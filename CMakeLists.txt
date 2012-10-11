@@ -36,6 +36,10 @@ find_package( Protobuf REQUIRED )
 include_directories(${PROTOBUF_INCLUDE_DIR})
 set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
 
+## Google PerfTools
+find_package( GPerf REQUIRED )
+set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
+
 ############################################################
 # Linker setup
 ############################################################
