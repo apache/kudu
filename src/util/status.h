@@ -16,6 +16,14 @@
 #include <string>
 #include "slice.h"
 
+
+// Return the given status if it is not OK.
+#define RETURN_NOT_OK(s) do { \
+    Status _s = (s); \
+    if (!_s.ok()) return _s; \
+  } while (0);
+
+
 namespace kudu {
 
 class Status {

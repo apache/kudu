@@ -66,10 +66,7 @@ Status Writer::Finish() {
   BOOST_FOREACH(Entry entry, trees_) {
     shared_ptr<TreeBuilder> tree = entry.second;
     BTreeInfoPB *info = footer.add_btrees();
-    Status s = tree->Finish(info);
-    if (!s.ok()) {
-      return s;
-    }
+    RETURN_NOT_OK(tree->Finish(info));
   }
 
   string footer_str;
@@ -80,15 +77,8 @@ Status Writer::Finish() {
   PutFixed32(&footer_str, footer.GetCachedSize());
   footer_str.append(kMagicString);
 
-  Status s = file_->Append(footer_str);
-  if (!s.ok()) {
-    return s;
-  }
-
-  s = file_->Flush();
-  if (!s.ok()) {
-    return s;
-  }
+  RETURN_NOT_OK(file_->Append(footer_str));
+  RETURN_NOT_OK(file_->Flush());
 
   return file_->Close();
 }
@@ -154,10 +144,7 @@ Status TreeBuilder::Finish(BTreeInfoPB *info) {
   // Write out any pending values as the last
   // data block.
   if (value_block_.Count() > 0) {
-    Status s = FinishCurValueBlock();
-    if (!s.ok()) {
-      return s;
-    }
+    RETURN_NOT_OK(FinishCurValueBlock());
   }
 
   // Now do the same for the positional index blocks, starting
@@ -167,10 +154,7 @@ Status TreeBuilder::Finish(BTreeInfoPB *info) {
 
   // Flush all but the root of the index.
   for (size_t i = 0; i < posidx_blocks_.size() - 1; i++) {
-    Status s = FinishPosIndexBlockAndPropagate(i);
-    if (!s.ok()) {
-      return s;
-    }
+    RETURN_NOT_OK(FinishPosIndexBlockAndPropagate(i));
   }
 
   // Flush the root
@@ -235,10 +219,7 @@ Status TreeBuilder::AppendPosIndexEntry(
   if (est_size > options_->block_size) {
     // This index block is full, flush it.
     BlockPointer index_block_ptr;
-    Status s = FinishPosIndexBlockAndPropagate(level);
-    if (!s.ok()) {
-      return s;
-    }
+    RETURN_NOT_OK(FinishPosIndexBlockAndPropagate(level));
   }
 
   return Status::OK();
@@ -264,21 +245,12 @@ Status TreeBuilder::FinishPosIndexBlockAndPropagate(size_t level)
 
   // Write to file.
   BlockPointer idx_block_ptr;
-  s = FinishPosIndexBlock(level, &idx_block_ptr);
-  if (!s.ok()) {
-    // TODO: this leaves us in a weird state, double-check that we aren't
-    // leaking anything here.
-    return s;
-  }
+  RETURN_NOT_OK(FinishPosIndexBlock(level, &idx_block_ptr));
 
   // Add to higher-level index.
-  s = AppendPosIndexEntry(first_in_idx_block, idx_block_ptr,
-                          level + 1);
-  if (!s.ok()) {
-    // TODO: this leaves us in a weird state, double-check that we aren't
-    // leaking anything here.
-    return s;
-  }
+  RETURN_NOT_OK(AppendPosIndexEntry(
+                  first_in_idx_block, idx_block_ptr,
+                  level + 1));
 
   return Status::OK();
 }
