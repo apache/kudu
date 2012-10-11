@@ -1,0 +1,113 @@
+CFile is a simple columnar format which stores multiple related B-Trees.
+
+
+File format
+-----------------
+
+<Header>
+<blocks>
+<btree root blocks>
+<footer>
+EOF
+
+
+Header
+------
+
+<magic>: the string 'kuducfil'
+<header length>: 32-bit integer length delimiter
+  <header>: CFileHeader protobuf
+
+Footer
+------
+
+CFileFooter protobuf
+<footer length> (length of protobuf)
+<magic>: the string 'kuducfil'
+
+
+
+
+
+
+
+
+
+Data blocks:
+
+- Various encodings
+
+plain:
+- cribbed from LevelDB
+
+
+group varint frame-of-reference: (int32 type)
+Header group (gvint): <num_elements, min_element, [unused], [unused]
+followed by enough group varints to represent the total number of
+elements, including padding 0s at the end. Each element is a delta
+from the min_element frame-of-reference.
+
+
+Index blocks:
+
+The index blocks are organized in a B-Tree. As data blocks are written,
+they are appended to the end of a leaf index block. When a leaf index
+block reaches the configured block size, it is added to another index
+block higher up the tree, and a new leaf is started. If the intermediate
+index block fills, it will start a new intermediate block and spill into
+an even higher-layer internal block.
+
+For example:
+
+                      [Int 0]
+           ------------------------------
+           |                            |
+        [Int 1]                       [Int 2]
+    -----------------            --------------
+    |       |       |            |             |
+[Leaf 0]     ...   [Leaf N]   [Leaf N+1]    [Leaf N+2]
+
+
+In this case, we wrote N leaf blocks, which filled up the node labeled
+Int 1. At this point, the writer would create Int 0 with one entry pointing
+to Int 1. Further leave blocks (N+1 and N+2) would be written to a new
+internal node (Int 2). When the file is completed, Int 2 will spill,
+adding its entry into Int 0 as well.
+
+Note that this strategy doesn't result in a fully balanced b-tree, but instead
+results in a 100% "fill factor" on all nodes in each level except for the last
+one written.
+
+There are two types of indexes:
+
+- Positional indexes: map ordinal position -> data block offset
+
+These are used to satisfy queries like: "seek to the Nth entry in this file"
+
+- Value-based indexes: reponsible for mapping value -> data block offset
+
+These are only present in files which contain data stored in sorted order
+(e.g key columns). They can satisfy seeks by value.
+
+
+An index block is encoded similarly for both types of indexes:
+
+<key> <block offset> <block size>
+<key> <block offset> <block size>
+...
+   key: vint64 for positional, otherwise varint-length-prefixed string
+   offset: vint64
+   block size: vint32
+
+<offset to first key>   (fixed32)
+<offset to second key>  (fixed32)
+...
+   These offsets are relative to the start of the block.
+
+<trailer>
+   A IndexBlockTrailerPB protobuf
+<trailer length>
+
+The trailer protobuf includes a field which designates whether the block
+is a leaf node or internal node of the B-Tree, allowing a reader to know
+whether the pointer is to another index block or to a data block.

@@ -1,0 +1,37 @@
+// Copyright (c) 2012, Cloudera, inc.
+
+package kudu.cfile;
+
+message CFileHeaderPB {
+  required int32 major_version = 1;
+  required int32 minor_version = 2;
+}
+
+message BlockPointerPB {
+  required int64 offset = 1;
+  required int32 size = 2;
+}
+
+message BTreeMetaPB {
+  required string identifier = 1;
+}
+
+message BTreeInfoPB {
+  required BTreeMetaPB metadata = 1;
+  required BlockPointerPB root_block = 2;
+}
+
+message IndexBlockTrailerPB {
+  required int32 num_entries = 1;
+
+  enum BlockType {
+    LEAF = 0;
+    INTERNAL = 1;
+  };
+  required BlockType type = 2;
+}
+// TODO: name all the PBs with *PB convention
+
+message CFileFooterPB {
+  repeated BTreeInfoPB btrees = 1;
+}
