@@ -3,6 +3,7 @@
 #ifndef KUDU_CFILE_CFILE_H
 #define KUDU_CFILE_CFILE_H
 
+#include <boost/scoped_ptr.hpp>
 #include <boost/utility.hpp>
 #include <tr1/memory>
 #include <tr1/unordered_map>
@@ -21,20 +22,20 @@ namespace cfile {
 
 using std::string;
 using std::tr1::shared_ptr;
+using boost::scoped_ptr;
 using std::vector;
 
 typedef uint32_t OrdinalIndex;
 typedef uint32_t IntType;
 
 class BlockPointer;
-class TreeBuilder;
 class BTreeInfoPB;
 class BTreeMetaPB;
+class TreeBuilder;
 class IntBlockBuilder;
 class StringBlockBuilder;
-template <class T> class IndexBlockBuilder;
 
-typedef class IndexBlockBuilder<OrdinalIndex> PosIndexBuilder;
+template <class KeyType> class IndexTreeBuilder;
 
 struct WriterOptions {
   // Approximate size of user data packed per block.  Note that the
@@ -73,6 +74,9 @@ public:
 
 private:
   friend class TreeBuilder;
+
+  template <class K>
+  friend class IndexTreeBuilder;
 
   // Append the given block into the file. Returns
   // the offset in the file at which it was stored
@@ -193,21 +197,14 @@ public:
 private:
   // TODO: inconsistent "value block" vs "data block"
   Status FinishCurValueBlock();
-  Status FinishPosIndexBlockAndPropagate(size_t level);
-  Status FinishPosIndexBlock(size_t level, BlockPointer *written);
 
-  Status AppendPosIndexEntry(
-    OrdinalIndex ordinal_idx, const BlockPointer &block,
-    size_t level=0);
-
-
+  const WriterOptions *options_;
   Writer *writer_;
 
   IntBlockBuilder value_block_;
-  vector<shared_ptr<PosIndexBuilder> > posidx_blocks_;
-  int value_count_;
+  scoped_ptr<IndexTreeBuilder<uint32_t> > posidx_builder_;
 
-  const WriterOptions *options_;
+  int value_count_;
 };
 
 } // namespace cfile

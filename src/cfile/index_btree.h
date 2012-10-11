@@ -1,0 +1,147 @@
+// Copyright (c) 2012, Cloudera, inc.
+
+#ifndef KUDU_CFILE_INDEX_BTREE_H
+#define KUDU_CFILE_INDEX_BTREE_H
+
+#include <boost/ptr_container/ptr_vector.hpp>
+#include <boost/noncopyable.hpp>
+
+#include "cfile.pb.h"
+#include "index_block.h"
+#include "util/logging.h"
+
+namespace kudu {
+namespace cfile {
+
+using boost::ptr_vector;
+
+template <class KeyType>
+class IndexTreeBuilder : boost::noncopyable {
+public:
+  typedef IndexBlockBuilder<KeyType> BlockBuilder;
+
+
+  explicit IndexTreeBuilder(const WriterOptions *options,
+                            Writer *writer) :
+    options_(options),
+    writer_(writer) {
+
+    idx_blocks_.push_back(new BlockBuilder(options));
+  }
+
+  Status Append(const KeyType &key, const BlockPointer &block) {
+    return Append(key, block, 0);
+  }
+
+  Status Finish(BTreeInfoPB *info) {
+    // Now do the same for the positional index blocks, starting
+    // with leaf
+    LOG(INFO) << "flushing tree, b-tree has " <<
+      idx_blocks_.size() << " levels";
+
+    // Flush all but the root of the index.
+    for (size_t i = 0; i < idx_blocks_.size() - 1; i++) {
+      RETURN_NOT_OK(FinishBlockAndPropagate(i));
+    }
+
+    // Flush the root
+    int root_level = idx_blocks_.size() - 1;
+    BlockPointer ptr;
+    Status s = FinishBlock(root_level, &ptr);
+    if (!s.ok()) {
+      LOG(ERROR) << "Unable to flush root index block";
+      return s;
+    }
+
+    LOG(INFO) << "Flushed root index block: " << ptr.ToString();
+
+    ptr.CopyToPB(info->mutable_root_block());
+    return Status::OK();
+  }
+
+
+private:
+  Status Append(const KeyType &key, const BlockPointer &block_ptr,
+                size_t level) {
+    if (level >= idx_blocks_.size()) {
+      // Need to create a new level
+      CHECK(level == idx_blocks_.size()) <<
+        "trying to create level " << level << " but size is only "
+                                  << idx_blocks_.size();
+      VLOG(1) << "Creating level-" << level << " in index b-tree";
+      idx_blocks_.push_back(new BlockBuilder(options_));
+    }
+
+    BlockBuilder &idx_block = idx_blocks_[level];
+    idx_block.Add(key, block_ptr);
+
+    size_t est_size = idx_block.EstimateEncodedSize();
+    if (est_size > options_->block_size) {
+      // This index block is full, flush it.
+      BlockPointer index_block_ptr;
+      RETURN_NOT_OK(FinishBlockAndPropagate(level));
+    }
+
+    return Status::OK();
+  }
+
+  // Finish the current block at the given index level, and then
+  // propagate by inserting this block into the next higher-up
+  // level index.
+  Status FinishBlockAndPropagate(size_t level) {
+    BlockBuilder &idx_block = idx_blocks_[level];
+
+    KeyType first_in_idx_block;
+    Status s = idx_block.GetFirstKey(&first_in_idx_block);
+    if (!s.ok()) {
+      LOG(ERROR) << "Unable to get first key of level-" << level
+                 << " index block" << GetStackTrace();
+      return s;
+    }
+
+    // Write to file.
+    BlockPointer idx_block_ptr;
+    RETURN_NOT_OK(FinishBlock(level, &idx_block_ptr));
+
+    // Add to higher-level index.
+    RETURN_NOT_OK(Append(first_in_idx_block, idx_block_ptr,
+                         level + 1));
+
+    return Status::OK();
+  }
+
+  // Finish the current block at the given level, writing it
+  // to the file. Return the location of the written block
+  // in 'written'.
+  Status FinishBlock(size_t level, BlockPointer *written) {
+    BlockBuilder &idx_block = idx_blocks_[level];
+    Slice data = idx_block.Finish();
+    uint64_t inserted_off;
+    Status s = writer_->AddBlock(data, &inserted_off, "idx");
+    if (!s.ok()) {
+      LOG(ERROR) << "Unable to append level-" << level << " index "
+                 << "block to file";
+      return s;
+    }
+
+    *written = BlockPointer(inserted_off, data.size());
+
+    // Reset this level block.
+    idx_block.Reset();
+
+    return Status::OK();
+  }
+
+
+  const WriterOptions *options_;
+  Writer *writer_;
+
+  ptr_vector<BlockBuilder> idx_blocks_;
+
+};
+
+
+
+} // namespace cfile
+} // namespace kudu
+#endif

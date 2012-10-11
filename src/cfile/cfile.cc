@@ -10,6 +10,7 @@
 #include "cfile.pb.h"
 #include "block_pointer.h"
 #include "index_block.h"
+#include "index_btree.h"
 #include "util/env.h"
 #include "util/coding.h"
 #include "util/logging.h"
@@ -117,16 +118,13 @@ Writer::~Writer() {
 ////////////////////////////////////////////////////////////
 // TreeBuilder
 ////////////////////////////////////////////////////////////
-
 TreeBuilder::TreeBuilder(const WriterOptions *options,
                          Writer *writer) :
+  options_(options),
   writer_(writer),
   value_block_(options),
-  value_count_(0),
-  options_(options)
+  posidx_builder_(new IndexTreeBuilder<uint32_t>(options, writer))
 {
-  posidx_blocks_.push_back(
-    shared_ptr<PosIndexBuilder>(new PosIndexBuilder(options)));
 }
 
 Status TreeBuilder::Append(IntType val) {
@@ -147,29 +145,7 @@ Status TreeBuilder::Finish(BTreeInfoPB *info) {
     RETURN_NOT_OK(FinishCurValueBlock());
   }
 
-  // Now do the same for the positional index blocks, starting
-  // with leaf
-  LOG(INFO) << "flushing tree, b-tree has " <<
-    posidx_blocks_.size() << " levels";
-
-  // Flush all but the root of the index.
-  for (size_t i = 0; i < posidx_blocks_.size() - 1; i++) {
-    RETURN_NOT_OK(FinishPosIndexBlockAndPropagate(i));
-  }
-
-  // Flush the root
-  int root_level = posidx_blocks_.size() - 1;
-  BlockPointer ptr;
-  Status s = FinishPosIndexBlock(root_level, &ptr);
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to flush root index block";
-    return s;
-  }
-
-  LOG(INFO) << "Flushed root index block: " << ptr.ToString();
-
-  ptr.CopyToPB(info->mutable_root_block());
-  return Status::OK();
+  return posidx_builder_->Finish(info);
 }
 
 
@@ -188,91 +164,12 @@ Status TreeBuilder::FinishCurValueBlock() {
   }
 
   BlockPointer ptr(inserted_off, data.size());
+
   // Now add to the index blocks
-  s = AppendPosIndexEntry(first_elem_ord, ptr);
+  s = posidx_builder_->Append(first_elem_ord, ptr);
   value_block_.Reset();
 
   return s;
-}
-
-// Append an entry into the positional index.
-// TODO: templatize this on index type so it works for
-// key indexes as well
-Status TreeBuilder::AppendPosIndexEntry(
-  OrdinalIndex ordinal_idx, const BlockPointer &block_ptr,
-  size_t level) {
-
-  if (level >= posidx_blocks_.size()) {
-    // Need to create a new level
-    CHECK(level == posidx_blocks_.size()) <<
-      "trying to create level " << level << " but size is only "
-                                << posidx_blocks_.size();
-    VLOG(1) << "Creating level-" << level << " in index b-tree";
-    posidx_blocks_.push_back(
-      shared_ptr<PosIndexBuilder>(new PosIndexBuilder(options_)));
-  }
-
-  shared_ptr<PosIndexBuilder> idx_block = posidx_blocks_[level];
-  idx_block->Add(ordinal_idx, block_ptr);
-
-  size_t est_size = idx_block->EstimateEncodedSize();
-  if (est_size > options_->block_size) {
-    // This index block is full, flush it.
-    BlockPointer index_block_ptr;
-    RETURN_NOT_OK(FinishPosIndexBlockAndPropagate(level));
-  }
-
-  return Status::OK();
-}
-
-
-// Append the index block at the given level to the file,
-// and insert it into the higher-level b-tree node, recursing
-// as necessary.
-// After doing so, resets this index block level so it is
-// fresh.
-Status TreeBuilder::FinishPosIndexBlockAndPropagate(size_t level)
-{
-  shared_ptr<PosIndexBuilder> idx_block = posidx_blocks_[level];
-
-  OrdinalIndex first_in_idx_block;
-  Status s = idx_block->GetFirstKey(&first_in_idx_block);
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to get first key of level-" << level
-               << " index block" << GetStackTrace();
-    return s;
-  }
-
-  // Write to file.
-  BlockPointer idx_block_ptr;
-  RETURN_NOT_OK(FinishPosIndexBlock(level, &idx_block_ptr));
-
-  // Add to higher-level index.
-  RETURN_NOT_OK(AppendPosIndexEntry(
-                  first_in_idx_block, idx_block_ptr,
-                  level + 1));
-
-  return Status::OK();
-}
-
-Status TreeBuilder::FinishPosIndexBlock(size_t level, BlockPointer *written)
-{
-  shared_ptr<PosIndexBuilder> idx_block = posidx_blocks_[level];
-  Slice data = idx_block->Finish();
-  uint64_t inserted_off;
-  Status s = writer_->AddBlock(data, &inserted_off, "idx");
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to append level-" << level << " index "
-               << "block to file";
-    return s;
-  }
-
-  *written = BlockPointer(inserted_off, data.size());
-
-  // Reset this level block.
-  idx_block->Reset();
-
-  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////
