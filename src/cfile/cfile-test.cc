@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "cfile.h"
+#include "cfile_reader.h"
 #include "cfile.pb.h"
 #include "index_block.h"
 #include "util/env.h"
@@ -175,12 +176,12 @@ class StringSink: public WritableFile {
   std::string contents_;
 };
 
-
-TEST(TestCFile, TestWriter) {
+static void WriteTestFile(const string &path,
+                          int num_entries) {
   Status s;
 
   WritableFile *file;
-  s = Env::Default()->NewWritableFile("/tmp/cfile", &file);
+  s = Env::Default()->NewWritableFile(path, &file);
 
   shared_ptr<WritableFile> sink(file);
   WriterOptions opts;
@@ -199,7 +200,7 @@ TEST(TestCFile, TestWriter) {
   ASSERT_STATUS_OK(s);
 
   // Append 100M values to the test tree
-  for (int i = 0; i < 100000000; i++) {
+  for (int i = 0; i < num_entries; i++) {
     Status s = tree->Append(i);
     // Dont use ASSERT because it accumulates all the logs
     // even for successes
@@ -209,6 +210,28 @@ TEST(TestCFile, TestWriter) {
   }
 
   ASSERT_STATUS_OK(w.Finish());
+}
+
+
+TEST(TestCFile, TestWrite100MFile) {
+  WriteTestFile("/tmp/cfile-Test100M", 100000000);
+}
+
+TEST(TestCFile, TestReadWrite) {
+  Env *env = Env::Default();
+
+  string path = "/tmp/cfile-TestReadWrite";
+  WriteTestFile(path, 1000);
+
+  RandomAccessFile *raf;
+  uint64_t size;
+  ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
+  ASSERT_STATUS_OK(env->GetFileSize(path, &size));
+
+  shared_ptr<RandomAccessFile> f(raf);
+
+  CFileReader reader(ReaderOptions(), f, size);
+  ASSERT_STATUS_OK(reader.Init());
 }
 
 

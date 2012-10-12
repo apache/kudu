@@ -37,6 +37,12 @@ class StringBlockBuilder;
 
 template <class KeyType> class IndexTreeBuilder;
 
+// Magic used in header/footer
+extern const string kMagicString;
+const int kCFileMajorVersion = 1;
+const int kCFileMinorVersion = 0;
+
+
 struct WriterOptions {
   // Approximate size of user data packed per block.  Note that the
   // block size specified here corresponds to uncompressed data.  The

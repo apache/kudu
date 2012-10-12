@@ -22,8 +22,9 @@ Footer
 ------
 
 CFileFooter protobuf
-<footer length> (length of protobuf)
+
 <magic>: the string 'kuducfil'
+<footer length> (length of protobuf)
 
 
 

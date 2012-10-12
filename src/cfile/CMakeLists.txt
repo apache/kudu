@@ -1,4 +1,4 @@
-SET(CFILE_SRCS cfile.cc)
+SET(CFILE_SRCS cfile.cc cfile_reader.cc)
 
 PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
   cfile.proto)

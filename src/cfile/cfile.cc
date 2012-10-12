@@ -18,7 +18,7 @@ using std::string;
 
 namespace kudu { namespace cfile {
 
-static const string kMagicString = "kuducfil";
+const string kMagicString = "kuducfil";
 
 
 ////////////////////////////////////////////////////////////
@@ -48,9 +48,23 @@ Status Writer::Start() {
   CHECK(state_ == kWriterInitialized) <<
     "bad state for Start(): " << state_;
 
-  Slice header(kMagicString);
-  file_->Append(header);
-  off_ += header.size();
+  CFileHeaderPB header;
+  header.set_major_version(kCFileMajorVersion);
+  header.set_minor_version(kCFileMinorVersion);
+  uint32_t pb_size = header.ByteSize();
+
+
+  string buf;
+  // First the magic.
+  buf.append(kMagicString);
+  // Then Length-prefixed header.
+  PutFixed32(&buf, pb_size);
+  if (!header.AppendToString(&buf)) {
+    return Status::Corruption("unable to encode header");
+  }
+
+  file_->Append(Slice(buf));
+  off_ += buf.size();
   state_ = kWriterWriting;
   return Status::OK();
 }
@@ -67,6 +81,10 @@ Status Writer::Finish() {
     shared_ptr<TreeBuilder> tree = entry.second;
     BTreeInfoPB *info = footer.add_btrees();
     RETURN_NOT_OK(tree->Finish(info));
+
+    // TODO: should track through the whole metadata object,
+    // not just use the identifier here
+    info->mutable_metadata()->set_identifier(entry.first);
   }
 
   string footer_str;
@@ -74,8 +92,8 @@ Status Writer::Finish() {
     return Status::Corruption("unable to serialize footer");
   }
 
-  PutFixed32(&footer_str, footer.GetCachedSize());
   footer_str.append(kMagicString);
+  PutFixed32(&footer_str, footer.GetCachedSize());
 
   RETURN_NOT_OK(file_->Append(footer_str));
   RETURN_NOT_OK(file_->Flush());
