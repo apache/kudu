@@ -18,6 +18,11 @@ namespace cfile {
 using std::string;
 using std::vector;
 
+
+// Forward decl.
+template <class KeyType> class IndexBlockIterator;
+
+
 // KeyEncoding template specializations determine
 // how to encode/decode various types into index
 // blocks.
@@ -179,7 +184,6 @@ private:
 };
 
 
-
 template <class KeyType>
 class IndexBlockReader : boost::noncopyable {
 public:
@@ -230,61 +234,23 @@ public:
     return trailer_.num_entries();
   }
 
-  // Find the highest block pointer in this index
-  // block which has a value <= the given key.
-  // If such a block is found, returns OK status.
-  // If no such block is found (i.e the smallest key in the
-  // index is still larger than the provided key), then
-  // 'ret' is left unmodified, and Status::NotFound is returned.
-  // If a search is successful, then 'matched_value' will be
-  // set to the index entry key for the block.
+  // TODO: kill this function eventually, since people
+  // should use iterators
   Status Search(const KeyType &search_key,
-                BlockPointer *ret,
-                KeyType *matched_value) const {
+                BlockPointer *ptr,
+                KeyType *match) {
+    scoped_ptr<IndexBlockIterator<KeyType> > iter(NewIterator());
+
+    RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
+
+    *ptr = iter->GetCurrentBlockPointer();
+    *match = iter->GetCurrentKey();
+    return Status::OK();
+  }
+
+  IndexBlockIterator<KeyType> *NewIterator() {
     CHECK(parsed_) << "not parsed";
-
-    size_t left = 0;
-    size_t right = Count() - 1;
-    int compare = 0;
-    int mid = 0;
-    while (left < right) {
-      mid = (left + right + 1) / 2;
-      const char *mid_key_ptr = GetKeyPointer(mid);
-
-      compare = encoding_.Compare(mid_key_ptr,
-                                  mid_key_ptr + 16, // conservative limit
-                                  search_key);
-      if (compare < 0) { // mid < search
-        left = mid;
-      } else if (compare > 0) { // mid > search
-        right = mid - 1;
-      } else { // mid == search
-        left = mid;
-        break;
-      }
-    }
-
-    // closest is now 'left'
-    const char *ptr = GetKeyPointer(left);
-    compare = encoding_.Compare(ptr, ptr + 16, search_key);
-    if (compare > 0) {
-      // The last midpoint was still greather then the
-      // provided key, which implies that the key is
-      // lower than the lowest in the block.
-      return Status::NotFound("key not present");
-    }
-
-    // At 'ptr', data is encoded as follows:
-    // <key> <block offset> <block length>
-    // We need to skip over the key itself
-    
-    ptr = encoding_.Decode(ptr, data_.data() + data_.size(),
-                           matched_value);
-    if (ptr == NULL) {
-      return Status::Corruption("Invalid key in index");
-    }
-
-    return ret->DecodeFrom(ptr, data_.data() + data_.size());
+    return new IndexBlockIterator<KeyType>(this);
   }
 
   bool IsLeaf() {
@@ -292,6 +258,33 @@ public:
   }
 
 private:
+  friend class IndexBlockIterator<KeyType>;
+
+  int CompareKey(int idx_in_block, const KeyType &search_key) const {
+    const char *key_ptr = GetKeyPointer(idx_in_block);
+    return encoding_.Compare(key_ptr,
+                             key_ptr + 16, // conservative limit
+                             search_key);
+  }
+
+  Status ReadEntry(size_t idx, KeyType *key, BlockPointer *block_ptr) const {
+    if (idx >= Count()) {
+      return Status::NotFound("Invalid index");
+    }
+
+    // At 'ptr', data is encoded as follows:
+    // <key> <block offset> <block length>
+
+    const char *ptr = GetKeyPointer(idx);
+    ptr = encoding_.Decode(ptr, data_.data() + data_.size(),
+                                 key);
+    if (ptr == NULL) {
+      return Status::Corruption("Invalid key in index");
+    }
+
+    return block_ptr->DecodeFrom(ptr, data_.data() + data_.size());
+  }
+
   const char *GetKeyPointer(int idx_in_block) const {
     size_t offset_in_block = DecodeFixed32(
       &key_offsets_[idx_in_block * sizeof(uint32_t)]);
@@ -308,6 +301,81 @@ private:
   bool parsed_;
 };
 
+template <class KeyType>
+class IndexBlockIterator : boost::noncopyable {
+public:
+  explicit IndexBlockIterator(const IndexBlockReader<KeyType> *reader) :
+    reader_(reader),
+    cur_idx_(-1)
+  {
+  }
+
+  // Find the highest block pointer in this index
+  // block which has a value <= the given key.
+  // If such a block is found, returns OK status.
+  // If no such block is found (i.e the smallest key in the
+  // index is still larger than the provided key), then
+  // Status::NotFound is returned.
+  //
+  // If this function returns an error, then the state of this
+  // iterator is undefined (i.e it may or may not have moved
+  // since the previous call)
+  Status SeekAtOrBefore(const KeyType &search_key) {
+    size_t left = 0;
+    size_t right = reader_->Count() - 1;
+    while (left < right) {
+      int mid = (left + right + 1) / 2;
+
+      int compare = reader_->CompareKey(mid, search_key);
+      if (compare < 0) { // mid < search
+        left = mid;
+      } else if (compare > 0) { // mid > search
+        right = mid - 1;
+      } else { // mid == search
+        left = mid;
+        break;
+      }
+    }
+
+    // closest is now 'left'
+    int compare = reader_->CompareKey(left, search_key);
+    if (compare > 0) {
+      // The last midpoint was still greather then the
+      // provided key, which implies that the key is
+      // lower than the lowest in the block.
+      return Status::NotFound("key not present");
+    }
+
+    return SeekToIndex(left);
+  }
+
+  Status SeekToIndex(size_t idx) {
+    cur_idx_ = idx;
+    return reader_->ReadEntry(idx, &cur_key_, &cur_ptr_);
+  }
+
+  bool HasNext() const {
+    return cur_idx_ + 1 < reader_->Count();
+  }
+
+  Status Next() {
+    return SeekToIndex(cur_idx_ + 1);
+  }
+
+  const BlockPointer &GetCurrentBlockPointer() const {
+    return cur_ptr_;
+  }
+
+  const KeyType &GetCurrentKey() const {
+    return cur_key_;
+  }
+
+private:
+  const IndexBlockReader<KeyType> *reader_;
+  size_t cur_idx_;
+  KeyType cur_key_;
+  BlockPointer cur_ptr_;
+};
 
 } // namespace kudu
 } // namespace cfile

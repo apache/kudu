@@ -94,16 +94,6 @@ private:
   scoped_ptr<CFileFooterPB> footer_;
 };
 
-
-class CFileIterator : boost::noncopyable {
-public:
-  CFileIterator(const CFileReader *reader);
-
-
-private:
-  CFileReader *reader_;
-};
-
 } // namespace cfile
 } // namespace kudu
 

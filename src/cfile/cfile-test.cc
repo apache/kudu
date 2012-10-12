@@ -12,10 +12,6 @@
 
 namespace kudu { namespace cfile {
 
-
-// TODO: need to write test for round-trip
-// int block encoding once there is a reader
-
 #define ASSERT_STATUS_OK(status) do { \
     Status _s = status; \
     if (_s.ok()) { \
@@ -121,6 +117,45 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
   EXPECT_EQ(40, (int)match);
 
   idx.Reset();
+}
+
+TEST(TestIndexBlock, TestIterator) {
+  // Encode an index block with 1000 entries.
+  WriterOptions opts;
+  IndexBlockBuilder<uint32_t> idx(&opts, true);
+
+  for (int i = 0; i < 1000; i++) {
+    idx.Add(i * 10, BlockPointer(100000 + i, 64 * 1024));
+  }
+  Slice s = idx.Finish();
+
+  IndexBlockReader<uint32_t> reader(s);
+  ASSERT_STATUS_OK(reader.Parse());
+  scoped_ptr<IndexBlockIterator<uint32_t> > iter(
+    reader.NewIterator());
+  iter->SeekToIndex(0);
+  ASSERT_EQ(0U, iter->GetCurrentKey());
+  ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
+
+  iter->SeekToIndex(50);
+  ASSERT_EQ(500U, iter->GetCurrentKey());
+  ASSERT_EQ(100050U, iter->GetCurrentBlockPointer().offset());
+
+  ASSERT_TRUE(iter->HasNext());
+  ASSERT_STATUS_OK(iter->Next());
+  ASSERT_EQ(510U, iter->GetCurrentKey());
+  ASSERT_EQ(100051U, iter->GetCurrentBlockPointer().offset());
+
+  iter->SeekToIndex(999);
+  ASSERT_EQ(9990U, iter->GetCurrentKey());
+  ASSERT_EQ(100999U, iter->GetCurrentBlockPointer().offset());
+  ASSERT_FALSE(iter->HasNext());
+  ASSERT_TRUE(iter->Next().IsNotFound());
+
+  iter->SeekToIndex(0);
+  ASSERT_EQ(0U, iter->GetCurrentKey());
+  ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
+  ASSERT_TRUE(iter->HasNext());
 }
 
 class StringSink: public WritableFile {
