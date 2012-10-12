@@ -32,22 +32,26 @@ CFileFooter protobuf
 
 
 
-
+==============================
 
 Data blocks:
 
-- Various encodings
+Data blocks are stored with various types of encodings.
 
-plain:
-- cribbed from LevelDB
+* Group Varint Frame-Of-Reference Encoding
 
+Used for uint32 blocks.
 
-group varint frame-of-reference: (int32 type)
-Header group (gvint): <num_elements, min_element, [unused], [unused]
-followed by enough group varints to represent the total number of
-elements, including padding 0s at the end. Each element is a delta
-from the min_element frame-of-reference.
+Starts with a header:
 
+<num elements> \
+<min element>  |
+<unused>       | group varint 32
+<unused>      /
+
+Followed by the actual data, each set of 4 integers using group-varint.
+The last group is padded with 0s.
+Each integer is relative to the min element in the header.
 
 Index blocks:
 

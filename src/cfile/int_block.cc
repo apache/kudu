@@ -112,7 +112,6 @@ Slice IntBlockBuilder::Finish() {
   IntType *trailer_p = &trailer[0];
 
   if (size > 0) {
-    p = &trailer[0];
     while (size > 0) {
       *trailer_p++ = *p++ - min;
       size--;
@@ -126,6 +125,7 @@ Slice IntBlockBuilder::Finish() {
 ////////////////////////////////////////////////////////////
 // Decoding
 ////////////////////////////////////////////////////////////
+
 
 const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
 
@@ -154,6 +154,91 @@ const uint8_t *IntBlockDecoder::DecodeGroupVarInt32(
 
   return src;
 }
+
+
+Status IntBlockDecoder::ParseHeader() {
+  // TODO: better range check
+  CHECK(data_.size() > 5);
+
+  uint32_t junk1, junk2;
+  ints_start_ = DecodeGroupVarInt32(
+    (const uint8_t *)data_.data(), &num_elems_, &min_elem_,
+    &junk1, &junk2);
+
+  if (num_elems_ <= 0 ||
+      num_elems_ * 5 / 4 > data_.size()) {
+    return Status::Corruption("bad number of elems in int block");
+  }
+
+  parsed_ = true;
+  SeekToStart();
+
+  return Status::OK();
+}
+
+void IntBlockDecoder::SeekToStart() {
+  CHECK(parsed_) << "Must call ParseHeader()";
+  cur_pos_ = ints_start_;
+  cur_idx_ = 0;
+  pending_.clear();
+}
+
+void IntBlockDecoder::DecodeInts(int n, std::vector<uint32_t> *vec) {
+
+  int rem = num_elems_ - cur_idx_;
+  assert(rem >= 0);
+
+  // Only fetch up to remaining amount
+  n = std::min(rem, n);
+
+  // TODO: vec->reserve(vec->size() + n);
+
+  // First drain pending_
+  while (n > 0 && !pending_.empty()) {
+    vec->push_back(pending_.back());
+    pending_.pop_back();
+    n--;
+    cur_idx_++;
+  }
+  if (n == 0) return;
+
+  // Now grab groups of 4 and append to vector
+  while (n >= 4) {
+    uint32_t ints[4];
+    cur_pos_ = DecodeGroupVarInt32(
+      cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
+    cur_idx_ += 4;
+
+    vec->push_back(min_elem_ + ints[0]);
+    vec->push_back(min_elem_ + ints[1]);
+    vec->push_back(min_elem_ + ints[2]);
+    vec->push_back(min_elem_ + ints[3]);
+
+    n -= 4;
+  }
+
+  if (n == 0) return;
+
+  // Grab next batch into pending_
+  // Note that this does _not_ increment cur_idx_
+  uint32_t ints[4];
+  cur_pos_ = DecodeGroupVarInt32(
+    cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
+  // pending_ acts like a stack, so push in reverse order.
+  pending_.push_back(min_elem_ + ints[3]);
+  pending_.push_back(min_elem_ + ints[2]);
+  pending_.push_back(min_elem_ + ints[1]);
+  pending_.push_back(min_elem_ + ints[0]);
+
+  while (n > 0 && !pending_.empty()) {
+    vec->push_back(pending_.back());
+    pending_.pop_back();
+    n--;
+    cur_idx_++;
+  }
+  assert(n == 0);
+}
+
 
 } // namespace cfile
 } // namespace kudu

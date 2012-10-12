@@ -7,9 +7,11 @@
 #include <stdint.h>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "util/slice.h"
+#include "util/status.h"
 
 namespace kudu {
 namespace cfile {
@@ -76,7 +78,14 @@ private:
 
 class IntBlockDecoder : boost::noncopyable {
 public:
-  IntBlockDecoder() {}
+  explicit IntBlockDecoder(const Slice &slice) :
+    data_(slice),
+    parsed_(false) {
+  }
+
+  Status ParseHeader();
+  void SeekToStart();
+  void DecodeInts(int n, std::vector<uint32_t> *vec);
 
 private:
   friend class TestEncoding;
@@ -84,6 +93,21 @@ private:
   static const uint8_t *DecodeGroupVarInt32(
     const uint8_t *src,
     uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
+
+  Slice data_;
+
+  bool parsed_;
+  const uint8_t *ints_start_;
+  uint32_t num_elems_;
+  uint32_t min_elem_;
+
+  const uint8_t *cur_pos_;
+  size_t cur_idx_;
+
+  // Items that have been decoded but not yet yielded
+  // to the user. The next one to be yielded is at the
+  // *end* of the vector!
+  std::vector<uint32_t> pending_;
 
 };
 

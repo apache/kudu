@@ -1,5 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include <boost/foreach.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/utility/binary.hpp>
 #include <glog/logging.h>
@@ -93,6 +94,43 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
   ibb.Reset();
   s = ibb.Finish();
   ASSERT_EQ(5UL, s.size());
+}
+
+TEST_F(TestEncoding, TestIntBlockRoundTrip) {
+  boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
+
+  srand(123);
+
+  std::vector<uint32_t> to_insert;
+  for (int i = 0; i < 10003; i++) {
+    to_insert.push_back(random());
+  }
+
+  IntBlockBuilder ibb(opts.get());
+  BOOST_FOREACH(uint32_t x, to_insert) {
+    ibb.Add(x);
+  }
+  Slice s = ibb.Finish();
+
+  IntBlockDecoder ibd(s);
+  ibd.ParseHeader();
+
+  std::vector<uint32_t> decoded;
+  while (decoded.size() < to_insert.size()) {
+    int to_decode = (random() % 30) + 1;
+
+    int before_count = decoded.size();
+    ibd.DecodeInts(to_decode, &decoded);
+    int after_count = decoded.size();
+    EXPECT_GE(to_decode, after_count - before_count);
+  }
+
+  for (uint i = 0; i < to_insert.size(); i++) {
+    if (to_insert[i] != decoded[i]) {
+      FAIL() << "Fail at index " << i <<
+        " inserted=" << to_insert[i] << " got=" << decoded[i];
+    }
+  }
 }
 
 
