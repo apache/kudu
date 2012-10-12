@@ -1,6 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc
 
-#include <algorithm>
 #include <boost/foreach.hpp>
 #include <endian.h>
 #include <string>
