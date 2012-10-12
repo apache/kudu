@@ -11,7 +11,35 @@
 
 namespace kudu { namespace cfile {
 
-TEST(TestCFile, TestGroupVarInt) {
+
+class TestEncoding : public ::testing::Test {
+protected:
+  // Encodes the given four ints as group-varint, then
+  // decodes and ensures the result is the same.
+  static void DoTestRoundTripGVI32(
+    uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+
+    std::string buf;
+    IntBlockBuilder::AppendGroupVarInt32(
+      &buf, a, b, c, d);
+
+    uint32_t a_rt, b_rt, c_rt, d_rt;
+
+    const uint8_t *end = IntBlockDecoder::DecodeGroupVarInt32(
+      reinterpret_cast<const uint8_t *>(buf.c_str()),
+      &a_rt, &b_rt, &c_rt, &d_rt);
+
+    ASSERT_EQ(a, a_rt);
+    ASSERT_EQ(b, b_rt);
+    ASSERT_EQ(c, c_rt);
+    ASSERT_EQ(d, d_rt);
+    ASSERT_EQ(reinterpret_cast<const char *>(end),
+              buf.c_str() + buf.size());
+  }
+};
+
+
+TEST_F(TestEncoding, TestGroupVarInt) {
   std::string buf;
   IntBlockBuilder::AppendGroupVarInt32(
     &buf, 0, 0, 0, 0);
@@ -37,7 +65,21 @@ TEST(TestCFile, TestGroupVarInt) {
   ASSERT_EQ(65535, *reinterpret_cast<uint16_t *>(&buf[5]));
 }
 
-TEST(TestCFile, TestIntBlockEncoder) {
+
+// Round-trip encode/decodes using group varint
+TEST_F(TestEncoding, TestGroupVarIntRoundTrip) {
+  // A few simple tests.
+  DoTestRoundTripGVI32(0, 0, 0, 0);
+  DoTestRoundTripGVI32(1, 2, 3, 4);
+  DoTestRoundTripGVI32(1, 2000, 3, 200000);
+
+  // Then a randomized test.
+  for (int i = 0; i < 10000; i++) {
+    DoTestRoundTripGVI32(random(), random(), random(), random());
+  }
+}
+
+TEST_F(TestEncoding, TestIntBlockEncoder) {
   boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
   IntBlockBuilder ibb(opts.get());
   for (int i = 0; i < 10000; i++) {

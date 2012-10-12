@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <algorithm>
+#include <boost/utility/binary.hpp>
 #include <stdint.h>
 
 #include "int_block.h"
@@ -8,11 +9,12 @@
 namespace kudu {
 namespace cfile {
 
-static size_t CalcRequiredBytes32(uint32_t i) {
-  if (i == 0) return 1;
 
-  return sizeof(long) - __builtin_clzl(i)/8;
-}
+
+////////////////////////////////////////////////////////////
+// Encoding
+////////////////////////////////////////////////////////////
+
 
 IntBlockBuilder::IntBlockBuilder(const WriterOptions *options) :
   estimated_raw_size_(0),
@@ -37,6 +39,13 @@ void IntBlockBuilder::Reset() {
   ints_.clear();
   buffer_.clear();
   estimated_raw_size_ = 0;
+}
+
+// Calculate the number of bytes to encode the given unsigned int.
+static size_t CalcRequiredBytes32(uint32_t i) {
+  if (i == 0) return 1;
+
+  return sizeof(long) - __builtin_clzl(i)/8;
 }
 
 void IntBlockBuilder::Add(IntType val) {
@@ -112,6 +121,38 @@ Slice IntBlockBuilder::Finish() {
     AppendGroupVarInt32(&buffer_, trailer[0], trailer[1], trailer[2], trailer[3]);
   }
   return Slice(buffer_);
+}
+
+////////////////////////////////////////////////////////////
+// Decoding
+////////////////////////////////////////////////////////////
+
+const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
+
+const uint8_t *IntBlockDecoder::DecodeGroupVarInt32(
+  const uint8_t *src,
+  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+
+  uint8_t a_sel = (*src & BOOST_BINARY( 11 00 00 00)) >> 6;
+  uint8_t b_sel = (*src & BOOST_BINARY( 00 11 00 00)) >> 4;
+  uint8_t c_sel = (*src & BOOST_BINARY( 00 00 11 00)) >> 2;
+  uint8_t d_sel = (*src & BOOST_BINARY( 00 00 00 11 ));
+
+  src++; // skip past selector byte
+
+  *a = *reinterpret_cast<const uint32_t *>(src) & MASKS[a_sel];
+  src += a_sel + 1;
+
+  *b = *reinterpret_cast<const uint32_t *>(src) & MASKS[b_sel];
+  src += b_sel + 1;
+
+  *c = *reinterpret_cast<const uint32_t *>(src) & MASKS[c_sel];
+  src += c_sel + 1;
+
+  *d = *reinterpret_cast<const uint32_t *>(src) & MASKS[d_sel];
+  src += d_sel + 1;
+
+  return src;
 }
 
 } // namespace cfile

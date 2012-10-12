@@ -53,8 +53,9 @@ public:
   size_t Count() const;
 
 private:
-  FRIEND_TEST(TestCFile, TestGroupVarInt);
-  FRIEND_TEST(TestCFile, TestIntBlockEncoder);
+  friend class TestEncoding;
+  FRIEND_TEST(TestEncoding, TestGroupVarInt);
+  FRIEND_TEST(TestEncoding, TestIntBlockEncoder);
 
   vector<IntType> ints_;
   string buffer_;
@@ -70,6 +71,20 @@ private:
   enum {
     kEstimatedHeaderSizeBytes = 6
   };
+};
+
+
+class IntBlockDecoder : boost::noncopyable {
+public:
+  IntBlockDecoder() {}
+
+private:
+  friend class TestEncoding;
+
+  static const uint8_t *DecodeGroupVarInt32(
+    const uint8_t *src,
+    uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
+
 };
 
 
