@@ -39,6 +39,8 @@ template <class KeyType> class IndexTreeBuilder;
 
 // Magic used in header/footer
 extern const string kMagicString;
+extern const string kPositionalIndexIdentifier;
+
 const int kCFileMajorVersion = 1;
 const int kCFileMinorVersion = 0;
 

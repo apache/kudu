@@ -20,6 +20,11 @@ namespace kudu { namespace cfile {
 
 const string kMagicString = "kuducfil";
 
+// TODO: should use a proto enum instead probably
+// TODO: weird conflation of columns and index trees (a given column can have 2 trees)
+// fix this weird n->1 relationship of types of data per file, or change to true PAX
+const string kPositionalIndexIdentifier = "posidx";
+
 
 ////////////////////////////////////////////////////////////
 // Options
@@ -140,7 +145,8 @@ TreeBuilder::TreeBuilder(const WriterOptions *options,
   options_(options),
   writer_(writer),
   value_block_(options),
-  posidx_builder_(new IndexTreeBuilder<uint32_t>(options, writer))
+  posidx_builder_(new IndexTreeBuilder<uint32_t>(options, writer)),
+  value_count_(0)
 {
 }
 
@@ -169,6 +175,9 @@ Status TreeBuilder::Finish(BTreeInfoPB *info) {
 Status TreeBuilder::FinishCurValueBlock() {
   size_t num_elems_in_block = value_block_.Count();
   OrdinalIndex first_elem_ord = value_count_ - num_elems_in_block;
+
+  VLOG(1) << "Appending data block for values " <<
+    first_elem_ord << "-" << (first_elem_ord + num_elems_in_block);
 
   // The current data block is full, need to push it
   // into the file, and add to index

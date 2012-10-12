@@ -2,7 +2,11 @@
 #ifndef KUDU_CFILE_BLOCK_POINTER_H
 #define KUDU_CFILE_BLOCK_POINTER_H
 
+#include <stdio.h>
+
 #include "util/coding.h"
+#include "util/status.h"
+#include "cfile.pb.h"
 
 namespace kudu { namespace cfile {
 
@@ -14,6 +18,11 @@ public:
   BlockPointer(const BlockPointer &from) :
     offset_(from.offset_),
     size_(from.size_) {}
+
+  explicit BlockPointer(const BlockPointerPB &from) :
+    offset_(from.offset()),
+    size_(from.size()) {
+  }
 
   BlockPointer(uint64_t offset, uint64_t size) :
     offset_(offset),
@@ -50,11 +59,11 @@ public:
     pb->set_size(size_);
   }
 
-  uint64_t offset() {
+  uint64_t offset() const {
     return offset_;
   }
 
-  uint32_t size() {
+  uint32_t size() const {
     return size_;
   }
 

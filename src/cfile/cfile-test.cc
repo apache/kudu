@@ -74,7 +74,7 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Encode an index block.
   WriterOptions opts;
-  IndexBlockBuilder<uint32_t> idx(&opts);
+  IndexBlockBuilder<uint32_t> idx(&opts, true);
 
   const int EXPECTED_NUM_ENTRIES = 4;
 
@@ -100,59 +100,68 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Search for a value prior to first entry
   BlockPointer ptr;
-  Status status = reader.Search(0, &ptr);
+  uint32_t match;
+  Status status = reader.Search(0, &ptr, &match);
   EXPECT_TRUE(status.IsNotFound());
 
   // Search for a value equal to first entry
-  status = reader.Search(10, &ptr);
+  status = reader.Search(10, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(10, (int)match);
 
   // Search for a value between 1st and 2nd entries.
   // Should return 1st.
-  status = reader.Search(15, &ptr);
+  status = reader.Search(15, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(10, (int)match);
 
   // Search for a value equal to 2nd
   // Should return 2nd.
-  status = reader.Search(20, &ptr);
+  status = reader.Search(20, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(20, (int)match);
 
   // Between 2nd and 3rd.
   // Should return 2nd
-  status = reader.Search(25, &ptr);
+  status = reader.Search(25, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(20, (int)match);
 
   // Equal 3rd
-  status = reader.Search(30, &ptr);
+  status = reader.Search(30, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(30, (int)match);
 
   // Between 3rd and 4th
-  status = reader.Search(35, &ptr);
+  status = reader.Search(35, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(30, (int)match);
 
   // Equal 4th (last)
-  status = reader.Search(40, &ptr);
+  status = reader.Search(40, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(40, (int)match);
 
   // Greater than 4th (last)
-  status = reader.Search(45, &ptr);
+  status = reader.Search(45, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
+  EXPECT_EQ(40, (int)match);
 
   idx.Reset();
 }
@@ -193,13 +202,13 @@ static void WriteTestFile(const string &path,
   ASSERT_STATUS_OK(w.Start());
 
   BTreeMetaPB meta;
-  meta.set_identifier("test");
+  meta.set_identifier(kPositionalIndexIdentifier);
 
   shared_ptr<TreeBuilder> tree;
   s = w.AddTree(meta, &tree);
   ASSERT_STATUS_OK(s);
 
-  // Append 100M values to the test tree
+  // Append given number of values to the test tree
   for (int i = 0; i < num_entries; i++) {
     Status s = tree->Append(i);
     // Dont use ASSERT because it accumulates all the logs
@@ -232,6 +241,18 @@ TEST(TestCFile, TestReadWrite) {
 
   CFileReader reader(ReaderOptions(), f, size);
   ASSERT_STATUS_OK(reader.Init());
+
+  BlockPointer ptr;
+
+  for (int i = 0; i < 1000; i++) {
+    // Lookup the data block
+    uint32_t match;
+    ASSERT_STATUS_OK(reader.SearchPosition(i, &ptr, &match));
+    BlockData dblk_data;
+    ASSERT_STATUS_OK(reader.ReadBlock(ptr, &dblk_data));
+
+    
+  }
 }
 
 

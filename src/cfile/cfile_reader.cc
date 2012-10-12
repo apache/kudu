@@ -1,10 +1,14 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include <boost/foreach.hpp>
+#include <boost/shared_array.hpp>
 #include <glog/logging.h>
 
+#include "block_pointer.h"
 #include "cfile_reader.h"
 #include "cfile.h"
 #include "cfile.pb.h"
+#include "index_block.h"
 
 #include "util/coding.h"
 #include "util/env.h"
@@ -111,6 +115,78 @@ Status CFileReader::ReadAndParseFooter() {
   return Status::OK();
 }
 
+Status CFileReader::ReadBlock(const BlockPointer &ptr,
+                              BlockData *ret) const {
+  CHECK(state_ == kInitialized) << "bad state: " << state_;
+  CHECK(ptr.offset() > 0 &&
+        ptr.offset() + ptr.size() < file_size_) <<
+    "bad offset " << ptr.ToString() << " in file of size "
+                  << file_size_;
+
+  shared_array<char> scratch(new char[ptr.size()]);
+  Slice s;
+  RETURN_NOT_OK( file_->Read(ptr.offset(), ptr.size(),
+                             &s, scratch.get()) );
+
+  if (s.size() != ptr.size()) {
+    return Status::IOError("Could not read full block length");
+  }
+
+  *ret = BlockData(s, scratch);
+
+  return Status::OK();
+}
+
+
+template <typename KeyType>
+static Status SearchDownward(const CFileReader *reader,
+                             const KeyType &search_key,
+                             const BlockPointer &in_block,
+                             BlockPointer *ret,
+                             KeyType *ret_key) {
+  BlockData data;
+  RETURN_NOT_OK( reader->ReadBlock(in_block, &data) );
+
+  IndexBlockReader<KeyType> idx_reader(data.slice());
+  RETURN_NOT_OK(idx_reader.Parse());
+
+  BlockPointer result;
+  RETURN_NOT_OK(idx_reader.Search(search_key, &result, ret_key));
+
+  if (idx_reader.IsLeaf()) {
+    *ret = result;
+    return Status::OK();
+  } else {
+    // Otherwise we just got a pointer to another internal node.
+    // Follow it.
+    return SearchDownward(reader, search_key, result, ret, ret_key);
+  }
+}
+
+
+Status CFileReader::SearchPosition(uint32_t pos, BlockPointer *ptr,
+                                   uint32_t *ret_key)
+{
+  CHECK(state_ == kInitialized) << "Must Init() first";
+
+  BlockPointer posidx_root;
+  RETURN_NOT_OK(GetIndexRootBlock(
+                  kPositionalIndexIdentifier, &posidx_root));
+
+  return SearchDownward<uint32_t>(this, pos, posidx_root, ptr, ret_key);
+}
+
+Status CFileReader::GetIndexRootBlock(
+  const string &identifier, BlockPointer *ptr) {
+  BOOST_FOREACH(BTreeInfoPB info, footer_->btrees()) {
+    if (info.metadata().identifier() == identifier) {
+      *ptr = BlockPointer(info.root_block());
+      return Status::OK();
+    }
+  }
+
+  return Status::NotFound("no such index");
+}
 
 
 } // namespace cfile

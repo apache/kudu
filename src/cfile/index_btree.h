@@ -26,7 +26,7 @@ public:
     options_(options),
     writer_(writer) {
 
-    idx_blocks_.push_back(new BlockBuilder(options));
+    idx_blocks_.push_back(new BlockBuilder(options, true));
   }
 
   Status Append(const KeyType &key, const BlockPointer &block) {
@@ -69,7 +69,7 @@ private:
         "trying to create level " << level << " but size is only "
                                   << idx_blocks_.size();
       VLOG(1) << "Creating level-" << level << " in index b-tree";
-      idx_blocks_.push_back(new BlockBuilder(options_));
+      idx_blocks_.push_back(new BlockBuilder(options_, false));
     }
 
     BlockBuilder &idx_block = idx_blocks_[level];
@@ -139,7 +139,6 @@ private:
   ptr_vector<BlockBuilder> idx_blocks_;
 
 };
-
 
 
 } // namespace cfile

@@ -6,6 +6,7 @@
 #include "block_pointer.h"
 #include "util/coding.h"
 
+#include <boost/lexical_cast.hpp>
 #include <boost/foreach.hpp>
 #include <boost/utility.hpp>
 #include <string>
@@ -57,15 +58,14 @@ public:
     }
   }
 
-  bool Decode(const char *encoded_ptr, const char *limit,
+  const char *Decode(const char *encoded_ptr, const char *limit,
               uint32_t *ret) const {
-    const char *next = GetVarint32Ptr(encoded_ptr, limit, ret);
-    return next != NULL;
+    return GetVarint32Ptr(encoded_ptr, limit, ret);
   }
 
   const char *SkipKey(const char *encoded_ptr, const char *limit) const {
     uint32_t unused;
-    return GetVarint32Ptr(encoded_ptr, limit, &unused);
+    return Decode(encoded_ptr, limit, &unused);
   }
 };
 
@@ -77,9 +77,11 @@ public:
 template <class KeyType>
 class IndexBlockBuilder : boost::noncopyable {
 public:
-  explicit IndexBlockBuilder(const WriterOptions *options) :
+  explicit IndexBlockBuilder(const WriterOptions *options,
+                             bool is_leaf) :
     options_(options),
-    finished_(false)
+    finished_(false),
+    is_leaf_(is_leaf)
   {
   }
 
@@ -109,7 +111,8 @@ public:
 
     IndexBlockTrailerPB trailer;
     trailer.set_num_entries(entry_offsets_.size());
-    trailer.set_type(IndexBlockTrailerPB::INTERNAL);
+    trailer.set_type(
+      is_leaf_ ? IndexBlockTrailerPB::LEAF : IndexBlockTrailerPB::INTERNAL);
     trailer.AppendToString(&buffer_);
 
     PutFixed32(&buffer_, trailer.GetCachedSize());
@@ -124,7 +127,7 @@ public:
       return Status::NotFound("no keys in builder");
     }
 
-    bool success = encoding_.Decode(
+    bool success = NULL != encoding_.Decode(
       buffer_.c_str(),
       buffer_.c_str() + buffer_.size(),
       key);
@@ -166,6 +169,9 @@ private:
   // Is the builder currently between Finish() and Reset()
   bool finished_;
 
+  // Is this a leaf block?
+  bool is_leaf_;
+
   KeyEncoding<KeyType> encoding_;
 
   string buffer_;
@@ -196,7 +202,8 @@ public:
     size_t max_size = trailer_size_ptr - data_.data();
     if (trailer_size <= 0 ||
         trailer_size > max_size) {
-      string err = "invalid trailer size: " + trailer_size;
+      string err = "invalid index block trailer size: " +
+        boost::lexical_cast<string>(trailer_size);
       return Status::Corruption(err);
     }
 
@@ -211,6 +218,8 @@ public:
 
     key_offsets_ = trailer_ptr - sizeof(uint32_t) * trailer_.num_entries();
     CHECK(trailer_ptr >= data_.data());
+
+    VLOG(2) << "Parsed index trailer: " << trailer_.DebugString();
 
     parsed_ = true;
     return Status::OK();
@@ -227,7 +236,11 @@ public:
   // If no such block is found (i.e the smallest key in the
   // index is still larger than the provided key), then
   // 'ret' is left unmodified, and Status::NotFound is returned.
-  Status Search(const KeyType &search_key, BlockPointer *ret) const {
+  // If a search is successful, then 'matched_value' will be
+  // set to the index entry key for the block.
+  Status Search(const KeyType &search_key,
+                BlockPointer *ret,
+                KeyType *matched_value) const {
     CHECK(parsed_) << "not parsed";
 
     size_t left = 0;
@@ -264,12 +277,18 @@ public:
     // At 'ptr', data is encoded as follows:
     // <key> <block offset> <block length>
     // We need to skip over the key itself
-    ptr = encoding_.SkipKey(ptr, data_.data() + data_.size());
+    
+    ptr = encoding_.Decode(ptr, data_.data() + data_.size(),
+                           matched_value);
     if (ptr == NULL) {
       return Status::Corruption("Invalid key in index");
     }
 
     return ret->DecodeFrom(ptr, data_.data() + data_.size());
+  }
+
+  bool IsLeaf() {
+    return trailer_.type() == IndexBlockTrailerPB::LEAF;
   }
 
 private:
