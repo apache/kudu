@@ -5,15 +5,19 @@
 
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/noncopyable.hpp>
+#include <memory>
 
 #include "cfile.pb.h"
 #include "index_block.h"
 #include "util/logging.h"
+#include "cfile_reader.h"
 
 namespace kudu {
 namespace cfile {
 
 using boost::ptr_vector;
+
+class CFileReader;
 
 template <class KeyType>
 class IndexTreeBuilder : boost::noncopyable {
@@ -140,6 +144,94 @@ private:
 
 };
 
+template <class KeyType>
+class IndexTreeIterator : boost::noncopyable {
+public:
+  explicit IndexTreeIterator(const CFileReader *reader,
+                             const BlockPointer &root_blockptr) :
+    reader_(reader),
+    root_block_(root_blockptr) {
+  }
+
+  Status SeekAtOrBefore(const KeyType &search_key) {
+    seeked_indexes_.clear();
+
+    return SeekDownward(search_key, root_block_);
+  }
+
+  const KeyType &GetCurrentKey() {
+    return seeked_indexes_.back().iter->GetCurrentKey();
+  }
+
+  const BlockPointer &GetCurrentBlockPointer() {
+    return seeked_indexes_.back().iter->GetCurrentBlockPointer();
+  }
+
+private:
+  Status SeekDownward(const KeyType &search_key,
+                      const BlockPointer &in_block) {
+
+    // Read the block.
+    BlockData data;
+    RETURN_NOT_OK(reader_->ReadBlock(in_block, &data));
+
+    // Parse it and open iterator.
+    IndexBlockReader<KeyType> *ibr;
+    IndexBlockIterator<KeyType> *iter;
+    {
+      std::auto_ptr<IndexBlockReader<KeyType> > ibr_auto(
+        new IndexBlockReader<KeyType>(data.slice()));
+      RETURN_NOT_OK(ibr_auto->Parse());
+
+      iter = ibr_auto->NewIterator();
+
+      // If we successfully parsed and created an iterator,
+      // we no longer need the auto_ptr to delete 'ibr'
+      ibr = ibr_auto.release();
+
+      // Add the block to the index iterator list.
+      SeekedIndex *si = new SeekedIndex(data,
+                                        ibr,
+                                        iter);
+      seeked_indexes_.push_back(si);
+    }
+
+
+    RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
+
+    // If the block is a leaf block, we're done,
+    // otherwise recurse downward into next layer
+    // of B-Tree
+    if (ibr->IsLeaf()) {
+      return Status::OK();
+    } else {
+      return SeekDownward(search_key, iter->GetCurrentBlockPointer());
+    }
+  }
+
+  struct SeekedIndex {
+    SeekedIndex(const BlockData &data_,
+                IndexBlockReader<KeyType> *reader_,
+                IndexBlockIterator<KeyType> *iter_) :
+      data(data_),
+      reader(reader_),
+      iter(iter_) {}
+
+    // Hold a copy of the underlying block data, which would
+    // otherwise go out of scope. The reader and iter
+    // do not themselves retain the data.
+    BlockData data;
+    scoped_ptr<IndexBlockReader<KeyType> > reader;
+    scoped_ptr<IndexBlockIterator<KeyType> > iter;
+  };
+
+
+  const CFileReader *reader_;
+
+  BlockPointer root_block_;
+
+  ptr_vector<SeekedIndex> seeked_indexes_;
+};
 
 } // namespace cfile
 } // namespace kudu

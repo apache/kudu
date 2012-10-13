@@ -86,18 +86,19 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
   for (int i = 0; i < 10000; i++) {
     ibb.Add(random());
   }
-  Slice s = ibb.Finish();
+  Slice s = ibb.Finish(12345);
   LOG(INFO) << "Encoded size for 10k ints: " << s.size();
 
   // Test empty case -- should be 5 bytes for just the
   // header word (all zeros)
   ibb.Reset();
-  s = ibb.Finish();
+  s = ibb.Finish(0);
   ASSERT_EQ(5UL, s.size());
 }
 
 TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
+  const uint32_t kOrdinalPosBase = 12345;
 
   srand(123);
 
@@ -110,13 +111,18 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   BOOST_FOREACH(uint32_t x, to_insert) {
     ibb.Add(x);
   }
-  Slice s = ibb.Finish();
+  Slice s = ibb.Finish(kOrdinalPosBase);
 
   IntBlockDecoder ibd(s);
   ibd.ParseHeader();
 
+  ASSERT_EQ(kOrdinalPosBase, ibd.ordinal_pos());
+
   std::vector<uint32_t> decoded;
   while (decoded.size() < to_insert.size()) {
+    EXPECT_EQ((uint32_t)(kOrdinalPosBase + decoded.size()),
+              ibd.ordinal_pos());
+
     int to_decode = (random() % 30) + 1;
 
     int before_count = decoded.size();
@@ -130,6 +136,19 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
       FAIL() << "Fail at index " << i <<
         " inserted=" << to_insert[i] << " got=" << decoded[i];
     }
+  }
+
+  // Test Seek within block
+  for (int i = 0; i < 100; i++) {
+    int seek_off = random() % decoded.size();
+    ibd.SeekToPositionInBlock(seek_off);
+
+    EXPECT_EQ((uint32_t)(kOrdinalPosBase + seek_off),
+              ibd.ordinal_pos());
+    std::vector<uint32_t> ret;
+    ibd.DecodeInts(1, &ret);
+    EXPECT_EQ(1u, ret.size());
+    EXPECT_EQ(decoded[seek_off], ret[0]);
   }
 }
 

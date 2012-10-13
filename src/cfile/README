@@ -44,10 +44,15 @@ Used for uint32 blocks.
 
 Starts with a header:
 
-<num elements> \
-<min element>  |
-<unused>       | group varint 32
-<unused>      /
+<num elements>     \
+<min element>      |
+<ordinal position> | group varint 32
+<unused>           /
+
+The ordinal position is the ordinal position of the first item in the
+file. For example, the first data block in the file has ordinal position
+0. If that block had 400 data entries, then the second data block would
+have ordinal position 400.
 
 Followed by the actual data, each set of 4 integers using group-varint.
 The last group is padded with 0s.

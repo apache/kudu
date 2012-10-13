@@ -84,7 +84,7 @@ void IntBlockBuilder::AppendGroupVarInt32(
   AppendShorterInt(s, d, d_req);
 }
 
-Slice IntBlockBuilder::Finish() {
+Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
   // TODO: negatives and big ints
 
   IntType min = 0;
@@ -96,7 +96,8 @@ Slice IntBlockBuilder::Finish() {
 
   buffer_.clear();
   AppendGroupVarInt32(&buffer_,
-                      (uint32_t)size, (uint32_t)min, 0, 0);
+                      (uint32_t)size, (uint32_t)min,
+                      (uint32_t)ordinal_pos, 0);
 
   IntType *p = &ints_[0];
   while (size >= 4) {
@@ -160,10 +161,10 @@ Status IntBlockDecoder::ParseHeader() {
   // TODO: better range check
   CHECK(data_.size() > 5);
 
-  uint32_t junk1, junk2;
+  uint32_t unused;
   ints_start_ = DecodeGroupVarInt32(
     (const uint8_t *)data_.data(), &num_elems_, &min_elem_,
-    &junk1, &junk2);
+    &ordinal_pos_base_, &unused);
 
   if (num_elems_ <= 0 ||
       num_elems_ * 5 / 4 > data_.size()) {
@@ -176,15 +177,30 @@ Status IntBlockDecoder::ParseHeader() {
   return Status::OK();
 }
 
-void IntBlockDecoder::SeekToStart() {
+class NullSink {
+public:
+  template <typename T>
+  void push_back(T t) {}
+};
+
+void IntBlockDecoder::SeekToPositionInBlock(int pos) {
   CHECK(parsed_) << "Must call ParseHeader()";
+
+  // Reset to start of block
   cur_pos_ = ints_start_;
   cur_idx_ = 0;
   pending_.clear();
+
+  NullSink null;
+  DoDecodeInts(pos, &null);
 }
 
 void IntBlockDecoder::DecodeInts(int n, std::vector<uint32_t> *vec) {
+  DoDecodeInts(n, vec);
+}
 
+template<class IntSink>
+void IntBlockDecoder::DoDecodeInts(int n, IntSink *sink) {
   int rem = num_elems_ - cur_idx_;
   assert(rem >= 0);
 
@@ -195,7 +211,7 @@ void IntBlockDecoder::DecodeInts(int n, std::vector<uint32_t> *vec) {
 
   // First drain pending_
   while (n > 0 && !pending_.empty()) {
-    vec->push_back(pending_.back());
+    sink->push_back(pending_.back());
     pending_.pop_back();
     n--;
     cur_idx_++;
@@ -209,10 +225,10 @@ void IntBlockDecoder::DecodeInts(int n, std::vector<uint32_t> *vec) {
       cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
     cur_idx_ += 4;
 
-    vec->push_back(min_elem_ + ints[0]);
-    vec->push_back(min_elem_ + ints[1]);
-    vec->push_back(min_elem_ + ints[2]);
-    vec->push_back(min_elem_ + ints[3]);
+    sink->push_back(min_elem_ + ints[0]);
+    sink->push_back(min_elem_ + ints[1]);
+    sink->push_back(min_elem_ + ints[2]);
+    sink->push_back(min_elem_ + ints[3]);
 
     n -= 4;
   }
@@ -231,14 +247,13 @@ void IntBlockDecoder::DecodeInts(int n, std::vector<uint32_t> *vec) {
   pending_.push_back(min_elem_ + ints[0]);
 
   while (n > 0 && !pending_.empty()) {
-    vec->push_back(pending_.back());
+    sink->push_back(pending_.back());
     pending_.pop_back();
     n--;
     cur_idx_++;
   }
   assert(n == 0);
 }
-
 
 } // namespace cfile
 } // namespace kudu

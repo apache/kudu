@@ -181,7 +181,7 @@ Status TreeBuilder::FinishCurValueBlock() {
 
   // The current data block is full, need to push it
   // into the file, and add to index
-  Slice data = value_block_.Finish();
+  Slice data = value_block_.Finish((uint32_t)first_elem_ord);
   uint64_t inserted_off;
   Status s = writer_->AddBlock(data, &inserted_off, "data");
   if (!s.ok()) {

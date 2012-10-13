@@ -8,6 +8,7 @@
 #include "cfile_reader.h"
 #include "cfile.pb.h"
 #include "index_block.h"
+#include "index_btree.h"
 #include "util/env.h"
 
 namespace kudu { namespace cfile {
@@ -188,7 +189,7 @@ static void WriteTestFile(const string &path,
   WriterOptions opts;
   // Use a smaller block size to exercise multi-level
   // indexing.
-  opts.block_size = 4096;
+  opts.block_size = 256;
   Writer w(opts, sink);
 
   ASSERT_STATUS_OK(w.Start());
@@ -202,7 +203,7 @@ static void WriteTestFile(const string &path,
 
   // Append given number of values to the test tree
   for (int i = 0; i < num_entries; i++) {
-    Status s = tree->Append(i);
+    Status s = tree->Append(i * 10);
     // Dont use ASSERT because it accumulates all the logs
     // even for successes
     if (!s.ok()) {
@@ -222,7 +223,7 @@ TEST(TestCFile, TestReadWrite) {
   Env *env = Env::Default();
 
   string path = "/tmp/cfile-TestReadWrite";
-  WriteTestFile(path, 1000);
+  WriteTestFile(path, 10000);
 
   RandomAccessFile *raf;
   uint64_t size;
@@ -236,13 +237,36 @@ TEST(TestCFile, TestReadWrite) {
 
   BlockPointer ptr;
 
-  for (int i = 0; i < 1000; i++) {
+
+  // TODO: get rid of this SearchPosition stuff, since it is now
+  // handled by the positional iterator
+  for (int i = 0; i < 10000; i++) {
     // Lookup the data block
     uint32_t match;
     ASSERT_STATUS_OK(reader.SearchPosition(i, &ptr, &match));
     BlockData dblk_data;
     ASSERT_STATUS_OK(reader.ReadBlock(ptr, &dblk_data));
   }
+
+  
+  CFileIterator *iter_ptr;
+  ASSERT_STATUS_OK( reader.NewIteratorByPos(&iter_ptr) );
+  scoped_ptr<CFileIterator> iter(iter_ptr);
+
+
+  ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
+  ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
+
+  // Seek to last key exactly, should succeed
+  ASSERT_STATUS_OK(iter->SeekToOrdinal(9999));
+  ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
+
+  // Seek to after last key. Should result in not found.
+  ASSERT_TRUE(iter->SeekToOrdinal(10000).IsNotFound());
+
+  // Seek to start of file
+  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+  ASSERT_EQ(0u, iter->GetCurrentOrdinal());
 }
 
 

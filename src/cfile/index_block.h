@@ -187,7 +187,11 @@ private:
 template <class KeyType>
 class IndexBlockReader : boost::noncopyable {
 public:
-  IndexBlockReader(const Slice &data) :
+
+  // Construct a reader for the given index block data.
+  // Note: this does not copy the data, so the slice must
+  // remain valid for the lifetime of the reader.
+  explicit IndexBlockReader(const Slice &data) :
     data_(data),
     parsed_(false)
   {}

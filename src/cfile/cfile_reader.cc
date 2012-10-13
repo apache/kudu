@@ -9,6 +9,7 @@
 #include "cfile.h"
 #include "cfile.pb.h"
 #include "index_block.h"
+#include "index_btree.h"
 
 #include "util/coding.h"
 #include "util/env.h"
@@ -137,6 +138,14 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   return Status::OK();
 }
 
+Status CFileReader::NewIteratorByPos(CFileIterator **iter) const {
+  BlockPointer posidx_root;
+  RETURN_NOT_OK(GetIndexRootBlock(
+                  kPositionalIndexIdentifier, &posidx_root));
+  *iter = new CFileIterator(this, posidx_root);
+  return Status::OK();
+}
+
 
 template <typename KeyType>
 static Status SearchDownward(const CFileReader *reader,
@@ -177,7 +186,7 @@ Status CFileReader::SearchPosition(uint32_t pos, BlockPointer *ptr,
 }
 
 Status CFileReader::GetIndexRootBlock(
-  const string &identifier, BlockPointer *ptr) {
+  const string &identifier, BlockPointer *ptr) const {
   BOOST_FOREACH(BTreeInfoPB info, footer_->btrees()) {
     if (info.metadata().identifier() == identifier) {
       *ptr = BlockPointer(info.root_block());
@@ -188,6 +197,63 @@ Status CFileReader::GetIndexRootBlock(
   return Status::NotFound("no such index");
 }
 
+////////////////////////////////////////////////////////////
+// Iterator
+////////////////////////////////////////////////////////////
+CFileIterator::CFileIterator(const CFileReader *reader,
+                             const BlockPointer &posidx_root) :
+  reader_(reader),
+  idx_iter_(new IndexTreeIterator<uint32_t>(reader, posidx_root)),
+  seeked_(false)
+{
+}
+
+Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
+  seeked_ = false;
+
+  RETURN_NOT_OK(idx_iter_->SeekAtOrBefore(ord_idx));
+
+  // TODO: fast seek within block (without reseeking index)
+
+  BlockPointer dblk_ptr = idx_iter_->GetCurrentBlockPointer();
+
+  BlockData data;
+  RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &data));
+
+  dblk_data_ = data;
+  dblk_.reset(new IntBlockDecoder(dblk_data_.slice()));
+  RETURN_NOT_OK(dblk_->ParseHeader());
+
+  // If the data block doesn't actually contain the data
+  // we're looking for, then we're probably in the last
+  // block in the file.
+  // TODO: could assert that each of the index layers is
+  // at its last entry (ie HasNext() is false for each)
+  if (ord_idx >= dblk_->ordinal_pos() + dblk_->Count()) {
+    return Status::NotFound("trying to seek past highest ordinal in file");
+  }
+
+  // Seek data block to correct index
+  DCHECK(ord_idx >= dblk_->ordinal_pos() &&
+         ord_idx < dblk_->ordinal_pos() + dblk_->Count())
+    << "got wrong data block. looking for ord_idx=" << ord_idx
+    << " but dblk spans " << dblk_->ordinal_pos() << "-"
+    << (dblk_->ordinal_pos() + dblk_->Count());
+  dblk_->SeekToPositionInBlock(ord_idx - dblk_->ordinal_pos());
+
+  DCHECK(ord_idx == dblk_->ordinal_pos()) <<
+    "failed seek, aimed for " << ord_idx << " got to " <<
+    dblk_->ordinal_pos();
+
+  seeked_ = true;
+  return Status::OK();
+}
+
+uint32_t CFileIterator::GetCurrentOrdinal() const {
+  CHECK(seeked_) << "not seeked";
+
+  return dblk_->ordinal_pos();
+}
 
 } // namespace cfile
 } // namespace kudu

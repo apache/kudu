@@ -45,7 +45,7 @@ public:
   // This Slice points to internal data of this class
   // and becomes invalid after the builder is destroyed
   // or after Finish() is called again.
-  Slice Finish();
+  Slice Finish(uint32_t ordinal_pos);
 
   void Reset();
 
@@ -84,8 +84,25 @@ public:
   }
 
   Status ParseHeader();
-  void SeekToStart();
+  void SeekToStart() {
+    SeekToPositionInBlock(0);
+  }
+
+  // Since we know the actual file position, maybe we
+  // should just take the actual ordinal in the file
+  // instead of the position in the block?
+  void SeekToPositionInBlock(int pos);
+
   void DecodeInts(int n, std::vector<uint32_t> *vec);
+
+  uint32_t ordinal_pos() const {
+    DCHECK(parsed_) << "must parse header first";
+    return ordinal_pos_base_ + cur_idx_;
+  }
+
+  size_t Count() const {
+    return num_elems_;
+  }
 
 private:
   friend class TestEncoding;
@@ -94,12 +111,16 @@ private:
     const uint8_t *src,
     uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
 
+  template<class IntSink>
+  void DoDecodeInts(int n, IntSink *sink);
+
   Slice data_;
 
   bool parsed_;
   const uint8_t *ints_start_;
   uint32_t num_elems_;
   uint32_t min_elem_;
+  uint32_t ordinal_pos_base_;
 
   const uint8_t *cur_pos_;
   size_t cur_idx_;

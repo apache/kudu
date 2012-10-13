@@ -19,6 +19,7 @@ namespace cfile {
 
 class CFileHeaderPB;
 class CFileFooterPB;
+template <class Key> class IndexTreeIterator;
 
 using std::string;
 using boost::shared_array;
@@ -31,7 +32,13 @@ struct ReaderOptions {
 
 class CFileIterator;
 class BlockPointer;
+class IntBlockDecoder;
 
+
+// Wrapper for a block of data read from a CFile.
+// This reference-counts the underlying data, so it can
+// be freely copied, and will not be collected until all copies
+// have been destructed.
 class BlockData {
 public:
   BlockData() {}
@@ -42,6 +49,11 @@ public:
     data_for_free_(data_for_free) {
   }
 
+  BlockData(const BlockData &other) :
+    data_(other.data_),
+    data_for_free_(other.data_for_free_) {
+  }
+
   const Slice &slice() const {
     return data_;
   }
@@ -50,6 +62,7 @@ private:
   Slice data_;
   shared_array<char> data_for_free_;
 };
+
 
 class CFileReader : boost::noncopyable {
 public:
@@ -64,7 +77,7 @@ public:
 
   Status Init();
 
-  CFileIterator *NewIterator() const;
+  Status NewIteratorByPos(CFileIterator **iter) const;
 
   Status ReadBlock(const BlockPointer &ptr,
                    BlockData *ret) const;
@@ -78,7 +91,7 @@ private:
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
 
-  Status GetIndexRootBlock(const string &identifier, BlockPointer *ptr);
+  Status GetIndexRootBlock(const string &identifier, BlockPointer *ptr) const;
 
   const ReaderOptions options_;
   const shared_ptr<RandomAccessFile> file_;
@@ -93,6 +106,27 @@ private:
   scoped_ptr<CFileHeaderPB> header_;
   scoped_ptr<CFileFooterPB> footer_;
 };
+
+
+class CFileIterator : boost::noncopyable {
+public:
+  CFileIterator(const CFileReader *reader,
+                const BlockPointer &posidx_root);
+
+  Status SeekToOrdinal(uint32_t ord_idx);
+  uint32_t GetCurrentOrdinal() const;
+
+private:
+  const CFileReader *reader_;
+
+  scoped_ptr<IndexTreeIterator<uint32_t> > idx_iter_;
+
+  bool seeked_;
+
+  BlockData dblk_data_;
+  scoped_ptr<IntBlockDecoder> dblk_;
+};
+
 
 } // namespace cfile
 } // namespace kudu
