@@ -192,15 +192,15 @@ void IntBlockDecoder::SeekToPositionInBlock(int pos) {
   pending_.clear();
 
   NullSink null;
-  DoDecodeInts(pos, &null);
+  DoGetNextValues(pos, &null);
 }
 
-void IntBlockDecoder::DecodeInts(int n, std::vector<uint32_t> *vec) {
-  DoDecodeInts(n, vec);
+void IntBlockDecoder::GetNextValues(int n, std::vector<uint32_t> *vec) {
+  DoGetNextValues(n, vec);
 }
 
 template<class IntSink>
-void IntBlockDecoder::DoDecodeInts(int n, IntSink *sink) {
+void IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
   int rem = num_elems_ - cur_idx_;
   assert(rem >= 0);
 

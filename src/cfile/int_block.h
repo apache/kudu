@@ -93,7 +93,7 @@ public:
   // instead of the position in the block?
   void SeekToPositionInBlock(int pos);
 
-  void DecodeInts(int n, std::vector<uint32_t> *vec);
+  void GetNextValues(int n, std::vector<uint32_t> *vec);
 
   uint32_t ordinal_pos() const {
     DCHECK(parsed_) << "must parse header first";
@@ -112,7 +112,7 @@ private:
     uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
 
   template<class IntSink>
-  void DoDecodeInts(int n, IntSink *sink);
+  void DoGetNextValues(int n, IntSink *sink);
 
   Slice data_;
 

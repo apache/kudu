@@ -126,7 +126,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     int to_decode = (random() % 30) + 1;
 
     int before_count = decoded.size();
-    ibd.DecodeInts(to_decode, &decoded);
+    ibd.GetNextValues(to_decode, &decoded);
     int after_count = decoded.size();
     EXPECT_GE(to_decode, after_count - before_count);
   }
@@ -146,7 +146,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     EXPECT_EQ((uint32_t)(kOrdinalPosBase + seek_off),
               ibd.ordinal_pos());
     std::vector<uint32_t> ret;
-    ibd.DecodeInts(1, &ret);
+    ibd.GetNextValues(1, &ret);
     EXPECT_EQ(1u, ret.size());
     EXPECT_EQ(decoded[seek_off], ret[0]);
   }
