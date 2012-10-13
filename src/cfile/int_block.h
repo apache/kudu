@@ -104,6 +104,10 @@ public:
     return num_elems_;
   }
 
+  bool HasNext() const {
+    return (num_elems_ - cur_idx_) > 0;
+  }
+
 private:
   friend class TestEncoding;
 

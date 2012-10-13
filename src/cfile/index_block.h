@@ -310,7 +310,8 @@ class IndexBlockIterator : boost::noncopyable {
 public:
   explicit IndexBlockIterator(const IndexBlockReader<KeyType> *reader) :
     reader_(reader),
-    cur_idx_(-1)
+    cur_idx_(-1),
+    seeked_(false)
   {
   }
 
@@ -355,7 +356,9 @@ public:
 
   Status SeekToIndex(size_t idx) {
     cur_idx_ = idx;
-    return reader_->ReadEntry(idx, &cur_key_, &cur_ptr_);
+    Status s = reader_->ReadEntry(idx, &cur_key_, &cur_ptr_);
+    seeked_ = s.ok();
+    return s;
   }
 
   bool HasNext() const {
@@ -367,10 +370,12 @@ public:
   }
 
   const BlockPointer &GetCurrentBlockPointer() const {
+    CHECK(seeked_) << "not seeked";
     return cur_ptr_;
   }
 
   const KeyType &GetCurrentKey() const {
+    CHECK(seeked_) << "not seeked";
     return cur_key_;
   }
 
@@ -379,6 +384,7 @@ private:
   size_t cur_idx_;
   KeyType cur_key_;
   BlockPointer cur_ptr_;
+  bool seeked_;
 };
 
 } // namespace kudu

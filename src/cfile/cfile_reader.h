@@ -115,8 +115,16 @@ public:
 
   Status SeekToOrdinal(uint32_t ord_idx);
   uint32_t GetCurrentOrdinal() const;
+  Status GetNextValues(int n, std::vector<uint32_t> *vec);
 
 private:
+  // Read the data block currently pointed to by idx_iter_
+  // into the dblk_data_ and dblk_ fields.
+  //
+  // If this returns an error, then the fields
+  // have undefined values.
+  Status ReadCurrentDataBlock();
+
   const CFileReader *reader_;
 
   scoped_ptr<IndexTreeIterator<uint32_t> > idx_iter_;

@@ -267,6 +267,11 @@ TEST(TestCFile, TestReadWrite) {
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
+
+  // Fetch all data.
+  vector<uint32_t> out;
+  ASSERT_STATUS_OK(iter->GetNextValues(10000, &out));
+  ASSERT_EQ(10000u, out.size());
 }
 
 

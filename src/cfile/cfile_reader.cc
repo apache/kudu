@@ -214,15 +214,7 @@ Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
   RETURN_NOT_OK(idx_iter_->SeekAtOrBefore(ord_idx));
 
   // TODO: fast seek within block (without reseeking index)
-
-  BlockPointer dblk_ptr = idx_iter_->GetCurrentBlockPointer();
-
-  BlockData data;
-  RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &data));
-
-  dblk_data_ = data;
-  dblk_.reset(new IntBlockDecoder(dblk_data_.slice()));
-  RETURN_NOT_OK(dblk_->ParseHeader());
+  ReadCurrentDataBlock();
 
   // If the data block doesn't actually contain the data
   // we're looking for, then we're probably in the last
@@ -254,6 +246,64 @@ uint32_t CFileIterator::GetCurrentOrdinal() const {
 
   return dblk_->ordinal_pos();
 }
+
+Status CFileIterator::ReadCurrentDataBlock() {
+  BlockPointer dblk_ptr = idx_iter_->GetCurrentBlockPointer();
+  RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data_));
+
+  dblk_.reset(new IntBlockDecoder(dblk_data_.slice()));
+  RETURN_NOT_OK(dblk_->ParseHeader());
+  return Status::OK();
+}
+
+Status CFileIterator::GetNextValues(int n, std::vector<uint32_t> *vec) {
+  CHECK(seeked_) << "not seeked";
+
+  int returned = 0;
+
+  while (n > 0) {
+    // Fetch as many as we can from the current datablock.
+
+    // TODO: have GetNextValues return count returned?
+    size_t size_before = vec->size();
+    dblk_->GetNextValues(n, vec);
+    int returned_in_batch = (vec->size() - size_before);
+    n -= returned_in_batch;
+
+    returned += returned_in_batch;
+
+    // If we didn't fetch as many as requested, then it should
+    // be because the current data block ran out.
+    if (n > 0) {
+      DCHECK(!dblk_->HasNext()) <<
+        "dblk stopped yielding values before it was empty";
+    }
+
+    // Pull in next datablock.
+    Status s = idx_iter_->Next();
+
+    if (s.IsNotFound()) {
+      // No next datablock
+
+      if (returned == 0) {
+        // No more data, and this call didn't return any
+        return s;
+      } else {
+        // Otherwise we did successfully add some to the vector.
+        return Status::OK();
+      }
+    } else if (!s.ok()) {
+      return s; // actual error
+    }
+
+    // Fill in the data for the next block.
+    RETURN_NOT_OK(ReadCurrentDataBlock());
+  }
+  CHECK(false) << "should not get here";
+  return Status::IOError("Got to unexpected state");
+}
+
+
 
 } // namespace cfile
 } // namespace kudu
