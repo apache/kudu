@@ -214,9 +214,46 @@ static void WriteTestFile(const string &path,
   ASSERT_STATUS_OK(w.Finish());
 }
 
+static void TimeReadFile(const string &path) {
+  Env *env = Env::Default();
+  Status s;
+
+  RandomAccessFile *raf;
+  uint64_t size;
+  ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
+  ASSERT_STATUS_OK(env->GetFileSize(path, &size));
+
+  shared_ptr<RandomAccessFile> f(raf);
+
+  CFileReader reader(ReaderOptions(), f, size);
+  ASSERT_STATUS_OK(reader.Init());
+
+  CFileIterator *iter_ptr;
+  ASSERT_STATUS_OK( reader.NewIteratorByPos(&iter_ptr) );
+  scoped_ptr<CFileIterator> iter(iter_ptr);
+  iter->SeekToOrdinal(0);
+
+  std::vector<uint32_t> v;
+  v.reserve(8192);
+
+  uint64_t sum = 0;
+  while (iter->HasNext()) {
+    CHECK(v.capacity() == 8192);
+    ASSERT_STATUS_OK(iter->GetNextValues(8192, &v));
+    BOOST_FOREACH(uint32_t x, v) {
+      sum += x;
+    }
+    v.clear();
+  }
+  LOG(INFO) << "Sum: " << sum;
+}
+
 
 TEST(TestCFile, TestWrite100MFile) {
   WriteTestFile("/tmp/cfile-Test100M", 100000000);
+  LOG(INFO) << "Starting readfile";
+  TimeReadFile("/tmp/cfile-Test100M");
+  LOG(INFO) << "End readfile";
 }
 
 TEST(TestCFile, TestReadWrite) {

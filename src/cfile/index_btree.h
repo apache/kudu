@@ -159,6 +159,16 @@ public:
     return SeekDownward(search_key, root_block_);
   }
 
+  bool HasNext() {
+    for (int i = seeked_indexes_.size() - 1;
+         i >= 0;
+         i--) {
+      if (seeked_indexes_[i].iter->HasNext())
+        return true;
+    }
+    return false;
+  }
+
   Status Next() {
     CHECK(!seeked_indexes_.empty()) <<
       "not seeked";

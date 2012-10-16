@@ -256,6 +256,12 @@ Status CFileIterator::ReadCurrentDataBlock() {
   return Status::OK();
 }
 
+bool CFileIterator::HasNext() {
+  CHECK(seeked_) << "not seeked";
+
+  return dblk_->HasNext() || idx_iter_->HasNext();
+}
+
 Status CFileIterator::GetNextValues(int n, std::vector<uint32_t> *vec) {
   CHECK(seeked_) << "not seeked";
 
@@ -299,8 +305,8 @@ Status CFileIterator::GetNextValues(int n, std::vector<uint32_t> *vec) {
     // Fill in the data for the next block.
     RETURN_NOT_OK(ReadCurrentDataBlock());
   }
-  CHECK(false) << "should not get here";
-  return Status::IOError("Got to unexpected state");
+
+  return Status::OK();
 }
 
 

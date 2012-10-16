@@ -116,6 +116,7 @@ public:
   Status SeekToOrdinal(uint32_t ord_idx);
   uint32_t GetCurrentOrdinal() const;
   Status GetNextValues(int n, std::vector<uint32_t> *vec);
+  bool HasNext();
 
 private:
   // Read the data block currently pointed to by idx_iter_
