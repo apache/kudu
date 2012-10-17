@@ -77,17 +77,25 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
     get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
     get_filename_component(FIL_WE ${FIL} NAME_WE)
     get_filename_component(FIL_PT ${FIL} PATH)
-    
-    list(APPEND ${SRCS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}/${FIL_WE}.pb.cc")
-    list(APPEND ${HDRS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}/${FIL_WE}.pb.h")
+
+    message("PT: ${FIL_PT}")
+
+    # The path has no trailing slash. This what we want
+    # if it's an empty path. Otherwise add it.
+    if(NOT "${FIL_PT}" STREQUAL "" )
+      SET(FIL_PT "${FIL_PT}/")
+    endif()
+
+    list(APPEND ${SRCS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}${FIL_WE}.pb.cc")
+    list(APPEND ${HDRS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}${FIL_WE}.pb.h")
 
     if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT})
         file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT})
     endif()
 
     add_custom_command(
-      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}/${FIL_WE}.pb.cc"
-             "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}/${FIL_WE}.pb.h"
+      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}${FIL_WE}.pb.cc"
+             "${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT}${FIL_WE}.pb.h"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}
       ARGS --cpp_out ${CMAKE_CURRENT_BINARY_DIR}/${FIL_PT} --proto_path ${CMAKE_CURRENT_SOURCE_DIR}/${FIL_PT} ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
       DEPENDS ${ABS_FIL}
