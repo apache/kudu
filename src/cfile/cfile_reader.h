@@ -82,16 +82,10 @@ public:
   Status ReadBlock(const BlockPointer &ptr,
                    BlockData *ret) const;
 
-  Status SearchPosition(uint32_t pos,
-                        BlockPointer *ptr,
-                        uint32_t *ret_key);
-
 private:
   Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
-
-  Status GetIndexRootBlock(const string &identifier, BlockPointer *ptr) const;
 
   const ReaderOptions options_;
   const shared_ptr<RandomAccessFile> file_;

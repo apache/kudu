@@ -12,8 +12,10 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+
 #include "util/status.h"
 #include "int_block.h"
+#include "cfile.pb.h"
 
 namespace kudu {
 
@@ -30,8 +32,6 @@ typedef uint32_t OrdinalIndex;
 
 class BlockPointer;
 class BTreeInfoPB;
-class BTreeMetaPB;
-class TreeBuilder;
 class IntBlockBuilder;
 class StringBlockBuilder;
 
@@ -39,7 +39,6 @@ template <class KeyType> class IndexTreeBuilder;
 
 // Magic used in header/footer
 extern const string kMagicString;
-extern const string kPositionalIndexIdentifier;
 
 const int kCFileMajorVersion = 1;
 const int kCFileMinorVersion = 0;
@@ -70,19 +69,17 @@ struct WriterOptions {
 class Writer : boost::noncopyable {
 public:
   explicit Writer(const WriterOptions &options,
+                  DataType type,
+                  EncodingType encoding,
                   shared_ptr<WritableFile> file);
   Status Start();
   Status Finish();
 
-  Status AddTree(const BTreeMetaPB &metadata,
-                 shared_ptr<TreeBuilder> *tree_out);
+  Status AppendEntries(IntType *entries, int count);
 
   ~Writer();
 
-
 private:
-  friend class TreeBuilder;
-
   template <class K>
   friend class IndexTreeBuilder;
 
@@ -91,8 +88,9 @@ private:
   Status AddBlock(const Slice &data, uint64_t *offset_out,
                   const string &name_for_log);
 
-  // Map of TreeBuilders which have been opened, keyed by identifier.
-  std::tr1::unordered_map<string, shared_ptr<TreeBuilder> > trees_;
+
+  // TODO: inconsistent "value block" vs "data block"
+  Status FinishCurValueBlock();
 
   // File being written.
   shared_ptr<WritableFile> file_;
@@ -100,7 +98,17 @@ private:
   // Current file offset.
   uint64_t off_;
 
+  // Current number of values that have been appended.
+  int value_count_;
+
   WriterOptions options_;
+
+  // Type of data being written
+  DataType datatype_;
+  EncodingType encoding_type_;
+
+  IntBlockBuilder value_block_;
+  scoped_ptr<IndexTreeBuilder<uint32_t> > posidx_builder_;
 
   enum State {
     kWriterInitialized,
@@ -140,28 +148,6 @@ private:
   bool finished_;
 
   const WriterOptions *options_;
-};
-
-
-class TreeBuilder : boost::noncopyable {
-public:
-  TreeBuilder(const WriterOptions *options,
-              Writer *writer);
-
-  Status Append(IntType val);
-  Status Finish(BTreeInfoPB *info);
-
-private:
-  // TODO: inconsistent "value block" vs "data block"
-  Status FinishCurValueBlock();
-
-  const WriterOptions *options_;
-  Writer *writer_;
-
-  IntBlockBuilder value_block_;
-  scoped_ptr<IndexTreeBuilder<uint32_t> > posidx_builder_;
-
-  int value_count_;
 };
 
 } // namespace cfile

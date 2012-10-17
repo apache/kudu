@@ -20,11 +20,6 @@ namespace kudu { namespace cfile {
 
 const string kMagicString = "kuducfil";
 
-// TODO: should use a proto enum instead probably
-// TODO: weird conflation of columns and index trees (a given column can have 2 trees)
-// fix this weird n->1 relationship of types of data per file, or change to true PAX
-const string kPositionalIndexIdentifier = "posidx";
-
 
 ////////////////////////////////////////////////////////////
 // Options
@@ -41,10 +36,16 @@ WriterOptions::WriterOptions() :
 
 
 Writer::Writer(const WriterOptions &options,
+               DataType type,
+               EncodingType encoding,
                shared_ptr<WritableFile> file) :
   file_(file),
   off_(0),
+  value_count_(0),
   options_(options),
+  datatype_(type),
+  encoding_type_(encoding),
+  value_block_(&options),
   state_(kWriterInitialized)
 {
 }
@@ -70,27 +71,31 @@ Status Writer::Start() {
 
   file_->Append(Slice(buf));
   off_ += buf.size();
+
+  // TODO: should do this in ctor?
+  posidx_builder_.reset(new IndexTreeBuilder<uint32_t>(&options_, this));
+
   state_ = kWriterWriting;
+
   return Status::OK();
 }
 
 Status Writer::Finish() {
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;
+
+  // Write out any pending values as the last data block.
+  RETURN_NOT_OK(FinishCurValueBlock());
+
+  // Write out any pending positional index blocks.
+  BTreeInfoPB posidx_info;
+  posidx_builder_->Finish(&posidx_info);
+
+  // Write out the footer.
   CFileFooterPB footer;
-
-  // Finish all trees in progress -- they may have pending
-  // writes.
-  typedef std::pair<string, shared_ptr<TreeBuilder> > Entry;
-  BOOST_FOREACH(Entry entry, trees_) {
-    shared_ptr<TreeBuilder> tree = entry.second;
-    BTreeInfoPB *info = footer.add_btrees();
-    RETURN_NOT_OK(tree->Finish(info));
-
-    // TODO: should track through the whole metadata object,
-    // not just use the identifier here
-    info->mutable_metadata()->set_identifier(entry.first);
-  }
+  footer.set_data_type(datatype_);
+  footer.set_encoding(encoding_type_);
+  footer.mutable_posidx_info()->CopyFrom(posidx_info);
 
   string footer_str;
   if (!footer.SerializeToString(&footer_str)) {
@@ -106,19 +111,47 @@ Status Writer::Finish() {
   return file_->Close();
 }
 
-Status Writer::AddTree(const BTreeMetaPB &meta, shared_ptr<TreeBuilder> *tree_out) {
-  CHECK(state_ == kWriterWriting) <<
-    "Bad state for AddTree(): " << state_;
+Status Writer::AppendEntries(IntType *entries, int count) {
+  for (int i = 0; i < count; i++) {
+    value_block_.Add(*entries++);
+    value_count_++;
 
-  if (trees_.find(meta.identifier()) != trees_.end()) {
-    return Status::InvalidArgument("identifier already used");
+    size_t est_size = value_block_.EstimateEncodedSize();
+    if (est_size > options_.block_size) {
+      RETURN_NOT_OK(FinishCurValueBlock());
+    }
+  }
+  return Status::OK();
+}
+
+Status Writer::FinishCurValueBlock() {
+  size_t num_elems_in_block = value_block_.Count();
+  if (num_elems_in_block == 0) {
+    return Status::OK();
   }
 
-  shared_ptr<TreeBuilder> builder(new TreeBuilder(&options_, this));
-  trees_[meta.identifier()] = builder;
+  OrdinalIndex first_elem_ord = value_count_ - num_elems_in_block;
 
-  (*tree_out) = builder;
-  return Status::OK();
+  VLOG(1) << "Appending data block for values " <<
+    first_elem_ord << "-" << (first_elem_ord + num_elems_in_block);
+
+  // The current data block is full, need to push it
+  // into the file, and add to index
+  Slice data = value_block_.Finish((uint32_t)first_elem_ord);
+  uint64_t inserted_off;
+  Status s = AddBlock(data, &inserted_off, "data");
+  if (!s.ok()) {
+    LOG(ERROR) << "Unable to append block to file";
+    return s;
+  }
+
+  BlockPointer ptr(inserted_off, data.size());
+
+  // Now add to the index blocks
+  s = posidx_builder_->Append(first_elem_ord, ptr);
+  value_block_.Reset();
+
+  return s;
 }
 
 Status Writer::AddBlock(const Slice &data, uint64_t *offset_out,
@@ -137,66 +170,7 @@ Status Writer::AddBlock(const Slice &data, uint64_t *offset_out,
 Writer::~Writer() {
 }
 
-////////////////////////////////////////////////////////////
-// TreeBuilder
-////////////////////////////////////////////////////////////
-TreeBuilder::TreeBuilder(const WriterOptions *options,
-                         Writer *writer) :
-  options_(options),
-  writer_(writer),
-  value_block_(options),
-  posidx_builder_(new IndexTreeBuilder<uint32_t>(options, writer)),
-  value_count_(0)
-{
-}
 
-Status TreeBuilder::Append(IntType val) {
-  value_block_.Add(val);
-  value_count_++;
-
-  size_t est_size = value_block_.EstimateEncodedSize();
-  if (est_size > options_->block_size) {
-    return FinishCurValueBlock();
-  }
-  return Status::OK();
-}
-
-Status TreeBuilder::Finish(BTreeInfoPB *info) {
-  // Write out any pending values as the last
-  // data block.
-  if (value_block_.Count() > 0) {
-    RETURN_NOT_OK(FinishCurValueBlock());
-  }
-
-  return posidx_builder_->Finish(info);
-}
-
-
-Status TreeBuilder::FinishCurValueBlock() {
-  size_t num_elems_in_block = value_block_.Count();
-  OrdinalIndex first_elem_ord = value_count_ - num_elems_in_block;
-
-  VLOG(1) << "Appending data block for values " <<
-    first_elem_ord << "-" << (first_elem_ord + num_elems_in_block);
-
-  // The current data block is full, need to push it
-  // into the file, and add to index
-  Slice data = value_block_.Finish((uint32_t)first_elem_ord);
-  uint64_t inserted_off;
-  Status s = writer_->AddBlock(data, &inserted_off, "data");
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to append block to file";
-    return s;
-  }
-
-  BlockPointer ptr(inserted_off, data.size());
-
-  // Now add to the index blocks
-  s = posidx_builder_->Append(first_elem_ord, ptr);
-  value_block_.Reset();
-
-  return s;
-}
 
 ////////////////////////////////////////////////////////////
 // StringBlockBuilder

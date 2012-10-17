@@ -139,9 +139,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
 }
 
 Status CFileReader::NewIteratorByPos(CFileIterator **iter) const {
-  BlockPointer posidx_root;
-  RETURN_NOT_OK(GetIndexRootBlock(
-                  kPositionalIndexIdentifier, &posidx_root));
+  BlockPointer posidx_root(footer_->posidx_info().root_block());
   *iter = new CFileIterator(this, posidx_root);
   return Status::OK();
 }
@@ -170,31 +168,6 @@ static Status SearchDownward(const CFileReader *reader,
     // Follow it.
     return SearchDownward(reader, search_key, result, ret, ret_key);
   }
-}
-
-
-Status CFileReader::SearchPosition(uint32_t pos, BlockPointer *ptr,
-                                   uint32_t *ret_key)
-{
-  CHECK(state_ == kInitialized) << "Must Init() first";
-
-  BlockPointer posidx_root;
-  RETURN_NOT_OK(GetIndexRootBlock(
-                  kPositionalIndexIdentifier, &posidx_root));
-
-  return SearchDownward<uint32_t>(this, pos, posidx_root, ptr, ret_key);
-}
-
-Status CFileReader::GetIndexRootBlock(
-  const string &identifier, BlockPointer *ptr) const {
-  BOOST_FOREACH(BTreeInfoPB info, footer_->btrees()) {
-    if (info.metadata().identifier() == identifier) {
-      *ptr = BlockPointer(info.root_block());
-      return Status::OK();
-    }
-  }
-
-  return Status::NotFound("no such index");
 }
 
 ////////////////////////////////////////////////////////////

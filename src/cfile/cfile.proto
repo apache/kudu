@@ -2,6 +2,17 @@
 
 package kudu.cfile;
 
+enum DataType {
+  UINT32 = 0;
+  STRING = 1;
+}
+
+enum EncodingType {
+  PLAIN = 0;
+  GROUP_VARINT = 1;
+}
+
+
 message CFileHeaderPB {
   required int32 major_version = 1;
   required int32 minor_version = 2;
@@ -12,13 +23,8 @@ message BlockPointerPB {
   required int32 size = 2;
 }
 
-message BTreeMetaPB {
-  required string identifier = 1;
-}
-
 message BTreeInfoPB {
-  required BTreeMetaPB metadata = 1;
-  required BlockPointerPB root_block = 2;
+  required BlockPointerPB root_block = 1;
 }
 
 message IndexBlockTrailerPB {
@@ -33,5 +39,9 @@ message IndexBlockTrailerPB {
 // TODO: name all the PBs with *PB convention
 
 message CFileFooterPB {
-  repeated BTreeInfoPB btrees = 1;
+  required DataType data_type = 1;
+  required EncodingType encoding = 2;
+
+  required BTreeInfoPB posidx_info = 3;
+  optional BTreeInfoPB validx_info = 4;
 }

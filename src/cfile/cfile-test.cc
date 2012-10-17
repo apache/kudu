@@ -190,20 +190,14 @@ static void WriteTestFile(const string &path,
   // Use a smaller block size to exercise multi-level
   // indexing.
   opts.block_size = 256;
-  Writer w(opts, sink);
+  Writer w(opts, UINT32, GROUP_VARINT, sink);
 
   ASSERT_STATUS_OK(w.Start());
 
-  BTreeMetaPB meta;
-  meta.set_identifier(kPositionalIndexIdentifier);
-
-  shared_ptr<TreeBuilder> tree;
-  s = w.AddTree(meta, &tree);
-  ASSERT_STATUS_OK(s);
-
   // Append given number of values to the test tree
   for (int i = 0; i < num_entries; i++) {
-    Status s = tree->Append(i * 10);
+    uint32_t val = i * 10;
+    Status s = w.AppendEntries(&val, 1);
     // Dont use ASSERT because it accumulates all the logs
     // even for successes
     if (!s.ok()) {
@@ -274,22 +268,9 @@ TEST(TestCFile, TestReadWrite) {
 
   BlockPointer ptr;
 
-
-  // TODO: get rid of this SearchPosition stuff, since it is now
-  // handled by the positional iterator
-  for (int i = 0; i < 10000; i++) {
-    // Lookup the data block
-    uint32_t match;
-    ASSERT_STATUS_OK(reader.SearchPosition(i, &ptr, &match));
-    BlockData dblk_data;
-    ASSERT_STATUS_OK(reader.ReadBlock(ptr, &dblk_data));
-  }
-
-  
   CFileIterator *iter_ptr;
   ASSERT_STATUS_OK( reader.NewIteratorByPos(&iter_ptr) );
   scoped_ptr<CFileIterator> iter(iter_ptr);
-
 
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
