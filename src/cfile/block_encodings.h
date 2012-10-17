@@ -1,7 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#ifndef KUDU_CFILE_INT_BLOCK_H
-#define KUDU_CFILE_INT_BLOCK_H
+#ifndef KUDU_CFILE_BLOCK_ENCODINGS_H
+#define KUDU_CFILE_BLOCK_ENCODINGS_H
 
 #include <boost/noncopyable.hpp>
 #include <stdint.h>
@@ -23,6 +23,20 @@ using std::string;
 
 typedef uint32_t IntType;
 
+
+class BlockBuilder : boost::noncopyable {
+public:
+  // TODO: add a more type-checkable wrapper for void *,
+  // like ConstVariantPointer in Supersonic
+  virtual int Add(const void *vals, int count) = 0;
+  virtual Slice Finish(uint32_t ordinal_pos) = 0;
+  virtual void Reset() = 0;
+  virtual uint64_t EstimateEncodedSize() const = 0;
+  virtual size_t Count() const = 0;
+  virtual ~BlockBuilder() {}
+};
+
+
 // Builder for an encoded block of ints.
 // The encoding is group-varint plus frame-of-reference:
 //
@@ -33,12 +47,11 @@ typedef uint32_t IntType;
 //
 // See AppendGroupVarInt32(...) for details on the varint
 // encoding.
-
-class IntBlockBuilder : boost::noncopyable {
+class IntBlockBuilder : public BlockBuilder {
 public:
   explicit IntBlockBuilder(const WriterOptions *options);
 
-  void Add(IntType val);
+  int Add(const void *vals, int count);
 
   // Return a Slice which represents the encoded data.
   //
@@ -75,6 +88,44 @@ private:
   };
 };
 
+
+// Encoding for data blocks of strings.
+// This encodes in a manner similar to LevelDB (prefix coding)
+//
+// TODO: this is not yet used or tested.
+class StringBlockBuilder : public BlockBuilder {
+public:
+  explicit StringBlockBuilder(const WriterOptions *options);
+
+  int Add(const void *vals, int count);
+
+  // Return a Slice which represents the encoded data.
+  //
+  // This Slice points to internal data of this class
+  // and becomes invalid after the builder is destroyed
+  // or after Finish() is called again.
+  Slice Finish();
+
+  void Reset();
+
+  // Return an estimate of the number
+  uint64_t EstimateEncodedSize() const;
+
+  size_t Count() const;
+private:
+  string buffer_;
+  string last_val_;
+
+  vector<uint32_t> restarts_;    // Restart points
+  int counter_;
+  bool finished_;
+
+  const WriterOptions *options_;
+};
+
+////////////////////////////////////////////////////////////
+// Decoding
+////////////////////////////////////////////////////////////
 
 class IntBlockDecoder : boost::noncopyable {
 public:

@@ -4,7 +4,11 @@
 #include <boost/utility/binary.hpp>
 #include <stdint.h>
 
-#include "int_block.h"
+#include "block_encodings.h"
+// TODO: including this to just get block size from options,
+// maybe we should not take a whole options struct
+#include "cfile.h"
+#include "util/coding.h"
 
 namespace kudu {
 namespace cfile {
@@ -48,12 +52,28 @@ static size_t CalcRequiredBytes32(uint32_t i) {
   return sizeof(long) - __builtin_clzl(i)/8;
 }
 
-void IntBlockBuilder::Add(IntType val) {
-  ints_.push_back(val);
-  estimated_raw_size_ += CalcRequiredBytes32(val);
+int IntBlockBuilder::Add(const void *vals_void, int count) {
+  const uint32_t *vals = reinterpret_cast<const uint32_t *>(vals_void);
+
+  int added = 0;
+  while (estimated_raw_size_ < options_->block_size &&
+         added < count) {
+    uint32_t val = *vals++;
+    estimated_raw_size_ += CalcRequiredBytes32(val);
+    ints_.push_back(val);
+    added++;
+  }
+
+  return added;
 }
 
 uint64_t IntBlockBuilder::EstimateEncodedSize() const {
+  // TODO: this currently does not do a good job of estimating
+  // when the ints are large but clustered together,
+  // since it doesn't take into account the delta coding relative
+  // to the min int. We could track the min int along the way
+  // but then we have extra branches in the add loop. Come back to this,
+  // probably the branches don't matter since this is write-side.
   return estimated_raw_size_ + ints_.size() / 4
     + kEstimatedHeaderSizeBytes;
 }
@@ -122,6 +142,79 @@ Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
   }
   return Slice(buffer_);
 }
+
+
+
+////////////////////////////////////////////////////////////
+// StringBlockBuilder encoding
+////////////////////////////////////////////////////////////
+
+StringBlockBuilder::StringBlockBuilder(const WriterOptions *options) :
+  counter_(0),
+  finished_(false),
+  options_(options)
+{}
+
+void StringBlockBuilder::Reset() {
+  finished_ = false;
+  counter_ = 0;
+  buffer_.clear();
+  last_val_.clear();
+}
+
+Slice StringBlockBuilder::Finish() {
+  finished_ = true;
+  return Slice(buffer_);
+}
+
+int StringBlockBuilder::Add(const void *vals_void, int count) {
+  DCHECK_GT(count, 0);
+
+  const Slice &val = *reinterpret_cast<const Slice *>(vals_void);
+
+  Slice last_val_piece(last_val_);
+  assert(!finished_);
+  assert(counter_ <= options_->block_restart_interval);
+  size_t shared = 0;
+  if (counter_ < options_->block_restart_interval) {
+    // See how much sharing to do with previous string
+    const size_t min_length = std::min(last_val_piece.size(), val.size());
+    while ((shared < min_length) && (last_val_piece[shared] == val[shared])) {
+      shared++;
+    }
+  } else {
+    // Restart compression
+    restarts_.push_back(buffer_.size());
+    counter_ = 0;
+  }
+  const size_t non_shared = val.size() - shared;
+
+  // Add "<shared><non_shared>" to buffer_
+  PutVarint32(&buffer_, shared);
+  PutVarint32(&buffer_, non_shared);
+
+  // Add string delta to buffer_
+  buffer_.append(val.data() + shared, non_shared);
+
+  // Update state
+  last_val_.resize(shared);
+  last_val_.append(val.data() + shared, non_shared);
+  assert(Slice(last_val_) == val);
+  counter_++;
+
+  return 1;
+}
+
+size_t StringBlockBuilder::Count() const {
+  return counter_;
+}
+
+uint64_t StringBlockBuilder::EstimateEncodedSize() const {
+  // TODO: add restarts size
+  return buffer_.size();
+}
+
+
 
 ////////////////////////////////////////////////////////////
 // Decoding
@@ -254,6 +347,10 @@ void IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
   }
   assert(n == 0);
 }
+
+
+
+
 
 } // namespace cfile
 } // namespace kudu

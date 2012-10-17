@@ -8,7 +8,7 @@
 #include <stdlib.h>
 
 #include "cfile.h"
-#include "int_block.h"
+#include "block_encodings.h"
 
 namespace kudu { namespace cfile {
 
@@ -83,9 +83,14 @@ TEST_F(TestEncoding, TestGroupVarIntRoundTrip) {
 TEST_F(TestEncoding, TestIntBlockEncoder) {
   boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
   IntBlockBuilder ibb(opts.get());
+
+  int *ints = new int[10000];
   for (int i = 0; i < 10000; i++) {
-    ibb.Add(random());
+    ints[i] = random();
   }
+  ibb.Add(reinterpret_cast<int *>(ints), 10000);
+  delete[] ints;
+
   Slice s = ibb.Finish(12345);
   LOG(INFO) << "Encoded size for 10k ints: " << s.size();
 
@@ -108,9 +113,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   }
 
   IntBlockBuilder ibb(opts.get());
-  BOOST_FOREACH(uint32_t x, to_insert) {
-    ibb.Add(x);
-  }
+  ibb.Add(&to_insert[0], to_insert.size());
   Slice s = ibb.Finish(kOrdinalPosBase);
 
   IntBlockDecoder ibd(s);

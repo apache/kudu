@@ -13,9 +13,9 @@
 
 #include <gtest/gtest.h>
 
-#include "util/status.h"
-#include "int_block.h"
+#include "block_encodings.h"
 #include "cfile.pb.h"
+#include "util/status.h"
 
 namespace kudu {
 
@@ -75,7 +75,7 @@ public:
   Status Start();
   Status Finish();
 
-  Status AppendEntries(IntType *entries, int count);
+  Status AppendEntries(void *entries, int count);
 
   ~Writer();
 
@@ -107,7 +107,7 @@ private:
   DataType datatype_;
   EncodingType encoding_type_;
 
-  IntBlockBuilder value_block_;
+  scoped_ptr<BlockBuilder> value_block_;
   scoped_ptr<IndexTreeBuilder<uint32_t> > posidx_builder_;
 
   enum State {
@@ -118,37 +118,6 @@ private:
   State state_;
 };
 
-
-
-class StringBlockBuilder : boost::noncopyable {
-public:
-  explicit StringBlockBuilder(const WriterOptions *options);
-
-  void Add(const Slice &val);
-
-  // Return a Slice which represents the encoded data.
-  //
-  // This Slice points to internal data of this class
-  // and becomes invalid after the builder is destroyed
-  // or after Finish() is called again.
-  Slice Finish();
-
-  void Reset();
-
-  // Return an estimate of the number
-  uint64_t EstimateEncodedSize() const;
-
-  size_t Count() const;
-private:
-  string buffer_;
-  string last_val_;
-
-  vector<uint32_t> restarts_;    // Restart points
-  int counter_;
-  bool finished_;
-
-  const WriterOptions *options_;
-};
 
 } // namespace cfile
 } // namespace kudu

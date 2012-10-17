@@ -45,7 +45,6 @@ Writer::Writer(const WriterOptions &options,
   options_(options),
   datatype_(type),
   encoding_type_(encoding),
-  value_block_(&options),
   state_(kWriterInitialized)
 {
 }
@@ -74,6 +73,7 @@ Status Writer::Start() {
 
   // TODO: should do this in ctor?
   posidx_builder_.reset(new IndexTreeBuilder<uint32_t>(&options_, this));
+  value_block_.reset(new IntBlockBuilder(&options_));
 
   state_ = kWriterWriting;
 
@@ -111,21 +111,27 @@ Status Writer::Finish() {
   return file_->Close();
 }
 
-Status Writer::AppendEntries(IntType *entries, int count) {
-  for (int i = 0; i < count; i++) {
-    value_block_.Add(*entries++);
-    value_count_++;
+Status Writer::AppendEntries(void *entries, int count) {
+  int added = 0;
 
-    size_t est_size = value_block_.EstimateEncodedSize();
+  while (added < count) {
+    int n = value_block_->Add(entries, count);
+    DCHECK_GE(n, 0);
+    added += n;
+    value_count_ += n;
+    
+    size_t est_size = value_block_->EstimateEncodedSize();
     if (est_size > options_.block_size) {
       RETURN_NOT_OK(FinishCurValueBlock());
     }
   }
+
+  DCHECK_EQ(added, count);
   return Status::OK();
 }
 
 Status Writer::FinishCurValueBlock() {
-  size_t num_elems_in_block = value_block_.Count();
+  size_t num_elems_in_block = value_block_->Count();
   if (num_elems_in_block == 0) {
     return Status::OK();
   }
@@ -137,8 +143,11 @@ Status Writer::FinishCurValueBlock() {
 
   // The current data block is full, need to push it
   // into the file, and add to index
-  Slice data = value_block_.Finish((uint32_t)first_elem_ord);
+  Slice data = value_block_->Finish((uint32_t)first_elem_ord);
   uint64_t inserted_off;
+  VLOG(2) << "estimated size=" << value_block_->EstimateEncodedSize()
+          << " actual=" << data.size();
+
   Status s = AddBlock(data, &inserted_off, "data");
   if (!s.ok()) {
     LOG(ERROR) << "Unable to append block to file";
@@ -149,7 +158,7 @@ Status Writer::FinishCurValueBlock() {
 
   // Now add to the index blocks
   s = posidx_builder_->Append(first_elem_ord, ptr);
-  value_block_.Reset();
+  value_block_->Reset();
 
   return s;
 }
@@ -169,64 +178,6 @@ Status Writer::AddBlock(const Slice &data, uint64_t *offset_out,
 
 Writer::~Writer() {
 }
-
-
-
-////////////////////////////////////////////////////////////
-// StringBlockBuilder
-////////////////////////////////////////////////////////////
-
-StringBlockBuilder::StringBlockBuilder(const WriterOptions *options) :
-  counter_(0),
-  finished_(false),
-  options_(options)
-{}
-
-void StringBlockBuilder::Reset() {
-  finished_ = false;
-  counter_ = 0;
-  buffer_.clear();
-  last_val_.clear();
-}
-
-Slice StringBlockBuilder::Finish() {
-  finished_ = true;
-  return Slice(buffer_);
-}
-
-void StringBlockBuilder::Add(const Slice &val) {
-  Slice last_val_piece(last_val_);
-  assert(!finished_);
-  assert(counter_ <= options_->block_restart_interval);
-  size_t shared = 0;
-  if (counter_ < options_->block_restart_interval) {
-    // See how much sharing to do with previous string
-    const size_t min_length = std::min(last_val_piece.size(), val.size());
-    while ((shared < min_length) && (last_val_piece[shared] == val[shared])) {
-      shared++;
-    }
-  } else {
-    // Restart compression
-    restarts_.push_back(buffer_.size());
-    counter_ = 0;
-  }
-  const size_t non_shared = val.size() - shared;
-
-  // Add "<shared><non_shared>" to buffer_
-  PutVarint32(&buffer_, shared);
-  PutVarint32(&buffer_, non_shared);
-
-  // Add string delta to buffer_
-  buffer_.append(val.data() + shared, non_shared);
-
-  // Update state
-  last_val_.resize(shared);
-  last_val_.append(val.data() + shared, non_shared);
-  assert(Slice(last_val_) == val);
-  counter_++;
-}
-
-
 
 
 }
