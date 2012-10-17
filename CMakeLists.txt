@@ -49,6 +49,11 @@ SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} gtest kudu_util)
 ############################################################
 # Subdirectories
 ############################################################
+
+# Google util libraries borrowed from supersonic
+add_subdirectory(src/gutil)
+set(LIBS ${LIBS} ${GUTIL_LIBS})
+
 add_subdirectory(src/port)
 set(LIBS ${LIBS} ${KUDU_PORT_LIBS})
 

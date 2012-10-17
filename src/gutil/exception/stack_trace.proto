@@ -1,0 +1,18 @@
+// Copyright 2011 Google Inc. All Rights Reserved.
+// Support for serializing stack traces.
+
+
+option java_package = "com.google.datawarehouse.common.exception";
+option java_outer_classname = "Exception";
+
+package common;
+
+message StackTrace {
+  message Element {
+    optional string function   = 1;
+    optional string filename   = 2;
+    optional int32 line        = 3  [default = -1];
+    optional string context    = 4;
+  }
+  repeated Element element     = 1;
+}
