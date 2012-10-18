@@ -97,7 +97,7 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
       break;
     case STRING:
       switch (encoding_type_) {
-        case PLAIN:
+        case PREFIX:
           // TODO: this should be called PREFIX_DELTA or something
           *bb = new StringBlockBuilder(&options_);
           break;

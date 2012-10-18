@@ -185,7 +185,7 @@ static void WriteTestFileStrings(
   // Use a smaller block size to exercise multi-level
   // indexing.
   opts.block_size = 1024;
-  Writer w(opts, STRING, PLAIN, sink);
+  Writer w(opts, STRING, PREFIX, sink);
 
   ASSERT_STATUS_OK(w.Start());
 

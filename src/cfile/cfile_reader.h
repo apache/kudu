@@ -107,6 +107,7 @@ public:
   CFileIterator(const CFileReader *reader,
                 const BlockPointer &posidx_root);
 
+  //TODO: add docs for these functions
   Status SeekToOrdinal(uint32_t ord_idx);
   uint32_t GetCurrentOrdinal() const;
 

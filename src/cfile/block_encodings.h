@@ -166,6 +166,7 @@ public:
   // persist beyond that lifetime.
   //
   // TODO: add some way to do a shallow "view" in the future?
+  // TODO: add some typesafe wrappers for void pointers
   virtual int GetNextValues(int n, void *out) = 0;
 
   // Return true if there are more values remaining to be iterated.
@@ -182,6 +183,8 @@ public:
   virtual ~BlockDecoder() {}
 };
 
+// Decoder for UINT32 type, GROUP_VARINT coding
+// TODO: rename?
 class IntBlockDecoder : public BlockDecoder {
 public:
   explicit IntBlockDecoder(const Slice &slice) :
