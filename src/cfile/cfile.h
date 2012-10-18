@@ -92,6 +92,9 @@ private:
   // TODO: inconsistent "value block" vs "data block"
   Status FinishCurValueBlock();
 
+
+  Status CreateBlockBuilder(BlockBuilder **builder) const;
+
   // File being written.
   shared_ptr<WritableFile> file_;
 

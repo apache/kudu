@@ -19,6 +19,7 @@
 namespace kudu {
 
 // Standard Put... routines append to a string
+// TODO: these should get inlined and use gutil/stl_util
 extern void PutFixed32(std::string* dst, uint32_t value);
 extern void PutFixed64(std::string* dst, uint64_t value);
 extern void PutVarint32(std::string* dst, uint32_t value);

@@ -104,7 +104,7 @@ public:
   // This Slice points to internal data of this class
   // and becomes invalid after the builder is destroyed
   // or after Finish() is called again.
-  Slice Finish();
+  Slice Finish(uint32_t ordinal_pos);
 
   void Reset();
 
@@ -116,11 +116,21 @@ private:
   string buffer_;
   string last_val_;
 
-  vector<uint32_t> restarts_;    // Restart points
-  int counter_;
+  // Restart points, offsets relative to start of block
+  vector<uint32_t> restarts_;
+
+  int val_count_;
+  int vals_since_restart_;
   bool finished_;
 
   const WriterOptions *options_;
+
+  // Maximum length of a header.
+  // We leave this much space at the start of the buffer before
+  // accumulating any data, so we can later fill in the variable-length
+  // header.
+  // Currently two varints, so max 10 bytes
+  static const size_t kHeaderReservedLength = 10;
 };
 
 ////////////////////////////////////////////////////////////

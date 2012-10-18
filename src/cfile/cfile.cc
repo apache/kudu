@@ -73,10 +73,43 @@ Status Writer::Start() {
 
   // TODO: should do this in ctor?
   posidx_builder_.reset(new IndexTreeBuilder<uint32_t>(&options_, this));
-  value_block_.reset(new IntBlockBuilder(&options_));
+  
+  BlockBuilder *bb;
+  RETURN_NOT_OK( CreateBlockBuilder(&bb) );
+  value_block_.reset(bb);
 
   state_ = kWriterWriting;
 
+  return Status::OK();
+}
+
+Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
+  *bb = NULL;
+  switch (datatype_) {
+    case UINT32:
+      switch (encoding_type_) {
+        case GROUP_VARINT:
+          *bb = new IntBlockBuilder(&options_);
+          break;
+        default:
+          return Status::NotFound("bad int encoding");
+      }
+      break;
+    case STRING:
+      switch (encoding_type_) {
+        case PLAIN:
+          // TODO: this should be called PREFIX_DELTA or something
+          *bb = new StringBlockBuilder(&options_);
+          break;
+        default:
+          return Status::NotFound("bad string encoding");
+      }
+      break;
+    default:
+      return Status::NotFound("bad datatype");
+  }
+
+  CHECK(*bb != NULL); // sanity check postcondition
   return Status::OK();
 }
 

@@ -1,11 +1,15 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/foreach.hpp>
+#include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <stdlib.h>
+
+#include "gutil/stringprintf.h"
+#include "util/test_macros.h"
 
 #include "cfile.h"
 #include "block_encodings.h"
@@ -153,6 +157,39 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     EXPECT_EQ(1u, ret.size());
     EXPECT_EQ(decoded[seek_off], ret[0]);
   }
+}
+
+TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
+  WriterOptions opts;
+  boost::ptr_vector<string> to_insert;
+  std::vector<Slice> slices;
+
+  // Prepare 10K items (storage and associated slices)
+  for (int i = 0; i < 10000; i++) {
+    string *val = new string(StringPrintf("hello%d\n", i));
+    to_insert.push_back(val);
+    slices.push_back(Slice(*val));
+  }
+
+  // Push into a block builder
+  StringBlockBuilder sbb(&opts);
+
+  int rem = slices.size();
+  Slice *ptr = &slices[0];
+  while (rem > 0) {
+    int added = sbb.Add(reinterpret_cast<void *>(ptr), rem);
+    CHECK(added > 0);
+    rem -= added;
+    ptr += added;
+  }
+
+  ASSERT_EQ(slices.size(), sbb.Count());
+  Slice s = sbb.Finish(12345L);
+
+  // the slice should take at least a few bytes per entry
+  ASSERT_GT(s.size(), 20000u);
+
+  // TODO: add decoder test here
 }
 
 

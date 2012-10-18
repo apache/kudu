@@ -1,14 +1,19 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <algorithm>
+#include <boost/foreach.hpp>
 #include <boost/utility/binary.hpp>
+#include <glog/logging.h>
 #include <stdint.h>
+
+#include "gutil/strings/fastmem.h"
+#include "gutil/stl_util.h"
+#include "util/coding.h"
 
 #include "block_encodings.h"
 // TODO: including this to just get block size from options,
 // maybe we should not take a whole options struct
 #include "cfile.h"
-#include "util/coding.h"
 
 namespace kudu {
 namespace cfile {
@@ -150,33 +155,75 @@ Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
 ////////////////////////////////////////////////////////////
 
 StringBlockBuilder::StringBlockBuilder(const WriterOptions *options) :
-  counter_(0),
+  val_count_(0),
+  vals_since_restart_(0),
   finished_(false),
   options_(options)
-{}
+{
+  // TODO: move below to method
+  STLStringResizeUninitialized(&buffer_, kHeaderReservedLength);
+}
 
 void StringBlockBuilder::Reset() {
   finished_ = false;
-  counter_ = 0;
+  val_count_ = 0;
+  vals_since_restart_ = 0;
+
   buffer_.clear();
+  STLStringResizeUninitialized(&buffer_, kHeaderReservedLength);
+
   last_val_.clear();
 }
 
-Slice StringBlockBuilder::Finish() {
+Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
+  CHECK(!finished_) << "already finished";
+  DCHECK_GE(buffer_.size(), kHeaderReservedLength);
+
+  char header_space[kHeaderReservedLength];
+  char *header_end = header_space;
+
+  header_end = EncodeVarint32(header_end, val_count_);
+  header_end = EncodeVarint32(header_end, ordinal_pos);
+
+  int header_encoded_len = header_end - header_space;
+
+  // Copy the header into the buffer at the right spot.
+  // Since the header is likely shorter than the amount of space
+  // reserved for it, need to find where it fits:
+  int header_offset = kHeaderReservedLength - header_encoded_len;
+  DCHECK_GE(header_offset, 0);
+  char *header_dst = string_as_array(&buffer_) + header_offset;
+  strings::memcpy_inlined(header_dst, header_space, header_encoded_len);
+
+  // Serialize the restart points.
+  // Note that the values stored in restarts_ are relative to the
+  // start of the *buffer*, which is not the same as the start of
+  // the block. So, we must subtract the header offset from each.
+  buffer_.reserve(buffer_.size()
+                  + restarts_.size() * sizeof(uint32_t) // the data
+                  + sizeof(uint32_t)); // the restart count);
+  BOOST_FOREACH(uint32_t restart, restarts_) {
+    DCHECK_GE((int)restart, header_offset);
+    uint32_t relative_to_block = restart - header_offset;
+    VLOG(2) << "appending restart " << relative_to_block;
+    PutFixed32(&buffer_, relative_to_block);
+  }
+  PutFixed32(&buffer_, restarts_.size());
+
   finished_ = true;
-  return Slice(buffer_);
+  return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
 }
 
 int StringBlockBuilder::Add(const void *vals_void, int count) {
   DCHECK_GT(count, 0);
+  DCHECK(!finished_);
+  DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
 
   const Slice &val = *reinterpret_cast<const Slice *>(vals_void);
 
   Slice last_val_piece(last_val_);
-  assert(!finished_);
-  assert(counter_ <= options_->block_restart_interval);
   size_t shared = 0;
-  if (counter_ < options_->block_restart_interval) {
+  if (vals_since_restart_ < options_->block_restart_interval) {
     // See how much sharing to do with previous string
     const size_t min_length = std::min(last_val_piece.size(), val.size());
     while ((shared < min_length) && (last_val_piece[shared] == val[shared])) {
@@ -185,7 +232,7 @@ int StringBlockBuilder::Add(const void *vals_void, int count) {
   } else {
     // Restart compression
     restarts_.push_back(buffer_.size());
-    counter_ = 0;
+    vals_since_restart_ = 0;
   }
   const size_t non_shared = val.size() - shared;
 
@@ -194,19 +241,20 @@ int StringBlockBuilder::Add(const void *vals_void, int count) {
   PutVarint32(&buffer_, non_shared);
 
   // Add string delta to buffer_
-  buffer_.append(val.data() + shared, non_shared);
+  STLAppendToString(&buffer_, val.data() + shared, non_shared);
 
   // Update state
-  last_val_.resize(shared);
-  last_val_.append(val.data() + shared, non_shared);
+  STLStringResizeUninitialized(&last_val_, shared);
+  STLAppendToString(&last_val_, val.data() + shared, non_shared);
   assert(Slice(last_val_) == val);
-  counter_++;
+  vals_since_restart_++;
+  val_count_++;
 
   return 1;
 }
 
 size_t StringBlockBuilder::Count() const {
-  return counter_;
+  return val_count_;
 }
 
 uint64_t StringBlockBuilder::EstimateEncodedSize() const {

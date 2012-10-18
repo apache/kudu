@@ -4,24 +4,17 @@
 #include <glog/logging.h>
 #include <stdlib.h>
 
+#include "gutil/stringprintf.h"
+#include "util/env.h"
+#include "util/test_macros.h"
+
 #include "cfile.h"
 #include "cfile_reader.h"
 #include "cfile.pb.h"
 #include "index_block.h"
 #include "index_btree.h"
-#include "util/env.h"
 
 namespace kudu { namespace cfile {
-
-#define ASSERT_STATUS_OK(status) do { \
-    Status _s = status; \
-    if (_s.ok()) { \
-      SUCCEED(); \
-    } else { \
-      FAIL() << "Bad status: " << _s.ToString();  \
-    } \
-  } while (0);
-
 
 // Test IndexBlockBuilder and IndexReader with integers
 TEST(TestIndexBuilder, TestIndexWithInts) {
@@ -178,6 +171,39 @@ class StringSink: public WritableFile {
   std::string contents_;
 };
 
+static void WriteTestFileStrings(
+  const string &path, int num_entries) {
+
+  Status s;
+
+  WritableFile *file;
+  s = Env::Default()->NewWritableFile(path, &file);
+
+  shared_ptr<WritableFile> sink(file);
+  WriterOptions opts;
+  // Use a smaller block size to exercise multi-level
+  // indexing.
+  opts.block_size = 1024;
+  Writer w(opts, STRING, PLAIN, sink);
+
+  ASSERT_STATUS_OK(w.Start());
+
+  // Append given number of values to the test tree
+  for (int i = 0; i < num_entries; i++) {
+    string str = StringPrintf("hello %d", i);
+    Slice slice(str);
+
+    Status s = w.AppendEntries(&slice, 1);
+    // Dont use ASSERT because it accumulates all the logs
+    // even for successes
+    if (!s.ok()) {
+      FAIL() << "Failed Append(" << i << ")";
+    }
+  }
+
+  ASSERT_STATUS_OK(w.Finish());
+}
+
 static void WriteTestFile(const string &path,
                           int num_entries) {
   Status s;
@@ -290,6 +316,11 @@ TEST(TestCFile, TestReadWrite) {
   vector<uint32_t> out;
   ASSERT_STATUS_OK(iter->GetNextValues(10000, &out));
   ASSERT_EQ(10000u, out.size());
+}
+
+TEST(TestCFile, TestWriteStrings) {
+  string path = "/tmp/cfile-TestReadWriteStrings";
+  WriteTestFileStrings(path, 1000);
 }
 
 
