@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "util/memory/arena.h"
+#include "util/faststring.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -290,7 +291,7 @@ private:
 
   uint32_t cur_idx_;
   const char *cur_ptr_;
-  string cur_val_;
+  faststring cur_val_;
 
   // Arena used for output storage for GetNextValues().
   Arena out_arena_;

@@ -11,6 +11,7 @@
 #include "gutil/stringprintf.h"
 #include "gutil/stl_util.h"
 #include "util/coding.h"
+#include "util/faststring.h"
 #include "util/memory/arena.h"
 
 #include "block_encodings.h"
@@ -434,7 +435,7 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
   data_start_(0),
   cur_idx_(0),
   cur_ptr_(NULL),
-  out_arena_(0, 16*1024*1024)
+  out_arena_(slice.size(), 16*1024*1024)
 {
 }
 
@@ -511,7 +512,7 @@ int StringBlockDecoder::GetNextValues(int n, void *out_void) {
 
     // Copy the value into the output arena.
     const char *out_data = out_arena_.AddStringPieceContent(
-      StringPiece(cur_val_));
+      StringPiece(cur_val_.data(), cur_val_.size()));
     CHECK(out_data != NULL) << "Failed to allocate " <<
       cur_val_.size() << " bytes in output arena";
 
@@ -568,8 +569,9 @@ Status StringBlockDecoder::ParseNextValue() {
   // key, then append the delta portion.
   DCHECK_LE(shared, cur_val_.size())
     << "Specified longer shared amount than previous key length";
+
   cur_val_.resize(shared);
-  STLAppendToString(&cur_val_, val_delta, non_shared);
+  cur_val_.append(val_delta, non_shared);
 
   DCHECK_EQ(cur_val_.size(), shared + non_shared);
 

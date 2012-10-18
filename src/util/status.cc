@@ -5,14 +5,16 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "status.h"
+#include "gutil/strings/fastmem.h"
 
 namespace kudu {
 
+
 const char* Status::CopyState(const char* state) {
   uint32_t size;
-  memcpy(&size, state, sizeof(size));
+  strings::memcpy_inlined((char *)&size, state, sizeof(size));
   char* result = new char[size + 5];
-  memcpy(result, state, size + 5);
+  strings::memcpy_inlined(result, state, size + 5);
   return result;
 }
 
