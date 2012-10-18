@@ -137,7 +137,52 @@ private:
 // Decoding
 ////////////////////////////////////////////////////////////
 
-class IntBlockDecoder : boost::noncopyable {
+class BlockDecoder : boost::noncopyable {
+public:
+  virtual Status ParseHeader() = 0;
+
+  // Seek the decoder to the given positional index of the block.
+  // For example, SeekToPositionInBlock(0) seeks to the first
+  // stored entry.
+  //
+  // It is an error to call this with a value larger than Count().
+  // Doing so has undefined results.
+  //
+  // TODO: Since we know the actual file position, maybe we
+  // should just take the actual ordinal in the file
+  // instead of the position in the block?
+  virtual void SeekToPositionInBlock(int pos) = 0;
+
+  // Fetch the next set of values from the block into 'out'
+  // The output vector must have space for up to 'n' values
+  // of this block decoder's type.
+  // Returns the number of values fetched.
+  //
+  // In the case that the values are themselves references
+  // to other memory (eg Slices), the referred-to memory is
+  // owned by this decoder object, and can be recycled or reused
+  // on the next call to GetNextValues or when the decoder is
+  // destructed. The caller should deep-copy them if they need to
+  // persist beyond that lifetime.
+  //
+  // TODO: add some way to do a shallow "view" in the future?
+  virtual int GetNextValues(int n, void *out) = 0;
+
+  // Return true if there are more values remaining to be iterated.
+  // TODO: change this to a Remaining() call?
+  virtual bool HasNext() const = 0;
+
+  // Return the number of elements in this block.
+  virtual size_t Count() const = 0;
+
+  // Return the ordinal position in the file of the first entry
+  // in this block.
+  virtual uint32_t ordinal_pos() const = 0;
+
+  virtual ~BlockDecoder() {}
+};
+
+class IntBlockDecoder : public BlockDecoder {
 public:
   explicit IntBlockDecoder(const Slice &slice) :
     data_(slice),
@@ -149,12 +194,9 @@ public:
     SeekToPositionInBlock(0);
   }
 
-  // Since we know the actual file position, maybe we
-  // should just take the actual ordinal in the file
-  // instead of the position in the block?
   void SeekToPositionInBlock(int pos);
 
-  void GetNextValues(int n, std::vector<uint32_t> *vec);
+  int GetNextValues(int n, void *out);
 
   uint32_t ordinal_pos() const {
     DCHECK(parsed_) << "must parse header first";
@@ -177,7 +219,7 @@ private:
     uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
 
   template<class IntSink>
-  void DoGetNextValues(int n, IntSink *sink);
+  int DoGetNextValues(int n, IntSink *sink);
 
   Slice data_;
 
@@ -194,7 +236,6 @@ private:
   // to the user. The next one to be yielded is at the
   // *end* of the vector!
   std::vector<uint32_t> pending_;
-
 };
 
 

@@ -235,21 +235,20 @@ bool CFileIterator::HasNext() {
   return dblk_->HasNext() || idx_iter_->HasNext();
 }
 
-Status CFileIterator::GetNextValues(int n, std::vector<uint32_t> *vec) {
+Status CFileIterator::GetNextValues(
+  int n, void *out, int *returned)
+{
   CHECK(seeked_) << "not seeked";
 
-  int returned = 0;
+  *returned = 0;
 
   while (n > 0) {
     // Fetch as many as we can from the current datablock.
 
     // TODO: have GetNextValues return count returned?
-    size_t size_before = vec->size();
-    dblk_->GetNextValues(n, vec);
-    int returned_in_batch = (vec->size() - size_before);
+    int returned_in_batch = dblk_->GetNextValues(n, out);
     n -= returned_in_batch;
-
-    returned += returned_in_batch;
+    *returned += returned_in_batch;
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
@@ -264,7 +263,7 @@ Status CFileIterator::GetNextValues(int n, std::vector<uint32_t> *vec) {
     if (s.IsNotFound()) {
       // No next datablock
 
-      if (returned == 0) {
+      if (*returned == 0) {
         // No more data, and this call didn't return any
         return s;
       } else {

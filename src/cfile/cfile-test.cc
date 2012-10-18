@@ -1,5 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc
 
+#include <boost/scoped_array.hpp>
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 #include <stdlib.h>
@@ -253,19 +254,19 @@ static void TimeReadFile(const string &path) {
   scoped_ptr<CFileIterator> iter(iter_ptr);
   iter->SeekToOrdinal(0);
 
-  std::vector<uint32_t> v;
-  v.reserve(8192);
-
+  boost::scoped_array<uint32_t> v(new uint32_t[8192]);
   uint64_t sum = 0;
+  int count = 0;
   while (iter->HasNext()) {
-    CHECK(v.capacity() == 8192);
-    ASSERT_STATUS_OK(iter->GetNextValues(8192, &v));
-    BOOST_FOREACH(uint32_t x, v) {
-      sum += x;
+    int n;
+    ASSERT_STATUS_OK(iter->GetNextValues(8192, &v[0], &n));
+    for (int i = 0; i < n; i++) {
+      sum += v[i];
     }
-    v.clear();
+    count += n;
   }
   LOG(INFO) << "Sum: " << sum;
+  LOG(INFO) << "Count: " << count;
 }
 
 
@@ -313,9 +314,10 @@ TEST(TestCFile, TestReadWrite) {
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
 
   // Fetch all data.
-  vector<uint32_t> out;
-  ASSERT_STATUS_OK(iter->GetNextValues(10000, &out));
-  ASSERT_EQ(10000u, out.size());
+  boost::scoped_array<uint32_t> out(new uint32_t[10000]);
+  int n;
+  ASSERT_STATUS_OK(iter->GetNextValues(10000, &out[0], &n));
+  ASSERT_EQ(10000, n);
 }
 
 TEST(TestCFile, TestWriteStrings) {

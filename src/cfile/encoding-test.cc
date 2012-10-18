@@ -126,17 +126,20 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   ASSERT_EQ(kOrdinalPosBase, ibd.ordinal_pos());
 
   std::vector<uint32_t> decoded;
-  while (decoded.size() < to_insert.size()) {
-    EXPECT_EQ((uint32_t)(kOrdinalPosBase + decoded.size()),
+  decoded.resize(to_insert.size());
+
+  int dec_count = 0;
+  while (ibd.HasNext()) {
+    ASSERT_EQ((uint32_t)(kOrdinalPosBase + dec_count),
               ibd.ordinal_pos());
 
     int to_decode = (random() % 30) + 1;
-
-    int before_count = decoded.size();
-    ibd.GetNextValues(to_decode, &decoded);
-    int after_count = decoded.size();
-    EXPECT_GE(to_decode, after_count - before_count);
+    int n = ibd.GetNextValues(to_decode, &decoded[dec_count]);
+    ASSERT_GE(to_decode, n);
+    dec_count += n;
   }
+
+  ASSERT_EQ((int)to_insert.size(), dec_count);
 
   for (uint i = 0; i < to_insert.size(); i++) {
     if (to_insert[i] != decoded[i]) {
@@ -152,10 +155,10 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
 
     EXPECT_EQ((uint32_t)(kOrdinalPosBase + seek_off),
               ibd.ordinal_pos());
-    std::vector<uint32_t> ret;
-    ibd.GetNextValues(1, &ret);
-    EXPECT_EQ(1u, ret.size());
-    EXPECT_EQ(decoded[seek_off], ret[0]);
+    uint32_t ret;
+    int n = ibd.GetNextValues(1, &ret);
+    EXPECT_EQ(1, n);
+    EXPECT_EQ(decoded[seek_off], ret);
   }
 }
 

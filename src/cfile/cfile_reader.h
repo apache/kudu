@@ -109,7 +109,8 @@ public:
 
   Status SeekToOrdinal(uint32_t ord_idx);
   uint32_t GetCurrentOrdinal() const;
-  Status GetNextValues(int n, std::vector<uint32_t> *vec);
+
+  Status GetNextValues(int n, void *out, int *fetched);
   bool HasNext();
 
 private:

@@ -324,6 +324,21 @@ public:
   void push_back(T t) {}
 };
 
+template<typename T>
+class PtrSink {
+public:
+  PtrSink(T *ptr) :
+    ptr_(ptr)
+  {}
+
+  void push_back(const T &t) {
+    *ptr_++ = t;
+  }
+
+private:
+  T *ptr_;
+};
+
 void IntBlockDecoder::SeekToPositionInBlock(int pos) {
   CHECK(parsed_) << "Must call ParseHeader()";
 
@@ -336,12 +351,14 @@ void IntBlockDecoder::SeekToPositionInBlock(int pos) {
   DoGetNextValues(pos, &null);
 }
 
-void IntBlockDecoder::GetNextValues(int n, std::vector<uint32_t> *vec) {
-  DoGetNextValues(n, vec);
+int IntBlockDecoder::GetNextValues(int n, void *out) {
+  PtrSink<uint32_t> sink(reinterpret_cast<uint32_t *>(out));
+  return DoGetNextValues(n, &sink);
 }
 
 template<class IntSink>
-void IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
+int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
+  int start_idx = cur_idx_;
   int rem = num_elems_ - cur_idx_;
   assert(rem >= 0);
 
@@ -357,7 +374,7 @@ void IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
     n--;
     cur_idx_++;
   }
-  if (n == 0) return;
+  if (n == 0) return cur_idx_ - start_idx;
 
   // Now grab groups of 4 and append to vector
   while (n >= 4) {
@@ -374,7 +391,7 @@ void IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
     n -= 4;
   }
 
-  if (n == 0) return;
+  if (n == 0) return cur_idx_ - start_idx;
 
   // Grab next batch into pending_
   // Note that this does _not_ increment cur_idx_
@@ -393,7 +410,9 @@ void IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
     n--;
     cur_idx_++;
   }
-  assert(n == 0);
+
+  CHECK_EQ(n, 0);
+  return cur_idx_ - start_idx;
 }
 
 
