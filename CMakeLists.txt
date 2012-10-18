@@ -40,11 +40,18 @@ set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
 find_package( GPerf REQUIRED )
 set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
 
+## GFlags
+find_package(GFlags REQUIRED)
+INCLUDE_DIRECTORIES(${GFLAGS_INCLUDE_DIR})
+add_library(gflags STATIC IMPORTED)
+set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
+SET(LIBS ${LIBS} gflags)
+
 ############################################################
 # Linker setup
 ############################################################
 SET(KUDU_LINK_LIBS ${LIBS})
-SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} gtest kudu_util gutil)
+SET(KUDU_TEST_LINK_LIBS  kudu_util gutil ${KUDU_LINK_LIBS} gtest)
 
 ############################################################
 # Subdirectories
