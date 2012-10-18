@@ -83,6 +83,8 @@ Status Writer::Start() {
   return Status::OK();
 }
 
+// TODO: refactor this into some kind of block factory
+// module, with its equivalent in CFileReader
 Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
   *bb = NULL;
   switch (datatype_) {

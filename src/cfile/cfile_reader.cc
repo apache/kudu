@@ -59,6 +59,12 @@ Status CFileReader::Init() {
 
   RETURN_NOT_OK(ReadAndParseFooter());
 
+  type_info_ = &GetTypeInfo(footer_->data_type());
+  VLOG(1) << "Initialized CFile reader. "
+          << "Header: " << header_->DebugString()
+          << " Footer: " << footer_->DebugString()
+          << " Type: " << type_info_->name();
+
   state_ = kInitialized;
 
   return Status::OK();
@@ -135,6 +141,39 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
 
   *ret = BlockData(s, scratch);
 
+  return Status::OK();
+}
+
+// TODO: perhaps decoders should be able to be Reset
+// to point to a different slice? any benefit to that?
+Status CFileReader::CreateBlockDecoder(
+  BlockDecoder **bd, const Slice &slice) const {
+  *bd = NULL;
+  switch (footer_->data_type()) {
+    case UINT32:
+      switch (footer_->encoding()) {
+        case GROUP_VARINT:
+          *bd = new IntBlockDecoder(slice);
+          break;
+        default:
+          return Status::NotFound("bad int encoding");
+      }
+      break;
+    case STRING:
+      switch (footer_->encoding()) {
+        case PREFIX:
+          // TODO: this should be called PREFIX_DELTA or something
+          *bd = new StringBlockDecoder(slice);
+          break;
+        default:
+          return Status::NotFound("bad string encoding");
+      }
+      break;
+    default:
+      return Status::NotFound("bad datatype");
+  }
+
+  CHECK(*bd != NULL); // sanity check postcondition
   return Status::OK();
 }
 
@@ -224,7 +263,10 @@ Status CFileIterator::ReadCurrentDataBlock() {
   BlockPointer dblk_ptr = idx_iter_->GetCurrentBlockPointer();
   RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data_));
 
-  dblk_.reset(new IntBlockDecoder(dblk_data_.slice()));
+  BlockDecoder *bd;
+  RETURN_NOT_OK(reader_->CreateBlockDecoder(
+                  &bd, dblk_data_.slice()));
+  dblk_.reset(bd);
   RETURN_NOT_OK(dblk_->ParseHeader());
   return Status::OK();
 }
@@ -249,12 +291,17 @@ Status CFileIterator::GetNextValues(
     int returned_in_batch = dblk_->GetNextValues(n, out);
     n -= returned_in_batch;
     *returned += returned_in_batch;
+    out = reinterpret_cast<char *>(out) + 
+      reader_->type_info()->size() * returned_in_batch;
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
     if (n > 0) {
       DCHECK(!dblk_->HasNext()) <<
         "dblk stopped yielding values before it was empty";
+    } else {
+      // Fetched as many as requested. Can return.
+      return Status::OK();
     }
 
     // Pull in next datablock.

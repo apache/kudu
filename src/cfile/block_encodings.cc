@@ -176,6 +176,7 @@ void StringBlockBuilder::Reset() {
   buffer_.clear();
   STLStringResizeUninitialized(&buffer_, kHeaderReservedLength);
 
+  restarts_.clear();
   last_val_.clear();
 }
 

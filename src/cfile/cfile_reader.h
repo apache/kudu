@@ -10,6 +10,7 @@
 #include <string>
 
 #include "util/status.h"
+#include "types.h"
 
 namespace kudu {
 
@@ -32,7 +33,7 @@ struct ReaderOptions {
 
 class CFileIterator;
 class BlockPointer;
-class IntBlockDecoder;
+class BlockDecoder;
 
 
 // Wrapper for a block of data read from a CFile.
@@ -82,7 +83,24 @@ public:
   Status ReadBlock(const BlockPointer &ptr,
                    BlockData *ret) const;
 
+  DataType data_type() const {
+    CHECK_EQ(state_, kInitialized);
+    return footer_->data_type();
+  }
+
+  const TypeInfo *type_info() const {
+    DCHECK_EQ(state_, kInitialized);
+    return type_info_;
+  }
+
 private:
+  friend class CFileIterator;
+
+  // Create a BlockDecoder for the data in this file.
+  // Sets *bd to the newly created decoder, if successful.
+  // Otherwise returns a non-OK Status.
+  Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice) const;
+
   Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
@@ -99,6 +117,8 @@ private:
 
   scoped_ptr<CFileHeaderPB> header_;
   scoped_ptr<CFileFooterPB> footer_;
+
+  const TypeInfo *type_info_;
 };
 
 
@@ -129,7 +149,7 @@ private:
   bool seeked_;
 
   BlockData dblk_data_;
-  scoped_ptr<IntBlockDecoder> dblk_;
+  scoped_ptr<BlockDecoder> dblk_;
 };
 
 

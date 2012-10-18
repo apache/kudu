@@ -14,4 +14,14 @@
   } while (0);
 
 
+// Like the above, but doesn't record successful
+// tests.
+#define ASSERT_STATUS_OK_FAST(status) do {      \
+    Status _s = status; \
+    if (!_s.ok()) { \
+      FAIL() << "Bad status: " << _s.ToString();  \
+    } \
+  } while (0);
+
+
 #endif
