@@ -23,6 +23,10 @@
     if (!_s.ok()) return _s; \
   } while (0);
 
+#define CHECK_OK(s) do { \
+  Status _s = (s); \
+  CHECK(_s.ok()) << "Bad status: " << _s.ToString(); \
+  } while (0);
 
 namespace kudu {
 

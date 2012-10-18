@@ -167,9 +167,11 @@ TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
   boost::ptr_vector<string> to_insert;
   std::vector<Slice> slices;
 
+  const uint kCount = 10;
+
   // Prepare 10K items (storage and associated slices)
-  for (int i = 0; i < 10000; i++) {
-    string *val = new string(StringPrintf("hello%d\n", i));
+  for (uint i = 0; i < kCount; i++) {
+    string *val = new string(StringPrintf("hello %d", i));
     to_insert.push_back(val);
     slices.push_back(Slice(*val));
   }
@@ -190,9 +192,43 @@ TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
   Slice s = sbb.Finish(12345L);
 
   // the slice should take at least a few bytes per entry
-  ASSERT_GT(s.size(), 20000u);
+  ASSERT_GT(s.size(), kCount * 2u);
 
-  // TODO: add decoder test here
+  StringBlockDecoder sbd(s);
+  ASSERT_STATUS_OK(sbd.ParseHeader());
+  ASSERT_EQ(kCount, sbd.Count());
+  ASSERT_EQ(12345u, sbd.ordinal_pos());
+  ASSERT_TRUE(sbd.HasNext());
+
+  // Iterate one by one through data, verifying that it matches
+  // what we put in.
+  for (uint i = 0; i < kCount; i++) {
+    ASSERT_EQ(12345u + i, sbd.ordinal_pos());
+
+    Slice s;
+    ASSERT_EQ(1, sbd.GetNextValues(1, &s));
+    string expected = StringPrintf("hello %d", i);
+    ASSERT_EQ(expected, s.ToString());
+  }
+  ASSERT_FALSE(sbd.HasNext());
+
+  // Now iterate backwards using positional seeking
+  for (int i = kCount - 1; i >= 0; i--) {
+    sbd.SeekToPositionInBlock(i);
+    ASSERT_EQ(12345u + i, sbd.ordinal_pos());
+  }
+
+  // Try to request a bunch of data in one go
+  scoped_array<Slice> decoded(new Slice[kCount]);
+  sbd.SeekToPositionInBlock(0);
+  int n = sbd.GetNextValues(kCount, &decoded[0]);
+  ASSERT_EQ((int)kCount, n);
+  ASSERT_FALSE(sbd.HasNext());
+
+  for (uint i = 0; i < kCount; i++) {
+    string expected = StringPrintf("hello %d", i);
+    ASSERT_EQ(expected, decoded[i]);
+  }
 }
 
 

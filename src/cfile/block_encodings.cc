@@ -7,8 +7,11 @@
 #include <stdint.h>
 
 #include "gutil/strings/fastmem.h"
+#include "gutil/strings/stringpiece.h"
+#include "gutil/stringprintf.h"
 #include "gutil/stl_util.h"
 #include "util/coding.h"
+#include "util/memory/arena.h"
 
 #include "block_encodings.h"
 // TODO: including this to just get block size from options,
@@ -18,6 +21,7 @@
 namespace kudu {
 namespace cfile {
 
+using kudu::Arena;
 
 
 ////////////////////////////////////////////////////////////
@@ -339,7 +343,7 @@ private:
   T *ptr_;
 };
 
-void IntBlockDecoder::SeekToPositionInBlock(int pos) {
+void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
   CHECK(parsed_) << "Must call ParseHeader()";
 
   // Reset to start of block
@@ -415,9 +419,164 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
   return cur_idx_ - start_idx;
 }
 
+////////////////////////////////////////////////////////////
+// StringBlockDecoder
+////////////////////////////////////////////////////////////
 
+StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
+  data_(slice),
+  parsed_(false),
+  num_elems_(0),
+  ordinal_pos_base_(0),
+  num_restarts_(0),
+  restarts_(NULL),
+  data_start_(0),
+  cur_idx_(0),
+  cur_ptr_(NULL),
+  out_arena_(0, 16*1024*1024)
+{
+}
 
+Status StringBlockDecoder::ParseHeader() {
+  // First parse the actual header.
+  Slice header(data_);
+  if (!GetVarint32(&header, &num_elems_)) {
+    return Status::Corruption("couldnt parse num_elems in header");
+  }
 
+  if (!GetVarint32(&header, &ordinal_pos_base_)) {
+    return Status::Corruption("couldnt parse ordinal_pos in header");
+  }
+
+  // Data starts after the header.
+  data_start_ = header.data();
+
+  // Then the footer, which points us to the restarts array
+  num_restarts_ = DecodeFixed32(
+    data_.data() + data_.size() - sizeof(uint32_t));
+
+  // sanity check the restarts size
+  uint32_t restarts_size = num_restarts_ * sizeof(uint32_t);
+  if (restarts_size > data_.size()) {
+    return Status::Corruption(
+      StringPrintf("restart count %d too big to fit in block size %d",
+                   num_restarts_, (int)data_.size()));
+  }
+
+  restarts_ = reinterpret_cast<const uint32_t *>(
+    data_.data() + data_.size()
+    - sizeof(uint32_t) // rewind before the restart length
+    - restarts_size);
+
+  SeekToStart();
+  parsed_ = true;
+  return Status::OK();
+}
+
+void StringBlockDecoder::SeekToStart() {
+  cur_idx_ = 0;
+  cur_ptr_ = data_start_;
+}
+
+void StringBlockDecoder::SeekToPositionInBlock(uint pos) {
+  DCHECK_LT(pos, num_elems_);
+
+  // TODO: change the format a bit so that we know the restart
+  // interval of the block. Then we can use the restarts to seek
+  // to the right offset.
+
+  // Currently we can only seek forward. If we're trying
+  // to move backward, have to restart from top of block.
+  if (pos < cur_idx_) {
+    SeekToStart();
+  }
+
+  // TODO: Seek calls should return a Status
+  CHECK(SkipForward(pos - cur_idx_).ok());
+  DCHECK_EQ(cur_idx_, pos);
+}
+
+int StringBlockDecoder::GetNextValues(int n, void *out_void) {
+  DCHECK(parsed_);
+  out_arena_.Reset();
+  Slice *out = reinterpret_cast<Slice *>(out_void);
+
+  int i = 0;
+  for (i = 0; i < n && cur_idx_ < num_elems_; i++) {
+    // TODO: Can ParseNextValue take a pointer to the previously
+    // parsed value, to avoid having to double-copy?
+    // TODO: wish GetNextValues returned Status
+    CHECK_OK(ParseNextValue());
+
+    // Copy the value into the output arena.
+    const char *out_data = out_arena_.AddStringPieceContent(
+      StringPiece(cur_val_));
+    CHECK(out_data != NULL) << "Failed to allocate " <<
+      cur_val_.size() << " bytes in output arena";
+
+    // Put a slice to it in the output array
+    *out++ = Slice(out_data, cur_val_.size());
+  }
+
+  return i;
+}
+
+// Decode the lengths pointed to by 'ptr', doing bounds checking.
+//
+// Returns a pointer to where the value itself starts.
+// Returns NULL if the varints themselves, or the value that
+// they prefix extend past the end of the block data.
+const char *StringBlockDecoder::DecodeEntryLengths(
+  const char *ptr, uint32_t *shared, uint32_t *non_shared) const {
+
+  // data ends where the restart info begins
+  const char *limit = reinterpret_cast<const char *>(restarts_);
+
+  if ((ptr = GetVarint32Ptr(ptr, limit, shared)) == NULL) return NULL;
+  if ((ptr = GetVarint32Ptr(ptr, limit, non_shared)) == NULL) return NULL;
+  if (limit - ptr < *non_shared) {
+    return NULL;
+  }
+
+  return ptr;
+}
+
+Status StringBlockDecoder::SkipForward(int n) {
+  DCHECK_LT(cur_idx_ + n, num_elems_) <<
+    "skip(" << n << ") curidx=" << cur_idx_
+            << " num_elems=" << num_elems_;
+  // Probably a faster way to implement this using restarts,
+  for (int i = 0; i < n; i++) {
+    RETURN_NOT_OK(ParseNextValue());
+  }
+  return Status::OK();
+}
+
+Status StringBlockDecoder::ParseNextValue() {
+  DCHECK(cur_ptr_ != NULL);
+
+  uint32_t shared, non_shared;
+  const char *val_delta = DecodeEntryLengths(cur_ptr_, &shared, &non_shared);
+  if (val_delta == NULL) {
+    return Status::Corruption(
+      StringPrintf("Could not decode value length data at idx %d",
+                   cur_idx_));
+  }
+
+  // Chop the current key to the length that is shared with the next
+  // key, then append the delta portion.
+  DCHECK_LE(shared, cur_val_.size())
+    << "Specified longer shared amount than previous key length";
+  cur_val_.resize(shared);
+  STLAppendToString(&cur_val_, val_delta, non_shared);
+
+  DCHECK_EQ(cur_val_.size(), shared + non_shared);
+
+  cur_ptr_ = val_delta + non_shared;
+  cur_idx_++;
+  return Status::OK();
+}
 
 } // namespace cfile
 } // namespace kudu
+

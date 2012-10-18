@@ -4,12 +4,14 @@
 #define KUDU_CFILE_BLOCK_ENCODINGS_H
 
 #include <boost/noncopyable.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <stdint.h>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "util/memory/arena.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -91,8 +93,6 @@ private:
 
 // Encoding for data blocks of strings.
 // This encodes in a manner similar to LevelDB (prefix coding)
-//
-// TODO: this is not yet used or tested.
 class StringBlockBuilder : public BlockBuilder {
 public:
   explicit StringBlockBuilder(const WriterOptions *options);
@@ -151,7 +151,7 @@ public:
   // TODO: Since we know the actual file position, maybe we
   // should just take the actual ordinal in the file
   // instead of the position in the block?
-  virtual void SeekToPositionInBlock(int pos) = 0;
+  virtual void SeekToPositionInBlock(uint pos) = 0;
 
   // Fetch the next set of values from the block into 'out'
   // The output vector must have space for up to 'n' values
@@ -197,7 +197,7 @@ public:
     SeekToPositionInBlock(0);
   }
 
-  void SeekToPositionInBlock(int pos);
+  void SeekToPositionInBlock(uint pos);
 
   int GetNextValues(int n, void *out);
 
@@ -241,6 +241,60 @@ private:
   std::vector<uint32_t> pending_;
 };
 
+
+// Decoder for STRING type, PREFIX encoding
+class StringBlockDecoder : public BlockDecoder {
+public:
+  explicit StringBlockDecoder(const Slice &slice);
+
+  virtual Status ParseHeader();
+  virtual void SeekToPositionInBlock(uint pos);
+  virtual int GetNextValues(int n, void *out);
+
+  virtual bool HasNext() const {
+    DCHECK(parsed_);
+    return cur_idx_ < num_elems_ - 1;
+  }
+
+  virtual size_t Count() const {
+    DCHECK(parsed_);
+    return num_elems_;
+  }
+
+  virtual uint32_t ordinal_pos() const {
+    DCHECK(parsed_);
+    return ordinal_pos_base_ + cur_idx_;
+  }
+
+private:
+  Status SkipForward(int n);
+  Status ParseNextValue();
+  const char *DecodeEntryLengths(const char *ptr,
+                           uint32_t *shared,
+                           uint32_t *non_shared) const;
+
+
+  void SeekToStart();
+
+  Slice data_;
+
+  bool parsed_;
+
+  uint32_t num_elems_;
+  uint32_t ordinal_pos_base_;
+
+  uint32_t num_restarts_;
+  const uint32_t *restarts_;
+
+  const char *data_start_;
+
+  uint32_t cur_idx_;
+  const char *cur_ptr_;
+  string cur_val_;
+
+  // Arena used for output storage for GetNextValues().
+  Arena out_arena_;
+};
 
 } // namespace cfile
 } // namespace kudu
