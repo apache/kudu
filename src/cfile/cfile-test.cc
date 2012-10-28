@@ -263,7 +263,7 @@ static void TimeReadFile(const string &path) {
       int count = 0;
       while (iter->HasNext()) {
         int n;
-        ASSERT_STATUS_OK(iter->GetNextValues(8192, &v[0], &n));
+        ASSERT_STATUS_OK_FAST(iter->GetNextValues(8192, &v[0], &n));
         for (int i = 0; i < n; i++) {
           sum += v[i];
         }
@@ -297,14 +297,20 @@ static void TimeReadFile(const string &path) {
 
 
 TEST(TestCFile, TestWrite100MFileInts) {
+  LOG(INFO) << "Starting writefile";
   WriteTestFile("/tmp/cfile-Test100M", 100000000);
+  LOG(INFO) << "Done writing";
+
   LOG(INFO) << "Starting readfile";
   TimeReadFile("/tmp/cfile-Test100M");
   LOG(INFO) << "End readfile";
 }
 
 TEST(TestCFile, TestWrite100MFileStrings) {
+  LOG(INFO) << "Starting writefile";
   WriteTestFileStrings("/tmp/cfile-Test100M-Strings", 100000000);
+  LOG(INFO) << "Done writing";
+
   LOG(INFO) << "Starting readfile";
   TimeReadFile("/tmp/cfile-Test100M-Strings");
   LOG(INFO) << "End readfile";
