@@ -17,6 +17,19 @@
 
 namespace kudu { namespace cfile {
 
+Status SearchInReader(const IndexBlockReader<uint32_t > &reader,
+                      uint32_t search_key,
+                      BlockPointer *ptr,
+                      uint32_t *match) {
+  scoped_ptr<IndexBlockIterator<uint32_t> > iter(reader.NewIterator());
+
+  RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
+
+  *ptr = iter->GetCurrentBlockPointer();
+  *match = iter->GetCurrentKey();
+  return Status::OK();
+}
+
 // Test IndexBlockBuilder and IndexReader with integers
 TEST(TestIndexBuilder, TestIndexWithInts) {
 
@@ -49,11 +62,11 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
   // Search for a value prior to first entry
   BlockPointer ptr;
   uint32_t match;
-  Status status = reader.Search(0, &ptr, &match);
+  Status status = SearchInReader(reader, 0, &ptr, &match);
   EXPECT_TRUE(status.IsNotFound());
 
   // Search for a value equal to first entry
-  status = reader.Search(10, &ptr, &match);
+  status = SearchInReader(reader, 10, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
@@ -61,7 +74,7 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Search for a value between 1st and 2nd entries.
   // Should return 1st.
-  status = reader.Search(15, &ptr, &match);
+  status = SearchInReader(reader, 15, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
@@ -69,7 +82,7 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Search for a value equal to 2nd
   // Should return 2nd.
-  status = reader.Search(20, &ptr, &match);
+  status = SearchInReader(reader, 20, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
@@ -77,35 +90,35 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Between 2nd and 3rd.
   // Should return 2nd
-  status = reader.Search(25, &ptr, &match);
+  status = SearchInReader(reader, 25, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
   EXPECT_EQ(20, (int)match);
 
   // Equal 3rd
-  status = reader.Search(30, &ptr, &match);
+  status = SearchInReader(reader, 30, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
   EXPECT_EQ(30, (int)match);
 
   // Between 3rd and 4th
-  status = reader.Search(35, &ptr, &match);
+  status = SearchInReader(reader, 35, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
   EXPECT_EQ(30, (int)match);
 
   // Equal 4th (last)
-  status = reader.Search(40, &ptr, &match);
+  status = SearchInReader(reader, 40, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());
   EXPECT_EQ(40, (int)match);
 
   // Greater than 4th (last)
-  status = reader.Search(45, &ptr, &match);
+  status = SearchInReader(reader, 45, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, (int)ptr.offset());
   EXPECT_EQ(64 * 1024, (int)ptr.size());

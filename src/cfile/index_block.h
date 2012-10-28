@@ -238,21 +238,7 @@ public:
     return trailer_.num_entries();
   }
 
-  // TODO: kill this function eventually, since people
-  // should use iterators
-  Status Search(const KeyType &search_key,
-                BlockPointer *ptr,
-                KeyType *match) {
-    scoped_ptr<IndexBlockIterator<KeyType> > iter(NewIterator());
-
-    RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
-
-    *ptr = iter->GetCurrentBlockPointer();
-    *match = iter->GetCurrentKey();
-    return Status::OK();
-  }
-
-  IndexBlockIterator<KeyType> *NewIterator() {
+  IndexBlockIterator<KeyType> *NewIterator() const {
     CHECK(parsed_) << "not parsed";
     return new IndexBlockIterator<KeyType>(this);
   }
