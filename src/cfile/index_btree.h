@@ -19,21 +19,25 @@ using boost::ptr_vector;
 
 class CFileReader;
 
-template <class KeyType>
-class IndexTreeBuilder : boost::noncopyable {
+
+class IndexTreeBuilder {
 public:
-  typedef IndexBlockBuilder<KeyType> BlockBuilder;
-
-
-  explicit IndexTreeBuilder(const WriterOptions *options,
-                            Writer *writer) :
+  explicit IndexTreeBuilder(
+    const WriterOptions *options,
+    DataType type,
+    Writer *writer) :
     options_(options),
-    writer_(writer) {
+    writer_(writer),
+    type_info_(GetTypeInfo(type)) {
 
-    idx_blocks_.push_back(new BlockBuilder(options, true));
+    idx_blocks_.push_back(CreateBlockBuilder(true));
   }
 
-  Status Append(const KeyType &key, const BlockPointer &block) {
+  IndexBlockBuilder *CreateBlockBuilder(bool is_leaf) {
+    return new IndexBlockBuilder(options_, is_leaf);
+  }
+
+  Status Append(const void *key, const BlockPointer &block) {
     return Append(key, block, 0);
   }
 
@@ -65,7 +69,7 @@ public:
 
 
 private:
-  Status Append(const KeyType &key, const BlockPointer &block_ptr,
+  Status Append(const void *key, const BlockPointer &block_ptr,
                 size_t level) {
     if (level >= idx_blocks_.size()) {
       // Need to create a new level
@@ -73,10 +77,10 @@ private:
         "trying to create level " << level << " but size is only "
                                   << idx_blocks_.size();
       VLOG(1) << "Creating level-" << level << " in index b-tree";
-      idx_blocks_.push_back(new BlockBuilder(options_, false));
+      idx_blocks_.push_back(CreateBlockBuilder(false));
     }
 
-    BlockBuilder &idx_block = idx_blocks_[level];
+    IndexBlockBuilder &idx_block = idx_blocks_[level];
     idx_block.Add(key, block_ptr);
 
     size_t est_size = idx_block.EstimateEncodedSize();
@@ -93,10 +97,12 @@ private:
   // propagate by inserting this block into the next higher-up
   // level index.
   Status FinishBlockAndPropagate(size_t level) {
-    BlockBuilder &idx_block = idx_blocks_[level];
+    IndexBlockBuilder &idx_block = idx_blocks_[level];
 
-    KeyType first_in_idx_block;
-    Status s = idx_block.GetFirstKey(&first_in_idx_block);
+    char space[16]; // TODO make this dynamic
+    void *first_in_idx_block = space;
+    Status s = idx_block.GetFirstKey(first_in_idx_block);
+
     if (!s.ok()) {
       LOG(ERROR) << "Unable to get first key of level-" << level
                  << " index block" << GetStackTrace();
@@ -118,7 +124,7 @@ private:
   // to the file. Return the location of the written block
   // in 'written'.
   Status FinishBlock(size_t level, BlockPointer *written) {
-    BlockBuilder &idx_block = idx_blocks_[level];
+    IndexBlockBuilder &idx_block = idx_blocks_[level];
     Slice data = idx_block.Finish();
     uint64_t inserted_off;
     Status s = writer_->AddBlock(data, &inserted_off, "idx");
@@ -140,7 +146,9 @@ private:
   const WriterOptions *options_;
   Writer *writer_;
 
-  ptr_vector<BlockBuilder> idx_blocks_;
+  const TypeInfo &type_info_;
+
+  ptr_vector<IndexBlockBuilder> idx_blocks_;
 
 };
 

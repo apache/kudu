@@ -35,14 +35,23 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Encode an index block.
   WriterOptions opts;
-  IndexBlockBuilder<uint32_t> idx(&opts, true);
+  IndexBlockBuilder idx(&opts, true);
 
   const int EXPECTED_NUM_ENTRIES = 4;
 
-  idx.Add(10, BlockPointer(90010, 64*1024));
-  idx.Add(20, BlockPointer(90020, 64*1024));
-  idx.Add(30, BlockPointer(90030, 64*1024));
-  idx.Add(40, BlockPointer(90040, 64*1024));
+  uint32_t i;
+
+  i = 10;
+  idx.Add(&i, BlockPointer(90010, 64*1024));
+
+  i = 20;
+  idx.Add(&i, BlockPointer(90020, 64*1024));
+
+  i = 30;
+  idx.Add(&i, BlockPointer(90030, 64*1024));
+
+  i = 40;
+  idx.Add(&i, BlockPointer(90040, 64*1024));
 
   size_t est_size = idx.EstimateEncodedSize();
   Slice s = idx.Finish();
@@ -130,10 +139,11 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 TEST(TestIndexBlock, TestIterator) {
   // Encode an index block with 1000 entries.
   WriterOptions opts;
-  IndexBlockBuilder<uint32_t> idx(&opts, true);
+  IndexBlockBuilder idx(&opts, true);
 
   for (int i = 0; i < 1000; i++) {
-    idx.Add(i * 10, BlockPointer(100000 + i, 64 * 1024));
+    uint32_t key = i * 10;
+    idx.Add(&key, BlockPointer(100000 + i, 64 * 1024));
   }
   Slice s = idx.Finish();
 

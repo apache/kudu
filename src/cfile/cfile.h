@@ -34,8 +34,7 @@ class BlockPointer;
 class BTreeInfoPB;
 class IntBlockBuilder;
 class StringBlockBuilder;
-
-template <class KeyType> class IndexTreeBuilder;
+class IndexTreeBuilder;
 
 // Magic used in header/footer
 extern const string kMagicString;
@@ -80,7 +79,6 @@ public:
   ~Writer();
 
 private:
-  template <class K>
   friend class IndexTreeBuilder;
 
   // Append the given block into the file. Returns
@@ -111,7 +109,7 @@ private:
   EncodingType encoding_type_;
 
   scoped_ptr<BlockBuilder> value_block_;
-  scoped_ptr<IndexTreeBuilder<uint32_t> > posidx_builder_;
+  scoped_ptr<IndexTreeBuilder> posidx_builder_;
 
   enum State {
     kWriterInitialized,

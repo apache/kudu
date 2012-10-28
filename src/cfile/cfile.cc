@@ -72,7 +72,9 @@ Status Writer::Start() {
   off_ += buf.size();
 
   // TODO: should do this in ctor?
-  posidx_builder_.reset(new IndexTreeBuilder<uint32_t>(&options_, this));
+  posidx_builder_.reset(new IndexTreeBuilder(&options_,
+                                             UINT32,
+                                             this));
   
   BlockBuilder *bb;
   RETURN_NOT_OK( CreateBlockBuilder(&bb) );
@@ -192,7 +194,7 @@ Status Writer::FinishCurValueBlock() {
   BlockPointer ptr(inserted_off, data.size());
 
   // Now add to the index blocks
-  s = posidx_builder_->Append(first_elem_ord, ptr);
+  s = posidx_builder_->Append(&first_elem_ord, ptr);
   value_block_->Reset();
 
   return s;

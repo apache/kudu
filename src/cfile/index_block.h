@@ -6,9 +6,10 @@
 #include "block_pointer.h"
 #include "util/coding.h"
 
+#include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/foreach.hpp>
 #include <boost/utility.hpp>
+#include <glog/logging.h>
 #include <string>
 #include <vector>
 
@@ -17,28 +18,18 @@ namespace cfile {
 
 using std::string;
 using std::vector;
-
+using boost::scoped_ptr;
 
 // Forward decl.
 template <class KeyType> class IndexBlockIterator;
 
-
-// KeyEncoding template specializations determine
-// how to encode/decode various types into index
-// blocks.
-template <class KeyType>
-class KeyEncoding {};
+class WriterOptions;
 
 
-// uint32_t specialization simply uses varint32s
-template <>
-class KeyEncoding<uint32_t> {
+class KeyEncoding {
 public:
-
   // Append the encoded value onto the buffer.
-  void Encode(const uint32_t i, string *buf) const {
-    PutVarint32(buf, i);
-  }
+  virtual void Encode(const void *key, string *buf) const = 0;
 
   // Compare an encoded key against 'cmp_against'.
   // The encoded key is a direct pointer into the index block
@@ -49,8 +40,29 @@ public:
   //          stretch. This is not in any way a _tight_ bound.
   //          That is to say, it may be far into the next key
   //          or even to the end of the entire block data.
+  virtual int Compare(
+    const char *encoded_ptr, const char *limit,
+    const void *cmp_against) const = 0;
+
+  virtual const char *Decode(const char *encoded_ptr, const char *limit,
+                             void *ret) const = 0;
+
+  virtual const char *SkipKey(const char *encoded_ptr, const char *limit) const = 0;
+
+  virtual ~KeyEncoding() {};
+};
+
+
+class UInt32KeyEncoding : public KeyEncoding {
+public:
+  void Encode(const void *key, string *buf) const {
+    PutVarint32(buf, Deref(key));
+  }
+
   int Compare(const char *encoded_ptr, const char *limit,
-              const uint32_t cmp_against) const {
+              const void *cmp_against_ptr) const {
+    uint32_t cmp_against = Deref(cmp_against_ptr);
+
     uint32_t result;
     GetVarint32Ptr(encoded_ptr, limit, &result);
 
@@ -64,13 +76,19 @@ public:
   }
 
   const char *Decode(const char *encoded_ptr, const char *limit,
-              uint32_t *ret) const {
+              void *retptr) const {
+    uint32_t *ret = reinterpret_cast<uint32_t *>(retptr);
     return GetVarint32Ptr(encoded_ptr, limit, ret);
   }
 
   const char *SkipKey(const char *encoded_ptr, const char *limit) const {
     uint32_t unused;
     return Decode(encoded_ptr, limit, &unused);
+  }
+
+private:
+  const uint32_t Deref(const void *p) const {
+    return *reinterpret_cast<const uint32_t *>(p);
   }
 };
 
@@ -79,94 +97,32 @@ public:
 // This works like the rest of the builders in the cfile package.
 // After repeatedly calling Add(), call Finish() to encode it
 // into a Slice, then you may Reset to re-use buffers.
-template <class KeyType>
 class IndexBlockBuilder : boost::noncopyable {
 public:
   explicit IndexBlockBuilder(const WriterOptions *options,
-                             bool is_leaf) :
-    options_(options),
-    finished_(false),
-    is_leaf_(is_leaf)
-  {
-  }
+                             bool is_leaf);
 
   // Append an entry into the index.
-  void Add(const KeyType &key,
-           const BlockPointer &ptr) {
-    DCHECK(!finished_) <<
-      "Must Reset() after Finish() before more Add()";
-
-    size_t entry_offset = buffer_.size();
-    encoding_.Encode(key, &buffer_);
-    ptr.EncodeTo(&buffer_);
-    entry_offsets_.push_back(entry_offset);
-  }
+  void Add(const void *key, const BlockPointer &ptr);
 
   // Finish the current index block.
   // Returns a fully encoded Slice including the data
   // as well as any necessary footer.
   // The Slice is only valid until the next call to
   // Reset().
-  Slice Finish() {
-    CHECK(!finished_) << "already called Finish()";
-
-    BOOST_FOREACH(uint32_t off, entry_offsets_) {
-      PutFixed32(&buffer_, off);
-    }
-
-    IndexBlockTrailerPB trailer;
-    trailer.set_num_entries(entry_offsets_.size());
-    trailer.set_type(
-      is_leaf_ ? IndexBlockTrailerPB::LEAF : IndexBlockTrailerPB::INTERNAL);
-    trailer.AppendToString(&buffer_);
-
-    PutFixed32(&buffer_, trailer.GetCachedSize());
-
-    finished_ = true;
-    return Slice(buffer_);
-  }
+  Slice Finish();
 
   // Return the key of the first entry in this index block.
-  Status GetFirstKey(KeyType *key) const {
-    if (entry_offsets_.empty()) {
-      return Status::NotFound("no keys in builder");
-    }
-
-    bool success = NULL != encoding_.Decode(
-      buffer_.c_str(),
-      buffer_.c_str() + buffer_.size(),
-      key);
-    if (success) {
-      return Status::OK();
-    } else {
-      return Status::Corruption("Unable to decode first key");
-    }
-  }
+  Status GetFirstKey(void *key) const;
 
   // Return an estimate of the post-encoding size of this
   // index block. This estimate should be conservative --
   // it will over-estimate rather than under-estimate, and
   // should be accurate to within a reasonable threshold,
   // but is not exact.
-  size_t EstimateEncodedSize() const {
-    // the actual encoded index entries
-    int size = buffer_.size();
+  size_t EstimateEncodedSize() const;
 
-    // entry offsets
-    size += sizeof(uint32_t) * entry_offsets_.size();
-
-    // estimate trailer cheaply -- not worth actually constructing
-    // a trailer to determine the size.
-    size += 16;
-
-    return size;
-  }
-
-  void Reset() {
-    buffer_.clear();
-    entry_offsets_.clear();
-    finished_ = false;
-  }
+  void Reset();
 
 private:
   const WriterOptions *options_;
@@ -177,7 +133,7 @@ private:
   // Is this a leaf block?
   bool is_leaf_;
 
-  KeyEncoding<KeyType> encoding_;
+  scoped_ptr<KeyEncoding> encoding_;
 
   string buffer_;
   vector<uint32_t> entry_offsets_;
@@ -253,7 +209,7 @@ private:
   int CompareKey(int idx_in_block, const KeyType &search_key) const {
     const char *key_ptr, *limit;
     GetKeyPointer(idx_in_block, &key_ptr, &limit);
-    return encoding_.Compare(key_ptr, limit, search_key);
+    return encoding_.Compare(key_ptr, limit, &search_key);
   }
 
   Status ReadEntry(size_t idx, KeyType *key, BlockPointer *block_ptr) const {
@@ -301,7 +257,7 @@ private:
     }
   }
 
-  KeyEncoding<KeyType> encoding_;
+  UInt32KeyEncoding encoding_;
 
   static const int kMaxTrailerSize = 64*1024;
   const Slice data_;
