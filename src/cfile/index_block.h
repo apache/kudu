@@ -265,10 +265,9 @@ private:
   friend class IndexBlockIterator<KeyType>;
 
   int CompareKey(int idx_in_block, const KeyType &search_key) const {
-    const char *key_ptr = GetKeyPointer(idx_in_block);
-    return encoding_.Compare(key_ptr,
-                             key_ptr + 16, // conservative limit
-                             search_key);
+    const char *key_ptr, *limit;
+    GetKeyPointer(idx_in_block, &key_ptr, &limit);
+    return encoding_.Compare(key_ptr, limit, search_key);
   }
 
   Status ReadEntry(size_t idx, KeyType *key, BlockPointer *block_ptr) const {
@@ -279,9 +278,10 @@ private:
     // At 'ptr', data is encoded as follows:
     // <key> <block offset> <block length>
 
-    const char *ptr = GetKeyPointer(idx);
-    ptr = encoding_.Decode(ptr, data_.data() + data_.size(),
-                                 key);
+    const char *ptr, *limit;
+    GetKeyPointer(idx, &ptr, &limit);
+
+    ptr = encoding_.Decode(ptr, limit, key);
     if (ptr == NULL) {
       return Status::Corruption("Invalid key in index");
     }
@@ -289,10 +289,30 @@ private:
     return block_ptr->DecodeFrom(ptr, data_.data() + data_.size());
   }
 
-  const char *GetKeyPointer(int idx_in_block) const {
+  // Set *ptr to the beginning of the index data for the given index
+  // entry.
+  // Set *limit to the 'limit' pointer for that entry (i.e a pointer
+  // beyond which the data no longer is part of that entry).
+  //   - *limit can be used to prevent overrunning in the case of a
+  //     corrupted length varint or length prefix
+  void GetKeyPointer(int idx_in_block, const char **ptr, const char **limit) const {
     size_t offset_in_block = DecodeFixed32(
       &key_offsets_[idx_in_block * sizeof(uint32_t)]);
-    return data_.data() + offset_in_block;
+    *ptr = data_.data() + offset_in_block;
+
+    int next_idx = idx_in_block + 1;
+
+    if (PREDICT_FALSE(next_idx >= Count())) {
+      DCHECK(next_idx == Count()) << "Bad index: " << idx_in_block
+                                  << " Count: " << Count();
+      // last key in block: limit is the beginning of the offsets array
+      *limit = key_offsets_;
+    } else {
+      // otherwise limit is the beginning of the next key
+      offset_in_block = DecodeFixed32(
+        &key_offsets_[next_idx * sizeof(uint32_t)]);
+      *limit = data_.data() + offset_in_block;
+    }
   }
 
   KeyEncoding<KeyType> encoding_;
