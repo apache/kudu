@@ -78,7 +78,6 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
     get_filename_component(FIL_WE ${FIL} NAME_WE)
     get_filename_component(FIL_PT ${FIL} PATH)
 
-    message("PT: ${FIL_PT}")
 
     # The path has no trailing slash. This what we want
     # if it's an empty path. Otherwise add it.
