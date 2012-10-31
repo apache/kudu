@@ -5,6 +5,10 @@ PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
 SET(CFILE_SRCS ${CFILE_SRCS} ${CFILE_PROTO_SRCS})
 add_library(cfile ${CFILE_SRCS})
 
+# index-test
+add_executable(index-test index-test.cc)
+TARGET_LINK_LIBRARIES(index-test cfile ${KUDU_TEST_LINK_LIBS})
+
 # cfile-test
 add_executable(cfile-test cfile-test.cc)
 TARGET_LINK_LIBRARIES(cfile-test cfile ${KUDU_TEST_LINK_LIBS})
