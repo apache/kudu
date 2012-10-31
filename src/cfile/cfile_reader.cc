@@ -215,7 +215,7 @@ static Status SearchDownward(const CFileReader *reader,
 CFileIterator::CFileIterator(const CFileReader *reader,
                              const BlockPointer &posidx_root) :
   reader_(reader),
-  idx_iter_(new IndexTreeIterator<uint32_t>(reader, posidx_root)),
+  idx_iter_(IndexTreeIterator::Create(reader, posidx_root)),
   seeked_(false)
 {
 }
@@ -223,7 +223,7 @@ CFileIterator::CFileIterator(const CFileReader *reader,
 Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
   seeked_ = false;
 
-  RETURN_NOT_OK(idx_iter_->SeekAtOrBefore(ord_idx));
+  RETURN_NOT_OK(idx_iter_->SeekAtOrBefore(&ord_idx));
 
   // TODO: fast seek within block (without reseeking index)
   ReadCurrentDataBlock();

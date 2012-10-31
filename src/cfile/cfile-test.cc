@@ -26,7 +26,7 @@ Status SearchInReader(const IndexBlockReader<uint32_t > &reader,
   RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
 
   *ptr = iter->GetCurrentBlockPointer();
-  *match = iter->GetCurrentKey();
+  *match = *reinterpret_cast<const uint32_t *>(iter->GetCurrentKey());
   return Status::OK();
 }
 
@@ -136,6 +136,10 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
   idx.Reset();
 }
 
+static uint32_t GetUInt32Key(const scoped_ptr<IndexBlockIterator<uint32_t> > &iter) {
+  return *reinterpret_cast<const uint32_t*>(iter->GetCurrentKey());
+}
+
 TEST(TestIndexBlock, TestIterator) {
   // Encode an index block with 1000 entries.
   WriterOptions opts;
@@ -152,26 +156,26 @@ TEST(TestIndexBlock, TestIterator) {
   scoped_ptr<IndexBlockIterator<uint32_t> > iter(
     reader.NewIterator());
   iter->SeekToIndex(0);
-  ASSERT_EQ(0U, iter->GetCurrentKey());
+  ASSERT_EQ(0U, GetUInt32Key(iter));
   ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
 
   iter->SeekToIndex(50);
-  ASSERT_EQ(500U, iter->GetCurrentKey());
+  ASSERT_EQ(500U, GetUInt32Key(iter));
   ASSERT_EQ(100050U, iter->GetCurrentBlockPointer().offset());
 
   ASSERT_TRUE(iter->HasNext());
   ASSERT_STATUS_OK(iter->Next());
-  ASSERT_EQ(510U, iter->GetCurrentKey());
+  ASSERT_EQ(510U, GetUInt32Key(iter));
   ASSERT_EQ(100051U, iter->GetCurrentBlockPointer().offset());
 
   iter->SeekToIndex(999);
-  ASSERT_EQ(9990U, iter->GetCurrentKey());
+  ASSERT_EQ(9990U,GetUInt32Key(iter));
   ASSERT_EQ(100999U, iter->GetCurrentBlockPointer().offset());
   ASSERT_FALSE(iter->HasNext());
   ASSERT_TRUE(iter->Next().IsNotFound());
 
   iter->SeekToIndex(0);
-  ASSERT_EQ(0U, iter->GetCurrentKey());
+  ASSERT_EQ(0U, GetUInt32Key(iter));
   ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
   ASSERT_TRUE(iter->HasNext());
 }

@@ -20,7 +20,7 @@ namespace cfile {
 
 class CFileHeaderPB;
 class CFileFooterPB;
-template <class Key> class IndexTreeIterator;
+class IndexTreeIterator;
 
 using std::string;
 using boost::shared_array;
@@ -144,7 +144,7 @@ private:
 
   const CFileReader *reader_;
 
-  scoped_ptr<IndexTreeIterator<uint32_t> > idx_iter_;
+  scoped_ptr<IndexTreeIterator> idx_iter_;
 
   bool seeked_;
 

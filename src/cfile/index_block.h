@@ -336,9 +336,9 @@ public:
     return cur_ptr_;
   }
 
-  const KeyType &GetCurrentKey() const {
+  const void *GetCurrentKey() const {
     CHECK(seeked_) << "not seeked";
-    return cur_key_;
+    return &cur_key_;
   }
 
 private:
