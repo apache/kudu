@@ -13,6 +13,7 @@
 #include "util/coding.h"
 #include "util/coding-inl.h"
 #include "util/faststring.h"
+#include "util/hexdump.h"
 #include "util/memory/arena.h"
 
 #include "block_encodings.h"
@@ -401,6 +402,10 @@ void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
   DoGetNextValues(pos, &null);
 }
 
+Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
+  return Status::NotSupported("TODO: int key search");
+}
+
 int IntBlockDecoder::GetNextValues(int n, void *out) {
   PtrSink<uint32_t> sink(reinterpret_cast<uint32_t *>(out));
   return DoGetNextValues(n, &sink);
@@ -478,7 +483,7 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
   restarts_(NULL),
   data_start_(0),
   cur_idx_(0),
-  cur_ptr_(NULL),
+  next_ptr_(NULL),
   out_arena_(slice.size(), 16*1024*1024)
 {
 }
@@ -524,19 +529,14 @@ Status StringBlockDecoder::ParseHeader() {
 }
 
 void StringBlockDecoder::SeekToStart() {
-  cur_idx_ = 0;
-  cur_ptr_ = data_start_;
+  SeekToRestartPoint(0);
 }
 
 void StringBlockDecoder::SeekToPositionInBlock(uint pos) {
   DCHECK_LT(pos, num_elems_);
 
-  int target_restart = pos/restart_interval_ - 1;
-  if (target_restart < 0) {
-    SeekToStart();
-  } else {
-    SeekToRestartPoint(target_restart);
-  }
+  int target_restart = pos/restart_interval_;
+  SeekToRestartPoint(target_restart);
 
   // Seek forward to the right index
 
@@ -545,16 +545,76 @@ void StringBlockDecoder::SeekToPositionInBlock(uint pos) {
   DCHECK_EQ(cur_idx_, pos);
 }
 
-uint32_t StringBlockDecoder::GetRestartPoint(uint32_t idx) {
-  DCHECK_LT(idx, num_restarts_);
-  return restarts_[idx];
+// Get the pointer to the entry corresponding to the given restart
+// point. Note that the restart points in the file do not include
+// the '0' restart point, since that is simply the beginning of
+// the data and hence a waste of space. So, 'idx' may range from
+// 0 (first record) through num_restarts_ (last recorded restart point)
+const char * StringBlockDecoder::GetRestartPoint(uint32_t idx) const {
+  DCHECK_LE(idx, num_restarts_);
+
+  if (PREDICT_TRUE(idx > 0)) {
+    return data_.data() + restarts_[idx - 1];
+  } else {
+    return data_start_;
+  }
 }
 
+// Note: see GetRestartPoint() for 'idx' semantics
 void StringBlockDecoder::SeekToRestartPoint(uint32_t idx) {
-  DCHECK_LT(idx, num_restarts_);
+  next_ptr_ = GetRestartPoint(idx);
+  cur_idx_ = idx * restart_interval_;
+  ParseNextValue();
+}
 
-  cur_idx_ = (idx + 1) * restart_interval_;
-  cur_ptr_ = data_.data() + restarts_[idx];
+Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
+  DCHECK_NOTNULL(value_void);
+
+  const Slice &target = *reinterpret_cast<const Slice *>(value_void);
+
+  // Binary search in restart array to find the first restart point
+  // with a key >= target
+  int32_t left = 0;
+  int32_t right = num_restarts_;
+  while (left < right) {
+    uint32_t mid = (left + right + 1) / 2;
+    const char *entry = GetRestartPoint(mid);
+    uint32_t shared, non_shared, value_length;
+    const char *key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
+    if (key_ptr == NULL || (shared != 0)) {
+      string err =
+        StringPrintf( "bad entry restart=%d shared=%d\n", mid, shared) +
+        HexDump(Slice(entry, 16));
+      return Status::Corruption(err);
+    }
+    Slice mid_key(key_ptr, non_shared);
+    if (mid_key.compare(target) < 0) {
+      // Key at "mid" is smaller than "target".  Therefore all
+      // blocks before "mid" are uninteresting.
+      left = mid;
+    } else {
+      // Key at "mid" is >= "target".  Therefore all blocks at or
+      // after "mid" are uninteresting.
+      right = mid - 1;
+    }
+  }
+
+  // Linear search (within restart block) for first key >= target
+  SeekToRestartPoint(left);
+
+  while (true) {
+#ifndef NDEBUG
+    VLOG(3) << "loop iter:\n"
+            << "cur_idx = " << cur_idx_ << "\n"
+            << "target  =" << target.ToString() << "\n"
+            << "cur_val_=" << Slice(cur_val_).ToString();
+#endif
+    if (Slice(cur_val_).compare(target) >= 0) {
+      return Status::OK();
+    }
+    RETURN_NOT_OK(ParseNextValue());
+    cur_idx_++;
+  }
 }
 
 int StringBlockDecoder::GetNextValues(int n, void *out_void) {
@@ -564,11 +624,6 @@ int StringBlockDecoder::GetNextValues(int n, void *out_void) {
 
   int i = 0;
   for (i = 0; i < n && cur_idx_ < num_elems_; i++) {
-    // TODO: Can ParseNextValue take a pointer to the previously
-    // parsed value, to avoid having to double-copy?
-    // TODO: wish GetNextValues returned Status
-    CHECK_OK(ParseNextValue());
-
     // Copy the value into the output arena.
     const char *out_data = out_arena_.AddStringPieceContent(
       StringPiece(cur_val_.data(), cur_val_.size()));
@@ -577,6 +632,18 @@ int StringBlockDecoder::GetNextValues(int n, void *out_void) {
 
     // Put a slice to it in the output array
     *out++ = Slice(out_data, cur_val_.size());
+
+    if (cur_idx_ + 1 < num_elems_) {
+      // TODO: Can ParseNextValue take a pointer to the previously
+      // parsed value, to avoid having to double-copy?
+      // TODO: wish GetNextValues returned Status
+      CHECK_OK(ParseNextValue());
+    } else {
+      // end of block -- postcondition: next_ptr_ NULL
+      // since there are no further entries
+      next_ptr_ = NULL;
+    }
+    cur_idx_++;
   }
 
   return i;
@@ -602,15 +669,24 @@ Status StringBlockDecoder::SkipForward(int n) {
   // Probably a faster way to implement this using restarts,
   for (int i = 0; i < n; i++) {
     RETURN_NOT_OK(ParseNextValue());
+    cur_idx_++;
   }
   return Status::OK();
 }
 
+// Parses the data pointed to by next_ptr_ and stores it in cur_val_
+// Advances next_ptr_ to point to the following values.
+// Does not modify cur_idx_
 Status StringBlockDecoder::ParseNextValue() {
-  DCHECK(cur_ptr_ != NULL);
+  DCHECK(next_ptr_ != NULL);
+
+  if (next_ptr_ == reinterpret_cast<const char *>(restarts_)) {
+    DCHECK_EQ(cur_idx_, num_elems_ - 1);
+    return Status::NotFound("Trying to parse past end of array");
+  }
 
   uint32_t shared, non_shared;
-  const char *val_delta = DecodeEntryLengths(cur_ptr_, &shared, &non_shared);
+  const char *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
   if (val_delta == NULL) {
     return Status::Corruption(
       StringPrintf("Could not decode value length data at idx %d",
@@ -627,8 +703,7 @@ Status StringBlockDecoder::ParseNextValue() {
 
   DCHECK_EQ(cur_val_.size(), shared + non_shared);
 
-  cur_ptr_ = val_delta + non_shared;
-  cur_idx_++;
+  next_ptr_ = val_delta + non_shared;
   return Status::OK();
 }
 

@@ -191,6 +191,17 @@ public:
   // instead of the position in the block?
   virtual void SeekToPositionInBlock(uint pos) = 0;
 
+  // Seek the decoder to the given value in the block, or the
+  // lowest value which is greater than the given value.
+  //
+  // If the given value is less than the lowest value in the block,
+  // seeks to the start of the block. If it is higher than the highest
+  // value in the block, then returns Status::NotFound
+  //
+  // This will only return valid results when the data block
+  // consists of values in sorted order.
+  virtual Status SeekAtOrAfterValue(const void *value) = 0;
+
   // Fetch the next set of values from the block into 'out'
   // The output vector must have space for up to 'n' values
   // of this block decoder's type.
@@ -236,6 +247,8 @@ public:
   }
 
   void SeekToPositionInBlock(uint pos);
+
+  Status SeekAtOrAfterValue(const void *value);
 
   int GetNextValues(int n, void *out);
 
@@ -283,6 +296,7 @@ public:
 
   virtual Status ParseHeader();
   virtual void SeekToPositionInBlock(uint pos);
+  virtual Status SeekAtOrAfterValue(const void *value);
   virtual int GetNextValues(int n, void *out);
 
   virtual bool HasNext() const {
@@ -307,7 +321,7 @@ private:
                            uint32_t *shared,
                            uint32_t *non_shared) const;
 
-  uint32_t GetRestartPoint(uint32_t idx);
+  const char * GetRestartPoint(uint32_t idx) const;
   void SeekToRestartPoint(uint32_t idx);
 
   void SeekToStart();
@@ -325,9 +339,12 @@ private:
 
   const char *data_start_;
 
+  // Pointers and data to be returned by the next call to
+  // GetNextValues().
+  // These are advanced by ParseNextValue()
   uint32_t cur_idx_;
-  const char *cur_ptr_;
   faststring cur_val_;
+  const char *next_ptr_;
 
   // Arena used for output storage for GetNextValues().
   Arena out_arena_;

@@ -115,7 +115,7 @@ static void TimeReadFile(const string &path) {
   ASSERT_STATUS_OK(reader.Init());
 
   CFileIterator *iter_ptr;
-  ASSERT_STATUS_OK( reader.NewIteratorByPos(&iter_ptr) );
+  ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
   scoped_ptr<CFileIterator> iter(iter_ptr);
   iter->SeekToOrdinal(0);
 
@@ -200,7 +200,7 @@ TEST(TestCFile, TestReadWriteInts) {
   BlockPointer ptr;
 
   CFileIterator *iter_ptr;
-  ASSERT_STATUS_OK( reader.NewIteratorByPos(&iter_ptr) );
+  ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
   scoped_ptr<CFileIterator> iter(iter_ptr);
 
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
@@ -242,7 +242,7 @@ TEST(TestCFile, TestReadWriteStrings) {
   BlockPointer ptr;
 
   CFileIterator *iter_ptr;
-  ASSERT_STATUS_OK( reader.NewIteratorByPos(&iter_ptr) );
+  ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
   scoped_ptr<CFileIterator> iter(iter_ptr);
 
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
@@ -259,6 +259,19 @@ TEST(TestCFile, TestReadWriteStrings) {
 
   // Seek to after last key. Should result in not found.
   ASSERT_TRUE(iter->SeekToOrdinal(10000).IsNotFound());
+
+
+  ////////
+  // Now try some seeks by the value instead of position
+  /////////
+  s = "hello 5000.5";
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
+  ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
+  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  ASSERT_EQ(1, n);
+  ASSERT_EQ(string("hello 5001"), s.ToString());
+
+
 
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));

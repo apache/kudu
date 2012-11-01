@@ -158,34 +158,162 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   }
 }
 
-TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
-  WriterOptions opts;
+// Insert a given number of strings into the provided
+// StringBlockBuilder.
+static Slice CreateStringBlock(StringBlockBuilder *sbb,
+                               int num_items,
+                               const char *fmt_str) {
   boost::ptr_vector<string> to_insert;
   std::vector<Slice> slices;
 
-  const uint kCount = 10;
-
-  // Prepare 10K items (storage and associated slices)
-  for (uint i = 0; i < kCount; i++) {
-    string *val = new string(StringPrintf("hello %d", i));
+  for (uint i = 0; i < num_items; i++) {
+    string *val = new string(StringPrintf(fmt_str, i));
     to_insert.push_back(val);
     slices.push_back(Slice(*val));
   }
 
-  // Push into a block builder
-  StringBlockBuilder sbb(&opts);
 
   int rem = slices.size();
   Slice *ptr = &slices[0];
   while (rem > 0) {
-    int added = sbb.Add(reinterpret_cast<void *>(ptr), rem);
+    int added = sbb->Add(reinterpret_cast<void *>(ptr), rem);
     CHECK(added > 0);
     rem -= added;
     ptr += added;
   }
 
-  ASSERT_EQ(slices.size(), sbb.Count());
-  Slice s = sbb.Finish(12345L);
+  CHECK_EQ(slices.size(), sbb->Count());
+  return sbb->Finish(12345L);
+}
+
+// Test seeking to a value in a small block.
+// Regression test for a bug seen in development where this would
+// infinite loop when there are no 'restarts' in a given block.
+TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
+  WriterOptions opts;
+  StringBlockBuilder sbb(&opts);
+  // Insert "hello 0" through "hello 9"
+  const uint kCount = 10;
+  Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+  StringBlockDecoder sbd(s);
+  ASSERT_STATUS_OK(sbd.ParseHeader());
+
+  // Seeking to just after a key should return the
+  // next key ('hello 4x' falls between 'hello 4' and 'hello 5')
+  Slice q = "hello 4x";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+
+  Slice ret;
+  ASSERT_EQ(12345 + 5u, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 5"), ret.ToString());
+
+  sbd.SeekToPositionInBlock(0);
+
+  // Seeking to an exact key should return that key
+  q = "hello 4";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_EQ(12345 + 4u, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 4"), ret.ToString());
+
+  // Seeking to before the first key should return first key
+  q = "hello";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_EQ(12345, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 0"), ret.ToString());
+
+  // Seeking after the last key should return not found
+  q = "zzzz";
+  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q).IsNotFound());
+
+  // Seeking to the last key should succeed
+  q = "hello 9";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_EQ(12345 + 9u, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 9"), ret.ToString());
+}
+
+
+// Test seeking to a value in a large block which contains
+// many 'restarts'
+TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
+  WriterOptions opts;
+  StringBlockBuilder sbb(&opts);
+  const uint kCount = 1000;
+  // Insert 'hello 000' through 'hello 999'
+  Slice s = CreateStringBlock(&sbb, kCount, "hello %03d");
+  StringBlockDecoder sbd(s);
+  ASSERT_STATUS_OK(sbd.ParseHeader());
+
+  // Seeking to just after a key should return the
+  // next key ('hello 444x' falls between 'hello 444' and 'hello 445')
+  Slice q = "hello 444x";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+
+  Slice ret;
+  ASSERT_EQ(12345 + 445u, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 445"), ret.ToString());
+
+  sbd.SeekToPositionInBlock(0);
+
+  // Seeking to an exact key should return that key
+  q = "hello 004";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  EXPECT_EQ(12345 + 4u, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 004"), ret.ToString());
+
+  // Seeking to before the first key should return first key
+  q = "hello";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  EXPECT_EQ(12345, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 000"), ret.ToString());
+
+  // Seeking after the last key should return not found
+  q = "zzzz";
+  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q).IsNotFound());
+
+  // Seeking to the last key should succeed
+  q = "hello 999";
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  EXPECT_EQ(12345 + 999u, sbd.ordinal_pos());
+  ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+  ASSERT_EQ(string("hello 999"), ret.ToString());
+
+  // Randomized seek
+  char target[20];
+  char before_target[20];
+  for (int i = 0; i < 1000; i++) {
+    int ord = random() % kCount;
+    int len = snprintf(target, sizeof(target), "hello %03d", ord);
+    q = Slice(target, len);
+
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+    EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
+    ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+    ASSERT_EQ(string(target), ret.ToString());
+
+    // Seek before this key
+    len = snprintf(before_target, sizeof(target), "hello %03d.before", ord-1);
+    q = Slice(before_target, len);
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+    EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
+    ASSERT_EQ(1, sbd.GetNextValues(1, &ret));
+    ASSERT_EQ(string(target), ret.ToString());
+  }
+}
+
+
+TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
+  WriterOptions opts;
+  StringBlockBuilder sbb(&opts);
+  const uint kCount = 10;
+  Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
 
   // the slice should take at least a few bytes per entry
   ASSERT_GT(s.size(), kCount * 2u);

@@ -78,7 +78,7 @@ public:
 
   Status Init();
 
-  Status NewIteratorByPos(CFileIterator **iter) const;
+  Status NewIterator(CFileIterator **iter) const;
 
   Status ReadBlock(const BlockPointer &ptr,
                    BlockData *ret) const;
@@ -125,10 +125,26 @@ private:
 class CFileIterator : boost::noncopyable {
 public:
   CFileIterator(const CFileReader *reader,
-                const BlockPointer &posidx_root);
+                const BlockPointer &posidx_root,
+                const BlockPointer *validx_root);
 
-  //TODO: add docs for these functions
+  // Seek to the given ordinal entry in the file.
+  // Entry 0 is the first entry written to the file.
+  // If provided seek point is past the end of the file,
+  // then returns a NotFound Status.
+  // TODO: do we ever want to be able to seek to the end of the file?
   Status SeekToOrdinal(uint32_t ord_idx);
+
+  // Seek to the given key, or to the entry directly following
+  // it. If the largest key in the file is still less than
+  // the given key, then returns a NotFound Status.
+  //
+  // If this iterator was constructed without no value index,
+  // then this will return a NotSupported status.
+  Status SeekAtOrAfter(const void *key);
+
+  // Get the ordinal index that the iterator is currently
+  // pointed to.
   uint32_t GetCurrentOrdinal() const;
 
   Status GetNextValues(int n, void *out, int *fetched);
@@ -140,13 +156,14 @@ private:
   //
   // If this returns an error, then the fields
   // have undefined values.
-  Status ReadCurrentDataBlock();
+  Status ReadCurrentDataBlock(const IndexTreeIterator &idx_iter);
 
   const CFileReader *reader_;
 
-  scoped_ptr<IndexTreeIterator> idx_iter_;
+  scoped_ptr<IndexTreeIterator> posidx_iter_;
+  scoped_ptr<IndexTreeIterator> validx_iter_;
 
-  bool seeked_;
+  IndexTreeIterator *seeked_;
 
   BlockData dblk_data_;
   scoped_ptr<BlockDecoder> dblk_;

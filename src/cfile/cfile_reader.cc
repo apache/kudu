@@ -177,9 +177,16 @@ Status CFileReader::CreateBlockDecoder(
   return Status::OK();
 }
 
-Status CFileReader::NewIteratorByPos(CFileIterator **iter) const {
+Status CFileReader::NewIterator(CFileIterator **iter) const {
   BlockPointer posidx_root(footer_->posidx_info().root_block());
-  *iter = new CFileIterator(this, posidx_root);
+
+  // If there is a value index in the file, pass it to the iterator
+  scoped_ptr<BlockPointer> validx_root;
+  if (footer_->has_validx_info()) {
+    validx_root.reset(new BlockPointer(footer_->validx_info().root_block()));
+  }
+
+  *iter = new CFileIterator(this, posidx_root, validx_root.get());
   return Status::OK();
 }
 
@@ -215,20 +222,25 @@ static Status SearchDownward(
 // Iterator
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(const CFileReader *reader,
-                             const BlockPointer &posidx_root) :
+                             const BlockPointer &posidx_root,
+                             const BlockPointer *validx_root) :
   reader_(reader),
-  idx_iter_(IndexTreeIterator::Create(reader, UINT32, posidx_root)),
+  posidx_iter_(IndexTreeIterator::Create(reader, UINT32, posidx_root)),
   seeked_(false)
 {
+  if (validx_root != NULL) {
+    validx_iter_.reset(IndexTreeIterator::Create(
+                         reader, reader->type_info()->type(), *validx_root));
+  }
 }
 
 Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
-  seeked_ = false;
+  seeked_ = NULL;
 
-  RETURN_NOT_OK(idx_iter_->SeekAtOrBefore(&ord_idx));
+  RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(&ord_idx));
 
   // TODO: fast seek within block (without reseeking index)
-  ReadCurrentDataBlock();
+  RETURN_NOT_OK(ReadCurrentDataBlock(*posidx_iter_));
 
   // If the data block doesn't actually contain the data
   // we're looking for, then we're probably in the last
@@ -251,7 +263,23 @@ Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
     "failed seek, aimed for " << ord_idx << " got to " <<
     dblk_->ordinal_pos();
 
-  seeked_ = true;
+  seeked_ = posidx_iter_.get();
+  return Status::OK();
+}
+
+Status CFileIterator::SeekAtOrAfter(const void *key) {
+  seeked_ = NULL;
+
+  if (PREDICT_FALSE(validx_iter_ == NULL)) {
+    return Status::NotSupported("no value index present");
+  }
+
+  RETURN_NOT_OK(validx_iter_->SeekAtOrBefore(key));
+  RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_));
+
+  dblk_->SeekAtOrAfterValue(key);
+
+  seeked_ = validx_iter_.get();
   return Status::OK();
 }
 
@@ -261,8 +289,8 @@ uint32_t CFileIterator::GetCurrentOrdinal() const {
   return dblk_->ordinal_pos();
 }
 
-Status CFileIterator::ReadCurrentDataBlock() {
-  BlockPointer dblk_ptr = idx_iter_->GetCurrentBlockPointer();
+Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter) {
+  BlockPointer dblk_ptr = idx_iter.GetCurrentBlockPointer();
   RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data_));
 
   BlockDecoder *bd;
@@ -276,7 +304,7 @@ Status CFileIterator::ReadCurrentDataBlock() {
 bool CFileIterator::HasNext() {
   CHECK(seeked_) << "not seeked";
 
-  return dblk_->HasNext() || idx_iter_->HasNext();
+  return dblk_->HasNext() || posidx_iter_->HasNext();
 }
 
 Status CFileIterator::GetNextValues(
@@ -307,7 +335,7 @@ Status CFileIterator::GetNextValues(
     }
 
     // Pull in next datablock.
-    Status s = idx_iter_->Next();
+    Status s = seeked_->Next();
 
     if (s.IsNotFound()) {
       // No next datablock
@@ -324,7 +352,7 @@ Status CFileIterator::GetNextValues(
     }
 
     // Fill in the data for the next block.
-    RETURN_NOT_OK(ReadCurrentDataBlock());
+    RETURN_NOT_OK(ReadCurrentDataBlock(*seeked_));
   }
 
   return Status::OK();
