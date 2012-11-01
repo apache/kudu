@@ -223,7 +223,7 @@ Status Writer::FinishCurValueBlock() {
 }
 
 Status Writer::AddBlock(const Slice &data, uint64_t *offset_out,
-                        const string &name_for_log) {
+                        const char *name_for_log) {
   *offset_out = off_;
   Status s = file_->Append(data);
   if (s.ok()) {

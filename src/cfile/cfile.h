@@ -85,7 +85,7 @@ private:
   // Append the given block into the file. Returns
   // the offset in the file at which it was stored
   Status AddBlock(const Slice &data, uint64_t *offset_out,
-                  const string &name_for_log);
+                  const char *name_for_log);
 
 
   // TODO: inconsistent "value block" vs "data block"
