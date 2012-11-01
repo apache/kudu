@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 
+#include "util/coding-inl.h"
 #include "util/coding.h"
 #include "util/status.h"
 #include "cfile.pb.h"
@@ -35,9 +36,10 @@ public:
     return string(tmp);
   }
 
-  void EncodeTo(string *s) const {
+  template<class StrType>
+  void EncodeTo(StrType *s) const {
     PutVarint64(s, offset_);
-    PutVarint32(s, size_);
+    InlinePutVarint32(s, size_);
   }
 
   Status DecodeFrom(const char *data, const char *limit) {

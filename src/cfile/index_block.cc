@@ -2,6 +2,7 @@
 #include "index_block.h"
 #include "boost/foreach.hpp"
 #include "cfile.h"
+#include "util/protobuf_util.h"
 
 namespace kudu {
 namespace cfile {
@@ -49,16 +50,16 @@ Slice IndexBlockBuilder::Finish() {
   CHECK(!finished_) << "already called Finish()";
 
   BOOST_FOREACH(uint32_t off, entry_offsets_) {
-    PutFixed32(&buffer_, off);
+    InlinePutFixed32(&buffer_, off);
   }
 
   IndexBlockTrailerPB trailer;
   trailer.set_num_entries(entry_offsets_.size());
   trailer.set_type(
     is_leaf_ ? IndexBlockTrailerPB::LEAF : IndexBlockTrailerPB::INTERNAL);
-  trailer.AppendToString(&buffer_);
+  AppendPBToString(trailer, &buffer_);
 
-  PutFixed32(&buffer_, trailer.GetCachedSize());
+  InlinePutFixed32(&buffer_, trailer.GetCachedSize());
 
   finished_ = true;
   return Slice(buffer_);
@@ -75,8 +76,8 @@ Status IndexBlockBuilder::GetFirstKey(void *key) const {
   }
 
   bool success = NULL != encoding_->Decode(
-    buffer_.c_str(),
-    buffer_.c_str() + buffer_.size(),
+    buffer_.data(),
+    buffer_.data() + buffer_.size(),
     key);
   if (success) {
     return Status::OK();

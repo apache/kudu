@@ -4,7 +4,7 @@
 #define KUDU_CFILE_INDEX_BLOCK_H
 
 #include "block_pointer.h"
-#include "util/coding.h"
+#include "util/coding-inl.h"
 #include "types.h"
 
 #include <boost/scoped_ptr.hpp>
@@ -30,7 +30,7 @@ class WriterOptions;
 class KeyEncoding {
 public:
   // Append the encoded value onto the buffer.
-  virtual void Encode(const void *key, string *buf) const = 0;
+  virtual void Encode(const void *key, faststring *buf) const = 0;
 
   // Compare an encoded key against 'cmp_against'.
   // The encoded key is a direct pointer into the index block
@@ -58,8 +58,8 @@ public:
 
 class UInt32KeyEncoding : public KeyEncoding {
 public:
-  void Encode(const void *key, string *buf) const {
-    PutVarint32(buf, Deref(key));
+  void Encode(const void *key, faststring *buf) const {
+    InlinePutVarint32(buf, Deref(key));
   }
 
   int Compare(const char *encoded_ptr, const char *limit,
@@ -97,9 +97,9 @@ private:
 
 class StringKeyEncoding : public KeyEncoding {
 public:
-  void Encode(const void *key, string *buf) const {
+  void Encode(const void *key, faststring *buf) const {
     const Slice *s = reinterpret_cast<const Slice *>(key);
-    PutVarint32(buf, s->size());
+    InlinePutVarint32(buf, s->size());
     buf->append(s->data(), s->size());
   }
 
@@ -214,7 +214,7 @@ private:
 
   scoped_ptr<KeyEncoding> encoding_;
 
-  string buffer_;
+  faststring buffer_;
   vector<uint32_t> entry_offsets_;
 };
 

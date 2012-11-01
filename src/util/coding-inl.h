@@ -9,6 +9,9 @@
 #ifndef KUDU_UTIL_CODING_INL_H
 #define KUDU_UTIL_CODING_INL_H
 
+#include <stdint.h>
+#include <string.h>
+
 namespace kudu {
 
 inline char* InlineEncodeVarint32(char* dst, uint32_t v) {
