@@ -11,6 +11,7 @@
 #include "gutil/stringprintf.h"
 #include "gutil/stl_util.h"
 #include "util/coding.h"
+#include "util/coding-inl.h"
 #include "util/faststring.h"
 #include "util/memory/arena.h"
 
@@ -190,8 +191,7 @@ StringBlockBuilder::StringBlockBuilder(const WriterOptions *options) :
   finished_(false),
   options_(options)
 {
-  // TODO: move below to method
-  STLStringResizeUninitialized(&buffer_, kHeaderReservedLength);
+  Reset();
 }
 
 void StringBlockBuilder::Reset() {
@@ -213,8 +213,8 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
   char header_space[kHeaderReservedLength];
   char *header_end = header_space;
 
-  header_end = EncodeVarint32(header_end, val_count_);
-  header_end = EncodeVarint32(header_end, ordinal_pos);
+  header_end = InlineEncodeVarint32(header_end, val_count_);
+  header_end = InlineEncodeVarint32(header_end, ordinal_pos);
 
   int header_encoded_len = header_end - header_space;
 
@@ -223,7 +223,7 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
   // reserved for it, need to find where it fits:
   int header_offset = kHeaderReservedLength - header_encoded_len;
   DCHECK_GE(header_offset, 0);
-  char *header_dst = string_as_array(&buffer_) + header_offset;
+  char *header_dst = buffer_.data() + header_offset;
   strings::memcpy_inlined(header_dst, header_space, header_encoded_len);
 
   // Serialize the restart points.
@@ -237,9 +237,9 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
     DCHECK_GE((int)restart, header_offset);
     uint32_t relative_to_block = restart - header_offset;
     VLOG(2) << "appending restart " << relative_to_block;
-    PutFixed32(&buffer_, relative_to_block);
+    InlinePutFixed32(&buffer_, relative_to_block);
   }
-  PutFixed32(&buffer_, restarts_.size());
+  InlinePutFixed32(&buffer_, restarts_.size());
 
   finished_ = true;
   return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
@@ -268,16 +268,16 @@ int StringBlockBuilder::Add(const void *vals_void, int count) {
   const size_t non_shared = val.size() - shared;
 
   // Add "<shared><non_shared>" to buffer_
-  PutVarint32(&buffer_, shared);
-  PutVarint32(&buffer_, non_shared);
+  InlinePutVarint32(&buffer_, shared);
+  InlinePutVarint32(&buffer_, non_shared);
 
   // Add string delta to buffer_
-  STLAppendToString(&buffer_, val.data() + shared, non_shared);
+  buffer_.append(val.data() + shared, non_shared);
 
   // Update state
-  STLStringResizeUninitialized(&last_val_, shared);
-  STLAppendToString(&last_val_, val.data() + shared, non_shared);
-  assert(Slice(last_val_) == val);
+  last_val_.resize(shared);
+  last_val_.append(val.data() + shared, non_shared);
+  DCHECK(Slice(last_val_) == val);
   vals_since_restart_++;
   val_count_++;
 

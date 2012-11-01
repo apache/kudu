@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <string>
+#include "faststring.h"
 
 namespace kudu {
 
@@ -35,6 +36,10 @@ class Slice {
 
   // Create a slice that refers to s[0,strlen(s)-1]
   Slice(const char* s) : data_(s), size_(strlen(s)) { }
+
+  // Create a slice that refers to the contents of the faststring.
+  // Note that further appends to the faststring may invalidate this slice.
+  Slice(const faststring &s) : data_(s.data()), size_(s.size()) { }
 
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }

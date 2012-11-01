@@ -3,78 +3,14 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "util/coding.h"
+#include "util/coding-inl.h"
 
 namespace kudu {
 
-void EncodeFixed32(char* buf, uint32_t value) {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-  memcpy(buf, &value, sizeof(value));
-#else
-  buf[0] = value & 0xff;
-  buf[1] = (value >> 8) & 0xff;
-  buf[2] = (value >> 16) & 0xff;
-  buf[3] = (value >> 24) & 0xff;
-#endif
-}
-
-void EncodeFixed64(char* buf, uint64_t value) {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-  memcpy(buf, &value, sizeof(value));
-#else
-  buf[0] = value & 0xff;
-  buf[1] = (value >> 8) & 0xff;
-  buf[2] = (value >> 16) & 0xff;
-  buf[3] = (value >> 24) & 0xff;
-  buf[4] = (value >> 32) & 0xff;
-  buf[5] = (value >> 40) & 0xff;
-  buf[6] = (value >> 48) & 0xff;
-  buf[7] = (value >> 56) & 0xff;
-#endif
-}
-
-void PutFixed32(std::string* dst, uint32_t value) {
-  char buf[sizeof(value)];
-  EncodeFixed32(buf, value);
-  dst->append(buf, sizeof(buf));
-}
-
-void PutFixed64(std::string* dst, uint64_t value) {
-  char buf[sizeof(value)];
-  EncodeFixed64(buf, value);
-  dst->append(buf, sizeof(buf));
-}
-
-char* EncodeVarint32(char* dst, uint32_t v) {
-  // Operate on characters as unsigneds
-  unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
-  static const int B = 128;
-  if (v < (1<<7)) {
-    *(ptr++) = v;
-  } else if (v < (1<<14)) {
-    *(ptr++) = v | B;
-    *(ptr++) = v>>7;
-  } else if (v < (1<<21)) {
-    *(ptr++) = v | B;
-    *(ptr++) = (v>>7) | B;
-    *(ptr++) = v>>14;
-  } else if (v < (1<<28)) {
-    *(ptr++) = v | B;
-    *(ptr++) = (v>>7) | B;
-    *(ptr++) = (v>>14) | B;
-    *(ptr++) = v>>21;
-  } else {
-    *(ptr++) = v | B;
-    *(ptr++) = (v>>7) | B;
-    *(ptr++) = (v>>14) | B;
-    *(ptr++) = (v>>21) | B;
-    *(ptr++) = v>>28;
-  }
-  return reinterpret_cast<char*>(ptr);
-}
 
 void PutVarint32(std::string* dst, uint32_t v) {
   char buf[5];
-  char* ptr = EncodeVarint32(buf, v);
+  char* ptr = InlineEncodeVarint32(buf, v);
   dst->append(buf, ptr - buf);
 }
 
@@ -87,6 +23,14 @@ char* EncodeVarint64(char* dst, uint64_t v) {
   }
   *(ptr++) = static_cast<unsigned char>(v);
   return reinterpret_cast<char*>(ptr);
+}
+
+void PutFixed32(std::string* dst, uint32_t value) {
+  InlinePutFixed32(dst, value);
+}
+
+void PutFixed64(std::string* dst, uint64_t value) {
+  InlinePutFixed64(dst, value);
 }
 
 void PutVarint64(std::string* dst, uint64_t v) {

@@ -144,8 +144,8 @@ public:
   Status GetFirstKey(void *key) const;
 
 private:
-  string buffer_;
-  string last_val_;
+  faststring buffer_;
+  faststring last_val_;
 
   // Restart points, offsets relative to start of block
   vector<uint32_t> restarts_;
