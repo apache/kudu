@@ -184,16 +184,18 @@ Status CFileReader::NewIteratorByPos(CFileIterator **iter) const {
 }
 
 
-template <typename KeyType>
-static Status SearchDownward(const CFileReader *reader,
-                             const KeyType &search_key,
-                             const BlockPointer &in_block,
-                             BlockPointer *ret,
-                             KeyType *ret_key) {
+template <DataType KeyTypeEnum>
+static Status SearchDownward(
+  const CFileReader *reader,
+  const typename TypeTraits<KeyTypeEnum>::cpp_type &search_key,
+  const BlockPointer &in_block,
+  BlockPointer *ret,
+  typename TypeTraits<KeyTypeEnum>::cpp_type *ret_key)
+{
   BlockData data;
   RETURN_NOT_OK( reader->ReadBlock(in_block, &data) );
 
-  IndexBlockReader<KeyType> idx_reader(data.slice());
+  IndexBlockReader<KeyTypeEnum> idx_reader(data.slice());
   RETURN_NOT_OK(idx_reader.Parse());
 
   BlockPointer result;
@@ -215,7 +217,7 @@ static Status SearchDownward(const CFileReader *reader,
 CFileIterator::CFileIterator(const CFileReader *reader,
                              const BlockPointer &posidx_root) :
   reader_(reader),
-  idx_iter_(IndexTreeIterator::Create(reader, posidx_root)),
+  idx_iter_(IndexTreeIterator::Create(reader, UINT32, posidx_root)),
   seeked_(false)
 {
 }

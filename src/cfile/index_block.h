@@ -5,6 +5,7 @@
 
 #include "block_pointer.h"
 #include "util/coding.h"
+#include "types.h"
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
@@ -21,7 +22,7 @@ using std::vector;
 using boost::scoped_ptr;
 
 // Forward decl.
-template <class KeyType> class IndexBlockIterator;
+template <DataType KeyTypeEnum> class IndexBlockIterator;
 
 class WriterOptions;
 
@@ -50,6 +51,8 @@ public:
   virtual const char *SkipKey(const char *encoded_ptr, const char *limit) const = 0;
 
   virtual ~KeyEncoding() {};
+
+  static KeyEncoding *Create(DataType type);
 };
 
 
@@ -64,7 +67,7 @@ public:
     uint32_t cmp_against = Deref(cmp_against_ptr);
 
     uint32_t result;
-    GetVarint32Ptr(encoded_ptr, limit, &result);
+    CHECK_NOTNULL(GetVarint32Ptr(encoded_ptr, limit, &result));
 
     if (result < cmp_against) {
       return -1;
@@ -92,6 +95,77 @@ private:
   }
 };
 
+class StringKeyEncoding : public KeyEncoding {
+public:
+  void Encode(const void *key, string *buf) const {
+    const Slice *s = reinterpret_cast<const Slice *>(key);
+    PutVarint32(buf, s->size());
+    buf->append(s->data(), s->size());
+  }
+
+  // Decode the string from the index into retptr, which must
+  // point to a Slice object.
+  //
+  // NOTE: This function does not copy any data. The slice which
+  // is returned points into some section of encoded_ptr,
+  // and thus is only valid as long as that data is.
+  const char *Decode(const char *encoded_ptr, const char *limit,
+              void *retptr) const {
+    Slice *ret = reinterpret_cast<Slice *>(retptr);
+
+    uint32_t len;
+    const char *data_start = GetVarint32Ptr(encoded_ptr, limit, &len);
+    if (data_start == NULL) {
+      // bad varint
+      return NULL;
+    }
+
+    if (data_start + len > limit) {
+      // length extends past end of valid area
+      return NULL;
+    }
+
+    *ret = Slice(data_start, len);
+    return data_start + len;
+  }
+
+
+  int Compare(const char *encoded_ptr, const char *limit,
+              const void *cmp_against_ptr) const {
+    DCHECK_NOTNULL(cmp_against_ptr);
+    DCHECK_NOTNULL(encoded_ptr);
+
+    const Slice *cmp_against = reinterpret_cast<const Slice *>(cmp_against_ptr);
+
+    Slice this_slice;
+    CHECK_NOTNULL(Decode(encoded_ptr, limit, &this_slice));
+
+    return this_slice.compare(*cmp_against);
+  }
+
+
+  const char *SkipKey(const char *encoded_ptr, const char *limit) const {
+    Slice unused;
+    return Decode(encoded_ptr, limit, &unused);
+  }
+};
+
+
+// Template to statically select the correct implementation
+// of the key encoding
+template<DataType Type>
+struct KeyEncodingResolver {};
+
+template<>
+struct KeyEncodingResolver<UINT32> {
+  typedef UInt32KeyEncoding Encoding;
+};
+
+template<>
+struct KeyEncodingResolver<STRING> {
+  typedef StringKeyEncoding Encoding;
+};
+
 
 // Index Block Builder for a particular key type.
 // This works like the rest of the builders in the cfile package.
@@ -100,6 +174,7 @@ private:
 class IndexBlockBuilder : boost::noncopyable {
 public:
   explicit IndexBlockBuilder(const WriterOptions *options,
+                             DataType data_type,
                              bool is_leaf);
 
   // Append an entry into the index.
@@ -140,9 +215,11 @@ private:
 };
 
 
-template <class KeyType>
+template <DataType KeyTypeEnum>
 class IndexBlockReader : boost::noncopyable {
 public:
+  typedef DataTypeTraits<KeyTypeEnum> KeyTypeTraits;
+  typedef typename KeyTypeTraits::cpp_type KeyType;
 
   // Construct a reader for the given index block data.
   // Note: this does not copy the data, so the slice must
@@ -194,9 +271,9 @@ public:
     return trailer_.num_entries();
   }
 
-  IndexBlockIterator<KeyType> *NewIterator() const {
+  IndexBlockIterator<KeyTypeEnum> *NewIterator() const {
     CHECK(parsed_) << "not parsed";
-    return new IndexBlockIterator<KeyType>(this);
+    return new IndexBlockIterator<KeyTypeEnum>(this);
   }
 
   bool IsLeaf() {
@@ -204,7 +281,7 @@ public:
   }
 
 private:
-  friend class IndexBlockIterator<KeyType>;
+  friend class IndexBlockIterator<KeyTypeEnum>;
 
   int CompareKey(int idx_in_block, const KeyType &search_key) const {
     const char *key_ptr, *limit;
@@ -257,7 +334,7 @@ private:
     }
   }
 
-  UInt32KeyEncoding encoding_;
+  typename KeyEncodingResolver<KeyTypeEnum>::Encoding encoding_;
 
   static const int kMaxTrailerSize = 64*1024;
   const Slice data_;
@@ -267,10 +344,13 @@ private:
   bool parsed_;
 };
 
-template <class KeyType>
+template <DataType KeyTypeEnum>
 class IndexBlockIterator : boost::noncopyable {
 public:
-  explicit IndexBlockIterator(const IndexBlockReader<KeyType> *reader) :
+  typedef DataTypeTraits<KeyTypeEnum> KeyTypeTraits;
+  typedef typename KeyTypeTraits::cpp_type KeyType;
+
+  explicit IndexBlockIterator(const IndexBlockReader<KeyTypeEnum> *reader) :
     reader_(reader),
     cur_idx_(-1),
     seeked_(false)
@@ -336,13 +416,13 @@ public:
     return cur_ptr_;
   }
 
-  const void *GetCurrentKey() const {
+  const KeyType *GetCurrentKey() const {
     CHECK(seeked_) << "not seeked";
     return &cur_key_;
   }
 
 private:
-  const IndexBlockReader<KeyType> *reader_;
+  const IndexBlockReader<KeyTypeEnum> *reader_;
   size_t cur_idx_;
   KeyType cur_key_;
   BlockPointer cur_ptr_;

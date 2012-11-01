@@ -20,7 +20,7 @@ IndexTreeBuilder::IndexTreeBuilder(
 
 
 IndexBlockBuilder *IndexTreeBuilder::CreateBlockBuilder(bool is_leaf) {
-  return new IndexBlockBuilder(options_, is_leaf);
+  return new IndexBlockBuilder(options_, type_info_.type(), is_leaf);
 }
 
 Status IndexTreeBuilder::Append(const void *key,
@@ -127,9 +127,12 @@ Status IndexTreeBuilder::FinishBlock(size_t level, BlockPointer *written) {
 
 ////////////////////////////////////////////////////////////
 
-template <class KeyType>
+template <DataType KeyTypeEnum>
 class TemplatizedIndexTreeIterator : public IndexTreeIterator {
 public:
+  typedef DataTypeTraits<KeyTypeEnum> KeyTypeTraits;
+  typedef typename KeyTypeTraits::cpp_type KeyType;
+
   explicit TemplatizedIndexTreeIterator(
     const CFileReader *reader,
     const BlockPointer &root_blockptr)
@@ -199,11 +202,11 @@ public:
   }
 
 private:
-  IndexBlockIterator<KeyType> *BottomIter() const {
+  IndexBlockIterator<KeyTypeEnum> *BottomIter() const {
     return seeked_indexes_.back().iter.get();
   }
 
-  IndexBlockReader<KeyType> *BottomReader() const {
+  IndexBlockReader<KeyTypeEnum> *BottomReader() const {
     return seeked_indexes_.back().reader.get();
   }
   
@@ -212,11 +215,11 @@ private:
     RETURN_NOT_OK(reader_->ReadBlock(block, &data));
 
     // Parse it and open iterator.
-    IndexBlockReader<KeyType> *ibr;
-    IndexBlockIterator<KeyType> *iter;
+    IndexBlockReader<KeyTypeEnum> *ibr;
+    IndexBlockIterator<KeyTypeEnum> *iter;
     {
-      std::auto_ptr<IndexBlockReader<KeyType> > ibr_auto(
-        new IndexBlockReader<KeyType>(data.slice()));
+      std::auto_ptr<IndexBlockReader<KeyTypeEnum> > ibr_auto(
+        new IndexBlockReader<KeyTypeEnum>(data.slice()));
       RETURN_NOT_OK(ibr_auto->Parse());
 
       iter = ibr_auto->NewIterator();
@@ -254,8 +257,8 @@ private:
 
   struct SeekedIndex {
     SeekedIndex(const BlockData &data_,
-                IndexBlockReader<KeyType> *reader_,
-                IndexBlockIterator<KeyType> *iter_) :
+                IndexBlockReader<KeyTypeEnum> *reader_,
+                IndexBlockIterator<KeyTypeEnum> *iter_) :
       data(data_),
       reader(reader_),
       iter(iter_) {}
@@ -264,8 +267,8 @@ private:
     // otherwise go out of scope. The reader and iter
     // do not themselves retain the data.
     BlockData data;
-    scoped_ptr<IndexBlockReader<KeyType> > reader;
-    scoped_ptr<IndexBlockIterator<KeyType> > iter;
+    scoped_ptr<IndexBlockReader<KeyTypeEnum> > reader;
+    scoped_ptr<IndexBlockIterator<KeyTypeEnum> > iter;
   };
 
 
@@ -273,15 +276,24 @@ private:
 
   BlockPointer root_block_;
 
+
   ptr_vector<SeekedIndex> seeked_indexes_;
 };
 
 
 IndexTreeIterator *IndexTreeIterator::Create(
     const CFileReader *reader,
+    DataType type,
     const BlockPointer &root_blockptr) {
-  // TODO: take type info here
-  return new TemplatizedIndexTreeIterator<uint32_t>(reader, root_blockptr);
+  switch (type) {
+    case UINT32:
+      return new TemplatizedIndexTreeIterator<UINT32>(reader, root_blockptr);
+    case STRING:
+      return new TemplatizedIndexTreeIterator<STRING>(reader, root_blockptr);
+    default:
+      CHECK(0) << "invalid type: " << type;
+      break;
+  }
 }
 
 

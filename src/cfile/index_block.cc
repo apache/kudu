@@ -6,15 +6,31 @@
 namespace kudu {
 namespace cfile {
 
+KeyEncoding *KeyEncoding::Create(DataType data_type) {
+  switch (data_type) {
+    case UINT32:
+      return new UInt32KeyEncoding();
+      break;
+    case STRING:
+      return new StringKeyEncoding();
+      break;
+    default:
+      // TODO: change this to be factory method
+      // so we can return a Status instead of barfing?
+      CHECK(0) << "Bad data type: " << data_type;
+      return NULL;
+  }
+}
+
 IndexBlockBuilder::IndexBlockBuilder(
-  const WriterOptions *options, bool is_leaf)
+  const WriterOptions *options,
+  DataType data_type,
+  bool is_leaf)
   : options_(options),
     finished_(false),
-    is_leaf_(is_leaf)
+    is_leaf_(is_leaf),
+    encoding_(KeyEncoding::Create(data_type))
 {
-
-  // TODO: instantiate the right encoding based on type
-  encoding_.reset(new UInt32KeyEncoding());
 }
 
 
