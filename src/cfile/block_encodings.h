@@ -32,10 +32,38 @@ public:
   // TODO: add a more type-checkable wrapper for void *,
   // like ConstVariantPointer in Supersonic
   virtual int Add(const void *vals, int count) = 0;
+
+  // Return a Slice which represents the encoded data.
+  //
+  // This Slice points to internal data of this class
+  // and becomes invalid after the builder is destroyed
+  // or after Finish() is called again.
   virtual Slice Finish(uint32_t ordinal_pos) = 0;
+
+  // Reset the internal state of the encoder.
+  //
+  // Any data previously returned by Finish or by GetFirstKey
+  // may be invalidated by this call.
+  //
+  // Postcondition: Count() == 0
   virtual void Reset() = 0;
+
+  // Return an estimate of the number of bytes that this block
+  // will require once encoded. This is not necessarily
+  // an upper or lower bound.
   virtual uint64_t EstimateEncodedSize() const = 0;
+
+  // Return the number of entries that have been added to the
+  // block.
   virtual size_t Count() const = 0;
+
+  // Return the key of the first entry in this index block.
+  // For pointer-based types (such as strings), the pointed-to
+  // data is only valid until the next call to Reset().
+  //
+  // If no keys have been added, returns Status::NotFound
+  virtual Status GetFirstKey(void *key) const = 0;
+
   virtual ~BlockBuilder() {}
 };
 
@@ -56,19 +84,17 @@ public:
 
   int Add(const void *vals, int count);
 
-  // Return a Slice which represents the encoded data.
-  //
-  // This Slice points to internal data of this class
-  // and becomes invalid after the builder is destroyed
-  // or after Finish() is called again.
   Slice Finish(uint32_t ordinal_pos);
 
   void Reset();
 
-  // Return an estimate of the number
   uint64_t EstimateEncodedSize() const;
 
   size_t Count() const;
+
+  // Return the first added key.
+  // key should be a uint32_t *
+  Status GetFirstKey(void *key) const;
 
 private:
   friend class TestEncoding;
@@ -109,10 +135,14 @@ public:
 
   void Reset();
 
-  // Return an estimate of the number
   uint64_t EstimateEncodedSize() const;
 
   size_t Count() const;
+
+  // Return the first added key.
+  // key should be a Slice *
+  Status GetFirstKey(void *key) const;
+
 private:
   string buffer_;
   string last_val_;

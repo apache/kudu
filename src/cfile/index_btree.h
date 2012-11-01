@@ -27,6 +27,9 @@ public:
     DataType type,
     Writer *writer);
 
+  // Append the given key into the index.
+  // The key is copied into the builder's internal
+  // memory.
   Status Append(const void *key, const BlockPointer &block);
   Status Finish(BTreeInfoPB *info);
 private:

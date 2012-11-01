@@ -16,6 +16,7 @@
 #include "block_encodings.h"
 #include "cfile.pb.h"
 #include "util/status.h"
+#include "types.h"
 
 namespace kudu {
 
@@ -106,10 +107,12 @@ private:
 
   // Type of data being written
   DataType datatype_;
+  const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
 
   scoped_ptr<BlockBuilder> value_block_;
   scoped_ptr<IndexTreeBuilder> posidx_builder_;
+  scoped_ptr<IndexTreeBuilder> validx_builder_;
 
   enum State {
     kWriterInitialized,

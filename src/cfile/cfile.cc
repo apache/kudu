@@ -13,6 +13,7 @@
 #include "util/env.h"
 #include "util/coding.h"
 #include "util/logging.h"
+#include "util/hexdump.h"
 
 using std::string;
 
@@ -44,6 +45,7 @@ Writer::Writer(const WriterOptions &options,
   value_count_(0),
   options_(options),
   datatype_(type),
+  typeinfo_(GetTypeInfo(type)),
   encoding_type_(encoding),
   state_(kWriterInitialized)
 {
@@ -75,7 +77,12 @@ Status Writer::Start() {
   posidx_builder_.reset(new IndexTreeBuilder(&options_,
                                              UINT32,
                                              this));
-  
+
+  // TODO: this should be optional -- only useful on key columns
+  validx_builder_.reset(new IndexTreeBuilder(&options_,
+                                             datatype_,
+                                             this));
+
   BlockBuilder *bb;
   RETURN_NOT_OK( CreateBlockBuilder(&bb) );
   value_block_.reset(bb);
@@ -128,11 +135,15 @@ Status Writer::Finish() {
   BTreeInfoPB posidx_info;
   posidx_builder_->Finish(&posidx_info);
 
+  BTreeInfoPB validx_info;
+  validx_builder_->Finish(&validx_info);
+
   // Write out the footer.
   CFileFooterPB footer;
   footer.set_data_type(datatype_);
   footer.set_encoding(encoding_type_);
   footer.mutable_posidx_info()->CopyFrom(posidx_info);
+  footer.mutable_validx_info()->CopyFrom(validx_info);
 
   string footer_str;
   if (!footer.SerializeToString(&footer_str)) {
@@ -194,7 +205,18 @@ Status Writer::FinishCurValueBlock() {
   BlockPointer ptr(inserted_off, data.size());
 
   // Now add to the index blocks
-  s = posidx_builder_->Append(&first_elem_ord, ptr);
+  RETURN_NOT_OK(posidx_builder_->Append(&first_elem_ord, ptr));
+
+  if (validx_builder_ != NULL) {
+    // Allocate a single datum on the stack.
+    char tmp[typeinfo_.size()];
+
+    RETURN_NOT_OK(value_block_->GetFirstKey(tmp));
+    VLOG(1) << "Appending validx entry\n" <<
+      kudu::HexDump(Slice(tmp, typeinfo_.size()));
+    s = validx_builder_->Append(tmp, ptr);
+  }
+
   value_block_->Reset();
 
   return s;

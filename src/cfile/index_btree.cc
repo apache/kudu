@@ -28,8 +28,9 @@ Status IndexTreeBuilder::Append(const void *key,
   return Append(key, block, 0);
 }
 
-Status IndexTreeBuilder::Append(const void *key, const BlockPointer &block_ptr,
-              size_t level) {
+Status IndexTreeBuilder::Append(
+  const void *key, const BlockPointer &block_ptr,
+  size_t level) {
   if (level >= idx_blocks_.size()) {
     // Need to create a new level
     CHECK(level == idx_blocks_.size()) <<
@@ -44,6 +45,9 @@ Status IndexTreeBuilder::Append(const void *key, const BlockPointer &block_ptr,
 
   size_t est_size = idx_block.EstimateEncodedSize();
   if (est_size > options_->block_size) {
+    DCHECK(idx_block.Count() > 1)
+      << "Index block full with only one entry - this would create "
+      << "an infinite loop";
     // This index block is full, flush it.
     BlockPointer index_block_ptr;
     RETURN_NOT_OK(FinishBlockAndPropagate(level));
@@ -82,13 +86,24 @@ Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
 Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
   IndexBlockBuilder &idx_block = idx_blocks_[level];
 
-  char space[16]; // TODO make this dynamic
+  // If the block doesn't have any data in it, we don't need to
+  // write it out.
+  // This happens if a lower-level block fills up exactly,
+  // and then the file completes.
+  //
+  // TODO: add a test case which exercises this explicitly.
+  if (idx_block.Count() == 0) {
+    return Status::OK();
+  }
+
+  char space[type_info_.size()];
   void *first_in_idx_block = space;
   Status s = idx_block.GetFirstKey(first_in_idx_block);
 
   if (!s.ok()) {
     LOG(ERROR) << "Unable to get first key of level-" << level
-               << " index block" << GetStackTrace();
+               << " index block: " << s.ToString() << std::endl
+               << GetStackTrace();
     return s;
   }
 

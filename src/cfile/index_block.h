@@ -188,7 +188,11 @@ public:
   Slice Finish();
 
   // Return the key of the first entry in this index block.
+  // For pointer-based types (such as strings), the pointed-to
+  // data is only valid until the next call to Reset().
   Status GetFirstKey(void *key) const;
+
+  size_t Count() const;
 
   // Return an estimate of the post-encoding size of this
   // index block. This estimate should be conservative --

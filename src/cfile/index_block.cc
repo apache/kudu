@@ -99,6 +99,10 @@ size_t IndexBlockBuilder::EstimateEncodedSize() const {
   return size;
 }
 
+size_t IndexBlockBuilder::Count() const {
+  return entry_offsets_.size();
+}
+
 void IndexBlockBuilder::Reset() {
   buffer_.clear();
   entry_offsets_.clear();

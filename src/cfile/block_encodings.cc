@@ -24,6 +24,22 @@ namespace cfile {
 
 using kudu::Arena;
 
+////////////////////////////////////////////////////////////
+// Utility code used by both encoding and decoding
+////////////////////////////////////////////////////////////
+
+static const char *DecodeEntryLengths(
+  const char *ptr, const char *limit,
+  uint32_t *shared, uint32_t *non_shared) {
+
+  if ((ptr = GetVarint32Ptr(ptr, limit, shared)) == NULL) return NULL;
+  if ((ptr = GetVarint32Ptr(ptr, limit, non_shared)) == NULL) return NULL;
+  if (limit - ptr < *non_shared) {
+    return NULL;
+  }
+
+  return ptr;
+}
 
 ////////////////////////////////////////////////////////////
 // Encoding
@@ -90,6 +106,15 @@ uint64_t IntBlockBuilder::EstimateEncodedSize() const {
 
 size_t IntBlockBuilder::Count() const {
   return ints_.size();
+}
+
+Status IntBlockBuilder::GetFirstKey(void *key) const {
+  if (ints_.empty()) {
+    return Status::NotFound("no keys in data block");
+  }
+
+  *reinterpret_cast<uint32_t *>(key) = ints_[0];
+  return Status::OK();
 }
 
 void IntBlockBuilder::AppendGroupVarInt32(
@@ -268,6 +293,24 @@ uint64_t StringBlockBuilder::EstimateEncodedSize() const {
   return buffer_.size();
 }
 
+Status StringBlockBuilder::GetFirstKey(void *key) const {
+  if (val_count_ == 0) {
+    return Status::NotFound("no keys in data block");
+  }
+
+  const char *p = &buffer_[kHeaderReservedLength];
+  uint32_t shared, non_shared;
+  p = DecodeEntryLengths(p, &buffer_[buffer_.size()], &shared, &non_shared);
+  if (p == NULL) {
+    return Status::Corruption("Could not decode first entry in string block");
+  }
+
+  CHECK(shared == 0) << "first entry in string block had a non-zero 'shared': "
+                     << shared;
+
+  *reinterpret_cast<Slice *>(key) = Slice(p, non_shared);
+  return Status::OK();
+}
 
 
 ////////////////////////////////////////////////////////////
@@ -533,14 +576,7 @@ const char *StringBlockDecoder::DecodeEntryLengths(
 
   // data ends where the restart info begins
   const char *limit = reinterpret_cast<const char *>(restarts_);
-
-  if ((ptr = GetVarint32Ptr(ptr, limit, shared)) == NULL) return NULL;
-  if ((ptr = GetVarint32Ptr(ptr, limit, non_shared)) == NULL) return NULL;
-  if (limit - ptr < *non_shared) {
-    return NULL;
-  }
-
-  return ptr;
+  return kudu::cfile::DecodeEntryLengths(ptr, limit, shared, non_shared);
 }
 
 Status StringBlockDecoder::SkipForward(int n) {
