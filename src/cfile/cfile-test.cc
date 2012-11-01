@@ -54,9 +54,10 @@ static void WriteTestFileStrings(
   ASSERT_STATUS_OK(w.Start());
 
   // Append given number of values to the test tree
+  char data[20];
   for (int i = 0; i < num_entries; i++) {
-    string str = StringPrintf("hello %d", i);
-    Slice slice(str);
+    int len = snprintf(data, sizeof(data), "hello %d", i);
+    Slice slice(data, len);
 
     Status s = w.AppendEntries(&slice, 1);
     // Dont use ASSERT because it accumulates all the logs
