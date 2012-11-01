@@ -26,6 +26,18 @@ using std::string;
 
 typedef uint32_t IntType;
 
+// TODO: move to coding-inl.h?
+extern const uint8_t *DecodeGroupVarInt32(
+  const uint8_t *src,
+  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
+
+extern void AppendShorterInt(faststring *s, uint32_t i, size_t bytes);
+
+extern void AppendGroupVarInt32(
+  faststring *s,
+  uint32_t a, uint32_t b, uint32_t c, uint32_t d);
+//
+
 
 class BlockBuilder : boost::noncopyable {
 public:
@@ -106,11 +118,6 @@ private:
   uint64_t estimated_raw_size_;
 
   const WriterOptions *options_;
-
-  static void AppendShorterInt(faststring *s, uint32_t i, size_t bytes);
-  static void AppendGroupVarInt32(
-    faststring *s,
-    uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 
   enum {
     kEstimatedHeaderSizeBytes = 6
@@ -248,10 +255,6 @@ public:
 private:
   friend class TestEncoding;
 
-  static const uint8_t *DecodeGroupVarInt32(
-    const uint8_t *src,
-    uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
-
   template<class IntSink>
   int DoGetNextValues(int n, IntSink *sink);
 
@@ -304,6 +307,8 @@ private:
                            uint32_t *shared,
                            uint32_t *non_shared) const;
 
+  uint32_t GetRestartPoint(uint32_t idx);
+  void SeekToRestartPoint(uint32_t idx);
 
   void SeekToStart();
 
@@ -316,6 +321,7 @@ private:
 
   uint32_t num_restarts_;
   const uint32_t *restarts_;
+  uint32_t restart_interval_;
 
   const char *data_start_;
 

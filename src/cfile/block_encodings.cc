@@ -42,20 +42,44 @@ static const char *DecodeEntryLengths(
   return ptr;
 }
 
-////////////////////////////////////////////////////////////
-// Encoding
-////////////////////////////////////////////////////////////
+// Calculate the number of bytes to encode the given unsigned int.
+static size_t CalcRequiredBytes32(uint32_t i) {
+  if (i == 0) return 1;
 
+  return sizeof(long) - __builtin_clzl(i)/8;
+}
 
-IntBlockBuilder::IntBlockBuilder(const WriterOptions *options) :
-  estimated_raw_size_(0),
-  options_(options)
-{}
+const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
 
-void IntBlockBuilder::AppendShorterInt(
-  faststring *s, uint32_t i, size_t bytes) {
+const uint8_t *DecodeGroupVarInt32(
+  const uint8_t *src,
+  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
 
-  assert(bytes > 0 && bytes <= 4);
+  uint8_t a_sel = (*src & BOOST_BINARY( 11 00 00 00)) >> 6;
+  uint8_t b_sel = (*src & BOOST_BINARY( 00 11 00 00)) >> 4;
+  uint8_t c_sel = (*src & BOOST_BINARY( 00 00 11 00)) >> 2;
+  uint8_t d_sel = (*src & BOOST_BINARY( 00 00 00 11 ));
+
+  src++; // skip past selector byte
+
+  *a = *reinterpret_cast<const uint32_t *>(src) & MASKS[a_sel];
+  src += a_sel + 1;
+
+  *b = *reinterpret_cast<const uint32_t *>(src) & MASKS[b_sel];
+  src += b_sel + 1;
+
+  *c = *reinterpret_cast<const uint32_t *>(src) & MASKS[c_sel];
+  src += c_sel + 1;
+
+  *d = *reinterpret_cast<const uint32_t *>(src) & MASKS[d_sel];
+  src += d_sel + 1;
+
+  return src;
+}
+
+void AppendShorterInt(faststring *s, uint32_t i, size_t bytes) {
+  DCHECK_GE(bytes, 0);
+  DCHECK_LE(bytes, 4);
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   // LSBs come first, so we can just reinterpret-cast
@@ -66,17 +90,46 @@ void IntBlockBuilder::AppendShorterInt(
 #endif
 }
 
+void AppendGroupVarInt32(
+  faststring *s,
+  uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+
+  uint8_t a_req = CalcRequiredBytes32(a);
+  uint8_t b_req = CalcRequiredBytes32(b);
+  uint8_t c_req = CalcRequiredBytes32(c);
+  uint8_t d_req = CalcRequiredBytes32(d);
+
+  uint8_t prefix_byte =
+    ((a_req - 1) << 6) |
+    ((b_req - 1) << 4) |
+    ((c_req - 1) << 2) |
+    (d_req - 1);
+
+  s->push_back(prefix_byte);
+  AppendShorterInt(s, a, a_req);
+  AppendShorterInt(s, b, b_req);
+  AppendShorterInt(s, c, c_req);
+  AppendShorterInt(s, d, d_req);
+}
+
+
+
+
+////////////////////////////////////////////////////////////
+// Encoding
+////////////////////////////////////////////////////////////
+
+
+IntBlockBuilder::IntBlockBuilder(const WriterOptions *options) :
+  estimated_raw_size_(0),
+  options_(options)
+{}
+
+
 void IntBlockBuilder::Reset() {
   ints_.clear();
   buffer_.clear();
   estimated_raw_size_ = 0;
-}
-
-// Calculate the number of bytes to encode the given unsigned int.
-static size_t CalcRequiredBytes32(uint32_t i) {
-  if (i == 0) return 1;
-
-  return sizeof(long) - __builtin_clzl(i)/8;
 }
 
 int IntBlockBuilder::Add(const void *vals_void, int count) {
@@ -116,28 +169,6 @@ Status IntBlockBuilder::GetFirstKey(void *key) const {
 
   *reinterpret_cast<uint32_t *>(key) = ints_[0];
   return Status::OK();
-}
-
-void IntBlockBuilder::AppendGroupVarInt32(
-  faststring *s,
-  uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
-
-  uint8_t a_req = CalcRequiredBytes32(a);
-  uint8_t b_req = CalcRequiredBytes32(b);
-  uint8_t c_req = CalcRequiredBytes32(c);
-  uint8_t d_req = CalcRequiredBytes32(d);
-
-  uint8_t prefix_byte =
-    ((a_req - 1) << 6) |
-    ((b_req - 1) << 4) |
-    ((c_req - 1) << 2) |
-    (d_req - 1);
-
-  s->push_back(prefix_byte);
-  AppendShorterInt(s, a, a_req);
-  AppendShorterInt(s, b, b_req);
-  AppendShorterInt(s, c, c_req);
-  AppendShorterInt(s, d, d_req);
 }
 
 Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
@@ -210,13 +241,12 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
   CHECK(!finished_) << "already finished";
   DCHECK_GE(buffer_.size(), kHeaderReservedLength);
 
-  char header_space[kHeaderReservedLength];
-  char *header_end = header_space;
+  faststring header(kHeaderReservedLength);
 
-  header_end = InlineEncodeVarint32(header_end, val_count_);
-  header_end = InlineEncodeVarint32(header_end, ordinal_pos);
+  AppendGroupVarInt32(&header, val_count_, ordinal_pos,
+                      options_->block_restart_interval, 0);
 
-  int header_encoded_len = header_end - header_space;
+  int header_encoded_len = header.size();
 
   // Copy the header into the buffer at the right spot.
   // Since the header is likely shorter than the amount of space
@@ -224,7 +254,7 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
   int header_offset = kHeaderReservedLength - header_encoded_len;
   DCHECK_GE(header_offset, 0);
   char *header_dst = buffer_.data() + header_offset;
-  strings::memcpy_inlined(header_dst, header_space, header_encoded_len);
+  strings::memcpy_inlined(header_dst, header.data(), header_encoded_len);
 
   // Serialize the restart points.
   // Note that the values stored in restarts_ are relative to the
@@ -316,35 +346,6 @@ Status StringBlockBuilder::GetFirstKey(void *key) const {
 ////////////////////////////////////////////////////////////
 // Decoding
 ////////////////////////////////////////////////////////////
-
-
-const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
-
-const uint8_t *IntBlockDecoder::DecodeGroupVarInt32(
-  const uint8_t *src,
-  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
-
-  uint8_t a_sel = (*src & BOOST_BINARY( 11 00 00 00)) >> 6;
-  uint8_t b_sel = (*src & BOOST_BINARY( 00 11 00 00)) >> 4;
-  uint8_t c_sel = (*src & BOOST_BINARY( 00 00 11 00)) >> 2;
-  uint8_t d_sel = (*src & BOOST_BINARY( 00 00 00 11 ));
-
-  src++; // skip past selector byte
-
-  *a = *reinterpret_cast<const uint32_t *>(src) & MASKS[a_sel];
-  src += a_sel + 1;
-
-  *b = *reinterpret_cast<const uint32_t *>(src) & MASKS[b_sel];
-  src += b_sel + 1;
-
-  *c = *reinterpret_cast<const uint32_t *>(src) & MASKS[c_sel];
-  src += c_sel + 1;
-
-  *d = *reinterpret_cast<const uint32_t *>(src) & MASKS[d_sel];
-  src += d_sel + 1;
-
-  return src;
-}
 
 
 Status IntBlockDecoder::ParseHeader() {
@@ -485,16 +486,17 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
 Status StringBlockDecoder::ParseHeader() {
   // First parse the actual header.
   Slice header(data_);
-  if (!GetVarint32(&header, &num_elems_)) {
-    return Status::Corruption("couldnt parse num_elems in header");
-  }
 
-  if (!GetVarint32(&header, &ordinal_pos_base_)) {
-    return Status::Corruption("couldnt parse ordinal_pos in header");
+  uint32_t unused;
+  data_start_ = reinterpret_cast<const char *>(
+    DecodeGroupVarInt32(
+      reinterpret_cast<const uint8_t *>(data_.data()),
+      &num_elems_, &ordinal_pos_base_,
+      &restart_interval_, &unused));
+  if (data_start_ == NULL) {
+    return Status::Corruption("couldnt parse string block header");
+    // TODO include hexdump
   }
-
-  // Data starts after the header.
-  data_start_ = header.data();
 
   // Then the footer, which points us to the restarts array
   num_restarts_ = DecodeFixed32(
@@ -507,6 +509,9 @@ Status StringBlockDecoder::ParseHeader() {
       StringPrintf("restart count %d too big to fit in block size %d",
                    num_restarts_, (int)data_.size()));
   }
+
+  // TODO: check relationship between num_elems, num_restarts_,
+  // and restart_interval_
 
   restarts_ = reinterpret_cast<const uint32_t *>(
     data_.data() + data_.size()
@@ -526,19 +531,30 @@ void StringBlockDecoder::SeekToStart() {
 void StringBlockDecoder::SeekToPositionInBlock(uint pos) {
   DCHECK_LT(pos, num_elems_);
 
-  // TODO: change the format a bit so that we know the restart
-  // interval of the block. Then we can use the restarts to seek
-  // to the right offset.
-
-  // Currently we can only seek forward. If we're trying
-  // to move backward, have to restart from top of block.
-  if (pos < cur_idx_) {
+  int target_restart = pos/restart_interval_ - 1;
+  if (target_restart < 0) {
     SeekToStart();
+  } else {
+    SeekToRestartPoint(target_restart);
   }
+
+  // Seek forward to the right index
 
   // TODO: Seek calls should return a Status
   CHECK(SkipForward(pos - cur_idx_).ok());
   DCHECK_EQ(cur_idx_, pos);
+}
+
+uint32_t StringBlockDecoder::GetRestartPoint(uint32_t idx) {
+  DCHECK_LT(idx, num_restarts_);
+  return restarts_[idx];
+}
+
+void StringBlockDecoder::SeekToRestartPoint(uint32_t idx) {
+  DCHECK_LT(idx, num_restarts_);
+
+  cur_idx_ = (idx + 1) * restart_interval_;
+  cur_ptr_ = data_.data() + restarts_[idx];
 }
 
 int StringBlockDecoder::GetNextValues(int n, void *out_void) {

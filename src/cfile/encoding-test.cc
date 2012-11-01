@@ -25,12 +25,11 @@ protected:
     uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 
     faststring buf;
-    IntBlockBuilder::AppendGroupVarInt32(
-      &buf, a, b, c, d);
+    AppendGroupVarInt32(&buf, a, b, c, d);
 
     uint32_t a_rt, b_rt, c_rt, d_rt;
 
-    const uint8_t *end = IntBlockDecoder::DecodeGroupVarInt32(
+    const uint8_t *end = DecodeGroupVarInt32(
       reinterpret_cast<const uint8_t *>(buf.data()),
       &a_rt, &b_rt, &c_rt, &d_rt);
 
@@ -46,22 +45,19 @@ protected:
 
 TEST_F(TestEncoding, TestGroupVarInt) {
   faststring buf;
-  IntBlockBuilder::AppendGroupVarInt32(
-    &buf, 0, 0, 0, 0);
+  AppendGroupVarInt32(&buf, 0, 0, 0, 0);
   ASSERT_EQ(5UL, buf.size());
   ASSERT_EQ(0, memcmp("\x00\x00\x00\x00\x00", buf.data(), 5));
   buf.clear();
 
   // All 1-byte
-  IntBlockBuilder::AppendGroupVarInt32(
-    &buf, 1, 2, 3, 254);
+  AppendGroupVarInt32(&buf, 1, 2, 3, 254);
   ASSERT_EQ(5UL, buf.size());
   ASSERT_EQ(0, memcmp("\x00\x01\x02\x03\xfe", buf.data(), 5));
   buf.clear();
 
   // Mixed 1-byte and 2-byte
-  IntBlockBuilder::AppendGroupVarInt32(
-    &buf, 256, 2, 3, 65535);
+  AppendGroupVarInt32(&buf, 256, 2, 3, 65535);
   ASSERT_EQ(7UL, buf.size());
   ASSERT_EQ( BOOST_BINARY( 01 00 00 01 ), buf.at(0));
   ASSERT_EQ(256, *reinterpret_cast<const uint16_t *>(&buf[1]));

@@ -43,9 +43,11 @@ Data blocks are stored with various types of encodings.
 Currently used for STRING blocks. This is based on the encoding used
 by LevelDB for its data blocks, more or less.
 
-Starts with a header:
-  <num elements> <- varint32
-  <ordinal position> <- varint32
+Starts with a header of four uint32s, group-varint coded:
+  <num elements>       \
+  <ordinal position>   |
+  <restart interval>   |  group varint 32
+  <unused>             /
 
 Followed by prefix-compressed values. Each value is stored relative
 to the proceeding value using the following format:
