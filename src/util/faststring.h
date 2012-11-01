@@ -24,6 +24,10 @@ public:
     capacity_(capacity)
   {}
 
+  void clear() {
+    resize(0);
+  }
+
   void resize(size_t newsize) {
     if (newsize > capacity_) {
       reserve(newsize);
@@ -46,6 +50,12 @@ public:
     len_ += count;
   }
 
+  void push_back(const char byte) {
+    reserve(len_ + 1);
+    data_[len_] = byte;
+    len_++;
+  }
+
   size_t length() const {
     return len_;
   }
@@ -64,6 +74,14 @@ public:
 
   char *data() {
     return &data_[0];
+  }
+
+  const char &at(size_t i) const {
+    return data_[i];
+  }
+
+  const char &operator[](size_t i) const {
+    return data_[i];
   }
 
 

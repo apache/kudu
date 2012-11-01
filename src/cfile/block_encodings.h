@@ -76,14 +76,14 @@ private:
   FRIEND_TEST(TestEncoding, TestIntBlockEncoder);
 
   vector<IntType> ints_;
-  string buffer_;
+  faststring buffer_;
   uint64_t estimated_raw_size_;
 
   const WriterOptions *options_;
 
-  static void AppendShorterInt(std::string *s, uint32_t i, size_t bytes);
+  static void AppendShorterInt(faststring *s, uint32_t i, size_t bytes);
   static void AppendGroupVarInt32(
-    std::string *s,
+    faststring *s,
     uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 
   enum {

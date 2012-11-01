@@ -36,7 +36,7 @@ IntBlockBuilder::IntBlockBuilder(const WriterOptions *options) :
 {}
 
 void IntBlockBuilder::AppendShorterInt(
-  std::string *s, uint32_t i, size_t bytes) {
+  faststring *s, uint32_t i, size_t bytes) {
 
   assert(bytes > 0 && bytes <= 4);
 
@@ -93,7 +93,7 @@ size_t IntBlockBuilder::Count() const {
 }
 
 void IntBlockBuilder::AppendGroupVarInt32(
-  std::string *s,
+  faststring *s,
   uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 
   uint8_t a_req = CalcRequiredBytes32(a);
@@ -150,7 +150,7 @@ Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
 
     AppendGroupVarInt32(&buffer_, trailer[0], trailer[1], trailer[2], trailer[3]);
   }
-  return Slice(buffer_);
+  return Slice(buffer_.data(), buffer_.size());
 }
 
 
@@ -175,7 +175,7 @@ void StringBlockBuilder::Reset() {
   vals_since_restart_ = 0;
 
   buffer_.clear();
-  STLStringResizeUninitialized(&buffer_, kHeaderReservedLength);
+  buffer_.resize(kHeaderReservedLength);
 
   restarts_.clear();
   last_val_.clear();
