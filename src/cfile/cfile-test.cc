@@ -8,6 +8,7 @@
 #include "gutil/stringprintf.h"
 #include "util/env.h"
 #include "util/test_macros.h"
+#include "util/stopwatch.h"
 
 #include "cfile.h"
 #include "cfile_reader.h"
@@ -163,24 +164,32 @@ static void TimeReadFile(const string &path) {
 
 
 TEST(TestCFile, TestWrite100MFileInts) {
-  LOG(INFO) << "Starting writefile";
-  WriteTestFile("/tmp/cfile-Test100M", 100000000);
-  LOG(INFO) << "Done writing";
+  LOG_TIMING(INFO, "writing 100m ints") {
+    LOG(INFO) << "Starting writefile";
+    WriteTestFile("/tmp/cfile-Test100M", 100000000);
+    LOG(INFO) << "Done writing";
+  }
 
-  LOG(INFO) << "Starting readfile";
-  TimeReadFile("/tmp/cfile-Test100M");
-  LOG(INFO) << "End readfile";
+  LOG_TIMING(INFO, "reading 100M ints") {
+    LOG(INFO) << "Starting readfile";
+    TimeReadFile("/tmp/cfile-Test100M");
+    LOG(INFO) << "End readfile";
+  }
 }
 
 TEST(TestCFile, TestWrite100MFileStrings) {
-  LOG(INFO) << "Starting writefile";
-  WriteTestFileStrings("/tmp/cfile-Test100M-Strings", 100000000,
-                       "hello %d");
-  LOG(INFO) << "Done writing";
+  LOG_TIMING(INFO, "writing 100M strings") {
+    LOG(INFO) << "Starting writefile";
+    WriteTestFileStrings("/tmp/cfile-Test100M-Strings", 100000000,
+                         "hello %d");
+    LOG(INFO) << "Done writing";
+  }
 
-  LOG(INFO) << "Starting readfile";
-  TimeReadFile("/tmp/cfile-Test100M-Strings");
-  LOG(INFO) << "End readfile";
+  LOG_TIMING(INFO, "reading 100M strings") {
+    LOG(INFO) << "Starting readfile";
+    TimeReadFile("/tmp/cfile-Test100M-Strings");
+    LOG(INFO) << "End readfile";
+  }
 }
 
 TEST(TestCFile, TestReadWriteInts) {
