@@ -37,7 +37,8 @@ class StringSink: public WritableFile {
 };
 
 static void WriteTestFileStrings(
-  const string &path, int num_entries) {
+  const string &path, int num_entries,
+  const char *format) {
 
   Status s;
 
@@ -56,7 +57,7 @@ static void WriteTestFileStrings(
   // Append given number of values to the test tree
   char data[20];
   for (int i = 0; i < num_entries; i++) {
-    int len = snprintf(data, sizeof(data), "hello %d", i);
+    int len = snprintf(data, sizeof(data), format, i);
     Slice slice(data, len);
 
     Status s = w.AppendEntries(&slice, 1);
@@ -173,7 +174,8 @@ TEST(TestCFile, TestWrite100MFileInts) {
 
 TEST(TestCFile, TestWrite100MFileStrings) {
   LOG(INFO) << "Starting writefile";
-  WriteTestFileStrings("/tmp/cfile-Test100M-Strings", 100000000);
+  WriteTestFileStrings("/tmp/cfile-Test100M-Strings", 100000000,
+                       "hello %d");
   LOG(INFO) << "Done writing";
 
   LOG(INFO) << "Starting readfile";
@@ -228,7 +230,7 @@ TEST(TestCFile, TestReadWriteStrings) {
   Env *env = Env::Default();
 
   string path = "/tmp/cfile-TestReadWriteStrings";
-  WriteTestFileStrings(path, 10000);
+  WriteTestFileStrings(path, 10000, "hello %04d");
   RandomAccessFile *raf;
   uint64_t size;
   ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
@@ -271,13 +273,34 @@ TEST(TestCFile, TestReadWriteStrings) {
   ASSERT_EQ(1, n);
   ASSERT_EQ(string("hello 5001"), s.ToString());
 
+  s = "hello 9000";
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
+  ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
+  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  ASSERT_EQ(1, n);
+  ASSERT_EQ(string("hello 9000"), s.ToString());
 
+  // after last entry
+  s = "hello 9999x";
+  EXPECT_TRUE(iter->SeekAtOrAfter(&s).IsNotFound());
+
+  // to last entry
+  s = "hello 9999";
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
+  ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
+  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  ASSERT_EQ(1, n);
+  ASSERT_EQ(string("hello 9999"), s.ToString());
 
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
+  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  ASSERT_EQ(1, n);
+  ASSERT_EQ(string("hello 0000"), s.ToString());
 
-  // Fetch all data.
+  // Reseek to start and fetch all data.
+  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   boost::scoped_array<Slice> out(new Slice[10000]);
   ASSERT_STATUS_OK(iter->GetNextValues(10000, &out[0], &n));
   ASSERT_EQ(10000, n);

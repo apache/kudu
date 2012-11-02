@@ -277,7 +277,7 @@ Status CFileIterator::SeekAtOrAfter(const void *key) {
   RETURN_NOT_OK(validx_iter_->SeekAtOrBefore(key));
   RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_));
 
-  dblk_->SeekAtOrAfterValue(key);
+  RETURN_NOT_OK(dblk_->SeekAtOrAfterValue(key));
 
   seeked_ = validx_iter_.get();
   return Status::OK();

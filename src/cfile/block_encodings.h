@@ -225,8 +225,8 @@ public:
   // Return the number of elements in this block.
   virtual size_t Count() const = 0;
 
-  // Return the ordinal position in the file of the first entry
-  // in this block.
+  // Return the ordinal position in the file of the currently seeked
+  // entry (ie the entry that will next be returned by GetNextValues())
   virtual uint32_t ordinal_pos() const = 0;
 
   virtual ~BlockDecoder() {}
