@@ -100,6 +100,9 @@ class Arena {
   // Encapsulates a single buffer in the arena.
   class Component;
 
+  // Fallback for AllocateBytes non-fast-path
+  void* AllocateBytesFallback(const size_t size);
+
   Component* AddComponent(size_t requested_size, size_t minimum_size);
 
   BufferAllocator* const buffer_allocator_;
@@ -177,7 +180,7 @@ class Arena::Component {
   // Tries to reserve space in this component. Returns the pointer to the
   // reserved space if successful; NULL on failure (if there's no more room).
   void* AllocateBytes(const size_t size) {
-    if (offset_ + size <= size_) {
+    if (PREDICT_TRUE(offset_ + size <= size_)) {
       void* destination = data_ + offset_;
       offset_ += size;
       return destination;
@@ -196,6 +199,14 @@ class Arena::Component {
   const size_t size_;
   DISALLOW_COPY_AND_ASSIGN(Component);
 };
+
+// Fast-path allocation should get inlined, and fall-back
+// to non-inline function call for allocation failure
+inline void *Arena::AllocateBytes(const size_t size) {
+  void* result = current_->AllocateBytes(size);
+  if (PREDICT_TRUE(result != NULL)) return result;
+  return AllocateBytesFallback(size);
+}
 
 inline const char* Arena::AddStringPieceContent(const StringPiece& value) {
   void* destination = AllocateBytes(value.size());

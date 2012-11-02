@@ -41,10 +41,7 @@ Arena::Arena(size_t initial_buffer_size, size_t max_buffer_size)
   CHECK_NOTNULL(AddComponent(initial_buffer_size, 0));
 }
 
-void* Arena::AllocateBytes(const size_t size) {
-  void* result = current_->AllocateBytes(size);
-  if (result != NULL) return result;
-
+void* Arena::AllocateBytesFallback(const size_t size) {
   // Need to allocate more space.
   size_t next_component_size = min(2 * current_->size(), max_buffer_size_);
   // But, allocate enough, even if the request is large. In this case,
@@ -68,7 +65,7 @@ void* Arena::AllocateBytes(const size_t size) {
   }
   if (!component) return NULL;
   // Now, must succeed. The component has at least 'size' bytes.
-  result = component->AllocateBytes(size);
+  void *result = component->AllocateBytes(size);
   CHECK(result != NULL);
   return result;
 }
