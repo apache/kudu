@@ -30,6 +30,9 @@ typedef uint32_t IntType;
 extern const uint8_t *DecodeGroupVarInt32(
   const uint8_t *src,
   uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
+extern const uint8_t *DecodeGroupVarInt32_SSE(
+  const uint8_t *src,
+  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d);
 
 extern void AppendShorterInt(faststring *s, uint32_t i, size_t bytes);
 
@@ -236,10 +239,7 @@ public:
 // TODO: rename?
 class IntBlockDecoder : public BlockDecoder {
 public:
-  explicit IntBlockDecoder(const Slice &slice) :
-    data_(slice),
-    parsed_(false) {
-  }
+  explicit IntBlockDecoder(const Slice &slice);
 
   Status ParseHeader();
   void SeekToStart() {

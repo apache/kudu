@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <stdint.h>
 
+#include "gutil/once.h"
 #include "gutil/strings/fastmem.h"
 #include "gutil/strings/stringpiece.h"
 #include "gutil/stringprintf.h"
@@ -20,11 +21,64 @@
 // TODO: including this to just get block size from options,
 // maybe we should not take a whole options struct
 #include "cfile.h"
+#include <smmintrin.h>
+
 
 namespace kudu {
 namespace cfile {
 
 using kudu::Arena;
+
+static GoogleOnceType once = GOOGLE_ONCE_INIT;
+
+
+static bool SSE_TABLE_INITTED = false;
+static char SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
+static char VARINT_SELECTOR_LENGTHS[256];
+
+const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
+
+static void InitializeSSETables() {
+  memset(SSE_TABLE, 0xff, sizeof(SSE_TABLE));
+
+  for (int i = 0; i < 256; i++) {
+    uint32_t *entry = reinterpret_cast<uint32_t *>(&SSE_TABLE[i * 16]);
+
+    uint8_t selectors[] = {
+      (i & BOOST_BINARY( 11 00 00 00)) >> 6,
+      (i & BOOST_BINARY( 00 11 00 00)) >> 4,
+      (i & BOOST_BINARY( 00 00 11 00)) >> 2,
+      (i & BOOST_BINARY( 00 00 00 11 )) };
+
+    // 00000000 ->
+    // 00 ff ff ff  01 ff ff ff  02 ff ff ff  03 ff ff ff
+
+    // 01000100 ->
+    // 00 01 ff ff  02 ff ff ff  03 04 ff ff  05 ff ff ff
+
+    uint8_t offset = 0;
+
+    for (int j = 0; j < 4; j++) {
+      uint8_t num_bytes = selectors[j] + 1;
+      uint8_t *entry_bytes = reinterpret_cast<uint8_t *>(&entry[j]);
+
+      for (int k = 0; k < num_bytes; k++) {
+        *entry_bytes++ = offset++;
+      }
+    }
+
+    VARINT_SELECTOR_LENGTHS[i] = offset;
+  }
+
+  SSE_TABLE_INITTED = true;
+}
+
+void DumpSSETable() {
+  GoogleOnceInit(&once, &InitializeSSETables);
+  LOG(INFO) << "SSE table:\n"
+            << kudu::HexDump(Slice(SSE_TABLE, sizeof(SSE_TABLE)));
+}
+
 
 ////////////////////////////////////////////////////////////
 // Utility code used by both encoding and decoding
@@ -50,8 +104,6 @@ static size_t CalcRequiredBytes32(uint32_t i) {
   return sizeof(long) - __builtin_clzl(i)/8;
 }
 
-const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
-
 const uint8_t *DecodeGroupVarInt32(
   const uint8_t *src,
   uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
@@ -75,6 +127,69 @@ const uint8_t *DecodeGroupVarInt32(
   *d = *reinterpret_cast<const uint32_t *>(src) & MASKS[d_sel];
   src += d_sel + 1;
 
+  return src;
+}
+
+const uint8_t *DecodeGroupVarInt32_SSE(
+  const uint8_t *src,
+  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+
+  DCHECK(SSE_TABLE_INITTED);
+
+  uint8_t sel_byte = *src++;
+  __m128i shuffle_mask = _mm_load_si128(
+    reinterpret_cast<__m128i *>(&SSE_TABLE[sel_byte * 16]));
+  __m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
+
+  __m128i results = _mm_shuffle_epi8(data, shuffle_mask);
+
+
+  // It would look like the following would be most efficient,
+  // since it turns into a single movdqa instruction:
+  //   *reinterpret_cast<__m128i *>(ret) = results;
+  // (where ret is an aligned array of ints, which the user must pass)
+  // but it is actually slower than the below alternatives by a
+  // good amount -- even though these result in more instructions.
+  *a = _mm_extract_ps((__v4sf)results, 0);
+  *b = _mm_extract_ps((__v4sf)results, 1);
+  *c = _mm_extract_ps((__v4sf)results, 2);
+  *d = _mm_extract_ps((__v4sf)results, 3);
+
+  // _mm_extract_ps turns into extractps, which is slightly faster
+  // than _mm_extract_epi32 (which turns into pextrd)
+  // Apparently pextrd involves one more micro-op
+  // than extractps
+  /*
+  *a = _mm_extract_epi32(results, 0);
+  *b = _mm_extract_epi32(results, 1);
+  *c = _mm_extract_epi32(results, 2);
+  *d = _mm_extract_epi32(results, 3);
+  */
+  src += VARINT_SELECTOR_LENGTHS[sel_byte];
+  return src;
+}
+
+const uint8_t *DecodeGroupVarInt32_SSE_Add(
+  const uint8_t *src,
+  uint32_t *ret,
+  __m128i add) {
+
+  DCHECK(SSE_TABLE_INITTED);
+
+  uint8_t sel_byte = *src++;
+  __m128i shuffle_mask = _mm_load_si128(
+    reinterpret_cast<__m128i *>(&SSE_TABLE[sel_byte * 16]));
+  __m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
+
+  __m128i decoded_deltas = _mm_shuffle_epi8(data, shuffle_mask);
+  __m128i results = _mm_add_epi32(decoded_deltas, add);
+
+  ret[0] = _mm_extract_ps((__v4sf)results, 0);
+  ret[1] = _mm_extract_ps((__v4sf)results, 1);
+  ret[2] = _mm_extract_ps((__v4sf)results, 2);
+  ret[3] = _mm_extract_ps((__v4sf)results, 3);
+
+  src += VARINT_SELECTOR_LENGTHS[sel_byte];
   return src;
 }
 
@@ -348,6 +463,13 @@ Status StringBlockBuilder::GetFirstKey(void *key) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
+IntBlockDecoder::IntBlockDecoder(const Slice &slice) :
+  data_(slice),
+  parsed_(false)
+{
+  GoogleOnceInit(&once, &InitializeSSETables);
+}
+
 
 Status IntBlockDecoder::ParseHeader() {
   // TODO: better range check
@@ -420,7 +542,11 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
   // Only fetch up to remaining amount
   n = std::min(rem, n);
 
-  // TODO: vec->reserve(vec->size() + n);
+  __m128i min_elem_xmm = (__m128i)_mm_set_ps(
+    *reinterpret_cast<float *>(&min_elem_),
+    *reinterpret_cast<float *>(&min_elem_),
+    *reinterpret_cast<float *>(&min_elem_),
+    *reinterpret_cast<float *>(&min_elem_));
 
   // First drain pending_
   while (n > 0 && !pending_.empty()) {
@@ -434,15 +560,14 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
   // Now grab groups of 4 and append to vector
   while (n >= 4) {
     uint32_t ints[4];
-    cur_pos_ = DecodeGroupVarInt32(
-      cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
+    cur_pos_ = DecodeGroupVarInt32_SSE_Add(
+      cur_pos_, ints, min_elem_xmm);
     cur_idx_ += 4;
 
-    sink->push_back(min_elem_ + ints[0]);
-    sink->push_back(min_elem_ + ints[1]);
-    sink->push_back(min_elem_ + ints[2]);
-    sink->push_back(min_elem_ + ints[3]);
-
+    sink->push_back(ints[0]);
+    sink->push_back(ints[1]);
+    sink->push_back(ints[2]);
+    sink->push_back(ints[3]);
     n -= 4;
   }
 
@@ -451,13 +576,13 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
   // Grab next batch into pending_
   // Note that this does _not_ increment cur_idx_
   uint32_t ints[4];
-  cur_pos_ = DecodeGroupVarInt32(
-    cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
+  cur_pos_ = DecodeGroupVarInt32_SSE_Add(
+    cur_pos_, ints, min_elem_xmm);
   // pending_ acts like a stack, so push in reverse order.
-  pending_.push_back(min_elem_ + ints[3]);
-  pending_.push_back(min_elem_ + ints[2]);
-  pending_.push_back(min_elem_ + ints[1]);
-  pending_.push_back(min_elem_ + ints[0]);
+  pending_.push_back(ints[3]);
+  pending_.push_back(ints[2]);
+  pending_.push_back(ints[1]);
+  pending_.push_back(ints[0]);
 
   while (n > 0 && !pending_.empty()) {
     sink->push_back(pending_.back());
@@ -494,7 +619,7 @@ Status StringBlockDecoder::ParseHeader() {
 
   uint32_t unused;
   data_start_ = reinterpret_cast<const char *>(
-    DecodeGroupVarInt32(
+    DecodeGroupVarInt32_SSE(
       reinterpret_cast<const uint8_t *>(data_.data()),
       &num_elems_, &ordinal_pos_base_,
       &restart_interval_, &unused));

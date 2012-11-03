@@ -16,32 +16,50 @@
 
 namespace kudu { namespace cfile {
 
+extern void DumpSSETable();
 
 class TestEncoding : public ::testing::Test {
 protected:
   // Encodes the given four ints as group-varint, then
   // decodes and ensures the result is the same.
   static void DoTestRoundTripGVI32(
-    uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+    uint32_t a, uint32_t b, uint32_t c, uint32_t d,
+    bool use_sse=false) {
 
     faststring buf;
     AppendGroupVarInt32(&buf, a, b, c, d);
 
-    uint32_t a_rt, b_rt, c_rt, d_rt;
+    uint32_t ret[4];
 
-    const uint8_t *end = DecodeGroupVarInt32(
-      reinterpret_cast<const uint8_t *>(buf.data()),
-      &a_rt, &b_rt, &c_rt, &d_rt);
+    const uint8_t *end;
 
-    ASSERT_EQ(a, a_rt);
-    ASSERT_EQ(b, b_rt);
-    ASSERT_EQ(c, c_rt);
-    ASSERT_EQ(d, d_rt);
+    if (use_sse) {
+      end = DecodeGroupVarInt32_SSE(
+        reinterpret_cast<const uint8_t *>(buf.data()),
+        &ret[0], &ret[1], &ret[2], &ret[3]);
+    } else {
+      end = DecodeGroupVarInt32(
+        reinterpret_cast<const uint8_t *>(buf.data()),
+        &ret[0], &ret[1], &ret[2], &ret[3]);
+    }
+
+    ASSERT_EQ(a, ret[0]);
+    ASSERT_EQ(b, ret[1]);
+    ASSERT_EQ(c, ret[2]);
+    ASSERT_EQ(d, ret[3]);
     ASSERT_EQ(reinterpret_cast<const char *>(end),
               buf.data() + buf.size());
   }
 };
 
+TEST_F(TestEncoding, TestSSETable) {
+  DumpSSETable();
+  faststring buf;
+  AppendGroupVarInt32(&buf, 0, 0, 0, 0);
+  DoTestRoundTripGVI32(0, 0, 0, 0, true);
+  DoTestRoundTripGVI32(1, 2, 3, 4, true);
+  DoTestRoundTripGVI32(1, 2000, 3, 200000, true);
+}
 
 TEST_F(TestEncoding, TestGroupVarInt) {
   faststring buf;

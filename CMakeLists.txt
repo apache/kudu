@@ -61,6 +61,9 @@ else()
   message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif ()
 
+# Add common flags
+SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
+
 INCLUDE_DIRECTORIES(src)
 
 ############################################################
