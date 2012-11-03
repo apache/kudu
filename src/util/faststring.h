@@ -36,7 +36,7 @@ public:
   }
 
   void reserve(size_t newcapacity) {
-    if (newcapacity <= capacity_) return;
+    if (PREDICT_TRUE(newcapacity <= capacity_)) return;
 
     scoped_array<char> newdata(new char[newcapacity]);
     strings::memcpy_inlined(&newdata[0], &data_[0], len_);
@@ -46,7 +46,20 @@ public:
 
   void append(const char *src, size_t count) {
     reserve(len_ + count);
-    strings::memcpy_inlined(&data_[len_], src, count);
+
+    // appending short values is common enough that this
+    // actually helps, according to benchmarks. In theory
+    // memcpy_inlined should already be just as good, but this
+    // was ~20% faster for reading a large prefix-coded string file
+    // where each string was only a few chars different
+    if (count <= 4) {
+      char *p = &data_[len_];
+      for (int i = 0; i < count; i++) {
+        *p++ = *src++;
+      }
+    } else {
+      strings::memcpy_inlined(&data_[len_], src, count);
+    }
     len_ += count;
   }
 
