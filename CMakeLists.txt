@@ -34,6 +34,9 @@ SET(CXX_COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage")
 SET(CXX_FLAGS_DEBUG "-ggdb")
 SET(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -Wno-strict-aliasing")
 
+SET(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")
+SET(CXX_FLAGS_PROFILE_BUILD "${CXX_FLAGS_RELEASE} -fprofile-use")
+
 # if no build build type is specified, default to debug builds
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
