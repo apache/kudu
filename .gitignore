@@ -4,3 +4,9 @@
 *-test
 *.a
 *.o
+
+Makefile
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
+TAGS
