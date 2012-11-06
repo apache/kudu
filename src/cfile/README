@@ -90,6 +90,12 @@ Followed by the actual data, each set of 4 integers using group-varint.
 The last group is padded with 0s.
 Each integer is relative to the min element in the header.
 
+
+
+
+
+==============================
+
 Index blocks:
 
 The index blocks are organized in a B-Tree. As data blocks are written,

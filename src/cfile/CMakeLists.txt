@@ -1,3 +1,5 @@
+# Copyright (c) 2012, Cloudera, inc.
+
 SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc block_encodings.cc types.cc )
 
 PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
