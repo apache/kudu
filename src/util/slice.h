@@ -44,6 +44,9 @@ class Slice {
   // Return a pointer to the beginning of the referenced data
   const char* data() const { return data_; }
 
+  // Return a mutable pointer to the beginning of the referenced data.
+  char *mutable_data() { return const_cast<char *>(data_); }
+
   // Return the length (in bytes) of the referenced data
   size_t size() const { return size_; }
 

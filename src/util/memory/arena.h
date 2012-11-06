@@ -33,6 +33,7 @@ using std::vector;
 #include "gutil/strings/stringpiece.h"
 #include "gutil/linked_ptr.h"
 #include "util/memory/memory.h"
+#include "util/slice.h"
 
 using std::allocator;
 
@@ -73,7 +74,12 @@ class Arena {
   // where it keeps these pointers together with size information).
   // If this request would make the arena grow and the allocator denies that,
   // returns NULL and leaves the arena unchanged.
-  const char* AddStringPieceContent(const StringPiece& value);
+  char* AddStringPieceContent(const StringPiece& value);
+
+  // Relocate the given Slice into the arena, setting 'dst' and
+  // returning true if successful.
+  // See AddStringPieceContent above for detail on memory lifetime.
+  bool RelocateSlice(const Slice &src, Slice *dst);
 
   // Reserves a blob of the specified size in the arena, and returns a pointer
   // to it. The caller can then fill the allocated memory. The pointer is
@@ -163,7 +169,12 @@ template<class T> class ArenaAllocator {
     return arena_ != other.arena();
   }
 
+  Arena *arena() const {
+    return arena_;
+  }
+
  private:
+
   Arena* arena_;
 };
 
@@ -208,11 +219,20 @@ inline void *Arena::AllocateBytes(const size_t size) {
   return AllocateBytesFallback(size);
 }
 
-inline const char* Arena::AddStringPieceContent(const StringPiece& value) {
+inline char* Arena::AddStringPieceContent(const StringPiece& value) {
   void* destination = AllocateBytes(value.size());
   if (destination == NULL) return NULL;
   memcpy(destination, value.data(), value.size());
-  return static_cast<const char*>(destination);
+  return static_cast<char*>(destination);
+}
+
+inline bool Arena::RelocateSlice(const Slice &src, Slice *dst) {
+  void* destination = AllocateBytes(src.size());
+  if (destination == NULL) return false;
+  memcpy(destination, src.data(), src.size());
+  *dst = Slice(reinterpret_cast<const char *>(destination),
+               src.size());
+  return true;
 }
 
 }  // namespace supersonic
