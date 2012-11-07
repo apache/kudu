@@ -1,0 +1,365 @@
+A Tablet is a horizontal partition of a Kudu table, similar to tablets
+in BigTable or regions in HBase. Each tablet hosts a contiguous range
+of rows which does not overlap any other tablet's range. Together,
+all the tablets in a table make up the entirety of the tablet's key space.
+
+Each tablet is further subdivided into a set of Layers. Each Layer consists
+of the data for a set of rows, and the set of rows for different layers
+do not intersect: that is to say, for any given key, it is present in at
+most one Layer.
+
+============================================================
+Handling Insertions
+============================================================
+
+The top Layer is held in memory and is referred to as the MemStore. All
+inserts go directly into the MemStore, which is a map sorted by the
+table's primary key. NB: only _inserts_ go into this MemStore -- other
+mutations such as updates and deletions are discussed below.
+
+When the MemStore fills up, a Flush occurs, which persists the data to disk.
+
++--------------------+
+| insertion memstore |
++--------------------+
+     |
+     | Flush process writes memstore to new layers on disk
+     v
++------------+
+| layer 0    |
++------------+
+
++------------+
+| layer ...  |
++------------+
+
++------------+
+| layer N    |
++------------+
+
+When the data is flushed, it is stored as a set of CFiles (see src/cfile/README).
+Each of the rows in the data is assigned a sequential "row ID", which is
+dense, immutable, and unique within this layer. For example, if a given
+layer contains 5 rows, then they will be assigned rowid 0 through 4, in
+order of ascending key. Within a different layer, there will be different
+rows with the same rowids.
+
+Note: other systems such as C-Store call the insertion memstore the
+"write optimized store" (WOS), and the on-disk files the "read-optimized store".
+
+
+============================================================
+Handling mutations
+============================================================
+
+Updates or deletes of already-flushed rows do not go into the Insertion
+MemStore. Instead, the updated key is searched for among all Layers
+in order to locate the unique layer which holds this key. In the future,
+Layers will maintain bloom filters on the primary key in order to
+speed up this process.
+
+Once the appropriate Layer has been determined, the mutation will also
+be aware of the key's rowid within the Layer (as a result of the same
+key search which verified that the key is present in the Layer). The
+mutation can then enter an in-memory structure called the Delta MemStore.
+This structure is indexed by row ID, and its value tracks all mutations
+relative to the on-disk data.
+
+When the Delta MemStore grows too large, it performs a flush to an
+on-disk delta file, and resets itself to become empty:
+
++------------+      +---------+     +---------+     +----------------+
+| base data  | <--- | delta 0 + <-- | delta N + <-- | delta memstore +
++------------+      +---------+     +---------+     +----------------+
+
+The delta files contain the same type of information as the Delta MemStore,
+and currently are also stored row-wise.
+
+A given row may have delta information in multiple delta structures. In that
+case, the deltas are applied sequentially, with later modifications winning
+over earlier modifications.
+
+Note that the mutation tracking structure for a given row does not
+necessarily include the entirety of the row. If only a single column of many
+is updated, then the mutation structure will only include the updated column.
+This allows for fast updates of small columns without the overhead of reading
+or re-writing larger columns.
+
+
+TODO: What happens if an insert arrives for a row which exists in some
+layer but has been deleted?
+option 1) insert a "revive" mutation in the delta structure
+option 2) treat as a fresh insert in the Insertion MemStore
+
+
+============================================================
+Delta Compactions
+============================================================
+
+Within a layer, reads become less efficient as more mutations accumulate
+in the delta tracking structures; in particular, each flushed delta file
+will have to be seeked and merged as the base data is read.
+
+In order to mitigate this, background compactions take care of merging
+delta files together: a set of adjacent delta files are selected and then
+a sequential merge process combines the mutations in such a way that
+later mutations win. This serves to reduce the number of files which
+must be merged in the read path.
+
+A delta compaction may be classified as either 'minor' or 'major':
+
+Minor delta compaction:
+------------------------
+
+A 'minor' compaction is one that does not include the base data. In this
+type of compaction, the resulting file is itself a delta file.
+
++------------+      +---------+     +---------+     +---------+     +---------+
+| base data  | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
++------------+      +---------+     +---------+     +---------+     +---------+
+                    \_________________________________________/
+                           files selected for compaction
+
+  =====>
+
++------------+      +---------+     +-----------------------+
+| base data  | <--- | delta 0 + <-- | delta 1 (old delta 3) +
++------------+      +---------+     +-----------------------+
+                    \_________/
+                  compaction result
+
+
+Major delta compaction:
+------------------------
+
+A 'major' compaction is one that includes the base data along with any number
+of delta files.
+
++------------+      +---------+     +---------+     +---------+     +---------+
+| base data  | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
++------------+      +---------+     +---------+     +---------+     +---------+
+\_____________________________________________/
+      files selected for compaction
+
+  =====>
+
++----------------+      +-----------------------+     +-----------------------+
+| new base data  | <--- | delta 0 (old delta 2) + <-- | delta 1 (old delta 3) +
++----------------+      +-----------------------+     +-----------------------+
+\________________/
+ compaction result
+
+
+
+Note that both types of delta compactions maintain the row ids within the layer:
+hence, they can be done entirely in the background with no locking. The resulting
+compaction file can be introduced into the layer by atomically swapping it with
+the compaction inputs. After the swap is complete, the pre-compaction files may
+be removed.
+
+
+TODO: what do major delta compactions do with deletes?
+Option 1) major delta compaction results in a new base data file with all
+mutations applied plus a new delta file with only deletion deltas. The base
+data file would replace the deleted data with nulls. Deletions would be actually
+processed as part of a Layer Compaction, since that already has to be able to
+deal with rowids changing.
+
+Option 2) the base data file actually has a mechanism by which deleted rows
+are marked as such
+
+
+============================================================
+Layer compactions
+============================================================
+
+As more data is inserted into a tablet, more and more Layers will accumulate.
+This can hurt performance for the following cases:
+
+a) Random access (get or update a single row by primary key)
+
+In this case, each layer must be individually consulted to locate the specified key.
+Bloom filters can mitigate the number of physical seeks, but extra bloom filter
+accesses can impact CPU and also increase memory usage.
+
+b) Scan with specified range (eg scan where primary key between 'A' and 'B')
+
+In this case, each layer must be individually seeked, regardless of bloom filters.
+Specialized index structures might be able to assist, here, but again at the cost
+of memory, etc.
+
+c) Sorted scans
+
+If the user query requires that the scan result be yielded in primary-key-sorted
+order, then the results must be passed through a merge process. Merging is typically
+logarithmic in the number of inputs: as the number of inputs grows higher, the merge
+becomes more expensive.
+
+Given the above, it is desirable to merge Layers together to reduce the number of
+layers:
+
++------------+
+| layer 0    |
++------------+
+
++------------+ \
+| layer 1    | |
++------------+ |
+               |
++------------+ |                            +-------------+
+| layer 2    | |===> layer compaction ===>  | new layer 1 |
++------------+ |                            +-------------+
+               |
++------------+ |
+| layer 3    | |
++------------+ /
+
+
+Unlike Delta Compactions described above, note that row ids are _not_ maintained
+in a Layer Compaction. This makes the handling of concurrent mutations a somewhat
+intricate dance. TODO: figure out exactly how this is going to work - probably will
+involve doubling writes into a new Delta Memstore during the compaction.
+
+
+============================================================
+Overall picture
+============================================================
+
+Go go gadget ASCII art!
+
++--------------------+
+| Insertion memstore |
++--------------------+
+
+  | flush: creates a new layer 0
+  v
++------------+
+| layer 0    |
++------------+
+
++------------+      +---------+     +---------+     +---------+     +---------+
+| layer 1    | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
++------------+      +---------+     +---------+     +---------+     +---------+
+                   \__________________________________________/
+                           | major compaction
+                           v
+                    +---------+     +-----------------------+
+                    | delta 0 + <-- | delta 1 (old delta 3) +
+                    +---------+     +-----------------------+
+                   \___________/
+                   compaction result
+
++------------+      +---------+     +---------+     +---------+     +---------+
+| layer 2    | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
++------------+      +---------+     +---------+     +---------+     +---------+
+                                    \_________________________/
+                                         | minor compaction
+                                         v
+                    +---------+     +---------+       +-----------------------+
+                    | delta 0 + <-- | delta 1 +   <-- | delta 2 (old delta 3) +
+                    +---------+     +---------+       +-----------------------+
+                                    \_________/
+                                 compaction result
+
++------------+ \
+| layer 3    | |
++------------+ |
+               |
++------------+ |                            +-------------+
+| layer 4    | |===> layer compaction ===>  | new layer 1 |
++------------+ |                            +-------------+
+               |
++------------+ |
+| layer 5    | |
++------------+ /
+
+
+============================================================
+Comparison to BigTable approach
+============================================================
+
+This design differs from the approach used in BigTable in a few key ways:
+
+1) A given key is only present at at most one Layer in the tablet.
+
+In BigTable, a key may be present in several different SSTables. An entire
+Tablet in BigTable looks more like the Layer in kudu -- any read of a key
+must merge together data found in all of the layers.
+
+The advantage here is that, when reading a row, or servicing a query for
+which sort-order is not important, no merge is required. For example,
+an aggregate over a range of keys can individually scan each Layer (even
+in parallel) and then sum the results, since the order in which keys are
+presented is not important. Similarly, selects without an explicit
+'ORDER BY primary_key' specification do not need to conduct a merge.
+It's obvious why this can result in more efficient scanning.
+
+The disadvantage here is that, unlike BigTable, inserts and mutations
+are distinct operations: inserts must go into the Write-MemStore, whereas
+mutations (delete/update) must go into the specific Mutation-MemStore
+associated with that key. This has performance impacts as follows:
+
+  a) Inserts must determine that they are in fact new keys
+
+  This results in a bloom filter query against all present layers. If
+  any layer indicates a possible match, then a seek must be performed
+  against the key column(s) to determine whether it is in fact an
+  insert or update.
+
+  It is assumed that, so long as the number of layers is small, and the
+  bloom filters accurate enough, the vast majority of inserts will not
+  require any physical disk seeks. Additionally, if the key pattern
+  for inserts is locally sequential (eg '<host>_<timestamp>' in a time-series
+  application), then the blocks corresponding to those keys are likely to
+  be kept in the data block cache due to their frequent usage.
+
+  b) Updates must determine which Layer they correspond to
+
+  Similar to above, this results in a bloom filter query against
+  all Layers, as well as a primary key lookup against any matching layers.
+
+
+2) Mutation merges are performed on numeric rowids rather than arbitrary keys
+
+In order to reconcile a key on disk with its potentially-mutated form,
+BigTable performs a merge based on the row's key. These keys may be arbitrarily
+long strings, so comparison can be expensive. Additionally, even if the
+key column is not needed to service a query (e.g an aggregate computation),
+the key column must be read off disk and processed, which causes extra IO.
+Given the compound keys often used in BigTable applications, the key size
+may dwarf the size of the column of interest by an order of magnitude, especially
+if the queried column is stored in a dense encoding.
+
+In contrast, mutations in Kudu are stored by rowid. So, merges can proceed
+much more efficiently by maintaining counters: given the next mutation to apply,
+we can simply subtract to find how many rows of unmutated base data may be passed
+through unmodified. Alternatively, direct addressing can be used to efficiently
+"patch" entire blocks of base data given a set of mutations.
+
+Additionally, if the key is not needed in the query results, the query plan
+need not consult the key except perhaps to determine scan boundaries.
+
+As an example, consider the query:
+ > SELECT SUM(cpu_usage) FROM timeseries WHERE machine = 'foo.cloudera.com'
+   AND unix_time BETWEEN 1349658729 AND 1352250720;
+ ... given a compound primary key (host, unix_time)
+
+This may be evaluated in Kudu with the following pseudo-code:
+  sum = 0
+  foreach layer:
+    start_rowid = layer.lookup_key(1349658729)
+    end_rowid = layer.lookup_key(1352250720)
+    iter = layer.new_iterator("cpu_usage")
+    iter.seek(start_rowid)
+    remaining = end_rowid - start_rowid
+    while remaining > 0:
+      block = iter.fetch_upto(remaining)
+      sum += sum(block)
+
+The fetching of blocks can be done very efficiently since the application
+of any potential mutations can simply index into the block and replace
+any mutated values with their new data.
+
+------------------------------------------------------------
+Copyright (c) 2012, Cloudera, inc.
+------------------------------------------------------------
