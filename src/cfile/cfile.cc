@@ -160,12 +160,16 @@ Status Writer::Finish() {
 }
 
 Status Writer::AppendEntries(const void *entries, int count) {
-  int added = 0;
+  int rem = count;
 
-  while (added < count) {
-    int n = data_block_->Add(entries, count);
+  const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
+
+  while (rem > 0) {
+    int n = data_block_->Add(ptr, rem);
     DCHECK_GE(n, 0);
-    added += n;
+
+    ptr += typeinfo_.size() * n;
+    rem -= n;
     value_count_ += n;
 
     size_t est_size = data_block_->EstimateEncodedSize();
@@ -174,7 +178,7 @@ Status Writer::AppendEntries(const void *entries, int count) {
     }
   }
 
-  DCHECK_EQ(added, count);
+  DCHECK_EQ(rem, 0);
   return Status::OK();
 }
 

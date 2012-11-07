@@ -88,14 +88,21 @@ static void WriteTestFile(const string &path,
 
   ASSERT_STATUS_OK(w.Start());
 
+  uint32_t block[8096];
+
   // Append given number of values to the test tree
-  for (int i = 0; i < num_entries; i++) {
-    uint32_t val = i * 10;
-    Status s = w.AppendEntries(&val, 1);
+  int i = 0;
+  while (i < num_entries) {
+    int towrite = std::min(num_entries - i, 8096);
+    for (int j = 0; j < towrite; j++) {
+      block[j] = i++ * 10;
+    }
+
+    Status s = w.AppendEntries(block, towrite);
     // Dont use ASSERT because it accumulates all the logs
     // even for successes
     if (!s.ok()) {
-      FAIL() << "Failed Append(" << i << ")";
+      FAIL() << "Failed Append(" << (i - towrite) << ")";
     }
   }
 
