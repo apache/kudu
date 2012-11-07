@@ -75,7 +75,8 @@ public:
   Status Start();
   Status Finish();
 
-  Status AppendEntries(void *entries, int count);
+  // Append a set of values to the file.
+  Status AppendEntries(const void *entries, int count);
 
   ~Writer();
 
@@ -88,8 +89,7 @@ private:
                   const char *name_for_log);
 
 
-  // TODO: inconsistent "value block" vs "data block"
-  Status FinishCurValueBlock();
+  Status FinishCurDataBlock();
 
 
   Status CreateBlockBuilder(BlockBuilder **builder) const;
@@ -110,7 +110,7 @@ private:
   const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
 
-  scoped_ptr<BlockBuilder> value_block_;
+  scoped_ptr<BlockBuilder> data_block_;
   scoped_ptr<IndexTreeBuilder> posidx_builder_;
   scoped_ptr<IndexTreeBuilder> validx_builder_;
 

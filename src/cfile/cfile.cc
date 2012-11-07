@@ -85,7 +85,7 @@ Status Writer::Start() {
 
   BlockBuilder *bb;
   RETURN_NOT_OK( CreateBlockBuilder(&bb) );
-  value_block_.reset(bb);
+  data_block_.reset(bb);
 
   state_ = kWriterWriting;
 
@@ -129,7 +129,7 @@ Status Writer::Finish() {
     "Bad state for Finish(): " << state_;
 
   // Write out any pending values as the last data block.
-  RETURN_NOT_OK(FinishCurValueBlock());
+  RETURN_NOT_OK(FinishCurDataBlock());
 
   // Write out any pending positional index blocks.
   BTreeInfoPB posidx_info;
@@ -159,18 +159,18 @@ Status Writer::Finish() {
   return file_->Close();
 }
 
-Status Writer::AppendEntries(void *entries, int count) {
+Status Writer::AppendEntries(const void *entries, int count) {
   int added = 0;
 
   while (added < count) {
-    int n = value_block_->Add(entries, count);
+    int n = data_block_->Add(entries, count);
     DCHECK_GE(n, 0);
     added += n;
     value_count_ += n;
-    
-    size_t est_size = value_block_->EstimateEncodedSize();
+
+    size_t est_size = data_block_->EstimateEncodedSize();
     if (est_size > options_.block_size) {
-      RETURN_NOT_OK(FinishCurValueBlock());
+      RETURN_NOT_OK(FinishCurDataBlock());
     }
   }
 
@@ -178,8 +178,8 @@ Status Writer::AppendEntries(void *entries, int count) {
   return Status::OK();
 }
 
-Status Writer::FinishCurValueBlock() {
-  size_t num_elems_in_block = value_block_->Count();
+Status Writer::FinishCurDataBlock() {
+  size_t num_elems_in_block = data_block_->Count();
   if (num_elems_in_block == 0) {
     return Status::OK();
   }
@@ -191,9 +191,9 @@ Status Writer::FinishCurValueBlock() {
 
   // The current data block is full, need to push it
   // into the file, and add to index
-  Slice data = value_block_->Finish((uint32_t)first_elem_ord);
+  Slice data = data_block_->Finish((uint32_t)first_elem_ord);
   uint64_t inserted_off;
-  VLOG(2) << "estimated size=" << value_block_->EstimateEncodedSize()
+  VLOG(2) << "estimated size=" << data_block_->EstimateEncodedSize()
           << " actual=" << data.size();
 
   Status s = AddBlock(data, &inserted_off, "data");
@@ -211,13 +211,13 @@ Status Writer::FinishCurValueBlock() {
     // Allocate a single datum on the stack.
     char tmp[typeinfo_.size()];
 
-    RETURN_NOT_OK(value_block_->GetFirstKey(tmp));
+    RETURN_NOT_OK(data_block_->GetFirstKey(tmp));
     VLOG(1) << "Appending validx entry\n" <<
       kudu::HexDump(Slice(tmp, typeinfo_.size()));
     s = validx_builder_->Append(tmp, ptr);
   }
 
-  value_block_->Reset();
+  data_block_->Reset();
 
   return s;
 }
