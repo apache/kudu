@@ -1,6 +1,6 @@
 # Copyright (c) 2012, Cloudera, inc.
 
-SET(TABLET_SRCS memstore.cc)
+SET(TABLET_SRCS memstore.cc tablet.cc layer.cc)
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 
 # tablet-test

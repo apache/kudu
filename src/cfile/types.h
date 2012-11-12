@@ -26,6 +26,7 @@ public:
   DataType type() const { return type_; }
   const string& name() const { return name_; }
   const size_t size() const { return size_; }
+  const EncodingType default_encoding() const { return default_encoding_; }
 
 private:
   friend class TypeInfoResolver;
@@ -34,6 +35,7 @@ private:
   const DataType type_;
   const string name_;
   const size_t size_;
+  const EncodingType default_encoding_;
 };
 
 
@@ -45,6 +47,9 @@ struct DataTypeTraits<UINT32> {
   static const char *name() {
     return "uint32";
   }
+  static EncodingType default_encoding() {
+    return GROUP_VARINT;
+  }
 };
 
 template<>
@@ -52,6 +57,9 @@ struct DataTypeTraits<STRING> {
   typedef Slice cpp_type;
   static const char *name() {
     return "string";
+  }
+  static const EncodingType default_encoding() {
+    return PREFIX;
   }
 };
 

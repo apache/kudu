@@ -1,11 +1,14 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/assign/list_of.hpp>
+#include <boost/lexical_cast.hpp>
 #include <boost/noncopyable.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <time.h>
 
 #include "tablet/memstore.h"
+#include "tablet/tablet.h"
 #include "util/memory/arena.h"
 #include "util/slice.h"
 #include "util/test_macros.h"
@@ -33,13 +36,24 @@ public:
     byte_idx_ = 0;
   }
 
+  void AddString(const Slice &slice) {
+    CheckNextType(cfile::STRING);
+
+    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
+    CHECK(arena_.RelocateSlice(slice, ptr)) << "could not allocate space in arena";
+
+    Advance();
+  }
+
   void AddString(const string &str) {
     CheckNextType(cfile::STRING);
-    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
 
     char *in_arena = arena_.AddStringPieceContent(str);
     CHECK(in_arena) << "could not allocate space in arena";
+
+    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
     *ptr = Slice(in_arena, str.size());
+
     Advance();
   }
 
@@ -74,23 +88,26 @@ private:
   size_t byte_idx_;
 };
 
-TEST(TestTablet, TestMemStore) {
+Schema CreateTestSchema() {
   ColumnSchema col1(kudu::cfile::STRING);
   ColumnSchema col2(kudu::cfile::UINT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
     (col1)(col2);
-  Schema schema(cols, 1);
+  return Schema(cols, 1);
+}
 
+TEST(TestTablet, TestMemStore) {
+  Schema schema = CreateTestSchema();
   MemStore ms(schema);
 
   RowBuilder rb(schema);
-  rb.AddString("hello world");
+  rb.AddString(string("hello world"));
   rb.AddUint32(12345);
   ASSERT_STATUS_OK(ms.Insert(rb.data()));
 
   rb.Reset();
-  rb.AddString("goodbye world");
+  rb.AddString(string("goodbye world"));
   rb.AddUint32(54321);
   ASSERT_STATUS_OK(ms.Insert(rb.data()));
 
@@ -120,6 +137,42 @@ TEST(TestTablet, TestMemStore) {
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->IsValid());
+}
+
+
+TEST(TestTablet, TestFlush) {
+  Env *env = Env::Default();
+
+  string test_dir;
+  ASSERT_STATUS_OK(env->GetTestDirectory(&test_dir));
+
+  env->DeleteDir(test_dir);
+
+  test_dir += "/TestTablet.TestFlush" +
+    boost::lexical_cast<string>(time(NULL));
+
+  LOG(INFO) << "Writing tablet in: " << test_dir;
+
+  Schema schema = CreateTestSchema();
+  Tablet tablet(schema, test_dir);
+  ASSERT_STATUS_OK(tablet.CreateNew());
+  ASSERT_STATUS_OK(tablet.Open());
+
+  // Insert 1000 rows into memstore
+  char buf[256];
+  for (int i = 0; i < 1000; i++) {
+    RowBuilder rb(schema);
+    int len = snprintf(buf, sizeof(buf), "hello %d", i);
+    rb.AddString(Slice(buf, len));
+
+    rb.AddUint32(i);
+    ASSERT_STATUS_OK(tablet.Insert(rb.data()));
+  }
+
+  // Flush it.
+  ASSERT_STATUS_OK(tablet.Flush());
+
+  // TODO: assert that the data can still be read after the flush.
 }
 
 }

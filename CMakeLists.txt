@@ -110,7 +110,7 @@ SET(LIBS ${LIBS} gflags)
 # Linker setup
 ############################################################
 SET(KUDU_LINK_LIBS ${LIBS})
-SET(KUDU_TEST_LINK_LIBS  kudu_util cfile gutil ${KUDU_LINK_LIBS} gtest)
+SET(KUDU_TEST_LINK_LIBS  cfile kudu_util gutil ${KUDU_LINK_LIBS} gtest)
 
 ############################################################
 # Subdirectories

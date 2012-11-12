@@ -4,7 +4,10 @@
 
 #include "cfile/cfile.pb.h"
 #include "cfile/types.h"
+#include "gutil/stringprintf.h"
+
 #include <boost/foreach.hpp>
+#include <glog/logging.h>
 
 namespace kudu { namespace tablet {
 
@@ -25,6 +28,10 @@ public:
 
   const TypeInfo &type_info() const {
     return type_info_;
+  }
+
+  string ToString() const {
+    return StringPrintf("[type='%s']", type_info_.name().c_str());
   }
 
 private:
