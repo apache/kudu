@@ -2,16 +2,23 @@
 #ifndef KUDU_TABLET_SCHEMA_H
 #define KUDU_TABLET_SCHEMA_H
 
+#include <boost/foreach.hpp>
+#include <glog/logging.h>
+
+#include <tr1/unordered_map>
+#include <vector>
+
 #include "cfile/cfile.pb.h"
 #include "cfile/types.h"
 #include "gutil/stringprintf.h"
-
-#include <boost/foreach.hpp>
-#include <glog/logging.h>
+#include "gutil/strings/join.h"
+#include "gutil/strings/strcat.h"
+#include "util/status.h"
 
 namespace kudu { namespace tablet {
 
 using std::vector;
+using std::tr1::unordered_map;
 using kudu::cfile::DataType;
 using kudu::cfile::TypeInfo;
 
@@ -22,7 +29,9 @@ using kudu::cfile::TypeInfo;
 // annotations, etc.
 class ColumnSchema {
 public:
-  ColumnSchema(DataType type) :
+  ColumnSchema(const string &name,
+               DataType type) :
+    name_(name),
     type_info_(kudu::cfile::GetTypeInfo(type))
   {}
 
@@ -30,11 +39,22 @@ public:
     return type_info_;
   }
 
+  const string &name() const {
+    return name_;
+  }
+
   string ToString() const {
-    return StringPrintf("[type='%s']", type_info_.name().c_str());
+    return StringPrintf("%s[type='%s']",
+                        name_.c_str(),
+                        type_info_.name().c_str());
+  }
+
+  bool EqualsType(const ColumnSchema &other) const {
+    return type_info_.type() == other.type_info().type();
   }
 
 private:
+  const string name_;
   const TypeInfo &type_info_;
 };
 
@@ -59,10 +79,16 @@ public:
     // Calculate the offset of each column in the row format.
     col_offsets_.reserve(cols_.size());
     size_t off = 0;
+    size_t i = 0;
     BOOST_FOREACH(ColumnSchema col, cols) {
+      name_to_index_[col.name()] = i++;
       col_offsets_.push_back(off);
       off += col.type_info().size();
     }
+
+    CHECK_EQ(cols.size(), name_to_index_.size())
+      << "Duplicate name present in schema!";
+
     // Add an extra element on the end for the total
     // byte size
     col_offsets_.push_back(off);
@@ -156,10 +182,65 @@ public:
     return 0;
   }
 
+  // Determine the mapping to project from from_schema into
+  // this schema. This schema's fields must be a subset of from_schema's
+  // fields.
+  // 'indexes' is mutated such that its length is equal to this schema's
+  // length, and each index stores the source schema's column index which
+  // corresponds to the same projected column.
+  //
+  // For example:
+  // this:  [foo, bar]
+  // from_schema: [bar, baz, foo]
+  // resulting indexes: [2, 0]
+  Status GetProjectionFrom(const Schema &from_schema,
+                           vector<size_t> *indexes) const {
+    indexes->clear();
+    indexes->reserve(num_columns());
+    BOOST_FOREACH(const ColumnSchema &col, cols_) {
+      NameToIndexMap::const_iterator iter =
+        from_schema.name_to_index_.find(col.name());
+      if (iter == from_schema.name_to_index_.end()) {
+        return Status::InvalidArgument(
+          string("Cannot map from schema ") +
+          from_schema.ToString() + " to " + ToString() +
+          ": column '" + col.name() + "' not present in source");
+      }
+
+      size_t idx = (*iter).second;
+      const ColumnSchema &from_col = from_schema.column(idx);
+      if (!from_col.EqualsType(col)) {
+        return Status::InvalidArgument(
+          string("Cannot map from schema ") +
+          from_schema.ToString() + " to " + ToString() +
+          ": type mismatch for column '" + col.name() + "'");
+      }
+
+      indexes->push_back((*iter).second);
+    }
+    return Status::OK();
+  }
+
+  // Stringify this Schema. This is not particularly efficient,
+  // so should only be used when necessary for output.
+  string ToString() const {
+    vector<string> col_strs;
+    BOOST_FOREACH(const ColumnSchema &col, cols_) {
+      col_strs.push_back(col.ToString());
+    }
+
+    return StrCat("Schema [",
+                  JoinStrings(col_strs, ", "),
+                  "]");
+  }
+
 private:
   const vector<ColumnSchema> cols_;
   const size_t num_key_columns_;
   vector<size_t> col_offsets_;
+
+  typedef unordered_map<string, size_t> NameToIndexMap;
+  NameToIndexMap name_to_index_;
 };
 
 } // namespace tablet

@@ -23,5 +23,13 @@
     } \
   } while (0);
 
+#define ASSERT_STR_CONTAINS(str, substr) do { \
+  std::string _s = (str); \
+  if (_s.find((substr)) == std::string::npos) { \
+    FAIL() << "Expected to find substring '" << (substr) \
+    << "'. Got: '" << _s << "'"; \
+  } \
+  } while (0);
+
 
 #endif

@@ -17,8 +17,8 @@ namespace kudu {
 namespace tablet {
 
 Schema CreateTestSchema() {
-  ColumnSchema col1(kudu::cfile::STRING);
-  ColumnSchema col2(kudu::cfile::UINT32);
+  ColumnSchema col1("key", kudu::cfile::STRING);
+  ColumnSchema col2("val", kudu::cfile::UINT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
     (col1)(col2);
