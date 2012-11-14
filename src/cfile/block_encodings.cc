@@ -704,7 +704,7 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   while (left < right) {
     uint32_t mid = (left + right + 1) / 2;
     const char *entry = GetRestartPoint(mid);
-    uint32_t shared, non_shared, value_length;
+    uint32_t shared, non_shared;
     const char *key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
     if (key_ptr == NULL || (shared != 0)) {
       string err =
