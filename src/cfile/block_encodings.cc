@@ -521,22 +521,25 @@ void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
   pending_.clear();
 
   NullSink null;
-  DoGetNextValues(pos, &null);
+  // TODO: should this return Status?
+  size_t n = pos;
+  CHECK_OK(DoGetNextValues(&n, &null));
 }
 
 Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   return Status::NotSupported("TODO: int key search");
 }
 
-int IntBlockDecoder::GetNextValues(int n, void *out) {
+Status IntBlockDecoder::CopyNextValues(size_t *n, void *out, Arena *out_arena) {
   PtrSink<uint32_t> sink(reinterpret_cast<uint32_t *>(out));
   return DoGetNextValues(n, &sink);
 }
 
 template<class IntSink>
-int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
+Status IntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
+  size_t n = *n_param;
   int start_idx = cur_idx_;
-  int rem = num_elems_ - cur_idx_;
+  size_t rem = num_elems_ - cur_idx_;
   assert(rem >= 0);
 
   // Only fetch up to remaining amount
@@ -555,7 +558,7 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
     n--;
     cur_idx_++;
   }
-  if (n == 0) return cur_idx_ - start_idx;
+  if (n == 0) goto ret;
 
   // Now grab groups of 4 and append to vector
   while (n >= 4) {
@@ -571,7 +574,7 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
     n -= 4;
   }
 
-  if (n == 0) return cur_idx_ - start_idx;
+  if (n == 0) goto ret;
 
   // Grab next batch into pending_
   // Note that this does _not_ increment cur_idx_
@@ -591,8 +594,10 @@ int IntBlockDecoder::DoGetNextValues(int n, IntSink *sink) {
     cur_idx_++;
   }
 
+  ret:
   CHECK_EQ(n, 0);
-  return cur_idx_ - start_idx;
+  *n_param = cur_idx_ - start_idx;
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////
@@ -608,8 +613,7 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
   restarts_(NULL),
   data_start_(0),
   cur_idx_(0),
-  next_ptr_(NULL),
-  out_arena_(slice.size(), 16*1024*1024)
+  next_ptr_(NULL)
 {
   InitializeSSETables();
 }
@@ -694,7 +698,7 @@ void StringBlockDecoder::SeekToRestartPoint(uint32_t idx) {
 }
 
 Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
-  DCHECK_NOTNULL(value_void);
+  DCHECK(value_void != NULL);
 
   const Slice &target = *reinterpret_cast<const Slice *>(value_void);
 
@@ -743,18 +747,21 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   }
 }
 
-int StringBlockDecoder::GetNextValues(int n, void *out_void) {
+Status StringBlockDecoder::CopyNextValues(size_t *n, void *out_void, Arena *out_arena) {
   DCHECK(parsed_);
-  out_arena_.Reset();
   Slice *out = reinterpret_cast<Slice *>(out_void);
 
-  int i = 0;
-  for (i = 0; i < n && cur_idx_ < num_elems_; i++) {
+  size_t i = 0;
+  for (i = 0; i < *n && cur_idx_ < num_elems_; i++) {
     // Copy the value into the output arena.
-    const char *out_data = out_arena_.AddStringPieceContent(
+    const char *out_data = out_arena->AddStringPieceContent(
       StringPiece(cur_val_.data(), cur_val_.size()));
-    CHECK(out_data != NULL) << "Failed to allocate " <<
-      cur_val_.size() << " bytes in output arena";
+    if (PREDICT_FALSE(out_data == NULL)) {
+      return Status::IOError(
+        "Out of memory",
+        StringPrintf("Failed to allocate %d bytes in output arena",
+                     (int)cur_val_.size()));
+    }
 
     // Put a slice to it in the output array
     *out++ = Slice(out_data, cur_val_.size());
@@ -762,8 +769,7 @@ int StringBlockDecoder::GetNextValues(int n, void *out_void) {
     if (cur_idx_ + 1 < num_elems_) {
       // TODO: Can ParseNextValue take a pointer to the previously
       // parsed value, to avoid having to double-copy?
-      // TODO: wish GetNextValues returned Status
-      CHECK_OK(ParseNextValue());
+      RETURN_NOT_OK(ParseNextValue());
     } else {
       // end of block -- postcondition: next_ptr_ NULL
       // since there are no further entries
@@ -772,7 +778,8 @@ int StringBlockDecoder::GetNextValues(int n, void *out_void) {
     cur_idx_++;
   }
 
-  return i;
+  *n = i;
+  return Status::OK();
 }
 
 // Decode the lengths pointed to by 'ptr', doing bounds checking.

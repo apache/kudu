@@ -10,6 +10,7 @@
 #include <string>
 
 #include "cfile/index_btree.h"
+#include "util/memory/arena.h"
 #include "util/status.h"
 #include "types.h"
 
@@ -148,7 +149,13 @@ public:
   // pointed to.
   uint32_t GetCurrentOrdinal() const;
 
-  Status GetNextValues(int n, void *out, int *fetched);
+  // Copy up to 'n' values into 'out'.
+  // The 'out' buffer must have enough space already allocated for
+  // n items.
+  // Any indirected values (eg strings) are allocated out of dst_arena.
+  // The number of values actually read is written back into 'n'.
+  Status CopyNextValues(size_t *n, void *out, Arena *dst_arena);
+
   bool HasNext();
 
 private:

@@ -150,8 +150,14 @@ public:
     return Status::OK();
   }
 
-  Status GetNextRow(char *dst,
-                    Arena *dst_arena) {
+  // Get the next batch of rows from the iterator.
+  // Retrieves up to 'nrows' rows, and writes back the number
+  // of rows actually fetched into the same variable.
+  // Any indirect data (eg strings) are allocated out of
+  // 'dst_arena'
+  Status CopyNextRows(size_t *nrows,
+                      char *dst,
+                      Arena *dst_arena) {
     DCHECK(initted_);
     DCHECK(dst) << "null dst";
     DCHECK(dst_arena) << "null dst_arena";
@@ -160,8 +166,8 @@ public:
     char *ptr = dst;
     int proj_idx = 0;
     BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
-      int fetched;
-      RETURN_NOT_OK(col_iter.GetNextValues(1, ptr, &fetched));
+      size_t fetched = 1;
+      RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, ptr, dst_arena));
       if (fetched != 1) {
         DCHECK_EQ(proj_idx, 0) << "all columns should end at the same time!";
         return Status::NotFound("end of input");

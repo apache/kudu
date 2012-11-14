@@ -208,21 +208,17 @@ public:
   // Fetch the next set of values from the block into 'out'
   // The output vector must have space for up to 'n' values
   // of this block decoder's type.
-  // Returns the number of values fetched.
+  // Modifies *n to contain the number of values fetched.
   //
   // In the case that the values are themselves references
   // to other memory (eg Slices), the referred-to memory is
-  // owned by this decoder object, and can be recycled or reused
-  // on the next call to GetNextValues or when the decoder is
-  // destructed. The caller should deep-copy them if they need to
-  // persist beyond that lifetime.
+  // allocated in out_arena.
   //
-  // TODO: add some way to do a shallow "view" in the future?
   // TODO: add some typesafe wrappers for void pointers
-  virtual int GetNextValues(int n, void *out) = 0;
+  virtual Status CopyNextValues(size_t *n, void *out, Arena *out_arena) = 0;
 
   // Return true if there are more values remaining to be iterated.
-  // (i.e that the next call to GetNextValues will return at least 1
+  // (i.e that the next call to CopyNextValues will return at least 1
   // element)
   // TODO: change this to a Remaining() call?
   virtual bool HasNext() const = 0;
@@ -231,7 +227,7 @@ public:
   virtual size_t Count() const = 0;
 
   // Return the ordinal position in the file of the currently seeked
-  // entry (ie the entry that will next be returned by GetNextValues())
+  // entry (ie the entry that will next be returned by CopyNextValues())
   virtual uint32_t ordinal_pos() const = 0;
 
   virtual ~BlockDecoder() {}
@@ -252,7 +248,7 @@ public:
 
   Status SeekAtOrAfterValue(const void *value);
 
-  int GetNextValues(int n, void *out);
+  Status CopyNextValues(size_t *n, void *out, Arena *out_arena);
 
   uint32_t ordinal_pos() const {
     DCHECK(parsed_) << "must parse header first";
@@ -271,7 +267,7 @@ private:
   friend class TestEncoding;
 
   template<class IntSink>
-  int DoGetNextValues(int n, IntSink *sink);
+  Status DoGetNextValues(size_t *n, IntSink *sink);
 
   Slice data_;
 
@@ -299,7 +295,7 @@ public:
   virtual Status ParseHeader();
   virtual void SeekToPositionInBlock(uint pos);
   virtual Status SeekAtOrAfterValue(const void *value);
-  virtual int GetNextValues(int n, void *out);
+  virtual Status CopyNextValues(size_t *n, void *out, Arena *out_arena);
 
   virtual bool HasNext() const {
     DCHECK(parsed_);
@@ -347,9 +343,6 @@ private:
   uint32_t cur_idx_;
   faststring cur_val_;
   const char *next_ptr_;
-
-  // Arena used for output storage for GetNextValues().
-  Arena out_arena_;
 };
 
 } // namespace cfile

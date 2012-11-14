@@ -83,7 +83,7 @@ static void WriteTestFile(const string &path,
   WriterOptions opts;
   // Use a smaller block size to exercise multi-level
   // indexing.
-  opts.block_size = 256;
+  opts.block_size = 100;
   Writer w(opts, UINT32, GROUP_VARINT, sink);
 
   ASSERT_STATUS_OK(w.Start());
@@ -109,7 +109,7 @@ static void WriteTestFile(const string &path,
   ASSERT_STATUS_OK(w.Finish());
 }
 
-static void TimeReadFile(const string &path) {
+static void TimeReadFile(const string &path, size_t *count_ret) {
   Env *env = Env::Default();
   Status s;
 
@@ -128,20 +128,21 @@ static void TimeReadFile(const string &path) {
   scoped_ptr<CFileIterator> iter(iter_ptr);
   iter->SeekToOrdinal(0);
 
-
+  Arena arena(8192, 8*1024*1024);
+  int count = 0;
   switch (reader.data_type()) {
     case UINT32:
     {
       boost::scoped_array<uint32_t> v(new uint32_t[8192]);
       uint64_t sum = 0;
-      int count = 0;
       while (iter->HasNext()) {
-        int n;
-        ASSERT_STATUS_OK_FAST(iter->GetNextValues(8192, &v[0], &n));
+        size_t n = 8192;
+        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &v[0], &arena));
         for (int i = 0; i < n; i++) {
           sum += v[i];
         }
         count += n;
+        arena.Reset();
       }
       LOG(INFO) << "Sum: " << sum;
       LOG(INFO) << "Count: " << count;
@@ -151,14 +152,14 @@ static void TimeReadFile(const string &path) {
     {
       boost::scoped_array<Slice> v(new Slice[100]);
       uint64_t sum_lens = 0;
-      int count = 0;
       while (iter->HasNext()) {
-        int n;
-        ASSERT_STATUS_OK_FAST(iter->GetNextValues(100, &v[0], &n));
+        size_t n = 100;
+        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &v[0], &arena));
         for (int i = 0; i < n; i++) {
           sum_lens += v[i].size();
         }
         count += n;
+        arena.Reset();
       }
       LOG(INFO) << "Sum of value lengths: " << sum_lens;
       LOG(INFO) << "Count: " << count;
@@ -167,6 +168,7 @@ static void TimeReadFile(const string &path) {
     default:
       FAIL() << "Unknown type: " << reader.data_type();
   }
+  *count_ret = count;
 }
 
 #ifdef NDEBUG
@@ -182,7 +184,9 @@ TEST(TestCFile, TestWrite100MFileInts) {
 
   LOG_TIMING(INFO, "reading 100M ints") {
     LOG(INFO) << "Starting readfile";
-    TimeReadFile("/tmp/cfile-Test100M");
+    size_t n;
+    TimeReadFile("/tmp/cfile-Test100M", &n);
+    ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
@@ -197,7 +201,9 @@ TEST(TestCFile, TestWrite100MFileStrings) {
 
   LOG_TIMING(INFO, "reading 100M strings") {
     LOG(INFO) << "Starting readfile";
-    TimeReadFile("/tmp/cfile-Test100M-Strings");
+    size_t n;
+    TimeReadFile("/tmp/cfile-Test100M-Strings", &n);
+    ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
@@ -239,10 +245,22 @@ TEST(TestCFile, TestReadWriteInts) {
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
 
+  Arena arena(1024, 1*1024*1024);
   // Fetch all data.
   boost::scoped_array<uint32_t> out(new uint32_t[10000]);
-  int n;
-  ASSERT_STATUS_OK(iter->GetNextValues(10000, &out[0], &n));
+  size_t n = 10000;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out[0], &arena));
+  ASSERT_EQ(10000, n);
+
+  for (int i = 0; i < 10000; i++) {
+    if (out[i] != i * 10) {
+      FAIL() << "mismatch at index " << i
+             << " expected: " << (i * 10)
+             << " got: " << out[i];
+    }
+  }
+
+  TimeReadFile("/tmp/cfile-TestReadWrite", &n);
   ASSERT_EQ(10000, n);
 }
 
@@ -267,11 +285,13 @@ TEST(TestCFile, TestReadWriteStrings) {
   ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
   scoped_ptr<CFileIterator> iter(iter_ptr);
 
+  Arena arena(1024, 1024*1024);
+
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
   Slice s;
-  int n;
-  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  size_t n = 1;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
   ASSERT_EQ(1, n);
   ASSERT_EQ(string("hello 5000"), s.ToString());
 
@@ -289,14 +309,16 @@ TEST(TestCFile, TestReadWriteStrings) {
   s = "hello 5000.5";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
   ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
-  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  n = 1;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
   ASSERT_EQ(1, n);
   ASSERT_EQ(string("hello 5001"), s.ToString());
 
   s = "hello 9000";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
   ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
-  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  n = 1;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
   ASSERT_EQ(1, n);
   ASSERT_EQ(string("hello 9000"), s.ToString());
 
@@ -308,21 +330,24 @@ TEST(TestCFile, TestReadWriteStrings) {
   s = "hello 9999";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
-  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  n = 1;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
   ASSERT_EQ(1, n);
   ASSERT_EQ(string("hello 9999"), s.ToString());
 
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
-  ASSERT_STATUS_OK(iter->GetNextValues(1, &s, &n));
+  n = 1;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
   ASSERT_EQ(1, n);
   ASSERT_EQ(string("hello 0000"), s.ToString());
 
   // Reseek to start and fetch all data.
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   boost::scoped_array<Slice> out(new Slice[10000]);
-  ASSERT_STATUS_OK(iter->GetNextValues(10000, &out[0], &n));
+  n = 10000;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out[0], &arena));
   ASSERT_EQ(10000, n);
 }
 

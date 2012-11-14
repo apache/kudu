@@ -307,26 +307,31 @@ bool CFileIterator::HasNext() {
   return dblk_->HasNext() || posidx_iter_->HasNext();
 }
 
-Status CFileIterator::GetNextValues(
-  int n, void *out, int *returned)
+Status CFileIterator::CopyNextValues(
+  size_t *n_param, void *out, Arena *dst_arena)
 {
   CHECK(seeked_) << "not seeked";
+  size_t rem = *n_param;
+  *n_param = 0;
 
-  *returned = 0;
-
-  while (n > 0) {
+  while (rem > 0) {
     // Fetch as many as we can from the current datablock.
 
-    // TODO: have GetNextValues return count returned?
-    int returned_in_batch = dblk_->GetNextValues(n, out);
-    n -= returned_in_batch;
-    *returned += returned_in_batch;
+    size_t this_batch = rem;
+    // TODO: if this returns a bad status, we've already read some.
+    // Should document the semantics of partial read.
+    RETURN_NOT_OK(dblk_->CopyNextValues(&this_batch, out, dst_arena));
+    DCHECK_LE(this_batch, rem);
+
+    rem -= this_batch;
+
+    *n_param += this_batch;
     out = reinterpret_cast<char *>(out) + 
-      reader_->type_info()->size() * returned_in_batch;
+      reader_->type_info()->size() * this_batch;
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
-    if (n > 0) {
+    if (rem > 0) {
       DCHECK(!dblk_->HasNext()) <<
         "dblk stopped yielding values before it was empty";
     } else {
@@ -334,24 +339,17 @@ Status CFileIterator::GetNextValues(
       return Status::OK();
     }
 
-    // TODO: this is most likely a bug: pulling in the next
-    // data block invalidates any strings pointed to by the
-    // previous data block. We need to early-out here with
-    // fewer values returned than the user asked for. Alternatively,
-    // BlockDecoder::GetNextValues() and CFileIterator::GetNextValues()
-    // should take an Arena, rather than leaving it inside the data block.
-
     // Pull in next datablock.
     Status s = seeked_->Next();
 
     if (s.IsNotFound()) {
       // No next datablock
 
-      if (*returned == 0) {
+      if (*n_param == 0) {
         // No more data, and this call didn't return any
         return s;
       } else {
-        // Otherwise we did successfully add some to the vector.
+        // Otherwise we did successfully return some to the caller.
         return Status::OK();
       }
     } else if (!s.ok()) {
@@ -361,7 +359,6 @@ Status CFileIterator::GetNextValues(
     // Fill in the data for the next block.
     RETURN_NOT_OK(ReadCurrentDataBlock(*seeked_));
   }
-
   return Status::OK();
 }
 
