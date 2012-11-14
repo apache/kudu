@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include "cfile.h"
+#include "cfile_reader.h"
 #include "index_btree.h"
 
 namespace kudu {

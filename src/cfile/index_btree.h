@@ -10,7 +10,6 @@
 #include "cfile.pb.h"
 #include "index_block.h"
 #include "util/logging.h"
-#include "cfile_reader.h"
 
 namespace kudu {
 namespace cfile {

@@ -9,6 +9,7 @@
 #include <tr1/memory>
 #include <string>
 
+#include "cfile/index_btree.h"
 #include "util/status.h"
 #include "types.h"
 
@@ -20,7 +21,6 @@ namespace cfile {
 
 class CFileHeaderPB;
 class CFileFooterPB;
-class IndexTreeIterator;
 
 using std::string;
 using boost::shared_array;
