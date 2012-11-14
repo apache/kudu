@@ -346,7 +346,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
   // what we put in.
   for (uint i = 0; i < kCount; i++) {
     ASSERT_EQ(12345u + i, sbd.ordinal_pos());
-
+    ASSERT_TRUE(sbd.HasNext()) << "Failed on iter " << i;
     Slice s;
     ASSERT_EQ(1, sbd.GetNextValues(1, &s));
     string expected = StringPrintf("hello %d", i);

@@ -222,6 +222,8 @@ public:
   virtual int GetNextValues(int n, void *out) = 0;
 
   // Return true if there are more values remaining to be iterated.
+  // (i.e that the next call to GetNextValues will return at least 1
+  // element)
   // TODO: change this to a Remaining() call?
   virtual bool HasNext() const = 0;
 
@@ -301,7 +303,7 @@ public:
 
   virtual bool HasNext() const {
     DCHECK(parsed_);
-    return cur_idx_ < num_elems_ - 1;
+    return cur_idx_ < num_elems_;
   }
 
   virtual size_t Count() const {
