@@ -87,9 +87,10 @@ TEST(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(tablet.Open());
 
   // Insert 1000 rows into memstore
+  RowBuilder rb(schema);
   char buf[256];
   for (int i = 0; i < 1000; i++) {
-    RowBuilder rb(schema);
+    rb.Reset();
     snprintf(buf, sizeof(buf), "hello %d", i);
     rb.AddString(Slice(buf));
 
