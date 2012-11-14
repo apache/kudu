@@ -611,6 +611,7 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
   next_ptr_(NULL),
   out_arena_(slice.size(), 16*1024*1024)
 {
+  InitializeSSETables();
 }
 
 Status StringBlockDecoder::ParseHeader() {
