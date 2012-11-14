@@ -132,8 +132,8 @@ public:
 
   int Compare(const char *encoded_ptr, const char *limit,
               const void *cmp_against_ptr) const {
-    DCHECK_NOTNULL(cmp_against_ptr);
-    DCHECK_NOTNULL(encoded_ptr);
+    DCHECK(cmp_against_ptr);
+    DCHECK(encoded_ptr);
 
     const Slice *cmp_against = reinterpret_cast<const Slice *>(cmp_against_ptr);
 
