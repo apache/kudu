@@ -1,8 +1,9 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <glog/logging.h>
-#include "tablet/memstore.h"
 #include "cfile/cfile.pb.h"
+#include "tablet/memstore.h"
+#include "tablet/row.h"
 
 namespace kudu { namespace tablet {
 
@@ -31,28 +32,7 @@ MemStore::MemStore(const Schema &schema) :
 
 Status MemStore::CopyRowToArena(const Slice &row,
                                 Slice *copied) {
-  // Copy row to arena
-  if (!arena_.RelocateSlice(row, copied)) {
-    return Status::IOError("unable to copy row into memstore arena");
-  }
-
-  // For any Slice columns, copy the sliced data into the arena
-  // and update the pointers
-  char *ptr = copied->mutable_data();
-  for (int i = 0; i < schema_.num_columns(); i++) {
-    if (schema_.column(i).type_info().type() == cfile::STRING) {
-      Slice *slice = reinterpret_cast<Slice *>(ptr);
-      Slice copied_slice;
-      if (!arena_.RelocateSlice(*slice, &copied_slice)) {
-        return Status::IOError("Unable to relocate slice");
-      }
-
-      *slice = copied_slice;
-    }
-    ptr += schema_.column(i).type_info().size();
-  }
-  DCHECK_EQ(ptr, copied->data() + schema_.byte_size());
-  return Status::OK();
+  return kudu::tablet::CopyRowToArena(row, schema_, &arena_, copied);
 }
 
 Status MemStore::Insert(const Slice &data) {

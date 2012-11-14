@@ -12,8 +12,38 @@
 namespace kudu {
 namespace tablet {
 
+inline Status CopyRowToArena(const Slice &row,
+                             const Schema &schema,
+                             Arena *dst_arena,
+                             Slice *copied) {
+  // Copy row to arena
+  if (!dst_arena->RelocateSlice(row, copied)) {
+    return Status::IOError("no space for row data in arena");
+  }
+
+  // For any Slice columns, copy the sliced data into the arena
+  // and update the pointers
+  char *ptr = copied->mutable_data();
+  for (int i = 0; i < schema.num_columns(); i++) {
+    if (schema.column(i).type_info().type() == cfile::STRING) {
+      Slice *slice = reinterpret_cast<Slice *>(ptr);
+      Slice copied_slice;
+      if (!dst_arena->RelocateSlice(*slice, &copied_slice)) {
+        return Status::IOError("Unable to relocate slice");
+      }
+
+      *slice = copied_slice;
+    }
+    ptr += schema.column(i).type_info().size();
+  }
+  DCHECK_EQ(ptr, copied->data() + schema.byte_size());
+  return Status::OK();
+}
+
 // Utility class for building rows corresponding to a given schema.
 // This is used when inserting data into the MemStore or a new Layer.
+// TODO: maybe this should not have an internal Arena, but instead
+// should just take a destination arena.
 class RowBuilder : boost::noncopyable {
 public:
   RowBuilder(const Schema &schema) :
@@ -23,6 +53,13 @@ public:
     Reset();
   }
 
+  // Reset the RowBuilder so that it is ready to build
+  // the next row.
+  // NOTE: The previous row's data is invalidated. Even
+  // if the previous row's data has been copied, indirected
+  // entries such as strings may end up shared or deallocated
+  // after Reset. So, the previous row must be fully copied
+  // (eg using CopyRowToArena()).
   void Reset() {
     arena_.Reset();
     buf_ = reinterpret_cast<uint8_t *>(
@@ -60,6 +97,25 @@ public:
     Advance();
   }
 
+  // Copy the currently built row into the destination arena.
+  // This copies all referenced data as well, such as strings.
+  // After using this method, the RowBuilder may be Reset.
+  Status CopyRowToArena(Arena *dst_arena,
+                        Slice *copied) const {
+    return kudu::tablet::CopyRowToArena(data(), schema_, dst_arena, copied);
+  }
+
+  // Retrieve the data slice from the current row.
+  // The Add*() functions must have been called an appropriate
+  // number of times such that all columns are filled in, or else
+  // a crash will occur.
+  //
+  // The data slice returned by this is only valid until the next
+  // call to Reset().
+  // Note that the Slice may also contain pointers which refer to
+  // other parts of the internal Arena, so even if the returned
+  // data is copied, it is not safe to Reset(). Use CopyToArena()
+  // to make a deep copy of the current row.
   const Slice data() const {
     CHECK_EQ(byte_idx_, schema_.byte_size());
     return Slice(reinterpret_cast<const char *>(buf_), byte_idx_);

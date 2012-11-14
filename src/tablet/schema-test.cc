@@ -5,8 +5,9 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-#include "tablet/schema.h"
 #include "util/test_macros.h"
+#include "tablet/row.h"
+#include "tablet/schema.h"
 
 namespace kudu {
 namespace tablet {
@@ -80,6 +81,33 @@ TEST(TestSchema, TestProjectMissingColumn) {
   ASSERT_STR_CONTAINS(s.ToString(), "column 'non_present' not present");
 }
 
-// TODO: write test for comparison (move RowBuilder somewhere, use that)
+
+TEST(TestSchema, TestComparison) {
+  Schema schema(boost::assign::list_of
+                 (ColumnSchema("col1", kudu::cfile::STRING))
+                 (ColumnSchema("col2", kudu::cfile::STRING))
+                 (ColumnSchema("col3", kudu::cfile::UINT32)),
+                 1);
+
+  Arena arena(1024, 256*1024);
+
+  RowBuilder rb(schema);
+  rb.AddString(string("row_a_1"));
+  rb.AddString(string("row_a_2"));
+  rb.AddUint32(3);
+  Slice row_a;
+  ASSERT_STATUS_OK(rb.CopyRowToArena(&arena, &row_a));
+
+  rb.Reset();
+  rb.AddString(string("row_b_1"));
+  rb.AddString(string("row_b_2"));
+  rb.AddUint32(3);
+  Slice row_b;
+  ASSERT_STATUS_OK(rb.CopyRowToArena(&arena, &row_b));
+
+  ASSERT_GT(schema.Compare(row_b.data(), row_a.data()), 0);
+  ASSERT_LT(schema.Compare(row_a.data(), row_b.data()), 0);
+}
+
 }
 }
