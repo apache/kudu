@@ -334,6 +334,13 @@ Status CFileIterator::GetNextValues(
       return Status::OK();
     }
 
+    // TODO: this is most likely a bug: pulling in the next
+    // data block invalidates any strings pointed to by the
+    // previous data block. We need to early-out here with
+    // fewer values returned than the user asked for. Alternatively,
+    // BlockDecoder::GetNextValues() and CFileIterator::GetNextValues()
+    // should take an Arena, rather than leaving it inside the data block.
+
     // Pull in next datablock.
     Status s = seeked_->Next();
 
