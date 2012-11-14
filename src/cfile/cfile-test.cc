@@ -169,6 +169,9 @@ static void TimeReadFile(const string &path) {
   }
 }
 
+#ifdef NDEBUG
+// Only run the 100M entry tests in non-debug mode.
+// They take way too long with debugging enabled.
 
 TEST(TestCFile, TestWrite100MFileInts) {
   LOG_TIMING(INFO, "writing 100m ints") {
@@ -198,6 +201,7 @@ TEST(TestCFile, TestWrite100MFileStrings) {
     LOG(INFO) << "End readfile";
   }
 }
+#endif
 
 TEST(TestCFile, TestReadWriteInts) {
   Env *env = Env::Default();
