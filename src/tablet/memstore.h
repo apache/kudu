@@ -118,6 +118,8 @@ public:
 
   Status SeekAtOrAfter(const Slice &key) {
     CHECK_GE(key.size(), memstore_->schema().key_byte_size());
+    // TODO: implement me
+    CHECK(false);
   }
 
   const Slice GetCurrentRow() const {

@@ -131,7 +131,21 @@ Status LayerReader::Open() {
     LOG(INFO) << "Successfully opened cfile for column " <<
       schema_.column(i).ToString() << " at " << path;
   }
+
+  open_ = true;
   return Status::OK();
+}
+
+
+LayerReader::RowIterator *LayerReader::NewRowIterator(const Schema &projection) const {
+  return new RowIterator(this, projection);
+}
+
+Status LayerReader::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
+  CHECK(open_);
+  CHECK_LT(col_idx, cfile_readers_.size());
+
+  return cfile_readers_[col_idx].NewIterator(iter);
 }
 
 

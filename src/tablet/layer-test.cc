@@ -25,6 +25,30 @@ Schema CreateTestSchema() {
   return Schema(cols, 1);
 }
 
+// Iterate over a Layer, dumping occasional rows to the console,
+// using the given schema as a projection.
+static void IterateProjection(const LayerReader &lr, const Schema &schema) {
+  scoped_ptr<LayerReader::RowIterator> row_iter(lr.NewRowIterator(schema));
+  ASSERT_STATUS_OK(row_iter->Init());
+  ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
+
+  Arena arena(1024, 1024);
+  char dst[schema.byte_size()];
+  int i = 0;
+  while (row_iter->HasNext()) {
+    arena.Reset();
+    ASSERT_STATUS_OK_FAST(row_iter->GetNextRow(dst, &arena));
+    i++;
+
+    LOG_EVERY_N(INFO, 50) << "Got row: " <<
+      schema.DebugRow(dst);
+  }
+
+  // TODO: this expect is failing currently, we're getting
+  // one too few rows...
+  EXPECT_EQ(1000, i);
+}
+
 // Test round-trip writing and reading back a layer with
 // multiple columns. Does not test any modifications.
 TEST(TestLayer, TestLayerRoundTrip) {
@@ -55,6 +79,23 @@ TEST(TestLayer, TestLayerRoundTrip) {
   // Now open the Layer for read
   LayerReader lr(env, schema, test_dir);
   ASSERT_STATUS_OK(lr.Open());
+
+  // First iterate over all columns
+  IterateProjection(lr, schema);
+
+  // Now iterate only over the key column
+  Schema proj_key(boost::assign::list_of
+                  (ColumnSchema("key", kudu::cfile::STRING)),
+                  1);
+  IterateProjection(lr, proj_key);
+
+
+  // Now iterate only over the non-key column
+  Schema proj_val(boost::assign::list_of
+              (ColumnSchema("val", kudu::cfile::UINT32)),
+              1);
+  IterateProjection(lr, proj_val);
+
 }
 
 } // namespace tablet
