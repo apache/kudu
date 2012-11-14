@@ -29,8 +29,6 @@ namespace cfile {
 
 using kudu::Arena;
 
-static GoogleOnceType once = GOOGLE_ONCE_INIT;
-
 
 static bool SSE_TABLE_INITTED = false;
 static char SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
@@ -38,6 +36,7 @@ static char VARINT_SELECTOR_LENGTHS[256];
 
 const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
 
+__attribute__((constructor))
 static void InitializeSSETables() {
   memset(SSE_TABLE, 0xff, sizeof(SSE_TABLE));
 
@@ -74,7 +73,6 @@ static void InitializeSSETables() {
 }
 
 void DumpSSETable() {
-  GoogleOnceInit(&once, &InitializeSSETables);
   LOG(INFO) << "SSE table:\n"
             << kudu::HexDump(Slice(SSE_TABLE, sizeof(SSE_TABLE)));
 }
@@ -467,7 +465,6 @@ IntBlockDecoder::IntBlockDecoder(const Slice &slice) :
   data_(slice),
   parsed_(false)
 {
-  GoogleOnceInit(&once, &InitializeSSETables);
 }
 
 
@@ -615,7 +612,6 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
   cur_idx_(0),
   next_ptr_(NULL)
 {
-  InitializeSSETables();
 }
 
 Status StringBlockDecoder::ParseHeader() {
