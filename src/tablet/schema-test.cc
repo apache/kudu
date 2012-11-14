@@ -14,6 +14,7 @@ namespace tablet {
 
 using std::vector;
 
+// Test basic functionality of Schema definition
 TEST(TestSchema, TestSchema) {
   ColumnSchema col1("key", kudu::cfile::STRING);
   ColumnSchema col2("val", kudu::cfile::UINT32);
@@ -82,7 +83,8 @@ TEST(TestSchema, TestProjectMissingColumn) {
 }
 
 
-TEST(TestSchema, TestComparison) {
+// Test that the schema can be used to compare and stringify rows.
+TEST(TestSchema, TestRowOperations) {
   Schema schema(boost::assign::list_of
                  (ColumnSchema("col1", kudu::cfile::STRING))
                  (ColumnSchema("col2", kudu::cfile::STRING))
@@ -107,6 +109,9 @@ TEST(TestSchema, TestComparison) {
 
   ASSERT_GT(schema.Compare(row_b.data(), row_a.data()), 0);
   ASSERT_LT(schema.Compare(row_a.data(), row_b.data()), 0);
+
+  ASSERT_EQ(string("(string col1=row_a_1, string col2=row_a_2, uint32 col3=3)"),
+            schema.DebugRow(row_a.data()));
 }
 
 }

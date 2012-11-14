@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "cfile.pb.h"
 #include "util/slice.h"
+#include "gutil/strings/numbers.h"
 
 namespace kudu {
 namespace cfile {
@@ -27,6 +28,7 @@ public:
   const string& name() const { return name_; }
   const size_t size() const { return size_; }
   const EncodingType default_encoding() const { return default_encoding_; }
+  void AppendDebugStringForValue(const void *ptr, string *str) const;
 
 private:
   friend class TypeInfoResolver;
@@ -36,6 +38,9 @@ private:
   const string name_;
   const size_t size_;
   const EncodingType default_encoding_;
+
+  typedef void (*AppendDebugFunc)(const void *, string *);
+  const AppendDebugFunc append_func_;
 };
 
 
@@ -50,6 +55,9 @@ struct DataTypeTraits<UINT32> {
   static EncodingType default_encoding() {
     return GROUP_VARINT;
   }
+  static void AppendDebugStringForValue(const void *val, string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const uint32_t *>(val)));
+  }
 };
 
 template<>
@@ -60,6 +68,10 @@ struct DataTypeTraits<STRING> {
   }
   static const EncodingType default_encoding() {
     return PREFIX;
+  }
+  static void AppendDebugStringForValue(const void *val, string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->append(s->ToString());
   }
 };
 

@@ -19,8 +19,13 @@ TypeInfo::TypeInfo(TypeTraitsClass t) :
   type_(TypeTraitsClass::type),
   name_(TypeTraitsClass::name()),
   size_(TypeTraitsClass::size),
-  default_encoding_(TypeTraitsClass::default_encoding())
+  default_encoding_(TypeTraitsClass::default_encoding()),
+  append_func_(TypeTraitsClass::AppendDebugStringForValue)
 {
+}
+
+void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
+  append_func_(ptr, str);
 }
 
 

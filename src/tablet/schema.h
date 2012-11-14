@@ -112,6 +112,12 @@ public:
     return cols_.size();
   }
 
+  // Return the length of the key prefix in this schema.
+  // TODO: this is currently always 1
+  size_t num_key_columns() const {
+    return num_key_columns_;
+  }
+
   // Return the byte offset within the row for the given column index.
   size_t column_offset(size_t col_idx) const {
     CHECK_LT(col_idx, cols_.size());
@@ -139,6 +145,29 @@ public:
 
     return reinterpret_cast<const typename cfile::DataTypeTraits<Type>::cpp_type *>(
       row.data() + col_offsets_[idx]);
+  }
+
+  // Stringify the given row, which conforms to this schema,
+  // in a way suitable for debugging. This isn't currently optimized
+  // so should be avoided in hot paths.
+  string DebugRow(const char *row) const {
+    string ret;
+    ret.append("(");
+
+    for (size_t col = 0; col < num_columns(); col++) {
+      const TypeInfo &ti = cols_[col].type_info();
+
+      if (col > 0) {
+        ret.append(", ");
+      }
+      ret.append(ti.name());
+      ret.append(" ");
+      ret.append(cols_[col].name());
+      ret.append("=");
+      ti.AppendDebugStringForValue(&row[col_offsets_[col]], &ret);
+    }
+    ret.append(")");
+    return ret;
   }
 
   // Compare two rows of this schema.
