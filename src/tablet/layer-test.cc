@@ -2,6 +2,7 @@
 
 #include <boost/assign/list_of.hpp>
 #include <boost/lexical_cast.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <time.h>
@@ -11,7 +12,11 @@
 #include "tablet/schema.h"
 #include "util/env.h"
 #include "util/status.h"
+#include "util/stopwatch.h"
 #include "util/test_macros.h"
+
+DEFINE_int32(roundtrip_num_rows, 100000,
+             "Number of rows to use for the round-trip test");
 
 namespace kudu {
 namespace tablet {
@@ -64,7 +69,8 @@ TEST(TestLayer, TestLayerRoundTrip) {
   string test_dir;
   test_dir="/tmp/kudutest-1000/TestLayer.TestLayerRoundTrip.1352878579";
 
-  int n_rows = 100;
+  int n_rows = FLAGS_roundtrip_num_rows;
+  CHECK(n_rows > 0);
 
   ASSERT_STATUS_OK(env->GetTestDirectory(&test_dir));
   test_dir += "/TestLayer.TestLayerRoundTrip." +
@@ -92,22 +98,35 @@ TEST(TestLayer, TestLayerRoundTrip) {
   ASSERT_STATUS_OK(lr.Open());
 
   // First iterate over all columns
-  IterateProjection(lr, schema, n_rows);
+  LOG_TIMING(INFO, "Iterating over all columns") {
+    IterateProjection(lr, schema, n_rows);
+  }
 
   // Now iterate only over the key column
   Schema proj_key(boost::assign::list_of
                   (ColumnSchema("key", kudu::cfile::STRING)),
                   1);
-  IterateProjection(lr, proj_key, n_rows);
+
+  LOG_TIMING(INFO, "Iterating over only key column") {
+    IterateProjection(lr, proj_key, n_rows);
+  }
 
 
   // Now iterate only over the non-key column
   Schema proj_val(boost::assign::list_of
-              (ColumnSchema("val", kudu::cfile::UINT32)),
-              1);
-  IterateProjection(lr, proj_val, n_rows);
+                  (ColumnSchema("val", kudu::cfile::UINT32)),
+                  1);
+  LOG_TIMING(INFO, "Iterating over only val column") {
+    IterateProjection(lr, proj_val, n_rows);
+  }
 
 }
 
 } // namespace tablet
 } // namespace kudu
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  google::ParseCommandLineFlags(&argc, &argv, true);
+  return RUN_ALL_TESTS();
+}
