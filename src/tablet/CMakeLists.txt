@@ -7,6 +7,10 @@ ADD_LIBRARY(tablet ${TABLET_SRCS})
 ADD_EXECUTABLE(tablet-test tablet-test.cc)
 TARGET_LINK_LIBRARIES(tablet-test tablet ${KUDU_TEST_LINK_LIBS})
 
+# layer-test
+ADD_EXECUTABLE(layer-test layer-test.cc)
+TARGET_LINK_LIBRARIES(layer-test tablet ${KUDU_TEST_LINK_LIBS})
+
 # schema-test
 ADD_EXECUTABLE(schema-test schema-test.cc)
 TARGET_LINK_LIBRARIES(schema-test ${KUDU_TEST_LINK_LIBS})

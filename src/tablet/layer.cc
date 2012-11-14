@@ -12,7 +12,18 @@
 
 namespace kudu { namespace tablet {
 
+using cfile::CFileReader;
+using cfile::ReaderOptions;
+using std::auto_ptr;
+using std::string;
 using std::tr1::shared_ptr;
+
+// Return the path at which the given column's cfile
+// is stored within the layer directory.
+static string GetColumnPath(const string &dir,
+                            int col_idx) {
+  return dir + "/col_" + boost::lexical_cast<string>(col_idx);
+}
 
 Status LayerWriter::Open() {
   CHECK(cfile_writers_.empty());
@@ -30,7 +41,7 @@ Status LayerWriter::Open() {
   for (int i = 0; i < schema_.num_columns(); i++) {
     const ColumnSchema &col = schema_.column(i);
 
-    string path = dir_ + "/col_" + boost::lexical_cast<string>(i);
+    string path = GetColumnPath(dir_, i);
 
     // Open file for write.
     WritableFile *out;
@@ -76,6 +87,52 @@ Status LayerWriter::Finish() {
   return Status::OK();
 }
 
+
+////////////////////////////////////////////////////////////
+// Reader
+////////////////////////////////////////////////////////////
+
+Status LayerReader::Open() {
+  CHECK(!open_) << "Already open!";
+  CHECK(cfile_readers_.empty()) << "Invalid state: should have no readers";
+
+  // TODO: somehow pass reader options in schema
+  ReaderOptions opts;
+  for (int i = 0; i < schema_.num_columns(); i++) {
+    string path = GetColumnPath(dir_, i);
+
+    RandomAccessFile *raf_ptr;
+    Status s = env_->NewRandomAccessFile(path, &raf_ptr);
+    if (!s.ok()) {
+      LOG(WARNING) << "Could not open cfile at path "
+                   << path << ": " << s.ToString();
+      return s;
+    }
+    shared_ptr<RandomAccessFile> raf(raf_ptr);
+
+    uint64_t file_size;
+    s = env_->GetFileSize(path, &file_size);
+    if (!s.ok()) {
+      LOG(WARNING) << "Could not get cfile length at path "
+                   << path << ": " << s.ToString();
+      return s;
+    }
+
+    auto_ptr<CFileReader> reader(
+      new CFileReader(opts, raf, file_size));
+    s = reader->Init();
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to Init() cfile reader for "
+                   << path << ": " << s.ToString();
+      return s;
+    }
+
+    cfile_readers_.push_back(reader.release());
+    LOG(INFO) << "Successfully opened cfile for column " <<
+      schema_.column(i).ToString() << " at " << path;
+  }
+  return Status::OK();
+}
 
 
 } // namespace tablet

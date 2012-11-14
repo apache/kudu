@@ -64,7 +64,6 @@ private:
   shared_array<char> data_for_free_;
 };
 
-
 class CFileReader : boost::noncopyable {
 public:
   CFileReader(const ReaderOptions &options,
@@ -80,6 +79,8 @@ public:
 
   Status NewIterator(CFileIterator **iter) const;
 
+  // TODO: make this private? should only be used
+  // by the iterator and index tree readers, I think.
   Status ReadBlock(const BlockPointer &ptr,
                    BlockData *ret) const;
 

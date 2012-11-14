@@ -90,8 +90,8 @@ TEST(TestTablet, TestFlush) {
   char buf[256];
   for (int i = 0; i < 1000; i++) {
     RowBuilder rb(schema);
-    int len = snprintf(buf, sizeof(buf), "hello %d", i);
-    rb.AddString(Slice(buf, len));
+    snprintf(buf, sizeof(buf), "hello %d", i);
+    rb.AddString(Slice(buf));
 
     rb.AddUint32(i);
     ASSERT_STATUS_OK(tablet.Insert(rb.data()));
