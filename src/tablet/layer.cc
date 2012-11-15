@@ -149,5 +149,78 @@ Status LayerReader::NewColumnIterator(size_t col_idx, CFileIterator **iter) cons
 }
 
 
+Status LayerReader::RowIterator::Init() {
+  CHECK(!initted_);
+
+  RETURN_NOT_OK(projection_.GetProjectionFrom(
+                  reader_->schema(), &projection_mapping_));
+
+  // Setup Key Iterator.
+
+  // Only support single key column for now.
+  CHECK_EQ(reader_->schema().num_key_columns(), 1);
+  int key_col = 0;
+
+  CFileIterator *iter;
+  RETURN_NOT_OK(reader_->NewColumnIterator(key_col, &iter));
+  key_iter_.reset(iter);
+
+  // Setup column iterators.
+
+  for (size_t i = 0; i < projection_.num_columns(); i++) {
+    size_t col_in_layer = projection_mapping_[i];
+
+    CFileIterator *iter;
+    RETURN_NOT_OK(reader_->NewColumnIterator(col_in_layer, &iter));
+    col_iters_.push_back(iter);
+  }
+
+  initted_ = true;
+  return Status::OK();
+}
+
+Status LayerReader::RowIterator::CopyNextRows(
+  size_t *nrows, char *dst, Arena *dst_arena)
+{
+  DCHECK(initted_);
+  DCHECK(dst) << "null dst";
+  DCHECK(dst_arena) << "null dst_arena";
+
+  // Copy the projected columns into 'dst'
+  size_t stride = projection_.byte_size();
+  char *ptr = dst;
+  int proj_idx = 0;
+
+  int fetched_prev_col = -1;
+
+  BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+
+    size_t fetched = *nrows;
+    RETURN_NOT_OK(col_iter.CopyNextValuesStrided(
+                    &fetched, ptr, stride, dst_arena));
+
+    if (proj_idx > 0) {
+      CHECK(fetched == fetched_prev_col) <<
+        "Column " << proj_idx << " only fetched "
+                  << fetched << " rows whereas the previous "
+                  << "columns fetched " << fetched_prev_col;
+    }
+    fetched_prev_col = fetched;
+
+    if (fetched == 0) {
+      DCHECK_EQ(proj_idx, 0) << "all columns should end at the same time!";
+      return Status::NotFound("end of input");
+    }
+
+    const TypeInfo &tinfo = projection_.column(proj_idx).type_info();
+    ptr += tinfo.size();
+    proj_idx++;
+  }
+
+  *nrows = fetched_prev_col;
+  return Status::OK();
+}
+
+
 } // namespace tablet
 } // namespace kudu
