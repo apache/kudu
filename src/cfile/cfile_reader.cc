@@ -307,8 +307,9 @@ bool CFileIterator::HasNext() {
   return dblk_->HasNext() || posidx_iter_->HasNext();
 }
 
-Status CFileIterator::CopyNextValues(
-  size_t *n_param, void *out, Arena *dst_arena)
+Status CFileIterator::CopyNextValuesStrided(
+  size_t *n_param, void *out, size_t stride,
+  Arena *dst_arena)
 {
   CHECK(seeked_) << "not seeked";
   size_t rem = *n_param;
@@ -320,14 +321,13 @@ Status CFileIterator::CopyNextValues(
     size_t this_batch = rem;
     // TODO: if this returns a bad status, we've already read some.
     // Should document the semantics of partial read.
-    RETURN_NOT_OK(dblk_->CopyNextValues(&this_batch, out, dst_arena));
+    RETURN_NOT_OK(dblk_->CopyNextValues(&this_batch, out, stride, dst_arena));
     DCHECK_LE(this_batch, rem);
 
     rem -= this_batch;
 
     *n_param += this_batch;
-    out = reinterpret_cast<char *>(out) + 
-      reader_->type_info()->size() * this_batch;
+    out = reinterpret_cast<char *>(out) + stride * this_batch;
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
@@ -362,6 +362,13 @@ Status CFileIterator::CopyNextValues(
   return Status::OK();
 }
 
+
+Status CFileIterator::CopyNextValues(
+  size_t *n_param, void *out, Arena *dst_arena)
+{
+  return CopyNextValuesStrided(
+    n_param, out, reader_->type_info()->size(), dst_arena);
+}
 
 
 } // namespace cfile

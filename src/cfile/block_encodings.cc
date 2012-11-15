@@ -495,18 +495,21 @@ public:
 };
 
 template<typename T>
-class PtrSink {
+class PtrSinkWithStride {
 public:
-  PtrSink(T *ptr) :
-    ptr_(ptr)
+  PtrSinkWithStride(char *ptr, size_t stride) :
+    ptr_(ptr),
+    stride_(stride)
   {}
 
   void push_back(const T &t) {
-    *ptr_++ = t;
+    *reinterpret_cast<T *>(ptr_) = t;
+    ptr_ += stride_;
   }
 
 private:
-  T *ptr_;
+  char *ptr_;
+  const size_t stride_;
 };
 
 void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
@@ -527,8 +530,11 @@ Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   return Status::NotSupported("TODO: int key search");
 }
 
-Status IntBlockDecoder::CopyNextValues(size_t *n, void *out, Arena *out_arena) {
-  PtrSink<uint32_t> sink(reinterpret_cast<uint32_t *>(out));
+Status IntBlockDecoder::CopyNextValues(size_t *n, void *out,
+                                       size_t stride, Arena *out_arena) {
+  CHECK_GE(stride, sizeof(uint32_t));
+
+  PtrSinkWithStride<uint32_t> sink(reinterpret_cast<char *>(out), stride);
   return DoGetNextValues(n, &sink);
 }
 
@@ -743,9 +749,12 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   }
 }
 
-Status StringBlockDecoder::CopyNextValues(size_t *n, void *out_void, Arena *out_arena) {
+Status StringBlockDecoder::CopyNextValues(size_t *n, void *out_void,
+                                          size_t stride, Arena *out_arena) {
   DCHECK(parsed_);
-  Slice *out = reinterpret_cast<Slice *>(out_void);
+  CHECK_GE(stride, sizeof(Slice));
+
+  char *out = reinterpret_cast<char *>(out_void);
 
   size_t i = 0;
   for (i = 0; i < *n && cur_idx_ < num_elems_; i++) {
@@ -760,7 +769,8 @@ Status StringBlockDecoder::CopyNextValues(size_t *n, void *out_void, Arena *out_
     }
 
     // Put a slice to it in the output array
-    *out++ = Slice(out_data, cur_val_.size());
+    *reinterpret_cast<Slice *>(out) = Slice(out_data, cur_val_.size());
+    out += stride;
 
     if (cur_idx_ + 1 < num_elems_) {
       // TODO: Can ParseNextValue take a pointer to the previously

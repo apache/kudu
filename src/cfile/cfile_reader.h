@@ -156,6 +156,9 @@ public:
   // The number of values actually read is written back into 'n'.
   Status CopyNextValues(size_t *n, void *out, Arena *dst_arena);
 
+  Status CopyNextValuesStrided(size_t *n, void *out, size_t stride,
+                               Arena *dst_arena);
+
   bool HasNext();
 
 private:
