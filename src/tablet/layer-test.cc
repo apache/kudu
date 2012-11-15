@@ -43,22 +43,24 @@ static void IterateProjection(const LayerReader &lr, const Schema &schema,
   char dst[schema.byte_size() * batch_size];
 
   int i = 0;
-  int log_interval = expected_rows/20;
+  int log_interval = expected_rows/20 / batch_size;
   while (row_iter->HasNext()) {
     arena.Reset();
     size_t n = batch_size;
     ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, dst, &arena));
-    i++;
+    i += n;
 
     LOG_EVERY_N(INFO, log_interval) << "Got row: " <<
       schema.DebugRow(dst);
   }
 
-  // TODO: this expect is failing currently, we're getting
-  // one too few rows...
   EXPECT_EQ(expected_rows, i);
+
 }
 
+
+// TODO: add test which calls CopyNextRows on an iterator with no more
+// rows - i think it segfaults!
 
 // Test round-trip writing and reading back a layer with
 // multiple columns. Does not test any modifications.
@@ -77,21 +79,23 @@ TEST(TestLayer, TestLayerRoundTrip) {
     boost::lexical_cast<string>(time(NULL));
 
   // Write 1000 rows into a new Layer.
-  LayerWriter lw(env, schema, test_dir);
+  LOG_TIMING(INFO, "Writing layer") {
+    LayerWriter lw(env, schema, test_dir);
 
-  ASSERT_STATUS_OK(lw.Open());
+    ASSERT_STATUS_OK(lw.Open());
 
 
-  char buf[256];
-  RowBuilder rb(schema);
-  for (int i = 0; i < n_rows; i++) {
-    rb.Reset();
-    snprintf(buf, sizeof(buf), "hello %d", i);
-    rb.AddString(Slice(buf));
-    rb.AddUint32(i);
-    ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
+    char buf[256];
+    RowBuilder rb(schema);
+    for (int i = 0; i < n_rows; i++) {
+      rb.Reset();
+      snprintf(buf, sizeof(buf), "hello %d", i);
+      rb.AddString(Slice(buf));
+      rb.AddUint32(i);
+      ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
+    }
+    ASSERT_STATUS_OK(lw.Finish());
   }
-  ASSERT_STATUS_OK(lw.Finish());
 
   // Now open the Layer for read
   LayerReader lr(env, schema, test_dir);

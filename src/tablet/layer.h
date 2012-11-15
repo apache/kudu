@@ -163,21 +163,38 @@ public:
     DCHECK(dst_arena) << "null dst_arena";
 
     // Copy the projected columns into 'dst'
+    size_t stride = projection_.byte_size();
     char *ptr = dst;
     int proj_idx = 0;
+
+    int fetched_prev_col = -1;
+
     BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
-      size_t fetched = 1;
-      RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, ptr, dst_arena));
-      if (fetched != 1) {
+
+      size_t fetched = *nrows;
+      RETURN_NOT_OK(col_iter.CopyNextValuesStrided(
+                      &fetched, ptr, stride, dst_arena));
+
+      if (proj_idx > 0) {
+        CHECK(fetched == fetched_prev_col) <<
+          "Column " << proj_idx << " only fetched "
+                    << fetched << " rows whereas the previous "
+                    << "columns fetched " << fetched_prev_col;
+      }
+      fetched_prev_col = fetched;
+
+      if (fetched == 0) {
         DCHECK_EQ(proj_idx, 0) << "all columns should end at the same time!";
         return Status::NotFound("end of input");
       }
-      ptr += projection_.column(proj_idx).type_info().size();
+
+      const TypeInfo &tinfo = projection_.column(proj_idx).type_info();
+      ptr += tinfo.size();
       proj_idx++;
     }
 
-    // Copy any indirect data into the Arena.
-    return CopyRowIndirectDataToArena(dst, projection_, dst_arena);
+    *nrows = fetched_prev_col;
+    return Status::OK();
   }
 
   bool HasNext() {

@@ -156,6 +156,9 @@ public:
   // The number of values actually read is written back into 'n'.
   Status CopyNextValues(size_t *n, void *out, Arena *dst_arena);
 
+  // Same as CopyNextValues() except that the output is strided by
+  // the given 'stride' value.
+  // TODO: probably get rid of the non-strided call?
   Status CopyNextValuesStrided(size_t *n, void *out, size_t stride,
                                Arena *dst_arena);
 
