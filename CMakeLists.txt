@@ -73,6 +73,8 @@ INCLUDE_DIRECTORIES(src)
 # Dependencies
 ############################################################
 
+set(LIBS ${LIBS} -lrt)
+
 ## Boost
 find_package(Boost COMPONENTS thread system REQUIRED)
 include_directories( ${Boost_INCLUDE_DIR} )
