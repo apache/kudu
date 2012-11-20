@@ -51,7 +51,7 @@ const unsigned char kAsciiPropertyBits[256] = {
   0x05, 0x05, 0x05, 0x10, 0x10, 0x10, 0x10, 0x40,
 };
 
-const char kAsciiToLower[256] = {
+const unsigned char kAsciiToLower[256] = {
   00,   1,   2,   3,   4,   5,   6,   7,   8,   9,
   10,  11,  12,  13,  14,  15,  16,  17,  18,  19,
   20,  21,  22,  23,  24,  25,  26,  27,  28,  29,
@@ -80,7 +80,7 @@ const char kAsciiToLower[256] = {
   250, 251, 252, 253, 254, 255
 };
 
-const char kAsciiToUpper[256] = {
+const unsigned char kAsciiToUpper[256] = {
   00,   1,   2,   3,   4,   5,   6,   7,   8,   9,
   10,  11,  12,  13,  14,  15,  16,  17,  18,  19,
   20,  21,  22,  23,  24,  25,  26,  27,  28,  29,

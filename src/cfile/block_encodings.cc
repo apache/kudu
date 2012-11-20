@@ -44,10 +44,10 @@ static void InitializeSSETables() {
     uint32_t *entry = reinterpret_cast<uint32_t *>(&SSE_TABLE[i * 16]);
 
     uint8_t selectors[] = {
-      (i & BOOST_BINARY( 11 00 00 00)) >> 6,
-      (i & BOOST_BINARY( 00 11 00 00)) >> 4,
-      (i & BOOST_BINARY( 00 00 11 00)) >> 2,
-      (i & BOOST_BINARY( 00 00 00 11 )) };
+      static_cast<uint8_t>((i & BOOST_BINARY( 11 00 00 00)) >> 6),
+      static_cast<uint8_t>((i & BOOST_BINARY( 00 11 00 00)) >> 4),
+      static_cast<uint8_t>((i & BOOST_BINARY( 00 00 11 00)) >> 2),
+      static_cast<uint8_t>((i & BOOST_BINARY( 00 00 00 11 ))) };
 
     // 00000000 ->
     // 00 ff ff ff  01 ff ff ff  02 ff ff ff  03 ff ff ff

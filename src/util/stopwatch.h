@@ -31,7 +31,7 @@ struct CpuTimes
 
   void clear() { wall = user = system = 0LL; }
 
-  static const double NANOS_PER_SECOND = 1000000000.0;
+  static constexpr double NANOS_PER_SECOND = 1000000000.0;
 
   std::string ToString() const {
     return StringPrintf(
