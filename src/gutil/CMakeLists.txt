@@ -1,15 +1,24 @@
 # Disable warnings which trigger a lot in the Google code:
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-sign-compare -Wno-deprecated")
 
-SET(EXTRA_PROTO_PATHS ..)
+
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
-  proto/types.proto
-  exception/stack_trace.proto
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../
+  PROTO_FILES exception/stack_trace.proto
   )
+SET(GUTIL_SRCS ${PROTO_SRCS})
+
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../
+  PROTO_FILES proto/types.proto 
+  )
+SET(GUTIL_SRCS ${GUTIL_SRCS} ${PROTO_SRCS})
 
 
 ADD_LIBRARY(gutil
-  ${PROTO_SRCS}
+  ${GUTIL_SRCS}
 ./exception/stack_trace.cc
 ./bits.cc
 ./file_util.cc

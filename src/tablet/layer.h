@@ -12,8 +12,8 @@
 
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
-#include "tablet/row.h"
-#include "tablet/schema.h"
+#include "common/row.h"
+#include "common/schema.h"
 #include "util/memory/arena.h"
 
 namespace kudu {

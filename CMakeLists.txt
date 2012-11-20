@@ -93,6 +93,8 @@ add_library(gtest STATIC IMPORTED)
 set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
 
 ## Protobuf
+SET(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
+SET(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
 find_package( Protobuf REQUIRED )
 include_directories(${PROTOBUF_INCLUDE_DIR})
 set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
@@ -112,7 +114,7 @@ SET(LIBS ${LIBS} gflags)
 # Linker setup
 ############################################################
 SET(KUDU_LINK_LIBS ${LIBS})
-SET(KUDU_TEST_LINK_LIBS  cfile kudu_util gutil ${KUDU_LINK_LIBS} gtest)
+SET(KUDU_TEST_LINK_LIBS cfile kudu_common kudu_util gutil ${KUDU_LINK_LIBS} gtest)
 
 ############################################################
 # Subdirectories
@@ -127,6 +129,9 @@ set(LIBS ${LIBS} ${KUDU_PORT_LIBS})
 
 add_subdirectory(src/util)
 set(LIBS ${LIBS} ${KUDU_UTIL_LIBS})
+
+add_subdirectory(src/common)
+set(LIBS ${LIBS} ${KUDU_COMMON_LIBS})
 
 add_subdirectory(src/cfile)
 set(LIBS ${LIBS} ${CFILE_LIBS})

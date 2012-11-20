@@ -3,9 +3,9 @@
 #ifndef KUDU_CFILE_INDEX_BLOCK_H
 #define KUDU_CFILE_INDEX_BLOCK_H
 
-#include "block_pointer.h"
+#include "common/types.h"
+#include "cfile/block_pointer.h"
 #include "util/coding-inl.h"
-#include "types.h"
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
@@ -20,6 +20,7 @@ namespace cfile {
 using std::string;
 using std::vector;
 using boost::scoped_ptr;
+using kudu::DataTypeTraits;
 
 // Forward decl.
 template <DataType KeyTypeEnum> class IndexBlockIterator;

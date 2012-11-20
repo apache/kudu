@@ -4,9 +4,9 @@
 #include <glog/logging.h>
 #include <tr1/memory>
 
+#include "common/schema.h"
 #include "cfile/cfile.h"
 #include "tablet/layer.h"
-#include "tablet/schema.h"
 #include "util/env.h"
 #include "util/status.h"
 
@@ -61,7 +61,7 @@ Status LayerWriter::Open() {
     std::auto_ptr<cfile::Writer> writer(new cfile::Writer(
                                           opts,
                                           col.type_info().type(),
-                                          col.type_info().default_encoding(),
+                                          cfile::GetDefaultEncoding(col.type_info().type()),
                                           out_shared));
 
     s = writer->Start();

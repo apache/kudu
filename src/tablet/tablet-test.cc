@@ -6,8 +6,8 @@
 #include <gtest/gtest.h>
 #include <time.h>
 
+#include "common/row.h"
 #include "tablet/memstore.h"
-#include "tablet/row.h"
 #include "tablet/tablet.h"
 #include "util/slice.h"
 #include "util/test_macros.h"
@@ -17,8 +17,8 @@ namespace tablet {
 
 
 Schema CreateTestSchema() {
-  ColumnSchema col1("key", kudu::cfile::STRING);
-  ColumnSchema col2("val", kudu::cfile::UINT32);
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col2("val", UINT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
     (col1)(col2);
@@ -49,9 +49,9 @@ TEST(TestTablet, TestMemStore) {
   Slice s = iter->GetCurrentRow();
   ASSERT_EQ(schema.byte_size(), s.size());
   ASSERT_EQ(Slice("goodbye world"),
-            *schema.ExtractColumnFromRow<cfile::STRING>(s, 0));
+            *schema.ExtractColumnFromRow<STRING>(s, 0));
   ASSERT_EQ(54321,
-            *schema.ExtractColumnFromRow<cfile::UINT32>(s, 1));
+            *schema.ExtractColumnFromRow<UINT32>(s, 1));
 
   // Next row should be 'hello world'
   ASSERT_TRUE(iter->Next());
@@ -59,9 +59,9 @@ TEST(TestTablet, TestMemStore) {
   s = iter->GetCurrentRow();
   ASSERT_EQ(schema.byte_size(), s.size());
   ASSERT_EQ(Slice("hello world"),
-            *schema.ExtractColumnFromRow<cfile::STRING>(s, 0));
+            *schema.ExtractColumnFromRow<STRING>(s, 0));
   ASSERT_EQ(12345,
-            *schema.ExtractColumnFromRow<cfile::UINT32>(s, 1));
+            *schema.ExtractColumnFromRow<UINT32>(s, 1));
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->IsValid());

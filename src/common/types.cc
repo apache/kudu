@@ -9,7 +9,6 @@
 #include "types.h"
 
 namespace kudu {
-namespace cfile {
 
 using std::tr1::unordered_map;
 using boost::scoped_ptr;
@@ -19,7 +18,6 @@ TypeInfo::TypeInfo(TypeTraitsClass t) :
   type_(TypeTraitsClass::type),
   name_(TypeTraitsClass::name()),
   size_(TypeTraitsClass::size),
-  default_encoding_(TypeTraitsClass::default_encoding()),
   append_func_(TypeTraitsClass::AppendDebugStringForValue)
 {
 }
@@ -62,6 +60,4 @@ const TypeInfo &GetTypeInfo(DataType type) {
 }
 
 
-
-} // namespace cfile
 } // namespace kudu

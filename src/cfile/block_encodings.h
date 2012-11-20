@@ -11,6 +11,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "cfile/cfile.pb.h"
 #include "util/memory/arena.h"
 #include "util/faststring.h"
 #include "util/slice.h"
@@ -40,6 +41,22 @@ extern void AppendGroupVarInt32(
   faststring *s,
   uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 //
+
+
+// Return the default encoding to use for the given data type.
+// TODO: this probably won't stay around too long - in a real Flush
+// situation, we can look at the content in the memstore and pick the
+// most effective coding.
+inline EncodingType GetDefaultEncoding(DataType type) {
+  switch (type) {
+    case STRING:
+      return PREFIX;
+    case UINT32:
+      return GROUP_VARINT;
+    default:
+      CHECK(0) << "unknown type: " << type;
+  }
+}
 
 
 class BlockBuilder : boost::noncopyable {

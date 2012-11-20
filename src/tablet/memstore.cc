@@ -1,9 +1,9 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <glog/logging.h>
-#include "cfile/cfile.pb.h"
+#include "common/common.pb.h"
+#include "common/row.h"
 #include "tablet/memstore.h"
-#include "tablet/row.h"
 
 namespace kudu { namespace tablet {
 
@@ -32,7 +32,7 @@ MemStore::MemStore(const Schema &schema) :
 
 Status MemStore::CopyRowToArena(const Slice &row,
                                 Slice *copied) {
-  return kudu::tablet::CopyRowToArena(row, schema_, &arena_, copied);
+  return kudu::CopyRowToArena(row, schema_, &arena_, copied);
 }
 
 Status MemStore::Insert(const Slice &data) {

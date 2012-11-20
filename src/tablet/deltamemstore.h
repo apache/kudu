@@ -6,7 +6,7 @@
 #include <boost/scoped_array.hpp>
 #include <map>
 
-#include "tablet/schema.h"
+#include "common/schema.h"
 #include "util/bitmap.h"
 #include "util/memory/arena.h"
 

@@ -1,16 +1,15 @@
 // Copyright (c) 2012, Cloudera, inc.
-#ifndef KUDU_TABLET_ROW_H
-#define KUDU_TABLET_ROW_H
+#ifndef KUDU_COMMON_ROW_H
+#define KUDU_COMMON_ROW_H
 
 #include <boost/noncopyable.hpp>
 #include <glog/logging.h>
 
-#include "cfile/types.h"
-#include "tablet/schema.h"
+#include "common/types.h"
+#include "common/schema.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
-namespace tablet {
 
 inline Status CopyRowIndirectDataToArena(char *row,
                                          const Schema &schema,
@@ -19,7 +18,7 @@ inline Status CopyRowIndirectDataToArena(char *row,
   // and update the pointers
   char *ptr = reinterpret_cast<char *>(row);
   for (int i = 0; i < schema.num_columns(); i++) {
-    if (schema.column(i).type_info().type() == cfile::STRING) {
+    if (schema.column(i).type_info().type() == STRING) {
       Slice *slice = reinterpret_cast<Slice *>(ptr);
       Slice copied_slice;
       if (!dst_arena->RelocateSlice(*slice, &copied_slice)) {
@@ -79,7 +78,7 @@ public:
   }
 
   void AddString(const Slice &slice) {
-    CheckNextType(cfile::STRING);
+    CheckNextType(STRING);
 
     Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
     CHECK(arena_.RelocateSlice(slice, ptr)) << "could not allocate space in arena";
@@ -88,7 +87,7 @@ public:
   }
 
   void AddString(const string &str) {
-    CheckNextType(cfile::STRING);
+    CheckNextType(STRING);
 
     char *in_arena = arena_.AddStringPieceContent(str);
     CHECK(in_arena) << "could not allocate space in arena";
@@ -100,7 +99,7 @@ public:
   }
 
   void AddUint32(uint32_t val) {
-    CheckNextType(cfile::UINT32);
+    CheckNextType(UINT32);
     *reinterpret_cast<uint32_t *>(&buf_[byte_idx_]) = val;
     Advance();
   }
@@ -110,7 +109,7 @@ public:
   // After using this method, the RowBuilder may be Reset.
   Status CopyRowToArena(Arena *dst_arena,
                         Slice *copied) const {
-    return kudu::tablet::CopyRowToArena(data(), schema_, dst_arena, copied);
+    return kudu::CopyRowToArena(data(), schema_, dst_arena, copied);
   }
 
   // Retrieve the data slice from the current row.
@@ -149,7 +148,6 @@ private:
   size_t byte_idx_;
 };
 
-} // namespace tablet
 } // namespace kudu
 
 #endif

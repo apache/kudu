@@ -1,16 +1,15 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#ifndef KUDU_CFILE_TYPES_H
-#define KUDU_CFILE_TYPES_H
+#ifndef KUDU_COMMON_TYPES_H
+#define KUDU_COMMON_TYPES_H
 
 #include <string>
 #include <stdint.h>
-#include "cfile.pb.h"
+#include "common/common.pb.h"
 #include "util/slice.h"
 #include "gutil/strings/numbers.h"
 
 namespace kudu {
-namespace cfile {
 
 using std::string;
 class TypeInfo;
@@ -27,7 +26,6 @@ public:
   DataType type() const { return type_; }
   const string& name() const { return name_; }
   const size_t size() const { return size_; }
-  const EncodingType default_encoding() const { return default_encoding_; }
   void AppendDebugStringForValue(const void *ptr, string *str) const;
 
 private:
@@ -37,7 +35,6 @@ private:
   const DataType type_;
   const string name_;
   const size_t size_;
-  const EncodingType default_encoding_;
 
   typedef void (*AppendDebugFunc)(const void *, string *);
   const AppendDebugFunc append_func_;
@@ -52,9 +49,6 @@ struct DataTypeTraits<UINT32> {
   static const char *name() {
     return "uint32";
   }
-  static EncodingType default_encoding() {
-    return GROUP_VARINT;
-  }
   static void AppendDebugStringForValue(const void *val, string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const uint32_t *>(val)));
   }
@@ -65,9 +59,6 @@ struct DataTypeTraits<STRING> {
   typedef Slice cpp_type;
   static const char *name() {
     return "string";
-  }
-  static const EncodingType default_encoding() {
-    return PREFIX;
   }
   static void AppendDebugStringForValue(const void *val, string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
@@ -85,10 +76,6 @@ template<DataType datatype> struct TypeTraits :
   static const size_t size = sizeof(cpp_type);
 };
 
-
-
-
-} // namespace cfile
 } // namespace kudu
 
 #endif

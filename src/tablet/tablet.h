@@ -5,8 +5,8 @@
 #include <boost/scoped_ptr.hpp>
 #include <string>
 
+#include "common/schema.h"
 #include "tablet/memstore.h"
-#include "tablet/schema.h"
 #include "util/env.h"
 #include "util/status.h"
 #include "util/slice.h"

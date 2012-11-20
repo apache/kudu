@@ -1,0 +1,17 @@
+# Copyright (c) 2012, Cloudera, inc.
+
+message("\n\n")
+SET(COMMON_SRCS types.cc)
+PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES common.proto)
+SET(COMMON_SRCS ${COMMON_SRCS} ${COMMON_PROTO_SRCS})
+MESSAGE("common srcs: ${COMMON_SRCS}\n\n")
+ADD_LIBRARY(kudu_common ${COMMON_SRCS})
+SET(KUDU_COMMON_LIBS kudu_common)
+
+
+# schema-test
+ADD_EXECUTABLE(schema-test schema-test.cc)
+TARGET_LINK_LIBRARIES(schema-test ${KUDU_TEST_LINK_LIBS})

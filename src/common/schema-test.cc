@@ -5,9 +5,9 @@
 #include <gtest/gtest.h>
 #include <vector>
 
+#include "common/row.h"
+#include "common/schema.h"
 #include "util/test_macros.h"
-#include "tablet/row.h"
-#include "tablet/schema.h"
 
 namespace kudu {
 namespace tablet {
@@ -16,8 +16,8 @@ using std::vector;
 
 // Test basic functionality of Schema definition
 TEST(TestSchema, TestSchema) {
-  ColumnSchema col1("key", kudu::cfile::STRING);
-  ColumnSchema col2("val", kudu::cfile::UINT32);
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col2("val", UINT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
     (col1)(col2);
@@ -33,13 +33,13 @@ TEST(TestSchema, TestSchema) {
 // Test projection from many columns down to a subset.
 TEST(TestSchema, TestProjection) {
   Schema schema1(boost::assign::list_of
-                 (ColumnSchema("col1", kudu::cfile::STRING))
-                 (ColumnSchema("col2", kudu::cfile::STRING))
-                 (ColumnSchema("col3", kudu::cfile::UINT32)),
+                 (ColumnSchema("col1", STRING))
+                 (ColumnSchema("col2", STRING))
+                 (ColumnSchema("col3", UINT32)),
                  1);
   Schema schema2(boost::assign::list_of
-                 (ColumnSchema("col3", kudu::cfile::UINT32))
-                 (ColumnSchema("col2", kudu::cfile::STRING)),
+                 (ColumnSchema("col3", UINT32))
+                 (ColumnSchema("col2", STRING)),
                  1);
 
   vector<size_t> proj;
@@ -53,11 +53,11 @@ TEST(TestSchema, TestProjection) {
 // doesn't match the original type.
 TEST(TestSchema, TestProjectTypeMismatch) {
   Schema schema1(boost::assign::list_of
-                 (ColumnSchema("key", kudu::cfile::STRING))
-                 (ColumnSchema("val", kudu::cfile::UINT32)),
+                 (ColumnSchema("key", STRING))
+                 (ColumnSchema("val", UINT32)),
                  1);
   Schema schema2(boost::assign::list_of
-                 (ColumnSchema("val", kudu::cfile::STRING)),
+                 (ColumnSchema("val", STRING)),
                  1);
 
   vector<size_t> proj;
@@ -69,12 +69,12 @@ TEST(TestSchema, TestProjectTypeMismatch) {
 // doesn't match the original type.
 TEST(TestSchema, TestProjectMissingColumn) {
   Schema schema1(boost::assign::list_of
-                 (ColumnSchema("key", kudu::cfile::STRING))
-                 (ColumnSchema("val", kudu::cfile::UINT32)),
+                 (ColumnSchema("key", STRING))
+                 (ColumnSchema("val", UINT32)),
                  1);
   Schema schema2(boost::assign::list_of
-                 (ColumnSchema("val", kudu::cfile::UINT32))
-                 (ColumnSchema("non_present", kudu::cfile::STRING)),
+                 (ColumnSchema("val", UINT32))
+                 (ColumnSchema("non_present", STRING)),
                  1);
 
   vector<size_t> proj;
@@ -86,9 +86,9 @@ TEST(TestSchema, TestProjectMissingColumn) {
 // Test that the schema can be used to compare and stringify rows.
 TEST(TestSchema, TestRowOperations) {
   Schema schema(boost::assign::list_of
-                 (ColumnSchema("col1", kudu::cfile::STRING))
-                 (ColumnSchema("col2", kudu::cfile::STRING))
-                 (ColumnSchema("col3", kudu::cfile::UINT32)),
+                 (ColumnSchema("col1", STRING))
+                 (ColumnSchema("col2", STRING))
+                 (ColumnSchema("col3", UINT32)),
                  1);
 
   Arena arena(1024, 256*1024);

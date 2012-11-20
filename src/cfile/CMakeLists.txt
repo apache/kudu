@@ -1,11 +1,14 @@
 # Copyright (c) 2012, Cloudera, inc.
 
-SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc block_encodings.cc types.cc )
-
 PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
-  cfile.proto)
-SET(CFILE_SRCS ${CFILE_SRCS} ${CFILE_PROTO_SRCS})
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES cfile.proto)
+
+SET(CFILE_SRCS ${CFILE_PROTO_SRCS} cfile.cc index_block.cc index_btree.cc cfile_reader.cc block_encodings.cc )
+
 add_library(cfile ${CFILE_SRCS})
+ADD_DEPENDENCIES(cfile kudu_common)
 
 # index-test
 add_executable(index-test index-test.cc)

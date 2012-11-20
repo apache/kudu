@@ -1,6 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
-#ifndef KUDU_TABLET_SCHEMA_H
-#define KUDU_TABLET_SCHEMA_H
+#ifndef KUDU_COMMON_SCHEMA_H
+#define KUDU_COMMON_SCHEMA_H
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
@@ -8,19 +8,17 @@
 #include <tr1/unordered_map>
 #include <vector>
 
-#include "cfile/cfile.pb.h"
-#include "cfile/types.h"
+#include "common/types.h"
+#include "common/common.pb.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/strcat.h"
 #include "util/status.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
 
 using std::vector;
 using std::tr1::unordered_map;
-using kudu::cfile::DataType;
-using kudu::cfile::TypeInfo;
 
 // The schema for a given column.
 //
@@ -32,7 +30,7 @@ public:
   ColumnSchema(const string &name,
                DataType type) :
     name_(name),
-    type_info_(kudu::cfile::GetTypeInfo(type))
+    type_info_(GetTypeInfo(type))
   {}
 
   const TypeInfo &type_info() const {
@@ -138,12 +136,12 @@ public:
   // This is mostly useful for tests at this point.
   // TODO: consider removing it.
   template<DataType Type>
-  const typename cfile::DataTypeTraits<Type>::cpp_type *
+  const typename DataTypeTraits<Type>::cpp_type *
   ExtractColumnFromRow(const Slice &row, size_t idx) {
     DCHECK_LT(idx, cols_.size());
     DCHECK_EQ(cols_[idx].type_info().type(), Type);
 
-    return reinterpret_cast<const typename cfile::DataTypeTraits<Type>::cpp_type *>(
+    return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type *>(
       row.data() + col_offsets_[idx]);
   }
 
@@ -179,7 +177,7 @@ public:
 
       // TODO: move this into types.cc or something
       switch (ti.type()) {
-        case cfile::UINT32:
+        case UINT32:
         {
           uint32_t lhs_int = *reinterpret_cast<const uint32_t *>(lhs);
           uint32_t rhs_int = *reinterpret_cast<const uint32_t *>(rhs);
@@ -190,7 +188,7 @@ public:
           }
           break;
         }
-        case cfile::STRING:
+        case STRING:
         {
           const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
           const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
@@ -272,7 +270,6 @@ private:
   NameToIndexMap name_to_index_;
 };
 
-} // namespace tablet
 } // namespace kudu
 
 #endif

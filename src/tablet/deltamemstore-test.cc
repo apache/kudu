@@ -4,12 +4,11 @@
 #include <boost/foreach.hpp>
 #include <boost/scoped_array.hpp>
 #include <gtest/gtest.h>
+#include <stdlib.h>
 #include <tr1/unordered_set>
 
-#include <stdlib.h>
-
+#include "common/schema.h"
 #include "tablet/deltamemstore.h"
-#include "tablet/schema.h"
 
 namespace kudu {
 namespace tablet {
@@ -33,7 +32,7 @@ static void GenerateRandomIndexes(uint32_t range, uint32_t count,
 
 TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
   Schema schema(boost::assign::list_of
-                 (ColumnSchema("col1", kudu::cfile::UINT32)),
+                 (ColumnSchema("col1", UINT32)),
                  1);
   DeltaMemStore dms(schema);
 
@@ -78,9 +77,9 @@ TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
 
 TEST(TestDeltaMemStore, TestDMSBasic) {
   Schema schema(boost::assign::list_of
-                 (ColumnSchema("col1", kudu::cfile::STRING))
-                 (ColumnSchema("col2", kudu::cfile::STRING))
-                 (ColumnSchema("col3", kudu::cfile::UINT32)),
+                 (ColumnSchema("col1", STRING))
+                 (ColumnSchema("col2", STRING))
+                 (ColumnSchema("col3", UINT32)),
                  1);
   DeltaMemStore dms(schema);
 
@@ -132,9 +131,9 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
 
 TEST(TestDeltaMemStore, TestRowDelta) {
   Schema schema(boost::assign::list_of
-                 (ColumnSchema("col1", kudu::cfile::STRING))
-                 (ColumnSchema("col2", kudu::cfile::STRING))
-                 (ColumnSchema("col3", kudu::cfile::UINT32)),
+                 (ColumnSchema("col1", STRING))
+                 (ColumnSchema("col2", STRING))
+                 (ColumnSchema("col3", UINT32)),
                  1);
 
   // Delta starts with no updates.

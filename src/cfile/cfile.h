@@ -13,10 +13,10 @@
 
 #include <gtest/gtest.h>
 
-#include "block_encodings.h"
-#include "cfile.pb.h"
+#include "cfile/block_encodings.h"
+#include "cfile/cfile.pb.h"
+#include "common/types.h"
 #include "util/status.h"
-#include "types.h"
 
 namespace kudu {
 

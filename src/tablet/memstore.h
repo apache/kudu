@@ -5,7 +5,7 @@
 #include <boost/noncopyable.hpp>
 #include <set>
 
-#include "tablet/schema.h"
+#include "common/schema.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
 

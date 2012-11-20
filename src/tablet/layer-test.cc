@@ -7,9 +7,9 @@
 #include <gtest/gtest.h>
 #include <time.h>
 
+#include "common/row.h"
+#include "common/schema.h"
 #include "tablet/layer.h"
-#include "tablet/row.h"
-#include "tablet/schema.h"
 #include "util/env.h"
 #include "util/status.h"
 #include "util/stopwatch.h"
@@ -22,8 +22,8 @@ namespace kudu {
 namespace tablet {
 
 Schema CreateTestSchema() {
-  ColumnSchema col1("key", kudu::cfile::STRING);
-  ColumnSchema col2("val", kudu::cfile::UINT32);
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col2("val", UINT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
     (col1)(col2);
@@ -108,7 +108,7 @@ TEST(TestLayer, TestLayerRoundTrip) {
 
   // Now iterate only over the key column
   Schema proj_key(boost::assign::list_of
-                  (ColumnSchema("key", kudu::cfile::STRING)),
+                  (ColumnSchema("key", STRING)),
                   1);
 
   LOG_TIMING(INFO, "Iterating over only key column") {
@@ -118,7 +118,7 @@ TEST(TestLayer, TestLayerRoundTrip) {
 
   // Now iterate only over the non-key column
   Schema proj_val(boost::assign::list_of
-                  (ColumnSchema("val", kudu::cfile::UINT32)),
+                  (ColumnSchema("val", UINT32)),
                   1);
   LOG_TIMING(INFO, "Iterating over only val column") {
     IterateProjection(lr, proj_val, n_rows);

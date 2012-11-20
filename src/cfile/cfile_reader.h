@@ -9,10 +9,10 @@
 #include <tr1/memory>
 #include <string>
 
+#include "common/types.h"
 #include "cfile/index_btree.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
-#include "types.h"
 
 namespace kudu {
 
