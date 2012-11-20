@@ -76,6 +76,9 @@ class Arena {
   // returns NULL and leaves the arena unchanged.
   char* AddStringPieceContent(const StringPiece& value);
 
+  // Same as above.
+  void * AddBytes(const void *data, size_t len);
+
   // Relocate the given Slice into the arena, setting 'dst' and
   // returning true if successful.
   // See AddStringPieceContent above for detail on memory lifetime.
@@ -220,10 +223,15 @@ inline void *Arena::AllocateBytes(const size_t size) {
 }
 
 inline char* Arena::AddStringPieceContent(const StringPiece& value) {
-  void* destination = AllocateBytes(value.size());
+  return reinterpret_cast<char *>(
+    AddBytes(value.data(), value.size()));
+}
+
+inline void *Arena::AddBytes(const void *data, size_t len) {
+  void* destination = AllocateBytes(len);
   if (destination == NULL) return NULL;
-  memcpy(destination, value.data(), value.size());
-  return static_cast<char*>(destination);
+  memcpy(destination, data, len);
+  return destination;
 }
 
 inline bool Arena::RelocateSlice(const Slice &src, Slice *dst) {
