@@ -92,7 +92,7 @@ private:
   const TypeInfo &type_;
 
   void *data_;
-  size_t stride_;
+  const size_t stride_;
   size_t nrows_;
 
   Arena *arena_;

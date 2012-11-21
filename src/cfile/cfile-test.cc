@@ -50,6 +50,30 @@ void CopyOne(CFileIterator *it,
 }
 
 
+// Fast unrolled summing of a vector.
+// GCC's auto-vectorization doesn't work here, because there isn't
+// enough guarantees on alignment and it can't seem to decude the
+// constant stride.
+template<class Indexable>
+uint64_t FastSum(const Indexable &data, size_t n) {
+  uint64_t sums[4] = {0, 0, 0, 0};
+  int rem = n;
+  int i = 0;
+  while (rem >= 4) {
+    sums[0] += data[i];
+    sums[1] += data[i+1];
+    sums[2] += data[i+2];
+    sums[3] += data[i+3];
+    i += 4;
+    rem -= 4;
+  }
+  while (rem > 0) {
+    sums[3] += data[i++];
+    rem--;
+  }
+  return sums[0] + sums[1] + sums[2] + sums[3];
+}
+
 static void WriteTestFileStrings(
   const string &path, int num_entries,
   const char *format) {
@@ -152,9 +176,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
       while (iter->HasNext()) {
         size_t n = cb.size();
         ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
-        for (int i = 0; i < n; i++) {
-          sum += cb[i];
-        }
+        sum += FastSum(cb, n);
         count += n;
         cb.arena()->Reset();
       }
