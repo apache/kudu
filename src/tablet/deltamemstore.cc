@@ -20,8 +20,6 @@ DeltaMemStore::DeltaMemStore(const Schema &schema) :
 
 void DeltaMemStore::Update(uint32_t row_idx,
                            const RowDelta &update) {
-  // TODO: copy any STRING type data into local arena
-
   DMSMap::iterator it = map_.lower_bound(row_idx);
   // returns the first index >= row_idx
 
@@ -29,7 +27,7 @@ void DeltaMemStore::Update(uint32_t row_idx,
       ((*it).first == row_idx)) {
     // Found an exact match, just merge the update in, no need to copy the
     // update into arena
-    (*it).second.MergeUpdatesFrom(schema_, update);
+    (*it).second.MergeUpdatesFrom(schema_, update, &arena_);
     return;
   } else if (PREDICT_TRUE(it != map_.begin())) {
     // Rewind the iterator to the previous entry, to act as an insertion
@@ -38,7 +36,7 @@ void DeltaMemStore::Update(uint32_t row_idx,
   }
 
   // Otherwise, copy the update into the arena.
-  RowDelta copied = update.CopyToArena(schema_, arena_);
+  RowDelta copied = update.CopyToArena(schema_, &arena_);
 
 
   DMSMap::value_type pair(row_idx, copied);
@@ -74,21 +72,28 @@ RowDelta::RowDelta(const Schema &schema,
   DCHECK(data != NULL);
 }
 
-RowDelta RowDelta::CopyToArena(const Schema &schema, Arena &arena) const {
-  void *copied_data = arena.AddBytes(data_, SizeForSchema(schema));
+RowDelta RowDelta::CopyToArena(const Schema &schema, Arena *arena) const {
+  void *copied_data = arena->AddBytes(data_, SizeForSchema(schema));
   CHECK(copied_data) << "failed to allocate";
 
-  return RowDelta(schema, reinterpret_cast<uint8_t *>(copied_data));
-}
+  RowDelta ret(schema, reinterpret_cast<uint8_t *>(copied_data));
 
+  for (int i = 0; i < schema.num_columns(); i++) {
+    if (IsUpdated(i) && schema.column(i).type_info().type() == STRING) {
+      Slice *s = reinterpret_cast<Slice *>(ret.col_ptr(schema, i));
+      CHECK(arena->RelocateSlice(*s, s))
+        << "Unable to relocate slice " << s->ToString()
+        << " (col " << i << " in schema " << schema.ToString() << ")";
+    }
+  }
+  return ret;
+}
 
 void RowDelta::UpdateColumn(const Schema &schema,
                             size_t col_idx,
                             const void *new_val) {
   DCHECK_LT(col_idx, schema.num_columns());
-  size_t bm_size = BitmapSize(schema.num_columns());
-  size_t off = schema.column_offset(col_idx);
-  memcpy(&data_[off + bm_size], new_val,
+  memcpy(col_ptr(schema, col_idx), new_val,
          schema.column(col_idx).type_info().size());
   BitmapSet(bitmap(), col_idx);
 }
@@ -113,16 +118,29 @@ bool RowDelta::ApplyColumnUpdate(const Schema &schema,
 }
 
 void RowDelta::MergeUpdatesFrom(const Schema &schema,
-                                const RowDelta &from) {
+                                const RowDelta &from,
+                                Arena *arena) {
   size_t bm_size = BitmapSize(schema.num_columns());
 
   // Copy the data from the other row, where the other row
   // has its bitfield set.
   for (size_t i = 0; i < schema.num_columns(); i++) {
     if (from.IsUpdated(i)) {
-      size_t off = schema.column_offset(i) + bm_size;
-      size_t size = schema.column(i).type_info().size();
-      memcpy(&data_[off], &from.data_[off], size);
+      if (schema.column(i).type_info().type() == STRING) {
+        // If it's a Slice column, need to relocate the referred-to data
+        // as well as the slice itself.
+        // TODO: potential optimization here: if the new value is smaller than
+        // the old value, we could potentially just overwrite.
+        const Slice *src = reinterpret_cast<const Slice *>(from.col_ptr(schema, i));
+        Slice *dst = reinterpret_cast<Slice *>(col_ptr(schema, i));
+        CHECK(arena->RelocateSlice(*src, dst))
+          << "Unable to relocate slice " << src->ToString()
+          << " (col " << i << " in schema " << schema.ToString() << ")";
+      } else {
+        size_t off = schema.column_offset(i) + bm_size;
+        size_t size = schema.column(i).type_info().size();
+        memcpy(&data_[off], &from.data_[off], size);
+      }
     }
   }
 

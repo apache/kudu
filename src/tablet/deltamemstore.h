@@ -74,8 +74,10 @@ public:
 
   // Copy the delta data itself to a new arena, and return a new object
   // which references storage in the destination arena.
-  // TODO: this doesn't copy Slices.
-  RowDelta CopyToArena(const Schema &schema, Arena &arena) const;
+  //
+  // This copies both the updated row itself as well as any updated
+  // STRING data.
+  RowDelta CopyToArena(const Schema &schema, Arena *arena) const;
 
   // Clear any updated columns
   void Clear(const Schema &schema) {
@@ -105,15 +107,25 @@ public:
 
   // Merge updates from another delta. The two RowDelta objects
   // must correspond to the same schema.
-  // If 'from' has references to external data (eg slices) it is not
-  // copied. TODO: need to deal with slice handling here.
+  // If 'from' has references to external data (eg slices), then that
+  // data is copied into the provided destination arena.
   void MergeUpdatesFrom(const Schema &schema,
-                        const RowDelta &from);
+                        const RowDelta &from,
+                        Arena *arena);
 
 private:
   const uint8_t *bitmap() const { return data_; }
   uint8_t *bitmap() { return data_; }
 
+  uint8_t *col_ptr(const Schema &schema, size_t idx) {
+    size_t bm_size = BitmapSize(schema.num_columns());
+    size_t off = schema.column_offset(idx);
+    return &data_[bm_size + off];
+  }
+
+  const uint8_t *col_ptr(const Schema &schema, size_t idx) const {
+    return const_cast<RowDelta *>(this)->col_ptr(schema, idx);
+  }
 
   // This conceptually would have a reference back to an associated
   // DeltaMemStore or Schema, but in order to save space it is instead passed

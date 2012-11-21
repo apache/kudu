@@ -81,6 +81,7 @@ class Arena {
 
   // Relocate the given Slice into the arena, setting 'dst' and
   // returning true if successful.
+  // It is legal for 'dst' to be a pointer to 'src'.
   // See AddStringPieceContent above for detail on memory lifetime.
   bool RelocateSlice(const Slice &src, Slice *dst);
 

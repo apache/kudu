@@ -74,6 +74,47 @@ TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
   }
 }
 
+// Test when a slice column has been updated multiple times in the
+// memstore that the referred to values properly end up in the
+// right arena.
+TEST(TestDeltaMemStore, TestReUpdateSlice) {
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("col1", STRING)),
+                1);
+
+  DeltaMemStore dms(schema);
+
+  ScopedRowDelta s_update(schema);
+  RowDelta &update = s_update.get();
+
+  // Update a cell, taking care that the buffer we use to perform
+  // the update gets cleared after usage. This ensures that the
+  // underlying data is properly copied into the DMS arena.
+  {
+    char buf[256] = "update 1";
+    Slice s(buf);
+    update.UpdateColumn(schema, 0, &s);
+    dms.Update(123, update);
+    memset(buf, 0xff, sizeof(buf));
+  }
+
+  // Update the same cell again with a different value
+  {
+    char buf[256] = "update 2";
+    Slice s(buf);
+    update.UpdateColumn(schema, 0, &s);
+    dms.Update(123, update);
+    memset(buf, 0xff, sizeof(buf));
+  }
+
+  // Ensure we only ended up with one entry
+  ASSERT_EQ(1, dms.Count());
+
+  // Ensure that we ended up with the right data.
+  ScopedColumnBlock<STRING> read_back(1);
+  dms.ApplyUpdates(0, 123, &read_back);
+  ASSERT_EQ("update 2", read_back[0].ToString());
+}
 
 TEST(TestDeltaMemStore, TestDMSBasic) {
   Schema schema(boost::assign::list_of
@@ -108,10 +149,16 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
   ScopedColumnBlock<STRING> read_back_slices(1000);
   dms.ApplyUpdates(2, 0, &read_back);
   dms.ApplyUpdates(0, 0, &read_back_slices);
+
+  // When reading back the slice, do so into a different buffer -
+  // otherwise if the slice references weren't properly copied above,
+  // we'd be writing our comparison value into the same buffer that
+  // we're comparing against!
+  char buf2[256];
   for (uint32_t i = 0; i < 1000; i++) {
     ASSERT_EQ(i * 10, read_back[i]);
-    snprintf(buf, sizeof(buf), "hello %d", i);
-    Slice s(buf);
+    snprintf(buf2, sizeof(buf2), "hello %d", i);
+    Slice s(buf2);
     ASSERT_EQ(0, s.compare(read_back_slices[i]));
   }
 
@@ -130,6 +177,8 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
 }
 
 TEST(TestDeltaMemStore, TestRowDelta) {
+  Arena arena(1024, 1024*1024);
+
   Schema schema(boost::assign::list_of
                  (ColumnSchema("col1", STRING))
                  (ColumnSchema("col2", STRING))
@@ -173,7 +222,7 @@ TEST(TestDeltaMemStore, TestRowDelta) {
   new_int = 54321;
   rd2.UpdateColumn(schema, 2, &new_int);
 
-  rd.MergeUpdatesFrom(schema, rd2);
+  rd.MergeUpdatesFrom(schema, rd2, &arena);
 
   EXPECT_FALSE(rd.IsUpdated(0));
   EXPECT_TRUE (rd.IsUpdated(1));
