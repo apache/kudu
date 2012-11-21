@@ -530,11 +530,11 @@ Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   return Status::NotSupported("TODO: int key search");
 }
 
-Status IntBlockDecoder::CopyNextValues(size_t *n, void *out,
-                                       size_t stride, Arena *out_arena) {
-  CHECK_GE(stride, sizeof(uint32_t));
+Status IntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
+  DCHECK_EQ(dst->type_info().type(), UINT32);
 
-  PtrSinkWithStride<uint32_t> sink(reinterpret_cast<char *>(out), stride);
+  PtrSinkWithStride<uint32_t> sink(
+    reinterpret_cast<char *>(dst->data()), dst->stride());
   return DoGetNextValues(n, &sink);
 }
 
@@ -749,12 +749,13 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
   }
 }
 
-Status StringBlockDecoder::CopyNextValues(size_t *n, void *out_void,
-                                          size_t stride, Arena *out_arena) {
+Status StringBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK(parsed_);
-  CHECK_GE(stride, sizeof(Slice));
+  CHECK_EQ(dst->type_info().type(), STRING);
+  DCHECK_LE(*n, dst->size());
 
-  char *out = reinterpret_cast<char *>(out_void);
+  Arena *out_arena = dst->arena();
+  char *out = reinterpret_cast<char *>(dst->data());
 
   size_t i = 0;
   for (i = 0; i < *n && cur_idx_ < num_elems_; i++) {
@@ -770,7 +771,7 @@ Status StringBlockDecoder::CopyNextValues(size_t *n, void *out_void,
 
     // Put a slice to it in the output array
     *reinterpret_cast<Slice *>(out) = Slice(out_data, cur_val_.size());
-    out += stride;
+    out += dst->stride();
 
     if (cur_idx_ + 1 < num_elems_) {
       // TODO: Can ParseNextValue take a pointer to the previously

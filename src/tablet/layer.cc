@@ -188,33 +188,33 @@ Status LayerReader::RowIterator::CopyNextRows(
 
   // Copy the projected columns into 'dst'
   size_t stride = projection_.byte_size();
-  char *ptr = dst;
-  int proj_idx = 0;
+  int proj_col_idx = 0;
 
   int fetched_prev_col = -1;
 
   BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+    const TypeInfo &tinfo = projection_.column(proj_col_idx).type_info();
+    ColumnBlock dst_block(tinfo,
+                          dst + projection_.column_offset(proj_col_idx),
+                          stride, *nrows, dst_arena);
 
     size_t fetched = *nrows;
-    RETURN_NOT_OK(col_iter.CopyNextValuesStrided(
-                    &fetched, ptr, stride, dst_arena));
+    RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_block));
 
-    if (proj_idx > 0) {
+    if (proj_col_idx > 0) {
       CHECK(fetched == fetched_prev_col) <<
-        "Column " << proj_idx << " only fetched "
+        "Column " << proj_col_idx << " only fetched "
                   << fetched << " rows whereas the previous "
                   << "columns fetched " << fetched_prev_col;
     }
     fetched_prev_col = fetched;
 
     if (fetched == 0) {
-      DCHECK_EQ(proj_idx, 0) << "all columns should end at the same time!";
+      DCHECK_EQ(proj_col_idx, 0) << "all columns should end at the same time!";
       return Status::NotFound("end of input");
     }
 
-    const TypeInfo &tinfo = projection_.column(proj_idx).type_info();
-    ptr += tinfo.size();
-    proj_idx++;
+    proj_col_idx++;
   }
 
   *nrows = fetched_prev_col;

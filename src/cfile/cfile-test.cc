@@ -5,6 +5,7 @@
 #include <glog/logging.h>
 #include <stdlib.h>
 
+#include "common/columnblock.h"
 #include "gutil/stringprintf.h"
 #include "util/env.h"
 #include "util/test_macros.h"
@@ -36,6 +37,18 @@ class StringSink: public WritableFile {
  private:
   std::string contents_;
 };
+
+template<DataType type>
+void CopyOne(CFileIterator *it,
+             typename TypeTraits<type>::cpp_type *ret,
+             Arena *arena) {
+  ColumnBlock cb(GetTypeInfo(type), ret,
+                 TypeTraits<type>::size, 1, arena);
+  size_t n = 1;
+  ASSERT_STATUS_OK(it->CopyNextValues(&n, &cb));
+  ASSERT_EQ(1, n);
+}
+
 
 static void WriteTestFileStrings(
   const string &path, int num_entries,
@@ -133,16 +146,17 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
   switch (reader.data_type()) {
     case UINT32:
     {
-      boost::scoped_array<uint32_t> v(new uint32_t[8192]);
+      ScopedColumnBlock<UINT32> cb(8192);
+
       uint64_t sum = 0;
       while (iter->HasNext()) {
-        size_t n = 8192;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &v[0], &arena));
+        size_t n = cb.size();
+        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
         for (int i = 0; i < n; i++) {
-          sum += v[i];
+          sum += cb[i];
         }
         count += n;
-        arena.Reset();
+        cb.arena()->Reset();
       }
       LOG(INFO) << "Sum: " << sum;
       LOG(INFO) << "Count: " << count;
@@ -150,16 +164,16 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
     }
     case STRING:
     {
-      boost::scoped_array<Slice> v(new Slice[100]);
+      ScopedColumnBlock<STRING> cb(100);
       uint64_t sum_lens = 0;
       while (iter->HasNext()) {
-        size_t n = 100;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &v[0], &arena));
+        size_t n = cb.size();
+        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
         for (int i = 0; i < n; i++) {
-          sum_lens += v[i].size();
+          sum_lens += cb[i].size();
         }
         count += n;
-        arena.Reset();
+        cb.arena()->Reset();
       }
       LOG(INFO) << "Sum of value lengths: " << sum_lens;
       LOG(INFO) << "Count: " << count;
@@ -245,11 +259,10 @@ TEST(TestCFile, TestReadWriteInts) {
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
 
-  Arena arena(1024, 1*1024*1024);
   // Fetch all data.
-  boost::scoped_array<uint32_t> out(new uint32_t[10000]);
+  ScopedColumnBlock<UINT32> out(10000);
   size_t n = 10000;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out[0], &arena));
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out));
   ASSERT_EQ(10000, n);
 
   for (int i = 0; i < 10000; i++) {
@@ -290,9 +303,7 @@ TEST(TestCFile, TestReadWriteStrings) {
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
   Slice s;
-  size_t n = 1;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
-  ASSERT_EQ(1, n);
+  CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 5000"), s.ToString());
 
   // Seek to last key exactly, should succeed
@@ -309,17 +320,13 @@ TEST(TestCFile, TestReadWriteStrings) {
   s = "hello 5000.5";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
   ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
-  n = 1;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
-  ASSERT_EQ(1, n);
+  CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 5001"), s.ToString());
 
   s = "hello 9000";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
   ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
-  n = 1;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
-  ASSERT_EQ(1, n);
+  CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9000"), s.ToString());
 
   // after last entry
@@ -330,24 +337,21 @@ TEST(TestCFile, TestReadWriteStrings) {
   s = "hello 9999";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
-  n = 1;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
-  ASSERT_EQ(1, n);
+  CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9999"), s.ToString());
 
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
-  n = 1;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &s, &arena));
-  ASSERT_EQ(1, n);
+  CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 0000"), s.ToString());
 
   // Reseek to start and fetch all data.
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
-  boost::scoped_array<Slice> out(new Slice[10000]);
-  n = 10000;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out[0], &arena));
+
+  ScopedColumnBlock<STRING> cb(10000);
+  size_t n = 10000;
+  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &cb));
   ASSERT_EQ(10000, n);
 }
 

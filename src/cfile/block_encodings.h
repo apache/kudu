@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "cfile/cfile.pb.h"
+#include "common/columnblock.h"
 #include "util/memory/arena.h"
 #include "util/faststring.h"
 #include "util/slice.h"
@@ -222,23 +223,15 @@ public:
   // consists of values in sorted order.
   virtual Status SeekAtOrAfterValue(const void *value) = 0;
 
-  // Fetch the next set of values from the block into 'out', separating
-  // the output entries by 'stride'.
-  // 'stride' should be at least the size of an individual value, and
-  // may be more, to aid in interleaving columns into a row-oriented
-  // structure.
-  //
-  // The output buffer must have space for up to n * stride bytes.
+  // Fetch the next set of values from the block into 'dst'.
+  // The output block must have space for up to n cells.
   //
   // Modifies *n to contain the number of values fetched.
   //
   // In the case that the values are themselves references
   // to other memory (eg Slices), the referred-to memory is
-  // allocated in out_arena.
-  //
-  // TODO: add some typesafe wrappers for void pointers
-  virtual Status CopyNextValues(size_t *n, void *out, size_t stride,
-                                Arena *out_arena) = 0;
+  // allocated in the dst block's arena.
+  virtual Status CopyNextValues(size_t *n, ColumnBlock *dst) = 0;
 
   // Return true if there are more values remaining to be iterated.
   // (i.e that the next call to CopyNextValues will return at least 1
@@ -271,7 +264,7 @@ public:
 
   Status SeekAtOrAfterValue(const void *value);
 
-  Status CopyNextValues(size_t *n, void *out, size_t stride, Arena *out_arena);
+  Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
   uint32_t ordinal_pos() const {
     DCHECK(parsed_) << "must parse header first";
@@ -318,8 +311,7 @@ public:
   virtual Status ParseHeader();
   virtual void SeekToPositionInBlock(uint pos);
   virtual Status SeekAtOrAfterValue(const void *value);
-  virtual Status CopyNextValues(size_t *n, void *out, size_t stride,
-                                Arena *out_arena);
+  Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
   virtual bool HasNext() const {
     DCHECK(parsed_);

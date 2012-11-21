@@ -62,10 +62,13 @@ protected:
               buf.data() + buf.size());
   }
 
-  void CopyOneString(StringBlockDecoder *sbd,
-                     Slice *ret) {
+  template<DataType type>
+  void CopyOne(BlockDecoder *decoder,
+               typename TypeTraits<type>::cpp_type *ret) {
+    ColumnBlock cb(GetTypeInfo(type), ret,
+                   TypeTraits<type>::size, 1, &arena_);
     size_t n = 1;
-    ASSERT_STATUS_OK(sbd->CopyNextValues(&n, ret, sizeof(Slice), &arena_));
+    ASSERT_STATUS_OK(decoder->CopyNextValues(&n, &cb));
     ASSERT_EQ(1, n);
   }
 
@@ -162,6 +165,11 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   std::vector<uint32_t> decoded;
   decoded.resize(to_insert.size());
 
+  ColumnBlock dst_block(GetTypeInfo(UINT32),
+                        &decoded[0],
+                        sizeof(uint32_t),
+                        to_insert.size(),
+                        &arena_);
   int dec_count = 0;
   while (ibd.HasNext()) {
     ASSERT_EQ((uint32_t)(kOrdinalPosBase + dec_count),
@@ -169,14 +177,15 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
 
     size_t to_decode = (random() % 30) + 1;
     size_t n = to_decode;
-    ASSERT_STATUS_OK_FAST(
-      ibd.CopyNextValues(&n, &decoded[dec_count],
-                         sizeof(uint32_t), &arena_));
+    ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(&n, &dst_block));
     ASSERT_GE(to_decode, n);
+    dst_block.Advance(n);
     dec_count += n;
   }
 
-  ASSERT_EQ((int)to_insert.size(), dec_count);
+  ASSERT_EQ(0, dst_block.size())
+    << "Should have no space left in the buffer after "
+    << "decoding all rows";
 
   for (uint i = 0; i < to_insert.size(); i++) {
     if (to_insert[i] != decoded[i]) {
@@ -193,10 +202,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     EXPECT_EQ((uint32_t)(kOrdinalPosBase + seek_off),
               ibd.ordinal_pos());
     uint32_t ret;
-    size_t n = 1;
-    ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(
-                            &n, &ret, sizeof(uint32_t), &arena_));
-    EXPECT_EQ(1, n);
+    CopyOne<UINT32>(&ibd, &ret);
     EXPECT_EQ(decoded[seek_off], ret);
   }
 }
@@ -248,7 +254,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
 
   Slice ret;
   ASSERT_EQ(12345 + 5u, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 5"), ret.ToString());
 
   sbd.SeekToPositionInBlock(0);
@@ -257,14 +263,14 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
   q = "hello 4";
   ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
   ASSERT_EQ(12345 + 4u, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 4"), ret.ToString());
 
   // Seeking to before the first key should return first key
   q = "hello";
   ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
   ASSERT_EQ(12345, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 0"), ret.ToString());
 
   // Seeking after the last key should return not found
@@ -275,7 +281,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
   q = "hello 9";
   ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
   ASSERT_EQ(12345 + 9u, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 9"), ret.ToString());
 }
 
@@ -299,7 +305,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
 
   Slice ret;
   ASSERT_EQ(12345 + 445u, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 445"), ret.ToString());
 
   sbd.SeekToPositionInBlock(0);
@@ -308,14 +314,14 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
   q = "hello 004";
   ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
   EXPECT_EQ(12345 + 4u, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 004"), ret.ToString());
 
   // Seeking to before the first key should return first key
   q = "hello";
   ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
   EXPECT_EQ(12345, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 000"), ret.ToString());
 
   // Seeking after the last key should return not found
@@ -326,7 +332,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
   q = "hello 999";
   ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
   EXPECT_EQ(12345 + 999u, sbd.ordinal_pos());
-  CopyOneString(&sbd, &ret);
+  CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 999"), ret.ToString());
 
   // Randomized seek
@@ -339,7 +345,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
 
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
     EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
-    CopyOneString(&sbd, &ret);
+    CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string(target), ret.ToString());
 
     // Seek before this key
@@ -347,7 +353,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
     q = Slice(before_target, len);
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
     EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
-    CopyOneString(&sbd, &ret);
+    CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string(target), ret.ToString());
   }
 }
@@ -374,7 +380,7 @@ TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
     ASSERT_EQ(12345u + i, sbd.ordinal_pos());
     ASSERT_TRUE(sbd.HasNext()) << "Failed on iter " << i;
     Slice s;
-    CopyOneString(&sbd, &s);
+    CopyOne<STRING>(&sbd, &s);
     string expected = StringPrintf("hello %d", i);
     ASSERT_EQ(expected, s.ToString());
   }
@@ -387,16 +393,16 @@ TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
   }
 
   // Try to request a bunch of data in one go
-  scoped_array<Slice> decoded(new Slice[kCount]);
+  ScopedColumnBlock<STRING> cb(kCount);
   sbd.SeekToPositionInBlock(0);
   size_t n = kCount;
-  ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &decoded[0], sizeof(Slice), &arena_));
+  ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cb));
   ASSERT_EQ(kCount, n);
   ASSERT_FALSE(sbd.HasNext());
 
   for (uint i = 0; i < kCount; i++) {
     string expected = StringPrintf("hello %d", i);
-    ASSERT_EQ(expected, decoded[i].ToString());
+    ASSERT_EQ(expected, cb[i].ToString());
   }
 }
 

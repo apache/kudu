@@ -54,11 +54,11 @@ TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
   ASSERT_EQ(100, dms.Count());
 
   // Now apply the updates from the DMS back to an array
-  scoped_array<uint32_t> read_back(new uint32_t[1000]);
+  ScopedColumnBlock<UINT32> read_back(1000);
   for (int i = 0; i < 1000; i++) {
     read_back[i] = 0xDEADBEEF;
   }
-  dms.ApplyUpdates(0, 0, read_back.get(), sizeof(uint32_t), 1000);
+  dms.ApplyUpdates(0, 0, &read_back);
 
   // And verify that only the rows that we updated are modified within
   // the array.
@@ -104,10 +104,10 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
   ASSERT_EQ(1000, dms.Count());
 
   // Read back the values and check correctness.
-  scoped_array<uint32_t> read_back(new uint32_t[1000]);
-  scoped_array<Slice> read_back_slices(new Slice[1000]);
-  dms.ApplyUpdates(2, 0, read_back.get(), sizeof(uint32_t), 1000);
-  dms.ApplyUpdates(0, 0, read_back_slices.get(), sizeof(Slice), 1000);
+  ScopedColumnBlock<UINT32> read_back(1000);
+  ScopedColumnBlock<STRING> read_back_slices(1000);
+  dms.ApplyUpdates(2, 0, &read_back);
+  dms.ApplyUpdates(0, 0, &read_back_slices);
   for (uint32_t i = 0; i < 1000; i++) {
     ASSERT_EQ(i * 10, read_back[i]);
     snprintf(buf, sizeof(buf), "hello %d", i);

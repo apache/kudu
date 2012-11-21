@@ -307,10 +307,13 @@ bool CFileIterator::HasNext() {
   return dblk_->HasNext() || posidx_iter_->HasNext();
 }
 
-Status CFileIterator::CopyNextValuesStrided(
-  size_t *n_param, void *out, size_t stride,
-  Arena *dst_arena)
+Status CFileIterator::CopyNextValues(
+  size_t *n_param, ColumnBlock *dst)
 {
+  // Make a local copy of the destination block so we can
+  // Advance it as we read into it.
+  ColumnBlock remaining_dst = *dst;
+
   CHECK(seeked_) << "not seeked";
   size_t rem = *n_param;
   *n_param = 0;
@@ -321,13 +324,13 @@ Status CFileIterator::CopyNextValuesStrided(
     size_t this_batch = rem;
     // TODO: if this returns a bad status, we've already read some.
     // Should document the semantics of partial read.
-    RETURN_NOT_OK(dblk_->CopyNextValues(&this_batch, out, stride, dst_arena));
+    RETURN_NOT_OK(dblk_->CopyNextValues(&this_batch, &remaining_dst));
     DCHECK_LE(this_batch, rem);
 
     rem -= this_batch;
 
     *n_param += this_batch;
-    out = reinterpret_cast<char *>(out) + stride * this_batch;
+    remaining_dst.Advance(this_batch);
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
@@ -361,15 +364,6 @@ Status CFileIterator::CopyNextValuesStrided(
   }
   return Status::OK();
 }
-
-
-Status CFileIterator::CopyNextValues(
-  size_t *n_param, void *out, Arena *dst_arena)
-{
-  return CopyNextValuesStrided(
-    n_param, out, reader_->type_info()->size(), dst_arena);
-}
-
 
 } // namespace cfile
 } // namespace kudu

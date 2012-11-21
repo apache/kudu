@@ -9,6 +9,7 @@
 #include <tr1/memory>
 #include <string>
 
+#include "common/columnblock.h"
 #include "common/types.h"
 #include "cfile/index_btree.h"
 #include "util/memory/arena.h"
@@ -152,15 +153,10 @@ public:
   // Copy up to 'n' values into 'out'.
   // The 'out' buffer must have enough space already allocated for
   // n items.
-  // Any indirected values (eg strings) are allocated out of dst_arena.
+  // Any indirected values (eg strings) are copied into the dst block's
+  // arena.
   // The number of values actually read is written back into 'n'.
-  Status CopyNextValues(size_t *n, void *out, Arena *dst_arena);
-
-  // Same as CopyNextValues() except that the output is strided by
-  // the given 'stride' value.
-  // TODO: probably get rid of the non-strided call?
-  Status CopyNextValuesStrided(size_t *n, void *out, size_t stride,
-                               Arena *dst_arena);
+  Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
   bool HasNext();
 

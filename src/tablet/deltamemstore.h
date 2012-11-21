@@ -6,6 +6,7 @@
 #include <boost/scoped_array.hpp>
 #include <map>
 
+#include "common/columnblock.h"
 #include "common/schema.h"
 #include "util/bitmap.h"
 #include "util/memory/arena.h"
@@ -37,7 +38,7 @@ public:
   // The target buffer 'dst' is assumed to have a length at least
   // as large as row_stride * nrows.
   void ApplyUpdates(size_t col_idx, uint32_t start_row,
-                    void *dst, size_t row_stride, size_t nrows) const;
+                    ColumnBlock *dst) const;
 
   size_t Count() const {
     return map_.size();

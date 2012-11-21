@@ -48,16 +48,17 @@ void DeltaMemStore::Update(uint32_t row_idx,
 
 void DeltaMemStore::ApplyUpdates(
   size_t col_idx, uint32_t start_row,
-  void *dst, size_t row_stride, size_t nrows) const
+  ColumnBlock *dst) const
 {
+  DCHECK_EQ(schema_.column(col_idx).type_info().type(),
+            dst->type_info().type());
+
   DMSMap::const_iterator it = map_.lower_bound(start_row);
   while (it != map_.end() &&
-         (*it).first < start_row + nrows) {
+         (*it).first < start_row + dst->size()) {
     uint32_t rel_idx = (*it).first - start_row;
-    void *dst_cell = reinterpret_cast<uint8_t *>(dst) +
-      row_stride * rel_idx;
-
-    (*it).second.ApplyColumnUpdate(schema_, col_idx, dst_cell);
+    (*it).second.ApplyColumnUpdate(schema_, col_idx,
+                                   dst->cell_ptr(rel_idx));
     ++it;
   }
 }
