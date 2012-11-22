@@ -77,10 +77,15 @@ public:
     schema_(schema),
     dir_(layer_dir),
     open_(false),
-    dms_(schema)
+    dms_(new DeltaMemStore(schema))
   {}
 
   Status Open();
+
+  // "Management" functions
+
+  // Flush all accumulated delta data from the DeltaMemStore to disk.
+  Status FlushDeltas();
 
   // Write functions
 
@@ -109,6 +114,7 @@ public:
 
 private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);
+  FRIEND_TEST(TestLayer, TestDMSFlush);
   friend class RowIterator;
 
   Env *env_;
@@ -118,7 +124,7 @@ private:
   bool open_;
   ptr_vector<cfile::CFileReader> cfile_readers_;
 
-  DeltaMemStore dms_;
+  scoped_ptr<DeltaMemStore> dms_;
 };
 
 

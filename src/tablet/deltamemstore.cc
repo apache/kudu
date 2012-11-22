@@ -2,9 +2,11 @@
 
 #include <utility>
 
+#include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
 #include "util/bitmap.h"
 #include "util/coding-inl.h"
+#include "util/status.h"
 
 namespace kudu { namespace tablet {
 
@@ -60,6 +62,13 @@ void DeltaMemStore::ApplyUpdates(
                                    dst->cell_ptr(rel_idx));
     ++it;
   }
+}
+
+Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
+  BOOST_FOREACH(DMSMap::value_type entry, map_) {
+    dfw->AppendDelta(entry.first, entry.second);
+  }
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////

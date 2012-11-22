@@ -17,6 +17,7 @@ namespace tablet {
 using std::map;
 
 class RowDelta;
+class DeltaFileWriter;
 
 // In-memory storage for data which has been recently updated.
 // This essentially tracks a 'diff' per row, which contains the
@@ -43,6 +44,8 @@ public:
   size_t Count() const {
     return map_.size();
   }
+
+  Status FlushToFile(DeltaFileWriter *dfw) const;
 
 private:
   friend class RowDelta;

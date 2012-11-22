@@ -6,6 +6,7 @@
 
 #include "common/schema.h"
 #include "cfile/cfile.h"
+#include "tablet/deltafile.h"
 #include "tablet/layer.h"
 #include "util/env.h"
 #include "util/status.h"
@@ -23,6 +24,13 @@ using std::tr1::shared_ptr;
 static string GetColumnPath(const string &dir,
                             int col_idx) {
   return dir + "/col_" + boost::lexical_cast<string>(col_idx);
+}
+
+// Return the path at which the given delta file
+// is stored within the layer directory.
+static string GetDeltaPath(const string &dir,
+                           int delta_idx) {
+  return dir + "/delta_" + boost::lexical_cast<string>(delta_idx);
 }
 
 Status LayerWriter::Open() {
@@ -174,9 +182,56 @@ Status Layer::UpdateRow(const void *key,
 
   uint32_t row_idx = key_iter->GetCurrentOrdinal();
   VLOG(1) << "updating row " << row_idx;
-  dms_.Update(row_idx, update);
+  dms_->Update(row_idx, update);
 
   return Status::OK();
+}
+
+
+Status Layer::FlushDeltas() {
+  // TODO: should use something more unique and monotonic than
+  // time() here...
+  int delta_idx = time(NULL);
+  string path = GetDeltaPath(dir_, delta_idx);
+
+  // Open file for write.
+  WritableFile *out;
+  Status s = env_->NewWritableFile(path, &out);
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to open output file for delta level " <<
+      delta_idx << " at path " << path << ": " << 
+      s.ToString();
+    return s;
+  }
+
+  // Construct a shared_ptr so that, if the writer construction
+  // fails, we don't leak the file descriptor.
+  shared_ptr<WritableFile> out_shared(out);
+
+  DeltaFileWriter dfw(schema_, out_shared);
+
+  s = dfw.Start();
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to start delta file writer for path " <<
+      delta_idx;
+    return s;
+  }
+
+  // swap in a new delta memstore
+  scoped_ptr<DeltaMemStore> old_dms(new DeltaMemStore(schema_));
+  old_dms.swap(dms_);
+  size_t count = old_dms->Count();
+  CHECK_GT(count, 0);
+
+  RETURN_NOT_OK(old_dms->FlushToFile(&dfw));
+
+  RETURN_NOT_OK(dfw.Finish());
+
+  LOG(INFO) << "Flushed " << count << " row deltas to " << path;
+  return Status::OK();
+
+  // TODO: wherever we write stuff, we should write to a tmp path
+  // and rename to final path!
 }
 
 ////////////////////////////////////////////////////////////
@@ -260,8 +315,8 @@ Status Layer::RowIterator::CopyNextRows(
             << " starting at row " << start_row
             << " for " << dst_block_valid.size() << " rows";
     #endif
-    reader_->dms_.ApplyUpdates(projection_mapping_[proj_col_idx],
-                               start_row, &dst_block_valid);
+    reader_->dms_->ApplyUpdates(projection_mapping_[proj_col_idx],
+                                start_row, &dst_block_valid);
     // TODO: instead, once the layer's column iterator reflects updates,
     // we don't need to do this here. Kind of ugly to reach back into the
     // Layer object.

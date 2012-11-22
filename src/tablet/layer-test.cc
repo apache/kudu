@@ -77,6 +77,25 @@ protected:
     }
   }
 
+  // Picks some number of rows from the given layer and updates
+  // them. Stores the indexes of the updated rows in *updated.
+  void UpdateExistingRows(Layer *l, float update_ratio,
+                          unordered_set<uint32_t> *updated) {
+    int to_update = (int)(n_rows_ * update_ratio);
+    char buf[256];
+    ScopedRowDelta update(schema_);
+    for (int i = 0; i < to_update; i++) {
+      uint32_t idx_to_update = random() % n_rows_;
+      FormatKey(idx_to_update, buf, sizeof(buf));
+      Slice key_slice(buf);
+      uint32_t new_val = idx_to_update * 5;
+      update.get().UpdateColumn(schema_, 1, &new_val);
+      ASSERT_STATUS_OK_FAST(l->UpdateRow(
+                              &key_slice, update.get()));
+      updated->insert(idx_to_update);
+    }
+  }
+
   void FormatKey(int i, char *buf, size_t buf_len) {
     snprintf(buf, buf_len, "hello %015d", i);
   }
@@ -163,24 +182,13 @@ TEST_F(TestLayer, TestLayerUpdate) {
   // Add an update to the delta tracker for a number of keys
   // which exist. These updates will change the value to
   // equal idx*5 (whereas in the original data, value = idx)
-  char buf[256];
   unordered_set<uint32_t> updated;
-
-  ScopedRowDelta update(schema_);
-  for (int i = 0; i < n_rows_ / 10; i++) {
-    uint32_t idx_to_update = random() % n_rows_;
-    FormatKey(idx_to_update, buf, sizeof(buf));
-    Slice key_slice(buf);
-    uint32_t new_val = idx_to_update * 5;
-    update.get().UpdateColumn(schema_, 1, &new_val);
-    ASSERT_STATUS_OK(l.UpdateRow(&key_slice, update.get()));
-    updated.insert(idx_to_update);
-  }
-
-  ASSERT_EQ(updated.size(), l.dms_.Count());
+  UpdateExistingRows(&l, 0.1f, &updated);
+  ASSERT_EQ(updated.size(), l.dms_->Count());
 
   // Try to add an update for a key not in the file (but which falls
   // between two valid keys)
+  ScopedRowDelta update(schema_);
   Slice bad_key = Slice("hello 00000000000049x");
   ASSERT_TRUE(l.UpdateRow(&bad_key, update.get()).IsNotFound());
 
@@ -216,7 +224,25 @@ TEST_F(TestLayer, TestLayerUpdate) {
     }
     i += n;
   }
+}
 
+TEST_F(TestLayer, TestDMSFlush) {
+  WriteTestLayer();
+
+  // Now open the Layer for read
+  Layer l(env_, schema_, test_dir_);
+  ASSERT_STATUS_OK(l.Open());
+
+  // Add an update to the delta tracker for a number of keys
+  // which exist. These updates will change the value to
+  // equal idx*5 (whereas in the original data, value = idx)
+  unordered_set<uint32_t> updated;
+  UpdateExistingRows(&l, 0.01f, &updated);
+  ASSERT_EQ(updated.size(), l.dms_->Count());
+
+  l.FlushDeltas();
+
+  ASSERT_EQ(0, l.dms_->Count());
 }
 
 } // namespace tablet
