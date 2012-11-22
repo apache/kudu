@@ -62,6 +62,12 @@ struct WriterOptions {
   // Default: 16
   int block_restart_interval;
 
+  // Whether the file needs a positional index.
+  bool write_posidx;
+
+  // Whether the file needs a value index
+  bool write_validx;
+
   WriterOptions();
 };
 

@@ -27,7 +27,9 @@ const string kMagicString = "kuducfil";
 ////////////////////////////////////////////////////////////
 WriterOptions::WriterOptions() :
   block_size(256*1024),
-  block_restart_interval(16)
+  block_restart_interval(16),
+  write_posidx(false),
+  write_validx(false)
 {}
 
 
@@ -49,6 +51,17 @@ Writer::Writer(const WriterOptions &options,
   encoding_type_(encoding),
   state_(kWriterInitialized)
 {
+  if (options.write_posidx) {
+    posidx_builder_.reset(new IndexTreeBuilder(&options_,
+                                               UINT32,
+                                               this));
+  }
+
+  if (options.write_validx) {
+    validx_builder_.reset(new IndexTreeBuilder(&options_,
+                                               datatype_,
+                                               this));
+  }
 }
 
 Status Writer::Start() {
@@ -72,16 +85,6 @@ Status Writer::Start() {
 
   file_->Append(Slice(buf));
   off_ += buf.size();
-
-  // TODO: should do this in ctor?
-  posidx_builder_.reset(new IndexTreeBuilder(&options_,
-                                             UINT32,
-                                             this));
-
-  // TODO: this should be optional -- only useful on key columns
-  validx_builder_.reset(new IndexTreeBuilder(&options_,
-                                             datatype_,
-                                             this));
 
   BlockBuilder *bb;
   RETURN_NOT_OK( CreateBlockBuilder(&bb) );
@@ -131,19 +134,23 @@ Status Writer::Finish() {
   // Write out any pending values as the last data block.
   RETURN_NOT_OK(FinishCurDataBlock());
 
-  // Write out any pending positional index blocks.
-  BTreeInfoPB posidx_info;
-  posidx_builder_->Finish(&posidx_info);
-
-  BTreeInfoPB validx_info;
-  validx_builder_->Finish(&validx_info);
-
-  // Write out the footer.
+  // Start preparing the footer.
   CFileFooterPB footer;
   footer.set_data_type(datatype_);
   footer.set_encoding(encoding_type_);
-  footer.mutable_posidx_info()->CopyFrom(posidx_info);
-  footer.mutable_validx_info()->CopyFrom(validx_info);
+
+  // Write out any pending positional index blocks.
+  if (options_.write_posidx) {
+    BTreeInfoPB posidx_info;
+    posidx_builder_->Finish(&posidx_info);
+    footer.mutable_posidx_info()->CopyFrom(posidx_info);
+  }
+
+  if (options_.write_validx) {
+    BTreeInfoPB validx_info;
+    validx_builder_->Finish(&validx_info);
+    footer.mutable_validx_info()->CopyFrom(validx_info);
+  }
 
   string footer_str;
   if (!footer.SerializeToString(&footer_str)) {
@@ -209,7 +216,9 @@ Status Writer::FinishCurDataBlock() {
   BlockPointer ptr(inserted_off, data.size());
 
   // Now add to the index blocks
-  RETURN_NOT_OK(posidx_builder_->Append(&first_elem_ord, ptr));
+  if (posidx_builder_ != NULL) {
+    RETURN_NOT_OK(posidx_builder_->Append(&first_elem_ord, ptr));
+  }
 
   if (validx_builder_ != NULL) {
     // Allocate a single datum on the stack.

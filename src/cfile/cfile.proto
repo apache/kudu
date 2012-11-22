@@ -37,6 +37,6 @@ message CFileFooterPB {
   required kudu.DataType data_type = 1;
   required EncodingType encoding = 2;
 
-  required BTreeInfoPB posidx_info = 3;
+  optional BTreeInfoPB posidx_info = 3;
   optional BTreeInfoPB validx_info = 4;
 }

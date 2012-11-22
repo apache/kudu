@@ -128,7 +128,7 @@ private:
 class CFileIterator : boost::noncopyable {
 public:
   CFileIterator(const CFileReader *reader,
-                const BlockPointer &posidx_root,
+                const BlockPointer *posidx_root,
                 const BlockPointer *validx_root);
 
   // Seek to the given ordinal entry in the file.

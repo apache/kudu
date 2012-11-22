@@ -178,7 +178,10 @@ Status CFileReader::CreateBlockDecoder(
 }
 
 Status CFileReader::NewIterator(CFileIterator **iter) const {
-  BlockPointer posidx_root(footer_->posidx_info().root_block());
+  scoped_ptr<BlockPointer> posidx_root;
+  if (footer_->has_posidx_info()) {
+    posidx_root.reset(new BlockPointer(footer_->posidx_info().root_block()));
+  }
 
   // If there is a value index in the file, pass it to the iterator
   scoped_ptr<BlockPointer> validx_root;
@@ -186,7 +189,7 @@ Status CFileReader::NewIterator(CFileIterator **iter) const {
     validx_root.reset(new BlockPointer(footer_->validx_info().root_block()));
   }
 
-  *iter = new CFileIterator(this, posidx_root, validx_root.get());
+  *iter = new CFileIterator(this, posidx_root.get(), validx_root.get());
   return Status::OK();
 }
 
@@ -222,12 +225,16 @@ static Status SearchDownward(
 // Iterator
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(const CFileReader *reader,
-                             const BlockPointer &posidx_root,
+                             const BlockPointer *posidx_root,
                              const BlockPointer *validx_root) :
   reader_(reader),
-  posidx_iter_(IndexTreeIterator::Create(reader, UINT32, posidx_root)),
-  seeked_(false)
+  seeked_(NULL)
 {
+  if (posidx_root != NULL) {
+    posidx_iter_.reset(IndexTreeIterator::Create(
+                         reader, UINT32, *posidx_root));
+  }
+
   if (validx_root != NULL) {
     validx_iter_.reset(IndexTreeIterator::Create(
                          reader, reader->type_info()->type(), *validx_root));
@@ -236,6 +243,9 @@ CFileIterator::CFileIterator(const CFileReader *reader,
 
 Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
   seeked_ = NULL;
+  if (PREDICT_FALSE(posidx_iter_ == NULL)) {
+    return Status::NotSupported("no positional index in file");
+  }
 
   RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(&ord_idx));
 

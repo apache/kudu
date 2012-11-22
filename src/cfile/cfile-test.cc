@@ -85,6 +85,8 @@ static void WriteTestFileStrings(
 
   shared_ptr<WritableFile> sink(file);
   WriterOptions opts;
+  opts.write_posidx = true;
+  opts.write_validx = true;
   // Use a smaller block size to exercise multi-level
   // indexing.
   opts.block_size = 1024;
@@ -118,6 +120,7 @@ static void WriteTestFile(const string &path,
 
   shared_ptr<WritableFile> sink(file);
   WriterOptions opts;
+  opts.write_posidx = true;
   // Use a smaller block size to exercise multi-level
   // indexing.
   opts.block_size = 100;
