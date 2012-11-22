@@ -15,13 +15,13 @@
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 
-DEFINE_int32(roundtrip_num_rows, 100000,
+DEFINE_int32(roundtrip_num_rows, 10000,
              "Number of rows to use for the round-trip test");
 
 namespace kudu {
 namespace tablet {
 
-Schema CreateTestSchema() {
+static Schema CreateTestSchema() {
   ColumnSchema col1("key", STRING);
   ColumnSchema col2("val", UINT32);
 
@@ -29,6 +29,51 @@ Schema CreateTestSchema() {
     (col1)(col2);
   return Schema(cols, 1);
 }
+
+
+class TestLayer : public ::testing::Test {
+public:
+  TestLayer() :
+    ::testing::Test(),
+    schema_(CreateTestSchema()),
+    env_(Env::Default()),
+    n_rows_(FLAGS_roundtrip_num_rows)
+  {
+    CHECK_GT(n_rows_, 0);
+  }
+
+protected:
+  virtual void SetUp() {
+    ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
+    test_dir_ += "/TestLayer.TestLayerRoundTrip." +
+      boost::lexical_cast<string>(time(NULL));
+  }
+
+  void WriteTestLayer() {
+    // Write rows into a new Layer.
+    LOG_TIMING(INFO, "Writing layer") {
+      LayerWriter lw(env_, schema_, test_dir_);
+
+      ASSERT_STATUS_OK(lw.Open());
+
+      char buf[256];
+      RowBuilder rb(schema_);
+      for (int i = 0; i < n_rows_; i++) {
+        rb.Reset();
+        snprintf(buf, sizeof(buf), "hello %d", i);
+        rb.AddString(Slice(buf));
+        rb.AddUint32(i);
+        ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
+      }
+      ASSERT_STATUS_OK(lw.Finish());
+    }
+  }
+
+  Schema schema_;
+  string test_dir_;
+  Env *env_;
+  size_t n_rows_;
+};
 
 // Iterate over a Layer, dumping occasional rows to the console,
 // using the given schema as a projection.
@@ -64,46 +109,16 @@ static void IterateProjection(const Layer &l, const Schema &schema,
 
 // Test round-trip writing and reading back a layer with
 // multiple columns. Does not test any modifications.
-TEST(TestLayer, TestLayerRoundTrip) {
-  Env *env = Env::Default();
-
-  Schema schema = CreateTestSchema();
-  string test_dir;
-  test_dir="/tmp/kudutest-1000/TestLayer.TestLayerRoundTrip.1352878579";
-
-  int n_rows = FLAGS_roundtrip_num_rows;
-  CHECK(n_rows > 0);
-
-  ASSERT_STATUS_OK(env->GetTestDirectory(&test_dir));
-  test_dir += "/TestLayer.TestLayerRoundTrip." +
-    boost::lexical_cast<string>(time(NULL));
-
-  // Write 1000 rows into a new Layer.
-  LOG_TIMING(INFO, "Writing layer") {
-    LayerWriter lw(env, schema, test_dir);
-
-    ASSERT_STATUS_OK(lw.Open());
-
-
-    char buf[256];
-    RowBuilder rb(schema);
-    for (int i = 0; i < n_rows; i++) {
-      rb.Reset();
-      snprintf(buf, sizeof(buf), "hello %d", i);
-      rb.AddString(Slice(buf));
-      rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
-    }
-    ASSERT_STATUS_OK(lw.Finish());
-  }
+TEST_F(TestLayer, TestLayerRoundTrip) {
+  WriteTestLayer();
 
   // Now open the Layer for read
-  Layer l(env, schema, test_dir);
+  Layer l(env_, schema_, test_dir_);
   ASSERT_STATUS_OK(l.Open());
 
   // First iterate over all columns
   LOG_TIMING(INFO, "Iterating over all columns") {
-    IterateProjection(l, schema, n_rows);
+    IterateProjection(l, schema_, n_rows_);
   }
 
   // Now iterate only over the key column
@@ -112,7 +127,7 @@ TEST(TestLayer, TestLayerRoundTrip) {
                   1);
 
   LOG_TIMING(INFO, "Iterating over only key column") {
-    IterateProjection(l, proj_key, n_rows);
+    IterateProjection(l, proj_key, n_rows_);
   }
 
 
@@ -121,9 +136,8 @@ TEST(TestLayer, TestLayerRoundTrip) {
                   (ColumnSchema("val", UINT32)),
                   1);
   LOG_TIMING(INFO, "Iterating over only val column") {
-    IterateProjection(l, proj_val, n_rows);
+    IterateProjection(l, proj_val, n_rows_);
   }
-
 }
 
 } // namespace tablet
