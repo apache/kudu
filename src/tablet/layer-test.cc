@@ -5,6 +5,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <tr1/unordered_set>
 #include <time.h>
 
 #include "common/row.h"
@@ -20,6 +21,8 @@ DEFINE_int32(roundtrip_num_rows, 10000,
 
 namespace kudu {
 namespace tablet {
+
+using std::tr1::unordered_set;
 
 static Schema CreateTestSchema() {
   ColumnSchema col1("key", STRING);
@@ -49,6 +52,11 @@ protected:
       boost::lexical_cast<string>(time(NULL));
   }
 
+  // Write out a test layer with n_rows_ rows.
+  // The data in the layer looks like:
+  //   ("hello <00n>", <n>)
+  // ... where n is the index of the row in the layer
+  // The string values are padded out to 15 digits
   void WriteTestLayer() {
     // Write rows into a new Layer.
     LOG_TIMING(INFO, "Writing layer") {
@@ -60,13 +68,17 @@ protected:
       RowBuilder rb(schema_);
       for (int i = 0; i < n_rows_; i++) {
         rb.Reset();
-        snprintf(buf, sizeof(buf), "hello %d", i);
+        FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));
         rb.AddUint32(i);
         ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
       }
       ASSERT_STATUS_OK(lw.Finish());
     }
+  }
+
+  void FormatKey(int i, char *buf, size_t buf_len) {
+    snprintf(buf, buf_len, "hello %015d", i);
   }
 
   Schema schema_;
@@ -138,6 +150,73 @@ TEST_F(TestLayer, TestLayerRoundTrip) {
   LOG_TIMING(INFO, "Iterating over only val column") {
     IterateProjection(l, proj_val, n_rows_);
   }
+}
+
+// Test writing a layer, and then updating some rows in it.
+TEST_F(TestLayer, TestLayerUpdate) {
+  WriteTestLayer();
+
+  // Now open the Layer for read
+  Layer l(env_, schema_, test_dir_);
+  ASSERT_STATUS_OK(l.Open());
+
+  // Add an update to the delta tracker for a number of keys
+  // which exist. These updates will change the value to
+  // equal idx*5 (whereas in the original data, value = idx)
+  char buf[256];
+  unordered_set<uint32_t> updated;
+
+  ScopedRowDelta update(schema_);
+  for (int i = 0; i < n_rows_ / 10; i++) {
+    uint32_t idx_to_update = random() % n_rows_;
+    FormatKey(idx_to_update, buf, sizeof(buf));
+    Slice key_slice(buf);
+    uint32_t new_val = idx_to_update * 5;
+    update.get().UpdateColumn(schema_, 1, &new_val);
+    ASSERT_STATUS_OK(l.UpdateRow(&key_slice, update.get()));
+    updated.insert(idx_to_update);
+  }
+
+  ASSERT_EQ(updated.size(), l.dms_.Count());
+
+  // Try to add an update for a key not in the file (but which falls
+  // between two valid keys)
+  Slice bad_key = Slice("hello 00000000000049x");
+  ASSERT_TRUE(l.UpdateRow(&bad_key, update.get()).IsNotFound());
+
+  // Now read back the value column, and verify that the updates
+  // are visible.
+  Schema proj_val(boost::assign::list_of
+                  (ColumnSchema("val", UINT32)),
+                  1);
+  scoped_ptr<Layer::RowIterator> row_iter(l.NewRowIterator(proj_val));
+  ASSERT_STATUS_OK(row_iter->Init());
+  ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
+  Arena arena(1024, 1024*1024);
+  int batch_size = 100;
+  uint32_t dst[batch_size];
+
+  int i = 0;
+  while (row_iter->HasNext()) {
+    arena.Reset();
+    size_t n = batch_size;
+    ASSERT_STATUS_OK_FAST(
+      row_iter->CopyNextRows(
+        &n, reinterpret_cast<char *>(dst), &arena));
+
+    for (int j = 0; j < n; j++) {
+      uint32_t idx_in_file = i + j;
+      if (updated.count(idx_in_file) > 0) {
+        // This is an index that should have been updated
+        ASSERT_EQ(idx_in_file * 5, dst[j]);
+      } else {
+        // This should have the original value
+        ASSERT_EQ(idx_in_file, dst[j]);
+      }
+    }
+    i += n;
+  }
+
 }
 
 } // namespace tablet

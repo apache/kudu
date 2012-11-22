@@ -149,6 +149,32 @@ Status Layer::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
 }
 
 
+Status Layer::UpdateRow(const void *key,
+                        const RowDelta &update) {
+  CFileIterator *key_iter_ptr;
+  RETURN_NOT_OK( NewColumnIterator(0, &key_iter_ptr) );
+  scoped_ptr<CFileIterator> key_iter(key_iter_ptr);
+
+  // TODO: check bloom filter
+
+  bool exact;
+  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
+  if (!exact) {
+    return Status::NotFound("not present in storefile (failed seek)");
+  }
+
+  uint32_t row_idx = key_iter->GetCurrentOrdinal();
+  VLOG(1) << "updating row " << row_idx;
+  dms_.Update(row_idx, update);
+
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// Layer Iterator
+////////////////////////////////////////////////////////////
+
+
 Status Layer::RowIterator::Init() {
   CHECK(!initted_);
 
@@ -189,7 +215,7 @@ Status Layer::RowIterator::CopyNextRows(
   // Copy the projected columns into 'dst'
   size_t stride = projection_.byte_size();
   int proj_col_idx = 0;
-
+  int start_row = col_iters_[0].GetCurrentOrdinal();
   int fetched_prev_col = -1;
 
   BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
@@ -200,7 +226,9 @@ Status Layer::RowIterator::CopyNextRows(
 
     size_t fetched = *nrows;
     RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_block));
+    ColumnBlock dst_block_valid = dst_block.SliceRange(0, fetched);
 
+    // Sanity check that all iters match up
     if (proj_col_idx > 0) {
       CHECK(fetched == fetched_prev_col) <<
         "Column " << proj_col_idx << " only fetched "
@@ -213,6 +241,21 @@ Status Layer::RowIterator::CopyNextRows(
       DCHECK_EQ(proj_col_idx, 0) << "all columns should end at the same time!";
       return Status::NotFound("end of input");
     }
+
+    // Apply updates from memory.
+    // TODO: can skip this on the key column? maybe not, once we have
+    // deletions?
+    #ifndef NDEBUG
+    VLOG(3) << "applying updates for col "
+            << projection_mapping_[proj_col_idx]
+            << " starting at row " << start_row
+            << " for " << dst_block_valid.size() << " rows";
+    #endif
+    reader_->dms_.ApplyUpdates(projection_mapping_[proj_col_idx],
+                               start_row, &dst_block_valid);
+    // TODO: instead, once the layer's column iterator reflects updates,
+    // we don't need to do this here. Kind of ugly to reach back into the
+    // Layer object.
 
     proj_col_idx++;
   }

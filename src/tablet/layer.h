@@ -8,12 +8,14 @@
 #define KUDU_TABLET_LAYER_H
 
 #include <boost/ptr_container/ptr_vector.hpp>
+#include <gtest/gtest.h>
 #include <string>
 
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
 #include "common/row.h"
 #include "common/schema.h"
+#include "tablet/deltamemstore.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
@@ -74,21 +76,39 @@ public:
     env_(env),
     schema_(schema),
     dir_(layer_dir),
-    open_(false)
+    open_(false),
+    dms_(schema)
   {}
 
+  Status Open();
+
+  // Write functions
+
+  // Update a row in this layer.
+  //
+  // If the row does not exist in this layer, returns
+  // Status::NotFound().
+  Status UpdateRow(const void *key,
+                   const RowDelta &update);
+
+  // Read functions.
+
+  // TODO: make this iterator also reflect updates!
+  // Probably need to introduce an interface ColumnIterator,
+  // which CFileIterator implements, and then have an impl
+  // here which reflects the updates
   Status NewColumnIterator(size_t col_idx,
                            CFileIterator **iter) const;
 
   RowIterator *NewRowIterator(const Schema &projection) const;
 
-  Status Open();
 
   const Schema &schema() const {
     return schema_;
   }
 
 private:
+  FRIEND_TEST(TestLayer, TestLayerUpdate);
   friend class RowIterator;
 
   Env *env_;
@@ -97,6 +117,8 @@ private:
 
   bool open_;
   ptr_vector<cfile::CFileReader> cfile_readers_;
+
+  DeltaMemStore dms_;
 };
 
 
