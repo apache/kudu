@@ -9,6 +9,7 @@
 
 #include "common/schema.h"
 #include "tablet/deltamemstore.h"
+#include "util/hexdump.h"
 
 namespace kudu {
 namespace tablet {
@@ -227,6 +228,14 @@ TEST(TestDeltaMemStore, TestRowDelta) {
   EXPECT_FALSE(rd.IsUpdated(0));
   EXPECT_TRUE (rd.IsUpdated(1));
   EXPECT_TRUE (rd.IsUpdated(2));
+
+  // Test serialization
+  faststring buf;
+  rd.SerializeToBuffer(schema, &buf);
+  ASSERT_EQ(
+    "000000: 060b 6865 6c6c 6f20 776f 726c 6431 d400 ..hello world1..\n"
+    "000010: 00                                      .\n",
+    HexDump(buf));
 }
 
 } // namespace tabletype

@@ -44,9 +44,10 @@ public:
     data_.swap(newdata);
   }
 
-  void append(const char *src, size_t count) {
+  void append(const void *src_v, size_t count) {
     reserve(len_ + count);
 
+    const char *src = reinterpret_cast<const char *>(src_v);
     // appending short values is common enough that this
     // actually helps, according to benchmarks. In theory
     // memcpy_inlined should already be just as good, but this

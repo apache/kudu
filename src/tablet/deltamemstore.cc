@@ -4,6 +4,7 @@
 
 #include "tablet/deltamemstore.h"
 #include "util/bitmap.h"
+#include "util/coding-inl.h"
 
 namespace kudu { namespace tablet {
 
@@ -156,6 +157,32 @@ void RowDelta::MergeUpdatesFrom(const Schema &schema,
   // Merge the set of updated fields
   BitmapMergeOr(bitmap(), from.bitmap(), schema.num_columns());
 }
+
+void RowDelta::SerializeToBuffer(
+  const Schema &schema, faststring *dst) const {
+
+  // First append the bitmap.
+  dst->append(bitmap(), BitmapSize(schema.num_columns()));
+
+  // Iterate over the valid columns, copying their data into the buffer.
+  for (TrueBitIterator it(bitmap(), schema.num_columns());
+       !it.done();
+       ++it) {
+    size_t i = *it;
+    const TypeInfo &ti = schema.column(i).type_info();
+    if (ti.type() == STRING) {
+      const Slice *src = reinterpret_cast<const Slice *>(col_ptr(schema, i));
+
+      // If it's a Slice column, copy the length followed by the data.
+      InlinePutVarint32(dst, src->size());
+      dst->append(src->data(), src->size());
+    } else {
+      // Otherwise, just copy the data itself.
+      dst->append(col_ptr(schema, i), ti.size());
+    }
+  }
+}
+
 
 
 } // namespace tablet

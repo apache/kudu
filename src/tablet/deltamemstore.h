@@ -113,6 +113,20 @@ public:
                         const RowDelta &from,
                         Arena *arena);
 
+  // Serialize the delta into a compact form in the destination buffer.
+  // The result is entirely self-contained, suitable for storing
+  // on disk (ie no pointers).
+  //
+  // The format here is simply the same bitmap stored in-memory in this
+  // class (1-bit set for any updated column), followed by the data for
+  // only the updated columns.
+  //
+  // In the case of Slice columns, the data is represented as
+  // <vint32 length> <data>
+  // Other columns are copied exactly from their in-memory form.
+  void SerializeToBuffer(const Schema &schema,
+                         faststring *dst) const;
+
 private:
   const uint8_t *bitmap() const { return data_; }
   uint8_t *bitmap() { return data_; }
