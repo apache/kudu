@@ -339,25 +339,29 @@ TEST(TestCFile, TestReadWriteStrings) {
   ////////
   // Now try some seeks by the value instead of position
   /////////
+  bool exact;
   s = "hello 5000.5";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  ASSERT_FALSE(exact);
   ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 5001"), s.ToString());
 
   s = "hello 9000";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  ASSERT_TRUE(exact);
   ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9000"), s.ToString());
 
   // after last entry
   s = "hello 9999x";
-  EXPECT_TRUE(iter->SeekAtOrAfter(&s).IsNotFound());
+  EXPECT_TRUE(iter->SeekAtOrAfter(&s, &exact).IsNotFound());
 
   // to last entry
   s = "hello 9999";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  ASSERT_TRUE(exact);
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9999"), s.ToString());

@@ -526,7 +526,8 @@ void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
   CHECK_OK(DoGetNextValues(&n, &null));
 }
 
-Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
+Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
+                                           bool *exact_match) {
   return Status::NotSupported("TODO: int key search");
 }
 
@@ -699,7 +700,8 @@ void StringBlockDecoder::SeekToRestartPoint(uint32_t idx) {
   ParseNextValue();
 }
 
-Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
+Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void,
+                                              bool *exact_match) {
   DCHECK(value_void != NULL);
 
   const Slice &target = *reinterpret_cast<const Slice *>(value_void);
@@ -741,7 +743,9 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void) {
             << "target  =" << target.ToString() << "\n"
             << "cur_val_=" << Slice(cur_val_).ToString();
 #endif
-    if (Slice(cur_val_).compare(target) >= 0) {
+    int cmp = Slice(cur_val_).compare(target);
+    if (cmp >= 0) {
+      *exact_match = (cmp == 0);
       return Status::OK();
     }
     RETURN_NOT_OK(ParseNextValue());

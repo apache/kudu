@@ -250,7 +250,9 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
   // Seeking to just after a key should return the
   // next key ('hello 4x' falls between 'hello 4' and 'hello 5')
   Slice q = "hello 4x";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  bool exact;
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+  ASSERT_FALSE(exact);
 
   Slice ret;
   ASSERT_EQ(12345 + 5u, sbd.ordinal_pos());
@@ -261,26 +263,29 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
 
   // Seeking to an exact key should return that key
   q = "hello 4";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
   ASSERT_EQ(12345 + 4u, sbd.ordinal_pos());
+  ASSERT_TRUE(exact);
   CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 4"), ret.ToString());
 
   // Seeking to before the first key should return first key
   q = "hello";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
   ASSERT_EQ(12345, sbd.ordinal_pos());
+  ASSERT_FALSE(exact);
   CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 0"), ret.ToString());
 
   // Seeking after the last key should return not found
   q = "zzzz";
-  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q).IsNotFound());
+  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q, &exact).IsNotFound());
 
   // Seeking to the last key should succeed
   q = "hello 9";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
   ASSERT_EQ(12345 + 9u, sbd.ordinal_pos());
+  ASSERT_TRUE(exact);
   CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 9"), ret.ToString());
 }
@@ -301,7 +306,9 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
   // Seeking to just after a key should return the
   // next key ('hello 444x' falls between 'hello 444' and 'hello 445')
   Slice q = "hello 444x";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  bool exact;
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+  ASSERT_FALSE(exact);
 
   Slice ret;
   ASSERT_EQ(12345 + 445u, sbd.ordinal_pos());
@@ -312,25 +319,28 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
 
   // Seeking to an exact key should return that key
   q = "hello 004";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+  EXPECT_TRUE(exact);
   EXPECT_EQ(12345 + 4u, sbd.ordinal_pos());
   CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 004"), ret.ToString());
 
   // Seeking to before the first key should return first key
   q = "hello";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+  EXPECT_FALSE(exact);
   EXPECT_EQ(12345, sbd.ordinal_pos());
   CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 000"), ret.ToString());
 
   // Seeking after the last key should return not found
   q = "zzzz";
-  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q).IsNotFound());
+  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q, &exact).IsNotFound());
 
   // Seeking to the last key should succeed
   q = "hello 999";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+  EXPECT_TRUE(exact);
   EXPECT_EQ(12345 + 999u, sbd.ordinal_pos());
   CopyOne<STRING>(&sbd, &ret);
   ASSERT_EQ(string("hello 999"), ret.ToString());
@@ -343,7 +353,8 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
     int len = snprintf(target, sizeof(target), "hello %03d", ord);
     q = Slice(target, len);
 
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    EXPECT_TRUE(exact);
     EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string(target), ret.ToString());
@@ -351,7 +362,8 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
     // Seek before this key
     len = snprintf(before_target, sizeof(target), "hello %03d.before", ord-1);
     q = Slice(before_target, len);
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q));
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    EXPECT_FALSE(exact);
     EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string(target), ret.ToString());

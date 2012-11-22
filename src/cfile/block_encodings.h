@@ -215,13 +215,19 @@ public:
   // Seek the decoder to the given value in the block, or the
   // lowest value which is greater than the given value.
   //
+  // If the decoder was able to locate an exact match, then
+  // sets *exact_match to true. Otherwise sets *exact_match to
+  // false, to indicate that the seeked value is _after_ the
+  // requested value.
+  //
   // If the given value is less than the lowest value in the block,
   // seeks to the start of the block. If it is higher than the highest
   // value in the block, then returns Status::NotFound
   //
   // This will only return valid results when the data block
   // consists of values in sorted order.
-  virtual Status SeekAtOrAfterValue(const void *value) = 0;
+  virtual Status SeekAtOrAfterValue(const void *value,
+                                    bool *exact_match) = 0;
 
   // Fetch the next set of values from the block into 'dst'.
   // The output block must have space for up to n cells.
@@ -262,7 +268,7 @@ public:
 
   void SeekToPositionInBlock(uint pos);
 
-  Status SeekAtOrAfterValue(const void *value);
+  Status SeekAtOrAfterValue(const void *value, bool *exact_match);
 
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
@@ -310,7 +316,8 @@ public:
 
   virtual Status ParseHeader();
   virtual void SeekToPositionInBlock(uint pos);
-  virtual Status SeekAtOrAfterValue(const void *value);
+  virtual Status SeekAtOrAfterValue(const void *value,
+                                    bool *exact_match);
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
   virtual bool HasNext() const {

@@ -142,9 +142,13 @@ public:
   // it. If the largest key in the file is still less than
   // the given key, then returns a NotFound Status.
   //
+  // Sets *exact_match to indicate whether the seek found the exact
+  // key requested.
+  //
   // If this iterator was constructed without no value index,
   // then this will return a NotSupported status.
-  Status SeekAtOrAfter(const void *key);
+  Status SeekAtOrAfter(const void *key,
+                       bool *exact_match);
 
   // Get the ordinal index that the iterator is currently
   // pointed to.
