@@ -78,8 +78,13 @@ RowDelta RowDelta::CopyToArena(const Schema &schema, Arena *arena) const {
 
   RowDelta ret(schema, reinterpret_cast<uint8_t *>(copied_data));
 
-  for (int i = 0; i < schema.num_columns(); i++) {
-    if (IsUpdated(i) && schema.column(i).type_info().type() == STRING) {
+  // Iterate over the valid columns, copying any STRING data into
+  // the target arena.
+  for (TrueBitIterator it(ret.bitmap(), schema.num_columns());
+       !it.done();
+       ++it) {
+    int i = *it;
+    if (schema.column(i).type_info().type() == STRING) {
       Slice *s = reinterpret_cast<Slice *>(ret.col_ptr(schema, i));
       CHECK(arena->RelocateSlice(*s, s))
         << "Unable to relocate slice " << s->ToString()
@@ -124,23 +129,27 @@ void RowDelta::MergeUpdatesFrom(const Schema &schema,
 
   // Copy the data from the other row, where the other row
   // has its bitfield set.
-  for (size_t i = 0; i < schema.num_columns(); i++) {
-    if (from.IsUpdated(i)) {
-      if (schema.column(i).type_info().type() == STRING) {
-        // If it's a Slice column, need to relocate the referred-to data
-        // as well as the slice itself.
-        // TODO: potential optimization here: if the new value is smaller than
-        // the old value, we could potentially just overwrite.
-        const Slice *src = reinterpret_cast<const Slice *>(from.col_ptr(schema, i));
-        Slice *dst = reinterpret_cast<Slice *>(col_ptr(schema, i));
-        CHECK(arena->RelocateSlice(*src, dst))
-          << "Unable to relocate slice " << src->ToString()
-          << " (col " << i << " in schema " << schema.ToString() << ")";
-      } else {
-        size_t off = schema.column_offset(i) + bm_size;
-        size_t size = schema.column(i).type_info().size();
-        memcpy(&data_[off], &from.data_[off], size);
-      }
+  
+  // Iterate over the valid columns, copying any STRING data into
+  // the target arena.
+  for (TrueBitIterator it(from.bitmap(), schema.num_columns());
+       !it.done();
+       ++it) {
+    size_t i = *it;
+    if (schema.column(i).type_info().type() == STRING) {
+      // If it's a Slice column, need to relocate the referred-to data
+      // as well as the slice itself.
+      // TODO: potential optimization here: if the new value is smaller than
+      // the old value, we could potentially just overwrite.
+      const Slice *src = reinterpret_cast<const Slice *>(from.col_ptr(schema, i));
+      Slice *dst = reinterpret_cast<Slice *>(col_ptr(schema, i));
+      CHECK(arena->RelocateSlice(*src, dst))
+        << "Unable to relocate slice " << src->ToString()
+        << " (col " << i << " in schema " << schema.ToString() << ")";
+    } else {
+      size_t off = schema.column_offset(i) + bm_size;
+      size_t size = schema.column(i).type_info().size();
+      memcpy(&data_[off], &from.data_[off], size);
     }
   }
 
