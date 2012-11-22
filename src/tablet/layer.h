@@ -62,15 +62,15 @@ private:
 };
 
 
-class LayerReader : boost::noncopyable {
+class Layer : boost::noncopyable {
 public:
   class RowIterator;
 
   // TODO: should 'schema' be stored with the layer? quite likely
   // so that we can support cheap alter table.
-  LayerReader(Env *env,
-              const Schema &schema,
-              const string &layer_dir) :
+  Layer(Env *env,
+        const Schema &schema,
+        const string &layer_dir) :
     env_(env),
     schema_(schema),
     dir_(layer_dir),
@@ -100,7 +100,7 @@ private:
 };
 
 
-class LayerReader::RowIterator : boost::noncopyable {
+class Layer::RowIterator : boost::noncopyable {
 public:
 
   Status Init();
@@ -137,16 +137,16 @@ public:
   }
 
 private:
-  friend class LayerReader;
+  friend class Layer;
 
-  RowIterator(const LayerReader *reader,
+  RowIterator(const Layer *reader,
               const Schema &projection) :
     reader_(reader),
     projection_(projection),
     initted_(false)
   {}
 
-  const LayerReader *reader_;
+  const Layer *reader_;
   const Schema projection_;
   vector<size_t> projection_mapping_;
 

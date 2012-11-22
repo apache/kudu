@@ -32,9 +32,9 @@ Schema CreateTestSchema() {
 
 // Iterate over a Layer, dumping occasional rows to the console,
 // using the given schema as a projection.
-static void IterateProjection(const LayerReader &lr, const Schema &schema,
+static void IterateProjection(const Layer &l, const Schema &schema,
                               int expected_rows) {
-  scoped_ptr<LayerReader::RowIterator> row_iter(lr.NewRowIterator(schema));
+  scoped_ptr<Layer::RowIterator> row_iter(l.NewRowIterator(schema));
   ASSERT_STATUS_OK(row_iter->Init());
   ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
 
@@ -98,12 +98,12 @@ TEST(TestLayer, TestLayerRoundTrip) {
   }
 
   // Now open the Layer for read
-  LayerReader lr(env, schema, test_dir);
-  ASSERT_STATUS_OK(lr.Open());
+  Layer l(env, schema, test_dir);
+  ASSERT_STATUS_OK(l.Open());
 
   // First iterate over all columns
   LOG_TIMING(INFO, "Iterating over all columns") {
-    IterateProjection(lr, schema, n_rows);
+    IterateProjection(l, schema, n_rows);
   }
 
   // Now iterate only over the key column
@@ -112,7 +112,7 @@ TEST(TestLayer, TestLayerRoundTrip) {
                   1);
 
   LOG_TIMING(INFO, "Iterating over only key column") {
-    IterateProjection(lr, proj_key, n_rows);
+    IterateProjection(l, proj_key, n_rows);
   }
 
 
@@ -121,7 +121,7 @@ TEST(TestLayer, TestLayerRoundTrip) {
                   (ColumnSchema("val", UINT32)),
                   1);
   LOG_TIMING(INFO, "Iterating over only val column") {
-    IterateProjection(lr, proj_val, n_rows);
+    IterateProjection(l, proj_val, n_rows);
   }
 
 }

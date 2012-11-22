@@ -92,7 +92,7 @@ Status LayerWriter::Finish() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status LayerReader::Open() {
+Status Layer::Open() {
   CHECK(!open_) << "Already open!";
   CHECK(cfile_readers_.empty()) << "Invalid state: should have no readers";
 
@@ -137,11 +137,11 @@ Status LayerReader::Open() {
 }
 
 
-LayerReader::RowIterator *LayerReader::NewRowIterator(const Schema &projection) const {
+Layer::RowIterator *Layer::NewRowIterator(const Schema &projection) const {
   return new RowIterator(this, projection);
 }
 
-Status LayerReader::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
+Status Layer::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
   CHECK(open_);
   CHECK_LT(col_idx, cfile_readers_.size());
 
@@ -149,7 +149,7 @@ Status LayerReader::NewColumnIterator(size_t col_idx, CFileIterator **iter) cons
 }
 
 
-Status LayerReader::RowIterator::Init() {
+Status Layer::RowIterator::Init() {
   CHECK(!initted_);
 
   RETURN_NOT_OK(projection_.GetProjectionFrom(
@@ -179,7 +179,7 @@ Status LayerReader::RowIterator::Init() {
   return Status::OK();
 }
 
-Status LayerReader::RowIterator::CopyNextRows(
+Status Layer::RowIterator::CopyNextRows(
   size_t *nrows, char *dst, Arena *dst_arena)
 {
   DCHECK(initted_);
