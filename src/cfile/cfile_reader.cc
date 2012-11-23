@@ -194,33 +194,6 @@ Status CFileReader::NewIterator(CFileIterator **iter) const {
 }
 
 
-template <DataType KeyTypeEnum>
-static Status SearchDownward(
-  const CFileReader *reader,
-  const typename TypeTraits<KeyTypeEnum>::cpp_type &search_key,
-  const BlockPointer &in_block,
-  BlockPointer *ret,
-  typename TypeTraits<KeyTypeEnum>::cpp_type *ret_key)
-{
-  BlockData data;
-  RETURN_NOT_OK( reader->ReadBlock(in_block, &data) );
-
-  IndexBlockReader<KeyTypeEnum> idx_reader(data.slice());
-  RETURN_NOT_OK(idx_reader.Parse());
-
-  BlockPointer result;
-  RETURN_NOT_OK(idx_reader.Search(search_key, &result, ret_key));
-
-  if (idx_reader.IsLeaf()) {
-    *ret = result;
-    return Status::OK();
-  } else {
-    // Otherwise we just got a pointer to another internal node.
-    // Follow it.
-    return SearchDownward(reader, search_key, result, ret, ret_key);
-  }
-}
-
 ////////////////////////////////////////////////////////////
 // Iterator
 ////////////////////////////////////////////////////////////
