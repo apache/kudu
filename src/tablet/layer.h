@@ -15,6 +15,7 @@
 #include "cfile/cfile_reader.h"
 #include "common/row.h"
 #include "common/schema.h"
+#include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
 #include "util/memory/arena.h"
 
@@ -125,6 +126,7 @@ private:
   ptr_vector<cfile::CFileReader> cfile_readers_;
 
   scoped_ptr<DeltaMemStore> dms_;
+  ptr_vector<DeltaFileReader> delta_readers_;
 };
 
 

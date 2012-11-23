@@ -224,10 +224,15 @@ Status Layer::FlushDeltas() {
   CHECK_GT(count, 0);
 
   RETURN_NOT_OK(old_dms->FlushToFile(&dfw));
-
   RETURN_NOT_OK(dfw.Finish());
-
   LOG(INFO) << "Flushed " << count << " row deltas to " << path;
+
+  // Now re-open for read
+  DeltaFileReader *dfr;
+  RETURN_NOT_OK(DeltaFileReader::Open(env_, path, schema_, &dfr));
+  delta_readers_.push_back(dfr);
+
+  LOG(INFO) << "Reopened delta file for read: " << path;
   return Status::OK();
 
   // TODO: wherever we write stuff, we should write to a tmp path
@@ -317,6 +322,18 @@ Status Layer::RowIterator::CopyNextRows(
     #endif
     reader_->dms_->ApplyUpdates(projection_mapping_[proj_col_idx],
                                 start_row, &dst_block_valid);
+
+    // Apply updates from all flushed deltas
+    // TODO: this causes the delta files to re-seek. this is no good.
+    // Instead, we should keep some kind of DeltaBlockIterator with the
+    // column iterator, so they iterate "with" each other and maintain the
+    // necessary state.
+    BOOST_FOREACH(const DeltaFileReader &dfr, reader_->delta_readers_) {
+      RETURN_NOT_OK(dfr.ApplyUpdates(
+                      projection_mapping_[proj_col_idx],
+                      start_row, &dst_block_valid));
+    }
+
     // TODO: instead, once the layer's column iterator reflects updates,
     // we don't need to do this here. Kind of ugly to reach back into the
     // Layer object.

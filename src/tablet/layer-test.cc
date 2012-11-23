@@ -96,6 +96,43 @@ protected:
     }
   }
 
+  // Verify the contents of the given layer.
+  // Updated rows (those whose index is present in 'updated') should have
+  // a 'val' column equal to idx*5.
+  // Other rows should have val column equal to idx.
+  void VerifyUpdates(const Layer &l, const unordered_set<uint32_t> &updated) {
+    Schema proj_val(boost::assign::list_of
+                    (ColumnSchema("val", UINT32)),
+                    1);
+    scoped_ptr<Layer::RowIterator> row_iter(l.NewRowIterator(proj_val));
+    ASSERT_STATUS_OK(row_iter->Init());
+    ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
+    Arena arena(1024, 1024*1024);
+    int batch_size = 100;
+    uint32_t dst[batch_size];
+
+    int i = 0;
+    while (row_iter->HasNext()) {
+      arena.Reset();
+      size_t n = batch_size;
+      ASSERT_STATUS_OK_FAST(
+        row_iter->CopyNextRows(
+          &n, reinterpret_cast<char *>(dst), &arena));
+
+      for (int j = 0; j < n; j++) {
+        uint32_t idx_in_file = i + j;
+        if (updated.count(idx_in_file) > 0) {
+          // This is an index that should have been updated
+          ASSERT_EQ(idx_in_file * 5, dst[j]);
+        } else {
+          // This should have the original value
+          ASSERT_EQ(idx_in_file, dst[j]);
+        }
+      }
+      i += n;
+    }
+  }
+
   void FormatKey(int i, char *buf, size_t buf_len) {
     snprintf(buf, buf_len, "hello %015d", i);
   }
@@ -194,36 +231,7 @@ TEST_F(TestLayer, TestLayerUpdate) {
 
   // Now read back the value column, and verify that the updates
   // are visible.
-  Schema proj_val(boost::assign::list_of
-                  (ColumnSchema("val", UINT32)),
-                  1);
-  scoped_ptr<Layer::RowIterator> row_iter(l.NewRowIterator(proj_val));
-  ASSERT_STATUS_OK(row_iter->Init());
-  ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
-  Arena arena(1024, 1024*1024);
-  int batch_size = 100;
-  uint32_t dst[batch_size];
-
-  int i = 0;
-  while (row_iter->HasNext()) {
-    arena.Reset();
-    size_t n = batch_size;
-    ASSERT_STATUS_OK_FAST(
-      row_iter->CopyNextRows(
-        &n, reinterpret_cast<char *>(dst), &arena));
-
-    for (int j = 0; j < n; j++) {
-      uint32_t idx_in_file = i + j;
-      if (updated.count(idx_in_file) > 0) {
-        // This is an index that should have been updated
-        ASSERT_EQ(idx_in_file * 5, dst[j]);
-      } else {
-        // This should have the original value
-        ASSERT_EQ(idx_in_file, dst[j]);
-      }
-    }
-    i += n;
-  }
+  VerifyUpdates(l, updated);
 }
 
 TEST_F(TestLayer, TestDMSFlush) {
@@ -242,7 +250,12 @@ TEST_F(TestLayer, TestDMSFlush) {
 
   l.FlushDeltas();
 
+  // Check that the Layer's DMS has now been emptied.
   ASSERT_EQ(0, l.dms_->Count());
+
+  // Now read back the value column, and verify that the updates
+  // are visible.
+  VerifyUpdates(l, updated);
 }
 
 } // namespace tablet
