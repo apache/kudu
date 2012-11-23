@@ -163,9 +163,8 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
   CFileReader reader(ReaderOptions(), f, size);
   ASSERT_STATUS_OK(reader.Init());
 
-  CFileIterator *iter_ptr;
-  ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
-  scoped_ptr<CFileIterator> iter(iter_ptr);
+  scoped_ptr<CFileIterator> iter;
+  ASSERT_STATUS_OK( reader.NewIterator(&iter) );
   iter->SeekToOrdinal(0);
 
   Arena arena(8192, 8*1024*1024);
@@ -266,9 +265,8 @@ TEST(TestCFile, TestReadWriteInts) {
 
   BlockPointer ptr;
 
-  CFileIterator *iter_ptr;
-  ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
-  scoped_ptr<CFileIterator> iter(iter_ptr);
+  scoped_ptr<CFileIterator> iter;
+  ASSERT_STATUS_OK( reader.NewIterator(&iter) );
 
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
@@ -319,9 +317,8 @@ TEST(TestCFile, TestReadWriteStrings) {
 
   BlockPointer ptr;
 
-  CFileIterator *iter_ptr;
-  ASSERT_STATUS_OK( reader.NewIterator(&iter_ptr) );
-  scoped_ptr<CFileIterator> iter(iter_ptr);
+  scoped_ptr<CFileIterator> iter;
+  ASSERT_STATUS_OK( reader.NewIterator(&iter) );
 
   Arena arena(1024, 1024*1024);
 

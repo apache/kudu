@@ -80,6 +80,12 @@ public:
   Status Init();
 
   Status NewIterator(CFileIterator **iter) const;
+  Status NewIterator(scoped_ptr<CFileIterator> *iter) const {
+    CFileIterator *iter_ptr;
+    RETURN_NOT_OK(NewIterator(&iter_ptr));
+    (*iter).reset(iter_ptr);
+    return Status::OK();
+  }
 
   // TODO: make this private? should only be used
   // by the iterator and index tree readers, I think.
