@@ -358,6 +358,14 @@ TEST(TestCFile, TestReadWriteStrings) {
   s = "hello 9999x";
   EXPECT_TRUE(iter->SeekAtOrAfter(&s, &exact).IsNotFound());
 
+  // before first entry
+  s = "hello";
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  ASSERT_FALSE(exact);
+  ASSERT_EQ(0u, iter->GetCurrentOrdinal());
+  CopyOne<STRING>(iter.get(), &s, &arena);
+  ASSERT_EQ(string("hello 0000"), s.ToString());
+
   // to last entry
   s = "hello 9999";
   ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));

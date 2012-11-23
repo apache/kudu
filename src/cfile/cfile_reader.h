@@ -102,6 +102,27 @@ public:
     return type_info_;
   }
 
+
+  // Advanced access to the cfile. This is used by the
+  // delta reader code. TODO: think about reorganizing this:
+  // delta files can probably be done more cleanly.
+
+  // Return true if there is a position-based index on this file.
+  bool has_posidx() const { return footer_->has_posidx_info(); }
+  BlockPointer posidx_root() const {
+    DCHECK(has_posidx());
+    return BlockPointer(footer_->posidx_info().root_block());
+  }
+
+  // Return true if there is a value-based index on this file.
+  bool has_validx() const { return footer_->has_validx_info(); }
+  BlockPointer validx_root() const {
+    DCHECK(has_validx());
+    return BlockPointer(footer_->validx_info().root_block());
+  }
+
+  
+
 private:
   friend class CFileIterator;
 

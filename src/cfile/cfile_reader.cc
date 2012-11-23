@@ -258,7 +258,17 @@ Status CFileIterator::SeekAtOrAfter(const void *key,
     return Status::NotSupported("no value index present");
   }
 
-  RETURN_NOT_OK(validx_iter_->SeekAtOrBefore(key));
+  Status s = validx_iter_->SeekAtOrBefore(key);
+  if (PREDICT_FALSE(s.IsNotFound())) {
+    // Seeking to a value before the first value in the file
+    // will return NotFound, due to the way the index seek
+    // works. We need to special-case this and have the
+    // iterator seek all the way down its leftmost branches
+    // to get the correct reslt.
+    s = validx_iter_->SeekToFirst();
+  }
+  RETURN_NOT_OK(s);
+
   RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_));
 
   RETURN_NOT_OK(dblk_->SeekAtOrAfterValue(key, exact_match));

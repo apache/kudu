@@ -163,6 +163,12 @@ public:
     return SeekDownward(key, root_block_);
   }
 
+  Status SeekToFirst() {
+    seeked_indexes_.clear();
+
+    return SeekToFirstDownward(root_block_);
+  }
+
   bool HasNext() {
     for (int i = seeked_indexes_.size() - 1;
          i >= 0;
@@ -268,6 +274,22 @@ private:
     } else {
       return SeekDownward(search_key,
                           BottomIter()->GetCurrentBlockPointer());
+    }
+  }
+
+  Status SeekToFirstDownward(const BlockPointer &in_block) {
+    // Read the block.
+    RETURN_NOT_OK(PushBlock(in_block));
+    RETURN_NOT_OK(BottomIter()->SeekToIndex(0));
+
+    // If the block is a leaf block, we're done,
+    // otherwise recurse downward into next layer
+    // of B-Tree
+    if (BottomReader()->IsLeaf()) {
+      return Status::OK();
+    } else {
+      return SeekToFirstDownward(
+        BottomIter()->GetCurrentBlockPointer());
     }
   }
 

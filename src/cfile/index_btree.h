@@ -56,7 +56,7 @@ private:
 
 class IndexTreeIterator : boost::noncopyable {
 public:
-
+  virtual Status SeekToFirst() = 0;
   virtual Status SeekAtOrBefore(const void *search_key) = 0;
   virtual bool HasNext() = 0;
   virtual Status Next() = 0;
