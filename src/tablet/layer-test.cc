@@ -106,6 +106,16 @@ protected:
   // a 'val' column equal to idx*5.
   // Other rows should have val column equal to idx.
   void VerifyUpdates(const Layer &l, const unordered_set<uint32_t> &updated) {
+    LOG_TIMING(INFO, "Reading updated rows with row iter") {
+      VerifyUpdatesWithRowIter(l, updated);
+    }
+    LOG_TIMING(INFO, "Reading updated rows with column iter") {
+      VerifyUpdatesWithColIter(l, updated);
+    }
+  }
+
+  void VerifyUpdatesWithRowIter(const Layer &l,
+                                const unordered_set<uint32_t> &updated) {
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
@@ -113,7 +123,7 @@ protected:
     ASSERT_STATUS_OK(row_iter->Init());
     ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
     Arena arena(1024, 1024*1024);
-    int batch_size = 100;
+    int batch_size = 10000;
     uint32_t dst[batch_size];
 
     int i = 0;
@@ -123,17 +133,51 @@ protected:
       ASSERT_STATUS_OK_FAST(
         row_iter->CopyNextRows(
           &n, reinterpret_cast<char *>(dst), &arena));
+      VerifyUpdatedBlock(reinterpret_cast<uint32_t *>(dst), i, n, updated);
+      i += n;
+    }
+  }
 
-      for (int j = 0; j < n; j++) {
-        uint32_t idx_in_file = i + j;
+  template<typename Indexable>
+  void VerifyUpdatedBlock(const Indexable &from_file, int start_row, size_t n_rows,
+                          const unordered_set<uint32_t> &updated) {
+      for (int j = 0; j < n_rows; j++) {
+        uint32_t idx_in_file = start_row + j;
+        int expected;
         if (updated.count(idx_in_file) > 0) {
-          // This is an index that should have been updated
-          ASSERT_EQ(idx_in_file * 5, dst[j]);
+          expected = idx_in_file * 5;
         } else {
-          // This should have the original value
-          ASSERT_EQ(idx_in_file, dst[j]);
+          expected = idx_in_file;
+        }
+
+        if (from_file[j] != expected) {
+          FAIL() << "Incorrect value at idx " << idx_in_file
+                 << ": expected=" << expected << " got=" << from_file[j];
         }
       }
+  }
+
+  // Verify the contents of the given layer.
+  // Identical to the above, except uses the column iterator instead of
+  // row iterator.
+  void VerifyUpdatesWithColIter(const Layer &l,
+                                const unordered_set<uint32_t> &updated) {
+    Schema proj_val(boost::assign::list_of
+                    (ColumnSchema("val", UINT32)),
+                    1);
+    scoped_ptr<Layer::ColumnIterator> col_iter;
+    ASSERT_STATUS_OK(l.NewColumnIterator(1, &col_iter));
+    ASSERT_STATUS_OK(col_iter->SeekToOrdinal(0));
+
+    int batch_size = 10000;
+
+    ScopedColumnBlock<UINT32> dst(batch_size);
+
+    int i = 0;
+    while (col_iter->HasNext()) {
+      size_t n = batch_size;
+      ASSERT_STATUS_OK_FAST(col_iter->CopyNextValues(&n, &dst));
+      VerifyUpdatedBlock(dst, i, n, updated);
       i += n;
     }
   }

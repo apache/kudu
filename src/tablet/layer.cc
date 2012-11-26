@@ -158,19 +158,35 @@ Layer::RowIterator *Layer::NewRowIterator(const Schema &projection) const {
   return new RowIterator(this, projection);
 }
 
-Status Layer::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
+Status Layer::NewColumnIterator(size_t col_idx, Layer::ColumnIterator **iter) const {
+  CHECK(open_);
+  CHECK_LT(col_idx, cfile_readers_.size());
+
+  auto_ptr<Layer::ColumnIterator> new_iter(new Layer::ColumnIterator(this, col_idx));
+  RETURN_NOT_OK(new_iter->Init());
+
+  *iter = new_iter.release();
+  return Status::OK();
+}
+
+Status Layer::NewColumnIterator(size_t col_idx, scoped_ptr<Layer::ColumnIterator> *iter) const {
+  ColumnIterator *iter_ptr;
+  RETURN_NOT_OK(NewColumnIterator(col_idx, &iter_ptr));
+  iter->reset(iter_ptr);
+  return Status::OK();
+}
+
+Status Layer::NewBaseColumnIterator(size_t col_idx, CFileIterator **iter) const {
   CHECK(open_);
   CHECK_LT(col_idx, cfile_readers_.size());
 
   return cfile_readers_[col_idx].NewIterator(iter);
 }
 
-
 Status Layer::UpdateRow(const void *key,
                         const RowDelta &update) {
-  CFileIterator *key_iter_ptr;
-  RETURN_NOT_OK( NewColumnIterator(0, &key_iter_ptr) );
-  scoped_ptr<CFileIterator> key_iter(key_iter_ptr);
+  scoped_ptr<CFileIterator> key_iter;
+  RETURN_NOT_OK( NewBaseColumnIterator(0, &key_iter) );
 
   // TODO: check bloom filter
 
@@ -240,10 +256,74 @@ Status Layer::FlushDeltas() {
 }
 
 ////////////////////////////////////////////////////////////
-// Layer Iterator
+// Layer Iterators
 ////////////////////////////////////////////////////////////
 
+////////////////////
+// Column Iterator
+////////////////////
 
+Layer::ColumnIterator::ColumnIterator(const Layer *layer,
+                               size_t col_idx) :
+  layer_(layer),
+  col_idx_(col_idx)
+{
+  CHECK_NOTNULL(layer);
+  CHECK_LT(col_idx, layer_->schema().num_columns());
+}
+
+Status Layer::ColumnIterator::Init() {
+  CHECK(base_iter_.get() == NULL) << "Already initialized: " << base_iter_;
+
+  RETURN_NOT_OK(layer_->NewBaseColumnIterator(col_idx_, &base_iter_));
+  return Status::OK();
+}
+
+Status Layer::ColumnIterator::SeekToOrdinal(uint32_t ord_idx) {
+  return base_iter_->SeekToOrdinal(ord_idx);
+}
+
+Status Layer::ColumnIterator::SeekAtOrAfter(const void *key, bool *exact_match) {
+  return base_iter_->SeekAtOrAfter(key, exact_match);
+}
+
+uint32_t Layer::ColumnIterator::GetCurrentOrdinal() const {
+  return base_iter_->GetCurrentOrdinal();
+}
+
+Status Layer::ColumnIterator::CopyNextValues(size_t *n, ColumnBlock *dst) {
+  uint32_t start_row = GetCurrentOrdinal();
+
+  // Copy as many rows as possible from the base data.
+  RETURN_NOT_OK(base_iter_->CopyNextValues(n, dst));
+  size_t base_copied = *n;
+
+
+  ColumnBlock dst_block_valid = dst->SliceRange(0, base_copied);
+
+  // Apply deltas from memory.
+  layer_->dms_->ApplyUpdates(col_idx_, start_row, &dst_block_valid);
+
+  // Apply updates from all flushed deltas
+  // TODO: this causes the delta files to re-seek. this is no good.
+  // Instead, we should keep some kind of DeltaBlockIterator with the
+  // column iterator, so they iterate "with" each other and maintain the
+  // necessary state.
+  BOOST_FOREACH(const DeltaFileReader &dfr, layer_->delta_readers_) {
+    RETURN_NOT_OK(dfr.ApplyUpdates(col_idx_, start_row, &dst_block_valid));
+  }
+  
+  return Status::OK();
+}
+
+bool Layer::ColumnIterator::HasNext() const {
+  return base_iter_->HasNext();
+}
+
+
+////////////////////
+// Row Iterator
+////////////////////
 Status Layer::RowIterator::Init() {
   CHECK(!initted_);
 
@@ -256,16 +336,14 @@ Status Layer::RowIterator::Init() {
   CHECK_EQ(reader_->schema().num_key_columns(), 1);
   int key_col = 0;
 
-  CFileIterator *iter;
-  RETURN_NOT_OK(reader_->NewColumnIterator(key_col, &iter));
-  key_iter_.reset(iter);
+  RETURN_NOT_OK(reader_->NewBaseColumnIterator(key_col, &key_iter_));
 
   // Setup column iterators.
 
   for (size_t i = 0; i < projection_.num_columns(); i++) {
     size_t col_in_layer = projection_mapping_[i];
 
-    CFileIterator *iter;
+    ColumnIterator *iter;
     RETURN_NOT_OK(reader_->NewColumnIterator(col_in_layer, &iter));
     col_iters_.push_back(iter);
   }
@@ -284,10 +362,9 @@ Status Layer::RowIterator::CopyNextRows(
   // Copy the projected columns into 'dst'
   size_t stride = projection_.byte_size();
   int proj_col_idx = 0;
-  int start_row = col_iters_[0].GetCurrentOrdinal();
   int fetched_prev_col = -1;
 
-  BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+  BOOST_FOREACH(ColumnIterator &col_iter, col_iters_) {
     const TypeInfo &tinfo = projection_.column(proj_col_idx).type_info();
     ColumnBlock dst_block(tinfo,
                           dst + projection_.column_offset(proj_col_idx),
@@ -295,7 +372,6 @@ Status Layer::RowIterator::CopyNextRows(
 
     size_t fetched = *nrows;
     RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_block));
-    ColumnBlock dst_block_valid = dst_block.SliceRange(0, fetched);
 
     // Sanity check that all iters match up
     if (proj_col_idx > 0) {
@@ -310,34 +386,6 @@ Status Layer::RowIterator::CopyNextRows(
       DCHECK_EQ(proj_col_idx, 0) << "all columns should end at the same time!";
       return Status::NotFound("end of input");
     }
-
-    // Apply updates from memory.
-    // TODO: can skip this on the key column? maybe not, once we have
-    // deletions?
-    #ifndef NDEBUG
-    VLOG(3) << "applying updates for col "
-            << projection_mapping_[proj_col_idx]
-            << " starting at row " << start_row
-            << " for " << dst_block_valid.size() << " rows";
-    #endif
-    reader_->dms_->ApplyUpdates(projection_mapping_[proj_col_idx],
-                                start_row, &dst_block_valid);
-
-    // Apply updates from all flushed deltas
-    // TODO: this causes the delta files to re-seek. this is no good.
-    // Instead, we should keep some kind of DeltaBlockIterator with the
-    // column iterator, so they iterate "with" each other and maintain the
-    // necessary state.
-    BOOST_FOREACH(const DeltaFileReader &dfr, reader_->delta_readers_) {
-      RETURN_NOT_OK(dfr.ApplyUpdates(
-                      projection_mapping_[proj_col_idx],
-                      start_row, &dst_block_valid));
-    }
-
-    // TODO: instead, once the layer's column iterator reflects updates,
-    // we don't need to do this here. Kind of ugly to reach back into the
-    // Layer object.
-
     proj_col_idx++;
   }
 

@@ -68,6 +68,7 @@ private:
 class Layer : boost::noncopyable {
 public:
   class RowIterator;
+  class ColumnIterator;
 
   // TODO: should 'schema' be stored with the layer? quite likely
   // so that we can support cheap alter table.
@@ -99,12 +100,14 @@ public:
 
   // Read functions.
 
-  // TODO: make this iterator also reflect updates!
-  // Probably need to introduce an interface ColumnIterator,
-  // which CFileIterator implements, and then have an impl
-  // here which reflects the updates
+  // Return an iterator over one of the columns in this layer.
+  // Upon return, the iterator will be initialized and ready for use.
+  // If an error occurs opening the iterator, a bad Status is returned
+  // and 'iter' is left unmodified.
   Status NewColumnIterator(size_t col_idx,
-                           CFileIterator **iter) const;
+                           ColumnIterator **iter) const;
+  Status NewColumnIterator(size_t col_idx,
+                           scoped_ptr<ColumnIterator> *iter) const;
 
   RowIterator *NewRowIterator(const Schema &projection) const;
 
@@ -117,6 +120,23 @@ private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);
   friend class RowIterator;
+  friend class ColumnIterator;
+
+  // Return an iterator over the un-updated data for one of the columns
+  // in this layer. This iterator _does not_ reflect updates.
+  // Use NewColumnIterator to create an iterator which reflects updates.
+  //
+  // Upon return, the iterator has been Initted and is ready for use.
+  Status NewBaseColumnIterator(size_t col_idx,
+                               CFileIterator **iter) const;
+  Status NewBaseColumnIterator(size_t col_idx,
+                               scoped_ptr<CFileIterator> *iter) const {
+    CFileIterator *iter_ptr;
+    RETURN_NOT_OK(NewBaseColumnIterator(col_idx, &iter_ptr));
+    iter->reset(iter_ptr);
+    return Status::OK();
+  }
+
 
   Env *env_;
   const Schema schema_;
@@ -129,7 +149,37 @@ private:
   ptr_vector<DeltaFileReader> delta_readers_;
 };
 
+// Iterator over a column in a layer, with deltas applied.
+class Layer::ColumnIterator : boost::noncopyable {
+public:
+  Status SeekToOrdinal(uint32_t ord_idx);
+  Status SeekAtOrAfter(const void *key, bool *exact_match);
+  uint32_t GetCurrentOrdinal() const;
+  Status CopyNextValues(size_t *n, ColumnBlock *dst);
+  bool HasNext() const;
+private:
+  friend class Layer;
 
+  // Create an iterator which yields updated rows from
+  // a given column.
+  ColumnIterator(const Layer *layer,
+                 size_t col_idx);
+
+  Status Init();
+
+  const Layer *layer_;
+  const size_t col_idx_;
+
+  // Iterator over the base (i.e unmodified)
+  scoped_ptr<CFileIterator> base_iter_;
+};
+
+
+// Iterator over materialized and projected rows of a given
+// layer. This is an "early materialization" iterator.
+// TODO: this might get replaced by an operator which takes
+// multiple column iterators and materializes them, but perhaps
+// this can actually be more efficient.
 class Layer::RowIterator : boost::noncopyable {
 public:
 
@@ -145,7 +195,7 @@ public:
 
   Status SeekToOrdinal(uint32_t ord_idx) {
     DCHECK(initted_);
-    BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+    BOOST_FOREACH(ColumnIterator &col_iter, col_iters_) {
       RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
     }
 
@@ -182,7 +232,7 @@ private:
 
   // Iterator for the key column in the underlying data.
   scoped_ptr<CFileIterator> key_iter_;
-  ptr_vector<CFileIterator> col_iters_;
+  ptr_vector<ColumnIterator> col_iters_;
 
   bool initted_;
 

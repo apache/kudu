@@ -216,6 +216,7 @@ Status DeltaFileReader::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
   s.remove_prefix(sizeof(uint32_t));
 
   // Decode the bitmap
+  // TODO: check bounds first!
   const uint8_t *bitmap = reinterpret_cast<const uint8_t *>(s.data());
   if (!BitmapTest(bitmap, col_idx)) {
     // No update for this column on this row
