@@ -1,7 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/assign/list_of.hpp>
-#include <boost/lexical_cast.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -10,6 +9,7 @@
 
 #include "common/row.h"
 #include "common/schema.h"
+#include "gutil/stringprintf.h"
 #include "tablet/layer.h"
 #include "util/env.h"
 #include "util/status.h"
@@ -47,9 +47,14 @@ public:
 
 protected:
   virtual void SetUp() {
+    const ::testing::TestInfo* const test_info =
+      ::testing::UnitTest::GetInstance()->current_test_info();
+
     ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
-    test_dir_ += "/TestLayer.TestLayerRoundTrip." +
-      boost::lexical_cast<string>(time(NULL));
+
+    test_dir_ += StringPrintf(
+      "/TestLayer.%s.%ld", test_info->name(), time(NULL));
+
   }
 
   // Write out a test layer with n_rows_ rows.
