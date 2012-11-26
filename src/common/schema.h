@@ -137,7 +137,7 @@ public:
   // TODO: consider removing it.
   template<DataType Type>
   const typename DataTypeTraits<Type>::cpp_type *
-  ExtractColumnFromRow(const Slice &row, size_t idx) {
+  ExtractColumnFromRow(const Slice &row, size_t idx) const {
     DCHECK_LT(idx, cols_.size());
     DCHECK_EQ(cols_[idx].type_info().type(), Type);
 
