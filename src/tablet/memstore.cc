@@ -62,6 +62,25 @@ Status MemStore::Insert(const Slice &data) {
   return Status::OK();
 }
 
+Status MemStore::UpdateRow(const void *key,
+                           const RowDelta &delta) {
+  MSSet::iterator it = entries_.find(Entry(key));
+  if (it == entries_.end()) {
+    return Status::NotFound("not in memstore");
+  }
+
+  Entry existing = *it;
+
+  // Ugly: remove constness of the set member.
+  // We know that the data here is owned by the memstore, so it's safe
+  // to mutate, but unfortunately we can't make the Entry non-const, since
+  // then we couldn't use const keys for _lookups_.
+  void *data = const_cast<void *>(existing.data);
+
+  delta.ApplyRowUpdate(schema_, data, &arena_);
+  return Status::OK();
+}
+
 
 MemStore::Iterator *MemStore::NewIterator() const {
   return new MemStore::Iterator(this);

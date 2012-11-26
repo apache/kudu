@@ -5,6 +5,7 @@
 #include <boost/noncopyable.hpp>
 #include <set>
 
+#include "tablet/rowdelta.h"
 #include "common/schema.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
@@ -41,6 +42,13 @@ public:
   //
   // Returns Status::OK unless allocation fails.
   Status Insert(const Slice &data);
+
+
+  // Update an existing row in the memstore.
+  //
+  // Returns Status::NotFound if the row doesn't exist.
+  Status UpdateRow(const void *key,
+                   const RowDelta &update);
 
   size_t entry_count() {
     return entries_.size();
@@ -95,6 +103,18 @@ private:
 
   typedef set<Entry, EntryComparator, ArenaAllocator<Entry> > MSSet;
 
+
+  MSSet::const_iterator IteratorAtOrAfter(const Slice &key,
+                                          bool *exact) const {
+    CHECK_GE(key.size(), schema().key_byte_size());
+
+    pair<MSSet::const_iterator, MSSet::const_iterator> range =
+      entries_.equal_range(Entry(key.data()));
+    *exact = (range.first != range.second);
+    return range.first;
+  }
+
+
   const Schema schema_;
   Arena arena_;
 
@@ -116,10 +136,9 @@ private:
 class MemStore::Iterator : boost::noncopyable {
 public:
 
-  Status SeekAtOrAfter(const Slice &key) {
-    CHECK_GE(key.size(), memstore_->schema().key_byte_size());
-    // TODO: implement me
-    CHECK(false);
+  Status SeekAtOrAfter(const Slice &key, bool *exact) {
+    iter_ = memstore_->IteratorAtOrAfter(key, exact);
+    return Status::OK();
   }
 
   const Slice GetCurrentRow() const {

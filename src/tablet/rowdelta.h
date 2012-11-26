@@ -54,9 +54,19 @@ public:
   //
   // NOTE: This does not copy any referenced data.
   // TODO: it should probably copy referenced data to an arena.
+  //
+  // Return true if any updates were made.
   bool ApplyColumnUpdate(const Schema &schema,
                          size_t col_idx,
                          void *dst) const;
+
+  // Apply all updated columns to the given row.
+  // dst must contain an entire row's worth of data.
+  //
+  // Updated slices are copied into the dst arena
+  void ApplyRowUpdate(const Schema &schema,
+                      void *dst,
+                      Arena *dst_arena) const;
 
   // Merge updates from another delta. The two RowDelta objects
   // must correspond to the same schema.

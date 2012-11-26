@@ -10,6 +10,7 @@
 namespace kudu {
 namespace tablet {
 
+using boost::scoped_ptr;
 
 class TestMemStore : public ::testing::Test {
 public:
@@ -22,6 +23,23 @@ public:
   {}
 
 protected:
+  // Check that the given row in the memstore contains the given
+  // integer value.
+  void CheckValue(const MemStore &ms, string key, uint32_t expected_val) {
+    scoped_ptr<MemStore::Iterator> iter(ms.NewIterator());
+    Slice keystr_slice(key);
+    Slice key_slice(reinterpret_cast<const char *>(&keystr_slice), sizeof(Slice));
+
+    bool exact;
+    ASSERT_STATUS_OK(iter->SeekAtOrAfter(key_slice, &exact));
+    ASSERT_TRUE(exact) << "unable to seek to key " << key;
+    ASSERT_TRUE(iter->IsValid());
+    Slice s = iter->GetCurrentRow();
+    ASSERT_EQ(schema_.byte_size(), s.size());
+
+    ASSERT_EQ(expected_val, *schema_.ExtractColumnFromRow<UINT32>(s, 1));
+  }
+
   const Schema schema_;
 };
 
@@ -65,6 +83,48 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->IsValid());
+}
+
+// Test that inserting duplicate key data fails with Status::AlreadyPresent
+TEST_F(TestMemStore, TestInsertDuplicate) {
+  MemStore ms(schema_);
+
+  RowBuilder rb(schema_);
+  rb.AddString(string("hello world"));
+  rb.AddUint32(12345);
+  ASSERT_STATUS_OK(ms.Insert(rb.data()));
+
+  Status s = ms.Insert(rb.data());
+  ASSERT_TRUE(s.IsAlreadyPresent()) << "bad status: " << s.ToString();
+}
+
+// Test for updating rows in memstore
+TEST_F(TestMemStore, TestUpdate) {
+  MemStore ms(schema_);
+
+  RowBuilder rb(schema_);
+  rb.AddString(string("hello world"));
+  rb.AddUint32(1);
+  ASSERT_STATUS_OK(ms.Insert(rb.data()));
+
+  // Validate insertion
+  CheckValue(ms, "hello world", 1);
+
+  // Update a key which exists.
+  ScopedRowDelta update(schema_);
+  Slice key = Slice("hello world");
+  uint32_t new_val = 2;
+  update.get().UpdateColumn(schema_, 1, &new_val);
+  ASSERT_STATUS_OK(ms.UpdateRow(&key, update.get()));
+
+  // Validate the updated value
+  CheckValue(ms, "hello world", 2);
+
+  // Try to update a key which doesn't exist - should return NotFound
+  key = Slice("does not exist");
+  update.get().UpdateColumn(schema_, 1, &new_val);
+  Status s = ms.UpdateRow(&key, update.get());
+  ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 }
 
 
