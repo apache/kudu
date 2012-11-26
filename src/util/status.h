@@ -59,6 +59,9 @@ class Status {
   static Status IOError(const Slice& msg, const Slice& msg2 = Slice()) {
     return Status(kIOError, msg, msg2);
   }
+  static Status AlreadyPresent(const Slice& msg, const Slice& msg2 = Slice()) {
+    return Status(kAlreadyPresent, msg, msg2);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -74,6 +77,9 @@ class Status {
 
   // Returns true iff the status indicates an InvalidArgument error
   bool IsInvalidArgument() const { return code() == kInvalidArgument; }
+
+  // Returns true iff the status indicates an AlreadyPresent error
+  bool IsAlreadyPresent() const { return code() == kAlreadyPresent; }
 
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
@@ -93,7 +99,8 @@ class Status {
     kCorruption = 2,
     kNotSupported = 3,
     kInvalidArgument = 4,
-    kIOError = 5
+    kIOError = 5,
+    kAlreadyPresent = 6
   };
 
   Code code() const {

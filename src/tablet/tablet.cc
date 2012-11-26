@@ -21,6 +21,13 @@ using std::tr1::shared_ptr;
 
 const string kLayerPrefix = "layer_";
 
+static string GetLayerPath(const string &tablet_dir,
+                           int layer_idx) {
+  return StringPrintf("%s/layer_%010d",
+                      tablet_dir.c_str(),
+                      layer_idx);
+}
+
 Tablet::Tablet(const Schema &schema,
                const string &dir) :
   schema_(schema),
@@ -67,6 +74,20 @@ Status Tablet::Open() {
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
+  // First, ensure that it is a unique key by checking all the open
+  // Layers
+  BOOST_FOREACH(Layer &layer, layers_) {
+    bool present;
+    LOG(INFO) << "checking for key in layer " << layer.ToString();
+    RETURN_NOT_OK(layer.CheckRowPresent(data.data(), &present));
+    if (present) {
+      return Status::AlreadyPresent("key already present");
+    }
+  }
+
+  // Now try to insert into memstore. The memstore itself will return
+  // AlreadyPresent if it has already been inserted there.
+  // TODO: check concurrency
   return memstore_->Insert(data);
 }
 
@@ -78,7 +99,13 @@ Status Tablet::Flush() {
   // TODO: will need to think carefully about handling concurrent
   // updates during the flush process. For initial prototype, ignore
   // this tricky bit.
-  LayerWriter out(env_, schema_, dir_ + "/flush.tmp");
+
+  // TODO: don't use time() here - add a counter
+  string new_layer_dir = GetLayerPath(dir_, time(NULL));
+  string tmp_layer_dir = new_layer_dir + ".tmp";
+  // 1. Flush new layer to temporary directory.
+
+  LayerWriter out(env_, schema_, tmp_layer_dir);
   RETURN_NOT_OK(out.Open());
 
   scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator());
@@ -97,7 +124,17 @@ Status Tablet::Flush() {
     written++;
   }
 
-  return out.Finish();
+  RETURN_NOT_OK(out.Finish());
+
+
+  // Flush to tmp was successful. Rename it to its real location.
+  RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
+
+  // Open it.
+  std::auto_ptr<Layer> new_layer(new Layer(env_, schema_, new_layer_dir));
+  RETURN_NOT_OK(new_layer->Open());
+  layers_.push_back(new_layer.release());
+  return Status::OK();
 }
 
 

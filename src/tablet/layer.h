@@ -121,6 +121,10 @@ public:
     return schema_;
   }
 
+  string ToString() const {
+    return dir_;
+  }
+
 private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);

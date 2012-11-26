@@ -94,6 +94,7 @@ TEST_F(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(tablet.CreateNew());
   ASSERT_STATUS_OK(tablet.Open());
 
+  
   // Insert 1000 rows into memstore
   RowBuilder rb(schema_);
   char buf[256];
@@ -110,6 +111,31 @@ TEST_F(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(tablet.Flush());
 
   // TODO: assert that the data can still be read after the flush.
+}
+
+// Test that inserting a row which already exists causes an AlreadyPresent
+// error
+TEST_F(TestTablet, TestInsertDuplicateKey) {
+  Tablet tablet(schema_, test_dir_);
+  ASSERT_STATUS_OK(tablet.CreateNew());
+  ASSERT_STATUS_OK(tablet.Open());
+
+  RowBuilder rb(schema_);
+  rb.AddString(Slice("hello world"));
+  rb.AddUint32(12345);
+  ASSERT_STATUS_OK(tablet.Insert(rb.data()));
+
+  // Insert again, should fail!
+  Status s = tablet.Insert(rb.data());
+  ASSERT_TRUE(s.IsAlreadyPresent()) <<
+    "expected AlreadyPresent, but got: " << s.ToString();
+
+  // Flush, and make sure that inserting duplicate still fails
+  ASSERT_STATUS_OK(tablet.Flush());
+
+  s = tablet.Insert(rb.data());
+  ASSERT_TRUE(s.IsAlreadyPresent()) <<
+    "expected AlreadyPresent, but got: " << s.ToString();
 }
 
 }

@@ -7,6 +7,7 @@
 
 #include "common/schema.h"
 #include "tablet/memstore.h"
+#include "tablet/layer.h"
 #include "util/env.h"
 #include "util/status.h"
 #include "util/slice.h"
@@ -40,6 +41,8 @@ public:
   // have been copied into internal memory, and thus the provided memory
   // buffer may safely be re-used or freed.
   //
+  // Returns Status::AlreadyPresent() if an entry with the same key is already
+  // present in the tablet.
   // Returns Status::OK unless allocation fails.
   Status Insert(const Slice &data);
 
@@ -49,6 +52,7 @@ private:
   Schema schema_;
   string dir_;
   scoped_ptr<MemStore> memstore_;
+  ptr_vector<Layer> layers_;
 
   Env *env_;
 

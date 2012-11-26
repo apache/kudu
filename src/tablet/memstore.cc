@@ -38,20 +38,27 @@ Status MemStore::CopyRowToArena(const Slice &row,
 Status MemStore::Insert(const Slice &data) {
   CHECK_EQ(data.size(), schema_.byte_size());
 
+
+  pair<MSSet::iterator, MSSet::iterator> range =
+    entries_.equal_range(Entry(data.data()));
+
+  if (range.first != range.second) {
+    // Entry was found in the set already
+    return Status::AlreadyPresent("entry already present in memstore");
+  }
+
+  // Otherwise, insert it.
   // Copy the row and any referred-to memory to arena
   Slice copied;
   RETURN_NOT_OK(CopyRowToArena(data, &copied));
-
   Entry new_entry(copied.data());
-  pair<MSSet::iterator, bool> ret = entries_.insert(new_entry);
-  if (!ret.second) {
-    // Already exists with same key; should replace entry.
-    MSSet::iterator it = ret.first;
-    entries_.erase(it++);
-    // Use the "hinted" insertion:
-    // http://gcc.gnu.org/onlinedocs/libstdc++/manual/bk01pt07ch17.html
-    entries_.insert(it, new_entry);
+
+  MSSet::iterator insertion_hint = range.first;
+  if (insertion_hint != entries_.end()) {
+    --insertion_hint;
   }
+
+  entries_.insert(insertion_hint, new_entry);
   return Status::OK();
 }
 
