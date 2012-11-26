@@ -45,48 +45,6 @@ protected:
   string test_dir_;
 };
 
-TEST_F(TestTablet, TestMemStore) {
-  MemStore ms(schema_);
-
-  RowBuilder rb(schema_);
-  rb.AddString(string("hello world"));
-  rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms.Insert(rb.data()));
-
-  rb.Reset();
-  rb.AddString(string("goodbye world"));
-  rb.AddUint32(54321);
-  ASSERT_STATUS_OK(ms.Insert(rb.data()));
-
-  ASSERT_EQ(2, ms.entry_count());
-
-  scoped_ptr<MemStore::Iterator> iter(ms.NewIterator());
-
-  // The first row returned from the iterator should
-  // be "goodbye" because 'g' sorts before 'h'
-  ASSERT_TRUE(iter->IsValid());
-  Slice s = iter->GetCurrentRow();
-  ASSERT_EQ(schema_.byte_size(), s.size());
-  ASSERT_EQ(Slice("goodbye world"),
-            *schema_.ExtractColumnFromRow<STRING>(s, 0));
-  ASSERT_EQ(54321,
-            *schema_.ExtractColumnFromRow<UINT32>(s, 1));
-
-  // Next row should be 'hello world'
-  ASSERT_TRUE(iter->Next());
-  ASSERT_TRUE(iter->IsValid());
-  s = iter->GetCurrentRow();
-  ASSERT_EQ(schema_.byte_size(), s.size());
-  ASSERT_EQ(Slice("hello world"),
-            *schema_.ExtractColumnFromRow<STRING>(s, 0));
-  ASSERT_EQ(12345,
-            *schema_.ExtractColumnFromRow<UINT32>(s, 1));
-
-  ASSERT_FALSE(iter->Next());
-  ASSERT_FALSE(iter->IsValid());
-}
-
-
 TEST_F(TestTablet, TestFlush) {
   LOG(INFO) << "Writing tablet in: " << test_dir_;
 
