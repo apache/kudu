@@ -16,20 +16,39 @@ namespace kudu {
 namespace tablet {
 
 
-Schema CreateTestSchema() {
-  ColumnSchema col1("key", STRING);
-  ColumnSchema col2("val", UINT32);
+class TestTablet : public ::testing::Test {
+public:
+  TestTablet() :
+    ::testing::Test(),
+    env_(Env::Default()),
+    schema_(boost::assign::list_of
+            (ColumnSchema("key", STRING))
+            (ColumnSchema("val", UINT32)),
+            1)
+  {}
+protected:
 
-  vector<ColumnSchema> cols = boost::assign::list_of
-    (col1)(col2);
-  return Schema(cols, 1);
-}
+  virtual void SetUp() {
+    const ::testing::TestInfo* const test_info =
+      ::testing::UnitTest::GetInstance()->current_test_info();
 
-TEST(TestTablet, TestMemStore) {
-  Schema schema = CreateTestSchema();
-  MemStore ms(schema);
+    ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
 
-  RowBuilder rb(schema);
+    test_dir_ += StringPrintf("/%s.%s.%ld",
+                              test_info->test_case_name(),
+                              test_info->name(),
+                              time(NULL));
+  }
+
+  Env *env_;
+  const Schema schema_;
+  string test_dir_;
+};
+
+TEST_F(TestTablet, TestMemStore) {
+  MemStore ms(schema_);
+
+  RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
   ASSERT_STATUS_OK(ms.Insert(rb.data()));
@@ -47,47 +66,36 @@ TEST(TestTablet, TestMemStore) {
   // be "goodbye" because 'g' sorts before 'h'
   ASSERT_TRUE(iter->IsValid());
   Slice s = iter->GetCurrentRow();
-  ASSERT_EQ(schema.byte_size(), s.size());
+  ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("goodbye world"),
-            *schema.ExtractColumnFromRow<STRING>(s, 0));
+            *schema_.ExtractColumnFromRow<STRING>(s, 0));
   ASSERT_EQ(54321,
-            *schema.ExtractColumnFromRow<UINT32>(s, 1));
+            *schema_.ExtractColumnFromRow<UINT32>(s, 1));
 
   // Next row should be 'hello world'
   ASSERT_TRUE(iter->Next());
   ASSERT_TRUE(iter->IsValid());
   s = iter->GetCurrentRow();
-  ASSERT_EQ(schema.byte_size(), s.size());
+  ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("hello world"),
-            *schema.ExtractColumnFromRow<STRING>(s, 0));
+            *schema_.ExtractColumnFromRow<STRING>(s, 0));
   ASSERT_EQ(12345,
-            *schema.ExtractColumnFromRow<UINT32>(s, 1));
+            *schema_.ExtractColumnFromRow<UINT32>(s, 1));
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->IsValid());
 }
 
 
-TEST(TestTablet, TestFlush) {
-  Env *env = Env::Default();
+TEST_F(TestTablet, TestFlush) {
+  LOG(INFO) << "Writing tablet in: " << test_dir_;
 
-  string test_dir;
-  ASSERT_STATUS_OK(env->GetTestDirectory(&test_dir));
-
-  env->DeleteDir(test_dir);
-
-  test_dir += "/TestTablet.TestFlush" +
-    boost::lexical_cast<string>(time(NULL));
-
-  LOG(INFO) << "Writing tablet in: " << test_dir;
-
-  Schema schema = CreateTestSchema();
-  Tablet tablet(schema, test_dir);
+  Tablet tablet(schema_, test_dir_);
   ASSERT_STATUS_OK(tablet.CreateNew());
   ASSERT_STATUS_OK(tablet.Open());
 
   // Insert 1000 rows into memstore
-  RowBuilder rb(schema);
+  RowBuilder rb(schema_);
   char buf[256];
   for (int i = 0; i < 1000; i++) {
     rb.Reset();
