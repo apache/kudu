@@ -203,6 +203,24 @@ Status Layer::UpdateRow(const void *key,
   return Status::OK();
 }
 
+Status Layer::CheckRowPresent(const void *key,
+                              bool *present) {
+  scoped_ptr<CFileIterator> key_iter;
+  RETURN_NOT_OK( NewBaseColumnIterator(0, &key_iter) );
+
+  // TODO: insert use of bloom filters here
+
+  Status s = key_iter->SeekAtOrAfter(key, present);
+  if (s.IsNotFound()) {
+    // In the case that the key comes past the end of the file, Seek
+    // will return NotFound. In that case, it is OK from this function's
+    // point of view - just a non-present key.
+    *present = false;
+    return Status::OK();
+  }
+  return s;
+}
+
 
 Status Layer::FlushDeltas() {
   // TODO: should use something more unique and monotonic than

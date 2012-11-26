@@ -98,6 +98,11 @@ public:
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
+  // Check if a given row key is present in this layer.
+  // Sets *present and returns Status::OK, unless an error
+  // occurs.
+  Status CheckRowPresent(const void *key, bool *present);
+
   // Read functions.
 
   // Return an iterator over one of the columns in this layer.
