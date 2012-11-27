@@ -54,6 +54,8 @@ private:
   scoped_ptr<MemStore> memstore_;
   ptr_vector<Layer> layers_;
 
+  size_t next_layer_idx_;
+
   Env *env_;
 
   bool open_;

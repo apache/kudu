@@ -61,6 +61,10 @@ Status Tablet::Open() {
       if (!safe_strtou32(child.c_str(), &layer_idx)) {
         return Status::IOError(string("Bad layer file: ") + child);
       }
+
+      next_layer_idx_ = std::max(next_layer_idx_,
+                                 (size_t)layer_idx + 1);
+
     } else {
       LOG(WARNING) << "ignoring unknown file in " << dir_  << ": " << child;
     }
@@ -92,6 +96,8 @@ Status Tablet::Insert(const Slice &data) {
 }
 
 Status Tablet::Flush() {
+  CHECK(open_);
+
   // swap in a new memstore
   scoped_ptr<MemStore> old_ms(new MemStore(schema_));
   old_ms.swap(memstore_);
@@ -100,8 +106,7 @@ Status Tablet::Flush() {
   // updates during the flush process. For initial prototype, ignore
   // this tricky bit.
 
-  // TODO: don't use time() here - add a counter
-  string new_layer_dir = GetLayerPath(dir_, time(NULL));
+  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
   string tmp_layer_dir = new_layer_dir + ".tmp";
   // 1. Flush new layer to temporary directory.
 
