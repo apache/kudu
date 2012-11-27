@@ -38,21 +38,20 @@ protected:
                               test_info->test_case_name(),
                               test_info->name(),
                               time(NULL));
+
+    LOG(INFO) << "Creating tablet in: " << test_dir_;
+    tablet_.reset(new Tablet(schema_, test_dir_));
+    ASSERT_STATUS_OK(tablet_->CreateNew());
+    ASSERT_STATUS_OK(tablet_->Open());
   }
 
   Env *env_;
   const Schema schema_;
   string test_dir_;
+  scoped_ptr<Tablet> tablet_;
 };
 
 TEST_F(TestTablet, TestFlush) {
-  LOG(INFO) << "Writing tablet in: " << test_dir_;
-
-  Tablet tablet(schema_, test_dir_);
-  ASSERT_STATUS_OK(tablet.CreateNew());
-  ASSERT_STATUS_OK(tablet.Open());
-
-  
   // Insert 1000 rows into memstore
   RowBuilder rb(schema_);
   char buf[256];
@@ -62,11 +61,11 @@ TEST_F(TestTablet, TestFlush) {
     rb.AddString(Slice(buf));
 
     rb.AddUint32(i);
-    ASSERT_STATUS_OK(tablet.Insert(rb.data()));
+    ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
   }
 
   // Flush it.
-  ASSERT_STATUS_OK(tablet.Flush());
+  ASSERT_STATUS_OK(tablet_->Flush());
 
   // TODO: assert that the data can still be read after the flush.
 }
@@ -74,24 +73,20 @@ TEST_F(TestTablet, TestFlush) {
 // Test that inserting a row which already exists causes an AlreadyPresent
 // error
 TEST_F(TestTablet, TestInsertDuplicateKey) {
-  Tablet tablet(schema_, test_dir_);
-  ASSERT_STATUS_OK(tablet.CreateNew());
-  ASSERT_STATUS_OK(tablet.Open());
-
   RowBuilder rb(schema_);
   rb.AddString(Slice("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(tablet.Insert(rb.data()));
+  ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
 
   // Insert again, should fail!
-  Status s = tablet.Insert(rb.data());
+  Status s = tablet_->Insert(rb.data());
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
 
   // Flush, and make sure that inserting duplicate still fails
-  ASSERT_STATUS_OK(tablet.Flush());
+  ASSERT_STATUS_OK(tablet_->Flush());
 
-  s = tablet.Insert(rb.data());
+  s = tablet_->Insert(rb.data());
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
 }
