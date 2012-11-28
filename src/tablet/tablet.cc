@@ -96,6 +96,30 @@ Status Tablet::Insert(const Slice &data) {
   return memstore_->Insert(data);
 }
 
+Status Tablet::UpdateRow(const void *key,
+                         const RowDelta &update) {
+  // First try to update in memstore.
+  Status s = memstore_->UpdateRow(key, update);
+  if (s.ok() || !s.IsNotFound()) {
+    // if it succeeded, or if an error occurred, return.
+    return s;
+  }
+
+  // TODO: could iterate the layers in a smart order
+  // based on recent statistics - eg if a layer is getting
+  // updated frequently, pick that one first.
+  BOOST_FOREACH(Layer &l, layers_) {
+    s = l.UpdateRow(key, update);
+    if (s.ok() || !s.IsNotFound()) {
+      // if it succeeded, or if an error occurred, return.
+      return s;
+    }
+  }
+
+  return Status::NotFound("key not found");
+}
+
+
 Status Tablet::Flush() {
   CHECK(open_);
 

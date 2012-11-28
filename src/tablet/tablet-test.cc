@@ -158,7 +158,6 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
 
 // Test iterating over a tablet which has a memstore
 // and several layers, each with many rows of data.
-// TODO: add Updates here as well.
 TEST_F(TestTablet, TestRowIteratorComplex) {
   // Put a row in disk layer 1 (insert and flush)
   RowBuilder rb(schema_);
@@ -181,6 +180,19 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
 
   // At this point, we should have several layers as well
   // as some data in memstore.
+
+  // Update a subset of the rows
+  ScopedRowDelta update(schema_);
+  for (uint32_t i = 0; i < 1000; i += 15) {
+    snprintf(keybuf, sizeof(keybuf), "hello %d", i);
+    Slice key_slice(keybuf);
+    uint32_t new_val = 10000 + i;
+    update.get().UpdateColumn(schema_, 1, &new_val);
+    ASSERT_STATUS_OK_FAST(
+      tablet_->UpdateRow(&key_slice, update.get()));
+    inserted.erase(i);
+    inserted.insert(new_val);
+  }
 
   // Now iterate the tablet and make sure the rows show up.
   scoped_ptr<Tablet::RowIterator> iter;

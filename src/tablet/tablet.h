@@ -51,6 +51,13 @@ public:
   // Returns Status::OK unless allocation fails.
   Status Insert(const Slice &data);
 
+  // Update a row in this tablet.
+  //
+  // If the row does not exist in this tablet, returns
+  // Status::NotFound().
+  Status UpdateRow(const void *key,
+                   const RowDelta &update);
+
   template <class SmartPointer>
   Status NewRowIterator(const Schema &projection,
                         SmartPointer *iter) const;
