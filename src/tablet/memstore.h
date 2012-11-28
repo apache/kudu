@@ -72,6 +72,16 @@ public:
     return schema_;
   }
 
+  // Dump the contents of the memstore to the INFO log.
+  // This dumps every row, so should only be used in tests, etc
+  void DebugDump() {
+    for (MSSet::const_iterator it = entries_.begin();
+         it != entries_.end();
+         ++it) {
+      LOG(INFO) << "row " << schema_.DebugRow((*it).data);
+    }
+  }
+
 private:
   friend class Iterator;
 
@@ -89,19 +99,24 @@ private:
     explicit Entry(const void *data_) :
       data(data_)
     {}
-
     const void *data;
+
+
+  private:
+    // Disallow equality comparison by struct
+    bool operator ==(const Entry &other);
+
   };
 
-  struct EntryComparator {
-    EntryComparator(const MemStore &store);
-    int operator() (const Entry &lhs,
-                    const Entry &rhs) const;
+  struct EntryLessThan {
+    EntryLessThan(const MemStore &store);
+    bool operator() (const Entry &lhs,
+                     const Entry &rhs) const;
 
     const MemStore &store_;
   };
 
-  typedef set<Entry, EntryComparator, ArenaAllocator<Entry> > MSSet;
+  typedef set<Entry, EntryLessThan, ArenaAllocator<Entry> > MSSet;
 
 
   MSSet::const_iterator IteratorAtOrAfter(const Slice &key,

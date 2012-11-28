@@ -127,6 +127,28 @@ TEST_F(TestMemStore, TestUpdate) {
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 }
 
+// Test which inserts many rows into memstore and checks for their
+// existence
+TEST_F(TestMemStore, TestInsertCopiesToArena) {
+  MemStore ms(schema_);
+
+  RowBuilder rb(schema_);
+  char keybuf[256];
+  for (uint32_t i = 0; i < 100; i++) {
+    rb.Reset();
+    snprintf(keybuf, sizeof(keybuf), "hello %d", i);
+    rb.AddString(Slice(keybuf));
+    rb.AddUint32(i);
+    ASSERT_STATUS_OK(ms.Insert(rb.data()));
+  }
+
+  // Validate insertion
+  for (uint32_t i = 0; i < 100; i++) {
+    snprintf(keybuf, sizeof(keybuf), "hello %d", i);
+    CheckValue(ms, keybuf, i);
+  }
+
+}
 
 } // namespace tablet
 } // namespace kudu

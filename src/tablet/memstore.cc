@@ -12,22 +12,21 @@ using std::pair;
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
 
-MemStore::EntryComparator::EntryComparator(const MemStore &store) :
+MemStore::EntryLessThan::EntryLessThan(const MemStore &store) :
   store_(store)
 {}
 
-int MemStore::EntryComparator::operator()(
+bool MemStore::EntryLessThan::operator()(
   const Entry &lhs,
   const Entry &rhs) const {
 
-  return store_.schema_.Compare(lhs.data, rhs.data);
+  return store_.schema_.Compare(lhs.data, rhs.data) < 0;
 }
 
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
-  entries_(EntryComparator(*this),
-           ArenaAllocator<Entry>(&arena_))
+  entries_(EntryLessThan(*this), ArenaAllocator<Entry>(&arena_))
 {}
 
 Status MemStore::CopyRowToArena(const Slice &row,
@@ -53,8 +52,12 @@ Status MemStore::Insert(const Slice &data) {
   RETURN_NOT_OK(CopyRowToArena(data, &copied));
   Entry new_entry(copied.data());
 
+  // For a non-present row, the equal_range function returns a range
+  // which consists of the element following the searched-for element.
+  // So, iterate it backwards one to serve as the "insertion hint" --
+  // this makes the insertion O(1) at this point.
   MSSet::iterator insertion_hint = range.first;
-  if (insertion_hint != entries_.end()) {
+  if (insertion_hint != entries_.begin()) {
     --insertion_hint;
   }
 
