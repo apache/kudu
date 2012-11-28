@@ -83,7 +83,7 @@ Status Tablet::Insert(const Slice &data) {
   // Layers
   BOOST_FOREACH(Layer &layer, layers_) {
     bool present;
-    LOG(INFO) << "checking for key in layer " << layer.ToString();
+    VLOG(1) << "checking for key in layer " << layer.ToString();
     RETURN_NOT_OK(layer.CheckRowPresent(data.data(), &present));
     if (present) {
       return Status::AlreadyPresent("key already present");
@@ -233,7 +233,6 @@ Status Tablet::RowIterator::CopyNextFromMemStore(
   uint8_t *dst = reinterpret_cast<uint8_t *>(CHECK_NOTNULL(dst_v));
   size_t fetched = 0;
   for (size_t i = 0; i < *nrows && iter->IsValid(); i++) {
-
     // Copy the row into the destination, including projection
     // and relocating slices.
     // TODO: can we share some code here with CopyRowToArena() from row.h
