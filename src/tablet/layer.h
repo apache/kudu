@@ -223,7 +223,7 @@ public:
                       char *dst,
                       Arena *dst_arena);
 
-  bool HasNext() {
+  bool HasNext() const {
     DCHECK(initted_);
     return col_iters_[0].HasNext();
   }

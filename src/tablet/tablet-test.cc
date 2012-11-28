@@ -119,6 +119,7 @@ TEST_F(TestTablet, TestRowIterator) {
   // Now iterate the tablet and make sure the rows show up
   scoped_ptr<Tablet::RowIterator> iter;
   ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+  ASSERT_TRUE(iter->HasNext());
 
   scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * 100]);
 
@@ -131,6 +132,7 @@ TEST_F(TestTablet, TestRowIterator) {
     << "should have retrieved the row data from memstore";
 
   // Next, should fetch the older layer
+  ASSERT_TRUE(iter->HasNext());
   n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
   ASSERT_EQ(1, n) << "should get only the one row from layer 1";
@@ -139,6 +141,7 @@ TEST_F(TestTablet, TestRowIterator) {
     << "should have retrieved the row data from layer 1";
 
   // Next, should fetch the newer layer
+  ASSERT_TRUE(iter->HasNext());
   n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
   ASSERT_EQ(1, n) << "should get only the one row from layer 2";
@@ -146,7 +149,7 @@ TEST_F(TestTablet, TestRowIterator) {
             schema_.DebugRow(&buf[0]))
     << "should have retrieved the row data from layer 2";
 
-  // TODO: ASSERT_FALSE(iter->HasNext());
+  ASSERT_FALSE(iter->HasNext());
 }
 
 }

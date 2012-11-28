@@ -194,6 +194,16 @@ Status Tablet::RowIterator::Init() {
   return Status::OK();
 }
 
+bool Tablet::RowIterator::HasNext() const {
+  BOOST_FOREACH(const MemStore::Iterator &iter, memstore_iters_) {
+    if (iter.IsValid()) return true;
+  }
+  BOOST_FOREACH(const Layer::RowIterator &iter, layer_iters_) {
+    if (iter.HasNext()) return true;
+  }
+
+  return false;
+}
 
 Status Tablet::RowIterator::CopyNextRows(
   size_t *nrows, void *dst, Arena *dst_arena)

@@ -91,6 +91,8 @@ public:
                       void *dst,
                       Arena *dst_arena);
 
+  bool HasNext() const;
+
 private:
   friend class Tablet;
 
