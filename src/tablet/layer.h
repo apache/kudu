@@ -114,6 +114,9 @@ public:
   Status NewColumnIterator(size_t col_idx,
                            scoped_ptr<ColumnIterator> *iter) const;
 
+  // Return a new RowIterator for this layer, with the given projection.
+  // NB: the returned iterator is not yet Initted.
+  // TODO: make this consistent with above.
   RowIterator *NewRowIterator(const Schema &projection) const;
 
 

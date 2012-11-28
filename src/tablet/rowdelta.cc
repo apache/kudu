@@ -78,20 +78,7 @@ void RowDelta::ApplyRowUpdate(const Schema &schema,
     size_t i = *it;
     size_t off = schema.column_offset(i);
 
-    if (schema.column(i).type_info().type() == STRING) {
-      // If it's a Slice column, need to relocate the referred-to data
-      // as well as the slice itself.
-      // TODO: potential optimization here: if the new value is smaller than
-      // the old value, we could potentially just overwrite.
-      const Slice *src = reinterpret_cast<const Slice *>(col_ptr(schema, i));
-      Slice *dst_slice = reinterpret_cast<Slice *>(dst + off);
-      CHECK(dst_arena->RelocateSlice(*src, dst_slice))
-        << "Unable to relocate slice " << src->ToString()
-        << " (col " << i << " in schema " << schema.ToString() << ")";
-    } else {
-      size_t size = schema.column(i).type_info().size();
-      memcpy(&dst[off], col_ptr(schema, i), size);
-    }
+    CHECK_OK(schema.column(i).CopyCell(dst + off, col_ptr(schema, i), dst_arena));
   }
 
 }

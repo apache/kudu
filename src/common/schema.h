@@ -13,6 +13,7 @@
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/strcat.h"
+#include "util/memory/arena.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -49,6 +50,24 @@ public:
 
   bool EqualsType(const ColumnSchema &other) const {
     return type_info_.type() == other.type_info().type();
+  }
+
+  Status CopyCell(void *dst, const void *src, Arena *dst_arena) const {
+    if (type_info().type() == STRING) {
+      // If it's a Slice column, need to relocate the referred-to data
+      // as well as the slice itself.
+      // TODO: potential optimization here: if the new value is smaller than
+      // the old value, we could potentially just overwrite in some cases.
+      const Slice *src_slice = reinterpret_cast<const Slice *>(src);
+      Slice *dst_slice = reinterpret_cast<Slice *>(dst);
+      if (PREDICT_FALSE(!dst_arena->RelocateSlice(*src_slice, dst_slice))) {
+        return Status::IOError("out of memory copying slice", src_slice->ToString());
+      }
+    } else {
+      size_t size = type_info().size();
+      memcpy(dst, src, size); // TODO: inline?
+    }
+    return Status::OK();
   }
 
 private:
@@ -148,7 +167,8 @@ public:
   // Stringify the given row, which conforms to this schema,
   // in a way suitable for debugging. This isn't currently optimized
   // so should be avoided in hot paths.
-  string DebugRow(const char *row) const {
+  string DebugRow(const void *row_v) const {
+    const uint8_t *row = reinterpret_cast<const uint8_t *>(row_v);
     string ret;
     ret.append("(");
 
