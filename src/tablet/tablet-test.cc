@@ -30,7 +30,6 @@ public:
     arena_(1024, 4*1024*1024)
   {}
 protected:
-
   virtual void SetUp() {
     const ::testing::TestInfo* const test_info =
       ::testing::UnitTest::GetInstance()->current_test_info();
@@ -48,6 +47,18 @@ protected:
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
+  void InsertTestRows(int count) {
+    char buf[256];
+    RowBuilder rb(schema_);
+    for (int i = 0; i < count; i++) {
+      rb.Reset();
+      snprintf(buf, sizeof(buf), "hello %d", i);
+      rb.AddString(Slice(buf));
+      rb.AddUint32(i);
+      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
+    }
+  }
+
   Env *env_;
   const Schema schema_;
   string test_dir_;
@@ -59,20 +70,10 @@ protected:
 TEST_F(TestTablet, TestFlush) {
   // Insert 1000 rows into memstore
   RowBuilder rb(schema_);
-  char buf[256];
-  for (int i = 0; i < 1000; i++) {
-    rb.Reset();
-    snprintf(buf, sizeof(buf), "hello %d", i);
-    rb.AddString(Slice(buf));
-
-    rb.AddUint32(i);
-    ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
-  }
+  InsertTestRows(1000);
 
   // Flush it.
   ASSERT_STATUS_OK(tablet_->Flush());
-
-  // TODO: assert that the data can still be read after the flush.
 }
 
 // Test that inserting a row which already exists causes an AlreadyPresent
@@ -199,7 +200,6 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
   ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
   scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * 100]);
 
-  // First call to CopyNextRows should fetch the whole memstore.
   while (iter->HasNext()) {
     arena_.Reset();
     size_t n = 100;
@@ -222,5 +222,35 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
     << inserted.size() << " elements were not seen.";
 }
 
+// Test that, when a tablet hsa flushed data and is
+// reopened, that the data persists
+TEST_F(TestTablet, TestDataPersists) {
+  InsertTestRows(1000);
+
+  // Flush it.
+  ASSERT_STATUS_OK(tablet_->Flush());
+
+  // Close and re-open tablet
+  tablet_.reset(new Tablet(schema_, test_dir_));
+  ASSERT_STATUS_OK(tablet_->Open());
+
+  // Ensure that rows exist
+  scoped_ptr<Tablet::RowIterator> iter;
+  ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+  scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * 100]);
+  int count = 0;
+  while (iter->HasNext()) {
+    arena_.Reset();
+    size_t n = 100;
+    ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+    LOG(INFO) << "Fetched batch of " << n;
+    count += n;
+  }
+
+  ASSERT_EQ(1000, count);
+
+  // TODO: add some more data, re-flush
 }
-}
+
+} // namespace tablet
+} // namespace kudu

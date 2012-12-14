@@ -56,16 +56,32 @@ Status Tablet::Open() {
   RETURN_NOT_OK(env_->GetChildren(dir_, &children));
 
   BOOST_FOREACH(const string &child, children) {
+    // Skip hidden files (also '.' and '..')
+    if (child[0] == '.') continue;
+
+    string absolute_path = env_->JoinPathSegments(dir_, child);
+
     string suffix;
     if (TryStripPrefixString(child, kLayerPrefix, &suffix)) {
+      // The file should be named 'layer_<N>'. N here is the index
+      // of the layer (indicating the order in which it was flushed).
       uint32_t layer_idx;
-      if (!safe_strtou32(child.c_str(), &layer_idx)) {
+      if (!safe_strtou32(suffix.c_str(), &layer_idx)) {
         return Status::IOError(string("Bad layer file: ") + child);
       }
 
+      std::auto_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
+      Status s = layer->Open();
+      if (!s.ok()) {
+        LOG(ERROR) << "Failed to open layer " << child << ": "
+                   << s.ToString();
+        return s;
+      }
+
+      layers_.push_back(layer.release());
+
       next_layer_idx_ = std::max(next_layer_idx_,
                                  (size_t)layer_idx + 1);
-
     } else {
       LOG(WARNING) << "ignoring unknown file in " << dir_  << ": " << child;
     }
@@ -188,6 +204,8 @@ Status Tablet::CaptureConsistentIterators(
     RETURN_NOT_OK(row_it->Init());
     RETURN_NOT_OK(row_it->SeekToOrdinal(0));
     layer_ret.push_back(row_it);
+
+    LOG(INFO) << "added layer iterator for layer " << l.ToString();
   }
 
   // Swap results into the parameters.

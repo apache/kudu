@@ -6,6 +6,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <glog/logging.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+
 #include "env.h"
 #include "slice.h"
 #include "port/port.h"
@@ -419,6 +421,19 @@ class PosixEnv : public Env {
       result = IOError(src, errno);
     }
     return result;
+  }
+
+  virtual std::string JoinPathSegments(const std::string &a,
+                                       const std::string &b) {
+    CHECK(!a.empty()) << "empty first component: " << a;
+    CHECK(!b.empty() && b[0] != '/')
+      << "second path component must be non-empty and relative: "
+      << b;
+    if (a[a.size() - 1] == '/') {
+      return a + b;
+    } else {
+      return a + "/" + b;
+    }
   }
 
   virtual Status LockFile(const std::string& fname, FileLock** lock) {
