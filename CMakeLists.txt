@@ -138,3 +138,5 @@ set(LIBS ${LIBS} ${CFILE_LIBS})
 
 add_subdirectory(src/tablet)
 set(LIBS ${LIBS} ${TABLET_LIBS})
+
+add_subdirectory(src/experiments)
