@@ -8,3 +8,6 @@ SET(KUDU_UTIL_LIBS kudu_util)
 ADD_EXECUTABLE(bitmap-test bitmap-test.cc)
 TARGET_LINK_LIBRARIES(bitmap-test ${KUDU_TEST_LINK_LIBS})
 
+# stringbag-test
+ADD_EXECUTABLE(stringbag-test stringbag-test.cc)
+TARGET_LINK_LIBRARIES(stringbag-test ${KUDU_TEST_LINK_LIBS})
