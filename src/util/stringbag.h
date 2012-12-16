@@ -44,11 +44,14 @@ class StringBag {
   // The internal layout of the data area is as follows:
   //
   // header_type main_:
-  //    free_space_pos: position to the first unallocated area
-  //    allocated_size: total size of this structure, as passed into the
-  //                    constructor
+  //    free_space_pos: position to the first unallocated area,
+  //                    relative to 's_'
+  //    data_size:      size of the data hanging off the end of this
+  //                    structure, pointed to by 's_'.
+  //                    This size counts the size for both the info_type
+  //                    array and the metadata.
   // info_type[width]: variable size based on constructor parameter
-  //    pos: pointer of the item in slot N, relative to the start of storage
+  //    pos: pointer of the item in slot N, relative to 's_'
   //    len: length of the item in slot N
   // <item data>
 
@@ -57,78 +60,126 @@ class StringBag {
 
   struct header_type {
     unsigned int free_space_pos : half_num_bits;
-    unsigned int allocated_size : half_num_bits;
-  };
+    unsigned int data_size : half_num_bits;
+  } PACKED;
 
   struct info_type {
     unsigned int pos : half_num_bits;
     unsigned int len : half_num_bits;
-  };
+  } PACKED;
 
 public:
 
   StringBag(int width, size_t allocated_size) {
+    #ifndef NDEBUG
+    debug_width_ = width;
+    #endif
 
     // The position where the first element will get
-    // inserted.
-    size_t firstpos = overhead(width);
-    CHECK_GE(allocated_size, firstpos)
+    // inserted, relative to _s
+    size_t firstpos = width * sizeof(info_type);
+
+    CHECK_GE(allocated_size, firstpos + sizeof(*this))
       << "Allocated size " << allocated_size << " not big enough "
       << "to contain " << width << " info elements of size "
       << sizeof(info_type);
+
     CHECK_LE(allocated_size, (size_t) max_halfinfo)
       << "Info type of size " << sizeof(InfoType) << " not big "
       << "enough to address " << allocated_size << "bytes";
 
     header_.free_space_pos = firstpos;
-    header_.allocated_size = allocated_size;
+    header_.data_size = allocated_size - sizeof(*this);
 
     memset(info_, 0, sizeof(info_type) * width);
   }
 
-  static size_t overhead(int width) {
-    return sizeof(StringBag<InfoType>) + width * sizeof(info_type);
-  }
+  Slice Get(int p) const {
+    CheckWidth(p);
 
-  Slice get(int p) const {
-    info_type info = info_[p];
+    info_type info = *(info_ + p);
     return Slice(s_ + info.pos, info.len);
   }
 
-  bool assign(int p, const char *s, int len) {
-    int old_len = (info_ + p)->len;
+  bool Assign(int p, const char *s, int len) {
+    CheckWidth(p);
 
-    int pos;
+    info_type *dst_info = info_ + p;
+    int old_len = dst_info->len;
     if (old_len >= len) {
       // Slot has space for the new data, so copy the new string into
       // the same spot.
-	    pos = (info_ + p)->pos;
-    } else if (header_.free_space_pos + len + sizeof(*this) <=
-               (size_t) header_.allocated_size) {
-	    pos = header_.free_space_pos;
-	    header_.free_space_pos += len;
-    } else {
-      // No space to assign into this slot.
-	    return false;
+      dst_info->len = len;
+    } else if (!AllocateSpace(len, dst_info)) {
+      // No space for this assignment
+      return false;
     }
-    memcpy(s_ + pos, s, len);
-    info_[p] = make_info(pos, len);
+
+    memcpy(s_ + dst_info->pos, s, len);
     return true;
   }
 
-  bool assign(int p, const Slice &s) {
-    return assign(p, s.data(), s.size());
+  bool Assign(int p, const Slice &s) {
+    return Assign(p, s.data(), s.size());
+  }
+
+  // Insert a new data item into slot numbered 'slot',
+  // shifting all data items higher than it to the right.
+  // This only affects the pointers -- the actual data storage
+  // is not affected.
+  //
+  // num_valid_slots is the total number of elements in the
+  // bag prior to the insertion operation -- it may be less
+  // than the allocated 'width' to achieve faster performance
+  // when the bag is not full.
+  // This value must be strictly less than the allocated width:
+  // if it is equal to width, then there is no room to insert
+  // further data, and this will likely corrupt the first element.
+  //
+  //
+  // Returns false if there is no more space for data available
+  // in the bag.
+  bool Insert(int slot, int num_valid_slots, const Slice &s) {
+    DCHECK_LE(slot, num_valid_slots);
+    #ifndef NDEBUG
+    DCHECK_LT(num_valid_slots, debug_width_);
+    #endif
+
+    // First, try to allocate space for the new slice, and
+    // copy it in to our storage.
+    info_type new_info;
+    if (!AllocateSpace(s.size(), &new_info)) {
+      // No space
+      return false;
+    }
+
+    // Copy the actual data
+    memcpy(s_ + new_info.pos, s.data(), s.size());
+
+    // Shift later 'info' records up to make space for insertion.
+    for (int i=num_valid_slots; i >= slot; i--) {
+      *(info_ + i + 1) = *(info_ + i);
+    }
+
+    // Copy the new info into the free space.
+    *(info_ + slot) = new_info;
+
+    return true;
   }
 
   std::string ToString(int width, const char *prefix="", int indent=0) {
+    #ifndef NDEBUG
+    DCHECK_EQ(width, debug_width_);
+    #endif
+
     std::string ret;
-    ret.reserve(header_.allocated_size * 5 / 4);
+    ret.reserve(header_.data_size * 5 / 4);
 
     StringAppendF(
-      &ret, "%s%*s%p (%d:)%d:%d [%d]...\n", prefix, indent, "",
-      this, (int) overhead(width),
+      &ret, "%s%*s%p %d:%d [%d]...\n", prefix, indent, "",
+      this,
       header_.free_space_pos,
-      header_.allocated_size,
+      header_.data_size,
       max_halfinfo + 1);
     for (int i = 0; i < width; ++i) {
       info_type info = *(info_ + i);
@@ -144,12 +195,37 @@ public:
   }
 
 private:
+  // Return the amount of free space available at the
+  // end of the array.
+  size_t space_available() const {
+    return header_.data_size - header_.free_space_pos;
+  }
+
+  bool AllocateSpace(size_t size, info_type *info) {
+    if (space_available() >= size) {
+      info->pos = header_.free_space_pos;
+      info->len = size;
+      header_.free_space_pos += size;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  void CheckWidth(int idx) const {
+    #ifndef NDEBUG
+    CHECK_LT(idx, debug_width_);
+    #endif
+  }
+
+#ifndef NDEBUG
+  size_t debug_width_;
+#endif
+
+  header_type header_;
 
   union {
-    struct {
-	    header_type header_;
-	    info_type info_[];
-    };
+    info_type info_[];
     char s_[];
   };
 
@@ -159,8 +235,7 @@ private:
     ret.len = len;
     return ret;
   }
-
-};
+} PACKED;
 
 } // namespace kudu
 
