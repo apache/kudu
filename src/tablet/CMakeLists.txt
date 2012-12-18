@@ -19,3 +19,6 @@ TARGET_LINK_LIBRARIES(memstore-test tablet ${KUDU_TEST_LINK_LIBS})
 ADD_EXECUTABLE(deltamemstore-test deltamemstore-test.cc)
 TARGET_LINK_LIBRARIES(deltamemstore-test tablet ${KUDU_TEST_LINK_LIBS})
 
+# cbtree-test
+ADD_EXECUTABLE(cbtree-test cbtree-test.cc)
+TARGET_LINK_LIBRARIES(cbtree-test ${KUDU_TEST_LINK_LIBS})

@@ -98,6 +98,11 @@ public:
     return data_[i];
   }
 
+  void assign_copy(const char *src, size_t len) {
+    resize(len);
+    memcpy(data(), src, len);
+  }
+
 
 private:
   enum {
