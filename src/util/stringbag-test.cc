@@ -111,6 +111,20 @@ TEST(TestStringBag, TestInsert) {
   ASSERT_LT(i, 10000);
 }
 
+TEST(TestStringBag, TestInsert2) {
+  char storage[250];
+  int width = 3;
+  StringBag<uint16_t> *sb =
+    new (storage) StringBag<uint16_t>(width, sizeof(storage));
+  ASSERT_TRUE(sb->Assign(0, Slice("key_4")));
+  ASSERT_TRUE(sb->Insert(0, 1, Slice("key_12")));
+  ASSERT_TRUE(sb->Insert(1, 2, Slice("key_16")));
+  LOG(INFO) << "bag contents: " << sb->ToString(width);
+  ASSERT_EQ("key_12", sb->Get(0).ToString());
+  ASSERT_EQ("key_16", sb->Get(1).ToString());
+  ASSERT_EQ("key_4", sb->Get(2).ToString());
+}
+
 // Test case which tries to fill up the bag exactly
 // to the end, and verify we don't write past the end
 TEST(TestStringBag, TestBoundaryCondition) {
@@ -128,6 +142,45 @@ TEST(TestStringBag, TestBoundaryCondition) {
 
   ASSERT_EQ('x', storage[99]);
   ASSERT_EQ('T', storage[100]);
+}
+
+// Test inserting data until it's full, then truncating and re-inserting
+TEST(TestStringBag, TestCompactBag) {
+  char storage[400];
+  int width = 40;
+  StringBag<uint32_t> *sb =
+    new (storage) StringBag<uint32_t>(width, sizeof(storage));
+
+  size_t original_available = sb->space_available();
+
+  // Fill up the bag with data.
+  Slice x("filler");
+  for (int i = 0; i < width; i++) {
+    ASSERT_NE(i, width - 1) << "should fill up before 40 elems";
+    if (!sb->Assign(i, x)) {
+      ASSERT_GT(i, 20) << "should fit at least 20 elems";
+      break;
+    }
+  }
+  ASSERT_LT(sb->space_available(), x.size());
+
+  // Truncate and compact
+  sb->TruncateAndCompact(width, 20);
+
+  // Ensure that the bag shows the correct space available.
+  ASSERT_EQ(original_available - x.size() * 20,
+            sb->space_available());
+
+  LOG(INFO) << "bag after truncate: " << sb->ToString(width);
+
+  // Ensure that the remaining elements are unchanged
+  for (int i = 0; i < 20; i++) {
+    ASSERT_EQ(0, x.compare(sb->Get(i)));
+  }
+  // Ensure that the truncated elements now have size 0
+  for (int i = 21; i < width; i++) {
+    ASSERT_EQ(0, sb->Get(i).size());
+  }
 }
 
 } // namespace kudu

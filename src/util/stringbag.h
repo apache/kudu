@@ -97,7 +97,7 @@ public:
   Slice Get(int p) const {
     CheckWidth(p);
 
-    info_type info = *(info_ + p);
+    info_type info = *info_ptr(p);
     return Slice(s_ + info.pos, info.len);
   }
 
@@ -157,14 +157,50 @@ public:
     memcpy(s_ + new_info.pos, s.data(), s.size());
 
     // Shift later 'info' records up to make space for insertion.
-    for (int i=num_valid_slots; i >= slot; i--) {
-      *(info_ + i + 1) = *(info_ + i);
+    for (int i=num_valid_slots - 1; i >= slot; i--) {
+      *info_ptr(i + 1) = *info_ptr(i);
     }
 
     // Copy the new info into the free space.
-    *(info_ + slot) = new_info;
+    *info_ptr(slot) = new_info;
 
     return true;
+  }
+
+  // Return the amount of free space available for data
+  // items.
+  size_t space_available() const {
+    return header_.data_size - header_.free_space_pos;
+  }
+
+  void Compact(int width) {
+    TruncateAndCompact(width, width);
+  }
+
+  void TruncateAndCompact(int width, int new_size) {
+    DCHECK_LE(new_size, width);
+    CheckWidth(new_size);
+
+    // TODO: stack allocation won't work for large bags.
+    // fall back to malloc or take in tmp space as an arg
+    char tmp_space[header_.data_size];
+    size_t tmp_idx = 0;
+    size_t firstpos = width * sizeof(info_type);
+
+    for (int i = 0; i < new_size; i++) {
+      info_type *info = info_ptr(i);
+      memcpy(&tmp_space[tmp_idx], s_ + info->pos, info->len);
+      info->pos = firstpos + tmp_idx;
+      tmp_idx += info->len;
+    }
+
+    // Zero out the truncated elements
+    for (int i = new_size; i < width; i++) {
+      info_ptr(i)->len = 0;
+    }
+
+    memcpy(s_ + firstpos, tmp_space, tmp_idx);
+    header_.free_space_pos = tmp_idx + firstpos;
   }
 
   std::string ToString(int width, const char *prefix="", int indent=0) {
@@ -182,7 +218,7 @@ public:
       header_.data_size,
       max_halfinfo + 1);
     for (int i = 0; i < width; ++i) {
-      info_type info = *(info_ + i);
+      info_type info = *info_ptr(i);
 	    if (info.len) {
         StringAppendF(
           &ret, "%s%*s  #%x %d:%d %.*s\n", prefix, indent, "",
@@ -195,11 +231,14 @@ public:
   }
 
 private:
-  // Return the amount of free space available at the
-  // end of the array.
-  size_t space_available() const {
-    return header_.data_size - header_.free_space_pos;
+  info_type *info_ptr(size_t idx) {
+    return info_ + idx;
   }
+
+  const info_type *info_ptr(size_t idx) const {
+    return info_ + idx;
+  }
+
 
   bool AllocateSpace(size_t size, info_type *info) {
     if (space_available() >= size) {
