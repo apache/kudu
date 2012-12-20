@@ -20,6 +20,7 @@
 #include <string.h>
 #include <string>
 #include "faststring.h"
+#include "gutil/strings/fastmem.h"
 
 namespace kudu {
 
@@ -82,7 +83,7 @@ class Slice {
   // Return true iff "x" is a prefix of "*this"
   bool starts_with(const Slice& x) const {
     return ((size_ >= x.size_) &&
-            (memcmp(data_, x.data_, x.size_) == 0));
+            (strings::memeq(data_, x.data_, x.size_)));
   }
 
  private:
@@ -94,7 +95,7 @@ class Slice {
 
 inline bool operator==(const Slice& x, const Slice& y) {
   return ((x.size() == y.size()) &&
-          (memcmp(x.data(), y.data(), x.size()) == 0));
+          (strings::memeq(x.data(), y.data(), x.size())));
 }
 
 inline bool operator!=(const Slice& x, const Slice& y) {
@@ -103,7 +104,7 @@ inline bool operator!=(const Slice& x, const Slice& y) {
 
 inline int Slice::compare(const Slice& b) const {
   const int min_len = (size_ < b.size_) ? size_ : b.size_;
-  int r = memcmp(data_, b.data_, min_len);
+  int r = strings::fastmemcmp_inlined(data_, b.data_, min_len);
   if (r == 0) {
     if (size_ < b.size_) r = -1;
     else if (size_ > b.size_) r = +1;
