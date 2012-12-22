@@ -29,6 +29,10 @@
 #include "gutil/stringprintf.h"
 #include "util/slice.h"
 
+#ifndef NDEBUG
+#define STRINGBAG_CHECK_WIDTH
+#endif
+
 namespace kudu {
 
 // A StringBag is an array-like structure which contains a number
@@ -71,7 +75,7 @@ class StringBag {
 public:
 
   StringBag(int width, size_t allocated_size) {
-    #ifndef NDEBUG
+    #ifdef STRINGBAG_CHECK_WIDTH
     debug_width_ = width;
     #endif
 
@@ -141,8 +145,8 @@ public:
   // in the bag.
   bool Insert(int slot, int num_valid_slots, const Slice &s) {
     DCHECK_LE(slot, num_valid_slots);
-    #ifndef NDEBUG
-    DCHECK_LT(num_valid_slots, debug_width_);
+    #ifdef STRINGBAG_CHECK_WIDTH
+    CHECK_LE(num_valid_slots, debug_width_);
     #endif
 
     // First, try to allocate space for the new slice, and
@@ -179,7 +183,9 @@ public:
 
   void TruncateAndCompact(int width, int new_size) {
     DCHECK_LE(new_size, width);
-    CheckWidth(new_size);
+    #ifdef STRINGBAG_CHECK_WIDTH
+    CHECK_EQ(width, debug_width_);
+    #endif
 
     // TODO: stack allocation won't work for large bags.
     // fall back to malloc or take in tmp space as an arg
@@ -203,9 +209,9 @@ public:
     header_.free_space_pos = tmp_idx + firstpos;
   }
 
-  std::string ToString(int width, const char *prefix="", int indent=0) {
-    #ifndef NDEBUG
-    DCHECK_EQ(width, debug_width_);
+  std::string ToString(int width, const char *prefix="", int indent=0) const {
+    #ifdef STRINGBAG_CHECK_WIDTH
+    CHECK_EQ(width, debug_width_);
     #endif
 
     std::string ret;
@@ -252,12 +258,12 @@ private:
   }
 
   void CheckWidth(int idx) const {
-    #ifndef NDEBUG
+    #ifdef STRINGBAG_CHECK_WIDTH
     CHECK_LT(idx, debug_width_);
     #endif
   }
 
-#ifndef NDEBUG
+#ifdef STRINGBAG_CHECK_WIDTH
   size_t debug_width_;
 #endif
 
