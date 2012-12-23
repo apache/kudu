@@ -541,11 +541,21 @@ template<class Traits>
 class LeafNode : public NodeBase<Traits> {
 public:
 
-  LeafNode() :
+  // Construct a new leaf node.
+  // If initially_locked is true, then the new node is created
+  // with LOCKED and INSERTING set.
+  LeafNode(bool initially_locked) :
+    next_(NULL),
     num_entries_(0),
     key_bag_(Traits::leaf_max_entries, sizeof(key_storage_)),
     val_bag_(Traits::leaf_max_entries, sizeof(val_storage_))
   {
+    if (initially_locked) {
+      // Just assign the version, instead of using the proper ->Lock()
+      // since we don't need a CAS here.
+      this->version_ = VersionField::BTREE_LOCK_MASK |
+        VersionField::BTREE_INSERTING_MASK;
+    }
   }
 
   // TODO: rename this to something less confusing
@@ -654,10 +664,13 @@ private:
   friend class CBTree<Traits>;
   friend class InternalNode<Traits>;
 
+  LeafNode<Traits> *next_;
+
   uint16_t num_entries_;
   static constexpr int storage_size = Traits::leaf_node_size
     - sizeof(NodeBase<Traits>)
-    - sizeof(num_entries_);
+    - sizeof(num_entries_)
+    - sizeof(next_);
 
   // TODO: combine keys and values into the same bag
   // so there isn't a stupid 50/50 split between them
@@ -694,7 +707,7 @@ template<class Traits = BTreeTraits>
 class CBTree {
 public:
   CBTree() :
-    root_(new LeafNode<Traits>())
+    root_(new LeafNode<Traits>(false))
   {
     // TODO: use a custom allocator
   }
@@ -1040,13 +1053,9 @@ private:
     DCHECK(node->IsLocked());
     DCHECK(node->version_ & VersionField::BTREE_SPLITTING_MASK);
 
-    LeafNode<Traits> *new_leaf = new LeafNode<Traits>();
-
-    // TODO: perf: we don't need a memory barrier on this lock,
-    // since we haven't published the new leaf yet - could have
-    // a faster lock here.
-    new_leaf->Lock();
-    new_leaf->SetInserting();
+    LeafNode<Traits> *new_leaf = new LeafNode<Traits>(true);
+    new_leaf->next_ = node->next_;
+    node->next_ = new_leaf;
 
     // Copy half the keys from node into the new leaf
     int copy_start = node->num_entries() / 2;

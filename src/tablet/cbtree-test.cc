@@ -19,7 +19,7 @@ using boost::scoped_ptr;
 // as we expect is working.
 TEST(TestCBTree, TestNodeSizes) {
 
-  LeafNode<BTreeTraits> lnode;
+  LeafNode<BTreeTraits> lnode(false);
   ASSERT_EQ(lnode.node_size(), sizeof(lnode));
 
   InternalNode<BTreeTraits> inode(Slice("split"), &lnode, &lnode);
@@ -28,7 +28,7 @@ TEST(TestCBTree, TestNodeSizes) {
 }
 
 TEST(TestCBTree, TestLeafNode) {
-  LeafNode<BTreeTraits> lnode;
+  LeafNode<BTreeTraits> lnode(false);
 
   // Must lock the node even in the single threaded test
   // to avoid firing the debug assertions.
