@@ -32,7 +32,7 @@ TEST(TestCBTree, TestLeafNode) {
 
   // Must lock the node even in the single threaded test
   // to avoid firing the debug assertions.
-  VersionLockGuard guard(&lnode);
+  lnode.Lock();
   lnode.SetInserting();
 
   Slice k1("key1");
@@ -82,6 +82,8 @@ TEST(TestCBTree, TestLeafNode) {
     }
   }
   ASSERT_LT(i, 1000) << "should have filled up node before 1000 entries";
+
+  lnode.Unlock();
 }
 
 // Setup the tree to fanout quicker, so we test internal node

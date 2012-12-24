@@ -184,7 +184,7 @@ size_t FindInSortedBag(const StringBag<T> &bag, ssize_t bag_size,
 }
 
 template<class Traits>
-class NodeBase {
+class NodeBase : boost::noncopyable {
 public:
   AtomicVersion StableVersion() {
     return VersionField::StableVersion(&version_);
@@ -235,8 +235,6 @@ public:
   }
 
 protected:
-  friend class VersionStabilityGuard;
-  friend class VersionLockGuard;
   friend class CBTree<Traits>;
 
   NodeBase() : version_(0), parent_(NULL)
@@ -306,47 +304,6 @@ struct NodePtr {
 
   void *p_;
 } PACKED;
-
-
-class VersionStabilityGuard : boost::noncopyable {
-public:
-  template <class T>
-  VersionStabilityGuard(const NodeBase<T> *node) :
-    vptr_(&node->version_),
-    acquired_val(0)
-  {}
-
-  void Acquire() {
-    acquired_val = base::subtle::Acquire_Load(vptr_);
-  }
-
-  bool WasUnstable() {
-    AtomicVersion new_val = base::subtle::Release_Load(vptr_);
-    return new_val != acquired_val;
-  }
-
-private:
-  const volatile AtomicVersion *vptr_;
-
-  AtomicVersion acquired_val;
-};
-
-class VersionLockGuard : boost::noncopyable {
-public:
-  template<class T>
-  VersionLockGuard(NodeBase<T> *node) :
-    vptr_(&node->version_)
-  {
-    VersionField::Lock(vptr_);
-  }
-
-  ~VersionLockGuard() {
-    VersionField::Unlock(vptr_);
-  }
-
-private:
-  volatile AtomicVersion *vptr_;
-};
 
 
 
@@ -544,7 +501,7 @@ public:
   // Construct a new leaf node.
   // If initially_locked is true, then the new node is created
   // with LOCKED and INSERTING set.
-  LeafNode(bool initially_locked) :
+  explicit LeafNode(bool initially_locked) :
     next_(NULL),
     num_entries_(0),
     key_bag_(Traits::leaf_max_entries, sizeof(key_storage_)),
@@ -704,7 +661,7 @@ struct BTreeTraits {
 ////////////////////////////////////////////////////////////
 
 template<class Traits = BTreeTraits>
-class CBTree {
+class CBTree : boost::noncopyable {
 public:
   CBTree() :
     root_(new LeafNode<Traits>(false))
@@ -1192,7 +1149,6 @@ private:
 
   NodePtr<Traits> root_;
 };
-
 } // namespace btree
 } // namespace tablet
 } // namespace kudu
