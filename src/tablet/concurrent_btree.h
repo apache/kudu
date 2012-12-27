@@ -783,11 +783,12 @@ public:
       retry_in_node:
       int num_children = node.internal_node_ptr()->num_children_;
       NodePtr<Traits> child = node.internal_node_ptr()->FindChild(key);
-      NodeBase<Traits> *child_base = child.base_ptr();
+      NodeBase<Traits> *child_base = NULL;
 
       AtomicVersion child_version = -1;
 
       if (PREDICT_TRUE(!child.is_null())) {
+        child_base = child.base_ptr();
         child_version = child_base->StableVersion();
       }
       AtomicVersion new_node_version = node_base->AcquireVersion();
