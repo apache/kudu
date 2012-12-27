@@ -274,7 +274,7 @@ public:
   // such that the buffer's lexicographic comparison represents
   // the proper comparison order of the underlying types.
   void EncodeComparableKey(const Slice &row,
-                           faststring *dst) {
+                           faststring *dst) const {
     KeyEncoder enc(dst);
     for (size_t i = 0; i < num_key_columns_; i++) {
       const TypeInfo &ti = cols_[i].type_info();

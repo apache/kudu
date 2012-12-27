@@ -812,6 +812,20 @@ public:
     return tree_->Update(this, new_val);
   }
 
+  // Return a slice referencing the existing data in the row.
+  //
+  // This is mutable data, but the size may not be changed.
+  // This can be used for updating in place if the new data
+  // has the same size as the original data. Otherwise,
+  // use Update()
+  Slice current_mutable_value() {
+    CHECK(prepared());
+    Slice k, v;
+    leaf_->SetInserting();
+    leaf_->Get(idx_, &k, &v);
+    return v;
+  }
+
   // Accessors
 
   bool prepared() const {

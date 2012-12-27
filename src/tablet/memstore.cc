@@ -12,22 +12,29 @@ using std::pair;
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
 
-MemStore::EntryLessThan::EntryLessThan(const MemStore &store) :
-  store_(store)
-{}
-
-bool MemStore::EntryLessThan::operator()(
-  const Entry &lhs,
-  const Entry &rhs) const {
-
-  return store_.schema_.Compare(lhs.data, rhs.data) < 0;
-}
-
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
-  arena_(kInitialArenaSize, kMaxArenaBufferSize),
-  entries_(EntryLessThan(*this), ArenaAllocator<Entry>(&arena_))
+  arena_(kInitialArenaSize, kMaxArenaBufferSize)
 {}
+
+size_t MemStore::entry_count() const {
+  boost::scoped_ptr<Iterator> iter(NewIterator());
+  size_t count = 0;
+  while (iter->IsValid()) {
+    count++;
+    iter->Next();
+  }
+  return count;
+}
+
+void MemStore::DebugDump() {
+  scoped_ptr<Iterator> iter(NewIterator());
+  while (iter->IsValid()) {
+    Slice k, v;
+    LOG(INFO) << "row " << iter->GetCurrentRow().data();
+    iter->Next();
+  }
+}
 
 Status MemStore::CopyRowToArena(const Slice &row,
                                 Slice *copied) {
@@ -37,56 +44,61 @@ Status MemStore::CopyRowToArena(const Slice &row,
 Status MemStore::Insert(const Slice &data) {
   CHECK_EQ(data.size(), schema_.byte_size());
 
+  faststring key_buf;
+  schema_.EncodeComparableKey(data, &key_buf);
+  Slice key(key_buf);
 
-  pair<MSSet::iterator, MSSet::iterator> range =
-    entries_.equal_range(Entry(data.data()));
+  btree::PreparedMutation<btree::BTreeTraits> mutation(key);
+  mutation.Prepare(&tree_);
 
-  if (range.first != range.second) {
-    // Entry was found in the set already
+  // TODO: for now, the key ends up stored doubly --
+  // once encoded in the btree key, and again in the value
+  // (unencoded).
+  // That's not very memory-efficient!
+
+
+  if (mutation.exists()) {
     return Status::AlreadyPresent("entry already present in memstore");
   }
 
-  // Otherwise, insert it.
-  // Copy the row and any referred-to memory to arena
+  // Copy the row and any referred-to memory to arena.
   Slice copied;
+  // TODO: don't need to copy the row key and val, just the indirect
+  // data -- since the key/val parts already get copied by CBTree.
   RETURN_NOT_OK(CopyRowToArena(data, &copied));
-  Entry new_entry(copied.data());
 
-  // For a non-present row, the equal_range function returns a range
-  // which consists of the element following the searched-for element.
-  // So, iterate it backwards one to serve as the "insertion hint" --
-  // this makes the insertion O(1) at this point.
-  MSSet::iterator insertion_hint = range.first;
-  if (insertion_hint != entries_.begin()) {
-    --insertion_hint;
-  }
+  CHECK(mutation.Insert(copied))
+    << "Expected to be able to insert, since the prepared mutation "
+    << "succeeded!";
 
-  entries_.insert(insertion_hint, new_entry);
   return Status::OK();
 }
 
 Status MemStore::UpdateRow(const void *key,
                            const RowDelta &delta) {
-  MSSet::iterator it = entries_.find(Entry(key));
-  if (it == entries_.end()) {
+  Slice unencoded_key_slice(reinterpret_cast<const char *>(key),
+                            schema_.key_byte_size());
+
+  faststring key_buf;
+  schema_.EncodeComparableKey(unencoded_key_slice, &key_buf);
+  Slice encoded_key_slice(key_buf);
+
+  btree::PreparedMutation<btree::BTreeTraits> mutation(encoded_key_slice);
+  mutation.Prepare(&tree_);
+
+  if (!mutation.exists()) {
     return Status::NotFound("not in memstore");
   }
 
-  Entry existing = *it;
-
-  // Ugly: remove constness of the set member.
-  // We know that the data here is owned by the memstore, so it's safe
-  // to mutate, but unfortunately we can't make the Entry non-const, since
-  // then we couldn't use const keys for _lookups_.
-  void *data = const_cast<void *>(existing.data);
-
-  delta.ApplyRowUpdate(schema_, data, &arena_);
+  // Update the row in-place.
+  Slice existing = mutation.current_mutable_value();
+  delta.ApplyRowUpdate(schema_, existing.mutable_data(), &arena_);
   return Status::OK();
 }
 
 
 MemStore::Iterator *MemStore::NewIterator() const {
-  return new MemStore::Iterator(this);
+  return new MemStore::Iterator(this, tree_.NewIterator());
 }
 
 } // namespace tablet

@@ -3,8 +3,8 @@
 #define KUDU_TABLET_MEMSTORE_H
 
 #include <boost/noncopyable.hpp>
-#include <set>
 
+#include "tablet/concurrent_btree.h"
 #include "tablet/rowdelta.h"
 #include "common/schema.h"
 #include "util/memory/arena.h"
@@ -12,8 +12,6 @@
 
 namespace kudu {
 namespace tablet {
-
-using std::set;
 
 
 // In-memory storage for data currently being written to the tablet.
@@ -50,21 +48,22 @@ public:
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
-  size_t entry_count() {
-    return entries_.size();
-  }
+  // Return the number of entries in the memstore.
+  // NOTE: this requires iterating all data, and is thus
+  // not very fast.
+  size_t entry_count() const;
 
   // Return the memory footprint of this memstore.
   // Note that this may be larger than the sum of the data
   // inserted into the memstore, due to arena and data structure
   // overhead.
   size_t memory_footprint() const {
+    // TODO: need to make cbtree use arena so this is accurate
     return arena_.memory_footprint();
   }
 
   // Return an iterator over the items in this memstore.
-  // NOTE: currently this iterator is not safe with regard to
-  // concurrent modifications.
+  // TODO: clarify the consistency of this iterator in the method doc
   Iterator *NewIterator() const;
 
   // Return the Schema for the rows in this memstore.
@@ -74,13 +73,7 @@ public:
 
   // Dump the contents of the memstore to the INFO log.
   // This dumps every row, so should only be used in tests, etc
-  void DebugDump() {
-    for (MSSet::const_iterator it = entries_.begin();
-         it != entries_.end();
-         ++it) {
-      LOG(INFO) << "row " << schema_.DebugRow((*it).data);
-    }
-  }
+  void DebugDump();
 
 private:
   friend class Iterator;
@@ -93,50 +86,14 @@ private:
   // row unless allocation fails.
   Status CopyRowToArena(const Slice &row, Slice *dst);
 
-  // One of the entries in the MemStore.
-  // Currently just a simple wrapper around a pointer.
-  struct Entry {
-    explicit Entry(const void *data_) :
-      data(data_)
-    {}
-    const void *data;
-
-
-  private:
-    // Disallow equality comparison by struct
-    bool operator ==(const Entry &other);
-
-  };
-
-  struct EntryLessThan {
-    EntryLessThan(const MemStore &store);
-    bool operator() (const Entry &lhs,
-                     const Entry &rhs) const;
-
-    const MemStore &store_;
-  };
-
-  typedef set<Entry, EntryLessThan, ArenaAllocator<Entry> > MSSet;
-
-
-  MSSet::const_iterator IteratorAtOrAfter(const Slice &key,
-                                          bool *exact) const {
-    CHECK_GE(key.size(), schema().key_byte_size());
-
-    pair<MSSet::const_iterator, MSSet::const_iterator> range =
-      entries_.equal_range(Entry(key.data()));
-    *exact = (range.first != range.second);
-    return range.first;
-  }
-
+  typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 
   const Schema schema_;
   Arena arena_;
 
-  // Note: important that entries_ be declared below arena_
-  // since entries_ uses the arena's allocator. This ensures
-  // proper destructor order.
-  MSSet entries_;
+  typedef btree::CBTreeIterator<btree::BTreeTraits> MSBTIter;
+
+  MSBTree tree_;
 };
 
 // An iterator through in-memory data stored in a MemStore.
@@ -152,36 +109,56 @@ class MemStore::Iterator : boost::noncopyable {
 public:
 
   Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    iter_ = memstore_->IteratorAtOrAfter(key, exact);
-    return Status::OK();
+    tmp_buf.clear();
+    memstore_->schema().EncodeComparableKey(key, &tmp_buf);
+
+    if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact)) {
+      return Status::OK();
+    } else {
+      return Status::NotFound("no match in memstore");
+    }
   }
 
   const Slice GetCurrentRow() const {
-    return Slice(reinterpret_cast<const char *>((*iter_).data),
-                 memstore_->schema().byte_size());
+    Slice dummy, ret;
+    iter_->GetCurrentEntry(&dummy, &ret);
+    return ret;
   }
 
   bool IsValid() const {
-    return iter_ != memstore_->entries_.end();
+    return iter_->IsValid();
   }
 
   bool Next() {
-    ++iter_;
-    return IsValid();
+    return iter_->Next();
+  }
+
+  void SeekToStart() {
+    bool exact;
+    iter_->SeekAtOrAfter(Slice(""), &exact);
   }
 
 private:
   friend class MemStore;
 
-  Iterator(const MemStore *ms) :
+  Iterator(const MemStore *ms,
+           MemStore::MSBTIter *iter) :
     memstore_(ms),
-    iter_(ms->entries_.begin())
+    iter_(iter)
   {
+    // TODO: various code assumes that a newly constructed iterator
+    // is pointed at the beginning of the dataset. This causes a redundant
+    // seek. Could make this lazy instead, or change the semantics so that
+    // a seek is required (probably the latter)
+    SeekToStart();
   }
 
   const MemStore *memstore_;
-  MemStore::MSSet::const_iterator iter_;
+  scoped_ptr<MemStore::MSBTIter> iter_;
 
+  // Temporary local buffer used for seeking to hold the encoded
+  // seek target.
+  faststring tmp_buf;
 };
 
 } // namespace tablet
