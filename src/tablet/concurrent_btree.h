@@ -171,19 +171,34 @@ template<class T>
 size_t FindInSortedBag(const StringBag<T> &bag, ssize_t bag_size,
                        const Slice &key, bool *exact) {
   DCHECK_GE(bag_size, 0);
-  for (int i = 0; i < bag_size; i++) {
-    int compare = bag.Get(i).compare(key);
-    if (compare >= 0) {
-      // key in bag >= expected value
-      *exact = compare == 0;
-      return i;
+
+  if (PREDICT_FALSE(bag_size == 0)) {
+    *exact = false;
+    return 0;
+  }
+
+  size_t left = 0;
+  size_t right = bag_size - 1;
+
+  while (left < right) {
+    int mid = (left + right + 1) / 2;
+    int compare = bag.Get(mid).compare(key);
+    if (compare < 0) { // mid < key
+      left = mid;
+    } else if (compare > 0) { // mid > search
+      right = mid - 1;
+    } else { // mid == search
+      *exact = true;
+      return mid;
     }
   }
 
-  *exact = false;
-  // search key is greater than all keys in the node --
-  // insertion point at the end
-  return bag_size;
+  int compare = bag.Get(left).compare(key);
+  *exact = compare == 0;
+  if (compare < 0) { // key > left
+    left++;
+  }
+  return left;
 }
 
 template<class Traits>
