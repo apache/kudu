@@ -12,6 +12,9 @@
 #include "gutil/stringprintf.h"
 #include "gutil/port.h"
 
+#define TRAVERSE_PREFETCH
+#define SCAN_PREFETCH
+
 namespace kudu { namespace tablet {
 namespace btree {
 
@@ -258,6 +261,18 @@ protected:
   NodeBase() : version_(0), parent_(NULL)
   {}
 
+  void PrefetchMemoryWithSize(size_t size) const {
+    int len = 4 * CACHELINE_SIZE;
+    if (size + 1 < len) {
+      len = size + 1;
+    }
+
+    for (int i = 0; i < len; i += CACHELINE_SIZE) {
+      prefetch((const char *) this + i, PREFETCH_HINT_T0);
+    }
+  }
+
+
 public:
   volatile AtomicVersion version_;
 
@@ -467,14 +482,7 @@ public:
 
   // Prefetch up to the first 4 cachelines of this node.
   void PrefetchMemory() const {
-    int len = 4 * CACHELINE_SIZE;
-    if (Traits::internal_node_size + 1 < len) {
-      len = Traits::internal_node_size + 1;
-    }
-
-    for (int i = CACHELINE_SIZE; i < len; i += CACHELINE_SIZE) {
-      prefetch((const char *) this + i, PREFETCH_HINT_T0);
-    }
+    this->PrefetchMemoryWithSize(Traits::internal_node_size);
   }
 
   string ToString() const {
@@ -620,6 +628,10 @@ public:
     num_entries_ = new_num_entries;
   }
 
+  // Prefetch up to the first 4 cachelines of this node.
+  void PrefetchMemory() const {
+    this->PrefetchMemoryWithSize(Traits::leaf_node_size);
+  }
 
   string ToString() const {
     string ret;
@@ -801,6 +813,9 @@ public:
     NodeBase<Traits> *node_base = node.base_ptr();
 
     while (node.type() != LEAF_NODE) {
+#ifdef TRAVERSE_PREFETCH
+      node.internal_node_ptr()->PrefetchMemory();
+#endif
       retry_in_node:
       int num_children = node.internal_node_ptr()->num_children_;
       NodePtr<Traits> child = node.internal_node_ptr()->FindChild(key);
@@ -836,6 +851,9 @@ public:
       node_base = child_base;
       version = child_version;
     }
+#ifdef TRAVERSE_PREFETCH
+    node.leaf_node_ptr()->PrefetchMemory();
+#endif
     *stable_version = version;
     return node.leaf_node_ptr();
   }
@@ -1229,6 +1247,10 @@ private:
     {
       AtomicVersion version;
       LeafNode<Traits> *leaf = tree_->TraverseToLeaf(key, &version);
+#ifdef SCAN_PREFETCH
+      leaf->next_->PrefetchMemory();
+#endif
+
       retry_in_leaf:
       {
         memcpy(&leaf_copy_, leaf, sizeof(leaf_copy_));
@@ -1250,11 +1272,14 @@ private:
   bool SeekNextLeaf() {
     CHECK(seeked_);
     LeafNode<Traits> *next = leaf_copy_.next_;
+    if (PREDICT_FALSE(next == NULL)) {
+      seeked_ = false;
+      return false;
+    }
+#ifdef SCAN_PREFETCH
+    next->next_->PrefetchMemory();
+#endif
     while (true) {
-      if (PREDICT_FALSE(next == NULL)) {
-        seeked_ = false;
-        return false;
-      }
       AtomicVersion version = next->StableVersion();
       memcpy(&leaf_copy_, next, sizeof(leaf_copy_));
       AtomicVersion new_version = next->StableVersion();
