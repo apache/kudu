@@ -6,6 +6,7 @@
 #include <boost/static_assert.hpp>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
+#include "util/status.h"
 #include "util/stringbag.h"
 #include "gutil/spinlock_wait.h"
 #include "gutil/stringprintf.h"
@@ -22,6 +23,8 @@ template<class Traits>
 class LeafNode;
 template<class Traits>
 class CBTree;
+template<class Traits>
+class CBTreeIterator;
 template<class Traits>
 class NodeBase;
 
@@ -559,6 +562,8 @@ public:
   // Find the index of the first key which is >= the given
   // search key.
   // If the comparison is equal, then sets *exact to true.
+  // If no keys in the leaf are >= the given search key,
+  // then returns the size of the leaf node.
   //
   // Note that, if the lock is not held, this may return
   // bogus results, in which case OCC must be used to verify.
@@ -620,6 +625,7 @@ public:
 private:
   friend class CBTree<Traits>;
   friend class InternalNode<Traits>;
+  friend class CBTreeIterator<Traits>;
 
   LeafNode<Traits> *next_;
 
@@ -819,6 +825,9 @@ public:
     return node.leaf_node_ptr();
   }
 
+  CBTreeIterator<Traits> *NewIterator() {
+    return new CBTreeIterator<Traits>(this);
+  }
 
 private:
   // Utility function that, when Traits::debug_raciness is non-zero
@@ -1150,6 +1159,106 @@ private:
 
   NodePtr<Traits> root_;
 };
+
+template<class Traits>
+class CBTreeIterator : boost::noncopyable {
+public:
+  bool SeekAtOrAfter(const Slice &key, bool *exact) {
+    SeekToLeaf(key);
+    SeekInLeaf(key, exact);
+    return IsValid();
+  }
+
+  bool IsValid() const {
+    return seeked_;
+  }
+
+  bool Next() {
+    CHECK(seeked_);
+    idx_in_leaf_++;
+    if (idx_in_leaf_ < leaf_copy_.num_entries()) {
+      return true;
+    } else {
+      return SeekNextLeaf();
+    }
+  }
+
+  void GetCurrentEntry(Slice *key, Slice *val) const {
+    CHECK(seeked_);
+    leaf_copy_.Get(idx_in_leaf_, key, val);
+  }
+
+private:
+  friend class CBTree<Traits>;
+
+  CBTreeIterator(CBTree<Traits> *tree) :
+    tree_(tree),
+    seeked_(false),
+    idx_in_leaf_(-1),
+    leaf_copy_(false)
+  {}
+
+  bool SeekInLeaf(const Slice &key, bool *exact) {
+    CHECK(seeked_);
+    idx_in_leaf_ = leaf_copy_.Find(key, exact);
+    if (idx_in_leaf_ == leaf_copy_.num_entries()) {
+      // not found in leaf, seek to start of next leaf if it exists.
+      return SeekNextLeaf();
+    }
+    return true;
+  }
+
+
+  void SeekToLeaf(const Slice &key) {
+    retry_from_root:
+    {
+      AtomicVersion version;
+      LeafNode<Traits> *leaf = tree_->TraverseToLeaf(key, &version);
+      retry_in_leaf:
+      {
+        memcpy(&leaf_copy_, leaf, sizeof(leaf_copy_));
+
+        AtomicVersion new_version = leaf->StableVersion();
+        if (VersionField::HasSplit(version, new_version)) {
+          goto retry_from_root;
+        } else if (VersionField::IsDifferent(version, new_version)) {
+          goto retry_in_leaf;
+        }
+        VLOG(2) << "got copy of leaf node: " << leaf_copy_.ToString();
+        // Got a consistent snapshot copy of the leaf node into
+        // leaf_copy_
+      }
+    }
+    seeked_ = true;
+  }
+
+  bool SeekNextLeaf() {
+    CHECK(seeked_);
+    LeafNode<Traits> *next = leaf_copy_.next_;
+    while (true) {
+      if (PREDICT_FALSE(next == NULL)) {
+        seeked_ = false;
+        return false;
+      }
+      AtomicVersion version = next->StableVersion();
+      memcpy(&leaf_copy_, next, sizeof(leaf_copy_));
+      AtomicVersion new_version = next->StableVersion();
+      if (VersionField::IsDifferent(new_version, version)) {
+        version = new_version;
+      } else {
+        idx_in_leaf_ = 0;
+        return true;
+      }
+    }
+  }
+
+  CBTree<Traits> *tree_;
+  bool seeked_;
+  size_t idx_in_leaf_;
+
+  LeafNode<Traits> leaf_copy_;
+};
+
 } // namespace btree
 } // namespace tablet
 } // namespace kudu

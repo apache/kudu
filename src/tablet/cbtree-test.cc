@@ -5,9 +5,13 @@
 #include <boost/scoped_ptr.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/barrier.hpp>
-
+#include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <unordered_set>
+
 #include "concurrent_btree.h"
+#include "util/stopwatch.h"
+#include "util/test_macros.h"
 
 namespace kudu {
 namespace tablet {
@@ -220,25 +224,33 @@ TEST(TestCBTree, TestInsertAndVerify) {
   }
 }
 
+template<class TREE, class COLLECTION>
+static void InsertRandomKeys(TREE *t, int n_keys,
+                             COLLECTION *inserted) {
+  char kbuf[64];
+  char vbuf[64];
+  int i = 0;
+  while (inserted->size() < n_keys) {
+    int key = rand();
+    memcpy(kbuf, &key, sizeof(key));
+    snprintf(vbuf, sizeof(vbuf), "val_%d", i);
+    t->Insert(Slice(kbuf, sizeof(key)), Slice(vbuf));
+    inserted->insert(key);
+    i++;
+  }
+}
+
 // Similar to above, but inserts in random order
 TEST(TestCBTree, TestInsertAndVerifyRandom) {
   CBTree<SmallFanoutTraits> t;
   char kbuf[64];
-  char vbuf[64];
   char vbuf_out[64];
 
   int n_keys = 100000;
-  std::vector<int> inserted;
+  std::unordered_set<int> inserted;
   inserted.reserve(n_keys);
 
-
-  for (int i = 0; i < n_keys; i++) {
-    int key = rand();
-    memcpy(kbuf, &key, sizeof(key));
-    snprintf(vbuf, sizeof(vbuf), "val_%d", i);
-    t.Insert(Slice(kbuf, sizeof(key)), Slice(vbuf));
-    inserted.push_back(key);
-  }
+  InsertRandomKeys(&t, n_keys, &inserted);
 
 
   BOOST_FOREACH(int key, inserted) {
@@ -358,7 +370,242 @@ TEST(TestCBTree, TestConcurrentInsert) {
   BOOST_FOREACH(boost::thread &thr, threads) {
     thr.join();
   }
+}
 
+TEST(TestCBTree, TestIterator) {
+  CBTree<SmallFanoutTraits> t;
+
+  int n_keys = 100000;
+  std::unordered_set<int> inserted;
+  inserted.reserve(n_keys);
+  InsertRandomKeys(&t, n_keys, &inserted);
+
+  // now iterate through, making sure we saw all
+  // the keys that were inserted
+  LOG_TIMING(INFO, "Iterating") {
+    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+      t.NewIterator());
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrAfter(Slice(""), &exact));
+    int count = 0;
+    while (iter->IsValid()) {
+      Slice k, v;
+      iter->GetCurrentEntry(&k, &v);
+
+      int k_int;
+      CHECK_EQ(sizeof(k_int), k.size());
+      memcpy(&k_int, k.data(), k.size());
+
+      bool removed = inserted.erase(k_int);
+      if (!removed) {
+        FAIL() << "Iterator saw entry " << k_int << " but not inserted";
+      }
+      count++;
+      iter->Next();
+    }
+
+    ASSERT_EQ(n_keys, count);
+    ASSERT_EQ(0, inserted.size()) << "Some entries were not seen by iterator";
+  }
+}
+
+TEST(TestCBTree, TestIteratorSeekOnEmptyTree) {
+  CBTree<SmallFanoutTraits> t;
+
+  scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    t.NewIterator());
+  bool exact = true;
+  ASSERT_FALSE(iter->SeekAtOrAfter(Slice(""), &exact));
+  ASSERT_FALSE(exact);
+  ASSERT_FALSE(iter->IsValid());
+}
+
+// Test seeking to exactly the first and last key, as well
+// as the boundary conditions (before first and after last)
+TEST(TestCBTree, TestIteratorSeekConditions) {
+  CBTree<SmallFanoutTraits> t;
+
+  ASSERT_TRUE(t.Insert(Slice("key1"), Slice("val")));
+  ASSERT_TRUE(t.Insert(Slice("key2"), Slice("val")));
+  ASSERT_TRUE(t.Insert(Slice("key3"), Slice("val")));
+
+  // Seek to before first key should successfully reach first key
+  {
+    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+      t.NewIterator());
+
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrAfter(Slice("key0"), &exact));
+    ASSERT_FALSE(exact);
+
+    ASSERT_TRUE(iter->IsValid());
+    Slice k, v;
+    iter->GetCurrentEntry(&k, &v);
+    ASSERT_EQ("key1", k.ToString());
+  }
+
+  // Seek to exactly first key should successfully reach first key
+  // and set exact = true
+  {
+    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+      t.NewIterator());
+
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrAfter(Slice("key1"), &exact));
+    ASSERT_TRUE(exact);
+
+    ASSERT_TRUE(iter->IsValid());
+    Slice k, v;
+    iter->GetCurrentEntry(&k, &v);
+    ASSERT_EQ("key1", k.ToString());
+  }
+
+  // Seek to exactly last key should successfully reach last key
+  // and set exact = true
+  {
+    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+      t.NewIterator());
+
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrAfter(Slice("key3"), &exact));
+    ASSERT_TRUE(exact);
+
+    ASSERT_TRUE(iter->IsValid());
+    Slice k, v;
+    iter->GetCurrentEntry(&k, &v);
+    ASSERT_EQ("key3", k.ToString());
+    ASSERT_FALSE(iter->Next());
+  }
+
+  // Seek to after last key should fail.
+  {
+    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+      t.NewIterator());
+
+    bool exact;
+    ASSERT_FALSE(iter->SeekAtOrAfter(Slice("key4"), &exact));
+    ASSERT_FALSE(exact);
+    ASSERT_FALSE(iter->IsValid());
+  }
+}
+
+template<class T>
+static void ScanThread(boost::barrier *go_barrier,
+                       boost::barrier *done_barrier,
+                       scoped_ptr<CBTree<T> > *tree) {
+  while (true) {
+    go_barrier->wait();
+    if (tree->get() == NULL) return;
+
+    int prev_count = 0;
+    int count = 0;
+    do {
+      prev_count = count;
+      count = 0;
+
+      faststring prev_key;
+
+      scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter((*tree)->NewIterator());
+      bool exact;
+      iter->SeekAtOrAfter(Slice(""), &exact);
+      while (iter->IsValid()) {
+        count++;
+        Slice k, v;
+        iter->GetCurrentEntry(&k, &v);
+
+        if (k.compare(Slice(prev_key)) <= 0) {
+          FAIL() << "prev key " << Slice(prev_key).ToString() <<
+            " wasn't less than cur key " << k.ToString();
+        }
+        prev_key.assign_copy(k.data(), k.size());
+
+        iter->Next();
+      }
+      ASSERT_GE(count, prev_count);
+    } while (count != prev_count || count == 0);
+
+    done_barrier->wait();
+  }
+}
+
+
+TEST(TestCBTree, TestConcurrentIterateAndInsert) {
+  scoped_ptr<CBTree<SmallFanoutTraits> > tree;
+
+  int num_ins_threads = 4;
+  int num_scan_threads = 4;
+  int num_threads = num_ins_threads + num_scan_threads;
+  int ins_per_thread = 30000;
+  int trials = 2;
+
+  boost::ptr_vector<boost::thread> threads;
+  boost::barrier go_barrier(num_threads + 1);
+  boost::barrier done_barrier(num_threads + 1);
+
+  for (int i = 0; i < num_ins_threads; i++) {
+    threads.push_back(new boost::thread(
+                        InsertAndVerify<SmallFanoutTraits>,
+                        &go_barrier,
+                        &done_barrier,
+                        &tree,
+                        ins_per_thread * i,
+                        ins_per_thread * (i + 1)));
+  }
+  for (int i = 0; i < num_scan_threads; i++) {
+    threads.push_back(new boost::thread(
+                        ScanThread<SmallFanoutTraits>,
+                        &go_barrier,
+                        &done_barrier,
+                        &tree));
+  }
+
+
+  // Rather than running one long trial, better to run
+  // a bunch of short trials, so that the threads contend a lot
+  // more on a smaller tree. As the tree gets larger, contention
+  // on areas of the key space diminishes.
+  for (int trial = 0; trial < trials; trial++) {
+    tree.reset(new CBTree<SmallFanoutTraits>());
+    go_barrier.wait();
+
+    done_barrier.wait();
+
+    if (::testing::Test::HasFatalFailure()) {
+      tree->DebugPrint();
+      return;
+    }
+  }
+
+  tree.reset(NULL);
+  go_barrier.wait();
+
+  BOOST_FOREACH(boost::thread &thr, threads) {
+    thr.join();
+  }
+}
+
+TEST(TestCBTree, TestScanPerformance) {
+  CBTree<BTreeTraits> tree;
+  int n_keys = 10000000;
+  LOG_TIMING(INFO, StringPrintf("Insert %d keys", n_keys)) {
+    InsertRange(&tree, 0, n_keys);
+  }
+
+  int scan_trials = 10;
+  LOG_TIMING(INFO, StringPrintf("Scan %d keys %d times", n_keys, scan_trials)) {
+    for (int i = 0; i < 10; i++)  {
+      scoped_ptr<CBTreeIterator<BTreeTraits> > iter(
+        tree.NewIterator());
+      bool exact;
+      iter->SeekAtOrAfter(Slice(""), &exact);
+      int count = 0;
+      while (iter->IsValid()) {
+        count++;
+        iter->Next();
+      }
+      ASSERT_EQ(count, n_keys);
+    }
+  }
 }
 
 }
