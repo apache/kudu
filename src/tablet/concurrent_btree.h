@@ -1,4 +1,20 @@
 // Copyright (c) 2012, Cloudera, inc.
+//
+// This file implements a concurrent in-memory B-tree similar to the one
+// described in the MassTree paper;
+//  "Cache Craftiness for Fast Multicore Key-Value Storage"
+//  Mao, Kohler, and Morris
+//  Eurosys 2012
+//
+// This implementation is only the B-tree component, and not the "trie of trees"
+// which make up their full data structure. In addition to this, there are
+// some other key differences:
+// - We do not support removal of elements from the tree -- in the Kudu memstore
+//   use case, we use a deletion bit to indicate a removed record, and end up
+//   actually removing the storage at compaction time.
+// - The leaf nodes are linked together with a "next" pointer. This makes
+//   scanning simpler (the Masstree implementation avoids this because it
+//   complicates the removal operation)
 #ifndef KUDU_TABLET_CONCURRENT_BTREE_H
 #define KUDU_TABLET_CONCURRENT_BTREE_H
 
@@ -18,7 +34,32 @@
 namespace kudu { namespace tablet {
 namespace btree {
 
-struct BTreeTraits;
+// All CBTree implementation classes are templatized on a traits
+// structure which customizes the implementation at compile-time.
+//
+// This default implementation should be reasonable for most usage.
+struct BTreeTraits {
+  // Number of bytes used per internal node.
+
+  static const size_t internal_node_size = 256;
+
+  // The max number of children in an internal node.
+  static const size_t fanout = 16;
+
+  // Number of bytes used by a leaf node.
+  static const size_t leaf_node_size = 256;
+
+  // The max number of entries in a leaf node.
+  // TODO: this should probably be dynamic, since we'd
+  // know the size of the value for fixed size tables
+  static const size_t leaf_max_entries = 16;
+
+  // Tests can set this trait to a non-zero value, which inserts
+  // some pause-loops in key parts of the code to try to simulate
+  // races.
+  static const size_t debug_raciness = 0;
+};
+
 
 template<class Traits>
 class InternalNode;
@@ -162,12 +203,6 @@ private:
   }
 };
 
-
-enum NodeType {
-  INTERNAL_NODE,
-  LEAF_NODE
-};
-
 // Return the index of the first entry in the bag which is
 // >= the given value
 template<class T>
@@ -283,6 +318,8 @@ public:
   InternalNode<Traits> *parent_;
 } PACKED;
 
+
+
 // Wrapper around a void pointer, which encodes the type
 // of the pointed-to object in its least-significant-bit.
 // The pointer may reference either an internal node or a
@@ -291,6 +328,12 @@ public:
 // 2-byte aligned, so that the LSB can be used as storage.
 template<class T>
 struct NodePtr {
+  enum NodeType {
+    INTERNAL_NODE,
+    LEAF_NODE
+  };
+
+
   NodePtr() : p_(NULL) {}
 
   NodePtr(InternalNode<T> *p) {
@@ -676,19 +719,6 @@ private:
 
 } PACKED;
 
-struct BTreeTraits {
-  static const size_t internal_node_size = 256;
-  static const size_t fanout = 16;
-
-  static const size_t leaf_node_size = 256;
-
-  // TODO: this should probably be dynamic, since we'd
-  // know the size of the value for fixed size tables
-  static const size_t leaf_max_entries = 16;
-
-  static const size_t debug_raciness = 0;
-};
-
 ////////////////////////////////////////////////////////////
 // Tree API
 ////////////////////////////////////////////////////////////
@@ -812,7 +842,7 @@ public:
     NodePtr<Traits> node = StableRoot(&version);
     NodeBase<Traits> *node_base = node.base_ptr();
 
-    while (node.type() != LEAF_NODE) {
+    while (node.type() != NodePtr<Traits>::LEAF_NODE) {
 #ifdef TRAVERSE_PREFETCH
       node.internal_node_ptr()->PrefetchMemory();
 #endif
@@ -884,7 +914,7 @@ private:
 
     std::string buf;
     switch (node.type()) {
-      case LEAF_NODE:
+      case NodePtr<Traits>::LEAF_NODE:
       {
         LeafNode<Traits> *leaf = node.leaf_node_ptr();
         SStringPrintf(&buf, "%*sLEAF %p: ", indent, "", leaf);
@@ -893,7 +923,7 @@ private:
         CHECK_EQ(leaf->parent_, expected_parent) << "failed for " << leaf;
         break;
       }
-      case INTERNAL_NODE:
+      case NodePtr<Traits>::INTERNAL_NODE:
       {
         InternalNode<Traits> *inode = node.internal_node_ptr();
 
@@ -918,10 +948,10 @@ private:
 
   void RecursiveDelete(NodePtr<Traits> node) {
     switch (node.type()) {
-      case LEAF_NODE:
+      case NodePtr<Traits>::LEAF_NODE:
         delete node.leaf_node_ptr();
         break;
-      case INTERNAL_NODE:
+      case NodePtr<Traits>::INTERNAL_NODE:
       {
         InternalNode<Traits> *inode = node.internal_node_ptr();
         for (int i = 0; i < inode->num_children_; i++) {
