@@ -31,38 +31,48 @@ TEST(TestCBTree, TestNodeSizes) {
 
 }
 
+template<class T>
+static InsertStatus InsertInLeaf(LeafNode<T> *l,
+                                 const Slice &k, const Slice &v) {
+  PreparedMutation<T> pm(k);
+  // Must lock the node even in the single threaded test
+  // to avoid firing the debug assertions.
+  l->Lock();
+  l->SetInserting();
+  l->PrepareMutation(&pm);
+  InsertStatus ret = l->Insert(&pm, v);
+  l->Unlock();
+  return ret;
+}
+
 TEST(TestCBTree, TestLeafNode) {
   LeafNode<BTreeTraits> lnode(false);
 
-  // Must lock the node even in the single threaded test
-  // to avoid firing the debug assertions.
-  lnode.Lock();
-  lnode.SetInserting();
 
   Slice k1("key1");
   Slice v1("val1");
   ASSERT_EQ(INSERT_SUCCESS,
-            lnode.Insert(k1, v1));
+            InsertInLeaf(&lnode, k1, v1));
   ASSERT_EQ(INSERT_DUPLICATE,
-            lnode.Insert(k1, v1));
+            InsertInLeaf(&lnode, k1, v1));
 
   // Insert another entry after first
   Slice k2("key2");
   Slice v2("val2");
-  ASSERT_EQ(INSERT_SUCCESS, lnode.Insert(k2, v2));
-  ASSERT_EQ(INSERT_DUPLICATE, lnode.Insert(k2, v2));
+  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, k2, v2));
+  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, k2, v2));
 
   // Another entry before first
   Slice k0("key0");
   Slice v0("val0");
-  ASSERT_EQ(INSERT_SUCCESS, lnode.Insert(k0, v0));
-  ASSERT_EQ(INSERT_DUPLICATE, lnode.Insert(k0, v0));
+  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, k0, v0));
+  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, k0, v0));
 
   // Another entry in the middle
   Slice k15("key1.5");
   Slice v15("val1.5");
-  ASSERT_EQ(INSERT_SUCCESS, lnode.Insert(k15, v15));
-  ASSERT_EQ(INSERT_DUPLICATE, lnode.Insert(k15, v15));
+  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, k15, v15));
+  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, k15, v15));
   ASSERT_EQ("[key0=val0], [key1=val1], [key1.5=val1.5], [key2=val2]",
             lnode.ToString());
 
@@ -72,7 +82,7 @@ TEST(TestCBTree, TestLeafNode) {
   for (i = 0; i < 1000 && full; i++) {
     char buf[64];
     snprintf(buf, sizeof(buf), "filler_key_%d", i);
-    switch (lnode.Insert(Slice(buf), Slice("data"))) {
+    switch (InsertInLeaf(&lnode, Slice(buf), Slice("data"))) {
       case INSERT_SUCCESS:
         continue;
       case INSERT_DUPLICATE:
@@ -86,8 +96,6 @@ TEST(TestCBTree, TestLeafNode) {
     }
   }
   ASSERT_LT(i, 1000) << "should have filled up node before 1000 entries";
-
-  lnode.Unlock();
 }
 
 // Setup the tree to fanout quicker, so we test internal node

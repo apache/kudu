@@ -67,16 +67,12 @@ struct BTreeTraits {
 };
 
 
-template<class Traits>
-class InternalNode;
-template<class Traits>
-class LeafNode;
-template<class Traits>
-class CBTree;
-template<class Traits>
-class CBTreeIterator;
-template<class Traits>
-class NodeBase;
+template<class Traits> class NodeBase;
+template<class Traits> class InternalNode;
+template<class Traits> class LeafNode;
+template<class Traits> class PreparedMutation;
+template<class Traits> class CBTree;
+template<class Traits> class CBTreeIterator;
 
 typedef base::subtle::Atomic64 AtomicVersion;
 
@@ -597,22 +593,32 @@ public:
 
   int num_entries() const { return num_entries_; }
 
-
-  InsertStatus Insert(const Slice &key, const Slice &val) {
+  void PrepareMutation(PreparedMutation<Traits> *ret) {
     DCHECK(this->IsLocked());
-    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
-    CHECK_GT(key.size(), 0);
+    ret->leaf_ = this;
+    ret->idx_ = Find(ret->key(), &ret->exists_);
+  }
 
-    bool exact;
-    size_t idx = Find(key, &exact);
-    if (PREDICT_FALSE(exact)) {
+  // Insert a new entry into this leaf node.
+  InsertStatus Insert(PreparedMutation<Traits> *mut, const Slice &val) {
+    DCHECK_EQ(this, mut->leaf());
+    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
+
+    if (PREDICT_FALSE(mut->exists())) {
       return INSERT_DUPLICATE;
     }
 
+    return InsertNew(mut->idx(), mut->key(), val);
+  }
+
+  // Insert an entry at the given index, which is guaranteed to be
+  // new.
+  InsertStatus InsertNew(size_t idx, const Slice &key, const Slice &val) {
     if (PREDICT_FALSE(num_entries_ == Traits::leaf_max_entries)) {
       // Full due to metadata
       return INSERT_FULL;
     }
+
 
     if (PREDICT_FALSE(key_bag_.space_available() < key.size() ||
                       val_bag_.space_available() < val.size())) {
@@ -721,13 +727,106 @@ private:
     StringBag<typename Traits::leaf_val_bag_storage_type> val_bag_;
     char val_storage_[storage_size/2];
   } PACKED;
-
-
 } PACKED;
+
 
 ////////////////////////////////////////////////////////////
 // Tree API
 ////////////////////////////////////////////////////////////
+
+// A "scoped" object which holds a lock on a leaf node.
+// Instances should be prepared with CBTree::PrepareMutation()
+// and then used with a further Insert() or Update() call.
+template<class Traits>
+class PreparedMutation : boost::noncopyable {
+public:
+  // Construct a PreparedMutation.
+  //
+  // The data referred to by the 'key' Slice passed in themust remain
+  // valid for the lifetime of the PreparedMutation object.
+  PreparedMutation(const Slice &key) :
+    key_(key),
+    tree_(NULL),
+    leaf_(NULL),
+    needs_unlock_(false)
+  {}
+
+  ~PreparedMutation() {
+    if (leaf_ != NULL && needs_unlock_) {
+      leaf_->Unlock();
+      needs_unlock_ = false;
+    }
+  }
+
+  // Prepare a mutation against the given tree.
+  //
+  // This prepared mutation may then be used with Insert()
+  // or [TODO] Update(). In between preparing the mutation and
+  // executing the mutation, the leaf node remains locked, so
+  // callers should endeavour to keep the critical section short.
+  //
+  // If the returned PreparedMutation object is not used with
+  // Insert() or Update(), it will be automatically unlocked
+  // by its destructor.
+  void Prepare(CBTree<Traits> *tree) {
+    CHECK(!prepared());
+    this->tree_ = tree;
+    tree->PrepareMutation(this);
+    needs_unlock_ = true;
+  }
+
+  bool Insert(const Slice &val) {
+    CHECK(prepared());
+    return tree_->Insert(this, val);
+  }
+
+
+  // Accessors
+
+  bool prepared() const {
+    return tree_ != NULL;
+  }
+
+  // Return the key that was prepared.
+  const Slice &key() const { return key_; }
+
+  CBTree<Traits> *tree() const {
+    return tree_;
+  }
+
+  LeafNode<Traits> *leaf() const {
+    return CHECK_NOTNULL(leaf_);
+  }
+
+  // Return true if the key that was prepared already exists.
+  bool exists() const {
+    return exists_;
+  }
+
+  const size_t idx() const {
+    return idx_;
+  }
+
+private:
+  friend class CBTree<Traits>;
+  friend class LeafNode<Traits>;
+
+
+  void mark_done() {
+    // set leaf_ back to NULL without unlocking it,
+    // since the caller will unlock it.
+    needs_unlock_ = false;
+  }
+
+  Slice key_;
+  CBTree<Traits> *tree_;
+  LeafNode<Traits> *leaf_;
+
+  size_t idx_;
+  bool exists_;
+  bool needs_unlock_;
+};
+
 
 template<class Traits = BTreeTraits>
 class CBTree : boost::noncopyable {
@@ -742,21 +841,17 @@ public:
     RecursiveDelete(root_);
   }
 
+
+  // Convenience API to insert an item.
+  //
+  // Returns true if successfully inserted, false if an item with the given
+  // key already exists.
+  //
+  // More advanced users can use the PreparedMutation class instead.
   bool Insert(const Slice &key, const Slice &val) {
-    while (true) {
-      AtomicVersion stable_version;
-      LeafNode<Traits> *lnode = TraverseToLeaf(key, &stable_version);
-      VLOG(3) << "Inserting into " << StringPrintf("%p", lnode);
-
-      lnode->Lock();
-      if (VersionField::HasSplit(lnode->AcquireVersion(), stable_version)) {
-        // Retry traversal due to a split
-        lnode->Unlock();
-        continue;
-      }
-
-      return InsertInLeaf(lnode, key, val);
-    }
+    PreparedMutation<Traits> mutation(key);
+    mutation.Prepare(this);
+    return mutation.Insert(val);
   }
 
   void DebugPrint() {
@@ -825,6 +920,13 @@ public:
       }
     }
   }
+  CBTreeIterator<Traits> *NewIterator() const {
+    return new CBTreeIterator<Traits>(this);
+  }
+
+private:
+  friend class PreparedMutation<Traits>;
+  friend class CBTreeIterator<Traits>;
 
   NodePtr<Traits> StableRoot(AtomicVersion *stable_version) const {
     while (true) {
@@ -895,11 +997,7 @@ public:
     return node.leaf_node_ptr();
   }
 
-  CBTreeIterator<Traits> *NewIterator() const {
-    return new CBTreeIterator<Traits>(this);
-  }
 
-private:
   // Utility function that, when Traits::debug_raciness is non-zero
   // (i.e only in debug code), will spin for some amount of time
   // related to that setting.
@@ -973,6 +1071,30 @@ private:
     }
   }
 
+  void PrepareMutation(PreparedMutation<Traits> *mutation) {
+    DCHECK_EQ(mutation->tree(), this);
+    while (true) {
+      AtomicVersion stable_version;
+      LeafNode<Traits> *lnode = TraverseToLeaf(mutation->key(), &stable_version);
+
+      lnode->Lock();
+      if (VersionField::HasSplit(lnode->AcquireVersion(), stable_version)) {
+        // Retry traversal due to a split
+        lnode->Unlock();
+        continue;
+      }
+
+      lnode->PrepareMutation(mutation);
+      return;
+    }
+  }
+
+  bool Insert(PreparedMutation<Traits> *mutation,
+              const Slice &val) {
+    DCHECK_EQ(mutation->tree(), this);
+    return InsertInLeaf(CHECK_NOTNULL(mutation), val);
+  }
+
   // Inserts the given key/value into the given leaf node.
   // If the leaf node is already full, handles splitting it and
   // propagating splits up the tree.
@@ -981,12 +1103,17 @@ private:
   //   'node' is locked
   // Postcondition:
   //   'node' is unlocked
-  bool InsertInLeaf(LeafNode<Traits> *node,
-                    const Slice &key,
+  bool InsertInLeaf(PreparedMutation<Traits> *mutation,
                     const Slice &val) {
+    LeafNode<Traits> *node = mutation->leaf();
     DCHECK(node->IsLocked());
     node->SetInserting();
-    switch (node->Insert(key, val)) {
+
+    // After this function, the prepared mutation cannot be used
+    // again.
+    mutation->mark_done();
+
+    switch (node->Insert(mutation, val)) {
       case INSERT_SUCCESS:
         node->Unlock();
         return true;
@@ -994,7 +1121,7 @@ private:
         node->Unlock();
         return false;
       case INSERT_FULL:
-        return SplitLeafAndInsertUp(node, key, val);
+        return SplitLeafAndInsertUp(mutation, val);
         // SplitLeafAndInsertUp takes care of unlocking
       default:
         CHECK(0) << "Unexpected result";
@@ -1103,9 +1230,8 @@ private:
       Slice k, v;
       node->Get(i, &k, &v);
 
-      // TODO: this could be done more efficiently since we know that
-      // these inserts are coming in sorted order.
-      CHECK_EQ(INSERT_SUCCESS, new_leaf->Insert(k, v));
+      CHECK_EQ(INSERT_SUCCESS,
+               new_leaf->InsertNew(new_leaf->num_entries(), k, v));
     }
 
     // Truncate the left node to remove the keys which have been
@@ -1120,9 +1246,11 @@ private:
   // This recurses upward splitting internal nodes as necessary.
   // The node should be locked on entrance to the function
   // and will be unlocked upon exit.
-  bool SplitLeafAndInsertUp(LeafNode<Traits> *node,
-                            const Slice &key,
+  bool SplitLeafAndInsertUp(PreparedMutation<Traits> *mutation,
                             const Slice &val) {
+    LeafNode<Traits> *node = mutation->leaf();
+    Slice key = mutation->key_;
+
     // Leaf node should already be locked at this point
     DCHECK(node->IsLocked());
     node->SetSplitting();
@@ -1140,8 +1268,10 @@ private:
     // correct side post-split.
     Slice split_key = new_leaf->GetKey(0);
     LeafNode<Traits> *dst_leaf = (key.compare(split_key) < 0) ? node : new_leaf;
+    // Re-prepare the mutation after the split.
+    dst_leaf->PrepareMutation(mutation);
 
-    CHECK_EQ(INSERT_SUCCESS, dst_leaf->Insert(key, val))
+    CHECK_EQ(INSERT_SUCCESS, dst_leaf->Insert(mutation, val))
       << "TODO: node split at " << split_key.ToString()
       << " did not result in enough space for key " << key.ToString()
       << " in left node";
