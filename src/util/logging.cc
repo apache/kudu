@@ -12,9 +12,11 @@
 #include "util/slice.h"
 #include <glog/logging.h>
 
-// This is including a glog internal file.  We want this to expose the
-// function to get the stack trace.
-#include <glog/../utilities.h>
+// Evil hack to grab a function from glog
+namespace google {
+namespace glog_internal_namespace_ {
+extern void DumpStackTraceToString(std::string *s);
+}}
 
 namespace kudu {
 

@@ -72,6 +72,7 @@ INCLUDE_DIRECTORIES(src)
 ############################################################
 # Dependencies
 ############################################################
+set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
 
 set(LIBS ${LIBS} -lrt)
 
@@ -84,6 +85,14 @@ set(LIBS ${LIBS} ${Boost_LIBRARIES})
 find_package(GLog REQUIRED)
 include_directories(${GLOG_INCLUDE_DIR})
 set(LIBS ${LIBS} ${GLOG_STATIC_LIB})
+
+## GFlags
+find_package(GFlags REQUIRED)
+INCLUDE_DIRECTORIES(${GFLAGS_INCLUDE_DIR})
+add_library(gflags STATIC IMPORTED)
+set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
+SET(LIBS ${LIBS} gflags)
+
 
 ## GTest
 find_package(GTest REQUIRED)
@@ -103,12 +112,6 @@ set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
 find_package( GPerf REQUIRED )
 set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
 
-## GFlags
-find_package(GFlags REQUIRED)
-INCLUDE_DIRECTORIES(${GFLAGS_INCLUDE_DIR})
-add_library(gflags STATIC IMPORTED)
-set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
-SET(LIBS ${LIBS} gflags)
 
 ############################################################
 # Linker setup

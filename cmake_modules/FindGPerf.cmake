@@ -10,14 +10,12 @@
 #  STACKTRACE_LIBRARIES, where to find the stacktrace library.
 #  PROFILER_LIBRARIES, where to find the profiler library.
 
-SET(GPERF_DIR ${CMAKE_SOURCE_DIR}/thirdparty/gperftools-2.0)
-
 FIND_PATH(GOOGLE_PERFTOOLS_INCLUDE_DIR google/heap-profiler.h
-${CMAKE_SOURCE_DIR}/thirdparty/gperftools-2.0/src
+  ${THIRDPARTY_PREFIX}/include
   NO_DEFAULT_PATH
 )
 
-SET(GPERF_LIB_SEARCH ${GPERF_DIR}/.libs)
+SET(GPERF_LIB_SEARCH   ${THIRDPARTY_PREFIX}/lib)
 
 SET(TCMALLOC_NAMES ${TCMALLOC_NAMES} tcmalloc)
 FIND_LIBRARY(TCMALLOC_LIBRARY

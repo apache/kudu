@@ -6,11 +6,11 @@
 #  GFLAGS_FOUND, whether gflags has been found
 
 set(GFLAGS_SEARCH_HEADER_PATHS  
-  ${CMAKE_SOURCE_DIR}/thirdparty/gflags-1.5/src
+  ${THIRDPARTY_PREFIX}/include
 )
 
 set(GFLAGS_SEARCH_LIB_PATH
-  ${CMAKE_SOURCE_DIR}/thirdparty/gflags-1.5/.libs
+  ${THIRDPARTY_PREFIX}/lib
 )
 
 find_path(GFLAGS_INCLUDE_DIR gflags/gflags.h PATHS
