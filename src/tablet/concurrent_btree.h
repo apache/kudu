@@ -1059,8 +1059,6 @@ private:
   void DebugPrint(NodePtr<Traits> node,
                   InternalNode<Traits> *expected_parent,
                   int indent) {
-    using std::cout;
-    using std::endl;
 
     std::string buf;
     switch (node.type()) {
@@ -1069,7 +1067,7 @@ private:
         LeafNode<Traits> *leaf = node.leaf_node_ptr();
         SStringPrintf(&buf, "%*sLEAF %p: ", indent, "", leaf);
         buf.append(leaf->ToString());
-        cout << buf << endl;
+        LOG(INFO) << buf;
         CHECK_EQ(leaf->parent_, expected_parent) << "failed for " << leaf;
         break;
       }
@@ -1078,14 +1076,14 @@ private:
         InternalNode<Traits> *inode = node.internal_node_ptr();
 
         SStringPrintf(&buf, "%*sINTERNAL %p: ", indent, "", inode);
-        cout << buf << endl;
+        LOG(INFO) << buf;
 
         for (int i = 0; i < inode->num_children_; i++) {
           DebugPrint(inode->child_pointers_[i], inode, indent + 4);
           if (i < inode->key_count()) {
             SStringPrintf(&buf, "%*sKEY ", indent + 2, "");
             buf.append(inode->GetKey(i).ToString());
-            cout << buf << endl;
+            LOG(INFO) << buf;
           }
         }
         CHECK_EQ(inode->parent_, expected_parent) << "failed for " << inode;
