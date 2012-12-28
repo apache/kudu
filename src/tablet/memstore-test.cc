@@ -1,11 +1,17 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/assign/list_of.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "common/row.h"
 #include "tablet/memstore.h"
+#include "util/stopwatch.h"
 #include "util/test_macros.h"
+
+DEFINE_int32(roundtrip_num_rows, 10000,
+             "Number of rows to use for the round-trip test");
 
 namespace kudu {
 namespace tablet {
@@ -150,5 +156,33 @@ TEST_F(TestMemStore, TestInsertCopiesToArena) {
 
 }
 
+
+TEST_F(TestMemStore, TestMemStoreInsertAndScan) {
+  MemStore ms(schema_);
+
+  LOG_TIMING(INFO, "Inserting rows") {
+    RowBuilder rb(schema_);
+    char keybuf[256];
+    for (uint32_t i = 0; i < FLAGS_roundtrip_num_rows; i++) {
+      rb.Reset();
+      snprintf(keybuf, sizeof(keybuf), "hello %d", i);
+      rb.AddString(Slice(keybuf));
+      rb.AddUint32(i);
+      ASSERT_STATUS_OK_FAST(ms.Insert(rb.data()));
+    }
+  }
+
+  LOG_TIMING(INFO, "Counting rows") {
+    int count = ms.entry_count();
+    ASSERT_EQ(FLAGS_roundtrip_num_rows, count);
+  }
+}
+
 } // namespace tablet
 } // namespace kudu
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  google::ParseCommandLineFlags(&argc, &argv, true);
+  return RUN_ALL_TESTS();
+}
