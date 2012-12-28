@@ -49,6 +49,11 @@ struct BTreeTraits {
   // Number of bytes used by a leaf node.
   static const size_t leaf_node_size = 256;
 
+  // The following types must be large enough such that sizeof(type)/2
+  // can store an offset as large as leaf_node_size
+  typedef uint16_t leaf_key_bag_storage_type;
+  typedef uint16_t leaf_val_bag_storage_type;
+
   // The max number of entries in a leaf node.
   // TODO: this should probably be dynamic, since we'd
   // know the size of the value for fixed size tables
@@ -58,6 +63,7 @@ struct BTreeTraits {
   // some pause-loops in key parts of the code to try to simulate
   // races.
   static const size_t debug_raciness = 0;
+
 };
 
 
@@ -708,11 +714,11 @@ private:
   // TODO: combine keys and values into the same bag
   // so there isn't a stupid 50/50 split between them
   union {
-    StringBag<uint32_t> key_bag_;
+    StringBag<typename Traits::leaf_key_bag_storage_type> key_bag_;
     char key_storage_[storage_size/2];
   } PACKED;
   union {
-    StringBag<uint32_t> val_bag_;
+    StringBag<typename Traits::leaf_val_bag_storage_type> val_bag_;
     char val_storage_[storage_size/2];
   } PACKED;
 
@@ -820,7 +826,7 @@ public:
     }
   }
 
-  NodePtr<Traits> StableRoot(AtomicVersion *stable_version) {
+  NodePtr<Traits> StableRoot(AtomicVersion *stable_version) const {
     while (true) {
       NodePtr<Traits> node = root_;
       NodeBase<Traits> *node_base = node.base_ptr();
@@ -836,7 +842,8 @@ public:
     }
   }
 
-  LeafNode<Traits> *TraverseToLeaf(const Slice &key, AtomicVersion *stable_version) {
+  LeafNode<Traits> *TraverseToLeaf(const Slice &key,
+                                   AtomicVersion *stable_version) const {
     retry_from_root:
     AtomicVersion version = 0;
     NodePtr<Traits> node = StableRoot(&version);
@@ -888,7 +895,7 @@ public:
     return node.leaf_node_ptr();
   }
 
-  CBTreeIterator<Traits> *NewIterator() {
+  CBTreeIterator<Traits> *NewIterator() const {
     return new CBTreeIterator<Traits>(this);
   }
 
@@ -1220,7 +1227,9 @@ private:
     }
   }
 
-  NodePtr<Traits> root_;
+  // marked 'mutable' because readers will lazy-update the root
+  // when they encounter a stale root pointer.
+  mutable NodePtr<Traits> root_;
 };
 
 template<class Traits>
@@ -1254,7 +1263,7 @@ public:
 private:
   friend class CBTree<Traits>;
 
-  CBTreeIterator(CBTree<Traits> *tree) :
+  CBTreeIterator(const CBTree<Traits> *tree) :
     tree_(tree),
     seeked_(false),
     idx_in_leaf_(-1),
@@ -1322,7 +1331,7 @@ private:
     }
   }
 
-  CBTree<Traits> *tree_;
+  const CBTree<Traits> *tree_;
   bool seeked_;
   size_t idx_in_leaf_;
 
