@@ -383,8 +383,6 @@ struct NodePtr {
   void *p_;
 } PACKED;
 
-
-
 enum InsertStatus {
   INSERT_SUCCESS,
   INSERT_FULL,
@@ -637,6 +635,32 @@ public:
     return INSERT_SUCCESS;
   }
 
+  enum UpdateStatus {
+    UPDATE_NOTFOUND,
+    UPDATE_SUCCESS,
+    UPDATE_FULL
+  };
+
+  // Update an entry in this leaf node.
+  UpdateStatus Update(PreparedMutation<Traits> *mut, const Slice &new_val) {
+    DCHECK_EQ(this, mut->leaf());
+    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
+    DCHECK_LT(mut->idx(), num_entries_);
+
+    if (PREDICT_FALSE(!mut->exists())) {
+      return UPDATE_NOTFOUND;
+    }
+
+    bool had_space = val_bag_.Assign(
+      mut->idx(), new_val.data(), new_val.size());
+    if (PREDICT_FALSE(!had_space)) {
+      // TODO: try to compact?
+      return UPDATE_FULL;
+    } else {
+      return UPDATE_SUCCESS;
+    }
+  }
+
   // Find the index of the first key which is >= the given
   // search key.
   // If the comparison is equal, then sets *exact to true.
@@ -780,6 +804,13 @@ public:
     return tree_->Insert(this, val);
   }
 
+  bool Update(const Slice &new_val) {
+    if (!exists()) {
+      return false;
+    }
+
+    return tree_->Update(this, new_val);
+  }
 
   // Accessors
 
@@ -875,7 +906,7 @@ public:
   //   In this case, sets *buf_len to the required buffer size.
   //
   // TODO: this call probably won't be necessary in the final implementation
-  GetResult GetCopy(const Slice &key, char *buf, size_t *buf_len) {
+  GetResult GetCopy(const Slice &key, char *buf, size_t *buf_len) const {
     size_t in_buf_len = *buf_len;
 
     retry_from_root:
@@ -1003,7 +1034,7 @@ private:
   // related to that setting.
   // This can be used when trying to debug race conditions, but
   // will compile away in production code.
-  void DebugRacyPoint() {
+  void DebugRacyPoint() const {
     if (Traits::debug_raciness > 0) {
       boost::detail::yield(Traits::debug_raciness);
     }
@@ -1089,13 +1120,7 @@ private:
     }
   }
 
-  bool Insert(PreparedMutation<Traits> *mutation,
-              const Slice &val) {
-    DCHECK_EQ(mutation->tree(), this);
-    return InsertInLeaf(CHECK_NOTNULL(mutation), val);
-  }
-
-  // Inserts the given key/value into the given leaf node.
+  // Inserts the given key/value into the prepared leaf node.
   // If the leaf node is already full, handles splitting it and
   // propagating splits up the tree.
   //
@@ -1103,8 +1128,11 @@ private:
   //   'node' is locked
   // Postcondition:
   //   'node' is unlocked
-  bool InsertInLeaf(PreparedMutation<Traits> *mutation,
-                    const Slice &val) {
+  bool Insert(PreparedMutation<Traits> *mutation,
+              const Slice &val) {
+    CHECK_NOTNULL(mutation);
+    DCHECK_EQ(mutation->tree(), this);
+
     LeafNode<Traits> *node = mutation->leaf();
     DCHECK(node->IsLocked());
     node->SetInserting();
@@ -1129,6 +1157,34 @@ private:
     }
     CHECK(0) << "should not get here";
     return false;
+  }
+
+  bool Update(PreparedMutation<Traits> *mutation,
+              const Slice &val) {
+    CHECK_NOTNULL(mutation);
+    DCHECK_EQ(mutation->tree(), this);
+
+    LeafNode<Traits> *node = mutation->leaf();
+    DCHECK(node->IsLocked());
+    node->SetInserting(); // TODO: rename SetMutating
+
+    // After this function, the prepared mutation cannot be used
+    // again.
+    mutation->mark_done();
+
+    switch (node->Update(mutation, val)) {
+      case LeafNode<Traits>::UPDATE_NOTFOUND:
+        node->Unlock();
+      case LeafNode<Traits>::UPDATE_SUCCESS:
+        node->Unlock();
+        return true;
+      case LeafNode<Traits>::UPDATE_FULL:
+        CHECK(0) << "TODO: split on update";
+        break;
+      default:
+        CHECK(0) << "Unexpected result";
+    }
+
   }
 
   // Splits the node 'node', returning the newly created right-sibling

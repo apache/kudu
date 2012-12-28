@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 #include "concurrent_btree.h"
+#include "util/hexdump.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 
@@ -155,21 +156,31 @@ void InsertRange(CBTree<T> *tree,
 }
 
 template<class T>
-void VerifyRange(CBTree<T> *tree,
+void VerifyGet(const CBTree<T> &tree,
+               Slice key,
+               Slice expected_val) {
+  char vbuf[64];
+  size_t len = sizeof(vbuf);
+  ASSERT_EQ(CBTree<T>::GET_SUCCESS,
+            tree.GetCopy(key, vbuf, &len));
+  Slice got_val(vbuf, len);
+  ASSERT_EQ(0, expected_val.compare(got_val))
+    << "Failure!\n"
+    << "Expected: " << HexDump(expected_val)
+    << "Got:      " << HexDump(got_val);
+}
+
+template<class T>
+void VerifyRange(const CBTree<T> &tree,
                  int start_idx,
                  int end_idx) {
   char kbuf[64];
   char vbuf[64];
-  char vbuf_out[64];
   for (int i = start_idx; i < end_idx; i++) {
     MakeKey(kbuf, sizeof(kbuf), i);
     snprintf(vbuf, sizeof(vbuf), "val_%d", i);
 
-    size_t len = sizeof(vbuf_out);
-    ASSERT_EQ(CBTree<T>::GET_SUCCESS,
-              tree->GetCopy(Slice(kbuf), vbuf_out, &len))
-      << "Failed verification for key  " << kbuf;
-    ASSERT_EQ(string(vbuf, len), string(vbuf_out, len));
+    VerifyGet(tree, Slice(kbuf), Slice(vbuf));
   }
 }
 
@@ -189,7 +200,7 @@ void InsertAndVerify(boost::barrier *go_barrier,
     if (tree->get() == NULL) return;
 
     InsertRange(tree->get(), start_idx, end_idx);
-    VerifyRange(tree->get(), start_idx, end_idx);
+    VerifyRange(*tree->get(), start_idx, end_idx);
 
     done_barrier->wait();
   }
@@ -200,7 +211,6 @@ TEST(TestCBTree, TestInsertAndVerify) {
   CBTree<SmallFanoutTraits> t;
   char kbuf[64];
   char vbuf[64];
-  char vbuf_out[64];
 
   int n_keys = 10000;
 
@@ -225,10 +235,34 @@ TEST(TestCBTree, TestInsertAndVerify) {
 
     // Do a Get() and check that the real value is still accessible.
     snprintf(vbuf, sizeof(vbuf), "val_%d", i);
-    size_t len = sizeof(vbuf_out);
-    ASSERT_EQ(CBTree<SmallFanoutTraits>::GET_SUCCESS,
-              t.GetCopy(Slice(kbuf), vbuf_out, &len));
-    ASSERT_EQ(string(vbuf, len), string(vbuf_out, len));
+    VerifyGet(t, Slice(kbuf), Slice(vbuf));
+  }
+}
+
+TEST(TestCBTree, TestUpdate) {
+  CBTree<SmallFanoutTraits> t;
+  Slice key("key");
+  t.Insert(key, Slice("val1"));
+  VerifyGet(t, key, Slice("val1"));
+
+  // Update with a value of the same size
+  {
+    PreparedMutation<SmallFanoutTraits> pm(key);
+    pm.Prepare(&t);
+    ASSERT_TRUE(pm.exists());
+    ASSERT_TRUE(pm.Update(Slice("val2")));
+
+    VerifyGet(t, key, Slice("val2"));
+  }
+
+  // Update with a value of shorter size
+  {
+    PreparedMutation<SmallFanoutTraits> pm(key);
+    pm.Prepare(&t);
+    ASSERT_TRUE(pm.exists());
+    ASSERT_TRUE(pm.Update(Slice("x")));
+
+    VerifyGet(t, key, Slice("x"));
   }
 }
 
