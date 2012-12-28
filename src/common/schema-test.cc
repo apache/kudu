@@ -7,6 +7,8 @@
 
 #include "common/row.h"
 #include "common/schema.h"
+#include "common/key_encoder.h"
+#include "util/hexdump.h"
 #include "util/test_macros.h"
 
 namespace kudu {
@@ -112,6 +114,30 @@ TEST(TestSchema, TestRowOperations) {
 
   ASSERT_EQ(string("(string col1=row_a_1, string col2=row_a_2, uint32 col3=3)"),
             schema.DebugRow(row_a.data()));
+}
+
+TEST(TestKeyEncoder, TestKeyEncoder) {
+  faststring fs;
+  KeyEncoder enc(&fs);
+
+  typedef boost::tuple<Slice, Slice> test_pair;
+
+  vector<test_pair> pairs = boost::assign::tuple_list_of
+    (Slice("foo", 3), Slice("foo\x00\x00", 5))
+    (Slice("xxx\x00yyy", 7), Slice("xxx\x00\x01yyy\x00\x00", 10));
+
+  BOOST_FOREACH(test_pair &t, pairs) {
+    Slice in = boost::get<0>(t);
+    Slice out = boost::get<1>(t);
+
+    fs.clear();
+    enc.EncodeBytes(in);
+    ASSERT_EQ(0, out.compare(Slice(fs)))
+      << "Failed encoding.\n"
+      << "Encoded:  " << HexDump(in)
+      << "Expected: " << HexDump(out)
+      << "Got:      " << HexDump(Slice(fs));
+  }
 }
 
 }

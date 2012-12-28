@@ -10,6 +10,7 @@
 
 #include "common/types.h"
 #include "common/common.pb.h"
+#include "common/key_encoder.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/strcat.h"
@@ -266,6 +267,30 @@ public:
       indexes->push_back((*iter).second);
     }
     return Status::OK();
+  }
+
+
+  // Encode the key portion of the given row into a buffer
+  // such that the buffer's lexicographic comparison represents
+  // the proper comparison order of the underlying types.
+  void EncodeComparableKey(const Slice &row,
+                           faststring *dst) {
+    KeyEncoder enc(dst);
+    for (size_t i = 0; i < num_key_columns_; i++) {
+      const TypeInfo &ti = cols_[i].type_info();
+
+      switch (ti.type()) {
+        case UINT32:
+          enc.EncodeUInt32(*ExtractColumnFromRow<UINT32>(row, i));
+          break;
+        case STRING:
+          enc.EncodeBytes(*ExtractColumnFromRow<STRING>(row, i));
+          break;
+        default:
+          CHECK(0) << "Unknown type: " << ti.name();
+      }
+    }
+    
   }
 
   // Stringify this Schema. This is not particularly efficient,
