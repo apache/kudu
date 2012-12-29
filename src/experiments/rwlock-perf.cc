@@ -9,14 +9,12 @@
 
 #include "gutil/walltime.h"
 
+#include <unistd.h>
+
 DEFINE_int32(num_threads, 8, "Number of threads to test");
 
 using namespace std;
 
-struct shared_data {
-  boost::shared_mutex rwlock;
-  boost::mutex lock;
-};
 
 class my_spinlock : public boost::detail::spinlock
 { 
@@ -31,6 +29,47 @@ public:
   }
 
 }; 
+
+
+struct per_cpu_lock {
+  struct padded_lock {
+    my_spinlock lock;
+    char padding[CACHELINE_SIZE - sizeof(my_spinlock)];
+  };
+
+  per_cpu_lock() {
+    errno = 0;
+    n_cpus_ = sysconf(_SC_NPROCESSORS_CONF);
+    CHECK_EQ(errno, 0) << strerror(errno);
+    CHECK_GT(n_cpus_, 0);
+    locks_ = new padded_lock[n_cpus_];
+  }
+
+  ~per_cpu_lock() {
+    delete [] locks_;
+  }
+
+  my_spinlock *get_lock() {
+    int cpu = sched_getcpu();
+    CHECK_LT(cpu, n_cpus_);
+    return &locks_[cpu].lock;
+  }
+
+  int n_cpus_;
+  padded_lock *locks_;
+
+};
+
+
+struct shared_data {
+  shared_data() {
+    errno = 0;
+  }
+
+  boost::shared_mutex rwlock;
+  boost::mutex lock;
+  per_cpu_lock per_cpu;
+};
 
 
 class noop_lock {
@@ -91,12 +130,25 @@ void own_mutex_entry() {
   depend_on(result);
 }
 
+void cpuid_spinlock_entry(shared_data *shared) {
+  float result = 1;
+  for (int i = 0; i < 1000000; i++) {
+    my_spinlock *l = shared->per_cpu.get_lock();
+    l->lock();
+    result += workload(result);
+    l->unlock();
+  }
+
+  depend_on(result);
+}
+
 
 enum TestMethod {
   SHARED_RWLOCK,
   SHARED_MUTEX,
   OWN_MUTEX,
   OWN_SPINLOCK,
+  CPUID_SPINLOCK,
   NO_LOCK
 };
 
@@ -128,6 +180,10 @@ void test_shared_lock(int num_threads,
         threads.push_back(new boost::thread(
                             own_mutex_entry<noop_lock>));
         break;
+      case CPUID_SPINLOCK:
+        threads.push_back(new boost::thread(
+                            cpuid_spinlock_entry, &shared));
+        break;
       default:
         CHECK(0) << "bad method: " << method;
     }
@@ -150,11 +206,12 @@ int main(int argc, char **argv) {
   for (int num_threads = 1;
        num_threads < FLAGS_num_threads;
        num_threads++) {
-    test_shared_lock(num_threads, SHARED_RWLOCK, "shared_rwlock");
-    test_shared_lock(num_threads, SHARED_MUTEX, "shared_mutex");
+//    test_shared_lock(num_threads, SHARED_RWLOCK, "shared_rwlock");
+//    test_shared_lock(num_threads, SHARED_MUTEX, "shared_mutex");
     test_shared_lock(num_threads, OWN_MUTEX, "own_mutex");
     test_shared_lock(num_threads, OWN_SPINLOCK, "own_spinlock");
     test_shared_lock(num_threads, NO_LOCK, "no_lock");
+    test_shared_lock(num_threads, CPUID_SPINLOCK, "cpuid_lock");
   }
 
 }
