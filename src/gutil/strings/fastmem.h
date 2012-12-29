@@ -67,11 +67,14 @@ inline bool memeq(const char* a, const char* b, size_t n) {
   return n == 0 || UNALIGNED_LOAD64(a) == UNALIGNED_LOAD64(b);
 }
 
-inline int fastmemcmp_inlined(const char *a, const char *b, size_t n) {
+inline int fastmemcmp_inlined(const void *a_void, const void *b_void, size_t n) {
+  const uint8_t *a = reinterpret_cast<const uint8_t *>(a_void);
+  const uint8_t *b = reinterpret_cast<const uint8_t *>(b_void);
+
   if (n >= 64) {
     return memcmp(a, b, n);
   }
-  const char* a_limit = a + n;
+  const void* a_limit = a + n;
   const size_t sizeof_uint64 = sizeof(uint64);  // NOLINT(runtime/sizeof)
   while (a + sizeof_uint64 <= a_limit &&
          UNALIGNED_LOAD64(a) == UNALIGNED_LOAD64(b)) {
