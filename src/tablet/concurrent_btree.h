@@ -449,7 +449,7 @@ public:
     bool exact;
     size_t idx = Find(key, &exact);
     CHECK(!exact)
-      << "Trying to insert duplicate key " << key.ToString()
+      << "Trying to insert duplicate key " << key.ToDebugString()
       << " into an internal node! Internal node keys should result "
       << " from splits and therefore be unique.";
 
@@ -720,10 +720,11 @@ public:
       }
       Slice k = key_bag_.Get(i);
       Slice v = val_bag_.Get(i);
-
-      StringAppendF(&ret, "[%.*s=%.*s]",
-                    (int)k.size(), k.data(),
-                    (int)v.size(), v.data());
+      ret.append("[");
+      ret.append(k.ToDebugString());
+      ret.append("=");
+      ret.append(v.ToDebugString());
+      ret.append("]");
     }
     return ret;
   }
@@ -1082,7 +1083,7 @@ private:
           DebugPrint(inode->child_pointers_[i], inode, indent + 4);
           if (i < inode->key_count()) {
             SStringPrintf(&buf, "%*sKEY ", indent + 2, "");
-            buf.append(inode->GetKey(i).ToString());
+            buf.append(inode->GetKey(i).ToDebugString());
             LOG(INFO) << buf;
           }
         }
@@ -1340,8 +1341,8 @@ private:
     dst_leaf->PrepareMutation(mutation);
 
     CHECK_EQ(INSERT_SUCCESS, dst_leaf->Insert(mutation, val))
-      << "TODO: node split at " << split_key.ToString()
-      << " did not result in enough space for key " << key.ToString()
+      << "TODO: node split at " << split_key.ToDebugString()
+      << " did not result in enough space for key " << key.ToDebugString()
       << " in left node";
 
     // Insert the new node into the parents.
@@ -1389,7 +1390,7 @@ private:
       case INSERT_SUCCESS:
       {
         VLOG(3) << "Inserted new entry into internal node "
-                << parent << " for " << split_key.ToString();
+                << parent << " for " << split_key.ToDebugString();
         left->Unlock();
         right->Unlock();
         parent->Unlock();
@@ -1410,8 +1411,8 @@ private:
           (split_key.compare(inode_split) < 0) ? parent : new_inode;
 
         VLOG(2) << "Split internal node " << parent << " for insert of "
-                << split_key.ToString() << "[" << right << "]"
-                << " (split at " << inode_split.ToString() << ")";
+                << split_key.ToDebugString() << "[" << right << "]"
+                << " (split at " << inode_split.ToDebugString() << ")";
 
         CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr));
 
