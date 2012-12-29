@@ -21,6 +21,7 @@
 #include <string>
 #include "faststring.h"
 #include "gutil/strings/fastmem.h"
+#include "gutil/stringprintf.h"
 
 namespace kudu {
 
@@ -73,6 +74,27 @@ class Slice {
 
   // Return a string that contains the copy of the referenced data.
   std::string ToString() const { return std::string(data_, size_); }
+
+  std::string ToDebugString() const {
+    int size = 0;
+    for (int i = 0; i < size_; i++) {
+      if (!isgraph(data_[i])) {
+        size += 4;
+      } else {
+        size++;
+      }
+    }
+    std::string ret;
+    ret.reserve(size);
+    for (int i = 0; i < size_; i++) {
+      if (!isgraph(data_[i])) {
+        StringAppendF(&ret, "\\x%02x", data_[i] & 0xff);
+      } else {
+        ret.push_back(data_[i]);
+      }
+    }
+    return ret;
+  }
 
   // Three-way comparison.  Returns value:
   //   <  0 iff "*this" <  "b",
