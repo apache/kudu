@@ -3,17 +3,16 @@
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
 #include <boost/noncopyable.hpp>
-#include <map>
 
 #include "common/columnblock.h"
 #include "common/schema.h"
+#include "tablet/concurrent_btree.h"
 #include "tablet/rowdelta.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
 namespace tablet {
 
-using std::map;
 
 class DeltaFileWriter;
 
@@ -40,7 +39,7 @@ public:
                     ColumnBlock *dst) const;
 
   size_t Count() const {
-    return map_.size();
+    return tree_.count();
   }
 
   Status FlushToFile(DeltaFileWriter *dfw) const;
@@ -52,11 +51,19 @@ private:
     return schema_;
   }
 
+  RowDelta DecodeDelta(Slice &val) const;
+  uint32_t DecodeKey(const Slice &key) const;
+
   const Schema schema_;
 
-  typedef map<uint32_t, RowDelta> DMSMap;
+  typedef btree::CBTree<btree::BTreeTraits> DMSTree;
+  typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
 
-  DMSMap map_;
+  // Concurrent B-Tree storing <key index> -> RowDelta
+  // TODO:
+  // Performance could be improved by storing the row delta data inline
+  // in the leaf nodes, rather than storing pointers 
+  DMSTree tree_;
 
   Arena arena_;
 };

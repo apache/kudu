@@ -4,9 +4,23 @@
 
 #include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
+#include "util/hexdump.h"
 #include "util/status.h"
 
 namespace kudu { namespace tablet {
+
+struct EncodedKeySlice : public Slice {
+public:
+  EncodedKeySlice(uint32_t row_idx) :
+    Slice(reinterpret_cast<const char *>(&buf_int_),
+          sizeof(uint32_t)),
+    buf_int_(htonl(row_idx))
+  {
+  }
+
+private:
+  uint32_t buf_int_;
+};
 
 ////////////////////////////////////////////////////////////
 // DeltaMemStore implementation
@@ -21,27 +35,26 @@ DeltaMemStore::DeltaMemStore(const Schema &schema) :
 
 void DeltaMemStore::Update(uint32_t row_idx,
                            const RowDelta &update) {
-  DMSMap::iterator it = map_.lower_bound(row_idx);
-  // returns the first index >= row_idx
+  EncodedKeySlice key(row_idx);
 
-  if ((it != map_.end()) &&
-      ((*it).first == row_idx)) {
-    // Found an exact match, just merge the update in, no need to copy the
-    // update into arena
-    (*it).second.MergeUpdatesFrom(schema_, update, &arena_);
-    return;
-  } else if (PREDICT_TRUE(it != map_.begin())) {
-    // Rewind the iterator to the previous entry, to act as an insertion
-    // hint
-    --it;
+  btree::PreparedMutation<btree::BTreeTraits> mutation(key);
+  mutation.Prepare(&tree_);
+  if (mutation.exists()) {
+    // This row was already updated - just merge the new updates
+    // in with the old.
+    Slice cur_val = mutation.current_mutable_value();
+
+    RowDelta cur_delta = DecodeDelta(cur_val);
+    cur_delta.MergeUpdatesFrom(schema_, update, &arena_);
+  } else {
+    // This row hasn't been updated. Create a new delta for it.
+    // Copy the update into the arena.
+    // TODO: no need to copy the update - just need to copy the
+    // referred-to data!
+    RowDelta copied = update.CopyToArena(schema_, &arena_);
+    Slice new_val(reinterpret_cast<char *>(&copied), sizeof(copied));
+    mutation.Insert(new_val);
   }
-
-  // Otherwise, copy the update into the arena.
-  RowDelta copied = update.CopyToArena(schema_, &arena_);
-
-
-  DMSMap::value_type pair(row_idx, copied);
-  it = map_.insert(it, pair);
 }
 
 
@@ -52,21 +65,56 @@ void DeltaMemStore::ApplyUpdates(
   DCHECK_EQ(schema_.column(col_idx).type_info().type(),
             dst->type_info().type());
 
-  DMSMap::const_iterator it = map_.lower_bound(start_row);
-  while (it != map_.end() &&
-         (*it).first < start_row + dst->size()) {
-    uint32_t rel_idx = (*it).first - start_row;
-    (*it).second.ApplyColumnUpdate(schema_, col_idx,
-                                   dst->cell_ptr(rel_idx));
-    ++it;
+  scoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+
+  EncodedKeySlice start_key(start_row);
+
+  bool exact;
+  if (!iter->SeekAtOrAfter(start_key, &exact)) {
+    // No updates matching this row or higher
+    return;
+  }
+
+  while (iter->IsValid()) {
+    Slice key, val;
+    iter->GetCurrentEntry(&key, &val);
+    uint32_t decoded_key = DecodeKey(key);
+    DCHECK_GE(decoded_key, start_row);
+    if (decoded_key > start_row + dst->size()) {
+      break;
+    }
+
+    uint32_t rel_idx = decoded_key - start_row;
+
+    RowDelta delta = DecodeDelta(val);
+    delta.ApplyColumnUpdate(schema_, col_idx,
+                            dst->cell_ptr(rel_idx));
+    iter->Next();
   }
 }
 
 Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
-  BOOST_FOREACH(DMSMap::value_type entry, map_) {
-    dfw->AppendDelta(entry.first, entry.second);
+  scoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  iter->SeekToStart();
+  while (iter->IsValid()) {
+    Slice key, val;
+    iter->GetCurrentEntry(&key, &val);
+    uint32_t row_idx = DecodeKey(key);
+    RowDelta delta = DecodeDelta(val);
+    dfw->AppendDelta(row_idx, delta);
+    iter->Next();
   }
   return Status::OK();
+}
+
+uint32_t DeltaMemStore::DecodeKey(const Slice &key) const {
+  DCHECK_EQ(sizeof(uint32_t), key.size());
+  return ntohl(*reinterpret_cast<const uint32_t *>(key.data()));
+}
+
+RowDelta DeltaMemStore::DecodeDelta(Slice &val) const {
+  DCHECK_EQ(sizeof(RowDelta), val.size());
+  return *reinterpret_cast<RowDelta *>(val.mutable_data());
 }
 
 

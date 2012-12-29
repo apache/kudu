@@ -157,7 +157,7 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
   // we're comparing against!
   char buf2[256];
   for (uint32_t i = 0; i < 1000; i++) {
-    ASSERT_EQ(i * 10, read_back[i]);
+    ASSERT_EQ(i * 10, read_back[i]) << "failed at iteration " << i;
     snprintf(buf2, sizeof(buf2), "hello %d", i);
     Slice s(buf2);
     ASSERT_EQ(0, s.compare(read_back_slices[i]));

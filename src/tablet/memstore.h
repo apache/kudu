@@ -51,7 +51,9 @@ public:
   // Return the number of entries in the memstore.
   // NOTE: this requires iterating all data, and is thus
   // not very fast.
-  size_t entry_count() const;
+  size_t entry_count() const {
+    return tree_.count();
+  }
 
   // Return the memory footprint of this memstore.
   // Note that this may be larger than the sum of the data
@@ -134,8 +136,7 @@ public:
   }
 
   void SeekToStart() {
-    bool exact;
-    iter_->SeekAtOrAfter(Slice(""), &exact);
+    iter_->SeekToStart();
   }
 
 private:

@@ -17,16 +17,6 @@ MemStore::MemStore(const Schema &schema) :
   arena_(kInitialArenaSize, kMaxArenaBufferSize)
 {}
 
-size_t MemStore::entry_count() const {
-  boost::scoped_ptr<Iterator> iter(NewIterator());
-  size_t count = 0;
-  while (iter->IsValid()) {
-    count++;
-    iter->Next();
-  }
-  return count;
-}
-
 void MemStore::DebugDump() {
   scoped_ptr<Iterator> iter(NewIterator());
   while (iter->IsValid()) {

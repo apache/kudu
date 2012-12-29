@@ -966,8 +966,25 @@ public:
       }
     }
   }
+
   CBTreeIterator<Traits> *NewIterator() const {
     return new CBTreeIterator<Traits>(this);
+  }
+
+  // Return the current number of elements in the tree.
+  //
+  // Note that this requires iterating through the entire tree,
+  // so it is not very efficient.
+  size_t count() const {
+    boost::scoped_ptr<CBTreeIterator<Traits> > iter(NewIterator());
+    bool exact;
+    iter->SeekAtOrAfter(Slice(""), &exact);
+    size_t count = 0;
+    while (iter->IsValid()) {
+      count++;
+      iter->Next();
+    }
+    return count;
   }
 
 private:
@@ -1434,6 +1451,11 @@ private:
 template<class Traits>
 class CBTreeIterator : boost::noncopyable {
 public:
+  bool SeekToStart() {
+    bool exact;
+    return SeekAtOrAfter(Slice(""), &exact);
+  }
+
   bool SeekAtOrAfter(const Slice &key, bool *exact) {
     SeekToLeaf(key);
     SeekInLeaf(key, exact);

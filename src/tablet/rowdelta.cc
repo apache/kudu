@@ -9,12 +9,6 @@
 
 namespace kudu { namespace tablet {
 
-RowDelta::RowDelta(const Schema &schema,
-                   uint8_t *data) :
-  data_(data) {
-  DCHECK(data != NULL);
-}
-
 RowDelta RowDelta::CopyToArena(const Schema &schema, Arena *arena) const {
   void *copied_data = arena->AddBytes(data_, SizeForSchema(schema));
   CHECK(copied_data) << "failed to allocate";

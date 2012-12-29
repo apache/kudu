@@ -17,7 +17,10 @@ namespace tablet {
 struct RowDelta {
 public:
   RowDelta(const Schema &schema,
-           uint8_t *data);
+           uint8_t *data)  :
+    data_(data) {
+    DCHECK(data != NULL);
+  }
 
   // Return the number of bytes of storage needed for a row delta.
   static size_t SizeForSchema(const Schema &schema) {
@@ -111,6 +114,9 @@ private:
   // The underlying data. Format
   // [bitset of updated columns]  (width: 1 bit per column in the schema)
   // a row (with all columns present)
+  //
+  // TODO: Given that CBTree stores raw slices, now, do we ever persist these
+  // things? Can probably simplify this class significantly.
   uint8_t *data_;
 };
 
