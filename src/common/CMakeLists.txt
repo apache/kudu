@@ -11,7 +11,5 @@ MESSAGE("common srcs: ${COMMON_SRCS}\n\n")
 ADD_LIBRARY(kudu_common ${COMMON_SRCS})
 SET(KUDU_COMMON_LIBS kudu_common)
 
-
 # schema-test
-ADD_EXECUTABLE(schema-test schema-test.cc)
-TARGET_LINK_LIBRARIES(schema-test ${KUDU_TEST_LINK_LIBS})
+ADD_KUDU_TEST(schema-test)

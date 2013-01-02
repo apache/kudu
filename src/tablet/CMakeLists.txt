@@ -4,25 +4,9 @@ SET(TABLET_SRCS memstore.cc tablet.cc layer.cc rowdelta.cc deltamemstore.cc delt
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 
 # tablet-test
-ADD_EXECUTABLE(tablet-test tablet-test.cc)
-TARGET_LINK_LIBRARIES(tablet-test tablet ${KUDU_TEST_LINK_LIBS})
-
-# layer-test
-ADD_EXECUTABLE(layer-test layer-test.cc)
-TARGET_LINK_LIBRARIES(layer-test tablet ${KUDU_TEST_LINK_LIBS})
-
-# mt-layer-test
-ADD_EXECUTABLE(mt-layer-test mt-layer-test.cc)
-TARGET_LINK_LIBRARIES(mt-layer-test tablet ${KUDU_TEST_LINK_LIBS})
-
-# memstore-test
-ADD_EXECUTABLE(memstore-test memstore-test.cc)
-TARGET_LINK_LIBRARIES(memstore-test tablet ${KUDU_TEST_LINK_LIBS})
-
-# deltamemstore-test
-ADD_EXECUTABLE(deltamemstore-test deltamemstore-test.cc)
-TARGET_LINK_LIBRARIES(deltamemstore-test tablet ${KUDU_TEST_LINK_LIBS})
-
-# cbtree-test
-ADD_EXECUTABLE(cbtree-test cbtree-test.cc)
-TARGET_LINK_LIBRARIES(cbtree-test ${KUDU_TEST_LINK_LIBS})
+ADD_KUDU_TEST(tablet-test)
+ADD_KUDU_TEST(layer-test)
+ADD_KUDU_TEST(mt-layer-test)
+ADD_KUDU_TEST(memstore-test)
+ADD_KUDU_TEST(deltamemstore-test)
+ADD_KUDU_TEST(cbtree-test)

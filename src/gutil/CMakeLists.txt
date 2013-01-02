@@ -55,14 +55,9 @@ ADD_LIBRARY(gutil
 
 SET(GUTIL_LIBS gutil)
 
-ADD_EXECUTABLE(stack_trace_test ./exception/stack_trace_test.cc)
-TARGET_LINK_LIBRARIES(stack_trace_test gutil ${KUDU_TEST_LINK_LIBS})
-
-ADD_EXECUTABLE(coowned_pointer_test ./exception/coowned_pointer_test.cc)
-TARGET_LINK_LIBRARIES(coowned_pointer_test gutil ${KUDU_TEST_LINK_LIBS})
-
-ADD_EXECUTABLE(failureor_test ./exception/failureor_test.cc)
-TARGET_LINK_LIBRARIES(failureor_test gutil ${KUDU_TEST_LINK_LIBS})
+ADD_KUDU_TEST(exception/stack_trace_test)
+ADD_KUDU_TEST(exception/coowned_pointer_test)
+ADD_KUDU_TEST(exception/failureor_test)
 
 # Disabled: relies on some stuff from base/
 #ADD_EXECUTABLE(atomic_test ./atomic/atomic_test.cc)

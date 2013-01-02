@@ -70,6 +70,17 @@ SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 INCLUDE_DIRECTORIES(src)
 
 ############################################################
+# Testing
+############################################################
+FUNCTION(ADD_KUDU_TEST TEST_NAME)
+  ADD_EXECUTABLE(${TEST_NAME} ${TEST_NAME}.cc)
+  ADD_TEST(${TEST_NAME} ${TEST_NAME})
+  TARGET_LINK_LIBRARIES(${TEST_NAME} ${KUDU_TEST_LINK_LIBS})
+ENDFUNCTION()
+
+ENABLE_TESTING()
+
+############################################################
 # Dependencies
 ############################################################
 set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
@@ -117,7 +128,7 @@ set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
 # Linker setup
 ############################################################
 SET(KUDU_LINK_LIBS ${LIBS})
-SET(KUDU_TEST_LINK_LIBS cfile kudu_common kudu_util gutil ${KUDU_LINK_LIBS} gtest)
+SET(KUDU_TEST_LINK_LIBS tablet cfile kudu_common kudu_util gutil ${KUDU_LINK_LIBS} gtest)
 
 ############################################################
 # Subdirectories
