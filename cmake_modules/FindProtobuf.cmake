@@ -134,7 +134,10 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
 endfunction()
 
 
-find_path(PROTOBUF_INCLUDE_DIR google/protobuf/service.h)
+find_path(PROTOBUF_INCLUDE_DIR google/protobuf/service.h
+  ${THIRDPARTY_PREFIX}/include
+  NO_DEFAULT_PATH
+)
 
 # Google's provided vcproj files generate libraries with a "lib"
 # prefix on Windows
@@ -145,12 +148,18 @@ endif()
 
 find_library(PROTOBUF_LIBRARY NAMES protobuf
              DOC "The Google Protocol Buffers Library"
+             PATHS ${THIRDPARTY_PREFIX}/lib
+             NO_DEFAULT_PATH
 )
 find_library(PROTOBUF_PROTOC_LIBRARY NAMES protoc
              DOC "The Google Protocol Buffers Compiler Library"
+             PATHS ${THIRDPARTY_PREFIX}/lib
+             NO_DEFAULT_PATH
 )
 find_program(PROTOBUF_PROTOC_EXECUTABLE NAMES protoc
              DOC "The Google Protocol Buffers Compiler"
+             PATHS ${THIRDPARTY_PREFIX}/bin
+             NO_DEFAULT_PATH
 )
 
 mark_as_advanced(PROTOBUF_INCLUDE_DIR

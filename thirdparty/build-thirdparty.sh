@@ -19,6 +19,9 @@ GPERFTOOLS_DIR=$TP_DIR/gperftools-$GPERFTOOLS_VERSION
 GTEST_VERSION=1.6.0
 GTEST_DIR=$TP_DIR/gtest-$GTEST_VERSION
 
+PROTOBUF_VERSION=2.4.1
+PROTOBUF_DIR=$TP_DIR/protobuf-$PROTOBUF_VERSION
+
 ##############################
 
 # build gflags
@@ -40,3 +43,8 @@ make -j4 install
 cd $GTEST_DIR
 cmake .
 make -j4
+
+# build protobuf
+cd $PROTOBUF_DIR
+./configure --with-pic --disable-shared --prefix=$PREFIX
+make -j4 install
