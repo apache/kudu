@@ -1,6 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc
 #ifndef KUDU_UTIL_STOPWATCH_H
-#define KUDU_UTIL_STOPWATCH
+#define KUDU_UTIL_STOPWATCH_H
 
 #include <glog/logging.h>
 #include <time.h>
