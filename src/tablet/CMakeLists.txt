@@ -11,6 +11,10 @@ TARGET_LINK_LIBRARIES(tablet-test tablet ${KUDU_TEST_LINK_LIBS})
 ADD_EXECUTABLE(layer-test layer-test.cc)
 TARGET_LINK_LIBRARIES(layer-test tablet ${KUDU_TEST_LINK_LIBS})
 
+# mt-layer-test
+ADD_EXECUTABLE(mt-layer-test mt-layer-test.cc)
+TARGET_LINK_LIBRARIES(mt-layer-test tablet ${KUDU_TEST_LINK_LIBS})
+
 # memstore-test
 ADD_EXECUTABLE(memstore-test memstore-test.cc)
 TARGET_LINK_LIBRARIES(memstore-test tablet ${KUDU_TEST_LINK_LIBS})

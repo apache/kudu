@@ -53,7 +53,7 @@ void DeltaMemStore::Update(uint32_t row_idx,
     // referred-to data!
     RowDelta copied = update.CopyToArena(schema_, &arena_);
     Slice new_val(reinterpret_cast<char *>(&copied), sizeof(copied));
-    mutation.Insert(new_val);
+    CHECK(mutation.Insert(new_val));
   }
 }
 

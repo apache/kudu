@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
+#include <unistd.h>
 
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
@@ -50,7 +51,7 @@ protected:
     ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
 
     test_dir_ += StringPrintf(
-      "/TestLayer.%s.%ld", test_info->name(), time(NULL));
+      "/TestLayer.%s.%d.%ld", test_info->name(), getpid(), time(NULL));
 
   }
 
