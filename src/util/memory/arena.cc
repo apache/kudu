@@ -13,6 +13,8 @@
 // limitations under the License.
 //
 
+#include <boost/thread/mutex.hpp>
+
 #include "util/memory/arena.h"
 
 #include <algorithm>
@@ -31,18 +33,25 @@ Arena::Arena(BufferAllocator* const buffer_allocator,
     : buffer_allocator_(buffer_allocator),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
-  CHECK_NOTNULL(AddComponent(initial_buffer_size, 0));
+  AddComponent( CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)) );
 }
 
 Arena::Arena(size_t initial_buffer_size, size_t max_buffer_size)
     : buffer_allocator_(HeapBufferAllocator::Get()),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
-  CHECK_NOTNULL(AddComponent(initial_buffer_size, 0));
+  AddComponent( CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)) );
 }
 
 void* Arena::AllocateBytesFallback(const size_t size) {
-  // Need to allocate more space.
+  boost::lock_guard<boost::mutex> lock(component_lock_);
+
+  // It's possible another thread raced with us and already allocated
+  // a new component, in which case we should try the "fast path" again
+  void* result = current_->AllocateBytes(size);
+  if (PREDICT_FALSE(result != NULL)) return result;
+
+  // Really need to allocate more space.
   size_t next_component_size = min(2 * current_->size(), max_buffer_size_);
   // But, allocate enough, even if the request is large. In this case,
   // might violate the max_element_size bound.
@@ -59,29 +68,40 @@ void* Arena::AllocateBytesFallback(const size_t size) {
   CHECK_LE(size, minimal);
   CHECK_LE(minimal, next_component_size);
   // Now, just make sure we can actually get the memory.
-  Component* component = AddComponent(next_component_size, minimal);
+  Component* component = NewComponent(next_component_size, minimal);
   if (component == NULL) {
-    component = AddComponent(next_component_size, size);
+    component = NewComponent(next_component_size, size);
   }
   if (!component) return NULL;
+
   // Now, must succeed. The component has at least 'size' bytes.
-  void *result = component->AllocateBytes(size);
+  result = component->AllocateBytes(size);
   CHECK(result != NULL);
+
+  // Now add it to the arena.
+  AddComponent(component);
+
   return result;
 }
 
-Arena::Component* Arena::AddComponent(size_t requested_size,
+Arena::Component* Arena::NewComponent(size_t requested_size,
                                       size_t minimum_size) {
   Buffer* buffer = buffer_allocator_->BestEffortAllocate(requested_size,
                                                          minimum_size);
   if (buffer == NULL) return NULL;
-  current_ = new Component(buffer);
+  return new Component(buffer);
+}
+
+// LOCKING: component_lock_ must be held by the current thread.
+void Arena::AddComponent(Arena::Component *component) {
+  current_ = component;
   arena_.push_back(linked_ptr<Component>(current_));
   arena_footprint_ += current_->size();
-  return current_;
 }
 
 void Arena::Reset() {
+  boost::lock_guard<boost::mutex> lock(component_lock_);
+
   linked_ptr<Component> last = arena_.back();
   if (arena_.size() > 1) {
     arena_.clear();
@@ -94,7 +114,7 @@ void Arena::Reset() {
   // In debug mode release the last component too for (hopefully) better
   // detection of memory-related bugs (invalid shallow copies, etc.).
   arena_.clear();
-  CHECK_NOTNULL(AddComponent(last->size(), 0));
+  AddComponent( CHECK_NOTNULL(NewComponent(last->size(), 0)) );
 #endif
 }
 

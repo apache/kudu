@@ -26,6 +26,8 @@
 #include <vector>
 using std::vector;
 
+#include <boost/thread/mutex.hpp>
+
 #include <glog/logging.h>
 #include "gutil/logging-inl.h"
 #include "gutil/macros.h"
@@ -45,6 +47,10 @@ namespace kudu {
 // allocates a new buffer. Each subsequent buffer is 2x larger, than its
 // predecessor, until the maximum specified buffer size is reached.
 // The buffers are furnished by a designated allocator.
+//
+// This class is thread-safe with the fast path lock-free.
+// TODO: a future optimization would be to implement a non-threadsafe arena
+// for single-threaded use cases.
 class Arena {
  public:
   // Creates a new arena, with a single buffer of size up-to
@@ -113,13 +119,20 @@ class Arena {
   // Fallback for AllocateBytes non-fast-path
   void* AllocateBytesFallback(const size_t size);
 
-  Component* AddComponent(size_t requested_size, size_t minimum_size);
+  Component* NewComponent(size_t requested_size, size_t minimum_size);
+  void AddComponent(Component *component);
 
   BufferAllocator* const buffer_allocator_;
   vector<linked_ptr<Component> > arena_;
   Component* current_;
   const size_t max_buffer_size_;
   size_t arena_footprint_;
+
+  // Lock covering 'slow path' allocation, when new components are
+  // allocated and added to the arena's list. Also covers any other
+  // mutation of the component data structure (eg Reset).
+  boost::mutex component_lock_;
+
   DISALLOW_COPY_AND_ASSIGN(Arena);
 };
 
@@ -195,10 +208,19 @@ class Arena::Component {
   // Tries to reserve space in this component. Returns the pointer to the
   // reserved space if successful; NULL on failure (if there's no more room).
   void* AllocateBytes(const size_t size) {
-    if (PREDICT_TRUE(offset_ + size <= size_)) {
-      void* destination = data_ + offset_;
-      offset_ += size;
-      return destination;
+    retry:
+
+    Atomic32 offset = Acquire_Load(&offset_);
+    Atomic32 new_offset = offset + size;
+
+    if (PREDICT_TRUE(new_offset <= size_)) {
+      bool success = Acquire_CompareAndSwap(&offset_, offset, new_offset) == offset;
+      if (PREDICT_TRUE(success)) {
+        return data_ + offset;
+      } else {
+        // Raced with another allocator
+        goto retry;
+      }
     } else {
       return NULL;
     }
@@ -210,7 +232,7 @@ class Arena::Component {
  private:
   scoped_ptr<Buffer> buffer_;
   char* const data_;
-  size_t offset_;
+  Atomic32 offset_;
   const size_t size_;
   DISALLOW_COPY_AND_ASSIGN(Component);
 };

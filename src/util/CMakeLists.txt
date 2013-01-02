@@ -11,3 +11,7 @@ TARGET_LINK_LIBRARIES(bitmap-test ${KUDU_TEST_LINK_LIBS})
 # stringbag-test
 ADD_EXECUTABLE(stringbag-test stringbag-test.cc)
 TARGET_LINK_LIBRARIES(stringbag-test ${KUDU_TEST_LINK_LIBS})
+
+# arena-test
+ADD_EXECUTABLE(arena-test memory/arena-test.cc)
+TARGET_LINK_LIBRARIES(arena-test ${KUDU_TEST_LINK_LIBS})
