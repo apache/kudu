@@ -340,7 +340,10 @@ Status Layer::FlushDeltas() {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
 
     count = dms_->Count();
-    CHECK_GT(count, 0);
+    if (count == 0) {
+      // No need to flush if there are no deltas.
+      return Status::OK();
+    }
 
     unique_ptr<DeltaMemStore> old_dms_unique(dms_.release());
     dms_.reset(new DeltaMemStore(schema_));
