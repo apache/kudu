@@ -5,22 +5,8 @@ set -x
 set -e
 
 TP_DIR=$(readlink -f $(dirname $BASH_SOURCE))
-PREFIX=$TP_DIR/installed
 
-GFLAGS_VERSION=1.5
-GFLAGS_DIR=$TP_DIR/gflags-$GFLAGS_VERSION
-
-GLOG_VERSION=0.3.1
-GLOG_DIR=$TP_DIR/glog-$GLOG_VERSION
-
-GPERFTOOLS_VERSION=2.0
-GPERFTOOLS_DIR=$TP_DIR/gperftools-$GPERFTOOLS_VERSION
-
-GTEST_VERSION=1.6.0
-GTEST_DIR=$TP_DIR/gtest-$GTEST_VERSION
-
-PROTOBUF_VERSION=2.4.1
-PROTOBUF_DIR=$TP_DIR/protobuf-$PROTOBUF_VERSION
+source $TP_DIR/vars.sh
 
 ##############################
 
@@ -48,3 +34,7 @@ make -j4
 cd $PROTOBUF_DIR
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -j4 install
+
+
+echo "---------------------"
+echo "Thirdparty dependencies built and installed into $PREFIX successfully"
