@@ -146,7 +146,7 @@ TEST(TestStringBag, TestBoundaryCondition) {
 
 // Test inserting data until it's full, then truncating and re-inserting
 TEST(TestStringBag, TestCompactBag) {
-  char storage[400];
+  char storage[300];
   int width = 40;
   StringBag<uint32_t> *sb =
     new (storage) StringBag<uint32_t>(width, sizeof(storage));
