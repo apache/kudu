@@ -261,8 +261,13 @@ Status Layer::UpdateRow(const void *key,
   }
 
   uint32_t row_idx = key_iter->GetCurrentOrdinal();
+
   VLOG(1) << "updating row " << row_idx;
-  dms_->Update(row_idx, update);
+  {
+    boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
+    dms_->Update(row_idx, update);
+  }
 
   return Status::OK();
 }
@@ -285,9 +290,10 @@ Status Layer::CheckRowPresent(const void *key,
   return s;
 }
 
-
-Status Layer::FlushDeltas() {
-  string path = GetDeltaPath(dir_, next_delta_idx_++);
+Status Layer::FlushDMS(const DeltaMemStore &dms,
+                       DeltaFileReader **dfr) {
+  int delta_idx = next_delta_idx_++;
+  string path = GetDeltaPath(dir_, delta_idx);
 
   // Open file for write.
   WritableFile *out;
@@ -308,26 +314,65 @@ Status Layer::FlushDeltas() {
   s = dfw.Start();
   if (!s.ok()) {
     LOG(WARNING) << "Unable to start delta file writer for path " <<
-      delta_idx;
+      path;
     return s;
   }
-
-  // swap in a new delta memstore
-  scoped_ptr<DeltaMemStore> old_dms(new DeltaMemStore(schema_));
-  old_dms.swap(dms_);
-  size_t count = old_dms->Count();
-  CHECK_GT(count, 0);
-
-  RETURN_NOT_OK(old_dms->FlushToFile(&dfw));
+  RETURN_NOT_OK(dms.FlushToFile(&dfw));
   RETURN_NOT_OK(dfw.Finish());
-  LOG(INFO) << "Flushed " << count << " row deltas to " << path;
+  LOG(INFO) << "Flushed delta file: " << path;
 
   // Now re-open for read
-  DeltaFileReader *dfr;
-  RETURN_NOT_OK(DeltaFileReader::Open(env_, path, schema_, &dfr));
-  delta_trackers_.push_back(dfr);
-
+  RETURN_NOT_OK(DeltaFileReader::Open(env_, path, schema_, dfr));
   LOG(INFO) << "Reopened delta file for read: " << path;
+
+  return Status::OK();
+}
+
+Status Layer::FlushDeltas() {
+  // First, swap out the old DeltaMemStore with a new one,
+  // and add it to the list of delta trackers to be reflected
+  // in reads.
+  DeltaMemStore *old_dms;
+  size_t count;
+  {
+    // Lock the component_lock_ in exclusive mode.
+    // This shuts out any concurrent readers or writers.
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+
+    count = dms_->Count();
+    CHECK_GT(count, 0);
+
+    unique_ptr<DeltaMemStore> old_dms_unique(dms_.release());
+    dms_.reset(new DeltaMemStore(schema_));
+    old_dms = old_dms_unique.release();
+
+    delta_trackers_.push_back(old_dms);
+  }
+
+  LOG(INFO) << "Flushing " << count << " deltas...";
+
+  // Now, actually flush the contents of the old DMS.
+  // TODO: need another lock to prevent concurrent flushers
+  // at some point.
+  DeltaFileReader *dfr;
+  Status s = FlushDMS(*old_dms, &dfr);
+  CHECK(s.ok())
+    << "TODO: need to figure out what to do with error handling "
+    << "if this fails -- we end up with a DeltaMemStore permanently "
+    << "in the tracker list. For now, abort.";
+
+
+  // Now, re-take the lock and swap in the DeltaFileReader in place of
+  // of the DeltaMemStore
+  {
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    size_t idx = delta_trackers_.size() - 1;
+
+    CHECK_EQ(&delta_trackers_[idx], old_dms)
+      << "Another thread modified the delta tracker list during flush";
+    delta_trackers_.replace(idx, dfr);
+  }
+
   return Status::OK();
 
   // TODO: wherever we write stuff, we should write to a tmp path
@@ -380,18 +425,21 @@ Status Layer::ColumnIterator::CopyNextValues(size_t *n, ColumnBlock *dst) {
 
   ColumnBlock dst_block_valid = dst->SliceRange(0, base_copied);
 
-  // Apply deltas from memory.
-  layer_->dms_->ApplyUpdates(col_idx_, start_row, &dst_block_valid);
+  {
+    boost::shared_lock<boost::shared_mutex> lock(layer_->component_lock_);
+    // Apply deltas from memory.
+    layer_->dms_->ApplyUpdates(col_idx_, start_row, &dst_block_valid);
 
-  // Apply updates from all flushed deltas
-  // TODO: this causes the delta files to re-seek. this is no good.
-  // Instead, we should keep some kind of DeltaBlockIterator with the
-  // column iterator, so they iterate "with" each other and maintain the
-  // necessary state.
-  BOOST_FOREACH(const DeltaTrackerInterface &dt, layer_->delta_trackers_) {
-    RETURN_NOT_OK(dt.ApplyUpdates(col_idx_, start_row, &dst_block_valid));
+    // Apply updates from all flushed deltas
+    // TODO: this causes the delta files to re-seek. this is no good.
+    // Instead, we should keep some kind of DeltaBlockIterator with the
+    // column iterator, so they iterate "with" each other and maintain the
+    // necessary state.
+    BOOST_FOREACH(const DeltaTrackerInterface &dt, layer_->delta_trackers_) {
+      RETURN_NOT_OK(dt.ApplyUpdates(col_idx_, start_row, &dst_block_valid));
+    }
   }
-  
+
   return Status::OK();
 }
 

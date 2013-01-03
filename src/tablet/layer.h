@@ -8,8 +8,10 @@
 #define KUDU_TABLET_LAYER_H
 
 #include <boost/ptr_container/ptr_vector.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
 #include <string>
+#include <memory>
 
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
@@ -27,6 +29,7 @@ namespace tablet {
 
 using boost::ptr_vector;
 using std::string;
+using std::unique_ptr;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
@@ -153,6 +156,9 @@ private:
   Status OpenBaseCFileReaders();
   Status OpenDeltaFileReaders();
 
+  Status FlushDMS(const DeltaMemStore &dms,
+                  DeltaFileReader **dfr);
+
   Env *env_;
   const Schema schema_;
   const string dir_;
@@ -165,8 +171,18 @@ private:
   ptr_vector<cfile::CFileReader> cfile_readers_;
 
   // The current delta memstore into which updates should be written.
-  scoped_ptr<DeltaMemStore> dms_;
+  unique_ptr<DeltaMemStore> dms_;
   ptr_vector<DeltaTrackerInterface> delta_trackers_;
+
+  // read-write lock protecting dms_ and delta_trackers_.
+  // - Readers and mutators take this lock in shared mode.
+  // - Flushers take this lock in exclusive mode before they modify the
+  //   structure of the layer.
+  //
+  // TODO(perf): convert this to a reader-biased lock to avoid any cacheline
+  // contention between threads.
+  mutable boost::shared_mutex component_lock_;
+
 };
 
 // Iterator over a column in a layer, with deltas applied.

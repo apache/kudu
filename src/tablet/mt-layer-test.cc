@@ -21,6 +21,33 @@ public:
     UpdateExistingRows(l, 0.5f, &updated);
   }
 
+  void FlushThread(Layer *l) {
+    for (int i = 0; i < 10; i++) {
+      l->FlushDeltas();
+    }
+  }
+
+  void StartUpdaterThreads(boost::ptr_vector<boost::thread> *threads,
+                           Layer *l,
+                           int n_threads) {
+    for (int i = 0; i < n_threads; i++) {
+      threads->push_back(new boost::thread(
+                           &TestMultiThreadedLayer::LayerUpdateThread, this,
+                           l));
+    }
+  }
+
+  void StartFlushThread(boost::ptr_vector<boost::thread> *threads,
+                        Layer *l) {
+    threads->push_back(new boost::thread(
+                         &TestMultiThreadedLayer::FlushThread, this, l));
+  }
+
+  void JoinThreads(boost::ptr_vector<boost::thread> &threads) {
+    BOOST_FOREACH(boost::thread &thr, threads) {
+      thr.join();
+    }
+  }
 };
 
 
@@ -33,15 +60,27 @@ TEST_F(TestMultiThreadedLayer, TestMTUpdate) {
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;
-  for (int i = 0; i < FLAGS_num_threads; i++) {
-    threads.push_back(new boost::thread(
-                        &TestMultiThreadedLayer::LayerUpdateThread, this,
-                        &l));
-  }
+  StartUpdaterThreads(&threads, &l, FLAGS_num_threads);
 
-  BOOST_FOREACH(boost::thread &thr, threads) {
-    thr.join();
-  }
+  JoinThreads(threads);
+}
+
+TEST_F(TestMultiThreadedLayer, TestMTUpdateAndFlush) {
+  WriteTestLayer();
+
+  // Re-open the layer
+  Layer l(env_, schema_, test_dir_);
+  ASSERT_STATUS_OK(l.Open());
+
+  // Spawn a bunch of threads, each of which will do updates.
+  boost::ptr_vector<boost::thread> threads;
+  StartUpdaterThreads(&threads, &l, FLAGS_num_threads);
+  StartFlushThread(&threads, &l);
+
+  JoinThreads(threads);
+
+  // TODO: test that updates were successful -- collect the updated
+  // row lists from all the threads, and verify them.
 }
 
 } // namespace tablet
