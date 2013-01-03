@@ -45,9 +45,7 @@ endif(NOT CMAKE_BUILD_TYPE)
 STRING (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 
 # Set compile flags based on the build type.
-message("Configured CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
-message("(set build type with cmake -DCMAKE_BUILD_TYPE={release,debug,...})")
-message("")
+message("Configured for ${CMAKE_BUILD_TYPE} build (set with cmake -DCMAKE_BUILD_TYPE={release,debug,...})")
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG")
   SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_DEBUG})
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")

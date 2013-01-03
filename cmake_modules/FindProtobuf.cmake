@@ -101,7 +101,6 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
     FILE(RELATIVE_PATH PROTO_REL_TO_ROOT "${ARG_SOURCE_ROOT}" "${ABS_FIL}")
 
     GET_FILENAME_COMPONENT(REL_DIR "${PROTO_REL_TO_ROOT}" PATH)
-    message("rel dir of '${ABS_FIL}' from '${ARG_SOURCE_ROOT}': ${REL_DIR}")
 
     if(NOT REL_DIR STREQUAL "")
       SET(REL_DIR "${REL_DIR}/")
@@ -109,7 +108,6 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
 
     set(PROTO_CC_OUT "${ARG_BINARY_ROOT}/${REL_DIR}${FIL_WE}.pb.cc")
     set(PROTO_H_OUT "${ARG_BINARY_ROOT}/${REL_DIR}${FIL_WE}.pb.h")
-    message("pccout is: ${PROTO_CC_OUT}")
     list(APPEND ${SRCS} "${PROTO_CC_OUT}")
     list(APPEND ${HDRS} "${PROTO_H_OUT}")
 
@@ -128,8 +126,6 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
 
   set_source_files_properties(${${SRCS}} ${${HDRS}} PROPERTIES GENERATED TRUE)
   set(${SRCS} ${${SRCS}} PARENT_SCOPE)
-  message("set ${SRCS} to '${${SRCS}}'")
-
   set(${HDRS} ${${HDRS}} PARENT_SCOPE)
 endfunction()
 
