@@ -289,8 +289,7 @@ TEST(TestCBTree, TestInsertAndVerifyRandom) {
   char vbuf_out[64];
 
   int n_keys = 100000;
-  std::unordered_set<int> inserted;
-  inserted.reserve(n_keys);
+  std::unordered_set<int> inserted(n_keys);
 
   InsertRandomKeys(&t, n_keys, &inserted);
 
@@ -418,8 +417,7 @@ TEST(TestCBTree, TestIterator) {
   CBTree<SmallFanoutTraits> t;
 
   int n_keys = 100000;
-  std::unordered_set<int> inserted;
-  inserted.reserve(n_keys);
+  std::unordered_set<int> inserted(n_keys);
   InsertRandomKeys(&t, n_keys, &inserted);
 
   // now iterate through, making sure we saw all

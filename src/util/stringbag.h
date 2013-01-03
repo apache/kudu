@@ -59,8 +59,10 @@ class StringBag {
   //    len: length of the item in slot N
   // <item data>
 
-  static constexpr int half_num_bits = (8 * sizeof(InfoType)) / 2;
-  static constexpr int max_halfinfo = (1 << half_num_bits) - 1;
+  enum {
+    half_num_bits = (8 * sizeof(InfoType)) / 2,
+    max_halfinfo = (1 << half_num_bits) - 1
+  };
 
   struct header_type {
     unsigned int free_space_pos : half_num_bits;

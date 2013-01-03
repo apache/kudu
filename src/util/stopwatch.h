@@ -18,6 +18,7 @@ namespace kudu {
        !_l.has_printed();                                               \
        _l.Print())
 
+#define NANOS_PER_SECOND 1000000000.0
 
 class Stopwatch;
 
@@ -30,8 +31,6 @@ struct CpuTimes
   nanosecond_type system;
 
   void clear() { wall = user = system = 0LL; }
-
-  static constexpr double NANOS_PER_SECOND = 1000000000.0;
 
   std::string ToString() const {
     return StringPrintf(

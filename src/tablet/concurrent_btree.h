@@ -546,15 +546,15 @@ public:
   }
 
   uint32_t num_children_;
-  static constexpr int storage_size = Traits::internal_node_size
-    - sizeof(NodeBase<Traits>)
-    - sizeof(num_children_)
-    - (sizeof(void *) * Traits::fanout); // child_pointers_
+  enum {
+    storage_size = Traits::internal_node_size
+      - sizeof(NodeBase<Traits>)
+      - sizeof(num_children_)
+      - (sizeof(void *) * Traits::fanout) // child_pointers_
+  };
 
-  union {
-    StringBag<uint16_t> key_bag_;
-    char storage_[storage_size];
-  } PACKED;
+  StringBag<uint16_t> key_bag_;
+  char storage_[storage_size - sizeof(key_bag_)];
 
   NodePtr<Traits> child_pointers_[Traits::fanout];
 } PACKED;
@@ -737,21 +737,20 @@ private:
   LeafNode<Traits> *next_;
 
   uint16_t num_entries_;
-  static constexpr int storage_size = Traits::leaf_node_size
-    - sizeof(NodeBase<Traits>)
-    - sizeof(num_entries_)
-    - sizeof(next_);
+  enum {
+    storage_size = Traits::leaf_node_size
+      - sizeof(NodeBase<Traits>)
+      - sizeof(num_entries_)
+      - sizeof(next_)
+  };
 
   // TODO: combine keys and values into the same bag
   // so there isn't a stupid 50/50 split between them
-  union {
-    StringBag<typename Traits::leaf_key_bag_storage_type> key_bag_;
-    char key_storage_[storage_size/2];
-  } PACKED;
-  union {
-    StringBag<typename Traits::leaf_val_bag_storage_type> val_bag_;
-    char val_storage_[storage_size/2];
-  } PACKED;
+  StringBag<typename Traits::leaf_key_bag_storage_type> key_bag_;
+  char key_storage_[storage_size/2 - sizeof(key_bag_)];
+  
+  StringBag<typename Traits::leaf_val_bag_storage_type> val_bag_;
+  char val_storage_[storage_size/2 - sizeof(val_bag_)];
 } PACKED;
 
 
