@@ -287,10 +287,7 @@ Status Layer::CheckRowPresent(const void *key,
 
 
 Status Layer::FlushDeltas() {
-  // TODO: should use something more unique and monotonic than
-  // time() here...
-  int delta_idx = time(NULL);
-  string path = GetDeltaPath(dir_, delta_idx);
+  string path = GetDeltaPath(dir_, next_delta_idx_++);
 
   // Open file for write.
   WritableFile *out;
