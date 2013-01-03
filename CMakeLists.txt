@@ -89,6 +89,9 @@ set(LIBS ${LIBS} -lrt)
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
 set(Boost_NO_BOOST_CMAKE ON)
 
+### Always static link
+set(Boost_USE_STATIC_LIBS ON)
+
 find_package(Boost COMPONENTS thread system REQUIRED)
 include_directories( ${Boost_INCLUDE_DIR} )
 set(LIBS ${LIBS} ${Boost_LIBRARIES})
