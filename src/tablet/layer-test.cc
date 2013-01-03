@@ -114,25 +114,38 @@ TEST_F(TestLayer, TestLayerUpdate) {
 TEST_F(TestLayer, TestDMSFlush) {
   WriteTestLayer();
 
-  // Now open the Layer for read
-  Layer l(env_, schema_, test_dir_);
-  ASSERT_STATUS_OK(l.Open());
-
-  // Add an update to the delta tracker for a number of keys
-  // which exist. These updates will change the value to
-  // equal idx*5 (whereas in the original data, value = idx)
   unordered_set<uint32_t> updated;
-  UpdateExistingRows(&l, 0.01f, &updated);
-  ASSERT_EQ(updated.size(), l.dms_->Count());
 
-  l.FlushDeltas();
+  // Now open the Layer for read
+  {
+    Layer l(env_, schema_, test_dir_);
+    ASSERT_STATUS_OK(l.Open());
 
-  // Check that the Layer's DMS has now been emptied.
-  ASSERT_EQ(0, l.dms_->Count());
+    // Add an update to the delta tracker for a number of keys
+    // which exist. These updates will change the value to
+    // equal idx*5 (whereas in the original data, value = idx)
+    UpdateExistingRows(&l, 0.01f, &updated);
+    ASSERT_EQ(updated.size(), l.dms_->Count());
 
-  // Now read back the value column, and verify that the updates
-  // are visible.
-  VerifyUpdates(l, updated);
+    l.FlushDeltas();
+
+    // Check that the Layer's DMS has now been emptied.
+    ASSERT_EQ(0, l.dms_->Count());
+
+    // Now read back the value column, and verify that the updates
+    // are visible.
+    VerifyUpdates(l, updated);
+  }
+
+  // Close and re-open the layer and ensure that the updates were
+  // persistent.
+  {
+    Layer l(env_, schema_, test_dir_);
+    ASSERT_STATUS_OK(l.Open());
+    // Now read back the value column, and verify that the updates
+    // are visible.
+    VerifyUpdates(l, updated);
+  }
 }
 
 } // namespace tablet

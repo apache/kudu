@@ -78,6 +78,7 @@ public:
     env_(env),
     schema_(schema),
     dir_(layer_dir),
+    next_delta_idx_(0),
     open_(false),
     dms_(new DeltaMemStore(schema))
   {}
@@ -149,10 +150,13 @@ private:
     return Status::OK();
   }
 
+  Status OpenBaseCFileReaders();
+  Status OpenDeltaFileReaders();
 
   Env *env_;
   const Schema schema_;
   const string dir_;
+  uint32_t next_delta_idx_;
 
   bool open_;
 

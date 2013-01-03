@@ -1,11 +1,14 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include <algorithm>
 #include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
 
 #include "common/schema.h"
 #include "cfile/cfile.h"
+#include "gutil/strings/numbers.h"
+#include "gutil/strings/strip.h"
 #include "tablet/deltafile.h"
 #include "tablet/layer.h"
 #include "util/env.h"
@@ -19,18 +22,23 @@ using std::auto_ptr;
 using std::string;
 using std::tr1::shared_ptr;
 
+static const string kDeltaPrefix = "delta_";
+static const string kColumnPrefix = "col_";
+
 // Return the path at which the given column's cfile
 // is stored within the layer directory.
 static string GetColumnPath(const string &dir,
                             int col_idx) {
-  return dir + "/col_" + boost::lexical_cast<string>(col_idx);
+  return dir + "/" + kColumnPrefix +
+    boost::lexical_cast<string>(col_idx);
 }
 
 // Return the path at which the given delta file
 // is stored within the layer directory.
 static string GetDeltaPath(const string &dir,
                            int delta_idx) {
-  return dir + "/delta_" + boost::lexical_cast<string>(delta_idx);
+  return dir + "/" + kDeltaPrefix +
+    boost::lexical_cast<string>(delta_idx);
 }
 
 Status LayerWriter::Open() {
@@ -113,6 +121,18 @@ Status Layer::Open() {
   CHECK(!open_) << "Already open!";
   CHECK(cfile_readers_.empty()) << "Invalid state: should have no readers";
 
+  RETURN_NOT_OK(OpenBaseCFileReaders());
+  RETURN_NOT_OK(OpenDeltaFileReaders());
+
+  open_ = true;
+  return Status::OK();
+}
+
+// Open the CFileReaders for the "base data" in this layer.
+Status Layer::OpenBaseCFileReaders() {
+  CHECK(cfile_readers_.empty()) << "Should call this only before opening";
+  CHECK(!open_);
+
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
   for (int i = 0; i < schema_.num_columns(); i++) {
@@ -149,7 +169,51 @@ Status Layer::Open() {
       schema_.column(i).ToString() << " at " << path;
   }
 
-  open_ = true;
+  return Status::OK();
+}
+
+// Open any previously flushed DeltaFiles in this layer
+Status Layer::OpenDeltaFileReaders() {
+  CHECK(delta_trackers_.empty()) << "should call before opening any readers";
+  CHECK(!open_);
+
+  vector<string> children;
+  RETURN_NOT_OK(env_->GetChildren(dir_, &children));
+  BOOST_FOREACH(const string &child, children) {
+    // Skip hidden files (also '.' and '..')
+    if (child[0] == '.') continue;
+
+    string absolute_path = env_->JoinPathSegments(dir_, child);
+
+    string suffix;
+    if (TryStripPrefixString(child, kDeltaPrefix, &suffix)) {
+      // The file should be named 'delta_<N>'. N here is the index
+      // of the delta file (indicating the order in which it was flushed).
+      uint32_t delta_idx;
+      if (!safe_strtou32(suffix.c_str(), &delta_idx)) {
+        return Status::IOError(string("Bad delta file: ") + absolute_path);
+      }
+
+      DeltaFileReader *dfr;
+      Status s = DeltaFileReader::Open(env_, absolute_path, schema_, &dfr);
+      if (!s.ok()) {
+        LOG(ERROR) << "Failed to open delta file " << absolute_path << ": "
+                   << s.ToString();
+        return s;
+      }
+      LOG(INFO) << "Successfully opened delta file " << absolute_path;
+
+      delta_trackers_.push_back(dfr);
+
+      next_delta_idx_ = std::max(next_delta_idx_,
+                                 delta_idx + 1);
+    } else if (TryStripPrefixString(child, kColumnPrefix, &suffix)) {
+      // expected: column data
+    } else {
+      LOG(WARNING) << "ignoring unknown file: " << absolute_path;
+    }
+  }
+
   return Status::OK();
 }
 

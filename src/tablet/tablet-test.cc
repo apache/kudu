@@ -224,7 +224,7 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
 
 // Test that, when a tablet hsa flushed data and is
 // reopened, that the data persists
-TEST_F(TestTablet, TestDataPersists) {
+TEST_F(TestTablet, TestInsertsPersist) {
   InsertTestRows(1000);
 
   // Flush it.

@@ -48,7 +48,6 @@ Status Tablet::CreateNew() {
 
 Status Tablet::Open() {
   CHECK(!open_) << "already open";
-  // TODO: read metadata file, open layer readers for flushed files.
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
   // for now, just list the children, to make sure the dir exists.
@@ -67,13 +66,13 @@ Status Tablet::Open() {
       // of the layer (indicating the order in which it was flushed).
       uint32_t layer_idx;
       if (!safe_strtou32(suffix.c_str(), &layer_idx)) {
-        return Status::IOError(string("Bad layer file: ") + child);
+        return Status::IOError(string("Bad layer file: ") + absolute_path);
       }
 
       std::auto_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
       Status s = layer->Open();
       if (!s.ok()) {
-        LOG(ERROR) << "Failed to open layer " << child << ": "
+        LOG(ERROR) << "Failed to open layer " << absolute_path << ": "
                    << s.ToString();
         return s;
       }
@@ -83,7 +82,7 @@ Status Tablet::Open() {
       next_layer_idx_ = std::max(next_layer_idx_,
                                  (size_t)layer_idx + 1);
     } else {
-      LOG(WARNING) << "ignoring unknown file in " << dir_  << ": " << child;
+      LOG(WARNING) << "ignoring unknown file: " << absolute_path;
     }
   }
 
