@@ -264,7 +264,7 @@ Status Layer::FlushDeltas() {
   // Now re-open for read
   DeltaFileReader *dfr;
   RETURN_NOT_OK(DeltaFileReader::Open(env_, path, schema_, &dfr));
-  delta_readers_.push_back(dfr);
+  delta_trackers_.push_back(dfr);
 
   LOG(INFO) << "Reopened delta file for read: " << path;
   return Status::OK();
@@ -327,8 +327,8 @@ Status Layer::ColumnIterator::CopyNextValues(size_t *n, ColumnBlock *dst) {
   // Instead, we should keep some kind of DeltaBlockIterator with the
   // column iterator, so they iterate "with" each other and maintain the
   // necessary state.
-  BOOST_FOREACH(const DeltaFileReader &dfr, layer_->delta_readers_) {
-    RETURN_NOT_OK(dfr.ApplyUpdates(col_idx_, start_row, &dst_block_valid));
+  BOOST_FOREACH(const DeltaTrackerInterface &dt, layer_->delta_trackers_) {
+    RETURN_NOT_OK(dt.ApplyUpdates(col_idx_, start_row, &dst_block_valid));
   }
   
   return Status::OK();

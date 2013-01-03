@@ -8,6 +8,7 @@
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/layer-interfaces.h"
 
 namespace kudu {
 
@@ -52,14 +53,15 @@ private:
 };
 
 
-class DeltaFileReader : boost::noncopyable {
+class DeltaFileReader : public DeltaTrackerInterface, boost::noncopyable {
 public:
   // Open the Delta File at the given path.
   static Status Open(Env *env, const string &path,
                      const Schema &schema,
                      DeltaFileReader **reader);
 
-  Status ApplyUpdates(size_t col_idx, uint32_t start_row, ColumnBlock *dst) const;
+  Status ApplyUpdates(size_t col_idx, uint32_t start_row,
+                      ColumnBlock *dst) const /* override */;
 
 private:
   DeltaFileReader(const shared_ptr<RandomAccessFile> &file,

@@ -58,7 +58,7 @@ void DeltaMemStore::Update(uint32_t row_idx,
 }
 
 
-void DeltaMemStore::ApplyUpdates(
+Status DeltaMemStore::ApplyUpdates(
   size_t col_idx, uint32_t start_row,
   ColumnBlock *dst) const
 {
@@ -72,7 +72,7 @@ void DeltaMemStore::ApplyUpdates(
   bool exact;
   if (!iter->SeekAtOrAfter(start_key, &exact)) {
     // No updates matching this row or higher
-    return;
+    return Status::OK();
   }
 
   while (iter->IsValid()) {
@@ -91,6 +91,8 @@ void DeltaMemStore::ApplyUpdates(
                             dst->cell_ptr(rel_idx));
     iter->Next();
   }
+
+  return Status::OK();
 }
 
 Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {

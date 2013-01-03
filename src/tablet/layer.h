@@ -155,10 +155,14 @@ private:
   const string dir_;
 
   bool open_;
+
+  // Base data for this layer.
+  // This vector contains one entry for each column.
   ptr_vector<cfile::CFileReader> cfile_readers_;
 
+  // The current delta memstore into which updates should be written.
   scoped_ptr<DeltaMemStore> dms_;
-  ptr_vector<DeltaFileReader> delta_readers_;
+  ptr_vector<DeltaTrackerInterface> delta_trackers_;
 };
 
 // Iterator over a column in a layer, with deltas applied.
