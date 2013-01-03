@@ -6,6 +6,7 @@ PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
   PROTO_FILES cfile.proto)
 
 add_library(cfile_proto ${CFILE_PROTO_SRCS} ${CFILE_PROTO_HDRS})
+ADD_DEPENDENCIES(cfile_proto kudu_common)
 
 SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc block_encodings.cc )
 
