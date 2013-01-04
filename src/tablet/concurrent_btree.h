@@ -443,7 +443,6 @@ public:
   // This is typically called after one of its child nodes has split.
   InsertStatus Insert(const Slice &key, NodePtr<Traits> right_child) {
     DCHECK(this->IsLocked());
-    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
     CHECK_GT(key.size(), 0);
 
     bool exact;
@@ -456,6 +455,10 @@ public:
     if (PREDICT_FALSE(num_children_ == Traits::fanout)) {
       return INSERT_FULL;
     }
+
+    // About to modify this node - flag it so that concurrent
+    // readers will retry.
+    this->SetInserting();
 
     if (PREDICT_FALSE(!key_bag_.Insert(idx, key_count(), key))) {
       return INSERT_FULL;
@@ -600,7 +603,7 @@ public:
   // Insert a new entry into this leaf node.
   InsertStatus Insert(PreparedMutation<Traits> *mut, const Slice &val) {
     DCHECK_EQ(this, mut->leaf());
-    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
+    DCHECK(this->IsLocked());
 
     if (PREDICT_FALSE(mut->exists())) {
       return INSERT_DUPLICATE;
@@ -626,6 +629,7 @@ public:
 
     DCHECK_LT(idx, Traits::leaf_max_entries);
 
+    this->SetInserting();
     // The following inserts should always succeed because we
     // verified space_available above
     CHECK(key_bag_.Insert(idx, num_entries_, key));
@@ -696,10 +700,10 @@ public:
   // to the new size. Also compacts the underlying storage so that all
   // free space is contiguous, allowing for new inserts.
   //
-  // Caller must hold the node's lock with the INSERTING flag set.
+  // Caller must hold the node's lock with the SPLITTING flag set.
   void TruncateAndCompact(size_t new_num_entries) {
     DCHECK(this->IsLocked());
-    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
+    DCHECK(this->version_ & VersionField::BTREE_SPLITTING_MASK);
 
     DCHECK_LT(new_num_entries, num_entries_);
     key_bag_.TruncateAndCompact(Traits::leaf_max_entries, new_num_entries);
@@ -821,8 +825,8 @@ public:
   Slice current_mutable_value() {
     CHECK(prepared());
     Slice k, v;
-    leaf_->SetInserting();
     leaf_->Get(idx_, &k, &v);
+    leaf_->SetInserting();
     return v;
   }
 
@@ -1164,7 +1168,6 @@ private:
 
     LeafNode<Traits> *node = mutation->leaf();
     DCHECK(node->IsLocked());
-    node->SetInserting();
 
     // After this function, the prepared mutation cannot be used
     // again.
@@ -1229,7 +1232,6 @@ private:
   InternalNode<Traits> *SplitInternalNode(InternalNode<Traits> *node,
                                           faststring *separator_key) {
     DCHECK(node->IsLocked());
-    node->SetSplitting();
     //VLOG(2) << "splitting internal node " << node->GetKey(0).ToString();
 
     // TODO: simplified implementation doesn't deal with splitting
@@ -1287,6 +1289,11 @@ private:
       CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child));
     }
 
+    // Up to this point, we haven't modified the left node, so concurrent
+    // reads were consistent. But, now we're about to actually mutate,
+    // so set the flag.
+    node->SetSplitting();
+
     // Truncate the left node to remove the keys which have been
     // moved to the right node
     node->TruncateAndCompact(split_point);
@@ -1296,15 +1303,15 @@ private:
   // Split the given leaf node 'node', creating a new node
   // with the higher half of the elements.
   //
-  // N.B: the new node is initially locked.
+  // N.B: the new node is initially locked, but doesn't have the
+  // SPLITTING flag. This function sets the SPLITTING flag before
+  // modifying it.
   void SplitLeafNode(LeafNode<Traits> *node,
                      LeafNode<Traits> **new_node) {
     DCHECK(node->IsLocked());
-    DCHECK(node->version_ & VersionField::BTREE_SPLITTING_MASK);
 
     LeafNode<Traits> *new_leaf = new LeafNode<Traits>(true);
     new_leaf->next_ = node->next_;
-    node->next_ = new_leaf;
 
     // Copy half the keys from node into the new leaf
     int copy_start = node->num_entries() / 2;
@@ -1320,7 +1327,9 @@ private:
     }
 
     // Truncate the left node to remove the keys which have been
-    // moved to the right node
+    // moved to the right node.
+    node->SetSplitting();
+    node->next_ = new_leaf;
     node->TruncateAndCompact(copy_start);
     *new_node = new_leaf;
   }
@@ -1338,7 +1347,6 @@ private:
 
     // Leaf node should already be locked at this point
     DCHECK(node->IsLocked());
-    node->SetSplitting();
 
     //DebugPrint();
 
@@ -1347,7 +1355,6 @@ private:
 
     // The new leaf node is returned still locked.
     DCHECK(new_leaf->IsLocked());
-    new_leaf->SetInserting();
 
     // Insert the key that we were originally trying to insert in the
     // correct side post-split.
@@ -1401,7 +1408,6 @@ private:
     }
 
     // Parent exists. Try to insert
-    parent->SetInserting();
     switch (parent->Insert(split_key, right_ptr)) {
       case INSERT_SUCCESS:
       {
