@@ -11,7 +11,7 @@ namespace kudu { namespace tablet {
 
 struct EncodedKeySlice : public Slice {
 public:
-  EncodedKeySlice(uint32_t row_idx) :
+  explicit EncodedKeySlice(uint32_t row_idx) :
     Slice(reinterpret_cast<const char *>(&buf_int_),
           sizeof(uint32_t)),
     buf_int_(htonl(row_idx))
@@ -44,7 +44,7 @@ void DeltaMemStore::Update(uint32_t row_idx,
     // in with the old.
     Slice cur_val = mutation.current_mutable_value();
 
-    RowDelta cur_delta = DecodeDelta(cur_val);
+    RowDelta cur_delta = DecodeDelta(&cur_val);
     cur_delta.MergeUpdatesFrom(schema_, update, &arena_);
   } else {
     // This row hasn't been updated. Create a new delta for it.
@@ -86,7 +86,7 @@ Status DeltaMemStore::ApplyUpdates(
 
     uint32_t rel_idx = decoded_key - start_row;
 
-    RowDelta delta = DecodeDelta(val);
+    RowDelta delta = DecodeDelta(&val);
     delta.ApplyColumnUpdate(schema_, col_idx,
                             dst->cell_ptr(rel_idx));
     iter->Next();
@@ -102,7 +102,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
     Slice key, val;
     iter->GetCurrentEntry(&key, &val);
     uint32_t row_idx = DecodeKey(key);
-    RowDelta delta = DecodeDelta(val);
+    RowDelta delta = DecodeDelta(&val);
     dfw->AppendDelta(row_idx, delta);
     iter->Next();
   }
@@ -114,9 +114,9 @@ uint32_t DeltaMemStore::DecodeKey(const Slice &key) const {
   return ntohl(*reinterpret_cast<const uint32_t *>(key.data()));
 }
 
-RowDelta DeltaMemStore::DecodeDelta(Slice &val) const {
-  DCHECK_EQ(sizeof(RowDelta), val.size());
-  return *reinterpret_cast<RowDelta *>(val.mutable_data());
+RowDelta DeltaMemStore::DecodeDelta(Slice *val) const {
+  DCHECK_EQ(sizeof(RowDelta), val->size());
+  return *reinterpret_cast<RowDelta *>(val->mutable_data());
 }
 
 

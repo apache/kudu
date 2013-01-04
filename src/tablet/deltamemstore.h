@@ -47,7 +47,7 @@ private:
     return schema_;
   }
 
-  RowDelta DecodeDelta(Slice &val) const;
+  RowDelta DecodeDelta(Slice *val) const;
   uint32_t DecodeKey(const Slice &key) const;
 
   const Schema schema_;

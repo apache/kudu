@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 #include <unordered_set>
 
-#include "concurrent_btree.h"
+#include "tablet/concurrent_btree.h"
 #include "util/hexdump.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"

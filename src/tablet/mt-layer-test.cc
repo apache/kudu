@@ -43,8 +43,8 @@ public:
                          &TestMultiThreadedLayer::FlushThread, this, l));
   }
 
-  void JoinThreads(boost::ptr_vector<boost::thread> &threads) {
-    BOOST_FOREACH(boost::thread &thr, threads) {
+  void JoinThreads(boost::ptr_vector<boost::thread> *threads) {
+    BOOST_FOREACH(boost::thread &thr, *threads) {
       thr.join();
     }
   }
@@ -62,7 +62,7 @@ TEST_F(TestMultiThreadedLayer, TestMTUpdate) {
   boost::ptr_vector<boost::thread> threads;
   StartUpdaterThreads(&threads, &l, FLAGS_num_threads);
 
-  JoinThreads(threads);
+  JoinThreads(&threads);
 }
 
 TEST_F(TestMultiThreadedLayer, TestMTUpdateAndFlush) {
@@ -77,7 +77,7 @@ TEST_F(TestMultiThreadedLayer, TestMTUpdateAndFlush) {
   StartUpdaterThreads(&threads, &l, FLAGS_num_threads);
   StartFlushThread(&threads, &l);
 
-  JoinThreads(threads);
+  JoinThreads(&threads);
 
   // TODO: test that updates were successful -- collect the updated
   // row lists from all the threads, and verify them.

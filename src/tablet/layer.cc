@@ -4,6 +4,7 @@
 #include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
+#include <vector>
 
 #include "common/schema.h"
 #include "cfile/cfile.h"
@@ -22,8 +23,8 @@ using std::auto_ptr;
 using std::string;
 using std::tr1::shared_ptr;
 
-static const string kDeltaPrefix = "delta_";
-static const string kColumnPrefix = "col_";
+static const char *kDeltaPrefix = "delta_";
+static const char *kColumnPrefix = "col_";
 
 // Return the path at which the given column's cfile
 // is stored within the layer directory.

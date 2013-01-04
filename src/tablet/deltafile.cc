@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <arpa/inet.h>
+#include <string>
 
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"

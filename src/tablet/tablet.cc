@@ -1,6 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-
+#include <algorithm>
 #include <boost/foreach.hpp>
 #include <tr1/memory>
 #include <vector>
@@ -20,7 +20,7 @@ using std::vector;
 using std::tr1::shared_ptr;
 
 
-const string kLayerPrefix = "layer_";
+const char *kLayerPrefix = "layer_";
 
 static string GetLayerPath(const string &tablet_dir,
                            int layer_idx) {
