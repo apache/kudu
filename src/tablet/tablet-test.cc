@@ -1,15 +1,12 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#include <boost/assign/list_of.hpp>
-#include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
-#include <gtest/gtest.h>
 #include <time.h>
-#include <tr1/unordered_set>
 
 #include "common/row.h"
 #include "tablet/memstore.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet-test-base.h"
 #include "util/slice.h"
 #include "util/test_macros.h"
 
@@ -18,59 +15,10 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-class TestTablet : public ::testing::Test {
-public:
-  TestTablet() :
-    ::testing::Test(),
-    env_(Env::Default()),
-    schema_(boost::assign::list_of
-            (ColumnSchema("key", STRING))
-            (ColumnSchema("val", UINT32)),
-            1),
-    arena_(1024, 4*1024*1024)
-  {}
-protected:
-  virtual void SetUp() {
-    const ::testing::TestInfo* const test_info =
-      ::testing::UnitTest::GetInstance()->current_test_info();
-
-    ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
-
-    test_dir_ += StringPrintf("/%s.%s.%ld",
-                              test_info->test_case_name(),
-                              test_info->name(),
-                              time(NULL));
-
-    LOG(INFO) << "Creating tablet in: " << test_dir_;
-    tablet_.reset(new Tablet(schema_, test_dir_));
-    ASSERT_STATUS_OK(tablet_->CreateNew());
-    ASSERT_STATUS_OK(tablet_->Open());
-  }
-
-  void InsertTestRows(int count) {
-    char buf[256];
-    RowBuilder rb(schema_);
-    for (int i = 0; i < count; i++) {
-      rb.Reset();
-      snprintf(buf, sizeof(buf), "hello %d", i);
-      rb.AddString(Slice(buf));
-      rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
-    }
-  }
-
-  Env *env_;
-  const Schema schema_;
-  string test_dir_;
-  scoped_ptr<Tablet> tablet_;
-
-  Arena arena_;
-};
-
 TEST_F(TestTablet, TestFlush) {
   // Insert 1000 rows into memstore
   RowBuilder rb(schema_);
-  InsertTestRows(1000);
+  InsertTestRows(0, 1000);
 
   // Flush it.
   ASSERT_STATUS_OK(tablet_->Flush());
@@ -225,7 +173,7 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
 // Test that, when a tablet hsa flushed data and is
 // reopened, that the data persists
 TEST_F(TestTablet, TestInsertsPersist) {
-  InsertTestRows(1000);
+  InsertTestRows(0, 1000);
 
   // Flush it.
   ASSERT_STATUS_OK(tablet_->Flush());

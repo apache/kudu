@@ -7,6 +7,7 @@ ADD_DEPENDENCIES(tablet cfile_proto)
 
 # tablet-test
 ADD_KUDU_TEST(tablet-test)
+ADD_KUDU_TEST(mt-tablet-test)
 ADD_KUDU_TEST(layer-test)
 ADD_KUDU_TEST(mt-layer-test)
 ADD_KUDU_TEST(memstore-test)
