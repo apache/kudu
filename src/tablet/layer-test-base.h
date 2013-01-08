@@ -8,6 +8,7 @@
 #include <tr1/unordered_set>
 #include <unistd.h>
 
+#include "common/iterator.h"
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
 #include "tablet/layer.h"
@@ -117,9 +118,9 @@ protected:
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
-    scoped_ptr<Layer::RowIterator> row_iter(l.NewRowIterator(proj_val));
+    scoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(proj_val));
     ASSERT_STATUS_OK(row_iter->Init());
-    ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
+    ASSERT_STATUS_OK(row_iter->SeekToStart());
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
     uint32_t dst[batch_size];
@@ -130,7 +131,7 @@ protected:
       size_t n = batch_size;
       ASSERT_STATUS_OK_FAST(
         row_iter->CopyNextRows(
-          &n, reinterpret_cast<char *>(dst), &arena));
+          &n, reinterpret_cast<uint8_t *>(dst), &arena));
       VerifyUpdatedBlock(reinterpret_cast<uint32_t *>(dst), i, n, updated);
       i += n;
     }
@@ -163,8 +164,9 @@ protected:
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
-    scoped_ptr<Layer::ColumnIterator> col_iter;
-    ASSERT_STATUS_OK(l.NewColumnIterator(1, &col_iter));
+    Layer::ColumnIterator *col_iter_ptr;
+    ASSERT_STATUS_OK(l.NewColumnIterator(1, &col_iter_ptr));
+    scoped_ptr<Layer::ColumnIterator> col_iter(col_iter_ptr);
     ASSERT_STATUS_OK(col_iter->SeekToOrdinal(0));
 
     int batch_size = 10000;
@@ -184,13 +186,13 @@ protected:
   // using the given schema as a projection.
   static void IterateProjection(const Layer &l, const Schema &schema,
                                 int expected_rows) {
-    scoped_ptr<Layer::RowIterator> row_iter(l.NewRowIterator(schema));
+    scoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(schema));
     ASSERT_STATUS_OK(row_iter->Init());
-    ASSERT_STATUS_OK(row_iter->SeekToOrdinal(0));
+    ASSERT_STATUS_OK(row_iter->SeekToStart());
 
     int batch_size = 100;
     Arena arena(1024, 1024*1024);
-    char dst[schema.byte_size() * batch_size];
+    uint8_t dst[schema.byte_size() * batch_size];
 
     int i = 0;
     int log_interval = expected_rows/20 / batch_size;

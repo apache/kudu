@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "cfile/cfile.h"
+#include "common/schema.h"
+#include "common/iterator.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/tablet.h"
@@ -69,7 +71,7 @@ Status Tablet::Open() {
         return Status::IOError(string("Bad layer file: ") + absolute_path);
       }
 
-      std::auto_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
+      std::unique_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
       Status s = layer->Open();
       if (!s.ok()) {
         LOG(ERROR) << "Failed to open layer " << absolute_path << ": "
@@ -96,7 +98,7 @@ Status Tablet::Insert(const Slice &data) {
 
   // First, ensure that it is a unique key by checking all the open
   // Layers
-  BOOST_FOREACH(Layer &layer, layers_) {
+  BOOST_FOREACH(LayerInterface &layer, layers_) {
     bool present;
     VLOG(1) << "checking for key in layer " << layer.ToString();
     RETURN_NOT_OK(layer.CheckRowPresent(data.data(), &present));
@@ -123,7 +125,7 @@ Status Tablet::UpdateRow(const void *key,
   // TODO: could iterate the layers in a smart order
   // based on recent statistics - eg if a layer is getting
   // updated frequently, pick that one first.
-  BOOST_FOREACH(Layer &l, layers_) {
+  BOOST_FOREACH(LayerInterface &l, layers_) {
     s = l.UpdateRow(key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
@@ -154,10 +156,11 @@ Status Tablet::Flush() {
   RETURN_NOT_OK(out.Open());
 
   scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator());
-  CHECK(iter->IsValid()) << "old memstore yielded invalid iterator";
+  CHECK(iter->HasNext()) << "old memstore yielded invalid iterator";
 
+  // TODO: convert over to the batched API
   int written = 0;
-  while (iter->IsValid()) {
+  while (iter->HasNext()) {
     Slice s = iter->GetCurrentRow();
     Status status = out.WriteRow(s);
     if (!status.ok()) {
@@ -184,32 +187,38 @@ Status Tablet::Flush() {
 
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
-  ptr_deque<MemStore::Iterator> *ms_iters,
-  ptr_deque<Layer::RowIterator> *layer_iters) const
+  ptr_deque<RowIteratorInterface> *iters) const
 {
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  ptr_deque<MemStore::Iterator> ms_ret;
-  ptr_deque<Layer::RowIterator> layer_ret;
+  ptr_deque<RowIteratorInterface> ret;
 
   // Grab the memstore iterator.
   // TODO: when we add concurrent flush, need to add all snapshot
   // memstore iterators.
-  ms_ret.push_back(memstore_->NewIterator());
+  std::unique_ptr<RowIteratorInterface> ms_iter(
+    memstore_->NewIterator(projection));
+  RETURN_NOT_OK(ms_iter->Init());
+  VLOG(2) << "adding " << ms_iter->ToString();
+
+  ret.push_back(ms_iter.release());
 
   // Grab all layer iterators.
-  BOOST_FOREACH(const Layer &l, layers_) {
-    std::auto_ptr<Layer::RowIterator> row_it(l.NewRowIterator(projection));
-    RETURN_NOT_OK(row_it->Init());
-    RETURN_NOT_OK(row_it->SeekToOrdinal(0));
-    layer_ret.push_back(row_it);
+  BOOST_FOREACH(const LayerInterface &l, layers_) {
+    std::unique_ptr<RowIteratorInterface> row_it(l.NewRowIterator(projection));
 
-    LOG(INFO) << "added layer iterator for layer " << l.ToString();
+    // TODO(perf): may be more efficient to _not_ init them, and instead make the
+    // caller do a seek. Otherwise we're always seeking down the left side
+    // of our b-trees to find the first key, even if we're about to seek
+    // somewhere else.
+    RETURN_NOT_OK(row_it->Init());
+    RETURN_NOT_OK(row_it->SeekToStart());
+    VLOG(2) << "adding " << row_it->ToString();
+    ret.push_back(row_it.release());
   }
 
   // Swap results into the parameters.
-  ms_ret.swap(*ms_iters);
-  layer_ret.swap(*layer_iters);
+  ret.swap(*iters);
   return Status::OK();
 }
 
@@ -224,22 +233,19 @@ Tablet::RowIterator::RowIterator(const Tablet &tablet,
 {}
 
 Status Tablet::RowIterator::Init() {
-  CHECK(memstore_iters_.empty() && layer_iters_.empty());
+  CHECK(sub_iters_.empty());
 
   RETURN_NOT_OK(projection_.GetProjectionFrom(
                   tablet_->schema(), &projection_mapping_));
 
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
-                  projection_, &memstore_iters_, &layer_iters_));
+                  projection_, &sub_iters_));
 
   return Status::OK();
 }
 
 bool Tablet::RowIterator::HasNext() const {
-  BOOST_FOREACH(const MemStore::Iterator &iter, memstore_iters_) {
-    if (iter.IsValid()) return true;
-  }
-  BOOST_FOREACH(const Layer::RowIterator &iter, layer_iters_) {
+  BOOST_FOREACH(const RowIteratorInterface &iter, sub_iters_) {
     if (iter.HasNext()) return true;
   }
 
@@ -247,78 +253,26 @@ bool Tablet::RowIterator::HasNext() const {
 }
 
 Status Tablet::RowIterator::CopyNextRows(
-  size_t *nrows, void *dst, Arena *dst_arena)
+  size_t *nrows, uint8_t *dst, Arena *dst_arena)
 {
-  if (!memstore_iters_.empty()) {
-    return CopyNextFromMemStore(nrows, dst, dst_arena);
-  } else {
-    return CopyNextFromLayers(nrows, dst, dst_arena);
-  }
-}
 
-Status Tablet::RowIterator::CopyNextFromMemStore(
-  size_t *nrows, void *dst_v, Arena *dst_arena)
-{
-  while (!memstore_iters_.empty() &&
-         !memstore_iters_.front().IsValid()) {
-    memstore_iters_.pop_front();
+  while (!sub_iters_.empty() &&
+         !sub_iters_.front().HasNext()) {
+    sub_iters_.pop_front();
   }
-
-  if (memstore_iters_.empty()) {
+  if (sub_iters_.empty()) {
     *nrows = 0;
     return Status::OK();
   }
 
-  MemStore::Iterator *iter = &(memstore_iters_.front());
+  RowIteratorInterface *iter = &(sub_iters_.front());
+  VLOG(1) << "Copying up to " << (*nrows) << " rows from " << iter->ToString();
 
-  uint8_t *dst = reinterpret_cast<uint8_t *>(CHECK_NOTNULL(dst_v));
-  size_t fetched = 0;
-  for (size_t i = 0; i < *nrows && iter->IsValid(); i++) {
-    // Copy the row into the destination, including projection
-    // and relocating slices.
-    // TODO: can we share some code here with CopyRowToArena() from row.h
-    // or otherwise put this elsewhere?
-    Slice s = iter->GetCurrentRow();
-    for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-      size_t src_col_idx = projection_mapping_[proj_col_idx];
-      void *dst_cell = dst + projection_.column_offset(proj_col_idx);
-      const void *src_cell = s.data() + tablet_->schema().column_offset(src_col_idx);
-      RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst_arena));
-    }
 
-    // advance to next row
-    fetched++;
-    dst += projection_.byte_size();
-    iter->Next();
-  }
-
-  if (!iter->IsValid()) {
-    // memstore iter exhausted - remove it
-    memstore_iters_.pop_front();
-  }
-
-  *nrows = fetched;
-  return Status::OK();
-}
-
-Status Tablet::RowIterator::CopyNextFromLayers(
-  size_t *nrows, void *dst, Arena *dst_arena)
-{
-  while (!layer_iters_.empty() &&
-         !layer_iters_.front().HasNext()) {
-    layer_iters_.pop_front();
-  }
-  if (layer_iters_.empty()) {
-    *nrows = 0;
-    return Status::OK();
-  }
-
-  Layer::RowIterator *iter = &(layer_iters_.front());
-  RETURN_NOT_OK(iter->CopyNextRows(
-                  nrows, reinterpret_cast<char *>(dst), dst_arena));
+  RETURN_NOT_OK(iter->CopyNextRows(nrows, dst, dst_arena));
   if (!iter->HasNext()) {
-    // memstore iter exhausted - remove it
-    layer_iters_.pop_front();
+    // Iterator exhausted, remove it.
+    sub_iters_.pop_front();
   }
   return Status::OK();
 }

@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "common/iterator.h"
 #include "common/schema.h"
 #include "cfile/cfile.h"
 #include "gutil/strings/numbers.h"
@@ -219,8 +220,8 @@ Status Layer::OpenDeltaFileReaders() {
 }
 
 
-Layer::RowIterator *Layer::NewRowIterator(const Schema &projection) const {
-  return new RowIterator(this, projection);
+RowIteratorInterface *Layer::NewRowIterator(const Schema &projection) const {
+  return new Layer::RowIterator(this, projection);
 }
 
 Status Layer::NewColumnIterator(size_t col_idx, Layer::ColumnIterator **iter) const {
@@ -234,12 +235,6 @@ Status Layer::NewColumnIterator(size_t col_idx, Layer::ColumnIterator **iter) co
   return Status::OK();
 }
 
-Status Layer::NewColumnIterator(size_t col_idx, scoped_ptr<Layer::ColumnIterator> *iter) const {
-  ColumnIterator *iter_ptr;
-  RETURN_NOT_OK(NewColumnIterator(col_idx, &iter_ptr));
-  iter->reset(iter_ptr);
-  return Status::OK();
-}
 
 Status Layer::NewBaseColumnIterator(size_t col_idx, CFileIterator **iter) const {
   CHECK(open_);
@@ -274,7 +269,7 @@ Status Layer::UpdateRow(const void *key,
 }
 
 Status Layer::CheckRowPresent(const void *key,
-                              bool *present) {
+                              bool *present) const {
   scoped_ptr<CFileIterator> key_iter;
   RETURN_NOT_OK( NewBaseColumnIterator(0, &key_iter) );
 
@@ -484,7 +479,7 @@ Status Layer::RowIterator::Init() {
 }
 
 Status Layer::RowIterator::CopyNextRows(
-  size_t *nrows, char *dst, Arena *dst_arena)
+  size_t *nrows, uint8_t *dst, Arena *dst_arena)
 {
   DCHECK(initted_);
   DCHECK(dst) << "null dst";

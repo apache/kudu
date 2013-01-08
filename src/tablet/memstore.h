@@ -6,6 +6,7 @@
 
 #include "tablet/concurrent_btree.h"
 #include "tablet/rowdelta.h"
+#include "tablet/layer-interfaces.h"
 #include "common/schema.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
@@ -67,6 +68,7 @@ public:
   // Return an iterator over the items in this memstore.
   // TODO: clarify the consistency of this iterator in the method doc
   Iterator *NewIterator() const;
+  Iterator *NewIterator(const Schema &projection) const;
 
   // Return the Schema for the rows in this memstore.
   const Schema &schema() const {
@@ -100,17 +102,26 @@ private:
 
 // An iterator through in-memory data stored in a MemStore.
 // This holds a reference to the MemStore, and so the memstore
-// must not be freed.
+// must not be freed while this iterator is outstanding.
 //
-// Additionally, currently, this iterator cannot survive mutations
-// to the underlying store.
-//
-// TODO: swap out the STL set with the leveldb skiplist, so we can
-// do snapshot iteration while updating
-class MemStore::Iterator : boost::noncopyable {
+// This iterator is not a full snapshot, but individual rows
+// are consistent, and it is safe to iterate during concurrent
+// mutation. The consistency guarantee is that it will return
+// at least all rows that were present at the time of construction,
+// and potentially more. Each row will be at least as current as
+// the time of construction, and potentially more current.
+class MemStore::Iterator : public RowIteratorInterface, boost::noncopyable {
 public:
+  virtual Status Init() {
+    RETURN_NOT_OK(projection_.GetProjectionFrom(
+                    memstore_->schema(), &projection_mapping_));
 
-  Status SeekAtOrAfter(const Slice &key, bool *exact) {
+    return Status::OK();
+  }
+
+  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
+    CHECK(!projection_mapping_.empty()) << "not initted";
+
     tmp_buf.clear();
     memstore_->schema().EncodeComparableKey(key, &tmp_buf);
 
@@ -121,31 +132,72 @@ public:
     }
   }
 
-  const Slice GetCurrentRow() const {
-    Slice dummy, ret;
-    iter_->GetCurrentEntry(&dummy, &ret);
-    return ret;
+  virtual Status CopyNextRows(size_t *nrows,
+                              uint8_t *dst,
+                              Arena *dst_arena) {
+    DCHECK(!projection_mapping_.empty()) << "not initted";
+    DCHECK_GT(*nrows, 0);
+    if (!HasNext()) {
+      return Status::NotFound("no more rows");
+    }
+
+    size_t fetched = 0;
+    for (size_t i = 0; i < *nrows && HasNext(); i++) {
+      // Copy the row into the destination, including projection
+      // and relocating slices.
+      // TODO: can we share some code here with CopyRowToArena() from row.h
+      // or otherwise put this elsewhere?
+      Slice s = GetCurrentRow();
+      for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
+        size_t src_col_idx = projection_mapping_[proj_col_idx];
+        void *dst_cell = dst + projection_.column_offset(proj_col_idx);
+        const void *src_cell = s.data() + memstore_->schema().column_offset(src_col_idx);
+        RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst_arena));
+      }
+
+      // advance to next row
+      fetched++;
+      dst += projection_.byte_size();
+      Next();
+    }
+
+    *nrows = fetched;
+
+    return Status::OK();
   }
 
-  bool IsValid() const {
+
+  virtual bool HasNext() const {
     return iter_->IsValid();
-  }
-
-  bool Next() {
-    return iter_->Next();
   }
 
   void SeekToStart() {
     iter_->SeekToStart();
   }
 
+  const Slice GetCurrentRow() const {
+    Slice dummy, ret;
+    iter_->GetCurrentEntry(&dummy, &ret);
+    return ret;
+  }
+
+  bool Next() {
+    return iter_->Next();
+  }
+
+  string ToString() const {
+    return "memstore iterator";
+  }
+
 private:
   friend class MemStore;
 
   Iterator(const MemStore *ms,
-           MemStore::MSBTIter *iter) :
+           MemStore::MSBTIter *iter,
+           const Schema &projection) :
     memstore_(ms),
-    iter_(iter)
+    iter_(iter),
+    projection_(projection)
   {
     // TODO: various code assumes that a newly constructed iterator
     // is pointed at the beginning of the dataset. This causes a redundant
@@ -154,8 +206,12 @@ private:
     SeekToStart();
   }
 
+
   const MemStore *memstore_;
   scoped_ptr<MemStore::MSBTIter> iter_;
+
+  const Schema projection_;
+  vector<size_t> projection_mapping_;
 
   // Temporary local buffer used for seeking to hold the encoded
   // seek target.

@@ -33,13 +33,15 @@ protected:
   // integer value.
   void CheckValue(const MemStore &ms, string key, uint32_t expected_val) {
     scoped_ptr<MemStore::Iterator> iter(ms.NewIterator());
+    iter->Init();
+
     Slice keystr_slice(key);
     Slice key_slice(reinterpret_cast<const char *>(&keystr_slice), sizeof(Slice));
 
     bool exact;
     ASSERT_STATUS_OK(iter->SeekAtOrAfter(key_slice, &exact));
     ASSERT_TRUE(exact) << "unable to seek to key " << key;
-    ASSERT_TRUE(iter->IsValid());
+    ASSERT_TRUE(iter->HasNext());
     Slice s = iter->GetCurrentRow();
     ASSERT_EQ(schema_.byte_size(), s.size());
 
@@ -69,7 +71,7 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
-  ASSERT_TRUE(iter->IsValid());
+  ASSERT_TRUE(iter->HasNext());
   Slice s = iter->GetCurrentRow();
   ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("goodbye world"),
@@ -79,7 +81,7 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
 
   // Next row should be 'hello world'
   ASSERT_TRUE(iter->Next());
-  ASSERT_TRUE(iter->IsValid());
+  ASSERT_TRUE(iter->HasNext());
   s = iter->GetCurrentRow();
   ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("hello world"),
@@ -88,7 +90,7 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
             *schema_.ExtractColumnFromRow<UINT32>(s, 1));
 
   ASSERT_FALSE(iter->Next());
-  ASSERT_FALSE(iter->IsValid());
+  ASSERT_FALSE(iter->HasNext());
 }
 
 // Test that inserting duplicate key data fails with Status::AlreadyPresent

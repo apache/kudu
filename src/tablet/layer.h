@@ -68,7 +68,7 @@ private:
 };
 
 
-class Layer : boost::noncopyable {
+class Layer : public LayerInterface, boost::noncopyable {
 public:
   class RowIterator;
   class ColumnIterator;
@@ -88,40 +88,33 @@ public:
 
   Status Open();
 
+  ////////////////////////////////////////////////////////////
   // "Management" functions
+  ////////////////////////////////////////////////////////////
 
   // Flush all accumulated delta data from the DeltaMemStore to disk.
   Status FlushDeltas();
 
-  // Write functions
 
-  // Update a row in this layer.
-  //
-  // If the row does not exist in this layer, returns
-  // Status::NotFound().
+  ////////////////////////////////////////////////////////////
+  // LayerInterface implementation
+  ////////////////////////////////////////////////////////////
+
+  ////////////////////
+  // Updates
+  ////////////////////
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
-  // Check if a given row key is present in this layer.
-  // Sets *present and returns Status::OK, unless an error
-  // occurs.
-  Status CheckRowPresent(const void *key, bool *present);
+  Status CheckRowPresent(const void *key, bool *present) const;
 
+  ////////////////////
   // Read functions.
-
-  // Return an iterator over one of the columns in this layer.
-  // Upon return, the iterator will be initialized and ready for use.
-  // If an error occurs opening the iterator, a bad Status is returned
-  // and 'iter' is left unmodified.
+  ////////////////////
   Status NewColumnIterator(size_t col_idx,
                            ColumnIterator **iter) const;
-  Status NewColumnIterator(size_t col_idx,
-                           scoped_ptr<ColumnIterator> *iter) const;
 
-  // Return a new RowIterator for this layer, with the given projection.
-  // NB: the returned iterator is not yet Initted.
-  // TODO: make this consistent with above.
-  RowIterator *NewRowIterator(const Schema &projection) const;
+  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
 
 
   const Schema &schema() const {
@@ -186,7 +179,7 @@ private:
 };
 
 // Iterator over a column in a layer, with deltas applied.
-class Layer::ColumnIterator : boost::noncopyable {
+class Layer::ColumnIterator : public boost::noncopyable {
 public:
   Status SeekToOrdinal(uint32_t ord_idx);
   Status SeekAtOrAfter(const void *key, bool *exact_match);
@@ -216,15 +209,20 @@ private:
 // TODO: this might get replaced by an operator which takes
 // multiple column iterators and materializes them, but perhaps
 // this can actually be more efficient.
-class Layer::RowIterator : boost::noncopyable {
+class Layer::RowIterator : public RowIteratorInterface, boost::noncopyable {
 public:
-
-  Status Init();
+  virtual Status Init();
 
   // Seek to a given key in the underlying data.
   // Note that the 'key' must correspond to the key in the
   // Layer's schema, not the projection schema.
-  Status SeekAtOrAfter(const Slice &key) {
+  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
+    // Allow the special empty key to seek to the start of the iterator.
+    if (key.size() == 0) {
+      return SeekToOrdinal(0);
+    }
+
+    // Otherwise, must seek to a valid key.
     CHECK_GE(key.size(), reader_->schema().key_byte_size());
     CHECK(false) << "TODO: implement me";
   }
@@ -244,12 +242,16 @@ public:
   // Any indirect data (eg strings) are allocated out of
   // 'dst_arena'
   Status CopyNextRows(size_t *nrows,
-                      char *dst,
+                      uint8_t *dst,
                       Arena *dst_arena);
 
   bool HasNext() const {
     DCHECK(initted_);
     return col_iters_[0].HasNext();
+  }
+
+  string ToString() const {
+    return string("layer iterator for ") + reader_->ToString();
   }
 
 private:

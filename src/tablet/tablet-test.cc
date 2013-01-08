@@ -3,6 +3,7 @@
 #include <glog/logging.h>
 #include <time.h>
 
+#include "common/iterator.h"
 #include "common/row.h"
 #include "tablet/memstore.h"
 #include "tablet/tablet.h"

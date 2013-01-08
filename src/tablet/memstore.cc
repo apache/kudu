@@ -19,7 +19,7 @@ MemStore::MemStore(const Schema &schema) :
 
 void MemStore::DebugDump() {
   scoped_ptr<Iterator> iter(NewIterator());
-  while (iter->IsValid()) {
+  while (iter->HasNext()) {
     Slice k, v;
     LOG(INFO) << "row " << iter->GetCurrentRow().data();
     iter->Next();
@@ -87,9 +87,14 @@ Status MemStore::UpdateRow(const void *key,
 }
 
 
-MemStore::Iterator *MemStore::NewIterator() const {
-  return new MemStore::Iterator(this, tree_.NewIterator());
+MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {
+  return new MemStore::Iterator(this, tree_.NewIterator(), projection);
 }
+
+MemStore::Iterator *MemStore::NewIterator() const {
+  return NewIterator(schema());
+}
+
 
 } // namespace tablet
 } // namespace kudu

@@ -7,6 +7,7 @@
 #include <boost/scoped_ptr.hpp>
 #include <string>
 
+#include "common/iterator.h"
 #include "common/schema.h"
 #include "tablet/memstore.h"
 #include "tablet/layer.h"
@@ -72,13 +73,12 @@ private:
   // TODO: these are not currently snapshot iterators - the only guarantee is that they
   // are all captured atomically (eg we don't miss an entire layer or something)
   Status CaptureConsistentIterators(const Schema &projection,
-                                    ptr_deque<MemStore::Iterator> *ms_iters_,
-                                    ptr_deque<Layer::RowIterator> *layer_iters) const;
+                                    ptr_deque<RowIteratorInterface> *iters) const;
 
   Schema schema_;
   string dir_;
   scoped_ptr<MemStore> memstore_;
-  ptr_vector<Layer> layers_;
+  ptr_vector<LayerInterface> layers_;
 
   size_t next_layer_idx_;
 
@@ -89,16 +89,23 @@ private:
 
 
 // Iterator over materialized rows in the tablet (across memstore and layers)
-class Tablet::RowIterator : boost::noncopyable {
+class Tablet::RowIterator : public RowIteratorInterface, boost::noncopyable {
 public:
+  virtual Status Init();
 
-  // TODO: this probably needs something like 'class RowBlock' to correspond to
-  // class ColumnBlock
-  Status CopyNextRows(size_t *nrows,
-                      void *dst,
-                      Arena *dst_arena);
+  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
+    return Status::NotSupported("TODO: implement me");
+  }
 
-  bool HasNext() const;
+  virtual Status CopyNextRows(size_t *nrows,
+                              uint8_t *dst,
+                              Arena *dst_arena);
+
+  virtual bool HasNext() const;
+
+  string ToString() const {
+    return "tablet iterator";
+  }
 
 private:
   friend class Tablet;
@@ -106,20 +113,10 @@ private:
   RowIterator(const Tablet &tablet,
               const Schema &projection);
 
-  Status Init();
-
-  Status CopyNextFromMemStore(size_t *nrows,
-                              void *dst,
-                              Arena *dst_arena);
-  Status CopyNextFromLayers(size_t *nrows,
-                            void *dst,
-                            Arena *dst_arena);
-
   const Tablet *tablet_;
   const Schema projection_;
 
-  ptr_deque<MemStore::Iterator> memstore_iters_;
-  ptr_deque<Layer::RowIterator> layer_iters_;
+  ptr_deque<RowIteratorInterface> sub_iters_;
 
   vector<size_t> projection_mapping_;
 };
