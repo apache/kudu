@@ -205,7 +205,7 @@ Status Layer::OpenDeltaFileReaders() {
       }
       LOG(INFO) << "Successfully opened delta file " << absolute_path;
 
-      delta_trackers_.push_back(dfr);
+      delta_trackers_.push_back(shared_ptr<DeltaTrackerInterface>(dfr));
 
       next_delta_idx_ = std::max(next_delta_idx_,
                                  delta_idx + 1);
@@ -328,7 +328,7 @@ Status Layer::FlushDeltas() {
   // First, swap out the old DeltaMemStore with a new one,
   // and add it to the list of delta trackers to be reflected
   // in reads.
-  DeltaMemStore *old_dms;
+  shared_ptr<DeltaMemStore> old_dms;
   size_t count;
   {
     // Lock the component_lock_ in exclusive mode.
@@ -341,9 +341,8 @@ Status Layer::FlushDeltas() {
       return Status::OK();
     }
 
-    unique_ptr<DeltaMemStore> old_dms_unique(dms_.release());
+    old_dms = dms_;
     dms_.reset(new DeltaMemStore(schema_));
-    old_dms = old_dms_unique.release();
 
     delta_trackers_.push_back(old_dms);
   }
@@ -367,9 +366,9 @@ Status Layer::FlushDeltas() {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
     size_t idx = delta_trackers_.size() - 1;
 
-    CHECK_EQ(&delta_trackers_[idx], old_dms)
+    CHECK_EQ(delta_trackers_[idx], old_dms)
       << "Another thread modified the delta tracker list during flush";
-    delta_trackers_.replace(idx, dfr);
+    delta_trackers_[idx].reset(dfr);
   }
 
   return Status::OK();
@@ -434,8 +433,8 @@ Status Layer::ColumnIterator::CopyNextValues(size_t *n, ColumnBlock *dst) {
     // Instead, we should keep some kind of DeltaBlockIterator with the
     // column iterator, so they iterate "with" each other and maintain the
     // necessary state.
-    BOOST_FOREACH(const DeltaTrackerInterface &dt, layer_->delta_trackers_) {
-      RETURN_NOT_OK(dt.ApplyUpdates(col_idx_, start_row, &dst_block_valid));
+    BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &dt, layer_->delta_trackers_) {
+      RETURN_NOT_OK(dt->ApplyUpdates(col_idx_, start_row, &dst_block_valid));
     }
   }
 

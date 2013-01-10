@@ -7,7 +7,7 @@
 #include <boost/thread/barrier.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <unordered_set>
+#include <boost/unordered_set.hpp>
 
 #include "tablet/concurrent_btree.h"
 #include "util/hexdump.h"
@@ -19,6 +19,7 @@ namespace tablet {
 namespace btree {
 
 using boost::scoped_ptr;
+using boost::unordered_set;
 
 // Ensure that the template magic to make the nodes sized
 // as we expect is working.
@@ -289,7 +290,7 @@ TEST(TestCBTree, TestInsertAndVerifyRandom) {
   char vbuf_out[64];
 
   int n_keys = 100000;
-  std::unordered_set<int> inserted(n_keys);
+  unordered_set<int> inserted(n_keys);
 
   InsertRandomKeys(&t, n_keys, &inserted);
 
@@ -417,7 +418,7 @@ TEST(TestCBTree, TestIterator) {
   CBTree<SmallFanoutTraits> t;
 
   int n_keys = 100000;
-  std::unordered_set<int> inserted(n_keys);
+  unordered_set<int> inserted(n_keys);
   InsertRandomKeys(&t, n_keys, &inserted);
 
   // now iterate through, making sure we saw all

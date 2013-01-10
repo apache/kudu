@@ -135,6 +135,9 @@ public:
   static void SetInserting(volatile AtomicVersion *v) {
     base::subtle::Release_Store(v, *v | BTREE_INSERTING_MASK);
   }
+  static void SetLockedInsertingNoBarrier(volatile AtomicVersion *v) {
+    *v = VersionField::BTREE_LOCK_MASK | VersionField::BTREE_INSERTING_MASK;
+  }
 
   // Return true if the two version fields differ in more
   // than just the lock status.
@@ -151,6 +154,12 @@ public:
 
   static inline bool IsLocked(AtomicVersion v) {
     return v & BTREE_LOCK_MASK;
+  }
+  static inline bool IsSplitting(AtomicVersion v) {
+    return v & BTREE_SPLITTING_MASK;
+  }
+  static inline bool IsInserting(AtomicVersion v) {
+    return v & BTREE_INSERTING_MASK;
   }
 
   static string Stringify(AtomicVersion v) {
@@ -415,8 +424,7 @@ public:
 
     // Just assign the version, instead of using the proper ->Lock()
     // since we don't need a CAS here.
-    this->version_ = VersionField::BTREE_LOCK_MASK |
-      VersionField::BTREE_INSERTING_MASK;
+    VersionField::SetLockedInsertingNoBarrier(&this->version_);
 
     // TODO: we need to dynamically configure the size of the
     // nodes so that, with really fat keys, we get at least
@@ -508,7 +516,7 @@ public:
   // Requires that the 
   void TruncateAndCompact(size_t new_num_keys) {
     DCHECK(this->IsLocked());
-    DCHECK(this->version_ & VersionField::BTREE_SPLITTING_MASK);
+    DCHECK(VersionField::IsSplitting(this->version_));
     DCHECK_GT(new_num_keys, 0);
 
     DCHECK_LT(new_num_keys, key_count());
@@ -552,12 +560,12 @@ public:
   enum {
     storage_size = Traits::internal_node_size
       - sizeof(NodeBase<Traits>)
-      - sizeof(num_children_)
+      - sizeof(uint32) /* num_children_ */
       - (sizeof(void *) * Traits::fanout) // child_pointers_
   };
 
   StringBag<uint16_t> key_bag_;
-  char storage_[storage_size - sizeof(key_bag_)];
+  char storage_[storage_size - sizeof(StringBag<uint16_t>)];
 
   NodePtr<Traits> child_pointers_[Traits::fanout];
 } PACKED;
@@ -582,8 +590,7 @@ public:
     if (initially_locked) {
       // Just assign the version, instead of using the proper ->Lock()
       // since we don't need a CAS here.
-      this->version_ = VersionField::BTREE_LOCK_MASK |
-        VersionField::BTREE_INSERTING_MASK;
+      VersionField::SetLockedInsertingNoBarrier(&this->version_);
     }
   }
 
@@ -648,7 +655,7 @@ public:
   // Update an entry in this leaf node.
   UpdateStatus Update(PreparedMutation<Traits> *mut, const Slice &new_val) {
     DCHECK_EQ(this, mut->leaf());
-    DCHECK(this->version_ & VersionField::BTREE_INSERTING_MASK);
+    DCHECK(VersionField::IsInserting(this->version_));
     DCHECK_LT(mut->idx(), num_entries_);
 
     if (PREDICT_FALSE(!mut->exists())) {
@@ -703,7 +710,7 @@ public:
   // Caller must hold the node's lock with the SPLITTING flag set.
   void TruncateAndCompact(size_t new_num_entries) {
     DCHECK(this->IsLocked());
-    DCHECK(this->version_ & VersionField::BTREE_SPLITTING_MASK);
+    DCHECK(VersionField::IsSplitting(this->version_));
 
     DCHECK_LT(new_num_entries, num_entries_);
     key_bag_.TruncateAndCompact(Traits::leaf_max_entries, new_num_entries);
@@ -744,17 +751,19 @@ private:
   enum {
     storage_size = Traits::leaf_node_size
       - sizeof(NodeBase<Traits>)
-      - sizeof(num_entries_)
-      - sizeof(next_)
+      - sizeof(uint16_t) /* num_entries */
+      - sizeof(LeafNode<Traits> *) /* next_ */
   };
 
   // TODO: combine keys and values into the same bag
   // so there isn't a stupid 50/50 split between them
-  StringBag<typename Traits::leaf_key_bag_storage_type> key_bag_;
-  char key_storage_[storage_size/2 - sizeof(key_bag_)];
+  typedef StringBag<typename Traits::leaf_key_bag_storage_type> KeyBagType;
+  KeyBagType key_bag_;
+  char key_storage_[storage_size/2 - sizeof(KeyBagType)];
   
-  StringBag<typename Traits::leaf_val_bag_storage_type> val_bag_;
-  char val_storage_[storage_size/2 - sizeof(val_bag_)];
+  typedef StringBag<typename Traits::leaf_val_bag_storage_type> ValBagType;
+  ValBagType val_bag_;
+  char val_storage_[storage_size/2 - sizeof(ValBagType)];
 } PACKED;
 
 

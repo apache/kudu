@@ -9,6 +9,7 @@
 
 #include "gutil/walltime.h"
 
+#include <stdio.h>
 #include <unistd.h>
 
 DEFINE_int32(num_threads, 8, "Number of threads to test");

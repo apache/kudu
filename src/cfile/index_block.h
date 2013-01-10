@@ -25,7 +25,7 @@ using kudu::DataTypeTraits;
 // Forward decl.
 template <DataType KeyTypeEnum> class IndexBlockIterator;
 
-class WriterOptions;
+struct WriterOptions;
 
 
 class KeyEncoding {

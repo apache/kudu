@@ -21,7 +21,7 @@
 namespace kudu {
 namespace cfile {
 
-class WriterOptions;
+struct WriterOptions;
 
 using std::vector;
 using std::string;

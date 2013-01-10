@@ -29,7 +29,7 @@ namespace tablet {
 
 using boost::ptr_vector;
 using std::string;
-using std::unique_ptr;
+using std::auto_ptr;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
@@ -164,8 +164,8 @@ private:
   ptr_vector<cfile::CFileReader> cfile_readers_;
 
   // The current delta memstore into which updates should be written.
-  unique_ptr<DeltaMemStore> dms_;
-  ptr_vector<DeltaTrackerInterface> delta_trackers_;
+  shared_ptr<DeltaMemStore> dms_;
+  vector<shared_ptr<DeltaTrackerInterface> > delta_trackers_;
 
   // read-write lock protecting dms_ and delta_trackers_.
   // - Readers and mutators take this lock in shared mode.

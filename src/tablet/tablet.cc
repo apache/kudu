@@ -16,7 +16,6 @@
 
 namespace kudu { namespace tablet {
 
-using boost::ptr_deque;
 using std::string;
 using std::vector;
 using std::tr1::shared_ptr;
@@ -71,7 +70,7 @@ Status Tablet::Open() {
         return Status::IOError(string("Bad layer file: ") + absolute_path);
       }
 
-      std::unique_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
+      shared_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
       Status s = layer->Open();
       if (!s.ok()) {
         LOG(ERROR) << "Failed to open layer " << absolute_path << ": "
@@ -79,7 +78,7 @@ Status Tablet::Open() {
         return s;
       }
 
-      layers_.push_back(layer.release());
+      layers_.push_back(layer);
 
       next_layer_idx_ = std::max(next_layer_idx_,
                                  (size_t)layer_idx + 1);
@@ -98,10 +97,10 @@ Status Tablet::Insert(const Slice &data) {
 
   // First, ensure that it is a unique key by checking all the open
   // Layers
-  BOOST_FOREACH(LayerInterface &layer, layers_) {
+  BOOST_FOREACH(shared_ptr<LayerInterface> &layer, layers_) {
     bool present;
-    VLOG(1) << "checking for key in layer " << layer.ToString();
-    RETURN_NOT_OK(layer.CheckRowPresent(data.data(), &present));
+    VLOG(1) << "checking for key in layer " << layer->ToString();
+    RETURN_NOT_OK(layer->CheckRowPresent(data.data(), &present));
     if (present) {
       return Status::AlreadyPresent("key already present");
     }
@@ -125,8 +124,8 @@ Status Tablet::UpdateRow(const void *key,
   // TODO: could iterate the layers in a smart order
   // based on recent statistics - eg if a layer is getting
   // updated frequently, pick that one first.
-  BOOST_FOREACH(LayerInterface &l, layers_) {
-    s = l.UpdateRow(key, update);
+  BOOST_FOREACH(shared_ptr<LayerInterface> &l, layers_) {
+    s = l->UpdateRow(key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
       return s;
@@ -179,33 +178,33 @@ Status Tablet::Flush() {
   RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
 
   // Open it.
-  std::auto_ptr<Layer> new_layer(new Layer(env_, schema_, new_layer_dir));
+  shared_ptr<Layer> new_layer(new Layer(env_, schema_, new_layer_dir));
   RETURN_NOT_OK(new_layer->Open());
-  layers_.push_back(new_layer.release());
+  layers_.push_back(new_layer);
   return Status::OK();
 }
 
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
-  ptr_deque<RowIteratorInterface> *iters) const
+  deque<shared_ptr<RowIteratorInterface> > *iters) const
 {
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  ptr_deque<RowIteratorInterface> ret;
+  deque<shared_ptr<RowIteratorInterface> > ret;
 
   // Grab the memstore iterator.
   // TODO: when we add concurrent flush, need to add all snapshot
   // memstore iterators.
-  std::unique_ptr<RowIteratorInterface> ms_iter(
+  shared_ptr<RowIteratorInterface> ms_iter(
     memstore_->NewIterator(projection));
   RETURN_NOT_OK(ms_iter->Init());
   VLOG(2) << "adding " << ms_iter->ToString();
 
-  ret.push_back(ms_iter.release());
+  ret.push_back(ms_iter);
 
   // Grab all layer iterators.
-  BOOST_FOREACH(const LayerInterface &l, layers_) {
-    std::unique_ptr<RowIteratorInterface> row_it(l.NewRowIterator(projection));
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
+    shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(projection));
 
     // TODO(perf): may be more efficient to _not_ init them, and instead make the
     // caller do a seek. Otherwise we're always seeking down the left side
@@ -214,7 +213,7 @@ Status Tablet::CaptureConsistentIterators(
     RETURN_NOT_OK(row_it->Init());
     RETURN_NOT_OK(row_it->SeekToStart());
     VLOG(2) << "adding " << row_it->ToString();
-    ret.push_back(row_it.release());
+    ret.push_back(row_it);
   }
 
   // Swap results into the parameters.
@@ -245,8 +244,8 @@ Status Tablet::RowIterator::Init() {
 }
 
 bool Tablet::RowIterator::HasNext() const {
-  BOOST_FOREACH(const RowIteratorInterface &iter, sub_iters_) {
-    if (iter.HasNext()) return true;
+  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, sub_iters_) {
+    if (iter->HasNext()) return true;
   }
 
   return false;
@@ -257,7 +256,7 @@ Status Tablet::RowIterator::CopyNextRows(
 {
 
   while (!sub_iters_.empty() &&
-         !sub_iters_.front().HasNext()) {
+         !sub_iters_.front()->HasNext()) {
     sub_iters_.pop_front();
   }
   if (sub_iters_.empty()) {
@@ -265,7 +264,7 @@ Status Tablet::RowIterator::CopyNextRows(
     return Status::OK();
   }
 
-  RowIteratorInterface *iter = &(sub_iters_.front());
+  shared_ptr<RowIteratorInterface> &iter = sub_iters_.front();
   VLOG(1) << "Copying up to " << (*nrows) << " rows from " << iter->ToString();
 
 

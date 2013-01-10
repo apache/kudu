@@ -41,7 +41,7 @@ public:
   Status FlushToFile(DeltaFileWriter *dfw) const;
 
 private:
-  friend class RowDelta;
+  friend struct RowDelta;
 
   const Schema &schema() const {
     return schema_;

@@ -3,9 +3,9 @@
 #define KUDU_TABLET_TABLET_H
 
 #include <boost/noncopyable.hpp>
-#include <boost/ptr_container/ptr_deque.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <string>
+#include <deque>
 
 #include "common/iterator.h"
 #include "common/schema.h"
@@ -17,9 +17,10 @@
 
 namespace kudu { namespace tablet {
 
-using boost::ptr_deque;
 using boost::scoped_ptr;
 using std::string;
+using std::deque;
+using std::tr1::shared_ptr;
 
 class Tablet {
 public:
@@ -73,12 +74,12 @@ private:
   // TODO: these are not currently snapshot iterators - the only guarantee is that they
   // are all captured atomically (eg we don't miss an entire layer or something)
   Status CaptureConsistentIterators(const Schema &projection,
-                                    ptr_deque<RowIteratorInterface> *iters) const;
+                                    deque<shared_ptr<RowIteratorInterface> > *iters) const;
 
   Schema schema_;
   string dir_;
   scoped_ptr<MemStore> memstore_;
-  ptr_vector<LayerInterface> layers_;
+  vector<shared_ptr<LayerInterface> > layers_;
 
   size_t next_layer_idx_;
 
@@ -116,7 +117,7 @@ private:
   const Tablet *tablet_;
   const Schema projection_;
 
-  ptr_deque<RowIteratorInterface> sub_iters_;
+  deque<shared_ptr<RowIteratorInterface> > sub_iters_;
 
   vector<size_t> projection_mapping_;
 };
