@@ -44,12 +44,12 @@ public:
 
   Status DecodeFrom(const char *data, const char *limit) {
     data = GetVarint64Ptr(data, limit, &offset_);
-    if (!data || offset_ < 0) {
+    if (!data) {
       return Status::Corruption("bad block pointer");
     }
 
     data = GetVarint32Ptr(data, limit, &size_);
-    if (!data || size_ < 0) {
+    if (!data) {
       return Status::Corruption("bad block pointer");
     }
 

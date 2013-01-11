@@ -564,9 +564,15 @@ public:
       - (sizeof(void *) * Traits::fanout) // child_pointers_
   };
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wgnu"
+#endif
   StringBag<uint16_t> key_bag_;
   char storage_[storage_size - sizeof(StringBag<uint16_t>)];
-
+#ifdef __clang_
+#  pragma clang diagnostic pop
+#endif
   NodePtr<Traits> child_pointers_[Traits::fanout];
 } PACKED;
 
@@ -757,6 +763,10 @@ private:
 
   // TODO: combine keys and values into the same bag
   // so there isn't a stupid 50/50 split between them
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wgnu"
+#endif
   typedef StringBag<typename Traits::leaf_key_bag_storage_type> KeyBagType;
   KeyBagType key_bag_;
   char key_storage_[storage_size/2 - sizeof(KeyBagType)];
@@ -764,6 +774,9 @@ private:
   typedef StringBag<typename Traits::leaf_val_bag_storage_type> ValBagType;
   ValBagType val_bag_;
   char val_storage_[storage_size/2 - sizeof(ValBagType)];
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 } PACKED;
 
 

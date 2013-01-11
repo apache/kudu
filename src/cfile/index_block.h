@@ -5,6 +5,7 @@
 
 #include "common/types.h"
 #include "cfile/block_pointer.h"
+#include "gutil/port.h"
 #include "util/coding-inl.h"
 
 #include <boost/scoped_ptr.hpp>
@@ -205,6 +206,9 @@ public:
   void Reset();
 
 private:
+#ifdef __clang__
+  __attribute__((__unused__))
+#endif
   const WriterOptions *options_;
 
   // Is the builder currently between Finish() and Reset()

@@ -623,8 +623,6 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
 
 Status StringBlockDecoder::ParseHeader() {
   // First parse the actual header.
-  Slice header(data_);
-
   uint32_t unused;
   data_start_ = reinterpret_cast<const char *>(
     DecodeGroupVarInt32_SSE(

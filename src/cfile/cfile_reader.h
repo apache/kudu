@@ -12,6 +12,7 @@
 #include "common/columnblock.h"
 #include "common/types.h"
 #include "cfile/index_btree.h"
+#include "gutil/port.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
 
@@ -135,6 +136,9 @@ private:
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
 
+#ifdef __clang__
+  __attribute__((__unused__))
+#endif
   const ReaderOptions options_;
   const shared_ptr<RandomAccessFile> file_;
   const uint64_t file_size_;
