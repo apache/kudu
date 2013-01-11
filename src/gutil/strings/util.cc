@@ -242,8 +242,8 @@ int GlobalReplaceSubstring(const StringPiece& substring,
     return 0;
   string tmp;
   int num_replacements = 0;
-  int pos = 0;
-  for (int match_pos = s->find(substring.data(), pos, substring.length());
+  size_t pos = 0;
+  for (size_t match_pos = s->find(substring.data(), pos, substring.length());
        match_pos != string::npos;
        pos = match_pos + substring.length(),
            match_pos = s->find(substring.data(), pos, substring.length())) {
@@ -884,7 +884,7 @@ void InsertString(string *const s,
 //  (returns string::npos = -1 if n <= 0)
 //------------------------------------------------------------------------
 int FindNth(StringPiece s, char c, int n) {
-  int pos = -1;
+  size_t pos = string::npos;
 
   for ( int i = 0; i < n; ++i ) {
     pos = s.find_first_of(c, pos + 1);
@@ -906,7 +906,7 @@ int ReverseFindNth(StringPiece s, char c, int n) {
     return static_cast<int>(StringPiece::npos);
   }
 
-  int pos = s.size();
+  size_t pos = s.size();
 
   for ( int i = 0; i < n; ++i ) {
     // If pos == 0, we return StringPiece::npos right away. Otherwise,
