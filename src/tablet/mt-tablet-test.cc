@@ -8,6 +8,7 @@
 #include <tr1/unordered_set>
 
 #include "tablet/tablet-test-base.h"
+#include "util/countdown_latch.h"
 
 DEFINE_int32(num_threads, 16, "Number of threads to test");
 DEFINE_int32(inserts_per_thread, 10000,
@@ -18,9 +19,28 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
+
+// Utility class which calls latch->CountDown() in its destructor.
+class CountDownOnScopeExit : boost::noncopyable {
+public:
+  CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
+  ~CountDownOnScopeExit() {
+    latch_->CountDown();
+  }
+
+private:
+  CountDownLatch *latch_;
+};
+
 class TestMultiThreadedTablet : public TestTablet {
 protected:
+  TestMultiThreadedTablet() :
+    running_insert_count_(FLAGS_num_threads)
+  {}
+
   void InsertThread(int tid) {
+    CountDownOnScopeExit dec_count(&running_insert_count_);
+
     // TODO: add a test where some of the inserts actually conflict
     // on the same row.
     InsertTestRows(tid * FLAGS_inserts_per_thread,
@@ -32,8 +52,17 @@ protected:
   }
 
   void FlushThread() {
-    for (int i = 0; i < 10; i++) {
+    // Start off with a very short wait time between flushes.
+    // But, especially in debug mode, this will only allow a few
+    // rows to get inserted between each flush, and the test will take
+    // quite a while. So, after every flush, we double the wait time below.
+    int wait_time = 30;
+    while (running_insert_count_.count() > 0) {
       tablet_->Flush();
+
+      // Wait, unless the inserters are all done.
+      running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
+      wait_time *= 2;
     }
   }
 
@@ -64,6 +93,8 @@ protected:
   }
 
   boost::ptr_vector<boost::thread> threads_;
+
+  CountDownLatch running_insert_count_;
 };
 
 

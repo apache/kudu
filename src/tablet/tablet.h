@@ -81,6 +81,18 @@ private:
   scoped_ptr<MemStore> memstore_;
   vector<shared_ptr<LayerInterface> > layers_;
 
+  // Lock protecting write access to the components of the tablet (memstore and layers).
+  // Shared mode:
+  // - Inserters, updaters take this in shared mode during their mutation.
+  // - Readers take this in shared mode while capturing their iterators.
+  // Exclusive mode:
+  // - Flushers take this lock in order to lock out concurrent updates when swapping in
+  //   a new memstore.
+  //
+  // TODO: this could probably done more efficiently with a single atomic swap of a list
+  // and an RCU-style quiesce phase, but not worth it for now.
+  mutable boost::shared_mutex component_lock_;
+
   size_t next_layer_idx_;
 
   Env *env_;

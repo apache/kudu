@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
 #include <vector>
 
@@ -95,6 +96,8 @@ Status Tablet::Open() {
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
   // First, ensure that it is a unique key by checking all the open
   // Layers
   BOOST_FOREACH(shared_ptr<LayerInterface> &layer, layers_) {
@@ -108,12 +111,13 @@ Status Tablet::Insert(const Slice &data) {
 
   // Now try to insert into memstore. The memstore itself will return
   // AlreadyPresent if it has already been inserted there.
-  // TODO: check concurrency
   return memstore_->Insert(data);
 }
 
 Status Tablet::UpdateRow(const void *key,
                          const RowDelta &update) {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
   // First try to update in memstore.
   Status s = memstore_->UpdateRow(key, update);
   if (s.ok() || !s.IsNotFound()) {
@@ -139,12 +143,29 @@ Status Tablet::UpdateRow(const void *key,
 Status Tablet::Flush() {
   CHECK(open_);
 
+  // Lock the component_lock_ in exclusive mode.
+  // This shuts out any concurrent readers or writers.
+  // TODO: this is a very bad implementation which locks
+  // out other accessors for the duration of the flush, which
+  // might be significantly long. A better approach would be
+  // to do this in multiple phases, and only taking the lock
+  // during the transitions between the phases. See 'flushing.txt'
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+
   // swap in a new memstore
   scoped_ptr<MemStore> old_ms(new MemStore(schema_));
   old_ms.swap(memstore_);
 
+  // TODO: there may be outstanding iterators on old_ms here.
+  // We need to either make them take a shared_ptr so it gets
+  // reference counted, or do something like RCU to free the
+  // memstore when the last iterator is closed.
+  // TODO: add a unit test which shows this issue (concurrent
+  // scanners with flushes)
+
   if (old_ms->empty()) {
     // flushing empty memstore is a no-op
+    LOG(INFO) << "Flush requested on empty memstore";
     return Status::OK();
   }
 
@@ -188,6 +209,8 @@ Status Tablet::Flush() {
   // Flush to tmp was successful. Rename it to its real location.
   RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
 
+  LOG(INFO) << "Successfully flushed " << written << " rows";
+
   // Open it.
   shared_ptr<Layer> new_layer(new Layer(env_, schema_, new_layer_dir));
   RETURN_NOT_OK(new_layer->Open());
@@ -199,6 +222,8 @@ Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   deque<shared_ptr<RowIteratorInterface> > *iters) const
 {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
   deque<shared_ptr<RowIteratorInterface> > ret;
