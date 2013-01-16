@@ -1562,6 +1562,7 @@ private:
         if (VersionField::HasSplit(version, new_version)) {
           goto retry_from_root;
         } else if (VersionField::IsDifferent(version, new_version)) {
+          version = new_version;
           goto retry_in_leaf;
         }
         VLOG(2) << "got copy of leaf node: " << leaf_copy_.ToString();
