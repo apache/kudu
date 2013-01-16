@@ -184,19 +184,7 @@ TEST_F(TestTablet, TestInsertsPersist) {
   ASSERT_STATUS_OK(tablet_->Open());
 
   // Ensure that rows exist
-  scoped_ptr<Tablet::RowIterator> iter;
-  ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-  scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * 100]);
-  int count = 0;
-  while (iter->HasNext()) {
-    arena_.Reset();
-    size_t n = 100;
-    ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
-    LOG(INFO) << "Fetched batch of " << n;
-    count += n;
-  }
-
-  ASSERT_EQ(1000, count);
+  VerifyTestRows(0, 1000);
 
   // TODO: add some more data, re-flush
 }

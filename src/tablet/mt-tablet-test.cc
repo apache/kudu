@@ -72,6 +72,7 @@ TEST_F(TestMultiThreadedTablet, TestInsertAndFlush) {
   StartInserterThreads(FLAGS_num_threads);
   StartFlushThread();
   JoinThreads();
+  VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_threads);
 }
 
 } // namespace tablet

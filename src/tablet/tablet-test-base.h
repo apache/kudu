@@ -5,6 +5,7 @@
 #include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
+#include <vector>
 
 #include "common/row.h"
 #include "common/schema.h"
@@ -56,6 +57,45 @@ protected:
       rb.AddString(Slice(buf));
       rb.AddUint32(i);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
+    }
+  }
+
+  void VerifyTestRows(int first_row, int expected_count) {
+    scoped_ptr<Tablet::RowIterator> iter;
+    ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+    int batch_size = expected_count / 10;
+    scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * batch_size]);
+
+    // Keep a bitmap of which rows have been seen from the requested
+    // range.
+    std::vector<bool> seen_rows;
+    seen_rows.resize(expected_count);
+
+    while (iter->HasNext()) {
+      arena_.Reset();
+      size_t n = batch_size;
+      ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+      LOG(INFO) << "Fetched batch of " << n;
+
+      for (int i = 0; i < n; i++) {
+        Slice s(reinterpret_cast<const char *>(&buf[i * schema_.byte_size()]),
+                schema_.byte_size());
+        int row = *schema_.ExtractColumnFromRow<UINT32>(s, 1);
+        if (row >= first_row && row < first_row + expected_count) {
+          size_t idx = row - first_row;
+          if (seen_rows[idx]) {
+            FAIL() << "Saw row " << row << " twice!\n"
+                   << "Slice: " << s.ToDebugString() << "\n"
+                   << "Row: " << schema_.DebugRow(s.data());
+          }
+          seen_rows[idx] = true;
+        }
+      }
+    }
+
+    // Verify that all the rows were seen.
+    for (int i = 0; i < expected_count; i++) {
+      ASSERT_EQ(true, seen_rows[i]) << "Never saw row: " << (i + first_row);
     }
   }
 
