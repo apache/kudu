@@ -144,6 +144,12 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   return Status::OK();
 }
 
+Status CFileReader::CountRows(size_t *count) const {
+  CHECK_EQ(state_, kInitialized);
+  *count = footer_->num_values();
+  return Status::OK();
+}
+
 // TODO: perhaps decoders should be able to be Reset
 // to point to a different slice? any benefit to that?
 Status CFileReader::CreateBlockDecoder(
@@ -192,7 +198,6 @@ Status CFileReader::NewIterator(CFileIterator **iter) const {
   *iter = new CFileIterator(this, posidx_root.get(), validx_root.get());
   return Status::OK();
 }
-
 
 ////////////////////////////////////////////////////////////
 // Iterator

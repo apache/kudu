@@ -303,8 +303,9 @@ TEST(TestCFile, TestReadWriteInts) {
 TEST(TestCFile, TestReadWriteStrings) {
   Env *env = Env::Default();
 
+  const int nrows = 10000;
   string path = "/tmp/cfile-TestReadWriteStrings";
-  WriteTestFileStrings(path, 10000, "hello %04d");
+  WriteTestFileStrings(path, nrows, "hello %04d");
   RandomAccessFile *raf;
   uint64_t size;
   ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
@@ -314,6 +315,10 @@ TEST(TestCFile, TestReadWriteStrings) {
 
   CFileReader reader(ReaderOptions(), f, size);
   ASSERT_STATUS_OK(reader.Init());
+
+  size_t reader_nrows;
+  ASSERT_STATUS_OK(reader.CountRows(&reader_nrows));
+  ASSERT_EQ(nrows, reader_nrows);
 
   BlockPointer ptr;
 

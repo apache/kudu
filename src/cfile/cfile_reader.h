@@ -93,6 +93,11 @@ public:
   Status ReadBlock(const BlockPointer &ptr,
                    BlockData *ret) const;
 
+  // Return the number of rows in this cfile.
+  // This is assumed to be reasonably fast (i.e does not scan
+  // the data)
+  Status CountRows(size_t *count) const;
+
   DataType data_type() const {
     CHECK_EQ(state_, kInitialized);
     return footer_->data_type();

@@ -138,6 +138,7 @@ Status Writer::Finish() {
   CFileFooterPB footer;
   footer.set_data_type(datatype_);
   footer.set_encoding(encoding_type_);
+  footer.set_num_values(value_count_);
 
   // Write out any pending positional index blocks.
   if (options_.write_posidx) {
