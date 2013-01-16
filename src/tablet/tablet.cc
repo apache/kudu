@@ -155,12 +155,13 @@ Status Tablet::Flush() {
   // swap in a new memstore
   shared_ptr<MemStore> old_ms(new MemStore(schema_));
   old_ms.swap(memstore_);
-  // TODO: there may be outstanding iterators on old_ms here.
-  // We need to either make them hold a shared_ptr as well so it gets
-  // reference counted, or do something like RCU to free the
-  // memstore when the last iterator is closed.
-  // TODO: add a unit test which shows this issue (concurrent
-  // scanners with flushes)
+
+  // Because this is a shared pointer, and iterators hold a shared_ptr
+  // to the MemStore as well, the actual memstore wlil get cleaned
+  // up when the last iterator is destructed.
+  //
+  // TODO: explicitly track iterators somehow so that a slow
+  // memstore reader can't hold on to too much memory in the tablet.
 
   if (old_ms->empty()) {
     // flushing empty memstore is a no-op

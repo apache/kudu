@@ -16,6 +16,7 @@ DEFINE_int32(roundtrip_num_rows, 10000,
 namespace kudu {
 namespace tablet {
 
+using std::tr1::shared_ptr;
 using boost::scoped_ptr;
 
 class TestMemStore : public ::testing::Test {
@@ -31,8 +32,9 @@ public:
 protected:
   // Check that the given row in the memstore contains the given
   // integer value.
-  void CheckValue(const MemStore &ms, string key, uint32_t expected_val) {
-    scoped_ptr<MemStore::Iterator> iter(ms.NewIterator());
+  void CheckValue(const shared_ptr<MemStore> &ms, string key,
+                  uint32_t expected_val) {
+    scoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
     iter->Init();
 
     Slice keystr_slice(key);
@@ -53,21 +55,21 @@ protected:
 
 
 TEST_F(TestMemStore, TestInsertAndIterate) {
-  MemStore ms(schema_);
+  shared_ptr<MemStore> ms(new MemStore(schema_));
 
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms.Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(rb.data()));
 
   rb.Reset();
   rb.AddString(string("goodbye world"));
   rb.AddUint32(54321);
-  ASSERT_STATUS_OK(ms.Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(rb.data()));
 
-  ASSERT_EQ(2, ms.entry_count());
+  ASSERT_EQ(2, ms->entry_count());
 
-  scoped_ptr<MemStore::Iterator> iter(ms.NewIterator());
+  scoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
@@ -95,25 +97,25 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
 
 // Test that inserting duplicate key data fails with Status::AlreadyPresent
 TEST_F(TestMemStore, TestInsertDuplicate) {
-  MemStore ms(schema_);
+  shared_ptr<MemStore> ms(new MemStore(schema_));
 
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms.Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(rb.data()));
 
-  Status s = ms.Insert(rb.data());
+  Status s = ms->Insert(rb.data());
   ASSERT_TRUE(s.IsAlreadyPresent()) << "bad status: " << s.ToString();
 }
 
 // Test for updating rows in memstore
 TEST_F(TestMemStore, TestUpdate) {
-  MemStore ms(schema_);
+  shared_ptr<MemStore> ms(new MemStore(schema_));
 
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(1);
-  ASSERT_STATUS_OK(ms.Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(rb.data()));
 
   // Validate insertion
   CheckValue(ms, "hello world", 1);
@@ -123,7 +125,7 @@ TEST_F(TestMemStore, TestUpdate) {
   Slice key = Slice("hello world");
   uint32_t new_val = 2;
   update.get().UpdateColumn(schema_, 1, &new_val);
-  ASSERT_STATUS_OK(ms.UpdateRow(&key, update.get()));
+  ASSERT_STATUS_OK(ms->UpdateRow(&key, update.get()));
 
   // Validate the updated value
   CheckValue(ms, "hello world", 2);
@@ -131,14 +133,14 @@ TEST_F(TestMemStore, TestUpdate) {
   // Try to update a key which doesn't exist - should return NotFound
   key = Slice("does not exist");
   update.get().UpdateColumn(schema_, 1, &new_val);
-  Status s = ms.UpdateRow(&key, update.get());
+  Status s = ms->UpdateRow(&key, update.get());
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 }
 
 // Test which inserts many rows into memstore and checks for their
 // existence
 TEST_F(TestMemStore, TestInsertCopiesToArena) {
-  MemStore ms(schema_);
+  shared_ptr<MemStore> ms(new MemStore(schema_));
 
   RowBuilder rb(schema_);
   char keybuf[256];
@@ -147,7 +149,7 @@ TEST_F(TestMemStore, TestInsertCopiesToArena) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
     rb.AddString(Slice(keybuf));
     rb.AddUint32(i);
-    ASSERT_STATUS_OK(ms.Insert(rb.data()));
+    ASSERT_STATUS_OK(ms->Insert(rb.data()));
   }
 
   // Validate insertion
@@ -160,7 +162,7 @@ TEST_F(TestMemStore, TestInsertCopiesToArena) {
 
 
 TEST_F(TestMemStore, TestMemStoreInsertAndScan) {
-  MemStore ms(schema_);
+  shared_ptr<MemStore> ms(new MemStore(schema_));
 
   LOG_TIMING(INFO, "Inserting rows") {
     RowBuilder rb(schema_);
@@ -170,12 +172,12 @@ TEST_F(TestMemStore, TestMemStoreInsertAndScan) {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(ms.Insert(rb.data()));
+      ASSERT_STATUS_OK_FAST(ms->Insert(rb.data()));
     }
   }
 
   LOG_TIMING(INFO, "Counting rows") {
-    int count = ms.entry_count();
+    int count = ms->entry_count();
     ASSERT_EQ(FLAGS_roundtrip_num_rows, count);
   }
 }

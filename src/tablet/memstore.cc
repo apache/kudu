@@ -92,7 +92,7 @@ Status MemStore::UpdateRow(const void *key,
 
 
 MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {
-  return new MemStore::Iterator(this, tree_.NewIterator(), projection);
+  return new MemStore::Iterator(shared_from_this(), tree_.NewIterator(), projection);
 }
 
 MemStore::Iterator *MemStore::NewIterator() const {

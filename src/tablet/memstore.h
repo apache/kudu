@@ -3,6 +3,7 @@
 #define KUDU_TABLET_MEMSTORE_H
 
 #include <boost/noncopyable.hpp>
+#include <tr1/memory>
 
 #include "tablet/concurrent_btree.h"
 #include "tablet/rowdelta.h"
@@ -14,6 +15,7 @@
 namespace kudu {
 namespace tablet {
 
+using std::tr1::shared_ptr;
 
 // In-memory storage for data currently being written to the tablet.
 // This is a holding area for inserts, currently held in row form
@@ -23,7 +25,8 @@ namespace tablet {
 //
 // TODO: evaluate whether it makes sense to support non-sorted
 // or lazily sorted storage.
-class MemStore : boost::noncopyable {
+class MemStore : boost::noncopyable,
+                 public std::tr1::enable_shared_from_this<MemStore> {
 public:
   class Iterator;
 
@@ -71,6 +74,11 @@ public:
   }
 
   // Return an iterator over the items in this memstore.
+  //
+  // NOTE: for this function to work, there must be a shared_ptr
+  // referring to this MemStore. Otherwise, this will throw
+  // a C++ exception and all bets are off.
+  //
   // TODO: clarify the consistency of this iterator in the method doc
   Iterator *NewIterator() const;
   Iterator *NewIterator(const Schema &projection) const;
@@ -206,7 +214,7 @@ public:
 private:
   friend class MemStore;
 
-  Iterator(const MemStore *ms,
+  Iterator(const shared_ptr<const MemStore> &ms,
            MemStore::MSBTIter *iter,
            const Schema &projection) :
     memstore_(ms),
@@ -221,7 +229,7 @@ private:
   }
 
 
-  const MemStore *memstore_;
+  const shared_ptr<const MemStore> memstore_;
   scoped_ptr<MemStore::MSBTIter> iter_;
 
   const Schema projection_;
