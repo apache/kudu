@@ -148,6 +148,8 @@ Status Tablet::Flush() {
     return Status::OK();
   }
 
+  uint64_t start_mutate_count = old_ms->debug_mutate_count();
+
   // TODO: will need to think carefully about handling concurrent
   // updates during the flush process. For initial prototype, ignore
   // this tricky bit.
@@ -178,6 +180,10 @@ Status Tablet::Flush() {
 
   RETURN_NOT_OK(out.Finish());
 
+  // Sanity check that no mutations happened during our flush.
+  CHECK_EQ(start_mutate_count, old_ms->debug_mutate_count())
+    << "Sanity check failed: mutations continued in memstore "
+    << "after flush was triggered! Aborting to prevent dataloss.";
 
   // Flush to tmp was successful. Rename it to its real location.
   RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));

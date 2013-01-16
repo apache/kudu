@@ -84,6 +84,10 @@ public:
   // This dumps every row, so should only be used in tests, etc
   void DebugDump();
 
+  uint64_t debug_mutate_count() const {
+    return debug_mutate_count_;
+  }
+
 private:
   friend class Iterator;
 
@@ -103,6 +107,11 @@ private:
   typedef btree::CBTreeIterator<btree::BTreeTraits> MSBTIter;
 
   MSBTree tree_;
+
+  // Approximate count of mutations. This variable is updated non-atomically,
+  // so it cannot be relied upon to be in any way accurate. It's only used
+  // as a sanity check during flush.
+  volatile uint64_t debug_mutate_count_;
 };
 
 // An iterator through in-memory data stored in a MemStore.

@@ -14,7 +14,8 @@ static const int kMaxArenaBufferSize = 4*1024*1024;
 
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
-  arena_(kInitialArenaSize, kMaxArenaBufferSize)
+  arena_(kInitialArenaSize, kMaxArenaBufferSize),
+  debug_mutate_count_(0)
 {}
 
 void MemStore::DebugDump() {
@@ -61,6 +62,7 @@ Status MemStore::Insert(const Slice &data) {
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 
+  debug_mutate_count_++;
   return Status::OK();
 }
 
@@ -83,6 +85,8 @@ Status MemStore::UpdateRow(const void *key,
   // Update the row in-place.
   Slice existing = mutation.current_mutable_value();
   delta.ApplyRowUpdate(schema_, existing.mutable_data(), &arena_);
+
+  debug_mutate_count_++;
   return Status::OK();
 }
 
