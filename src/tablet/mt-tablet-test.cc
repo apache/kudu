@@ -10,7 +10,7 @@
 #include "tablet/tablet-test-base.h"
 #include "util/countdown_latch.h"
 
-DEFINE_int32(num_threads, 16, "Number of threads to test");
+DEFINE_int32(num_threads, 8, "Number of threads to test");
 DEFINE_int32(inserts_per_thread, 10000,
              "Number of rows inserted by each inserter thread");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
@@ -64,6 +64,30 @@ public:
     }
   }
 
+  // Thread which iterates slowly over the first 10% of the data.
+  // This is meant to test that outstanding iterators don't end up
+  // trying to reference already-freed memstore memory.
+  void SlowReaderThread(int tid) {
+    uint8_t buf[schema_.byte_size()];
+
+    int max_iters = FLAGS_num_threads * FLAGS_inserts_per_thread / 10;
+
+    while (running_insert_count_.count() > 0) {
+      scoped_ptr<Tablet::RowIterator> iter;
+      ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+
+
+      for (int i = 0; i < max_iters && iter->HasNext(); i++) {
+        arena_.Reset();
+        size_t n = 1;
+        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &buf[0], &arena_));
+        if (running_insert_count_.TimedWait(boost::posix_time::milliseconds(1))) {
+          return;
+        }
+      }
+    }
+  }
+
   void FlushThread(int tid) {
     // Start off with a very short wait time between flushes.
     // But, especially in debug mode, this will only allow a few
@@ -103,6 +127,7 @@ TEST_F(TestMultiThreadedTablet, TestInsertAndFlush) {
   StartThreads(FLAGS_num_threads, &TestMultiThreadedTablet::InsertThread);
   StartThreads(FLAGS_num_threads, &TestMultiThreadedTablet::CountThread);
   StartThreads(1, &TestMultiThreadedTablet::FlushThread);
+  StartThreads(1, &TestMultiThreadedTablet::SlowReaderThread);
   JoinThreads();
   VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_threads);
 }
