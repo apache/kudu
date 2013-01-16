@@ -56,6 +56,11 @@ public:
     return tree_.count();
   }
 
+  // Return true if there are no entries in the memstore.
+  bool empty() const {
+    return tree_.empty();
+  }
+
   // Return the memory footprint of this memstore.
   // Note that this may be larger than the sum of the data
   // inserted into the memstore, due to arena and data structure

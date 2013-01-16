@@ -242,9 +242,13 @@ TEST(TestCBTree, TestInsertAndVerify) {
 
 TEST(TestCBTree, TestUpdate) {
   CBTree<SmallFanoutTraits> t;
+  ASSERT_TRUE(t.empty());
+
   Slice key("key");
   t.Insert(key, Slice("val1"));
   VerifyGet(t, key, Slice("val1"));
+
+  ASSERT_FALSE(t.empty());
 
   // Update with a value of the same size
   {

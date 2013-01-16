@@ -1012,6 +1012,22 @@ public:
     return count;
   }
 
+  // Return true if this tree contains no elements
+  bool empty() const {
+    NodePtr<Traits> root = root_;
+    switch (root.type()) {
+      case NodePtr<Traits>::INTERNAL_NODE:
+        // If there's already an internal node, then we've inserted some data.
+        // Because we don't remove, this means we definitely have data.
+        return false;
+      case NodePtr<Traits>::LEAF_NODE:
+        return root.leaf_node_ptr()->num_entries() == 0;
+      default:
+        CHECK(0) << "bad type";
+        return true;
+    }
+  }
+
 private:
   friend class PreparedMutation<Traits>;
   friend class CBTreeIterator<Traits>;

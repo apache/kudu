@@ -143,6 +143,11 @@ Status Tablet::Flush() {
   scoped_ptr<MemStore> old_ms(new MemStore(schema_));
   old_ms.swap(memstore_);
 
+  if (old_ms->empty()) {
+    // flushing empty memstore is a no-op
+    return Status::OK();
+  }
+
   // TODO: will need to think carefully about handling concurrent
   // updates during the flush process. For initial prototype, ignore
   // this tricky bit.
