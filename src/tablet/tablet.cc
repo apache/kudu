@@ -153,11 +153,10 @@ Status Tablet::Flush() {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
 
   // swap in a new memstore
-  scoped_ptr<MemStore> old_ms(new MemStore(schema_));
+  shared_ptr<MemStore> old_ms(new MemStore(schema_));
   old_ms.swap(memstore_);
-
   // TODO: there may be outstanding iterators on old_ms here.
-  // We need to either make them take a shared_ptr so it gets
+  // We need to either make them hold a shared_ptr as well so it gets
   // reference counted, or do something like RCU to free the
   // memstore when the last iterator is closed.
   // TODO: add a unit test which shows this issue (concurrent
@@ -254,6 +253,28 @@ Status Tablet::CaptureConsistentIterators(
 
   // Swap results into the parameters.
   ret.swap(*iters);
+  return Status::OK();
+}
+
+Status Tablet::CountRows(size_t *count) const {
+  // First grab a consistent view of the components of the tablet.
+  shared_ptr<MemStore> memstore;
+  vector<shared_ptr<LayerInterface> > layers;
+  {
+    boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+    memstore = memstore_;
+    layers = layers_;
+  }
+
+  // Now sum up the counts.
+  *count = memstore->entry_count();
+
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, layers) {
+    size_t l_count;
+    RETURN_NOT_OK(layer->CountRows(&l_count));
+    *count += l_count;
+  }
+
   return Status::OK();
 }
 

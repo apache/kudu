@@ -65,6 +65,11 @@ public:
                         SmartPointer *iter) const;
   Status Flush();
 
+  // Attempt to count the total number of rows in the tablet.
+  // This is not super-efficient since it must iterate over the
+  // memstore in the current implementation.
+  Status CountRows(size_t *count) const;
+
   const Schema &schema() const { return schema_; }
 
 private:
@@ -78,7 +83,7 @@ private:
 
   Schema schema_;
   string dir_;
-  scoped_ptr<MemStore> memstore_;
+  shared_ptr<MemStore> memstore_;
   vector<shared_ptr<LayerInterface> > layers_;
 
   // Lock protecting write access to the components of the tablet (memstore and layers).

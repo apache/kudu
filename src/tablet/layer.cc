@@ -286,6 +286,12 @@ Status Layer::CheckRowPresent(const void *key,
   return s;
 }
 
+Status Layer::CountRows(size_t *count) const {
+  const cfile::CFileReader &reader = cfile_readers_[0];
+  return reader.CountRows(count);
+}
+
+
 Status Layer::FlushDMS(const DeltaMemStore &dms,
                        DeltaFileReader **dfr) {
   int delta_idx = next_delta_idx_++;

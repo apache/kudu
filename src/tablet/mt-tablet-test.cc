@@ -13,6 +13,7 @@
 DEFINE_int32(num_threads, 16, "Number of threads to test");
 DEFINE_int32(inserts_per_thread, 10000,
              "Number of rows inserted by each inserter thread");
+DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 
 namespace kudu {
 namespace tablet {
@@ -33,7 +34,7 @@ private:
 };
 
 class TestMultiThreadedTablet : public TestTablet {
-protected:
+public:
   TestMultiThreadedTablet() :
     running_insert_count_(FLAGS_num_threads)
   {}
@@ -47,11 +48,23 @@ protected:
                    FLAGS_inserts_per_thread);
   }
   
-  void UpdateThread() {
+  void UpdateThread(int tid) {
     // TODO: impl
   }
 
-  void FlushThread() {
+  // Thread which repeatedly issues CountRows() and makes sure
+  // that the count doesn't go ever down.
+  void CountThread(int tid) {
+    size_t last_count = 0;
+    while (running_insert_count_.count() > 0) {
+      size_t count;
+      ASSERT_STATUS_OK_FAST(tablet_->CountRows(&count));
+      ASSERT_GE(count, last_count);
+      last_count = count;
+    }
+  }
+
+  void FlushThread(int tid) {
     // Start off with a very short wait time between flushes.
     // But, especially in debug mode, this will only allow a few
     // rows to get inserted between each flush, and the test will take
@@ -62,28 +75,15 @@ protected:
 
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
-      wait_time *= 2;
+      wait_time *= FLAGS_flusher_backoff;
     }
   }
 
-  void StartUpdaterThreads(int n_threads) {
+  template<typename FunctionType>
+  void StartThreads(int n_threads, const FunctionType &function) {
     for (int i = 0; i < n_threads; i++) {
-      threads_.push_back(new boost::thread(
-                           &TestMultiThreadedTablet::UpdateThread, this));
+      threads_.push_back(new boost::thread(function, this, i));
     }
-  }
-
-  void StartInserterThreads(int n_threads) {
-    for (int i = 0; i < n_threads; i++) {
-      threads_.push_back(new boost::thread(
-                           &TestMultiThreadedTablet::InsertThread, this,
-                           i));
-    }
-  }
-
-  void StartFlushThread() {
-    threads_.push_back(new boost::thread(
-                         &TestMultiThreadedTablet::FlushThread, this));
   }
 
   void JoinThreads() {
@@ -100,8 +100,9 @@ protected:
 
 TEST_F(TestMultiThreadedTablet, TestInsertAndFlush) {
   // Spawn a bunch of threads, each of which will do updates.
-  StartInserterThreads(FLAGS_num_threads);
-  StartFlushThread();
+  StartThreads(FLAGS_num_threads, &TestMultiThreadedTablet::InsertThread);
+  StartThreads(FLAGS_num_threads, &TestMultiThreadedTablet::CountThread);
+  StartThreads(1, &TestMultiThreadedTablet::FlushThread);
   JoinThreads();
   VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_threads);
 }

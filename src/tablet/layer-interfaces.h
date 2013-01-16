@@ -31,6 +31,8 @@ public:
   // TODO: make this consistent with above.
   virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const = 0;
 
+  // Count the number of rows in this layer.
+  virtual Status CountRows(size_t *count) const = 0;
 
   // Return a displayable string for this layer.
   virtual string ToString() const = 0;

@@ -117,6 +117,9 @@ public:
   RowIteratorInterface *NewRowIterator(const Schema &projection) const;
 
 
+  // Count the number of rows in this layer.
+  Status CountRows(size_t *count) const;
+
   const Schema &schema() const {
     return schema_;
   }

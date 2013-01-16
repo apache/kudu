@@ -38,12 +38,18 @@ TEST_F(TestTablet, TestInsertDuplicateKey) {
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
 
+  ASSERT_EQ(1, TabletCount());
+
   // Flush, and make sure that inserting duplicate still fails
   ASSERT_STATUS_OK(tablet_->Flush());
+
+  ASSERT_EQ(1, TabletCount());
 
   s = tablet_->Insert(rb.data());
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
+
+  ASSERT_EQ(1, TabletCount());
 }
 
 // Test iterating over a tablet which contains data
@@ -175,9 +181,12 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
 // reopened, that the data persists
 TEST_F(TestTablet, TestInsertsPersist) {
   InsertTestRows(0, 1000);
+  ASSERT_EQ(1000, TabletCount());
 
   // Flush it.
   ASSERT_STATUS_OK(tablet_->Flush());
+
+  ASSERT_EQ(1000, TabletCount());
 
   // Close and re-open tablet
   tablet_.reset(new Tablet(schema_, test_dir_));
@@ -185,6 +194,7 @@ TEST_F(TestTablet, TestInsertsPersist) {
 
   // Ensure that rows exist
   VerifyTestRows(0, 1000);
+  ASSERT_EQ(1000, TabletCount());
 
   // TODO: add some more data, re-flush
 }
