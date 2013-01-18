@@ -80,7 +80,7 @@ Status DeltaMemStore::ApplyUpdates(
     iter->GetCurrentEntry(&key, &val);
     uint32_t decoded_key = DecodeKey(key);
     DCHECK_GE(decoded_key, start_row);
-    if (decoded_key > start_row + dst->size()) {
+    if (decoded_key >= start_row + dst->size()) {
       break;
     }
 
