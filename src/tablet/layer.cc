@@ -107,6 +107,39 @@ Status LayerWriter::Open() {
   return Status::OK();
 }
 
+Status LayerWriter::FlushProjection(const Schema &projection,
+                                    RowIteratorInterface *src_iter) {
+  vector<size_t> orig_columns;
+  projection.GetProjectionFrom(schema_, &orig_columns);
+
+  // TODO: handle big rows
+  int buf_size = 1024*1024;
+  scoped_array<uint8_t> buf(new uint8_t[buf_size]);
+  int batch_size = buf_size / projection.byte_size();
+  CHECK_GE(batch_size, 1) << "could not fit a row from schema: "
+                          << projection.ToString() << " in " << buf_size << " bytes";
+  Arena tmp_arena(1024, buf_size);
+
+  while (src_iter->HasNext()) {
+    // Read a batch from the iterator.
+    tmp_arena.Reset();
+    size_t nrows = batch_size;
+    RETURN_NOT_OK(src_iter->CopyNextRows(&nrows, &buf[0], &tmp_arena));
+    CHECK_GT(nrows, 0);
+
+    // Write the batch to the each of the columns
+    for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
+      size_t orig_col = orig_columns[proj_col];
+      size_t off = projection.column_offset(orig_col);
+      size_t stride = projection.byte_size();
+      const void *p = &buf[off];
+      RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
+    }
+  }
+
+  return Status::OK();
+}
+
 Status LayerWriter::Finish() {
   for (int i = 0; i < schema_.num_columns(); i++) {
     RETURN_NOT_OK(cfile_writers_[i].Finish());
@@ -132,6 +165,7 @@ Status Layer::Open(Env *env,
   *layer = l.release();
   return Status::OK();
 }
+
 
 // Open the CFileReaders for the "base data" in this layer.
 // TODO: rename me

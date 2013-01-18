@@ -52,6 +52,10 @@ public:
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
+  // Return true if the given key is contained in the memstore.
+  // TODO: unit test me
+  bool ContainsRow(const void *key) const;
+
   // Return the number of entries in the memstore.
   // NOTE: this requires iterating all data, and is thus
   // not very fast.
@@ -92,8 +96,8 @@ public:
   // This dumps every row, so should only be used in tests, etc
   void DebugDump();
 
-  uint64_t debug_mutate_count() const {
-    return debug_mutate_count_;
+  uint64_t debug_insert_count() const {
+    return debug_insert_count_;
   }
 
 private:
@@ -116,10 +120,10 @@ private:
 
   MSBTree tree_;
 
-  // Approximate count of mutations. This variable is updated non-atomically,
+  // Approximate count of insertions. This variable is updated non-atomically,
   // so it cannot be relied upon to be in any way accurate. It's only used
   // as a sanity check during flush.
-  volatile uint64_t debug_mutate_count_;
+  volatile uint64_t debug_insert_count_;
 };
 
 // An iterator through in-memory data stored in a MemStore.

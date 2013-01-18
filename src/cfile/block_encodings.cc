@@ -246,13 +246,18 @@ void IntBlockBuilder::Reset() {
   estimated_raw_size_ = 0;
 }
 
-int IntBlockBuilder::Add(const void *vals_void, int count) {
-  const uint32_t *vals = reinterpret_cast<const uint32_t *>(vals_void);
+int IntBlockBuilder::Add(const uint8_t *vals_void, size_t count, size_t stride) {
+  if (count > 1) {
+    DCHECK_GE(stride, sizeof(uint32_t));
+  }
+
+  const uint8_t *vals = reinterpret_cast<const uint8_t *>(vals_void);
 
   int added = 0;
   while (estimated_raw_size_ < options_->block_size &&
          added < count) {
-    uint32_t val = *vals++;
+    uint32_t val = *reinterpret_cast<const uint32_t *>(vals);
+    vals += stride;
     estimated_raw_size_ += CalcRequiredBytes32(val);
     ints_.push_back(val);
     added++;
@@ -389,12 +394,16 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
   return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
 }
 
-int StringBlockBuilder::Add(const void *vals_void, int count) {
+int StringBlockBuilder::Add(const uint8_t *vals, size_t count, size_t stride) {
   DCHECK_GT(count, 0);
   DCHECK(!finished_);
   DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
+  if (count > 1) {
+    DCHECK_GE(stride, sizeof(Slice));
+  }
 
-  const Slice &val = *reinterpret_cast<const Slice *>(vals_void);
+
+  const Slice &val = *reinterpret_cast<const Slice *>(vals);
 
   Slice last_val_piece(last_val_);
   size_t shared = 0;

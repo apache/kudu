@@ -100,7 +100,7 @@ static void WriteTestFileStrings(
     int len = snprintf(data, sizeof(data), format, i);
     Slice slice(data, len);
 
-    Status s = w.AppendEntries(&slice, 1);
+    Status s = w.AppendEntries(&slice, 1, 0);
     // Dont use ASSERT because it accumulates all the logs
     // even for successes
     if (!s.ok()) {
@@ -129,6 +129,7 @@ static void WriteTestFile(const string &path,
   ASSERT_STATUS_OK(w.Start());
 
   uint32_t block[8096];
+  size_t stride = sizeof(uint32_t);
 
   // Append given number of values to the test tree
   int i = 0;
@@ -138,7 +139,7 @@ static void WriteTestFile(const string &path,
       block[j] = i++ * 10;
     }
 
-    Status s = w.AppendEntries(block, towrite);
+    Status s = w.AppendEntries(block, towrite, stride);
     // Dont use ASSERT because it accumulates all the logs
     // even for successes
     if (!s.ok()) {

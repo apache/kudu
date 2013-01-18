@@ -5,11 +5,13 @@
 #include <boost/noncopyable.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <string>
+#include <tr1/memory>
 
 #include "cfile/cfile_reader.h"
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "tablet/layer-interfaces.h"
+#include "tablet/memstore.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/slice.h"
@@ -26,14 +28,10 @@ namespace tablet {
 using boost::ptr_vector;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
+using std::tr1::shared_ptr;
 
-class LayerBaseData {
+class LayerBaseData : public LayerInterface {
 public:
-  class UpdateStatus;
-
-  virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const = 0;
-  virtual Status CountRows(size_t *count) const = 0;
-
   // Return true if this layer's base data can be updated in-place.
   //
   // If this returns true, then Update() on the same object must
@@ -44,39 +42,74 @@ public:
   // Update() may return NotSupported.
   virtual bool is_updatable_in_place() const = 0;
 
-  // Update the given row.
-  //
-  // See is_updatable_in_place() for restrictions on when this may be used.
-  virtual Status UpdateRow(const void *key, const RowDelta &update) {
-    return Status::NotSupported("");
-  }
-
   // Determine the index of the given row key.
   //
   // See is_updatable_in_place() for restrictions on when this may be used.
   virtual Status FindRow(const void *key, uint32_t *idx) const {
     return Status::NotSupported("");
   }
-
-  // Determine whether the given row is present in the base data.
-  virtual Status CheckRowPresent(const void *key, bool *present) const = 0;
 };
 
+
+// Simple wrapper around MemStore which makes it conform to the
+// LayerBaseData interface.
+// This base data is in-place mutable, and is used during the
+// Flush process.
+class MemStoreBaseData : public LayerBaseData, boost::noncopyable {
+public:
+  explicit MemStoreBaseData(const shared_ptr<MemStore> &ms) :
+    ms_(ms)
+  {}
+
+  Status UpdateRow(const void *key, const RowDelta &update) {
+    return ms_->UpdateRow(key, update);
+  }
+
+  Status CheckRowPresent(const void *key, bool *present) const {
+    *present = ms_->ContainsRow(key);
+    return Status::OK();
+  }
+
+  RowIteratorInterface *NewRowIterator(const Schema &projection) const {
+    return ms_->NewIterator(projection);
+  }
+
+  Status CountRows(size_t *count) const {
+    *count = ms_->entry_count();
+    return Status::OK();
+  }
+
+  bool is_updatable_in_place() const {
+    return true;
+  }
+
+  string ToString() const {
+    return string("MemStoreBaseData");
+  }
+
+private:
+  shared_ptr<MemStore> ms_;
+};
+
+// Base Data made up of a set of CFiles, one for each column.
 class CFileBaseData : public LayerBaseData, boost::noncopyable {
 public:
   CFileBaseData(Env *env, const string &dir, const Schema &schema);
 
   Status Open();
   virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const;
-  Status NewColumnIterator(size_t col_idx, CFileIterator **iter) const;
   Status CountRows(size_t *count) const;
   Status FindRow(const void *key, uint32_t *idx) const;
-
-  const Schema &schema() const { return schema_; }
 
   bool is_updatable_in_place() const {
     return false;
   }
+
+  Status UpdateRow(const void *key, const RowDelta &update) {
+    return Status::NotSupported("CFiles are immutable");
+  }
+
+  const Schema &schema() const { return schema_; }
 
   string ToString() const {
     return string("CFile base data in ") + dir_;
@@ -86,6 +119,9 @@ public:
 
 private:
   class RowIterator;
+  friend class RowIterator;
+
+  Status NewColumnIterator(size_t col_idx, CFileIterator **iter) const;
 
   Env *env_;
   const string dir_;
@@ -95,7 +131,6 @@ private:
 
   ptr_vector<CFileReader> readers_;
 };
-
 
 // Iterator which yields the combined and projected rows from a
 // subset of the columns.

@@ -15,7 +15,7 @@ static const int kMaxArenaBufferSize = 4*1024*1024;
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
-  debug_mutate_count_(0)
+  debug_insert_count_(0)
 {}
 
 void MemStore::DebugDump() {
@@ -62,7 +62,7 @@ Status MemStore::Insert(const Slice &data) {
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 
-  debug_mutate_count_++;
+  debug_insert_count_++;
   return Status::OK();
 }
 
@@ -86,10 +86,19 @@ Status MemStore::UpdateRow(const void *key,
   Slice existing = mutation.current_mutable_value();
   delta.ApplyRowUpdate(schema_, existing.mutable_data(), &arena_);
 
-  debug_mutate_count_++;
   return Status::OK();
 }
 
+bool MemStore::ContainsRow(const void *key) const {
+  Slice unencoded_key_slice(reinterpret_cast<const char *>(key),
+                            schema_.key_byte_size());
+
+  faststring key_buf;
+  schema_.EncodeComparableKey(unencoded_key_slice, &key_buf);
+  Slice encoded_key_slice(key_buf);
+
+  return tree_.ContainsKey(encoded_key_slice);
+}
 
 MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {
   return new MemStore::Iterator(shared_from_this(), tree_.NewIterator(), projection);

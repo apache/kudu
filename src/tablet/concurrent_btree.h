@@ -992,6 +992,37 @@ public:
     }
   }
 
+  // Returns true if the given key is contained in the tree.
+  // TODO: unit test
+  bool ContainsKey(const Slice &key) const {
+    bool ret;
+
+    retry_from_root:
+    {
+      AtomicVersion version;
+      LeafNode<Traits> *leaf = CHECK_NOTNULL(TraverseToLeaf(key, &version));
+
+      DebugRacyPoint();
+
+      retry_in_leaf:
+      {
+        size_t idx = leaf->Find(key, &ret);
+        DebugRacyPoint();
+
+        // Got some kind of result, but may be based on racy data.
+        // Verify it.
+        AtomicVersion new_version = leaf->StableVersion();
+        if (VersionField::HasSplit(version, new_version)) {
+          goto retry_from_root;
+        } else if (VersionField::IsDifferent(version, new_version)) {
+          version = new_version;
+          goto retry_in_leaf;
+        }
+        return ret;
+      }
+    }
+  }
+
   CBTreeIterator<Traits> *NewIterator() const {
     return new CBTreeIterator<Traits>(this);
   }

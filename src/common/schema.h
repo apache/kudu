@@ -71,6 +71,13 @@ public:
     return Status::OK();
   }
 
+  ColumnSchema(const ColumnSchema &other) :
+    name_(other.name_),
+    type_info_(other.type_info_)
+  {}
+
+  ColumnSchema & operator=(const ColumnSchema&);
+
 private:
   const string name_;
   const TypeInfo &type_info_;
@@ -91,14 +98,14 @@ public:
     CHECK_GT(cols_.size(), 0);
     CHECK_LE(key_columns, cols_.size());
 
-    CHECK_EQ(1, key_columns) <<
+    CHECK_LE(1, key_columns) <<
       "TODO: Currently only support a single key-column.";
 
     // Calculate the offset of each column in the row format.
     col_offsets_.reserve(cols_.size());
     size_t off = 0;
     size_t i = 0;
-    BOOST_FOREACH(ColumnSchema col, cols) {
+    BOOST_FOREACH(const ColumnSchema &col, cols) {
       name_to_index_[col.name()] = i++;
       col_offsets_.push_back(off);
       off += col.type_info().size();
@@ -267,6 +274,16 @@ public:
       indexes->push_back((*iter).second);
     }
     return Status::OK();
+  }
+
+  // Return the projection of this schema which contains only
+  // the key columns.
+  Schema CreateKeyProjection() {
+    vector<ColumnSchema> key_cols;
+    for (int i = 0; i < num_key_columns_; i++) {
+      key_cols.push_back(cols_[i]);
+    }
+    return Schema(key_cols, num_key_columns_);
   }
 
 

@@ -82,7 +82,7 @@ public:
   Status Finish();
 
   // Append a set of values to the file.
-  Status AppendEntries(const void *entries, int count);
+  Status AppendEntries(const void *entries, size_t count, size_t stride);
 
   ~Writer();
 

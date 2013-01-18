@@ -142,79 +142,92 @@ Status Tablet::UpdateRow(const void *key,
 Status Tablet::Flush() {
   CHECK(open_);
 
-  // Lock the component_lock_ in exclusive mode.
-  // This shuts out any concurrent readers or writers.
-  // TODO: this is a very bad implementation which locks
-  // out other accessors for the duration of the flush, which
-  // might be significantly long. A better approach would be
-  // to do this in multiple phases, and only taking the lock
-  // during the transitions between the phases. See 'flushing.txt'
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  uint64_t start_insert_count;
 
-  // swap in a new memstore
   shared_ptr<MemStore> old_ms(new MemStore(schema_));
-  old_ms.swap(memstore_);
 
-  // Because this is a shared pointer, and iterators hold a shared_ptr
-  // to the MemStore as well, the actual memstore wlil get cleaned
-  // up when the last iterator is destructed.
-  //
-  // TODO: explicitly track iterators somehow so that a slow
-  // memstore reader can't hold on to too much memory in the tablet.
+  // Step 1. Freeze the old memstore by blocking readers and swapping
+  // it in as a new layer.
+  {
+    // Lock the component_lock_ in exclusive mode.
+    // This shuts out any concurrent readers or writers for as long
+    // as the swap takes.
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
 
-  if (old_ms->empty()) {
-    // flushing empty memstore is a no-op
-    LOG(INFO) << "Flush requested on empty memstore";
-    return Status::OK();
+    start_insert_count = memstore_->debug_insert_count();
+
+    // swap in a new memstore
+    old_ms.swap(memstore_);
+
+    if (old_ms->empty()) {
+      // flushing empty memstore is a no-op
+      LOG(INFO) << "Flush requested on empty memstore";
+      return Status::OK();
+    }
+
+    shared_ptr<LayerInterface> old_ms_layer(new MemStoreBaseData(old_ms));
+    layers_.push_back(old_ms_layer);
   }
 
-  uint64_t start_mutate_count = old_ms->debug_mutate_count();
+  // At this point:
+  //   Inserts: go into the new memstore
+  //   Updates: can go to either memstore as appropriate
+  //   Deletes: TODO
+  //
+  // Crucially, the *key set* of the old memstore has been frozen,
+  // so we can flush it to disk without it changing under us.
+
+  // Step 2. Flush the key column of the old memstore. This doesn't need
+  // any lock, since updates go on concurrently.
+  // TODO: deletes are a little bit tricky here -- need to make sure
+  // that deletes at this point are just marking entries in the btree
+  // rather than actually deleting them.
+
+  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
+  string tmp_layer_dir = new_layer_dir + ".tmp";
+
+
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+
+  //Schema keys_only = schema_; // schema_.CreateKeyProjection();
+  scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(schema_));
+  RETURN_NOT_OK(iter->Init());
+
 
   // TODO: will need to think carefully about handling concurrent
   // updates during the flush process. For initial prototype, ignore
   // this tricky bit.
 
-  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
-  string tmp_layer_dir = new_layer_dir + ".tmp";
   // 1. Flush new layer to temporary directory.
 
   LayerWriter out(env_, schema_, tmp_layer_dir);
   RETURN_NOT_OK(out.Open());
-
-  scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator());
-  CHECK(iter->HasNext()) << "old memstore yielded invalid iterator";
-
-  // TODO: convert over to the batched API
-  int written = 0;
-  while (iter->HasNext()) {
-    Slice s = iter->GetCurrentRow();
-    Status status = out.WriteRow(s);
-    if (!status.ok()) {
-      LOG(ERROR) << "Unable to write row " << written << " to " <<
-        dir_ << ": " << status.ToString();
-      return status;
-    }
-    iter->Next();
-    written++;
-  }
-
+  RETURN_NOT_OK(out.FlushProjection(schema_, iter.get()));
   RETURN_NOT_OK(out.Finish());
 
   // Sanity check that no mutations happened during our flush.
-  CHECK_EQ(start_mutate_count, old_ms->debug_mutate_count())
+  CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
     << "Sanity check failed: mutations continued in memstore "
     << "after flush was triggered! Aborting to prevent dataloss.";
 
   // Flush to tmp was successful. Rename it to its real location.
   RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
 
-  LOG(INFO) << "Successfully flushed " << written << " rows";
+  LOG(INFO) << "Successfully flushed " << out.written_count() << " rows";
 
   // Open it.
   Layer *new_layer;
   RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
-  layers_.push_back(shared_ptr<Layer>(new_layer));
+
+  // Replace the memstore layer with the on-disk layer.
+  // Because this is a shared pointer, and iterators hold a shared_ptr
+  // to the MemStore as well, the actual memstore wlil get cleaned
+  // up when the last iterator is destructed.
+  layers_[layers_.size() - 1].reset(new_layer);
   return Status::OK();
+
+  // TODO: explicitly track iterators somehow so that a slow
+  // memstore reader can't hold on to too much memory in the tablet.
 }
 
 Status Tablet::CaptureConsistentIterators(

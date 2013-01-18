@@ -129,7 +129,7 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
   for (int i = 0; i < 10000; i++) {
     ints[i] = random();
   }
-  ibb.Add(reinterpret_cast<int *>(ints), 10000);
+  ibb.Add(reinterpret_cast<const uint8_t *>(ints), 10000, sizeof(int));
   delete[] ints;
 
   Slice s = ibb.Finish(12345);
@@ -154,7 +154,8 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   }
 
   IntBlockBuilder ibb(opts.get());
-  ibb.Add(&to_insert[0], to_insert.size());
+  ibb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
+          to_insert.size(), sizeof(uint32_t));
   Slice s = ibb.Finish(kOrdinalPosBase);
 
   IntBlockDecoder ibd(s);
@@ -225,7 +226,8 @@ static Slice CreateStringBlock(StringBlockBuilder *sbb,
   int rem = slices.size();
   Slice *ptr = &slices[0];
   while (rem > 0) {
-    int added = sbb->Add(reinterpret_cast<void *>(ptr), rem);
+    int added = sbb->Add(reinterpret_cast<const uint8_t *>(ptr),
+                         rem, sizeof(Slice));
     CHECK(added > 0);
     rem -= added;
     ptr += added;

@@ -167,16 +167,20 @@ Status Writer::Finish() {
   return file_->Close();
 }
 
-Status Writer::AppendEntries(const void *entries, int count) {
+Status Writer::AppendEntries(const void *entries, size_t count, size_t stride) {
   int rem = count;
+  if (count > 1) {
+    CHECK_GE(stride, typeinfo_.size())
+      << "stride " << stride << " too small for type " << typeinfo_.name();
+  }
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
 
   while (rem > 0) {
-    int n = data_block_->Add(ptr, rem);
+    int n = data_block_->Add(ptr, rem, stride);
     DCHECK_GE(n, 0);
 
-    ptr += typeinfo_.size() * n;
+    ptr += stride * n;
     rem -= n;
     value_count_ += n;
 

@@ -62,7 +62,7 @@ Status DeltaFileWriter::AppendDelta(
           << HexDump(tmp_buf_);
 
   Slice data_slice(tmp_buf_);
-  return writer_->AppendEntries(&data_slice, 1);
+  return writer_->AppendEntries(&data_slice, 1, 0);
 }
 
 ////////////////////////////////////////////////////////////

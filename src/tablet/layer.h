@@ -41,10 +41,14 @@ public:
               const string &layer_dir) :
     env_(env),
     schema_(schema),
-    dir_(layer_dir)
+    dir_(layer_dir),
+    written_count_(0)
   {}
 
   Status Open();
+
+  Status FlushProjection(const Schema &projection,
+                         RowIteratorInterface *src_iter);
 
   Status WriteRow(const Slice &row) {
     DCHECK_EQ(row.size(), schema_.byte_size());
@@ -52,7 +56,7 @@ public:
     for (int i = 0; i < schema_.num_columns(); i++) {
       int off = schema_.column_offset(i);
       const void *p = row.data() + off;
-      RETURN_NOT_OK( cfile_writers_[i].AppendEntries(p, 1) );
+      RETURN_NOT_OK( cfile_writers_[i].AppendEntries(p, 1, 0) );
     }
 
     return Status::OK();
@@ -60,10 +64,15 @@ public:
 
   Status Finish();
 
+  size_t written_count() const { return written_count_; }
+
 private:
   Env *env_;
   const Schema schema_;
   const string dir_;
+
+  // TODO: write logic to update this
+  size_t written_count_;
 
   ptr_vector<cfile::Writer> cfile_writers_;
 };
@@ -81,6 +90,12 @@ public:
                      const Schema &schema,
                      const string &layer_dir,
                      Layer **layer);
+
+  Status CreateFromMemStore(Env *env,
+                            const Schema &schema,
+                            const string &layer_dir,
+                            shared_ptr<MemStore> &memstore,
+                            Layer **layer);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions

@@ -64,7 +64,7 @@ class BlockBuilder : boost::noncopyable {
 public:
   // TODO: add a more type-checkable wrapper for void *,
   // like ConstVariantPointer in Supersonic
-  virtual int Add(const void *vals, int count) = 0;
+  virtual int Add(const uint8_t *vals, size_t count, size_t stride) = 0;
 
   // Return a Slice which represents the encoded data.
   //
@@ -115,7 +115,7 @@ class IntBlockBuilder : public BlockBuilder {
 public:
   explicit IntBlockBuilder(const WriterOptions *options);
 
-  int Add(const void *vals, int count);
+  int Add(const uint8_t *vals, size_t count, size_t stride);
 
   Slice Finish(uint32_t ordinal_pos);
 
@@ -152,7 +152,7 @@ class StringBlockBuilder : public BlockBuilder {
 public:
   explicit StringBlockBuilder(const WriterOptions *options);
 
-  int Add(const void *vals, int count);
+  int Add(const uint8_t *vals, size_t count, size_t stride);
 
   // Return a Slice which represents the encoded data.
   //
