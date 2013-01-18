@@ -26,7 +26,8 @@ public:
     env_(Env::Default()),
     schema_(boost::assign::list_of
             (ColumnSchema("key", STRING))
-            (ColumnSchema("val", UINT32)),
+            (ColumnSchema("insert_id", UINT32))
+            (ColumnSchema("update_count", UINT32)),
             1),
     arena_(1024, 4*1024*1024)
   {}
@@ -56,6 +57,7 @@ protected:
       snprintf(buf, sizeof(buf), "hello %d", i);
       rb.AddString(Slice(buf));
       rb.AddUint32(i);
+      rb.AddUint32(0);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
     }
   }

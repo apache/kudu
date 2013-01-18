@@ -15,14 +15,15 @@ static const int kMaxArenaBufferSize = 4*1024*1024;
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
-  debug_insert_count_(0)
+  debug_insert_count_(0),
+  debug_update_count_(0)
 {}
 
 void MemStore::DebugDump() {
   scoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
     Slice k, v;
-    LOG(INFO) << "row " << iter->GetCurrentRow().data();
+    LOG(INFO) << "row " << schema_.DebugRow(iter->GetCurrentRow().data());
     iter->Next();
   }
 }
@@ -86,6 +87,7 @@ Status MemStore::UpdateRow(const void *key,
   Slice existing = mutation.current_mutable_value();
   delta.ApplyRowUpdate(schema_, existing.mutable_data(), &arena_);
 
+  debug_update_count_++;
   return Status::OK();
 }
 

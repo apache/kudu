@@ -1006,7 +1006,7 @@ public:
 
       retry_in_leaf:
       {
-        size_t idx = leaf->Find(key, &ret);
+        leaf->Find(key, &ret);
         DebugRacyPoint();
 
         // Got some kind of result, but may be based on racy data.

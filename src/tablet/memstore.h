@@ -99,6 +99,9 @@ public:
   uint64_t debug_insert_count() const {
     return debug_insert_count_;
   }
+  uint64_t debug_update_count() const {
+    return debug_update_count_;
+  }
 
 private:
   friend class Iterator;
@@ -120,10 +123,11 @@ private:
 
   MSBTree tree_;
 
-  // Approximate count of insertions. This variable is updated non-atomically,
+  // Approximate counts of mutations. This variable is updated non-atomically,
   // so it cannot be relied upon to be in any way accurate. It's only used
   // as a sanity check during flush.
   volatile uint64_t debug_insert_count_;
+  volatile uint64_t debug_update_count_;
 };
 
 // An iterator through in-memory data stored in a MemStore.

@@ -199,6 +199,7 @@ Status Tablet::Flush() {
   // this tricky bit.
 
   // 1. Flush new layer to temporary directory.
+  uint64_t start_update_count = old_ms->debug_update_count();
 
   LayerWriter out(env_, schema_, tmp_layer_dir);
   RETURN_NOT_OK(out.Open());
@@ -207,8 +208,12 @@ Status Tablet::Flush() {
 
   // Sanity check that no mutations happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
-    << "Sanity check failed: mutations continued in memstore "
+    << "Sanity check failed: insertions continued in memstore "
     << "after flush was triggered! Aborting to prevent dataloss.";
+  CHECK_EQ(start_update_count, old_ms->debug_update_count())
+    << "Sanity check failed: updates continued in memstore "
+    << "after flush was triggered! Aborting to prevent dataloss.";
+
 
   // Flush to tmp was successful. Rename it to its real location.
   RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
