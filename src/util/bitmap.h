@@ -87,7 +87,7 @@ private:
       bit_idx_ = cur_byte_idx_ * 8;
     }
 
-    if (cur_byte_ == 0) {
+    if (cur_byte_ == 0 || bit_idx_ >= n_bits_) {
       done_ = true;
       return;
     }
