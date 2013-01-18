@@ -131,6 +131,8 @@ Status Writer::Finish() {
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;
 
+  state_ = kWriterFinished;
+
   // Write out any pending values as the last data block.
   RETURN_NOT_OK(FinishCurDataBlock());
 

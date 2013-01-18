@@ -81,6 +81,10 @@ public:
   Status Start();
   Status Finish();
 
+  bool finished() {
+    return state_ == kWriterFinished;
+  }
+
   // Append a set of values to the file.
   Status AppendEntries(const void *entries, size_t count, size_t stride);
 
