@@ -142,9 +142,15 @@ Status Tablet::UpdateRow(const void *key,
 Status Tablet::Flush() {
   CHECK(open_);
 
+  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
+  string tmp_layer_dir = new_layer_dir + ".tmp";
+
   uint64_t start_insert_count;
 
   shared_ptr<MemStore> old_ms(new MemStore(schema_));
+
+
+  LOG(INFO) << "Flush: entering stage 1 (freezing old memstore from inserts)";
 
   // Step 1. Freeze the old memstore by blocking readers and swapping
   // it in as a new layer.
@@ -165,8 +171,9 @@ Status Tablet::Flush() {
       return Status::OK();
     }
 
-    shared_ptr<LayerInterface> old_ms_layer(new MemStoreBaseData(old_ms));
-    layers_.push_back(old_ms_layer);
+    // TODO: maybe just make MemStore implement LayerInterface
+    //shared_ptr<LayerInterface> old_ms_layer(old_ms);
+    layers_.push_back(old_ms);
   }
 
   // At this point:
@@ -182,29 +189,52 @@ Status Tablet::Flush() {
   // TODO: deletes are a little bit tricky here -- need to make sure
   // that deletes at this point are just marking entries in the btree
   // rather than actually deleting them.
+  LOG(INFO) << "Flush: entering stage 2 (flushing keys)";
 
-  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
-  string tmp_layer_dir = new_layer_dir + ".tmp";
+  Schema keys_only = schema_.CreateKeyProjection();
 
-
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-
-  //Schema keys_only = schema_; // schema_.CreateKeyProjection();
-  scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(schema_));
+  scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(keys_only));
   RETURN_NOT_OK(iter->Init());
-
-
-  // TODO: will need to think carefully about handling concurrent
-  // updates during the flush process. For initial prototype, ignore
-  // this tricky bit.
-
-  // 1. Flush new layer to temporary directory.
-  uint64_t start_update_count = old_ms->debug_update_count();
 
   LayerWriter out(env_, schema_, tmp_layer_dir);
   RETURN_NOT_OK(out.Open());
-  RETURN_NOT_OK(out.FlushProjection(schema_, iter.get()));
+  RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get()));
+
+
+  // Step 3. Freeze old memstore contents.
+  // Because the key column exists on disk, we can create a new layer
+  // which does positional updating instead of in-place updating,
+  // and swap that in.
+
+  LOG(INFO) << "Flush: entering stage 3 (freezing old memstore from in-place updates)";
+
+  Layer *partially_flushed_layer;
+  RETURN_NOT_OK(Layer::CreatePartiallyFlushed(
+                  env_, schema_, tmp_layer_dir, old_ms,
+                  &partially_flushed_layer));
+
+
+  uint64_t start_update_count;
+  {
+    // Swap it in under the lock.
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    CHECK_EQ(layers_.back(), old_ms)
+      << "Layer components changed during flush";
+    layers_.back().reset(partially_flushed_layer);
+
+    // We shouldn't have any more updates after this point.
+    start_update_count = old_ms->debug_update_count();
+  }
+
+  LOG(INFO) << "Flush: entering stage 4 (flushing the rest of the columns)";
+
+  // Step 4. Flush the non-key columns
+  Schema non_keys = schema_.CreateNonKeyProjection();
+  iter.reset(old_ms->NewIterator(non_keys));
+  RETURN_NOT_OK(iter->Init());
+  RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get()));
   RETURN_NOT_OK(out.Finish());
+
 
   // Sanity check that no mutations happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
@@ -228,7 +258,10 @@ Status Tablet::Flush() {
   // Because this is a shared pointer, and iterators hold a shared_ptr
   // to the MemStore as well, the actual memstore wlil get cleaned
   // up when the last iterator is destructed.
-  layers_[layers_.size() - 1].reset(new_layer);
+  {
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    layers_.back().reset(new_layer);
+  }
   return Status::OK();
 
   // TODO: explicitly track iterators somehow so that a slow

@@ -31,6 +31,7 @@ TEST_F(TestTablet, TestInsertDuplicateKey) {
   RowBuilder rb(schema_);
   rb.AddString(Slice("hello world"));
   rb.AddUint32(12345);
+  rb.AddUint32(0);
   ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
 
   // Insert again, should fail!
@@ -60,6 +61,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   RowBuilder rb(schema_);
   rb.AddString(Slice("hello from layer 1"));
   rb.AddUint32(1);
+  rb.AddUint32(0);
   ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
   ASSERT_STATUS_OK(tablet_->Flush());
 
@@ -67,6 +69,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   rb.Reset();
   rb.AddString(Slice("hello from layer 2"));
   rb.AddUint32(2);
+  rb.AddUint32(0);
   ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
   ASSERT_STATUS_OK(tablet_->Flush());
 
@@ -74,6 +77,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   rb.Reset();
   rb.AddString(Slice("hello from memstore"));
   rb.AddUint32(3);
+  rb.AddUint32(0);
   ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
 
   // Now iterate the tablet and make sure the rows show up
@@ -87,7 +91,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   size_t n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
   ASSERT_EQ(1, n) << "should get only the one row from memstore";
-  ASSERT_EQ("(string key=hello from memstore, uint32 val=3)",
+  ASSERT_EQ("(string key=hello from memstore, uint32 val=3, uint32 update_count=0)",
             schema_.DebugRow(&buf[0]))
     << "should have retrieved the row data from memstore";
 
@@ -96,7 +100,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
   ASSERT_EQ(1, n) << "should get only the one row from layer 1";
-  ASSERT_EQ("(string key=hello from layer 1, uint32 val=1)",
+  ASSERT_EQ("(string key=hello from layer 1, uint32 val=1, uint32 update_count=0)",
             schema_.DebugRow(&buf[0]))
     << "should have retrieved the row data from layer 1";
 
@@ -105,7 +109,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
   ASSERT_EQ(1, n) << "should get only the one row from layer 2";
-  ASSERT_EQ("(string key=hello from layer 2, uint32 val=2)",
+  ASSERT_EQ("(string key=hello from layer 2, uint32 val=2, uint32 update_count=0)",
             schema_.DebugRow(&buf[0]))
     << "should have retrieved the row data from layer 2";
 
@@ -124,6 +128,7 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
     rb.AddString(Slice(keybuf));
     rb.AddUint32(i);
+    rb.AddUint32(0);
     ASSERT_STATUS_OK(tablet_->Insert(rb.data()));
     inserted.insert(i);
 

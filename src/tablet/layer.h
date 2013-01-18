@@ -42,21 +42,26 @@ public:
     env_(env),
     schema_(schema),
     dir_(layer_dir),
-    written_count_(0)
+    finished_(false),
+    column_flushed_counts_(schema.num_columns(), 0)
   {}
 
   Status Open();
 
+  // TODO: doc me
   Status FlushProjection(const Schema &projection,
                          RowIteratorInterface *src_iter);
 
   Status WriteRow(const Slice &row) {
+    CHECK(!finished_);
     DCHECK_EQ(row.size(), schema_.byte_size());
 
     for (int i = 0; i < schema_.num_columns(); i++) {
       int off = schema_.column_offset(i);
       const void *p = row.data() + off;
       RETURN_NOT_OK( cfile_writers_[i].AppendEntries(p, 1, 0) );
+
+      column_flushed_counts_[i]++;
     }
 
     return Status::OK();
@@ -64,17 +69,20 @@ public:
 
   Status Finish();
 
-  size_t written_count() const { return written_count_; }
+  size_t written_count() const {
+    CHECK(finished_);
+    return column_flushed_counts_[0];
+  }
+
 
 private:
   Env *env_;
   const Schema schema_;
   const string dir_;
-
-  // TODO: write logic to update this
-  size_t written_count_;
+  bool finished_;
 
   ptr_vector<cfile::Writer> cfile_writers_;
+  vector<size_t> column_flushed_counts_;
 };
 
 ////////////////////////////////////////////////////////////
@@ -91,11 +99,13 @@ public:
                      const string &layer_dir,
                      Layer **layer);
 
-  Status CreateFromMemStore(Env *env,
-                            const Schema &schema,
-                            const string &layer_dir,
-                            shared_ptr<MemStore> &memstore,
-                            Layer **layer);
+  // TODO: docme
+  static Status CreatePartiallyFlushed(
+    Env *env,
+    const Schema &schema,
+    const string &layer_dir,
+    shared_ptr<MemStore> &memstore,
+    Layer **layer);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions

@@ -91,7 +91,7 @@ Status MemStore::UpdateRow(const void *key,
   return Status::OK();
 }
 
-bool MemStore::ContainsRow(const void *key) const {
+Status MemStore::CheckRowPresent(const void *key, bool *present) const {
   Slice unencoded_key_slice(reinterpret_cast<const char *>(key),
                             schema_.key_byte_size());
 
@@ -99,7 +99,8 @@ bool MemStore::ContainsRow(const void *key) const {
   schema_.EncodeComparableKey(unencoded_key_slice, &key_buf);
   Slice encoded_key_slice(key_buf);
 
-  return tree_.ContainsKey(encoded_key_slice);
+  *present = tree_.ContainsKey(encoded_key_slice);
+  return Status::OK();
 }
 
 MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {
@@ -108,6 +109,10 @@ MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {
 
 MemStore::Iterator *MemStore::NewIterator() const {
   return NewIterator(schema());
+}
+
+RowIteratorInterface *MemStore::NewRowIterator(const Schema &projection) const {
+  return NewIterator(projection);
 }
 
 

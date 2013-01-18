@@ -13,6 +13,87 @@ using cfile::ReaderOptions;
 using std::auto_ptr;
 using std::tr1::shared_ptr;
 
+////////////////////////////////////////////////////////////
+// Utilities
+////////////////////////////////////////////////////////////
+
+static Status OpenReader(Env *env, string dir, size_t col_idx,
+                         CFileReader **new_reader) {
+  string path = Layer::GetColumnPath(dir, col_idx);
+
+  // TODO: somehow pass reader options in schema
+  ReaderOptions opts;
+
+  RandomAccessFile *raf_ptr;
+  Status s = env->NewRandomAccessFile(path, &raf_ptr);
+  if (!s.ok()) {
+    LOG(WARNING) << "Could not open cfile at path "
+                 << path << ": " << s.ToString();
+    return s;
+  }
+  shared_ptr<RandomAccessFile> raf(raf_ptr);
+
+  uint64_t file_size;
+  s = env->GetFileSize(path, &file_size);
+  if (!s.ok()) {
+    LOG(WARNING) << "Could not get cfile length at path "
+                 << path << ": " << s.ToString();
+    return s;
+  }
+
+  auto_ptr<CFileReader> reader(
+    new CFileReader(opts, raf, file_size));
+  s = reader->Init();
+  if (!s.ok()) {
+    LOG(WARNING) << "Failed to Init() cfile reader for "
+                 << path << ": " << s.ToString();
+    return s;
+  }
+
+  *new_reader = reader.release();
+  return Status::OK();
+}
+
+
+////////////////////////////////////////////////////////////
+// KeysFlushed base
+////////////////////////////////////////////////////////////
+
+Status KeysFlushedBaseData::Open() {
+  CHECK(!open_);
+
+  CFileReader *reader;
+  RETURN_NOT_OK(OpenReader(env_, dir_, 0, &reader));
+  key_reader_.reset(reader);
+
+  open_ = true;
+  return Status::OK();
+}
+
+Status KeysFlushedBaseData::FindRow(const void *key, uint32_t *idx) const {
+  CHECK(open_);
+
+  CFileIterator *key_iter;
+  RETURN_NOT_OK( key_reader_->NewIterator(&key_iter) );
+  scoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
+
+  // TODO: check bloom filter, or perhaps check the memstore here as a filter?
+
+  bool exact;
+  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
+  if (!exact) {
+    return Status::NotFound("not present in storefile (failed seek)");
+  }
+
+  *idx = key_iter->GetCurrentOrdinal();
+  return Status::OK();
+}
+
+
+////////////////////////////////////////////////////////////
+// CFile Base
+////////////////////////////////////////////////////////////
+
 CFileBaseData::CFileBaseData(Env *env,
                              const string &dir,
                              const Schema &schema) :
@@ -22,44 +103,17 @@ CFileBaseData::CFileBaseData(Env *env,
   open_(false)
 {}
 
+
 Status CFileBaseData::Open() {
   CHECK(readers_.empty()) << "Should call this only before opening";
   CHECK(!open_);
 
-  // TODO: somehow pass reader options in schema
-  ReaderOptions opts;
   for (int i = 0; i < schema_.num_columns(); i++) {
-    string path = Layer::GetColumnPath(dir_, i);
-
-    RandomAccessFile *raf_ptr;
-    Status s = env_->NewRandomAccessFile(path, &raf_ptr);
-    if (!s.ok()) {
-      LOG(WARNING) << "Could not open cfile at path "
-                   << path << ": " << s.ToString();
-      return s;
-    }
-    shared_ptr<RandomAccessFile> raf(raf_ptr);
-
-    uint64_t file_size;
-    s = env_->GetFileSize(path, &file_size);
-    if (!s.ok()) {
-      LOG(WARNING) << "Could not get cfile length at path "
-                   << path << ": " << s.ToString();
-      return s;
-    }
-
-    auto_ptr<CFileReader> reader(
-      new CFileReader(opts, raf, file_size));
-    s = reader->Init();
-    if (!s.ok()) {
-      LOG(WARNING) << "Failed to Init() cfile reader for "
-                   << path << ": " << s.ToString();
-      return s;
-    }
-
-    readers_.push_back(reader.release());
+    CFileReader *reader;
+    RETURN_NOT_OK(OpenReader(env_, dir_, i, &reader));
+    readers_.push_back(reader);
     LOG(INFO) << "Successfully opened cfile for column " <<
-      schema_.column(i).ToString() << " at " << path;
+      schema_.column(i).ToString() << " in " << dir_;;
   }
 
   open_ = true;

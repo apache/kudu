@@ -10,7 +10,9 @@
 #include "tablet/tablet-test-base.h"
 #include "util/countdown_latch.h"
 
-DEFINE_int32(num_threads, 8, "Number of threads to test");
+DEFINE_int32(num_insert_threads, 8, "Number of inserting threads to launch");
+DEFINE_int32(num_counter_threads, 8, "Number of counting threads to launch");
+DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(inserts_per_thread, 10000,
              "Number of rows inserted by each inserter thread");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
@@ -36,7 +38,7 @@ private:
 class TestMultiThreadedTablet : public TestTablet {
 public:
   TestMultiThreadedTablet() :
-    running_insert_count_(FLAGS_num_threads)
+    running_insert_count_(FLAGS_num_insert_threads)
   {}
 
   void InsertThread(int tid) {
@@ -99,7 +101,7 @@ public:
   void SlowReaderThread(int tid) {
     uint8_t buf[schema_.byte_size()];
 
-    int max_iters = FLAGS_num_threads * FLAGS_inserts_per_thread / 10;
+    int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
     while (running_insert_count_.count() > 0) {
       scoped_ptr<Tablet::RowIterator> iter;
@@ -153,13 +155,13 @@ public:
 
 TEST_F(TestMultiThreadedTablet, TestInsertAndFlush) {
   // Spawn a bunch of threads, each of which will do updates.
-  StartThreads(FLAGS_num_threads, &TestMultiThreadedTablet::InsertThread);
-  StartThreads(FLAGS_num_threads, &TestMultiThreadedTablet::CountThread);
+  StartThreads(FLAGS_num_insert_threads, &TestMultiThreadedTablet::InsertThread);
+  StartThreads(FLAGS_num_counter_threads, &TestMultiThreadedTablet::CountThread);
   StartThreads(1, &TestMultiThreadedTablet::FlushThread);
   StartThreads(1, &TestMultiThreadedTablet::SlowReaderThread);
-  StartThreads(1, &TestMultiThreadedTablet::UpdateThread);
+  StartThreads(FLAGS_num_updater_threads, &TestMultiThreadedTablet::UpdateThread);
   JoinThreads();
-  VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_threads);
+  VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
 }
 
 } // namespace tablet

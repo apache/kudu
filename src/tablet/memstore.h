@@ -26,6 +26,7 @@ using std::tr1::shared_ptr;
 // TODO: evaluate whether it makes sense to support non-sorted
 // or lazily sorted storage.
 class MemStore : boost::noncopyable,
+                 public LayerInterface,
                  public std::tr1::enable_shared_from_this<MemStore> {
 public:
   class Iterator;
@@ -52,10 +53,6 @@ public:
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
-  // Return true if the given key is contained in the memstore.
-  // TODO: unit test me
-  bool ContainsRow(const void *key) const;
-
   // Return the number of entries in the memstore.
   // NOTE: this requires iterating all data, and is thus
   // not very fast.
@@ -63,10 +60,19 @@ public:
     return tree_.count();
   }
 
+  // Conform entry_count to LayerInterface
+  Status CountRows(size_t *count) const {
+    *count = entry_count();
+    return Status::OK();
+  }
+
   // Return true if there are no entries in the memstore.
   bool empty() const {
     return tree_.empty();
   }
+
+  // TODO: unit test me
+  Status CheckRowPresent(const void *key, bool *present) const;
 
   // Return the memory footprint of this memstore.
   // Note that this may be larger than the sum of the data
@@ -87,6 +93,9 @@ public:
   Iterator *NewIterator() const;
   Iterator *NewIterator(const Schema &projection) const;
 
+  // Alias to conform to Layer interface
+  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+
   // Return the Schema for the rows in this memstore.
   const Schema &schema() const {
     return schema_;
@@ -95,6 +104,10 @@ public:
   // Dump the contents of the memstore to the INFO log.
   // This dumps every row, so should only be used in tests, etc
   void DebugDump();
+
+  string ToString() const {
+    return string("memstore");
+  }
 
   uint64_t debug_insert_count() const {
     return debug_insert_count_;
@@ -152,8 +165,13 @@ public:
   virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
     CHECK(!projection_mapping_.empty()) << "not initted";
 
-    tmp_buf.clear();
-    memstore_->schema().EncodeComparableKey(key, &tmp_buf);
+    if (key.size() > 0) {
+      tmp_buf.clear();
+      memstore_->schema().EncodeComparableKey(key, &tmp_buf);
+    } else {
+      // Seeking to empty key shouldn't try to run any encoding.
+      tmp_buf.resize(0);
+    }
 
     if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact)) {
       return Status::OK();

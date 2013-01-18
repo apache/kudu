@@ -32,11 +32,11 @@ public:
   ColumnSchema(const string &name,
                DataType type) :
     name_(name),
-    type_info_(GetTypeInfo(type))
+    type_info_(&GetTypeInfo(type))
   {}
 
   const TypeInfo &type_info() const {
-    return type_info_;
+    return *type_info_;
   }
 
   const string &name() const {
@@ -46,11 +46,11 @@ public:
   string ToString() const {
     return StringPrintf("%s[type='%s']",
                         name_.c_str(),
-                        type_info_.name().c_str());
+                        type_info_->name().c_str());
   }
 
   bool EqualsType(const ColumnSchema &other) const {
-    return type_info_.type() == other.type_info().type();
+    return type_info().type() == other.type_info().type();
   }
 
   Status CopyCell(void *dst, const void *src, Arena *dst_arena) const {
@@ -71,16 +71,9 @@ public:
     return Status::OK();
   }
 
-  ColumnSchema(const ColumnSchema &other) :
-    name_(other.name_),
-    type_info_(other.type_info_)
-  {}
-
-  ColumnSchema & operator=(const ColumnSchema&);
-
 private:
-  const string name_;
-  const TypeInfo &type_info_;
+  string name_;
+  const TypeInfo *type_info_;
 };
 
 
@@ -98,7 +91,7 @@ public:
     CHECK_GT(cols_.size(), 0);
     CHECK_LE(key_columns, cols_.size());
 
-    CHECK_LE(1, key_columns) <<
+    CHECK_GE(1, key_columns) <<
       "TODO: Currently only support a single key-column.";
 
     // Calculate the offset of each column in the row format.
@@ -279,11 +272,17 @@ public:
   // Return the projection of this schema which contains only
   // the key columns.
   Schema CreateKeyProjection() {
-    vector<ColumnSchema> key_cols;
-    for (int i = 0; i < num_key_columns_; i++) {
-      key_cols.push_back(cols_[i]);
-    }
+    vector<ColumnSchema> key_cols(cols_.begin(),
+                                  cols_.begin() + num_key_columns_);
     return Schema(key_cols, num_key_columns_);
+  }
+
+  // Return the projection of this schema which contains only
+  // the non-key columns.
+  Schema CreateNonKeyProjection() {
+    vector<ColumnSchema> non_key_cols(cols_.begin() + num_key_columns_,
+                                      cols_.end());
+    return Schema(non_key_cols, 0);
   }
 
 

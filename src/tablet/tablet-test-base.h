@@ -26,7 +26,7 @@ public:
     env_(Env::Default()),
     schema_(boost::assign::list_of
             (ColumnSchema("key", STRING))
-            (ColumnSchema("insert_id", UINT32))
+            (ColumnSchema("val", UINT32))
             (ColumnSchema("update_count", UINT32)),
             1),
     arena_(1024, 4*1024*1024)
@@ -99,6 +99,7 @@ protected:
     for (int i = 0; i < expected_count; i++) {
       ASSERT_EQ(true, seen_rows[i]) << "Never saw row: " << (i + first_row);
     }
+    LOG(INFO) << "Successfully verified " << expected_count << "rows";
   }
 
   // Return the number of rows in the tablet.

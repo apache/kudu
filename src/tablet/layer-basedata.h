@@ -50,24 +50,25 @@ public:
   }
 };
 
-
-// Simple wrapper around MemStore which makes it conform to the
-// LayerBaseData interface.
-// This base data is in-place mutable, and is used during the
-// Flush process.
-class MemStoreBaseData : public LayerBaseData, boost::noncopyable {
+class KeysFlushedBaseData : public LayerBaseData, boost::noncopyable {
 public:
-  explicit MemStoreBaseData(const shared_ptr<MemStore> &ms) :
-    ms_(ms)
+  KeysFlushedBaseData(Env *env, const string &dir, const Schema &schema,
+                      const shared_ptr<MemStore> &ms) :
+    env_(env),
+    dir_(dir),
+    schema_(schema),
+    ms_(ms),
+    open_(false)
   {}
+
+  Status Open();
 
   Status UpdateRow(const void *key, const RowDelta &update) {
     return ms_->UpdateRow(key, update);
   }
 
   Status CheckRowPresent(const void *key, bool *present) const {
-    *present = ms_->ContainsRow(key);
-    return Status::OK();
+    return ms_->CheckRowPresent(key, present);
   }
 
   RowIteratorInterface *NewRowIterator(const Schema &projection) const {
@@ -79,8 +80,10 @@ public:
     return Status::OK();
   }
 
+  Status FindRow(const void *key, uint32_t *idx) const;
+
   bool is_updatable_in_place() const {
-    return true;
+    return false;
   }
 
   string ToString() const {
@@ -88,8 +91,16 @@ public:
   }
 
 private:
+  Env *env_;
+  const string dir_;
+  const Schema schema_;
+
   shared_ptr<MemStore> ms_;
+  bool open_;
+
+  scoped_ptr<CFileReader> key_reader_;
 };
+
 
 // Base Data made up of a set of CFiles, one for each column.
 class CFileBaseData : public LayerBaseData, boost::noncopyable {

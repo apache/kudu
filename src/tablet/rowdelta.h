@@ -128,6 +128,11 @@ public:
   ScopedRowDelta(const Schema &schema) :
     data_(new uint8_t[RowDelta::SizeForSchema(schema)]),
     delta_(schema, data_.get()) {
+#ifndef NDEBUG
+    OverwriteWithPattern(reinterpret_cast<char *>(&data_[0]),
+                         RowDelta::SizeForSchema(schema),
+                         "NEW");
+#endif
     delta_.Clear(schema);
   }
 

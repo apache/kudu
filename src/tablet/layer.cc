@@ -109,6 +109,7 @@ Status LayerWriter::Open() {
 
 Status LayerWriter::FlushProjection(const Schema &projection,
                                     RowIteratorInterface *src_iter) {
+  CHECK(!finished_);
   vector<size_t> orig_columns;
   projection.GetProjectionFrom(schema_, &orig_columns);
 
@@ -131,7 +132,7 @@ Status LayerWriter::FlushProjection(const Schema &projection,
     // Write the batch to the each of the columns
     for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
       size_t orig_col = orig_columns[proj_col];
-      size_t off = projection.column_offset(orig_col);
+      size_t off = projection.column_offset(proj_col);
       size_t stride = projection.byte_size();
       const void *p = &buf[off];
       RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
@@ -139,20 +140,30 @@ Status LayerWriter::FlushProjection(const Schema &projection,
     written += nrows;
   }
 
-  if (written_count_ == 0) {
-    written_count_ = written;
-  } else {
-    CHECK_EQ(written, written_count_)
-      << "Different projection flushes had different number of rows";
+  for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
+    size_t orig_col = orig_columns[proj_col];
+    CHECK_EQ(column_flushed_counts_[orig_col], 0);
+    column_flushed_counts_[orig_col] = written;
+
+    RETURN_NOT_OK(cfile_writers_[orig_col].Finish());
   }
 
   return Status::OK();
 }
 
 Status LayerWriter::Finish() {
+  CHECK(!finished_);
   for (int i = 0; i < schema_.num_columns(); i++) {
-    RETURN_NOT_OK(cfile_writers_[i].Finish());
+    CHECK_EQ(column_flushed_counts_[i], column_flushed_counts_[0])
+      << "Uneven flush. Column " << schema_.column(i).ToString() << " didn't match count "
+      << "of column " << schema_.column(0).ToString();
+    if (!cfile_writers_[i].finished()) {
+      RETURN_NOT_OK(cfile_writers_[i].Finish());
+    }
   }
+
+  finished_ = true;
+
   return Status::OK();
 }
 
@@ -169,6 +180,26 @@ Status Layer::Open(Env *env,
 
   RETURN_NOT_OK(l->OpenBaseCFileReaders());
   RETURN_NOT_OK(l->OpenDeltaFileReaders());
+  l->open_ = true;
+
+  *layer = l.release();
+  return Status::OK();
+}
+
+
+
+Status Layer::CreatePartiallyFlushed(Env *env,
+                                     const Schema &schema,
+                                     const string &layer_dir,
+                                     shared_ptr<MemStore> &memstore,
+                                     Layer **layer) {
+  auto_ptr<Layer> l(new Layer(env, schema, layer_dir));
+
+  auto_ptr<KeysFlushedBaseData> lbd(
+    new KeysFlushedBaseData(env, layer_dir, schema, memstore));
+
+  RETURN_NOT_OK(lbd->Open());
+  l->base_data_.reset(lbd.release());
   l->open_ = true;
 
   *layer = l.release();
