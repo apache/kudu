@@ -120,6 +120,7 @@ Status LayerWriter::FlushProjection(const Schema &projection,
                           << projection.ToString() << " in " << buf_size << " bytes";
   Arena tmp_arena(1024, buf_size);
 
+  size_t written = 0;
   while (src_iter->HasNext()) {
     // Read a batch from the iterator.
     tmp_arena.Reset();
@@ -135,6 +136,14 @@ Status LayerWriter::FlushProjection(const Schema &projection,
       const void *p = &buf[off];
       RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
     }
+    written += nrows;
+  }
+
+  if (written_count_ == 0) {
+    written_count_ = written;
+  } else {
+    CHECK_EQ(written, written_count_)
+      << "Different projection flushes had different number of rows";
   }
 
   return Status::OK();
