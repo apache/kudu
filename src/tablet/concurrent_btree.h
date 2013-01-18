@@ -22,6 +22,7 @@
 #include <boost/static_assert.hpp>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
+#include "util/memory/arena.h"
 #include "util/status.h"
 #include "util/stringbag.h"
 #include "gutil/spinlock_wait.h"
@@ -903,6 +904,7 @@ template<class Traits = BTreeTraits>
 class CBTree : boost::noncopyable {
 public:
   CBTree() :
+    arena_(1024, 1024*1024),
     root_(new LeafNode<Traits>(false))
   {
     // TODO: use a custom allocator
@@ -1187,7 +1189,7 @@ private:
   void RecursiveDelete(NodePtr<Traits> node) {
     switch (node.type()) {
       case NodePtr<Traits>::LEAF_NODE:
-        delete node.leaf_node_ptr();
+        FreeLeaf(node.leaf_node_ptr());
         break;
       case NodePtr<Traits>::INTERNAL_NODE:
       {
@@ -1379,7 +1381,7 @@ private:
                      LeafNode<Traits> **new_node) {
     DCHECK(node->IsLocked());
 
-    LeafNode<Traits> *new_leaf = new LeafNode<Traits>(true);
+    LeafNode<Traits> *new_leaf = NewLeaf(true);
     new_leaf->next_ = node->next_;
 
     // Copy half the keys from node into the new leaf
@@ -1516,6 +1518,18 @@ private:
         CHECK(0);
     }
   }
+
+  LeafNode<Traits> *NewLeaf(bool locked) {
+    void *mem = CHECK_NOTNULL(arena_.AllocateBytes(sizeof(LeafNode<Traits>)));
+    return new (mem) LeafNode<Traits>(locked);
+  }
+
+  void FreeLeaf(LeafNode<Traits> *leaf) {
+    leaf->~LeafNode();
+    // No need to actually free, since it came from the arena
+  }
+
+  Arena arena_;
 
   // marked 'mutable' because readers will lazy-update the root
   // when they encounter a stale root pointer.
