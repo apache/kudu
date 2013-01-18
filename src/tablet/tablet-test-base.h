@@ -77,7 +77,8 @@ protected:
       arena_.Reset();
       size_t n = batch_size;
       ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
-      LOG(INFO) << "Fetched batch of " << n;
+      LOG(INFO) << "Fetched batch of " << n << "\n"
+                << "First row: " << schema_.DebugRow(&buf[0]);
 
       for (int i = 0; i < n; i++) {
         Slice s(reinterpret_cast<const char *>(&buf[i * schema_.byte_size()]),

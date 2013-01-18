@@ -114,7 +114,12 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   projection.GetProjectionFrom(schema_, &orig_columns);
 
   // TODO: handle big rows
-  int buf_size = 1024*1024;
+
+  // Use a small buffer here -- otherwise we end up with larger-than-requested
+  // blocks in the CFile. This could be considered a bug in the CFile writer.
+  // If flush performance is bad, could consider fetching in larger batches.
+  // TODO: look at above - puts a minimum on real block size
+  int buf_size = 32*1024;
   scoped_array<uint8_t> buf(new uint8_t[buf_size]);
   int batch_size = buf_size / projection.byte_size();
   CHECK_GE(batch_size, 1) << "could not fit a row from schema: "
