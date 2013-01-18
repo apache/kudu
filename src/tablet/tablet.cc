@@ -15,6 +15,10 @@
 #include "tablet/layer.h"
 #include "util/env.h"
 
+DEFINE_bool(tablet_do_dup_key_checks, true,
+            "Whether to check primary keys for duplicate on insertion. "
+            "Use at your own risk!");
+
 namespace kudu { namespace tablet {
 
 using std::string;
@@ -99,12 +103,14 @@ Status Tablet::Insert(const Slice &data) {
 
   // First, ensure that it is a unique key by checking all the open
   // Layers
-  BOOST_FOREACH(shared_ptr<LayerInterface> &layer, layers_) {
-    bool present;
-    VLOG(1) << "checking for key in layer " << layer->ToString();
-    RETURN_NOT_OK(layer->CheckRowPresent(data.data(), &present));
-    if (present) {
-      return Status::AlreadyPresent("key already present");
+  if (FLAGS_tablet_do_dup_key_checks) {
+    BOOST_FOREACH(shared_ptr<LayerInterface> &layer, layers_) {
+      bool present;
+      VLOG(1) << "checking for key in layer " << layer->ToString();
+      RETURN_NOT_OK(layer->CheckRowPresent(data.data(), &present));
+      if (present) {
+        return Status::AlreadyPresent("key already present");
+      }
     }
   }
 
