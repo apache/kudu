@@ -71,15 +71,14 @@ Status Tablet::Open() {
         return Status::IOError(string("Bad layer file: ") + absolute_path);
       }
 
-      shared_ptr<Layer> layer(new Layer(env_, schema_, absolute_path));
-      Status s = layer->Open();
+      Layer *layer;
+      Status s = Layer::Open(env_, schema_, absolute_path, &layer);
       if (!s.ok()) {
         LOG(ERROR) << "Failed to open layer " << absolute_path << ": "
                    << s.ToString();
         return s;
       }
-
-      layers_.push_back(layer);
+      layers_.push_back(shared_ptr<Layer>(layer));
 
       next_layer_idx_ = std::max(next_layer_idx_,
                                  (size_t)layer_idx + 1);
@@ -212,9 +211,9 @@ Status Tablet::Flush() {
   LOG(INFO) << "Successfully flushed " << written << " rows";
 
   // Open it.
-  shared_ptr<Layer> new_layer(new Layer(env_, schema_, new_layer_dir));
-  RETURN_NOT_OK(new_layer->Open());
-  layers_.push_back(new_layer);
+  Layer *new_layer;
+  RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
+  layers_.push_back(shared_ptr<Layer>(new_layer));
   return Status::OK();
 }
 

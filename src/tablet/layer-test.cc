@@ -31,12 +31,12 @@ TEST_F(TestLayer, TestLayerRoundTrip) {
   WriteTestLayer();
 
   // Now open the Layer for read
-  Layer l(env_, schema_, test_dir_);
-  ASSERT_STATUS_OK(l.Open());
+  shared_ptr<Layer> l;
+  ASSERT_STATUS_OK(OpenTestLayer(&l));
 
   // First iterate over all columns
   LOG_TIMING(INFO, "Iterating over all columns") {
-    IterateProjection(l, schema_, n_rows_);
+    IterateProjection(*l, schema_, n_rows_);
   }
 
   // Now iterate only over the key column
@@ -45,7 +45,7 @@ TEST_F(TestLayer, TestLayerRoundTrip) {
                   1);
 
   LOG_TIMING(INFO, "Iterating over only key column") {
-    IterateProjection(l, proj_key, n_rows_);
+    IterateProjection(*l, proj_key, n_rows_);
   }
 
 
@@ -54,7 +54,7 @@ TEST_F(TestLayer, TestLayerRoundTrip) {
                   (ColumnSchema("val", UINT32)),
                   1);
   LOG_TIMING(INFO, "Iterating over only val column") {
-    IterateProjection(l, proj_val, n_rows_);
+    IterateProjection(*l, proj_val, n_rows_);
   }
 
   // Test that CheckRowPresent returns correct results
@@ -62,25 +62,25 @@ TEST_F(TestLayer, TestLayerRoundTrip) {
   // 1. Check a key which comes before all keys in layer
   Slice key("h");
   bool present;
-  ASSERT_STATUS_OK(l.CheckRowPresent(&key, &present));
+  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
   ASSERT_FALSE(present);
 
   // 2. Check a key which comes after all keys in layer
   key = "z";
-  ASSERT_STATUS_OK(l.CheckRowPresent(&key, &present));
+  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
   ASSERT_FALSE(present);
 
   // 3. Check a key which is not present, but comes between present
   // keys
   key = "hello 00000000000049x";
-  ASSERT_STATUS_OK(l.CheckRowPresent(&key, &present));
+  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
   ASSERT_FALSE(present);
 
   // 4. Check a key which is present
   char buf[256];
   FormatKey(49, buf, sizeof(buf));
   key = buf;
-  ASSERT_STATUS_OK(l.CheckRowPresent(&key, &present));
+  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
   ASSERT_TRUE(present);
 
 }
@@ -90,25 +90,25 @@ TEST_F(TestLayer, TestLayerUpdate) {
   WriteTestLayer();
 
   // Now open the Layer for read
-  Layer l(env_, schema_, test_dir_);
-  ASSERT_STATUS_OK(l.Open());
+  shared_ptr<Layer> l;
+  ASSERT_STATUS_OK(OpenTestLayer(&l));
 
   // Add an update to the delta tracker for a number of keys
   // which exist. These updates will change the value to
   // equal idx*5 (whereas in the original data, value = idx)
   unordered_set<uint32_t> updated;
-  UpdateExistingRows(&l, 0.1f, &updated);
-  ASSERT_EQ(updated.size(), l.dms_->Count());
+  UpdateExistingRows(l.get(), 0.1f, &updated);
+  ASSERT_EQ(updated.size(), l->dms_->Count());
 
   // Try to add an update for a key not in the file (but which falls
   // between two valid keys)
   ScopedRowDelta update(schema_);
   Slice bad_key = Slice("hello 00000000000049x");
-  ASSERT_TRUE(l.UpdateRow(&bad_key, update.get()).IsNotFound());
+  ASSERT_TRUE(l->UpdateRow(&bad_key, update.get()).IsNotFound());
 
   // Now read back the value column, and verify that the updates
   // are visible.
-  VerifyUpdates(l, updated);
+  VerifyUpdates(*l, updated);
 }
 
 TEST_F(TestLayer, TestDMSFlush) {
@@ -118,33 +118,34 @@ TEST_F(TestLayer, TestDMSFlush) {
 
   // Now open the Layer for read
   {
-    Layer l(env_, schema_, test_dir_);
-    ASSERT_STATUS_OK(l.Open());
+    shared_ptr<Layer> l;
+    ASSERT_STATUS_OK(OpenTestLayer(&l));
 
     // Add an update to the delta tracker for a number of keys
     // which exist. These updates will change the value to
     // equal idx*5 (whereas in the original data, value = idx)
-    UpdateExistingRows(&l, 0.01f, &updated);
-    ASSERT_EQ(updated.size(), l.dms_->Count());
+    UpdateExistingRows(l.get(), 0.01f, &updated);
+    ASSERT_EQ(updated.size(), l->dms_->Count());
 
-    l.FlushDeltas();
+    l->FlushDeltas();
 
     // Check that the Layer's DMS has now been emptied.
-    ASSERT_EQ(0, l.dms_->Count());
+    ASSERT_EQ(0, l->dms_->Count());
 
     // Now read back the value column, and verify that the updates
     // are visible.
-    VerifyUpdates(l, updated);
+    VerifyUpdates(*l, updated);
   }
 
   // Close and re-open the layer and ensure that the updates were
   // persistent.
   {
-    Layer l(env_, schema_, test_dir_);
-    ASSERT_STATUS_OK(l.Open());
+    shared_ptr<Layer> l;
+    ASSERT_STATUS_OK(OpenTestLayer(&l));
+
     // Now read back the value column, and verify that the updates
     // are visible.
-    VerifyUpdates(l, updated);
+    VerifyUpdates(*l, updated);
   }
 }
 

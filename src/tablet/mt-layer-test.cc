@@ -55,12 +55,12 @@ TEST_F(TestMultiThreadedLayer, TestMTUpdate) {
   WriteTestLayer();
 
   // Re-open the layer
-  Layer l(env_, schema_, test_dir_);
-  ASSERT_STATUS_OK(l.Open());
+  shared_ptr<Layer> l;
+  ASSERT_STATUS_OK(OpenTestLayer(&l));
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;
-  StartUpdaterThreads(&threads, &l, FLAGS_num_threads);
+  StartUpdaterThreads(&threads, l.get(), FLAGS_num_threads);
 
   JoinThreads(&threads);
 }
@@ -69,13 +69,13 @@ TEST_F(TestMultiThreadedLayer, TestMTUpdateAndFlush) {
   WriteTestLayer();
 
   // Re-open the layer
-  Layer l(env_, schema_, test_dir_);
-  ASSERT_STATUS_OK(l.Open());
+  shared_ptr<Layer> l;
+  ASSERT_STATUS_OK(OpenTestLayer(&l));
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;
-  StartUpdaterThreads(&threads, &l, FLAGS_num_threads);
-  StartFlushThread(&threads, &l);
+  StartUpdaterThreads(&threads, l.get(), FLAGS_num_threads);
+  StartFlushThread(&threads, l.get());
 
   JoinThreads(&threads);
 

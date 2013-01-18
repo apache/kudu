@@ -68,22 +68,19 @@ private:
   ptr_vector<cfile::Writer> cfile_writers_;
 };
 
+////////////////////////////////////////////////////////////
+// Layer
+////////////////////////////////////////////////////////////
+
 class Layer : public LayerInterface, boost::noncopyable {
 public:
-  // TODO: should 'schema' be stored with the layer? quite likely
-  // so that we can support cheap alter table.
-  Layer(Env *env,
-        const Schema &schema,
-        const string &layer_dir) :
-    env_(env),
-    schema_(schema),
-    dir_(layer_dir),
-    next_delta_idx_(0),
-    open_(false),
-    dms_(new DeltaMemStore(schema))
-  {}
 
-  Status Open();
+  // Open a layer from disk.
+  // If successful, sets *layer to the newly open layer
+  static Status Open(Env *env,
+                     const Schema &schema,
+                     const string &layer_dir,
+                     Layer **layer);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions
@@ -128,6 +125,20 @@ public:
 private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);
+
+  // TODO: should 'schema' be stored with the layer? quite likely
+  // so that we can support cheap alter table.
+  Layer(Env *env,
+        const Schema &schema,
+        const string &layer_dir) :
+    env_(env),
+    schema_(schema),
+    dir_(layer_dir),
+    next_delta_idx_(0),
+    open_(false),
+    dms_(new DeltaMemStore(schema))
+  {}
+
 
   Status OpenBaseCFileReaders();
   Status OpenDeltaFileReaders();

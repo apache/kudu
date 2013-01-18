@@ -178,8 +178,15 @@ protected:
     }
 
     EXPECT_EQ(expected_rows, i);
-
   }
+
+  Status OpenTestLayer(shared_ptr<Layer> *layer) {
+    Layer *tmp;
+    RETURN_NOT_OK(Layer::Open(env_, schema_, test_dir_, &tmp));
+    layer->reset(tmp);
+    return Status::OK();
+  }
+
 
 
   void FormatKey(int i, char *buf, size_t buf_len) {

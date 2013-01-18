@@ -119,14 +119,17 @@ Status LayerWriter::Finish() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status Layer::Open() {
-  CHECK(!open_) << "Already open!";
-  CHECK(base_data_.get() == NULL) << "Invalid state: should have no base data";
+Status Layer::Open(Env *env,
+                   const Schema &schema,
+                   const string &layer_dir,
+                   Layer **layer) {
+  auto_ptr<Layer> l(new Layer(env, schema, layer_dir));
 
-  RETURN_NOT_OK(OpenBaseCFileReaders());
-  RETURN_NOT_OK(OpenDeltaFileReaders());
+  RETURN_NOT_OK(l->OpenBaseCFileReaders());
+  RETURN_NOT_OK(l->OpenDeltaFileReaders());
+  l->open_ = true;
 
-  open_ = true;
+  *layer = l.release();
   return Status::OK();
 }
 
