@@ -1,0 +1,201 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+#include <glog/logging.h>
+#include <tr1/memory>
+
+#include "cfile/cfile.h"
+#include "tablet/layer.h"
+#include "tablet/layer-basedata.h"
+
+namespace kudu { namespace tablet {
+
+using cfile::ReaderOptions;
+using std::auto_ptr;
+using std::tr1::shared_ptr;
+
+CFileBaseData::CFileBaseData(Env *env,
+                             const string &dir,
+                             const Schema &schema) :
+  env_(env),
+  dir_(dir),
+  schema_(schema),
+  open_(false)
+{}
+
+Status CFileBaseData::Open() {
+  CHECK(readers_.empty()) << "Should call this only before opening";
+  CHECK(!open_);
+
+  // TODO: somehow pass reader options in schema
+  ReaderOptions opts;
+  for (int i = 0; i < schema_.num_columns(); i++) {
+    string path = Layer::GetColumnPath(dir_, i);
+
+    RandomAccessFile *raf_ptr;
+    Status s = env_->NewRandomAccessFile(path, &raf_ptr);
+    if (!s.ok()) {
+      LOG(WARNING) << "Could not open cfile at path "
+                   << path << ": " << s.ToString();
+      return s;
+    }
+    shared_ptr<RandomAccessFile> raf(raf_ptr);
+
+    uint64_t file_size;
+    s = env_->GetFileSize(path, &file_size);
+    if (!s.ok()) {
+      LOG(WARNING) << "Could not get cfile length at path "
+                   << path << ": " << s.ToString();
+      return s;
+    }
+
+    auto_ptr<CFileReader> reader(
+      new CFileReader(opts, raf, file_size));
+    s = reader->Init();
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to Init() cfile reader for "
+                   << path << ": " << s.ToString();
+      return s;
+    }
+
+    readers_.push_back(reader.release());
+    LOG(INFO) << "Successfully opened cfile for column " <<
+      schema_.column(i).ToString() << " at " << path;
+  }
+
+  open_ = true;
+
+  return Status::OK();
+}
+
+
+Status CFileBaseData::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
+  CHECK(open_);
+  CHECK_LT(col_idx, readers_.size());
+
+  return readers_[col_idx].NewIterator(iter);
+}
+
+
+RowIteratorInterface *CFileBaseData::NewRowIterator(const Schema &projection) const {
+  return new CFileBaseData::RowIterator(this, projection);
+}
+
+Status CFileBaseData::CountRows(size_t *count) const {
+  const cfile::CFileReader &reader = readers_[0];
+  return reader.CountRows(count);
+}
+
+Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
+  CFileIterator *key_iter;
+  RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );
+  scoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
+
+  // TODO: check bloom filter
+
+  bool exact;
+  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
+  if (!exact) {
+    return Status::NotFound("not present in storefile (failed seek)");
+  }
+
+  *idx = key_iter->GetCurrentOrdinal();
+  return Status::OK();
+}
+
+Status CFileBaseData::CheckRowPresent(const void *key, bool *present) const {
+  // TODO: use bloom
+
+  uint32_t junk;
+  Status s = FindRow(key, &junk);
+  if (s.IsNotFound()) {
+    // In the case that the key comes past the end of the file, Seek
+    // will return NotFound. In that case, it is OK from this function's
+    // point of view - just a non-present key.
+    *present = false;
+    return Status::OK();
+  }
+  *present = true;
+  return s;
+}
+
+
+////////////////////////////////////////////////////////////
+// Iterator
+////////////////////////////////////////////////////////////
+
+Status CFileBaseData::RowIterator::Init() {
+  CHECK(!initted_);
+
+  RETURN_NOT_OK(projection_.GetProjectionFrom(
+                  base_data_->schema(), &projection_mapping_));
+
+  // Setup Key Iterator.
+
+  // Only support single key column for now.
+  CHECK_EQ(base_data_->schema().num_key_columns(), 1);
+  int key_col = 0;
+
+  CFileIterator *tmp;
+  RETURN_NOT_OK(base_data_->NewColumnIterator(key_col, &tmp));
+  key_iter_.reset(tmp);
+
+  // Setup column iterators.
+
+  for (size_t i = 0; i < projection_.num_columns(); i++) {
+    size_t col_in_layer = projection_mapping_[i];
+
+    CFileIterator *iter;
+    RETURN_NOT_OK(base_data_->NewColumnIterator(col_in_layer, &iter));
+    col_iters_.push_back(iter);
+  }
+
+  initted_ = true;
+  return Status::OK();
+}
+
+Status CFileBaseData::RowIterator::CopyNextRows(
+  size_t *nrows, uint8_t *dst, Arena *dst_arena)
+{
+  DCHECK(initted_);
+  DCHECK(dst) << "null dst";
+  DCHECK(dst_arena) << "null dst_arena";
+
+  // Copy the projected columns into 'dst'
+  size_t stride = projection_.byte_size();
+  int proj_col_idx = 0;
+  int fetched_prev_col = -1;
+
+  BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+    const TypeInfo &tinfo = projection_.column(proj_col_idx).type_info();
+    ColumnBlock dst_block(tinfo,
+                          dst + projection_.column_offset(proj_col_idx),
+                          stride, *nrows, dst_arena);
+
+    size_t fetched = *nrows;
+    RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_block));
+
+    // Sanity check that all iters match up
+    if (proj_col_idx > 0) {
+      CHECK(fetched == fetched_prev_col) <<
+        "Column " << proj_col_idx << " only fetched "
+                  << fetched << " rows whereas the previous "
+                  << "columns fetched " << fetched_prev_col;
+    }
+    fetched_prev_col = fetched;
+
+    if (fetched == 0) {
+      DCHECK_EQ(proj_col_idx, 0) << "all columns should end at the same time!";
+      return Status::NotFound("end of input");
+    }
+    proj_col_idx++;
+  }
+
+  *nrows = fetched_prev_col;
+  return Status::OK();
+}
+
+
+
+} // namespace tablet
+} // namespace kudu
+

@@ -29,7 +29,7 @@ static const char *kColumnPrefix = "col_";
 
 // Return the path at which the given column's cfile
 // is stored within the layer directory.
-static string GetColumnPath(const string &dir,
+string Layer::GetColumnPath(const string &dir,
                             int col_idx) {
   return dir + "/" + kColumnPrefix +
     boost::lexical_cast<string>(col_idx);
@@ -37,7 +37,7 @@ static string GetColumnPath(const string &dir,
 
 // Return the path at which the given delta file
 // is stored within the layer directory.
-static string GetDeltaPath(const string &dir,
+string Layer::GetDeltaPath(const string &dir,
                            int delta_idx) {
   return dir + "/" + kDeltaPrefix +
     boost::lexical_cast<string>(delta_idx);
@@ -68,7 +68,7 @@ Status LayerWriter::Open() {
     // the corresponding rows.
     opts.write_posidx = true;
 
-    string path = GetColumnPath(dir_, i);
+    string path = Layer::GetColumnPath(dir_, i);
 
     // Open file for write.
     WritableFile *out;
@@ -121,7 +121,7 @@ Status LayerWriter::Finish() {
 
 Status Layer::Open() {
   CHECK(!open_) << "Already open!";
-  CHECK(cfile_readers_.empty()) << "Invalid state: should have no readers";
+  CHECK(base_data_.get() == NULL) << "Invalid state: should have no base data";
 
   RETURN_NOT_OK(OpenBaseCFileReaders());
   RETURN_NOT_OK(OpenDeltaFileReaders());
@@ -131,45 +131,13 @@ Status Layer::Open() {
 }
 
 // Open the CFileReaders for the "base data" in this layer.
+// TODO: rename me
 Status Layer::OpenBaseCFileReaders() {
-  CHECK(cfile_readers_.empty()) << "Should call this only before opening";
-  CHECK(!open_);
+  std::auto_ptr<CFileBaseData> new_base(
+    new CFileBaseData(env_, dir_, schema_));
+  RETURN_NOT_OK(new_base->Open());
 
-  // TODO: somehow pass reader options in schema
-  ReaderOptions opts;
-  for (int i = 0; i < schema_.num_columns(); i++) {
-    string path = GetColumnPath(dir_, i);
-
-    RandomAccessFile *raf_ptr;
-    Status s = env_->NewRandomAccessFile(path, &raf_ptr);
-    if (!s.ok()) {
-      LOG(WARNING) << "Could not open cfile at path "
-                   << path << ": " << s.ToString();
-      return s;
-    }
-    shared_ptr<RandomAccessFile> raf(raf_ptr);
-
-    uint64_t file_size;
-    s = env_->GetFileSize(path, &file_size);
-    if (!s.ok()) {
-      LOG(WARNING) << "Could not get cfile length at path "
-                   << path << ": " << s.ToString();
-      return s;
-    }
-
-    auto_ptr<CFileReader> reader(
-      new CFileReader(opts, raf, file_size));
-    s = reader->Init();
-    if (!s.ok()) {
-      LOG(WARNING) << "Failed to Init() cfile reader for "
-                   << path << ": " << s.ToString();
-      return s;
-    }
-
-    cfile_readers_.push_back(reader.release());
-    LOG(INFO) << "Successfully opened cfile for column " <<
-      schema_.column(i).ToString() << " at " << path;
-  }
+  base_data_.reset(new_base.release());
 
   return Status::OK();
 }
@@ -221,47 +189,29 @@ Status Layer::OpenDeltaFileReaders() {
 
 
 RowIteratorInterface *Layer::NewRowIterator(const Schema &projection) const {
-  return new Layer::RowIterator(this, projection);
-}
-
-Status Layer::NewColumnIterator(size_t col_idx, Layer::ColumnIterator **iter) const {
   CHECK(open_);
-  CHECK_LT(col_idx, cfile_readers_.size());
 
-  auto_ptr<Layer::ColumnIterator> new_iter(new Layer::ColumnIterator(this, col_idx));
-  RETURN_NOT_OK(new_iter->Init());
+  // TODO: locking
+  RowIteratorInterface *base_iter = base_data_->NewRowIterator(projection);
 
-  *iter = new_iter.release();
-  return Status::OK();
-}
+  std::vector<shared_ptr<DeltaTrackerInterface> > deltas(delta_trackers_);
+  deltas.push_back(dms_);
 
-
-Status Layer::NewBaseColumnIterator(size_t col_idx, CFileIterator **iter) const {
-  CHECK(open_);
-  CHECK_LT(col_idx, cfile_readers_.size());
-
-  return cfile_readers_[col_idx].NewIterator(iter);
+  return new DeltaMergingIterator(base_iter, deltas, schema_, projection);
 }
 
 Status Layer::UpdateRow(const void *key,
                         const RowDelta &update) {
-  scoped_ptr<CFileIterator> key_iter;
-  RETURN_NOT_OK( NewBaseColumnIterator(0, &key_iter) );
+  CHECK(open_);
 
-  // TODO: check bloom filter
+  // TODO: can probably lock this more fine-grained.
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
-  bool exact;
-  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
-  if (!exact) {
-    return Status::NotFound("not present in storefile (failed seek)");
-  }
-
-  uint32_t row_idx = key_iter->GetCurrentOrdinal();
-
-  VLOG(1) << "updating row " << row_idx;
-  {
-    boost::shared_lock<boost::shared_mutex> lock(component_lock_);
-
+  if (base_data_->is_updatable_in_place()) {
+    return base_data_->UpdateRow(key, update);
+  } else {
+    uint32_t row_idx;
+    RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
     dms_->Update(row_idx, update);
   }
 
@@ -270,25 +220,14 @@ Status Layer::UpdateRow(const void *key,
 
 Status Layer::CheckRowPresent(const void *key,
                               bool *present) const {
-  scoped_ptr<CFileIterator> key_iter;
-  RETURN_NOT_OK( NewBaseColumnIterator(0, &key_iter) );
-
-  // TODO: insert use of bloom filters here
-
-  Status s = key_iter->SeekAtOrAfter(key, present);
-  if (s.IsNotFound()) {
-    // In the case that the key comes past the end of the file, Seek
-    // will return NotFound. In that case, it is OK from this function's
-    // point of view - just a non-present key.
-    *present = false;
-    return Status::OK();
-  }
-  return s;
+  CHECK(open_);
+  return base_data_->CheckRowPresent(key, present);
 }
 
 Status Layer::CountRows(size_t *count) const {
-  const cfile::CFileReader &reader = cfile_readers_[0];
-  return reader.CountRows(count);
+  CHECK(open_);
+
+  return base_data_->CountRows(count);
 }
 
 
@@ -387,143 +326,42 @@ Status Layer::FlushDeltas() {
 // Layer Iterators
 ////////////////////////////////////////////////////////////
 
-////////////////////
-// Column Iterator
-////////////////////
-
-Layer::ColumnIterator::ColumnIterator(const Layer *layer,
-                               size_t col_idx) :
-  layer_(layer),
-  col_idx_(col_idx)
-{
-  CHECK_NOTNULL(layer);
-  CHECK_LT(col_idx, layer_->schema().num_columns());
-}
-
-Status Layer::ColumnIterator::Init() {
-  CHECK(base_iter_.get() == NULL) << "Already initialized: " << base_iter_;
-
-  RETURN_NOT_OK(layer_->NewBaseColumnIterator(col_idx_, &base_iter_));
+Status DeltaMergingIterator::Init() {
+  RETURN_NOT_OK(base_iter_->Init());
+  RETURN_NOT_OK(
+    projection_.GetProjectionFrom(src_schema_, &projection_mapping_));
   return Status::OK();
 }
 
-Status Layer::ColumnIterator::SeekToOrdinal(uint32_t ord_idx) {
-  return base_iter_->SeekToOrdinal(ord_idx);
-}
-
-Status Layer::ColumnIterator::SeekAtOrAfter(const void *key, bool *exact_match) {
-  return base_iter_->SeekAtOrAfter(key, exact_match);
-}
-
-uint32_t Layer::ColumnIterator::GetCurrentOrdinal() const {
-  return base_iter_->GetCurrentOrdinal();
-}
-
-Status Layer::ColumnIterator::CopyNextValues(size_t *n, ColumnBlock *dst) {
-  uint32_t start_row = GetCurrentOrdinal();
-
-  // Copy as many rows as possible from the base data.
-  RETURN_NOT_OK(base_iter_->CopyNextValues(n, dst));
-  size_t base_copied = *n;
-
-
-  ColumnBlock dst_block_valid = dst->SliceRange(0, base_copied);
-
-  {
-    boost::shared_lock<boost::shared_mutex> lock(layer_->component_lock_);
-    // Apply deltas from memory.
-    layer_->dms_->ApplyUpdates(col_idx_, start_row, &dst_block_valid);
-
-    // Apply updates from all flushed deltas
-    // TODO: this causes the delta files to re-seek. this is no good.
-    // Instead, we should keep some kind of DeltaBlockIterator with the
-    // column iterator, so they iterate "with" each other and maintain the
-    // necessary state.
-    BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &dt, layer_->delta_trackers_) {
-      RETURN_NOT_OK(dt->ApplyUpdates(col_idx_, start_row, &dst_block_valid));
-    }
-  }
-
-  return Status::OK();
-}
-
-bool Layer::ColumnIterator::HasNext() const {
-  return base_iter_->HasNext();
-}
-
-
-////////////////////
-// Row Iterator
-////////////////////
-Status Layer::RowIterator::Init() {
-  CHECK(!initted_);
-
-  RETURN_NOT_OK(projection_.GetProjectionFrom(
-                  reader_->schema(), &projection_mapping_));
-
-  // Setup Key Iterator.
-
-  // Only support single key column for now.
-  CHECK_EQ(reader_->schema().num_key_columns(), 1);
-  int key_col = 0;
-
-  RETURN_NOT_OK(reader_->NewBaseColumnIterator(key_col, &key_iter_));
-
-  // Setup column iterators.
-
-  for (size_t i = 0; i < projection_.num_columns(); i++) {
-    size_t col_in_layer = projection_mapping_[i];
-
-    ColumnIterator *iter;
-    RETURN_NOT_OK(reader_->NewColumnIterator(col_in_layer, &iter));
-    col_iters_.push_back(iter);
-  }
-
-  initted_ = true;
-  return Status::OK();
-}
-
-Status Layer::RowIterator::CopyNextRows(
+Status DeltaMergingIterator::CopyNextRows(
   size_t *nrows, uint8_t *dst, Arena *dst_arena)
 {
-  DCHECK(initted_);
-  DCHECK(dst) << "null dst";
-  DCHECK(dst_arena) << "null dst_arena";
+  // Get base data
+  RETURN_NOT_OK(base_iter_->CopyNextRows(nrows, dst, dst_arena));
+  size_t old_cur_row = cur_row_;
+  cur_row_ += *nrows;
 
-  // Copy the projected columns into 'dst'
-  size_t stride = projection_.byte_size();
-  int proj_col_idx = 0;
-  int fetched_prev_col = -1;
-
-  BOOST_FOREACH(ColumnIterator &col_iter, col_iters_) {
-    const TypeInfo &tinfo = projection_.column(proj_col_idx).type_info();
-    ColumnBlock dst_block(tinfo,
-                          dst + projection_.column_offset(proj_col_idx),
-                          stride, *nrows, dst_arena);
-
-    size_t fetched = *nrows;
-    RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_block));
-
-    // Sanity check that all iters match up
-    if (proj_col_idx > 0) {
-      CHECK(fetched == fetched_prev_col) <<
-        "Column " << proj_col_idx << " only fetched "
-                  << fetched << " rows whereas the previous "
-                  << "columns fetched " << fetched_prev_col;
-    }
-    fetched_prev_col = fetched;
-
-    if (fetched == 0) {
-      DCHECK_EQ(proj_col_idx, 0) << "all columns should end at the same time!";
-      return Status::NotFound("end of input");
-    }
-    proj_col_idx++;
+  if (*nrows == 0) {
+    // TODO: does this happen?
+    return Status::OK();
   }
 
-  *nrows = fetched_prev_col;
+  // Apply updates
+  BOOST_FOREACH(shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers_) {
+    for (size_t proj_col_idx = 0; proj_col_idx < projection_.num_columns(); proj_col_idx++) {
+      ColumnBlock dst_col( projection_.column(proj_col_idx).type_info(),
+                           dst + projection_.column_offset(proj_col_idx),
+                           projection_.byte_size(),
+                           *nrows,
+                           dst_arena );
+      size_t src_col_idx = projection_mapping_[proj_col_idx];
+
+      RETURN_NOT_OK(tracker->ApplyUpdates(src_col_idx, old_cur_row, &dst_col));
+    }
+  }
+
   return Status::OK();
 }
-
 
 } // namespace tablet
 } // namespace kudu

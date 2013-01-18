@@ -4,6 +4,7 @@
 
 #include "common/iterator.h"
 #include "common/row.h"
+#include "tablet/rowdelta.h"
 #include "util/status.h"
 
 namespace kudu {

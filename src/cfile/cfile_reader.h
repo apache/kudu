@@ -198,7 +198,7 @@ public:
   // The number of values actually read is written back into 'n'.
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
-  bool HasNext();
+  bool HasNext() const;
 
 private:
   // Read the data block currently pointed to by idx_iter_

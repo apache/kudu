@@ -108,9 +108,6 @@ protected:
     LOG_TIMING(INFO, "Reading updated rows with row iter") {
       VerifyUpdatesWithRowIter(l, updated);
     }
-    LOG_TIMING(INFO, "Reading updated rows with column iter") {
-      VerifyUpdatesWithColIter(l, updated);
-    }
   }
 
   void VerifyUpdatesWithRowIter(const Layer &l,
@@ -154,32 +151,6 @@ protected:
                  << ": expected=" << expected << " got=" << from_file[j];
         }
       }
-  }
-
-  // Verify the contents of the given layer.
-  // Identical to the above, except uses the column iterator instead of
-  // row iterator.
-  void VerifyUpdatesWithColIter(const Layer &l,
-                                const unordered_set<uint32_t> &updated) {
-    Schema proj_val(boost::assign::list_of
-                    (ColumnSchema("val", UINT32)),
-                    1);
-    Layer::ColumnIterator *col_iter_ptr;
-    ASSERT_STATUS_OK(l.NewColumnIterator(1, &col_iter_ptr));
-    scoped_ptr<Layer::ColumnIterator> col_iter(col_iter_ptr);
-    ASSERT_STATUS_OK(col_iter->SeekToOrdinal(0));
-
-    int batch_size = 10000;
-
-    ScopedColumnBlock<UINT32> dst(batch_size);
-
-    int i = 0;
-    while (col_iter->HasNext()) {
-      size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(col_iter->CopyNextValues(&n, &dst));
-      VerifyUpdatedBlock(dst, i, n, updated);
-      i += n;
-    }
   }
 
   // Iterate over a Layer, dumping occasional rows to the console,

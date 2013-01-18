@@ -300,7 +300,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter) {
   return Status::OK();
 }
 
-bool CFileIterator::HasNext() {
+bool CFileIterator::HasNext() const {
   CHECK(seeked_) << "not seeked";
 
   return dblk_->HasNext() || posidx_iter_->HasNext();
