@@ -45,7 +45,18 @@ public:
   }
 
   void append(const void *src_v, size_t count) {
-    reserve(len_ + count);
+    if (PREDICT_FALSE(len_ + count > capacity_)) {
+      // Not enough space, need to reserve more.
+      // Don't reserve exactly enough space for the new string -- that makes it
+      // too easy to write perf bugs where you get O(n^2) append.
+      // Instead, alwayhs expand by at least 50%.
+
+      size_t to_reserve = len_ + count;
+      if (len_ + count < len_ * 3 / 2) {
+        to_reserve = len_ *  3 / 2;
+      }
+      reserve(to_reserve);
+    }
 
     const char *src = reinterpret_cast<const char *>(src_v);
     // appending short values is common enough that this
