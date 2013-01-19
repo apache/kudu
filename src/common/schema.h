@@ -61,8 +61,15 @@ public:
       // the old value, we could potentially just overwrite in some cases.
       const Slice *src_slice = reinterpret_cast<const Slice *>(src);
       Slice *dst_slice = reinterpret_cast<Slice *>(dst);
-      if (PREDICT_FALSE(!dst_arena->RelocateSlice(*src_slice, dst_slice))) {
-        return Status::IOError("out of memory copying slice", src_slice->ToString());
+      if (dst_arena != NULL) {
+        if (PREDICT_FALSE(!dst_arena->RelocateSlice(*src_slice, dst_slice))) {
+          return Status::IOError("out of memory copying slice", src_slice->ToString());
+        }
+      } else {
+        // Just copy the slice without relocating.
+        // This is used by callers who know that the source row's data is going
+        // to stick around for the scope of the destination.
+        *dst_slice = *src_slice;
       }
     } else {
       size_t size = type_info().size();

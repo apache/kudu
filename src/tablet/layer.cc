@@ -124,14 +124,12 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   int batch_size = buf_size / projection.byte_size();
   CHECK_GE(batch_size, 1) << "could not fit a row from schema: "
                           << projection.ToString() << " in " << buf_size << " bytes";
-  Arena tmp_arena(1024, buf_size);
 
   size_t written = 0;
   while (src_iter->HasNext()) {
     // Read a batch from the iterator.
-    tmp_arena.Reset();
     size_t nrows = batch_size;
-    RETURN_NOT_OK(src_iter->CopyNextRows(&nrows, &buf[0], &tmp_arena));
+    RETURN_NOT_OK(src_iter->CopyNextRows(&nrows, &buf[0], NULL));
     CHECK_GT(nrows, 0);
 
     // Write the batch to the each of the columns
