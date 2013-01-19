@@ -40,6 +40,7 @@ Tablet::Tablet(const Schema &schema,
   schema_(schema),
   dir_(dir),
   memstore_(new MemStore(schema)),
+  next_layer_idx_(0),
   env_(Env::Default()),
   open_(false)
 {
