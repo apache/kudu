@@ -79,8 +79,8 @@ public:
   // inserted into the memstore, due to arena and data structure
   // overhead.
   size_t memory_footprint() const {
-    // TODO: need to make cbtree use arena so this is accurate
-    return arena_.memory_footprint();
+    // TODO: merge the two into the same arena?
+    return arena_.memory_footprint() + tree_.estimate_memory_usage();
   }
 
   // Return an iterator over the items in this memstore.
@@ -126,6 +126,9 @@ private:
   // Returns Status::OK() and sets *dst to point at the copied
   // row unless allocation fails.
   Status CopyRowToArena(const Slice &row, Slice *dst);
+
+  // Temporary hack to slow down mutators when the memstore is over 1GB.
+  void SlowMutators();
 
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 

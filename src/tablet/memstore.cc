@@ -1,9 +1,16 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include <boost/thread.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+
 #include "common/common.pb.h"
 #include "common/row.h"
 #include "tablet/memstore.h"
+
+DEFINE_int32(memstore_throttle_mb, 0,
+             "number of MB of RAM beyond which memstore inserts will be throttled");
+
 
 namespace kudu { namespace tablet {
 
@@ -64,6 +71,7 @@ Status MemStore::Insert(const Slice &data) {
     << "succeeded!";
 
   debug_insert_count_++;
+  SlowMutators();
   return Status::OK();
 }
 
@@ -88,6 +96,7 @@ Status MemStore::UpdateRow(const void *key,
   delta.ApplyRowUpdate(schema_, existing.mutable_data(), &arena_);
 
   debug_update_count_++;
+  SlowMutators();
   return Status::OK();
 }
 
@@ -101,6 +110,16 @@ Status MemStore::CheckRowPresent(const void *key, bool *present) const {
 
   *present = tree_.ContainsKey(encoded_key_slice);
   return Status::OK();
+}
+
+void MemStore::SlowMutators() {
+  if (FLAGS_memstore_throttle_mb == 0) return;
+
+  ssize_t over_mem = memory_footprint() - FLAGS_memstore_throttle_mb * 1024 * 1024;
+  if (over_mem > 0) {
+    size_t us_to_sleep = over_mem / 1024 / 512;
+    boost::this_thread::sleep(boost::posix_time::microseconds(us_to_sleep));
+  }
 }
 
 MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {

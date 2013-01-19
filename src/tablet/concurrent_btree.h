@@ -1061,6 +1061,10 @@ public:
     }
   }
 
+  size_t estimate_memory_usage() const {
+    return arena_.memory_footprint();
+  }
+
 private:
   friend class PreparedMutation<Traits>;
   friend class CBTreeIterator<Traits>;
