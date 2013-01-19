@@ -29,7 +29,7 @@
 #include "gutil/stringprintf.h"
 #include "gutil/port.h"
 
-#define TRAVERSE_PREFETCH
+//#define TRAVERSE_PREFETCH
 #define SCAN_PREFETCH
 
 namespace kudu { namespace tablet {
@@ -904,7 +904,7 @@ template<class Traits = BTreeTraits>
 class CBTree : boost::noncopyable {
 public:
   CBTree() :
-    arena_(1024, 1024*1024),
+    arena_(512*1024, 4*1024*1024),
     root_(new LeafNode<Traits>(false))
   {
     // TODO: use a custom allocator
