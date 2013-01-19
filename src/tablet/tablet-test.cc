@@ -16,10 +16,14 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
+DEFINE_int32(testflush_num_inserts, 1000,
+             "Number of rows inserted in TestFlush");
+
+
 TEST_F(TestTablet, TestFlush) {
   // Insert 1000 rows into memstore
   RowBuilder rb(schema_);
-  InsertTestRows(0, 1000);
+  InsertTestRows(0, FLAGS_testflush_num_inserts);
 
   // Flush it.
   ASSERT_STATUS_OK(tablet_->Flush());
@@ -206,3 +210,10 @@ TEST_F(TestTablet, TestInsertsPersist) {
 
 } // namespace tablet
 } // namespace kudu
+
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  google::ParseCommandLineFlags(&argc, &argv, true);
+  return RUN_ALL_TESTS();
+}
