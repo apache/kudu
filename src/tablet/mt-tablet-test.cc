@@ -16,6 +16,7 @@ DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(inserts_per_thread, 10000,
              "Number of rows inserted by each inserter thread");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
+DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
 namespace kudu {
 namespace tablet {
@@ -124,7 +125,7 @@ public:
     // But, especially in debug mode, this will only allow a few
     // rows to get inserted between each flush, and the test will take
     // quite a while. So, after every flush, we double the wait time below.
-    int wait_time = 30;
+    int wait_time = FLAGS_flusher_initial_frequency_ms;
     while (running_insert_count_.count() > 0) {
       tablet_->Flush();
 
