@@ -141,7 +141,7 @@ private:
   const WriterOptions *options_;
 
   enum {
-    kEstimatedHeaderSizeBytes = 6
+    kEstimatedHeaderSizeBytes = 10
   };
 };
 

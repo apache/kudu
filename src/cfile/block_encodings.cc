@@ -243,6 +243,7 @@ IntBlockBuilder::IntBlockBuilder(const WriterOptions *options) :
 void IntBlockBuilder::Reset() {
   ints_.clear();
   buffer_.clear();
+  ints_.reserve(options_->block_size / sizeof(uint32_t));
   estimated_raw_size_ = 0;
 }
 
@@ -291,6 +292,8 @@ Status IntBlockBuilder::GetFirstKey(void *key) const {
 }
 
 Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
+  int size_estimate = EstimateEncodedSize();
+  buffer_.reserve(size_estimate);
   // TODO: negatives and big ints
 
   IntType min = 0;
@@ -326,6 +329,11 @@ Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
 
     AppendGroupVarInt32(&buffer_, trailer[0], trailer[1], trailer[2], trailer[3]);
   }
+
+  // Our estimate should always be an upper bound, or else there's a bunch of
+  // extra copies due to resizes here.
+  DCHECK(size_estimate < buffer_.size());
+
   return Slice(buffer_.data(), buffer_.size());
 }
 
@@ -351,6 +359,7 @@ void StringBlockBuilder::Reset() {
 
   buffer_.clear();
   buffer_.resize(kHeaderReservedLength);
+  buffer_.reserve(options_->block_size);
 
   restarts_.clear();
   last_val_.clear();
