@@ -100,7 +100,7 @@ Status Tablet::Open() {
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // First, ensure that it is a unique key by checking all the open
   // Layers
@@ -122,7 +122,7 @@ Status Tablet::Insert(const Slice &data) {
 
 Status Tablet::UpdateRow(const void *key,
                          const RowDelta &update) {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // First try to update in memstore.
   Status s = memstore_->UpdateRow(key, update);
@@ -165,7 +165,7 @@ Status Tablet::Flush() {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
     // as the swap takes.
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
     start_insert_count = memstore_->debug_insert_count();
 
@@ -224,7 +224,7 @@ Status Tablet::Flush() {
   uint64_t start_update_count;
   {
     // Swap it in under the lock.
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    boost::lock_guard<percpu_rwlock> lock(component_lock_);
     CHECK_EQ(layers_.back(), old_ms)
       << "Layer components changed during flush";
     layers_.back().reset(partially_flushed_layer);
@@ -266,7 +266,7 @@ Status Tablet::Flush() {
   // to the MemStore as well, the actual memstore wlil get cleaned
   // up when the last iterator is destructed.
   {
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    boost::lock_guard<percpu_rwlock> lock(component_lock_);
     layers_.back().reset(new_layer);
   }
   return Status::OK();
@@ -279,7 +279,7 @@ Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   deque<shared_ptr<RowIteratorInterface> > *iters) const
 {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
@@ -319,7 +319,7 @@ Status Tablet::CountRows(size_t *count) const {
   shared_ptr<MemStore> memstore;
   vector<shared_ptr<LayerInterface> > layers;
   {
-    boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+    boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
     memstore = memstore_;
     layers = layers_;
   }

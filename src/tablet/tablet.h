@@ -12,6 +12,7 @@
 #include "tablet/memstore.h"
 #include "tablet/layer.h"
 #include "util/env.h"
+#include "util/percpu_rwlock.h"
 #include "util/status.h"
 #include "util/slice.h"
 
@@ -96,7 +97,7 @@ private:
   //
   // TODO: this could probably done more efficiently with a single atomic swap of a list
   // and an RCU-style quiesce phase, but not worth it for now.
-  mutable boost::shared_mutex component_lock_;
+  mutable percpu_rwlock component_lock_;
 
   size_t next_layer_idx_;
 
