@@ -197,6 +197,7 @@ Status Tablet::Flush() {
   // that deletes at this point are just marking entries in the btree
   // rather than actually deleting them.
   LOG(INFO) << "Flush: entering stage 2 (flushing keys)";
+  LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
   Schema keys_only = schema_.CreateKeyProjection();
 
