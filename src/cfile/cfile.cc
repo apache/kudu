@@ -27,6 +27,7 @@ const string kMagicString = "kuducfil";
 ////////////////////////////////////////////////////////////
 WriterOptions::WriterOptions() :
   block_size(256*1024),
+  index_block_size(32*1024),
   block_restart_interval(16),
   write_posidx(false),
   write_validx(false)

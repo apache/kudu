@@ -53,6 +53,11 @@ struct WriterOptions {
   // Default: 256K
   size_t block_size;
 
+  // Approximate size of index blocks.
+  //
+  // Default: 32KB.
+  size_t index_block_size;
+
   // Number of keys between restart points for delta encoding of keys.
   // This parameter can be changed dynamically.  Most clients should
   // leave this parameter alone.

@@ -45,7 +45,7 @@ Status IndexTreeBuilder::Append(
   idx_block.Add(key, block_ptr);
 
   size_t est_size = idx_block.EstimateEncodedSize();
-  if (est_size > options_->block_size) {
+  if (est_size > options_->index_block_size) {
     DCHECK(idx_block.Count() > 1)
       << "Index block full with only one entry - this would create "
       << "an infinite loop";
