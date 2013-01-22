@@ -3,6 +3,8 @@
 #define KUDU_UTIL_STOPWATCH_H
 
 #include <glog/logging.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include "gutil/stringprintf.h"
