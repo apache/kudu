@@ -631,7 +631,11 @@ TEST(TestCBTree, TestConcurrentIterateAndInsert) {
 
 TEST(TestCBTree, TestScanPerformance) {
   CBTree<BTreeTraits> tree;
-  int n_keys = 10000000;
+#ifndef NDEBUG
+  int n_keys = 10000;
+#else
+  int n_keys = 1000000;
+#endif
   LOG_TIMING(INFO, StringPrintf("Insert %d keys", n_keys)) {
     InsertRange(&tree, 0, n_keys);
   }

@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "common/iterator.h"
+#include "common/rowblock.h"
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
 #include "tablet/layer.h"
@@ -120,22 +121,21 @@ protected:
     ASSERT_STATUS_OK(row_iter->SeekToStart());
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
-    uint32_t dst[batch_size];
+    ScopedRowBlock dst(proj_val, batch_size, &arena);
+
 
     int i = 0;
     while (row_iter->HasNext()) {
       arena.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(
-        row_iter->CopyNextRows(
-          &n, reinterpret_cast<uint8_t *>(dst), &arena));
-      VerifyUpdatedBlock(reinterpret_cast<uint32_t *>(dst), i, n, updated);
+      ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, &dst));
+      VerifyUpdatedBlock(reinterpret_cast<const uint32_t *>(dst.row_ptr(0)),
+                         i, n, updated);
       i += n;
     }
   }
 
-  template<typename Indexable>
-  void VerifyUpdatedBlock(const Indexable &from_file, int start_row, size_t n_rows,
+  void VerifyUpdatedBlock(const uint32_t *from_file, int start_row, size_t n_rows,
                           const unordered_set<uint32_t> &updated) {
       for (int j = 0; j < n_rows; j++) {
         uint32_t idx_in_file = start_row + j;
@@ -163,18 +163,18 @@ protected:
 
     int batch_size = 100;
     Arena arena(1024, 1024*1024);
-    uint8_t dst[schema.byte_size() * batch_size];
+    ScopedRowBlock dst(schema, batch_size, &arena);
 
     int i = 0;
     int log_interval = expected_rows/20 / batch_size;
     while (row_iter->HasNext()) {
       arena.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, dst, &arena));
+      ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, &dst));
       i += n;
 
       LOG_EVERY_N(INFO, log_interval) << "Got row: " <<
-        schema.DebugRow(dst);
+        schema.DebugRow(dst.row_ptr(0));
     }
 
     EXPECT_EQ(expected_rows, i);

@@ -58,6 +58,7 @@ public:
     ScopedRowDelta update(schema_);
 
     Arena tmp_arena (1024, 1024);
+    RowBlock block(schema_, &buf[0], 1, &tmp_arena);
 
     while (running_insert_count_.count() > 0) {
       scoped_ptr<Tablet::RowIterator> iter;
@@ -66,7 +67,7 @@ public:
       while (iter->HasNext()) {
         tmp_arena.Reset();
         size_t n = 1;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &buf[0], &tmp_arena));
+        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
         CHECK_EQ(n, 1);
 
         // Grab the key
@@ -101,6 +102,7 @@ public:
   // trying to reference already-freed memstore memory.
   void SlowReaderThread(int tid) {
     uint8_t buf[schema_.byte_size()];
+    RowBlock block(schema_, &buf[0], 1, &arena_);
 
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
@@ -112,7 +114,7 @@ public:
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         arena_.Reset();
         size_t n = 1;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &buf[0], &arena_));
+        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
         if (running_insert_count_.TimedWait(boost::posix_time::milliseconds(1))) {
           return;
         }

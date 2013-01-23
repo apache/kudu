@@ -90,10 +90,11 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   ASSERT_TRUE(iter->HasNext());
 
   scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * 100]);
+  RowBlock block(schema_, &buf[0], 100, &arena_);
 
   // First call to CopyNextRows should fetch the whole memstore.
   size_t n = 100;
-  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from memstore";
   ASSERT_EQ("(string key=hello from memstore, uint32 val=3, uint32 update_count=0)",
             schema_.DebugRow(&buf[0]))
@@ -102,7 +103,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   // Next, should fetch the older layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
-  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 1";
   ASSERT_EQ("(string key=hello from layer 1, uint32 val=1, uint32 update_count=0)",
             schema_.DebugRow(&buf[0]))
@@ -111,7 +112,7 @@ TEST_F(TestTablet, TestRowIteratorSimple) {
   // Next, should fetch the newer layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
-  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 2";
   ASSERT_EQ("(string key=hello from layer 2, uint32 val=2, uint32 update_count=0)",
             schema_.DebugRow(&buf[0]))
@@ -163,11 +164,12 @@ TEST_F(TestTablet, TestRowIteratorComplex) {
   scoped_ptr<Tablet::RowIterator> iter;
   ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
   scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * 100]);
+  RowBlock block(schema_, &buf[0], 100, &arena_);
 
   while (iter->HasNext()) {
     arena_.Reset();
     size_t n = 100;
-    ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+    ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
     LOG(INFO) << "Fetched batch of " << n;
     for (size_t i = 0; i < n; i++) {
       const char *row_ptr = reinterpret_cast<const char *>(

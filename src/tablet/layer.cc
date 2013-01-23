@@ -124,12 +124,13 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   int batch_size = buf_size / projection.byte_size();
   CHECK_GE(batch_size, 1) << "could not fit a row from schema: "
                           << projection.ToString() << " in " << buf_size << " bytes";
+  RowBlock buf_block(projection, &buf[0], batch_size, NULL);
 
   size_t written = 0;
   while (src_iter->HasNext()) {
     // Read a batch from the iterator.
     size_t nrows = batch_size;
-    RETURN_NOT_OK(src_iter->CopyNextRows(&nrows, &buf[0], NULL));
+    RETURN_NOT_OK(src_iter->CopyNextRows(&nrows, &buf_block));
     CHECK_GT(nrows, 0);
 
     // Write the batch to the each of the columns
@@ -413,11 +414,10 @@ Status DeltaMergingIterator::Init() {
   return Status::OK();
 }
 
-Status DeltaMergingIterator::CopyNextRows(
-  size_t *nrows, uint8_t *dst, Arena *dst_arena)
+Status DeltaMergingIterator::CopyNextRows(size_t *nrows, RowBlock *dst)
 {
   // Get base data
-  RETURN_NOT_OK(base_iter_->CopyNextRows(nrows, dst, dst_arena));
+  RETURN_NOT_OK(base_iter_->CopyNextRows(nrows, dst));
   size_t old_cur_row = cur_row_;
   cur_row_ += *nrows;
 
@@ -429,11 +429,7 @@ Status DeltaMergingIterator::CopyNextRows(
   // Apply updates
   BOOST_FOREACH(shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers_) {
     for (size_t proj_col_idx = 0; proj_col_idx < projection_.num_columns(); proj_col_idx++) {
-      ColumnBlock dst_col( projection_.column(proj_col_idx).type_info(),
-                           dst + projection_.column_offset(proj_col_idx),
-                           projection_.byte_size(),
-                           *nrows,
-                           dst_arena );
+      ColumnBlock dst_col = dst->column_block(proj_col_idx, *nrows);
       size_t src_col_idx = projection_mapping_[proj_col_idx];
 
       RETURN_NOT_OK(tracker->ApplyUpdates(src_col_idx, old_cur_row, &dst_col));

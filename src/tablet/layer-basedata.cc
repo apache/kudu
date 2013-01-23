@@ -208,25 +208,21 @@ Status CFileBaseData::RowIterator::Init() {
 }
 
 Status CFileBaseData::RowIterator::CopyNextRows(
-  size_t *nrows, uint8_t *dst, Arena *dst_arena)
+  size_t *nrows, RowBlock *dst)
 {
   DCHECK(initted_);
   DCHECK(dst) << "null dst";
-  DCHECK(dst_arena) << "null dst_arena";
+  DCHECK(dst->arena()) << "null dst_arena";
 
   // Copy the projected columns into 'dst'
-  size_t stride = projection_.byte_size();
   int proj_col_idx = 0;
   int fetched_prev_col = -1;
 
   BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
-    const TypeInfo &tinfo = projection_.column(proj_col_idx).type_info();
-    ColumnBlock dst_block(tinfo,
-                          dst + projection_.column_offset(proj_col_idx),
-                          stride, *nrows, dst_arena);
+    ColumnBlock dst_col = dst->column_block(proj_col_idx, *nrows);
 
     size_t fetched = *nrows;
-    RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_block));
+    RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_col));
 
     // Sanity check that all iters match up
     if (proj_col_idx > 0) {

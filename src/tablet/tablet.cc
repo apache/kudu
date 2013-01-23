@@ -367,9 +367,7 @@ bool Tablet::RowIterator::HasNext() const {
   return false;
 }
 
-Status Tablet::RowIterator::CopyNextRows(
-  size_t *nrows, uint8_t *dst, Arena *dst_arena)
-{
+Status Tablet::RowIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
 
   while (!sub_iters_.empty() &&
          !sub_iters_.front()->HasNext()) {
@@ -384,7 +382,7 @@ Status Tablet::RowIterator::CopyNextRows(
   VLOG(1) << "Copying up to " << (*nrows) << " rows from " << iter->ToString();
 
 
-  RETURN_NOT_OK(iter->CopyNextRows(nrows, dst, dst_arena));
+  RETURN_NOT_OK(iter->CopyNextRows(nrows, dst));
   if (!iter->HasNext()) {
     // Iterator exhausted, remove it.
     sub_iters_.pop_front();

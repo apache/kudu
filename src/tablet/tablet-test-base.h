@@ -67,6 +67,7 @@ protected:
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
     int batch_size = expected_count / 10;
     scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * batch_size]);
+    RowBlock block(schema_, &buf[0], batch_size, &arena_);
 
     // Keep a bitmap of which rows have been seen from the requested
     // range.
@@ -76,7 +77,7 @@ protected:
     while (iter->HasNext()) {
       arena_.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK(iter->CopyNextRows(&n, &buf[0], &arena_));
+      ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
       LOG(INFO) << "Fetched batch of " << n << "\n"
                 << "First row: " << schema_.DebugRow(&buf[0]);
 

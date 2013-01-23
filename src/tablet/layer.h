@@ -16,6 +16,7 @@
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
 #include "common/row.h"
+#include "common/rowblock.h"
 #include "common/schema.h"
 #include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
@@ -227,7 +228,7 @@ public:
   // of rows actually fetched into the same variable.
   // Any indirect data (eg strings) are allocated out of
   // 'dst_arena'
-  Status CopyNextRows(size_t *nrows, uint8_t *dst, Arena *dst_arena);
+  Status CopyNextRows(size_t *nrows, RowBlock *dst);
 
   bool HasNext() const {
     return base_iter_->HasNext();

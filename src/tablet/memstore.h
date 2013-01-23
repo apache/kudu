@@ -8,6 +8,7 @@
 #include "tablet/concurrent_btree.h"
 #include "tablet/rowdelta.h"
 #include "tablet/layer-interfaces.h"
+#include "common/rowblock.h"
 #include "common/schema.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
@@ -183,9 +184,9 @@ public:
     }
   }
 
-  virtual Status CopyNextRows(size_t *nrows,
-                              uint8_t *dst,
-                              Arena *dst_arena) {
+  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst) {
+    // TODO: add dcheck that dst->schema() matches our schema
+    // also above TODO applies to a lot of other CopyNextRows cases
     DCHECK(!projection_mapping_.empty()) << "not initted";
     DCHECK_GT(*nrows, 0);
     if (!HasNext()) {
@@ -201,14 +202,13 @@ public:
       Slice s = GetCurrentRow();
       for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
         size_t src_col_idx = projection_mapping_[proj_col_idx];
-        void *dst_cell = dst + projection_.column_offset(proj_col_idx);
+        void *dst_cell = dst->row_ptr(fetched) + projection_.column_offset(proj_col_idx);
         const void *src_cell = s.data() + memstore_->schema().column_offset(src_col_idx);
-        RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst_arena));
+        RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
       }
 
       // advance to next row
       fetched++;
-      dst += projection_.byte_size();
       Next();
     }
 

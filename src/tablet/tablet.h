@@ -116,9 +116,7 @@ public:
     return Status::NotSupported("TODO: implement me");
   }
 
-  virtual Status CopyNextRows(size_t *nrows,
-                              uint8_t *dst,
-                              Arena *dst_arena);
+  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst);
 
   virtual bool HasNext() const;
 

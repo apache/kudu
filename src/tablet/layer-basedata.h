@@ -177,9 +177,7 @@ public:
   // of rows actually fetched into the same variable.
   // Any indirect data (eg strings) are allocated out of
   // 'dst_arena'
-  Status CopyNextRows(size_t *nrows,
-                      uint8_t *dst,
-                      Arena *dst_arena);
+  Status CopyNextRows(size_t *nrows, RowBlock *dst);
 
   bool HasNext() const {
     DCHECK(initted_);

@@ -10,6 +10,7 @@
 namespace kudu {
 
 class Arena;
+class RowBlock;
 
 class RowIteratorInterface {
 public:
@@ -26,16 +27,13 @@ public:
   }
 
   // Get the next batch of rows from the iterator.
-  // Retrieves up to 'nrows' rows, and writes back the number
-  // of rows actually fetched into the same variable.
-  // Any indirect data (eg strings) are allocated out of
-  // 'dst_arena'
   //
-  // TODO: this probably needs something like 'class RowBlock' to correspond to
-  // class ColumnBlock
-  virtual Status CopyNextRows(size_t *nrows,
-                              uint8_t *dst,
-                              Arena *dst_arena) = 0;
+  // Retrieves up to *nrows rows into the given row block.
+  // On return, if successfull, sets *nrows to the number of rows actually fetched.
+  //
+  // Any indirect data (eg strings) are copied into the destination row block's
+  // arena, if non-null.
+  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst) = 0;
 
   virtual bool HasNext() const = 0;
 
