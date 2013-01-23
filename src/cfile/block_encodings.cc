@@ -332,7 +332,7 @@ Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
 
   // Our estimate should always be an upper bound, or else there's a bunch of
   // extra copies due to resizes here.
-  DCHECK(size_estimate < buffer_.size());
+  DCHECK_GE(size_estimate, buffer_.size());
 
   return Slice(buffer_.data(), buffer_.size());
 }
