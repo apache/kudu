@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "cfile/cfile.pb.h"
+#include "cfile/seek_flags.h"
 #include "common/columnblock.h"
 #include "util/memory/arena.h"
 #include "util/faststring.h"
@@ -227,7 +228,8 @@ public:
   // This will only return valid results when the data block
   // consists of values in sorted order.
   virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match) = 0;
+                                    bool *exact_match,
+                                    SeekFlags flags = 0) = 0;
 
   // Fetch the next set of values from the block into 'dst'.
   // The output block must have space for up to n cells.
@@ -268,7 +270,9 @@ public:
 
   void SeekToPositionInBlock(uint pos);
 
-  Status SeekAtOrAfterValue(const void *value, bool *exact_match);
+  Status SeekAtOrAfterValue(const void *value,
+                            bool *exact_match,
+                            SeekFlags flags = 0);
 
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
@@ -317,7 +321,8 @@ public:
   virtual Status ParseHeader();
   virtual void SeekToPositionInBlock(uint pos);
   virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match);
+                                    bool *exact_match,
+                                    SeekFlags flags = 0);
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
   virtual bool HasNext() const {

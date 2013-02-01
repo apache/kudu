@@ -4,6 +4,7 @@
 #include <tr1/memory>
 
 #include "cfile/cfile.h"
+#include "cfile/seek_flags.h"
 #include "tablet/layer.h"
 #include "tablet/layer-basedata.h"
 
@@ -80,7 +81,7 @@ Status KeysFlushedBaseData::FindRow(const void *key, uint32_t *idx) const {
   // TODO: check bloom filter, or perhaps check the memstore here as a filter?
 
   bool exact;
-  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
+  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact, 0) );
   if (!exact) {
     return Status::NotFound("not present in storefile (failed seek)");
   }
@@ -147,7 +148,7 @@ Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
   // TODO: check bloom filter
 
   bool exact;
-  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
+  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact, 0) );
   if (!exact) {
     return Status::NotFound("not present in storefile (failed seek)");
   }
@@ -159,16 +160,16 @@ Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
 Status CFileBaseData::CheckRowPresent(const void *key, bool *present) const {
   // TODO: use bloom
 
-  uint32_t junk;
-  Status s = FindRow(key, &junk);
+  CFileIterator *key_iter;
+  RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );
+  scoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
+
+  Status s = key_iter->SeekAtOrAfter(key, present,
+                                     cfile::SEEK_FORCE_EXACT_MATCH);
   if (s.IsNotFound()) {
-    // In the case that the key comes past the end of the file, Seek
-    // will return NotFound. In that case, it is OK from this function's
-    // point of view - just a non-present key.
     *present = false;
     return Status::OK();
   }
-  *present = true;
   return s;
 }
 
