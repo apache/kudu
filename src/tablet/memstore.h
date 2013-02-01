@@ -240,6 +240,10 @@ public:
     return "memstore iterator";
   }
 
+  const Schema &schema() const {
+    return projection_;
+  }
+
 private:
   friend class MemStore;
 

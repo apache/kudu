@@ -238,6 +238,10 @@ public:
     return string("delta merging iterator");
   }
 
+  const Schema &schema() const {
+    return projection_;
+  }
+
 private:
   friend class Layer;
 

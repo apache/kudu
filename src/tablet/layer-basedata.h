@@ -188,6 +188,10 @@ public:
     return string("layer iterator for ") + base_data_->ToString();
   }
 
+  const Schema &schema() const {
+    return projection_;
+  }
+
 private:
   friend class CFileBaseData;
 

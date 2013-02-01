@@ -124,6 +124,10 @@ public:
     return "tablet iterator";
   }
 
+  virtual const Schema &schema() const {
+    return projection_;
+  }
+
 private:
   friend class Tablet;
 

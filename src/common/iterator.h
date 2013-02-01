@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "common/schema.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -38,6 +39,8 @@ public:
   virtual bool HasNext() const = 0;
 
   virtual string ToString() const = 0;
+
+  virtual const Schema &schema() const = 0;
 
   virtual ~RowIteratorInterface() {}
 };
