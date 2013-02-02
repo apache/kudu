@@ -256,8 +256,7 @@ Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
 }
 
 Status CFileIterator::SeekAtOrAfter(const void *key,
-                                    bool *exact_match,
-                                    SeekFlags seek_flags) {
+                                    bool *exact_match) {
   seeked_ = NULL;
 
   if (PREDICT_FALSE(validx_iter_ == NULL)) {
@@ -277,7 +276,7 @@ Status CFileIterator::SeekAtOrAfter(const void *key,
 
   RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_));
 
-  RETURN_NOT_OK(dblk_->SeekAtOrAfterValue(key, exact_match, seek_flags));
+  RETURN_NOT_OK(dblk_->SeekAtOrAfterValue(key, exact_match));
 
   seeked_ = validx_iter_.get();
   return Status::OK();

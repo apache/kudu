@@ -146,7 +146,7 @@ Status DeltaFileReader::ApplyUpdates(
     RETURN_NOT_OK(sbd.ParseHeader());
 
     bool exact;
-    s = sbd.SeekAtOrAfterValue(&key_slice, &exact, cfile::SEEK_NO_FLAGS);
+    s = sbd.SeekAtOrAfterValue(&key_slice, &exact);
     if (!s.ok()) {
       if (s.IsNotFound()) {
         // This can happen if we seek into the middle of a block, but we

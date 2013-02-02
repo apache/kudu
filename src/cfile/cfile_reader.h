@@ -12,7 +12,6 @@
 #include "common/columnblock.h"
 #include "common/types.h"
 #include "cfile/index_btree.h"
-#include "cfile/seek_flags.h"
 #include "gutil/port.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
@@ -184,11 +183,8 @@ public:
   //
   // If this iterator was constructed without no value index,
   // then this will return a NotSupported status.
-  //
-  // See seek_flags.h for possible seek_flags.
   Status SeekAtOrAfter(const void *key,
-                       bool *exact_match,
-                       SeekFlags seek_flags = 0);
+                       bool *exact_match);
 
   // Get the ordinal index that the iterator is currently
   // pointed to.
@@ -203,6 +199,7 @@ public:
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
   bool HasNext() const;
+
 private:
   // Read the data block currently pointed to by idx_iter_
   // into the dblk_data_ and dblk_ fields.

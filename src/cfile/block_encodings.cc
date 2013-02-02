@@ -545,8 +545,7 @@ void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
 }
 
 Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
-                                           bool *exact_match,
-                                           SeekFlags flags) {
+                                           bool *exact_match) {
   return Status::NotSupported("TODO: int key search");
 }
 
@@ -718,8 +717,7 @@ void StringBlockDecoder::SeekToRestartPoint(uint32_t idx) {
 }
 
 Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void,
-                                              bool *exact_match,
-                                              SeekFlags flags) {
+                                              bool *exact_match) {
   DCHECK(value_void != NULL);
 
   const Slice &target = *reinterpret_cast<const Slice *>(value_void);
@@ -753,38 +751,6 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 
   // Linear search (within restart block) for first key >= target
   SeekToRestartPoint(left);
-
-  // If we're only looking for exact matches (eg to check a key against
-  // a duplicate insert, do a fast path scan to check for any potential
-  // matches, by looking only at equality of the "delta" portions
-  if (flags & SEEK_FORCE_EXACT_MATCH) {
-    const char *p = next_ptr_;
-    const char *limit;
-    if (left < num_restarts_) {
-      limit = GetRestartPoint(left + 1);
-    } else {
-      // Limit is where the restart data begins
-      limit = reinterpret_cast<const char *>(restarts_);
-    }
-    bool possible_match = false;
-    while (p < limit) {
-      uint32_t shared, non_shared;
-      const char *val_delta = DecodeEntryLengths(p, &shared, &non_shared);
-
-      if (shared + non_shared == target.size() &&
-          strings::memeq(val_delta, target.data() + shared, non_shared)) {
-        possible_match = true;
-        break;
-      }
-
-      p = val_delta + non_shared;
-    }
-
-    if (!possible_match) {
-      *exact_match = false;
-      return Status::OK();
-    }
-  }
 
   while (true) {
 #ifndef NDEBUG
