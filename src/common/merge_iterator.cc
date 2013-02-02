@@ -26,11 +26,15 @@ public:
   {}
 
   const void *next_row_ptr() {
-    return read_block_.row_ptr(cur_row_);
+    return next_row_ptr_;
   }
 
   Status Advance() {
     cur_row_++;
+    // Manually advancing next_row_ptr_ is some 20% faster
+    // than calling row_ptr(cur_row_), since it avoids an expensive multiplication
+    // in the inner loop.
+    next_row_ptr_ += iter_->schema().byte_size();
     if (PREDICT_TRUE(cur_row_ < valid_rows_)) {
       return Status::OK();
     } else {
@@ -45,6 +49,7 @@ public:
     RETURN_NOT_OK( iter_->CopyNextRows(&n, &read_block_) );
     cur_row_ = 0;
     valid_rows_ = n;
+    next_row_ptr_ = read_block_.row_ptr(0);
     return Status::OK();
   }
 
@@ -61,6 +66,7 @@ public:
 
   shared_ptr<RowIteratorInterface> iter_;
   ScopedRowBlock read_block_;
+  uint8_t *next_row_ptr_;
   size_t cur_row_;
   size_t valid_rows_;
 
@@ -98,11 +104,17 @@ Status MergeIterator::SeekAtOrAfter(const Slice &key, bool *exact) {
   return Status::NotSupported("Merge iterator doesn't currently support seek");
 }
 
+// TODO: this is an obvious spot to add codegen - there's a ton of branching
+// and such around the comparisons. A simple experiment indicated there's some
+// 2x to be gained.
 Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
   CHECK(initted_);
+  // TODO: check that dst has the same schema
 
   *nrows = 0;
   size_t dst_row_idx = 0;
+  size_t row_size = schema_.byte_size();
+  uint8_t *dst_ptr = dst->row_ptr(0);
 
   while (dst_row_idx < dst->nrows()) {
 
@@ -112,7 +124,7 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     for (size_t i = 0; i < iters_.size(); i++) {
       shared_ptr<MergeIterState> &state = iters_[i];
 
-      if (state->IsExhausted()) {
+      if (PREDICT_FALSE(state->IsExhausted())) {
         iters_.erase(iters_.begin() + i);
         i--;
         continue;
@@ -128,9 +140,11 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     if (PREDICT_FALSE(smallest == NULL)) break;
 
     // Otherwise, copy the row from the smallest one, and advance it
-    strings::memcpy_inlined(reinterpret_cast<char *>(dst->row_ptr(dst_row_idx)),
+    strings::memcpy_inlined(reinterpret_cast<char *>(dst_ptr),
                             reinterpret_cast<const char *>(smallest->next_row_ptr()),
-                            schema_.byte_size());
+                            row_size);
+    dst_ptr += row_size;
+
     RETURN_NOT_OK(smallest->Advance());
     dst_row_idx++;
   }
