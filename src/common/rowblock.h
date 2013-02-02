@@ -43,6 +43,8 @@ public:
                        arena_);
   }
 
+  size_t nrows() const { return nrows_; }
+
 private:
   Schema schema_;
   uint8_t *data_;
