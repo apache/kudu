@@ -131,7 +131,7 @@ Status CFileBaseData::NewColumnIterator(size_t col_idx, CFileIterator **iter) co
 
 
 RowIteratorInterface *CFileBaseData::NewRowIterator(const Schema &projection) const {
-  return new CFileBaseData::RowIterator(this, projection);
+  return new CFileBaseData::RowIterator(shared_from_this(), projection);
 }
 
 Status CFileBaseData::CountRows(size_t *count) const {

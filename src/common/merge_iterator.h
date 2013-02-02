@@ -43,7 +43,6 @@ private:
   bool initted_;
 
   vector<shared_ptr<MergeIterState> > iters_;
-
 };
 
 } // namespace kudu

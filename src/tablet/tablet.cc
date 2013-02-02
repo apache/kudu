@@ -7,8 +7,9 @@
 #include <vector>
 
 #include "cfile/cfile.h"
-#include "common/schema.h"
 #include "common/iterator.h"
+#include "common/merge_iterator.h"
+#include "common/schema.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/tablet.h"
@@ -206,7 +207,7 @@ Status Tablet::Flush() {
 
   LayerWriter out(env_, schema_, tmp_layer_dir);
   RETURN_NOT_OK(out.Open());
-  RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get()));
+  RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get(), false));
 
 
   // Step 3. Freeze old memstore contents.
@@ -240,7 +241,7 @@ Status Tablet::Flush() {
   Schema non_keys = schema_.CreateNonKeyProjection();
   iter.reset(old_ms->NewIterator(non_keys));
   RETURN_NOT_OK(iter->Init());
-  RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get()));
+  RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get(), false));
   RETURN_NOT_OK(out.Finish());
 
 
@@ -274,6 +275,114 @@ Status Tablet::Flush() {
 
   // TODO: explicitly track iterators somehow so that a slow
   // memstore reader can't hold on to too much memory in the tablet.
+}
+
+Status Tablet::Compact()
+{
+  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
+  string tmp_layer_dir = new_layer_dir + ".compact-tmp";
+
+  vector<shared_ptr<RowIteratorInterface> > key_iters;
+  vector<shared_ptr<LayerInterface> > input_layers;
+
+  Schema keys_only = schema_.CreateKeyProjection();
+
+  LOG(INFO) << "Compaction: entering stage 1 (collecting layers)";
+
+  // Step 1. Capture the layers to be merged
+  {
+    boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+
+
+    // Grab all layer iterators.
+    BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
+      input_layers.push_back(l);
+    }
+  }
+
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
+    shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(keys_only));
+
+    VLOG(2) << "adding " << row_it->ToString() << " for compaction";
+    key_iters.push_back(row_it);
+  }
+
+
+  LOG(INFO) << "Compaction: entering stage 2 (compacting keys)";
+
+  // Step 2. Merge their key columns.
+  MergeIterator merge_keys(keys_only, key_iters);
+  RETURN_NOT_OK(merge_keys.Init());
+
+  LayerWriter out(env_, schema_, tmp_layer_dir);
+  RETURN_NOT_OK(out.Open());
+  RETURN_NOT_OK(out.FlushProjection(keys_only, &merge_keys, true));
+  
+  // Step 3. Swap in the UpdateDuplicatingLayer
+
+  // ------ TODO ---------
+
+  // Step 4. Merge non-keys
+  LOG(INFO) << "Compaction: entering stage 4 (compacting other columns)";
+
+  vector<shared_ptr<RowIteratorInterface> > full_iters;
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
+    shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(schema_));
+    VLOG(2) << "adding " << row_it->ToString() << " for compaction stage 2";
+    full_iters.push_back(row_it);
+  }
+
+  MergeIterator merge_full(schema_, full_iters);
+  RETURN_NOT_OK(merge_full.Init());
+  Schema non_keys = schema_.CreateNonKeyProjection();
+  RETURN_NOT_OK(out.FlushProjection(non_keys, &merge_full, true));
+
+  RETURN_NOT_OK(out.Finish());
+
+  // ------------------------------
+  // Flush to tmp was successful. Rename it to its real location.
+
+  RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
+
+  LOG(INFO) << "Successfully compacted " << out.written_count() << " rows";
+
+  // Open it.
+  Layer *new_layer;
+  RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
+
+  // Replace the compacted layers with the new on-disk layer.
+  {
+    boost::lock_guard<percpu_rwlock> lock(component_lock_);
+
+    // O(n^2) diff algorithm to collect the set of layers excluding
+    // the layers that were included in the compaction
+    vector<shared_ptr<LayerInterface> > new_layers;
+    BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
+      bool was_in_compaction = false;
+      BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input_layers) {
+        if (l_input == l) {
+          was_in_compaction = true;
+          break;
+        }
+      }
+      if (!was_in_compaction) {
+        new_layers.push_back(l);
+      }
+    }
+    new_layers.push_back(shared_ptr<LayerInterface>(new_layer));
+
+    layers_.swap(new_layers);
+  }
+
+  // Remove old layers
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input_layers) {
+    LOG(INFO) << "Removing compaction input layer " << l_input->ToString();
+    RETURN_NOT_OK(l_input->Delete());
+  }
+
+
+  return Status::OK();
+
 }
 
 Status Tablet::CaptureConsistentIterators(

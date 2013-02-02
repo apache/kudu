@@ -110,6 +110,10 @@ public:
     return string("memstore");
   }
 
+  Status Delete() {
+    CHECK(0) << "Cannot Delete a memstore!";
+  }
+
   uint64_t debug_insert_count() const {
     return debug_insert_count_;
   }

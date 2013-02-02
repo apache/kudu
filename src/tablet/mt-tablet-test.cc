@@ -128,12 +128,16 @@ public:
     // rows to get inserted between each flush, and the test will take
     // quite a while. So, after every flush, we double the wait time below.
     int wait_time = FLAGS_flusher_initial_frequency_ms;
+    int flush_count = 0;
     while (running_insert_count_.count() > 0) {
       tablet_->Flush();
 
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
       wait_time *= FLAGS_flusher_backoff;
+      if (flush_count++ % 3 == 0) {
+        tablet_->Compact();
+      }
     }
   }
 

@@ -39,6 +39,11 @@ public:
   }
 
   Status SeekAtOrAfter(const Slice &key, bool *exact) {
+    if (key.size() == 0) {
+      // Seek to start
+      cur_idx_ = 0;
+      return Status::OK();
+    }
     return Status::NotSupported("test iter doesnt seek");
   }
 
@@ -68,10 +73,6 @@ public:
 
   virtual const Schema &schema() const {
     return kIntSchema;
-  }
-
-  void Reset() {
-    cur_idx_ = 0;
   }
 
 private:
@@ -107,10 +108,6 @@ TEST(TestMergeIterator, TestMerge) {
 
 
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
-    for (int i = 0; i < to_merge.size(); i++) {
-      reinterpret_cast<VectorIterator *>(to_merge[i].get())->Reset();
-    }
-
     LOG_TIMING(INFO, "Iterate merged lists") {
       MergeIterator merger(kIntSchema, to_merge);
       ASSERT_STATUS_OK(merger.Init());

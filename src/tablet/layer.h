@@ -50,8 +50,13 @@ public:
   Status Open();
 
   // TODO: doc me
+  //
+  // need_arena: if true, then the input iterators do not maintain
+  // stable copies of all indirect data, a local arena is needed to hold
+  // tmp copies during the flush.
   Status FlushProjection(const Schema &projection,
-                         RowIteratorInterface *src_iter);
+                         RowIteratorInterface *src_iter,
+                         bool need_arena);
 
   Status WriteRow(const Slice &row) {
     CHECK(!finished_);
@@ -115,6 +120,8 @@ public:
   // Flush all accumulated delta data from the DeltaMemStore to disk.
   Status FlushDeltas();
 
+  // Delete the layer directory.
+  Status Delete();
 
   ////////////////////////////////////////////////////////////
   // LayerInterface implementation
@@ -181,7 +188,7 @@ private:
 
   // Base data for this layer.
   // This vector contains one entry for each column.
-  scoped_ptr<LayerBaseData> base_data_;
+  shared_ptr<LayerBaseData> base_data_;
 
   // The current delta memstore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;

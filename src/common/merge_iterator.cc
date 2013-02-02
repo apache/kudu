@@ -4,6 +4,7 @@
 #include <string>
 
 #include "common/merge_iterator.h"
+#include "common/row.h"
 #include "common/rowblock.h"
 #include "util/memory/arena.h"
 #include <boost/scoped_array.hpp>
@@ -20,31 +21,47 @@ class MergeIterState {
 public:
   MergeIterState(const shared_ptr<RowIteratorInterface> &iter) :
     iter_(iter),
-    read_block_(iter->schema(), kMergeRowBuffer, NULL),
+    arena_(1024, 256*1024),
+    read_block_(iter->schema(), kMergeRowBuffer, &arena_),
     cur_row_(0),
     valid_rows_(0)
   {}
 
   const void *next_row_ptr() {
+    DCHECK_LT(cur_row_, valid_rows_);
     return next_row_ptr_;
   }
 
   Status Advance() {
     cur_row_++;
-    // Manually advancing next_row_ptr_ is some 20% faster
-    // than calling row_ptr(cur_row_), since it avoids an expensive multiplication
-    // in the inner loop.
-    next_row_ptr_ += iter_->schema().byte_size();
-    if (PREDICT_TRUE(cur_row_ < valid_rows_)) {
-      return Status::OK();
-    } else {
+    if (IsBlockExhausted()) {
+      arena_.Reset();
       return PullNextBlock();
+    } else {
+      // Manually advancing next_row_ptr_ is some 20% faster
+      // than calling row_ptr(cur_row_), since it avoids an expensive multiplication
+      // in the inner loop.
+      next_row_ptr_ += iter_->schema().byte_size();
+
+      return Status::OK();
     }
+  }
+
+  bool IsBlockExhausted() const {
+    return cur_row_ == valid_rows_;
+  }
+
+  bool IsFullyExhausted() const {
+    return IsBlockExhausted() && !iter_->HasNext();
   }
 
   Status PullNextBlock() {
     CHECK_EQ(cur_row_, valid_rows_)
-      << "should not pull next block until current block is used up";
+      << "should not pull next block until current block is exhausted";
+    if (IsFullyExhausted()) {
+      return Status::OK();
+    }
+
     size_t n = read_block_.nrows();
     RETURN_NOT_OK( iter_->CopyNextRows(&n, &read_block_) );
     cur_row_ = 0;
@@ -53,18 +70,8 @@ public:
     return Status::OK();
   }
 
-  bool IsExhausted() const {
-    if (PREDICT_FALSE(cur_row_ == valid_rows_)) {
-      CHECK(!iter_->HasNext())
-        << "Should not be considered exhausted if underlying iter has more "
-        << "rows";
-      return true;
-    } else {
-      return false;
-    }
-  }
-
   shared_ptr<RowIteratorInterface> iter_;
+  Arena arena_;
   ScopedRowBlock read_block_;
   uint8_t *next_row_ptr_;
   size_t cur_row_;
@@ -93,6 +100,7 @@ Status MergeIterator::Init() {
 
   BOOST_FOREACH(shared_ptr<MergeIterState> &state, iters_) {
     RETURN_NOT_OK(state->iter_->Init());
+    RETURN_NOT_OK(state->iter_->SeekToStart());
     RETURN_NOT_OK(state->PullNextBlock());
   }
 
@@ -109,12 +117,15 @@ Status MergeIterator::SeekAtOrAfter(const Slice &key, bool *exact) {
 // 2x to be gained.
 Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
   CHECK(initted_);
+
   // TODO: check that dst has the same schema
+
 
   *nrows = 0;
   size_t dst_row_idx = 0;
   size_t row_size = schema_.byte_size();
-  uint8_t *dst_ptr = dst->row_ptr(0);
+  char *dst_ptr = reinterpret_cast<char *>(dst->row_ptr(0));
+
 
   while (dst_row_idx < dst->nrows()) {
 
@@ -124,7 +135,7 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     for (size_t i = 0; i < iters_.size(); i++) {
       shared_ptr<MergeIterState> &state = iters_[i];
 
-      if (PREDICT_FALSE(state->IsExhausted())) {
+      if (PREDICT_FALSE(state->IsFullyExhausted())) {
         iters_.erase(iters_.begin() + i);
         i--;
         continue;
@@ -140,9 +151,13 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     if (PREDICT_FALSE(smallest == NULL)) break;
 
     // Otherwise, copy the row from the smallest one, and advance it
-    strings::memcpy_inlined(reinterpret_cast<char *>(dst_ptr),
+    strings::memcpy_inlined(dst_ptr,
                             reinterpret_cast<const char *>(smallest->next_row_ptr()),
                             row_size);
+    if (dst->arena() != NULL) {
+      RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(dst_ptr, schema_, dst->arena()));
+    }
+
     dst_ptr += row_size;
 
     RETURN_NOT_OK(smallest->Advance());

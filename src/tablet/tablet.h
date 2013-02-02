@@ -65,6 +65,7 @@ public:
   Status NewRowIterator(const Schema &projection,
                         SmartPointer *iter) const;
   Status Flush();
+  Status Compact();
 
   // Attempt to count the total number of rows in the tablet.
   // This is not super-efficient since it must iterate over the

@@ -108,10 +108,21 @@ Status LayerWriter::Open() {
 }
 
 Status LayerWriter::FlushProjection(const Schema &projection,
-                                    RowIteratorInterface *src_iter) {
+                                    RowIteratorInterface *src_iter,
+                                    bool need_arena) {
+  scoped_ptr<Arena> arena;
+  if (need_arena) {
+    arena.reset(new Arena(16*1024, 256*1024));
+  }
+
+  const Schema &iter_schema = src_iter->schema();
+
   CHECK(!finished_);
-  vector<size_t> orig_columns;
-  projection.GetProjectionFrom(schema_, &orig_columns);
+  vector<size_t> orig_projection;
+  vector<size_t> iter_projection;
+  projection.GetProjectionFrom(schema_, &orig_projection);
+  projection.GetProjectionFrom(iter_schema, &iter_projection);
+
 
   // TODO: handle big rows
 
@@ -121,10 +132,10 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   // TODO: look at above - puts a minimum on real block size
   int buf_size = 32*1024;
   scoped_array<uint8_t> buf(new uint8_t[buf_size]);
-  int batch_size = buf_size / projection.byte_size();
+  int batch_size = buf_size / iter_schema.byte_size();
   CHECK_GE(batch_size, 1) << "could not fit a row from schema: "
-                          << projection.ToString() << " in " << buf_size << " bytes";
-  RowBlock buf_block(projection, &buf[0], batch_size, NULL);
+                          << iter_schema.ToString() << " in " << buf_size << " bytes";
+  RowBlock buf_block(iter_schema, &buf[0], batch_size, arena.get());
 
   size_t written = 0;
   while (src_iter->HasNext()) {
@@ -135,9 +146,11 @@ Status LayerWriter::FlushProjection(const Schema &projection,
 
     // Write the batch to the each of the columns
     for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
-      size_t orig_col = orig_columns[proj_col];
-      size_t off = projection.column_offset(proj_col);
-      size_t stride = projection.byte_size();
+      size_t orig_col = orig_projection[proj_col];
+      size_t iter_col = iter_projection[proj_col];
+
+      size_t off = iter_schema.column_offset(iter_col);
+      size_t stride = iter_schema.byte_size();
       const void *p = &buf[off];
       RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
     }
@@ -145,7 +158,7 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   }
 
   for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
-    size_t orig_col = orig_columns[proj_col];
+    size_t orig_col = orig_projection[proj_col];
     CHECK_EQ(column_flushed_counts_[orig_col], 0);
     column_flushed_counts_[orig_col] = written;
 
@@ -401,6 +414,12 @@ Status Layer::FlushDeltas() {
 
   // TODO: wherever we write stuff, we should write to a tmp path
   // and rename to final path!
+}
+
+
+Status Layer::Delete() {
+  // TODO: actually rm -rf, not just rename!
+  return env_->RenameFile(dir_, dir_ + ".deleted");
 }
 
 ////////////////////////////////////////////////////////////

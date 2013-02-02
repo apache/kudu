@@ -210,6 +210,23 @@ TEST_F(TestTablet, TestInsertsPersist) {
   // TODO: add some more data, re-flush
 }
 
+TEST_F(TestTablet, TestCompaction) {
+  // Create three layers by inserting and flushing
+  InsertTestRows(0, 1000);
+  ASSERT_STATUS_OK(tablet_->Flush());
+
+  InsertTestRows(1000, 1000);
+  ASSERT_STATUS_OK(tablet_->Flush());
+
+  InsertTestRows(2000, 1000);
+  ASSERT_STATUS_OK(tablet_->Flush());
+  ASSERT_EQ(3000, TabletCount());
+
+  // Issue compaction
+  ASSERT_STATUS_OK(tablet_->Compact());
+  ASSERT_EQ(3000, TabletCount());
+}
+
 } // namespace tablet
 } // namespace kudu
 

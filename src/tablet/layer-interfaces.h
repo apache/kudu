@@ -38,6 +38,8 @@ public:
   // Return a displayable string for this layer.
   virtual string ToString() const = 0;
 
+  // Delete the underlying storage for this layer.
+  virtual Status Delete() = 0;
 
   virtual ~LayerInterface() {}
 };

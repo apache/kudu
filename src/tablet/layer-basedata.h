@@ -48,6 +48,10 @@ public:
   virtual Status FindRow(const void *key, uint32_t *idx) const {
     return Status::NotSupported("");
   }
+
+  Status Delete() {
+    CHECK(0) << "Cannot Delete " << ToString();
+  }
 };
 
 class KeysFlushedBaseData : public LayerBaseData, boost::noncopyable {
@@ -103,7 +107,9 @@ private:
 
 
 // Base Data made up of a set of CFiles, one for each column.
-class CFileBaseData : public LayerBaseData, boost::noncopyable {
+class CFileBaseData : public LayerBaseData,
+                      public std::tr1::enable_shared_from_this<CFileBaseData>,
+                      boost::noncopyable {
 public:
   CFileBaseData(Env *env, const string &dir, const Schema &schema);
 
@@ -176,7 +182,7 @@ public:
   // Retrieves up to 'nrows' rows, and writes back the number
   // of rows actually fetched into the same variable.
   // Any indirect data (eg strings) are allocated out of
-  // 'dst_arena'
+  // the destination block's arena.
   Status CopyNextRows(size_t *nrows, RowBlock *dst);
 
   bool HasNext() const {
@@ -195,14 +201,14 @@ public:
 private:
   friend class CFileBaseData;
 
-  RowIterator(const CFileBaseData *base_data,
+  RowIterator(const shared_ptr<CFileBaseData const> &base_data,
               const Schema &projection) :
     base_data_(base_data),
     projection_(projection),
     initted_(false)
   {}
 
-  const CFileBaseData *base_data_;
+  const shared_ptr<CFileBaseData const> base_data_;
   const Schema projection_;
   vector<size_t> projection_mapping_;
 
