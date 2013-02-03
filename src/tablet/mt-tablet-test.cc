@@ -13,8 +13,14 @@
 DEFINE_int32(num_insert_threads, 8, "Number of inserting threads to launch");
 DEFINE_int32(num_counter_threads, 8, "Number of counting threads to launch");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
-DEFINE_int32(inserts_per_thread, 10000,
+DEFINE_int32(num_slowreader_threads, 1, "Number of 'slow' reader threads to launch");
+DEFINE_int32(num_flush_threads, 1, "Number of flusher reader threads to launch");
+DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
+
+
+DEFINE_int32(inserts_per_thread, 50000,
              "Number of rows inserted by each inserter thread");
+DEFINE_int32(flush_threshold_mb, 0, "Minimum memstore size to flush");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
@@ -128,16 +134,26 @@ public:
     // rows to get inserted between each flush, and the test will take
     // quite a while. So, after every flush, we double the wait time below.
     int wait_time = FLAGS_flusher_initial_frequency_ms;
-    int flush_count = 0;
     while (running_insert_count_.count() > 0) {
-      tablet_->Flush();
 
+      if (tablet_->MemStoreSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+        ASSERT_STATUS_OK(tablet_->Flush());
+      } else {
+        LOG(INFO) << "Not flushing, memstore not very full";
+      }
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
       wait_time *= FLAGS_flusher_backoff;
-      if (flush_count++ % 3 == 0) {
-        tablet_->Compact();
-      }
+    }
+  }
+
+  void CompactThread(int tid) {
+    int wait_time = 100;
+    while (running_insert_count_.count() > 0) {
+      ASSERT_STATUS_OK(tablet_->Compact());
+
+      // Wait, unless the inserters are all done.
+      running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
     }
   }
 
@@ -164,8 +180,9 @@ TEST_F(TestMultiThreadedTablet, TestInsertAndFlush) {
   // Spawn a bunch of threads, each of which will do updates.
   StartThreads(FLAGS_num_insert_threads, &TestMultiThreadedTablet::InsertThread);
   StartThreads(FLAGS_num_counter_threads, &TestMultiThreadedTablet::CountThread);
-  StartThreads(1, &TestMultiThreadedTablet::FlushThread);
-  StartThreads(1, &TestMultiThreadedTablet::SlowReaderThread);
+  StartThreads(FLAGS_num_flush_threads, &TestMultiThreadedTablet::FlushThread);
+  StartThreads(FLAGS_num_compact_threads, &TestMultiThreadedTablet::CompactThread);
+  StartThreads(FLAGS_num_slowreader_threads, &TestMultiThreadedTablet::SlowReaderThread);
   StartThreads(FLAGS_num_updater_threads, &TestMultiThreadedTablet::UpdateThread);
   JoinThreads();
   VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
