@@ -131,8 +131,8 @@ set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
 ############################################################
 # Linker setup
 ############################################################
-SET(KUDU_LINK_LIBS ${LIBS})
-SET(KUDU_TEST_LINK_LIBS tablet cfile kudu_common kudu_util gutil ${KUDU_LINK_LIBS} gtest)
+SET(KUDU_LINK_LIBS tablet cfile kudu_common kudu_util gutil ${LIBS})
+SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} gtest)
 
 ############################################################
 # Subdirectories

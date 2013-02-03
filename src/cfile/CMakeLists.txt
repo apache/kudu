@@ -18,3 +18,8 @@ ADD_DEPENDENCIES(cfile cfile_proto)
 ADD_KUDU_TEST(index-test)
 ADD_KUDU_TEST(cfile-test)
 ADD_KUDU_TEST(encoding-test)
+
+
+# Tools
+ADD_EXECUTABLE(cfile-dump cfile-dump.cc)
+TARGET_LINK_LIBRARIES(cfile-dump ${KUDU_LINK_LIBS})

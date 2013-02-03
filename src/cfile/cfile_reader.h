@@ -11,6 +11,7 @@
 
 #include "common/columnblock.h"
 #include "common/types.h"
+#include "cfile/block_encodings.h"
 #include "cfile/index_btree.h"
 #include "gutil/port.h"
 #include "util/memory/arena.h"
@@ -97,6 +98,10 @@ public:
   // This is assumed to be reasonably fast (i.e does not scan
   // the data)
   Status CountRows(size_t *count) const;
+
+  uint64_t file_size() const {
+    return file_size_;
+  }
 
   DataType data_type() const {
     CHECK_EQ(state_, kInitialized);
