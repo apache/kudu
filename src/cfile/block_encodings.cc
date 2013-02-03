@@ -891,7 +891,7 @@ inline Status StringBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst,
 // Parses the data pointed to by next_ptr_ and stores it in cur_val_
 // Advances next_ptr_ to point to the following values.
 // Does not modify cur_idx_
-Status StringBlockDecoder::ParseNextValue() {
+inline Status StringBlockDecoder::ParseNextValue() {
   RETURN_NOT_OK(CheckNextPtr());
 
   uint32_t shared, non_shared;
