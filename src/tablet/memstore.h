@@ -147,7 +147,7 @@ private:
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 
   const Schema schema_;
-  Arena arena_;
+  ThreadSafeArena arena_;
 
   typedef btree::CBTreeIterator<btree::BTreeTraits> MSBTIter;
 

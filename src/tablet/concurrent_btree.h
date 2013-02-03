@@ -1533,7 +1533,7 @@ private:
     // No need to actually free, since it came from the arena
   }
 
-  Arena arena_;
+  ThreadSafeArena arena_;
 
   // marked 'mutable' because readers will lazy-update the root
   // when they encounter a stale root pointer.

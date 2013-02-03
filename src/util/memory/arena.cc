@@ -27,23 +27,27 @@ using std::swap;
 
 namespace kudu {
 
-Arena::Arena(BufferAllocator* const buffer_allocator,
-             size_t initial_buffer_size,
-             size_t max_buffer_size)
+template <bool THREADSAFE>
+ArenaBase<THREADSAFE>::ArenaBase(
+  BufferAllocator* const buffer_allocator,
+  size_t initial_buffer_size,
+  size_t max_buffer_size)
     : buffer_allocator_(buffer_allocator),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
   AddComponent( CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)) );
 }
 
-Arena::Arena(size_t initial_buffer_size, size_t max_buffer_size)
+template <bool THREADSAFE>
+ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_size)
     : buffer_allocator_(HeapBufferAllocator::Get()),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
   AddComponent( CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)) );
 }
 
-void* Arena::AllocateBytesFallback(const size_t size) {
+template <bool THREADSAFE>
+void* ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size) {
   boost::lock_guard<boost::mutex> lock(component_lock_);
 
   // It's possible another thread raced with us and already allocated
@@ -84,8 +88,10 @@ void* Arena::AllocateBytesFallback(const size_t size) {
   return result;
 }
 
-Arena::Component* Arena::NewComponent(size_t requested_size,
-                                      size_t minimum_size) {
+template <bool THREADSAFE>
+typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
+  size_t requested_size,
+  size_t minimum_size) {
   Buffer* buffer = buffer_allocator_->BestEffortAllocate(requested_size,
                                                          minimum_size);
   if (buffer == NULL) return NULL;
@@ -93,13 +99,15 @@ Arena::Component* Arena::NewComponent(size_t requested_size,
 }
 
 // LOCKING: component_lock_ must be held by the current thread.
-void Arena::AddComponent(Arena::Component *component) {
+template <bool THREADSAFE>
+void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
   current_ = component;
   arena_.push_back(linked_ptr<Component>(current_));
   arena_footprint_ += current_->size();
 }
 
-void Arena::Reset() {
+template <bool THREADSAFE>
+void ArenaBase<THREADSAFE>::Reset() {
   boost::lock_guard<boost::mutex> lock(component_lock_);
 
   linked_ptr<Component> last = arena_.back();
@@ -117,5 +125,10 @@ void Arena::Reset() {
   AddComponent( CHECK_NOTNULL(NewComponent(last->size(), 0)) );
 #endif
 }
+
+// Explicit instantiation.
+template class ArenaBase<true>;
+template class ArenaBase<false>;
+
 
 }  // namespace supersonic

@@ -11,9 +11,10 @@
 
 namespace kudu {
 
+template <class ArenaType>
 inline Status CopyRowIndirectDataToArena(char *row,
                                          const Schema &schema,
-                                         Arena *dst_arena) {
+                                         ArenaType *dst_arena) {
   // For any Slice columns, copy the sliced data into the arena
   // and update the pointers
   char *ptr = reinterpret_cast<char *>(row);
@@ -33,9 +34,10 @@ inline Status CopyRowIndirectDataToArena(char *row,
   return Status::OK();
 }
 
+template <class ArenaType>
 inline Status CopyRowToArena(const Slice &row,
                              const Schema &schema,
-                             Arena *dst_arena,
+                             ArenaType *dst_arena,
                              Slice *copied) {
   // Copy the direct row data to arena
   if (!dst_arena->RelocateSlice(row, copied)) {

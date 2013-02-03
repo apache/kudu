@@ -61,7 +61,7 @@ private:
   // in the leaf nodes, rather than storing pointers 
   DMSTree tree_;
 
-  Arena arena_;
+  ThreadSafeArena arena_;
 };
 
 

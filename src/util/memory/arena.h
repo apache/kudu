@@ -41,6 +41,16 @@ using std::allocator;
 
 namespace kudu {
 
+template<bool THREADSAFE> struct ArenaTraits;
+
+template <> struct ArenaTraits<true> {
+  typedef Atomic32 offset_type;
+};
+
+template <> struct ArenaTraits<false> {
+  typedef uint32_t offset_type;
+};
+
 // A helper class for storing variable-length blobs (e.g. strings). Once a blob
 // is added to the arena, its index stays fixed. No reallocation happens.
 // Instead, the arena keeps a list of buffers. When it needs to grow, it
@@ -49,9 +59,8 @@ namespace kudu {
 // The buffers are furnished by a designated allocator.
 //
 // This class is thread-safe with the fast path lock-free.
-// TODO: a future optimization would be to implement a non-threadsafe arena
-// for single-threaded use cases.
-class Arena {
+template <bool THREADSAFE>
+class ArenaBase {
  public:
   // Creates a new arena, with a single buffer of size up-to
   // initial_buffer_size, upper size limit for later-allocated buffers capped
@@ -64,13 +73,13 @@ class Arena {
   // until it is exhausted. Then, a subsequent working buffer will be allocated.
   // The size of the next buffer is normally 2x the size of the previous buffer.
   // It might be capped by the allocator, or by the max_buffer_size parameter.
-  Arena(BufferAllocator* const buffer_allocator,
-        size_t initial_buffer_size,
-        size_t max_buffer_size);
+  ArenaBase(BufferAllocator* const buffer_allocator,
+            size_t initial_buffer_size,
+            size_t max_buffer_size);
 
   // Creates an arena using a default (heap) allocator with unbounded capacity.
   // Discretion advised.
-  explicit Arena(size_t initial_buffer_size, size_t max_buffer_size);
+  ArenaBase(size_t initial_buffer_size, size_t max_buffer_size);
 
   // Adds content of the specified StringPiece to the arena, and returns a
   // pointer to it. The pointer is guaranteed to remain valid during the
@@ -133,13 +142,13 @@ class Arena {
   // mutation of the component data structure (eg Reset).
   boost::mutex component_lock_;
 
-  DISALLOW_COPY_AND_ASSIGN(Arena);
+  DISALLOW_COPY_AND_ASSIGN(ArenaBase);
 };
 
 // STL-compliant allocator, for use with hash_maps and other structures
 // needed by transformations. Enables memory control and improves performance.
 // (The code is shamelessly stolen from base/arena-inl.h).
-template<class T> class ArenaAllocator {
+template<class T, bool THREADSAFE> class ArenaAllocator {
  public:
   typedef T value_type;
   typedef size_t size_type;
@@ -153,7 +162,7 @@ template<class T> class ArenaAllocator {
   const_pointer index(const_reference r) const  { return &r; }
   size_type max_size() const  { return size_t(-1) / sizeof(T); }
 
-  explicit ArenaAllocator(Arena* arena) : arena_(arena) {
+  explicit ArenaAllocator(ArenaBase<THREADSAFE>* arena) : arena_(arena) {
     CHECK_NOTNULL(arena_);
   }
 
@@ -171,33 +180,49 @@ template<class T> class ArenaAllocator {
 
   void destroy(pointer p) { p->~T(); }
 
-  template<class U> struct rebind {
-    typedef ArenaAllocator<U> other;
+  template<class U, bool TS> struct rebind {
+    typedef ArenaAllocator<U, TS> other;
   };
 
-  template<class U> ArenaAllocator(const ArenaAllocator<U>& other)
+  template<class U, bool TS> ArenaAllocator(const ArenaAllocator<U, TS>& other)
       : arena_(other.arena()) { }
 
-  template<class U> bool operator==(const ArenaAllocator<U>& other) const {
+  template<class U, bool TS> bool operator==(const ArenaAllocator<U, TS>& other) const {
     return arena_ == other.arena();
   }
 
-  template<class U> bool operator!=(const ArenaAllocator<U>& other) const {
+  template<class U, bool TS> bool operator!=(const ArenaAllocator<U, TS>& other) const {
     return arena_ != other.arena();
   }
 
-  Arena *arena() const {
+  ArenaBase<THREADSAFE> *arena() const {
     return arena_;
   }
 
  private:
 
-  Arena* arena_;
+  ArenaBase<THREADSAFE>* arena_;
+};
+
+
+class Arena : public ArenaBase<false> {
+public:
+  explicit Arena(size_t initial_buffer_size, size_t max_buffer_size) :
+    ArenaBase<false>(initial_buffer_size, max_buffer_size)
+  {}
+};
+
+class ThreadSafeArena : public ArenaBase<true> {
+public:
+  explicit ThreadSafeArena(size_t initial_buffer_size, size_t max_buffer_size) :
+    ArenaBase<true>(initial_buffer_size, max_buffer_size)
+  {}
 };
 
 // Implementation of inline and template methods
 
-class Arena::Component {
+template<bool THREADSAFE>
+class ArenaBase<THREADSAFE>::Component {
  public:
   explicit Component(Buffer* buffer)
       : buffer_(buffer),
@@ -207,57 +232,78 @@ class Arena::Component {
 
   // Tries to reserve space in this component. Returns the pointer to the
   // reserved space if successful; NULL on failure (if there's no more room).
-  void* AllocateBytes(const size_t size) {
-    retry:
-
-    Atomic32 offset = Acquire_Load(&offset_);
-    Atomic32 new_offset = offset + size;
-
-    if (PREDICT_TRUE(new_offset <= size_)) {
-      bool success = Acquire_CompareAndSwap(&offset_, offset, new_offset) == offset;
-      if (PREDICT_TRUE(success)) {
-        return data_ + offset;
-      } else {
-        // Raced with another allocator
-        goto retry;
-      }
-    } else {
-      return NULL;
-    }
-  }
-
+  void* AllocateBytes(const size_t size);
   size_t size() const { return size_; }
   void Reset() { offset_ = 0; }
 
  private:
   scoped_ptr<Buffer> buffer_;
   char* const data_;
-  Atomic32 offset_;
+  typename ArenaTraits<THREADSAFE>::offset_type offset_;
   const size_t size_;
   DISALLOW_COPY_AND_ASSIGN(Component);
 };
 
+
+// Thread-safe implementation
+template <>
+inline void *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
+  retry:
+
+  Atomic32 offset = Acquire_Load(&offset_);
+  Atomic32 new_offset = offset + size;
+
+  if (PREDICT_TRUE(new_offset <= size_)) {
+    bool success = Acquire_CompareAndSwap(&offset_, offset, new_offset) == offset;
+    if (PREDICT_TRUE(success)) {
+      return data_ + offset;
+    } else {
+      // Raced with another allocator
+      goto retry;
+    }
+  } else {
+    return NULL;
+  }
+}
+
+// Non-Threadsafe implementation
+template <>
+inline void *ArenaBase<false>::Component::AllocateBytes(const size_t size) {
+  if (PREDICT_TRUE(offset_ + size <= size_)) {
+    void* destination = data_ + offset_;
+    offset_ += size;
+    return destination;
+  } else {
+    return NULL;
+  }
+}
+
+
 // Fast-path allocation should get inlined, and fall-back
 // to non-inline function call for allocation failure
-inline void *Arena::AllocateBytes(const size_t size) {
+template <bool THREADSAFE>
+inline void *ArenaBase<THREADSAFE>::AllocateBytes(const size_t size) {
   void* result = current_->AllocateBytes(size);
   if (PREDICT_TRUE(result != NULL)) return result;
   return AllocateBytesFallback(size);
 }
 
-inline char* Arena::AddStringPieceContent(const StringPiece& value) {
+template <bool THREADSAFE>
+inline char* ArenaBase<THREADSAFE>::AddStringPieceContent(const StringPiece& value) {
   return reinterpret_cast<char *>(
     AddBytes(value.data(), value.size()));
 }
 
-inline void *Arena::AddBytes(const void *data, size_t len) {
+template <bool THREADSAFE>
+inline void *ArenaBase<THREADSAFE>::AddBytes(const void *data, size_t len) {
   void* destination = AllocateBytes(len);
   if (destination == NULL) return NULL;
   memcpy(destination, data, len);
   return destination;
 }
 
-inline bool Arena::RelocateSlice(const Slice &src, Slice *dst) {
+template <bool THREADSAFE>
+inline bool ArenaBase<THREADSAFE>::RelocateSlice(const Slice &src, Slice *dst) {
   void* destination = AllocateBytes(src.size());
   if (destination == NULL) return false;
   memcpy(destination, src.data(), src.size());

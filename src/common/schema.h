@@ -53,7 +53,8 @@ public:
     return type_info().type() == other.type_info().type();
   }
 
-  Status CopyCell(void *dst, const void *src, Arena *dst_arena) const {
+  template<class ArenaType>
+  Status CopyCell(void *dst, const void *src, ArenaType *dst_arena) const {
     if (type_info().type() == STRING) {
       // If it's a Slice column, need to relocate the referred-to data
       // as well as the slice itself.

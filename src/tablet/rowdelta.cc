@@ -9,28 +9,6 @@
 
 namespace kudu { namespace tablet {
 
-RowDelta RowDelta::CopyToArena(const Schema &schema, Arena *arena) const {
-  void *copied_data = arena->AddBytes(data_, SizeForSchema(schema));
-  CHECK(copied_data) << "failed to allocate";
-
-  RowDelta ret(schema, reinterpret_cast<uint8_t *>(copied_data));
-
-  // Iterate over the valid columns, copying any STRING data into
-  // the target arena.
-  for (TrueBitIterator it(ret.bitmap(), schema.num_columns());
-       !it.done();
-       ++it) {
-    int i = *it;
-    if (schema.column(i).type_info().type() == STRING) {
-      Slice *s = reinterpret_cast<Slice *>(ret.col_ptr(schema, i));
-      CHECK(arena->RelocateSlice(*s, s))
-        << "Unable to relocate slice " << s->ToString()
-        << " (col " << i << " in schema " << schema.ToString() << ")";
-    }
-  }
-  return ret;
-}
-
 void RowDelta::UpdateColumn(const Schema &schema,
                             size_t col_idx,
                             const void *new_val) {
@@ -57,35 +35,6 @@ bool RowDelta::ApplyColumnUpdate(const Schema &schema,
     return true;
   }
   return false;
-}
-
-void RowDelta::ApplyRowUpdate(const Schema &schema,
-                              void *dst_v,
-                              Arena *dst_arena) const {
-  uint8_t *dst = reinterpret_cast<uint8_t *>(dst_v);
-
-  // Iterate over the valid columns, copying any STRING data into
-  // the target arena.
-  for (TrueBitIterator it(bitmap(), schema.num_columns());
-       !it.done();
-       ++it) {
-    size_t i = *it;
-    size_t off = schema.column_offset(i);
-
-    CHECK_OK(schema.column(i).CopyCell(dst + off, col_ptr(schema, i), dst_arena));
-  }
-
-}
-
-void RowDelta::MergeUpdatesFrom(const Schema &schema,
-                                const RowDelta &from,
-                                Arena *arena) {
-  // Copy the data from the other row, where the other row
-  // has its bitfield set.
-  from.ApplyRowUpdate(schema, col_ptr(schema, 0), arena);
-
-  // Merge the set of updated fields
-  BitmapMergeOr(bitmap(), from.bitmap(), schema.num_columns());
 }
 
 void RowDelta::SerializeToBuffer(
