@@ -157,7 +157,7 @@ Status Tablet::Flush() {
   uint64_t start_insert_count;
 
   shared_ptr<MemStore> old_ms(new MemStore(schema_));
-
+  boost::mutex::scoped_try_lock old_ms_lock;
 
   LOG(INFO) << "Flush: entering stage 1 (freezing old memstore from inserts)";
 
@@ -183,7 +183,8 @@ Status Tablet::Flush() {
     // Mark the memstore layer as locked, so compactions won't consider it
     // for inclusion. We don't need to ever unlock it, since threads only
     // trylock on this, and we'll dispose it when the flush is over.
-    CHECK(old_ms->compact_flush_lock()->try_lock());
+    old_ms_lock.swap(boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
+    CHECK(old_ms_lock.owns_lock());
     layers_.push_back(old_ms);
   }
 
@@ -227,7 +228,9 @@ Status Tablet::Flush() {
 
   // Mark the partially flushed layer as locked, so compactions won't consider it
   // for inclusion.
-  CHECK(partially_flushed_layer->compact_flush_lock()->try_lock());
+  boost::mutex::scoped_try_lock partial_layer_lock(
+    *partially_flushed_layer->compact_flush_lock());
+  CHECK(partial_layer_lock.owns_lock());
 
   uint64_t start_update_count;
   {
