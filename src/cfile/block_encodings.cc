@@ -274,8 +274,8 @@ uint64_t IntBlockBuilder::EstimateEncodedSize() const {
   // to the min int. We could track the min int along the way
   // but then we have extra branches in the add loop. Come back to this,
   // probably the branches don't matter since this is write-side.
-  return estimated_raw_size_ + ints_.size() / 4
-    + kEstimatedHeaderSizeBytes;
+  return estimated_raw_size_ + (ints_.size() + 3) / 4
+    + kEstimatedHeaderSizeBytes + kTrailerExtraPaddingBytes;
 }
 
 size_t IntBlockBuilder::Count() const {

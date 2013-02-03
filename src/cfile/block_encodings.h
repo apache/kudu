@@ -141,7 +141,11 @@ private:
   const WriterOptions *options_;
 
   enum {
-    kEstimatedHeaderSizeBytes = 10
+    kEstimatedHeaderSizeBytes = 10,
+
+    // Up to 3 "0s" can be tacked on the end of the block to round out
+    // the groups of 4
+    kTrailerExtraPaddingBytes = 3
   };
 };
 
