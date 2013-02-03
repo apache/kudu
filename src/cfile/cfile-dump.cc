@@ -7,6 +7,8 @@
 #include "cfile/cfile_reader.h"
 #include "util/env.h"
 
+DEFINE_bool(print_rows, true, "print each row in the file");
+
 namespace kudu {
 namespace cfile {
 
@@ -26,18 +28,24 @@ void DumpIterator(const CFileReader &reader, CFileIterator *it) {
 
   string strbuf;
 
+  uint64_t count = 0;
   while (it->HasNext()) {
     size_t n = max_rows;
     CHECK_OK(it->CopyNextValues(&n, &cb));
 
-    for (size_t i = 0; i < n; i++) {
-      type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
-      strbuf.push_back('\n');
+    if (FLAGS_print_rows) {
+      for (size_t i = 0; i < n; i++) {
+        type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
+        strbuf.push_back('\n');
+      }
     }
     arena.Reset();
     cout << strbuf;
     strbuf.clear();
+    count += n;
   }
+
+  LOG(INFO) << "Dumped " << count << " rows";
 
 }
 
