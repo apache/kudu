@@ -269,11 +269,12 @@ inline void *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
 // Non-Threadsafe implementation
 template <>
 inline void *ArenaBase<false>::Component::AllocateBytes(const size_t size) {
-  if (PREDICT_TRUE(offset_ + size <= size_)) {
-    void* destination = data_ + offset_;
-    offset_ += size;
+  void* destination = data_ + offset_;
+  offset_ += size;
+  if (PREDICT_TRUE(offset_ <= size_)) {
     return destination;
   } else {
+    offset_ -= size;
     return NULL;
   }
 }
