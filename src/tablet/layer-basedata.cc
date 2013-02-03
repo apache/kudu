@@ -111,7 +111,7 @@ Status CFileBaseData::Open() {
   for (int i = 0; i < schema_.num_columns(); i++) {
     CFileReader *reader;
     RETURN_NOT_OK(OpenReader(env_, dir_, i, &reader));
-    readers_.push_back(reader);
+    readers_.push_back(shared_ptr<CFileReader>(reader));
     LOG(INFO) << "Successfully opened cfile for column " <<
       schema_.column(i).ToString() << " in " << dir_;;
   }
@@ -126,7 +126,7 @@ Status CFileBaseData::NewColumnIterator(size_t col_idx, CFileIterator **iter) co
   CHECK(open_);
   CHECK_LT(col_idx, readers_.size());
 
-  return readers_[col_idx].NewIterator(iter);
+  return readers_[col_idx]->NewIterator(iter);
 }
 
 
@@ -135,14 +135,14 @@ RowIteratorInterface *CFileBaseData::NewRowIterator(const Schema &projection) co
 }
 
 Status CFileBaseData::CountRows(size_t *count) const {
-  const cfile::CFileReader &reader = readers_[0];
-  return reader.CountRows(count);
+  const shared_ptr<cfile::CFileReader> &reader = readers_[0];
+  return reader->CountRows(count);
 }
 
 uint64_t CFileBaseData::EstimateOnDiskSize() const {
   uint64_t ret = 0;
-  BOOST_FOREACH(const CFileReader &reader, readers_) {
-    ret += reader.file_size();
+  BOOST_FOREACH(const shared_ptr<CFileReader> &reader, readers_) {
+    ret += reader->file_size();
   }
   return ret;
 }

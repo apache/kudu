@@ -3,7 +3,6 @@
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
 #include <boost/noncopyable.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
 #include <string>
 #include <tr1/memory>
 
@@ -160,7 +159,7 @@ private:
 
   bool open_;
 
-  ptr_vector<CFileReader> readers_;
+  vector<shared_ptr<CFileReader> > readers_;
 };
 
 // Iterator which yields the combined and projected rows from a
