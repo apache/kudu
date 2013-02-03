@@ -67,6 +67,14 @@ public:
     return Status::OK();
   }
 
+  uint64_t EstimateOnDiskSize() const {
+    return 0;
+  }
+
+  boost::mutex *compact_flush_lock() {
+    return &compact_flush_lock_;
+  }
+
   // Return true if there are no entries in the memstore.
   bool empty() const {
     return tree_.empty();
@@ -112,6 +120,7 @@ public:
 
   Status Delete() {
     CHECK(0) << "Cannot Delete a memstore!";
+    return Status::NotSupported("Delete of MemStore not supported");
   }
 
   uint64_t debug_insert_count() const {
@@ -149,6 +158,8 @@ private:
   // as a sanity check during flush.
   volatile uint64_t debug_insert_count_;
   volatile uint64_t debug_update_count_;
+
+  boost::mutex compact_flush_lock_;
 };
 
 // An iterator through in-memory data stored in a MemStore.

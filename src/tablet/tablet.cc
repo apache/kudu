@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
 #include <vector>
@@ -179,8 +180,10 @@ Status Tablet::Flush() {
       return Status::OK();
     }
 
-    // TODO: maybe just make MemStore implement LayerInterface
-    //shared_ptr<LayerInterface> old_ms_layer(old_ms);
+    // Mark the memstore layer as locked, so compactions won't consider it
+    // for inclusion. We don't need to ever unlock it, since threads only
+    // trylock on this, and we'll dispose it when the flush is over.
+    CHECK(old_ms->compact_flush_lock()->try_lock());
     layers_.push_back(old_ms);
   }
 
@@ -222,6 +225,9 @@ Status Tablet::Flush() {
                   env_, schema_, tmp_layer_dir, old_ms,
                   &partially_flushed_layer));
 
+  // Mark the partially flushed layer as locked, so compactions won't consider it
+  // for inclusion.
+  CHECK(partially_flushed_layer->compact_flush_lock()->try_lock());
 
   uint64_t start_update_count;
   {
@@ -260,6 +266,9 @@ Status Tablet::Flush() {
   LOG(INFO) << "Successfully flushed " << out.written_count() << " rows";
 
   // Open it.
+  // TODO: this should actually just swap-out the BaseData, probably - otherwise
+  // we'll lose any updates that happened during the flush process.
+  // TODO: add a test which verifies no lost updates
   Layer *new_layer;
   RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
 
@@ -277,12 +286,18 @@ Status Tablet::Flush() {
   // memstore reader can't hold on to too much memory in the tablet.
 }
 
+static bool CompareBySize(const shared_ptr<LayerInterface> &a,
+                          const shared_ptr<LayerInterface> &b) {
+  return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
+}
+
 Status Tablet::Compact()
 {
   string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
   string tmp_layer_dir = new_layer_dir + ".compact-tmp";
 
   vector<shared_ptr<RowIteratorInterface> > key_iters;
+  vector<shared_ptr<LayerInterface> > tmp_layers;
   vector<shared_ptr<LayerInterface> > input_layers;
 
   Schema keys_only = schema_.CreateKeyProjection();
@@ -293,17 +308,52 @@ Status Tablet::Compact()
   {
     boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
+    tmp_layers.assign(layers_.begin(), layers_.end());
+  }
 
-    // Grab all layer iterators.
-    BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
+  // Sort the layers by their on-disk size
+  std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
+
+  vector<shared_ptr<boost::mutex::scoped_try_lock> > compact_locks;
+
+  uint64_t accumulated_size = 0;
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
+    // Grab the compact_flush_lock: this prevents any other concurrent
+    // compaction from selecting this same layer, and also ensures that
+    // we don't select a layer which is currently in the middle of being
+    // flushed.
+    shared_ptr<boost::mutex::scoped_try_lock> lock(
+      new boost::mutex::scoped_try_lock(*l->compact_flush_lock()));
+    if (!lock->owns_lock()) {
+      LOG(INFO) << "Unable to select " << l->ToString() << " for compaction: it is busy";
+      continue;
+    }
+    // Push the lock on our scoped list, so we unlock when done.
+    compact_locks.push_back(lock);
+
+    uint64_t this_size = l->EstimateOnDiskSize();
+    if (input_layers.size() < 2 || this_size < accumulated_size * 2) {
+      accumulated_size += this_size;
       input_layers.push_back(l);
+    } else {
+      break;
     }
   }
+
+  tmp_layers.clear();
+
+  if (input_layers.size() < 2) {
+    LOG(INFO) << "Not enough layers to run compaction! Aborting...";
+    return Status::OK();
+  }
+
+  LOG(INFO) << "Selected " << input_layers.size() << " layers to compact"
+            << " (" << accumulated_size << " bytes):";
 
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
     shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(keys_only));
 
-    VLOG(2) << "adding " << row_it->ToString() << " for compaction";
+    LOG(INFO) << l->ToString() << "(" << l->EstimateOnDiskSize() << " bytes)";
     key_iters.push_back(row_it);
   }
 
@@ -357,6 +407,7 @@ Status Tablet::Compact()
     // O(n^2) diff algorithm to collect the set of layers excluding
     // the layers that were included in the compaction
     vector<shared_ptr<LayerInterface> > new_layers;
+    new_layers.push_back(shared_ptr<LayerInterface>(new_layer));
     BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
       bool was_in_compaction = false;
       BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input_layers) {
@@ -369,7 +420,6 @@ Status Tablet::Compact()
         new_layers.push_back(l);
       }
     }
-    new_layers.push_back(shared_ptr<LayerInterface>(new_layer));
 
     layers_.swap(new_layers);
   }

@@ -51,6 +51,15 @@ public:
 
   Status Delete() {
     CHECK(0) << "Cannot Delete " << ToString();
+    return Status::NotSupported("delete of LayerBaseData not supported");
+  }
+
+  boost::mutex *compact_flush_lock() {
+    // TODO: would be nice to have another separate interface from LayerInterface
+    // which LayerBaseData could inherit from, since several of these methods
+    // don't make sense in this context.
+    CHECK(0) << "Not relevant";
+    return NULL;
   }
 };
 
@@ -82,6 +91,10 @@ public:
   Status CountRows(size_t *count) const {
     *count = ms_->entry_count();
     return Status::OK();
+  }
+
+  uint64_t EstimateOnDiskSize() const {
+    return key_reader_->file_size();
   }
 
   Status FindRow(const void *key, uint32_t *idx) const;
@@ -116,6 +129,7 @@ public:
   Status Open();
   virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const;
   Status CountRows(size_t *count) const;
+  uint64_t EstimateOnDiskSize() const;
   Status FindRow(const void *key, uint32_t *idx) const;
 
   bool is_updatable_in_place() const {

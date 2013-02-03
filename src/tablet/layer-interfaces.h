@@ -41,6 +41,14 @@ public:
   // Delete the underlying storage for this layer.
   virtual Status Delete() = 0;
 
+  // Estimate the number of bytes on-disk
+  virtual size_t EstimateOnDiskSize() const = 0;
+
+  // Return the lock used for including this Layer in a compaction.
+  // This prevents multiple compactions and flushes from trying to include
+  // the same layer.
+  virtual boost::mutex *compact_flush_lock() = 0;
+
   virtual ~LayerInterface() {}
 };
 

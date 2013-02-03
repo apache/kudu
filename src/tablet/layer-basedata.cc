@@ -139,6 +139,14 @@ Status CFileBaseData::CountRows(size_t *count) const {
   return reader.CountRows(count);
 }
 
+uint64_t CFileBaseData::EstimateOnDiskSize() const {
+  uint64_t ret = 0;
+  BOOST_FOREACH(const CFileReader &reader, readers_) {
+    ret += reader.file_size();
+  }
+  return ret;
+}
+
 Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
   CFileIterator *key_iter;
   RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );

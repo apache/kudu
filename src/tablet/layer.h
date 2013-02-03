@@ -144,6 +144,13 @@ public:
   // Count the number of rows in this layer.
   Status CountRows(size_t *count) const;
 
+  // Estimate the number of bytes on-disk
+  uint64_t EstimateOnDiskSize() const;
+
+  boost::mutex *compact_flush_lock() {
+    return &compact_flush_lock_;
+  }
+
   const Schema &schema() const {
     return schema_;
   }
@@ -203,6 +210,10 @@ private:
   // contention between threads.
   mutable boost::shared_mutex component_lock_;
 
+
+  // Lock governing this layer's inclusion in a compact/flush. If locked,
+  // no other compactor will attempt to include this layer.
+  boost::mutex compact_flush_lock_;
 };
 
 ////////////////////////////////////////////////////////////

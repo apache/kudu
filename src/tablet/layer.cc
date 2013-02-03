@@ -324,6 +324,11 @@ Status Layer::CountRows(size_t *count) const {
   return base_data_->CountRows(count);
 }
 
+uint64_t Layer::EstimateOnDiskSize() const {
+  CHECK(open_);
+  // TODO: should probably add the delta trackers as well.
+  return base_data_->EstimateOnDiskSize();
+}
 
 Status Layer::FlushDMS(const DeltaMemStore &dms,
                        DeltaFileReader **dfr) {
