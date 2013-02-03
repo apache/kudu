@@ -114,6 +114,10 @@ public:
     memcpy(data(), src, len);
   }
 
+  void assign_copy(const std::string &str) {
+    assign_copy(str.c_str(), str.size());
+  }
+
 
 private:
   enum {

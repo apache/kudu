@@ -337,7 +337,10 @@ public:
 
 private:
   Status SkipForward(int n);
+  Status CheckNextPtr();
   Status ParseNextValue();
+  Status ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied);
+
   const char *DecodeEntryLengths(const char *ptr,
                            uint32_t *shared,
                            uint32_t *non_shared) const;
@@ -360,11 +363,17 @@ private:
 
   const char *data_start_;
 
-  // Pointers and data to be returned by the next call to
-  // GetNextValues().
-  // These are advanced by ParseNextValue()
+  // Index of the next row to be returned by CopyNextValues, relative to
+  // the block's base offset.
+  // When the block is exhausted, cur_idx_ == num_elems_
   uint32_t cur_idx_;
+
+  // The first value to be returned by the next CopyNextValues().
   faststring cur_val_;
+
+  // The ptr pointing to the next element to parse. This is for the entry
+  // following cur_val_
+  // This is advanced by ParseNextValue()
   const char *next_ptr_;
 };
 

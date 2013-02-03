@@ -777,32 +777,54 @@ Status StringBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   Arena *out_arena = dst->arena();
   char *out = reinterpret_cast<char *>(dst->data());
 
+  if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
+    *n = 0;
+    return Status::OK();
+  }
+
   size_t i = 0;
-  for (i = 0; i < *n && cur_idx_ < num_elems_; i++) {
-    // Copy the value into the output arena.
-    const char *out_data = out_arena->AddStringPieceContent(
-      StringPiece(cur_val_.data(), cur_val_.size()));
-    if (PREDICT_FALSE(out_data == NULL)) {
-      return Status::IOError(
-        "Out of memory",
-        StringPrintf("Failed to allocate %d bytes in output arena",
-                     (int)cur_val_.size()));
-    }
+  size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
-    // Put a slice to it in the output array
-    *reinterpret_cast<Slice *>(out) = Slice(out_data, cur_val_.size());
+  // Grab the first row, which we've cached from the last call or seek.
+  const char *out_data = out_arena->AddStringPieceContent(
+    StringPiece(cur_val_.data(), cur_val_.size()));
+  if (PREDICT_FALSE(out_data == NULL)) {
+    return Status::IOError(
+      "Out of memory",
+      StringPrintf("Failed to allocate %d bytes in output arena",
+                   (int)cur_val_.size()));
+  }
+
+  // Put a slice to it in the output array
+  Slice prev_val(out_data, cur_val_.size());
+  *reinterpret_cast<Slice *>(out) = prev_val;
+  out += dst->stride();
+  i++;
+  cur_idx_++;
+
+  #ifndef NDEBUG
+  cur_val_.assign_copy("INVALID");
+  #endif
+
+  // Now iterate pulling more rows from the block, decoding relative
+  // to the previous value.
+
+  for (; i < max_fetch; i++) {
+    Slice copied;
+    RETURN_NOT_OK(ParseNextIntoArena(prev_val, dst->arena(), &copied));
+    *reinterpret_cast<Slice *>(out) = copied;
     out += dst->stride();
-
-    if (cur_idx_ + 1 < num_elems_) {
-      // TODO: Can ParseNextValue take a pointer to the previously
-      // parsed value, to avoid having to double-copy?
-      RETURN_NOT_OK(ParseNextValue());
-    } else {
-      // end of block -- postcondition: next_ptr_ NULL
-      // since there are no further entries
-      next_ptr_ = NULL;
-    }
+    prev_val = copied;
     cur_idx_++;
+  }
+
+  // Fetch the next value to be returned, using the last value we fetched
+  // for the delta.
+  cur_val_.assign_copy(prev_val.data(), prev_val.size());
+  if (cur_idx_ < num_elems_) {
+    RETURN_NOT_OK(ParseNextValue());
+  } else {
+    next_ptr_ = NULL;
   }
 
   *n = i;
@@ -834,16 +856,43 @@ Status StringBlockDecoder::SkipForward(int n) {
   return Status::OK();
 }
 
+Status StringBlockDecoder::CheckNextPtr() {
+  DCHECK(next_ptr_ != NULL);
+
+  if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const char *>(restarts_))) {
+    DCHECK_EQ(cur_idx_, num_elems_ - 1);
+    return Status::NotFound("Trying to parse past end of array");
+  }
+  return Status::OK();
+}
+
+inline Status StringBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied) {
+  RETURN_NOT_OK(CheckNextPtr());
+  uint32_t shared, non_shared;
+  const char *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
+  if (val_delta == NULL) {
+    return Status::Corruption(
+      StringPrintf("Could not decode value length data at idx %d",
+                   cur_idx_));
+  }
+
+  DCHECK_LE(shared, prev_val.size())
+    << "Spcified longer shared amount than previous key length";
+
+  char *buf = reinterpret_cast<char *>(dst->AllocateBytes(non_shared + shared));
+  strings::memcpy_inlined(buf, prev_val.data(), shared);
+  strings::memcpy_inlined(buf + shared, val_delta, non_shared);
+
+  *copied = Slice(buf, non_shared + shared);
+  next_ptr_ = val_delta + non_shared;
+  return Status::OK();
+}
+
 // Parses the data pointed to by next_ptr_ and stores it in cur_val_
 // Advances next_ptr_ to point to the following values.
 // Does not modify cur_idx_
 Status StringBlockDecoder::ParseNextValue() {
-  DCHECK(next_ptr_ != NULL);
-
-  if (next_ptr_ == reinterpret_cast<const char *>(restarts_)) {
-    DCHECK_EQ(cur_idx_, num_elems_ - 1);
-    return Status::NotFound("Trying to parse past end of array");
-  }
+  RETURN_NOT_OK(CheckNextPtr());
 
   uint32_t shared, non_shared;
   const char *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
