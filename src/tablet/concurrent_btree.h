@@ -32,6 +32,11 @@
 //#define TRAVERSE_PREFETCH
 #define SCAN_PREFETCH
 
+
+// Define the following to get an ugly printout on each node split
+// to see how much of the node was actually being used.
+// #define DEBUG_DUMP_SPLIT_STATS
+
 namespace kudu { namespace tablet {
 namespace btree {
 
@@ -1384,6 +1389,21 @@ private:
   void SplitLeafNode(LeafNode<Traits> *node,
                      LeafNode<Traits> **new_node) {
     DCHECK(node->IsLocked());
+
+#ifdef DEBUG_DUMP_SPLIT_STATS
+    {
+      size_t key_size = 0, val_size = 0;
+      for (size_t i = 0; i < node->num_entries(); i++) {
+        Slice k, v;
+        node->Get(i, &k, &v);
+        key_size += k.size();
+        val_size += v.size();
+      }
+      LOG(INFO) << "split leaf. entries=" << node->num_entries()
+                << " keysize=" << key_size
+                << " valsize=" << val_size;
+    }
+#endif
 
     LeafNode<Traits> *new_leaf = NewLeaf(true);
     new_leaf->next_ = node->next_;
