@@ -5,11 +5,13 @@
 #include <string>
 #include <glog/logging.h>
 
-#include "cfile.h"
-#include "cfile.pb.h"
-#include "block_pointer.h"
-#include "index_block.h"
-#include "index_btree.h"
+#include "cfile/cfile.h"
+#include "cfile/cfile.pb.h"
+#include "cfile/block_pointer.h"
+#include "cfile/gvint_block.h"
+#include "cfile/string_prefix_block.h"
+#include "cfile/index_block.h"
+#include "cfile/index_btree.h"
 #include "util/env.h"
 #include "util/coding.h"
 #include "util/logging.h"

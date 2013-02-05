@@ -1,81 +1,20 @@
-// Copyright (c) 2012, Cloudera, inc.
+// Copyright (c) 2013, Cloudera, inc.
 
-#include <algorithm>
 #include <boost/foreach.hpp>
-#include <boost/utility/binary.hpp>
-#include <glog/logging.h>
-#include <stdint.h>
 
-#include "gutil/once.h"
-#include "gutil/strings/fastmem.h"
-#include "gutil/strings/stringpiece.h"
-#include "gutil/stringprintf.h"
-#include "gutil/stl_util.h"
+#include "cfile/cfile.h"
+#include "cfile/string_prefix_block.h"
+#include "common/columnblock.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
-#include "util/faststring.h"
+#include "util/group_varint-inl.h"
 #include "util/hexdump.h"
-#include "util/memory/arena.h"
-
-#include "block_encodings.h"
-// TODO: including this to just get block size from options,
-// maybe we should not take a whole options struct
-#include "cfile.h"
-#include <smmintrin.h>
-
+#include "util/slice.h"
 
 namespace kudu {
 namespace cfile {
 
-using kudu::Arena;
-
-
-static bool SSE_TABLE_INITTED = false;
-static char SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
-static char VARINT_SELECTOR_LENGTHS[256];
-
-const static uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
-
-__attribute__((constructor))
-static void InitializeSSETables() {
-  memset(SSE_TABLE, 0xff, sizeof(SSE_TABLE));
-
-  for (int i = 0; i < 256; i++) {
-    uint32_t *entry = reinterpret_cast<uint32_t *>(&SSE_TABLE[i * 16]);
-
-    uint8_t selectors[] = {
-      static_cast<uint8_t>((i & BOOST_BINARY( 11 00 00 00)) >> 6),
-      static_cast<uint8_t>((i & BOOST_BINARY( 00 11 00 00)) >> 4),
-      static_cast<uint8_t>((i & BOOST_BINARY( 00 00 11 00)) >> 2),
-      static_cast<uint8_t>((i & BOOST_BINARY( 00 00 00 11 ))) };
-
-    // 00000000 ->
-    // 00 ff ff ff  01 ff ff ff  02 ff ff ff  03 ff ff ff
-
-    // 01000100 ->
-    // 00 01 ff ff  02 ff ff ff  03 04 ff ff  05 ff ff ff
-
-    uint8_t offset = 0;
-
-    for (int j = 0; j < 4; j++) {
-      uint8_t num_bytes = selectors[j] + 1;
-      uint8_t *entry_bytes = reinterpret_cast<uint8_t *>(&entry[j]);
-
-      for (int k = 0; k < num_bytes; k++) {
-        *entry_bytes++ = offset++;
-      }
-    }
-
-    VARINT_SELECTOR_LENGTHS[i] = offset;
-  }
-
-  SSE_TABLE_INITTED = true;
-}
-
-void DumpSSETable() {
-  LOG(INFO) << "SSE table:\n"
-            << kudu::HexDump(Slice(SSE_TABLE, sizeof(SSE_TABLE)));
-}
+using kudu::coding::AppendGroupVarInt32;
 
 
 ////////////////////////////////////////////////////////////
@@ -93,248 +32,6 @@ static const char *DecodeEntryLengths(
   }
 
   return ptr;
-}
-
-// Calculate the number of bytes to encode the given unsigned int.
-static size_t CalcRequiredBytes32(uint32_t i) {
-  if (i == 0) return 1;
-
-  return sizeof(long) - __builtin_clzl(i)/8;
-}
-
-const uint8_t *DecodeGroupVarInt32(
-  const uint8_t *src,
-  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
-
-  uint8_t a_sel = (*src & BOOST_BINARY( 11 00 00 00)) >> 6;
-  uint8_t b_sel = (*src & BOOST_BINARY( 00 11 00 00)) >> 4;
-  uint8_t c_sel = (*src & BOOST_BINARY( 00 00 11 00)) >> 2;
-  uint8_t d_sel = (*src & BOOST_BINARY( 00 00 00 11 ));
-
-  src++; // skip past selector byte
-
-  *a = *reinterpret_cast<const uint32_t *>(src) & MASKS[a_sel];
-  src += a_sel + 1;
-
-  *b = *reinterpret_cast<const uint32_t *>(src) & MASKS[b_sel];
-  src += b_sel + 1;
-
-  *c = *reinterpret_cast<const uint32_t *>(src) & MASKS[c_sel];
-  src += c_sel + 1;
-
-  *d = *reinterpret_cast<const uint32_t *>(src) & MASKS[d_sel];
-  src += d_sel + 1;
-
-  return src;
-}
-
-const uint8_t *DecodeGroupVarInt32_SSE(
-  const uint8_t *src,
-  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
-
-  DCHECK(SSE_TABLE_INITTED);
-
-  uint8_t sel_byte = *src++;
-  __m128i shuffle_mask = _mm_load_si128(
-    reinterpret_cast<__m128i *>(&SSE_TABLE[sel_byte * 16]));
-  __m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
-
-  __m128i results = _mm_shuffle_epi8(data, shuffle_mask);
-
-
-  // It would look like the following would be most efficient,
-  // since it turns into a single movdqa instruction:
-  //   *reinterpret_cast<__m128i *>(ret) = results;
-  // (where ret is an aligned array of ints, which the user must pass)
-  // but it is actually slower than the below alternatives by a
-  // good amount -- even though these result in more instructions.
-  *a = _mm_extract_ps((__v4sf)results, 0);
-  *b = _mm_extract_ps((__v4sf)results, 1);
-  *c = _mm_extract_ps((__v4sf)results, 2);
-  *d = _mm_extract_ps((__v4sf)results, 3);
-
-  // _mm_extract_ps turns into extractps, which is slightly faster
-  // than _mm_extract_epi32 (which turns into pextrd)
-  // Apparently pextrd involves one more micro-op
-  // than extractps
-  /*
-  *a = _mm_extract_epi32(results, 0);
-  *b = _mm_extract_epi32(results, 1);
-  *c = _mm_extract_epi32(results, 2);
-  *d = _mm_extract_epi32(results, 3);
-  */
-  src += VARINT_SELECTOR_LENGTHS[sel_byte];
-  return src;
-}
-
-const uint8_t *DecodeGroupVarInt32_SSE_Add(
-  const uint8_t *src,
-  uint32_t *ret,
-  __m128i add) {
-
-  DCHECK(SSE_TABLE_INITTED);
-
-  uint8_t sel_byte = *src++;
-  __m128i shuffle_mask = _mm_load_si128(
-    reinterpret_cast<__m128i *>(&SSE_TABLE[sel_byte * 16]));
-  __m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
-
-  __m128i decoded_deltas = _mm_shuffle_epi8(data, shuffle_mask);
-  __m128i results = _mm_add_epi32(decoded_deltas, add);
-
-  ret[0] = _mm_extract_ps((__v4sf)results, 0);
-  ret[1] = _mm_extract_ps((__v4sf)results, 1);
-  ret[2] = _mm_extract_ps((__v4sf)results, 2);
-  ret[3] = _mm_extract_ps((__v4sf)results, 3);
-
-  src += VARINT_SELECTOR_LENGTHS[sel_byte];
-  return src;
-}
-
-void AppendShorterInt(faststring *s, uint32_t i, size_t bytes) {
-  DCHECK_GE(bytes, 0);
-  DCHECK_LE(bytes, 4);
-
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-  // LSBs come first, so we can just reinterpret-cast
-  // and set the right length
-  s->append(reinterpret_cast<char *>(&i), bytes);
-#else
-#error dont support big endian currently
-#endif
-}
-
-void AppendGroupVarInt32(
-  faststring *s,
-  uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
-
-  uint8_t a_req = CalcRequiredBytes32(a);
-  uint8_t b_req = CalcRequiredBytes32(b);
-  uint8_t c_req = CalcRequiredBytes32(c);
-  uint8_t d_req = CalcRequiredBytes32(d);
-
-  uint8_t prefix_byte =
-    ((a_req - 1) << 6) |
-    ((b_req - 1) << 4) |
-    ((c_req - 1) << 2) |
-    (d_req - 1);
-
-  s->push_back(prefix_byte);
-  AppendShorterInt(s, a, a_req);
-  AppendShorterInt(s, b, b_req);
-  AppendShorterInt(s, c, c_req);
-  AppendShorterInt(s, d, d_req);
-}
-
-
-
-
-////////////////////////////////////////////////////////////
-// Encoding
-////////////////////////////////////////////////////////////
-
-
-GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options) :
-  estimated_raw_size_(0),
-  options_(options)
-{}
-
-
-void GVIntBlockBuilder::Reset() {
-  ints_.clear();
-  buffer_.clear();
-  ints_.reserve(options_->block_size / sizeof(uint32_t));
-  estimated_raw_size_ = 0;
-}
-
-int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count, size_t stride) {
-  if (count > 1) {
-    DCHECK_GE(stride, sizeof(uint32_t));
-  }
-
-  const uint8_t *vals = reinterpret_cast<const uint8_t *>(vals_void);
-
-  int added = 0;
-  while (estimated_raw_size_ < options_->block_size &&
-         added < count) {
-    uint32_t val = *reinterpret_cast<const uint32_t *>(vals);
-    vals += stride;
-    estimated_raw_size_ += CalcRequiredBytes32(val);
-    ints_.push_back(val);
-    added++;
-  }
-
-  return added;
-}
-
-uint64_t GVIntBlockBuilder::EstimateEncodedSize() const {
-  // TODO: this currently does not do a good job of estimating
-  // when the ints are large but clustered together,
-  // since it doesn't take into account the delta coding relative
-  // to the min int. We could track the min int along the way
-  // but then we have extra branches in the add loop. Come back to this,
-  // probably the branches don't matter since this is write-side.
-  return estimated_raw_size_ + (ints_.size() + 3) / 4
-    + kEstimatedHeaderSizeBytes + kTrailerExtraPaddingBytes;
-}
-
-size_t GVIntBlockBuilder::Count() const {
-  return ints_.size();
-}
-
-Status GVIntBlockBuilder::GetFirstKey(void *key) const {
-  if (ints_.empty()) {
-    return Status::NotFound("no keys in data block");
-  }
-
-  *reinterpret_cast<uint32_t *>(key) = ints_[0];
-  return Status::OK();
-}
-
-Slice GVIntBlockBuilder::Finish(uint32_t ordinal_pos) {
-  int size_estimate = EstimateEncodedSize();
-  buffer_.reserve(size_estimate);
-  // TODO: negatives and big ints
-
-  IntType min = 0;
-  size_t size = ints_.size();
-
-  if (size > 0) {
-    min = *std::min_element(ints_.begin(), ints_.end());
-  }
-
-  buffer_.clear();
-  AppendGroupVarInt32(&buffer_,
-                      (uint32_t)size, (uint32_t)min,
-                      (uint32_t)ordinal_pos, 0);
-
-  IntType *p = &ints_[0];
-  while (size >= 4) {
-    AppendGroupVarInt32(
-      &buffer_,
-      p[0] - min, p[1] - min, p[2] - min, p[3] - min);
-    size -= 4;
-    p += 4;
-  }
-
-
-  IntType trailer[4] = {0, 0, 0, 0};
-  IntType *trailer_p = &trailer[0];
-
-  if (size > 0) {
-    while (size > 0) {
-      *trailer_p++ = *p++ - min;
-      size--;
-    }
-
-    AppendGroupVarInt32(&buffer_, trailer[0], trailer[1], trailer[2], trailer[3]);
-  }
-
-  // Our estimate should always be an upper bound, or else there's a bunch of
-  // extra copies due to resizes here.
-  DCHECK_GE(size_estimate, buffer_.size());
-
-  return Slice(buffer_.data(), buffer_.size());
 }
 
 
@@ -476,153 +173,6 @@ Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
 
 
 ////////////////////////////////////////////////////////////
-// Decoding
-////////////////////////////////////////////////////////////
-
-GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice) :
-  data_(slice),
-  parsed_(false)
-{
-}
-
-
-Status GVIntBlockDecoder::ParseHeader() {
-  // TODO: better range check
-  CHECK(data_.size() > 5);
-
-  uint32_t unused;
-  ints_start_ = DecodeGroupVarInt32(
-    (const uint8_t *)data_.data(), &num_elems_, &min_elem_,
-    &ordinal_pos_base_, &unused);
-
-  if (num_elems_ <= 0 ||
-      num_elems_ * 5 / 4 > data_.size()) {
-    return Status::Corruption("bad number of elems in int block");
-  }
-
-  parsed_ = true;
-  SeekToStart();
-
-  return Status::OK();
-}
-
-class NullSink {
-public:
-  template <typename T>
-  void push_back(T t) {}
-};
-
-template<typename T>
-class PtrSinkWithStride {
-public:
-  PtrSinkWithStride(char *ptr, size_t stride) :
-    ptr_(ptr),
-    stride_(stride)
-  {}
-
-  void push_back(const T &t) {
-    *reinterpret_cast<T *>(ptr_) = t;
-    ptr_ += stride_;
-  }
-
-private:
-  char *ptr_;
-  const size_t stride_;
-};
-
-void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
-  CHECK(parsed_) << "Must call ParseHeader()";
-
-  // Reset to start of block
-  cur_pos_ = ints_start_;
-  cur_idx_ = 0;
-  pending_.clear();
-
-  NullSink null;
-  // TODO: should this return Status?
-  size_t n = pos;
-  CHECK_OK(DoGetNextValues(&n, &null));
-}
-
-Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
-                                           bool *exact_match) {
-  return Status::NotSupported("TODO: int key search");
-}
-
-Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
-  DCHECK_EQ(dst->type_info().type(), UINT32);
-
-  PtrSinkWithStride<uint32_t> sink(
-    reinterpret_cast<char *>(dst->data()), dst->stride());
-  return DoGetNextValues(n, &sink);
-}
-
-template<class IntSink>
-Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
-  size_t n = *n_param;
-  int start_idx = cur_idx_;
-  size_t rem = num_elems_ - cur_idx_;
-  assert(rem >= 0);
-
-  // Only fetch up to remaining amount
-  n = std::min(rem, n);
-
-  __m128i min_elem_xmm = (__m128i)_mm_set_ps(
-    *reinterpret_cast<float *>(&min_elem_),
-    *reinterpret_cast<float *>(&min_elem_),
-    *reinterpret_cast<float *>(&min_elem_),
-    *reinterpret_cast<float *>(&min_elem_));
-
-  // First drain pending_
-  while (n > 0 && !pending_.empty()) {
-    sink->push_back(pending_.back());
-    pending_.pop_back();
-    n--;
-    cur_idx_++;
-  }
-  if (n == 0) goto ret;
-
-  // Now grab groups of 4 and append to vector
-  while (n >= 4) {
-    uint32_t ints[4];
-    cur_pos_ = DecodeGroupVarInt32_SSE_Add(
-      cur_pos_, ints, min_elem_xmm);
-    cur_idx_ += 4;
-
-    sink->push_back(ints[0]);
-    sink->push_back(ints[1]);
-    sink->push_back(ints[2]);
-    sink->push_back(ints[3]);
-    n -= 4;
-  }
-
-  if (n == 0) goto ret;
-
-  // Grab next batch into pending_
-  // Note that this does _not_ increment cur_idx_
-  uint32_t ints[4];
-  cur_pos_ = DecodeGroupVarInt32_SSE_Add(
-    cur_pos_, ints, min_elem_xmm);
-  // pending_ acts like a stack, so push in reverse order.
-  pending_.push_back(ints[3]);
-  pending_.push_back(ints[2]);
-  pending_.push_back(ints[1]);
-  pending_.push_back(ints[0]);
-
-  while (n > 0 && !pending_.empty()) {
-    sink->push_back(pending_.back());
-    pending_.pop_back();
-    n--;
-    cur_idx_++;
-  }
-
-  ret:
-  CHECK_EQ(n, 0);
-  *n_param = cur_idx_ - start_idx;
-  return Status::OK();
-}
-
-////////////////////////////////////////////////////////////
 // StringPrefixBlockDecoder
 ////////////////////////////////////////////////////////////
 
@@ -643,7 +193,7 @@ Status StringPrefixBlockDecoder::ParseHeader() {
   // First parse the actual header.
   uint32_t unused;
   data_start_ = reinterpret_cast<const char *>(
-    DecodeGroupVarInt32_SSE(
+    coding::DecodeGroupVarInt32_SSE(
       reinterpret_cast<const uint8_t *>(data_.data()),
       &num_elems_, &ordinal_pos_base_,
       &restart_interval_, &unused));
@@ -786,8 +336,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
   // Grab the first row, which we've cached from the last call or seek.
-  const char *out_data = out_arena->AddStringPieceContent(
-    StringPiece(cur_val_.data(), cur_val_.size()));
+  const char *out_data = out_arena->AddSlice(cur_val_);
   if (PREDICT_FALSE(out_data == NULL)) {
     return Status::IOError(
       "Out of memory",
@@ -918,4 +467,3 @@ inline Status StringPrefixBlockDecoder::ParseNextValue() {
 
 } // namespace cfile
 } // namespace kudu
-

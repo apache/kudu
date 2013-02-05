@@ -4,12 +4,14 @@
 #include <boost/shared_array.hpp>
 #include <glog/logging.h>
 
-#include "block_pointer.h"
-#include "cfile_reader.h"
-#include "cfile.h"
-#include "cfile.pb.h"
-#include "index_block.h"
-#include "index_btree.h"
+#include "cfile/block_pointer.h"
+#include "cfile/cfile_reader.h"
+#include "cfile/cfile.h"
+#include "cfile/cfile.pb.h"
+#include "cfile/gvint_block.h"
+#include "cfile/index_block.h"
+#include "cfile/index_btree.h"
+#include "cfile/string_prefix_block.h"
 
 #include "util/coding.h"
 #include "util/env.h"

@@ -81,15 +81,15 @@ class ArenaBase {
   // Discretion advised.
   ArenaBase(size_t initial_buffer_size, size_t max_buffer_size);
 
-  // Adds content of the specified StringPiece to the arena, and returns a
+  // Adds content of the specified Slice to the arena, and returns a
   // pointer to it. The pointer is guaranteed to remain valid during the
-  // lifetime of the arena. The StringPiece object itself is not copied. The
+  // lifetime of the arena. The Slice object itself is not copied. The
   // size information is not stored.
-  // (Normal use case is that the caller already has an array of StringPieces,
+  // (Normal use case is that the caller already has an array of Slices,
   // where it keeps these pointers together with size information).
   // If this request would make the arena grow and the allocator denies that,
   // returns NULL and leaves the arena unchanged.
-  char* AddStringPieceContent(const StringPiece& value);
+  char* AddSlice(const Slice& value);
 
   // Same as above.
   void * AddBytes(const void *data, size_t len);
@@ -97,7 +97,7 @@ class ArenaBase {
   // Relocate the given Slice into the arena, setting 'dst' and
   // returning true if successful.
   // It is legal for 'dst' to be a pointer to 'src'.
-  // See AddStringPieceContent above for detail on memory lifetime.
+  // See AddSlice above for detail on memory lifetime.
   bool RelocateSlice(const Slice &src, Slice *dst);
 
   // Reserves a blob of the specified size in the arena, and returns a pointer
@@ -108,7 +108,7 @@ class ArenaBase {
   void* AllocateBytes(const size_t size);
 
   // Removes all data from the arena. (Invalidates all pointers returned by
-  // AddStringPiece and AllocateBytes). Does not cause memory allocation.
+  // AddSlice and AllocateBytes). Does not cause memory allocation.
   // May reduce memory footprint, as it discards all allocated buffers but
   // the last one.
   // Unless allocations exceed max_buffer_size, repetitive filling up and
@@ -290,7 +290,7 @@ inline void *ArenaBase<THREADSAFE>::AllocateBytes(const size_t size) {
 }
 
 template <bool THREADSAFE>
-inline char* ArenaBase<THREADSAFE>::AddStringPieceContent(const StringPiece& value) {
+inline char* ArenaBase<THREADSAFE>::AddSlice(const Slice& value) {
   return reinterpret_cast<char *>(
     AddBytes(value.data(), value.size()));
 }

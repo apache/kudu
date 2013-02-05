@@ -6,6 +6,7 @@
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
+#include "cfile/string_prefix_block.h"
 #include "tablet/deltafile.h"
 #include "util/coding-inl.h"
 #include "util/env.h"

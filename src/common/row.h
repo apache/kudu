@@ -91,7 +91,7 @@ public:
   void AddString(const string &str) {
     CheckNextType(STRING);
 
-    char *in_arena = arena_.AddStringPieceContent(str);
+    char *in_arena = arena_.AddSlice(str);
     CHECK(in_arena) << "could not allocate space in arena";
 
     Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);

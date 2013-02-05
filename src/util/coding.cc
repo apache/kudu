@@ -7,7 +7,6 @@
 
 namespace kudu {
 
-
 void PutVarint32(std::string* dst, uint32_t v) {
   char buf[5];
   char* ptr = InlineEncodeVarint32(buf, v);
