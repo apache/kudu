@@ -11,6 +11,7 @@ ADD_DEPENDENCIES(cfile_proto kudu_common)
 SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
   gvint_block.cc
   string_prefix_block.cc
+  string_plain_block.cc
 )
 
 add_library(cfile ${CFILE_SRCS} ${CFILE_PROTO_SRCS})

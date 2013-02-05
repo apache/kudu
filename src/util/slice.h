@@ -57,7 +57,7 @@ class Slice {
 
   // Return the ith byte in the referenced data.
   // REQUIRES: n < size()
-  char operator[](size_t n) const {
+  const char &operator[](size_t n) const {
     assert(n < size());
     return data_[n];
   }

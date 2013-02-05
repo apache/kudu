@@ -11,9 +11,11 @@
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"
 #include "cfile/gvint_block.h"
+#include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
 #include "common/columnblock.h"
 #include "gutil/stringprintf.h"
+#include "util/hexdump.h"
 #include "util/memory/arena.h"
 #include "util/test_macros.h"
 
@@ -212,6 +214,8 @@ protected:
     const uint kCount = 10;
     Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
 
+    LOG(INFO) << "Block: " << HexDump(s);
+
     // the slice should take at least a few bytes per entry
     ASSERT_GT(s.size(), kCount * 2u);
 
@@ -229,7 +233,7 @@ protected:
       Slice s;
       CopyOne<STRING>(&sbd, &s);
       string expected = StringPrintf("hello %d", i);
-      ASSERT_EQ(expected, s.ToString());
+      ASSERT_EQ(expected, s.ToString()) << "failed at iter " << i;
     }
     ASSERT_FALSE(sbd.HasNext());
 
@@ -351,6 +355,9 @@ TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueSmallBlock) {
   TestStringSeekByValueSmallBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
+TEST_F(TestEncoding, TestStringPlainBlockBuilderSeekByValueSmallBlock) {
+  TestStringSeekByValueSmallBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+}
 
 // Test seeking to a value in a large block which contains
 // many 'restarts'
@@ -358,9 +365,17 @@ TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueLargeBlock) {
   TestStringSeekByValueLargeBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
+TEST_F(TestEncoding, TestStringPlainBlockBuilderSeekByValueLargeBlock) {
+  TestStringSeekByValueLargeBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+}
 
+// Test round-trip encode/decode of a string block.
 TEST_F(TestEncoding, TestStringPrefixBlockBuilderRoundTrip) {
   TestStringBlockRoundTrip<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+}
+
+TEST_F(TestEncoding, TestStringPlainBlockBuilderRoundTrip) {
+  TestStringBlockRoundTrip<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
 

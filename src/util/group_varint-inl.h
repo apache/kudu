@@ -26,7 +26,6 @@ inline size_t CalcRequiredBytes32(uint32_t i) {
   return sizeof(long) - __builtin_clzl(i)/8;
 }
 
-
 // Decode a set of 4 group-varint encoded integers from the given pointer.
 //
 // Returns a pointer following the last decoded integer.
@@ -167,6 +166,44 @@ inline void AppendGroupVarInt32(
   AppendShorterInt(s, d, d_req);
 }
 
+// Append a sequence of uint32s encoded using group-varint.
+//
+// 'frame_of_reference' is also subtracted from each integer
+// before encoding.
+//
+// If frame_of_reference is greater than any element in the array,
+// results are undefined.
+//
+// For best performance, users should already have reserved adequate
+// space in 's' (CalcRequiredBytes32 can be handy here)
+inline void AppendGroupVarInt32Sequence(
+  faststring *s, uint32_t frame_of_reference,
+  uint32_t *ints, size_t size)
+{
+  uint32_t *p = ints;
+  while (size >= 4) {
+    AppendGroupVarInt32(s,
+                        p[0] - frame_of_reference,
+                        p[1] - frame_of_reference,
+                        p[2] - frame_of_reference,
+                        p[3] - frame_of_reference);
+    size -= 4;
+    p += 4;
+  }
+
+
+  uint32_t trailer[4] = {0, 0, 0, 0};
+  uint32_t *trailer_p = &trailer[0];
+
+  if (size > 0) {
+    while (size > 0) {
+      *trailer_p++ = *p++ - frame_of_reference;
+      size--;
+    }
+
+    AppendGroupVarInt32(s, trailer[0], trailer[1], trailer[2], trailer[3]);
+  }
+}
 
 
 } // namespace coding

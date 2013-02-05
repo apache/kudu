@@ -13,6 +13,7 @@ using kudu::coding::AppendGroupVarInt32;
 using kudu::coding::CalcRequiredBytes32;
 using kudu::coding::DecodeGroupVarInt32;
 using kudu::coding::DecodeGroupVarInt32_SSE_Add;
+using kudu::coding::AppendGroupVarInt32Sequence;
 
 GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options) :
   estimated_raw_size_(0),
@@ -88,27 +89,7 @@ Slice GVIntBlockBuilder::Finish(uint32_t ordinal_pos) {
                       (uint32_t)size, (uint32_t)min,
                       (uint32_t)ordinal_pos, 0);
 
-  IntType *p = &ints_[0];
-  while (size >= 4) {
-    AppendGroupVarInt32(
-      &buffer_,
-      p[0] - min, p[1] - min, p[2] - min, p[3] - min);
-    size -= 4;
-    p += 4;
-  }
-
-
-  IntType trailer[4] = {0, 0, 0, 0};
-  IntType *trailer_p = &trailer[0];
-
-  if (size > 0) {
-    while (size > 0) {
-      *trailer_p++ = *p++ - min;
-      size--;
-    }
-
-    AppendGroupVarInt32(&buffer_, trailer[0], trailer[1], trailer[2], trailer[3]);
-  }
+  AppendGroupVarInt32Sequence(&buffer_, min, &ints_[0], size);
 
   // Our estimate should always be an upper bound, or else there's a bunch of
   // extra copies due to resizes here.
