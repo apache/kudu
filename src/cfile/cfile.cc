@@ -104,7 +104,7 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
     case UINT32:
       switch (encoding_type_) {
         case GROUP_VARINT:
-          *bb = new IntBlockBuilder(&options_);
+          *bb = new GVIntBlockBuilder(&options_);
           break;
         default:
           return Status::NotFound("bad int encoding");
@@ -114,7 +114,7 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
       switch (encoding_type_) {
         case PREFIX:
           // TODO: this should be called PREFIX_DELTA or something
-          *bb = new StringBlockBuilder(&options_);
+          *bb = new StringPrefixBlockBuilder(&options_);
           break;
         default:
           return Status::NotFound("bad string encoding");

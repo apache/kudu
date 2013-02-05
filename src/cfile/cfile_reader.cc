@@ -159,7 +159,7 @@ Status CFileReader::CreateBlockDecoder(
     case UINT32:
       switch (footer_->encoding()) {
         case GROUP_VARINT:
-          *bd = new IntBlockDecoder(slice);
+          *bd = new GVIntBlockDecoder(slice);
           break;
         default:
           return Status::NotFound("bad int encoding");
@@ -168,8 +168,7 @@ Status CFileReader::CreateBlockDecoder(
     case STRING:
       switch (footer_->encoding()) {
         case PREFIX:
-          // TODO: this should be called PREFIX_DELTA or something
-          *bd = new StringBlockDecoder(slice);
+          *bd = new StringPrefixBlockDecoder(slice);
           break;
         default:
           return Status::NotFound("bad string encoding");

@@ -234,20 +234,20 @@ void AppendGroupVarInt32(
 ////////////////////////////////////////////////////////////
 
 
-IntBlockBuilder::IntBlockBuilder(const WriterOptions *options) :
+GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options) :
   estimated_raw_size_(0),
   options_(options)
 {}
 
 
-void IntBlockBuilder::Reset() {
+void GVIntBlockBuilder::Reset() {
   ints_.clear();
   buffer_.clear();
   ints_.reserve(options_->block_size / sizeof(uint32_t));
   estimated_raw_size_ = 0;
 }
 
-int IntBlockBuilder::Add(const uint8_t *vals_void, size_t count, size_t stride) {
+int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count, size_t stride) {
   if (count > 1) {
     DCHECK_GE(stride, sizeof(uint32_t));
   }
@@ -267,7 +267,7 @@ int IntBlockBuilder::Add(const uint8_t *vals_void, size_t count, size_t stride) 
   return added;
 }
 
-uint64_t IntBlockBuilder::EstimateEncodedSize() const {
+uint64_t GVIntBlockBuilder::EstimateEncodedSize() const {
   // TODO: this currently does not do a good job of estimating
   // when the ints are large but clustered together,
   // since it doesn't take into account the delta coding relative
@@ -278,11 +278,11 @@ uint64_t IntBlockBuilder::EstimateEncodedSize() const {
     + kEstimatedHeaderSizeBytes + kTrailerExtraPaddingBytes;
 }
 
-size_t IntBlockBuilder::Count() const {
+size_t GVIntBlockBuilder::Count() const {
   return ints_.size();
 }
 
-Status IntBlockBuilder::GetFirstKey(void *key) const {
+Status GVIntBlockBuilder::GetFirstKey(void *key) const {
   if (ints_.empty()) {
     return Status::NotFound("no keys in data block");
   }
@@ -291,7 +291,7 @@ Status IntBlockBuilder::GetFirstKey(void *key) const {
   return Status::OK();
 }
 
-Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
+Slice GVIntBlockBuilder::Finish(uint32_t ordinal_pos) {
   int size_estimate = EstimateEncodedSize();
   buffer_.reserve(size_estimate);
   // TODO: negatives and big ints
@@ -340,10 +340,10 @@ Slice IntBlockBuilder::Finish(uint32_t ordinal_pos) {
 
 
 ////////////////////////////////////////////////////////////
-// StringBlockBuilder encoding
+// StringPrefixBlockBuilder encoding
 ////////////////////////////////////////////////////////////
 
-StringBlockBuilder::StringBlockBuilder(const WriterOptions *options) :
+StringPrefixBlockBuilder::StringPrefixBlockBuilder(const WriterOptions *options) :
   val_count_(0),
   vals_since_restart_(0),
   finished_(false),
@@ -352,7 +352,7 @@ StringBlockBuilder::StringBlockBuilder(const WriterOptions *options) :
   Reset();
 }
 
-void StringBlockBuilder::Reset() {
+void StringPrefixBlockBuilder::Reset() {
   finished_ = false;
   val_count_ = 0;
   vals_since_restart_ = 0;
@@ -365,7 +365,7 @@ void StringBlockBuilder::Reset() {
   last_val_.clear();
 }
 
-Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
+Slice StringPrefixBlockBuilder::Finish(uint32_t ordinal_pos) {
   CHECK(!finished_) << "already finished";
   DCHECK_GE(buffer_.size(), kHeaderReservedLength);
 
@@ -403,7 +403,7 @@ Slice StringBlockBuilder::Finish(uint32_t ordinal_pos) {
   return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
 }
 
-int StringBlockBuilder::Add(const uint8_t *vals, size_t count, size_t stride) {
+int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count, size_t stride) {
   DCHECK_GT(count, 0);
   DCHECK(!finished_);
   DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
@@ -446,16 +446,16 @@ int StringBlockBuilder::Add(const uint8_t *vals, size_t count, size_t stride) {
   return 1;
 }
 
-size_t StringBlockBuilder::Count() const {
+size_t StringPrefixBlockBuilder::Count() const {
   return val_count_;
 }
 
-uint64_t StringBlockBuilder::EstimateEncodedSize() const {
+uint64_t StringPrefixBlockBuilder::EstimateEncodedSize() const {
   // TODO: add restarts size
   return buffer_.size();
 }
 
-Status StringBlockBuilder::GetFirstKey(void *key) const {
+Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
   if (val_count_ == 0) {
     return Status::NotFound("no keys in data block");
   }
@@ -479,14 +479,14 @@ Status StringBlockBuilder::GetFirstKey(void *key) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-IntBlockDecoder::IntBlockDecoder(const Slice &slice) :
+GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice) :
   data_(slice),
   parsed_(false)
 {
 }
 
 
-Status IntBlockDecoder::ParseHeader() {
+Status GVIntBlockDecoder::ParseHeader() {
   // TODO: better range check
   CHECK(data_.size() > 5);
 
@@ -530,7 +530,7 @@ private:
   const size_t stride_;
 };
 
-void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
+void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
   CHECK(parsed_) << "Must call ParseHeader()";
 
   // Reset to start of block
@@ -544,12 +544,12 @@ void IntBlockDecoder::SeekToPositionInBlock(uint pos) {
   CHECK_OK(DoGetNextValues(&n, &null));
 }
 
-Status IntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
+Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
                                            bool *exact_match) {
   return Status::NotSupported("TODO: int key search");
 }
 
-Status IntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
+Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK_EQ(dst->type_info().type(), UINT32);
 
   PtrSinkWithStride<uint32_t> sink(
@@ -558,7 +558,7 @@ Status IntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
 }
 
 template<class IntSink>
-Status IntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
+Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
   size_t n = *n_param;
   int start_idx = cur_idx_;
   size_t rem = num_elems_ - cur_idx_;
@@ -623,10 +623,10 @@ Status IntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
 }
 
 ////////////////////////////////////////////////////////////
-// StringBlockDecoder
+// StringPrefixBlockDecoder
 ////////////////////////////////////////////////////////////
 
-StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
+StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice) :
   data_(slice),
   parsed_(false),
   num_elems_(0),
@@ -639,7 +639,7 @@ StringBlockDecoder::StringBlockDecoder(const Slice &slice) :
 {
 }
 
-Status StringBlockDecoder::ParseHeader() {
+Status StringPrefixBlockDecoder::ParseHeader() {
   // First parse the actual header.
   uint32_t unused;
   data_start_ = reinterpret_cast<const char *>(
@@ -677,11 +677,11 @@ Status StringBlockDecoder::ParseHeader() {
   return Status::OK();
 }
 
-void StringBlockDecoder::SeekToStart() {
+void StringPrefixBlockDecoder::SeekToStart() {
   SeekToRestartPoint(0);
 }
 
-void StringBlockDecoder::SeekToPositionInBlock(uint pos) {
+void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
   DCHECK_LT(pos, num_elems_);
 
   int target_restart = pos/restart_interval_;
@@ -699,7 +699,7 @@ void StringBlockDecoder::SeekToPositionInBlock(uint pos) {
 // the '0' restart point, since that is simply the beginning of
 // the data and hence a waste of space. So, 'idx' may range from
 // 0 (first record) through num_restarts_ (last recorded restart point)
-const char * StringBlockDecoder::GetRestartPoint(uint32_t idx) const {
+const char * StringPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
   DCHECK_LE(idx, num_restarts_);
 
   if (PREDICT_TRUE(idx > 0)) {
@@ -710,13 +710,13 @@ const char * StringBlockDecoder::GetRestartPoint(uint32_t idx) const {
 }
 
 // Note: see GetRestartPoint() for 'idx' semantics
-void StringBlockDecoder::SeekToRestartPoint(uint32_t idx) {
+void StringPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
   next_ptr_ = GetRestartPoint(idx);
   cur_idx_ = idx * restart_interval_;
   ParseNextValue();
 }
 
-Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void,
+Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
                                               bool *exact_match) {
   DCHECK(value_void != NULL);
 
@@ -769,7 +769,7 @@ Status StringBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   }
 }
 
-Status StringBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
+Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
   DCHECK_LE(*n, dst->size());
@@ -836,7 +836,7 @@ Status StringBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
 // Returns a pointer to where the value itself starts.
 // Returns NULL if the varints themselves, or the value that
 // they prefix extend past the end of the block data.
-const char *StringBlockDecoder::DecodeEntryLengths(
+const char *StringPrefixBlockDecoder::DecodeEntryLengths(
   const char *ptr, uint32_t *shared, uint32_t *non_shared) const {
 
   // data ends where the restart info begins
@@ -844,7 +844,7 @@ const char *StringBlockDecoder::DecodeEntryLengths(
   return kudu::cfile::DecodeEntryLengths(ptr, limit, shared, non_shared);
 }
 
-Status StringBlockDecoder::SkipForward(int n) {
+Status StringPrefixBlockDecoder::SkipForward(int n) {
   DCHECK_LT(cur_idx_ + n, num_elems_) <<
     "skip(" << n << ") curidx=" << cur_idx_
             << " num_elems=" << num_elems_;
@@ -856,7 +856,7 @@ Status StringBlockDecoder::SkipForward(int n) {
   return Status::OK();
 }
 
-Status StringBlockDecoder::CheckNextPtr() {
+Status StringPrefixBlockDecoder::CheckNextPtr() {
   DCHECK(next_ptr_ != NULL);
 
   if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const char *>(restarts_))) {
@@ -866,7 +866,7 @@ Status StringBlockDecoder::CheckNextPtr() {
   return Status::OK();
 }
 
-inline Status StringBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied) {
+inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied) {
   RETURN_NOT_OK(CheckNextPtr());
   uint32_t shared, non_shared;
   const char *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
@@ -891,7 +891,7 @@ inline Status StringBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst,
 // Parses the data pointed to by next_ptr_ and stores it in cur_val_
 // Advances next_ptr_ to point to the following values.
 // Does not modify cur_idx_
-inline Status StringBlockDecoder::ParseNextValue() {
+inline Status StringPrefixBlockDecoder::ParseNextValue() {
   RETURN_NOT_OK(CheckNextPtr());
 
   uint32_t shared, non_shared;

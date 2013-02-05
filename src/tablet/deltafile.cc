@@ -130,7 +130,7 @@ Status DeltaFileReader::ApplyUpdates(
   // Successful seek - process deltas until we have gotten
   // all that apply to this range of rows.
   // TODO: this is a very inefficient impl based around reusing
-  // StringBlockDecoder. Instead we should have a Delta-specific
+  // StringPrefixBlockDecoder. Instead we should have a Delta-specific
   // format which can easily skip if a column isn't updated, etc.
   // - maybe even its own file format outside of cfile, so the index
   // structure can carry filter information on columns, etc.
@@ -142,7 +142,7 @@ Status DeltaFileReader::ApplyUpdates(
 
     RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data));
 
-    cfile::StringBlockDecoder sbd(dblk_data.slice());
+    cfile::StringPrefixBlockDecoder sbd(dblk_data.slice());
     RETURN_NOT_OK(sbd.ParseHeader());
 
     bool exact;

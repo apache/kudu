@@ -33,8 +33,8 @@ typedef uint32_t OrdinalIndex;
 
 class BlockPointer;
 class BTreeInfoPB;
-class IntBlockBuilder;
-class StringBlockBuilder;
+class GVIntBlockBuilder;
+class StringPrefixBlockBuilder;
 class IndexTreeBuilder;
 
 // Magic used in header/footer
@@ -62,7 +62,7 @@ struct WriterOptions {
   // This parameter can be changed dynamically.  Most clients should
   // leave this parameter alone.
   //
-  // This is currently only used by StringBlockBuilder
+  // This is currently only used by StringPrefixBlockBuilder
   //
   // Default: 16
   int block_restart_interval;

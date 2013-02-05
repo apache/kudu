@@ -123,7 +123,7 @@ TEST_F(TestEncoding, TestGroupVarIntRoundTrip) {
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
   boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
-  IntBlockBuilder ibb(opts.get());
+  GVIntBlockBuilder ibb(opts.get());
 
   int *ints = new int[10000];
   for (int i = 0; i < 10000; i++) {
@@ -153,12 +153,12 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     to_insert.push_back(random());
   }
 
-  IntBlockBuilder ibb(opts.get());
+  GVIntBlockBuilder ibb(opts.get());
   ibb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
           to_insert.size(), sizeof(uint32_t));
   Slice s = ibb.Finish(kOrdinalPosBase);
 
-  IntBlockDecoder ibd(s);
+  GVIntBlockDecoder ibd(s);
   ibd.ParseHeader();
 
   ASSERT_EQ(kOrdinalPosBase, ibd.ordinal_pos());
@@ -209,8 +209,8 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
 }
 
 // Insert a given number of strings into the provided
-// StringBlockBuilder.
-static Slice CreateStringBlock(StringBlockBuilder *sbb,
+// StringPrefixBlockBuilder.
+static Slice CreateStringBlock(StringPrefixBlockBuilder *sbb,
                                int num_items,
                                const char *fmt_str) {
   boost::ptr_vector<string> to_insert;
@@ -240,13 +240,13 @@ static Slice CreateStringBlock(StringBlockBuilder *sbb,
 // Test seeking to a value in a small block.
 // Regression test for a bug seen in development where this would
 // infinite loop when there are no 'restarts' in a given block.
-TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
+TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueSmallBlock) {
   WriterOptions opts;
-  StringBlockBuilder sbb(&opts);
+  StringPrefixBlockBuilder sbb(&opts);
   // Insert "hello 0" through "hello 9"
   const uint kCount = 10;
   Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
-  StringBlockDecoder sbd(s);
+  StringPrefixBlockDecoder sbd(s);
   ASSERT_STATUS_OK(sbd.ParseHeader());
 
   // Seeking to just after a key should return the
@@ -295,14 +295,14 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueSmallBlock) {
 
 // Test seeking to a value in a large block which contains
 // many 'restarts'
-TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
+TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueLargeBlock) {
   Arena arena(1024, 1024*1024); // TODO: move to fixture?
   WriterOptions opts;
-  StringBlockBuilder sbb(&opts);
+  StringPrefixBlockBuilder sbb(&opts);
   const uint kCount = 1000;
   // Insert 'hello 000' through 'hello 999'
   Slice s = CreateStringBlock(&sbb, kCount, "hello %03d");
-  StringBlockDecoder sbd(s);
+  StringPrefixBlockDecoder sbd(s);
   ASSERT_STATUS_OK(sbd.ParseHeader());
 
   // Seeking to just after a key should return the
@@ -373,16 +373,16 @@ TEST_F(TestEncoding, TestStringBlockBuilderSeekByValueLargeBlock) {
 }
 
 
-TEST_F(TestEncoding, TestStringBlockBuilderRoundTrip) {
+TEST_F(TestEncoding, TestStringPrefixBlockBuilderRoundTrip) {
   WriterOptions opts;
-  StringBlockBuilder sbb(&opts);
+  StringPrefixBlockBuilder sbb(&opts);
   const uint kCount = 10;
   Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
 
   // the slice should take at least a few bytes per entry
   ASSERT_GT(s.size(), kCount * 2u);
 
-  StringBlockDecoder sbd(s);
+  StringPrefixBlockDecoder sbd(s);
   ASSERT_STATUS_OK(sbd.ParseHeader());
   ASSERT_EQ(kCount, sbd.Count());
   ASSERT_EQ(12345u, sbd.ordinal_pos());

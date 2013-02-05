@@ -111,9 +111,9 @@ public:
 //
 // See AppendGroupVarInt32(...) for details on the varint
 // encoding.
-class IntBlockBuilder : public BlockBuilder {
+class GVIntBlockBuilder : public BlockBuilder {
 public:
-  explicit IntBlockBuilder(const WriterOptions *options);
+  explicit GVIntBlockBuilder(const WriterOptions *options);
 
   int Add(const uint8_t *vals, size_t count, size_t stride);
 
@@ -152,9 +152,9 @@ private:
 
 // Encoding for data blocks of strings.
 // This encodes in a manner similar to LevelDB (prefix coding)
-class StringBlockBuilder : public BlockBuilder {
+class StringPrefixBlockBuilder : public BlockBuilder {
 public:
-  explicit StringBlockBuilder(const WriterOptions *options);
+  explicit StringPrefixBlockBuilder(const WriterOptions *options);
 
   int Add(const uint8_t *vals, size_t count, size_t stride);
 
@@ -260,10 +260,9 @@ public:
 };
 
 // Decoder for UINT32 type, GROUP_VARINT coding
-// TODO: rename?
-class IntBlockDecoder : public BlockDecoder {
+class GVIntBlockDecoder : public BlockDecoder {
 public:
-  explicit IntBlockDecoder(const Slice &slice);
+  explicit GVIntBlockDecoder(const Slice &slice);
 
   Status ParseHeader();
   void SeekToStart() {
@@ -314,9 +313,9 @@ private:
 
 
 // Decoder for STRING type, PREFIX encoding
-class StringBlockDecoder : public BlockDecoder {
+class StringPrefixBlockDecoder : public BlockDecoder {
 public:
-  explicit StringBlockDecoder(const Slice &slice);
+  explicit StringPrefixBlockDecoder(const Slice &slice);
 
   virtual Status ParseHeader();
   virtual void SeekToPositionInBlock(uint pos);
