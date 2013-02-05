@@ -17,7 +17,8 @@ DEFINE_int32(alloc_size, 4, "number of bytes in each allocation");
 
 namespace kudu {
 
-static void AllocateThread(Arena *arena, uint8_t thread_index) {
+template<class ArenaType>
+static void AllocateThread(ArenaType *arena, uint8_t thread_index) {
   std::vector<void *> ptrs;
   ptrs.reserve(FLAGS_allocs_per_thread);
 
@@ -38,6 +39,12 @@ static void AllocateThread(Arena *arena, uint8_t thread_index) {
   }
 }
 
+// Non-templated function to forward to above -- simplifies
+// boost::thread creation
+static void AllocateThreadTSArena(ThreadSafeArena *arena, uint8_t thread_index) {
+  AllocateThread(arena, thread_index);
+}
+
 
 TEST(TestArena, TestSingleThreaded) {
   Arena arena(128, 128);
@@ -50,11 +57,11 @@ TEST(TestArena, TestSingleThreaded) {
 TEST(TestArena, TestMultiThreaded) {
   CHECK(FLAGS_num_threads < 256);
 
-  Arena arena(1024, 1024);
+  ThreadSafeArena arena(1024, 1024);
 
   boost::ptr_vector<boost::thread> threads;
   for (uint8_t i = 0; i < FLAGS_num_threads; i++) {
-    threads.push_back(new boost::thread(AllocateThread, &arena, (uint8_t)i));
+    threads.push_back(new boost::thread(AllocateThreadTSArena, &arena, (uint8_t)i));
   }
 
   BOOST_FOREACH(boost::thread &thr, threads) {
