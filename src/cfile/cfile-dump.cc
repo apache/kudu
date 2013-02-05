@@ -7,6 +7,8 @@
 #include "cfile/cfile_reader.h"
 #include "util/env.h"
 
+DEFINE_bool(print_meta, true, "print the header and footer from the file");
+DEFINE_bool(iterate_rows, true, "iterate each row in the file");
 DEFINE_bool(print_rows, true, "print each row in the file");
 
 namespace kudu {
@@ -62,11 +64,18 @@ void DumpFile(const string &path) {
   CFileReader reader(ReaderOptions(), f, size);
   CHECK_OK(reader.Init());
 
-  scoped_ptr<CFileIterator> it;
-  CHECK_OK(reader.NewIterator(&it));
+  if (FLAGS_print_meta) {
+    cout << "Header:\n" << reader.header().DebugString() << endl;
+    cout << "Footer:\n" << reader.footer().DebugString() << endl;
+  }
 
-  it->SeekToOrdinal(0);
-  DumpIterator(reader, it.get());
+  if (FLAGS_iterate_rows) {
+    scoped_ptr<CFileIterator> it;
+    CHECK_OK(reader.NewIterator(&it));
+
+    CHECK_OK(it->SeekToOrdinal(0));
+    DumpIterator(reader, it.get());
+  }
 }
 
 }
@@ -79,6 +88,10 @@ int main(int argc, char **argv) {
   if (argc != 2) {
     cerr << "usage: " << argv[0] << " <path>" << endl;
     return 1;
+  }
+
+  if (!FLAGS_iterate_rows) {
+    FLAGS_print_rows = false;
   }
 
   kudu::cfile::DumpFile(argv[1]);

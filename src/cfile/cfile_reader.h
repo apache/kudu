@@ -113,6 +113,13 @@ public:
     return type_info_;
   }
 
+  const CFileHeaderPB &header() const {
+    return *CHECK_NOTNULL(header_.get());
+  }
+
+  const CFileFooterPB &footer() const {
+    return *CHECK_NOTNULL(footer_.get());
+  }
 
   // Advanced access to the cfile. This is used by the
   // delta reader code. TODO: think about reorganizing this:
