@@ -54,6 +54,29 @@ inline const uint8_t *DecodeGroupVarInt32(
   src += d_sel + 1;
 
   return src;
+} 
+
+inline void DoExtractM128(__m128i results,
+                          uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d)
+{
+#define SSE_USE_EXTRACT_PS
+#ifdef SSE_USE_EXTRACT_PS
+  // _mm_extract_ps turns into extractps, which is slightly faster
+  // than _mm_extract_epi32 (which turns into pextrd)
+  // Apparently pextrd involves one more micro-op
+  // than extractps.
+  //
+  // A uint32 cfile macro-benchmark is about 3% faster with this code path.
+  *a = _mm_extract_ps((__v4sf)results, 0);
+  *b = _mm_extract_ps((__v4sf)results, 1);
+  *c = _mm_extract_ps((__v4sf)results, 2);
+  *d = _mm_extract_ps((__v4sf)results, 3);
+#else 
+  *a = _mm_extract_epi32(results, 0);
+  *b = _mm_extract_epi32(results, 1);
+  *c = _mm_extract_epi32(results, 2);
+  *d = _mm_extract_epi32(results, 3);
+#endif
 }
 
 // Same as above, but uses SSE so may be faster.
@@ -71,29 +94,15 @@ inline const uint8_t *DecodeGroupVarInt32_SSE(
 
   __m128i results = _mm_shuffle_epi8(data, shuffle_mask);
 
-
   // It would look like the following would be most efficient,
   // since it turns into a single movdqa instruction:
   //   *reinterpret_cast<__m128i *>(ret) = results;
   // (where ret is an aligned array of ints, which the user must pass)
   // but it is actually slower than the below alternatives by a
   // good amount -- even though these result in more instructions.
-  *a = _mm_extract_ps((__v4sf)results, 0);
-  *b = _mm_extract_ps((__v4sf)results, 1);
-  *c = _mm_extract_ps((__v4sf)results, 2);
-  *d = _mm_extract_ps((__v4sf)results, 3);
-
-  // _mm_extract_ps turns into extractps, which is slightly faster
-  // than _mm_extract_epi32 (which turns into pextrd)
-  // Apparently pextrd involves one more micro-op
-  // than extractps
-  /*
-  *a = _mm_extract_epi32(results, 0);
-  *b = _mm_extract_epi32(results, 1);
-  *c = _mm_extract_epi32(results, 2);
-  *d = _mm_extract_epi32(results, 3);
-  */
+  DoExtractM128(results, a, b, c, d);
   src += VARINT_SELECTOR_LENGTHS[sel_byte];
+
   return src;
 }
 
@@ -115,10 +124,7 @@ inline const uint8_t *DecodeGroupVarInt32_SSE_Add(
   __m128i decoded_deltas = _mm_shuffle_epi8(data, shuffle_mask);
   __m128i results = _mm_add_epi32(decoded_deltas, add);
 
-  ret[0] = _mm_extract_ps((__v4sf)results, 0);
-  ret[1] = _mm_extract_ps((__v4sf)results, 1);
-  ret[2] = _mm_extract_ps((__v4sf)results, 2);
-  ret[3] = _mm_extract_ps((__v4sf)results, 3);
+  DoExtractM128(results, &ret[0], &ret[1], &ret[2], &ret[3]);
 
   src += VARINT_SELECTOR_LENGTHS[sel_byte];
   return src;
