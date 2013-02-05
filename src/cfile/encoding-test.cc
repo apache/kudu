@@ -44,6 +44,215 @@ protected:
     ASSERT_EQ(1, n);
   }
 
+  // Insert a given number of strings into the provided
+  // StringPrefixBlockBuilder.
+  template<class BuilderType>
+  static Slice CreateStringBlock(BuilderType *sbb,
+                                 int num_items,
+                                 const char *fmt_str) {
+    boost::ptr_vector<string> to_insert;
+    std::vector<Slice> slices;
+
+    for (uint i = 0; i < num_items; i++) {
+      string *val = new string(StringPrintf(fmt_str, i));
+      to_insert.push_back(val);
+      slices.push_back(Slice(*val));
+    }
+
+
+    int rem = slices.size();
+    Slice *ptr = &slices[0];
+    while (rem > 0) {
+      int added = sbb->Add(reinterpret_cast<const uint8_t *>(ptr),
+                           rem, sizeof(Slice));
+      CHECK(added > 0);
+      rem -= added;
+      ptr += added;
+    }
+
+    CHECK_EQ(slices.size(), sbb->Count());
+    return sbb->Finish(12345L);
+  }
+
+  template<class BuilderType, class DecoderType>
+  void TestStringSeekByValueSmallBlock() {
+    WriterOptions opts;
+    BuilderType sbb(&opts);
+    // Insert "hello 0" through "hello 9"
+    const uint kCount = 10;
+    Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+    DecoderType sbd(s);
+    ASSERT_STATUS_OK(sbd.ParseHeader());
+
+    // Seeking to just after a key should return the
+    // next key ('hello 4x' falls between 'hello 4' and 'hello 5')
+    Slice q = "hello 4x";
+    bool exact;
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_FALSE(exact);
+
+    Slice ret;
+    ASSERT_EQ(12345 + 5u, sbd.ordinal_pos());
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 5"), ret.ToString());
+
+    sbd.SeekToPositionInBlock(0);
+
+    // Seeking to an exact key should return that key
+    q = "hello 4";
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_EQ(12345 + 4u, sbd.ordinal_pos());
+    ASSERT_TRUE(exact);
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 4"), ret.ToString());
+
+    // Seeking to before the first key should return first key
+    q = "hello";
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_EQ(12345, sbd.ordinal_pos());
+    ASSERT_FALSE(exact);
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 0"), ret.ToString());
+
+    // Seeking after the last key should return not found
+    q = "zzzz";
+    ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q, &exact).IsNotFound());
+
+    // Seeking to the last key should succeed
+    q = "hello 9";
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_EQ(12345 + 9u, sbd.ordinal_pos());
+    ASSERT_TRUE(exact);
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 9"), ret.ToString());
+  }
+
+  template<class BuilderType, class DecoderType>
+  void TestStringSeekByValueLargeBlock() {
+    Arena arena(1024, 1024*1024); // TODO: move to fixture?
+    WriterOptions opts;
+    StringPrefixBlockBuilder sbb(&opts);
+    const uint kCount = 1000;
+    // Insert 'hello 000' through 'hello 999'
+    Slice s = CreateStringBlock(&sbb, kCount, "hello %03d");
+    StringPrefixBlockDecoder sbd(s);
+    ASSERT_STATUS_OK(sbd.ParseHeader());
+
+    // Seeking to just after a key should return the
+    // next key ('hello 444x' falls between 'hello 444' and 'hello 445')
+    Slice q = "hello 444x";
+    bool exact;
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_FALSE(exact);
+
+    Slice ret;
+    ASSERT_EQ(12345 + 445u, sbd.ordinal_pos());
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 445"), ret.ToString());
+
+    sbd.SeekToPositionInBlock(0);
+
+    // Seeking to an exact key should return that key
+    q = "hello 004";
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    EXPECT_TRUE(exact);
+    EXPECT_EQ(12345 + 4u, sbd.ordinal_pos());
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 004"), ret.ToString());
+
+    // Seeking to before the first key should return first key
+    q = "hello";
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    EXPECT_FALSE(exact);
+    EXPECT_EQ(12345, sbd.ordinal_pos());
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 000"), ret.ToString());
+
+    // Seeking after the last key should return not found
+    q = "zzzz";
+    ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q, &exact).IsNotFound());
+
+    // Seeking to the last key should succeed
+    q = "hello 999";
+    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    EXPECT_TRUE(exact);
+    EXPECT_EQ(12345 + 999u, sbd.ordinal_pos());
+    CopyOne<STRING>(&sbd, &ret);
+    ASSERT_EQ(string("hello 999"), ret.ToString());
+
+    // Randomized seek
+    char target[20];
+    char before_target[20];
+    for (int i = 0; i < 1000; i++) {
+      int ord = random() % kCount;
+      int len = snprintf(target, sizeof(target), "hello %03d", ord);
+      q = Slice(target, len);
+
+      ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+      EXPECT_TRUE(exact);
+      EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
+      CopyOne<STRING>(&sbd, &ret);
+      ASSERT_EQ(string(target), ret.ToString());
+
+      // Seek before this key
+      len = snprintf(before_target, sizeof(target), "hello %03d.before", ord-1);
+      q = Slice(before_target, len);
+      ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+      EXPECT_FALSE(exact);
+      EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
+      CopyOne<STRING>(&sbd, &ret);
+      ASSERT_EQ(string(target), ret.ToString());
+    }
+  }
+
+  template<class BuilderType, class DecoderType>
+  void TestStringBlockRoundTrip() {
+    WriterOptions opts;
+    BuilderType sbb(&opts);
+    const uint kCount = 10;
+    Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+
+    // the slice should take at least a few bytes per entry
+    ASSERT_GT(s.size(), kCount * 2u);
+
+    DecoderType sbd(s);
+    ASSERT_STATUS_OK(sbd.ParseHeader());
+    ASSERT_EQ(kCount, sbd.Count());
+    ASSERT_EQ(12345u, sbd.ordinal_pos());
+    ASSERT_TRUE(sbd.HasNext());
+
+    // Iterate one by one through data, verifying that it matches
+    // what we put in.
+    for (uint i = 0; i < kCount; i++) {
+      ASSERT_EQ(12345u + i, sbd.ordinal_pos());
+      ASSERT_TRUE(sbd.HasNext()) << "Failed on iter " << i;
+      Slice s;
+      CopyOne<STRING>(&sbd, &s);
+      string expected = StringPrintf("hello %d", i);
+      ASSERT_EQ(expected, s.ToString());
+    }
+    ASSERT_FALSE(sbd.HasNext());
+
+    // Now iterate backwards using positional seeking
+    for (int i = kCount - 1; i >= 0; i--) {
+      sbd.SeekToPositionInBlock(i);
+      ASSERT_EQ(12345u + i, sbd.ordinal_pos());
+    }
+
+    // Try to request a bunch of data in one go
+    ScopedColumnBlock<STRING> cb(kCount);
+    sbd.SeekToPositionInBlock(0);
+    size_t n = kCount;
+    ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cb));
+    ASSERT_EQ(kCount, n);
+    ASSERT_FALSE(sbd.HasNext());
+
+    for (uint i = 0; i < kCount; i++) {
+      string expected = StringPrintf("hello %d", i);
+      ASSERT_EQ(expected, cb[i].ToString());
+    }
+  }
+
   Arena arena_;
 };
 
@@ -135,216 +344,23 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   }
 }
 
-// Insert a given number of strings into the provided
-// StringPrefixBlockBuilder.
-static Slice CreateStringBlock(StringPrefixBlockBuilder *sbb,
-                               int num_items,
-                               const char *fmt_str) {
-  boost::ptr_vector<string> to_insert;
-  std::vector<Slice> slices;
-
-  for (uint i = 0; i < num_items; i++) {
-    string *val = new string(StringPrintf(fmt_str, i));
-    to_insert.push_back(val);
-    slices.push_back(Slice(*val));
-  }
-
-
-  int rem = slices.size();
-  Slice *ptr = &slices[0];
-  while (rem > 0) {
-    int added = sbb->Add(reinterpret_cast<const uint8_t *>(ptr),
-                         rem, sizeof(Slice));
-    CHECK(added > 0);
-    rem -= added;
-    ptr += added;
-  }
-
-  CHECK_EQ(slices.size(), sbb->Count());
-  return sbb->Finish(12345L);
-}
-
 // Test seeking to a value in a small block.
 // Regression test for a bug seen in development where this would
 // infinite loop when there are no 'restarts' in a given block.
 TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueSmallBlock) {
-  WriterOptions opts;
-  StringPrefixBlockBuilder sbb(&opts);
-  // Insert "hello 0" through "hello 9"
-  const uint kCount = 10;
-  Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
-  StringPrefixBlockDecoder sbd(s);
-  ASSERT_STATUS_OK(sbd.ParseHeader());
-
-  // Seeking to just after a key should return the
-  // next key ('hello 4x' falls between 'hello 4' and 'hello 5')
-  Slice q = "hello 4x";
-  bool exact;
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  ASSERT_FALSE(exact);
-
-  Slice ret;
-  ASSERT_EQ(12345 + 5u, sbd.ordinal_pos());
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 5"), ret.ToString());
-
-  sbd.SeekToPositionInBlock(0);
-
-  // Seeking to an exact key should return that key
-  q = "hello 4";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  ASSERT_EQ(12345 + 4u, sbd.ordinal_pos());
-  ASSERT_TRUE(exact);
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 4"), ret.ToString());
-
-  // Seeking to before the first key should return first key
-  q = "hello";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  ASSERT_EQ(12345, sbd.ordinal_pos());
-  ASSERT_FALSE(exact);
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 0"), ret.ToString());
-
-  // Seeking after the last key should return not found
-  q = "zzzz";
-  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q, &exact).IsNotFound());
-
-  // Seeking to the last key should succeed
-  q = "hello 9";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  ASSERT_EQ(12345 + 9u, sbd.ordinal_pos());
-  ASSERT_TRUE(exact);
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 9"), ret.ToString());
+  TestStringSeekByValueSmallBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
 
 // Test seeking to a value in a large block which contains
 // many 'restarts'
 TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueLargeBlock) {
-  Arena arena(1024, 1024*1024); // TODO: move to fixture?
-  WriterOptions opts;
-  StringPrefixBlockBuilder sbb(&opts);
-  const uint kCount = 1000;
-  // Insert 'hello 000' through 'hello 999'
-  Slice s = CreateStringBlock(&sbb, kCount, "hello %03d");
-  StringPrefixBlockDecoder sbd(s);
-  ASSERT_STATUS_OK(sbd.ParseHeader());
-
-  // Seeking to just after a key should return the
-  // next key ('hello 444x' falls between 'hello 444' and 'hello 445')
-  Slice q = "hello 444x";
-  bool exact;
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  ASSERT_FALSE(exact);
-
-  Slice ret;
-  ASSERT_EQ(12345 + 445u, sbd.ordinal_pos());
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 445"), ret.ToString());
-
-  sbd.SeekToPositionInBlock(0);
-
-  // Seeking to an exact key should return that key
-  q = "hello 004";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  EXPECT_TRUE(exact);
-  EXPECT_EQ(12345 + 4u, sbd.ordinal_pos());
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 004"), ret.ToString());
-
-  // Seeking to before the first key should return first key
-  q = "hello";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  EXPECT_FALSE(exact);
-  EXPECT_EQ(12345, sbd.ordinal_pos());
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 000"), ret.ToString());
-
-  // Seeking after the last key should return not found
-  q = "zzzz";
-  ASSERT_TRUE(sbd.SeekAtOrAfterValue(&q, &exact).IsNotFound());
-
-  // Seeking to the last key should succeed
-  q = "hello 999";
-  ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-  EXPECT_TRUE(exact);
-  EXPECT_EQ(12345 + 999u, sbd.ordinal_pos());
-  CopyOne<STRING>(&sbd, &ret);
-  ASSERT_EQ(string("hello 999"), ret.ToString());
-
-  // Randomized seek
-  char target[20];
-  char before_target[20];
-  for (int i = 0; i < 1000; i++) {
-    int ord = random() % kCount;
-    int len = snprintf(target, sizeof(target), "hello %03d", ord);
-    q = Slice(target, len);
-
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-    EXPECT_TRUE(exact);
-    EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
-    CopyOne<STRING>(&sbd, &ret);
-    ASSERT_EQ(string(target), ret.ToString());
-
-    // Seek before this key
-    len = snprintf(before_target, sizeof(target), "hello %03d.before", ord-1);
-    q = Slice(before_target, len);
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-    EXPECT_FALSE(exact);
-    EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
-    CopyOne<STRING>(&sbd, &ret);
-    ASSERT_EQ(string(target), ret.ToString());
-  }
+  TestStringSeekByValueLargeBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
 
 TEST_F(TestEncoding, TestStringPrefixBlockBuilderRoundTrip) {
-  WriterOptions opts;
-  StringPrefixBlockBuilder sbb(&opts);
-  const uint kCount = 10;
-  Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
-
-  // the slice should take at least a few bytes per entry
-  ASSERT_GT(s.size(), kCount * 2u);
-
-  StringPrefixBlockDecoder sbd(s);
-  ASSERT_STATUS_OK(sbd.ParseHeader());
-  ASSERT_EQ(kCount, sbd.Count());
-  ASSERT_EQ(12345u, sbd.ordinal_pos());
-  ASSERT_TRUE(sbd.HasNext());
-
-  // Iterate one by one through data, verifying that it matches
-  // what we put in.
-  for (uint i = 0; i < kCount; i++) {
-    ASSERT_EQ(12345u + i, sbd.ordinal_pos());
-    ASSERT_TRUE(sbd.HasNext()) << "Failed on iter " << i;
-    Slice s;
-    CopyOne<STRING>(&sbd, &s);
-    string expected = StringPrintf("hello %d", i);
-    ASSERT_EQ(expected, s.ToString());
-  }
-  ASSERT_FALSE(sbd.HasNext());
-
-  // Now iterate backwards using positional seeking
-  for (int i = kCount - 1; i >= 0; i--) {
-    sbd.SeekToPositionInBlock(i);
-    ASSERT_EQ(12345u + i, sbd.ordinal_pos());
-  }
-
-  // Try to request a bunch of data in one go
-  ScopedColumnBlock<STRING> cb(kCount);
-  sbd.SeekToPositionInBlock(0);
-  size_t n = kCount;
-  ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cb));
-  ASSERT_EQ(kCount, n);
-  ASSERT_FALSE(sbd.HasNext());
-
-  for (uint i = 0; i < kCount; i++) {
-    string expected = StringPrintf("hello %d", i);
-    ASSERT_EQ(expected, cb[i].ToString());
-  }
+  TestStringBlockRoundTrip<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
 
