@@ -122,7 +122,7 @@ TEST(TestBloomFile, TestWriteAndRead) {
   VerifyBloomFile(env.get(), path);
 }
 
-#ifndef NDEBUG
+#ifdef NDEBUG
 TEST(TestBloomFile, Benchmark) {
   scoped_ptr<Env> env(NewMemEnv(Env::Default()));
 
