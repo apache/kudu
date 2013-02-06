@@ -136,7 +136,7 @@ class StringKeyEncoding : public KeyEncodingStaticForwarders<StringKeyEncoding> 
 public:
   void StaticEncode(const void *key, faststring *buf) const {
     const Slice *s = reinterpret_cast<const Slice *>(key);
-    InlinePutFixed32(buf, s->size());
+    InlinePutVarint32(buf, s->size());
     buf->append(s->data(), s->size());
   }
 
@@ -150,8 +150,12 @@ public:
                            void *retptr) const {
     Slice *ret = reinterpret_cast<Slice *>(retptr);
 
-    uint32_t len = DecodeFixed32(encoded_ptr);
-    const char *data_start = encoded_ptr + 4;
+    uint32_t len;
+    const char *data_start = GetVarint32Ptr(encoded_ptr, limit, &len);
+    if (data_start == NULL) {
+      // bad varint
+      return NULL;
+    }
 
     if (data_start + len > limit) {
       // length extends past end of valid area
