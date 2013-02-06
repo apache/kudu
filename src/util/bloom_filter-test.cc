@@ -31,7 +31,8 @@ static void CheckRandomKeys(int random_seed, int n_keys, const BloomFilter &bf) 
 
 TEST(TestBloomFilter, TestInsertAndProbe) {
   int n_keys = 2000;
-  BloomFilterBuilder bfb(n_keys, 0.01);
+  BloomFilterBuilder bfb(
+    BloomFilterSizing::ByCountAndFPRate(n_keys, 0.01));
 
   // Check that the desired false positive rate is achieved.
   double expected_fp_rate = bfb.false_positive_rate();

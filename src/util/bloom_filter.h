@@ -51,13 +51,35 @@ private:
   uint32_t h_2_;
 };
 
+class BloomFilterSizing {
+public:
+  // Size the bloom filter by a fixed size and false positive rate.
+  //
+  // Picks the number of entries to achieve the above.
+  static BloomFilterSizing BySizeAndFPRate(size_t n_bytes, double fp_rate);
+  static BloomFilterSizing ByCountAndFPRate(size_t expected_count, double fp_rate);
+
+  size_t n_bytes() const { return n_bytes_; }
+  size_t expected_count() const { return expected_count_; }
+
+private:
+  BloomFilterSizing(size_t n_bytes, size_t expected_count) :
+    n_bytes_(n_bytes),
+    expected_count_(expected_count)
+  {}
+
+  size_t n_bytes_;
+  size_t expected_count_;
+  
+};
+
 
 // Builder for a BloomFilter structure.
 class BloomFilterBuilder : boost::noncopyable {
 public:
-  // Create a bloom filter which expects to be able to hold the given
-  // number of keys with the approximately the given false positive rate.
-  BloomFilterBuilder(size_t expected_count, double fp_rate);
+  // Create a bloom filter.
+  // See BloomFilterSizing static methods to specify this argument.
+  BloomFilterBuilder(const BloomFilterSizing &sizing);
 
   // Clear all entries.
   void Clear();
@@ -95,8 +117,9 @@ private:
   size_t n_hashes_;
 };
 
+
 // Wrapper around a byte array for reading it as a bloom filter.
-class BloomFilter : boost::noncopyable {
+class BloomFilter {
 public:
   BloomFilter(const Slice &data, size_t n_hashes);
 
