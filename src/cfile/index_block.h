@@ -58,14 +58,49 @@ public:
 };
 
 
-class UInt32KeyEncoding : public KeyEncoding {
+// Static polymorphism pattern:
+// For performance in the templatized IndexReader code, we want to avod
+// virtual calls for Compare and Decode. But, on the encoding side, we currently
+// depend on vcalls. So, this allows the subclasses to implement the static methods
+// and this conforms them to the virtual interface.
+template<class SUBCLASS>
+class KeyEncodingStaticForwarders : public KeyEncoding {
 public:
   void Encode(const void *key, faststring *buf) const {
-    InlinePutVarint32(buf, Deref(key));
+    derived()->StaticEncode(key, buf);
+  }
+
+  const char *Decode(const char *encoded_ptr, const char *limit,
+              void *retptr) const {
+    return derived()->StaticDecode(encoded_ptr, limit, retptr);
+  }
+
+  const char *SkipKey(const char *encoded_ptr, const char *limit) const {
+    return derived()->StaticSkipKey(encoded_ptr, limit);
   }
 
   int Compare(const char *encoded_ptr, const char *limit,
               const void *cmp_against_ptr) const {
+    return derived()->StaticCompare(encoded_ptr, limit, cmp_against_ptr);
+  }
+
+private:
+  SUBCLASS *derived() {
+    return static_cast<SUBCLASS *>(this);
+  }
+  const SUBCLASS *derived() const {
+    return static_cast<const SUBCLASS *>(this);
+  }
+};
+
+class UInt32KeyEncoding : public KeyEncodingStaticForwarders<UInt32KeyEncoding> {
+public:
+  void StaticEncode(const void *key, faststring *buf) const {
+    InlinePutVarint32(buf, Deref(key));
+  }
+
+  int StaticCompare(const char *encoded_ptr, const char *limit,
+                    const void *cmp_against_ptr) const {
     uint32_t cmp_against = Deref(cmp_against_ptr);
 
     uint32_t result;
@@ -80,13 +115,13 @@ public:
     }
   }
 
-  const char *Decode(const char *encoded_ptr, const char *limit,
+  const char *StaticDecode(const char *encoded_ptr, const char *limit,
               void *retptr) const {
     uint32_t *ret = reinterpret_cast<uint32_t *>(retptr);
     return GetVarint32Ptr(encoded_ptr, limit, ret);
   }
 
-  const char *SkipKey(const char *encoded_ptr, const char *limit) const {
+  const char *StaticSkipKey(const char *encoded_ptr, const char *limit) const {
     uint32_t unused;
     return Decode(encoded_ptr, limit, &unused);
   }
@@ -97,11 +132,11 @@ private:
   }
 };
 
-class StringKeyEncoding : public KeyEncoding {
+class StringKeyEncoding : public KeyEncodingStaticForwarders<StringKeyEncoding> {
 public:
-  void Encode(const void *key, faststring *buf) const {
+  void StaticEncode(const void *key, faststring *buf) const {
     const Slice *s = reinterpret_cast<const Slice *>(key);
-    InlinePutVarint32(buf, s->size());
+    InlinePutFixed32(buf, s->size());
     buf->append(s->data(), s->size());
   }
 
@@ -111,16 +146,12 @@ public:
   // NOTE: This function does not copy any data. The slice which
   // is returned points into some section of encoded_ptr,
   // and thus is only valid as long as that data is.
-  const char *Decode(const char *encoded_ptr, const char *limit,
-              void *retptr) const {
+  const char *StaticDecode(const char *encoded_ptr, const char *limit,
+                           void *retptr) const {
     Slice *ret = reinterpret_cast<Slice *>(retptr);
 
-    uint32_t len;
-    const char *data_start = GetVarint32Ptr(encoded_ptr, limit, &len);
-    if (data_start == NULL) {
-      // bad varint
-      return NULL;
-    }
+    uint32_t len = DecodeFixed32(encoded_ptr);
+    const char *data_start = encoded_ptr + 4;
 
     if (data_start + len > limit) {
       // length extends past end of valid area
@@ -132,7 +163,7 @@ public:
   }
 
 
-  int Compare(const char *encoded_ptr, const char *limit,
+  int StaticCompare(const char *encoded_ptr, const char *limit,
               const void *cmp_against_ptr) const {
     DCHECK(cmp_against_ptr);
     DCHECK(encoded_ptr);
@@ -140,13 +171,15 @@ public:
     const Slice *cmp_against = reinterpret_cast<const Slice *>(cmp_against_ptr);
 
     Slice this_slice;
-    CHECK_NOTNULL(Decode(encoded_ptr, limit, &this_slice));
+    if (PREDICT_FALSE(StaticDecode(encoded_ptr, limit, &this_slice) == NULL)) {
+      LOG(WARNING) << "Invalid data in block!";
+      return 0;
+    }
 
     return this_slice.compare(*cmp_against);
   }
 
-
-  const char *SkipKey(const char *encoded_ptr, const char *limit) const {
+  const char *StaticSkipKey(const char *encoded_ptr, const char *limit) const {
     Slice unused;
     return Decode(encoded_ptr, limit, &unused);
   }
@@ -307,11 +340,11 @@ private:
   int CompareKey(int idx_in_block, const KeyType &search_key) const {
     const char *key_ptr, *limit;
     GetKeyPointer(idx_in_block, &key_ptr, &limit);
-    return encoding_.Compare(key_ptr, limit, &search_key);
+    return encoding_.StaticCompare(key_ptr, limit, &search_key);
   }
 
   Status ReadEntry(size_t idx, KeyType *key, BlockPointer *block_ptr) const {
-    if (idx >= Count()) {
+    if (idx >= trailer_.num_entries()) {
       return Status::NotFound("Invalid index");
     }
 
@@ -321,7 +354,7 @@ private:
     const char *ptr, *limit;
     GetKeyPointer(idx, &ptr, &limit);
 
-    ptr = encoding_.Decode(ptr, limit, key);
+    ptr = encoding_.StaticDecode(ptr, limit, key);
     if (ptr == NULL) {
       return Status::Corruption("Invalid key in index");
     }
@@ -342,7 +375,7 @@ private:
 
     int next_idx = idx_in_block + 1;
 
-    if (PREDICT_FALSE(next_idx >= Count())) {
+    if (PREDICT_FALSE(next_idx >= trailer_.num_entries())) {
       DCHECK(next_idx == Count()) << "Bad index: " << idx_in_block
                                   << " Count: " << Count();
       // last key in block: limit is the beginning of the offsets array
