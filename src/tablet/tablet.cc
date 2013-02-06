@@ -181,8 +181,7 @@ Status Tablet::Flush() {
     }
 
     // Mark the memstore layer as locked, so compactions won't consider it
-    // for inclusion. We don't need to ever unlock it, since threads only
-    // trylock on this, and we'll dispose it when the flush is over.
+    // for inclusion.
     old_ms_lock.swap(boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
     CHECK(old_ms_lock.owns_lock());
     layers_.push_back(old_ms);
@@ -281,6 +280,11 @@ Status Tablet::Flush() {
   // up when the last iterator is destructed.
   {
     boost::lock_guard<percpu_rwlock> lock(component_lock_);
+
+    // unlock these now. Although no other thread should ever see them,
+    // we trigger pthread assertions in DEBUG mode if we don't unlock.
+    old_ms_lock.unlock();
+    partial_layer_lock.unlock();
     layers_.back().reset(new_layer);
   }
   return Status::OK();
@@ -307,39 +311,39 @@ Status Tablet::Compact()
 
   LOG(INFO) << "Compaction: entering stage 1 (collecting layers)";
 
+  uint64_t accumulated_size = 0;
+  vector<shared_ptr<boost::mutex::scoped_try_lock> > compact_locks;
+
   // Step 1. Capture the layers to be merged
   {
     boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
     tmp_layers.assign(layers_.begin(), layers_.end());
-  }
 
-  // Sort the layers by their on-disk size
-  std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
+    // Sort the layers by their on-disk size
+    std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
 
-  vector<shared_ptr<boost::mutex::scoped_try_lock> > compact_locks;
+    BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
+      uint64_t this_size = l->EstimateOnDiskSize();
+      if (input_layers.size() < 2 || this_size < accumulated_size * 2) {
+        // Grab the compact_flush_lock: this prevents any other concurrent
+        // compaction from selecting this same layer, and also ensures that
+        // we don't select a layer which is currently in the middle of being
+        // flushed.
+        shared_ptr<boost::mutex::scoped_try_lock> lock(
+          new boost::mutex::scoped_try_lock(*l->compact_flush_lock()));
+        if (!lock->owns_lock()) {
+          LOG(INFO) << "Unable to select " << l->ToString() << " for compaction: it is busy";
+          continue;
+        }
 
-  uint64_t accumulated_size = 0;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
-    // Grab the compact_flush_lock: this prevents any other concurrent
-    // compaction from selecting this same layer, and also ensures that
-    // we don't select a layer which is currently in the middle of being
-    // flushed.
-    shared_ptr<boost::mutex::scoped_try_lock> lock(
-      new boost::mutex::scoped_try_lock(*l->compact_flush_lock()));
-    if (!lock->owns_lock()) {
-      LOG(INFO) << "Unable to select " << l->ToString() << " for compaction: it is busy";
-      continue;
-    }
-    // Push the lock on our scoped list, so we unlock when done.
-    compact_locks.push_back(lock);
-
-    uint64_t this_size = l->EstimateOnDiskSize();
-    if (input_layers.size() < 2 || this_size < accumulated_size * 2) {
-      accumulated_size += this_size;
-      input_layers.push_back(l);
-    } else {
-      break;
+        // Push the lock on our scoped list, so we unlock when done.
+        compact_locks.push_back(lock);
+        accumulated_size += this_size;
+        input_layers.push_back(l);
+      } else {
+        break;
+      }
     }
   }
 
