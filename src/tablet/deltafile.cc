@@ -6,7 +6,7 @@
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
-#include "cfile/string_prefix_block.h"
+#include "cfile/string_plain_block.h"
 #include "tablet/deltafile.h"
 #include "util/coding-inl.h"
 #include "util/env.h"
@@ -28,7 +28,7 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
 {
   cfile::WriterOptions opts;
   opts.write_validx = true;
-  writer_.reset(new cfile::Writer(opts, STRING, cfile::PREFIX, file));
+  writer_.reset(new cfile::Writer(opts, STRING, cfile::PLAIN, file));
 }
 
 
@@ -131,7 +131,7 @@ Status DeltaFileReader::ApplyUpdates(
   // Successful seek - process deltas until we have gotten
   // all that apply to this range of rows.
   // TODO: this is a very inefficient impl based around reusing
-  // StringPrefixBlockDecoder. Instead we should have a Delta-specific
+  // StringPlainBlockDecoder. Instead we should have a Delta-specific
   // format which can easily skip if a column isn't updated, etc.
   // - maybe even its own file format outside of cfile, so the index
   // structure can carry filter information on columns, etc.
@@ -143,7 +143,7 @@ Status DeltaFileReader::ApplyUpdates(
 
     RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data));
 
-    cfile::StringPrefixBlockDecoder sbd(dblk_data.slice());
+    cfile::StringPlainBlockDecoder sbd(dblk_data.slice());
     RETURN_NOT_OK(sbd.ParseHeader());
 
     bool exact;

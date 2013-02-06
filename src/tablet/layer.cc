@@ -399,7 +399,8 @@ Status Layer::FlushDeltas() {
   DeltaFileReader *dfr;
   Status s = FlushDMS(*old_dms, &dfr);
   CHECK(s.ok())
-    << "TODO: need to figure out what to do with error handling "
+    << "Failed to flush DMS: " << s.ToString()
+    << "\nTODO: need to figure out what to do with error handling "
     << "if this fails -- we end up with a DeltaMemStore permanently "
     << "in the tracker list. For now, abort.";
 
