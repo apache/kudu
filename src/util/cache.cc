@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 #include "util/cache.h"
+#include "util/pthread_spinlock.h"
 
 namespace kudu {
 
@@ -19,7 +20,7 @@ Cache::~Cache() {
 
 namespace {
 
-typedef boost::detail::spinlock MutexType;
+typedef PThreadSpinLock MutexType;
 
 // LRU cache implementation
 
