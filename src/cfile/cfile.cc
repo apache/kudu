@@ -216,49 +216,84 @@ Status Writer::FinishCurDataBlock() {
   // The current data block is full, need to push it
   // into the file, and add to index
   Slice data = data_block_->Finish((uint32_t)first_elem_ord);
-  uint64_t inserted_off;
   VLOG(2) << "estimated size=" << data_block_->EstimateEncodedSize()
           << " actual=" << data.size();
 
-  Status s = AddBlock(data, &inserted_off, "data");
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to append block to file";
-    return s;
-  }
-
-  BlockPointer ptr(inserted_off, data.size());
-
-  // Now add to the index blocks
-  if (posidx_builder_ != NULL) {
-    RETURN_NOT_OK(posidx_builder_->Append(&first_elem_ord, ptr));
-  }
+  char key_tmp_space[typeinfo_.size()];
 
   if (validx_builder_ != NULL) {
-    // Allocate a single datum on the stack.
-    char tmp[typeinfo_.size()];
-
-    RETURN_NOT_OK(data_block_->GetFirstKey(tmp));
+    // If we're building an index, we need to copy the first
+    // key from the block locally, so we can write it into that index.
+    RETURN_NOT_OK(data_block_->GetFirstKey(key_tmp_space));
     VLOG(1) << "Appending validx entry\n" <<
-      kudu::HexDump(Slice(tmp, typeinfo_.size()));
-    s = validx_builder_->Append(tmp, ptr);
+      kudu::HexDump(Slice(key_tmp_space, typeinfo_.size()));
   }
+
+  vector<Slice> v;
+  v.push_back(data);
+  Status s = AppendRawBlock(v, first_elem_ord,
+                            reinterpret_cast<const void *>(key_tmp_space),
+                            "data block");
 
   data_block_->Reset();
 
   return s;
 }
 
-Status Writer::AddBlock(const Slice &data, uint64_t *offset_out,
+Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
+                              size_t ordinal_pos,
+                              const void *validx_key,
+                              const char *name_for_log) {
+  BlockPointer ptr;
+  Status s = AddBlock(data_slices, &ptr, "data");
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to append block to file: " << s.ToString();
+    return s;
+  }
+
+
+  // Now add to the index blocks
+  if (posidx_builder_ != NULL) {
+    RETURN_NOT_OK(posidx_builder_->Append(&ordinal_pos, ptr));
+  }
+
+  if (validx_builder_ != NULL) {
+    CHECK(validx_key != NULL) <<
+      "must pass a  key for raw block if validx is configured";
+    VLOG(1) << "Appending validx entry\n" <<
+      kudu::HexDump(Slice(reinterpret_cast<const char *>(validx_key), typeinfo_.size()));
+    s = validx_builder_->Append(validx_key, ptr);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to append to value index: " << s.ToString();
+      return s;
+    }
+  }
+
+  return s;
+}
+
+Status Writer::AddBlock(const vector<Slice> &data_slices,
+                        BlockPointer *block_ptr,
                         const char *name_for_log) {
-  *offset_out = off_;
-  Status s = file_->Append(data);
-  if (s.ok()) {
-    VLOG(1) << "Appended block " << name_for_log
-            << " with " << data.size() << " bytes at " << off_;
-    VLOG(2) << "trace:\n" << kudu::GetStackTrace();
+  uint64_t start_offset = off_;
+
+  BOOST_FOREACH(const Slice &data, data_slices) {
+    Status s = file_->Append(data);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to append slice of size "
+                   << data.size() << " at offset " << off_
+                   << ": " << s.ToString();
+      return s;
+    }
     off_ += data.size();
   }
-  return s;
+
+  uint64_t total_size = off_ - start_offset;
+
+  *block_ptr = BlockPointer(start_offset, total_size);
+  VLOG(1) << "Appended " << name_for_log
+          << " with " << total_size << " bytes at " << block_ptr->size();
+  return Status::OK();
 }
 
 Writer::~Writer() {

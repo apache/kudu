@@ -93,14 +93,27 @@ public:
   // Append a set of values to the file.
   Status AppendEntries(const void *entries, size_t count, size_t stride);
 
+  // Append a raw block to the file, adding it to the various indexes.
+  //
+  // The Slices in 'data_slices' are concatenated to form the block.
+  //
+  // validx_key may be NULL if this file writer has not been configured with
+  // value indexing.
+  Status AppendRawBlock(const vector<Slice> &data_slices,
+                        size_t ordinal_pos,
+                        const void *validx_key,
+                        const char *name_for_log);
+
   ~Writer();
 
 private:
   friend class IndexTreeBuilder;
 
-  // Append the given block into the file. Returns
-  // the offset in the file at which it was stored
-  Status AddBlock(const Slice &data, uint64_t *offset_out,
+  // Append the given block into the file.
+  //
+  // Sets *block_ptr to correspond to the newly inserted block.
+  Status AddBlock(const vector<Slice> &data_slices,
+                  BlockPointer *block_ptr,
                   const char *name_for_log);
 
 

@@ -125,15 +125,15 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 Status IndexTreeBuilder::FinishBlock(size_t level, BlockPointer *written) {
   IndexBlockBuilder &idx_block = idx_blocks_[level];
   Slice data = idx_block.Finish();
-  uint64_t inserted_off;
-  Status s = writer_->AddBlock(data, &inserted_off, "idx");
+
+  vector<Slice> v;
+  v.push_back(data);
+  Status s = writer_->AddBlock(v, written, "index block");
   if (!s.ok()) {
     LOG(ERROR) << "Unable to append level-" << level << " index "
                << "block to file";
     return s;
   }
-
-  *written = BlockPointer(inserted_off, data.size());
 
   // Reset this level block.
   idx_block.Reset();
