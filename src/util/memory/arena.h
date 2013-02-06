@@ -94,6 +94,22 @@ class ArenaBase {
   // Same as above.
   void * AddBytes(const void *data, size_t len);
 
+  // Handy wrapper for placement-new
+  template<class T>
+  T *NewObject();
+
+  // Handy wrapper for placement-new
+  template<class T, typename A1>
+  T *NewObject(A1 arg1);
+
+  // Handy wrapper for placement-new
+  template<class T, typename A1, typename A2>
+  T *NewObject(A1 arg1, A2 arg2);
+
+  // Handy wrapper for placement-new
+  template<class T, typename A1, typename A2, typename A3>
+  T *NewObject(A1 arg1, A2 arg2, A3 arg3);
+
   // Relocate the given Slice into the arena, setting 'dst' and
   // returning true if successful.
   // It is legal for 'dst' to be a pointer to 'src'.
@@ -312,6 +328,41 @@ inline bool ArenaBase<THREADSAFE>::RelocateSlice(const Slice &src, Slice *dst) {
                src.size());
   return true;
 }
+
+
+template<bool THREADSAFE>
+template<class T>
+inline T *ArenaBase<THREADSAFE>::NewObject() {
+  void *mem = AllocateBytes(sizeof(T));
+  if (mem == NULL) throw std::bad_alloc();
+  return new (mem) T();
+}
+
+template<bool THREADSAFE>
+template<class T, typename A1>
+inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1) {
+  void *mem = AllocateBytes(sizeof(T));
+  if (mem == NULL) throw std::bad_alloc();
+  return new (mem) T(arg1);
+}
+
+
+template<bool THREADSAFE>
+template<class T, typename A1, typename A2>
+inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1, A2 arg2) {
+  void *mem = AllocateBytes(sizeof(T));
+  if (mem == NULL) throw std::bad_alloc();
+  return new (mem) T(arg1, arg2);
+}
+
+template<bool THREADSAFE>
+template<class T, typename A1, typename A2, typename A3>
+inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1, A2 arg2, A3 arg3) {
+  void *mem = AllocateBytes(sizeof(T));
+  if (mem == NULL) throw std::bad_alloc();
+  return new (mem) T(arg1, arg2, arg3);
+}
+
 
 }  // namespace supersonic
 
