@@ -1,11 +1,16 @@
-ADD_LIBRARY(kudu_util status.cc env.cc env_posix.cc logging.cc coding.cc
+ADD_LIBRARY(kudu_util
+
+  env.cc env_posix.cc env_util.cc
   bloom_filter.cc
   cache.cc
+  coding.cc
   group_varint.cc
+  logging.cc
   hexdump.cc
   memory/arena.cc memory/memory.cc
-
   memenv/memenv.cc
+  status.cc
+
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 

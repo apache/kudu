@@ -27,6 +27,13 @@ TEST_F(TestTablet, TestFlush) {
 
   // Flush it.
   ASSERT_STATUS_OK(tablet_->Flush());
+
+  // Make sure the files were created as expected.
+  string layer_dir_ = Tablet::GetLayerPath(test_dir_, 0);
+  ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 0));
+  ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 1));
+  ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 2));
+  ASSERT_FILE_EXISTS(env_, Layer::GetBloomPath(layer_dir_))
 }
 
 // Test that inserting a row which already exists causes an AlreadyPresent

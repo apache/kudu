@@ -15,6 +15,7 @@
 #include "gutil/strings/strip.h"
 #include "tablet/tablet.h"
 #include "tablet/layer.h"
+#include "util/bloom_filter.h"
 #include "util/env.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
@@ -30,8 +31,8 @@ using std::tr1::shared_ptr;
 
 const char *kLayerPrefix = "layer_";
 
-static string GetLayerPath(const string &tablet_dir,
-                           int layer_idx) {
+string Tablet::GetLayerPath(const string &tablet_dir,
+                            int layer_idx) {
   return StringPrintf("%s/layer_%010d",
                       tablet_dir.c_str(),
                       layer_idx);
@@ -212,6 +213,13 @@ Status Tablet::Flush() {
   RETURN_NOT_OK(out.Open());
   RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get(), false));
 
+  // Flush the bloom filter for the key.
+  LOG(INFO) << "Flush: flushing bloom filter";
+  iter->SeekToStart();
+  // TODO: make this configurable
+  BloomFilterSizing sizing =
+    BloomFilterSizing::BySizeAndFPRate(64*1024, 0.01f);
+  RETURN_NOT_OK( out.FlushBloomFilter(iter.get(), sizing, false) );
 
   // Step 3. Freeze old memstore contents.
   // Because the key column exists on disk, we can create a new layer

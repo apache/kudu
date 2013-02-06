@@ -78,6 +78,8 @@ public:
 
   const Schema &schema() const { return schema_; }
 
+  static string GetLayerPath(const string &tablet_dir, int layer_idx);
+
 private:
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.

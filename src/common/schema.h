@@ -297,6 +297,8 @@ public:
   // Encode the key portion of the given row into a buffer
   // such that the buffer's lexicographic comparison represents
   // the proper comparison order of the underlying types.
+  //
+  // The encoded key is appended into the destination buffer.
   void EncodeComparableKey(const Slice &row,
                            faststring *dst) const {
     KeyEncoder enc(dst);

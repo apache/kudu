@@ -8,12 +8,14 @@
 
 #include "common/iterator.h"
 #include "common/schema.h"
+#include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/deltafile.h"
 #include "tablet/layer.h"
 #include "util/env.h"
+#include "util/env_util.h"
 #include "util/status.h"
 
 namespace kudu { namespace tablet {
@@ -26,6 +28,7 @@ using std::tr1::shared_ptr;
 
 static const char *kDeltaPrefix = "delta_";
 static const char *kColumnPrefix = "col_";
+static const char *kBloomFileName = "bloom";
 
 // Return the path at which the given column's cfile
 // is stored within the layer directory.
@@ -42,6 +45,71 @@ string Layer::GetDeltaPath(const string &dir,
   return dir + "/" + kDeltaPrefix +
     boost::lexical_cast<string>(delta_idx);
 }
+
+// Return the path at which the bloom filter
+// is stored within the layer directory.
+string Layer::GetBloomPath(const string &dir) {
+  return dir + "/" + kBloomFileName;
+}
+
+// Utility class for pulling batches of rows from an iterator, storing
+// the resulting data in local scope.
+//
+// This is probably useful more generally, but for now just lives here
+// for use within the various Flush calls.
+class ScopedBatchReader {
+public:
+  ScopedBatchReader(RowIteratorInterface *src_iter,
+                    bool need_arena) :
+    iter_(src_iter)
+  {
+    if (need_arena) {
+      arena_.reset(new Arena(16*1024, 256*1024));
+    }
+
+    int buf_size = sizeof(buf_);
+    batch_size_ = buf_size / iter_->schema().byte_size();
+
+    // TODO: handle big rows
+    CHECK_GE(batch_size_, 1) << "could not fit a row from schema: "
+                             << src_iter->schema().ToString()
+                             << " in " << buf_size << " bytes";
+
+    block_.reset(new RowBlock(iter_->schema(), &buf_[0],
+                              batch_size_, arena_.get()));
+  }
+
+  bool HasNext() {
+    return iter_->HasNext();
+  }
+
+  Status NextBatch(size_t *nrows) {
+    if (arena_ != NULL) arena_->Reset();
+
+    *nrows = batch_size_;
+    return iter_->CopyNextRows(nrows, block_.get());
+  }
+
+  void *col_ptr(size_t col_idx) {
+    return &buf_[iter_->schema().column_offset(col_idx)];
+  }
+
+  uint8_t *row_ptr(size_t row_idx) {
+    return block_->row_ptr(row_idx);
+  }
+
+private:
+  RowIteratorInterface *iter_;
+  scoped_ptr<Arena> arena_;
+  scoped_ptr<RowBlock> block_;
+
+  // Use a small buffer here -- otherwise we end up with larger-than-requested
+  // blocks in the CFile. This could be considered a bug in the CFile writer.
+  // If flush performance is bad, could consider fetching in larger batches.
+  // TODO: look at above - puts a minimum on real block size
+  uint8_t buf_[32768];
+  size_t batch_size_;
+};
 
 Status LayerWriter::Open() {
   CHECK(cfile_writers_.empty());
@@ -71,8 +139,8 @@ Status LayerWriter::Open() {
     string path = Layer::GetColumnPath(dir_, i);
 
     // Open file for write.
-    WritableFile *out;
-    Status s = env_->NewWritableFile(path, &out);
+    shared_ptr<WritableFile> out;
+    Status s = env_util::OpenFileForWrite(env_, path, &out);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to open output file for column " <<
         col.ToString() << " at path " << path << ": " << 
@@ -80,16 +148,12 @@ Status LayerWriter::Open() {
       return s;
     }
 
-    // Construct a shared_ptr so that, if the writer construction
-    // fails, we don't leak the file descriptor.
-    shared_ptr<WritableFile> out_shared(out);
-
     // Create the CFile writer itself.
     std::auto_ptr<cfile::Writer> writer(new cfile::Writer(
                                           opts,
                                           col.type_info().type(),
                                           cfile::GetDefaultEncoding(col.type_info().type()),
-                                          out_shared));
+                                          out));
 
     s = writer->Start();
     if (!s.ok()) {
@@ -110,11 +174,6 @@ Status LayerWriter::Open() {
 Status LayerWriter::FlushProjection(const Schema &projection,
                                     RowIteratorInterface *src_iter,
                                     bool need_arena) {
-  scoped_ptr<Arena> arena;
-  if (need_arena) {
-    arena.reset(new Arena(16*1024, 256*1024));
-  }
-
   const Schema &iter_schema = src_iter->schema();
 
   CHECK(!finished_);
@@ -123,25 +182,13 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   projection.GetProjectionFrom(schema_, &orig_projection);
   projection.GetProjectionFrom(iter_schema, &iter_projection);
 
-
-  // TODO: handle big rows
-
-  // Use a small buffer here -- otherwise we end up with larger-than-requested
-  // blocks in the CFile. This could be considered a bug in the CFile writer.
-  // If flush performance is bad, could consider fetching in larger batches.
-  // TODO: look at above - puts a minimum on real block size
-  int buf_size = 32*1024;
-  scoped_array<uint8_t> buf(new uint8_t[buf_size]);
-  int batch_size = buf_size / iter_schema.byte_size();
-  CHECK_GE(batch_size, 1) << "could not fit a row from schema: "
-                          << iter_schema.ToString() << " in " << buf_size << " bytes";
-  RowBlock buf_block(iter_schema, &buf[0], batch_size, arena.get());
+  ScopedBatchReader batcher(src_iter, need_arena);
 
   size_t written = 0;
-  while (src_iter->HasNext()) {
+  while (batcher.HasNext()) {
     // Read a batch from the iterator.
-    size_t nrows = batch_size;
-    RETURN_NOT_OK(src_iter->CopyNextRows(&nrows, &buf_block));
+    size_t nrows;
+    RETURN_NOT_OK(batcher.NextBatch(&nrows));
     CHECK_GT(nrows, 0);
 
     // Write the batch to the each of the columns
@@ -149,9 +196,8 @@ Status LayerWriter::FlushProjection(const Schema &projection,
       size_t orig_col = orig_projection[proj_col];
       size_t iter_col = iter_projection[proj_col];
 
-      size_t off = iter_schema.column_offset(iter_col);
       size_t stride = iter_schema.byte_size();
-      const void *p = &buf[off];
+      const void *p = batcher.col_ptr(iter_col);
       RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
     }
     written += nrows;
@@ -164,6 +210,55 @@ Status LayerWriter::FlushProjection(const Schema &projection,
 
     RETURN_NOT_OK(cfile_writers_[orig_col].Finish());
   }
+
+  return Status::OK();
+}
+
+Status LayerWriter::FlushBloomFilter(RowIteratorInterface *src_iter,
+                                     const BloomFilterSizing &sizing,
+                                     bool need_arena) {
+  const Schema &schema = src_iter->schema();
+
+  // Open the output file.
+  string path(Layer::GetBloomPath(dir_));
+  shared_ptr<WritableFile> file;
+  RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
+  cfile::BloomFileWriter bfw(file, sizing);
+  RETURN_NOT_OK(bfw.Start());
+
+  // Set up buffer to read data into from the iterator.
+  ScopedBatchReader batcher(src_iter, need_arena);
+
+  // Set up buffer for encoding keys into
+  faststring encoded_key_buf;
+
+  while (src_iter->HasNext()) {
+    // Read a batch from the iterator.
+    size_t nrows;
+    RETURN_NOT_OK(batcher.NextBatch(&nrows));
+    CHECK_GT(nrows, 0);
+
+    const uint8_t *row = batcher.row_ptr(0);
+    for (size_t i = 0; i < nrows; i++) {
+      // TODO: performance might be better if we actually batch this -
+      // encode a bunch of key slices, then pass them all in one go.
+
+      // Encode the row into sortable form
+      encoded_key_buf.clear();
+      Slice row_slice(reinterpret_cast<const char *>(row),
+                      schema.byte_size());
+      schema.EncodeComparableKey(row_slice, &encoded_key_buf);
+
+      // Insert the encoded row into the bloom.
+      Slice encoded_key_slice(encoded_key_buf);
+      RETURN_NOT_OK( bfw.AppendKeys(&encoded_key_slice, 1) );
+
+      // Advance.
+      row += schema.byte_size();
+    }
+  }
+
+  RETURN_NOT_OK(bfw.Finish());
 
   return Status::OK();
 }

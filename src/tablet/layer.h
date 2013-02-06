@@ -21,6 +21,7 @@
 #include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/layer-basedata.h"
+#include "util/bloom_filter.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
@@ -57,6 +58,11 @@ public:
   Status FlushProjection(const Schema &projection,
                          RowIteratorInterface *src_iter,
                          bool need_arena);
+
+  // Flush a bloom filter into the layer directory.
+  Status FlushBloomFilter(RowIteratorInterface *src_iter,
+                          const BloomFilterSizing &sizing,
+                          bool need_arena);
 
   Status WriteRow(const Slice &row) {
     CHECK(!finished_);
@@ -161,6 +167,7 @@ public:
 
   static string GetColumnPath(const string &dir, int col_idx);
   static string GetDeltaPath(const string &dir, int delta_idx);
+  static string GetBloomPath(const string &dir);
 
 private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);

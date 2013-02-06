@@ -31,5 +31,10 @@
   } \
   } while (0);
 
+#define ASSERT_FILE_EXISTS(env, path) do { \
+  std::string _s = path; \
+  ASSERT_TRUE(env->FileExists(_s)) \
+    << "Expected file to exist: " << _s; \
+  } while (0);
 
 #endif
