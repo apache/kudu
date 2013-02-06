@@ -153,12 +153,32 @@ inline void BloomFilterBuilder::AddKey(const BloomKeyProbe &probe) {
 
 inline bool BloomFilter::MayContainKey(const BloomKeyProbe &probe) const {
   uint32_t h = probe.initial_hash();
-  for (size_t i = 0; i < n_hashes_; i++) {
+
+  // Basic unrolling by 2s gives a small benefit here since the two bit positions
+  // can be calculated in parallel -- it's a 50% chance that the first will be
+  // set even if it's a bloom miss, in which case we can parallelize the load.
+  int rem_hashes = n_hashes_;
+  while (rem_hashes >= 2) {
+    uint32_t bitpos1 = h % n_bits_;
+    h = probe.MixHash(h);
+    uint32_t bitpos2 = h % n_bits_;
+    h = probe.MixHash(h);
+
+    if (!BitmapTest(&bitmap_[0], bitpos1) ||
+        !BitmapTest(&bitmap_[0], bitpos2)) {
+      return false;
+    }
+
+    rem_hashes -= 2;
+  }
+
+  while (rem_hashes) {
     uint32_t bitpos = h % n_bits_;
     if (!BitmapTest(&bitmap_[0], bitpos)) {
       return false;
     }
     h = probe.MixHash(h);
+    rem_hashes--;
   }
   return true;
 }
