@@ -9,6 +9,7 @@
 #include "cfile/cfile_reader.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
+#include "util/faststring.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -18,15 +19,23 @@ using std::tr1::shared_ptr;
 
 class BloomFileWriter : boost::noncopyable {
 public:
-  BloomFileWriter(const shared_ptr<WritableFile> &file);
+  BloomFileWriter(const shared_ptr<WritableFile> &file,
+                  const BloomFilterSizing &sizing);
 
   Status Start();
+  Status AppendKeys(const Slice *keys, size_t n_keys);
   Status Finish();
 
-  Status AppendBloom(const BloomFilterBuilder &bloom,
-                     const Slice &start_key);
 private:
+
+  Status FinishCurrentBloomBlock();
+
   scoped_ptr<cfile::Writer> writer_;
+
+  BloomFilterBuilder bloom_builder_;
+
+  // first key inserted in the current block.
+  faststring first_key_;
 };
 
 // Reader for a bloom file.

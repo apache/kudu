@@ -20,47 +20,16 @@ DEFINE_int64(benchmark_queries, 1000000, "Number of probes to benchmark");
 namespace kudu {
 namespace cfile {
 
-// TODO: a lot of this logic belongs in BloomFileWriter itself.
-// Move it there!
 static void AppendBlooms(BloomFileWriter *bfw) {
-  BloomFilterBuilder bfb(BloomFilterSizing::BySizeAndFPRate(
-                           FLAGS_bloom_size_bytes, FLAGS_fp_rate));
-  ASSERT_NEAR( bfb.n_bytes(), FLAGS_bloom_size_bytes, FLAGS_bloom_size_bytes * 0.05 );
-  ASSERT_GT(FLAGS_n_keys, bfb.expected_count())
-    << "Invalid parameters: --n_keys isn't set large enough to fill even "
-    << "one bloom filter of the requested --bloom_size_bytes";
-
-  int inserted_in_cur_bloom = 0;
-  uint32_t first_key = 0;
-  Slice first_key_slice(reinterpret_cast<char *>(&first_key),
-                        sizeof(first_key));
-
   for (uint32_t i = 0; i < FLAGS_n_keys; i++) {
     // Byte-swap the keys so that they're inserted in ascending
     // lexicographic order.
     // TODO: spent a while debugging this - would be good to add DCHECK
-    // to the AppendBloom code to ensure that keys go upward only
+    // to the index builder code to ensure that keys go upward only
     uint32_t i_byteswapped = htonl(i);
 
     Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
-    bfb.AddKey(s);
-
-    if (inserted_in_cur_bloom == 0) {
-      first_key = i_byteswapped;
-    }
-
-    if (++inserted_in_cur_bloom >= bfb.expected_count()) {
-      LOG(INFO) << "Appending a new block, first_key=" << first_key;
-
-      ASSERT_STATUS_OK( bfw->AppendBloom(bfb, first_key_slice) );
-      inserted_in_cur_bloom = 0;
-      bfb.Clear();
-    }
-  }
-
-  if (inserted_in_cur_bloom > 0) {
-    ASSERT_STATUS_OK( bfw->AppendBloom(bfb, first_key_slice) );
-    inserted_in_cur_bloom = 0;
+    bfw->AppendKeys(&s, 1);
   }
 }
 
@@ -69,7 +38,17 @@ static void WriteTestBloomFile(Env *env, const string &path) {
   ASSERT_STATUS_OK( env->NewWritableFile(path, &file) );
   shared_ptr<WritableFile> sink(file);
 
-  BloomFileWriter bfw(sink);
+  // Set sizing based on flags
+  BloomFilterSizing sizing = BloomFilterSizing::BySizeAndFPRate(
+    FLAGS_bloom_size_bytes, FLAGS_fp_rate);
+  ASSERT_NEAR( sizing.n_bytes(), FLAGS_bloom_size_bytes, FLAGS_bloom_size_bytes * 0.05 );
+  ASSERT_GT(FLAGS_n_keys, sizing.expected_count())
+    << "Invalid parameters: --n_keys isn't set large enough to fill even "
+    << "one bloom filter of the requested --bloom_size_bytes";
+
+  BloomFileWriter bfw(sink, sizing);
+
+
   ASSERT_STATUS_OK(bfw.Start());
   AppendBlooms(&bfw);
   ASSERT_STATUS_OK( bfw.Finish() );

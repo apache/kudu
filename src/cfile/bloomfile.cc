@@ -16,7 +16,9 @@ namespace kudu { namespace cfile {
 // Writer
 ////////////////////////////////////////////////////////////
 
-BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file)
+BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
+                                 const BloomFilterSizing &sizing) :
+  bloom_builder_(sizing)
 {
   cfile::WriterOptions opts;
   opts.write_posidx = false;
@@ -29,23 +31,65 @@ Status BloomFileWriter::Start() {
 }
 
 Status BloomFileWriter::Finish() {
+  if (bloom_builder_.count() > 0) {
+    RETURN_NOT_OK( FinishCurrentBloomBlock() );
+  }
   return writer_->Finish();
 }
 
-Status BloomFileWriter::AppendBloom(
-  const BloomFilterBuilder &bloom, const Slice &start_key) {
+Status BloomFileWriter::AppendKeys(
+  const Slice *keys, size_t n_keys) {
 
+  // If this is the call on a new bloom, copy the first key.
+  if (bloom_builder_.count() == 0 && n_keys > 0) {
+    first_key_.assign_copy(keys[0].data(), keys[0].size());
+  }
+
+  for (size_t i = 0; i < n_keys; i++) {
+
+    bloom_builder_.AddKey(keys[i]);
+
+    // Bloom has reached optimal occupancy: flush it to the file
+    if (bloom_builder_.count() >= bloom_builder_.expected_count()) {
+      RETURN_NOT_OK( FinishCurrentBloomBlock() );
+
+      // Copy the next key as the first key of the next block.
+      // Doing this here avoids having to do it in normal code path of the loop.
+      if (i < n_keys - 1) {
+        first_key_.assign_copy(keys[i + 1].data(), keys[i + 1].size());
+      }
+    }
+  }
+
+  return Status::OK();
+}
+
+Status BloomFileWriter::FinishCurrentBloomBlock() {
+  VLOG(1) << "Appending a new bloom block, first_key=" << Slice(first_key_).ToDebugString();
+
+  // Encode the header.
   BloomBlockHeaderPB hdr;
-  hdr.set_num_hash_functions(bloom.n_hashes());
+  hdr.set_num_hash_functions(bloom_builder_.n_hashes());
   string hdr_str;
   PutFixed32(&hdr_str, hdr.ByteSize());
   CHECK(hdr.AppendToString(&hdr_str));
 
+  // The data is the concatenation of the header and the bloom itself.
   vector<Slice> slices;
   slices.push_back(Slice(hdr_str));
-  slices.push_back(bloom.slice());
+  slices.push_back(bloom_builder_.slice());
 
-  return writer_->AppendRawBlock(slices, 0, &start_key, "bloom block");
+  // Append to the file.
+  Slice start_key(first_key_);
+  RETURN_NOT_OK( writer_->AppendRawBlock(slices, 0, &start_key, "bloom block") );
+
+  bloom_builder_.Clear();
+
+  #ifndef NDEBUG
+  first_key.assign_copy("POST_RESET");
+  #endif
+
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////

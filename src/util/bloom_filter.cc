@@ -42,14 +42,16 @@ BloomFilterSizing BloomFilterSizing::BySizeAndFPRate(size_t n_bytes, double fp_r
 BloomFilterBuilder::BloomFilterBuilder(const BloomFilterSizing &sizing) :
   n_bits_(sizing.n_bytes() * 8),
   bitmap_(new uint8_t[sizing.n_bytes()]),
+  n_hashes_(ComputeOptimalHashCount(n_bits_, sizing.expected_count())),
   expected_count_(sizing.expected_count()),
-  n_hashes_(ComputeOptimalHashCount(n_bits_, sizing.expected_count()))
+  n_inserted_(0)
 {
   Clear();
 }
 
 void BloomFilterBuilder::Clear() {
   memset(&bitmap_[0], 0, n_bytes());
+  n_inserted_ = 0;
 }
 
 double BloomFilterBuilder::false_positive_rate() const {

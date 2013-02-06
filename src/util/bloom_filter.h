@@ -88,7 +88,7 @@ public:
   // See BloomFilterSizing static methods to specify this argument.
   BloomFilterBuilder(const BloomFilterSizing &sizing);
 
-  // Clear all entries.
+  // Clear all entries, reset insertion count.
   void Clear();
 
   // Add the given key to the bloom filter.
@@ -118,12 +118,21 @@ public:
 
   size_t expected_count() const { return expected_count_; }
 
+  // Return the number of keys inserted.
+  size_t count() const { return n_inserted_; }
+
 private:
   size_t n_bits_;
   scoped_array<uint8_t> bitmap_;
 
-  size_t expected_count_;
+  // The number of hash functions to compute.
   size_t n_hashes_;
+
+  // The expected number of elements, for which the bloom is optimized.
+  size_t expected_count_;
+
+  // The number of elements inserted so far since the last Reset.
+  size_t n_inserted_;
 };
 
 
@@ -149,6 +158,7 @@ inline void BloomFilterBuilder::AddKey(const BloomKeyProbe &probe) {
     BitmapSet(&bitmap_[0], bitpos);
     h = probe.MixHash(h);
   }
+  n_inserted_++;
 }
 
 inline bool BloomFilter::MayContainKey(const BloomKeyProbe &probe) const {
