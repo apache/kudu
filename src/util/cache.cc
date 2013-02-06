@@ -19,6 +19,8 @@ Cache::~Cache() {
 
 namespace {
 
+typedef boost::detail::spinlock MutexType;
+
 // LRU cache implementation
 
 // An entry is a variable length heap-allocated structure.  Entries
@@ -158,7 +160,7 @@ class LRUCache {
   size_t capacity_;
 
   // mutex_ protects the following state.
-  boost::mutex mutex_;
+  MutexType mutex_;
   size_t usage_;
   uint64_t last_id_;
 
@@ -210,7 +212,7 @@ void LRUCache::LRU_Append(LRUHandle* e) {
 }
 
 Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
-  boost::lock_guard<boost::mutex> l(mutex_);
+  boost::lock_guard<MutexType> l(mutex_);
   LRUHandle* e = table_.Lookup(key, hash);
   if (e != NULL) {
     e->refs++;
@@ -221,14 +223,14 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
 }
 
 void LRUCache::Release(Cache::Handle* handle) {
-  boost::lock_guard<boost::mutex> l(mutex_);
+  boost::lock_guard<MutexType> l(mutex_);
   Unref(reinterpret_cast<LRUHandle*>(handle));
 }
 
 Cache::Handle* LRUCache::Insert(
     const Slice& key, uint32_t hash, void* value, size_t charge,
     void (*deleter)(const Slice& key, void* value)) {
-  boost::lock_guard<boost::mutex> l(mutex_);
+  boost::lock_guard<MutexType> l(mutex_);
 
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
       malloc(sizeof(LRUHandle)-1 + key.size()));
@@ -259,7 +261,7 @@ Cache::Handle* LRUCache::Insert(
 }
 
 void LRUCache::Erase(const Slice& key, uint32_t hash) {
-  boost::lock_guard<boost::mutex> l(mutex_);
+  boost::lock_guard<MutexType> l(mutex_);
   LRUHandle* e = table_.Remove(key, hash);
   if (e != NULL) {
     LRU_Remove(e);
@@ -273,7 +275,7 @@ static const int kNumShards = 1 << kNumShardBits;
 class ShardedLRUCache : public Cache {
  private:
   LRUCache shard_[kNumShards];
-  boost::mutex id_mutex_;
+  MutexType id_mutex_;
   uint64_t last_id_;
 
   static inline uint32_t HashSlice(const Slice& s) {
@@ -314,7 +316,7 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<LRUHandle*>(handle)->value;
   }
   virtual uint64_t NewId() {
-    boost::lock_guard<boost::mutex> l(id_mutex_);
+    boost::lock_guard<MutexType> l(id_mutex_);
     return ++(last_id_);
   }
 };
