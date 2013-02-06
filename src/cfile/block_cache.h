@@ -72,6 +72,16 @@ public:
     handle_ = NULL;
   }
 
+  // Swap this handle with another handle.
+  // This can be useful to transfer ownership of a handle by swapping
+  // with an empty BlockCacheHandle.
+  void swap(BlockCacheHandle *dst) {
+    uint8_t buf[sizeof(*this)];
+    memcpy(buf, dst, sizeof(*this));
+    memcpy(dst, this, sizeof(*this));
+    memcpy(this, buf, sizeof(*this));
+  }
+
   // Return the data in the cached block.
   //
   // NOTE: this slice is only valid until the block cache handle is

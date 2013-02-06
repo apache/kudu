@@ -78,6 +78,10 @@ Status BloomFileReader::Init() {
     return Status::Corruption("bloom file missing value index");
   }
 
+  BlockPointer validx_root = reader_->validx_root();
+  index_iter_.reset(
+    IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
+
   return Status::OK();
 }
 
@@ -113,11 +117,7 @@ Status BloomFileReader::ParseBlockHeader(const Slice &block,
 Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
                                         bool *maybe_present) {
 
-  BlockPointer validx_root = reader_->validx_root();
-  scoped_ptr<cfile::IndexTreeIterator> iter(
-    IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
-
-  Status s = iter->SeekAtOrBefore(&probe.key());
+  Status s = index_iter_->SeekAtOrBefore(&probe.key());
   if (PREDICT_FALSE(s.IsNotFound())) {
     // Seek to before the first entry in the file.
     *maybe_present = false;
@@ -126,7 +126,7 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   RETURN_NOT_OK(s);
 
   // Successfully found the pointer to the bloom block. Read it.
-  BlockPointer bblk_ptr = iter->GetCurrentBlockPointer();
+  BlockPointer bblk_ptr = index_iter_->GetCurrentBlockPointer();
   BlockCacheHandle dblk_data;
   RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
 

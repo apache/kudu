@@ -29,7 +29,11 @@ private:
   scoped_ptr<cfile::Writer> writer_;
 };
 
-
+// Reader for a bloom file.
+// NB: this is not currently thread-safe.
+// When making it thread-safe, should make sure that the threads
+// share a single CFileReader, or else the cache keys won't end up
+// shared!
 class BloomFileReader : boost::noncopyable {
 public:
   static Status Open(Env *env, const string &path,
@@ -56,6 +60,7 @@ private:
                           BloomBlockHeaderPB *hdr,
                           Slice *bloom_data) const;
 
+  scoped_ptr<cfile::IndexTreeIterator> index_iter_;
   scoped_ptr<CFileReader> reader_;
 };
 

@@ -230,16 +230,28 @@ public:
   typedef DataTypeTraits<KeyTypeEnum> KeyTypeTraits;
   typedef typename KeyTypeTraits::cpp_type KeyType;
 
-  // Construct a reader for the given index block data.
-  // Note: this does not copy the data, so the slice must
-  // remain valid for the lifetime of the reader.
-  explicit IndexBlockReader(const Slice &data) :
-    data_(data),
+  // Construct a reader.
+  // After construtoin, call 
+  IndexBlockReader() :
     parsed_(false)
   {}
 
-  Status Parse() {
-    CHECK(!parsed_) << "already parsed";
+  void Reset() {
+    data_ = Slice();
+    parsed_ = false;
+  }
+
+  // Parse the given index block.
+  //
+  // This function may be called repeatedly to "reset" the reader to process
+  // a new block.
+  //
+  // Note: this does not copy the data, so the slice must
+  // remain valid for the lifetime of the reader (or until the next Parse cal)
+  Status Parse(const Slice &data) {
+    parsed_ = false;
+    data_ = data;
+
 
     if (data_.size() < sizeof(uint32_t)) {
       return Status::Corruption("index block too small");
@@ -346,7 +358,7 @@ private:
   typename KeyEncodingResolver<KeyTypeEnum>::Encoding encoding_;
 
   static const int kMaxTrailerSize = 64*1024;
-  const Slice data_;
+  Slice data_;
 
   IndexBlockTrailerPB trailer_;
   const char *key_offsets_;
@@ -364,6 +376,13 @@ public:
     cur_idx_(-1),
     seeked_(false)
   {
+  }
+
+  // Reset the state of this iterator. This should be used
+  // after the associated 'reader' object parses a different block.
+  void Reset() {
+    seeked_ = false;
+    cur_idx_ = -1;
   }
 
   // Find the highest block pointer in this index

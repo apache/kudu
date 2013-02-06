@@ -154,8 +154,8 @@ public:
     const CFileReader *reader,
     const BlockPointer &root_blockptr)
     : reader_(reader),
-      root_block_(root_blockptr) {
-  }
+      root_block_(root_blockptr)
+  {}
 
   Status SeekAtOrBefore(const void *search_key) {
     seeked_indexes_.clear();
@@ -174,7 +174,7 @@ public:
     for (int i = seeked_indexes_.size() - 1;
          i >= 0;
          i--) {
-      if (seeked_indexes_[i].iter->HasNext())
+      if (seeked_indexes_[i].iter.HasNext())
         return true;
     }
     return false;
@@ -216,46 +216,34 @@ public:
   }
 
   const void *GetCurrentKey() const {
-    return seeked_indexes_.back().iter->GetCurrentKey();
+    return seeked_indexes_.back().iter.GetCurrentKey();
   }
 
   const BlockPointer &GetCurrentBlockPointer() const {
-    return seeked_indexes_.back().iter->GetCurrentBlockPointer();
+    return seeked_indexes_.back().iter.GetCurrentBlockPointer();
   }
 
 private:
-  IndexBlockIterator<KeyTypeEnum> *BottomIter() const {
-    return seeked_indexes_.back().iter.get();
+  IndexBlockIterator<KeyTypeEnum> *BottomIter() {
+    return &seeked_indexes_.back().iter;
   }
 
-  IndexBlockReader<KeyTypeEnum> *BottomReader() const {
-    return seeked_indexes_.back().reader.get();
+  IndexBlockReader<KeyTypeEnum> *BottomReader() {
+    return &seeked_indexes_.back().reader;
   }
   
   Status PushBlock(const BlockPointer &block) {
-    std::auto_ptr<BlockCacheHandle> data(new BlockCacheHandle());
-    RETURN_NOT_OK(reader_->ReadBlock(block, data.get()));
+    std::auto_ptr<SeekedIndex> seeked( new SeekedIndex() );
 
-    // Parse it and open iterator.
-    IndexBlockReader<KeyTypeEnum> *ibr;
-    IndexBlockIterator<KeyTypeEnum> *iter;
-    {
-      std::auto_ptr<IndexBlockReader<KeyTypeEnum> > ibr_auto(
-        new IndexBlockReader<KeyTypeEnum>(data->data()));
-      RETURN_NOT_OK(ibr_auto->Parse());
+    seeked->reader.Reset();
+    seeked->iter.Reset();
 
-      iter = ibr_auto->NewIterator();
+    RETURN_NOT_OK(reader_->ReadBlock(block, &seeked->data));
 
-      // If we successfully parsed and created an iterator,
-      // we no longer need the auto_ptr to delete 'ibr'
-      ibr = ibr_auto.release();
+    // Parse the new block.
+    RETURN_NOT_OK(seeked->reader.Parse(seeked->data.data()));
 
-      // Add the block to the index iterator list.
-      SeekedIndex *si = new SeekedIndex(data.release(),
-                                        ibr,
-                                        iter);
-      seeked_indexes_.push_back(si);
-    }
+    seeked_indexes_.push_back(seeked.release());
     return Status::OK();
   }
 
@@ -294,26 +282,22 @@ private:
   }
 
   struct SeekedIndex {
-    SeekedIndex(BlockCacheHandle *data_,
-                IndexBlockReader<KeyTypeEnum> *reader_,
-                IndexBlockIterator<KeyTypeEnum> *iter_) :
-      data(data_),
-      reader(reader_),
-      iter(iter_) {}
+    SeekedIndex() :
+      iter(&reader)
+    {}
 
     // Hold a copy of the underlying block data, which would
     // otherwise go out of scope. The reader and iter
     // do not themselves retain the data.
-    scoped_ptr<BlockCacheHandle> data;
-    scoped_ptr<IndexBlockReader<KeyTypeEnum> > reader;
-    scoped_ptr<IndexBlockIterator<KeyTypeEnum> > iter;
+    BlockCacheHandle data;
+    IndexBlockReader<KeyTypeEnum> reader;
+    IndexBlockIterator<KeyTypeEnum> iter;
   };
 
 
   const CFileReader *reader_;
 
   BlockPointer root_block_;
-
 
   ptr_vector<SeekedIndex> seeked_indexes_;
 };

@@ -62,8 +62,8 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
   EXPECT_GT(s.size(), est_size * 3 /4);
 
   // Open the encoded block in a reader.
-  IndexBlockReader<UINT32> reader(s);
-  ASSERT_STATUS_OK(reader.Parse());
+  IndexBlockReader<UINT32> reader;
+  ASSERT_STATUS_OK(reader.Parse(s));
 
   // Should have all the entries we inserted.
   ASSERT_EQ(EXPECTED_NUM_ENTRIES, (int)reader.Count());
@@ -160,8 +160,8 @@ TEST(TestIndexBlock, TestIndexBlockWithStrings) {
   VLOG(1) << kudu::HexDump(s);
 
   // Open the encoded block in a reader.
-  IndexBlockReader<STRING> reader(s);
-  ASSERT_STATUS_OK(reader.Parse());
+  IndexBlockReader<STRING> reader;
+  ASSERT_STATUS_OK(reader.Parse(s));
 
   // Should have all the entries we inserted.
   ASSERT_EQ(EXPECTED_NUM_ENTRIES, (int)reader.Count());
@@ -244,8 +244,8 @@ TEST(TestIndexBlock, TestIterator) {
   }
   Slice s = idx.Finish();
 
-  IndexBlockReader<UINT32> reader(s);
-  ASSERT_STATUS_OK(reader.Parse());
+  IndexBlockReader<UINT32> reader;
+  ASSERT_STATUS_OK(reader.Parse(s));
   scoped_ptr<IndexBlockIterator<UINT32> > iter(
     reader.NewIterator());
   iter->SeekToIndex(0);
