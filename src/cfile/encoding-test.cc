@@ -244,9 +244,9 @@ protected:
     }
 
     // Try to request a bunch of data in one go
-    ScopedColumnBlock<STRING> cb(kCount);
+    ScopedColumnBlock<STRING> cb(kCount + 10);
     sbd.SeekToPositionInBlock(0);
-    size_t n = kCount;
+    size_t n = kCount + 10;
     ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cb));
     ASSERT_EQ(kCount, n);
     ASSERT_FALSE(sbd.HasNext());

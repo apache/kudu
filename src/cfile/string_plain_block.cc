@@ -241,7 +241,8 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
   uint8_t *out = reinterpret_cast<uint8_t *>(dst->data());
-  for (size_t i = 0; i < max_fetch; i++) {
+  size_t i;
+  for (i = 0; i < max_fetch; i++) {
     Slice elem(string_at_index(cur_idx_));
 
     // TODO: in a lot of cases, we might be able to get away with the decoder
@@ -252,6 +253,7 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
     cur_idx_++;
   }
 
+  *n = i;
   return Status::OK();
 }
 

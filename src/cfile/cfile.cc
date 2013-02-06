@@ -10,6 +10,7 @@
 #include "cfile/block_pointer.h"
 #include "cfile/gvint_block.h"
 #include "cfile/string_prefix_block.h"
+#include "cfile/string_plain_block.h"
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
 #include "util/env.h"
@@ -115,8 +116,10 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
     case STRING:
       switch (encoding_type_) {
         case PREFIX:
-          // TODO: this should be called PREFIX_DELTA or something
           *bb = new StringPrefixBlockBuilder(&options_);
+          break;
+        case PLAIN:
+          *bb = new StringPlainBlockBuilder(&options_);
           break;
         default:
           return Status::NotFound("bad string encoding");
