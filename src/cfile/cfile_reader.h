@@ -11,6 +11,7 @@
 
 #include "common/columnblock.h"
 #include "common/types.h"
+#include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
 #include "cfile/index_btree.h"
 #include "gutil/port.h"
@@ -35,49 +36,18 @@ using std::tr1::shared_ptr;
 struct ReaderOptions {
 };
 
-class CFileIterator;
-class BlockPointer;
+class BlockCache;
+class BlockCacheHandle;
 class BlockDecoder;
+class BlockPointer;
+class CFileIterator;
 
-
-// Wrapper for a block of data read from a CFile.
-// This reference-counts the underlying data, so it can
-// be freely copied, and will not be collected until all copies
-// have been destructed.
-class BlockData {
-public:
-  BlockData() {}
-
-  BlockData(const Slice &data,
-            shared_array<char> data_for_free) :
-    data_(data),
-    data_for_free_(data_for_free) {
-  }
-
-  BlockData(const BlockData &other) :
-    data_(other.data_),
-    data_for_free_(other.data_for_free_) {
-  }
-
-  const Slice &slice() const {
-    return data_;
-  }
-
-private:
-  Slice data_;
-  shared_array<char> data_for_free_;
-};
 
 class CFileReader : boost::noncopyable {
 public:
   CFileReader(const ReaderOptions &options,
               const shared_ptr<RandomAccessFile> &file,
-              uint64_t file_size) :
-    options_(options),
-    file_(file),
-    file_size_(file_size),
-    state_(kUninitialized) {
-  }
+              uint64_t file_size);
 
   Status Init();
 
@@ -92,7 +62,7 @@ public:
   // TODO: make this private? should only be used
   // by the iterator and index tree readers, I think.
   Status ReadBlock(const BlockPointer &ptr,
-                   BlockData *ret) const;
+                   BlockCacheHandle *ret) const;
 
   // Return the number of rows in this cfile.
   // This is assumed to be reasonably fast (i.e does not scan
@@ -170,6 +140,9 @@ private:
   scoped_ptr<CFileFooterPB> footer_;
 
   const TypeInfo *type_info_;
+
+  BlockCache *cache_;
+  BlockCache::FileId cache_id_;
 };
 
 
@@ -227,7 +200,7 @@ private:
 
   IndexTreeIterator *seeked_;
 
-  BlockData dblk_data_;
+  BlockCacheHandle dblk_data_;
   scoped_ptr<BlockDecoder> dblk_;
 };
 

@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <string>
 
+#include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
@@ -14,7 +15,7 @@
 
 namespace kudu {
 
-using cfile::BlockData;
+using cfile::BlockCacheHandle;
 using cfile::BlockPointer;
 
 namespace tablet {
@@ -139,11 +140,11 @@ Status DeltaFileReader::ApplyUpdates(
   ScopedColumnBlock<STRING> buf(1000);
   while (true) {
     BlockPointer dblk_ptr = iter->GetCurrentBlockPointer();
-    BlockData dblk_data;
+    BlockCacheHandle dblk_data;
 
     RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data));
 
-    cfile::StringPlainBlockDecoder sbd(dblk_data.slice());
+    cfile::StringPlainBlockDecoder sbd(dblk_data.data());
     RETURN_NOT_OK(sbd.ParseHeader());
 
     bool exact;

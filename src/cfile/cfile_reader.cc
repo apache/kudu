@@ -4,6 +4,7 @@
 #include <boost/shared_array.hpp>
 #include <glog/logging.h>
 
+#include "cfile/block_cache.h"
 #include "cfile/block_pointer.h"
 #include "cfile/cfile_reader.h"
 #include "cfile/cfile.h"
@@ -12,7 +13,7 @@
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
 #include "cfile/string_prefix_block.h"
-
+#include "gutil/scoped_ptr.h"
 #include "util/coding.h"
 #include "util/env.h"
 #include "util/slice.h"
@@ -42,6 +43,19 @@ static Status ParseMagicAndLength(const Slice &data,
 
   return Status::OK();
 }
+
+CFileReader::CFileReader(const ReaderOptions &options,
+                         const shared_ptr<RandomAccessFile> &file,
+                         uint64_t file_size) :
+  options_(options),
+  file_(file),
+  file_size_(file_size),
+  state_(kUninitialized),
+  cache_(BlockCache::GetSingleton()),
+  cache_id_(cache_->GenerateFileId())
+{
+}
+
 
 Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   char scratch[kMagicAndLengthSize];
@@ -124,24 +138,52 @@ Status CFileReader::ReadAndParseFooter() {
   return Status::OK();
 }
 
+// Some of the File implementations from LevelDB attempt to be tricky
+// and just return a Slice into an mmapped region (or in-memory region).
+// But, this is hard to program against in terms of cache management, etc,
+// and in practice won't be useful in a libhdfs context.
+//
+// This function detects this case, where slice->data() doesn't match
+// the given buffer, and if so, memcpys the data into the buffer and
+// adjusts the Slice accordingly
+static void MatchReadSliceWithBuffer(Slice *slice,
+                                     char *buffer) {
+  if (slice->data() != buffer) {
+    memcpy(buffer, slice->data(), slice->size());
+    *slice = Slice(buffer, slice->size());
+  }
+}
+
 Status CFileReader::ReadBlock(const BlockPointer &ptr,
-                              BlockData *ret) const {
+                              BlockCacheHandle *ret) const {
   CHECK(state_ == kInitialized) << "bad state: " << state_;
   CHECK(ptr.offset() > 0 &&
         ptr.offset() + ptr.size() < file_size_) <<
     "bad offset " << ptr.ToString() << " in file of size "
                   << file_size_;
 
-  shared_array<char> scratch(new char[ptr.size()]);
+  if (cache_->Lookup(cache_id_, ptr.offset(), ret)) {
+    // Cache hit
+    return Status::OK();
+  }
+
+  // Cache miss: need to read ourselves.
+  ::scoped_array<char> scratch(new char[ptr.size()]);
   Slice s;
   RETURN_NOT_OK( file_->Read(ptr.offset(), ptr.size(),
                              &s, scratch.get()) );
+  MatchReadSliceWithBuffer(&s, scratch.get());
+
 
   if (s.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }
 
-  *ret = BlockData(s, scratch);
+  cache_->Insert(cache_id_, ptr.offset(), s, ret);
+
+  // The cache now has ownership over the memory, so release
+  // the scoped pointer.
+  scratch.release();
 
   return Status::OK();
 }
@@ -295,7 +337,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter) {
 
   BlockDecoder *bd;
   RETURN_NOT_OK(reader_->CreateBlockDecoder(
-                  &bd, dblk_data_.slice()));
+                  &bd, dblk_data_.data()));
   dblk_.reset(bd);
   RETURN_NOT_OK(dblk_->ParseHeader());
   return Status::OK();

@@ -10,6 +10,7 @@ ADD_DEPENDENCIES(cfile_proto kudu_common)
 
 SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 
+  block_cache.cc
   bloomfile.cc
 
   gvint_block.cc
@@ -26,6 +27,7 @@ ADD_KUDU_TEST(index-test)
 ADD_KUDU_TEST(cfile-test)
 ADD_KUDU_TEST(encoding-test)
 ADD_KUDU_TEST(bloomfile-test)
+ADD_KUDU_TEST(block_cache-test)
 
 # Tools
 ADD_EXECUTABLE(cfile-dump cfile-dump.cc)

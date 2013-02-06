@@ -81,10 +81,10 @@ Status BloomFileReader::Init() {
   return Status::OK();
 }
 
-Status BloomFileReader::ParseBlockHeader(const BlockData &block,
+Status BloomFileReader::ParseBlockHeader(const Slice &block,
                                          BloomBlockHeaderPB *hdr,
                                          Slice *bloom_data) const {
-  Slice data = block.slice();
+  Slice data(block);
   if (PREDICT_FALSE(data.size() < 4)) {
     return Status::Corruption("Invalid bloom block header: not enough bytes");
   }
@@ -127,13 +127,13 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
 
   // Successfully found the pointer to the bloom block. Read it.
   BlockPointer bblk_ptr = iter->GetCurrentBlockPointer();
-  BlockData dblk_data;
+  BlockCacheHandle dblk_data;
   RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
 
   // Parse the header in the block.
   BloomBlockHeaderPB hdr;
   Slice bloom_data;
-  RETURN_NOT_OK( ParseBlockHeader(dblk_data, &hdr, &bloom_data) );
+  RETURN_NOT_OK( ParseBlockHeader(dblk_data.data(), &hdr, &bloom_data) );
 
   // Actually check the bloom filter.
   BloomFilter bf(bloom_data, hdr.num_hash_functions());

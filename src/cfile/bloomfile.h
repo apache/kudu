@@ -52,7 +52,7 @@ private:
   // Returns the parsed header inside *hdr, and returns
   // a Slice to the true bloom filter data inside
   // *bloom_data.
-  Status ParseBlockHeader(const BlockData &block,
+  Status ParseBlockHeader(const Slice &block,
                           BloomBlockHeaderPB *hdr,
                           Slice *bloom_data) const;
 

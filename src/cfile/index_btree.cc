@@ -1,8 +1,9 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#include "cfile.h"
-#include "cfile_reader.h"
-#include "index_btree.h"
+#include "cfile/block_cache.h"
+#include "cfile/cfile.h"
+#include "cfile/cfile_reader.h"
+#include "cfile/index_btree.h"
 
 namespace kudu {
 namespace cfile {
@@ -207,7 +208,6 @@ public:
     // Otherwise, the last layer points to the valid
     // next block. Propagate downward if it is not a leaf.
     while (!BottomReader()->IsLeaf()) {
-      BlockData data;
       RETURN_NOT_OK(PushBlock(BottomIter()->GetCurrentBlockPointer()));
       RETURN_NOT_OK(BottomIter()->SeekToIndex(0));
     }
@@ -233,15 +233,15 @@ private:
   }
   
   Status PushBlock(const BlockPointer &block) {
-    BlockData data;
-    RETURN_NOT_OK(reader_->ReadBlock(block, &data));
+    std::auto_ptr<BlockCacheHandle> data(new BlockCacheHandle());
+    RETURN_NOT_OK(reader_->ReadBlock(block, data.get()));
 
     // Parse it and open iterator.
     IndexBlockReader<KeyTypeEnum> *ibr;
     IndexBlockIterator<KeyTypeEnum> *iter;
     {
       std::auto_ptr<IndexBlockReader<KeyTypeEnum> > ibr_auto(
-        new IndexBlockReader<KeyTypeEnum>(data.slice()));
+        new IndexBlockReader<KeyTypeEnum>(data->data()));
       RETURN_NOT_OK(ibr_auto->Parse());
 
       iter = ibr_auto->NewIterator();
@@ -251,7 +251,7 @@ private:
       ibr = ibr_auto.release();
 
       // Add the block to the index iterator list.
-      SeekedIndex *si = new SeekedIndex(data,
+      SeekedIndex *si = new SeekedIndex(data.release(),
                                         ibr,
                                         iter);
       seeked_indexes_.push_back(si);
@@ -294,7 +294,7 @@ private:
   }
 
   struct SeekedIndex {
-    SeekedIndex(const BlockData &data_,
+    SeekedIndex(BlockCacheHandle *data_,
                 IndexBlockReader<KeyTypeEnum> *reader_,
                 IndexBlockIterator<KeyTypeEnum> *iter_) :
       data(data_),
@@ -304,7 +304,7 @@ private:
     // Hold a copy of the underlying block data, which would
     // otherwise go out of scope. The reader and iter
     // do not themselves retain the data.
-    BlockData data;
+    scoped_ptr<BlockCacheHandle> data;
     scoped_ptr<IndexBlockReader<KeyTypeEnum> > reader;
     scoped_ptr<IndexBlockIterator<KeyTypeEnum> > iter;
   };

@@ -38,8 +38,9 @@ public:
   bool Lookup(FileId file_id, uint64_t offset, BlockCacheHandle *handle);
 
   // Insert the given block into the cache.
-  // The data pointed to by Slice should have been allocated with new[].
-  // After insertion, the block cache owns this pointer and will delete[] it upon
+  //
+  // The data pointed to by Slice should have been allocated with malloc.
+  // After insertion, the block cache owns this pointer and will free it upon
   // eviction.
   //
   // The inserted entry is returned in *inserted.
@@ -75,7 +76,7 @@ public:
   //
   // NOTE: this slice is only valid until the block cache handle is
   // destructed or explicitly Released().
-  const Slice &block_data() const {
+  const Slice &data() const {
     const Slice *slice = reinterpret_cast<const Slice *>(cache_->Value(handle_));
     return *slice;
   }
