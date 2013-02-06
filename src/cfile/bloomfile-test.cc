@@ -1,0 +1,123 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+#include <arpa/inet.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "cfile/bloomfile.h"
+#include "util/env.h"
+#include "util/memenv/memenv.h"
+#include "util/test_macros.h"
+
+
+DEFINE_int32(bloom_size_bytes, 4*1024, "Size of each bloom filter");
+DEFINE_int32(n_keys, 10*1000, "Number of keys to insert into the file");
+DEFINE_double(fp_rate, 0.01f, "False positive rate to aim for");
+
+namespace kudu {
+namespace cfile {
+
+// TODO: a lot of this logic belongs in BloomFileWriter itself.
+// Move it there!
+static void AppendBlooms(BloomFileWriter *bfw) {
+  BloomFilterBuilder bfb(BloomFilterSizing::BySizeAndFPRate(
+                           FLAGS_bloom_size_bytes, FLAGS_fp_rate));
+  ASSERT_NEAR( bfb.n_bytes(), FLAGS_bloom_size_bytes, FLAGS_bloom_size_bytes * 0.05 );
+
+  ASSERT_GT(FLAGS_n_keys, bfb.expected_count())
+    << "Invalid parameters: --n_keys isn't set large enough to fill even "
+    << "one bloom filter of the requested --bloom_size_bytes";
+
+  int inserted_in_cur_bloom = 0;
+  uint32_t first_key = 0;
+  Slice first_key_slice(reinterpret_cast<char *>(&first_key),
+                        sizeof(first_key));
+
+  for (uint32_t i = 0; i < FLAGS_n_keys; i++) {
+    // Byte-swap the keys so that they're inserted in ascending
+    // lexicographic order.
+    // TODO: spent a while debugging this - would be good to add DCHECK
+    // to the AppendBloom code to ensure that keys go upward only
+    uint32_t i_byteswapped = htonl(i);
+
+    Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
+    bfb.AddKey(s);
+
+    if (inserted_in_cur_bloom == 0) {
+      first_key = i_byteswapped;
+    }
+
+    if (++inserted_in_cur_bloom >= bfb.expected_count()) {
+      LOG(INFO) << "Appending a new block, first_key=" << first_key;
+
+      ASSERT_STATUS_OK( bfw->AppendBloom(bfb, first_key_slice) );
+      inserted_in_cur_bloom = 0;
+      bfb.Clear();
+    }
+  }
+
+  if (inserted_in_cur_bloom > 0) {
+    ASSERT_STATUS_OK( bfw->AppendBloom(bfb, first_key_slice) );
+    inserted_in_cur_bloom = 0;
+  }
+}
+
+static void WriteTestBloomFile(Env *env, const string &path) {
+  WritableFile *file;
+  ASSERT_STATUS_OK( env->NewWritableFile(path, &file) );
+  shared_ptr<WritableFile> sink(file);
+
+  BloomFileWriter bfw(sink);
+  ASSERT_STATUS_OK(bfw.Start());
+  AppendBlooms(&bfw);
+  ASSERT_STATUS_OK( bfw.Finish() );
+}
+
+// Verify that all the entries we put in the bloom file check as
+// present, and verify that entries we didn't put in have the
+// expected false positive rate.
+static void VerifyBloomFile(Env *env, const string &path) {
+  BloomFileReader *bfr_ptr;
+  ASSERT_STATUS_OK( BloomFileReader::Open(env, path, &bfr_ptr) );
+  scoped_ptr<BloomFileReader> bfr(bfr_ptr);
+
+  // Verify all the keys that we inserted probe as present.
+  for (int i = 0; i < FLAGS_n_keys; i++) {
+    uint32_t i_byteswapped = htonl(i);
+    Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
+
+    bool present = false;
+    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(s, &present) );
+    ASSERT_TRUE(present);
+  }
+
+  int positive_count = 0;
+  // Check that the FP rate for keys we didn't insert is what we expect.
+  for (int i = FLAGS_n_keys; i < FLAGS_n_keys * 2; i++) {
+    uint32_t i_byteswapped = htonl(i);
+    Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
+
+    bool present = false;
+    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(s, &present) );
+    if (present) {
+      positive_count++;
+    }
+  }
+
+  double fp_rate = (double)positive_count / (double)FLAGS_n_keys;
+  LOG(INFO) << "fp_rate: " << fp_rate << "(" << positive_count << "/" << FLAGS_n_keys << ")";
+  ASSERT_NEAR(FLAGS_fp_rate, fp_rate, fp_rate * 0.20f)
+    << "Should be within 20% of the expected FP rate";
+}
+
+
+TEST(TestBloomFile, TestWriteAndRead) {
+  scoped_ptr<Env> env(NewMemEnv(Env::Default()));
+
+  string path("/test-bloomfile");
+  WriteTestBloomFile(env.get(), path);
+  VerifyBloomFile(env.get(), path);
+}
+
+} // namespace kudu
+} // namespace kudu

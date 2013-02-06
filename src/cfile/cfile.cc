@@ -244,6 +244,8 @@ Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
                               size_t ordinal_pos,
                               const void *validx_key,
                               const char *name_for_log) {
+  CHECK_EQ(state_, kWriterWriting);
+
   BlockPointer ptr;
   Status s = AddBlock(data_slices, &ptr, "data");
   if (!s.ok()) {

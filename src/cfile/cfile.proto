@@ -44,3 +44,8 @@ message CFileFooterPB {
   optional BTreeInfoPB posidx_info = 4;
   optional BTreeInfoPB validx_info = 5;
 }
+
+
+message BloomBlockHeaderPB {
+  required int32 num_hash_functions = 1;
+}

@@ -49,7 +49,7 @@ BloomFilterBuilder::BloomFilterBuilder(const BloomFilterSizing &sizing) :
 }
 
 void BloomFilterBuilder::Clear() {
-  memset(&bitmap_[0], 0, n_bits_ * 8);
+  memset(&bitmap_[0], 0, n_bytes());
 }
 
 double BloomFilterBuilder::false_positive_rate() const {

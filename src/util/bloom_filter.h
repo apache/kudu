@@ -25,7 +25,12 @@ namespace kudu {
 // at some point.
 class BloomKeyProbe : boost::noncopyable {
 public:
-  BloomKeyProbe(const Slice &key) {
+
+  // Construct a probe from the given key.
+  //
+  // NOTE: proper operation requires that the referenced memory remain
+  // valid for the lifetime of this object.
+  BloomKeyProbe(const Slice &key) : key_(key) {
     uint64_t h = util_hash::CityHash64(key.data(), key.size());
 
     // Use the top and bottom halves of the 64-bit hash
@@ -38,6 +43,8 @@ public:
     return h_1_;
   }
 
+  const Slice &key() const { return key_; }
+
   // Mix the given hash function with the second calculated hash
   // value. A sequence of independent hashes can be calculated
   // by repeatedly calling
@@ -46,7 +53,7 @@ public:
   }
 
 private:
-
+  const Slice key_;
   uint32_t h_1_;
   uint32_t h_2_;
 };
@@ -107,7 +114,9 @@ public:
 
   // Return the number of hashes that are calculated for each entry
   // in the bloom filter.
-  const size_t n_hashes() const { return n_hashes_; }
+  size_t n_hashes() const { return n_hashes_; }
+
+  size_t expected_count() const { return expected_count_; }
 
 private:
   size_t n_bits_;
