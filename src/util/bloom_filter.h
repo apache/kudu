@@ -31,7 +31,9 @@ public:
   // NOTE: proper operation requires that the referenced memory remain
   // valid for the lifetime of this object.
   BloomKeyProbe(const Slice &key) : key_(key) {
-    uint64_t h = util_hash::CityHash64(key.data(), key.size());
+    uint64_t h = util_hash::CityHash64(
+      reinterpret_cast<const char *>(key.data()),
+      key.size());
 
     // Use the top and bottom halves of the 64-bit hash
     // as the two independent hash functions for mixing.
@@ -108,8 +110,7 @@ public:
   // Return a slice view into this Bloom Filter, suitable for
   // writing out to a file.
   const Slice slice() const {
-    return Slice(reinterpret_cast<const char *>(&bitmap_[0]),
-                 n_bytes());
+    return Slice(&bitmap_[0], n_bytes());
   }
 
   // Return the number of hashes that are calculated for each entry

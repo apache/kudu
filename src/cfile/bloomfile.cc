@@ -8,6 +8,7 @@
 #include "util/env.h"
 #include "util/coding.h"
 #include "util/hexdump.h"
+#include "util/pb_util.h"
 
 namespace kudu { namespace cfile {
 
@@ -70,9 +71,9 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
   // Encode the header.
   BloomBlockHeaderPB hdr;
   hdr.set_num_hash_functions(bloom_builder_.n_hashes());
-  string hdr_str;
+  faststring hdr_str;
   PutFixed32(&hdr_str, hdr.ByteSize());
-  CHECK(hdr.AppendToString(&hdr_str));
+  CHECK(pb_util::AppendToString(hdr, &hdr_str));
 
   // The data is the concatenation of the header and the bloom itself.
   vector<Slice> slices;

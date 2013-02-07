@@ -13,7 +13,7 @@ static void AddRandomKeys(int random_seed, int n_keys, BloomFilterBuilder *bf) {
   srand(random_seed);
   for (int i = 0; i < n_keys; i++) {
     uint64_t key = random();
-    Slice key_slice(reinterpret_cast<const char *>(&key), sizeof(key));
+    Slice key_slice(reinterpret_cast<const uint8_t *>(&key), sizeof(key));
     BloomKeyProbe probe(key_slice);
     bf->AddKey(probe);
   }
@@ -23,7 +23,7 @@ static void CheckRandomKeys(int random_seed, int n_keys, const BloomFilter &bf) 
   srand(random_seed);
   for (int i = 0; i < n_keys; i++) {
     uint64_t key = random();
-    Slice key_slice(reinterpret_cast<const char *>(&key), sizeof(key));
+    Slice key_slice(reinterpret_cast<const uint8_t *>(&key), sizeof(key));
     BloomKeyProbe probe(key_slice);
     ASSERT_TRUE(bf.MayContainKey(probe));
   }
@@ -54,7 +54,7 @@ TEST(TestBloomFilter, TestInsertAndProbe) {
   uint32_t num_positives = 0;
   for (int i = 0; i < num_queries; i++) {
     uint64_t key = random();
-    Slice key_slice(reinterpret_cast<const char *>(&key), sizeof(key));
+    Slice key_slice(reinterpret_cast<const uint8_t *>(&key), sizeof(key));
     BloomKeyProbe probe(key_slice);
     if (bf.MayContainKey(probe)) {
       num_positives++;

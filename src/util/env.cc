@@ -3,6 +3,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "util/env.h"
+#include "util/faststring.h"
 
 namespace kudu {
 
@@ -55,6 +56,7 @@ static Status DoWriteStringToFile(Env* env, const Slice& data,
   return s;
 }
 
+// TODO: move these utils into env_util
 Status WriteStringToFile(Env* env, const Slice& data,
                          const std::string& fname) {
   return DoWriteStringToFile(env, data, fname, false);
@@ -65,7 +67,7 @@ Status WriteStringToFileSync(Env* env, const Slice& data,
   return DoWriteStringToFile(env, data, fname, true);
 }
 
-Status ReadFileToString(Env* env, const std::string& fname, std::string* data) {
+Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
   data->clear();
   SequentialFile* file;
   Status s = env->NewSequentialFile(fname, &file);
@@ -73,7 +75,7 @@ Status ReadFileToString(Env* env, const std::string& fname, std::string* data) {
     return s;
   }
   static const int kBufferSize = 8192;
-  char* space = new char[kBufferSize];
+  uint8_t* space = new uint8_t[kBufferSize];
   while (true) {
     Slice fragment;
     s = file->Read(kBufferSize, &fragment, space);

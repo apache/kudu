@@ -16,6 +16,7 @@
 #include "util/env.h"
 #include "util/coding.h"
 #include "util/logging.h"
+#include "util/pb_util.h"
 #include "util/hexdump.h"
 
 using std::string;
@@ -77,13 +78,12 @@ Status Writer::Start() {
   header.set_minor_version(kCFileMinorVersion);
   uint32_t pb_size = header.ByteSize();
 
-
-  string buf;
+  faststring buf;
   // First the magic.
   buf.append(kMagicString);
   // Then Length-prefixed header.
   PutFixed32(&buf, pb_size);
-  if (!header.AppendToString(&buf)) {
+  if (!pb_util::AppendToString(header, &buf)) {
     return Status::Corruption("unable to encode header");
   }
 
@@ -161,8 +161,8 @@ Status Writer::Finish() {
     footer.mutable_validx_info()->CopyFrom(validx_info);
   }
 
-  string footer_str;
-  if (!footer.SerializeToString(&footer_str)) {
+  faststring footer_str;
+  if (!pb_util::SerializeToString(footer, &footer_str)) {
     return Status::Corruption("unable to serialize footer");
   }
 
@@ -219,7 +219,7 @@ Status Writer::FinishCurDataBlock() {
   VLOG(2) << "estimated size=" << data_block_->EstimateEncodedSize()
           << " actual=" << data.size();
 
-  char key_tmp_space[typeinfo_.size()];
+  uint8_t key_tmp_space[typeinfo_.size()];
 
   if (validx_builder_ != NULL) {
     // If we're building an index, we need to copy the first
@@ -263,7 +263,8 @@ Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
     CHECK(validx_key != NULL) <<
       "must pass a  key for raw block if validx is configured";
     VLOG(1) << "Appending validx entry\n" <<
-      kudu::HexDump(Slice(reinterpret_cast<const char *>(validx_key), typeinfo_.size()));
+      kudu::HexDump(Slice(reinterpret_cast<const uint8_t *>(validx_key),
+                          typeinfo_.size()));
     s = validx_builder_->Append(validx_key, ptr);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to append to value index: " << s.ToString();

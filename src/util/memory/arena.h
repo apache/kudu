@@ -89,7 +89,7 @@ class ArenaBase {
   // where it keeps these pointers together with size information).
   // If this request would make the arena grow and the allocator denies that,
   // returns NULL and leaves the arena unchanged.
-  char* AddSlice(const Slice& value);
+  uint8_t *AddSlice(const Slice& value);
 
   // Same as above.
   void * AddBytes(const void *data, size_t len);
@@ -242,19 +242,19 @@ class ArenaBase<THREADSAFE>::Component {
  public:
   explicit Component(Buffer* buffer)
       : buffer_(buffer),
-        data_(static_cast<char*>(buffer->data())),
+        data_(static_cast<uint8_t*>(buffer->data())),
         offset_(0),
         size_(buffer->size()) {}
 
   // Tries to reserve space in this component. Returns the pointer to the
   // reserved space if successful; NULL on failure (if there's no more room).
-  void* AllocateBytes(const size_t size);
+  uint8_t* AllocateBytes(const size_t size);
   size_t size() const { return size_; }
   void Reset() { offset_ = 0; }
 
  private:
   scoped_ptr<Buffer> buffer_;
-  char* const data_;
+  uint8_t* const data_;
   typename ArenaTraits<THREADSAFE>::offset_type offset_;
   const size_t size_;
   DISALLOW_COPY_AND_ASSIGN(Component);
@@ -263,7 +263,7 @@ class ArenaBase<THREADSAFE>::Component {
 
 // Thread-safe implementation
 template <>
-inline void *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
+inline uint8_t *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
   retry:
 
   Atomic32 offset = Acquire_Load(&offset_);
@@ -284,8 +284,8 @@ inline void *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
 
 // Non-Threadsafe implementation
 template <>
-inline void *ArenaBase<false>::Component::AllocateBytes(const size_t size) {
-  void* destination = data_ + offset_;
+inline uint8_t *ArenaBase<false>::Component::AllocateBytes(const size_t size) {
+  uint8_t* destination = data_ + offset_;
   offset_ += size;
   if (PREDICT_TRUE(offset_ <= size_)) {
     return destination;
@@ -306,9 +306,8 @@ inline void *ArenaBase<THREADSAFE>::AllocateBytes(const size_t size) {
 }
 
 template <bool THREADSAFE>
-inline char* ArenaBase<THREADSAFE>::AddSlice(const Slice& value) {
-  return reinterpret_cast<char *>(
-    AddBytes(value.data(), value.size()));
+inline uint8_t* ArenaBase<THREADSAFE>::AddSlice(const Slice& value) {
+  return reinterpret_cast<uint8_t *>(AddBytes(value.data(), value.size()));
 }
 
 template <bool THREADSAFE>
@@ -324,8 +323,7 @@ inline bool ArenaBase<THREADSAFE>::RelocateSlice(const Slice &src, Slice *dst) {
   void* destination = AllocateBytes(src.size());
   if (destination == NULL) return false;
   memcpy(destination, src.data(), src.size());
-  *dst = Slice(reinterpret_cast<const char *>(destination),
-               src.size());
+  *dst = Slice(reinterpret_cast<uint8_t *>(destination), src.size());
   return true;
 }
 

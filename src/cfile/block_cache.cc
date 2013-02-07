@@ -21,7 +21,7 @@ struct CacheKey {
   {}
 
   const Slice slice() const {
-    return Slice(reinterpret_cast<const char *>(this), sizeof(*this));
+    return Slice(reinterpret_cast<const uint8_t *>(this), sizeof(*this));
   }
 
   BlockCache::FileId file_id_;

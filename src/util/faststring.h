@@ -6,6 +6,8 @@
 #include <boost/scoped_array.hpp>
 #include "gutil/strings/fastmem.h"
 
+#include <string>
+
 namespace kudu {
 
 using boost::scoped_array;
@@ -13,13 +15,13 @@ using boost::scoped_array;
 class faststring : public boost::noncopyable {
 public:
   faststring() :
-    data_(new char[kInitialCapacity]),
+    data_(new uint8_t[kInitialCapacity]),
     len_(0),
     capacity_(kInitialCapacity) {
   }
 
   explicit faststring(size_t capacity) :
-    data_(new char[capacity]),
+    data_(new uint8_t[capacity]),
     len_(0),
     capacity_(capacity)
   {}
@@ -38,13 +40,14 @@ public:
   void reserve(size_t newcapacity) {
     if (PREDICT_TRUE(newcapacity <= capacity_)) return;
 
-    scoped_array<char> newdata(new char[newcapacity]);
+    scoped_array<uint8_t> newdata(new uint8_t[newcapacity]);
     strings::memcpy_inlined(&newdata[0], &data_[0], len_);
     capacity_ = newcapacity;
     data_.swap(newdata);
   }
 
   void append(const void *src_v, size_t count) {
+    const uint8_t *src = reinterpret_cast<const uint8_t *>(src_v);
     if (PREDICT_FALSE(len_ + count > capacity_)) {
       // Not enough space, need to reserve more.
       // Don't reserve exactly enough space for the new string -- that makes it
@@ -58,14 +61,13 @@ public:
       reserve(to_reserve);
     }
 
-    const char *src = reinterpret_cast<const char *>(src_v);
     // appending short values is common enough that this
     // actually helps, according to benchmarks. In theory
     // memcpy_inlined should already be just as good, but this
     // was ~20% faster for reading a large prefix-coded string file
     // where each string was only a few chars different
     if (count <= 4) {
-      char *p = &data_[len_];
+      uint8_t *p = &data_[len_];
       for (int i = 0; i < count; i++) {
         *p++ = *src++;
       }
@@ -73,6 +75,10 @@ public:
       strings::memcpy_inlined(&data_[len_], src, count);
     }
     len_ += count;
+  }
+
+  void append(const std::string &str) {
+    append(str.data(), str.size());
   }
 
   void push_back(const char byte) {
@@ -93,42 +99,47 @@ public:
     return capacity_;
   }
 
-  const char *data() const {
+  const uint8_t *data() const {
     return &data_[0];
   }
 
-  char *data() {
+  uint8_t *data() {
     return &data_[0];
   }
 
-  const char &at(size_t i) const {
+  const uint8_t &at(size_t i) const {
     return data_[i];
   }
 
-  const char &operator[](size_t i) const {
+  const uint8_t &operator[](size_t i) const {
     return data_[i];
   }
 
-  char &operator[](size_t i) {
+  uint8_t &operator[](size_t i) {
     return data_[i];
   }
 
-  void assign_copy(const char *src, size_t len) {
+  void assign_copy(const uint8_t *src, size_t len) {
     resize(len);
     memcpy(data(), src, len);
   }
 
   void assign_copy(const std::string &str) {
-    assign_copy(str.c_str(), str.size());
+    assign_copy(reinterpret_cast<const uint8_t *>(str.c_str()),
+                str.size());
   }
 
+  std::string ToString() const {
+    return std::string(reinterpret_cast<const char *>(data()),
+                       len_);
+  }
 
 private:
   enum {
     kInitialCapacity = 16
   };
 
-  scoped_array<char> data_;
+  scoped_array<uint8_t> data_;
   size_t len_;
   size_t capacity_;
 };

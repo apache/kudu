@@ -14,9 +14,9 @@
 
 namespace kudu {
 
-inline char* InlineEncodeVarint32(char* dst, uint32_t v) {
+inline uint8_t *InlineEncodeVarint32(uint8_t *dst, uint32_t v) {
   // Operate on characters as unsigneds
-  unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
+  uint8_t *ptr = dst;
   static const int B = 128;
   if (v < (1<<7)) {
     *(ptr++) = v;
@@ -39,10 +39,10 @@ inline char* InlineEncodeVarint32(char* dst, uint32_t v) {
     *(ptr++) = (v>>21) | B;
     *(ptr++) = v>>28;
   }
-  return reinterpret_cast<char*>(ptr);
+  return ptr;
 }
 
-inline void InlineEncodeFixed32(char* buf, uint32_t value) {
+inline void InlineEncodeFixed32(uint8_t *buf, uint32_t value) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   memcpy(buf, &value, sizeof(value));
 #else
@@ -53,7 +53,7 @@ inline void InlineEncodeFixed32(char* buf, uint32_t value) {
 #endif
 }
 
-inline void InlineEncodeFixed64(char* buf, uint64_t value) {
+inline void InlineEncodeFixed64(uint8_t *buf, uint64_t value) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   memcpy(buf, &value, sizeof(value));
 #else
@@ -72,22 +72,22 @@ inline void InlineEncodeFixed64(char* buf, uint64_t value) {
 // Standard Put... routines append to a string
 template <class StrType>
 inline void InlinePutFixed32(StrType *dst, uint32_t value) {
-  char buf[sizeof(value)];
+  uint8_t buf[sizeof(value)];
   InlineEncodeFixed32(buf, value);
   dst->append(buf, sizeof(buf));
 }
 
 template <class StrType>
 inline void InlinePutFixed64(StrType *dst, uint64_t value) {
-  char buf[sizeof(value)];
+  uint8_t buf[sizeof(value)];
   InlineEncodeFixed64(buf, value);
   dst->append(buf, sizeof(buf));
 }
 
 template <class StrType>
 inline void InlinePutVarint32(StrType* dst, uint32_t v) {
-  char buf[5];
-  char* ptr = InlineEncodeVarint32(buf, v);
+  uint8_t buf[5];
+  uint8_t *ptr = InlineEncodeVarint32(buf, v);
   dst->append(buf, ptr - buf);
 }
 

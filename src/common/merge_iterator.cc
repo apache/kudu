@@ -124,7 +124,7 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
   *nrows = 0;
   size_t dst_row_idx = 0;
   size_t row_size = schema_.byte_size();
-  char *dst_ptr = reinterpret_cast<char *>(dst->row_ptr(0));
+  uint8_t *dst_ptr = dst->row_ptr(0);
 
 
   while (dst_row_idx < dst->nrows()) {
@@ -151,9 +151,7 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     if (PREDICT_FALSE(smallest == NULL)) break;
 
     // Otherwise, copy the row from the smallest one, and advance it
-    strings::memcpy_inlined(dst_ptr,
-                            reinterpret_cast<const char *>(smallest->next_row_ptr()),
-                            row_size);
+    strings::memcpy_inlined(dst_ptr, smallest->next_row_ptr(), row_size);
     if (dst->arena() != NULL) {
       RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(dst_ptr, schema_, dst->arena()));
     }

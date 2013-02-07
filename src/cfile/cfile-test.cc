@@ -19,24 +19,6 @@
 
 namespace kudu { namespace cfile {
 
-class StringSink: public WritableFile {
- public:
-  ~StringSink() { }
-
-  const std::string& contents() const { return contents_; }
-
-  virtual Status Close() { return Status::OK(); }
-  virtual Status Flush() { return Status::OK(); }
-  virtual Status Sync() { return Status::OK(); }
-
-  virtual Status Append(const Slice& data) {
-    contents_.append(data.data(), data.size());
-    return Status::OK();
-  }
-
- private:
-  std::string contents_;
-};
 
 template<DataType type>
 void CopyOne(CFileIterator *it,

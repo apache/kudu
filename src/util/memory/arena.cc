@@ -47,12 +47,12 @@ ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_s
 }
 
 template <bool THREADSAFE>
-void* ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size) {
+void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size) {
   boost::lock_guard<boost::mutex> lock(component_lock_);
 
   // It's possible another thread raced with us and already allocated
   // a new component, in which case we should try the "fast path" again
-  void* result = current_->AllocateBytes(size);
+  void * result = current_->AllocateBytes(size);
   if (PREDICT_FALSE(result != NULL)) return result;
 
   // Really need to allocate more space.

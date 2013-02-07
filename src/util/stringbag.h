@@ -107,7 +107,7 @@ public:
     return Slice(s_ + info.pos, info.len);
   }
 
-  bool Assign(int p, const char *s, int len) {
+  bool Assign(int p, const uint8_t *s, int len) {
     CheckWidth(p);
 
     info_type *dst_info = info_ + p;
@@ -191,7 +191,7 @@ public:
 
     // TODO: stack allocation won't work for large bags.
     // fall back to malloc or take in tmp space as an arg
-    char tmp_space[header_.data_size];
+    uint8_t tmp_space[header_.data_size];
     size_t tmp_idx = 0;
     size_t firstpos = width * sizeof(info_type);
 
@@ -273,7 +273,7 @@ private:
 
   union {
     info_type info_[];
-    char s_[];
+    uint8_t s_[];
   };
 
   static info_type make_info(int pos, int len) {

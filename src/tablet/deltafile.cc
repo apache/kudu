@@ -114,7 +114,7 @@ Status DeltaFileReader::ApplyUpdates(
     cfile::IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
 
   uint32_t start_row_bigendian = htonl(start_row);
-  Slice key_slice(reinterpret_cast<const char *>(&start_row_bigendian),
+  Slice key_slice(reinterpret_cast<const uint8_t *>(&start_row_bigendian),
                   sizeof(uint32_t));
 
   Status s = iter->SeekAtOrBefore(&key_slice);

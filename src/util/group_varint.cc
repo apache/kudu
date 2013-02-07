@@ -13,8 +13,8 @@ namespace kudu {
 namespace coding {
 
 bool SSE_TABLE_INITTED = false;
-char SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
-char VARINT_SELECTOR_LENGTHS[256];
+uint8_t SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
+uint8_t VARINT_SELECTOR_LENGTHS[256];
 
 __attribute__((constructor))
 static void InitializeSSETables() {

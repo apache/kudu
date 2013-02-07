@@ -88,11 +88,11 @@ private:
   Status ParseNextValue();
   Status ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied);
 
-  const char *DecodeEntryLengths(const char *ptr,
+  const uint8_t *DecodeEntryLengths(const uint8_t *ptr,
                            uint32_t *shared,
                            uint32_t *non_shared) const;
 
-  const char * GetRestartPoint(uint32_t idx) const;
+  const uint8_t *GetRestartPoint(uint32_t idx) const;
   void SeekToRestartPoint(uint32_t idx);
 
   void SeekToStart();
@@ -108,7 +108,7 @@ private:
   const uint32_t *restarts_;
   uint32_t restart_interval_;
 
-  const char *data_start_;
+  const uint8_t *data_start_;
 
   // Index of the next row to be returned by CopyNextValues, relative to
   // the block's base offset.
@@ -121,7 +121,7 @@ private:
   // The ptr pointing to the next element to parse. This is for the entry
   // following cur_val_
   // This is advanced by ParseNextValue()
-  const char *next_ptr_;
+  const uint8_t *next_ptr_;
 };
 
 } // namespace cfile

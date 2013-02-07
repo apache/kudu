@@ -32,7 +32,7 @@ TEST(TestBlockCache, TestBasics) {
   BlockCacheHandle retrieved_handle;
   ASSERT_TRUE(cache.Lookup(id, 1, &retrieved_handle));
   ASSERT_TRUE(retrieved_handle.valid());
-  ASSERT_EQ(retrieved_handle.data().data(),
+  ASSERT_EQ(reinterpret_cast<const char *>(retrieved_handle.data().data()),
             DATUM_1.c_str());
 
   // Ensure that a lookup for a different offset doesn't

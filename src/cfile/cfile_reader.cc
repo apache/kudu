@@ -58,7 +58,7 @@ CFileReader::CFileReader(const ReaderOptions &options,
 
 
 Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
-  char scratch[kMagicAndLengthSize];
+  uint8_t scratch[kMagicAndLengthSize];
   Slice slice;
 
   RETURN_NOT_OK(file_->Read(offset, kMagicAndLengthSize,
@@ -96,7 +96,7 @@ Status CFileReader::ReadAndParseHeader() {
   RETURN_NOT_OK(ReadMagicAndLength(0, &header_size));
 
   // Now read the protobuf header.
-  char header_space[header_size];
+  uint8_t header_space[header_size];
   Slice header_slice;
   header_.reset(new CFileHeaderPB());
 
@@ -125,7 +125,7 @@ Status CFileReader::ReadAndParseFooter() {
 
   // Now read the protobuf footer.
   footer_.reset(new CFileFooterPB());
-  char footer_space[footer_size];
+  uint8_t footer_space[footer_size];
   Slice footer_slice;
   uint64_t off = file_size_ - kMagicAndLengthSize - footer_size;
   RETURN_NOT_OK(file_->Read(off, footer_size, &footer_slice, footer_space));
@@ -147,7 +147,7 @@ Status CFileReader::ReadAndParseFooter() {
 // the given buffer, and if so, memcpys the data into the buffer and
 // adjusts the Slice accordingly
 static void MatchReadSliceWithBuffer(Slice *slice,
-                                     char *buffer) {
+                                     uint8_t *buffer) {
   if (slice->data() != buffer) {
     memcpy(buffer, slice->data(), slice->size());
     *slice = Slice(buffer, slice->size());
@@ -168,7 +168,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   }
 
   // Cache miss: need to read ourselves.
-  ::scoped_array<char> scratch(new char[ptr.size()]);
+  ::scoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice s;
   RETURN_NOT_OK( file_->Read(ptr.offset(), ptr.size(),
                              &s, scratch.get()) );

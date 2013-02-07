@@ -245,8 +245,7 @@ Status LayerWriter::FlushBloomFilter(RowIteratorInterface *src_iter,
 
       // Encode the row into sortable form
       encoded_key_buf.clear();
-      Slice row_slice(reinterpret_cast<const char *>(row),
-                      schema.byte_size());
+      Slice row_slice(row, schema.byte_size());
       schema.EncodeComparableKey(row_slice, &encoded_key_buf);
 
       // Insert the encoded row into the bloom.

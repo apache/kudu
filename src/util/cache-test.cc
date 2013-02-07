@@ -15,9 +15,9 @@ namespace kudu {
 
 // Conversions between numeric keys/values and the types expected by Cache.
 static std::string EncodeKey(int k) {
-  std::string result;
+  faststring result;
   PutFixed32(&result, k);
-  return result;
+  return result.ToString();
 }
 static int DecodeKey(const Slice& k) {
   assert(k.size() == 4);

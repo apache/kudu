@@ -42,7 +42,7 @@ class PosixSequentialFile: public SequentialFile {
       : filename_(fname), file_(f) { }
   virtual ~PosixSequentialFile() { fclose(file_); }
 
-  virtual Status Read(size_t n, Slice* result, char* scratch) {
+  virtual Status Read(size_t n, Slice* result, uint8_t* scratch) {
     Status s;
     size_t r = fread_unlocked(scratch, 1, n, file_);
     *result = Slice(scratch, r);
@@ -77,7 +77,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
   virtual ~PosixRandomAccessFile() { close(fd_); }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const {
+                      uint8_t *scratch) const {
     Status s;
     ssize_t r = pread(fd_, scratch, n, static_cast<off_t>(offset));
     *result = Slice(scratch, (r < 0) ? 0 : r);
@@ -103,13 +103,13 @@ class PosixMmapReadableFile: public RandomAccessFile {
   virtual ~PosixMmapReadableFile() { munmap(mmapped_region_, length_); }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const {
+                      uint8_t *scratch) const {
     Status s;
     if (offset + n > length_) {
       *result = Slice();
       s = IOError(filename_, EINVAL);
     } else {
-      *result = Slice(reinterpret_cast<char*>(mmapped_region_) + offset, n);
+      *result = Slice(reinterpret_cast<uint8_t *>(mmapped_region_) + offset, n);
     }
     return s;
   }
@@ -125,10 +125,10 @@ class PosixMmapFile : public WritableFile {
   int fd_;
   size_t page_size_;
   size_t map_size_;       // How much extra memory to map at a time
-  char* base_;            // The mapped region
-  char* limit_;           // Limit of the mapped region
-  char* dst_;             // Where to write next  (in range [base_,limit_])
-  char* last_sync_;       // Where have we synced up to
+  uint8_t *base_;            // The mapped region
+  uint8_t *limit_;           // Limit of the mapped region
+  uint8_t *dst_;             // Where to write next  (in range [base_,limit_])
+  uint8_t *last_sync_;       // Where have we synced up to
   uint64_t file_offset_;  // Offset of base_ in file
 
   // Have we done an munmap of unsynced data?
@@ -179,7 +179,7 @@ class PosixMmapFile : public WritableFile {
     if (ptr == MAP_FAILED) {
       return false;
     }
-    base_ = reinterpret_cast<char*>(ptr);
+    base_ = reinterpret_cast<uint8_t *>(ptr);
     limit_ = base_ + map_size_;
     dst_ = base_;
     last_sync_ = base_;
@@ -209,7 +209,7 @@ class PosixMmapFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) {
-    const char* src = data.data();
+    const uint8_t *src = data.data();
     size_t left = data.size();
     while (left > 0) {
       assert(base_ <= dst_);

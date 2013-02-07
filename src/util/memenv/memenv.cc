@@ -54,7 +54,7 @@ class FileState {
 
   uint64_t Size() const { return size_; }
 
-  Status Read(uint64_t offset, size_t n, Slice* result, char* scratch) const {
+  Status Read(uint64_t offset, size_t n, Slice* result, uint8_t* scratch) const {
     if (offset > size_) {
       return Status::IOError("Offset greater than file size.");
     }
@@ -77,7 +77,7 @@ class FileState {
     }
 
     size_t bytes_to_copy = n;
-    char* dst = scratch;
+    uint8_t* dst = scratch;
 
     while (bytes_to_copy > 0) {
       size_t avail = kBlockSize - block_offset;
@@ -97,7 +97,7 @@ class FileState {
   }
 
   Status Append(const Slice& data) {
-    const char* src = data.data();
+    const uint8_t* src = data.data();
     size_t src_len = data.size();
 
     while (src_len > 0) {
@@ -109,7 +109,7 @@ class FileState {
         avail = kBlockSize - offset;
       } else {
         // No room in the last block; push new one.
-        blocks_.push_back(new char[kBlockSize]);
+        blocks_.push_back(new uint8_t[kBlockSize]);
         avail = kBlockSize;
       }
 
@@ -128,7 +128,7 @@ class FileState {
  private:
   // Private since only Unref() should be used to delete it.
   ~FileState() {
-    for (std::vector<char*>::iterator i = blocks_.begin(); i != blocks_.end();
+    for (std::vector<uint8_t*>::iterator i = blocks_.begin(); i != blocks_.end();
          ++i) {
       delete [] *i;
     }
@@ -144,7 +144,7 @@ class FileState {
   // The following fields are not protected by any mutex. They are only mutable
   // while the file is being written, and concurrent access is not allowed
   // to writable files.
-  std::vector<char*> blocks_;
+  std::vector<uint8_t*> blocks_;
   uint64_t size_;
 
   enum { kBlockSize = 8 * 1024 };
@@ -160,7 +160,7 @@ class SequentialFileImpl : public SequentialFile {
     file_->Unref();
   }
 
-  virtual Status Read(size_t n, Slice* result, char* scratch) {
+  virtual Status Read(size_t n, Slice* result, uint8_t* scratch) {
     Status s = file_->Read(pos_, n, result, scratch);
     if (s.ok()) {
       pos_ += result->size();
@@ -196,7 +196,7 @@ class RandomAccessFileImpl : public RandomAccessFile {
   }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const {
+                      uint8_t* scratch) const {
     return file_->Read(offset, n, result, scratch);
   }
 

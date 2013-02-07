@@ -28,26 +28,36 @@ namespace kudu {
 class Slice {
  public:
   // Create an empty slice.
-  Slice() : data_(""), size_(0) { }
+  Slice() : data_(reinterpret_cast<const uint8_t *>("")),
+            size_(0) { }
 
   // Create a slice that refers to d[0,n-1].
-  Slice(const char* d, size_t n) : data_(d), size_(n) { }
+  Slice(const uint8_t* d, size_t n) : data_(d), size_(n) { }
+
+  // Create a slice that refers to d[0,n-1].
+  Slice(const char* d, size_t n) :
+    data_(reinterpret_cast<const uint8_t *>(d)),
+    size_(n) { }
 
   // Create a slice that refers to the contents of "s"
-  Slice(const std::string& s) : data_(s.data()), size_(s.size()) { }
+  Slice(const std::string& s) :
+    data_(reinterpret_cast<const uint8_t *>(s.data())),
+    size_(s.size()) { }
 
   // Create a slice that refers to s[0,strlen(s)-1]
-  Slice(const char* s) : data_(s), size_(strlen(s)) { }
+  Slice(const char* s) :
+    data_(reinterpret_cast<const uint8_t *>(s)),
+    size_(strlen(s)) { }
 
   // Create a slice that refers to the contents of the faststring.
   // Note that further appends to the faststring may invalidate this slice.
   Slice(const faststring &s) : data_(s.data()), size_(s.size()) { }
 
   // Return a pointer to the beginning of the referenced data
-  const char* data() const { return data_; }
+  const uint8_t* data() const { return data_; }
 
   // Return a mutable pointer to the beginning of the referenced data.
-  char *mutable_data() { return const_cast<char *>(data_); }
+  uint8_t *mutable_data() { return const_cast<uint8_t *>(data_); }
 
   // Return the length (in bytes) of the referenced data
   size_t size() const { return size_; }
@@ -57,13 +67,16 @@ class Slice {
 
   // Return the ith byte in the referenced data.
   // REQUIRES: n < size()
-  const char &operator[](size_t n) const {
+  const uint8_t &operator[](size_t n) const {
     assert(n < size());
     return data_[n];
   }
 
   // Change this slice to refer to an empty array
-  void clear() { data_ = ""; size_ = 0; }
+  void clear() {
+    data_ = reinterpret_cast<const uint8_t *>("");
+    size_ = 0;
+  }
 
   // Drop the first "n" bytes from this slice.
   void remove_prefix(size_t n) {
@@ -73,7 +86,9 @@ class Slice {
   }
 
   // Return a string that contains the copy of the referenced data.
-  std::string ToString() const { return std::string(data_, size_); }
+  std::string ToString() const {
+    return std::string(reinterpret_cast<const char *>(data_), size_);
+  }
 
   std::string ToDebugString() const {
     int size = 0;
@@ -109,7 +124,7 @@ class Slice {
   }
 
  private:
-  const char* data_;
+  const uint8_t* data_;
   size_t size_;
 
   // Intentionally copyable

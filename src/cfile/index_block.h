@@ -44,13 +44,13 @@ public:
   //          That is to say, it may be far into the next key
   //          or even to the end of the entire block data.
   virtual int Compare(
-    const char *encoded_ptr, const char *limit,
+    const uint8_t *encoded_ptr, const uint8_t *limit,
     const void *cmp_against) const = 0;
 
-  virtual const char *Decode(const char *encoded_ptr, const char *limit,
-                             void *ret) const = 0;
+  virtual const uint8_t *Decode(const uint8_t *encoded_ptr, const uint8_t *limit,
+                                void *ret) const = 0;
 
-  virtual const char *SkipKey(const char *encoded_ptr, const char *limit) const = 0;
+  virtual const uint8_t *SkipKey(const uint8_t *encoded_ptr, const uint8_t *limit) const = 0;
 
   virtual ~KeyEncoding() {};
 
@@ -70,16 +70,16 @@ public:
     derived()->StaticEncode(key, buf);
   }
 
-  const char *Decode(const char *encoded_ptr, const char *limit,
+  const uint8_t *Decode(const uint8_t *encoded_ptr, const uint8_t *limit,
               void *retptr) const {
     return derived()->StaticDecode(encoded_ptr, limit, retptr);
   }
 
-  const char *SkipKey(const char *encoded_ptr, const char *limit) const {
+  const uint8_t *SkipKey(const uint8_t *encoded_ptr, const uint8_t *limit) const {
     return derived()->StaticSkipKey(encoded_ptr, limit);
   }
 
-  int Compare(const char *encoded_ptr, const char *limit,
+  int Compare(const uint8_t *encoded_ptr, const uint8_t *limit,
               const void *cmp_against_ptr) const {
     return derived()->StaticCompare(encoded_ptr, limit, cmp_against_ptr);
   }
@@ -99,7 +99,7 @@ public:
     InlinePutVarint32(buf, Deref(key));
   }
 
-  int StaticCompare(const char *encoded_ptr, const char *limit,
+  int StaticCompare(const uint8_t *encoded_ptr, const uint8_t *limit,
                     const void *cmp_against_ptr) const {
     uint32_t cmp_against = Deref(cmp_against_ptr);
 
@@ -115,13 +115,13 @@ public:
     }
   }
 
-  const char *StaticDecode(const char *encoded_ptr, const char *limit,
+  const uint8_t *StaticDecode(const uint8_t *encoded_ptr, const uint8_t *limit,
               void *retptr) const {
     uint32_t *ret = reinterpret_cast<uint32_t *>(retptr);
     return GetVarint32Ptr(encoded_ptr, limit, ret);
   }
 
-  const char *StaticSkipKey(const char *encoded_ptr, const char *limit) const {
+  const uint8_t *StaticSkipKey(const uint8_t *encoded_ptr, const uint8_t *limit) const {
     uint32_t unused;
     return Decode(encoded_ptr, limit, &unused);
   }
@@ -146,12 +146,12 @@ public:
   // NOTE: This function does not copy any data. The slice which
   // is returned points into some section of encoded_ptr,
   // and thus is only valid as long as that data is.
-  const char *StaticDecode(const char *encoded_ptr, const char *limit,
+  const uint8_t *StaticDecode(const uint8_t *encoded_ptr, const uint8_t *limit,
                            void *retptr) const {
     Slice *ret = reinterpret_cast<Slice *>(retptr);
 
     uint32_t len;
-    const char *data_start = GetVarint32Ptr(encoded_ptr, limit, &len);
+    const uint8_t *data_start = GetVarint32Ptr(encoded_ptr, limit, &len);
     if (data_start == NULL) {
       // bad varint
       return NULL;
@@ -167,7 +167,7 @@ public:
   }
 
 
-  int StaticCompare(const char *encoded_ptr, const char *limit,
+  int StaticCompare(const uint8_t *encoded_ptr, const uint8_t *limit,
               const void *cmp_against_ptr) const {
     DCHECK(cmp_against_ptr);
     DCHECK(encoded_ptr);
@@ -183,7 +183,7 @@ public:
     return this_slice.compare(*cmp_against);
   }
 
-  const char *StaticSkipKey(const char *encoded_ptr, const char *limit) const {
+  const uint8_t *StaticSkipKey(const uint8_t *encoded_ptr, const uint8_t *limit) const {
     Slice unused;
     return Decode(encoded_ptr, limit, &unused);
   }
@@ -294,7 +294,7 @@ public:
       return Status::Corruption("index block too small");
     }
 
-    const char *trailer_size_ptr =
+    const uint8_t *trailer_size_ptr =
       data_.data() + data_.size() - sizeof(uint32_t);
     uint32_t trailer_size = DecodeFixed32(trailer_size_ptr);
 
@@ -306,7 +306,7 @@ public:
       return Status::Corruption(err);
     }
 
-    const char *trailer_ptr = trailer_size_ptr - trailer_size;
+    const uint8_t *trailer_ptr = trailer_size_ptr - trailer_size;
 
     bool success = trailer_.ParseFromArray(trailer_ptr, trailer_size);
     if (!success) {
@@ -342,7 +342,7 @@ private:
   friend class IndexBlockIterator<KeyTypeEnum>;
 
   int CompareKey(int idx_in_block, const KeyType &search_key) const {
-    const char *key_ptr, *limit;
+    const uint8_t *key_ptr, *limit;
     GetKeyPointer(idx_in_block, &key_ptr, &limit);
     return encoding_.StaticCompare(key_ptr, limit, &search_key);
   }
@@ -355,7 +355,7 @@ private:
     // At 'ptr', data is encoded as follows:
     // <key> <block offset> <block length>
 
-    const char *ptr, *limit;
+    const uint8_t *ptr, *limit;
     GetKeyPointer(idx, &ptr, &limit);
 
     ptr = encoding_.StaticDecode(ptr, limit, key);
@@ -372,7 +372,7 @@ private:
   // beyond which the data no longer is part of that entry).
   //   - *limit can be used to prevent overrunning in the case of a
   //     corrupted length varint or length prefix
-  void GetKeyPointer(int idx_in_block, const char **ptr, const char **limit) const {
+  void GetKeyPointer(int idx_in_block, const uint8_t **ptr, const uint8_t **limit) const {
     size_t offset_in_block = DecodeFixed32(
       &key_offsets_[idx_in_block * sizeof(uint32_t)]);
     *ptr = data_.data() + offset_in_block;
@@ -398,7 +398,7 @@ private:
   Slice data_;
 
   IndexBlockTrailerPB trailer_;
-  const char *key_offsets_;
+  const uint8_t *key_offsets_;
   bool parsed_;
 };
 

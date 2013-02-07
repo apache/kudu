@@ -14,11 +14,11 @@ std::string HexDump(const Slice &slice) {
   std::string output;
   output.reserve(slice.size() * 5);
 
-  const char *p = slice.data();
+  const uint8_t *p = slice.data();
 
   int rem = slice.size();
   while (rem > 0) {
-    const char *line_p = p;
+    const uint8_t *line_p = p;
     int line_len = std::min(rem, 16);
     int line_rem = line_len;
     StringAppendF(&output, "%06lx: ", line_p - slice.data());

@@ -22,13 +22,13 @@ public:
     // Byteswap so it is correctly comparable
     x = htonl(x);
 
-    dst_->append(reinterpret_cast<char *>(&x), sizeof(x));
+    dst_->append(reinterpret_cast<uint8_t *>(&x), sizeof(x));
   }
 
   void EncodeBytes(const Slice &s) {
 #ifdef USE_SSE
     char buf[16];
-    const char *p = s.data();
+    const uint8_t *p = s.data();
     size_t rem = s.size();
 
     __m128i xmm_zero = _mm_setzero_si128();
@@ -57,7 +57,7 @@ public:
         CHECK(0) << "TODO";
       }
     }
-    char zeros[] = {0, 0};
+    uint8_t zeros[] = {0, 0};
     dst_->append(zeros, 2);
 #else
     for (int i = 0; i < s.size(); i++) {

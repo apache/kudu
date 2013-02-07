@@ -170,7 +170,7 @@ class SequentialFile {
   // If an error was encountered, returns a non-OK status.
   //
   // REQUIRES: External synchronization
-  virtual Status Read(size_t n, Slice* result, char* scratch) = 0;
+  virtual Status Read(size_t n, Slice* result, uint8_t *scratch) = 0;
 
   // Skip "n" bytes from the file. This is guaranteed to be no
   // slower that reading the same data, but may be faster.
@@ -198,7 +198,7 @@ class RandomAccessFile {
   //
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const = 0;
+                      uint8_t *scratch) const = 0;
 };
 
 // A file abstraction for sequential writing.  The implementation
@@ -260,7 +260,7 @@ extern Status WriteStringToFile(Env* env, const Slice& data,
 
 // A utility routine: read contents of named file into *data
 extern Status ReadFileToString(Env* env, const std::string& fname,
-                               std::string* data);
+                               faststring* data);
 
 // An implementation of Env that forwards all calls to another Env.
 // May be useful to clients who wish to override just part of the

@@ -12,7 +12,7 @@ namespace kudu { namespace tablet {
 struct EncodedKeySlice : public Slice {
 public:
   explicit EncodedKeySlice(uint32_t row_idx) :
-    Slice(reinterpret_cast<const char *>(&buf_int_),
+    Slice(reinterpret_cast<const uint8_t *>(&buf_int_),
           sizeof(uint32_t)),
     buf_int_(htonl(row_idx))
   {
@@ -52,7 +52,7 @@ void DeltaMemStore::Update(uint32_t row_idx,
     // TODO: no need to copy the update - just need to copy the
     // referred-to data!
     RowDelta copied = update.CopyToArena(schema_, &arena_);
-    Slice new_val(reinterpret_cast<char *>(&copied), sizeof(copied));
+    Slice new_val(reinterpret_cast<uint8_t *>(&copied), sizeof(copied));
     CHECK(mutation.Insert(new_val));
   }
 }

@@ -12,12 +12,12 @@
 namespace kudu {
 
 template <class ArenaType>
-inline Status CopyRowIndirectDataToArena(char *row,
+inline Status CopyRowIndirectDataToArena(uint8_t *row,
                                          const Schema &schema,
                                          ArenaType *dst_arena) {
   // For any Slice columns, copy the sliced data into the arena
   // and update the pointers
-  char *ptr = reinterpret_cast<char *>(row);
+  uint8_t *ptr = row;
   for (int i = 0; i < schema.num_columns(); i++) {
     if (schema.column(i).type_info().type() == STRING) {
       Slice *slice = reinterpret_cast<Slice *>(ptr);
@@ -91,7 +91,7 @@ public:
   void AddString(const string &str) {
     CheckNextType(STRING);
 
-    char *in_arena = arena_.AddSlice(str);
+    uint8_t *in_arena = arena_.AddSlice(str);
     CHECK(in_arena) << "could not allocate space in arena";
 
     Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
@@ -127,7 +127,7 @@ public:
   // to make a deep copy of the current row.
   const Slice data() const {
     CHECK_EQ(byte_idx_, schema_.byte_size());
-    return Slice(reinterpret_cast<const char *>(buf_), byte_idx_);
+    return Slice(buf_, byte_idx_);
   }
 
 private:

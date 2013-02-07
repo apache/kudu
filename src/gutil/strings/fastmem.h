@@ -34,7 +34,10 @@ namespace strings {
 // moderately-sized inputs, or inputs that share a common prefix and differ
 // somewhere in their last 8 bytes. Further optimizations can be added later
 // if it makes sense to do so.
-inline bool memeq(const char* a, const char* b, size_t n) {
+inline bool memeq(const void* a_v, const void* b_v, size_t n) {
+  const uint8_t *a = reinterpret_cast<const uint8_t *>(a_v);
+  const uint8_t *b = reinterpret_cast<const uint8_t *>(b_v);
+
   size_t n_rounded_down = n & ~static_cast<size_t>(7);
   if (PREDICT_FALSE(n_rounded_down == 0)) {  // n <= 7
     return memcmp(a, b, n) == 0;
@@ -98,7 +101,7 @@ inline int fastmemcmp_inlined(const void *a_void, const void *b_void, size_t n) 
 // This implementation inlines the optimal realization for sizes 1 to 16.
 // To avoid code bloat don't use it in case of not performance-critical spots,
 // nor when you don't expect very frequent values of size <= 16.
-inline void memcpy_inlined(char *dst, const char *src, size_t size) {
+inline void memcpy_inlined(void *dst, const void *src, size_t size) {
   // Compiler inlines code with minimal amount of data movement when third
   // parameter of memcpy is a constant.
   switch (size) {

@@ -23,20 +23,17 @@ static void DoTestRoundTripGVI32(
 
   if (use_sse) {
     end = DecodeGroupVarInt32_SSE(
-      reinterpret_cast<const uint8_t *>(buf.data()),
-      &ret[0], &ret[1], &ret[2], &ret[3]);
+      buf.data(), &ret[0], &ret[1], &ret[2], &ret[3]);
   } else {
     end = DecodeGroupVarInt32(
-      reinterpret_cast<const uint8_t *>(buf.data()),
-      &ret[0], &ret[1], &ret[2], &ret[3]);
+      buf.data(), &ret[0], &ret[1], &ret[2], &ret[3]);
   }
 
   ASSERT_EQ(a, ret[0]);
   ASSERT_EQ(b, ret[1]);
   ASSERT_EQ(c, ret[2]);
   ASSERT_EQ(d, ret[3]);
-  ASSERT_EQ(reinterpret_cast<const char *>(end),
-            buf.data() + buf.size());
+  ASSERT_EQ(end, buf.data() + buf.size());
 }
 
 

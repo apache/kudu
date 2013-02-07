@@ -7,44 +7,37 @@
 
 namespace kudu {
 
-void PutVarint32(std::string* dst, uint32_t v) {
-  char buf[5];
-  char* ptr = InlineEncodeVarint32(buf, v);
+void PutVarint32(faststring* dst, uint32_t v) {
+  uint8_t buf[5];
+  uint8_t* ptr = InlineEncodeVarint32(buf, v);
   dst->append(buf, ptr - buf);
 }
 
-char* EncodeVarint64(char* dst, uint64_t v) {
+uint8_t* EncodeVarint64(uint8_t* dst, uint64_t v) {
   static const int B = 128;
-  unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
   while (v >= B) {
-    *(ptr++) = (v & (B-1)) | B;
+    *(dst++) = (v & (B-1)) | B;
     v >>= 7;
   }
-  *(ptr++) = static_cast<unsigned char>(v);
-  return reinterpret_cast<char*>(ptr);
+  *(dst++) = static_cast<uint8_t>(v);
+  return dst;
 }
 
-void PutFixed32(std::string* dst, uint32_t value) {
+void PutFixed32(faststring *dst, uint32_t value) {
   InlinePutFixed32(dst, value);
 }
 
-void PutFixed64(std::string* dst, uint64_t value) {
+void PutFixed64(faststring *dst, uint64_t value) {
   InlinePutFixed64(dst, value);
 }
 
-void PutVarint64(std::string* dst, uint64_t v) {
-  char buf[10];
-  char* ptr = EncodeVarint64(buf, v);
+void PutVarint64(faststring *dst, uint64_t v) {
+  uint8_t buf[10];
+  uint8_t* ptr = EncodeVarint64(buf, v);
   dst->append(buf, ptr - buf);
 }
 
-void PutVarint64(faststring* dst, uint64_t v) {
-  char buf[10];
-  char* ptr = EncodeVarint64(buf, v);
-  dst->append(buf, ptr - buf);
-}
-
-void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
+void PutLengthPrefixedSlice(faststring* dst, const Slice& value) {
   PutVarint32(dst, value.size());
   dst->append(value.data(), value.size());
 }
@@ -58,12 +51,12 @@ int VarintLength(uint64_t v) {
   return len;
 }
 
-const char* GetVarint32PtrFallback(const char* p,
-                                   const char* limit,
+const uint8_t *GetVarint32PtrFallback(const uint8_t *p,
+                                   const uint8_t *limit,
                                    uint32_t* value) {
   uint32_t result = 0;
   for (uint32_t shift = 0; shift <= 28 && p < limit; shift += 7) {
-    uint32_t byte = *(reinterpret_cast<const unsigned char*>(p));
+    uint32_t byte = *p;
     p++;
     if (byte & 128) {
       // More bytes are present
@@ -71,16 +64,16 @@ const char* GetVarint32PtrFallback(const char* p,
     } else {
       result |= (byte << shift);
       *value = result;
-      return reinterpret_cast<const char*>(p);
+      return p;
     }
   }
   return NULL;
 }
 
 bool GetVarint32(Slice* input, uint32_t* value) {
-  const char* p = input->data();
-  const char* limit = p + input->size();
-  const char* q = GetVarint32Ptr(p, limit, value);
+  const uint8_t *p = input->data();
+  const uint8_t *limit = p + input->size();
+  const uint8_t *q = GetVarint32Ptr(p, limit, value);
   if (q == NULL) {
     return false;
   } else {
@@ -89,10 +82,10 @@ bool GetVarint32(Slice* input, uint32_t* value) {
   }
 }
 
-const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
+const uint8_t *GetVarint64Ptr(const uint8_t *p, const uint8_t *limit, uint64_t* value) {
   uint64_t result = 0;
   for (uint32_t shift = 0; shift <= 63 && p < limit; shift += 7) {
-    uint64_t byte = *(reinterpret_cast<const unsigned char*>(p));
+    uint64_t byte = *p;
     p++;
     if (byte & 128) {
       // More bytes are present
@@ -100,16 +93,16 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
     } else {
       result |= (byte << shift);
       *value = result;
-      return reinterpret_cast<const char*>(p);
+      return p;
     }
   }
   return NULL;
 }
 
 bool GetVarint64(Slice* input, uint64_t* value) {
-  const char* p = input->data();
-  const char* limit = p + input->size();
-  const char* q = GetVarint64Ptr(p, limit, value);
+  const uint8_t *p = input->data();
+  const uint8_t *limit = p + input->size();
+  const uint8_t *q = GetVarint64Ptr(p, limit, value);
   if (q == NULL) {
     return false;
   } else {
@@ -118,7 +111,7 @@ bool GetVarint64(Slice* input, uint64_t* value) {
   }
 }
 
-const char* GetLengthPrefixedSlice(const char* p, const char* limit,
+const uint8_t *GetLengthPrefixedSlice(const uint8_t *p, const uint8_t *limit,
                                    Slice* result) {
   uint32_t len;
   p = GetVarint32Ptr(p, limit, &len);

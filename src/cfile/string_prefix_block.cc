@@ -21,8 +21,8 @@ using kudu::coding::AppendGroupVarInt32;
 // Utility code used by both encoding and decoding
 ////////////////////////////////////////////////////////////
 
-static const char *DecodeEntryLengths(
-  const char *ptr, const char *limit,
+static const uint8_t *DecodeEntryLengths(
+  const uint8_t *ptr, const uint8_t *limit,
   uint32_t *shared, uint32_t *non_shared) {
 
   if ((ptr = GetVarint32Ptr(ptr, limit, shared)) == NULL) return NULL;
@@ -78,7 +78,7 @@ Slice StringPrefixBlockBuilder::Finish(uint32_t ordinal_pos) {
   // reserved for it, need to find where it fits:
   int header_offset = kHeaderReservedLength - header_encoded_len;
   DCHECK_GE(header_offset, 0);
-  char *header_dst = buffer_.data() + header_offset;
+  uint8_t *header_dst = buffer_.data() + header_offset;
   strings::memcpy_inlined(header_dst, header.data(), header_encoded_len);
 
   // Serialize the restart points.
@@ -157,7 +157,7 @@ Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
     return Status::NotFound("no keys in data block");
   }
 
-  const char *p = &buffer_[kHeaderReservedLength];
+  const uint8_t *p = &buffer_[kHeaderReservedLength];
   uint32_t shared, non_shared;
   p = DecodeEntryLengths(p, &buffer_[buffer_.size()], &shared, &non_shared);
   if (p == NULL) {
@@ -192,11 +192,11 @@ StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice) :
 Status StringPrefixBlockDecoder::ParseHeader() {
   // First parse the actual header.
   uint32_t unused;
-  data_start_ = reinterpret_cast<const char *>(
+  data_start_ =
     coding::DecodeGroupVarInt32_SSE(
       reinterpret_cast<const uint8_t *>(data_.data()),
       &num_elems_, &ordinal_pos_base_,
-      &restart_interval_, &unused));
+      &restart_interval_, &unused);
   if (data_start_ == NULL) {
     return Status::Corruption("couldnt parse string block header");
     // TODO include hexdump
@@ -249,7 +249,7 @@ void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
 // the '0' restart point, since that is simply the beginning of
 // the data and hence a waste of space. So, 'idx' may range from
 // 0 (first record) through num_restarts_ (last recorded restart point)
-const char * StringPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
+const uint8_t * StringPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
   DCHECK_LE(idx, num_restarts_);
 
   if (PREDICT_TRUE(idx > 0)) {
@@ -278,9 +278,9 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   int32_t right = num_restarts_;
   while (left < right) {
     uint32_t mid = (left + right + 1) / 2;
-    const char *entry = GetRestartPoint(mid);
+    const uint8_t *entry = GetRestartPoint(mid);
     uint32_t shared, non_shared;
-    const char *key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
+    const uint8_t *key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
     if (key_ptr == NULL || (shared != 0)) {
       string err =
         StringPrintf( "bad entry restart=%d shared=%d\n", mid, shared) +
@@ -325,7 +325,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK_LE(*n, dst->size());
 
   Arena *out_arena = dst->arena();
-  char *out = reinterpret_cast<char *>(dst->data());
+  uint8_t *out = reinterpret_cast<uint8_t *>(dst->data());
 
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
     *n = 0;
@@ -336,7 +336,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
   // Grab the first row, which we've cached from the last call or seek.
-  const char *out_data = out_arena->AddSlice(cur_val_);
+  const uint8_t *out_data = out_arena->AddSlice(cur_val_);
   if (PREDICT_FALSE(out_data == NULL)) {
     return Status::IOError(
       "Out of memory",
@@ -385,11 +385,11 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
 // Returns a pointer to where the value itself starts.
 // Returns NULL if the varints themselves, or the value that
 // they prefix extend past the end of the block data.
-const char *StringPrefixBlockDecoder::DecodeEntryLengths(
-  const char *ptr, uint32_t *shared, uint32_t *non_shared) const {
+const uint8_t *StringPrefixBlockDecoder::DecodeEntryLengths(
+  const uint8_t *ptr, uint32_t *shared, uint32_t *non_shared) const {
 
   // data ends where the restart info begins
-  const char *limit = reinterpret_cast<const char *>(restarts_);
+  const uint8_t *limit = reinterpret_cast<const uint8_t *>(restarts_);
   return kudu::cfile::DecodeEntryLengths(ptr, limit, shared, non_shared);
 }
 
@@ -408,7 +408,7 @@ Status StringPrefixBlockDecoder::SkipForward(int n) {
 Status StringPrefixBlockDecoder::CheckNextPtr() {
   DCHECK(next_ptr_ != NULL);
 
-  if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const char *>(restarts_))) {
+  if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const uint8_t *>(restarts_))) {
     DCHECK_EQ(cur_idx_, num_elems_ - 1);
     return Status::NotFound("Trying to parse past end of array");
   }
@@ -418,7 +418,7 @@ Status StringPrefixBlockDecoder::CheckNextPtr() {
 inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied) {
   RETURN_NOT_OK(CheckNextPtr());
   uint32_t shared, non_shared;
-  const char *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
+  const uint8_t *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
   if (val_delta == NULL) {
     return Status::Corruption(
       StringPrintf("Could not decode value length data at idx %d",
@@ -428,7 +428,7 @@ inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena
   DCHECK_LE(shared, prev_val.size())
     << "Spcified longer shared amount than previous key length";
 
-  char *buf = reinterpret_cast<char *>(dst->AllocateBytes(non_shared + shared));
+  uint8_t *buf = reinterpret_cast<uint8_t *>(dst->AllocateBytes(non_shared + shared));
   strings::memcpy_inlined(buf, prev_val.data(), shared);
   strings::memcpy_inlined(buf + shared, val_delta, non_shared);
 
@@ -444,7 +444,7 @@ inline Status StringPrefixBlockDecoder::ParseNextValue() {
   RETURN_NOT_OK(CheckNextPtr());
 
   uint32_t shared, non_shared;
-  const char *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
+  const uint8_t *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);
   if (val_delta == NULL) {
     return Status::Corruption(
       StringPrintf("Could not decode value length data at idx %d",

@@ -42,7 +42,7 @@ public:
     InlinePutVarint32(s, size_);
   }
 
-  Status DecodeFrom(const char *data, const char *limit) {
+  Status DecodeFrom(const uint8_t *data, const uint8_t *limit) {
     data = GetVarint64Ptr(data, limit, &offset_);
     if (!data) {
       return Status::Corruption("bad block pointer");

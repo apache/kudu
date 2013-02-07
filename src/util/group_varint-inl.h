@@ -13,8 +13,8 @@ namespace kudu {
 namespace coding {
 
 extern bool SSE_TABLE_INITTED;
-extern char SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
-extern char VARINT_SELECTOR_LENGTHS[256];
+extern uint8_t SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
+extern uint8_t VARINT_SELECTOR_LENGTHS[256];
 
 const uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
 
@@ -136,7 +136,7 @@ static void AppendShorterInt(faststring *s, uint32_t i, size_t bytes) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   // LSBs come first, so we can just reinterpret-cast
   // and set the right length
-  s->append(reinterpret_cast<char *>(&i), bytes);
+  s->append(reinterpret_cast<uint8_t *>(&i), bytes);
 #else
 #error dont support big endian currently
 #endif

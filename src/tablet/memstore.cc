@@ -77,7 +77,7 @@ Status MemStore::Insert(const Slice &data) {
 
 Status MemStore::UpdateRow(const void *key,
                            const RowDelta &delta) {
-  Slice unencoded_key_slice(reinterpret_cast<const char *>(key),
+  Slice unencoded_key_slice(reinterpret_cast<const uint8_t *>(key),
                             schema_.key_byte_size());
 
   faststring key_buf;
@@ -101,7 +101,7 @@ Status MemStore::UpdateRow(const void *key,
 }
 
 Status MemStore::CheckRowPresent(const void *key, bool *present) const {
-  Slice unencoded_key_slice(reinterpret_cast<const char *>(key),
+  Slice unencoded_key_slice(reinterpret_cast<const uint8_t *>(key),
                             schema_.key_byte_size());
 
   faststring key_buf;

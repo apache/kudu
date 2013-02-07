@@ -36,7 +36,7 @@ struct LRUHandle {
   size_t key_length;
   uint32_t refs;
   uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
-  char key_data[1];   // Beginning of key
+  uint8_t key_data[1];   // Beginning of key
 
   Slice key() const {
     // For cheaper lookups, we allow a temporary Handle object
@@ -280,7 +280,8 @@ class ShardedLRUCache : public Cache {
   uint64_t last_id_;
 
   static inline uint32_t HashSlice(const Slice& s) {
-    return util_hash::CityHash64(s.data(), s.size());
+    return util_hash::CityHash64(
+      reinterpret_cast<const char *>(s.data()), s.size());
   }
 
   static uint32_t Shard(uint32_t hash) {
