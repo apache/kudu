@@ -147,7 +147,7 @@ public:
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
-  Status CheckRowPresent(const void *key, bool *present) const;
+  Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
 
   ////////////////////
   // Read functions.

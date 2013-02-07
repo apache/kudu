@@ -81,7 +81,7 @@ public:
   }
 
   // TODO: unit test me
-  Status CheckRowPresent(const void *key, bool *present) const;
+  Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
 
   // Return the memory footprint of this memstore.
   // Note that this may be larger than the sum of the data

@@ -404,10 +404,10 @@ Status Layer::UpdateRow(const void *key,
   return Status::OK();
 }
 
-Status Layer::CheckRowPresent(const void *key,
+Status Layer::CheckRowPresent(const LayerKeyProbe &probe,
                               bool *present) const {
   CHECK(open_);
-  return base_data_->CheckRowPresent(key, present);
+  return base_data_->CheckRowPresent(probe, present);
 }
 
 Status Layer::CountRows(size_t *count) const {

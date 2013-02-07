@@ -109,6 +109,8 @@ BloomFilterSizing Tablet::bloom_sizing() const {
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
+  LayerKeyProbe probe(schema_, data.data());
+
   boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // First, ensure that it is a unique key by checking all the open
@@ -117,12 +119,15 @@ Status Tablet::Insert(const Slice &data) {
     BOOST_FOREACH(shared_ptr<LayerInterface> &layer, layers_) {
       bool present;
       VLOG(1) << "checking for key in layer " << layer->ToString();
-      RETURN_NOT_OK(layer->CheckRowPresent(data.data(), &present));
+      RETURN_NOT_OK(layer->CheckRowPresent(probe, &present));
       if (present) {
         return Status::AlreadyPresent("key already present");
       }
     }
   }
+
+  // TODO: the Insert() call below will re-encode the key, which is a
+  // waste. Should pass through the KeyProbe structure perhaps.
 
   // Now try to insert into memstore. The memstore itself will return
   // AlreadyPresent if it has already been inserted there.

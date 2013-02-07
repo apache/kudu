@@ -1,11 +1,16 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <tr1/memory>
 
+#include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
 #include "tablet/layer.h"
 #include "tablet/layer-basedata.h"
+
+
+DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
 
 namespace kudu { namespace tablet {
 
@@ -116,6 +121,15 @@ Status CFileBaseData::Open() {
       schema_.column(i).ToString() << " in " << dir_;;
   }
 
+  BloomFileReader *rdr;
+  Status s = BloomFileReader::Open(env_, Layer::GetBloomPath(dir_), &rdr);
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to open bloom file in " << dir_ << ": "
+                 << s.ToString();
+  } else {
+    bloom_reader_.reset(rdr);
+  }
+
   open_ = true;
 
   return Status::OK();
@@ -164,11 +178,21 @@ Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
   return Status::OK();
 }
 
-Status CFileBaseData::CheckRowPresent(const void *key, bool *present) const {
-  // TODO: use bloom
+Status CFileBaseData::CheckRowPresent(const LayerKeyProbe &probe, bool *present) const {
+  if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
+    Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), present);
+    if (s.ok() && !*present) {
+      return Status::OK();
+    } else if (!s.ok()) {
+      LOG(WARNING) << "Unable to query bloom: " << s.ToString()
+                   << " (disabling bloom for this layer from this point forward)";
+      const_cast<CFileBaseData *>(this)->bloom_reader_.reset(NULL);
+      // Continue with the slow path
+    }
+  }
 
   uint32_t junk;
-  Status s = FindRow(key, &junk);
+  Status s = FindRow(probe.raw_key(), &junk);
   if (s.IsNotFound()) {
     // In the case that the key comes past the end of the file, Seek
     // will return NotFound. In that case, it is OK from this function's

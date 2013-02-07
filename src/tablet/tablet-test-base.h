@@ -11,6 +11,7 @@
 #include "common/schema.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
+#include "util/stopwatch.h"
 #include "util/test_macros.h"
 #include "tablet/tablet.h"
 
@@ -52,6 +53,7 @@ protected:
   void InsertTestRows(int first_row, int count) {
     char buf[256];
     RowBuilder rb(schema_);
+
     for (int i = first_row; i < first_row + count; i++) {
       rb.Reset();
       snprintf(buf, sizeof(buf), "hello %d", i);

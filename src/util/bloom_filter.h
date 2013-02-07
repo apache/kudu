@@ -23,8 +23,11 @@ namespace kudu {
 // Currently, the implementation uses the 64-bit City Hash.
 // TODO: an SSE CRC32 hash is probably ~20% faster. Come back to this
 // at some point.
-class BloomKeyProbe : boost::noncopyable {
+class BloomKeyProbe {
 public:
+  // Default constructor - this is only used to instantiate an object
+  // and later reassign by assignment from another instance
+  BloomKeyProbe() {}
 
   // Construct a probe from the given key.
   //
@@ -55,7 +58,7 @@ public:
   }
 
 private:
-  const Slice key_;
+  Slice key_;
   uint32_t h_1_;
   uint32_t h_2_;
 };

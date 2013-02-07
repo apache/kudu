@@ -6,7 +6,9 @@
 #include <string>
 #include <tr1/memory>
 
+#include "cfile/bloomfile.h"
 #include "cfile/cfile_reader.h"
+
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "tablet/layer-interfaces.h"
@@ -17,14 +19,10 @@
 
 namespace kudu {
 
-namespace cfile {
-class CFileReader;
-class CFileIterator;
-}
-
 namespace tablet {
 
 using boost::ptr_vector;
+using kudu::cfile::BloomFileReader;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using std::tr1::shared_ptr;
@@ -79,7 +77,7 @@ public:
     return ms_->UpdateRow(key, update);
   }
 
-  Status CheckRowPresent(const void *key, bool *present) const {
+  Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const {
     return ms_->CheckRowPresent(key, present);
   }
 
@@ -115,6 +113,7 @@ private:
   bool open_;
 
   scoped_ptr<CFileReader> key_reader_;
+  scoped_ptr<BloomFileReader> bloom_reader_;
 };
 
 
@@ -145,7 +144,7 @@ public:
     return string("CFile base data in ") + dir_;
   }
 
-  virtual Status CheckRowPresent(const void *key, bool *present) const;
+  virtual Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
 
 private:
   class RowIterator;
@@ -160,6 +159,7 @@ private:
   bool open_;
 
   vector<shared_ptr<CFileReader> > readers_;
+  scoped_ptr<BloomFileReader> bloom_reader_;
 };
 
 // Iterator which yields the combined and projected rows from a
