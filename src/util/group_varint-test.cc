@@ -1,7 +1,11 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <vector>
+
 #include "util/group_varint-inl.h"
+#include "util/stopwatch.h"
 
 namespace kudu {
 namespace coding {
@@ -83,7 +87,28 @@ TEST(TestGroupVarInt, TestRoundTrip) {
   }
 }
 
+#ifdef NDEBUG
+TEST(TestGroupVarInt, EncodingBenchmark) {
+  int n_ints = 1000000;
 
+  std::vector<uint32_t> ints;
+  ints.reserve(n_ints);
+  for (int i = 0; i < n_ints; i++) {
+    ints.push_back(i);
+  }
+
+  faststring s;
+  // conservative reservation
+  s.reserve(ints.size() * 4);
+
+  LOG_TIMING(INFO, "Benchmark") {
+    for (int i = 0; i < 100; i++) {
+      s.clear();
+      AppendGroupVarInt32Sequence(&s, 0, &ints[0], n_ints);
+    }
+  }
+}
+#endif
 
 }
 }
