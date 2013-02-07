@@ -3,17 +3,20 @@
 #define KUDU_TABLET_TABLET_TEST_BASE_H
 
 #include <boost/assign/list_of.hpp>
+#include <boost/thread.hpp>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 #include <vector>
 
 #include "common/row.h"
 #include "common/schema.h"
+#include "gutil/walltime.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 #include "tablet/tablet.h"
+
 
 namespace kudu {
 namespace tablet {
@@ -54,6 +57,9 @@ protected:
     char buf[256];
     RowBuilder rb(schema_);
 
+    WallTime last_print_time = 0;
+    uint64_t last_print_count = 0;
+
     for (int i = first_row; i < first_row + count; i++) {
       rb.Reset();
       snprintf(buf, sizeof(buf), "hello %d", i);
@@ -61,6 +67,18 @@ protected:
       rb.AddUint32(i);
       rb.AddUint32(0);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
+
+      if (i % 100 == 0) {
+        WallTime now = WallTime_Now();
+        uint64_t insert_count = i - first_row;
+        if (now > last_print_time + 0.1) {
+          int rate = (insert_count - last_print_count) / (now - last_print_time);
+          LOG(INFO) << "Insert thread " << boost::this_thread::get_id() << ":\t"
+                    << insert_count << " rows (" << rate << "/s)";
+          last_print_time = now;
+          last_print_count = insert_count;
+        }
+      }
     }
   }
 
