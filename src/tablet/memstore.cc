@@ -37,19 +37,20 @@ void MemStore::DebugDump() {
   }
 }
 
-Status MemStore::CopyRowToArena(const Slice &row,
-                                Slice *copied) {
-  return kudu::CopyRowToArena(row, schema_, &arena_, copied);
-}
 
 Status MemStore::Insert(const Slice &data) {
   CHECK_EQ(data.size(), schema_.byte_size());
 
-  faststring key_buf;
-  schema_.EncodeComparableKey(data, &key_buf);
-  Slice key(key_buf);
+  faststring enc_key_buf;
+  schema_.EncodeComparableKey(data, &enc_key_buf);
+  Slice enc_key(enc_key_buf);
 
-  btree::PreparedMutation<btree::BTreeTraits> mutation(key);
+  // Copy the non-encoded key onto the stack since we need
+  // to mutate it when we relocate its Slices into our arena.
+  uint8_t row_copy[schema_.byte_size()];
+  memcpy(row_copy, data.data(), data.size());
+
+  btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
   mutation.Prepare(&tree_);
 
   // TODO: for now, the key ends up stored doubly --
@@ -57,18 +58,14 @@ Status MemStore::Insert(const Slice &data) {
   // (unencoded).
   // That's not very memory-efficient!
 
-
   if (mutation.exists()) {
     return Status::AlreadyPresent("entry already present in memstore");
   }
 
-  // Copy the row and any referred-to memory to arena.
-  Slice copied;
-  // TODO: don't need to copy the row key and val, just the indirect
-  // data -- since the key/val parts already get copied by CBTree.
-  RETURN_NOT_OK(CopyRowToArena(data, &copied));
+  // Copy any referred-to memory to arena.
+  RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(row_copy, schema_, &arena_));
 
-  CHECK(mutation.Insert(copied))
+  CHECK(mutation.Insert(Slice(row_copy, data.size())))
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 

@@ -41,7 +41,7 @@ public:
   // memstore's Schema.byte_size().
   //
   // After insert, the row and any referred-to memory (eg for strings)
-  // have been copied into this MemStore's internal Arena, and thus
+  // have been copied into this MemStore's internal storage, and thus
   // the provided memory buffer may safely be re-used or freed.
   //
   // Returns Status::OK unless allocation fails.
@@ -132,14 +132,6 @@ public:
 
 private:
   friend class Iterator;
-
-  // Copy the given row into the local Arena.
-  // This copies both the row data (primitives) as well as any
-  // indirect data (eg string types).
-  //
-  // Returns Status::OK() and sets *dst to point at the copied
-  // row unless allocation fails.
-  Status CopyRowToArena(const Slice &row, Slice *dst);
 
   // Temporary hack to slow down mutators when the memstore is over 1GB.
   void SlowMutators();
