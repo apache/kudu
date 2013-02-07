@@ -53,17 +53,17 @@ struct BTreeTraits {
   static const size_t fanout = 16;
 
   // Number of bytes used by a leaf node.
-  static const size_t leaf_node_size = 256;
+  static const size_t leaf_node_size = 1024;
 
   // The following types must be large enough such that sizeof(type)/2
   // can store an offset as large as leaf_node_size
-  typedef uint16_t leaf_key_bag_storage_type;
-  typedef uint16_t leaf_val_bag_storage_type;
+  typedef uint32_t leaf_key_bag_storage_type;
+  typedef uint32_t leaf_val_bag_storage_type;
 
   // The max number of entries in a leaf node.
   // TODO: this should probably be dynamic, since we'd
   // know the size of the value for fixed size tables
-  static const size_t leaf_max_entries = 16;
+  static const size_t leaf_max_entries = 64;
 
   // Tests can set this trait to a non-zero value, which inserts
   // some pause-loops in key parts of the code to try to simulate
