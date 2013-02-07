@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/thread/mutex.hpp>
 #include <tr1/memory>
 
 #include "cfile/cfile.h"
@@ -9,6 +10,7 @@
 #include "util/coding.h"
 #include "util/hexdump.h"
 #include "util/pb_util.h"
+#include "util/pthread_spinlock.h"
 
 namespace kudu { namespace cfile {
 
@@ -161,19 +163,22 @@ Status BloomFileReader::ParseBlockHeader(const Slice &block,
 
 Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
                                         bool *maybe_present) {
-
-  Status s = index_iter_->SeekAtOrBefore(&probe.key());
-  if (PREDICT_FALSE(s.IsNotFound())) {
-    // Seek to before the first entry in the file.
-    *maybe_present = false;
-    return Status::OK();
-  }
-  RETURN_NOT_OK(s);
-
-  // Successfully found the pointer to the bloom block. Read it.
-  BlockPointer bblk_ptr = index_iter_->GetCurrentBlockPointer();
   BlockCacheHandle dblk_data;
-  RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
+  {
+    boost::lock_guard<PThreadSpinLock> lock(iter_lock_);
+
+    Status s = index_iter_->SeekAtOrBefore(&probe.key());
+    if (PREDICT_FALSE(s.IsNotFound())) {
+      // Seek to before the first entry in the file.
+      *maybe_present = false;
+      return Status::OK();
+    }
+    RETURN_NOT_OK(s);
+
+    // Successfully found the pointer to the bloom block. Read it.
+    BlockPointer bblk_ptr = index_iter_->GetCurrentBlockPointer();
+    RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
+  }
 
   // Parse the header in the block.
   BloomBlockHeaderPB hdr;

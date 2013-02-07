@@ -10,6 +10,7 @@
 #include "util/bloom_filter.h"
 #include "util/env.h"
 #include "util/faststring.h"
+#include "util/pthread_spinlock.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -71,6 +72,12 @@ private:
 
   scoped_ptr<cfile::IndexTreeIterator> index_iter_;
   scoped_ptr<CFileReader> reader_;
+
+  // TODO: temporary workaround for the fact that
+  // the index tree iterator is a member of the Reader object.
+  // We need a big per-thread object which gets passed around so as
+  // to avoid this.
+  PThreadSpinLock iter_lock_;
 };
 
 
