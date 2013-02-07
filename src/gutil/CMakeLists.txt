@@ -5,7 +5,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-sign-compare -Wno-deprecated")
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../
-  PROTO_FILES exception/stack_trace.proto
   )
 SET(GUTIL_SRCS ${PROTO_SRCS})
 
@@ -19,7 +18,6 @@ SET(GUTIL_SRCS ${GUTIL_SRCS} ${PROTO_SRCS})
 
 ADD_LIBRARY(gutil
   ${GUTIL_SRCS}
-./exception/stack_trace.cc
 ./bits.cc
 ./file_util.cc
 ./atomic/locking.cc
@@ -54,10 +52,6 @@ ADD_LIBRARY(gutil
 )
 
 SET(GUTIL_LIBS gutil)
-
-ADD_KUDU_TEST(exception/stack_trace_test)
-ADD_KUDU_TEST(exception/coowned_pointer_test)
-ADD_KUDU_TEST(exception/failureor_test)
 
 # Disabled: relies on some stuff from base/
 #ADD_EXECUTABLE(atomic_test ./atomic/atomic_test.cc)
