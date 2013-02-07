@@ -130,22 +130,35 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
   faststring fs;
   KeyEncoder enc(&fs);
 
-  typedef boost::tuple<Slice, Slice> test_pair;
+  typedef boost::tuple<vector<Slice>, Slice> test_pair;
+  using boost::assign::list_of;
 
-  vector<test_pair> pairs = boost::assign::tuple_list_of
-    (Slice("foo", 3), Slice("foo\x00\x00", 5))
-    (Slice("xxx\x00yyy", 7), Slice("xxx\x00\x01yyy\x00\x00", 10));
+  vector<test_pair> pairs;
+
+  // Simple key
+  pairs.push_back(test_pair(list_of(Slice("foo", 3)),
+                            Slice("foo", 3)));
+
+  // Simple compound key
+  pairs.push_back(test_pair(list_of(Slice("foo", 3))(Slice("bar", 3)),
+                            Slice("foo" "\x00\x00" "bar", 8)));
+
+  // Key with a \x00 in it
+  pairs.push_back(test_pair(list_of(Slice("xxx\x00yyy", 7)),
+                            Slice("xxx" "\x00\x01" "yyy", 8)));
 
   BOOST_FOREACH(test_pair &t, pairs) {
-    Slice in = boost::get<0>(t);
-    Slice out = boost::get<1>(t);
+    vector<Slice> &in = boost::get<0>(t);
+    Slice expected = boost::get<1>(t);
 
     fs.clear();
-    enc.EncodeBytes(in);
-    ASSERT_EQ(0, out.compare(Slice(fs)))
+    for (int col = 0; col < in.size(); col++) {
+      enc.EncodeBytes(in[col], col == in.size() - 1);
+    }
+
+    ASSERT_EQ(0, expected.compare(Slice(fs)))
       << "Failed encoding.\n"
-      << "Encoded:  " << HexDump(in)
-      << "Expected: " << HexDump(out)
+      << "Expected: " << HexDump(expected)
       << "Got:      " << HexDump(Slice(fs));
   }
 }
