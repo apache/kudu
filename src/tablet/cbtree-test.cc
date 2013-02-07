@@ -640,19 +640,26 @@ TEST(TestCBTree, TestScanPerformance) {
     InsertRange(&tree, 0, n_keys);
   }
 
-  int scan_trials = 10;
-  LOG_TIMING(INFO, StringPrintf("Scan %d keys %d times", n_keys, scan_trials)) {
-    for (int i = 0; i < 10; i++)  {
-      scoped_ptr<CBTreeIterator<BTreeTraits> > iter(
-        tree.NewIterator());
-      bool exact;
-      iter->SeekAtOrAfter(Slice(""), &exact);
-      int count = 0;
-      while (iter->IsValid()) {
-        count++;
-        iter->Next();
+  for (int freeze = 0; freeze <= 1; freeze++) {
+    if (freeze) {
+      tree.Freeze();
+    }
+    int scan_trials = 10;
+    LOG_TIMING(INFO, StringPrintf("Scan %d keys %d times (%s)",
+                                  n_keys, scan_trials,
+                                  freeze ? "frozen" : "not frozen")) {
+      for (int i = 0; i < 10; i++)  {
+        scoped_ptr<CBTreeIterator<BTreeTraits> > iter(
+          tree.NewIterator());
+        bool exact;
+        iter->SeekAtOrAfter(Slice(""), &exact);
+        int count = 0;
+        while (iter->IsValid()) {
+          count++;
+          iter->Next();
+        }
+        ASSERT_EQ(count, n_keys);
       }
-      ASSERT_EQ(count, n_keys);
     }
   }
 }

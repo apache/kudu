@@ -252,6 +252,7 @@ Status Tablet::Flush() {
 
     // We shouldn't have any more updates after this point.
     start_update_count = old_ms->debug_update_count();
+    old_ms->Freeze();
   }
 
   LOG(INFO) << "Flush: entering stage 4 (flushing the rest of the columns)";

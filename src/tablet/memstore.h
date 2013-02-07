@@ -123,6 +123,11 @@ public:
     return Status::NotSupported("Delete of MemStore not supported");
   }
 
+  // Mark the memstore as frozen. See CBTree::Freeze()
+  void Freeze() {
+    tree_.Freeze();
+  }
+
   uint64_t debug_insert_count() const {
     return debug_insert_count_;
   }

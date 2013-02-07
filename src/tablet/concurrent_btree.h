@@ -910,7 +910,8 @@ class CBTree : boost::noncopyable {
 public:
   CBTree() :
     arena_(512*1024, 4*1024*1024),
-    root_(new LeafNode<Traits>(false))
+    root_(new LeafNode<Traits>(false)),
+    frozen_(false)
   {
     // TODO: use a custom allocator
   }
@@ -1031,7 +1032,7 @@ public:
   }
 
   CBTreeIterator<Traits> *NewIterator() const {
-    return new CBTreeIterator<Traits>(this);
+    return new CBTreeIterator<Traits>(this, frozen_);
   }
 
   // Return the current number of elements in the tree.
@@ -1068,6 +1069,14 @@ public:
 
   size_t estimate_memory_usage() const {
     return arena_.memory_footprint();
+  }
+
+  // Mark the tree as frozen.
+  // Once frozen, no further mutations may occur without triggering a CHECK
+  // violation. But, new iterators created after this point can scan more
+  // efficiently.
+  void Freeze() {
+    frozen_ = true;
   }
 
 private:
@@ -1243,6 +1252,7 @@ private:
   //   'node' is unlocked
   bool Insert(PreparedMutation<Traits> *mutation,
               const Slice &val) {
+    CHECK(!frozen_);
     CHECK_NOTNULL(mutation);
     DCHECK_EQ(mutation->tree(), this);
 
@@ -1273,6 +1283,7 @@ private:
 
   bool Update(PreparedMutation<Traits> *mutation,
               const Slice &val) {
+    CHECK(!frozen_);
     CHECK_NOTNULL(mutation);
     DCHECK_EQ(mutation->tree(), this);
 
@@ -1558,6 +1569,11 @@ private:
   // marked 'mutable' because readers will lazy-update the root
   // when they encounter a stale root pointer.
   mutable NodePtr<Traits> root_;
+
+  // If true, the tree is no longer mutable. Once a tree becomes
+  // frozen, it may not be un-frozen. If an iterator is created on
+  // a frozen tree, it will be more efficient.
+  bool frozen_;
 };
 
 template<class Traits>
@@ -1581,7 +1597,7 @@ public:
   bool Next() {
     CHECK(seeked_);
     idx_in_leaf_++;
-    if (idx_in_leaf_ < leaf_copy_.num_entries()) {
+    if (idx_in_leaf_ < leaf_to_scan_->num_entries()) {
       return true;
     } else {
       return SeekNextLeaf();
@@ -1590,23 +1606,26 @@ public:
 
   void GetCurrentEntry(Slice *key, Slice *val) const {
     CHECK(seeked_);
-    leaf_copy_.Get(idx_in_leaf_, key, val);
+    leaf_to_scan_->Get(idx_in_leaf_, key, val);
   }
 
 private:
   friend class CBTree<Traits>;
 
-  CBTreeIterator(const CBTree<Traits> *tree) :
+  CBTreeIterator(const CBTree<Traits> *tree,
+                 bool tree_frozen) :
     tree_(tree),
+    tree_frozen_(tree_frozen),
     seeked_(false),
     idx_in_leaf_(-1),
-    leaf_copy_(false)
+    leaf_copy_(false),
+    leaf_to_scan_(&leaf_copy_)
   {}
 
   bool SeekInLeaf(const Slice &key, bool *exact) {
     CHECK(seeked_);
-    idx_in_leaf_ = leaf_copy_.Find(key, exact);
-    if (idx_in_leaf_ == leaf_copy_.num_entries()) {
+    idx_in_leaf_ = leaf_to_scan_->Find(key, exact);
+    if (idx_in_leaf_ == leaf_to_scan_->num_entries()) {
       // not found in leaf, seek to start of next leaf if it exists.
       return SeekNextLeaf();
     }
@@ -1623,6 +1642,13 @@ private:
       leaf->next_->PrefetchMemory();
 #endif
 
+      // If the tree is frozen, we don't need to follow optimistic concurrency.
+      if (tree_frozen_) {
+        leaf_to_scan_ = leaf;
+        seeked_ = true;
+        return;
+      }
+
       retry_in_leaf:
       {
         memcpy(&leaf_copy_, leaf, sizeof(leaf_copy_));
@@ -1634,9 +1660,9 @@ private:
           version = new_version;
           goto retry_in_leaf;
         }
-        VLOG(2) << "got copy of leaf node: " << leaf_copy_.ToString();
         // Got a consistent snapshot copy of the leaf node into
         // leaf_copy_
+        leaf_to_scan_ = &leaf_copy_;
       }
     }
     seeked_ = true;
@@ -1644,7 +1670,7 @@ private:
 
   bool SeekNextLeaf() {
     CHECK(seeked_);
-    LeafNode<Traits> *next = leaf_copy_.next_;
+    LeafNode<Traits> *next = leaf_to_scan_->next_;
     if (PREDICT_FALSE(next == NULL)) {
       seeked_ = false;
       return false;
@@ -1652,6 +1678,15 @@ private:
 #ifdef SCAN_PREFETCH
     next->next_->PrefetchMemory();
 #endif
+
+    // If the tree is frozen, we don't need to play optimistic concurrency
+    // games or make a defensive copy.
+    if (tree_frozen_) {
+      leaf_to_scan_ = next;
+      idx_in_leaf_ = 0;
+      return true;
+    }
+
     while (true) {
       AtomicVersion version = next->StableVersion();
       memcpy(&leaf_copy_, next, sizeof(leaf_copy_));
@@ -1660,16 +1695,24 @@ private:
         version = new_version;
       } else {
         idx_in_leaf_ = 0;
+        leaf_to_scan_ = &leaf_copy_;
         return true;
       }
     }
   }
 
   const CBTree<Traits> *tree_;
+
+  // If true, the tree we are scanning is completely frozen and we don't
+  // need to perform optimistic concurrency control or copies for safety.
+  bool tree_frozen_;
+
   bool seeked_;
   size_t idx_in_leaf_;
 
+
   LeafNode<Traits> leaf_copy_;
+  LeafNode<Traits> *leaf_to_scan_;
 };
 
 } // namespace btree
