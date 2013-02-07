@@ -21,9 +21,8 @@ const uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
 
 // Calculate the number of bytes to encode the given unsigned int.
 inline size_t CalcRequiredBytes32(uint32_t i) {
-  if (i == 0) return 1;
-
-  return sizeof(long) - __builtin_clzl(i)/8;
+  // | 1 because the result is undefined for the 0 case
+  return sizeof(uint32_t) - __builtin_clz(i|1)/8;
 }
 
 // Decode a set of 4 group-varint encoded integers from the given pointer.
@@ -129,41 +128,51 @@ inline const uint8_t *DecodeGroupVarInt32_SSE_Add(
   return src;
 }
 
-static void AppendShorterInt(faststring *s, uint32_t i, size_t bytes) {
-  DCHECK_GE(bytes, 0);
-  DCHECK_LE(bytes, 4);
-
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-  // LSBs come first, so we can just reinterpret-cast
-  // and set the right length
-  s->append(reinterpret_cast<uint8_t *>(&i), bytes);
-#else
-#error dont support big endian currently
-#endif
-}
-
 
 // Append a set of group-varint encoded integers to the given faststring.
 inline void AppendGroupVarInt32(
   faststring *s,
   uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 
-  uint8_t a_req = CalcRequiredBytes32(a);
-  uint8_t b_req = CalcRequiredBytes32(b);
-  uint8_t c_req = CalcRequiredBytes32(c);
-  uint8_t d_req = CalcRequiredBytes32(d);
+  uint8_t a_tag = CalcRequiredBytes32(a) - 1;
+  uint8_t b_tag = CalcRequiredBytes32(b) - 1;
+  uint8_t c_tag = CalcRequiredBytes32(c) - 1;
+  uint8_t d_tag = CalcRequiredBytes32(d) - 1;
 
   uint8_t prefix_byte =
-    ((a_req - 1) << 6) |
-    ((b_req - 1) << 4) |
-    ((c_req - 1) << 2) |
-    (d_req - 1);
+    (a_tag << 6) |
+    (b_tag << 4) |
+    (c_tag << 2) |
+    (d_tag);
 
-  s->push_back(prefix_byte);
-  AppendShorterInt(s, a, a_req);
-  AppendShorterInt(s, b, b_req);
-  AppendShorterInt(s, c, c_req);
-  AppendShorterInt(s, d, d_req);
+  uint8_t size = 1 +
+    a_tag + 1 +
+    b_tag + 1 +
+    c_tag + 1 +
+    d_tag + 1;
+
+  size_t old_size = s->size();
+  // Reserving 4 extra bytes means we can use simple
+  // 4-byte stores instead of variable copies here --
+  // if we hang off the end of the array into the "empty" area, it's OK.
+
+  s->reserve(old_size + size + 4);
+  s->resize(old_size + size);
+
+  uint8_t *ptr = &((*s)[old_size]);
+
+#if __BYTE_ORDER != __LITTLE_ENDIAN
+#error dont support big endian currently
+#endif
+
+  *ptr++ = prefix_byte;
+  memcpy(ptr, &a, 4);
+  ptr += a_tag + 1;
+  memcpy(ptr, &b, 4);
+  ptr += b_tag + 1;
+  memcpy(ptr, &c, 4);
+  ptr += c_tag + 1;
+  memcpy(ptr, &d, 4);
 }
 
 // Append a sequence of uint32s encoded using group-varint.
