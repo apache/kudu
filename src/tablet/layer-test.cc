@@ -60,29 +60,43 @@ TEST_F(TestLayer, TestLayerRoundTrip) {
   // Test that CheckRowPresent returns correct results
 
   // 1. Check a key which comes before all keys in layer
-  Slice key("h");
-  bool present;
-  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
-  ASSERT_FALSE(present);
+  {
+    Slice key("h");
+    LayerKeyProbe probe(schema_, &key);
+    bool present;
+    ASSERT_STATUS_OK(l->CheckRowPresent(probe, &present));
+    ASSERT_FALSE(present);
+  }
 
   // 2. Check a key which comes after all keys in layer
-  key = "z";
-  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
-  ASSERT_FALSE(present);
+  {
+    Slice key("z");
+    LayerKeyProbe probe(schema_, &key);
+    bool present;
+    ASSERT_STATUS_OK(l->CheckRowPresent(probe, &present));
+    ASSERT_FALSE(present);
+  }
 
   // 3. Check a key which is not present, but comes between present
   // keys
-  key = "hello 00000000000049x";
-  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
-  ASSERT_FALSE(present);
+  {
+    Slice key("hello 00000000000049x");
+    LayerKeyProbe probe(schema_, &key);
+    bool present;
+    ASSERT_STATUS_OK(l->CheckRowPresent(probe, &present));
+    ASSERT_FALSE(present);
+  }
 
   // 4. Check a key which is present
-  char buf[256];
-  FormatKey(49, buf, sizeof(buf));
-  key = buf;
-  ASSERT_STATUS_OK(l->CheckRowPresent(&key, &present));
-  ASSERT_TRUE(present);
-
+  {
+    char buf[256];
+    FormatKey(49, buf, sizeof(buf));
+    Slice key(buf);
+    LayerKeyProbe probe(schema_, &key);
+    bool present;
+    ASSERT_STATUS_OK(l->CheckRowPresent(probe, &present));
+    ASSERT_TRUE(present);
+  }
 }
 
 // Test writing a layer, and then updating some rows in it.
