@@ -53,7 +53,7 @@ Status BloomFileWriter::AppendKeys(
     bloom_builder_.AddKey(keys[i]);
 
     // Bloom has reached optimal occupancy: flush it to the file
-    if (bloom_builder_.count() >= bloom_builder_.expected_count()) {
+    if (PREDICT_FALSE(bloom_builder_.count() >= bloom_builder_.expected_count())) {
       RETURN_NOT_OK( FinishCurrentBloomBlock() );
 
       // Copy the next key as the first key of the next block.

@@ -149,16 +149,32 @@ public:
   bool MayContainKey(const BloomKeyProbe &probe) const;
 
 private:
+  friend class BloomFilterBuilder;
+  static uint32_t PickBit(uint32_t hash, size_t n_bits);
+
   size_t n_bits_;
   const uint8_t *bitmap_;
 
   size_t n_hashes_;
 };
 
+inline uint32_t BloomFilter::PickBit(uint32_t hash, size_t n_bits) {
+  switch (n_bits) {
+
+    case 65536 * 8:
+    case 16384 * 8:
+    case 32768 * 8:
+      return hash & (n_bits - 1);
+
+    default:
+      return hash % n_bits;
+  }
+}
+
 inline void BloomFilterBuilder::AddKey(const BloomKeyProbe &probe) {
   uint32_t h = probe.initial_hash();
   for (size_t i = 0; i < n_hashes_; i++) {
-    uint32_t bitpos = h % n_bits_;
+    uint32_t bitpos = BloomFilter::PickBit(h, n_bits_);
     BitmapSet(&bitmap_[0], bitpos);
     h = probe.MixHash(h);
   }
@@ -173,9 +189,9 @@ inline bool BloomFilter::MayContainKey(const BloomKeyProbe &probe) const {
   // set even if it's a bloom miss, in which case we can parallelize the load.
   int rem_hashes = n_hashes_;
   while (rem_hashes >= 2) {
-    uint32_t bitpos1 = h % n_bits_;
+    uint32_t bitpos1 = PickBit(h, n_bits_);
     h = probe.MixHash(h);
-    uint32_t bitpos2 = h % n_bits_;
+    uint32_t bitpos2 = PickBit(h, n_bits_);
     h = probe.MixHash(h);
 
     if (!BitmapTest(&bitmap_[0], bitpos1) ||
@@ -187,7 +203,7 @@ inline bool BloomFilter::MayContainKey(const BloomKeyProbe &probe) const {
   }
 
   while (rem_hashes) {
-    uint32_t bitpos = h % n_bits_;
+    uint32_t bitpos = PickBit(h, n_bits_);
     if (!BitmapTest(&bitmap_[0], bitpos)) {
       return false;
     }
