@@ -89,7 +89,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
   bloom_builder_.Clear();
 
   #ifndef NDEBUG
-  first_key.assign_copy("POST_RESET");
+  first_key_.assign_copy("POST_RESET");
   #endif
 
   return Status::OK();
