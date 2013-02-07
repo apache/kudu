@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "cfile/bloomfile.h"
+#include "gutil/endian.h"
 #include "util/env.h"
 #include "util/memenv/memenv.h"
 #include "util/stopwatch.h"
@@ -16,20 +17,24 @@ DEFINE_int32(n_keys, 10*1000, "Number of keys to insert into the file");
 DEFINE_double(fp_rate, 0.01f, "False positive rate to aim for");
 
 DEFINE_int64(benchmark_queries, 1000000, "Number of probes to benchmark");
+DEFINE_bool(benchmark_should_hit, false, "Set to true for the benchmark to query rows which match");
 
 namespace kudu {
 namespace cfile {
 
-static void AppendBlooms(BloomFileWriter *bfw) {
-  for (uint32_t i = 0; i < FLAGS_n_keys; i++) {
-    // Byte-swap the keys so that they're inserted in ascending
-    // lexicographic order.
-    // TODO: spent a while debugging this - would be good to add DCHECK
-    // to the index builder code to ensure that keys go upward only
-    uint32_t i_byteswapped = htonl(i);
+static const int kKeyShift = 2;
 
-    Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
-    bfw->AppendKeys(&s, 1);
+static void AppendBlooms(BloomFileWriter *bfw) {
+  uint64_t key_buf;
+  Slice key_slice(reinterpret_cast<const uint8_t *>(&key_buf),
+                  sizeof(key_buf));
+
+  for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
+    // Shift the key left a bit so that while querying, we can
+    // get a good mix of hits and misses while still staying within
+    // the real key range.
+    key_buf = BigEndian::FromHost64(i << kKeyShift);
+    bfw->AppendKeys(&key_slice, 1);
   }
 }
 
@@ -48,7 +53,6 @@ static void WriteTestBloomFile(Env *env, const string &path) {
 
   BloomFileWriter bfw(sink, sizing);
 
-
   ASSERT_STATUS_OK(bfw.Start());
   AppendBlooms(&bfw);
   ASSERT_STATUS_OK( bfw.Finish() );
@@ -63,8 +67,8 @@ static void VerifyBloomFile(Env *env, const string &path) {
   scoped_ptr<BloomFileReader> bfr(bfr_ptr);
 
   // Verify all the keys that we inserted probe as present.
-  for (int i = 0; i < FLAGS_n_keys; i++) {
-    uint32_t i_byteswapped = htonl(i);
+  for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
+    uint64_t i_byteswapped = BigEndian::FromHost64(i << kKeyShift);
     Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
     bool present = false;
@@ -74,9 +78,9 @@ static void VerifyBloomFile(Env *env, const string &path) {
 
   int positive_count = 0;
   // Check that the FP rate for keys we didn't insert is what we expect.
-  for (int i = 0; i < FLAGS_n_keys; i++) {
-    uint32_t i = random();
-    Slice s(reinterpret_cast<char *>(&i), sizeof(i));
+  for (uint64 i = 0; i < FLAGS_n_keys; i++) {
+    uint64_t key = random();
+    Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 
     bool present = false;
     ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(s, &present) );
@@ -113,14 +117,36 @@ TEST(TestBloomFile, Benchmark) {
   ASSERT_STATUS_OK( BloomFileReader::Open(env.get(), path, &bfr_ptr) );
   scoped_ptr<BloomFileReader> bfr(bfr_ptr);
 
+  uint64_t count_present = 0;
   LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {
-    uint64_t count_present = 0;
-    for (int i = 0; i < FLAGS_benchmark_queries; i++) {
-      Slice s(reinterpret_cast<char *>(&i), sizeof(i));
+
+    for (uint64_t i = 0; i < FLAGS_benchmark_queries; i++) {
+      uint64_t key = random() % FLAGS_n_keys;
+      key <<= kKeyShift;
+      if (!FLAGS_benchmark_should_hit) {
+        // Since the keys are bitshifted, setting the last bit
+        // ensures that none of the queries will match.
+        key |= 1;
+      }
+
+      key = BigEndian::FromHost64(key);
+
+      Slice s(reinterpret_cast<uint8_t *>(&key), sizeof(key));
       bool present;
       CHECK_OK( bfr->CheckKeyPresent(s, &present) ); 
       if (present) count_present++;
     }
+  }
+
+  double hit_rate = (double)count_present / (double)FLAGS_benchmark_queries;
+  LOG(INFO) << "Hit Rate: " << hit_rate <<
+    "(" << count_present << "/" << FLAGS_benchmark_queries << ")";
+
+  if (FLAGS_benchmark_should_hit) {
+    ASSERT_EQ(count_present, FLAGS_benchmark_queries);
+  } else {
+    ASSERT_LT(hit_rate, FLAGS_fp_rate + FLAGS_fp_rate * 0.20f)
+      << "Should be no more than 1.2x the expected FP rate";
   }
 }
 #endif
