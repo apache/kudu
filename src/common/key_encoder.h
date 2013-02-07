@@ -18,14 +18,14 @@ class KeyEncoder : boost::noncopyable {
 public:
   KeyEncoder(faststring *dst) : dst_(dst) {}
 
-  void EncodeUInt32(uint32_t x) {
+  void EncodeUInt32(uint32_t x, bool is_last) {
     // Byteswap so it is correctly comparable
     x = htonl(x);
 
     dst_->append(reinterpret_cast<uint8_t *>(&x), sizeof(x));
   }
 
-  void EncodeBytes(const Slice &s) {
+  void EncodeBytes(const Slice &s, bool is_last) {
 #ifdef USE_SSE
     char buf[16];
     const uint8_t *p = s.data();
@@ -58,7 +58,9 @@ public:
       }
     }
     uint8_t zeros[] = {0, 0};
-    dst_->append(zeros, 2);
+    if (!is_last) {
+      dst_->append(zeros, 2);
+    }
 #else
     for (int i = 0; i < s.size(); i++) {
       if (PREDICT_FALSE(s[i] == '\0')) {
@@ -67,7 +69,9 @@ public:
         dst_->push_back(s[i]);
       }
     }
-    dst_->append("\x00\x00", 2);
+    if (!is_last) {
+      dst_->append("\x00\x00", 2);
+    }
 #endif
   }
 

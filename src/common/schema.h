@@ -304,13 +304,14 @@ public:
     KeyEncoder enc(dst);
     for (size_t i = 0; i < num_key_columns_; i++) {
       const TypeInfo &ti = cols_[i].type_info();
+      bool is_last = i == num_key_columns_;
 
       switch (ti.type()) {
         case UINT32:
-          enc.EncodeUInt32(*ExtractColumnFromRow<UINT32>(row, i));
+          enc.EncodeUInt32(*ExtractColumnFromRow<UINT32>(row, i), is_last);
           break;
         case STRING:
-          enc.EncodeBytes(*ExtractColumnFromRow<STRING>(row, i));
+          enc.EncodeBytes(*ExtractColumnFromRow<STRING>(row, i), is_last);
           break;
         default:
           CHECK(0) << "Unknown type: " << ti.name();
