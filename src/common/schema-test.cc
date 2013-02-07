@@ -9,6 +9,7 @@
 #include "common/schema.h"
 #include "common/key_encoder.h"
 #include "util/hexdump.h"
+#include "util/stopwatch.h"
 #include "util/test_macros.h"
 
 namespace kudu {
@@ -162,6 +163,26 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
       << "Got:      " << HexDump(Slice(fs));
   }
 }
+
+#ifdef NDEBUG
+TEST(TestKeyEncoder, BenchmarkSimpleKey) {
+  faststring fs;
+  KeyEncoder enc(&fs);
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("col1", STRING)), 1);
+
+  Slice key("hello world");
+  Slice row(reinterpret_cast<const uint8_t *>(&key),  
+            sizeof(key));
+
+  LOG_TIMING(INFO, "Encoding") {
+    for (int i = 0; i < 10000000; i++) {
+      fs.clear();
+      schema.EncodeComparableKey(row, &fs);
+    }
+  }
+}
+#endif
 
 }
 }
