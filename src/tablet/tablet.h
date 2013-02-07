@@ -89,6 +89,8 @@ private:
   Status CaptureConsistentIterators(const Schema &projection,
                                     deque<shared_ptr<RowIteratorInterface> > *iters) const;
 
+  BloomFilterSizing bloom_sizing() const;
+
   Schema schema_;
   string dir_;
   shared_ptr<MemStore> memstore_;

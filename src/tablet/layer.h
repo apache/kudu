@@ -28,11 +28,16 @@ namespace kudu {
 
 class Env;
 
+namespace cfile {
+class BloomFileWriter;
+}
+
 namespace tablet {
 
 using boost::ptr_vector;
 using std::string;
 using std::auto_ptr;
+using kudu::cfile::BloomFileWriter;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
@@ -40,10 +45,12 @@ class LayerWriter : boost::noncopyable {
 public:
   LayerWriter(Env *env,
               const Schema &schema,
-              const string &layer_dir) :
+              const string &layer_dir,
+              const BloomFilterSizing &bloom_sizing) :
     env_(env),
     schema_(schema),
     dir_(layer_dir),
+    bloom_sizing_(bloom_sizing),
     finished_(false),
     column_flushed_counts_(schema.num_columns(), 0)
   {}
@@ -57,13 +64,10 @@ public:
   // tmp copies during the flush.
   Status FlushProjection(const Schema &projection,
                          RowIteratorInterface *src_iter,
-                         bool need_arena);
+                         bool need_arena,
+                         bool write_bloom);
 
-  // Flush a bloom filter into the layer directory.
-  Status FlushBloomFilter(RowIteratorInterface *src_iter,
-                          const BloomFilterSizing &sizing,
-                          bool need_arena);
-
+  // TODO: this is only used by tests. Kill this off.
   Status WriteRow(const Slice &row) {
     CHECK(!finished_);
     DCHECK_EQ(row.size(), schema_.byte_size());
@@ -88,11 +92,15 @@ public:
 
 
 private:
+
+  Status InitBloomFileWriter(scoped_ptr<BloomFileWriter> *bfw) const;
+
   Env *env_;
   const Schema schema_;
   const string dir_;
-  bool finished_;
+  BloomFilterSizing bloom_sizing_;
 
+  bool finished_;
   ptr_vector<cfile::Writer> cfile_writers_;
   vector<size_t> column_flushed_counts_;
 };

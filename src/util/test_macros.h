@@ -37,4 +37,11 @@
     << "Expected file to exist: " << _s; \
   } while (0);
 
+#define ASSERT_FILE_NOT_EXISTS(env, path) do { \
+  std::string _s = path; \
+  ASSERT_FALSE(env->FileExists(_s)) \
+    << "Expected file not to exist: " << _s; \
+  } while (0);
+
+
 #endif

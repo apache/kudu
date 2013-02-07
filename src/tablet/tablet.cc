@@ -100,6 +100,12 @@ Status Tablet::Open() {
   return Status::OK();
 }
 
+BloomFilterSizing Tablet::bloom_sizing() const {
+  // TODO: make this configurable
+  return BloomFilterSizing::BySizeAndFPRate(64*1024, 0.01f);
+}
+
+
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
@@ -209,17 +215,9 @@ Status Tablet::Flush() {
   scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(keys_only));
   RETURN_NOT_OK(iter->Init());
 
-  LayerWriter out(env_, schema_, tmp_layer_dir);
+  LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
   RETURN_NOT_OK(out.Open());
-  RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get(), false));
-
-  // Flush the bloom filter for the key.
-  LOG(INFO) << "Flush: flushing bloom filter";
-  iter->SeekToStart();
-  // TODO: make this configurable
-  BloomFilterSizing sizing =
-    BloomFilterSizing::BySizeAndFPRate(64*1024, 0.01f);
-  RETURN_NOT_OK( out.FlushBloomFilter(iter.get(), sizing, false) );
+  RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get(), false, true));
 
   // Step 3. Freeze old memstore contents.
   // Because the key column exists on disk, we can create a new layer
@@ -257,7 +255,7 @@ Status Tablet::Flush() {
   Schema non_keys = schema_.CreateNonKeyProjection();
   iter.reset(old_ms->NewIterator(non_keys));
   RETURN_NOT_OK(iter->Init());
-  RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get(), false));
+  RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get(), false, false));
   RETURN_NOT_OK(out.Finish());
 
 
@@ -379,9 +377,10 @@ Status Tablet::Compact()
   MergeIterator merge_keys(keys_only, key_iters);
   RETURN_NOT_OK(merge_keys.Init());
 
-  LayerWriter out(env_, schema_, tmp_layer_dir);
+  LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
   RETURN_NOT_OK(out.Open());
-  RETURN_NOT_OK(out.FlushProjection(keys_only, &merge_keys, true));
+  RETURN_NOT_OK(out.FlushProjection(keys_only, &merge_keys, true, true));
+
   
   // Step 3. Swap in the UpdateDuplicatingLayer
 
@@ -400,7 +399,7 @@ Status Tablet::Compact()
   MergeIterator merge_full(schema_, full_iters);
   RETURN_NOT_OK(merge_full.Init());
   Schema non_keys = schema_.CreateNonKeyProjection();
-  RETURN_NOT_OK(out.FlushProjection(non_keys, &merge_full, true));
+  RETURN_NOT_OK(out.FlushProjection(non_keys, &merge_full, true, false));
 
   RETURN_NOT_OK(out.Finish());
 

@@ -171,9 +171,19 @@ Status LayerWriter::Open() {
   return Status::OK();
 }
 
+Status LayerWriter::InitBloomFileWriter(scoped_ptr<BloomFileWriter> *bfw) const {
+  string path(Layer::GetBloomPath(dir_));
+  shared_ptr<WritableFile> file;
+  RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
+  bfw->reset(new BloomFileWriter(file, bloom_sizing_));
+  return bfw->get()->Start();
+}
+
+
 Status LayerWriter::FlushProjection(const Schema &projection,
                                     RowIteratorInterface *src_iter,
-                                    bool need_arena) {
+                                    bool need_arena,
+                                    bool write_bloom) {
   const Schema &iter_schema = src_iter->schema();
 
   CHECK(!finished_);
@@ -181,6 +191,13 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   vector<size_t> iter_projection;
   projection.GetProjectionFrom(schema_, &orig_projection);
   projection.GetProjectionFrom(iter_schema, &iter_projection);
+
+  faststring encoded_key_buf; // for blooms
+  scoped_ptr<BloomFileWriter> bfw;
+  if (write_bloom) {
+    InitBloomFileWriter(&bfw);
+  }
+
 
   ScopedBatchReader batcher(src_iter, need_arena);
 
@@ -200,9 +217,32 @@ Status LayerWriter::FlushProjection(const Schema &projection,
       const void *p = batcher.col_ptr(iter_col);
       RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
     }
+
+    // Write the batch to the bloom, if applicable
+    if (write_bloom) {
+      const uint8_t *row = batcher.row_ptr(0);
+      for (size_t i = 0; i < nrows; i++) {
+        // TODO: performance might be better if we actually batch this -
+        // encode a bunch of key slices, then pass them all in one go.
+
+        // Encode the row into sortable form
+        encoded_key_buf.clear();
+        Slice row_slice(row, iter_schema.byte_size());
+        iter_schema.EncodeComparableKey(row_slice, &encoded_key_buf);
+
+        // Insert the encoded row into the bloom.
+        Slice encoded_key_slice(encoded_key_buf);
+        RETURN_NOT_OK( bfw->AppendKeys(&encoded_key_slice, 1) );
+
+        // Advance.
+        row += iter_schema.byte_size();
+      }
+    }
+
     written += nrows;
   }
 
+  // Finish columns.
   for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
     size_t orig_col = orig_projection[proj_col];
     CHECK_EQ(column_flushed_counts_[orig_col], 0);
@@ -211,53 +251,11 @@ Status LayerWriter::FlushProjection(const Schema &projection,
     RETURN_NOT_OK(cfile_writers_[orig_col].Finish());
   }
 
-  return Status::OK();
-}
-
-Status LayerWriter::FlushBloomFilter(RowIteratorInterface *src_iter,
-                                     const BloomFilterSizing &sizing,
-                                     bool need_arena) {
-  const Schema &schema = src_iter->schema();
-
-  // Open the output file.
-  string path(Layer::GetBloomPath(dir_));
-  shared_ptr<WritableFile> file;
-  RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
-  cfile::BloomFileWriter bfw(file, sizing);
-  RETURN_NOT_OK(bfw.Start());
-
-  // Set up buffer to read data into from the iterator.
-  ScopedBatchReader batcher(src_iter, need_arena);
-
-  // Set up buffer for encoding keys into
-  faststring encoded_key_buf;
-
-  while (src_iter->HasNext()) {
-    // Read a batch from the iterator.
-    size_t nrows;
-    RETURN_NOT_OK(batcher.NextBatch(&nrows));
-    CHECK_GT(nrows, 0);
-
-    const uint8_t *row = batcher.row_ptr(0);
-    for (size_t i = 0; i < nrows; i++) {
-      // TODO: performance might be better if we actually batch this -
-      // encode a bunch of key slices, then pass them all in one go.
-
-      // Encode the row into sortable form
-      encoded_key_buf.clear();
-      Slice row_slice(row, schema.byte_size());
-      schema.EncodeComparableKey(row_slice, &encoded_key_buf);
-
-      // Insert the encoded row into the bloom.
-      Slice encoded_key_slice(encoded_key_buf);
-      RETURN_NOT_OK( bfw.AppendKeys(&encoded_key_slice, 1) );
-
-      // Advance.
-      row += schema.byte_size();
-    }
+  // Finish bloom.
+  if (write_bloom) {
+    RETURN_NOT_OK(bfw->Finish());
   }
 
-  RETURN_NOT_OK(bfw.Finish());
 
   return Status::OK();
 }

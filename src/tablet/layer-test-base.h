@@ -65,7 +65,8 @@ protected:
   void WriteTestLayer() {
     // Write rows into a new Layer.
     LOG_TIMING(INFO, "Writing layer") {
-      LayerWriter lw(env_, schema_, test_dir_);
+      LayerWriter lw(env_, schema_, test_dir_,
+                     BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
       ASSERT_STATUS_OK(lw.Open());
 

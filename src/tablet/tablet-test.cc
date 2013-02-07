@@ -219,19 +219,41 @@ TEST_F(TestTablet, TestInsertsPersist) {
 
 TEST_F(TestTablet, TestCompaction) {
   // Create three layers by inserting and flushing
-  InsertTestRows(0, 1000);
-  ASSERT_STATUS_OK(tablet_->Flush());
+  {
+    InsertTestRows(0, 1000);
+    ASSERT_STATUS_OK(tablet_->Flush());
+    string layer_dir_ = Tablet::GetLayerPath(test_dir_, 0);
+    ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 0));
+  }
 
-  InsertTestRows(1000, 1000);
-  ASSERT_STATUS_OK(tablet_->Flush());
+  {
+    InsertTestRows(1000, 1000);
+    ASSERT_STATUS_OK(tablet_->Flush());
+    string layer_dir_ = Tablet::GetLayerPath(test_dir_, 1);
+    ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 0));
+  }
 
-  InsertTestRows(2000, 1000);
-  ASSERT_STATUS_OK(tablet_->Flush());
-  ASSERT_EQ(3000, TabletCount());
+  {
+    InsertTestRows(2000, 1000);
+    ASSERT_STATUS_OK(tablet_->Flush());
+    string layer_dir_ = Tablet::GetLayerPath(test_dir_, 2);
+    ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 0));
+  }
 
   // Issue compaction
-  ASSERT_STATUS_OK(tablet_->Compact());
-  ASSERT_EQ(3000, TabletCount());
+  {
+    ASSERT_STATUS_OK(tablet_->Compact());
+    ASSERT_EQ(3000, TabletCount());
+    string layer_dir_ = Tablet::GetLayerPath(test_dir_, 3);
+    ASSERT_FILE_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 0));
+    ASSERT_FILE_EXISTS(env_, Layer::GetBloomPath(layer_dir_))
+  }
+
+  // Old layers should not exist anymore
+  for (int i = 0; i <= 2; i++) {
+    string layer_dir_ = Tablet::GetLayerPath(test_dir_, i);
+    ASSERT_FILE_NOT_EXISTS(env_, Layer::GetColumnPath(layer_dir_, 0));
+  }
 }
 
 } // namespace tablet
