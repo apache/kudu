@@ -6,6 +6,7 @@
 
 #include "common/common.pb.h"
 #include "common/row.h"
+#include "gutil/atomicops.h"
 #include "tablet/memstore.h"
 
 DEFINE_int32(memstore_throttle_mb, 0,
@@ -23,7 +24,8 @@ MemStore::MemStore(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
   debug_insert_count_(0),
-  debug_update_count_(0)
+  debug_update_count_(0),
+  has_logged_throttling_(0)
 {}
 
 void MemStore::DebugDump() {
@@ -110,6 +112,11 @@ void MemStore::SlowMutators() {
 
   ssize_t over_mem = memory_footprint() - FLAGS_memstore_throttle_mb * 1024 * 1024;
   if (over_mem > 0) {
+    if (!has_logged_throttling_ &&
+        base::subtle::NoBarrier_AtomicExchange(&has_logged_throttling_, 1) == 0) {
+      LOG(WARNING) << "Throttling memstore insert rate";
+    }
+
     size_t us_to_sleep = over_mem / 1024 / 512;
     boost::this_thread::sleep(boost::posix_time::microseconds(us_to_sleep));
   }

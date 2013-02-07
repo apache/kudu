@@ -160,6 +160,8 @@ private:
   volatile uint64_t debug_update_count_;
 
   boost::mutex compact_flush_lock_;
+
+  Atomic32 has_logged_throttling_;
 };
 
 // An iterator through in-memory data stored in a MemStore.
