@@ -158,16 +158,12 @@ public:
   {}
 
   Status SeekAtOrBefore(const void *search_key) {
-    seeked_indexes_.clear();
-
     KeyType key = *reinterpret_cast<const KeyType *>(search_key);
-    return SeekDownward(key, root_block_);
+    return SeekDownward(key, root_block_, 0);
   }
 
   Status SeekToFirst() {
-    seeked_indexes_.clear();
-
-    return SeekToFirstDownward(root_block_);
+    return SeekToFirstDownward(root_block_, 0);
   }
 
   bool HasNext() {
@@ -208,7 +204,8 @@ public:
     // Otherwise, the last layer points to the valid
     // next block. Propagate downward if it is not a leaf.
     while (!BottomReader()->IsLeaf()) {
-      RETURN_NOT_OK(PushBlock(BottomIter()->GetCurrentBlockPointer()));
+      RETURN_NOT_OK(LoadBlock(BottomIter()->GetCurrentBlockPointer(),
+                              seeked_indexes_.size()));
       RETURN_NOT_OK(BottomIter()->SeekToIndex(0));
     }
 
@@ -231,53 +228,88 @@ private:
   IndexBlockReader<KeyTypeEnum> *BottomReader() {
     return &seeked_indexes_.back().reader;
   }
-  
-  Status PushBlock(const BlockPointer &block) {
-    std::auto_ptr<SeekedIndex> seeked( new SeekedIndex() );
 
-    seeked->reader.Reset();
-    seeked->iter.Reset();
+  IndexBlockIterator<KeyTypeEnum> *seeked_iter(int depth) {
+    return &seeked_indexes_[depth].iter;
+  }
+
+  IndexBlockReader<KeyTypeEnum> *seeked_reader(int depth) {
+    return &seeked_indexes_[depth].reader;
+  }
+  
+  Status LoadBlock(const BlockPointer &block, int depth) {
+    
+    SeekedIndex *seeked;
+    if (depth < seeked_indexes_.size()) {
+      // We have a cached instance from previous seek.
+      seeked = &seeked_indexes_[depth];
+
+      if (seeked->block_ptr.offset() == block.offset()) {
+        // We're already seeked to this block - no need to re-parse it.
+        // This is handy on the root block as well as for the case
+        // when a lot of requests are traversing down the same part of
+        // the tree.
+        return Status::OK();
+      }
+
+      // Seeked to a different block: reset the reader
+      seeked->reader.Reset();
+      seeked->iter.Reset();
+    } else {
+      // No cached instance, make a new one.
+      seeked_indexes_.push_back(new SeekedIndex());
+      seeked = &seeked_indexes_.back();
+    }
 
     RETURN_NOT_OK(reader_->ReadBlock(block, &seeked->data));
+    seeked->block_ptr = block;
 
     // Parse the new block.
     RETURN_NOT_OK(seeked->reader.Parse(seeked->data.data()));
 
-    seeked_indexes_.push_back(seeked.release());
     return Status::OK();
   }
 
   Status SeekDownward(const KeyType &search_key,
-                      const BlockPointer &in_block) {
+                      const BlockPointer &in_block,
+                      int cur_depth) {
 
     // Read the block.
-    RETURN_NOT_OK(PushBlock(in_block));
-    RETURN_NOT_OK(BottomIter()->SeekAtOrBefore(search_key));
+    RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
+    IndexBlockIterator<KeyTypeEnum> *iter = seeked_iter(cur_depth);
+
+    RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
 
     // If the block is a leaf block, we're done,
     // otherwise recurse downward into next layer
     // of B-Tree
-    if (BottomReader()->IsLeaf()) {
+    if (seeked_reader(cur_depth)->IsLeaf()) {
+      seeked_indexes_.resize(cur_depth + 1);
       return Status::OK();
     } else {
       return SeekDownward(search_key,
-                          BottomIter()->GetCurrentBlockPointer());
+                          iter->GetCurrentBlockPointer(),
+                          cur_depth + 1);
     }
   }
 
-  Status SeekToFirstDownward(const BlockPointer &in_block) {
+  Status SeekToFirstDownward(const BlockPointer &in_block,
+                             int cur_depth) {
     // Read the block.
-    RETURN_NOT_OK(PushBlock(in_block));
-    RETURN_NOT_OK(BottomIter()->SeekToIndex(0));
+    RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
+    IndexBlockIterator<KeyTypeEnum> *iter = seeked_iter(cur_depth);
+
+    RETURN_NOT_OK(iter->SeekToIndex(0));
 
     // If the block is a leaf block, we're done,
     // otherwise recurse downward into next layer
     // of B-Tree
-    if (BottomReader()->IsLeaf()) {
+    if (seeked_reader(cur_depth)->IsLeaf()) {
+      seeked_indexes_.resize(cur_depth + 1);
       return Status::OK();
     } else {
       return SeekToFirstDownward(
-        BottomIter()->GetCurrentBlockPointer());
+        iter->GetCurrentBlockPointer(), cur_depth + 1);
     }
   }
 
@@ -289,6 +321,7 @@ private:
     // Hold a copy of the underlying block data, which would
     // otherwise go out of scope. The reader and iter
     // do not themselves retain the data.
+    BlockPointer block_ptr;
     BlockCacheHandle data;
     IndexBlockReader<KeyTypeEnum> reader;
     IndexBlockIterator<KeyTypeEnum> iter;
