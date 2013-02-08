@@ -139,7 +139,7 @@ public:
 template<typename T>
 class PtrSinkWithStride {
 public:
-  PtrSinkWithStride(char *ptr, size_t stride) :
+  PtrSinkWithStride(uint8_t *ptr, size_t stride) :
     ptr_(ptr),
     stride_(stride)
   {}
@@ -150,7 +150,7 @@ public:
   }
 
 private:
-  char *ptr_;
+  uint8_t *ptr_;
   const size_t stride_;
 };
 
@@ -170,14 +170,46 @@ void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
 
 Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
                                            bool *exact_match) {
-  return Status::NotSupported("TODO: int key search");
+  // for now, use a linear search.
+  // TODO: evaluate adding a few pointers at the end of the block back
+  // into every 16th group or so, or skipping by just looking at the
+  // selector bytes
+  SeekToPositionInBlock(0);
+
+  // If it's at or below the first element, stop here.
+  uint32_t target = *reinterpret_cast<const uint32_t *>(value_void);
+
+  // Otherwise advance until we find an element >=
+  while (cur_idx_ < num_elems_) {
+    uint32_t chunk[4];
+    PtrSinkWithStride<uint32_t> sink(reinterpret_cast<uint8_t *>(chunk),
+                                     sizeof(uint32_t));
+    size_t count = 4;
+    RETURN_NOT_OK( DoGetNextValues(&count, &sink) );
+
+    uint32_t *chunk_ptr = chunk;
+    while (count) {
+      if (*chunk_ptr >= target) {
+        *exact_match = *chunk_ptr == target;
+        // the DoGetNextValues call advanced cur_idx past all 4 values
+        // that we read. So, we need to subtract back to point at
+        // the matching value.
+        cur_idx_ -= count;
+        return Status::OK();
+      }
+      count--;
+      chunk_ptr++;
+    }
+  }
+
+  return Status::NotFound("not in block");
 }
 
 Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK_EQ(dst->type_info().type(), UINT32);
 
   PtrSinkWithStride<uint32_t> sink(
-    reinterpret_cast<char *>(dst->data()), dst->stride());
+    reinterpret_cast<uint8_t *>(dst->data()), dst->stride());
   return DoGetNextValues(n, &sink);
 }
 

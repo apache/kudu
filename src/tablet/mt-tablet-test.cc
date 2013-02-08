@@ -87,16 +87,15 @@ public:
         ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
         CHECK_EQ(n, 1);
 
-        // Grab the key
-        Slice key = *schema.ExtractColumnFromRow<STRING>(row_slice, 0);
-
+        // The key is at the start of the row
+        const uint8_t *row_key = row_slice.data();
         if (rand() % 10 == 7) {
           // Increment the "update count"
           uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(row_slice, 2);
           // Issue an update
           uint32_t new_val = old_val + 1;
           update.get().UpdateColumn(schema, 2, &new_val);
-          ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(&key, update.get()));
+          ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(row_key, update.get()));
         }
       }
     }
