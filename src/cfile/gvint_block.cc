@@ -170,7 +170,7 @@ void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
 
 Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
                                              bool *exact_match) {
-  
+
   // for now, use a linear search.
   // TODO: evaluate adding a few pointers at the end of the block back
   // into every 16th group or so?
@@ -179,11 +179,12 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   // Stop here if the target is < the first elem of the block.
   uint32_t target = *reinterpret_cast<const uint32_t *>(value_void);
   if (target < min_elem_) {
+    *exact_match = false;
     return Status::OK();
   }
 
   // Put target into this block's frame of reference
-  target -= min_elem_;
+  uint32_t rel_target = target - min_elem_;
 
   const uint8_t *prev_group_pos = cur_pos_;
 
@@ -195,7 +196,7 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
     // Determine length of first in this block
     uint32_t first_elem = *reinterpret_cast<const uint32_t *>(cur_pos_)
       & coding::MASKS[a_sel];
-    if (target < first_elem) {
+    if (rel_target < first_elem) {
       // target fell in previous group
       DCHECK_GE(cur_idx_, 4);
       cur_idx_ -= 4;
@@ -210,7 +211,7 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
     cur_idx_ += 4;
   }
 
-  if (cur_idx_ == num_elems_) {
+  if (cur_idx_ >= num_elems_) {
     // target may be in the last group in the block
     DCHECK_GE(cur_idx_, 4);
     cur_idx_ -= 4;
@@ -224,7 +225,9 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
                                    sizeof(uint32_t));
   size_t count = 4;
   RETURN_NOT_OK( DoGetNextValues(&count, &sink) );
-  cur_idx_ -= 4;
+
+  // Reset the index back to the start of this block
+  cur_idx_ -= count;
 
   for (int i = 0; i < count; i++) {
     if (chunk[i] >= target) {

@@ -259,9 +259,13 @@ protected:
   }
 
   void DoSeekTest(int num_ints, int num_queries, bool verify) {
+    // Don't start the ints at 0, in order to check that we properly
+    // deal with the frame-of-reference.
+    const uint32_t kBase = 6;
+
     uint32_t data[num_ints];
     for (uint32_t i = 0; i < num_ints; i++) {
-      data[i] = i * 2;
+      data[i] = kBase + i * 2;
     }
 
     boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
@@ -277,11 +281,12 @@ protected:
     LOG_TIMING(INFO, "Seeking in gvint block") {
       for (int i = 0; i < num_queries; i++) {
         bool exact;
-        uint32_t target = random() % (num_ints * 2);
+        uint32_t target = random() % (num_ints * 2 + kBase);
         Status s = ibd.SeekAtOrAfterValue(&target, &exact);
         if (verify) {
+          SCOPED_TRACE(target);
           if (s.IsNotFound()) {
-            ASSERT_EQ(num_ints * 2 - 1, target);
+            ASSERT_EQ(kBase + num_ints * 2 - 1, target);
             continue;
           }
           ASSERT_STATUS_OK_FAST(s);
@@ -289,7 +294,10 @@ protected:
           uint32_t got;
           CopyOne<UINT32>(&ibd, &got);
 
-          if (target % 2 == 0) {
+          if (target < kBase) {
+            ASSERT_EQ(kBase, got);
+            ASSERT_FALSE(exact);
+          } else if (target % 2 == 0) {
             // Was inserted
             ASSERT_EQ(target, got);
             ASSERT_TRUE(exact);
@@ -431,6 +439,13 @@ TEST_F(TestEncoding, GVIntSeekBenchmark) {
 
 TEST_F(TestEncoding, GVIntSeekTest) {
   DoSeekTest(64, 1000, true);
+}
+
+
+TEST_F(TestEncoding, GVIntSeekTestTinyBlock) {
+  for (int block_size = 1; block_size < 16; block_size++) {
+    DoSeekTest(block_size, 1000, true);
+  }
 }
 
 } // namespace cfile

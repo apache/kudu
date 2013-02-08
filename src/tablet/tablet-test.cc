@@ -59,8 +59,9 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_EQ(1, this->TabletCount());
 
   s = this->tablet_->Insert(rb.data());
-  ASSERT_TRUE(s.IsAlreadyPresent()) <<
-    "expected AlreadyPresent, but got: " << s.ToString();
+  ASSERT_TRUE(s.IsAlreadyPresent())
+    << "expected AlreadyPresent, but got: " << s.ToString()
+    << " Inserting: " << rb.data().ToDebugString();
 
   ASSERT_EQ(1, this->TabletCount());
 }
@@ -146,6 +147,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // Update a subset of the rows
   ScopedRowDelta update(this->schema_);
   for (uint32_t i = 0; i < 1000; i += 15) {
+    SCOPED_TRACE("update " + i);
     uint32_t new_val = 10000 + i;
     ASSERT_STATUS_OK_FAST(
       this->setup_.DoUpdate(this->tablet_.get(), &update, i, new_val));
