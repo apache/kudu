@@ -178,7 +178,7 @@ public:
   void VerifyTestRows(int first_row, int expected_count) {
     scoped_ptr<Tablet::RowIterator> iter;
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-    int batch_size = std::max((size_t)(expected_count / 10),
+    int batch_size = std::min((size_t)(expected_count / 10),
                               4*1024*1024 / schema_.byte_size());
     scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * batch_size]);
     RowBlock block(schema_, &buf[0], batch_size, &arena_);
