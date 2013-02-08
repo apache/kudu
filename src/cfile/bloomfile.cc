@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/thread/mutex.hpp>
+#include <sched.h>
+#include <unistd.h>
 #include <tr1/memory>
 
 #include "cfile/cfile.h"
@@ -126,8 +128,16 @@ Status BloomFileReader::Init() {
   }
 
   BlockPointer validx_root = reader_->validx_root();
-  index_iter_.reset(
-    IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
+
+  // Ugly hack: create a per-cpu iterator.
+  // Instead this should be threadlocal, or allow us to just
+  // stack-allocate these things more smartly!
+  int n_cpus = sysconf(_SC_NPROCESSORS_CONF);
+  for (int i = 0; i < n_cpus; i++) {
+    index_iters_.push_back(
+      IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
+  }
+  iter_locks_.resize(n_cpus);
 
   return Status::OK();
 }
@@ -163,11 +173,15 @@ Status BloomFileReader::ParseBlockHeader(const Slice &block,
 
 Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
                                         bool *maybe_present) {
-  BlockCacheHandle dblk_data;
-  {
-    boost::lock_guard<PThreadSpinLock> lock(iter_lock_);
+  int cpu = sched_getcpu();
+  CHECK_LT(cpu, iter_locks_.size());
 
-    Status s = index_iter_->SeekAtOrBefore(&probe.key());
+  BlockPointer bblk_ptr;
+  {
+    boost::lock_guard<PThreadSpinLock> lock(iter_locks_[cpu]);
+    cfile::IndexTreeIterator *index_iter = &index_iters_[cpu];
+
+    Status s = index_iter->SeekAtOrBefore(&probe.key());
     if (PREDICT_FALSE(s.IsNotFound())) {
       // Seek to before the first entry in the file.
       *maybe_present = false;
@@ -176,9 +190,11 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
     RETURN_NOT_OK(s);
 
     // Successfully found the pointer to the bloom block. Read it.
-    BlockPointer bblk_ptr = index_iter_->GetCurrentBlockPointer();
-    RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
+    bblk_ptr = index_iter->GetCurrentBlockPointer();
   }
+
+  BlockCacheHandle dblk_data;
+  RETURN_NOT_OK(reader_->ReadBlock(bblk_ptr, &dblk_data));
 
   // Parse the header in the block.
   BloomBlockHeaderPB hdr;

@@ -3,7 +3,9 @@
 #define KUDU_CFILE_BLOOMFILE_H
 
 #include <boost/noncopyable.hpp>
+#include <boost/ptr_container/ptr_vector.hpp>
 #include <tr1/memory>
+#include <vector>
 
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
@@ -70,14 +72,15 @@ private:
                           BloomBlockHeaderPB *hdr,
                           Slice *bloom_data) const;
 
-  scoped_ptr<cfile::IndexTreeIterator> index_iter_;
   scoped_ptr<CFileReader> reader_;
 
   // TODO: temporary workaround for the fact that
   // the index tree iterator is a member of the Reader object.
   // We need a big per-thread object which gets passed around so as
-  // to avoid this.
-  PThreadSpinLock iter_lock_;
+  // to avoid this... Instead we'll use a per-CPU iterator as a
+  // lame hack.
+  boost::ptr_vector<cfile::IndexTreeIterator> index_iters_;
+  std::vector<PThreadSpinLock> iter_locks_;
 };
 
 
