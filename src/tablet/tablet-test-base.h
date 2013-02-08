@@ -150,13 +150,13 @@ public:
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
-  void InsertTestRows(int first_row, int count) {
+  void InsertTestRows(uint64_t first_row, uint64_t count) {
     RowBuilder rb(schema_);
 
     WallTime last_print_time = 0;
     uint64_t last_print_count = 0;
 
-    for (int i = first_row; i < first_row + count; i++) {
+    for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
       setup_.BuildRow(&rb, i);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
@@ -175,7 +175,7 @@ public:
     }
   }
 
-  void VerifyTestRows(int first_row, int expected_count) {
+  void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
     scoped_ptr<Tablet::RowIterator> iter;
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
     int batch_size = std::min((size_t)(expected_count / 10),
