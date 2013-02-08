@@ -80,6 +80,18 @@ private:
   int cur_idx_;
 };
 
+// Test that empty input to a merger behaves correctly.
+TEST(TestMergeIterator, TestMergeEmpty) {
+  vector<uint32_t> empty_vec;
+  shared_ptr<VectorIterator> iter(new VectorIterator(empty_vec));
+
+  vector<shared_ptr<RowIteratorInterface> > to_merge;
+  to_merge.push_back(iter);
+
+  MergeIterator merger(kIntSchema, to_merge);
+  ASSERT_STATUS_OK(merger.Init());
+  ASSERT_FALSE(merger.HasNext());
+}
 
 TEST(TestMergeIterator, TestMerge) {
   vector<shared_ptr<RowIteratorInterface> > to_merge;
@@ -117,6 +129,9 @@ TEST(TestMergeIterator, TestMerge) {
       while (merger.HasNext()) {
         size_t n = dst.nrows();
         ASSERT_STATUS_OK_FAST(merger.CopyNextRows(&n, &dst));
+        ASSERT_GT(n, 0) <<
+          "if HasNext() returns true, must return some rows";
+        LOG(INFO) << "result: " << n;
 
         for (int i = 0; i < n; i++) {
           uint32_t this_row = *(reinterpret_cast<const uint32_t *>(dst.row_ptr(i)));

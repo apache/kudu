@@ -52,13 +52,17 @@ public:
   }
 
   bool IsFullyExhausted() const {
-    return IsBlockExhausted() && !iter_->HasNext();
+    return valid_rows_ == 0;
   }
 
   Status PullNextBlock() {
     CHECK_EQ(cur_row_, valid_rows_)
       << "should not pull next block until current block is exhausted";
-    if (IsFullyExhausted()) {
+
+    if (!iter_->HasNext()) {
+      // Fully exhausted
+      cur_row_ = 0;
+      valid_rows_ = 0;
       return Status::OK();
     }
 
@@ -104,6 +108,17 @@ Status MergeIterator::Init() {
     RETURN_NOT_OK(state->PullNextBlock());
   }
 
+  // Before we copy any rows, clean up any iterators which were empty
+  // to start with. Otherwise, HasNext() won't properly return false
+  // if we were passed only empty iterators.
+  for (size_t i = 0; i < iters_.size(); i++) {
+    if (PREDICT_FALSE(iters_[i]->IsFullyExhausted())) {
+      iters_.erase(iters_.begin() + i);
+      i--;
+      continue;
+    }
+  }
+
   initted_ = true;
   return Status::OK();
 }
@@ -120,30 +135,24 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
 
   // TODO: check that dst has the same schema
 
-
   *nrows = 0;
   size_t dst_row_idx = 0;
   size_t row_size = schema_.byte_size();
   uint8_t *dst_ptr = dst->row_ptr(0);
 
-
   while (dst_row_idx < dst->nrows()) {
 
     // Find the sub-iterator which is currently smallest
     MergeIterState *smallest = NULL;
+    size_t smallest_idx;
 
     for (size_t i = 0; i < iters_.size(); i++) {
       shared_ptr<MergeIterState> &state = iters_[i];
 
-      if (PREDICT_FALSE(state->IsFullyExhausted())) {
-        iters_.erase(iters_.begin() + i);
-        i--;
-        continue;
-      }
-
       if (smallest == NULL ||
           schema_.Compare(state->next_row_ptr(), smallest->next_row_ptr()) < 0) {
         smallest = state.get();
+        smallest_idx = i;
       }
     }
 
@@ -159,6 +168,11 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     dst_ptr += row_size;
 
     RETURN_NOT_OK(smallest->Advance());
+
+    if (smallest->IsFullyExhausted()) {
+      iters_.erase(iters_.begin() + smallest_idx);
+    }
+
     dst_row_idx++;
   }
 
