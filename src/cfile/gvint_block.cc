@@ -169,40 +169,90 @@ void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
 }
 
 Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
-                                           bool *exact_match) {
+                                             bool *exact_match) {
+  
   // for now, use a linear search.
   // TODO: evaluate adding a few pointers at the end of the block back
-  // into every 16th group or so, or skipping by just looking at the
-  // selector bytes
+  // into every 16th group or so?
   SeekToPositionInBlock(0);
 
-  // If it's at or below the first element, stop here.
+  // Stop here if the target is < the first elem of the block.
   uint32_t target = *reinterpret_cast<const uint32_t *>(value_void);
+  if (target < min_elem_) {
+    return Status::OK();
+  }
 
-  // Otherwise advance until we find an element >=
+  // Put target into this block's frame of reference
+  target -= min_elem_;
+
+  const uint8_t *prev_group_pos = cur_pos_;
+
+  // Search for the group which contains the target
   while (cur_idx_ < num_elems_) {
-    uint32_t chunk[4];
-    PtrSinkWithStride<uint32_t> sink(reinterpret_cast<uint8_t *>(chunk),
-                                     sizeof(uint32_t));
-    size_t count = 4;
-    RETURN_NOT_OK( DoGetNextValues(&count, &sink) );
+    uint8_t tag = *cur_pos_++;
+    uint8_t a_sel = (tag & BOOST_BINARY( 11 00 00 00)) >> 6;
 
-    uint32_t *chunk_ptr = chunk;
-    while (count) {
-      if (*chunk_ptr >= target) {
-        *exact_match = *chunk_ptr == target;
-        // the DoGetNextValues call advanced cur_idx past all 4 values
-        // that we read. So, we need to subtract back to point at
-        // the matching value.
-        cur_idx_ -= count;
-        return Status::OK();
+    // Determine length of first in this block
+    uint32_t first_elem = *reinterpret_cast<const uint32_t *>(cur_pos_)
+      & coding::MASKS[a_sel];
+    if (target < first_elem) {
+      // target fell in previous group
+      DCHECK_GE(cur_idx_, 4);
+      cur_idx_ -= 4;
+      cur_pos_ = prev_group_pos;
+      break;
+    }
+
+    // Skip group;
+    uint8_t group_len = coding::VARINT_SELECTOR_LENGTHS[tag];
+    prev_group_pos = cur_pos_ - 1;
+    cur_pos_ += group_len;
+    cur_idx_ += 4;
+  }
+
+  if (cur_idx_ == num_elems_) {
+    // target may be in the last group in the block
+    DCHECK_GE(cur_idx_, 4);
+    cur_idx_ -= 4;
+    cur_pos_ = prev_group_pos;
+  }
+
+  // We're now pointed at the correct group. Decode it
+
+  uint32_t chunk[4];
+  PtrSinkWithStride<uint32_t> sink(reinterpret_cast<uint8_t *>(chunk),
+                                   sizeof(uint32_t));
+  size_t count = 4;
+  RETURN_NOT_OK( DoGetNextValues(&count, &sink) );
+  cur_idx_ -= 4;
+
+  for (int i = 0; i < count; i++) {
+    if (chunk[i] >= target) {
+      *exact_match = chunk[i] == target;
+      cur_idx_ += i;
+
+      int rem = count; // convert to signed
+
+      while (rem-- > i) {
+        pending_.push_back(chunk[rem]);
       }
-      count--;
-      chunk_ptr++;
+
+      return Status::OK();
     }
   }
 
-  return Status::NotFound("not in block");
+  // If it wasn't in this block, then it falls between this block
+  // and the following one. So, we are positioned correctly.
+  cur_idx_ += count;
+  *exact_match = false;
+
+  if (cur_idx_ == num_elems_) {
+    // If it wasn't in the block, and this was the last block,
+    // mark as not found
+    return Status::NotFound("not in block");
+  }
+
+  return Status::OK();
 }
 
 Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
@@ -214,7 +264,7 @@ Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
 }
 
 template<class IntSink>
-Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
+inline Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink) {
   size_t n = *n_param;
   int start_idx = cur_idx_;
   size_t rem = num_elems_ - cur_idx_;
