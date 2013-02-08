@@ -18,6 +18,7 @@
 #include "util/hexdump.h"
 #include "util/memory/arena.h"
 #include "util/test_macros.h"
+#include "util/stopwatch.h"
 
 namespace kudu { namespace cfile {
 
@@ -257,6 +258,50 @@ protected:
     }
   }
 
+  void DoSeekTest(int num_ints, int num_queries, bool verify) {
+    uint32_t data[num_ints];
+    for (uint32_t i = 0; i < num_ints; i++) {
+      data[i] = i * 2;
+    }
+
+    boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
+    GVIntBlockBuilder ibb(opts.get());
+    CHECK_EQ(num_ints, ibb.Add(reinterpret_cast<uint8_t *>(&data),
+                               num_ints, sizeof(uint32_t)));
+
+    Slice s = ibb.Finish(0);
+    GVIntBlockDecoder ibd(s);
+    ibd.ParseHeader();
+
+    // Benchmark seeking
+    LOG_TIMING(INFO, "Seeking in gvint block") {
+      for (int i = 0; i < num_queries; i++) {
+        bool exact;
+        uint32_t target = random() % (num_ints * 2);
+        Status s = ibd.SeekAtOrAfterValue(&target, &exact);
+        if (verify) {
+          if (s.IsNotFound()) {
+            ASSERT_EQ(num_ints * 2 - 1, target);
+            continue;
+          }
+          ASSERT_STATUS_OK_FAST(s);
+
+          uint32_t got;
+          CopyOne<UINT32>(&ibd, &got);
+
+          if (target % 2 == 0) {
+            // Was inserted
+            ASSERT_EQ(target, got);
+            ASSERT_TRUE(exact);
+          } else {
+            ASSERT_EQ(target + 1, got);
+            ASSERT_FALSE(exact);
+          }
+        }
+      }
+    }
+  }
+
   Arena arena_;
 };
 
@@ -335,7 +380,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     }
   }
 
-  // Test Seek within block
+  // Test Seek within block by ordinal
   for (int i = 0; i < 100; i++) {
     int seek_off = random() % decoded.size();
     ibd.SeekToPositionInBlock(seek_off);
@@ -378,6 +423,15 @@ TEST_F(TestEncoding, TestStringPlainBlockBuilderRoundTrip) {
   TestStringBlockRoundTrip<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
+#ifdef NDEBUG
+TEST_F(TestEncoding, GVIntSeekBenchmark) {
+  DoSeekTest(32768, 1000000, false);
+}
+#endif
+
+TEST_F(TestEncoding, GVIntSeekTest) {
+  DoSeekTest(64, 1000, true);
+}
 
 } // namespace cfile
 } // namespace kudu
