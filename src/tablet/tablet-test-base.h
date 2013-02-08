@@ -11,6 +11,7 @@
 
 #include "common/row.h"
 #include "common/schema.h"
+#include "gutil/strings/util.h"
 #include "gutil/walltime.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
@@ -24,29 +25,124 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-class TestTablet : public ::testing::Test {
+// The base class takes as a template argument a "setup" class
+// which can customize the schema for the tests. This way we can
+// get coverage on various schemas without duplicating test code.
+struct StringKeyTestSetup {
 public:
-  TestTablet() :
-    ::testing::Test(),
+  StringKeyTestSetup() :
+    test_schema_(boost::assign::list_of
+                 (ColumnSchema("key", STRING))
+                 (ColumnSchema("val", UINT32))
+                 (ColumnSchema("update_count", UINT32)),
+                 1)
+  {}
+
+  void BuildRow(RowBuilder *rb, uint64_t row_idx)
+  {
+    // This is called from multiple threads, so can't move this buffer
+    // to be a class member. However, it's likely to get inlined anyway
+    // and loop-hosted.
+    char buf[256];
+    FormatKey(buf, sizeof(buf), row_idx);
+    rb->AddString(Slice(buf));
+    rb->AddUint32(row_idx);
+    rb->AddUint32(0);
+  }
+
+  const Schema &test_schema() const {
+    return test_schema_;
+  }
+
+  static void FormatKey(char *buf, size_t buf_size, uint64_t row_idx) {
+    snprintf(buf, buf_size, "hello %ld", row_idx);
+  }
+
+  void VerifyRow(const uint8_t *row, uint64_t row_idx) {
+    char buf[256];
+    FormatKey(buf, sizeof(buf), row_idx);
+
+    string expected = StringPrintf(
+      "(string key=%s, uint32 val=%ld, uint32 update_count=0)",
+      buf, row_idx);
+
+    ASSERT_EQ(expected, test_schema_.DebugRow(row));
+  }
+
+  Status DoUpdate(Tablet *tablet, ScopedRowDelta *delta,
+                  uint64_t row_idx, uint32_t new_val) {
+    char keybuf[256];
+    FormatKey(keybuf, sizeof(keybuf), row_idx);
+
+    Slice key_slice(keybuf);
+    delta->get().UpdateColumn(test_schema_, 1, &new_val);
+    return tablet->UpdateRow(&key_slice, delta->get());
+  }
+
+  Schema test_schema_;
+};
+
+
+// Setup for testing integer keys
+struct IntKeyTestSetup {
+public:
+  IntKeyTestSetup() :
+    test_schema_(boost::assign::list_of
+                 (ColumnSchema("k1", UINT32))
+                 (ColumnSchema("k2", UINT32))
+                 (ColumnSchema("k3", UINT32)), 1)
+  {}
+
+  void BuildRow(RowBuilder *rb, uint64_t i) {
+    rb->AddUint32((uint32_t)i);
+    rb->AddUint32((uint32_t)i);
+    rb->AddUint32((uint32_t)0);
+  }
+
+  const Schema &test_schema() const { return test_schema_; }
+
+  void VerifyRow(const uint8_t *row, uint64_t row_idx) {
+    Slice row_slice(row, test_schema_.byte_size());
+    ASSERT_EQ((uint32_t)row_idx,
+              *test_schema_.ExtractColumnFromRow<UINT32>(row_slice, 0));
+  }
+
+  Status DoUpdate(Tablet *tablet, ScopedRowDelta *delta,
+                  uint64_t row_idx, uint32_t new_val) {
+    uint32_t row_key = row_idx;
+    delta->get().UpdateColumn(test_schema_, 1, &new_val);
+    return tablet->UpdateRow(&row_key, delta->get());
+  }
+
+
+  Schema test_schema_;
+
+};
+
+// Use this with TYPED_TEST_CASE from gtest
+typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup> TabletTestHelperTypes;
+
+template<class TESTSETUP>
+class TabletTestBase : public ::testing::Test {
+public:
+  TabletTestBase() :
+    setup_(),
     env_(Env::Default()),
-    schema_(boost::assign::list_of
-            (ColumnSchema("key", STRING))
-            (ColumnSchema("val", UINT32))
-            (ColumnSchema("update_count", UINT32)),
-            1),
+    schema_(setup_.test_schema()),
     arena_(1024, 4*1024*1024)
   {}
-protected:
+
   virtual void SetUp() {
     const ::testing::TestInfo* const test_info =
       ::testing::UnitTest::GetInstance()->current_test_info();
 
     ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
 
-    test_dir_ += StringPrintf("/%s.%s.%ld",
-                              test_info->test_case_name(),
-                              test_info->name(),
-                              time(NULL));
+    test_dir_ += StringPrintf(
+      "/%s.%s.%ld",
+      StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
+      test_info->name(),
+      time(NULL));
 
     LOG(INFO) << "Creating tablet in: " << test_dir_;
     tablet_.reset(new Tablet(schema_, test_dir_));
@@ -55,7 +151,6 @@ protected:
   }
 
   void InsertTestRows(int first_row, int count) {
-    char buf[256];
     RowBuilder rb(schema_);
 
     WallTime last_print_time = 0;
@@ -63,10 +158,7 @@ protected:
 
     for (int i = first_row; i < first_row + count; i++) {
       rb.Reset();
-      snprintf(buf, sizeof(buf), "hello %d", i);
-      rb.AddString(Slice(buf));
-      rb.AddUint32(i);
-      rb.AddUint32(0);
+      setup_.BuildRow(&rb, i);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
 
       if (i % 100 == 0) {
@@ -133,6 +225,12 @@ protected:
     return count;
   }
 
+  const Schema &schema() const {
+    return schema_;
+  }
+
+  TESTSETUP setup_;
+
   Env *env_;
   const Schema schema_;
   string test_dir_;
@@ -140,6 +238,7 @@ protected:
 
   Arena arena_;
 };
+
 
 } // namespace tablet
 } // namespace kudu

@@ -42,9 +42,17 @@ private:
   CountDownLatch *latch_;
 };
 
-class TestMultiThreadedTablet : public TestTablet {
+template<class SETUP>
+class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
+  // Import some names from superclass, since C++ is stingy about
+  // letting us refer to the members otherwise.
+  typedef TabletTestBase<SETUP> superclass;
+  using superclass::schema_;
+  using superclass::tablet_;
+  using superclass::arena_;
+
 public:
-  TestMultiThreadedTablet() :
+  MultiThreadedTabletTest() :
     running_insert_count_(FLAGS_num_insert_threads)
   {}
 
@@ -53,11 +61,14 @@ public:
 
     // TODO: add a test where some of the inserts actually conflict
     // on the same row.
-    InsertTestRows(tid * FLAGS_inserts_per_thread,
-                   FLAGS_inserts_per_thread);
+    this->InsertTestRows(tid * FLAGS_inserts_per_thread,
+                        FLAGS_inserts_per_thread);
   }
   
   void UpdateThread(int tid) {
+    const Schema &schema = schema_;
+
+    // TODO: move the update code into the SETUP class
     uint8_t buf[schema_.byte_size()];
     Slice row_slice(reinterpret_cast<const char *>(buf),
                     schema_.byte_size());
@@ -77,14 +88,14 @@ public:
         CHECK_EQ(n, 1);
 
         // Grab the key
-        Slice key = *schema_.ExtractColumnFromRow<STRING>(row_slice, 0);
+        Slice key = *schema.ExtractColumnFromRow<STRING>(row_slice, 0);
 
         if (rand() % 10 == 7) {
           // Increment the "update count"
-          uint32_t old_val = *schema_.ExtractColumnFromRow<UINT32>(row_slice, 2);
+          uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(row_slice, 2);
           // Issue an update
           uint32_t new_val = old_val + 1;
-          update.get().UpdateColumn(schema_, 2, &new_val);
+          update.get().UpdateColumn(schema, 2, &new_val);
           ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(&key, update.get()));
         }
       }
@@ -173,19 +184,23 @@ public:
   boost::ptr_vector<boost::thread> threads_;
 
   CountDownLatch running_insert_count_;
+
 };
 
 
-TEST_F(TestMultiThreadedTablet, TestInsertAndFlush) {
+TYPED_TEST_CASE(MultiThreadedTabletTest, TabletTestHelperTypes);
+
+
+TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   // Spawn a bunch of threads, each of which will do updates.
-  StartThreads(FLAGS_num_insert_threads, &TestMultiThreadedTablet::InsertThread);
-  StartThreads(FLAGS_num_counter_threads, &TestMultiThreadedTablet::CountThread);
-  StartThreads(FLAGS_num_flush_threads, &TestMultiThreadedTablet::FlushThread);
-  StartThreads(FLAGS_num_compact_threads, &TestMultiThreadedTablet::CompactThread);
-  StartThreads(FLAGS_num_slowreader_threads, &TestMultiThreadedTablet::SlowReaderThread);
-  StartThreads(FLAGS_num_updater_threads, &TestMultiThreadedTablet::UpdateThread);
-  JoinThreads();
-  VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
+  StartThreads(FLAGS_num_insert_threads, &TestFixture::InsertThread);
+  StartThreads(FLAGS_num_counter_threads, &TestFixture::CountThread);
+  StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
+  StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
+  StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);
+  StartThreads(FLAGS_num_updater_threads, &TestFixture::UpdateThread);
+  this->JoinThreads();
+  this->VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
 }
 
 } // namespace tablet
