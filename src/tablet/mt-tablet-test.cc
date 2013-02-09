@@ -191,8 +191,8 @@ public:
           count_since_report = 0;
         }
       }
-      scan_rate_ts->SetValue(0);
     }
+    scan_rate_ts->SetValue(0);
   }
 
 
