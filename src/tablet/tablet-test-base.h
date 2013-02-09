@@ -16,6 +16,7 @@
 #include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/stopwatch.h"
+#include "util/test_graph.h"
 #include "util/test_macros.h"
 #include "tablet/tablet.h"
 
@@ -89,7 +90,7 @@ public:
   IntKeyTestSetup() :
     test_schema_(boost::assign::list_of
                  (ColumnSchema("k1", UINT32))
-                 (ColumnSchema("k2", UINT32))
+                 (ColumnSchema("val", UINT32))
                  (ColumnSchema("k3", UINT32)), 1)
   {}
 
@@ -150,28 +151,23 @@ public:
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
-  void InsertTestRows(uint64_t first_row, uint64_t count) {
+  void InsertTestRows(uint64_t first_row, uint64_t count, TimeSeries *ts=NULL) {
     RowBuilder rb(schema_);
 
-    WallTime last_print_time = 0;
-    uint64_t last_print_count = 0;
-
+    uint64_t inserted_since_last_report = 0;
     for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
       setup_.BuildRow(&rb, i);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
 
-      if (i % 100 == 0) {
-        WallTime now = WallTime_Now();
-        uint64_t insert_count = i - first_row;
-        if (now > last_print_time + 0.1) {
-          int rate = (insert_count - last_print_count) / (now - last_print_time);
-          LOG(INFO) << "Insert thread " << boost::this_thread::get_id() << ":\t"
-                    << insert_count << " rows (" << rate << "/s)";
-          last_print_time = now;
-          last_print_count = insert_count;
-        }
+      if ((inserted_since_last_report++ > 100) && ts) {
+        ts->AddValue(static_cast<double>(inserted_since_last_report));
+        inserted_since_last_report = 0;
       }
+    }
+
+    if (ts) {
+      ts->AddValue(static_cast<double>(inserted_since_last_report));
     }
   }
 

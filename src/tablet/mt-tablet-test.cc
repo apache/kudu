@@ -9,9 +9,11 @@
 
 #include "tablet/tablet-test-base.h"
 #include "util/countdown_latch.h"
+#include "util/test_graph.h"
 
 DEFINE_int32(num_insert_threads, 8, "Number of inserting threads to launch");
 DEFINE_int32(num_counter_threads, 8, "Number of counting threads to launch");
+DEFINE_int32(num_summer_threads, 1, "Number of summing threads to launch");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(num_slowreader_threads, 1, "Number of 'slow' reader threads to launch");
 DEFINE_int32(num_flush_threads, 1, "Number of flusher reader threads to launch");
@@ -53,16 +55,21 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
 public:
   MultiThreadedTabletTest() :
-    running_insert_count_(FLAGS_num_insert_threads)
-  {}
+    running_insert_count_(FLAGS_num_insert_threads),
+    ts_collector_(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name())
+  {
+    ts_collector_.StartDumperThread();
+  }
 
   void InsertThread(int tid) {
     CountDownOnScopeExit dec_count(&running_insert_count_);
+    shared_ptr<TimeSeries> inserts = ts_collector_.GetTimeSeries("inserted");
 
     // TODO: add a test where some of the inserts actually conflict
     // on the same row.
     this->InsertTestRows(tid * FLAGS_inserts_per_thread,
-                        FLAGS_inserts_per_thread);
+                         FLAGS_inserts_per_thread,
+                         inserts.get());
   }
   
   void UpdateThread(int tid) {
@@ -126,17 +133,68 @@ public:
       scoped_ptr<Tablet::RowIterator> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
 
-
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         arena_.Reset();
         size_t n = 1;
         ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
+        
         if (running_insert_count_.TimedWait(boost::posix_time::milliseconds(1))) {
           return;
         }
       }
     }
   }
+
+  void SummerThread(int tid) {
+    Arena arena(1024, 1024); // unused, just scanning ints
+
+    shared_ptr<TimeSeries> scan_rate_ts = ts_collector_.GetTimeSeries(
+      "scan_rate");
+
+    // Scan a projection with only an int column.
+    // This is provided by both harnesses.
+    Schema projection = Schema(boost::assign::list_of
+                               (ColumnSchema("val", UINT32)),
+                               1);
+
+
+    static const int kBufInts = 1024*1024 / 8;
+    uint32_t buf[kBufInts];
+    RowBlock block(projection, reinterpret_cast<uint8_t *>(&buf[0]),
+                   kBufInts, &arena_);
+
+    WallTime last_metrics_report = WallTime_Now();
+    uint64_t count_since_report = 0;
+
+    while (running_insert_count_.count() > 0) {
+      uint64_t sum = 0;
+
+      scoped_ptr<Tablet::RowIterator> iter;
+      ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
+
+      while (iter->HasNext()) {
+        arena.Reset();
+        size_t n = kBufInts;
+        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
+
+        for (size_t j = 0; j < n; j++) {
+          sum += buf[j];
+        }
+        count_since_report += n;
+
+        // Report metrics if enough time has passed
+        WallTime elapsed = WallTime_Now() - last_metrics_report;
+        if (elapsed > 0.25) {
+          double rows_per_sec = static_cast<double>(count_since_report) / elapsed;
+          scan_rate_ts->SetValue(rows_per_sec);
+          last_metrics_report = WallTime_Now();
+          count_since_report = 0;
+        }
+      }
+      scan_rate_ts->SetValue(0);
+    }
+  }
+
 
   void FlushThread(int tid) {
     // Start off with a very short wait time between flushes.
@@ -148,6 +206,7 @@ public:
 
       if (tablet_->MemStoreSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
         ASSERT_STATUS_OK(tablet_->Flush());
+
       } else {
         LOG(INFO) << "Not flushing, memstore not very full";
       }
@@ -167,6 +226,25 @@ public:
     }
   }
 
+  // Thread which wakes up periodically and collects metrics like memstore
+  // size, etc. Eventually we should have a metrics system to collect things
+  // like this, but for now, this is what we've got.
+  void CollectStatisticsThread(int tid) {
+    shared_ptr<TimeSeries> num_layers_ts = ts_collector_.GetTimeSeries(
+      "num_layers");
+    shared_ptr<TimeSeries> memstore_size_ts = ts_collector_.GetTimeSeries(
+      "memstore_kb");
+
+    while (running_insert_count_.count() > 0) {
+
+      num_layers_ts->SetValue( tablet_->num_layers() );
+      memstore_size_ts->SetValue( tablet_->MemStoreSize() / 1024);
+
+      // Wait, unless the inserters are all done.
+      running_insert_count_.TimedWait(boost::posix_time::milliseconds(250));
+    }
+  }
+
   template<typename FunctionType>
   void StartThreads(int n_threads, const FunctionType &function) {
     for (int i = 0; i < n_threads; i++) {
@@ -181,9 +259,9 @@ public:
   }
 
   boost::ptr_vector<boost::thread> threads_;
-
   CountDownLatch running_insert_count_;
 
+  TimeSeriesCollector ts_collector_;
 };
 
 
@@ -192,8 +270,10 @@ TYPED_TEST_CASE(MultiThreadedTabletTest, TabletTestHelperTypes);
 
 TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   // Spawn a bunch of threads, each of which will do updates.
+  StartThreads(1, &TestFixture::CollectStatisticsThread);
   StartThreads(FLAGS_num_insert_threads, &TestFixture::InsertThread);
   StartThreads(FLAGS_num_counter_threads, &TestFixture::CountThread);
+  StartThreads(FLAGS_num_summer_threads, &TestFixture::SummerThread);
   StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
   StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
   StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);

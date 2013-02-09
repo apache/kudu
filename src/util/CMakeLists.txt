@@ -11,6 +11,7 @@ ADD_LIBRARY(kudu_util
   memenv/memenv.cc
   pb_util.cc
   status.cc
+  test_graph.cc
 
 )
 SET(KUDU_UTIL_LIBS kudu_util)

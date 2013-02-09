@@ -516,6 +516,12 @@ Status Tablet::CountRows(size_t *count) const {
   return Status::OK();
 }
 
+size_t Tablet::num_layers() const {
+  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  return layers_.size();
+}
+
+
 ////////////////////////////////////////////////////////////
 // Tablet::RowIterator
 ////////////////////////////////////////////////////////////

@@ -66,6 +66,11 @@ public:
     return true;
   }
 
+  void Reset(uint64_t count) {
+    boost::unique_lock<boost::mutex> lock(lock_);
+    count_ = count;
+  }
+
   uint64_t count() const {
     return count_;
   }

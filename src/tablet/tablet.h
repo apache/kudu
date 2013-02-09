@@ -71,6 +71,9 @@ public:
     return memstore_->memory_footprint();
   }
 
+  // Return the current number of layers in the tablet.
+  size_t num_layers() const;
+
   // Attempt to count the total number of rows in the tablet.
   // This is not super-efficient since it must iterate over the
   // memstore in the current implementation.
