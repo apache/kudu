@@ -5,16 +5,12 @@ si_num <- function (x) {
 
   if (!is.na(x)) {
     if (x >= 1e9) { 
-      rem <- format(x/1e6, digits=3)
+      rem <- format(x/1e9, digits=3)
       rem <- append(rem, "B");
-    }
-
-    if (x >= 1e6) { 
+    } else if (x >= 1e6) { 
       rem <- format(x/1e6, digits=3)
       rem <- append(rem, "M");
-    }
-
-    else if (x > 1e3) { 
+    } else if (x > 1e3) { 
       rem <- format(x/1e3, digits=3)
       rem <- append(rem, "K");
     }
@@ -48,4 +44,5 @@ d <- rename(d, c(
 d.melted = melt(d, id="time")
 print(qplot(time, value, data=d.melted, geom="line", group = variable)
                   + scale_y_continuous(labels=si_vec)
-                  + facet_grid(variable~., scale = "free_y"))
+                  + facet_grid(variable~., scale = "free_y")
+                  + stat_smooth())
