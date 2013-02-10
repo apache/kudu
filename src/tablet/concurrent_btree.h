@@ -910,10 +910,9 @@ class CBTree : boost::noncopyable {
 public:
   CBTree() :
     arena_(512*1024, 4*1024*1024),
-    root_(new LeafNode<Traits>(false)),
+    root_(NewLeaf(false)),
     frozen_(false)
   {
-    // TODO: use a custom allocator
   }
 
   ~CBTree() {
