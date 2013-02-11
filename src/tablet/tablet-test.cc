@@ -5,6 +5,7 @@
 
 #include "common/iterator.h"
 #include "common/row.h"
+#include <gutil/strings/join.h>
 #include "tablet/memstore.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-test-base.h"
@@ -103,21 +104,21 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   size_t n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from memstore";
-  this->setup_.VerifyRow(&buf[0], kInMemstore);
+  this->VerifyRow(&buf[0], kInMemstore, 0);
 
   // Next, should fetch the older layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 1";
-  this->setup_.VerifyRow(&buf[0], kInLayer1);
+  this->VerifyRow(&buf[0], kInLayer1, 0);
 
   // Next, should fetch the newer layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
   ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 2";
-  this->setup_.VerifyRow(&buf[0], kInLayer2);
+  this->VerifyRow(&buf[0], kInLayer2, 0);
 
   ASSERT_FALSE(iter->HasNext());
 }
@@ -247,6 +248,98 @@ TYPED_TEST(TestTablet, TestCompaction) {
     ASSERT_FILE_NOT_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 }
+
+// Iterate through the given iterator, stringifying the resulting rows
+// into the given vector
+static Status IterateToStringList(RowIteratorInterface *iter, vector<string> *out) {
+  Schema schema = iter->schema();
+  Arena arena(1024, 1024);
+  ScopedRowBlock block(schema, 1, &arena);
+  while (iter->HasNext()) {
+    size_t n = 1;
+    RETURN_NOT_OK( iter->CopyNextRows(&n, &block) );
+    CHECK_GT(n, 0);
+    out->push_back( schema.DebugRow(block.row_ptr(0)) );
+  }
+  return Status::OK();
+}
+
+// Test for compaction with concurrent update and insert during the
+// various phases.
+TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
+  // Create three layers by inserting and flushing
+  this->InsertTestRows(0, 1);
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  this->InsertTestRows(1, 1);
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  this->InsertTestRows(2, 1);
+  this->InsertTestRows(3, 1);
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  class MyHooks : public Tablet::CompactionFaultHooks {
+  public:
+    MyHooks(TestFixture *test) : test_(test) {}
+
+    Status PostMergeKeys() {
+      test_->InsertTestRows(4, 1);
+      test_->UpdateTestRow(0, 12345);
+      return Status::OK();
+    }
+
+    Status PostMergeNonKeys() {
+      test_->InsertTestRows(5, 1);
+      test_->UpdateTestRow(1, 12345);
+      return Status::OK();
+    }
+
+    Status PostRenameFile() {
+      test_->InsertTestRows(6, 1);
+      test_->UpdateTestRow(2, 12345);
+      return Status::OK();
+    }
+
+    Status PostSwapNewLayer() {
+      test_->InsertTestRows(7, 1);
+      test_->UpdateTestRow(3, 12345);
+      return Status::OK();
+    }
+
+  private:
+    TestFixture *test_;
+  };
+
+  shared_ptr<Tablet::CompactionFaultHooks> hooks(
+    reinterpret_cast<Tablet::CompactionFaultHooks *>(new MyHooks(this)));
+
+  this->tablet_->SetCompactionHooksForTests(hooks);
+
+  // Issue compaction
+  ASSERT_STATUS_OK(this->tablet_->Compact());
+
+  // Grab the resulting data into a vector.
+  vector<string> out_rows;
+  scoped_ptr<Tablet::RowIterator> iter;
+  ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
+  ASSERT_STATUS_OK(IterateToStringList(iter.get(), &out_rows));
+
+  // Verify that all the inserts and updates arrived and persisted.
+  std::sort(out_rows.begin(), out_rows.end());
+  LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
+
+  ASSERT_EQ(8, out_rows.size());
+
+  ASSERT_EQ(this->setup_.FormatDebugRow(0, 12345), out_rows[0]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(1, 12345), out_rows[1]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(2, 12345), out_rows[2]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(3, 12345), out_rows[3]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(4, 0), out_rows[4]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(5, 0), out_rows[5]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(6, 0), out_rows[6]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(7, 0), out_rows[7]);
+}
+
 
 } // namespace tablet
 } // namespace kudu

@@ -59,15 +59,13 @@ public:
     snprintf(buf, buf_size, "hello %ld", row_idx);
   }
 
-  void VerifyRow(const uint8_t *row, uint64_t row_idx) {
+  string FormatDebugRow(uint64_t row_idx, uint32_t update_count) {
     char buf[256];
     FormatKey(buf, sizeof(buf), row_idx);
 
-    string expected = StringPrintf(
-      "(string key=%s, uint32 val=%ld, uint32 update_count=0)",
-      buf, row_idx);
-
-    ASSERT_EQ(expected, test_schema_.DebugRow(row));
+    return StringPrintf(
+      "(string key=%s, uint32 val=%ld, uint32 update_count=%d)",
+      buf, row_idx, update_count);
   }
 
   Status DoUpdate(Tablet *tablet, ScopedRowDelta *delta,
@@ -89,9 +87,9 @@ struct IntKeyTestSetup {
 public:
   IntKeyTestSetup() :
     test_schema_(boost::assign::list_of
-                 (ColumnSchema("k1", UINT32))
+                 (ColumnSchema("key", UINT32))
                  (ColumnSchema("val", UINT32))
-                 (ColumnSchema("k3", UINT32)), 1)
+                 (ColumnSchema("update_count", UINT32)), 1)
   {}
 
   void BuildRow(RowBuilder *rb, uint64_t i) {
@@ -102,10 +100,10 @@ public:
 
   const Schema &test_schema() const { return test_schema_; }
 
-  void VerifyRow(const uint8_t *row, uint64_t row_idx) {
-    Slice row_slice(row, test_schema_.byte_size());
-    ASSERT_EQ((uint32_t)row_idx,
-              *test_schema_.ExtractColumnFromRow<UINT32>(row_slice, 0));
+  string FormatDebugRow(uint64_t row_idx, uint32_t update_count) {
+    return StringPrintf(
+      "(uint32 key=%d, uint32 val=%ld, uint32 update_count=%d)",
+      (uint32_t)row_idx, row_idx, update_count);
   }
 
   Status DoUpdate(Tablet *tablet, ScopedRowDelta *delta,
@@ -171,11 +169,25 @@ public:
     }
   }
 
+  void UpdateTestRow(uint64_t row_idx, uint32_t new_val) {
+    RowBuilder rb(schema_);
+    setup_.BuildRow(&rb, row_idx);
+    ScopedRowDelta update(schema_);
+    update.get().UpdateColumn(schema_, 2, &new_val);
+    ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(rb.data().data(), update.get()));
+  }
+
+  void VerifyRow(uint8_t *row, uint64_t row_idx, uint32_t update_count) {
+    ASSERT_EQ(setup_.FormatDebugRow(row_idx, update_count),
+              schema_.DebugRow(row));
+  }
+
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
     scoped_ptr<Tablet::RowIterator> iter;
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-    int batch_size = std::min((size_t)(expected_count / 10),
-                              4*1024*1024 / schema_.byte_size());
+    int batch_size = std::max(
+      (size_t)1, std::min((size_t)(expected_count / 10),
+                          4*1024*1024 / schema_.byte_size()));
     scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * batch_size]);
     RowBlock block(schema_, &buf[0], batch_size, &arena_);
 
@@ -194,6 +206,8 @@ public:
       arena_.Reset();
       size_t n = batch_size;
       ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
+
+      CHECK_GT(n, 0);
       LOG(INFO) << "Fetched batch of " << n << "\n"
                 << "First row: " << schema_.DebugRow(&buf[0]);
 

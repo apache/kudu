@@ -305,6 +305,11 @@ Status Tablet::Flush() {
   // memstore reader can't hold on to too much memory in the tablet.
 }
 
+void Tablet::SetCompactionHooksForTests(
+  const shared_ptr<Tablet::CompactionFaultHooks> &hooks) {
+  compaction_hooks_ = hooks;
+}
+
 static bool CompareBySize(const shared_ptr<LayerInterface> &a,
                           const shared_ptr<LayerInterface> &b) {
   return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
@@ -312,6 +317,8 @@ static bool CompareBySize(const shared_ptr<LayerInterface> &a,
 
 Status Tablet::Compact()
 {
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PreCompaction());
+
   string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
   string tmp_layer_dir = new_layer_dir + ".compact-tmp";
 
@@ -359,6 +366,8 @@ Status Tablet::Compact()
     }
   }
 
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
+
   tmp_layers.clear();
 
   if (input_layers.size() < 2) {
@@ -387,6 +396,7 @@ Status Tablet::Compact()
   RETURN_NOT_OK(out.Open());
   RETURN_NOT_OK(out.FlushProjection(keys_only, &merge_keys, true, true));
 
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostMergeKeys());
   
   // Step 3. Swap in the UpdateDuplicatingLayer
 
@@ -406,13 +416,15 @@ Status Tablet::Compact()
   RETURN_NOT_OK(merge_full.Init());
   Schema non_keys = schema_.CreateNonKeyProjection();
   RETURN_NOT_OK(out.FlushProjection(non_keys, &merge_full, true, false));
-
   RETURN_NOT_OK(out.Finish());
+
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostMergeNonKeys());
 
   // ------------------------------
   // Flush to tmp was successful. Rename it to its real location.
 
   RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostRenameFile());
 
   LOG(INFO) << "Successfully compacted " << out.written_count() << " rows";
 
@@ -444,12 +456,15 @@ Status Tablet::Compact()
     layers_.swap(new_layers);
   }
 
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSwapNewLayer());
+
   // Remove old layers
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input_layers) {
     LOG(INFO) << "Removing compaction input layer " << l_input->ToString();
     RETURN_NOT_OK(l_input->Delete());
   }
 
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostCompaction());
 
   return Status::OK();
 

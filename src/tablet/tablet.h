@@ -26,6 +26,7 @@ using std::tr1::shared_ptr;
 class Tablet {
 public:
   class RowIterator;
+  class CompactionFaultHooks;
 
   Tablet(const Schema &schema,
          const string &dir);
@@ -83,6 +84,8 @@ public:
 
   static string GetLayerPath(const string &tablet_dir, int layer_idx);
 
+  void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
+
 private:
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
@@ -116,6 +119,9 @@ private:
   Env *env_;
 
   bool open_;
+
+  // Fault hooks. In production code, these will always be NULL.
+  shared_ptr<CompactionFaultHooks> compaction_hooks_;
 };
 
 
@@ -153,6 +159,20 @@ private:
 
   vector<size_t> projection_mapping_;
 };
+
+// Hooks used in test code to inject faults or other code into interesting
+// parts of the compaction code.
+class Tablet::CompactionFaultHooks {
+public:
+  virtual Status PreCompaction() { return Status::OK(); }
+  virtual Status PostSelectIterators() { return Status::OK(); }
+  virtual Status PostMergeKeys() { return Status::OK(); }
+  virtual Status PostMergeNonKeys() { return Status::OK(); }
+  virtual Status PostRenameFile() { return Status::OK(); }
+  virtual Status PostSwapNewLayer() { return Status::OK(); }
+  virtual Status PostCompaction() { return Status::OK(); }
+};
+
 
 template <class SmartPointer>
 inline Status Tablet::NewRowIterator(const Schema &projection,
