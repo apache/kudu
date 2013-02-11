@@ -179,6 +179,12 @@ public:
     scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * batch_size]);
     RowBlock block(schema_, &buf[0], batch_size, &arena_);
 
+    if (expected_count > INT_MAX) {
+      LOG(INFO) << "Not checking rows for duplicates -- duplicates expected since "
+                << "there were more than " << INT_MAX << " rows inserted.";
+      return;
+    }
+
     // Keep a bitmap of which rows have been seen from the requested
     // range.
     std::vector<bool> seen_rows;
