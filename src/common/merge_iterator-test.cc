@@ -131,7 +131,6 @@ TEST(TestMergeIterator, TestMerge) {
         ASSERT_STATUS_OK_FAST(merger.CopyNextRows(&n, &dst));
         ASSERT_GT(n, 0) <<
           "if HasNext() returns true, must return some rows";
-        LOG(INFO) << "result: " << n;
 
         for (int i = 0; i < n; i++) {
           uint32_t this_row = *(reinterpret_cast<const uint32_t *>(dst.row_ptr(i)));

@@ -41,7 +41,7 @@ public:
       // Manually advancing next_row_ptr_ is some 20% faster
       // than calling row_ptr(cur_row_), since it avoids an expensive multiplication
       // in the inner loop.
-      next_row_ptr_ += iter_->schema().byte_size();
+      next_row_ptr_ += read_block_.schema().byte_size();
 
       return Status::OK();
     }
