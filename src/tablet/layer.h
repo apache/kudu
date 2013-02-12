@@ -111,6 +111,7 @@ private:
 
 class Layer : public LayerInterface, boost::noncopyable {
 public:
+  static const char *kTmpLayerSuffix;
 
   // Open a layer from disk.
   // If successful, sets *layer to the newly open layer
@@ -136,6 +137,11 @@ public:
 
   // Delete the layer directory.
   Status Delete();
+
+  // If the layer was created as "partially flushed" layer, finish the flush.
+  // This renames the layer directory from its ".tmp" suffix to its final
+  // location, and re-opens the base data cfiles.
+  Status FinishFlush();
 
   ////////////////////////////////////////////////////////////
   // LayerInterface implementation
@@ -203,7 +209,7 @@ private:
 
   Env *env_;
   const Schema schema_;
-  const string dir_;
+  string dir_;
   uint32_t next_delta_idx_;
 
   bool open_;

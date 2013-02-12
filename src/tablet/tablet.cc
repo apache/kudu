@@ -199,7 +199,7 @@ Status Tablet::Flush() {
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PreFlush());
 
   string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
-  string tmp_layer_dir = new_layer_dir + ".tmp";
+  string tmp_layer_dir = new_layer_dir + Layer::kTmpLayerSuffix;
 
   uint64_t start_insert_count;
 
@@ -311,29 +311,21 @@ Status Tablet::Flush() {
     << "after flush was triggered! Aborting to prevent dataloss.";
 
 
-  // Flush to tmp was successful. Rename it to its real location.
-  RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
+  // Flush to tmp was successful. Finish the flush.
+  Status s = partially_flushed_layer->FinishFlush();
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to finish flush of " << new_layer_dir
+                 << ": " << s.ToString();
+    return s;
+  }
+
 
   LOG(INFO) << "Successfully flushed " << out.written_count() << " rows";
 
-  // Open it.
-  // TODO: this should actually just swap-out the BaseData, probably - otherwise
-  // we'll lose any updates that happened during the flush process.
-  // TODO: add a test which verifies no lost updates
-  shared_ptr<Layer> new_layer;
-  RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
-
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostOpenNewLayer());
-
-  // Replace the memstore layer with the on-disk layer.
-  // Because this is a shared pointer, and iterators hold a shared_ptr
-  // to the MemStore as well, the actual memstore wlil get cleaned
-  // up when the last iterator is destructed.
 
   // unlock these now. Although no other thread should ever see them,
   // we trigger pthread assertions in DEBUG mode if we don't unlock.
-  AtomicSwapLayers(boost::assign::list_of(partially_flushed_layer),
-                   new_layer);
   old_ms_lock.unlock();
   partial_layer_lock.unlock();
 

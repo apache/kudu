@@ -30,6 +30,8 @@ static const char *kDeltaPrefix = "delta_";
 static const char *kColumnPrefix = "col_";
 static const char *kBloomFileName = "bloom";
 
+const char *Layer::kTmpLayerSuffix = ".tmp";
+
 // Return the path at which the given column's cfile
 // is stored within the layer directory.
 string Layer::GetColumnPath(const string &dir,
@@ -373,6 +375,35 @@ Status Layer::OpenDeltaFileReaders() {
   return Status::OK();
 }
 
+Status Layer::FinishFlush() {
+  // TODO: add some state enum which indicates this is a partially
+  // flushed layer.
+
+  // TODO: we may be able to get away with just the read-lock here,
+  // or at least start with read and then upgrade.
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+
+  string new_dir;
+  CHECK(TryStripSuffixString(dir_, kTmpLayerSuffix, &new_dir))
+    << "Invalid dir not a tmp layer: " << dir_;
+
+  // Rename the actual directory.
+  // TODO: in hdfs, we may need to also re-open delta trackers which
+  // might have flushed in the tmp dir.
+  RETURN_NOT_OK(env_->RenameFile(dir_, new_dir));
+  dir_ = new_dir;
+
+  // Open the data in its new location.
+  Status s = OpenBaseCFileReaders();
+  if (!s.ok()) {
+    LOG(WARNING) << "Failed to open flushed data in " << dir_ << ": "
+                 << s.ToString();
+    return s;
+  }
+
+  return Status::OK();
+}
+
 
 RowIteratorInterface *Layer::NewRowIterator(const Schema &projection) const {
   CHECK(open_);
@@ -407,11 +438,14 @@ Status Layer::UpdateRow(const void *key,
 Status Layer::CheckRowPresent(const LayerKeyProbe &probe,
                               bool *present) const {
   CHECK(open_);
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
   return base_data_->CheckRowPresent(probe, present);
 }
 
 Status Layer::CountRows(size_t *count) const {
   CHECK(open_);
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
   return base_data_->CountRows(count);
 }
@@ -419,6 +453,8 @@ Status Layer::CountRows(size_t *count) const {
 uint64_t Layer::EstimateOnDiskSize() const {
   CHECK(open_);
   // TODO: should probably add the delta trackers as well.
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
   return base_data_->EstimateOnDiskSize();
 }
 
