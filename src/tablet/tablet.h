@@ -88,6 +88,9 @@ public:
 
 private:
 
+  typedef vector<shared_ptr<LayerInterface> > LayerVector;
+  typedef vector<shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
+
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
   // TODO: these are not currently snapshot iterators - the only guarantee is that they
@@ -95,12 +98,22 @@ private:
   Status CaptureConsistentIterators(const Schema &projection,
                                     deque<shared_ptr<RowIteratorInterface> > *iters) const;
 
+  Status PickLayersToCompact(
+    LayerVector *out_layers,
+    LockVector *out_locks) const;
+
+  // Swap out a set of layers, atomically replacing them with the new layer
+  // under the lock.
+  void AtomicSwapLayers(const LayerVector old_layers,
+                        const shared_ptr<LayerInterface> &new_layer);
+    
+
   BloomFilterSizing bloom_sizing() const;
 
   Schema schema_;
   string dir_;
   shared_ptr<MemStore> memstore_;
-  vector<shared_ptr<LayerInterface> > layers_;
+  LayerVector layers_;
 
   // Lock protecting write access to the components of the tablet (memstore and layers).
   // Shared mode:

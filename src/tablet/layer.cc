@@ -284,14 +284,14 @@ Status LayerWriter::Finish() {
 Status Layer::Open(Env *env,
                    const Schema &schema,
                    const string &layer_dir,
-                   Layer **layer) {
-  auto_ptr<Layer> l(new Layer(env, schema, layer_dir));
+                   shared_ptr<Layer> *layer) {
+  shared_ptr<Layer> l(new Layer(env, schema, layer_dir));
 
   RETURN_NOT_OK(l->OpenBaseCFileReaders());
   RETURN_NOT_OK(l->OpenDeltaFileReaders());
   l->open_ = true;
 
-  *layer = l.release();
+  layer->swap(l);
   return Status::OK();
 }
 
@@ -301,8 +301,8 @@ Status Layer::CreatePartiallyFlushed(Env *env,
                                      const Schema &schema,
                                      const string &layer_dir,
                                      shared_ptr<MemStore> &memstore,
-                                     Layer **layer) {
-  auto_ptr<Layer> l(new Layer(env, schema, layer_dir));
+                                     shared_ptr<Layer> *layer) {
+  shared_ptr<Layer> l(new Layer(env, schema, layer_dir));
 
   auto_ptr<KeysFlushedBaseData> lbd(
     new KeysFlushedBaseData(env, layer_dir, schema, memstore));
@@ -311,7 +311,7 @@ Status Layer::CreatePartiallyFlushed(Env *env,
   l->base_data_.reset(lbd.release());
   l->open_ = true;
 
-  *layer = l.release();
+  layer->swap(l);
   return Status::OK();
 }
 

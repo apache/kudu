@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <algorithm>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
@@ -79,14 +80,14 @@ Status Tablet::Open() {
         return Status::IOError(string("Bad layer file: ") + absolute_path);
       }
 
-      Layer *layer;
+      shared_ptr<Layer> layer;
       Status s = Layer::Open(env_, schema_, absolute_path, &layer);
       if (!s.ok()) {
         LOG(ERROR) << "Failed to open layer " << absolute_path << ": "
                    << s.ToString();
         return s;
       }
-      layers_.push_back(shared_ptr<Layer>(layer));
+      layers_.push_back(layer);
 
       next_layer_idx_ = std::max(next_layer_idx_,
                                  (size_t)layer_idx + 1);
@@ -159,6 +160,38 @@ Status Tablet::UpdateRow(const void *key,
   return Status::NotFound("key not found");
 }
 
+void Tablet::AtomicSwapLayers(const LayerVector old_layers,
+                              const shared_ptr<LayerInterface> &new_layer) {
+  LayerVector new_layers;
+  boost::lock_guard<percpu_rwlock> lock(component_lock_);
+
+  // O(n^2) diff algorithm to collect the set of layers excluding
+  // the layers that were included in the compaction
+  int num_replaced = 0;
+
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
+
+    // Determine if it should be removed
+    bool should_remove = false;
+    BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, old_layers) {
+      if (l_input == l) {
+        should_remove = true;
+        num_replaced++;
+        break;
+      }
+    }
+    if (!should_remove) {
+      new_layers.push_back(l);
+    }
+  }
+
+  CHECK_EQ(num_replaced, old_layers.size());
+
+  // Then push the new layer on the end.
+  new_layers.push_back(new_layer);
+
+  layers_.swap(new_layers);
+}
 
 Status Tablet::Flush() {
   CHECK(open_);
@@ -231,7 +264,7 @@ Status Tablet::Flush() {
 
   LOG(INFO) << "Flush: entering stage 3 (freezing old memstore from in-place updates)";
 
-  Layer *partially_flushed_layer;
+  shared_ptr<Layer> partially_flushed_layer;
   RETURN_NOT_OK(Layer::CreatePartiallyFlushed(
                   env_, schema_, tmp_layer_dir, old_ms,
                   &partially_flushed_layer));
@@ -243,17 +276,12 @@ Status Tablet::Flush() {
   CHECK(partial_layer_lock.owns_lock());
 
   uint64_t start_update_count;
-  {
-    // Swap it in under the lock.
-    boost::lock_guard<percpu_rwlock> lock(component_lock_);
-    CHECK_EQ(layers_.back(), old_ms)
-      << "Layer components changed during flush";
-    layers_.back().reset(partially_flushed_layer);
+  AtomicSwapLayers(boost::assign::list_of(old_ms),
+                   partially_flushed_layer);
 
-    // We shouldn't have any more updates after this point.
-    start_update_count = old_ms->debug_update_count();
-    old_ms->Freeze();
-  }
+  // We shouldn't have any more updates after this point.
+  start_update_count = old_ms->debug_update_count();
+  old_ms->Freeze();
 
   LOG(INFO) << "Flush: entering stage 4 (flushing the rest of the columns)";
 
@@ -283,22 +311,22 @@ Status Tablet::Flush() {
   // TODO: this should actually just swap-out the BaseData, probably - otherwise
   // we'll lose any updates that happened during the flush process.
   // TODO: add a test which verifies no lost updates
-  Layer *new_layer;
+  shared_ptr<Layer> new_layer;
   RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
 
   // Replace the memstore layer with the on-disk layer.
   // Because this is a shared pointer, and iterators hold a shared_ptr
   // to the MemStore as well, the actual memstore wlil get cleaned
   // up when the last iterator is destructed.
-  {
-    boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
-    // unlock these now. Although no other thread should ever see them,
-    // we trigger pthread assertions in DEBUG mode if we don't unlock.
-    old_ms_lock.unlock();
-    partial_layer_lock.unlock();
-    layers_.back().reset(new_layer);
-  }
+  // unlock these now. Although no other thread should ever see them,
+  // we trigger pthread assertions in DEBUG mode if we don't unlock.
+  AtomicSwapLayers(boost::assign::list_of(partially_flushed_layer),
+                   new_layer);
+  old_ms_lock.unlock();
+  partial_layer_lock.unlock();
+
+
   return Status::OK();
 
   // TODO: explicitly track iterators somehow so that a slow
@@ -315,6 +343,46 @@ static bool CompareBySize(const shared_ptr<LayerInterface> &a,
   return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
 }
 
+Status Tablet::PickLayersToCompact(
+  LayerVector *out_layers,
+  LockVector *out_locks) const
+{
+  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  CHECK_EQ(out_layers->size(), 0);
+
+  vector<shared_ptr<LayerInterface> > tmp_layers;
+  tmp_layers.assign(layers_.begin(), layers_.end());
+
+  // Sort the layers by their on-disk size
+  std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
+  uint64_t accumulated_size;
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
+    uint64_t this_size = l->EstimateOnDiskSize();
+    if (out_layers->size() < 2 || this_size < accumulated_size * 2) {
+      // Grab the compact_flush_lock: this prevents any other concurrent
+      // compaction from selecting this same layer, and also ensures that
+      // we don't select a layer which is currently in the middle of being
+      // flushed.
+      shared_ptr<boost::mutex::scoped_try_lock> lock(
+        new boost::mutex::scoped_try_lock(*l->compact_flush_lock()));
+      if (!lock->owns_lock()) {
+        LOG(INFO) << "Unable to select " << l->ToString() << " for compaction: it is busy";
+        continue;
+      }
+
+      // Push the lock on our scoped list, so we unlock when done.
+      out_locks->push_back(lock);
+      out_layers->push_back(l);
+      accumulated_size += this_size;
+    } else {
+      break;
+    }
+  }
+
+  return Status::OK();
+}
+
+
 Status Tablet::Compact()
 {
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PreCompaction());
@@ -322,62 +390,24 @@ Status Tablet::Compact()
   string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
   string tmp_layer_dir = new_layer_dir + ".compact-tmp";
 
-  vector<shared_ptr<RowIteratorInterface> > key_iters;
-  vector<shared_ptr<LayerInterface> > tmp_layers;
-  vector<shared_ptr<LayerInterface> > input_layers;
-
   Schema keys_only = schema_.CreateKeyProjection();
 
   LOG(INFO) << "Compaction: entering stage 1 (collecting layers)";
 
-  uint64_t accumulated_size = 0;
-  vector<shared_ptr<boost::mutex::scoped_try_lock> > compact_locks;
-
   // Step 1. Capture the layers to be merged
-  {
-    boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
-
-    tmp_layers.assign(layers_.begin(), layers_.end());
-
-    // Sort the layers by their on-disk size
-    std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
-
-    BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
-      uint64_t this_size = l->EstimateOnDiskSize();
-      if (input_layers.size() < 2 || this_size < accumulated_size * 2) {
-        // Grab the compact_flush_lock: this prevents any other concurrent
-        // compaction from selecting this same layer, and also ensures that
-        // we don't select a layer which is currently in the middle of being
-        // flushed.
-        shared_ptr<boost::mutex::scoped_try_lock> lock(
-          new boost::mutex::scoped_try_lock(*l->compact_flush_lock()));
-        if (!lock->owns_lock()) {
-          LOG(INFO) << "Unable to select " << l->ToString() << " for compaction: it is busy";
-          continue;
-        }
-
-        // Push the lock on our scoped list, so we unlock when done.
-        compact_locks.push_back(lock);
-        accumulated_size += this_size;
-        input_layers.push_back(l);
-      } else {
-        break;
-      }
-    }
-  }
-
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
-
-  tmp_layers.clear();
-
+  LayerVector input_layers;
+  LockVector compact_locks;
+  RETURN_NOT_OK(PickLayersToCompact(&input_layers, &compact_locks));
   if (input_layers.size() < 2) {
     LOG(INFO) << "Not enough layers to run compaction! Aborting...";
     return Status::OK();
   }
 
-  LOG(INFO) << "Selected " << input_layers.size() << " layers to compact"
-            << " (" << accumulated_size << " bytes):";
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
 
+  // Dump the selected layers to the log, and collect corresponding iterators.
+  vector<shared_ptr<RowIteratorInterface> > key_iters;
+  LOG(INFO) << "Selected " << input_layers.size() << " layers to compact:";
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
     shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(keys_only));
 
@@ -386,9 +416,9 @@ Status Tablet::Compact()
   }
 
 
+  // Step 2. Merge their key columns.
   LOG(INFO) << "Compaction: entering stage 2 (compacting keys)";
 
-  // Step 2. Merge their key columns.
   MergeIterator merge_keys(keys_only, key_iters);
   RETURN_NOT_OK(merge_keys.Init());
 
@@ -429,32 +459,11 @@ Status Tablet::Compact()
   LOG(INFO) << "Successfully compacted " << out.written_count() << " rows";
 
   // Open it.
-  Layer *new_layer;
+  shared_ptr<Layer> new_layer;
   RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
 
   // Replace the compacted layers with the new on-disk layer.
-  {
-    boost::lock_guard<percpu_rwlock> lock(component_lock_);
-
-    // O(n^2) diff algorithm to collect the set of layers excluding
-    // the layers that were included in the compaction
-    vector<shared_ptr<LayerInterface> > new_layers;
-    new_layers.push_back(shared_ptr<LayerInterface>(new_layer));
-    BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-      bool was_in_compaction = false;
-      BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input_layers) {
-        if (l_input == l) {
-          was_in_compaction = true;
-          break;
-        }
-      }
-      if (!was_in_compaction) {
-        new_layers.push_back(l);
-      }
-    }
-
-    layers_.swap(new_layers);
-  }
+  AtomicSwapLayers(input_layers, new_layer);
 
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSwapNewLayer());
 

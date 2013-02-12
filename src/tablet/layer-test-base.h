@@ -182,10 +182,7 @@ protected:
   }
 
   Status OpenTestLayer(shared_ptr<Layer> *layer) {
-    Layer *tmp;
-    RETURN_NOT_OK(Layer::Open(env_, schema_, test_dir_, &tmp));
-    layer->reset(tmp);
-    return Status::OK();
+    return Layer::Open(env_, schema_, test_dir_, layer);
   }
 
 

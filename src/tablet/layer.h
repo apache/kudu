@@ -117,7 +117,7 @@ public:
   static Status Open(Env *env,
                      const Schema &schema,
                      const string &layer_dir,
-                     Layer **layer);
+                     shared_ptr<Layer> *layer);
 
   // TODO: docme
   static Status CreatePartiallyFlushed(
@@ -125,7 +125,7 @@ public:
     const Schema &schema,
     const string &layer_dir,
     shared_ptr<MemStore> &memstore,
-    Layer **layer);
+    shared_ptr<Layer> *new_layer);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions
