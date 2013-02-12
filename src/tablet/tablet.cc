@@ -15,6 +15,7 @@
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet-util.h"
 #include "tablet/layer.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
@@ -117,13 +118,11 @@ Status Tablet::Insert(const Slice &data) {
   // First, ensure that it is a unique key by checking all the open
   // Layers
   if (FLAGS_tablet_do_dup_key_checks) {
-    BOOST_FOREACH(shared_ptr<LayerInterface> &layer, layers_) {
-      bool present;
-      VLOG(1) << "checking for key in layer " << layer->ToString();
-      RETURN_NOT_OK(layer->CheckRowPresent(probe, &present));
-      if (present) {
-        return Status::AlreadyPresent("key already present");
-      }
+    bool present;
+    RETURN_NOT_OK(tablet_util::CheckRowPresentInAnyLayer(
+                    layers_, probe, &present));
+    if (present) {
+      return Status::AlreadyPresent("key already present");
     }
   }
 

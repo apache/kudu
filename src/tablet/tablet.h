@@ -89,8 +89,6 @@ public:
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
 
 private:
-
-  typedef vector<shared_ptr<LayerInterface> > LayerVector;
   typedef vector<shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.

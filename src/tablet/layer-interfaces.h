@@ -2,6 +2,8 @@
 #ifndef KUDU_TABLET_LAYER_INTERFACES_H
 #define KUDU_TABLET_LAYER_INTERFACES_H
 
+#include <tr1/memory>
+
 #include "common/iterator.h"
 #include "common/row.h"
 #include "tablet/rowdelta.h"
@@ -13,6 +15,8 @@ namespace kudu {
 class ColumnBlock;
 
 namespace tablet {
+
+using std::tr1::shared_ptr;
 
 // Structure which caches an encoded and hashed key, suitable
 // for probing against layers.
@@ -88,6 +92,10 @@ public:
 
   virtual ~LayerInterface() {}
 };
+
+// Used often enough, may as well typedef it.
+typedef vector<shared_ptr<LayerInterface> > LayerVector;
+
 
 class DeltaTrackerInterface {
 public:
