@@ -234,6 +234,27 @@ public:
     LOG(INFO) << "Successfully verified " << expected_count << "rows";
   }
 
+  // Iterate through the full table, stringifying the resulting rows
+  // into the given vector. This is only useful in tests which insert
+  // a very small number of rows.
+  // The output is sorted by key.
+  Status IterateToStringList(vector<string> *out) {
+    scoped_ptr<Tablet::RowIterator> iter;
+    RETURN_NOT_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
+
+    Schema schema = iter->schema();
+    Arena arena(1024, 1024);
+    ScopedRowBlock block(schema, 1, &arena);
+    while (iter->HasNext()) {
+      size_t n = 1;
+      RETURN_NOT_OK( iter->CopyNextRows(&n, &block) );
+      CHECK_GT(n, 0);
+      out->push_back( schema.DebugRow(block.row_ptr(0)) );
+    }
+    std::sort(out->begin(), out->end());
+    return Status::OK();
+  }
+
   // Return the number of rows in the tablet.
   size_t TabletCount() const {
     size_t count;

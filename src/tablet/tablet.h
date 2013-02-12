@@ -27,6 +27,7 @@ class Tablet {
 public:
   class RowIterator;
   class CompactionFaultHooks;
+  class FlushFaultHooks;
 
   Tablet(const Schema &schema,
          const string &dir);
@@ -85,6 +86,7 @@ public:
   static string GetLayerPath(const string &tablet_dir, int layer_idx);
 
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
+  void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
 
 private:
 
@@ -135,6 +137,7 @@ private:
 
   // Fault hooks. In production code, these will always be NULL.
   shared_ptr<CompactionFaultHooks> compaction_hooks_;
+  shared_ptr<FlushFaultHooks> flush_hooks_;
 };
 
 
@@ -184,6 +187,17 @@ public:
   virtual Status PostRenameFile() { return Status::OK(); }
   virtual Status PostSwapNewLayer() { return Status::OK(); }
   virtual Status PostCompaction() { return Status::OK(); }
+};
+
+// Hooks used in test code to inject faults or other code into interesting
+// parts of the Flush() code.
+class Tablet::FlushFaultHooks {
+public:
+  virtual Status PreFlush() { return Status::OK(); }
+  virtual Status PostSwapNewMemStore() { return Status::OK(); }
+  virtual Status PostFlushKeys() { return Status::OK(); }
+  virtual Status PostFreezeOldMemStore() { return Status::OK(); }
+  virtual Status PostOpenNewLayer() { return Status::OK(); }
 };
 
 

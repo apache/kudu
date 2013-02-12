@@ -249,20 +249,68 @@ TYPED_TEST(TestTablet, TestCompaction) {
   }
 }
 
-// Iterate through the given iterator, stringifying the resulting rows
-// into the given vector
-static Status IterateToStringList(RowIteratorInterface *iter, vector<string> *out) {
-  Schema schema = iter->schema();
-  Arena arena(1024, 1024);
-  ScopedRowBlock block(schema, 1, &arena);
-  while (iter->HasNext()) {
-    size_t n = 1;
-    RETURN_NOT_OK( iter->CopyNextRows(&n, &block) );
-    CHECK_GT(n, 0);
-    out->push_back( schema.DebugRow(block.row_ptr(0)) );
-  }
-  return Status::OK();
+// Test for Flush with concurrent update and insert during the
+// various phases.
+TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
+  // Insert several rows into memstore
+  this->InsertTestRows(0, 5);
+
+  // Inject hooks which mutate those rows and add more rows at
+  // each key stage of flushing.
+  class MyHooks : public Tablet::FlushFaultHooks {
+  public:
+    MyHooks(TestFixture *test) : test_(test) {}
+
+    Status PostSwapNewMemStore() {
+      test_->InsertTestRows(5, 1);
+      test_->UpdateTestRow(0, 12345);
+      return Status::OK();
+    }
+    Status PostFlushKeys() {
+      test_->InsertTestRows(6, 1);
+      test_->UpdateTestRow(1, 12345);
+      return Status::OK();
+    }
+
+    Status PostFreezeOldMemStore() {
+      test_->InsertTestRows(7, 1);
+      test_->UpdateTestRow(2, 12345);
+      return Status::OK();
+    }
+
+    Status PostOpenNewLayer() {
+      test_->InsertTestRows(8, 1);
+      test_->UpdateTestRow(3, 12345);
+      return Status::OK();
+    }
+
+  private:
+    TestFixture *test_;
+  };
+  shared_ptr<Tablet::FlushFaultHooks> hooks(
+    reinterpret_cast<Tablet::FlushFaultHooks *>(new MyHooks(this)));
+  this->tablet_->SetFlushHooksForTests(hooks);
+  this->tablet_->Flush();
+
+  vector<string> out_rows;
+  ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+
+  // Verify that all the inserts and updates arrived and persisted.
+  LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
+
+  ASSERT_EQ(9, out_rows.size());
+
+  ASSERT_EQ(this->setup_.FormatDebugRow(0, 12345), out_rows[0]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(1, 12345), out_rows[1]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(2, 12345), out_rows[2]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(3, 12345), out_rows[3]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(4, 0), out_rows[4]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(5, 0), out_rows[5]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(6, 0), out_rows[6]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(7, 0), out_rows[7]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(8, 0), out_rows[8]);
 }
+
 
 // Test for compaction with concurrent update and insert during the
 // various phases.
@@ -320,12 +368,9 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
 
   // Grab the resulting data into a vector.
   vector<string> out_rows;
-  scoped_ptr<Tablet::RowIterator> iter;
-  ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
-  ASSERT_STATUS_OK(IterateToStringList(iter.get(), &out_rows));
+  ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
 
   // Verify that all the inserts and updates arrived and persisted.
-  std::sort(out_rows.begin(), out_rows.end());
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
   ASSERT_EQ(8, out_rows.size());

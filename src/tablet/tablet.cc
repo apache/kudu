@@ -196,6 +196,8 @@ void Tablet::AtomicSwapLayers(const LayerVector old_layers,
 Status Tablet::Flush() {
   CHECK(open_);
 
+  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PreFlush());
+
   string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
   string tmp_layer_dir = new_layer_dir + ".tmp";
 
@@ -232,6 +234,9 @@ Status Tablet::Flush() {
     layers_.push_back(old_ms);
   }
 
+  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemStore());
+
+
   // At this point:
   //   Inserts: go into the new memstore
   //   Updates: can go to either memstore as appropriate
@@ -256,6 +261,8 @@ Status Tablet::Flush() {
   LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
   RETURN_NOT_OK(out.Open());
   RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get(), false, true));
+
+  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostFlushKeys());
 
   // Step 3. Freeze old memstore contents.
   // Because the key column exists on disk, we can create a new layer
@@ -282,6 +289,8 @@ Status Tablet::Flush() {
   // We shouldn't have any more updates after this point.
   start_update_count = old_ms->debug_update_count();
   old_ms->Freeze();
+
+  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostFreezeOldMemStore());
 
   LOG(INFO) << "Flush: entering stage 4 (flushing the rest of the columns)";
 
@@ -314,6 +323,8 @@ Status Tablet::Flush() {
   shared_ptr<Layer> new_layer;
   RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
 
+  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostOpenNewLayer());
+
   // Replace the memstore layer with the on-disk layer.
   // Because this is a shared pointer, and iterators hold a shared_ptr
   // to the MemStore as well, the actual memstore wlil get cleaned
@@ -336,6 +347,11 @@ Status Tablet::Flush() {
 void Tablet::SetCompactionHooksForTests(
   const shared_ptr<Tablet::CompactionFaultHooks> &hooks) {
   compaction_hooks_ = hooks;
+}
+
+void Tablet::SetFlushHooksForTests(
+  const shared_ptr<Tablet::FlushFaultHooks> &hooks) {
+  flush_hooks_ = hooks;
 }
 
 static bool CompareBySize(const shared_ptr<LayerInterface> &a,
