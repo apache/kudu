@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "cfile/cfile.h"
+#include "common/generic_iterators.h"
 #include "common/iterator.h"
-#include "common/merge_iterator.h"
 #include "common/schema.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"

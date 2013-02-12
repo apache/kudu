@@ -1,6 +1,6 @@
 # Copyright (c) 2012, Cloudera, inc.
 
-SET(COMMON_SRCS types.cc merge_iterator.cc)
+SET(COMMON_SRCS types.cc generic_iterators.cc)
 PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
@@ -11,4 +11,4 @@ SET(KUDU_COMMON_LIBS kudu_common)
 
 # schema-test
 ADD_KUDU_TEST(schema-test)
-ADD_KUDU_TEST(merge_iterator-test)
+ADD_KUDU_TEST(generic_iterators-test)

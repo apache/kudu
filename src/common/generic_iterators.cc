@@ -3,7 +3,7 @@
 #include <boost/foreach.hpp>
 #include <string>
 
-#include "common/merge_iterator.h"
+#include "common/generic_iterators.h"
 #include "common/row.h"
 #include "common/rowblock.h"
 #include "util/memory/arena.h"
