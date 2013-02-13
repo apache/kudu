@@ -268,24 +268,34 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
     Status PostSwapNewMemStore() {
       test_->InsertTestRows(5, 1);
       test_->UpdateTestRow(0, 12345);
+      CheckCanIterate();
       return Status::OK();
     }
     Status PostFlushKeys() {
       test_->InsertTestRows(6, 1);
       test_->UpdateTestRow(1, 12345);
+      CheckCanIterate();
       return Status::OK();
     }
 
     Status PostFreezeOldMemStore() {
       test_->InsertTestRows(7, 1);
       test_->UpdateTestRow(2, 12345);
+      CheckCanIterate();
       return Status::OK();
     }
 
     Status PostOpenNewLayer() {
       test_->InsertTestRows(8, 1);
       test_->UpdateTestRow(3, 12345);
+      CheckCanIterate();
       return Status::OK();
+    }
+
+    // Verify that iteration doesn't fail
+    void CheckCanIterate() {
+      vector<string> out_rows;
+      ASSERT_STATUS_OK(test_->IterateToStringList(&out_rows));
     }
 
   private:
@@ -337,25 +347,38 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
     Status PostMergeKeys() {
       test_->InsertTestRows(4, 1);
       test_->UpdateTestRow(0, 12345);
+
+      CheckCanIterate();
       return Status::OK();
     }
 
     Status PostMergeNonKeys() {
       test_->InsertTestRows(5, 1);
       test_->UpdateTestRow(1, 12345);
+
+      CheckCanIterate();
       return Status::OK();
     }
 
     Status PostRenameFile() {
       test_->InsertTestRows(6, 1);
       test_->UpdateTestRow(2, 12345);
+
+      CheckCanIterate();
       return Status::OK();
     }
 
     Status PostSwapNewLayer() {
       test_->InsertTestRows(7, 1);
       test_->UpdateTestRow(3, 12345);
+      CheckCanIterate();
       return Status::OK();
+    }
+
+    // Verify that iteration doesn't fail
+    void CheckCanIterate() {
+      vector<string> out_rows;
+      ASSERT_STATUS_OK(test_->IterateToStringList(&out_rows));
     }
 
   private:

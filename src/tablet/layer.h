@@ -124,14 +124,6 @@ public:
                      const string &layer_dir,
                      shared_ptr<Layer> *layer);
 
-  // TODO: docme
-  static Status CreatePartiallyFlushed(
-    Env *env,
-    const Schema &schema,
-    const string &layer_dir,
-    shared_ptr<MemStore> &memstore,
-    shared_ptr<Layer> *new_layer);
-
   ////////////////////////////////////////////////////////////
   // "Management" functions
   ////////////////////////////////////////////////////////////
@@ -142,10 +134,6 @@ public:
   // Delete the layer directory.
   Status Delete();
 
-  // If the layer was created as "partially flushed" layer, finish the flush.
-  // This renames the layer directory from its ".tmp" suffix to its final
-  // location, and re-opens the base data cfiles.
-  Status FinishFlush();
 
   ////////////////////////////////////////////////////////////
   // LayerInterface implementation
@@ -190,20 +178,19 @@ public:
 private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);
+  friend class Tablet;
 
   // TODO: should 'schema' be stored with the layer? quite likely
   // so that we can support cheap alter table.
   Layer(Env *env,
         const Schema &schema,
-        const string &layer_dir) :
-    env_(env),
-    schema_(schema),
-    dir_(layer_dir),
-    open_(false),
-    delta_tracker_(new DeltaTracker(env, schema, layer_dir))
-  {}
+        const string &layer_dir);
 
-  Status OpenBaseCFileReaders();
+  Status Open();
+
+  void set_delta_tracker(const shared_ptr<DeltaTracker> &dt) {
+    delta_tracker_ = dt;
+  }
 
   Env *env_;
   const Schema schema_;
@@ -213,13 +200,66 @@ private:
 
   // Base data for this layer.
   // This vector contains one entry for each column.
-  shared_ptr<LayerBaseData> base_data_;
+  shared_ptr<CFileBaseData> base_data_;
   shared_ptr<DeltaTracker> delta_tracker_;
 
   // Lock governing this layer's inclusion in a compact/flush. If locked,
   // no other compactor will attempt to include this layer.
   boost::mutex compact_flush_lock_;
 };
+
+
+class FlushInProgressLayer : public LayerInterface, boost::noncopyable {
+public:
+  static Status Open(Env *env, const Schema &schema, const string &dir,
+                     const shared_ptr<MemStore> &ms,
+                     shared_ptr<FlushInProgressLayer> *layer);
+
+  Status UpdateRow(const void *key, const RowDelta &update);
+
+  Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
+
+  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+
+  Status CountRows(size_t *count) const;
+
+  uint64_t EstimateOnDiskSize() const;
+
+  Status FindRow(const void *key, uint32_t *idx) const;
+
+  string ToString() const {
+    return string("FlushInProgress at ") + dir_;
+  }
+
+  Status Delete();
+
+  boost::mutex *compact_flush_lock() {
+    return &always_locked_;
+  }
+
+  ~FlushInProgressLayer();
+
+
+private:
+  friend class Tablet;
+
+  Status Open();
+
+  FlushInProgressLayer(Env *env, const Schema &schema, const string &dir,
+                       const shared_ptr<MemStore> &ms);
+
+  Env *env_;
+  const string dir_;
+  const Schema schema_;
+
+  shared_ptr<CFileBaseData> base_data_;
+  shared_ptr<DeltaTracker> delta_tracker_;
+  shared_ptr<MemStore> ms_;
+  bool open_;
+
+  boost::mutex always_locked_;
+};
+
 
 
 } // namespace tablet

@@ -281,76 +281,39 @@ Status LayerWriter::Finish() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-
-
 Status Layer::Open(Env *env,
                    const Schema &schema,
                    const string &layer_dir,
                    shared_ptr<Layer> *layer) {
   shared_ptr<Layer> l(new Layer(env, schema, layer_dir));
 
-  RETURN_NOT_OK(l->OpenBaseCFileReaders());
-  RETURN_NOT_OK(l->delta_tracker_->Open());
-  l->open_ = true;
+  RETURN_NOT_OK(l->Open());
 
   layer->swap(l);
   return Status::OK();
 }
 
 
-
-Status Layer::CreatePartiallyFlushed(Env *env,
-                                     const Schema &schema,
-                                     const string &layer_dir,
-                                     shared_ptr<MemStore> &memstore,
-                                     shared_ptr<Layer> *layer) {
-  shared_ptr<Layer> l(new Layer(env, schema, layer_dir));
-
-  auto_ptr<KeysFlushedBaseData> lbd(
-    new KeysFlushedBaseData(env, layer_dir, schema, memstore));
-
-  RETURN_NOT_OK(lbd->Open());
-  l->base_data_.reset(lbd.release());
-  l->open_ = true;
-
-  layer->swap(l);
-  return Status::OK();
-}
+Layer::Layer(Env *env,
+             const Schema &schema,
+             const string &layer_dir) :
+    env_(env),
+    schema_(schema),
+    dir_(layer_dir),
+    open_(false),
+    delta_tracker_(new DeltaTracker(env, schema, layer_dir))
+{}
 
 
-// Open the CFileReaders for the "base data" in this layer.
-// TODO: rename me
-Status Layer::OpenBaseCFileReaders() {
+Status Layer::Open() {
   std::auto_ptr<CFileBaseData> new_base(
     new CFileBaseData(env_, dir_, schema_));
-  RETURN_NOT_OK(new_base->Open());
+  RETURN_NOT_OK(new_base->OpenAllColumns());
 
   base_data_.reset(new_base.release());
+  RETURN_NOT_OK(delta_tracker_->Open());
 
-  return Status::OK();
-}
-
-Status Layer::FinishFlush() {
-  // TODO: add some state enum which indicates this is a partially
-  // flushed layer.
-
-  string new_dir;
-  CHECK(TryStripSuffixString(dir_, kTmpLayerSuffix, &new_dir))
-    << "Invalid dir not a tmp layer: " << dir_;
-
-  // Rename the actual directory.
-  // TODO: in hdfs, we may need to also re-open delta trackers which
-  // might have flushed in the tmp dir.
-  RETURN_NOT_OK(env_->RenameFile(dir_, new_dir));
-  dir_ = new_dir;
-
-  // Open the data in its new location.
-  Status s = OpenBaseCFileReaders();
-  if (!s.ok()) {
-    LOG(WARNING) << "Failed to open flushed data in " << dir_ << ": "
-                 << s.ToString();
-    return s;
-  }
+  open_ = true;
 
   return Status::OK();
 }
@@ -372,13 +335,9 @@ Status Layer::UpdateRow(const void *key,
                         const RowDelta &update) {
   CHECK(open_);
 
-  if (base_data_->is_updatable_in_place()) {
-    return base_data_->UpdateRow(key, update);
-  } else {
-    uint32_t row_idx;
-    RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
-    delta_tracker_->Update(row_idx, update);
-  }
+  uint32_t row_idx;
+  RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
+  delta_tracker_->Update(row_idx, update);
 
   return Status::OK();
 }
@@ -407,6 +366,90 @@ Status Layer::Delete() {
   // TODO: actually rm -rf, not just rename!
   return env_->RenameFile(dir_, dir_ + ".deleted");
 }
+
+
+////////////////////////////////////////
+
+Status FlushInProgressLayer::Open(Env *env,
+                                  const Schema &schema,
+                                  const string &layer_dir,
+                                  const shared_ptr<MemStore> &ms,
+                                  shared_ptr<FlushInProgressLayer> *layer) {
+  shared_ptr<FlushInProgressLayer> l(new FlushInProgressLayer(env, schema, layer_dir, ms));
+
+  RETURN_NOT_OK(l->Open());
+
+  layer->swap(l);
+  return Status::OK();
+}
+
+FlushInProgressLayer::FlushInProgressLayer(Env *env,
+                                           const Schema &schema,
+                                           const string &dir,
+                                           const shared_ptr<MemStore> &ms) :
+  env_(env),
+  dir_(dir),
+  schema_(schema),
+  base_data_(new CFileBaseData(env_, dir_, schema_)),
+  delta_tracker_(new DeltaTracker(env, schema, dir)),
+  ms_(ms),
+  open_(false)
+{
+  always_locked_.lock();
+}
+
+FlushInProgressLayer::~FlushInProgressLayer() {
+  always_locked_.unlock();
+}
+
+Status FlushInProgressLayer::Open() {
+  RETURN_NOT_OK( base_data_->OpenKeyColumns() );
+  open_ = true;
+  return Status::OK();
+}
+
+RowIteratorInterface *FlushInProgressLayer::NewRowIterator(const Schema &projection) const {
+  CHECK(open_);
+  // Use memstore as base data, updated by delta tracker
+  shared_ptr<RowIteratorInterface> base_iter(ms_->NewRowIterator(projection));
+  return delta_tracker_->WrapIterator(base_iter);
+}
+
+Status FlushInProgressLayer::UpdateRow(const void *key,
+                                       const RowDelta &update) {
+  CHECK(open_);
+  uint32_t row_idx;
+  RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
+  delta_tracker_->Update(row_idx, update);
+
+  return Status::OK();
+}
+
+Status FlushInProgressLayer::CheckRowPresent(const LayerKeyProbe &probe,
+                              bool *present) const {
+  CHECK(open_);
+  return ms_->CheckRowPresent(probe, present);
+}
+
+Status FlushInProgressLayer::CountRows(size_t *count) const {
+  CHECK(open_);
+  return base_data_->CountRows(count);
+}
+
+uint64_t FlushInProgressLayer::EstimateOnDiskSize() const {
+  // The actual value of this doesn't matter, since it won't be selected
+  // for compaction.
+  return 0;
+}
+
+
+Status FlushInProgressLayer::Delete() {
+  LOG(FATAL) << "Unsupported op";
+  return Status::NotSupported("");
+}
+
+
+
 
 } // namespace tablet
 } // namespace kudu

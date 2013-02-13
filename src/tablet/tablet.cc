@@ -270,20 +270,13 @@ Status Tablet::Flush() {
 
   LOG(INFO) << "Flush: entering stage 3 (freezing old memstore from in-place updates)";
 
-  shared_ptr<Layer> partially_flushed_layer;
-  RETURN_NOT_OK(Layer::CreatePartiallyFlushed(
+  shared_ptr<FlushInProgressLayer> inprogress_layer;
+  RETURN_NOT_OK(FlushInProgressLayer::Open(
                   env_, schema_, tmp_layer_dir, old_ms,
-                  &partially_flushed_layer));
-
-  // Mark the partially flushed layer as locked, so compactions won't consider it
-  // for inclusion.
-  boost::mutex::scoped_try_lock partial_layer_lock(
-    *partially_flushed_layer->compact_flush_lock());
-  CHECK(partial_layer_lock.owns_lock());
+                  &inprogress_layer));
 
   uint64_t start_update_count;
-  AtomicSwapLayers(boost::assign::list_of(old_ms),
-                   partially_flushed_layer);
+  AtomicSwapLayers(boost::assign::list_of(old_ms), inprogress_layer);
 
   // We shouldn't have any more updates after this point.
   start_update_count = old_ms->debug_update_count();
@@ -309,15 +302,20 @@ Status Tablet::Flush() {
     << "Sanity check failed: updates continued in memstore "
     << "after flush was triggered! Aborting to prevent dataloss.";
 
-
   // Flush to tmp was successful. Finish the flush.
-  Status s = partially_flushed_layer->FinishFlush();
+  // TODO: move this to be a method in FlushInProgressLayer
+  RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
+
+  shared_ptr<Layer> final_layer;
+  Status s = Layer::Open(env_, schema_, new_layer_dir, &final_layer);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to finish flush of " << new_layer_dir
+    LOG(WARNING) << "Unable to open flush result " << new_layer_dir
                  << ": " << s.ToString();
     return s;
   }
 
+  final_layer->set_delta_tracker(inprogress_layer->delta_tracker_);
+  AtomicSwapLayers(boost::assign::list_of(inprogress_layer), final_layer);
 
   LOG(INFO) << "Successfully flushed " << out.written_count() << " rows";
 
@@ -326,8 +324,6 @@ Status Tablet::Flush() {
   // unlock these now. Although no other thread should ever see them,
   // we trigger pthread assertions in DEBUG mode if we don't unlock.
   old_ms_lock.unlock();
-  partial_layer_lock.unlock();
-
 
   return Status::OK();
 

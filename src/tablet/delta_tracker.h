@@ -17,9 +17,12 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
-class DeltaTracker : public boost::noncopyable
-{
+class DeltaTracker : public boost::noncopyable {
 public:
+  DeltaTracker(Env *env,
+               const Schema &schema,
+               const string &dir);
+
   RowIteratorInterface *WrapIterator(const shared_ptr<RowIteratorInterface> &base) const;
 
   Status Open();
@@ -34,10 +37,6 @@ private:
   friend class Layer;
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);
-
-  DeltaTracker(Env *env,
-               const Schema &schema,
-               const string &dir);
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,

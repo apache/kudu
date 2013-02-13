@@ -27,116 +27,22 @@ using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using std::tr1::shared_ptr;
 
-class LayerBaseData : public LayerInterface {
-public:
-  // Return true if this layer's base data can be updated in-place.
-  //
-  // If this returns true, then Update() on the same object must
-  // succeed (given a valid row key). In this case, FindRow()
-  // does not have to be supported.
-  //
-  // If this returns false, then FindRow must be supported, and
-  // Update() may return NotSupported.
-  virtual bool is_updatable_in_place() const = 0;
-
-  // Determine the index of the given row key.
-  //
-  // See is_updatable_in_place() for restrictions on when this may be used.
-  virtual Status FindRow(const void *key, uint32_t *idx) const {
-    return Status::NotSupported("");
-  }
-
-  Status Delete() {
-    CHECK(0) << "Cannot Delete " << ToString();
-    return Status::NotSupported("delete of LayerBaseData not supported");
-  }
-
-  boost::mutex *compact_flush_lock() {
-    // TODO: would be nice to have another separate interface from LayerInterface
-    // which LayerBaseData could inherit from, since several of these methods
-    // don't make sense in this context.
-    CHECK(0) << "Not relevant";
-    return NULL;
-  }
-};
-
-class KeysFlushedBaseData : public LayerBaseData, boost::noncopyable {
-public:
-  KeysFlushedBaseData(Env *env, const string &dir, const Schema &schema,
-                      const shared_ptr<MemStore> &ms) :
-    env_(env),
-    dir_(dir),
-    schema_(schema),
-    ms_(ms),
-    open_(false)
-  {}
-
-  Status Open();
-
-  Status UpdateRow(const void *key, const RowDelta &update) {
-    return ms_->UpdateRow(key, update);
-  }
-
-  Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const {
-    return ms_->CheckRowPresent(key, present);
-  }
-
-  RowIteratorInterface *NewRowIterator(const Schema &projection) const {
-    return ms_->NewIterator(projection);
-  }
-
-  Status CountRows(size_t *count) const {
-    *count = ms_->entry_count();
-    return Status::OK();
-  }
-
-  uint64_t EstimateOnDiskSize() const {
-    return key_reader_->file_size();
-  }
-
-  Status FindRow(const void *key, uint32_t *idx) const;
-
-  bool is_updatable_in_place() const {
-    return false;
-  }
-
-  string ToString() const {
-    return string("MemStoreBaseData");
-  }
-
-private:
-  Env *env_;
-  const string dir_;
-  const Schema schema_;
-
-  shared_ptr<MemStore> ms_;
-  bool open_;
-
-  scoped_ptr<CFileReader> key_reader_;
-  scoped_ptr<BloomFileReader> bloom_reader_;
-};
-
 
 // Base Data made up of a set of CFiles, one for each column.
-class CFileBaseData : public LayerBaseData,
-                      public std::tr1::enable_shared_from_this<CFileBaseData>,
+class CFileBaseData : public std::tr1::enable_shared_from_this<CFileBaseData>,
                       boost::noncopyable {
 public:
   CFileBaseData(Env *env, const string &dir, const Schema &schema);
 
-  Status Open();
+  Status OpenAllColumns();
+  Status OpenKeyColumns();
+
   virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const;
   Status CountRows(size_t *count) const;
   uint64_t EstimateOnDiskSize() const;
+
+  // Determine the index of the given row key.
   Status FindRow(const void *key, uint32_t *idx) const;
-
-  bool is_updatable_in_place() const {
-    return false;
-  }
-
-  Status UpdateRow(const void *key, const RowDelta &update) {
-    return Status::NotSupported("CFiles are immutable");
-  }
 
   const Schema &schema() const { return schema_; }
 
@@ -150,13 +56,14 @@ private:
   class RowIterator;
   friend class RowIterator;
 
+  Status OpenColumns(size_t num_cols);
+  Status OpenBloomReader();
+
   Status NewColumnIterator(size_t col_idx, CFileIterator **iter) const;
 
   Env *env_;
   const string dir_;
   const Schema schema_;
-
-  bool open_;
 
   vector<shared_ptr<CFileReader> > readers_;
   scoped_ptr<BloomFileReader> bloom_reader_;

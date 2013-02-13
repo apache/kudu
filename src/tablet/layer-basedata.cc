@@ -59,42 +59,6 @@ static Status OpenReader(Env *env, string dir, size_t col_idx,
   return Status::OK();
 }
 
-
-////////////////////////////////////////////////////////////
-// KeysFlushed base
-////////////////////////////////////////////////////////////
-
-Status KeysFlushedBaseData::Open() {
-  CHECK(!open_);
-
-  CFileReader *reader;
-  RETURN_NOT_OK(OpenReader(env_, dir_, 0, &reader));
-  key_reader_.reset(reader);
-
-  open_ = true;
-  return Status::OK();
-}
-
-Status KeysFlushedBaseData::FindRow(const void *key, uint32_t *idx) const {
-  CHECK(open_);
-
-  CFileIterator *key_iter;
-  RETURN_NOT_OK( key_reader_->NewIterator(&key_iter) );
-  scoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
-
-  // TODO: check bloom filter, or perhaps check the memstore here as a filter?
-
-  bool exact;
-  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
-  if (!exact) {
-    return Status::NotFound("not present in storefile (failed seek)");
-  }
-
-  *idx = key_iter->GetCurrentOrdinal();
-  return Status::OK();
-}
-
-
 ////////////////////////////////////////////////////////////
 // CFile Base
 ////////////////////////////////////////////////////////////
@@ -104,21 +68,45 @@ CFileBaseData::CFileBaseData(Env *env,
                              const Schema &schema) :
   env_(env),
   dir_(dir),
-  schema_(schema),
-  open_(false)
+  schema_(schema)
 {}
 
 
-Status CFileBaseData::Open() {
-  CHECK(readers_.empty()) << "Should call this only before opening";
-  CHECK(!open_);
+Status CFileBaseData::OpenAllColumns() {
+  return OpenColumns(schema_.num_columns());
+}
 
-  for (int i = 0; i < schema_.num_columns(); i++) {
+Status CFileBaseData::OpenKeyColumns() {
+  return OpenColumns(schema_.num_key_columns());
+}
+
+Status CFileBaseData::OpenColumns(size_t num_cols) {
+  CHECK_LE(num_cols, schema_.num_columns());
+
+  RETURN_NOT_OK( OpenBloomReader() );
+
+  readers_.resize(num_cols);
+
+  for (int i = 0; i < num_cols; i++) {
+    if (readers_[i] != NULL) {
+      // Already open.
+      continue;
+    }
+
     CFileReader *reader;
     RETURN_NOT_OK(OpenReader(env_, dir_, i, &reader));
-    readers_.push_back(shared_ptr<CFileReader>(reader));
+    readers_[i].reset(reader);
     LOG(INFO) << "Successfully opened cfile for column " <<
       schema_.column(i).ToString() << " in " << dir_;;
+  }
+
+  return Status::OK();
+}
+
+
+Status CFileBaseData::OpenBloomReader() {
+  if (bloom_reader_ != NULL) {
+    return Status::OK();
   }
 
   BloomFileReader *rdr;
@@ -130,17 +118,14 @@ Status CFileBaseData::Open() {
     bloom_reader_.reset(rdr);
   }
 
-  open_ = true;
-
   return Status::OK();
 }
 
 
 Status CFileBaseData::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
-  CHECK(open_);
   CHECK_LT(col_idx, readers_.size());
 
-  return readers_[col_idx]->NewIterator(iter);
+  return CHECK_NOTNULL(readers_[col_idx].get())->NewIterator(iter);
 }
 
 
