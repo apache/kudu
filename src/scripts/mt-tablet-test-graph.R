@@ -30,6 +30,9 @@ si_vec <- function(x) {
 d <- read.table(file="/tmp/graph.tsv", header=T)
 
 d$insert_rate = c(0, diff(d$inserted)/diff(d$time))
+d$update_rate = c(0, diff(d$updated)/diff(d$time))
+d <- subset(d, select = -c(updated))
+
 
 # Put memstore usage in bytes
 d$memstore_bytes <- d$memstore * 1024
