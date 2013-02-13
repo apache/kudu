@@ -75,6 +75,8 @@ public:
   void UpdateThread(int tid) {
     const Schema &schema = schema_;
 
+    shared_ptr<TimeSeries> updates = ts_collector_.GetTimeSeries("updated");
+
     // TODO: move the update code into the SETUP class
     uint8_t buf[schema_.byte_size()];
     Slice row_slice(reinterpret_cast<const char *>(buf),
@@ -84,12 +86,13 @@ public:
     Arena tmp_arena (1024, 1024);
     RowBlock block(schema_, &buf[0], 1, &tmp_arena);
 
+    uint64_t updates_since_last_report = 0;
     while (running_insert_count_.count() > 0) {
       scoped_ptr<RowIteratorInterface> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
       ASSERT_STATUS_OK(iter->Init());
 
-      while (iter->HasNext()) {
+      while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
         size_t n = 1;
         ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
@@ -104,6 +107,11 @@ public:
           uint32_t new_val = old_val + 1;
           update.get().UpdateColumn(schema, 2, &new_val);
           ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(row_key, update.get()));
+
+          if (++updates_since_last_report >= 10) {
+            updates->AddValue(updates_since_last_report);
+            updates_since_last_report = 0;
+          }
         }
       }
     }
