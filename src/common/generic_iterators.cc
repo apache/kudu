@@ -218,15 +218,12 @@ Status UnionIterator::Init() {
   // Verify schemas match.
   schema_.reset(new Schema(iters_.front()->schema()));
   BOOST_FOREACH(shared_ptr<RowIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->Init());
     if (!iter->schema().Equals(*schema_)) {
       return Status::InvalidArgument(
         string("Schemas do not match: ") + schema_->ToString()
         + " vs " + iter->schema().ToString());
     }
-  }
-
-  BOOST_FOREACH(shared_ptr<RowIteratorInterface> &iter, iters_) {
-    RETURN_NOT_OK(iter->Init());
     RETURN_NOT_OK(iter->SeekToStart());
   }
   initted_ = true;
@@ -234,6 +231,11 @@ Status UnionIterator::Init() {
 }
 
 Status UnionIterator::SeekAtOrAfter(const Slice &key, bool *exact) {
+  if (key.size() == 0) {
+    // Can seek to start
+    return Status::OK();
+  }
+
   // it's not clear what SeekAtOrAfter means in this context.
   // We probably should end up getting rid of this API altogether,
   // in favor of a more high-level way of specifying the range for a

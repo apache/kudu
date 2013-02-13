@@ -418,7 +418,6 @@ Status Tablet::Compact()
     key_iters.push_back(row_it);
   }
 
-
   // Step 2. Merge their key columns.
   LOG(INFO) << "Compaction: entering stage 2 (compacting keys)";
 
@@ -432,8 +431,11 @@ Status Tablet::Compact()
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostMergeKeys());
   
   // Step 3. Swap in the UpdateDuplicatingLayer
-
-  // ------ TODO ---------
+  shared_ptr<CompactionInProgressLayer> inprogress_layer;
+  RETURN_NOT_OK(CompactionInProgressLayer::Open(
+                  env_, schema_, tmp_layer_dir, input_layers,
+                  &inprogress_layer));
+  AtomicSwapLayers(input_layers, inprogress_layer);
 
   // Step 4. Merge non-keys
   LOG(INFO) << "Compaction: entering stage 4 (compacting other columns)";
@@ -464,9 +466,11 @@ Status Tablet::Compact()
   // Open it.
   shared_ptr<Layer> new_layer;
   RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
+  new_layer->set_delta_tracker(inprogress_layer->delta_tracker_);
 
   // Replace the compacted layers with the new on-disk layer.
-  AtomicSwapLayers(input_layers, new_layer);
+  AtomicSwapLayers(boost::assign::list_of(inprogress_layer),
+                   new_layer);
 
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSwapNewLayer());
 

@@ -283,7 +283,7 @@ public:
 
   // Return the projection of this schema which contains only
   // the key columns.
-  Schema CreateKeyProjection() {
+  Schema CreateKeyProjection() const {
     vector<ColumnSchema> key_cols(cols_.begin(),
                                   cols_.begin() + num_key_columns_);
     return Schema(key_cols, num_key_columns_);
@@ -291,7 +291,7 @@ public:
 
   // Return the projection of this schema which contains only
   // the non-key columns.
-  Schema CreateNonKeyProjection() {
+  Schema CreateNonKeyProjection() const {
     vector<ColumnSchema> non_key_cols(cols_.begin() + num_key_columns_,
                                       cols_.end());
     return Schema(non_key_cols, 0);

@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "cfile/bloomfile.h"
@@ -448,7 +449,124 @@ Status FlushInProgressLayer::Delete() {
   return Status::NotSupported("");
 }
 
+////////////////////////////////////////////////////////////
+// CompactionInProgressLayer
+////////////////////////////////////////////////////////////
 
+Status CompactionInProgressLayer::Open(
+  Env *env,
+  const Schema &schema,
+  const string &layer_dir,
+  const LayerVector &input_layers,
+  shared_ptr<CompactionInProgressLayer> *layer)
+{
+  shared_ptr<CompactionInProgressLayer> l(
+    new CompactionInProgressLayer(env, schema, layer_dir, input_layers));
+
+  RETURN_NOT_OK(l->Open());
+
+  layer->swap(l);
+  return Status::OK();
+}
+
+CompactionInProgressLayer::CompactionInProgressLayer(Env *env,
+                                                     const Schema &schema,
+                                                     const string &dir,
+                                                     const LayerVector &input_layers) :
+  env_(env),
+  dir_(dir),
+  schema_(schema),
+  base_data_(new CFileBaseData(env_, dir_, schema_)),
+  delta_tracker_(new DeltaTracker(env, schema, dir)),
+  input_layers_(input_layers),
+  open_(false)
+{
+  always_locked_.lock();
+}
+
+CompactionInProgressLayer::~CompactionInProgressLayer() {
+  always_locked_.unlock();
+}
+
+Status CompactionInProgressLayer::Open() {
+  RETURN_NOT_OK( base_data_->OpenKeyColumns() );
+  open_ = true;
+  return Status::OK();
+}
+
+RowIteratorInterface *CompactionInProgressLayer::NewRowIterator(const Schema &projection) const {
+  CHECK(open_);
+
+  // Use a union of the input layers as the row iterator.
+  // No need to merge with the delta tracker, since we're duplicating all the writes
+  // back into the input layers during the compaction.
+  vector<shared_ptr<RowIteratorInterface> > iters;
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, input_layers_) {
+    shared_ptr<RowIteratorInterface> iter(layer->NewRowIterator(projection));
+    iters.push_back(iter);
+  }
+
+  return new UnionIterator(iters);
+}
+
+Status CompactionInProgressLayer::UpdateRow(const void *key,
+                                            const RowDelta &update) {
+  CHECK(open_);
+
+  uint32_t row_idx_in_output;
+  RETURN_NOT_OK( base_data_->FindRow(key, &row_idx_in_output) );
+
+
+  // Duplicate the update to both the relevant input layer and the output layer.
+  // First propagate to the relevant input layer.
+  bool updated = false;
+  BOOST_FOREACH(shared_ptr<LayerInterface> &layer, input_layers_) {
+    Status s = layer->UpdateRow(key, update);
+    if (s.ok()) {
+      updated = true;
+      break;
+    } else if (!s.IsNotFound()) {
+      LOG(ERROR) << "Unable to update key "
+                 << schema_.CreateKeyProjection().DebugRow(key)
+                 << " (failed on layer " << layer->ToString() << "): "
+                 << s.ToString();
+      return s;
+    }
+  }
+
+  if (!updated) {
+    LOG(DFATAL) << "Found row in compaction output but not in any input layer: "
+                << schema_.CreateKeyProjection().DebugRow(key);
+    return Status::NotFound("not found in any input layer of compaction");
+  }
+
+  // Then put in the delta tracker corresponding to the post-compaction
+  // row index.
+  delta_tracker_->Update(row_idx_in_output, update);
+  return Status::OK();
+}
+
+Status CompactionInProgressLayer::CheckRowPresent(const LayerKeyProbe &probe,
+                              bool *present) const {
+  return base_data_->CheckRowPresent(probe, present);
+}
+
+Status CompactionInProgressLayer::CountRows(size_t *count) const {
+  CHECK(open_);
+  return base_data_->CountRows(count);
+}
+
+uint64_t CompactionInProgressLayer::EstimateOnDiskSize() const {
+  // The actual value of this doesn't matter, since it won't be selected
+  // for compaction.
+  return 0;
+}
+
+
+Status CompactionInProgressLayer::Delete() {
+  LOG(FATAL) << "Unsupported op";
+  return Status::NotSupported("");
+}
 
 
 } // namespace tablet

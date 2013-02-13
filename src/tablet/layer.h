@@ -239,7 +239,6 @@ public:
 
   ~FlushInProgressLayer();
 
-
 private:
   friend class Tablet;
 
@@ -260,6 +259,57 @@ private:
   boost::mutex always_locked_;
 };
 
+
+class CompactionInProgressLayer : public LayerInterface, boost::noncopyable {
+public:
+
+  static Status Open(Env *env, const Schema &schema, const string &dir,
+                     const LayerVector &input_layers,
+                     shared_ptr<CompactionInProgressLayer> *layer);
+
+  Status UpdateRow(const void *key, const RowDelta &update);
+
+  Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
+
+  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+
+  Status CountRows(size_t *count) const;
+
+  uint64_t EstimateOnDiskSize() const;
+
+  Status FindRow(const void *key, uint32_t *idx) const;
+
+  string ToString() const {
+    return string("CompactionInProgress at ") + dir_;
+  }
+
+  Status Delete();
+
+  boost::mutex *compact_flush_lock() {
+    return &always_locked_;
+  }
+
+  ~CompactionInProgressLayer();
+
+private:
+  friend class Tablet;
+
+  Status Open();
+
+  CompactionInProgressLayer(Env *env, const Schema &schema, const string &dir,
+                            const LayerVector &input_layers);
+
+  Env *env_;
+  const string dir_;
+  const Schema schema_;
+
+  shared_ptr<CFileBaseData> base_data_;
+  shared_ptr<DeltaTracker> delta_tracker_;
+  LayerVector input_layers_;
+  bool open_;
+
+  boost::mutex always_locked_;
+};
 
 
 } // namespace tablet
