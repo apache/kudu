@@ -407,10 +407,9 @@ Status Layer::FinishFlush() {
 
 RowIteratorInterface *Layer::NewRowIterator(const Schema &projection) const {
   CHECK(open_);
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
-  // TODO: locking
   RowIteratorInterface *base_iter = base_data_->NewRowIterator(projection);
-
   std::vector<shared_ptr<DeltaTrackerInterface> > deltas(delta_trackers_);
   deltas.push_back(dms_);
 

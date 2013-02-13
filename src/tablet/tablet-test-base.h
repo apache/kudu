@@ -183,8 +183,9 @@ public:
   }
 
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
-    scoped_ptr<Tablet::RowIterator> iter;
+    scoped_ptr<RowIteratorInterface> iter;
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(iter->Init());
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
                           4*1024*1024 / schema_.byte_size()));
@@ -239,8 +240,9 @@ public:
   // a very small number of rows.
   // The output is sorted by key.
   Status IterateToStringList(vector<string> *out) {
-    scoped_ptr<Tablet::RowIterator> iter;
+    scoped_ptr<RowIteratorInterface> iter;
     RETURN_NOT_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
+    RETURN_NOT_OK(iter->Init());
 
     Schema schema = iter->schema();
     Arena arena(1024, 1024);

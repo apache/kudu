@@ -284,6 +284,7 @@ public:
 private:
   friend class Layer;
 
+  // Construct. The base_iter should not be Initted.
   DeltaMergingIterator(RowIteratorInterface *base_iter,
                        const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers,
                        const Schema &src_schema,

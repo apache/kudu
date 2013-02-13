@@ -53,6 +53,10 @@ public:
     return type_info().type() == other.type_info().type();
   }
 
+  bool Equals(const ColumnSchema &other) const {
+    return EqualsType(other) && this->name_ == other.name_;
+  }
+
   template<class ArenaType>
   Status CopyCell(void *dst, const void *src, ArenaType *dst_arena) const {
     if (type_info().type() == STRING) {
@@ -331,6 +335,20 @@ public:
     return StrCat("Schema [",
                   JoinStrings(col_strs, ", "),
                   "]");
+  }
+
+  // Return true if the schemas have exactly the same set of columns
+  // and respective types.
+  bool Equals(const Schema &other) const {
+    if (this == &other) return true;
+    if (this->num_key_columns_ != other.num_key_columns_) return false;
+    if (this->cols_.size() != other.cols_.size()) return false;
+
+    for (size_t i = 0; i < other.cols_.size(); i++) {
+      if (!this->cols_[i].Equals(other.cols_[i])) return false;
+    }
+
+    return true;
   }
 
 private:

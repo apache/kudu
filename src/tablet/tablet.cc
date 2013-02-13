@@ -488,35 +488,21 @@ Status Tablet::Compact()
 
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
-  deque<shared_ptr<RowIteratorInterface> > *iters) const
+  vector<shared_ptr<RowIteratorInterface> > *iters) const
 {
   boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  deque<shared_ptr<RowIteratorInterface> > ret;
+  vector<shared_ptr<RowIteratorInterface> > ret;
 
   // Grab the memstore iterator.
-  // TODO: when we add concurrent flush, need to add all snapshot
-  // memstore iterators.
-  shared_ptr<RowIteratorInterface> ms_iter(
-    memstore_->NewIterator(projection));
-  RETURN_NOT_OK(ms_iter->Init());
-  VLOG(2) << "adding " << ms_iter->ToString();
-
+  shared_ptr<RowIteratorInterface> ms_iter(memstore_->NewIterator(projection));
   ret.push_back(ms_iter);
 
   // Grab all layer iterators.
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
     shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(projection));
-
-    // TODO(perf): may be more efficient to _not_ init them, and instead make the
-    // caller do a seek. Otherwise we're always seeking down the left side
-    // of our b-trees to find the first key, even if we're about to seek
-    // somewhere else.
-    RETURN_NOT_OK(row_it->Init());
-    RETURN_NOT_OK(row_it->SeekToStart());
-    VLOG(2) << "adding " << row_it->ToString();
     ret.push_back(row_it);
   }
 
@@ -551,61 +537,6 @@ size_t Tablet::num_layers() const {
   boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
   return layers_.size();
 }
-
-
-////////////////////////////////////////////////////////////
-// Tablet::RowIterator
-////////////////////////////////////////////////////////////
-
-Tablet::RowIterator::RowIterator(const Tablet &tablet,
-                                 const Schema &projection) :
-  tablet_(&tablet),
-  projection_(projection)
-{}
-
-Status Tablet::RowIterator::Init() {
-  CHECK(sub_iters_.empty());
-
-  RETURN_NOT_OK(projection_.GetProjectionFrom(
-                  tablet_->schema(), &projection_mapping_));
-
-  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
-                  projection_, &sub_iters_));
-
-  return Status::OK();
-}
-
-bool Tablet::RowIterator::HasNext() const {
-  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, sub_iters_) {
-    if (iter->HasNext()) return true;
-  }
-
-  return false;
-}
-
-Status Tablet::RowIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
-
-  while (!sub_iters_.empty() &&
-         !sub_iters_.front()->HasNext()) {
-    sub_iters_.pop_front();
-  }
-  if (sub_iters_.empty()) {
-    *nrows = 0;
-    return Status::OK();
-  }
-
-  shared_ptr<RowIteratorInterface> &iter = sub_iters_.front();
-  VLOG(1) << "Copying up to " << (*nrows) << " rows from " << iter->ToString();
-
-
-  RETURN_NOT_OK(iter->CopyNextRows(nrows, dst));
-  if (!iter->HasNext()) {
-    // Iterator exhausted, remove it.
-    sub_iters_.pop_front();
-  }
-  return Status::OK();
-}
-
 
 } // namespace table
 } // namespace kudu

@@ -93,8 +93,10 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
 
   // Now iterate the tablet and make sure the rows show up
-  scoped_ptr<Tablet::RowIterator> iter;
+  scoped_ptr<RowIteratorInterface> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
+  ASSERT_STATUS_OK(iter->Init());
+
   ASSERT_TRUE(iter->HasNext());
 
   scoped_array<uint8_t> buf(new uint8_t[this->schema_.byte_size() * 100]);
@@ -157,8 +159,10 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   }
 
   // Now iterate the tablet and make sure the rows show up.
-  scoped_ptr<Tablet::RowIterator> iter;
+  scoped_ptr<RowIteratorInterface> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
+  ASSERT_STATUS_OK(iter->Init());
+
   scoped_array<uint8_t> buf(new uint8_t[this->schema_.byte_size() * 100]);
   RowBlock block(this->schema_, &buf[0], 100, &this->arena_);
 

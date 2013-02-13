@@ -191,7 +191,8 @@ public:
       tmp_buf.resize(0);
     }
 
-    if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact)) {
+    if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact) ||
+        key.size() == 0) {
       return Status::OK();
     } else {
       return Status::NotFound("no match in memstore");

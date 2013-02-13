@@ -69,8 +69,7 @@ public:
                            const RowDelta &update) = 0;
 
   // Return a new RowIterator for this layer, with the given projection.
-  // NB: the returned iterator is not yet Initted.
-  // TODO: make this consistent with above.
+  // The returned iterator is not Initted.
   virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const = 0;
 
   // Count the number of rows in this layer.

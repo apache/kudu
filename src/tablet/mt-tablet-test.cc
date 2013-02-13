@@ -85,8 +85,9 @@ public:
     RowBlock block(schema_, &buf[0], 1, &tmp_arena);
 
     while (running_insert_count_.count() > 0) {
-      scoped_ptr<Tablet::RowIterator> iter;
+      scoped_ptr<RowIteratorInterface> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+      ASSERT_STATUS_OK(iter->Init());
 
       while (iter->HasNext()) {
         tmp_arena.Reset();
@@ -130,8 +131,9 @@ public:
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
     while (running_insert_count_.count() > 0) {
-      scoped_ptr<Tablet::RowIterator> iter;
+      scoped_ptr<RowIteratorInterface> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+      ASSERT_STATUS_OK(iter->Init());
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         arena_.Reset();
@@ -169,8 +171,9 @@ public:
     while (running_insert_count_.count() > 0) {
       uint64_t sum = 0;
 
-      scoped_ptr<Tablet::RowIterator> iter;
+      scoped_ptr<RowIteratorInterface> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
+      ASSERT_STATUS_OK(iter->Init());
 
       while (iter->HasNext()) {
         arena.Reset();

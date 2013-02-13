@@ -5,8 +5,8 @@
 #include <boost/noncopyable.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <string>
-#include <deque>
 
+#include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "tablet/memstore.h"
@@ -20,12 +20,10 @@ namespace kudu { namespace tablet {
 
 using boost::scoped_ptr;
 using std::string;
-using std::deque;
 using std::tr1::shared_ptr;
 
 class Tablet {
 public:
-  class RowIterator;
   class CompactionFaultHooks;
   class FlushFaultHooks;
 
@@ -63,6 +61,8 @@ public:
   Status UpdateRow(const void *key,
                    const RowDelta &update);
 
+  // Create a new row iterator.
+  // The returned iterator is not initialized.
   template <class SmartPointer>
   Status NewRowIterator(const Schema &projection,
                         SmartPointer *iter) const;
@@ -93,10 +93,13 @@ private:
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
-  // TODO: these are not currently snapshot iterators - the only guarantee is that they
-  // are all captured atomically (eg we don't miss an entire layer or something)
+  // These iterators are not true snapshot iterators, but they are safe against
+  // concurrent modification. They will include all data that was present at the time
+  // of creation, and potentially newer data.
+  //
+  // The returned iterators are not Init()ed
   Status CaptureConsistentIterators(const Schema &projection,
-                                    deque<shared_ptr<RowIteratorInterface> > *iters) const;
+                                    vector<shared_ptr<RowIteratorInterface> > *iters) const;
 
   Status PickLayersToCompact(
     LayerVector *out_layers,
@@ -139,41 +142,6 @@ private:
 };
 
 
-// Iterator over materialized rows in the tablet (across memstore and layers)
-class Tablet::RowIterator : public RowIteratorInterface, boost::noncopyable {
-public:
-  virtual Status Init();
-
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    return Status::NotSupported("TODO: implement me");
-  }
-
-  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst);
-
-  virtual bool HasNext() const;
-
-  string ToString() const {
-    return "tablet iterator";
-  }
-
-  virtual const Schema &schema() const {
-    return projection_;
-  }
-
-private:
-  friend class Tablet;
-
-  RowIterator(const Tablet &tablet,
-              const Schema &projection);
-
-  const Tablet *tablet_;
-  const Schema projection_;
-
-  deque<shared_ptr<RowIteratorInterface> > sub_iters_;
-
-  vector<size_t> projection_mapping_;
-};
-
 // Hooks used in test code to inject faults or other code into interesting
 // parts of the compaction code.
 class Tablet::CompactionFaultHooks {
@@ -203,9 +171,11 @@ template <class SmartPointer>
 inline Status Tablet::NewRowIterator(const Schema &projection,
                                      SmartPointer *iter) const
 {
-  std::auto_ptr<RowIterator> it(new RowIterator(*this, projection));
-  RETURN_NOT_OK(it->Init());
-  iter->reset(it.release());
+  vector<shared_ptr<RowIteratorInterface> > iters;
+  RETURN_NOT_OK(CaptureConsistentIterators(projection, &iters));
+
+  iter->reset(new UnionIterator(iters));
+
   return Status::OK();
 }
 

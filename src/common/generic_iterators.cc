@@ -14,6 +14,10 @@ namespace kudu {
 using std::string;
 using std::tr1::shared_ptr;
 
+////////////////////////////////////////////////////////////
+// Merge iterator
+////////////////////////////////////////////////////////////
+
 // TODO: size by bytes, not # rows
 static const int kMergeRowBuffer = 1000;
 
@@ -186,6 +190,94 @@ string MergeIterator::ToString() const {
   bool first = true;
   BOOST_FOREACH(const shared_ptr<MergeIterState> &iter, iters_) {
     s.append(iter->iter_->ToString());
+    if (!first) {
+      s.append(", ");
+    }
+    first = false;
+  }
+  s.append(")");
+  return s;
+}
+
+
+////////////////////////////////////////////////////////////
+// Union iterator
+////////////////////////////////////////////////////////////
+
+UnionIterator::UnionIterator(const vector<shared_ptr<RowIteratorInterface> > &iters) :
+  initted_(false),
+  iters_(iters.size())
+{
+  CHECK_GT(iters.size(), 0);
+  iters_.assign(iters.begin(), iters.end());
+}
+
+Status UnionIterator::Init() {
+  CHECK(!initted_);
+
+  // Verify schemas match.
+  schema_.reset(new Schema(iters_.front()->schema()));
+  BOOST_FOREACH(shared_ptr<RowIteratorInterface> &iter, iters_) {
+    if (!iter->schema().Equals(*schema_)) {
+      return Status::InvalidArgument(
+        string("Schemas do not match: ") + schema_->ToString()
+        + " vs " + iter->schema().ToString());
+    }
+  }
+
+  BOOST_FOREACH(shared_ptr<RowIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->Init());
+    RETURN_NOT_OK(iter->SeekToStart());
+  }
+  initted_ = true;
+  return Status::OK();
+}
+
+Status UnionIterator::SeekAtOrAfter(const Slice &key, bool *exact) {
+  // it's not clear what SeekAtOrAfter means in this context.
+  // We probably should end up getting rid of this API altogether,
+  // in favor of a more high-level way of specifying the range for a
+  // scan.
+  return Status::NotSupported("TODO: implement me");
+}
+
+bool UnionIterator::HasNext() const {
+  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, iters_) {
+    if (iter->HasNext()) return true;
+  }
+
+  return false;
+}
+
+Status UnionIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
+  CHECK(initted_);
+
+  while (!iters_.empty() &&
+         !iters_.front()->HasNext()) {
+    iters_.pop_front();
+  }
+  if (iters_.empty()) {
+    *nrows = 0;
+    return Status::OK();
+  }
+
+  shared_ptr<RowIteratorInterface> &iter = iters_.front();
+
+  RETURN_NOT_OK(iter->CopyNextRows(nrows, dst));
+  if (!iter->HasNext()) {
+    // Iterator exhausted, remove it.
+    iters_.pop_front();
+  }
+  return Status::OK();
+}
+
+
+string UnionIterator::ToString() const {
+  string s;
+  s.append("Union(");
+  bool first = true;
+  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, iters_) {
+    s.append(iter->ToString());
     if (!first) {
       s.append(", ");
     }
