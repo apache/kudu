@@ -112,7 +112,7 @@ TEST_F(TestLayer, TestLayerUpdate) {
   // equal idx*5 (whereas in the original data, value = idx)
   unordered_set<uint32_t> updated;
   UpdateExistingRows(l.get(), 0.1f, &updated);
-  ASSERT_EQ(updated.size(), l->dms_->Count());
+  ASSERT_EQ(updated.size(), l->delta_tracker_->dms_->Count());
 
   // Try to add an update for a key not in the file (but which falls
   // between two valid keys)
@@ -139,12 +139,12 @@ TEST_F(TestLayer, TestDMSFlush) {
     // which exist. These updates will change the value to
     // equal idx*5 (whereas in the original data, value = idx)
     UpdateExistingRows(l.get(), 0.01f, &updated);
-    ASSERT_EQ(updated.size(), l->dms_->Count());
+    ASSERT_EQ(updated.size(), l->delta_tracker_->dms_->Count());
 
     l->FlushDeltas();
 
     // Check that the Layer's DMS has now been emptied.
-    ASSERT_EQ(0, l->dms_->Count());
+    ASSERT_EQ(0, l->delta_tracker_->dms_->Count());
 
     // Now read back the value column, and verify that the updates
     // are visible.

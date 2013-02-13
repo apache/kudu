@@ -4,7 +4,7 @@ SET(TABLET_SRCS
   tablet.cc tablet-util.cc
   layer-basedata.cc layer.cc
   memstore.cc
-  deltamemstore.cc deltafile.cc
+  deltamemstore.cc deltafile.cc delta_tracker.cc
   rowdelta.cc
 )
 ADD_LIBRARY(tablet ${TABLET_SRCS})

@@ -20,6 +20,7 @@
 #include "common/schema.h"
 #include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/delta_tracker.h"
 #include "tablet/layer-basedata.h"
 #include "util/bloom_filter.h"
 #include "util/memory/arena.h"
@@ -111,6 +112,9 @@ private:
 
 class Layer : public LayerInterface, boost::noncopyable {
 public:
+  static const char *kDeltaPrefix;
+  static const char *kColumnPrefix;
+  static const char *kBloomFileName;
   static const char *kTmpLayerSuffix;
 
   // Open a layer from disk.
@@ -132,7 +136,7 @@ public:
   // "Management" functions
   ////////////////////////////////////////////////////////////
 
-  // Flush all accumulated delta data from the DeltaMemStore to disk.
+  // Flush all accumulated delta data to disk.
   Status FlushDeltas();
 
   // Delete the layer directory.
@@ -195,117 +199,28 @@ private:
     env_(env),
     schema_(schema),
     dir_(layer_dir),
-    next_delta_idx_(0),
     open_(false),
-    dms_(new DeltaMemStore(schema))
+    delta_tracker_(new DeltaTracker(env, schema, layer_dir))
   {}
 
-
   Status OpenBaseCFileReaders();
-  Status OpenDeltaFileReaders();
-
-  Status FlushDMS(const DeltaMemStore &dms,
-                  DeltaFileReader **dfr);
 
   Env *env_;
   const Schema schema_;
   string dir_;
-  uint32_t next_delta_idx_;
 
   bool open_;
 
   // Base data for this layer.
   // This vector contains one entry for each column.
   shared_ptr<LayerBaseData> base_data_;
-
-  // The current delta memstore into which updates should be written.
-  shared_ptr<DeltaMemStore> dms_;
-  vector<shared_ptr<DeltaTrackerInterface> > delta_trackers_;
-
-  // read-write lock protecting dms_ and delta_trackers_.
-  // - Readers and mutators take this lock in shared mode.
-  // - Flushers take this lock in exclusive mode before they modify the
-  //   structure of the layer.
-  //
-  // TODO(perf): convert this to a reader-biased lock to avoid any cacheline
-  // contention between threads.
-  mutable boost::shared_mutex component_lock_;
-
+  shared_ptr<DeltaTracker> delta_tracker_;
 
   // Lock governing this layer's inclusion in a compact/flush. If locked,
   // no other compactor will attempt to include this layer.
   boost::mutex compact_flush_lock_;
 };
 
-////////////////////////////////////////////////////////////
-// DeltaMergingIterator
-////////////////////////////////////////////////////////////
-
-
-// Iterator over materialized and projected rows of a given
-// layer. This is an "early materialization" iterator.
-// TODO: this might get replaced by an operator which takes
-// multiple column iterators and materializes them, but perhaps
-// this can actually be more efficient.
-class DeltaMergingIterator : public RowIteratorInterface, boost::noncopyable {
-public:
-  virtual Status Init();
-
-  // Seek to a given key in the underlying data.
-  // Note that the 'key' must correspond to the key in the
-  // Layer's schema, not the projection schema.
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    CHECK_EQ(key.size(), 0)
-      << "TODO: cant seek the merging iterator at the moment: "
-      << "need to plumb the ordinal indexes back up so deltas "
-      << "can be applied after seek!";
-    return base_iter_->SeekAtOrAfter(key, exact);
-  }
-
-  // Get the next batch of rows from the iterator.
-  // Retrieves up to 'nrows' rows, and writes back the number
-  // of rows actually fetched into the same variable.
-  // Any indirect data (eg strings) are allocated out of
-  // 'dst_arena'
-  Status CopyNextRows(size_t *nrows, RowBlock *dst);
-
-  bool HasNext() const {
-    return base_iter_->HasNext();
-  }
-
-  string ToString() const {
-    return string("delta merging iterator");
-  }
-
-  const Schema &schema() const {
-    return projection_;
-  }
-
-private:
-  friend class Layer;
-
-  // Construct. The base_iter should not be Initted.
-  DeltaMergingIterator(RowIteratorInterface *base_iter,
-                       const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers,
-                       const Schema &src_schema,
-                       const Schema &projection) :
-    base_iter_(base_iter),
-    delta_trackers_(delta_trackers),
-    src_schema_(src_schema),
-    projection_(projection),
-    cur_row_(0)
-  {}
-
-  // Iterator for the key column in the underlying data.
-  scoped_ptr<RowIteratorInterface> base_iter_;
-  vector<shared_ptr<DeltaTrackerInterface> > delta_trackers_;
-
-  const Schema src_schema_;
-  const Schema projection_;
-  vector<size_t> projection_mapping_;
-
-  size_t cur_row_;
-};
 
 } // namespace tablet
 } // namespace kudu
