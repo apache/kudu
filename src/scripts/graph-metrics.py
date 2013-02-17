@@ -15,8 +15,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def parse_data_from(stream, scope):
   data = []
+  scanned = 0
+  prev_time = 0
   for line in stream:
-    if 'metrics: ' not in line:
+    if 'metrics: {' not in line:
       continue
     match = METRICS_LINE.search(line)
     if not match:
@@ -30,6 +32,12 @@ def parse_data_from(stream, scope):
     if data_points['scope'] != scope:
       continue
     del data_points['scope']
+    if 'scan_rate' in data_points:
+      scanned += (data_points['scan_rate'] * (data_points['time'] - prev_time))
+      data_points['scanned'] = scanned
+      del data_points['scan_rate']
+    prev_time = data_points['time']
+
     data.append(data_points)
   return data
 
@@ -41,11 +49,11 @@ def get_keys(raw_data):
   return keys
 
 def main():
-  scope = sys.argv[2]
-  data = parse_data_from(file(sys.argv[1]), scope)
+  scope = sys.argv[1]
+  data = parse_data_from(sys.stdin, scope)
   keys = get_keys(data)
 
-  with file("/tmp/graph.tsv", "w") as f:
+  with sys.stdout as f:
     print >>f, "\t".join(keys)
     for row in data:
       print >>f, "\t".join([str(row.get(k, 0)) for k in keys])
