@@ -156,10 +156,16 @@ public:
   }
 
   void SummerThread(int tid) {
-    Arena arena(1024, 1024); // unused, just scanning ints
+    shared_ptr<TimeSeries> scanned_ts = ts_collector_.GetTimeSeries(
+      "scanned");
 
-    shared_ptr<TimeSeries> scan_rate_ts = ts_collector_.GetTimeSeries(
-      "scan_rate");
+    while (running_insert_count_.count() > 0) {
+      CountSum(scanned_ts);
+    }
+  }
+
+  uint64_t CountSum(const shared_ptr<TimeSeries> &scanned_ts) {
+    Arena arena(1024, 1024); // unused, just scanning ints
 
     // Scan a projection with only an int column.
     // This is provided by both harnesses.
@@ -173,38 +179,40 @@ public:
     RowBlock block(projection, reinterpret_cast<uint8_t *>(&buf[0]),
                    kBufInts, &arena_);
 
-    WallTime last_metrics_report = WallTime_Now();
     uint64_t count_since_report = 0;
 
-    while (running_insert_count_.count() > 0) {
-      uint64_t sum = 0;
+    uint64_t sum = 0;
 
-      scoped_ptr<RowIteratorInterface> iter;
-      ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
-      ASSERT_STATUS_OK(iter->Init());
+    scoped_ptr<RowIteratorInterface> iter;
+    CHECK_OK(tablet_->NewRowIterator(projection, &iter));
+    CHECK_OK(iter->Init());
 
-      while (iter->HasNext()) {
-        arena.Reset();
-        size_t n = kBufInts;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
+    while (iter->HasNext()) {
+      arena.Reset();
+      size_t n = kBufInts;
+      CHECK_OK(iter->CopyNextRows(&n, &block));
 
-        for (size_t j = 0; j < n; j++) {
-          sum += buf[j];
+      for (size_t j = 0; j < n; j++) {
+        sum += buf[j];
+      }
+      count_since_report += n;
+
+      // Report metrics if enough time has passed
+      if (count_since_report > 100) {
+        if (scanned_ts.get()) {
+          scanned_ts->AddValue(count_since_report);
         }
-        count_since_report += n;
-
-        // Report metrics if enough time has passed
-        WallTime elapsed = WallTime_Now() - last_metrics_report;
-        if (elapsed > 0.25) {
-          double rows_per_sec = static_cast<double>(count_since_report) / elapsed;
-          scan_rate_ts->SetValue(rows_per_sec);
-          last_metrics_report = WallTime_Now();
-          count_since_report = 0;
-        }
+        count_since_report = 0;
       }
     }
-    scan_rate_ts->SetValue(0);
+
+    if (scanned_ts.get()) {
+      scanned_ts->AddValue(count_since_report);
+    }
+
+    return sum;
   }
+  
 
 
   void FlushThread(int tid) {
@@ -290,6 +298,10 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);
   StartThreads(FLAGS_num_updater_threads, &TestFixture::UpdateThread);
   this->JoinThreads();
+  LOG_TIMING(INFO, "Summing int32 column") {
+    uint64_t sum = this->CountSum(shared_ptr<TimeSeries>());
+    LOG(INFO) << "Sum = " << sum;
+  }
   this->VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
 }
 
