@@ -93,8 +93,9 @@ set(LIBS ${LIBS} -lrt)
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
 set(Boost_NO_BOOST_CMAKE ON)
 
-### Always static link
-set(Boost_USE_STATIC_LIBS ON)
+if (${KUDU_STATIC_LINK})
+  set(Boost_USE_STATIC_LIBS ON)
+endif()
 
 find_package(Boost COMPONENTS thread system REQUIRED)
 include_directories( ${Boost_INCLUDE_DIR} )
@@ -103,22 +104,30 @@ set(LIBS ${LIBS} ${Boost_LIBRARIES})
 ## GLog
 find_package(GLog REQUIRED)
 include_directories(${GLOG_INCLUDE_DIR})
-set(LIBS ${LIBS} ${GLOG_STATIC_LIB})
+if (${KUDU_STATIC_LINK})
+  set(LIBS ${LIBS} ${GLOG_STATIC_LIB})
+else()
+  set(LIBS ${LIBS} ${GLOG_LIBS}/libglog.so)
+endif()
 
 ## GFlags
 find_package(GFlags REQUIRED)
 INCLUDE_DIRECTORIES(${GFLAGS_INCLUDE_DIR})
-add_library(gflags STATIC IMPORTED)
-set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
+if (${KUDU_STATIC_LINK})
+  add_library(gflags STATIC IMPORTED)
+  set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
+else()
+  add_library(gflags SHARED IMPORTED)
+  set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_LIBS}/libgflags.so")
+endif()
 SET(LIBS ${LIBS} gflags)
-
 
 ## GTest
 find_package(GTest REQUIRED)
 include_directories(${GTEST_INCLUDE_DIR})
-set(LIBS ${LIBS} ${GTEST_LIBRARIES})
 add_library(gtest STATIC IMPORTED)
 set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
+set(LIBS ${LIBS} ${GTEST_LIBRARIES})
 
 ## Protobuf
 SET(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
