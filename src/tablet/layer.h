@@ -209,6 +209,18 @@ private:
 };
 
 
+
+// Layer which is used during the middle of a flush. This layer type is constructed
+// after all of the keys from the memstore have been written to disk, but before
+// the rest of the columns have been written.
+//
+// Given that the keys have been flushed, there are static row indexes for the
+// keys in this layer, and thus updates use a DeltaTracker the same as a normal
+// (already-flushed) Layer. However, given that not all of the columns have been
+// flushed, data is still _read_ from the frozen MemStore, with updates applied
+// from the DeltaTracker.
+//
+// See Tablet::Flush() for a little more detail on how this is used.
 class FlushInProgressLayer : public LayerInterface, boost::noncopyable {
 public:
   static Status Open(Env *env, const Schema &schema, const string &dir,
@@ -233,6 +245,7 @@ public:
 
   Status Delete();
 
+  // A flush-in-progress layer should never be selected for compaction.
   boost::mutex *compact_flush_lock() {
     return &always_locked_;
   }
@@ -260,6 +273,21 @@ private:
 };
 
 
+// An in-progress layer for the output of a compaction. While several files are
+// being compacted together, they are replaced in the tablet by a single
+// CompactionInProgressLayer instance which forwards its calls to the input layers.
+//
+// Concurrent access in a compaction is somewhat tricky because the indices of the
+// rows are changing, since multiple input files are being merged, and deletions
+// may be processed. This layer type is constructed after the input keys have
+// been merged, but before the input columns have been merged.
+//
+// This layer implementation has the following properties:
+//
+// - Reads access the union of the input layers
+// - Updates are duplicated:
+//   ... to the appropriate input layer, so that reads _during_ compaction reflect updates
+//   ... to the output layer, so that reads _after_ compaction reflect updates
 class CompactionInProgressLayer : public LayerInterface, boost::noncopyable {
 public:
 
@@ -285,6 +313,7 @@ public:
 
   Status Delete();
 
+  // A compaction-in-progress layer should never be selected for compaction.
   boost::mutex *compact_flush_lock() {
     return &always_locked_;
   }

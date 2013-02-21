@@ -12,8 +12,18 @@
 
 #include "util/faststring.h"
 
+// The SSE-based encoding is not yet working. Don't define this!
+#undef KEY_ENCODER_USE_SSE
+
 namespace kudu {
 
+// Utility class for generating a lexicographically comparable string from a
+// composite key. This uses the following encoding:
+//
+// strings:
+//   - Null terminate with "\x00\x00" (unless this is the last column in the key)
+//   - escape '\0' with "\x00\x01" so that shorter strings compare before longer.
+// unsigned ints: encode as big-endian so that smaller ints compare before larger
 class KeyEncoder : boost::noncopyable {
 public:
   KeyEncoder(faststring *dst) : dst_(dst) {}
@@ -26,7 +36,9 @@ public:
   }
 
   void EncodeBytes(const Slice &s, bool is_last) {
-#ifdef USE_SSE
+#ifdef KEY_ENCODER_USE_SSE
+    // Work-in-progress code for using SSE to do the string escaping.
+    // This doesn't work correctly yet, and this hasn't been a serious hot spot.
     char buf[16];
     const uint8_t *p = s.data();
     size_t rem = s.size();

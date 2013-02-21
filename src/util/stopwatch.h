@@ -12,11 +12,13 @@
 namespace kudu {
 
 // Macro for logging timing of a block. Usage:
-//   LOG_TIMING(INFO, "doing some task")
+//   LOG_TIMING(INFO, "doing some task") {
+//     ... some task which takes some time
+//   }
 // yields a log like:
 // I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task: real 3.729s user 3.570s sys 0.150s
 #define LOG_TIMING(severity, description) \
-  for (LogTiming _l(__FILE__, __LINE__, google::severity, description); \
+  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description); \
        !_l.has_printed();                                               \
        _l.Print())
 
@@ -26,6 +28,7 @@ class Stopwatch;
 
 typedef uint64_t nanosecond_type;
 
+// Structure which contains an elapsed amount of wall/user/sys time.
 struct CpuTimes
 {
   nanosecond_type wall;
@@ -34,6 +37,7 @@ struct CpuTimes
 
   void clear() { wall = user = system = 0LL; }
 
+  // Return a string formatted similar to the output of the "time" shell command.
   std::string ToString() const {
     return StringPrintf(
       "real %.3fs\tuser %.3fs\tsys %.3fs",
@@ -41,19 +45,33 @@ struct CpuTimes
   }
 };
 
+// A Stopwatch is a convenient way of timing a given operation.
+//
+// Wall clock time is based on a monotonic timer, so can be reliably used for
+// determining durations.
+// CPU time is based on the current thread's usage (not the whole process).
+//
+// The implementation relies on several syscalls, so should not be used for
+// hot paths, but is useful for timing anything on the granularity of seconds
+// or more.
 class Stopwatch {
 public:
+
+  // Construct a new stopwatch. The stopwatch is initially stopped.
   Stopwatch() :
       stopped_(true)
   {
     times_.clear();
   }
 
+  // Start counting. If the stopwatch is already counting, then resets the
+  // start point at the current time.
   void start() {
     stopped_ = false;
     GetTimes(&times_);
   }
 
+  // Stop counting. If the stopwatch is already stopped, has no effect.
   void stop() {
     if (stopped_) return;
     stopped_ = true;
@@ -65,6 +83,10 @@ public:
     times_.system = current.system - times_.system;
   }
 
+  // Return the elapsed amount of time. If the stopwatch is running, then returns
+  // the amount of time since it was started. If it is stopped, returns the amount
+  // of time between the most recent start/stop pair. If the stopwatch has never been
+  // started, the elapsed time is considered to be zero.
   CpuTimes elapsed() const {
     if (stopped_) return times_;
 
@@ -76,6 +98,16 @@ public:
     return current;
   }
 
+  // Resume a stopped stopwatch, such that the elapsed time continues to grow from
+  // the point where it was last stopped.
+  // For example:
+  //   Stopwatch s;
+  //   s.start();
+  //   sleep(1); // elapsed() is now ~1sec
+  //   s.stop();
+  //   sleep(1);
+  //   s.resume();
+  //   sleep(1); // elapsed() is now ~2sec
   void resume() {
     if (!stopped_) return;
 
@@ -109,6 +141,9 @@ private:
 };
 
 
+namespace sw_internal {
+
+// Internal class used by the LOG_TIMING macro.
 class LogTiming {
 public:
   LogTiming(const char *file, int line, google::LogSeverity severity,
@@ -142,6 +177,7 @@ private:
   const std::string description_;
   bool has_printed_;
 };
+}
 
 
 }

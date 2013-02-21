@@ -6,6 +6,7 @@
 
 namespace kudu {
 
+// Wrapper around pthread spinlocks to satisfy the boost lock interface.
 class PThreadSpinLock {
 public:
   PThreadSpinLock() {

@@ -13,6 +13,10 @@ namespace kudu {
 class Arena;
 class RowBlock;
 
+// Interface which various stores of data implement (eg tablet layers, memstores, etc).
+//
+// An iterator has an associated schema and can produce rows into a buffer which fits that
+// schema.
 class RowIteratorInterface {
 public:
   virtual Status Init() = 0;
@@ -36,10 +40,13 @@ public:
   // arena, if non-null.
   virtual Status CopyNextRows(size_t *nrows, RowBlock *dst) = 0;
 
+  // Return true if the next call to CopyNextRows will return at least one row.
   virtual bool HasNext() const = 0;
 
+  // Return a string representation of this iterator, suitable for debug output.
   virtual string ToString() const = 0;
 
+  // Return the schema for the rows which this iterator produces.
   virtual const Schema &schema() const = 0;
 
   virtual ~RowIteratorInterface() {}

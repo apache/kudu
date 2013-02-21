@@ -1,4 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
+//
+// Utility functions for dealing with a byte array as if it were a bitmap.
 #ifndef KUDU_UTIL_BITMAP_H
 #define KUDU_UTIL_BITMAP_H
 
@@ -6,22 +8,28 @@
 
 namespace kudu {
 
+// Return the number of bytes necessary to store the given number of bits.
 inline size_t BitmapSize(size_t num_bits) {
   return (num_bits + 7) / 8;
 }
 
+// Set the given bit.
 inline void BitmapSet(uint8_t *bitmap, size_t idx) {
   bitmap[idx >> 3] |= 1 << (idx & 7);
 }
 
+// Clear the given bit.
 inline void BitmapClear(uint8_t *bitmap, size_t idx) {
   bitmap[idx >> 3] &= ~(1 << (idx & 7));
 }
 
+// Test/get the given bit.
 inline bool BitmapTest(const uint8_t *bitmap, size_t idx) {
   return bitmap[idx >> 3] & (1 << (idx & 7));
 }
 
+// Merge the two bitmaps using bitwise or. Both bitmaps should have at least
+// n_bits valid bits.
 inline void BitmapMergeOr(uint8_t *dst, const uint8_t *src, size_t n_bits) {
   size_t n_bytes = BitmapSize(n_bits);
   for (size_t i = 0; i < n_bytes; i++) {

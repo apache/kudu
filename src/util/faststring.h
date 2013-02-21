@@ -12,6 +12,9 @@ namespace kudu {
 
 using boost::scoped_array;
 
+// A faststring is similar to a std::string, except that it is faster for many
+// common use cases (in particular, resize() will fill with uninitialized data
+// instead of memsetting to \0)
 class faststring : public boost::noncopyable {
 public:
   faststring() :
@@ -20,16 +23,25 @@ public:
     capacity_(kInitialCapacity) {
   }
 
+  // Construct a string with the given capacity, in bytes.
   explicit faststring(size_t capacity) :
     data_(new uint8_t[capacity]),
     len_(0),
     capacity_(capacity)
   {}
 
+  // Reset the valid length of the string to 0.
+  //
+  // This does not free up any memory. The capacity of the string remains unchanged.
   void clear() {
     resize(0);
   }
 
+  // Resize the string to the given length.
+  // If the new length is larger than the old length, the capacity is expanded as necessary.
+  //
+  // NOTE: in contrast to std::string's implementation, Any newly "exposed" bytes of data are
+  // not cleared.
   void resize(size_t newsize) {
     if (newsize > capacity_) {
       reserve(newsize);
@@ -37,6 +49,8 @@ public:
     len_ = newsize;
   }
 
+  // Reserve space for the given total amount of data. If the current capacity is already
+  // larger than the newly requested capacity, this is a no-op (i.e. it does not ever free memory)
   void reserve(size_t newcapacity) {
     if (PREDICT_TRUE(newcapacity <= capacity_)) return;
 
@@ -46,6 +60,7 @@ public:
     data_.swap(newdata);
   }
 
+  // Append the given data to the string, resizing capcaity as necessary.
   void append(const void *src_v, size_t count) {
     const uint8_t *src = reinterpret_cast<const uint8_t *>(src_v);
     if (PREDICT_FALSE(len_ + count > capacity_)) {
@@ -77,58 +92,76 @@ public:
     len_ += count;
   }
 
+  // Append the given string to this string.
   void append(const std::string &str) {
     append(str.data(), str.size());
   }
 
+  // Append the given character to this string.
   void push_back(const char byte) {
     reserve(len_ + 1);
     data_[len_] = byte;
     len_++;
   }
 
+  // Return the valid length of this string.
   size_t length() const {
     return len_;
   }
 
+  // Return the valid length of this string (identical to length())
   size_t size() const {
     return len_;
   }
 
+  // Return the allocated capacity of this string.
   size_t capacity() const {
     return capacity_;
   }
 
+  // Return a pointer to the data in this string. Note that this pointer
+  // may be invalidated by any later non-const operation.
   const uint8_t *data() const {
     return &data_[0];
   }
 
+  // Return a pointer to the data in this string. Note that this pointer
+  // may be invalidated by any later non-const operation.
   uint8_t *data() {
     return &data_[0];
   }
 
+  // Return the given element of this string. Note that this does not perform
+  // any bounds checking.
   const uint8_t &at(size_t i) const {
     return data_[i];
   }
 
+  // Return the given element of this string. Note that this does not perform
+  // any bounds checking.
   const uint8_t &operator[](size_t i) const {
     return data_[i];
   }
 
+  // Return the given element of this string. Note that this does not perform
+  // any bounds checking.
   uint8_t &operator[](size_t i) {
     return data_[i];
   }
 
+  // Reset the contents of this string by copying 'len' bytes from 'src'.
   void assign_copy(const uint8_t *src, size_t len) {
     resize(len);
     memcpy(data(), src, len);
   }
 
+  // Reset the contents of this string by copying from the given std::string.
   void assign_copy(const std::string &str) {
     assign_copy(reinterpret_cast<const uint8_t *>(str.c_str()),
                 str.size());
   }
 
+  // Return a copy of this string as a std::string.
   std::string ToString() const {
     return std::string(reinterpret_cast<const char *>(data()),
                        len_);

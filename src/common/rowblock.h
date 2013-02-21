@@ -11,6 +11,8 @@
 
 namespace kudu {
 
+// Wrapper around a buffer, which keeps the buffer's size, associated arena,
+// and schema. Provides convenience accessors for indexing by row, column, etc.
 class RowBlock : boost::noncopyable {
 public:
   RowBlock(const Schema &schema,
@@ -51,7 +53,6 @@ private:
   size_t nrows_;
   Arena *arena_;
 };
-
 
 
 class ScopedRowBlock : public RowBlock {

@@ -44,31 +44,41 @@ public:
     h_2_ = (uint32)(h >> 32);
   }
 
+  const Slice &key() const { return key_; }
+
+  // The initial hash value. See MixHash() for usage example.
   uint32_t initial_hash() const {
     return h_1_;
   }
 
-  const Slice &key() const { return key_; }
-
   // Mix the given hash function with the second calculated hash
   // value. A sequence of independent hashes can be calculated
-  // by repeatedly calling
+  // by repeatedly calling MixHash() on its previous result.
   uint32_t MixHash(uint32_t h) const {
     return h + h_2_;
   }
 
 private:
   Slice key_;
+
+  // The two hashes.
   uint32_t h_1_;
   uint32_t h_2_;
 };
 
+// Sizing parameters for the constructor to BloomFilterBuilder.
+// This is simply to provide a nicer API than a bunch of overloaded
+// constructors.
 class BloomFilterSizing {
 public:
   // Size the bloom filter by a fixed size and false positive rate.
   //
   // Picks the number of entries to achieve the above.
   static BloomFilterSizing BySizeAndFPRate(size_t n_bytes, double fp_rate);
+
+  // Size the bloom filer by an expected count and false positive rate.
+  //
+  // Picks the number of bytes to achieve the above.
   static BloomFilterSizing ByCountAndFPRate(size_t expected_count, double fp_rate);
 
   size_t n_bytes() const { return n_bytes_; }
@@ -82,7 +92,6 @@ private:
 
   size_t n_bytes_;
   size_t expected_count_;
-  
 };
 
 
@@ -158,9 +167,15 @@ private:
   size_t n_hashes_;
 };
 
+
+////////////////////////////////////////////////////////////
+// Inline implementations
+////////////////////////////////////////////////////////////
+
 inline uint32_t BloomFilter::PickBit(uint32_t hash, size_t n_bits) {
   switch (n_bits) {
-
+    // Fast path for some common powers of two, where we can use bitwise
+    // math instead of the much slower '%' operator
     case 65536 * 8:
     case 16384 * 8:
     case 32768 * 8:

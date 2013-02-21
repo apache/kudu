@@ -1,8 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
-//
-// This is a C++ implementation of the Java CountDownLatch
-// class.
-// See http://docs.oracle.com/javase/6/docs/api/java/util/concurrent/CountDownLatch.html
+// All rights reserved.
 #ifndef KUDU_UTIL_COUNTDOWN_LATCH_H
 #define KUDU_UTIL_COUNTDOWN_LATCH_H
 
@@ -11,6 +8,9 @@
 
 namespace kudu {
 
+// This is a C++ implementation of the Java CountDownLatch
+// class.
+// See http://docs.oracle.com/javase/6/docs/api/java/util/concurrent/CountDownLatch.html
 class CountDownLatch : boost::noncopyable {
 public:
   // Initialize the latch with the given initial count.
@@ -66,6 +66,8 @@ public:
     return true;
   }
 
+  // Reset the latch with the given count. This is equivalent to reconstructing
+  // the latch.
   void Reset(uint64_t count) {
     boost::unique_lock<boost::mutex> lock(lock_);
     count_ = count;

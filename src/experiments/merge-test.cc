@@ -16,8 +16,6 @@ DEFINE_int32(num_iters, 5, "Number of times to run merge");
 
 using std::vector;
 using std::string;
-using kudu::LogTiming;
-
 
 typedef string MergeType;
 
