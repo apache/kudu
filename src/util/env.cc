@@ -19,19 +19,7 @@ RandomAccessFile::~RandomAccessFile() {
 WritableFile::~WritableFile() {
 }
 
-Logger::~Logger() {
-}
-
 FileLock::~FileLock() {
-}
-
-void Log(Logger* info_log, const char* format, ...) {
-  if (info_log != NULL) {
-    va_list ap;
-    va_start(ap, format);
-    info_log->Logv(format, ap);
-    va_end(ap);
-  }
 }
 
 static Status DoWriteStringToFile(Env* env, const Slice& data,

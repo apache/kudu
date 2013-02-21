@@ -19,9 +19,6 @@ SET(GUTIL_SRCS ${GUTIL_SRCS} ${PROTO_SRCS})
 ADD_LIBRARY(gutil
   ${GUTIL_SRCS}
 ./bits.cc
-./file_util.cc
-./atomic/locking.cc
-./atomic/x86-gcc.cc
 ./stringprintf.cc
 ./strings/memutil.cc
 ./strings/charset.cc
@@ -37,11 +34,8 @@ ADD_LIBRARY(gutil
 ./strings/strcat.cc
 ./strings/serialize.cc
 ./mathlimits.cc
-./demangle.cc
-./file.cc
 ./int128.cc
 ./strtoint.cc
-./random.cc
 ./once.cc
 ./atomicops-internals-x86.cc
 ./spinlock_wait.cc
@@ -52,7 +46,3 @@ ADD_LIBRARY(gutil
 )
 
 SET(GUTIL_LIBS gutil)
-
-# Disabled: relies on some stuff from base/
-#ADD_EXECUTABLE(atomic_test ./atomic/atomic_test.cc)
-#TARGET_LINK_LIBRARIES(atomic_test gutil)

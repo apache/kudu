@@ -14,7 +14,6 @@
 #include <string.h>
 #include <string>
 #include "slice.h"
-#include "port/port.h"
 #include "faststring.h"
 
 namespace kudu {

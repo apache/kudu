@@ -23,8 +23,7 @@
 
 #include <memory>
 #include <new>
-#include <vector>
-using std::vector;
+#include <tr1/memory>
 
 #include <boost/thread/mutex.hpp>
 
@@ -33,13 +32,13 @@ using std::vector;
 #include "gutil/macros.h"
 #include "gutil/scoped_ptr.h"
 #include "gutil/strings/stringpiece.h"
-#include "gutil/linked_ptr.h"
 #include "util/memory/memory.h"
 #include "util/slice.h"
 
 using std::allocator;
 
 namespace kudu {
+using std::tr1::shared_ptr;
 
 template<bool THREADSAFE> struct ArenaTraits;
 
@@ -148,7 +147,7 @@ class ArenaBase {
   void AddComponent(Component *component);
 
   BufferAllocator* const buffer_allocator_;
-  vector<linked_ptr<Component> > arena_;
+  vector<shared_ptr<Component> > arena_;
   Component* current_;
   const size_t max_buffer_size_;
   size_t arena_footprint_;

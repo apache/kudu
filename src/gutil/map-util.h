@@ -210,33 +210,6 @@ FindPtrOrNull(Collection& collection,  // NOLINT
   return it->second;
 }
 
-// Finds the pointer value associated with the given key in a map whose values
-// are linked_ptrs. Returns NULL if key is not found.
-template <class Collection>
-typename Collection::value_type::second_type::element_type*
-FindLinkedPtrOrNull(const Collection& collection,
-                    const typename Collection::value_type::first_type& key) {
-  typename Collection::const_iterator it = collection.find(key);
-  if (it == collection.end()) {
-    return 0;
-  }
-  // Since linked_ptr::get() is a const member returning a non const,
-  // we do not need a version of this function taking a non const collection.
-  return it->second.get();
-}
-
-// Same as above, but dies if the key is not found.
-template <class Collection>
-typename Collection::value_type::second_type::element_type&
-FindLinkedPtrOrDie(const Collection& collection,
-                   const typename Collection::value_type::first_type& key) {
-  typename Collection::const_iterator it = collection.find(key);
-  CHECK(it != collection.end()) <<  "key not found: " << key;
-  // Since linked_ptr::operator*() is a const member returning a non const,
-  // we do not need a version of this function taking a non const collection.
-  return *it->second;
-}
-
 // Finds the value associated with the given key and copies it to *value (if not
 // NULL). Returns false if the key was not found, true otherwise.
 template <class Collection, class Key, class Value>
@@ -512,56 +485,12 @@ LookupOrInsertNew(Collection* const collection,
 
 // Lookup of linked/shared pointers is used in two scenarios:
 //
-// Use LookupOrInsertNewLinkedPtr if the container owns the elements.
-// In this case it is fine working with the raw pointer as long as it is
-// guaranteed that no other thread can delete/update an accessed element.
-// A mutex will need to lock the container operation as well as the use
-// of the returned elements. Finding an element may be performed using
-// FindLinkedPtr*().
-//
 // Use LookupOrInsertSharedPtr if the container does not own the elements
 // for their whole lifetime. This is typically the case when a reader allows
 // parallel updates to the container. In this case a Mutex only needs to lock
 // container operations, but all element operations must be performed on the
 // shared pointer. Finding an element must be performed using FindPtr*() and
 // cannot be done with FindLinkedPtr*() even though it compiles.
-
-// Lookup a key in a map or hash_map whose values are linked_ptrs.  If it is
-// missing, set collection[key].reset(new Value::element_type) and return that.
-// Value::element_type must be default constructable.
-template <class Collection>
-typename Collection::value_type::second_type::element_type*
-LookupOrInsertNewLinkedPtr(
-    Collection* const collection,
-    const typename Collection::value_type::first_type& key) {
-  typedef typename Collection::value_type::second_type Value;
-  pair<typename Collection::iterator, bool> ret =
-      collection->insert(typename Collection::value_type(key, Value()));
-  if (ret.second) {
-    ret.first->second.reset(new typename Value::element_type);
-  }
-  return ret.first->second.get();
-}
-
-// A variant of LookupOrInsertNewLinkedPtr where the value is constructed using
-// a single-parameter constructor.  Note: the constructor argument is computed
-// even if it will not be used, so only values cheap to compute should be passed
-// here.  On the other hand it does not matter how expensive the construction of
-// the actual stored value is, as that only occurs if necessary.
-template <class Collection, class Arg>
-typename Collection::value_type::second_type::element_type*
-LookupOrInsertNewLinkedPtr(
-    Collection* const collection,
-    const typename Collection::value_type::first_type& key,
-    const Arg& arg) {
-  typedef typename Collection::value_type::second_type Value;
-  pair<typename Collection::iterator, bool> ret =
-      collection->insert(typename Collection::value_type(key, Value()));
-  if (ret.second) {
-    ret.first->second.reset(new typename Value::element_type(arg));
-  }
-  return ret.first->second.get();
-}
 
 // Lookup a key in a map or hash_map whose values are shared_ptrs.  If it is
 // missing, set collection[key].reset(new Value::element_type). Unlike

@@ -22,7 +22,6 @@
 namespace kudu {
 
 class FileLock;
-class Logger;
 class RandomAccessFile;
 class SequentialFile;
 class Slice;
@@ -140,9 +139,6 @@ class Env {
   // same directory.
   virtual Status GetTestDirectory(std::string* path) = 0;
 
-  // Create and return a log file for storing informational messages.
-  virtual Status NewLogger(const std::string& fname, Logger** result) = 0;
-
   // Returns the number of micro-seconds since some fixed point in time. Only
   // useful for computing deltas of time.
   virtual uint64_t NowMicros() = 0;
@@ -220,21 +216,6 @@ class WritableFile {
   void operator=(const WritableFile&);
 };
 
-// An interface for writing log messages.
-class Logger {
- public:
-  Logger() { }
-  virtual ~Logger();
-
-  // Write an entry to the log file with the specified format.
-  virtual void Logv(const char* format, va_list ap) = 0;
-
- private:
-  // No copying allowed
-  Logger(const Logger&);
-  void operator=(const Logger&);
-};
-
 
 // Identifies a locked file.
 class FileLock {
@@ -246,13 +227,6 @@ class FileLock {
   FileLock(const FileLock&);
   void operator=(const FileLock&);
 };
-
-// Log the specified data to *info_log if info_log is non-NULL.
-extern void Log(Logger* info_log, const char* format, ...)
-#   if defined(__GNUC__) || defined(__clang__)
-    __attribute__((__format__ (__printf__, 2, 3)))
-#   endif
-    ;
 
 // A utility routine: write "data" to the named file.
 extern Status WriteStringToFile(Env* env, const Slice& data,
@@ -313,9 +287,6 @@ class EnvWrapper : public Env {
   }
   virtual Status GetTestDirectory(std::string* path) {
     return target_->GetTestDirectory(path);
-  }
-  virtual Status NewLogger(const std::string& fname, Logger** result) {
-    return target_->NewLogger(fname, result);
   }
   uint64_t NowMicros() {
     return target_->NowMicros();

@@ -102,7 +102,7 @@ typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
 template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
   current_ = component;
-  arena_.push_back(linked_ptr<Component>(current_));
+  arena_.push_back(shared_ptr<Component>(current_));
   arena_footprint_ += current_->size();
 }
 
@@ -110,7 +110,7 @@ template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::Reset() {
   boost::lock_guard<boost::mutex> lock(component_lock_);
 
-  linked_ptr<Component> last = arena_.back();
+  shared_ptr<Component> last = arena_.back();
   if (arena_.size() > 1) {
     arena_.clear();
     arena_.push_back(last);

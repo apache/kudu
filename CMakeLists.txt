@@ -155,9 +155,6 @@ SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} gtest)
 add_subdirectory(src/gutil)
 set(LIBS ${LIBS} ${GUTIL_LIBS})
 
-add_subdirectory(src/port)
-set(LIBS ${LIBS} ${KUDU_PORT_LIBS})
-
 add_subdirectory(src/util)
 set(LIBS ${LIBS} ${KUDU_UTIL_LIBS})
 

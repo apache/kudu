@@ -1,9 +1,8 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#include <boost/scoped_ptr.hpp>
+#include <boost/shared_ptr.hpp>
 #include <tr1/unordered_map>
 
-#include "gutil/linked_ptr.h"
 #include "gutil/singleton.h"
 
 #include "types.h"
@@ -11,7 +10,7 @@
 namespace kudu {
 
 using std::tr1::unordered_map;
-using boost::scoped_ptr;
+using boost::shared_ptr;
 
 template<typename TypeTraitsClass>
 TypeInfo::TypeInfo(TypeTraitsClass t) :
@@ -44,11 +43,11 @@ private:
 
   template<DataType type> void AddMapping() {
     TypeTraits<type> traits;
-    mapping_.insert(make_pair(type, make_linked_ptr(new TypeInfo(traits))));
+    mapping_.insert(make_pair(type, shared_ptr<TypeInfo>(new TypeInfo(traits))));
   }
 
   unordered_map<DataType,
-                linked_ptr<const TypeInfo>,
+                shared_ptr<const TypeInfo>,
                 std::tr1::hash<size_t> > mapping_;
 
   friend class Singleton<TypeInfoResolver>;

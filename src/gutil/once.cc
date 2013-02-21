@@ -2,7 +2,6 @@
 
 #include <glog/logging.h>
 #include "gutil/logging-inl.h"
-#include "gutil/mutex.h"
 #include "gutil/once.h"
 #include "gutil/dynamic_annotations.h"
 #include "gutil/spinlock_wait.h"
