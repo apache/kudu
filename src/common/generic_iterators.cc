@@ -108,7 +108,6 @@ Status MergeIterator::Init() {
 
   BOOST_FOREACH(shared_ptr<MergeIterState> &state, iters_) {
     RETURN_NOT_OK(state->iter_->Init());
-    RETURN_NOT_OK(state->iter_->SeekToStart());
     RETURN_NOT_OK(state->PullNextBlock());
   }
 
@@ -224,7 +223,6 @@ Status UnionIterator::Init() {
         string("Schemas do not match: ") + schema_->ToString()
         + " vs " + iter->schema().ToString());
     }
-    RETURN_NOT_OK(iter->SeekToStart());
   }
   initted_ = true;
   return Status::OK();

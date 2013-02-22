@@ -21,16 +21,6 @@ class RowIteratorInterface {
 public:
   virtual Status Init() = 0;
 
-  // Seek to a given key in the underlying data.
-  // Note that the 'key' must correspond to the key in the
-  // Layer's schema, not the projection schema.
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) = 0;
-
-  Status SeekToStart() {
-    bool exact_unused;
-    return SeekAtOrAfter(Slice(""), &exact_unused);
-  }
-
   // Get the next batch of rows from the iterator.
   //
   // Retrieves up to *nrows rows into the given row block.

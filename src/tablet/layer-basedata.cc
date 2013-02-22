@@ -221,8 +221,21 @@ Status CFileBaseData::RowIterator::Init() {
   }
 
   initted_ = true;
+
+  // TODO: later, Init() will probably take some kind of predicate,
+  // which would tell us where to seek to.
+  return SeekToOrdinal(0);
+}
+
+Status CFileBaseData::RowIterator::SeekToOrdinal(uint32_t ord_idx) {
+  DCHECK(initted_);
+  BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+    RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
+  }
+
   return Status::OK();
 }
+
 
 Status CFileBaseData::RowIterator::CopyNextRows(
   size_t *nrows, RowBlock *dst)

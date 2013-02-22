@@ -75,29 +75,6 @@ class CFileBaseData::RowIterator : public RowIteratorInterface, boost::noncopyab
 public:
   virtual Status Init();
 
-  // Seek to a given key in the underlying data.
-  // Note that the 'key' must correspond to the key in the
-  // Layer's schema, not the projection schema.
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    // Allow the special empty key to seek to the start of the iterator.
-    if (key.size() == 0) {
-      return SeekToOrdinal(0);
-    }
-
-    // Otherwise, must seek to a valid key.
-    CHECK_GE(key.size(), base_data_->schema().key_byte_size());
-    return Status::NotSupported("TODO implement me");
-  }
-
-  Status SeekToOrdinal(uint32_t ord_idx) {
-    DCHECK(initted_);
-    BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
-      RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
-    }
-
-    return Status::OK();
-  }
-
   // Get the next batch of rows from the iterator.
   // Retrieves up to 'nrows' rows, and writes back the number
   // of rows actually fetched into the same variable.
@@ -127,6 +104,8 @@ private:
     projection_(projection),
     initted_(false)
   {}
+
+  Status SeekToOrdinal(uint32_t ord_idx);
 
   const shared_ptr<CFileBaseData const> base_data_;
   const Schema projection_;

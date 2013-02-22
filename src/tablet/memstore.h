@@ -180,7 +180,7 @@ public:
     return Status::OK();
   }
 
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
+  Status SeekAtOrAfter(const Slice &key, bool *exact) {
     CHECK(!projection_mapping_.empty()) << "not initted";
 
     if (key.size() > 0) {
@@ -237,10 +237,6 @@ public:
     return iter_->IsValid();
   }
 
-  void SeekToStart() {
-    iter_->SeekToStart();
-  }
-
   const Slice GetCurrentRow() const {
     Slice dummy, ret;
     iter_->GetCurrentEntry(&dummy, &ret);
@@ -273,7 +269,7 @@ private:
     // is pointed at the beginning of the dataset. This causes a redundant
     // seek. Could make this lazy instead, or change the semantics so that
     // a seek is required (probably the latter)
-    SeekToStart();
+    iter_->SeekToStart();
   }
 
 

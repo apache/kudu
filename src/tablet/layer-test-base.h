@@ -119,7 +119,6 @@ protected:
                     1);
     scoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(proj_val));
     ASSERT_STATUS_OK(row_iter->Init());
-    ASSERT_STATUS_OK(row_iter->SeekToStart());
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
     ScopedRowBlock dst(proj_val, batch_size, &arena);
@@ -160,7 +159,6 @@ protected:
                                 int expected_rows) {
     scoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(schema));
     ASSERT_STATUS_OK(row_iter->Init());
-    ASSERT_STATUS_OK(row_iter->SeekToStart());
 
     int batch_size = 100;
     Arena arena(1024, 1024*1024);

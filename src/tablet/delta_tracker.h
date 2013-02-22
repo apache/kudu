@@ -78,17 +78,6 @@ class DeltaMergingIterator : public RowIteratorInterface, boost::noncopyable {
 public:
   virtual Status Init();
 
-  // Seek to a given key in the underlying data.
-  // Note that the 'key' must correspond to the key in the
-  // Layer's schema, not the projection schema.
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    CHECK_EQ(key.size(), 0)
-      << "TODO: cant seek the merging iterator at the moment: "
-      << "need to plumb the ordinal indexes back up so deltas "
-      << "can be applied after seek!";
-    return base_iter_->SeekAtOrAfter(key, exact);
-  }
-
   // Get the next batch of rows from the iterator.
   // Retrieves up to 'nrows' rows, and writes back the number
   // of rows actually fetched into the same variable.
