@@ -358,7 +358,7 @@ Status Tablet::PickLayersToCompact(
 
   // Sort the layers by their on-disk size
   std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
-  uint64_t accumulated_size;
+  uint64_t accumulated_size = 0;
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
     uint64_t this_size = l->EstimateOnDiskSize();
     if (out_layers->size() < 2 || this_size < accumulated_size * 2) {
