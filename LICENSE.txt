@@ -1,0 +1,15 @@
+Copyright (c) 2013, Cloudera, inc.
+All rights reserved.
+
+Some portions (src/gutil) copyright (c) Google inc and licensed under the
+Apache 2.0 License.
+
+Some portions (parts of src/util) copyright (c) The LevelDB Authors and licensed
+under the Apache 2.0 License.
+
+src/util/stringbag.h:
+- some portions Copyright (c) 2012, Massachusetts Institute of Technology
+- some portions Copyright (c) 2012, President and Fellows of Harvard College
+Licensed under the MIT license.
+
+src/gutil/utf: Copyright (c) Luecnt Technologies. see src/gutil/utf/LICENSE
