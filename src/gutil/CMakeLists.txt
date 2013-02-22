@@ -1,7 +1,3 @@
-# Disable warnings which trigger a lot in the Google code:
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-sign-compare -Wno-deprecated")
-
-
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../
@@ -44,5 +40,8 @@ ADD_LIBRARY(gutil
 ./hash/jenkins.cc
 ./hash/city.cc
 )
+# Disable warnings which trigger a lot in the Google code:
+SET_TARGET_PROPERTIES(gutil PROPERTIES
+  COMPILE_FLAGS "-funsigned-char -Wno-deprecated -Wno-char-subscripts")
 
 SET(GUTIL_LIBS gutil)
