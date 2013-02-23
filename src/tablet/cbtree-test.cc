@@ -309,6 +309,10 @@ TEST(TestCBTree, TestInsertAndVerifyRandom) {
   }
 }
 
+// Thread which cycles through doing the following:
+// - lock the node
+// - either mark it splitting or inserting (alternatingly)
+// - unlock it
 void LockCycleThread(AtomicVersion *v, int count_split, int count_insert) {
   int i = 0;
   while (count_split > 0 || count_insert > 0) {
@@ -325,6 +329,8 @@ void LockCycleThread(AtomicVersion *v, int count_split, int count_insert) {
   }
 }
 
+// Single-threaded test case which verifies the correct behavior of
+// VersionField.
 TEST(TestCBTree, TestVersionLockSimple) {
   AtomicVersion v = 0;
   VersionField::Lock(&v);
@@ -347,6 +353,9 @@ TEST(TestCBTree, TestVersionLockSimple) {
 
 }
 
+// Multi-threaded test case which spawns several threads, each of which
+// locks and unlocks a version field a predetermined number of times.
+// Verifies that the counters are correct at the end.
 TEST(TestCBTree, TestVersionLockConcurrent) {
   boost::ptr_vector<boost::thread> threads;
   int num_threads = 4;
@@ -371,12 +380,20 @@ TEST(TestCBTree, TestVersionLockConcurrent) {
             VersionField::GetVInsert(v));
 }
 
+// Test that the tree holds up properly under a concurrent insert workload.
+// Each thread inserts a number of elements and then verifies that it can
+// read them back.
 TEST(TestCBTree, TestConcurrentInsert) {
   scoped_ptr<CBTree<SmallFanoutTraits> > tree;
   
     int num_threads = 16;
     int ins_per_thread = 30;
-  
+#ifdef NDEBUG
+    int n_trials = 600;
+#else
+    int n_trials = 30;
+#endif
+
     boost::ptr_vector<boost::thread> threads;
     boost::barrier go_barrier(num_threads + 1);
     boost::barrier done_barrier(num_threads + 1);
@@ -398,7 +415,7 @@ TEST(TestCBTree, TestConcurrentInsert) {
   // more on a smaller tree. As the tree gets larger, contention
   // on areas of the key space diminishes.
 
-  for (int trial = 0; trial < 600; trial++) {
+  for (int trial = 0; trial < n_trials; trial++) {
     tree.reset(new CBTree<SmallFanoutTraits>());
     go_barrier.wait();
 
@@ -534,6 +551,11 @@ TEST(TestCBTree, TestIteratorSeekConditions) {
   }
 }
 
+// Thread which scans through the entirety of the tree verifying
+// that results are returned in-order. The scan is performed in a loop
+// until tree->get() == NULL.
+//   go_barrier: waits on this barrier to start running
+//   done_barrier: waits on this barrier once finished.
 template<class T>
 static void ScanThread(boost::barrier *go_barrier,
                        boost::barrier *done_barrier,
@@ -573,7 +595,9 @@ static void ScanThread(boost::barrier *go_barrier,
   }
 }
 
-
+// Thread which starts a number of threads to insert data while
+// other threads repeatedly scan and verify that the results come back
+// in order.
 TEST(TestCBTree, TestConcurrentIterateAndInsert) {
   scoped_ptr<CBTree<SmallFanoutTraits> > tree;
 
@@ -629,6 +653,7 @@ TEST(TestCBTree, TestConcurrentIterateAndInsert) {
   }
 }
 
+// Check the performance of scanning through a large tree.
 TEST(TestCBTree, TestScanPerformance) {
   CBTree<BTreeTraits> tree;
 #ifndef NDEBUG
