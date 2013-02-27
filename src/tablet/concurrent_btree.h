@@ -527,9 +527,7 @@ public:
   // Truncates the node, removing entries from the right to reduce
   // to the new size. Also compacts the underlying storage so that all
   // free space is contiguous, allowing for new inserts.
-  //
-  // TODO: rename this, doesn't compact anymore.
-  void TruncateAndCompact(size_t new_num_keys) {
+  void Truncate(size_t new_num_keys) {
     DCHECK(this->IsLocked());
     DCHECK(VersionField::IsSplitting(this->version_));
     DCHECK_GT(new_num_keys, 0);
@@ -713,9 +711,8 @@ public:
 
   // Truncates the node, removing entries from the right to reduce
   // to the new size.
-  // TODO: rename me, no longer "compacts".
   // Caller must hold the node's lock with the SPLITTING flag set.
-  void TruncateAndCompact(size_t new_num_entries) {
+  void Truncate(size_t new_num_entries) {
     DCHECK(this->IsLocked());
     DCHECK(VersionField::IsSplitting(this->version_));
 
@@ -1208,7 +1205,7 @@ private:
           RecursiveDelete(inode->child_pointers_[i]);
           inode->child_pointers_[i] = NodePtr<Traits>();
         }
-        delete inode;
+        FreeInternalNode(inode);
         break;
       }
       default:
@@ -1313,8 +1310,7 @@ private:
   //     new_inode is locked and marked INSERTING
   
   InternalNode<Traits> *SplitInternalNode(InternalNode<Traits> *node,
-                                          faststring *separator_key,
-                                          ThreadSafeArena *arena) {
+                                          faststring *separator_key) {
     DCHECK(node->IsLocked());
     //VLOG(2) << "splitting internal node " << node->GetKey(0).ToString();
 
@@ -1355,11 +1351,11 @@ private:
 
     NodePtr<Traits> separator_ptr;
 
-    InternalNode<Traits> *new_inode = new InternalNode<Traits>(
+    InternalNode<Traits> *new_inode = NewInternalNode(
       node->GetKey(split_point + 1),
       node->child_pointers_[split_point + 1],
-      node->child_pointers_[split_point + 2],
-      arena);
+      node->child_pointers_[split_point + 2]);
+
     // The new inode is constructed in locked and INSERTING state.
 
     // Copy entries to the new right-hand node.
@@ -1371,7 +1367,7 @@ private:
 
       // TODO: this could be done more efficiently since we know that
       // these inserts are coming in sorted order.
-      CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child, arena));
+      CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child, &arena_));
     }
 
     // Up to this point, we haven't modified the left node, so concurrent
@@ -1381,7 +1377,7 @@ private:
 
     // Truncate the left node to remove the keys which have been
     // moved to the right node
-    node->TruncateAndCompact(split_point);
+    node->Truncate(split_point);
     return new_inode;
   }
 
@@ -1428,7 +1424,7 @@ private:
     // moved to the right node.
     node->SetSplitting();
     node->next_ = new_leaf;
-    node->TruncateAndCompact(copy_start);
+    node->Truncate(copy_start);
     *new_node = new_leaf;
   }
 
@@ -1462,12 +1458,12 @@ private:
     dst_leaf->PrepareMutation(mutation);
 
     CHECK_EQ(INSERT_SUCCESS, dst_leaf->Insert(mutation, val))
-      << "TODO: node split at " << split_key.ToDebugString()
+      << "node split at " << split_key.ToDebugString()
       << " did not result in enough space for key " << key.ToDebugString()
       << " in left node";
 
     // Insert the new node into the parents.
-    PropagateSplitUpward(node, new_leaf, split_key, mutation->arena());
+    PropagateSplitUpward(node, new_leaf, split_key);
 
     // NB: No ned to unlock nodes here, since it is done by the upward
     // propagation path ('ascend' label in Figure 5 in the masstree paper)
@@ -1486,7 +1482,7 @@ private:
   //   parent is marked INSERTING
   //   left and right are unlocked
   void PropagateSplitUpward(NodePtr<Traits> left_ptr, NodePtr<Traits> right_ptr,
-                            const Slice &split_key, ThreadSafeArena *arena) {
+                            const Slice &split_key) {
     NodeBase<Traits> *left = left_ptr.base_ptr();
     NodeBase<Traits> *right = right_ptr.base_ptr();
 
@@ -1496,7 +1492,7 @@ private:
     InternalNode<Traits> *parent = left->GetLockedParent();
     if (parent == NULL) {
       // Node is the root - make new parent node
-      parent = new InternalNode<Traits>(split_key, left_ptr, right_ptr, arena);
+      parent = NewInternalNode(split_key, left_ptr, right_ptr);
       // Constructor also reassigns parents.
       // root_ will be updated lazily by next traverser
       left->Unlock();
@@ -1506,7 +1502,7 @@ private:
     }
 
     // Parent exists. Try to insert
-    switch (parent->Insert(split_key, right_ptr, arena)) {
+    switch (parent->Insert(split_key, right_ptr, &arena_)) {
       case INSERT_SUCCESS:
       {
         VLOG(3) << "Inserted new entry into internal node "
@@ -1520,7 +1516,7 @@ private:
       {
         // Split the node in two
         faststring sep_key(0);
-        InternalNode<Traits> *new_inode = SplitInternalNode(parent, &sep_key, arena);
+        InternalNode<Traits> *new_inode = SplitInternalNode(parent, &sep_key);
 
         DCHECK(new_inode->IsLocked());
         DCHECK(parent->IsLocked()) << "original should still be locked";
@@ -1534,11 +1530,11 @@ private:
                 << split_key.ToDebugString() << "[" << right << "]"
                 << " (split at " << inode_split.ToDebugString() << ")";
 
-        CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr, arena));
+        CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr, &arena_));
 
         left->Unlock();
         right->Unlock();
-        PropagateSplitUpward(parent, new_inode, inode_split, arena);
+        PropagateSplitUpward(parent, new_inode, inode_split);
         break;
       }
       default:
@@ -1551,8 +1547,20 @@ private:
     return new (mem) LeafNode<Traits>(locked);
   }
 
+  InternalNode<Traits> *NewInternalNode(const Slice &split_key,
+                                        NodePtr<Traits> lchild,
+                                        NodePtr<Traits> rchild) {
+    void *mem = CHECK_NOTNULL(arena_.AllocateBytes(sizeof(InternalNode<Traits>)));
+    return new (mem) InternalNode<Traits>(split_key, lchild, rchild, &arena_);
+  }
+
   void FreeLeaf(LeafNode<Traits> *leaf) {
     leaf->~LeafNode();
+    // No need to actually free, since it came from the arena
+  }
+
+  void FreeInternalNode(InternalNode<Traits> *node) {
+    node->~InternalNode();
     // No need to actually free, since it came from the arena
   }
 
