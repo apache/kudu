@@ -11,6 +11,7 @@
 
 #include "tablet/concurrent_btree.h"
 #include "util/hexdump.h"
+#include "util/memory/memory.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 
@@ -21,60 +22,84 @@ namespace btree {
 using boost::scoped_ptr;
 using boost::unordered_set;
 
+class TestCBTree : public ::testing::Test {
+protected:
+  template<class T>
+  InsertStatus InsertInLeaf(LeafNode<T> *l, ThreadSafeArena *arena,
+                                   const Slice &k, const Slice &v) {
+    PreparedMutation<T> pm(k);
+    pm.arena_ = arena;
+
+    // Must lock the node even in the single threaded test
+    // to avoid firing the debug assertions.
+    l->Lock();
+    l->SetInserting();
+    l->PrepareMutation(&pm);
+    InsertStatus ret = l->Insert(&pm, v);
+    l->Unlock();
+    return ret;
+  }
+
+  void DoBigKVTest(size_t key_size, size_t val_size) {
+    ThreadSafeArena arena(1024, 1024);
+
+    char kbuf[key_size];
+    char vbuf[val_size];
+    OverwriteWithPattern(kbuf, key_size, "KEY");
+    OverwriteWithPattern(vbuf, key_size, "VAL");
+    Slice key(kbuf, key_size);
+    Slice val(vbuf, val_size);
+
+    LeafNode<BTreeTraits> lnode(false);
+    ASSERT_EQ(INSERT_SUCCESS,
+              InsertInLeaf(&lnode, &arena, key, val));
+  }
+
+};
+
 // Ensure that the template magic to make the nodes sized
 // as we expect is working.
-TEST(TestCBTree, TestNodeSizes) {
+// The nodes may come in slightly smaller than the requested size,
+// but should not be any larger.
+TEST_F(TestCBTree, TestNodeSizes) {
+  ThreadSafeArena arena(1024, 1024);
 
   LeafNode<BTreeTraits> lnode(false);
-  ASSERT_EQ(lnode.node_size(), sizeof(lnode));
+  ASSERT_LE(sizeof(lnode), BTreeTraits::leaf_node_size);
 
-  InternalNode<BTreeTraits> inode(Slice("split"), &lnode, &lnode);
-  ASSERT_EQ(inode.node_size(), sizeof(inode));
+  InternalNode<BTreeTraits> inode(Slice("split"), &lnode, &lnode, &arena);
+  ASSERT_LE(sizeof(inode), BTreeTraits::internal_node_size);
 
 }
 
-template<class T>
-static InsertStatus InsertInLeaf(LeafNode<T> *l,
-                                 const Slice &k, const Slice &v) {
-  PreparedMutation<T> pm(k);
-  // Must lock the node even in the single threaded test
-  // to avoid firing the debug assertions.
-  l->Lock();
-  l->SetInserting();
-  l->PrepareMutation(&pm);
-  InsertStatus ret = l->Insert(&pm, v);
-  l->Unlock();
-  return ret;
-}
-
-TEST(TestCBTree, TestLeafNode) {
+TEST_F(TestCBTree, TestLeafNode) {
   LeafNode<BTreeTraits> lnode(false);
-
+  ThreadSafeArena arena(1024, 1024);
 
   Slice k1("key1");
   Slice v1("val1");
   ASSERT_EQ(INSERT_SUCCESS,
-            InsertInLeaf(&lnode, k1, v1));
+            InsertInLeaf(&lnode, &arena, k1, v1));
   ASSERT_EQ(INSERT_DUPLICATE,
-            InsertInLeaf(&lnode, k1, v1));
+            InsertInLeaf(&lnode, &arena, k1, v1));
 
   // Insert another entry after first
   Slice k2("key2");
   Slice v2("val2");
-  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, k2, v2));
-  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, k2, v2));
+  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, &arena, k2, v2));
+  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, &arena, k2, v2));
 
   // Another entry before first
   Slice k0("key0");
   Slice v0("val0");
-  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, k0, v0));
-  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, k0, v0));
+  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, &arena, k0, v0));
+  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, &arena, k0, v0));
 
   // Another entry in the middle
   Slice k15("key1.5");
   Slice v15("val1.5");
-  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, k15, v15));
-  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, k15, v15));
+  ASSERT_EQ(INSERT_SUCCESS, InsertInLeaf(&lnode, &arena, k15, v15));
+  ASSERT_EQ(INSERT_DUPLICATE, InsertInLeaf(&lnode, &arena, k15, v15));
   ASSERT_EQ("[key0=val0], [key1=val1], [key1.5=val1.5], [key2=val2]",
             lnode.ToString());
 
@@ -84,7 +109,7 @@ TEST(TestCBTree, TestLeafNode) {
   for (i = 0; i < 1000 && full; i++) {
     char buf[64];
     snprintf(buf, sizeof(buf), "filler_key_%d", i);
-    switch (InsertInLeaf(&lnode, Slice(buf), Slice("data"))) {
+    switch (InsertInLeaf(&lnode, &arena, Slice(buf), Slice("data"))) {
       case INSERT_SUCCESS:
         continue;
       case INSERT_DUPLICATE:
@@ -98,6 +123,14 @@ TEST(TestCBTree, TestLeafNode) {
     }
   }
   ASSERT_LT(i, 1000) << "should have filled up node before 1000 entries";
+}
+
+// Directly test leaf node with keys and values which are large (such that
+// only zero or one would fit in the actual allocated space)
+TEST_F(TestCBTree, TestLeafNodeBigKVs) {
+  LeafNode<BTreeTraits> lnode(false);
+
+  DoBigKVTest(1000, 1000);
 }
 
 // Setup the tree to fanout quicker, so we test internal node
@@ -208,7 +241,7 @@ void InsertAndVerify(boost::barrier *go_barrier,
 }
 
 
-TEST(TestCBTree, TestInsertAndVerify) {
+TEST_F(TestCBTree, TestInsertAndVerify) {
   CBTree<SmallFanoutTraits> t;
   char kbuf[64];
   char vbuf[64];
@@ -240,7 +273,7 @@ TEST(TestCBTree, TestInsertAndVerify) {
   }
 }
 
-TEST(TestCBTree, TestUpdate) {
+TEST_F(TestCBTree, TestUpdate) {
   CBTree<SmallFanoutTraits> t;
   ASSERT_TRUE(t.empty());
 
@@ -288,7 +321,7 @@ static void InsertRandomKeys(TREE *t, int n_keys,
 }
 
 // Similar to above, but inserts in random order
-TEST(TestCBTree, TestInsertAndVerifyRandom) {
+TEST_F(TestCBTree, TestInsertAndVerifyRandom) {
   CBTree<SmallFanoutTraits> t;
   char kbuf[64];
   char vbuf_out[64];
@@ -331,7 +364,7 @@ void LockCycleThread(AtomicVersion *v, int count_split, int count_insert) {
 
 // Single-threaded test case which verifies the correct behavior of
 // VersionField.
-TEST(TestCBTree, TestVersionLockSimple) {
+TEST_F(TestCBTree, TestVersionLockSimple) {
   AtomicVersion v = 0;
   VersionField::Lock(&v);
   ASSERT_EQ(1L << 63, v);
@@ -356,7 +389,7 @@ TEST(TestCBTree, TestVersionLockSimple) {
 // Multi-threaded test case which spawns several threads, each of which
 // locks and unlocks a version field a predetermined number of times.
 // Verifies that the counters are correct at the end.
-TEST(TestCBTree, TestVersionLockConcurrent) {
+TEST_F(TestCBTree, TestVersionLockConcurrent) {
   boost::ptr_vector<boost::thread> threads;
   int num_threads = 4;
   int split_per_thread = 2348;
@@ -383,7 +416,7 @@ TEST(TestCBTree, TestVersionLockConcurrent) {
 // Test that the tree holds up properly under a concurrent insert workload.
 // Each thread inserts a number of elements and then verifies that it can
 // read them back.
-TEST(TestCBTree, TestConcurrentInsert) {
+TEST_F(TestCBTree, TestConcurrentInsert) {
   scoped_ptr<CBTree<SmallFanoutTraits> > tree;
   
     int num_threads = 16;
@@ -435,7 +468,7 @@ TEST(TestCBTree, TestConcurrentInsert) {
   }
 }
 
-TEST(TestCBTree, TestIterator) {
+TEST_F(TestCBTree, TestIterator) {
   CBTree<SmallFanoutTraits> t;
 
   int n_keys = 100000;
@@ -471,7 +504,7 @@ TEST(TestCBTree, TestIterator) {
   }
 }
 
-TEST(TestCBTree, TestIteratorSeekOnEmptyTree) {
+TEST_F(TestCBTree, TestIteratorSeekOnEmptyTree) {
   CBTree<SmallFanoutTraits> t;
 
   scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
@@ -484,7 +517,7 @@ TEST(TestCBTree, TestIteratorSeekOnEmptyTree) {
 
 // Test seeking to exactly the first and last key, as well
 // as the boundary conditions (before first and after last)
-TEST(TestCBTree, TestIteratorSeekConditions) {
+TEST_F(TestCBTree, TestIteratorSeekConditions) {
   CBTree<SmallFanoutTraits> t;
 
   ASSERT_TRUE(t.Insert(Slice("key1"), Slice("val")));
@@ -598,7 +631,7 @@ static void ScanThread(boost::barrier *go_barrier,
 // Thread which starts a number of threads to insert data while
 // other threads repeatedly scan and verify that the results come back
 // in order.
-TEST(TestCBTree, TestConcurrentIterateAndInsert) {
+TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
   scoped_ptr<CBTree<SmallFanoutTraits> > tree;
 
   int num_ins_threads = 4;
@@ -654,7 +687,7 @@ TEST(TestCBTree, TestConcurrentIterateAndInsert) {
 }
 
 // Check the performance of scanning through a large tree.
-TEST(TestCBTree, TestScanPerformance) {
+TEST_F(TestCBTree, TestScanPerformance) {
   CBTree<BTreeTraits> tree;
 #ifndef NDEBUG
   int n_keys = 10000;

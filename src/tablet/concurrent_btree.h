@@ -22,6 +22,7 @@
 #include <boost/static_assert.hpp>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
+#include "util/inline_slice.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
 #include "util/stringbag.h"
@@ -45,30 +46,30 @@ namespace btree {
 //
 // This default implementation should be reasonable for most usage.
 struct BTreeTraits {
-  // Number of bytes used per internal node.
+  enum {
+    // Number of bytes used per internal node.
+    internal_node_size = 256,
 
-  static const size_t internal_node_size = 256;
+    // The max number of children in an internal node.
+    fanout = 14,
 
-  // The max number of children in an internal node.
-  static const size_t fanout = 16;
 
-  // Number of bytes used by a leaf node.
-  static const size_t leaf_node_size = 1024;
+    // TODO: the leaf node parameters are basically hard coded now,
+    // these shouldn't be traits.
 
-  // The following types must be large enough such that sizeof(type)/2
-  // can store an offset as large as leaf_node_size
-  typedef uint32_t leaf_key_bag_storage_type;
-  typedef uint32_t leaf_val_bag_storage_type;
+    // Number of bytes used by a leaf node.
+    leaf_node_size = 256,
 
-  // The max number of entries in a leaf node.
-  // TODO: this should probably be dynamic, since we'd
-  // know the size of the value for fixed size tables
-  static const size_t leaf_max_entries = 64;
+    // The max number of entries in a leaf node.
+    // TODO: this should probably be dynamic, since we'd
+    // know the size of the value for fixed size tables
+    leaf_max_entries = 14,
 
-  // Tests can set this trait to a non-zero value, which inserts
-  // some pause-loops in key parts of the code to try to simulate
-  // races.
-  static const size_t debug_raciness = 0;
+    // Tests can set this trait to a non-zero value, which inserts
+    // some pause-loops in key parts of the code to try to simulate
+    // races.
+    debug_raciness = 0
+  };
 
 };
 
@@ -220,24 +221,26 @@ private:
   }
 };
 
-// Return the index of the first entry in the bag which is
+// Return the index of the first entry in the array which is
 // >= the given value
-template<class T>
-size_t FindInSortedBag(const StringBag<T> &bag, ssize_t bag_size,
-                       const Slice &key, bool *exact) {
-  DCHECK_GE(bag_size, 0);
+template<size_t N>
+size_t FindInSliceArray(const InlineSlice<N> *array, ssize_t num_entries,
+                        const Slice &key, bool *exact) {
+  DCHECK_GE(num_entries, 0);
 
-  if (PREDICT_FALSE(bag_size == 0)) {
+  if (PREDICT_FALSE(num_entries == 0)) {
     *exact = false;
     return 0;
   }
 
   size_t left = 0;
-  size_t right = bag_size - 1;
+  size_t right = num_entries - 1;
 
   while (left < right) {
     int mid = (left + right + 1) / 2;
-    int compare = bag.Get(mid).compare(key);
+    // TODO: inline slices with more than 8 bytes will store a prefix of the
+    // slice inline, which we could use to short circuit some of these comparisons.
+    int compare = array[mid].as_slice().compare(key);
     if (compare < 0) { // mid < key
       left = mid;
     } else if (compare > 0) { // mid > search
@@ -248,13 +251,26 @@ size_t FindInSortedBag(const StringBag<T> &bag, ssize_t bag_size,
     }
   }
 
-  int compare = bag.Get(left).compare(key);
+  int compare = array[left].as_slice().compare(key);
   *exact = compare == 0;
   if (compare < 0) { // key > left
     left++;
   }
   return left;
 }
+
+
+template<class ISlice>
+static void InsertInSliceArray(ISlice *array, size_t num_entries,
+                               const Slice &src, size_t idx,
+                               ThreadSafeArena *arena) {
+  DCHECK_LT(idx, num_entries);
+  for (size_t i = num_entries - 1; i > idx; i--) {
+    array[i] = array[i - 1];
+  }
+  array[idx].set(src, arena);
+}
+
 
 template<class Traits>
 class NodeBase : boost::noncopyable {
@@ -338,11 +354,12 @@ public:
 
 
 // Wrapper around a void pointer, which encodes the type
-// of the pointed-to object in its least-significant-bit.
+// of the pointed-to object in its most-significant-bit.
 // The pointer may reference either an internal node or a
 // leaf node.
-// This assumes that the true pointed-to object is at least
-// 2-byte aligned, so that the LSB can be used as storage.
+// This assumes that the most significant bit of all valid pointers is
+// 0, so that that bit can be used as storage. This is true on x86, where
+// pointers are truly only 48-bit.
 template<class T>
 struct NodePtr {
   enum NodeType {
@@ -355,19 +372,19 @@ struct NodePtr {
 
   NodePtr(InternalNode<T> *p) {
     uintptr_t p_int = reinterpret_cast<uintptr_t>(p);
-    DCHECK(!(p_int & 1)) << "Pointer must be word-aligned";
+    DCHECK(!(p_int & kDiscriminatorBit)) << "Pointer must not use most significant bit";
     p_ = p;
   }
 
   NodePtr(LeafNode<T> *p) {
     uintptr_t p_int = reinterpret_cast<uintptr_t>(p);
-    DCHECK(!(p_int & 1)) << "Pointer must be word-aligned";
-    p_ = reinterpret_cast<void *>(p_int | 1);
+    DCHECK(!(p_int & kDiscriminatorBit)) << "Pointer must not use most significant bit";
+    p_ = reinterpret_cast<void *>(p_int | kDiscriminatorBit);
   }
 
   NodeType type() {
     DCHECK(p_ != NULL);
-    if (reinterpret_cast<uintptr_t>(p_) & 1) {
+    if (reinterpret_cast<uintptr_t>(p_) & kDiscriminatorBit) {
       return LEAF_NODE;
     } else {
       return INTERNAL_NODE;
@@ -386,16 +403,21 @@ struct NodePtr {
   LeafNode<T> *leaf_node_ptr() {
     DCHECK_EQ(type(), LEAF_NODE);
     return reinterpret_cast<LeafNode<T> *>(
-      reinterpret_cast<uintptr_t>(p_) & (~1));
+      reinterpret_cast<uintptr_t>(p_) & (~kDiscriminatorBit));
   }
 
   NodeBase<T> *base_ptr() {
     DCHECK(!is_null());
     return reinterpret_cast<NodeBase<T> *>(
-      reinterpret_cast<uintptr_t>(p_) & (~1));
+      reinterpret_cast<uintptr_t>(p_) & (~kDiscriminatorBit));
   }
 
   void *p_;
+
+private:
+  enum {
+    kDiscriminatorBit = (1L << (sizeof(uintptr_t) * 8 - 1))
+  };
 } PACKED;
 
 enum InsertStatus {
@@ -420,9 +442,9 @@ public:
   // the new internal node node is constructed in LOCKED state.
   InternalNode(const Slice &split_key,
                NodePtr<Traits> lchild,
-               NodePtr<Traits> rchild) :
-    num_children_(0),
-    key_bag_(Traits::fanout - 1, sizeof(storage_))
+               NodePtr<Traits> rchild,
+               ThreadSafeArena *arena) :
+    num_children_(0)
   {
     DCHECK_EQ(lchild.type(), rchild.type())
       << "Only expect to create a new internal node on account of a "
@@ -432,10 +454,7 @@ public:
     // since we don't need a CAS here.
     VersionField::SetLockedInsertingNoBarrier(&this->version_);
 
-    // TODO: we need to dynamically configure the size of the
-    // nodes so that, with really fat keys, we get at least
-    // a fanout of 2, or that we can fall back to indirect storage.
-    CHECK(key_bag_.Assign(0, split_key));
+    keys_[0].set(split_key, arena);
     DCHECK_GT(split_key.size(), 0);
     child_pointers_[0] = lchild;
     child_pointers_[1] = rchild;
@@ -445,17 +464,11 @@ public:
     num_children_ = 2;
   }
 
-  // Return the physical size in memory consumed by the internal node
-  // NOTE: this is a fully static property, not dependent on
-  // anything but the configured Traits.
-  size_t node_size() const {
-    return Traits::internal_node_size;
-  }
-
   // Insert a new entry to the internal node.
   //
   // This is typically called after one of its child nodes has split.
-  InsertStatus Insert(const Slice &key, NodePtr<Traits> right_child) {
+  InsertStatus Insert(const Slice &key, NodePtr<Traits> right_child,
+                      ThreadSafeArena *arena) {
     DCHECK(this->IsLocked());
     CHECK_GT(key.size(), 0);
 
@@ -473,13 +486,10 @@ public:
     // About to modify this node - flag it so that concurrent
     // readers will retry.
     this->SetInserting();
-
-    if (PREDICT_FALSE(!key_bag_.Insert(idx, key_count(), key))) {
-      return INSERT_FULL;
-    }
-
-    // Insert the child pointer in the right spot in the list
     num_children_++;
+
+    // Insert the key and child pointer in the right spot in the list
+    InsertInSliceArray(keys_, num_children_, key, idx, arena);
     for (int i = num_children_ - 1; i > idx + 1; i--) {
       child_pointers_[i] = child_pointers_[i - 1];
     }
@@ -494,7 +504,7 @@ public:
   // For example, if the key is less than the first discriminating
   // node, returns 0. If it is between 0 and 1, returns 1, etc.
   size_t Find(const Slice &key, bool *exact) {
-    return FindInSortedBag(key_bag_, key_count(), key, exact);
+    return FindInSliceArray(keys_, key_count(), key, exact);
   }
 
   // Find the child whose subtree may contain the given key.
@@ -503,7 +513,7 @@ public:
   // used to verify it after its usage.
   NodePtr<Traits> FindChild(const Slice &key) {
     bool exact;
-    size_t idx = FindInSortedBag(key_bag_, key_count(), key, &exact);
+    size_t idx = Find(key, &exact);
     if (exact) {
       idx++;
     }
@@ -512,25 +522,25 @@ public:
 
   Slice GetKey(size_t idx) const {
     DCHECK_LT(idx, key_count());
-    return key_bag_.Get(idx);
+    return keys_[idx].as_slice();
   }
 
   // Truncates the node, removing entries from the right to reduce
   // to the new size. Also compacts the underlying storage so that all
   // free space is contiguous, allowing for new inserts.
   //
-  // Requires that the 
+  // TODO: rename this, doesn't compact anymore.
   void TruncateAndCompact(size_t new_num_keys) {
     DCHECK(this->IsLocked());
     DCHECK(VersionField::IsSplitting(this->version_));
     DCHECK_GT(new_num_keys, 0);
 
     DCHECK_LT(new_num_keys, key_count());
-    key_bag_.TruncateAndCompact(Traits::fanout - 1, new_num_keys);
     num_children_ = new_num_keys + 1;
 
-    // TODO: the following loop is not actually necessary for
-    // correctness, but it may result in avoiding bugs
+    #ifndef NDEBUG
+    // This loop isn't necessary for correct operation, but nulling the pointers
+    // might help us catch bugs in debug mode.
     for (int i = 0; i < num_children_; i++) {
       DCHECK(!child_pointers_[i].is_null());
     }
@@ -538,15 +548,25 @@ public:
       // reset to NULL
       child_pointers_[i] = NodePtr<Traits>();
     }
+    #endif
   }
 
   // Prefetch up to the first 4 cachelines of this node.
   void PrefetchMemory() const {
-    this->PrefetchMemoryWithSize(Traits::internal_node_size);
+    this->PrefetchMemoryWithSize(sizeof(*this));
   }
 
   string ToString() const {
-    return key_bag_.ToString(Traits::fanout - 1);
+    string ret("[");
+    for (int i = 0; i < num_children_; i++) {
+      if (i > 0) {
+        ret.append(", ");
+      }
+      Slice k = keys_[i].as_slice();
+      ret.append(k.ToDebugString());
+    }
+    ret.append("]");
+    return ret;
   }
 
   private:
@@ -563,22 +583,17 @@ public:
   }
 
   uint32_t num_children_;
+
   enum {
-    storage_size = Traits::internal_node_size
-      - sizeof(NodeBase<Traits>)
-      - sizeof(uint32) /* num_children_ */
-      - (sizeof(void *) * Traits::fanout) // child_pointers_
+    constant_overhead = (sizeof(NodeBase<Traits>)
+                         + sizeof(uint32) /* num_children_ */
+                         + (sizeof(void *) * Traits::fanout)), // child_pointers_
+
+    key_inline_size = (Traits::internal_node_size - constant_overhead) / Traits::fanout
   };
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wgnu"
-#endif
-  StringBag<uint16_t> key_bag_;
-  char storage_[storage_size - sizeof(StringBag<uint16_t>)];
-#ifdef __clang_
-#  pragma clang diagnostic pop
-#endif
+  typedef InlineSlice<key_inline_size> KeyInlineSlice;
+  KeyInlineSlice keys_[Traits::fanout];
   NodePtr<Traits> child_pointers_[Traits::fanout];
 } PACKED;
 
@@ -595,20 +610,13 @@ public:
   // with LOCKED and INSERTING set.
   explicit LeafNode(bool initially_locked) :
     next_(NULL),
-    num_entries_(0),
-    key_bag_(Traits::leaf_max_entries, sizeof(key_storage_)),
-    val_bag_(Traits::leaf_max_entries, sizeof(val_storage_))
+    num_entries_(0)
   {
     if (initially_locked) {
       // Just assign the version, instead of using the proper ->Lock()
       // since we don't need a CAS here.
       VersionField::SetLockedInsertingNoBarrier(&this->version_);
     }
-  }
-
-  // TODO: rename this to something less confusing
-  size_t node_size() const {
-    return Traits::leaf_node_size;
   }
 
   int num_entries() const { return num_entries_; }
@@ -628,32 +636,27 @@ public:
       return INSERT_DUPLICATE;
     }
 
-    return InsertNew(mut->idx(), mut->key(), val);
+    return InsertNew(mut->idx(), mut->key(), val, mut->arena());
   }
 
   // Insert an entry at the given index, which is guaranteed to be
   // new.
-  InsertStatus InsertNew(size_t idx, const Slice &key, const Slice &val) {
+  InsertStatus InsertNew(size_t idx, const Slice &key, const Slice &val,
+                         ThreadSafeArena *arena) {
     if (PREDICT_FALSE(num_entries_ == Traits::leaf_max_entries)) {
       // Full due to metadata
-      return INSERT_FULL;
-    }
-
-
-    if (PREDICT_FALSE(key_bag_.space_available() < key.size() ||
-                      val_bag_.space_available() < val.size())) {
-      // Full due to data space
       return INSERT_FULL;
     }
 
     DCHECK_LT(idx, Traits::leaf_max_entries);
 
     this->SetInserting();
+
     // The following inserts should always succeed because we
     // verified space_available above
-    CHECK(key_bag_.Insert(idx, num_entries_, key));
-    CHECK(val_bag_.Insert(idx, num_entries_, val));
     num_entries_++;
+    InsertInSliceArray(keys_, num_entries_, key, idx, arena);
+    InsertInSliceArray(vals_, num_entries_, val, idx, arena);
 
     return INSERT_SUCCESS;
   }
@@ -674,14 +677,8 @@ public:
       return UPDATE_NOTFOUND;
     }
 
-    bool had_space = val_bag_.Assign(
-      mut->idx(), new_val.data(), new_val.size());
-    if (PREDICT_FALSE(!had_space)) {
-      // TODO: try to compact?
-      return UPDATE_FULL;
-    } else {
-      return UPDATE_SUCCESS;
-    }
+    vals_[mut->idx()].set(new_val, mut->arena());
+    return UPDATE_SUCCESS;
   }
 
   // Find the index of the first key which is >= the given
@@ -693,7 +690,7 @@ public:
   // Note that, if the lock is not held, this may return
   // bogus results, in which case OCC must be used to verify.
   size_t Find(const Slice &key, bool *exact) const {
-    return FindInSortedBag(key_bag_, num_entries_, key, exact);
+    return FindInSliceArray(keys_, num_entries_, key, exact);
   }
 
   // Get the slice corresponding to the nth key.
@@ -702,7 +699,7 @@ public:
   // may point to arbitrary data, and the result should be only
   // trusted when verified by checking for conflicts.
   Slice GetKey(size_t idx) const {
-    return key_bag_.Get(idx);
+    return keys_[idx].as_slice();
   }
 
   // Get the slice corresponding to the nth key and value.
@@ -711,22 +708,19 @@ public:
   // may point to arbitrary data, and the result should be only
   // trusted when verified by checking for conflicts.
   void Get(size_t idx, Slice *k, Slice *v) const {
-    *k = key_bag_.Get(idx);
-    *v = val_bag_.Get(idx);
+    *k = keys_[idx].as_slice();
+    *v = vals_[idx].as_slice();
   }
 
   // Truncates the node, removing entries from the right to reduce
-  // to the new size. Also compacts the underlying storage so that all
-  // free space is contiguous, allowing for new inserts.
-  //
+  // to the new size.
+  // TODO: rename me, no longer "compacts".
   // Caller must hold the node's lock with the SPLITTING flag set.
   void TruncateAndCompact(size_t new_num_entries) {
     DCHECK(this->IsLocked());
     DCHECK(VersionField::IsSplitting(this->version_));
 
     DCHECK_LT(new_num_entries, num_entries_);
-    key_bag_.TruncateAndCompact(Traits::leaf_max_entries, new_num_entries);
-    val_bag_.TruncateAndCompact(Traits::leaf_max_entries, new_num_entries);
     num_entries_ = new_num_entries;
   }
 
@@ -741,8 +735,8 @@ public:
       if (i > 0) {
         ret.append(", ");
       }
-      Slice k = key_bag_.Get(i);
-      Slice v = val_bag_.Get(i);
+      Slice k = keys_[i].as_slice();
+      Slice v = vals_[i].as_slice();
       ret.append("[");
       ret.append(k.ToDebugString());
       ret.append("=");
@@ -759,30 +753,20 @@ private:
 
   LeafNode<Traits> *next_;
 
-  uint16_t num_entries_;
+  uint8_t num_entries_;
+
   enum {
-    storage_size = Traits::leaf_node_size
-      - sizeof(NodeBase<Traits>)
-      - sizeof(uint16_t) /* num_entries */
-      - sizeof(LeafNode<Traits> *) /* next_ */
+    constant_overhead = sizeof(next_) + sizeof(num_entries_),
+    kv_space = Traits::leaf_node_size - constant_overhead,
+    key_inline_size = kv_space / 2 / Traits::leaf_max_entries,
+    val_inline_size = kv_space / 2 / Traits::leaf_max_entries
   };
 
-  // TODO: combine keys and values into the same bag
-  // so there isn't a stupid 50/50 split between them
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wgnu"
-#endif
-  typedef StringBag<typename Traits::leaf_key_bag_storage_type> KeyBagType;
-  KeyBagType key_bag_;
-  char key_storage_[storage_size/2 - sizeof(KeyBagType)];
-  
-  typedef StringBag<typename Traits::leaf_val_bag_storage_type> ValBagType;
-  ValBagType val_bag_;
-  char val_storage_[storage_size/2 - sizeof(ValBagType)];
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+  typedef InlineSlice<key_inline_size> KeyInlineSlice; 
+  typedef InlineSlice<val_inline_size> ValInlineSlice;
+
+  KeyInlineSlice keys_[Traits::leaf_max_entries];
+  ValInlineSlice vals_[Traits::leaf_max_entries];
 } PACKED;
 
 
@@ -827,6 +811,7 @@ public:
   void Prepare(CBTree<Traits> *tree) {
     CHECK(!prepared());
     this->tree_ = tree;
+    this->arena_ = &tree->arena_;
     tree->PrepareMutation(this);
     needs_unlock_ = true;
   }
@@ -884,10 +869,14 @@ public:
     return idx_;
   }
 
+  ThreadSafeArena *arena() {
+    return arena_;
+  }
+
 private:
   friend class CBTree<Traits>;
   friend class LeafNode<Traits>;
-
+  friend class TestCBTree;
 
   void mark_done() {
     // set leaf_ back to NULL without unlocking it,
@@ -897,6 +886,11 @@ private:
 
   Slice key_;
   CBTree<Traits> *tree_;
+
+  // The arena where inserted data may be copied if the data is too
+  // large to fit entirely within a tree node.
+  ThreadSafeArena *arena_;
+
   LeafNode<Traits> *leaf_;
 
   size_t idx_;
@@ -1320,7 +1314,8 @@ private:
   //     new_inode is locked and marked INSERTING
   
   InternalNode<Traits> *SplitInternalNode(InternalNode<Traits> *node,
-                                          faststring *separator_key) {
+                                          faststring *separator_key,
+                                          ThreadSafeArena *arena) {
     DCHECK(node->IsLocked());
     //VLOG(2) << "splitting internal node " << node->GetKey(0).ToString();
 
@@ -1364,7 +1359,8 @@ private:
     InternalNode<Traits> *new_inode = new InternalNode<Traits>(
       node->GetKey(split_point + 1),
       node->child_pointers_[split_point + 1],
-      node->child_pointers_[split_point + 2]);
+      node->child_pointers_[split_point + 2],
+      arena);
     // The new inode is constructed in locked and INSERTING state.
 
     // Copy entries to the new right-hand node.
@@ -1376,7 +1372,7 @@ private:
 
       // TODO: this could be done more efficiently since we know that
       // these inserts are coming in sorted order.
-      CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child));
+      CHECK_EQ(INSERT_SUCCESS, new_inode->Insert(k, child, arena));
     }
 
     // Up to this point, we haven't modified the left node, so concurrent
@@ -1423,13 +1419,11 @@ private:
     CHECK_GT(copy_start, 0) <<
       "Trying to split a node with 0 or 1 entries";
 
-    for (int i = copy_start; i < node->num_entries(); i++) {
-      Slice k, v;
-      node->Get(i, &k, &v);
-
-      CHECK_EQ(INSERT_SUCCESS,
-               new_leaf->InsertNew(new_leaf->num_entries(), k, v));
-    }
+    std::copy(node->keys_ + copy_start, node->keys_ + node->num_entries(),
+              new_leaf->keys_);
+    std::copy(node->vals_ + copy_start, node->vals_ + node->num_entries(),
+              new_leaf->vals_);
+    new_leaf->num_entries_ = node->num_entries() - copy_start;
 
     // Truncate the left node to remove the keys which have been
     // moved to the right node.
@@ -1474,7 +1468,7 @@ private:
       << " in left node";
 
     // Insert the new node into the parents.
-    PropagateSplitUpward(node, new_leaf, split_key);
+    PropagateSplitUpward(node, new_leaf, split_key, mutation->arena());
 
     // NB: No ned to unlock nodes here, since it is done by the upward
     // propagation path ('ascend' label in Figure 5 in the masstree paper)
@@ -1493,7 +1487,7 @@ private:
   //   parent is marked INSERTING
   //   left and right are unlocked
   void PropagateSplitUpward(NodePtr<Traits> left_ptr, NodePtr<Traits> right_ptr,
-                            const Slice &split_key) {
+                            const Slice &split_key, ThreadSafeArena *arena) {
     NodeBase<Traits> *left = left_ptr.base_ptr();
     NodeBase<Traits> *right = right_ptr.base_ptr();
 
@@ -1503,7 +1497,7 @@ private:
     InternalNode<Traits> *parent = left->GetLockedParent();
     if (parent == NULL) {
       // Node is the root - make new parent node
-      parent = new InternalNode<Traits>(split_key, left_ptr, right_ptr);
+      parent = new InternalNode<Traits>(split_key, left_ptr, right_ptr, arena);
       // Constructor also reassigns parents.
       // root_ will be updated lazily by next traverser
       left->Unlock();
@@ -1513,7 +1507,7 @@ private:
     }
 
     // Parent exists. Try to insert
-    switch (parent->Insert(split_key, right_ptr)) {
+    switch (parent->Insert(split_key, right_ptr, arena)) {
       case INSERT_SUCCESS:
       {
         VLOG(3) << "Inserted new entry into internal node "
@@ -1527,7 +1521,7 @@ private:
       {
         // Split the node in two
         faststring sep_key(0);
-        InternalNode<Traits> *new_inode = SplitInternalNode(parent, &sep_key);
+        InternalNode<Traits> *new_inode = SplitInternalNode(parent, &sep_key, arena);
 
         DCHECK(new_inode->IsLocked());
         DCHECK(parent->IsLocked()) << "original should still be locked";
@@ -1541,11 +1535,11 @@ private:
                 << split_key.ToDebugString() << "[" << right << "]"
                 << " (split at " << inode_split.ToDebugString() << ")";
 
-        CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr));
+        CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr, arena));
 
         left->Unlock();
         right->Unlock();
-        PropagateSplitUpward(parent, new_inode, inode_split);
+        PropagateSplitUpward(parent, new_inode, inode_split, arena);
         break;
       }
       default:
