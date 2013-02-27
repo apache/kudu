@@ -18,7 +18,6 @@ SET(KUDU_UTIL_LIBS kudu_util)
 
 ADD_KUDU_TEST(bitmap-test)
 ADD_KUDU_TEST(cache-test)
-ADD_KUDU_TEST(stringbag-test)
 ADD_KUDU_TEST(memory/arena-test)
 ADD_KUDU_TEST(bloom_filter-test)
 ADD_KUDU_TEST(group_varint-test)

@@ -25,7 +25,6 @@
 #include "util/inline_slice.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
-#include "util/stringbag.h"
 #include "gutil/spinlock_wait.h"
 #include "gutil/stringprintf.h"
 #include "gutil/port.h"
