@@ -10,6 +10,12 @@ source $TP_DIR/vars.sh
 
 ##############################
 
+# On some systems, autotools installs libraries to lib64 rather than lib.  Fix
+# this by setting up lib64 as a symlink to lib.  We have to do this step first
+# to handle cases where one third-party library depends on another.
+mkdir -p "$TP_DIR/installed/lib"
+ln -s lib "$TP_DIR/installed/lib64"
+
 # build gflags
 cd $GFLAGS_DIR
 ./configure --with-pic --prefix=$PREFIX
@@ -34,7 +40,6 @@ make -j4
 cd $PROTOBUF_DIR
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -j4 install
-
 
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"
