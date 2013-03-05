@@ -189,8 +189,7 @@ public:
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
                           4*1024*1024 / schema_.byte_size()));
-    scoped_array<uint8_t> buf(new uint8_t[schema_.byte_size() * batch_size]);
-    RowBlock block(schema_, &buf[0], batch_size, &arena_);
+    ScopedRowBlock block(schema_, batch_size, &arena_);
 
     if (expected_count > INT_MAX) {
       LOG(INFO) << "Not checking rows for duplicates -- duplicates expected since "
@@ -210,11 +209,10 @@ public:
 
       CHECK_GT(n, 0);
       LOG(INFO) << "Fetched batch of " << n << "\n"
-                << "First row: " << schema_.DebugRow(&buf[0]);
+                << "First row: " << schema_.DebugRow(block.row_ptr(0));
 
       for (int i = 0; i < n; i++) {
-        Slice s(reinterpret_cast<const char *>(&buf[i * schema_.byte_size()]),
-                schema_.byte_size());
+        Slice s(block.row_slice(i));
         int row = *schema_.ExtractColumnFromRow<UINT32>(s, 1);
         if (row >= first_row && row < first_row + expected_count) {
           size_t idx = row - first_row;

@@ -163,8 +163,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
   ASSERT_STATUS_OK(iter->Init());
 
-  scoped_array<uint8_t> buf(new uint8_t[this->schema_.byte_size() * 100]);
-  RowBlock block(this->schema_, &buf[0], 100, &this->arena_);
+  ScopedRowBlock block(this->schema_, 100, &this->arena_);
 
   // Copy schema into local scope, since gcc is getting confused by
   // too many templates.
@@ -176,10 +175,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
     ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
     LOG(INFO) << "Fetched batch of " << n;
     for (size_t i = 0; i < n; i++) {
-      const char *row_ptr = reinterpret_cast<const char *>(
-        &buf[schema.byte_size() * i]);
-      Slice row_slice(row_ptr, schema.byte_size());
-      uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(row_slice, 1);
+      uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(block.row_slice(i), 1);
       bool removed = inserted.erase(val_read);
       ASSERT_TRUE(removed) << "Got value " << val_read << " but either "
                            << "the value was invalid or was already "

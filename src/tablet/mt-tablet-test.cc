@@ -78,13 +78,11 @@ public:
     shared_ptr<TimeSeries> updates = ts_collector_.GetTimeSeries("updated");
 
     // TODO: move the update code into the SETUP class
-    uint8_t buf[schema_.byte_size()];
-    Slice row_slice(reinterpret_cast<const char *>(buf),
-                    schema_.byte_size());
-    ScopedRowDelta update(schema_);
 
-    Arena tmp_arena (1024, 1024);
-    RowBlock block(schema_, &buf[0], 1, &tmp_arena);
+    Arena tmp_arena(1024, 1024);
+    ScopedRowBlock block(schema_, 1, &tmp_arena);
+    Slice row_slice(block.row_slice(0));
+    ScopedRowDelta update(schema_);
 
     uint64_t updates_since_last_report = 0;
     while (running_insert_count_.count() > 0) {
@@ -133,8 +131,7 @@ public:
   // This is meant to test that outstanding iterators don't end up
   // trying to reference already-freed memstore memory.
   void SlowReaderThread(int tid) {
-    uint8_t buf[schema_.byte_size()];
-    RowBlock block(schema_, &buf[0], 1, &arena_);
+    ScopedRowBlock block(schema_, 1, &arena_);
 
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 

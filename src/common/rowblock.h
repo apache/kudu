@@ -29,8 +29,13 @@ public:
   uint8_t *row_ptr(size_t idx) {
     return data_ + schema_.byte_size() * idx;
   }
+
   const uint8_t *row_ptr(size_t idx) const {
     return data_ + schema_.byte_size() * idx;
+  }
+
+  const Slice row_slice(size_t idx) const {
+    return Slice(row_ptr(0), schema_.byte_size());
   }
 
   const Schema &schema() const { return schema_; }
