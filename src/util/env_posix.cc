@@ -22,13 +22,14 @@
 #include "env.h"
 #include "slice.h"
 #include "util/logging.h"
+#include "util/errno.h"
 
 namespace kudu {
 
 namespace {
 
 static Status IOError(const std::string& context, int err_number) {
-  return Status::IOError(context, strerror(err_number), err_number);
+  return Status::IOError(context, ErrnoToString(err_number), err_number);
 }
 
 class PosixSequentialFile: public SequentialFile {
@@ -563,7 +564,7 @@ class PosixEnv : public Env {
  private:
   void PthreadCall(const char* label, int result) {
     if (result != 0) {
-      fprintf(stderr, "pthread %s: %s\n", label, strerror(result));
+      fprintf(stderr, "pthread %s: %s\n", label, ErrnoToString(result).c_str());
       exit(1);
     }
   }
