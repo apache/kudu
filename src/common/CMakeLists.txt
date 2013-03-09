@@ -9,6 +9,7 @@ SET(COMMON_SRCS ${COMMON_SRCS} ${COMMON_PROTO_SRCS})
 ADD_LIBRARY(kudu_common ${COMMON_SRCS})
 SET(KUDU_COMMON_LIBS kudu_common)
 
-# schema-test
+SET(KUDU_TEST_LINK_LIBS kudu_common kudu_util gutil ${KUDU_DEP_LIBS} gtest )
 ADD_KUDU_TEST(schema-test)
 ADD_KUDU_TEST(generic_iterators-test)
+ADD_KUDU_TEST(row_changelist-test)
