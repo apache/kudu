@@ -5,7 +5,6 @@ SET(TABLET_SRCS
   layer-basedata.cc layer.cc
   memstore.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
-  rowdelta.cc
 )
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 ADD_DEPENDENCIES(tablet kudu_common)

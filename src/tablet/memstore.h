@@ -6,7 +6,6 @@
 #include <tr1/memory>
 
 #include "tablet/concurrent_btree.h"
-#include "tablet/rowdelta.h"
 #include "tablet/layer-interfaces.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
@@ -52,7 +51,7 @@ public:
   //
   // Returns Status::NotFound if the row doesn't exist.
   Status UpdateRow(const void *key,
-                   const RowDelta &update);
+                   const RowChangeList &update);
 
   // Return the number of entries in the memstore.
   // NOTE: this requires iterating all data, and is thus

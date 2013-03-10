@@ -68,14 +68,14 @@ public:
       buf, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, ScopedRowDelta *delta,
-                  uint64_t row_idx, uint32_t new_val) {
+  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t new_val) {
     char keybuf[256];
     FormatKey(keybuf, sizeof(keybuf), row_idx);
+    Slice row_key(keybuf);
 
-    Slice key_slice(keybuf);
-    delta->get().UpdateColumn(test_schema_, 1, &new_val);
-    return tablet->UpdateRow(&key_slice, delta->get());
+    faststring ubuf;
+    RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, &new_val);
+    return tablet->UpdateRow(&row_key, RowChangeList(ubuf));
   }
 
   Schema test_schema_;
@@ -106,16 +106,15 @@ public:
       (uint32_t)row_idx, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, ScopedRowDelta *delta,
-                  uint64_t row_idx, uint32_t new_val) {
+  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t new_val) {
     uint32_t row_key = row_idx;
-    delta->get().UpdateColumn(test_schema_, 1, &new_val);
-    return tablet->UpdateRow(&row_key, delta->get());
+    faststring buf;
+    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, &new_val);
+    return tablet->UpdateRow(&row_key, RowChangeList(buf));
   }
 
 
   Schema test_schema_;
-
 };
 
 // Use this with TYPED_TEST_CASE from gtest
@@ -172,9 +171,10 @@ public:
   void UpdateTestRow(uint64_t row_idx, uint32_t new_val) {
     RowBuilder rb(schema_);
     setup_.BuildRow(&rb, row_idx);
-    ScopedRowDelta update(schema_);
-    update.get().UpdateColumn(schema_, 2, &new_val);
-    ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(rb.data().data(), update.get()));
+
+    faststring buf;
+    RowChangeListEncoder(schema_, &buf).AddColumnUpdate(2, &new_val);
+    ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(rb.data().data(), RowChangeList(buf)));
   }
 
   void VerifyRow(uint8_t *row, uint64_t row_idx, uint32_t update_count) {

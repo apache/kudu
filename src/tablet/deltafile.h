@@ -33,7 +33,7 @@ public:
   Status Start();
   Status Finish();
 
-  Status AppendDelta(uint32_t row_idx, const RowDelta &delta);
+  Status AppendDelta(uint32_t row_idx, const RowChangeList &delta);
 
 private:
   const Schema schema_;

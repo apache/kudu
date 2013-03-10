@@ -11,9 +11,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 #  - Wall: Enable all warnings.
 #  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned 
 #    integers
+#  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
 #  - pthread: enable multithreaded malloc
 #  - DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG: enable nanosecond precision for boost
-SET(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -pthread")
+SET(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread")
 SET(CXX_COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage")
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:

@@ -121,19 +121,19 @@ TEST_F(TestMemStore, TestUpdate) {
   CheckValue(ms, "hello world", 1);
 
   // Update a key which exists.
-  ScopedRowDelta update(schema_);
+  faststring update_buf;
+  RowChangeListEncoder update(schema_, &update_buf);
   Slice key = Slice("hello world");
   uint32_t new_val = 2;
-  update.get().UpdateColumn(schema_, 1, &new_val);
-  ASSERT_STATUS_OK(ms->UpdateRow(&key, update.get()));
+  update.AddColumnUpdate(1, &new_val);
+  ASSERT_STATUS_OK(ms->UpdateRow(&key, RowChangeList(update_buf)));
 
   // Validate the updated value
   CheckValue(ms, "hello world", 2);
 
   // Try to update a key which doesn't exist - should return NotFound
   key = Slice("does not exist");
-  update.get().UpdateColumn(schema_, 1, &new_val);
-  Status s = ms->UpdateRow(&key, update.get());
+  Status s = ms->UpdateRow(&key, RowChangeList(update_buf));
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 }
 

@@ -42,7 +42,8 @@ Status DeltaFileWriter::Finish() {
 }
 
 Status DeltaFileWriter::AppendDelta(
-  uint32_t row_idx, const RowDelta &delta) {
+  uint32_t row_idx, const RowChangeList &delta) {
+  Slice delta_slice(delta.slice());
 
 #ifndef NDEBUG
   // Sanity check insertion order in debug mode.
@@ -53,18 +54,18 @@ Status DeltaFileWriter::AppendDelta(
   last_row_idx_ = row_idx;
 #endif
 
+
   tmp_buf_.clear();
 
   // Write the row index in big-endian, so that it
   // sorts correctly
+  // TODO: we could probably varint encode it and save some space, no?
+  // varints still sort lexicographically, no?
   uint32_t row_idx_bigendian = htonl(row_idx);
   tmp_buf_.append(&row_idx_bigendian, sizeof(uint32_t));
-  delta.SerializeToBuffer(schema_, &tmp_buf_);
-  VLOG(1) << "Encoded delta for row " << row_idx << ":" << std::endl
-          << HexDump(tmp_buf_);
 
-  Slice data_slice(tmp_buf_);
-  return writer_->AppendEntries(&data_slice, 1, 0);
+  tmp_buf_.append(delta_slice.data(), delta_slice.size());
+  return writer_->AppendEntries(&tmp_buf_, 1, 0);
 }
 
 ////////////////////////////////////////////////////////////
@@ -215,67 +216,14 @@ Status DeltaFileReader::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
     return Status::OK();
   }
 
+  size_t rel_idx = rowid - start_row;
+
   // Skip the rowid we just decoded.
   s.remove_prefix(sizeof(uint32_t));
 
-  // Decode the bitmap
-  // TODO: check bounds first!
-  const uint8_t *bitmap = reinterpret_cast<const uint8_t *>(s.data());
-  if (!BitmapTest(bitmap, col_idx)) {
-    // No update for this column on this row
-    return Status::OK();
-  }
 
-  // Skip the bitmap
-  s.remove_prefix(BitmapSize(schema_.num_columns()));
-
-  // Now go through the delta, skipping the columns that come
-  // before the one of interest, and applying the one we find.
-  for (TrueBitIterator it(bitmap, schema_.num_columns());
-       !it.done();
-       ++it) {
-    int i = *it;
-
-    const TypeInfo &type = schema_.column(i).type_info();
-
-    if (i < col_idx) {
-      // Skip over any columns we aren't interested in
-      if (type.type() == STRING) {
-        Slice str;
-        if (!GetLengthPrefixedSlice(&s, &str)) {
-          std::string err = StringPrintf(
-            "invalid slice in delta data at offset=%ld:\n%s",
-            s.data() - s_in.data(),
-            HexDump(s_in).c_str());
-          return Status::Corruption("invalid slice in delta",
-                                    err);
-        }
-      } else {
-        s.remove_prefix(type.size());
-      }
-    } else if (i == col_idx) {
-      // Apply the delta
-      VLOG(3) << "should apply delta for row " << rowid;
-      if (type.type() == STRING) {
-        Slice str;
-        if (!GetLengthPrefixedSlice(&s, &str)) {
-          return Status::Corruption("invalid slice in delta");
-        }
-
-        CHECK(0) << "TODO: impl slice update";
-      } else {
-        memcpy(dst->cell_ptr(rowid - start_row),
-               s.data(),
-               type.size());
-        s.remove_prefix(type.size());
-      }
-      break;
-    } else {
-      // past the column we care about
-      break;
-    }
-  }
-  return Status::OK();
+  RowChangeListDecoder decoder(schema_, s);
+  return decoder.ApplyToOneColumn(col_idx, dst->cell_ptr(rel_idx), dst->arena());
 }
 
 } // namespace tablet

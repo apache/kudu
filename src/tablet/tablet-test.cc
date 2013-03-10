@@ -148,12 +148,11 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // as some data in memstore.
 
   // Update a subset of the rows
-  ScopedRowDelta update(this->schema_);
   for (uint32_t i = 0; i < 1000; i += 15) {
     SCOPED_TRACE("update " + i);
     uint32_t new_val = 10000 + i;
     ASSERT_STATUS_OK_FAST(
-      this->setup_.DoUpdate(this->tablet_.get(), &update, i, new_val));
+      this->setup_.DoUpdate(this->tablet_.get(), i, new_val));
     inserted.erase(i);
     inserted.insert(new_val);
   }

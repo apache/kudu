@@ -59,7 +59,7 @@ public:
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
   Status UpdateRow(const void *key,
-                   const RowDelta &update);
+                   const RowChangeList &update);
 
   // Create a new row iterator.
   // The returned iterator is not initialized.

@@ -116,9 +116,8 @@ TEST_F(TestLayer, TestLayerUpdate) {
 
   // Try to add an update for a key not in the file (but which falls
   // between two valid keys)
-  ScopedRowDelta update(schema_);
   Slice bad_key = Slice("hello 00000000000049x");
-  ASSERT_TRUE(l->UpdateRow(&bad_key, update.get()).IsNotFound());
+  ASSERT_TRUE(l->UpdateRow(&bad_key, RowChangeList(Slice())).IsNotFound());
 
   // Now read back the value column, and verify that the updates
   // are visible.

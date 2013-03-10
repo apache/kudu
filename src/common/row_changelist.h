@@ -5,15 +5,34 @@
 #ifndef KUDU_COMMON_ROW_CHANGELIST_H
 #define KUDU_COMMON_ROW_CHANGELIST_H
 
+#include <boost/noncopyable.hpp>
+
 #include "util/coding.h"
 #include "util/coding-inl.h"
 #include "util/faststring.h"
+#include "util/memory/arena.h"
 
 namespace kudu {
 
+class RowChangeList {
+public:
+  explicit RowChangeList(const faststring &fs) :
+    encoded_data_(fs)
+  {}
+
+  explicit RowChangeList(const Slice &s) :
+    encoded_data_(s)
+  {}
+
+  const Slice &slice() const { return encoded_data_; }
+
+private:
+  Slice encoded_data_;
+
+};
+
 class RowChangeListEncoder {
 public:
-
   // Construct a new encoder.
   // NOTE: The 'schema' parameter is stored by reference, rather than copied.
   // It is assumed that this class is only used in tightly scoped contexts where
@@ -41,6 +60,10 @@ public:
       // Otherwise, just copy the data itself.
       dst_->append(new_val, ti.size());
     }
+  }
+
+  RowChangeList as_changelist() {
+    return RowChangeList(*dst_);
   }
 
 private:
@@ -107,6 +130,36 @@ public:
 
     return Status::OK();
   }
+
+  template<class ARENA>
+  Status ApplyRowUpdate(Slice *dst_row, ARENA *arena) {
+    DCHECK_EQ(dst_row->size(), schema_.byte_size());
+
+    while (HasNext()) {
+      size_t updated_col;
+      const void *new_val;
+      RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
+      uint8_t *dst_cell = dst_row->mutable_data() + schema_.column_offset(updated_col);
+      schema_.column(updated_col).CopyCell(dst_cell, new_val, arena);
+    }
+    return Status::OK();
+  }
+
+  template<class ARENA>
+  Status ApplyToOneColumn(size_t col_idx, void *dst_cell, ARENA *arena) {
+    while (HasNext()) {
+      size_t updated_col;
+      const void *new_val;
+      RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
+      if (updated_col == col_idx) {
+        schema_.column(col_idx).CopyCell(dst_cell, new_val, arena);
+        // TODO: could potentially break; here if we're guaranteed to only have one update
+        // per column in a RowChangeList (which would make sense!)
+      }
+    }
+    return Status::OK();
+  }
+
 
 private:
   const Schema &schema_;

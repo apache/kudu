@@ -135,7 +135,7 @@ Status Tablet::Insert(const Slice &data) {
 }
 
 Status Tablet::UpdateRow(const void *key,
-                         const RowDelta &update) {
+                         const RowChangeList &update) {
   boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // First try to update in memstore.

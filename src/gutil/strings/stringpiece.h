@@ -112,6 +112,7 @@
 #ifndef STRINGS_STRINGPIECE_H_
 #define STRINGS_STRINGPIECE_H_
 
+
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>

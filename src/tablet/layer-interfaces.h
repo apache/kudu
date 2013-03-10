@@ -6,7 +6,7 @@
 
 #include "common/iterator.h"
 #include "common/row.h"
-#include "tablet/rowdelta.h"
+#include "common/row_changelist.h"
 #include "util/bloom_filter.h"
 #include "util/status.h"
 
@@ -66,7 +66,7 @@ public:
   // If the row does not exist in this layer, returns
   // Status::NotFound().
   virtual Status UpdateRow(const void *key,
-                           const RowDelta &update) = 0;
+                           const RowChangeList &update) = 0;
 
   // Return a new RowIterator for this layer, with the given projection.
   // The returned iterator is not Initted.

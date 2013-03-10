@@ -34,26 +34,16 @@ DeltaMemStore::DeltaMemStore(const Schema &schema) :
 
 
 void DeltaMemStore::Update(uint32_t row_idx,
-                           const RowDelta &update) {
+                           const RowChangeList &update) {
   EncodedKeySlice key(row_idx);
+
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(key);
   mutation.Prepare(&tree_);
   if (mutation.exists()) {
-    // This row was already updated - just merge the new updates
-    // in with the old.
-    Slice cur_val = mutation.current_mutable_value();
-
-    RowDelta cur_delta = DecodeDelta(&cur_val);
-    cur_delta.MergeUpdatesFrom(schema_, update, &arena_);
+    CHECK(mutation.Update(update.slice()));
   } else {
-    // This row hasn't been updated. Create a new delta for it.
-    // Copy the update into the arena.
-    // TODO: no need to copy the update - just need to copy the
-    // referred-to data!
-    RowDelta copied = update.CopyToArena(schema_, &arena_);
-    Slice new_val(reinterpret_cast<uint8_t *>(&copied), sizeof(copied));
-    CHECK(mutation.Insert(new_val));
+    CHECK(mutation.Insert(update.slice()));
   }
 }
 
@@ -86,9 +76,16 @@ Status DeltaMemStore::ApplyUpdates(
 
     uint32_t rel_idx = decoded_key - start_row;
 
-    RowDelta delta = DecodeDelta(&val);
-    delta.ApplyColumnUpdate(schema_, col_idx,
-                            dst->cell_ptr(rel_idx));
+    RowChangeListDecoder decoder(schema_, val);
+    // TODO: do we need to actually copy to arena here? or can we just refer to the
+    // DMS arena?
+    Status s = decoder.ApplyToOneColumn(col_idx, dst->cell_ptr(rel_idx), dst->arena());
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to decode changelist at row " << decoded_key
+                   << ": " << s.ToString();
+      return s;
+    }
+
     iter->Next();
   }
 
@@ -102,8 +99,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
     Slice key, val;
     iter->GetCurrentEntry(&key, &val);
     uint32_t row_idx = DecodeKey(key);
-    RowDelta delta = DecodeDelta(&val);
-    dfw->AppendDelta(row_idx, delta);
+    dfw->AppendDelta(row_idx, RowChangeList(val));
     iter->Next();
   }
   return Status::OK();
@@ -113,12 +109,6 @@ uint32_t DeltaMemStore::DecodeKey(const Slice &key) const {
   DCHECK_EQ(sizeof(uint32_t), key.size());
   return ntohl(*reinterpret_cast<const uint32_t *>(key.data()));
 }
-
-RowDelta DeltaMemStore::DecodeDelta(Slice *val) const {
-  DCHECK_EQ(sizeof(RowDelta), val->size());
-  return *reinterpret_cast<RowDelta *>(val->mutable_data());
-}
-
 
 
 } // namespace tablet

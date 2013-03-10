@@ -31,7 +31,7 @@ public:
   // Update the given row in the database.
   // Copies the data, as well as any referenced
   // values into a local arena.
-  void Update(uint32_t row_idx, const RowDelta &update);
+  void Update(uint32_t row_idx, const RowChangeList &update);
 
 private:
   friend class Layer;

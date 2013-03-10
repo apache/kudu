@@ -89,7 +89,7 @@ RowIteratorInterface *DeltaTracker::WrapIterator(
   return new DeltaMergingIterator(base, deltas, schema_, base->schema());
 }
 
-void DeltaTracker::Update(uint32_t row_idx, const RowDelta &update) {
+void DeltaTracker::Update(uint32_t row_idx, const RowChangeList &update) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 

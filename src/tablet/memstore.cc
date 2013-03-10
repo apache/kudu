@@ -75,7 +75,7 @@ Status MemStore::Insert(const Slice &data) {
 }
 
 Status MemStore::UpdateRow(const void *key,
-                           const RowDelta &delta) {
+                           const RowChangeList &delta) {
   Slice unencoded_key_slice(reinterpret_cast<const uint8_t *>(key),
                             schema_.key_byte_size());
 
@@ -92,7 +92,8 @@ Status MemStore::UpdateRow(const void *key,
 
   // Update the row in-place.
   Slice existing = mutation.current_mutable_value();
-  delta.ApplyRowUpdate(schema_, existing.mutable_data(), &arena_);
+  RowChangeListDecoder decoder(schema_, delta.slice());
+  decoder.ApplyRowUpdate(&existing, &arena_);
 
   debug_update_count_++;
   SlowMutators();

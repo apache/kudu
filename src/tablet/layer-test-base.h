@@ -89,15 +89,17 @@ protected:
                           unordered_set<uint32_t> *updated) {
     int to_update = (int)(n_rows_ * update_ratio);
     char buf[256];
-    ScopedRowDelta update(schema_);
+    faststring update_buf;
+    RowChangeListEncoder update(schema_, &update_buf);
     for (int i = 0; i < to_update; i++) {
       uint32_t idx_to_update = random() % n_rows_;
       FormatKey(idx_to_update, buf, sizeof(buf));
       Slice key_slice(buf);
       uint32_t new_val = idx_to_update * 5;
-      update.get().UpdateColumn(schema_, 1, &new_val);
+      update_buf.clear();
+      update.AddColumnUpdate(1, &new_val);
       ASSERT_STATUS_OK_FAST(l->UpdateRow(
-                              &key_slice, update.get()));
+                              &key_slice, RowChangeList(update_buf)));
       updated->insert(idx_to_update);
     }
   }

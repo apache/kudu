@@ -333,7 +333,7 @@ RowIteratorInterface *Layer::NewRowIterator(const Schema &projection) const {
 }
 
 Status Layer::UpdateRow(const void *key,
-                        const RowDelta &update) {
+                        const RowChangeList &update) {
   CHECK(open_);
 
   uint32_t row_idx;
@@ -417,7 +417,7 @@ RowIteratorInterface *FlushInProgressLayer::NewRowIterator(const Schema &project
 }
 
 Status FlushInProgressLayer::UpdateRow(const void *key,
-                                       const RowDelta &update) {
+                                       const RowChangeList &update) {
   CHECK(open_);
   uint32_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
@@ -510,7 +510,7 @@ RowIteratorInterface *CompactionInProgressLayer::NewRowIterator(const Schema &pr
 }
 
 Status CompactionInProgressLayer::UpdateRow(const void *key,
-                                            const RowDelta &update) {
+                                            const RowChangeList &update) {
   CHECK(open_);
 
   uint32_t row_idx_in_output;

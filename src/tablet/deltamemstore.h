@@ -5,9 +5,9 @@
 #include <boost/noncopyable.hpp>
 
 #include "common/columnblock.h"
+#include "common/row_changelist.h"
 #include "common/schema.h"
 #include "tablet/concurrent_btree.h"
-#include "tablet/rowdelta.h"
 #include "tablet/layer-interfaces.h"
 #include "util/memory/arena.h"
 
@@ -28,7 +28,7 @@ public:
   // Update the given row in the database.
   // Copies the data, as well as any referenced
   // values into this DMS's local arena.
-  void Update(uint32_t row_idx, const RowDelta &update);
+  void Update(uint32_t row_idx, const RowChangeList &update);
 
   // See DeltaTrackerInterface::ApplyUpdates()
   Status ApplyUpdates(size_t col_idx, uint32_t start_row,
@@ -41,13 +41,11 @@ public:
   Status FlushToFile(DeltaFileWriter *dfw) const;
 
 private:
-  friend struct RowDelta;
 
   const Schema &schema() const {
     return schema_;
   }
 
-  RowDelta DecodeDelta(Slice *val) const;
   uint32_t DecodeKey(const Slice &key) const;
 
   const Schema schema_;
@@ -55,10 +53,7 @@ private:
   typedef btree::CBTree<btree::BTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
 
-  // Concurrent B-Tree storing <key index> -> RowDelta
-  // TODO:
-  // Performance could be improved by storing the row delta data inline
-  // in the leaf nodes, rather than storing pointers 
+  // Concurrent B-Tree storing <key index> -> RowChangeList
   DMSTree tree_;
 
   ThreadSafeArena arena_;

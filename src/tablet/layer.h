@@ -17,6 +17,7 @@
 #include "cfile/cfile_reader.h"
 #include "common/row.h"
 #include "common/rowblock.h"
+#include "common/row_changelist.h"
 #include "common/schema.h"
 #include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
@@ -143,7 +144,7 @@ public:
   // Updates
   ////////////////////
   Status UpdateRow(const void *key,
-                   const RowDelta &update);
+                   const RowChangeList &update);
 
   Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
 
@@ -227,7 +228,7 @@ public:
                      const shared_ptr<MemStore> &ms,
                      shared_ptr<FlushInProgressLayer> *layer);
 
-  Status UpdateRow(const void *key, const RowDelta &update);
+  Status UpdateRow(const void *key, const RowChangeList &update);
 
   Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
 
@@ -295,7 +296,7 @@ public:
                      const LayerVector &input_layers,
                      shared_ptr<CompactionInProgressLayer> *layer);
 
-  Status UpdateRow(const void *key, const RowDelta &update);
+  Status UpdateRow(const void *key, const RowChangeList &update);
 
   Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
 
