@@ -485,14 +485,16 @@ public:
     // About to modify this node - flag it so that concurrent
     // readers will retry.
     this->SetInserting();
-    num_children_++;
 
     // Insert the key and child pointer in the right spot in the list
-    InsertInSliceArray(keys_, num_children_, key, idx, arena);
-    for (int i = num_children_ - 1; i > idx + 1; i--) {
+    int new_num_children = num_children_ + 1;
+    InsertInSliceArray(keys_, new_num_children, key, idx, arena);
+    for (int i = new_num_children - 1; i > idx + 1; i--) {
       child_pointers_[i] = child_pointers_[i - 1];
     }
     child_pointers_[idx + 1] = right_child;
+
+    base::subtle::Release_Store(reinterpret_cast<volatile Atomic32*>(&num_children_), new_num_children);
 
     ReassignParent(right_child);
 
