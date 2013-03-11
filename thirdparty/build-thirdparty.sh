@@ -14,7 +14,7 @@ source $TP_DIR/vars.sh
 # this by setting up lib64 as a symlink to lib.  We have to do this step first
 # to handle cases where one third-party library depends on another.
 mkdir -p "$TP_DIR/installed/lib"
-ln -s lib "$TP_DIR/installed/lib64"
+ln -sf lib "$TP_DIR/installed/lib64"
 
 # build gflags
 cd $GFLAGS_DIR
