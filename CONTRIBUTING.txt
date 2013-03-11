@@ -1,0 +1,36 @@
+Code style
+-----------------------------
+
+In general, Kudu follows the Google C++ Style Guide:
+http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml
+
+There are a few exceptions where we depart from the above:
+
+- Use of boost is permitted
+
+Google has a lot more legacy code and portability concerns than we do. So, they prohibit a lot of pieces of boost. Feel free to use boost libraries rather than re-implementing the same functionality, but heed the warning in the Google guide:
+  "Some Boost libraries encourage coding practices which can hamper 
+   readability, such as metaprogramming and other advanced template
+   techniques, and an excessively "functional" style of programming."
+
+Don't be fancy, and avoid crazy things like boost::bind, etc, which can make really ugly complex code.
+
+Also, check that any features from boost you use are present in boost 1.46 or earlier, for compatibility with RHEL6.
+
+- Line length: up to 100 characters is OK
+
+The google guide says 80 characters, but that's a little short. Try to keep under 80 where possible, but if you spill over to ~100 or so, not a big deal.
+
+
+Testing guidelines
+-----------------------
+
+All new code should have tests. Add new tests either in existing files, or create new test files as necessary.
+
+All bug fixes should have tests. It's OK to fix a bug without adding a new test if it's triggered by an existing test case. For example, if a race shows up when running a multi-threaded system test after 20 minutes or so, it's worth trying to make a more targeted test case to trigger the bug. But, if that's hard to do, the existing system test should be enough.
+
+Tests should run quickly. For tests that run slowly in non-optimized builds, it's OK to use #ifdef NDEBUG to change the number of iterations or data size for a test, so it runs faster.
+
+Tests which run a number of iterations of some task can use gflags to take the number of iterations on the command line. This is handy for writing quick stress tests or performance tests.
+
+Commits which may affect performance should include before/after "perf stat" output for a test case which shows the performance improvement, or shows the non-regression of performance. Performance sensitive code should include some test case which can be used as a targeted benchmark.
