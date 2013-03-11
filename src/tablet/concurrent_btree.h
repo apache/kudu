@@ -45,7 +45,7 @@ namespace btree {
 //
 // This default implementation should be reasonable for most usage.
 struct BTreeTraits {
-  enum {
+  enum TraitConstants {
     // Number of bytes used per internal node.
     internal_node_size = 256,
 
@@ -754,7 +754,8 @@ private:
   uint8_t num_entries_;
 
   enum {
-    constant_overhead = sizeof(next_) + sizeof(num_entries_),
+    constant_overhead = sizeof(LeafNode<Traits> * /* next_ */) +
+                        sizeof(uint8_t /* num_entries_*/),
     kv_space = Traits::leaf_node_size - constant_overhead,
     key_inline_size = kv_space / 2 / Traits::leaf_max_entries,
     val_inline_size = kv_space / 2 / Traits::leaf_max_entries
