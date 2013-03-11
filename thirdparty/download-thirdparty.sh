@@ -34,5 +34,10 @@ wget http://protobuf.googlecode.com/files/protobuf-${PROTOBUF_VERSION}.tar.gz
 tar xzf protobuf-${PROTOBUF_VERSION}.tar.gz
 rm protobuf-${PROTOBUF_VERSION}.tar.gz
 
+echo "Fetching cmake"
+wget http://www.cmake.org/files/v2.8/cmake-${CMAKE_VERSION}.tar.gz
+tar xzf cmake-${CMAKE_VERSION}.tar.gz
+rm cmake-${CMAKE_VERSION}.tar.gz
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

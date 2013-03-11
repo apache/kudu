@@ -41,5 +41,11 @@ cd $PROTOBUF_DIR
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -j4 install
 
+# build cmake
+cd $CMAKE_DIR
+./bootstrap --prefix=$PREFIX --parallel=8
+make -j
+make install
+
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"
