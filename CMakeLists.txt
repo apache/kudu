@@ -70,6 +70,12 @@ endif ()
 # Add common flags
 SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
+# Flag to enable clang address sanitizer
+# This will only build if clang is the chosen compiler
+if (${KUDU_USE_ASAN})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g -fno-omit-frame-pointer")
+endif ()
+
 INCLUDE_DIRECTORIES(src)
 
 ############################################################
@@ -139,8 +145,9 @@ set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
 
 ## Google PerfTools
 find_package( GPerf REQUIRED )
-set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
-
+if (NOT ${KUDU_USE_ASAN})
+  set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
+endif()
 
 ############################################################
 # Linker setup
