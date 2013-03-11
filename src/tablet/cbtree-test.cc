@@ -196,7 +196,9 @@ void VerifyGet(const CBTree<T> &tree,
   char vbuf[64];
   size_t len = sizeof(vbuf);
   ASSERT_EQ(CBTree<T>::GET_SUCCESS,
-            tree.GetCopy(key, vbuf, &len));
+            tree.GetCopy(key, vbuf, &len))
+    << "Failed on key " << HexDump(key);
+    
   Slice got_val(vbuf, len);
   ASSERT_EQ(0, expected_val.compare(got_val))
     << "Failure!\n"
