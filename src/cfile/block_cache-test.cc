@@ -10,8 +10,7 @@ namespace kudu {
 namespace cfile {
 
 TEST(TestBlockCache, TestBasics) {
-  const string DATUM_1("hello world");
-  const string DATUM_2("goodbye world");
+  char *DATUM_1 = strdup("hello world");
 
   BlockCache cache(1024);
 
@@ -33,7 +32,7 @@ TEST(TestBlockCache, TestBasics) {
   ASSERT_TRUE(cache.Lookup(id, 1, &retrieved_handle));
   ASSERT_TRUE(retrieved_handle.valid());
   ASSERT_EQ(reinterpret_cast<const char *>(retrieved_handle.data().data()),
-            DATUM_1.c_str());
+            DATUM_1);
 
   // Ensure that a lookup for a different offset doesn't
   // return this data.
