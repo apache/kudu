@@ -44,7 +44,7 @@ private:
   // Finish the current block at the given level, writing it
   // to the file. Return the location of the written block
   // in 'written'.
-  Status FinishBlock(size_t level, BlockPointer *written);
+  Status FinishAndWriteBlock(size_t level, BlockPointer *written);
 
   const WriterOptions *options_;
   Writer *writer_;

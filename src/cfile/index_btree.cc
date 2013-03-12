@@ -73,7 +73,7 @@ Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
   // Flush the root
   int root_level = idx_blocks_.size() - 1;
   BlockPointer ptr;
-  Status s = FinishBlock(root_level, &ptr);
+  Status s = FinishAndWriteBlock(root_level, &ptr);
   if (!s.ok()) {
     LOG(ERROR) << "Unable to flush root index block";
     return s;
@@ -98,6 +98,11 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
     return Status::OK();
   }
 
+  // Write to file.
+  BlockPointer idx_block_ptr;
+  RETURN_NOT_OK(FinishAndWriteBlock(level, &idx_block_ptr));
+
+  // Get the first key of the finished block.
   char space[type_info_.size()];
   void *first_in_idx_block = space;
   Status s = idx_block.GetFirstKey(first_in_idx_block);
@@ -109,13 +114,14 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
     return s;
   }
 
-  // Write to file.
-  BlockPointer idx_block_ptr;
-  RETURN_NOT_OK(FinishBlock(level, &idx_block_ptr));
-
   // Add to higher-level index.
   RETURN_NOT_OK(Append(first_in_idx_block, idx_block_ptr,
                        level + 1));
+
+  // Finally, reset the block we just wrote. It's important to wait until
+  // here to do this, since the first_in_idx_block data may point to internal
+  // storage of the index block.
+  idx_block.Reset();
 
   return Status::OK();
 }
@@ -123,7 +129,7 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 // Finish the current block at the given level, writing it
 // to the file. Return the location of the written block
 // in 'written'.
-Status IndexTreeBuilder::FinishBlock(size_t level, BlockPointer *written) {
+Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer *written) {
   IndexBlockBuilder &idx_block = idx_blocks_[level];
   Slice data = idx_block.Finish();
 
@@ -135,9 +141,6 @@ Status IndexTreeBuilder::FinishBlock(size_t level, BlockPointer *written) {
                << "block to file";
     return s;
   }
-
-  // Reset this level block.
-  idx_block.Reset();
 
   return Status::OK();
 }
