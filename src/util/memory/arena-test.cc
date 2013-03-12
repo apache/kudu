@@ -69,4 +69,17 @@ TEST(TestArena, TestMultiThreaded) {
   }
 }
 
+TEST(TestArena, TestAlignment) {
+
+  ThreadSafeArena arena(1024, 1024);
+  for (int i = 0; i < 1000; i++) {
+    int alignment = 1 << (1 % 5);
+
+    void *ret = arena.AllocateBytesAligned(5, alignment);
+    ASSERT_EQ(0, (uintptr_t)(ret) % alignment) <<
+      "failed to align on " << alignment << "b boundary: " <<
+      ret;
+  }
+}
+
 }

@@ -1546,14 +1546,16 @@ private:
   }
 
   LeafNode<Traits> *NewLeaf(bool locked) {
-    void *mem = CHECK_NOTNULL(arena_.AllocateBytes(sizeof(LeafNode<Traits>)));
+    void *mem = CHECK_NOTNULL(arena_.AllocateBytesAligned(sizeof(LeafNode<Traits>),
+                                                          sizeof(AtomicVersion)));
     return new (mem) LeafNode<Traits>(locked);
   }
 
   InternalNode<Traits> *NewInternalNode(const Slice &split_key,
                                         NodePtr<Traits> lchild,
                                         NodePtr<Traits> rchild) {
-    void *mem = CHECK_NOTNULL(arena_.AllocateBytes(sizeof(InternalNode<Traits>)));
+    void *mem = CHECK_NOTNULL(arena_.AllocateBytesAligned(sizeof(InternalNode<Traits>),
+                                                          sizeof(AtomicVersion)));
     return new (mem) InternalNode<Traits>(split_key, lchild, rchild, &arena_);
   }
 

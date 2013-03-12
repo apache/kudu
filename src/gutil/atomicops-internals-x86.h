@@ -22,8 +22,8 @@
 #ifndef SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
 #define SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
 
+#include <glog/logging.h>
 #include <stdint.h>
-
 
 typedef int32_t Atomic32;
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
@@ -55,6 +55,15 @@ void AtomicOps_x86CPUFeaturesInit();
 namespace base {
 namespace subtle {
 
+// These atomic primitives don't work atomically, and can cause really nasty
+// hard-to-track-down bugs, if the pointer isn't naturally aligned. Check alignment
+// in debug mode.
+template<class T>
+inline void CheckNaturalAlignment(const T *ptr) {
+  DCHECK_EQ(0, reinterpret_cast<const uintptr_t>(ptr) & (sizeof(T) - 1))
+    << "unaligned pointer not allowed for atomics";
+}
+
 typedef int64_t Atomic64;
 
 // 32-bit low-level operations on any platform.
@@ -62,6 +71,7 @@ typedef int64_t Atomic64;
 inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
                                          Atomic32 old_value,
                                          Atomic32 new_value) {
+  CheckNaturalAlignment(ptr);
   Atomic32 prev;
   __asm__ __volatile__("lock; cmpxchgl %1,%2"
                        : "=a" (prev)
@@ -72,6 +82,7 @@ inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
 
 inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
                                          Atomic32 new_value) {
+  CheckNaturalAlignment(ptr);
   __asm__ __volatile__("xchgl %1,%0"  // The lock prefix is implicit for xchg.
                        : "=r" (new_value)
                        : "m" (*ptr), "0" (new_value)
@@ -81,6 +92,7 @@ inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
 
 inline Atomic32 Acquire_AtomicExchange(volatile Atomic32* ptr,
                                        Atomic32 new_value) {
+  CheckNaturalAlignment(ptr);
   Atomic32 old_val = NoBarrier_AtomicExchange(ptr, new_value);
   if (AtomicOps_Internalx86CPUFeatures.has_amd_lock_mb_bug) {
     __asm__ __volatile__("lfence" : : : "memory");
@@ -95,6 +107,7 @@ inline Atomic32 Release_AtomicExchange(volatile Atomic32* ptr,
 
 inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
                                           Atomic32 increment) {
+  CheckNaturalAlignment(ptr);
   Atomic32 temp = increment;
   __asm__ __volatile__("lock; xaddl %0,%1"
                        : "+r" (temp), "+m" (*ptr)
@@ -105,6 +118,7 @@ inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
 
 inline Atomic32 Barrier_AtomicIncrement(volatile Atomic32* ptr,
                                         Atomic32 increment) {
+  CheckNaturalAlignment(ptr);
   Atomic32 temp = increment;
   __asm__ __volatile__("lock; xaddl %0,%1"
                        : "+r" (temp), "+m" (*ptr)
@@ -133,6 +147,7 @@ inline Atomic32 Release_CompareAndSwap(volatile Atomic32* ptr,
 }
 
 inline void NoBarrier_Store(volatile Atomic32* ptr, Atomic32 value) {
+  CheckNaturalAlignment(ptr);
   *ptr = value;
 }
 
@@ -145,6 +160,7 @@ inline void MemoryBarrier() {
 }
 
 inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
+  CheckNaturalAlignment(ptr);
   *ptr = value;
   MemoryBarrier();
 }
@@ -162,6 +178,7 @@ inline void MemoryBarrier() {
 
 inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
   if (AtomicOps_Internalx86CPUFeatures.has_sse2) {
+    CheckNaturalAlignment(ptr);
     *ptr = value;
     __asm__ __volatile__("mfence" : : : "memory");
   } else {
@@ -171,16 +188,19 @@ inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
 #endif
 
 inline void Release_Store(volatile Atomic32* ptr, Atomic32 value) {
+  CheckNaturalAlignment(ptr);
   ATOMICOPS_COMPILER_BARRIER();
   *ptr = value;  // An x86 store acts as a release barrier.
   // See comments in Atomic64 version of Release_Store(), below.
 }
 
 inline Atomic32 NoBarrier_Load(volatile const Atomic32* ptr) {
+  CheckNaturalAlignment(ptr);
   return *ptr;
 }
 
 inline Atomic32 Acquire_Load(volatile const Atomic32* ptr) {
+  CheckNaturalAlignment(ptr);
   Atomic32 value = *ptr;  // An x86 load acts as a acquire barrier.
   // See comments in Atomic64 version of Release_Store(), below.
   ATOMICOPS_COMPILER_BARRIER();
@@ -188,6 +208,7 @@ inline Atomic32 Acquire_Load(volatile const Atomic32* ptr) {
 }
 
 inline Atomic32 Release_Load(volatile const Atomic32* ptr) {
+  CheckNaturalAlignment(ptr);
   MemoryBarrier();
   return *ptr;
 }
@@ -200,6 +221,7 @@ inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
                                          Atomic64 old_value,
                                          Atomic64 new_value) {
   Atomic64 prev;
+  CheckNaturalAlignment(ptr);
   __asm__ __volatile__("lock; cmpxchgq %1,%2"
                        : "=a" (prev)
                        : "q" (new_value), "m" (*ptr), "0" (old_value)
@@ -209,6 +231,7 @@ inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
 
 inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64* ptr,
                                          Atomic64 new_value) {
+  CheckNaturalAlignment(ptr);
   __asm__ __volatile__("xchgq %1,%0"  // The lock prefix is implicit for xchg.
                        : "=r" (new_value)
                        : "m" (*ptr), "0" (new_value)
@@ -233,6 +256,7 @@ inline Atomic64 Release_AtomicExchange(volatile Atomic64* ptr,
 inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64* ptr,
                                           Atomic64 increment) {
   Atomic64 temp = increment;
+  CheckNaturalAlignment(ptr);
   __asm__ __volatile__("lock; xaddq %0,%1"
                        : "+r" (temp), "+m" (*ptr)
                        : : "memory");
@@ -243,6 +267,7 @@ inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64* ptr,
 inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
                                         Atomic64 increment) {
   Atomic64 temp = increment;
+  CheckNaturalAlignment(ptr);
   __asm__ __volatile__("lock; xaddq %0,%1"
                        : "+r" (temp), "+m" (*ptr)
                        : : "memory");
@@ -254,17 +279,19 @@ inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
 }
 
 inline void NoBarrier_Store(volatile Atomic64* ptr, Atomic64 value) {
+  CheckNaturalAlignment(ptr);
   *ptr = value;
 }
 
 inline void Acquire_Store(volatile Atomic64* ptr, Atomic64 value) {
+  CheckNaturalAlignment(ptr);
   *ptr = value;
   MemoryBarrier();
 }
 
 inline void Release_Store(volatile Atomic64* ptr, Atomic64 value) {
   ATOMICOPS_COMPILER_BARRIER();
-
+  CheckNaturalAlignment(ptr);
   *ptr = value;  // An x86 store acts as a release barrier
                  // for current AMD/Intel chips as of Jan 2008.
                  // See also Acquire_Load(), below.
@@ -284,10 +311,12 @@ inline void Release_Store(volatile Atomic64* ptr, Atomic64 value) {
 }
 
 inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) {
+  CheckNaturalAlignment(ptr);
   return *ptr;
 }
 
 inline Atomic64 Acquire_Load(volatile const Atomic64* ptr) {
+  CheckNaturalAlignment(ptr);
   Atomic64 value = *ptr;  // An x86 load acts as a acquire barrier,
                           // for current AMD/Intel chips as of Jan 2008.
                           // See also Release_Store(), above.
@@ -296,6 +325,7 @@ inline Atomic64 Acquire_Load(volatile const Atomic64* ptr) {
 }
 
 inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
+  CheckNaturalAlignment(ptr);
   MemoryBarrier();
   return *ptr;
 }
@@ -319,6 +349,7 @@ inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
 inline Atomic64 __sync_val_compare_and_swap(volatile Atomic64* ptr,
                                             Atomic64 old_value,
                                             Atomic64 new_value) {
+  CheckNaturalAlignment(ptr);
   Atomic64 prev;
   __asm__ __volatile__("push %%ebx\n\t"
                        "movl (%3), %%ebx\n\t"     // Move 64-bit new_value into
@@ -337,12 +368,14 @@ inline Atomic64 __sync_val_compare_and_swap(volatile Atomic64* ptr,
 inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
                                          Atomic64 old_val,
                                          Atomic64 new_val) {
+  CheckNaturalAlignment(ptr);
   return __sync_val_compare_and_swap(ptr, old_val, new_val);
 }
 
 inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64* ptr,
                                          Atomic64 new_val) {
   Atomic64 old_val;
+  CheckNaturalAlignment(ptr);
 
   do {
     old_val = *ptr;
@@ -353,6 +386,7 @@ inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64* ptr,
 
 inline Atomic64 Acquire_AtomicExchange(volatile Atomic64* ptr,
                                        Atomic64 new_val) {
+  CheckNaturalAlignment(ptr);
   Atomic64 old_val = NoBarrier_AtomicExchange(ptr, new_val);
   if (AtomicOps_Internalx86CPUFeatures.has_amd_lock_mb_bug) {
     __asm__ __volatile__("lfence" : : : "memory");
@@ -367,6 +401,7 @@ inline Atomic64 Release_AtomicExchange(volatile Atomic64* ptr,
 
 inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64* ptr,
                                           Atomic64 increment) {
+  CheckNaturalAlignment(ptr);
   Atomic64 old_val, new_val;
 
   do {
@@ -379,6 +414,7 @@ inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64* ptr,
 
 inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
                                         Atomic64 increment) {
+  CheckNaturalAlignment(ptr);
   Atomic64 new_val = NoBarrier_AtomicIncrement(ptr, increment);
   if (AtomicOps_Internalx86CPUFeatures.has_amd_lock_mb_bug) {
     __asm__ __volatile__("lfence" : : : "memory");
@@ -387,6 +423,7 @@ inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
 }
 
 inline void NoBarrier_Store(volatile Atomic64* ptr, Atomic64 value) {
+  CheckNaturalAlignment(ptr);
   __asm__ __volatile__("movq %1, %%mm0\n\t"  // Use mmx reg for 64-bit atomic
                        "movq %%mm0, %0\n\t"  // moves (ptr could be read-only)
                        "emms\n\t"            // Empty mmx state/Reset FP regs
@@ -409,6 +446,7 @@ inline void Release_Store(volatile Atomic64* ptr, Atomic64 value) {
 }
 
 inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) {
+  CheckNaturalAlignment(ptr);
   Atomic64 value;
   __asm__ __volatile__("movq %1, %%mm0\n\t"  // Use mmx reg for 64-bit atomic
                        "movq %%mm0, %0\n\t"  // moves (ptr could be read-only)
@@ -423,6 +461,7 @@ inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) {
 }
 
 inline Atomic64 Acquire_Load(volatile const Atomic64* ptr) {
+  CheckNaturalAlignment(ptr);
   Atomic64 value = NoBarrier_Load(ptr);
   ATOMICOPS_COMPILER_BARRIER();
   return value;

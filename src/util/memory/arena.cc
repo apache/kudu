@@ -47,12 +47,12 @@ ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_s
 }
 
 template <bool THREADSAFE>
-void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size) {
+void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size_t align) {
   boost::lock_guard<boost::mutex> lock(component_lock_);
 
   // It's possible another thread raced with us and already allocated
   // a new component, in which case we should try the "fast path" again
-  void * result = current_->AllocateBytes(size);
+  void * result = current_->AllocateBytesAligned(size, align);
   if (PREDICT_FALSE(result != NULL)) return result;
 
   // Really need to allocate more space.
@@ -79,7 +79,7 @@ void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size) {
   if (!component) return NULL;
 
   // Now, must succeed. The component has at least 'size' bytes.
-  result = component->AllocateBytes(size);
+  result = component->AllocateBytesAligned(size, align);
   CHECK(result != NULL);
 
   // Now add it to the arena.
@@ -95,6 +95,10 @@ typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
   Buffer* buffer = buffer_allocator_->BestEffortAllocate(requested_size,
                                                          minimum_size);
   if (buffer == NULL) return NULL;
+
+  CHECK_EQ(reinterpret_cast<uintptr_t>(buffer->data()) & (64 - 1), 0)
+    << "Components should be 64-byte aligned: " << buffer->data();
+
   return new Component(buffer);
 }
 

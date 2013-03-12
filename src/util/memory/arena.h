@@ -120,7 +120,13 @@ class ArenaBase {
   // guaranteed to remain valid during the lifetime of the arena.
   // If this request would make the arena grow and the allocator denies that,
   // returns NULL and leaves the arena unchanged.
-  void* AllocateBytes(const size_t size);
+  void* AllocateBytes(const size_t size) {
+    return AllocateBytesAligned(size, 1);
+  }
+
+  // Allocate bytes, ensuring a specified alignment.
+  // NOTE: alignment MUST be a power of two, or else this will break.
+  void* AllocateBytesAligned(const size_t size, const size_t alignment);
 
   // Removes all data from the arena. (Invalidates all pointers returned by
   // AddSlice and AllocateBytes). Does not cause memory allocation.
@@ -141,7 +147,7 @@ class ArenaBase {
   class Component;
 
   // Fallback for AllocateBytes non-fast-path
-  void* AllocateBytesFallback(const size_t size);
+  void* AllocateBytesFallback(const size_t size, const size_t align);
 
   Component* NewComponent(size_t requested_size, size_t minimum_size);
   void AddComponent(Component *component);
@@ -247,7 +253,12 @@ class ArenaBase<THREADSAFE>::Component {
 
   // Tries to reserve space in this component. Returns the pointer to the
   // reserved space if successful; NULL on failure (if there's no more room).
-  uint8_t* AllocateBytes(const size_t size);
+  uint8_t* AllocateBytes(const size_t size) {
+    return AllocateBytesAligned(size, 1);
+  }
+
+  uint8_t *AllocateBytesAligned(const size_t size, const size_t alignment);
+
   size_t size() const { return size_; }
   void Reset() { offset_ = 0; }
 
@@ -262,16 +273,21 @@ class ArenaBase<THREADSAFE>::Component {
 
 // Thread-safe implementation
 template <>
-inline uint8_t *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
+inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(const size_t size, const size_t alignment) {
+  // Special case check the alignments that are useful
+  DCHECK(alignment == 1 || alignment == 2 || alignment == 4 ||
+         alignment == 8 || alignment == 16 || alignment == 64)
+    << "bad alignment: " << alignment;
   retry:
-
   Atomic32 offset = Acquire_Load(&offset_);
-  Atomic32 new_offset = offset + size;
+
+  Atomic32 aligned = (offset + (alignment - 1)) & ~(alignment - 1);
+  Atomic32 new_offset = aligned + size;
 
   if (PREDICT_TRUE(new_offset <= size_)) {
     bool success = Acquire_CompareAndSwap(&offset_, offset, new_offset) == offset;
     if (PREDICT_TRUE(success)) {
-      return data_ + offset;
+      return data_ + aligned;
     } else {
       // Raced with another allocator
       goto retry;
@@ -283,13 +299,15 @@ inline uint8_t *ArenaBase<true>::Component::AllocateBytes(const size_t size) {
 
 // Non-Threadsafe implementation
 template <>
-inline uint8_t *ArenaBase<false>::Component::AllocateBytes(const size_t size) {
-  uint8_t* destination = data_ + offset_;
-  offset_ += size;
+inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(const size_t size, const size_t alignment) {
+  size_t aligned = (offset_ + (alignment - 1)) & ~(alignment - 1);
+  uint8_t* destination = data_ + aligned;
+  size_t save_offset = offset_;
+  offset_ = aligned + size;
   if (PREDICT_TRUE(offset_ <= size_)) {
     return destination;
   } else {
-    offset_ -= size;
+    offset_ = save_offset;
     return NULL;
   }
 }
@@ -298,10 +316,10 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytes(const size_t size) {
 // Fast-path allocation should get inlined, and fall-back
 // to non-inline function call for allocation failure
 template <bool THREADSAFE>
-inline void *ArenaBase<THREADSAFE>::AllocateBytes(const size_t size) {
-  void* result = current_->AllocateBytes(size);
+inline void *ArenaBase<THREADSAFE>::AllocateBytesAligned(const size_t size, const size_t align) {
+  void* result = current_->AllocateBytesAligned(size, align);
   if (PREDICT_TRUE(result != NULL)) return result;
-  return AllocateBytesFallback(size);
+  return AllocateBytesFallback(size, align);
 }
 
 template <bool THREADSAFE>
