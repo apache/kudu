@@ -16,6 +16,7 @@ ADD_LIBRARY(kudu_util
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 
+SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} gtest )
 ADD_KUDU_TEST(bitmap-test)
 ADD_KUDU_TEST(cache-test)
 ADD_KUDU_TEST(memory/arena-test)
