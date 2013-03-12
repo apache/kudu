@@ -48,31 +48,30 @@ class TrueBitIterator {
 public:
   TrueBitIterator(const uint8_t *bitmap, size_t n_bits) :
     bitmap_(bitmap),
-    cur_byte_idx_(0),
     cur_byte_(0),
+    cur_byte_idx_(0),
     n_bits_(n_bits),
-    bit_idx_(0),
-    done_(false)
+    n_bytes_(BitmapSize(n_bits_)),
+    bit_idx_(0)
   {
     if (n_bits_ == 0) {
-      done_ = true;
+      cur_byte_idx_ = 1; // sets done
     } else {
       cur_byte_ = bitmap[0];
-      AdvanceToNext();
+      AdvanceToNextOneBit();
     }
   }
 
   TrueBitIterator &operator ++() {
     DCHECK(!done());
     DCHECK(cur_byte_ & 1);
-    cur_byte_ >>= 1;
-    bit_idx_++;
-    AdvanceToNext();
+    cur_byte_ &= (~1);
+    AdvanceToNextOneBit();
     return *this;
   }
 
   bool done() const {
-    return done_;
+    return cur_byte_idx_ >= n_bytes_;
   }
 
   size_t operator *() const {
@@ -81,37 +80,29 @@ public:
   }
 
 private:
-  // Position cur_byte_ to the next non-zero byte,
-  // and shift it such that the least significant bit is
-  // 1. Sets bit_idx_ to correspond to this bit.
-  void AdvanceToNext() {
-
-    // TODO: can iterate by uint32 or uint64 instead of by
-    // byte for better performance here down the line.
-    while (cur_byte_ == 0 &&
-           bit_idx_ < n_bits_) {
+  void AdvanceToNextOneBit() {
+    while (cur_byte_ == 0) {
       cur_byte_idx_++;
+      if (cur_byte_idx_ >= n_bytes_) return;
       cur_byte_ = bitmap_[cur_byte_idx_];
       bit_idx_ = cur_byte_idx_ * 8;
     }
+    LOG(INFO) << "Found next nonzero byte at " << (int)cur_byte_idx_
+              << " val=" << (int)cur_byte_;
 
-    if (cur_byte_ == 0 || bit_idx_ >= n_bits_) {
-      done_ = true;
-      return;
-    }
-
+    DCHECK_NE(cur_byte_, 0);
     int set_bit = Bits::FindLSBSetNonZero(cur_byte_);
     bit_idx_ += set_bit;
     cur_byte_ >>= set_bit;
   }
 
   const uint8_t *bitmap_;
+  uint8_t cur_byte_;
   uint8_t cur_byte_idx_;
 
-  uint8_t cur_byte_;
   const size_t n_bits_;
+  const size_t n_bytes_;
   size_t bit_idx_;
-  bool done_;
 };
 
 } // namespace kudu
