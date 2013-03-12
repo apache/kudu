@@ -96,8 +96,8 @@ typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
                                                          minimum_size);
   if (buffer == NULL) return NULL;
 
-  CHECK_EQ(reinterpret_cast<uintptr_t>(buffer->data()) & (64 - 1), 0)
-    << "Components should be 64-byte aligned: " << buffer->data();
+  CHECK_EQ(reinterpret_cast<uintptr_t>(buffer->data()) & (16 - 1), 0)
+    << "Components should be 16-byte aligned: " << buffer->data();
 
   return new Component(buffer);
 }

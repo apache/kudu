@@ -274,9 +274,11 @@ class ArenaBase<THREADSAFE>::Component {
 // Thread-safe implementation
 template <>
 inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(const size_t size, const size_t alignment) {
-  // Special case check the alignments that are useful
+  // Special case check the allowed alignments. Currently, we only ensure
+  // the allocated buffer components are 16-byte aligned, and the code path
+  // doesn't support larger alignment.
   DCHECK(alignment == 1 || alignment == 2 || alignment == 4 ||
-         alignment == 8 || alignment == 16 || alignment == 64)
+         alignment == 8 || alignment == 16)
     << "bad alignment: " << alignment;
   retry:
   Atomic32 offset = Acquire_Load(&offset_);
@@ -300,6 +302,9 @@ inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(const size_t si
 // Non-Threadsafe implementation
 template <>
 inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(const size_t size, const size_t alignment) {
+  DCHECK(alignment == 1 || alignment == 2 || alignment == 4 ||
+         alignment == 8 || alignment == 16)
+    << "bad alignment: " << alignment;
   size_t aligned = (offset_ + (alignment - 1)) & ~(alignment - 1);
   uint8_t* destination = data_ + aligned;
   size_t save_offset = offset_;
