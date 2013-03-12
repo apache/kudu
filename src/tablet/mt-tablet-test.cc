@@ -287,14 +287,14 @@ TYPED_TEST_CASE(MultiThreadedTabletTest, TabletTestHelperTypes);
 
 TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   // Spawn a bunch of threads, each of which will do updates.
-  StartThreads(1, &TestFixture::CollectStatisticsThread);
-  StartThreads(FLAGS_num_insert_threads, &TestFixture::InsertThread);
-  StartThreads(FLAGS_num_counter_threads, &TestFixture::CountThread);
-  StartThreads(FLAGS_num_summer_threads, &TestFixture::SummerThread);
-  StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
-  StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
-  StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);
-  StartThreads(FLAGS_num_updater_threads, &TestFixture::UpdateThread);
+  this->StartThreads(1, &TestFixture::CollectStatisticsThread);
+  this->StartThreads(FLAGS_num_insert_threads, &TestFixture::InsertThread);
+  this->StartThreads(FLAGS_num_counter_threads, &TestFixture::CountThread);
+  this->StartThreads(FLAGS_num_summer_threads, &TestFixture::SummerThread);
+  this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
+  this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
+  this->StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);
+  this->StartThreads(FLAGS_num_updater_threads, &TestFixture::UpdateThread);
   this->JoinThreads();
   LOG_TIMING(INFO, "Summing int32 column") {
     uint64_t sum = this->CountSum(shared_ptr<TimeSeries>());
