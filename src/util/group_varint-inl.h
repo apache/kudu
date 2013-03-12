@@ -27,6 +27,9 @@ inline size_t CalcRequiredBytes32(uint32_t i) {
 
 // Decode a set of 4 group-varint encoded integers from the given pointer.
 //
+// Requires that there are at up to 3 extra bytes remaining in 'src' after
+// the last integer.
+//
 // Returns a pointer following the last decoded integer.
 inline const uint8_t *DecodeGroupVarInt32(
   const uint8_t *src,
@@ -54,6 +57,22 @@ inline const uint8_t *DecodeGroupVarInt32(
   return src;
 } 
 
+// Decode a set of 4 group-varint encoded integers from the given pointer.
+//
+// Returns a pointer following the last decoded integer.
+inline const uint8_t *DecodeGroupVarInt32_SlowButSafe(
+  const uint8_t *src,
+  uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+
+  uint8_t total_len = VARINT_SELECTOR_LENGTHS[*src] + 1;
+
+  uint8_t safe_buf[17];
+  memcpy(safe_buf, src, total_len);
+  DecodeGroupVarInt32(safe_buf, a, b, c, d);
+  return src + total_len;
+} 
+
+
 inline void DoExtractM128(__m128i results,
                           uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d)
 {
@@ -79,6 +98,9 @@ inline void DoExtractM128(__m128i results,
 
 // Same as above, but uses SSE so may be faster.
 // TODO: remove this and just automatically pick the right implementation at runtime.
+//
+// NOTE: the src buffer must be have at least 17 bytes remaining in it, so this
+// code path is not usable at the end of a block.
 inline const uint8_t *DecodeGroupVarInt32_SSE(
   const uint8_t *src,
   uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
@@ -107,6 +129,9 @@ inline const uint8_t *DecodeGroupVarInt32_SSE(
 // Optimized function which decodes a group of uint32s from 'src' into 'ret',
 // which should have enough space for 4 uint32s. During decoding, adds 'add'
 // to the vector in parallel.
+//
+// NOTE: the src buffer must be have at least 17 bytes remaining in it, so this
+// code path is not usable at the end of a block.
 inline const uint8_t *DecodeGroupVarInt32_SSE_Add(
   const uint8_t *src,
   uint32_t *ret,

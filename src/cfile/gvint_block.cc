@@ -12,6 +12,7 @@ namespace kudu { namespace cfile {
 using kudu::coding::AppendGroupVarInt32;
 using kudu::coding::CalcRequiredBytes32;
 using kudu::coding::DecodeGroupVarInt32;
+using kudu::coding::DecodeGroupVarInt32_SlowButSafe;
 using kudu::coding::DecodeGroupVarInt32_SSE_Add;
 using kudu::coding::AppendGroupVarInt32Sequence;
 
@@ -289,13 +290,24 @@ inline Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink)
     n--;
     cur_idx_++;
   }
+
+  const uint8_t *sse_safe_pos = data_.data() + data_.size() - 17;
   if (n == 0) goto ret;
 
   // Now grab groups of 4 and append to vector
   while (n >= 4) {
     uint32_t ints[4];
-    cur_pos_ = DecodeGroupVarInt32_SSE_Add(
-      cur_pos_, ints, min_elem_xmm);
+    if (cur_pos_ < sse_safe_pos) {
+      cur_pos_ = DecodeGroupVarInt32_SSE_Add(
+        cur_pos_, ints, min_elem_xmm);
+    } else {
+      cur_pos_ = DecodeGroupVarInt32_SlowButSafe(
+        cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
+      ints[0] += min_elem_;
+      ints[1] += min_elem_;
+      ints[2] += min_elem_;
+      ints[3] += min_elem_;
+    }
     cur_idx_ += 4;
 
     sink->push_back(ints[0]);
@@ -310,8 +322,17 @@ inline Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink)
   // Grab next batch into pending_
   // Note that this does _not_ increment cur_idx_
   uint32_t ints[4];
-  cur_pos_ = DecodeGroupVarInt32_SSE_Add(
-    cur_pos_, ints, min_elem_xmm);
+  cur_pos_ = DecodeGroupVarInt32_SlowButSafe(
+    cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
+
+  DCHECK_LE(cur_pos_, &data_[0] + data_.size())
+    << "Overflowed end of buffer! cur_pos=" << cur_pos_ 
+    << " data=" << data_.data() << " size=" << data_.size();
+
+  ints[0] += min_elem_;
+  ints[1] += min_elem_;
+  ints[2] += min_elem_;
+  ints[3] += min_elem_;
   // pending_ acts like a stack, so push in reverse order.
   pending_.push_back(ints[3]);
   pending_.push_back(ints[2]);

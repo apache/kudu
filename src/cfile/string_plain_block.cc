@@ -154,7 +154,11 @@ Status StringPlainBlockDecoder::ParseHeader() {
   size_t rem = num_elems_;
   while (rem >= 4) {
     uint32_t ints[4];
-    p = coding::DecodeGroupVarInt32_SSE(p, &ints[0], &ints[1], &ints[2], &ints[3]);
+    if (p + 16 < limit) {
+      p = coding::DecodeGroupVarInt32_SSE(p, &ints[0], &ints[1], &ints[2], &ints[3]);
+    } else {
+      p = coding::DecodeGroupVarInt32_SlowButSafe(p, &ints[0], &ints[1], &ints[2], &ints[3]);
+    }
     if (p > limit) {
       LOG(WARNING) << "bad block: " << HexDump(data_);
       return Status::Corruption(
@@ -170,7 +174,7 @@ Status StringPlainBlockDecoder::ParseHeader() {
 
   if (rem > 0) {
     uint32_t ints[4];
-    p = coding::DecodeGroupVarInt32_SSE(p, &ints[0], &ints[1], &ints[2], &ints[3]);
+    p = coding::DecodeGroupVarInt32_SlowButSafe(p, &ints[0], &ints[1], &ints[2], &ints[3]);
     if (p > limit) {
       LOG(WARNING) << "bad block: " << HexDump(data_);
       return Status::Corruption(

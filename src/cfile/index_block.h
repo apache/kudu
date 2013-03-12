@@ -228,7 +228,7 @@ public:
 
   // Return the key of the first entry in this index block.
   // For pointer-based types (such as strings), the pointed-to
-  // data is only valid until the next call to Reset().
+  // data is only valid until the next call to this builder.
   Status GetFirstKey(void *key) const;
 
   size_t Count() const;
