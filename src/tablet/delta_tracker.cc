@@ -7,6 +7,7 @@
 
 #include "gutil/strings/strip.h"
 #include "util/env.h"
+#include "util/env_util.h"
 #include "util/status.h"
 #include "tablet/deltafile.h"
 #include "tablet/delta_tracker.h"
@@ -103,20 +104,15 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
   string path = Layer::GetDeltaPath(dir_, delta_idx);
 
   // Open file for write.
-  WritableFile *out;
-  Status s = env_->NewWritableFile(path, &out);
+  shared_ptr<WritableFile> out;
+  Status s = env_util::OpenFileForWrite(env_, path, &out);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open output file for delta level " <<
       delta_idx << " at path " << path << ": " << 
       s.ToString();
     return s;
   }
-
-  // Construct a shared_ptr so that, if the writer construction
-  // fails, we don't leak the file descriptor.
-  shared_ptr<WritableFile> out_shared(out);
-
-  DeltaFileWriter dfw(schema_, out_shared);
+  DeltaFileWriter dfw(schema_, out);
 
   s = dfw.Start();
   if (!s.ok()) {
