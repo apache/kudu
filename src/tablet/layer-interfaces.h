@@ -18,6 +18,8 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
+class DeltaIteratorInterface;
+
 // Structure which caches an encoded and hashed key, suitable
 // for probing against layers.
 class LayerKeyProbe {
@@ -95,21 +97,65 @@ public:
 // Used often enough, may as well typedef it.
 typedef vector<shared_ptr<LayerInterface> > LayerVector;
 
-
+// Interface for the pieces of the system that track deltas/updates.
+// This is implemented by DeltaMemStore and by DeltaTracker, which reads
+// on-disk delta files.
 class DeltaTrackerInterface {
 public:
 
-  // Apply updates for a given column to a batch of rows.
-  // TODO: would be better to take in a projection schema here, maybe?
-  // Or provide functions for each (column-wise scanning vs early materialization?)
-  //
-  // The target buffer 'dst' is assumed to have a length at least
-  // as large as row_stride * nrows.
-  virtual Status ApplyUpdates(size_t col_idx, uint32_t start_row,
-                              ColumnBlock *dst) const = 0;
+  // Create a DeltaIteratorInterface for the given projection.
+  // The projection corresponds to whatever scan is currently ongoing.
+  // All RowBlocks passed to this DeltaIterator will have this same schema.
+  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection_) = 0;
 
   virtual ~DeltaTrackerInterface() {}
 };
+
+
+// Iterator over deltas.
+// For each layer, this iterator is constructed alongside the base data iterator,
+// and used to apply any updates which haven't been yet compacted into the base
+// (i.e. those edits in the DeltaMemStore or in delta files)
+//
+// Typically this is used as follows:
+//
+//   Open iterator, seek to particular point in file
+//   RowBlock rowblock;
+//   foreach RowBlock in base data {
+//     clear row block
+//     CHECK_OK(iter->PrepareToApply(&rowblock));
+//     ... read one column from base data into row block ...
+//     CHECK_OK(iter->ApplyUpdates(&rowblock, <column index>))
+//     ... check predicates for column ...
+//     ... read another column from base data...
+//     CHECK_OK(iter->ApplyUpdates(&rowblock, <second column>))
+//     ...
+//  }
+class DeltaIteratorInterface {
+public:
+  // Initialize the iterator. This must be called once before any other
+  // call.  
+  virtual Status Init() = 0;
+
+  // Seek to a particular ordinal position in the delta data. This cancels any prepared
+  // block, and must be called at least once prior to PrepareToApply.
+  virtual Status SeekToOrdinal(uint32_t idx) = 0;
+
+  // Prepare to apply deltas to a block of rows. This takes a consistent snapshot
+  // of all deltas that will apply to the block, so that subsequent calls to
+  // ApplyUpdates() will not cause any "tearing"/non-atomicity.
+  //
+  // Each time this is called, the iterator is advanced by the full length
+  // of the previously prepared block.
+  virtual Status PrepareToApply(RowBlock *dst) = 0;
+
+  // Apply the snapshotted updates to one of the columns.
+  // 'dst' must be the same row block as was previously passed to PrepareToApply()
+  virtual Status ApplyUpdates(RowBlock *dst, size_t col_to_apply) = 0;
+
+  virtual ~DeltaIteratorInterface() {}
+};
+
 
 
 } // namespace tablet

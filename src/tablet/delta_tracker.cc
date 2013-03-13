@@ -87,7 +87,7 @@ RowIteratorInterface *DeltaTracker::WrapIterator(
     deltas.push_back(dms_);
   }
 
-  return new DeltaMergingIterator(base, deltas, schema_, base->schema());
+  return new DeltaMergingIterator(base, deltas);
 }
 
 void DeltaTracker::Update(uint32_t row_idx, const RowChangeList &update) {
@@ -189,10 +189,22 @@ Status DeltaTracker::Flush() {
 // Iterator
 ////////////////////////////////////////////////////////////
 
+DeltaMergingIterator::DeltaMergingIterator(const shared_ptr<RowIteratorInterface> &base_iter,
+                                           const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers) :
+  base_iter_(base_iter)
+{
+  BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers) {
+    delta_iters_.push_back(tracker->NewDeltaIterator(base_iter_->schema()));
+  }
+}
+
+
 Status DeltaMergingIterator::Init() {
   RETURN_NOT_OK(base_iter_->Init());
-  RETURN_NOT_OK(
-    projection_.GetProjectionFrom(src_schema_, &projection_mapping_));
+  BOOST_FOREACH(DeltaIteratorInterface &delta_iter, delta_iters_) {
+    RETURN_NOT_OK(delta_iter.Init());
+    RETURN_NOT_OK(delta_iter.SeekToOrdinal(0));
+  }
   return Status::OK();
 }
 
@@ -200,8 +212,6 @@ Status DeltaMergingIterator::CopyNextRows(size_t *nrows, RowBlock *dst)
 {
   // Get base data
   RETURN_NOT_OK(base_iter_->CopyNextRows(nrows, dst));
-  size_t old_cur_row = cur_row_;
-  cur_row_ += *nrows;
 
   if (*nrows == 0) {
     // TODO: does this happen?
@@ -209,12 +219,10 @@ Status DeltaMergingIterator::CopyNextRows(size_t *nrows, RowBlock *dst)
   }
 
   // Apply updates
-  BOOST_FOREACH(shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers_) {
-    for (size_t proj_col_idx = 0; proj_col_idx < projection_.num_columns(); proj_col_idx++) {
-      ColumnBlock dst_col = dst->column_block(proj_col_idx, *nrows);
-      size_t src_col_idx = projection_mapping_[proj_col_idx];
-
-      RETURN_NOT_OK(tracker->ApplyUpdates(src_col_idx, old_cur_row, &dst_col));
+  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
+    RETURN_NOT_OK(iter.PrepareToApply(dst));
+    for (size_t proj_col_idx = 0; proj_col_idx < dst->schema().num_columns(); proj_col_idx++) {
+      RETURN_NOT_OK(iter.ApplyUpdates(dst, proj_col_idx));
     }
   }
 

@@ -20,6 +20,7 @@
 namespace kudu {
 namespace cfile {
 
+class WriterOptions;
 
 class StringPlainBlockBuilder : public BlockBuilder {
 public:
@@ -88,9 +89,9 @@ public:
     return ordinal_pos_base_ + cur_idx_;
   }
 
-private:
   Slice string_at_index(size_t indx) const;
 
+private:
   Slice data_;
   bool parsed_;
 

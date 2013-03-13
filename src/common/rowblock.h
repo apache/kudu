@@ -52,6 +52,13 @@ public:
 
   size_t nrows() const { return nrows_; }
 
+  // Zero the memory pointed to by this row block.
+  // This physically zeros the memory, so is not efficient - mostly useful
+  // from unit tests.
+  void ZeroMemory() {
+    memset(data_, '\0', schema_.byte_size() * nrows_);
+  }
+
 private:
   Schema schema_;
   uint8_t *data_;

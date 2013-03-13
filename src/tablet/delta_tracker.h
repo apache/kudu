@@ -4,6 +4,7 @@
 #define KUDU_TABLET_DELTATRACKER_H
 
 #include <boost/noncopyable.hpp>
+#include <boost/ptr_container/ptr_vector.hpp>
 #include <gtest/gtest.h>
 
 #include "common/iterator.h"
@@ -94,7 +95,7 @@ public:
   }
 
   const Schema &schema() const {
-    return projection_;
+    return base_iter_->schema();
   }
 
 private:
@@ -102,25 +103,11 @@ private:
 
   // Construct. The base_iter should not be Initted.
   DeltaMergingIterator(const shared_ptr<RowIteratorInterface> &base_iter,
-                       const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers,
-                       const Schema &src_schema,
-                       const Schema &projection) :
-    base_iter_(base_iter),
-    delta_trackers_(delta_trackers),
-    src_schema_(src_schema),
-    projection_(projection),
-    cur_row_(0)
-  {}
+                       const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers);
 
   // Iterator for the key column in the underlying data.
   shared_ptr<RowIteratorInterface> base_iter_;
-  vector<shared_ptr<DeltaTrackerInterface> > delta_trackers_;
-
-  const Schema src_schema_;
-  const Schema projection_;
-  vector<size_t> projection_mapping_;
-
-  size_t cur_row_;
+  boost::ptr_vector<DeltaIteratorInterface> delta_iters_;
 };
 
 } // namespace tablet

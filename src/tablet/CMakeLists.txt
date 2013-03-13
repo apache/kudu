@@ -17,6 +17,7 @@ ADD_KUDU_TEST(layer-test)
 ADD_KUDU_TEST(mt-layer-test)
 ADD_KUDU_TEST(memstore-test)
 ADD_KUDU_TEST(deltamemstore-test)
+ADD_KUDU_TEST(deltafile-test)
 
 # cbtree-test doesn't have dependencies on other tablet stuff
 SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} gtest )
