@@ -136,8 +136,8 @@ public:
     DCHECK_EQ(dst_row->size(), schema_.byte_size());
 
     while (HasNext()) {
-      size_t updated_col;
-      const void *new_val;
+      size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
+      const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
       uint8_t *dst_cell = dst_row->mutable_data() + schema_.column_offset(updated_col);
       schema_.column(updated_col).CopyCell(dst_cell, new_val, arena);
@@ -148,8 +148,8 @@ public:
   template<class ARENA>
   Status ApplyToOneColumn(size_t col_idx, void *dst_cell, ARENA *arena) {
     while (HasNext()) {
-      size_t updated_col;
-      const void *new_val;
+      size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
+      const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
       if (updated_col == col_idx) {
         schema_.column(col_idx).CopyCell(dst_cell, new_val, arena);
