@@ -157,6 +157,18 @@ SET(KUDU_LINK_LIBS tablet cfile kudu_common kudu_util gutil ${LIBS})
 SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} gtest)
 
 ############################################################
+# "make etags" target
+############################################################
+IF (UNIX)
+  ADD_CUSTOM_TARGET(tags etags --members --declarations 
+  `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name 
+*.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or 
+-name *.f`)
+  ADD_CUSTOM_TARGET(etags DEPENDS tags)
+ENDIF (UNIX)
+
+
+############################################################
 # Subdirectories
 ############################################################
 
