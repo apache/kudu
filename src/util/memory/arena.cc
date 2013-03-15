@@ -125,8 +125,9 @@ void ArenaBase<THREADSAFE>::Reset() {
 #ifndef NDEBUG
   // In debug mode release the last component too for (hopefully) better
   // detection of memory-related bugs (invalid shallow copies, etc.).
+  size_t last_size = arena_.back()->size();
   arena_.clear();
-  AddComponent( CHECK_NOTNULL(NewComponent(arena_.back()->size(), 0)) );
+  AddComponent( CHECK_NOTNULL(NewComponent(last_size, 0)) );
 #endif
 }
 
