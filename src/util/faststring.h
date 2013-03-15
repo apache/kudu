@@ -3,14 +3,12 @@
 #define KUDU_UTIL_FASTSTRING_H
 
 #include <boost/noncopyable.hpp>
-#include <boost/scoped_array.hpp>
+#include "gutil/gscoped_ptr.h"
 #include "gutil/strings/fastmem.h"
 
 #include <string>
 
 namespace kudu {
-
-using boost::scoped_array;
 
 // A faststring is similar to a std::string, except that it is faster for many
 // common use cases (in particular, resize() will fill with uninitialized data
@@ -54,7 +52,7 @@ public:
   void reserve(size_t newcapacity) {
     if (PREDICT_TRUE(newcapacity <= capacity_)) return;
 
-    scoped_array<uint8_t> newdata(new uint8_t[newcapacity]);
+    gscoped_array<uint8_t> newdata(new uint8_t[newcapacity]);
     strings::memcpy_inlined(&newdata[0], &data_[0], len_);
     capacity_ = newcapacity;
     data_.swap(newdata);
@@ -172,7 +170,7 @@ private:
     kInitialCapacity = 16
   };
 
-  scoped_array<uint8_t> data_;
+  gscoped_array<uint8_t> data_;
   size_t len_;
   size_t capacity_;
 };

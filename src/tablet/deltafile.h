@@ -38,7 +38,7 @@ public:
 private:
   const Schema schema_;
 
-  scoped_ptr<cfile::Writer> writer_;
+  gscoped_ptr<cfile::Writer> writer_;
 
   // Buffer used as a temporary for storing the serialized form
   // of the deltas
@@ -73,7 +73,7 @@ private:
                            uint32_t start_row, ColumnBlock *dst,
                            bool *done) const;
 
-  scoped_ptr<cfile::CFileReader> reader_;
+  gscoped_ptr<cfile::CFileReader> reader_;
   const Schema schema_;
 };
 

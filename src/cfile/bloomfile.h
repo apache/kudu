@@ -33,7 +33,7 @@ private:
 
   Status FinishCurrentBloomBlock();
 
-  scoped_ptr<cfile::Writer> writer_;
+  gscoped_ptr<cfile::Writer> writer_;
 
   BloomFilterBuilder bloom_builder_;
 
@@ -72,7 +72,7 @@ private:
                           BloomBlockHeaderPB *hdr,
                           Slice *bloom_data) const;
 
-  scoped_ptr<CFileReader> reader_;
+  gscoped_ptr<CFileReader> reader_;
 
   // TODO: temporary workaround for the fact that
   // the index tree iterator is a member of the Reader object.

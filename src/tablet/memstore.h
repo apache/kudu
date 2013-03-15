@@ -273,7 +273,7 @@ private:
 
 
   const shared_ptr<const MemStore> memstore_;
-  scoped_ptr<MemStore::MSBTIter> iter_;
+  gscoped_ptr<MemStore::MSBTIter> iter_;
 
   const Schema projection_;
   vector<size_t> projection_mapping_;

@@ -5,7 +5,6 @@
 
 #include <boost/noncopyable.hpp>
 #include <boost/shared_array.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <tr1/memory>
 #include <string>
 
@@ -14,6 +13,7 @@
 #include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
 #include "cfile/index_btree.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/port.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
@@ -29,7 +29,6 @@ class CFileFooterPB;
 
 using std::string;
 using boost::shared_array;
-using boost::scoped_ptr;
 using std::tr1::shared_ptr;
 
 
@@ -52,7 +51,7 @@ public:
   Status Init();
 
   Status NewIterator(CFileIterator **iter) const;
-  Status NewIterator(scoped_ptr<CFileIterator> *iter) const {
+  Status NewIterator(gscoped_ptr<CFileIterator> *iter) const {
     CFileIterator *iter_ptr;
     RETURN_NOT_OK(NewIterator(&iter_ptr));
     (*iter).reset(iter_ptr);
@@ -136,8 +135,8 @@ private:
   };
   State state_;
 
-  scoped_ptr<CFileHeaderPB> header_;
-  scoped_ptr<CFileFooterPB> footer_;
+  gscoped_ptr<CFileHeaderPB> header_;
+  gscoped_ptr<CFileFooterPB> footer_;
 
   const TypeInfo *type_info_;
 
@@ -195,13 +194,13 @@ private:
 
   const CFileReader *reader_;
 
-  scoped_ptr<IndexTreeIterator> posidx_iter_;
-  scoped_ptr<IndexTreeIterator> validx_iter_;
+  gscoped_ptr<IndexTreeIterator> posidx_iter_;
+  gscoped_ptr<IndexTreeIterator> validx_iter_;
 
   IndexTreeIterator *seeked_;
 
   BlockCacheHandle dblk_data_;
-  scoped_ptr<BlockDecoder> dblk_;
+  gscoped_ptr<BlockDecoder> dblk_;
 };
 
 

@@ -4,11 +4,11 @@
 
 #include <boost/noncopyable.hpp>
 #include <boost/thread.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 
+#include "gutil/gscoped_ptr.h"
 #include "gutil/walltime.h"
 #include "util/countdown_latch.h"
 #include "util/faststring.h"
@@ -16,7 +16,6 @@
 
 namespace kudu {
 
-using boost::scoped_ptr;
 using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
@@ -63,7 +62,7 @@ private:
   SeriesMap series_map_;
   mutable boost::mutex series_lock_;
 
-  scoped_ptr<boost::thread> dumper_thread_;
+  gscoped_ptr<boost::thread> dumper_thread_;
 
   // Latch used to stop the dumper_thread_. When the thread is started,
   // this is set to 1, and when the thread should exit, it is counted down.

@@ -119,7 +119,7 @@ protected:
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
-    scoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(proj_val));
+    gscoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(proj_val));
     ASSERT_STATUS_OK(row_iter->Init());
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
@@ -159,7 +159,7 @@ protected:
   // using the given schema as a projection.
   static void IterateProjection(const Layer &l, const Schema &schema,
                                 int expected_rows) {
-    scoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(schema));
+    gscoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(schema));
     ASSERT_STATUS_OK(row_iter->Init());
 
     int batch_size = 100;

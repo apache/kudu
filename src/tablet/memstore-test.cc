@@ -17,7 +17,6 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::shared_ptr;
-using boost::scoped_ptr;
 
 class TestMemStore : public ::testing::Test {
 public:
@@ -34,7 +33,7 @@ protected:
   // integer value.
   void CheckValue(const shared_ptr<MemStore> &ms, string key,
                   uint32_t expected_val) {
-    scoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
+    gscoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
     iter->Init();
 
     Slice keystr_slice(key);
@@ -69,7 +68,7 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
 
   ASSERT_EQ(2, ms->entry_count());
 
-  scoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
+  gscoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'

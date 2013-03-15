@@ -2,7 +2,6 @@
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -14,6 +13,7 @@
 #include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
 #include "common/columnblock.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
 #include "util/hexdump.h"
 #include "util/memory/arena.h"
@@ -268,7 +268,7 @@ protected:
       data[i] = kBase + i * 2;
     }
 
-    boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
+    gscoped_ptr<WriterOptions> opts(new WriterOptions());
     GVIntBlockBuilder ibb(opts.get());
     CHECK_EQ(num_ints, ibb.Add(reinterpret_cast<uint8_t *>(&data),
                                num_ints, sizeof(uint32_t)));
@@ -315,7 +315,7 @@ protected:
 
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
-  boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(new WriterOptions());
   GVIntBlockBuilder ibb(opts.get());
 
   int *ints = new int[10000];
@@ -336,7 +336,7 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
 }
 
 TEST_F(TestEncoding, TestIntBlockRoundTrip) {
-  boost::scoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(new WriterOptions());
   const uint32_t kOrdinalPosBase = 12345;
 
   srand(123);

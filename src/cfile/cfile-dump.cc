@@ -70,7 +70,7 @@ void DumpFile(const string &path) {
   }
 
   if (FLAGS_iterate_rows) {
-    scoped_ptr<CFileIterator> it;
+    gscoped_ptr<CFileIterator> it;
     CHECK_OK(reader.NewIterator(&it));
 
     CHECK_OK(it->SeekToOrdinal(0));

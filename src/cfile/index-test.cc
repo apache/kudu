@@ -16,7 +16,7 @@ Status SearchInReader(const IndexBlockReader<type> &reader,
                       const typename DataTypeTraits<type>::cpp_type &search_key,
                       BlockPointer *ptr,
                       typename DataTypeTraits<type>::cpp_type *match) {
-  scoped_ptr<IndexBlockIterator<type> > iter(reader.NewIterator());
+  gscoped_ptr<IndexBlockIterator<type> > iter(reader.NewIterator());
 
   RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
 
@@ -25,7 +25,7 @@ Status SearchInReader(const IndexBlockReader<type> &reader,
   return Status::OK();
 }
 
-static uint32_t GetUInt32Key(const scoped_ptr<IndexBlockIterator<UINT32> > &iter) {
+static uint32_t GetUInt32Key(const gscoped_ptr<IndexBlockIterator<UINT32> > &iter) {
   return *iter->GetCurrentKey();
 }
 
@@ -246,7 +246,7 @@ TEST(TestIndexBlock, TestIterator) {
 
   IndexBlockReader<UINT32> reader;
   ASSERT_STATUS_OK(reader.Parse(s));
-  scoped_ptr<IndexBlockIterator<UINT32> > iter(
+  gscoped_ptr<IndexBlockIterator<UINT32> > iter(
     reader.NewIterator());
   iter->SeekToIndex(0);
   ASSERT_EQ(0U, GetUInt32Key(iter));

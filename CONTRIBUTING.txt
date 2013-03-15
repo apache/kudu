@@ -21,6 +21,12 @@ Also, check that any features from boost you use are present in boost 1.46 or ea
 
 The google guide says 80 characters, but that's a little short. Try to keep under 80 where possible, but if you spill over to ~100 or so, not a big deal.
 
+- Smart pointers:
+
+For shared_ptrs, use std::tr1::shared_ptr
+For scoped pointers, use gscoped_ptr from gutil/gscoped_ptr.h. This is more or less equivalent to C++11's unique_ptr, minus the move semantics, which aren't supported by old enough compilers for us to use.
+auto_ptr is disallowed.
+
 
 Testing guidelines
 -----------------------

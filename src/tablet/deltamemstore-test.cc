@@ -2,19 +2,18 @@
 
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
-#include <boost/scoped_array.hpp>
 #include <gtest/gtest.h>
 #include <stdlib.h>
 #include <tr1/unordered_set>
 
 #include "common/schema.h"
+#include "gutil/gscoped_ptr.h"
 #include "tablet/deltamemstore.h"
 #include "util/hexdump.h"
 
 namespace kudu {
 namespace tablet {
 
-using boost::scoped_array;
 using std::tr1::unordered_set;
 
 static void GenerateRandomIndexes(uint32_t range, uint32_t count,

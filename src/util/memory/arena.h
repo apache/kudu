@@ -31,7 +31,7 @@
 #include <glog/logging.h>
 #include "gutil/logging-inl.h"
 #include "gutil/macros.h"
-#include "gutil/scoped_ptr.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/strings/stringpiece.h"
 #include "util/memory/memory.h"
 #include "util/slice.h"
@@ -268,7 +268,7 @@ class ArenaBase<THREADSAFE>::Component {
   void Reset() { offset_ = 0; }
 
  private:
-  scoped_ptr<Buffer> buffer_;
+  gscoped_ptr<Buffer> buffer_;
   uint8_t* const data_;
   typename ArenaTraits<THREADSAFE>::offset_type offset_;
   const size_t size_;

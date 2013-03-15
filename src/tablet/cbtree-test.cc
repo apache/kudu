@@ -2,13 +2,13 @@
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/barrier.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <boost/unordered_set.hpp>
 
+#include "gutil/gscoped_ptr.h"
 #include "tablet/concurrent_btree.h"
 #include "util/hexdump.h"
 #include "util/memory/memory.h"
@@ -19,7 +19,6 @@ namespace kudu {
 namespace tablet {
 namespace btree {
 
-using boost::scoped_ptr;
 using boost::unordered_set;
 
 class TestCBTree : public ::testing::Test {
@@ -227,7 +226,7 @@ void VerifyRange(const CBTree<T> &tree,
 template<class T>
 void InsertAndVerify(boost::barrier *go_barrier,
                      boost::barrier *done_barrier,
-                     scoped_ptr<CBTree<T> > *tree,
+                     gscoped_ptr<CBTree<T> > *tree,
                      int start_idx,
                      int end_idx) {
   while (true) {
@@ -419,7 +418,7 @@ TEST_F(TestCBTree, TestVersionLockConcurrent) {
 // Each thread inserts a number of elements and then verifies that it can
 // read them back.
 TEST_F(TestCBTree, TestConcurrentInsert) {
-  scoped_ptr<CBTree<SmallFanoutTraits> > tree;
+  gscoped_ptr<CBTree<SmallFanoutTraits> > tree;
   
     int num_threads = 16;
     int ins_per_thread = 30;
@@ -480,7 +479,7 @@ TEST_F(TestCBTree, TestIterator) {
   // now iterate through, making sure we saw all
   // the keys that were inserted
   LOG_TIMING(INFO, "Iterating") {
-    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
       t.NewIterator());
     bool exact;
     ASSERT_TRUE(iter->SeekAtOrAfter(Slice(""), &exact));
@@ -509,7 +508,7 @@ TEST_F(TestCBTree, TestIterator) {
 TEST_F(TestCBTree, TestIteratorSeekOnEmptyTree) {
   CBTree<SmallFanoutTraits> t;
 
-  scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+  gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
     t.NewIterator());
   bool exact = true;
   ASSERT_FALSE(iter->SeekAtOrAfter(Slice(""), &exact));
@@ -528,7 +527,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
 
   // Seek to before first key should successfully reach first key
   {
-    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
       t.NewIterator());
 
     bool exact;
@@ -544,7 +543,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
   // Seek to exactly first key should successfully reach first key
   // and set exact = true
   {
-    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
       t.NewIterator());
 
     bool exact;
@@ -560,7 +559,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
   // Seek to exactly last key should successfully reach last key
   // and set exact = true
   {
-    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
       t.NewIterator());
 
     bool exact;
@@ -576,7 +575,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
 
   // Seek to after last key should fail.
   {
-    scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
       t.NewIterator());
 
     bool exact;
@@ -594,7 +593,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
 template<class T>
 static void ScanThread(boost::barrier *go_barrier,
                        boost::barrier *done_barrier,
-                       scoped_ptr<CBTree<T> > *tree) {
+                       gscoped_ptr<CBTree<T> > *tree) {
   while (true) {
     go_barrier->wait();
     if (tree->get() == NULL) return;
@@ -607,7 +606,7 @@ static void ScanThread(boost::barrier *go_barrier,
 
       faststring prev_key;
 
-      scoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter((*tree)->NewIterator());
+      gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter((*tree)->NewIterator());
       bool exact;
       iter->SeekAtOrAfter(Slice(""), &exact);
       while (iter->IsValid()) {
@@ -634,7 +633,7 @@ static void ScanThread(boost::barrier *go_barrier,
 // other threads repeatedly scan and verify that the results come back
 // in order.
 TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
-  scoped_ptr<CBTree<SmallFanoutTraits> > tree;
+  gscoped_ptr<CBTree<SmallFanoutTraits> > tree;
 
   int num_ins_threads = 4;
   int num_scan_threads = 4;
@@ -709,7 +708,7 @@ TEST_F(TestCBTree, TestScanPerformance) {
                                   n_keys, scan_trials,
                                   freeze ? "frozen" : "not frozen")) {
       for (int i = 0; i < 10; i++)  {
-        scoped_ptr<CBTreeIterator<BTreeTraits> > iter(
+        gscoped_ptr<CBTreeIterator<BTreeTraits> > iter(
           tree.NewIterator());
         bool exact;
         iter->SeekAtOrAfter(Slice(""), &exact);

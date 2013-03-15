@@ -23,7 +23,7 @@ using std::string;
 #include "gutil/integral_types.h"
 #include <glog/logging.h>
 #include "gutil/logging-inl.h"
-#include "gutil/scoped_ptr.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strtoint.h"
 #include "gutil/strings/ascii_ctype.h"
@@ -78,7 +78,7 @@ static inline bool EatADouble(const char** text, int* len, bool allow_question,
     retval = strtod(pos, &end_nonconst);
   } else {
     // not '\0'-terminated & no obvious terminator found. must copy.
-    scoped_array<char> buf(new char[rem + 1]);
+    gscoped_array<char> buf(new char[rem + 1]);
     memcpy(buf.get(), pos, rem);
     buf[rem] = '\0';
     retval = strtod(buf.get(), &end_nonconst);

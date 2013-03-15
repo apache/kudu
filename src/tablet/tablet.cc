@@ -254,7 +254,7 @@ Status Tablet::Flush() {
 
   Schema keys_only = schema_.CreateKeyProjection();
 
-  scoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(keys_only));
+  gscoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(keys_only));
   RETURN_NOT_OK(iter->Init());
 
   LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());

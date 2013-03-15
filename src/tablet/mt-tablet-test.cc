@@ -86,7 +86,7 @@ public:
 
     uint64_t updates_since_last_report = 0;
     while (running_insert_count_.count() > 0) {
-      scoped_ptr<RowIteratorInterface> iter;
+      gscoped_ptr<RowIteratorInterface> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
       ASSERT_STATUS_OK(iter->Init());
 
@@ -137,7 +137,7 @@ public:
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
     while (running_insert_count_.count() > 0) {
-      scoped_ptr<RowIteratorInterface> iter;
+      gscoped_ptr<RowIteratorInterface> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
       ASSERT_STATUS_OK(iter->Init());
 
@@ -181,7 +181,7 @@ public:
 
     uint64_t sum = 0;
 
-    scoped_ptr<RowIteratorInterface> iter;
+    gscoped_ptr<RowIteratorInterface> iter;
     CHECK_OK(tablet_->NewRowIterator(projection, &iter));
     CHECK_OK(iter->Init());
 

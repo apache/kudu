@@ -2,8 +2,7 @@
 #ifndef KUDU_UTIL_BLOOM_FILTER_H
 #define KUDU_UTIL_BLOOM_FILTER_H
 
-#include <boost/scoped_array.hpp>
-
+#include "gutil/gscoped_ptr.h"
 #include "gutil/hash/city.h"
 #include "util/bitmap.h"
 #include "util/slice.h"
@@ -136,7 +135,7 @@ public:
 
 private:
   size_t n_bits_;
-  scoped_array<uint8_t> bitmap_;
+  gscoped_array<uint8_t> bitmap_;
 
   // The number of hash functions to compute.
   size_t n_hashes_;

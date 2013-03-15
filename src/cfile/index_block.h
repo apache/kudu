@@ -3,24 +3,23 @@
 #ifndef KUDU_CFILE_INDEX_BLOCK_H
 #define KUDU_CFILE_INDEX_BLOCK_H
 
-#include "common/types.h"
-#include "cfile/block_pointer.h"
-#include "gutil/port.h"
-#include "util/coding-inl.h"
-
-#include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/utility.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <vector>
 
+#include "common/types.h"
+#include "cfile/block_pointer.h"
+#include "gutil/gscoped_ptr.h"
+#include "gutil/port.h"
+#include "util/coding-inl.h"
+
 namespace kudu {
 namespace cfile {
 
 using std::string;
 using std::vector;
-using boost::scoped_ptr;
 using kudu::DataTypeTraits;
 
 // Forward decl.
@@ -254,7 +253,7 @@ private:
   // Is this a leaf block?
   bool is_leaf_;
 
-  scoped_ptr<KeyEncoding> encoding_;
+  gscoped_ptr<KeyEncoding> encoding_;
 
   faststring buffer_;
   vector<uint32_t> entry_offsets_;

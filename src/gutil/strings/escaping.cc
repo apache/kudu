@@ -14,7 +14,7 @@ using std::vector;
 
 #include "gutil/integral_types.h"
 #include "gutil/port.h"
-#include "gutil/scoped_ptr.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/strings/join.h"
 #include "gutil/utf/utf.h"  // for runetochar
 #include "gutil/charmap.h"
@@ -229,7 +229,7 @@ int UnescapeCEscapeString(const string& src, string* dest,
 }
 
 string UnescapeCEscapeString(const string& src) {
-  scoped_array<char> unescaped(new char[src.size() + 1]);
+  gscoped_array<char> unescaped(new char[src.size() + 1]);
   int len = UnescapeCEscapeSequences(src.c_str(), unescaped.get(), NULL);
   return string(unescaped.get(), len);
 }
@@ -581,7 +581,7 @@ int Utf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
 // ----------------------------------------------------------------------
 string CEscape(const StringPiece& src) {
   const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
-  scoped_array<char> dest(new char[dest_length]);
+  gscoped_array<char> dest(new char[dest_length]);
   const int len = CEscapeInternal(src.data(), src.size(),
                                   dest.get(), dest_length, false, false);
   DCHECK_GE(len, 0);
@@ -590,7 +590,7 @@ string CEscape(const StringPiece& src) {
 
 string CHexEscape(const StringPiece& src) {
   const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
-  scoped_array<char> dest(new char[dest_length]);
+  gscoped_array<char> dest(new char[dest_length]);
   const int len = CEscapeInternal(src.data(), src.size(),
                                   dest.get(), dest_length, true, false);
   DCHECK_GE(len, 0);
@@ -599,7 +599,7 @@ string CHexEscape(const StringPiece& src) {
 
 string Utf8SafeCEscape(const StringPiece& src) {
   const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
-  scoped_array<char> dest(new char[dest_length]);
+  gscoped_array<char> dest(new char[dest_length]);
   const int len = CEscapeInternal(src.data(), src.size(),
                                   dest.get(), dest_length, false, true);
   DCHECK_GE(len, 0);
@@ -608,7 +608,7 @@ string Utf8SafeCEscape(const StringPiece& src) {
 
 string Utf8SafeCHexEscape(const StringPiece& src) {
   const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
-  scoped_array<char> dest(new char[dest_length]);
+  gscoped_array<char> dest(new char[dest_length]);
   const int len = CEscapeInternal(src.data(), src.size(),
                                   dest.get(), dest_length, true, true);
   DCHECK_GE(len, 0);

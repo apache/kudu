@@ -2,15 +2,13 @@
 #ifndef KUDU_CFILE_BLOCK_CACHE_H
 #define KUDU_CFILE_BLOCK_CACHE_H
 
-#include <boost/scoped_ptr.hpp>
 #include <glog/logging.h>
 
+#include "gutil/gscoped_ptr.h"
 #include "util/cache.h"
 
 namespace kudu {
 namespace cfile {
-
-using boost::scoped_ptr;
 
 class BlockCacheHandle;
 
@@ -51,7 +49,7 @@ private:
 
   static void ValueDeleter(const Slice &key, void *value);
 
-  scoped_ptr<Cache> cache_;
+  gscoped_ptr<Cache> cache_;
 };
 
 // Scoped reference to a block from the block cache.

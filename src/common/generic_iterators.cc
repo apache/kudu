@@ -6,8 +6,8 @@
 #include "common/generic_iterators.h"
 #include "common/row.h"
 #include "common/rowblock.h"
+#include "gutil/gscoped_ptr.h"
 #include "util/memory/arena.h"
-#include <boost/scoped_array.hpp>
 
 namespace kudu {
 

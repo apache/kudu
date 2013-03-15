@@ -2,14 +2,11 @@
 #ifndef KUDU_COMMON_COLUMNBLOCK_H
 #define KUDU_COMMON_COLUMNBLOCK_H
 
-#include <boost/scoped_ptr.hpp>
-
 #include "common/types.h"
+#include "gutil/gscoped_ptr.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
-
-using boost::scoped_ptr;
 
 class Arena;
 
@@ -130,8 +127,8 @@ public:
 
 private:
 
-  scoped_array<cpp_type> data_;
-  scoped_ptr<Arena> arena_;
+  gscoped_array<cpp_type> data_;
+  gscoped_ptr<Arena> arena_;
 
 };
 

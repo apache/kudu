@@ -9,7 +9,7 @@
 
 #include <glog/logging.h>
 #include "gutil/logging-inl.h"
-#include "gutil/scoped_ptr.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/strings/ascii_ctype.h"
 #include "gutil/strings/escaping.h"
 #include "gutil/stl_util.h"

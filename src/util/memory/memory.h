@@ -43,10 +43,10 @@ using std::vector;
 
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/locks.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <glog/logging.h>
 
 #include "util/boost_mutex_utils.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/logging-inl.h"
 #include "gutil/macros.h"
 #include "gutil/strings/stringpiece.h"
@@ -55,7 +55,6 @@ using std::vector;
 namespace kudu {
 using boost::mutex;
 using boost::lock_guard;
-using boost::scoped_ptr;
 
 class BufferAllocator;
 
@@ -657,7 +656,7 @@ class MemoryStatisticsCollectingBufferAllocator : public BufferAllocator {
   virtual void FreeInternal(Buffer* buffer);
 
   BufferAllocator* delegate_;
-  scoped_ptr<MemoryStatisticsCollectorInterface>
+  gscoped_ptr<MemoryStatisticsCollectorInterface>
       memory_stats_collector_;
 };
 
@@ -729,7 +728,7 @@ class OwningThreadSafeBufferAllocator
   virtual ~OwningThreadSafeBufferAllocator() {}
 
  private:
-  scoped_ptr<DelegateAllocatorType> delegate_owned_;
+  gscoped_ptr<DelegateAllocatorType> delegate_owned_;
 };
 
 class ThreadSafeMemoryLimit

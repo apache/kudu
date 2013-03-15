@@ -82,7 +82,7 @@ public:
 
 private:
   // Schema: initialized during Init()
-  scoped_ptr<Schema> schema_;
+  gscoped_ptr<Schema> schema_;
   bool initted_;
   deque<shared_ptr<RowIteratorInterface> > iters_;
 };

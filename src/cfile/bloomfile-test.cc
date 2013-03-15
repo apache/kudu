@@ -64,7 +64,7 @@ static void WriteTestBloomFile(Env *env, const string &path) {
 static void VerifyBloomFile(Env *env, const string &path) {
   BloomFileReader *bfr_ptr;
   ASSERT_STATUS_OK( BloomFileReader::Open(env, path, &bfr_ptr) );
-  scoped_ptr<BloomFileReader> bfr(bfr_ptr);
+  gscoped_ptr<BloomFileReader> bfr(bfr_ptr);
 
   // Verify all the keys that we inserted probe as present.
   for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
@@ -97,7 +97,7 @@ static void VerifyBloomFile(Env *env, const string &path) {
 
 
 TEST(TestBloomFile, TestWriteAndRead) {
-  scoped_ptr<Env> env(NewMemEnv(Env::Default()));
+  gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
 
   string path("/test-bloomfile");
   ASSERT_NO_FATAL_FAILURE(
@@ -107,7 +107,7 @@ TEST(TestBloomFile, TestWriteAndRead) {
 
 #ifdef NDEBUG
 TEST(TestBloomFile, Benchmark) {
-  scoped_ptr<Env> env(NewMemEnv(Env::Default()));
+  gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
 
   string path("/test-bloomfile");
   ASSERT_NO_FATAL_FAILURE(
@@ -115,7 +115,7 @@ TEST(TestBloomFile, Benchmark) {
 
   BloomFileReader *bfr_ptr;
   ASSERT_STATUS_OK( BloomFileReader::Open(env.get(), path, &bfr_ptr) );
-  scoped_ptr<BloomFileReader> bfr(bfr_ptr);
+  gscoped_ptr<BloomFileReader> bfr(bfr_ptr);
 
   uint64_t count_present = 0;
   LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {

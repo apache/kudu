@@ -1,11 +1,11 @@
 // Copyright (c) 2012, Cloudera, inc
 
-#include <boost/scoped_array.hpp>
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 #include <stdlib.h>
 
 #include "common/columnblock.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
 #include "util/env.h"
 #include "util/test_macros.h"
@@ -146,7 +146,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
   CFileReader reader(ReaderOptions(), f, size);
   ASSERT_STATUS_OK(reader.Init());
 
-  scoped_ptr<CFileIterator> iter;
+  gscoped_ptr<CFileIterator> iter;
   ASSERT_STATUS_OK( reader.NewIterator(&iter) );
   iter->SeekToOrdinal(0);
 
@@ -248,7 +248,7 @@ TEST(TestCFile, TestReadWriteInts) {
 
   BlockPointer ptr;
 
-  scoped_ptr<CFileIterator> iter;
+  gscoped_ptr<CFileIterator> iter;
   ASSERT_STATUS_OK( reader.NewIterator(&iter) );
 
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
@@ -305,7 +305,7 @@ TEST(TestCFile, TestReadWriteStrings) {
 
   BlockPointer ptr;
 
-  scoped_ptr<CFileIterator> iter;
+  gscoped_ptr<CFileIterator> iter;
   ASSERT_STATUS_OK( reader.NewIterator(&iter) );
 
   Arena arena(1024, 1024*1024);

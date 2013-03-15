@@ -15,7 +15,6 @@ DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on ro
 namespace kudu { namespace tablet {
 
 using cfile::ReaderOptions;
-using std::auto_ptr;
 using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////
@@ -46,7 +45,7 @@ static Status OpenReader(Env *env, string dir, size_t col_idx,
     return s;
   }
 
-  auto_ptr<CFileReader> reader(
+  gscoped_ptr<CFileReader> reader(
     new CFileReader(opts, raf, file_size));
   s = reader->Init();
   if (!s.ok()) {
@@ -149,7 +148,7 @@ uint64_t CFileBaseData::EstimateOnDiskSize() const {
 Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
   CFileIterator *key_iter;
   RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );
-  scoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
+  gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
   // TODO: check bloom filter
 

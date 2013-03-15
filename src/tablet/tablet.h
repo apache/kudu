@@ -3,12 +3,12 @@
 #define KUDU_TABLET_TABLET_H
 
 #include <boost/noncopyable.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <string>
 
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
+#include "gutil/gscoped_ptr.h"
 #include "tablet/memstore.h"
 #include "tablet/layer.h"
 #include "util/env.h"
@@ -18,7 +18,6 @@
 
 namespace kudu { namespace tablet {
 
-using boost::scoped_ptr;
 using std::string;
 using std::tr1::shared_ptr;
 

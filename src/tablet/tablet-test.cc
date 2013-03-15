@@ -93,13 +93,13 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
 
   // Now iterate the tablet and make sure the rows show up
-  scoped_ptr<RowIteratorInterface> iter;
+  gscoped_ptr<RowIteratorInterface> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
   ASSERT_STATUS_OK(iter->Init());
 
   ASSERT_TRUE(iter->HasNext());
 
-  scoped_array<uint8_t> buf(new uint8_t[this->schema_.byte_size() * 100]);
+  gscoped_array<uint8_t> buf(new uint8_t[this->schema_.byte_size() * 100]);
   RowBlock block(this->schema_, &buf[0], 100, &this->arena_);
 
   // First call to CopyNextRows should fetch the whole memstore.
@@ -158,7 +158,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   }
 
   // Now iterate the tablet and make sure the rows show up.
-  scoped_ptr<RowIteratorInterface> iter;
+  gscoped_ptr<RowIteratorInterface> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
   ASSERT_STATUS_OK(iter->Init());
 

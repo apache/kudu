@@ -29,7 +29,7 @@ MemStore::MemStore(const Schema &schema) :
 {}
 
 void MemStore::DebugDump() {
-  scoped_ptr<Iterator> iter(NewIterator());
+  gscoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
     Slice k, v;
     LOG(INFO) << "row " << schema_.DebugRow(iter->GetCurrentRow().data());

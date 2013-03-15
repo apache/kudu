@@ -3,7 +3,6 @@
 #ifndef KUDU_CFILE_CFILE_H
 #define KUDU_CFILE_CFILE_H
 
-#include <boost/scoped_ptr.hpp>
 #include <boost/utility.hpp>
 #include <tr1/memory>
 #include <tr1/unordered_map>
@@ -16,6 +15,7 @@
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.pb.h"
 #include "common/types.h"
+#include "gutil/gscoped_ptr.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -26,7 +26,6 @@ namespace cfile {
 
 using std::string;
 using std::tr1::shared_ptr;
-using boost::scoped_ptr;
 using std::vector;
 
 typedef uint32_t OrdinalIndex;
@@ -138,9 +137,9 @@ private:
   const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
 
-  scoped_ptr<BlockBuilder> data_block_;
-  scoped_ptr<IndexTreeBuilder> posidx_builder_;
-  scoped_ptr<IndexTreeBuilder> validx_builder_;
+  gscoped_ptr<BlockBuilder> data_block_;
+  gscoped_ptr<IndexTreeBuilder> posidx_builder_;
+  gscoped_ptr<IndexTreeBuilder> validx_builder_;
 
   enum State {
     kWriterInitialized,

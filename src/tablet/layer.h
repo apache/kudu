@@ -38,7 +38,6 @@ namespace tablet {
 
 using boost::ptr_vector;
 using std::string;
-using std::auto_ptr;
 using kudu::cfile::BloomFileWriter;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
@@ -95,7 +94,7 @@ public:
 
 private:
 
-  Status InitBloomFileWriter(scoped_ptr<BloomFileWriter> *bfw) const;
+  Status InitBloomFileWriter(gscoped_ptr<BloomFileWriter> *bfw) const;
 
   Env *env_;
   const Schema schema_;

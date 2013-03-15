@@ -1032,7 +1032,7 @@ public:
   // Note that this requires iterating through the entire tree,
   // so it is not very efficient.
   size_t count() const {
-    boost::scoped_ptr<CBTreeIterator<Traits> > iter(NewIterator());
+    gscoped_ptr<CBTreeIterator<Traits> > iter(NewIterator());
     bool exact;
     iter->SeekAtOrAfter(Slice(""), &exact);
     size_t count = 0;

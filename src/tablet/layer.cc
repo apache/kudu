@@ -11,6 +11,7 @@
 #include "common/schema.h"
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
+#include "gutil/gscoped_ptr.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/layer.h"
@@ -22,7 +23,6 @@ namespace kudu { namespace tablet {
 
 using cfile::CFileReader;
 using cfile::ReaderOptions;
-using std::auto_ptr;
 using std::string;
 using std::tr1::shared_ptr;
 
@@ -101,8 +101,8 @@ public:
 
 private:
   RowIteratorInterface *iter_;
-  scoped_ptr<Arena> arena_;
-  scoped_ptr<RowBlock> block_;
+  gscoped_ptr<Arena> arena_;
+  gscoped_ptr<RowBlock> block_;
 
   // Use a small buffer here -- otherwise we end up with larger-than-requested
   // blocks in the CFile. This could be considered a bug in the CFile writer.
@@ -150,11 +150,11 @@ Status LayerWriter::Open() {
     }
 
     // Create the CFile writer itself.
-    std::auto_ptr<cfile::Writer> writer(new cfile::Writer(
-                                          opts,
-                                          col.type_info().type(),
-                                          cfile::GetDefaultEncoding(col.type_info().type()),
-                                          out));
+    gscoped_ptr<cfile::Writer> writer(new cfile::Writer(
+                                        opts,
+                                        col.type_info().type(),
+                                        cfile::GetDefaultEncoding(col.type_info().type()),
+                                        out));
 
     s = writer->Start();
     if (!s.ok()) {
@@ -172,7 +172,7 @@ Status LayerWriter::Open() {
   return Status::OK();
 }
 
-Status LayerWriter::InitBloomFileWriter(scoped_ptr<BloomFileWriter> *bfw) const {
+Status LayerWriter::InitBloomFileWriter(gscoped_ptr<BloomFileWriter> *bfw) const {
   string path(Layer::GetBloomPath(dir_));
   shared_ptr<WritableFile> file;
   RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
@@ -194,7 +194,7 @@ Status LayerWriter::FlushProjection(const Schema &projection,
   projection.GetProjectionFrom(iter_schema, &iter_projection);
 
   faststring encoded_key_buf; // for blooms
-  scoped_ptr<BloomFileWriter> bfw;
+  gscoped_ptr<BloomFileWriter> bfw;
   if (write_bloom) {
     InitBloomFileWriter(&bfw);
   }
@@ -307,7 +307,7 @@ Layer::Layer(Env *env,
 
 
 Status Layer::Open() {
-  std::auto_ptr<CFileBaseData> new_base(
+  gscoped_ptr<CFileBaseData> new_base(
     new CFileBaseData(env_, dir_, schema_));
   RETURN_NOT_OK(new_base->OpenAllColumns());
 

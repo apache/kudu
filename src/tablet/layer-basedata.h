@@ -66,7 +66,7 @@ private:
   const Schema schema_;
 
   vector<shared_ptr<CFileReader> > readers_;
-  scoped_ptr<BloomFileReader> bloom_reader_;
+  gscoped_ptr<BloomFileReader> bloom_reader_;
 };
 
 // Iterator which yields the combined and projected rows from a
@@ -112,7 +112,7 @@ private:
   vector<size_t> projection_mapping_;
 
   // Iterator for the key column in the underlying data.
-  scoped_ptr<CFileIterator> key_iter_;
+  gscoped_ptr<CFileIterator> key_iter_;
   ptr_vector<CFileIterator> col_iters_;
 
   bool initted_;

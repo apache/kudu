@@ -13,7 +13,7 @@
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
 #include "cfile/string_prefix_block.h"
-#include "gutil/scoped_ptr.h"
+#include "gutil/gscoped_ptr.h"
 #include "util/coding.h"
 #include "util/env.h"
 #include "util/slice.h"
@@ -168,7 +168,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   }
 
   // Cache miss: need to read ourselves.
-  ::scoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
+  gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice s;
   RETURN_NOT_OK( file_->Read(ptr.offset(), ptr.size(),
                              &s, scratch.get()) );
@@ -227,13 +227,13 @@ Status CFileReader::CreateBlockDecoder(
 }
 
 Status CFileReader::NewIterator(CFileIterator **iter) const {
-  scoped_ptr<BlockPointer> posidx_root;
+  gscoped_ptr<BlockPointer> posidx_root;
   if (footer_->has_posidx_info()) {
     posidx_root.reset(new BlockPointer(footer_->posidx_info().root_block()));
   }
 
   // If there is a value index in the file, pass it to the iterator
-  scoped_ptr<BlockPointer> validx_root;
+  gscoped_ptr<BlockPointer> validx_root;
   if (footer_->has_validx_info()) {
     validx_root.reset(new BlockPointer(footer_->validx_info().root_block()));
   }

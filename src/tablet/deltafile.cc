@@ -111,7 +111,7 @@ Status DeltaFileReader::ApplyUpdates(
   VLOG(2) << "Starting to apply updates for " <<
     start_row << "-" << (start_row + dst->size());
   BlockPointer validx_root = reader_->validx_root();
-  scoped_ptr<cfile::IndexTreeIterator> iter(
+  gscoped_ptr<cfile::IndexTreeIterator> iter(
     cfile::IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
 
   uint32_t start_row_bigendian = htonl(start_row);

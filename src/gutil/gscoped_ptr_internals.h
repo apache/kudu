@@ -1,11 +1,11 @@
 // Copyright 2012 Google Inc. All Rights Reserved.
 //
 // DO NOT INCLUDE THIS FILE. It contains implementation details of
-// scoped_ptr and related classes; its contents, as well as the file
-// itself, should be considered implementation details of scoped_ptr.h
+// gscoped_ptr and related classes; its contents, as well as the file
+// itself, should be considered implementation details of gscoped_ptr.h
 
-#ifndef BASE_SCOPED_PTR_INTERNALS_H_
-#define BASE_SCOPED_PTR_INTERNALS_H_
+#ifndef BASE_GSCOPED_PTR_INTERNALS_H_
+#define BASE_GSCOPED_PTR_INTERNALS_H_
 
 #include <algorithm>
 using std::copy;
@@ -18,14 +18,14 @@ using std::swap;  // for std::swap
 namespace base {
 namespace internal {
 
-// Minimal implementation of the core logic of scoped_ptr, suitable for
-// reuse in both scoped_ptr and its specialization.
+// Minimal implementation of the core logic of gscoped_ptr, suitable for
+// reuse in both gscoped_ptr and its specialization.
 template <class C, class D>
-class scoped_ptr_impl {
+class gscoped_ptr_impl {
  public:
-  explicit scoped_ptr_impl(C* p) : data_(p) { }
+  explicit gscoped_ptr_impl(C* p) : data_(p) { }
 
-  ~scoped_ptr_impl() {
+  ~gscoped_ptr_impl() {
     if (data_.ptr != NULL) {
       (static_cast<D&>(data_))(data_.ptr);
     }
@@ -47,7 +47,7 @@ class scoped_ptr_impl {
 
   C* get() const { return data_.ptr; }
 
-  void swap(scoped_ptr_impl& p2) {
+  void swap(gscoped_ptr_impl& p2) {
     // Standard swap idiom: 'using std::swap' ensures that std::swap is
     // present in the overload set, but we call swap unqualified so that
     // any more-specific overloads can be used, if available.
@@ -76,11 +76,11 @@ class scoped_ptr_impl {
   Data data_;
 
   // Disallow copy and assignment.
-  scoped_ptr_impl(const scoped_ptr_impl&);
-  scoped_ptr_impl& operator=(const scoped_ptr_impl&);
+  gscoped_ptr_impl(const gscoped_ptr_impl&);
+  gscoped_ptr_impl& operator=(const gscoped_ptr_impl&);
 };
 
 }  // namespace internal
 }  // namespace base
 
-#endif  // BASE_SCOPED_PTR_INTERNALS_H_
+#endif  // BASE_GSCOPED_PTR_INTERNALS_H_

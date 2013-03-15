@@ -55,7 +55,7 @@ Status DeltaMemStore::ApplyUpdates(
   DCHECK_EQ(schema_.column(col_idx).type_info().type(),
             dst->type_info().type());
 
-  scoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
 
   EncodedKeySlice start_key(start_row);
 
@@ -93,7 +93,7 @@ Status DeltaMemStore::ApplyUpdates(
 }
 
 Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
-  scoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
   iter->SeekToStart();
   while (iter->IsValid()) {
     Slice key, val;
