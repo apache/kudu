@@ -52,6 +52,8 @@ public:
 
   virtual Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
 
+  virtual ~CFileBaseData();
+
 private:
   class RowIterator;
   friend class RowIterator;

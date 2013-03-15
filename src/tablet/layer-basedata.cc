@@ -70,6 +70,9 @@ CFileBaseData::CFileBaseData(Env *env,
   schema_(schema)
 {}
 
+CFileBaseData::~CFileBaseData() {
+}
+
 
 Status CFileBaseData::OpenAllColumns() {
   return OpenColumns(schema_.num_columns());
