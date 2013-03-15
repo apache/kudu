@@ -164,6 +164,41 @@ TEST_F(TestLayer, TestDMSFlush) {
   }
 }
 
+// Similar to TestDMSFlush above, except does not actually verify
+// the results (since the verification step is expensive). Additionally,
+// loops the "read" side of the benchmark a number of times, so that
+// the speed of applying deltas during read can be micro-benchmarked.
+//
+// This is most usefully run with an invocation like:
+// ./layer-test --gtest_filter=\*Performance --roundtrip_num_rows=1000000 \
+//    --n_read_passes=1000 --update_fraction=0.01
+TEST_F(TestLayer, TestDeltaApplicationPerformance) {
+  WriteTestLayer();
+
+  // Now open the Layer for read
+  {
+    shared_ptr<Layer> l;
+    ASSERT_STATUS_OK(OpenTestLayer(&l));
+
+    BenchmarkIterationPerformance(*l.get(),
+      StringPrintf("Reading %zd rows prior to updates %d times",
+                   n_rows_, FLAGS_n_read_passes));
+
+    UpdateExistingRows(l.get(), FLAGS_update_fraction, NULL);
+
+    BenchmarkIterationPerformance(*l.get(),
+      StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates in DMS)",
+                   n_rows_, FLAGS_update_fraction * 100.0f,
+                   FLAGS_n_read_passes));
+    l->FlushDeltas();
+
+    BenchmarkIterationPerformance(*l.get(),
+      StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates on disk)",
+                   n_rows_, FLAGS_update_fraction * 100.0f,
+                   FLAGS_n_read_passes));
+  }
+}
+
 } // namespace tablet
 } // namespace kudu
 

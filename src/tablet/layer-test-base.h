@@ -19,6 +19,8 @@
 
 DEFINE_int32(roundtrip_num_rows, 10000,
              "Number of rows to use for the round-trip test");
+DEFINE_int32(n_read_passes, 10,
+             "number of times to read data for perf test");
 
 namespace kudu {
 namespace tablet {
@@ -100,7 +102,9 @@ protected:
       update.AddColumnUpdate(1, &new_val);
       ASSERT_STATUS_OK_FAST(l->UpdateRow(
                               &key_slice, RowChangeList(update_buf)));
-      updated->insert(idx_to_update);
+      if (updated != NULL) {
+        updated->insert(idx_to_update);
+      }
     }
   }
 
@@ -158,11 +162,11 @@ protected:
   // Iterate over a Layer, dumping occasional rows to the console,
   // using the given schema as a projection.
   static void IterateProjection(const Layer &l, const Schema &schema,
-                                int expected_rows) {
+                                int expected_rows, bool do_log = true) {
     gscoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(schema));
     ASSERT_STATUS_OK(row_iter->Init());
 
-    int batch_size = 100;
+    int batch_size = 1000;
     Arena arena(1024, 1024*1024);
     ScopedRowBlock dst(schema, batch_size, &arena);
 
@@ -174,11 +178,40 @@ protected:
       ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, &dst));
       i += n;
 
-      LOG_EVERY_N(INFO, log_interval) << "Got row: " <<
-        schema.DebugRow(dst.row_ptr(0));
+      if (do_log) {
+        LOG_EVERY_N(INFO, log_interval) << "Got row: " <<
+          schema.DebugRow(dst.row_ptr(0));
+      }
     }
 
     EXPECT_EQ(expected_rows, i);
+  }
+
+  void BenchmarkIterationPerformance(const Layer &l,
+                                     const string &log_message) {
+    Schema proj_val(boost::assign::list_of
+                    (ColumnSchema("val", UINT32)),
+                    1);
+    LOG_TIMING(INFO, log_message + " (val column only)") {
+      for (int i = 0; i < FLAGS_n_read_passes; i++) {
+        IterateProjection(l, proj_val, n_rows_, false);
+      }
+    }
+
+    Schema proj_key(boost::assign::list_of
+                    (ColumnSchema("key", STRING)),
+                    1);
+    LOG_TIMING(INFO, log_message + " (key string column only)") {
+      for (int i = 0; i < FLAGS_n_read_passes; i++) {
+        IterateProjection(l, proj_key, n_rows_, false);
+      }
+    }
+
+    LOG_TIMING(INFO, log_message + " (both columns)") { 
+      for (int i = 0; i < FLAGS_n_read_passes; i++) {
+        IterateProjection(l, schema_, n_rows_, false);
+      }
+    }
   }
 
   Status OpenTestLayer(shared_ptr<Layer> *layer) {
