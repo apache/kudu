@@ -145,7 +145,7 @@ set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
 
 ## Google PerfTools
 find_package( GPerf REQUIRED )
-if (NOT ${KUDU_USE_ASAN})
+if (NOT "${KUDU_USE_ASAN}")
   set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
 endif()
 
