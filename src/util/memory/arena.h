@@ -25,6 +25,7 @@
 #include <new>
 #include <tr1/memory>
 
+#include <boost/signals2/dummy_mutex.hpp>
 #include <boost/thread/mutex.hpp>
 
 #include <glog/logging.h>
@@ -44,10 +45,13 @@ template<bool THREADSAFE> struct ArenaTraits;
 
 template <> struct ArenaTraits<true> {
   typedef Atomic32 offset_type;
+  typedef boost::mutex mutex_type;
 };
 
 template <> struct ArenaTraits<false> {
   typedef uint32_t offset_type;
+  // For non-threadsafe, we don't need any real locking.
+  typedef boost::signals2::dummy_mutex mutex_type;
 };
 
 // A helper class for storing variable-length blobs (e.g. strings). Once a blob
@@ -143,6 +147,7 @@ class ArenaBase {
   size_t memory_footprint() const { return arena_footprint_; }
 
  private:
+  typedef typename ArenaTraits<THREADSAFE>::mutex_type mutex_type;
   // Encapsulates a single buffer in the arena.
   class Component;
 
@@ -161,7 +166,7 @@ class ArenaBase {
   // Lock covering 'slow path' allocation, when new components are
   // allocated and added to the arena's list. Also covers any other
   // mutation of the component data structure (eg Reset).
-  boost::mutex component_lock_;
+  mutex_type component_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(ArenaBase);
 };

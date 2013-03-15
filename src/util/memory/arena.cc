@@ -48,7 +48,7 @@ ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_s
 
 template <bool THREADSAFE>
 void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size_t align) {
-  boost::lock_guard<boost::mutex> lock(component_lock_);
+  boost::lock_guard<mutex_type> lock(component_lock_);
 
   // It's possible another thread raced with us and already allocated
   // a new component, in which case we should try the "fast path" again
@@ -112,15 +112,15 @@ void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
 
 template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::Reset() {
-  boost::lock_guard<boost::mutex> lock(component_lock_);
+  boost::lock_guard<mutex_type> lock(component_lock_);
 
-  shared_ptr<Component> last = arena_.back();
-  if (arena_.size() > 1) {
+  if (PREDICT_FALSE(arena_.size() > 1)) {
+    shared_ptr<Component> last = arena_.back();
     arena_.clear();
     arena_.push_back(last);
     current_ = last.get();
   }
-  last->Reset();
+  arena_.back()->Reset();
 
 #ifndef NDEBUG
   // In debug mode release the last component too for (hopefully) better
