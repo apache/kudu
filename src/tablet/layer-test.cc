@@ -16,6 +16,8 @@
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 
+DEFINE_double(update_fraction, 0.1f, "fraction of rows to update");
+
 namespace kudu {
 namespace tablet {
 
@@ -111,7 +113,7 @@ TEST_F(TestLayer, TestLayerUpdate) {
   // which exist. These updates will change the value to
   // equal idx*5 (whereas in the original data, value = idx)
   unordered_set<uint32_t> updated;
-  UpdateExistingRows(l.get(), 0.1f, &updated);
+  UpdateExistingRows(l.get(), FLAGS_update_fraction, &updated);
   ASSERT_EQ(updated.size(), l->delta_tracker_->dms_->Count());
 
   // Try to add an update for a key not in the file (but which falls
@@ -137,7 +139,7 @@ TEST_F(TestLayer, TestDMSFlush) {
     // Add an update to the delta tracker for a number of keys
     // which exist. These updates will change the value to
     // equal idx*5 (whereas in the original data, value = idx)
-    UpdateExistingRows(l.get(), 0.01f, &updated);
+    UpdateExistingRows(l.get(), FLAGS_update_fraction, &updated);
     ASSERT_EQ(updated.size(), l->delta_tracker_->dms_->Count());
 
     l->FlushDeltas();
