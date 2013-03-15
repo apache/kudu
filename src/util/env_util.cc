@@ -21,6 +21,14 @@ Status OpenFileForWrite(Env *env, const string &path,
   return Status::OK();
 }
 
+Status OpenFileForRandom(Env *env, const string &path,
+                         shared_ptr<RandomAccessFile> *file) {
+  RandomAccessFile *w;
+  RETURN_NOT_OK(env->NewRandomAccessFile(path, &w));
+  file->reset(w);
+  return Status::OK();
+}
+
 
 } // namespace env_util
 } // namespace kudu

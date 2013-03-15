@@ -17,6 +17,10 @@ using std::tr1::shared_ptr;
 Status OpenFileForWrite(Env *env, const string &path,
                         shared_ptr<WritableFile> *file);
 
+Status OpenFileForRandom(Env *env, const string &path,
+                         shared_ptr<RandomAccessFile> *file);
+
+
 }
 }
 
