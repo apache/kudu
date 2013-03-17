@@ -1,6 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 

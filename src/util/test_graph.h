@@ -3,7 +3,7 @@
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
 #include <boost/noncopyable.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>

@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <boost/assign/list_of.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 #include <vector>
