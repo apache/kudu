@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "cfile/block_encodings.h"
+#include "cfile/block_compression.h"
 #include "cfile/cfile.pb.h"
 #include "common/types.h"
 #include "gutil/gscoped_ptr.h"
@@ -71,6 +72,11 @@ struct WriterOptions {
 
   // Whether the file needs a value index
   bool write_validx;
+
+  // Block compression codec type
+  //
+  // Default: NO_COMPRESSION
+  CompressionType compression;
 
   WriterOptions();
 };
@@ -140,6 +146,7 @@ private:
   gscoped_ptr<BlockBuilder> data_block_;
   gscoped_ptr<IndexTreeBuilder> posidx_builder_;
   gscoped_ptr<IndexTreeBuilder> validx_builder_;
+  gscoped_ptr<CompressedBlockBuilder> block_compressor_;
 
   enum State {
     kWriterInitialized,

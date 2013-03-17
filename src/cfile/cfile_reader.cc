@@ -28,6 +28,8 @@ namespace cfile {
 static const size_t kMagicAndLengthSize = 12;
 static const size_t kMaxHeaderFooterPBSize = 64*1024;
 
+static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
+
 static Status ParseMagicAndLength(const Slice &data,
                                   uint32_t *parsed_len) {
   if (data.size() != kMagicAndLengthSize) {
@@ -150,6 +152,13 @@ Status CFileReader::ReadAndParseFooter() {
     return Status::Corruption("Invalid cfile pb footer");
   }
 
+  // Verify if the compression codec is available
+  if (footer_->compression() != NO_COMPRESSION) {
+    shared_ptr<CompressionCodec> compression_codec;
+    RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &compression_codec));
+    block_uncompressor_.reset(new CompressedBlockDecoder(compression_codec, kBlockSizeLimit));
+  }
+
   VLOG(1) << "Read footer: " << footer_->DebugString();
 
   return Status::OK();
@@ -186,17 +195,31 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
 
   // Cache miss: need to read ourselves.
   gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
-  Slice s;
+  Slice block;
   RETURN_NOT_OK( file_->Read(ptr.offset(), ptr.size(),
-                             &s, scratch.get()) );
-  MatchReadSliceWithBuffer(&s, scratch.get());
-
-
-  if (s.size() != ptr.size()) {
+                             &block, scratch.get()) );
+  if (block.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }
 
-  cache_->Insert(cache_id_, ptr.offset(), s, ret);
+  // Decompress the block
+  if (block_uncompressor_ != NULL) {
+    Slice ublock;
+    Status s = block_uncompressor_->Uncompress(block, &ublock);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to uncompress block at " << ptr.offset()
+                   << " of size " << ptr.size() << ": " << s.ToString();
+      return s;
+    }
+
+    // free scratch, now that we have the uncompressed block
+    block = ublock;
+    scratch.reset(NULL);
+  } else {
+    MatchReadSliceWithBuffer(&block, scratch.get());
+  }
+
+  cache_->Insert(cache_id_, ptr.offset(), block, ret);
 
   // The cache now has ownership over the memory, so release
   // the scoped pointer.

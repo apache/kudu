@@ -21,10 +21,30 @@
 
 using std::string;
 
+DEFINE_string(cfile_default_compression_codec, "none",
+              "Default cfile block compression codec.");
+
 namespace kudu { namespace cfile {
 
 const string kMagicString = "kuducfil";
 
+static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
+
+static CompressionType GetDefaultCompressionCodec() {
+  if (FLAGS_cfile_default_compression_codec.compare("snappy") == 0)
+    return SNAPPY;
+  if (FLAGS_cfile_default_compression_codec.compare("lz4") == 0)
+    return LZ4;
+  if (FLAGS_cfile_default_compression_codec.compare("zlib") == 0)
+    return ZLIB;
+  if (FLAGS_cfile_default_compression_codec.compare("none") == 0)
+    return NO_COMPRESSION;
+
+  LOG(WARNING) << "Unable to recognize the compression codec '"
+               << FLAGS_cfile_default_compression_codec
+               << "' using no compression as default.";
+  return NO_COMPRESSION;
+}
 
 ////////////////////////////////////////////////////////////
 // Options
@@ -34,7 +54,8 @@ WriterOptions::WriterOptions() :
   index_block_size(32*1024),
   block_restart_interval(16),
   write_posidx(false),
-  write_validx(false)
+  write_validx(false),
+  compression(GetDefaultCompressionCodec())
 {}
 
 
@@ -72,6 +93,12 @@ Writer::Writer(const WriterOptions &options,
 Status Writer::Start() {
   CHECK(state_ == kWriterInitialized) <<
     "bad state for Start(): " << state_;
+
+  if (options_.compression != NO_COMPRESSION) {
+    shared_ptr<CompressionCodec> compression_codec;
+    RETURN_NOT_OK(GetCompressionCodec(options_.compression, &compression_codec));
+    block_compressor_ .reset(new CompressedBlockBuilder(compression_codec, kBlockSizeLimit));
+  }
 
   CFileHeaderPB header;
   header.set_major_version(kCFileMajorVersion);
@@ -147,6 +174,7 @@ Status Writer::Finish() {
   footer.set_data_type(datatype_);
   footer.set_encoding(encoding_type_);
   footer.set_num_values(value_count_);
+  footer.set_compression(options_.compression);
 
   // Write out any pending positional index blocks.
   if (options_.write_posidx) {
@@ -281,21 +309,33 @@ Status Writer::AddBlock(const vector<Slice> &data_slices,
   uint64_t start_offset = off_;
 
   BOOST_FOREACH(const Slice &data, data_slices) {
-    Status s = file_->Append(data);
+    Slice cdata = data;
+
+    if (block_compressor_ != NULL) {
+      Status s = block_compressor_->Compress(data, &cdata);
+      if (!s.ok()) {
+        LOG(WARNING) << "Unable to compress slice of size "
+                     << cdata.size() << " at offset " << off_
+                     << ": " << s.ToString();
+        return(s);
+      }
+    }
+
+    Status s = file_->Append(cdata);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to append slice of size "
-                   << data.size() << " at offset " << off_
+                   << cdata.size() << " at offset " << off_
                    << ": " << s.ToString();
       return s;
     }
-    off_ += data.size();
+    off_ += cdata.size();
   }
 
   uint64_t total_size = off_ - start_offset;
 
   *block_ptr = BlockPointer(start_offset, total_size);
   VLOG(1) << "Appended " << name_for_log
-          << " with " << total_size << " bytes at " << block_ptr->size();
+          << " with " << total_size << " bytes at " << start_offset;
   return Status::OK();
 }
 

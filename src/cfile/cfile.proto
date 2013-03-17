@@ -9,6 +9,13 @@ enum EncodingType {
   GROUP_VARINT = 2;
 }
 
+enum CompressionType {
+  NO_COMPRESSION = 0;
+  SNAPPY = 1;
+  LZ4 = 2;
+  ZLIB = 3;
+}
+
 message CFileHeaderPB {
   required int32 major_version = 1;
   required int32 minor_version = 2;
@@ -43,6 +50,8 @@ message CFileFooterPB {
 
   optional BTreeInfoPB posidx_info = 4;
   optional BTreeInfoPB validx_info = 5;
+
+  optional CompressionType compression = 6 [default=NO_COMPRESSION];
 }
 
 

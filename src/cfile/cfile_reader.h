@@ -13,6 +13,7 @@
 #include "common/types.h"
 #include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
+#include "cfile/block_compression.h"
 #include "cfile/index_btree.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/port.h"
@@ -148,6 +149,8 @@ private:
 
   gscoped_ptr<CFileHeaderPB> header_;
   gscoped_ptr<CFileFooterPB> footer_;
+
+  gscoped_ptr<CompressedBlockDecoder> block_uncompressor_;
 
   const TypeInfo *type_info_;
 

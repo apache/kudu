@@ -158,6 +158,29 @@ else()
 endif()
 set(LIBS ${LIBS} protobuf)
 
+## Snappy
+find_package(Snappy REQUIRED)
+include_directories(${SNAPPY_INCLUDE_DIR})
+if (${KUDU_STATIC_LINK})
+  set(LIBS ${LIBS} ${SNAPPY_STATIC_LIB})
+else()
+  set(LIBS ${LIBS} ${SNAPPY_LIBS}/libsnappy.so)
+endif()
+
+## LZ4
+find_package(Lz4 REQUIRED)
+include_directories(${LZ4_INCLUDE_DIR})
+set(LIBS ${LIBS} ${LZ4_STATIC_LIB})
+
+## ZLib
+find_package(Zlib REQUIRED)
+include_directories(${ZLIB_INCLUDE_DIR})
+if (${KUDU_STATIC_LINK})
+  set(LIBS ${LIBS} ${ZLIB_STATIC_LIB})
+else()
+  set(LIBS ${LIBS} ${ZLIB_LIBS}/libz.so)
+endif()
+
 ## Google PerfTools
 find_package( GPerf REQUIRED )
 if (NOT "${KUDU_USE_ASAN}")

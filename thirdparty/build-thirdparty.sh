@@ -47,5 +47,20 @@ cd $CMAKE_DIR
 make -j
 make install
 
+# build snappy
+cd $SNAPPY_DIR
+./configure --with-pic --prefix=$PREFIX
+make -j4 install
+
+# build zlib
+cd $ZLIB_DIR
+./configure --prefix=$PREFIX
+make -j4 install
+
+# build lz4 (TODO: We've a custom Makefile to produce a lib)
+cd $LZ4_DIR
+cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
+make -j4 install
+
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"

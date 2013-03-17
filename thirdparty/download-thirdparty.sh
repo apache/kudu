@@ -51,5 +51,19 @@ if [ ! -d cmake-${CMAKE_VERSION} ]; then
   rm cmake-${CMAKE_VERSION}.tar.gz
 fi
 
+if [ ! -d snappy-${SNAPPY_VERSION} ]; then
+  echo "Fetching snappy"
+  wget http://snappy.googlecode.com/files/snappy-${SNAPPY_VERSION}.tar.gz
+  tar xzf snappy-${SNAPPY_VERSION}.tar.gz
+  rm snappy-${SNAPPY_VERSION}.tar.gz
+fi
+
+if [ ! -d zlib-${ZLIB_VERSION} ]; then
+  echo "Fetching zlib"
+  wget http://zlib.net/zlib-${ZLIB_VERSION}.tar.gz
+  tar xzf zlib-${ZLIB_VERSION}.tar.gz
+  rm zlib-${ZLIB_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
