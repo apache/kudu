@@ -12,6 +12,7 @@ ADD_LIBRARY(kudu_util
   pb_util.cc
   status.cc
   test_graph.cc
+  errno.cc
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 
