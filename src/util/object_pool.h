@@ -49,7 +49,7 @@ public:
       node = node->next_on_alloc_list;
       if (!tmp->is_on_freelist) {
         // Have to run the actual destructor if the user forgot to free it.
-        tmp->obj.Destroy();
+        tmp->Destroy();
       }
       delete tmp;
     }
@@ -66,11 +66,10 @@ public:
   // free-list.
   void Destroy(T *t) {
     CHECK_NOTNULL(t);
-    uintptr_t t_ptr = reinterpret_cast<uintptr_t>(t);
-    t_ptr -= offsetof(ListNode, obj);
-    ListNode *node = reinterpret_cast<ListNode *>(t_ptr);
+    ListNode *node = static_cast<ListNode *>(
+      reinterpret_cast<ManualConstructor<T> *>(t));
 
-    node->obj.Destroy();
+    node->Destroy();
 
     DCHECK(!node->is_on_freelist);
     node->is_on_freelist = true;
@@ -87,13 +86,9 @@ public:
   }
 
 private:
-  struct ListNode {
-    ListNode() : next_on_free_list(NULL),
-                 next_on_alloc_list(NULL),
-                 is_on_freelist(false)
-    {}
+  class ListNode : ManualConstructor<T> {
+    friend class ObjectPool<T>;
 
-    ManualConstructor<T> obj;
     ListNode *next_on_free_list;
     ListNode *next_on_alloc_list;
 
@@ -109,12 +104,14 @@ private:
       DCHECK(tmp->is_on_freelist);
       tmp->is_on_freelist = false;
 
-      return &tmp->obj;
+      return static_cast<ManualConstructor<T> *>(tmp);
     }
     ListNode *new_node = new ListNode();
+    new_node->next_on_free_list = NULL;
     new_node->next_on_alloc_list = alloc_list_head_;
+    new_node->is_on_freelist = false;
     alloc_list_head_ = new_node;
-    return &new_node->obj;
+    return new_node;
   }
 
   // Keeps track of free objects in this pool.
