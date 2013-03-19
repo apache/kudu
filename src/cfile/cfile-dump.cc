@@ -10,6 +10,7 @@
 DEFINE_bool(print_meta, true, "print the header and footer from the file");
 DEFINE_bool(iterate_rows, true, "iterate each row in the file");
 DEFINE_bool(print_rows, true, "print each row in the file");
+DEFINE_int32(num_iterations, 1, "number of times to iterate the file");
 
 namespace kudu {
 namespace cfile {
@@ -73,8 +74,10 @@ void DumpFile(const string &path) {
     gscoped_ptr<CFileIterator> it;
     CHECK_OK(reader.NewIterator(&it));
 
-    CHECK_OK(it->SeekToOrdinal(0));
-    DumpIterator(reader, it.get());
+    for (int i = 0; i < FLAGS_num_iterations; i++) {
+      CHECK_OK(it->SeekToOrdinal(0));
+      DumpIterator(reader, it.get());
+    }
   }
 }
 
