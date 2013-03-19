@@ -32,7 +32,6 @@ int MyClass::instance_count_ = 0;
 
 TEST(TestObjectPool, TestPooling) {
   MyClass::ResetCount();
-
   {
     ObjectPool<MyClass> pool;
     ASSERT_EQ(0, MyClass::instance_count());
@@ -53,6 +52,18 @@ TEST(TestObjectPool, TestPooling) {
 
   ASSERT_EQ(0, MyClass::instance_count())
     << "destructing pool should have cleared instances";
+}
+
+TEST(TestObjectPool, TestScopedPtr) {
+  MyClass::ResetCount();
+  ASSERT_EQ(0, MyClass::instance_count());
+  ObjectPool<MyClass> pool;
+  {
+    ObjectPool<MyClass>::scoped_ptr sptr(
+      pool.make_scoped_ptr(pool.Construct()));
+    ASSERT_EQ(1, MyClass::instance_count());
+  }
+  ASSERT_EQ(0, MyClass::instance_count());
 }
 
 } // namespace kudu

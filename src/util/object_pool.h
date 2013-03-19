@@ -8,11 +8,14 @@
 #include <glog/logging.h>
 #include <stdint.h>
 #include "gutil/manual_constructor.h"
+#include "gutil/gscoped_ptr.h"
 
 namespace kudu {
 
 using base::ManualConstructor;
 
+template<class T>
+class ReturnToPool;
 
 // An object pool allocates and destroys a single class of objects
 // off of a free-list.
@@ -29,9 +32,13 @@ using base::ManualConstructor;
 template<typename T>
 class ObjectPool {
 public:
+  typedef ReturnToPool<T> deleter_type;
+  typedef gscoped_ptr<T, deleter_type> scoped_ptr;
+
   ObjectPool() :
     free_list_head_(NULL),
-    alloc_list_head_(NULL) {
+    alloc_list_head_(NULL),
+    deleter_(this) {
   }
 
   ~ObjectPool() {
@@ -71,6 +78,14 @@ public:
     free_list_head_ = node;
   }
 
+  // Create a scoped_ptr wrapper around the given pointer which came from this
+  // pool.
+  // When the scoped_ptr goes out of scope, the object will get released back
+  // to the pool.
+  scoped_ptr make_scoped_ptr(T *ptr) {
+    return scoped_ptr(ptr, deleter_);
+  }
+
 private:
   struct ListNode {
     ListNode() : next_on_free_list(NULL),
@@ -107,6 +122,26 @@ private:
 
   // Keeps track of all objects ever allocated by this pool.
   ListNode *alloc_list_head_;
+
+  deleter_type deleter_;
+};
+
+// Functor which returns the passed objects to a specific object pool.
+// This can be used in conjunction with scoped_ptr to automatically release
+// an object back to a pool when it goes out of scope.
+template<class T>
+class ReturnToPool {
+public:
+  ReturnToPool(ObjectPool<T> *pool) :
+    pool_(pool) {
+  }
+
+  inline void operator()(T *ptr) const {
+    pool_->Destroy(ptr);
+  }
+
+private:
+  ObjectPool<T> *pool_;
 };
 
 
