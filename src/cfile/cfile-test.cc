@@ -280,7 +280,40 @@ TEST(TestCFile, TestReadWriteInts) {
              << " expected: " << (i * 10)
              << " got: " << out[i];
     }
+    out[i] = 0;
   }
+  
+
+  // Fetch all data using small batches of only a few rows.
+  // This should catch edge conditions like a batch lining up exactly
+  // with the end of a block.
+  unsigned int seed = time(NULL);
+  LOG(INFO) << "Using random seed: " << seed;
+  srand(seed);
+  iter->SeekToOrdinal(0);
+  ColumnBlock advancing_block = out;
+  size_t fetched = 0;
+  while (fetched < 10000) {
+    ASSERT_TRUE(iter->HasNext());
+    size_t batch_size = random() % 5 + 1;
+    size_t n = batch_size;
+    ASSERT_STATUS_OK(iter->CopyNextValues(&n, &advancing_block));
+    ASSERT_LE(n, batch_size);
+    advancing_block.Advance(n);
+    fetched += n;
+  }
+  ASSERT_FALSE(iter->HasNext());
+
+  // Re-verify
+  for (int i = 0; i < 10000; i++) {
+    if (out[i] != i * 10) {
+      FAIL() << "mismatch at index " << i
+             << " expected: " << (i * 10)
+             << " got: " << out[i];
+    }
+    out[i] = 0;
+  }
+
 
   TimeReadFile("/tmp/cfile-TestReadWrite", &n);
   ASSERT_EQ(10000, n);

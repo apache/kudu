@@ -16,6 +16,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "util/coding.h"
 #include "util/env.h"
+#include "util/object_pool.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -249,7 +250,10 @@ CFileIterator::CFileIterator(const CFileReader *reader,
                              const BlockPointer *posidx_root,
                              const BlockPointer *validx_root) :
   reader_(reader),
-  seeked_(NULL)
+  seeked_(NULL),
+  prepared_dst_block_(NULL),
+  last_prepare_idx_(-1),
+  last_prepare_count_(-1)
 {
   if (posidx_root != NULL) {
     posidx_iter_.reset(IndexTreeIterator::Create(
@@ -263,7 +267,7 @@ CFileIterator::CFileIterator(const CFileReader *reader,
 }
 
 Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
-  seeked_ = NULL;
+  Unseek();
   if (PREDICT_FALSE(posidx_iter_ == NULL)) {
     return Status::NotSupported("no positional index in file");
   }
@@ -271,37 +275,38 @@ Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
   RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(&ord_idx));
 
   // TODO: fast seek within block (without reseeking index)
-  RETURN_NOT_OK(ReadCurrentDataBlock(*posidx_iter_));
+  pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
+    prepared_block_pool_.Construct());
+  RETURN_NOT_OK(ReadCurrentDataBlock(*posidx_iter_, b.get()));
 
   // If the data block doesn't actually contain the data
   // we're looking for, then we're probably in the last
   // block in the file.
   // TODO: could assert that each of the index layers is
   // at its last entry (ie HasNext() is false for each)
-  if (ord_idx >= dblk_->ordinal_pos() + dblk_->Count()) {
+  if (PREDICT_FALSE(ord_idx > b->last_row_idx())){
     return Status::NotFound("trying to seek past highest ordinal in file");
   }
 
   // Seek data block to correct index
-  DCHECK(ord_idx >= dblk_->ordinal_pos() &&
-         ord_idx < dblk_->ordinal_pos() + dblk_->Count())
+  DCHECK(ord_idx >= b->first_row_idx_ &&
+         ord_idx <= b->last_row_idx())
     << "got wrong data block. looking for ord_idx=" << ord_idx
-    << " but dblk spans " << dblk_->ordinal_pos() << "-"
-    << (dblk_->ordinal_pos() + dblk_->Count());
-  dblk_->SeekToPositionInBlock(ord_idx - dblk_->ordinal_pos());
+    << " but got dblk " << b->ToString();
+  b->dblk_->SeekToPositionInBlock(ord_idx - b->first_row_idx_);
 
-  DCHECK(ord_idx == dblk_->ordinal_pos()) <<
-    "failed seek, aimed for " << ord_idx << " got to " <<
-    dblk_->ordinal_pos();
+  DCHECK_EQ(ord_idx, b->dblk_->ordinal_pos()) << "failed seek";
 
+  prepared_blocks_.push_back(b.release());
+  last_prepare_idx_ = ord_idx;
+  last_prepare_count_ = 0;
   seeked_ = posidx_iter_.get();
   return Status::OK();
 }
 
 Status CFileIterator::SeekAtOrAfter(const void *key,
                                     bool *exact_match) {
-  seeked_ = NULL;
-
+  Unseek();
   if (PREDICT_FALSE(validx_iter_ == NULL)) {
     return Status::NotSupported("no value index present");
   }
@@ -317,95 +322,225 @@ Status CFileIterator::SeekAtOrAfter(const void *key,
   }
   RETURN_NOT_OK(s);
 
-  RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_));
+  pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
+    prepared_block_pool_.Construct());
+  RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_, b.get()));
 
-  RETURN_NOT_OK(dblk_->SeekAtOrAfterValue(key, exact_match));
+  RETURN_NOT_OK(b->dblk_->SeekAtOrAfterValue(key, exact_match));
+
+  last_prepare_idx_ = b->dblk_->ordinal_pos();
+  last_prepare_count_ = 0;
+
+  prepared_blocks_.push_back(b.release());
 
   seeked_ = validx_iter_.get();
   return Status::OK();
 }
 
-uint32_t CFileIterator::GetCurrentOrdinal() const {
-  CHECK(seeked_) << "not seeked";
-
-  return dblk_->ordinal_pos();
+void CFileIterator::Unseek() {
+  seeked_ = NULL;
+  BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
+    prepared_block_pool_.Destroy(pb);
+  }
+  prepared_blocks_.clear();
 }
 
-Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter) {
-  BlockPointer dblk_ptr = idx_iter.GetCurrentBlockPointer();
-  RETURN_NOT_OK(reader_->ReadBlock(dblk_ptr, &dblk_data_));
+uint32_t CFileIterator::GetCurrentOrdinal() const {
+  CHECK(seeked_) << "not seeked";
+  DCHECK(!prepared_blocks_.empty());
+
+  return prepared_blocks_.front()->dblk_->ordinal_pos();
+}
+
+string CFileIterator::PreparedBlock::ToString() const {
+  return StringPrintf("dblk(%s, rows=%d-%d)",
+                      dblk_ptr_.ToString().c_str(),
+                      first_row_idx_,
+                      last_row_idx());
+}
+
+Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
+                                           PreparedBlock *prep_block) {
+  prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
+  RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, &prep_block->dblk_data_));
 
   BlockDecoder *bd;
   RETURN_NOT_OK(reader_->CreateBlockDecoder(
-                  &bd, dblk_data_.data()));
-  dblk_.reset(bd);
-  RETURN_NOT_OK(dblk_->ParseHeader());
+                  &bd, prep_block->dblk_data_.data()));
+  prep_block->dblk_.reset(bd);
+  RETURN_NOT_OK(prep_block->dblk_->ParseHeader());
+
+  prep_block->first_row_idx_ = prep_block->dblk_->ordinal_pos();
+
+  prep_block->needs_rewind_ = false;
+  prep_block->rewind_idx_ = 0;
+
+  DVLOG(2) << "Read dblk " << prep_block->ToString();
+
+  return Status::OK();
+}
+
+Status CFileIterator::QueueCurrentDataBlock(const IndexTreeIterator &idx_iter) {
+  pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
+    prepared_block_pool_.Construct());
+  RETURN_NOT_OK(ReadCurrentDataBlock(idx_iter, b.get()));
+  prepared_blocks_.push_back(b.release());
   return Status::OK();
 }
 
 bool CFileIterator::HasNext() const {
   CHECK(seeked_) << "not seeked";
+  CHECK(prepared_dst_block_ == NULL) << "Cannot call HasNext() mid-batch";
 
-  return dblk_->HasNext() || posidx_iter_->HasNext();
+  return !prepared_blocks_.empty() || posidx_iter_->HasNext();
 }
 
-Status CFileIterator::CopyNextValues(
-  size_t *n_param, ColumnBlock *dst)
+Status CFileIterator::PrepareBatch(ColumnBlock *dst, size_t *n) {
+  CHECK(prepared_dst_block_ == NULL) << "Should call FinishBatch() first";
+  CHECK(seeked_ != NULL) << "must be seeked";
+
+  CHECK(!prepared_blocks_.empty());
+
+  uint32_t start_idx = last_prepare_idx_ + last_prepare_count_;
+  uint32_t end_idx = start_idx + *n;
+
+  // Read blocks until all blocks covering the requested range are in the
+  // prepared_blocks_ queue.
+  while (prepared_blocks_.back()->last_row_idx() < end_idx) {
+    Status s = seeked_->Next();
+    if (PREDICT_FALSE(s.IsNotFound())) {
+      VLOG(1) << "Reached EOF";
+      break;
+    } else if (!s.ok()) {
+      return s;
+    }
+    RETURN_NOT_OK(QueueCurrentDataBlock(*seeked_));
+  }
+
+  // Seek the first block in the queue such that the first value to be read
+  // corresponds to start_idx
+  {
+    PreparedBlock *front = prepared_blocks_.front();
+    front->rewind_idx_ = start_idx - front->first_row_idx_;
+    front->needs_rewind_ = true;
+  }
+
+  uint32_t size_covered_by_prep_blocks = prepared_blocks_.back()->last_row_idx() - start_idx + 1;
+  if (PREDICT_FALSE(size_covered_by_prep_blocks < *n)) {
+    *n = size_covered_by_prep_blocks;
+  }
+
+  last_prepare_idx_ = start_idx;
+  last_prepare_count_ = *n;
+  prepared_dst_block_ = dst;
+
+  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+    VLOG(1) << "Prepared for " << (*n) << " rows"
+            << " (" << start_idx << "-" << (start_idx + *n - 1) << ")";
+    BOOST_FOREACH(PreparedBlock *b, prepared_blocks_) {
+      VLOG(1) << "  " << b->ToString();
+    }
+    VLOG(1) << "-------------";
+  }
+
+
+
+  return Status::OK();
+}
+
+Status CFileIterator::FinishBatch() {
+  CHECK(prepared_dst_block_ != NULL) << "no batch prepared";
+  prepared_dst_block_ = NULL;
+
+  DVLOG(1) << "Finishing batch " << last_prepare_idx_ << "-" << (last_prepare_idx_ + last_prepare_count_ - 1);
+
+  // Release all blocks except for the last one, which may still contain
+  // relevent data for the next batch.
+  for (int i = 0; i < prepared_blocks_.size() - 1; i++) {
+    PreparedBlock *b = prepared_blocks_[i];
+    prepared_block_pool_.Destroy(b);
+  }
+
+  PreparedBlock *back = prepared_blocks_.back();
+  DVLOG(1) << "checking last block " << back->ToString() << " vs "
+           << last_prepare_idx_ << " + " << last_prepare_count_
+           << " (" << (last_prepare_idx_ + last_prepare_count_) << ")";
+  if (back->last_row_idx() < last_prepare_idx_ + last_prepare_count_) {
+    // Last block is irrelevant
+    prepared_block_pool_.Destroy(back);
+    prepared_blocks_.clear();
+  } else {
+    prepared_blocks_[0] = back;
+    prepared_blocks_.resize(1);
+  }
+
+  #ifndef NDEBUG
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Left around following blocks:";
+    BOOST_FOREACH(PreparedBlock *b, prepared_blocks_) {
+      VLOG(1) << "  " << b->ToString();
+    }
+    VLOG(1) << "-------------";
+  }
+  #endif
+
+  return Status::OK();
+}
+
+
+Status CFileIterator::Scan()
 {
+  CHECK(seeked_) << "not seeked";
+
   // Make a local copy of the destination block so we can
   // Advance it as we read into it.
-  ColumnBlock remaining_dst = *dst;
+  ColumnBlock remaining_dst = *CHECK_NOTNULL(prepared_dst_block_);
 
-  CHECK(seeked_) << "not seeked";
-  size_t rem = *n_param;
-  *n_param = 0;
+  size_t rem = last_prepare_count_;
+  DCHECK_LE(rem, prepared_dst_block_->size());
 
-  while (rem > 0) {
+  BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
     // Fetch as many as we can from the current datablock.
 
     size_t this_batch = rem;
-    // TODO: if this returns a bad status, we've already read some.
-    // Should document the semantics of partial read.
-    RETURN_NOT_OK(dblk_->CopyNextValues(&this_batch, &remaining_dst));
+
+    if (pb->needs_rewind_) {
+      // Seek back to the saved position.
+      pb->dblk_->SeekToPositionInBlock(pb->rewind_idx_);
+      // TODO: we could add a mark/reset like interface in BlockDecoder interface
+      // that might be more efficient (allowing the decoder to save internal state
+      // instead of having to reconstruct it)
+    }
+    RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+
+    pb->needs_rewind_ = true;
+
     DCHECK_LE(this_batch, rem);
-
     rem -= this_batch;
-
-    *n_param += this_batch;
     remaining_dst.Advance(this_batch);
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
     if (rem > 0) {
-      DCHECK(!dblk_->HasNext()) <<
+      DCHECK_EQ(pb->dblk_->ordinal_pos(), pb->last_row_idx() + 1) <<
         "dblk stopped yielding values before it was empty";
     } else {
-      // Fetched as many as requested. Can return.
-      return Status::OK();
+      break;
     }
-
-    // Pull in next datablock.
-    Status s = seeked_->Next();
-
-    if (s.IsNotFound()) {
-      // No next datablock
-
-      if (*n_param == 0) {
-        // No more data, and this call didn't return any
-        return s;
-      } else {
-        // Otherwise we did successfully return some to the caller.
-        return Status::OK();
-      }
-    } else if (!s.ok()) {
-      return s; // actual error
-    }
-
-    // Fill in the data for the next block.
-    RETURN_NOT_OK(ReadCurrentDataBlock(*seeked_));
   }
+
+  DCHECK_EQ(rem, 0) << "Should have fetched exactly the number of prepared rows";
+
   return Status::OK();
 }
+
+Status CFileIterator::CopyNextValues(size_t *n, ColumnBlock *cb) {
+  RETURN_NOT_OK(PrepareBatch(cb, n));
+  RETURN_NOT_OK(Scan());
+  RETURN_NOT_OK(FinishBatch());
+  return Status::OK();
+}
+
 
 } // namespace cfile
 } // namespace kudu

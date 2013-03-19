@@ -106,7 +106,8 @@ Slice GVIntBlockBuilder::Finish(uint32_t ordinal_pos) {
 
 GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice) :
   data_(slice),
-  parsed_(false)
+  parsed_(false),
+  cur_pos_(NULL)
 {
 }
 
@@ -157,6 +158,9 @@ private:
 
 void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
   CHECK(parsed_) << "Must call ParseHeader()";
+
+  // no-op if seeking to current position
+  if (cur_idx_ == pos && cur_pos_ != NULL) return;
 
   // Reset to start of block
   cur_pos_ = ints_start_;

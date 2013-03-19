@@ -5,6 +5,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <boost/shared_array.hpp>
+#include <vector>
 #include <tr1/memory>
 #include <string>
 
@@ -16,6 +17,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/port.h"
 #include "util/memory/arena.h"
+#include "util/object_pool.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -170,37 +172,105 @@ public:
   Status SeekAtOrAfter(const void *key,
                        bool *exact_match);
 
-  // Get the ordinal index that the iterator is currently
-  // pointed to.
+  // Get the ordinal index that the iterator is currently pointed to.
+  //
+  // Prior to calling PrepareBatch(), this returns the position after the last
+  // seek. PrepareBatch() and Scan() do not change the position returned by this
+  // function. FinishBatch() advances the ordinal to the position of the next
+  // block to be prepared.
   uint32_t GetCurrentOrdinal() const;
 
-  // Copy up to 'n' values into 'out'.
-  // The 'out' buffer must have enough space already allocated for
-  // n items.
+  // Prepare to read up to *n into the given column block.
+  // On return sets *n to the number of prepared rows, which is always
+  // <= the requested value.
+  //
+  // This assumes that dst->size() >= *n on input.
+  //
+  // If there are at least dst->size() values remaining in the underlying file,
+  // this will always return *n == dst->size(). In other words, this does not
+  // ever result in a "short read".
+  Status PrepareBatch(ColumnBlock *dst, size_t *n);
+
+  // Copy values into the prepared column block.
   // Any indirected values (eg strings) are copied into the dst block's
   // arena.
-  // The number of values actually read is written back into 'n'.
-  Status CopyNextValues(size_t *n, ColumnBlock *dst);
+  // This does _not_ advance the position in the underlying file. Multiple
+  // calls to Scan() will re-read the same values.
+  Status Scan();
 
+  // Finish processing the current batch, advancing the iterators
+  // such that the next call to PrepareBatch() will start where the previous
+  // batch left off.
+  Status FinishBatch();
+
+  // Return true if the next call to PrepareBatch will return at least one row.
   bool HasNext() const;
 
+
+  // Convenience method to prepare a batch, scan it, and finish it.
+  Status CopyNextValues(size_t *n, ColumnBlock *dst);
+
+
 private:
+  struct PreparedBlock {
+    BlockPointer dblk_ptr_;
+    BlockCacheHandle dblk_data_;
+    gscoped_ptr<BlockDecoder> dblk_;
+
+    // The index of the first row in this block.
+    uint32_t first_row_idx_;
+
+    // When the block is first read, it is seeked to the proper position
+    // and rewind_idx_ is set to that offset in the block. needs_rewind_
+    // is initially false, but after any values are read from the block,
+    // it becomes true. This indicates that dblk_ is pointed at a later
+    // position in the block, and should be rewound if a second call to
+    // Scan() is made.
+    bool needs_rewind_;
+    uint32_t rewind_idx_;
+
+    uint32_t last_row_idx() const {
+      return first_row_idx_ + dblk_->Count() - 1;
+    }
+
+    string ToString() const;
+  };
+
   // Read the data block currently pointed to by idx_iter_
-  // into the dblk_data_ and dblk_ fields.
+  // into the given PreparedBlock structure.
   //
-  // If this returns an error, then the fields
-  // have undefined values.
-  Status ReadCurrentDataBlock(const IndexTreeIterator &idx_iter);
+  // This does not advance the iterator.
+  Status ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
+                              PreparedBlock *prep_block);
+
+  // Read the data block currently pointed to by idx_iter_, and enqueue
+  // it onto the end of the prepared_blocks_ deque.
+  Status QueueCurrentDataBlock(const IndexTreeIterator &idx_iter);
+
+  // Clear any seek-related state.
+  void Unseek();
 
   const CFileReader *reader_;
 
   gscoped_ptr<IndexTreeIterator> posidx_iter_;
   gscoped_ptr<IndexTreeIterator> validx_iter_;
 
+  // The currently in-use index iterator. This is equal to either
+  // posidx_iter_.get(), validx_iter_.get(), or NULL if not seeked.
   IndexTreeIterator *seeked_;
 
-  BlockCacheHandle dblk_data_;
-  gscoped_ptr<BlockDecoder> dblk_;
+  // Data blocks that contain data relevant to the currently Prepared
+  // batch of rows.
+  // These pointers are allocated from the prepared_block_pool_ below.
+  vector<PreparedBlock *> prepared_blocks_;
+
+  ObjectPool<PreparedBlock> prepared_block_pool_;
+  typedef ObjectPool<PreparedBlock>::scoped_ptr pblock_pool_scoped_ptr;
+
+  // State set up by PrepareBatch(...):
+  ColumnBlock *prepared_dst_block_;
+  uint32_t last_prepare_idx_;
+  uint32_t last_prepare_count_;
 };
 
 
