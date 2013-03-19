@@ -14,6 +14,7 @@
 #
 # The following cache variables are also defined:
 #   PROTOBUF_LIBRARY - The protobuf library
+#   PROTOBUF_STATIC_LIBRARY - The protobuf library (static link)
 #   PROTOBUF_PROTOC_LIBRARY   - The protoc library
 #   PROTOBUF_INCLUDE_DIR - The include directory for protocol buffers
 #   PROTOBUF_PROTOC_EXECUTABLE - The protoc compiler
@@ -147,6 +148,11 @@ find_library(PROTOBUF_LIBRARY NAMES protobuf
              PATHS ${THIRDPARTY_PREFIX}/lib
              NO_DEFAULT_PATH
 )
+find_file(PROTOBUF_STATIC_LIBRARY libprotobuf.a
+         DOC "Static version of the Google Protocol Buffers Library"
+         PATHS ${THIRDPARTY_PREFIX}/lib
+         NO_DEFAULT_PATH)
+
 find_library(PROTOBUF_PROTOC_LIBRARY NAMES protoc
              DOC "The Google Protocol Buffers Compiler Library"
              PATHS ${THIRDPARTY_PREFIX}/lib
@@ -160,6 +166,7 @@ find_program(PROTOBUF_PROTOC_EXECUTABLE NAMES protoc
 
 mark_as_advanced(PROTOBUF_INCLUDE_DIR
                  PROTOBUF_LIBRARY
+                 PROTOBUF_STATIC_LIBRARY
                  PROTOBUF_PROTOC_LIBRARY
                  PROTOBUF_PROTOC_EXECUTABLE)
 

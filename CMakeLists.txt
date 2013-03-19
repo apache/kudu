@@ -74,6 +74,10 @@ SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 # This will only build if clang is the chosen compiler
 if (${KUDU_USE_ASAN})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g -fno-omit-frame-pointer")
+
+  # Ensure static linking is on -- otherwise can run into llvm bug #56393:
+  # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
+  set(KUDU_STATIC_LINK ON)
 endif ()
 
 INCLUDE_DIRECTORIES(src)
@@ -100,7 +104,7 @@ set(LIBS ${LIBS} -lrt)
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
 set(Boost_NO_BOOST_CMAKE ON)
 
-if (${KUDU_STATIC_LINK})
+if ("${KUDU_STATIC_LINK}")
   set(Boost_USE_STATIC_LIBS ON)
 endif()
 
@@ -111,7 +115,7 @@ set(LIBS ${LIBS} ${Boost_LIBRARIES})
 ## GLog
 find_package(GLog REQUIRED)
 include_directories(${GLOG_INCLUDE_DIR})
-if (${KUDU_STATIC_LINK})
+if ("${KUDU_STATIC_LINK}")
   set(LIBS ${LIBS} ${GLOG_STATIC_LIB})
 else()
   set(LIBS ${LIBS} ${GLOG_LIBS}/libglog.so)
@@ -120,7 +124,7 @@ endif()
 ## GFlags
 find_package(GFlags REQUIRED)
 INCLUDE_DIRECTORIES(${GFLAGS_INCLUDE_DIR})
-if (${KUDU_STATIC_LINK})
+if ("${KUDU_STATIC_LINK}")
   add_library(gflags STATIC IMPORTED)
   set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
 else()
@@ -141,7 +145,14 @@ SET(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
 SET(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
 find_package( Protobuf REQUIRED )
 include_directories(${PROTOBUF_INCLUDE_DIR})
-set(LIBS ${LIBS} ${PROTOBUF_LIBRARY})
+if ("${KUDU_STATIC_LINK}")
+  add_library(protobuf STATIC IMPORTED)
+  set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_STATIC_LIBRARY}")
+else()
+  add_library(protobuf SHARED IMPORTED)
+  set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_LIBRARY}")
+endif()
+set(LIBS ${LIBS} protobuf)
 
 ## Google PerfTools
 find_package( GPerf REQUIRED )
