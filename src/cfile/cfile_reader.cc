@@ -183,7 +183,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
 
   // The cache now has ownership over the memory, so release
   // the scoped pointer.
-  scratch.release();
+  ignore_result(scratch.release());
 
   return Status::OK();
 }

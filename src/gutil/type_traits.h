@@ -38,6 +38,7 @@
 //   is_integral
 //   is_floating_point
 //   is_pointer
+//   is_array
 //   is_enum
 //   is_reference
 //   is_pod
@@ -70,6 +71,7 @@ template <bool cond, class T> struct enable_if;
 template <class T> struct is_integral;
 template <class T> struct is_floating_point;
 template <class T> struct is_pointer;
+template <class T> struct is_array;
 // MSVC can't compile this correctly, and neither can gcc 3.3.5 (at least)
 #if !defined(_MSC_VER) && !(defined(__GNUC__) && __GNUC__ <= 3)
 // is_enum uses is_convertible, which is not available on MSVC.
@@ -149,6 +151,11 @@ template <class T> struct is_pointer<T*> : true_type { };
 template <class T> struct is_pointer<const T> : is_pointer<T> { };
 template <class T> struct is_pointer<volatile T> : is_pointer<T> { };
 template <class T> struct is_pointer<const volatile T> : is_pointer<T> { };
+
+
+template<class> struct is_array : public false_type {};
+template<class T, size_t n> struct is_array<T[n]> : public true_type {};
+template<class T> struct is_array<T[]> : public true_type {};
 
 #if !defined(_MSC_VER) && !(defined(__GNUC__) && __GNUC__ <= 3)
 

@@ -344,6 +344,17 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 #define STATIC_ANALYSIS
 #endif // __KLOCWORK__
 
+
+// Annotate a function indicating the caller must examine the return value.
+// Use like:
+//   int foo() WARN_UNUSED_RESULT;
+// To explicitly ignore a result, see |ignore_result()| in <base/basictypes.h>.
+#if defined(__GNUC__)
+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+#define WARN_UNUSED_RESULT
+#endif
+
 // GCC-specific features
 
 #if (defined(__GNUC__) || defined(__APPLE__)) && !defined(SWIG)
