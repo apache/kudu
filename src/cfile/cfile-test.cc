@@ -17,6 +17,11 @@
 #include "index_block.h"
 #include "index_btree.h"
 
+DEFINE_int32(cfile_test_block_size, 1024,
+             "Block size to use for testing cfiles. "
+             "Default is low to stress code, but can be set higher for "
+             "performance testing");
+
 namespace kudu { namespace cfile {
 
 
@@ -69,9 +74,7 @@ static void WriteTestFileStrings(
   WriterOptions opts;
   opts.write_posidx = true;
   opts.write_validx = true;
-  // Use a smaller block size to exercise multi-level
-  // indexing.
-  opts.block_size = 1024;
+  opts.block_size = FLAGS_cfile_test_block_size;
   Writer w(opts, STRING, PREFIX, sink);
 
   ASSERT_STATUS_OK(w.Start());
@@ -105,7 +108,7 @@ static void WriteTestFile(const string &path,
   opts.write_posidx = true;
   // Use a smaller block size to exercise multi-level
   // indexing.
-  opts.block_size = 100;
+  opts.block_size = FLAGS_cfile_test_block_size;
   Writer w(opts, UINT32, GROUP_VARINT, sink);
 
   ASSERT_STATUS_OK(w.Start());
