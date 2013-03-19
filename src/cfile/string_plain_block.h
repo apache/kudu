@@ -20,7 +20,7 @@
 namespace kudu {
 namespace cfile {
 
-class WriterOptions;
+struct WriterOptions;
 
 class StringPlainBlockBuilder : public BlockBuilder {
 public:

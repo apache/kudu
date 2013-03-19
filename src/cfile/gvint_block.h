@@ -10,7 +10,7 @@
 namespace kudu {
 namespace cfile {
 
-class WriterOptions;
+struct WriterOptions;
 typedef uint32_t IntType;
 
 using std::vector;

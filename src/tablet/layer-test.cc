@@ -170,7 +170,7 @@ TEST_F(TestLayer, TestDMSFlush) {
 // the speed of applying deltas during read can be micro-benchmarked.
 //
 // This is most usefully run with an invocation like:
-// ./layer-test --gtest_filter=\*Performance --roundtrip_num_rows=1000000 \
+// ./layer-test --gtest_filter=\*Performance --roundtrip_num_rows=1000000
 //    --n_read_passes=1000 --update_fraction=0.01
 TEST_F(TestLayer, TestDeltaApplicationPerformance) {
   WriteTestLayer();
