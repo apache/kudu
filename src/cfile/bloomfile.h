@@ -49,8 +49,8 @@ private:
 class BloomFileReader : boost::noncopyable {
 public:
   static Status Open(Env *env, const string &path,
-                     BloomFileReader **reader);
-
+                     gscoped_ptr<BloomFileReader> *reader);
+  
   // Check if the given key may be present in the file.
   //
   // Sets *maybe_present to false if the key is definitely not
@@ -59,8 +59,10 @@ public:
                          bool *maybe_present);
 
 private:
-  BloomFileReader(const shared_ptr<RandomAccessFile> &file,
-                  uint64_t file_size);
+  // Constructor. Takes ownership of 'reader'
+  //
+  // 'reader' should already have had CFileReader::Init() called.
+  BloomFileReader(CFileReader *reader);
   Status Init();
 
   // Parse the header present in the given block.

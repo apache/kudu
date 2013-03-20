@@ -16,6 +16,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "util/coding.h"
 #include "util/env.h"
+#include "util/env_util.h"
 #include "util/object_pool.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -55,6 +56,21 @@ CFileReader::CFileReader(const ReaderOptions &options,
   cache_(BlockCache::GetSingleton()),
   cache_id_(cache_->GenerateFileId())
 {
+}
+
+
+Status CFileReader::Open(Env *env, const string &path,
+                         const ReaderOptions &options,
+                         gscoped_ptr<CFileReader> *reader) {
+  shared_ptr<RandomAccessFile> file;
+  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
+  uint64_t size;
+  RETURN_NOT_OK(env->GetFileSize(path, &size));
+
+  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, file, size));
+  RETURN_NOT_OK(reader_local->Init());
+  reader->reset(reader_local.release());
+  return Status::OK();
 }
 
 

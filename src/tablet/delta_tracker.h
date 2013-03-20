@@ -41,7 +41,7 @@ private:
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
-                  DeltaFileReader **dfr);
+                  gscoped_ptr<DeltaFileReader> *dfr);
 
 
   Env *env_;

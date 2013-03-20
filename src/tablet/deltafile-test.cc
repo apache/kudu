@@ -1,7 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/assign/list_of.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
@@ -23,7 +22,6 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::shared_ptr;
-using boost::scoped_ptr;
 
 // Test path to write delta file to (in in-memory environment)
 const string kTestPath = "/tmp/test";
@@ -72,11 +70,10 @@ public:
   }
 
   void VerifyTestFile() {
-    DeltaFileReader *reader;
+    gscoped_ptr<DeltaFileReader> reader;
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
-    scoped_ptr<DeltaFileReader> reader_scoped(reader);
 
-    scoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_));
+    gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_));
     ASSERT_STATUS_OK(it->Init());
 
     ScopedRowBlock block(schema_, 100, &arena_);
@@ -115,7 +112,7 @@ public:
   }
 
 protected:
-  scoped_ptr<Env> env_;
+  gscoped_ptr<Env> env_;
   Schema schema_;
   Arena arena_;
 };

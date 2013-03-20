@@ -54,29 +54,21 @@ void DumpIterator(const CFileReader &reader, CFileIterator *it) {
 
 void DumpFile(const string &path) {
   Env *env = Env::Default();
-
-  RandomAccessFile *raf;
-  uint64_t size;
-  CHECK_OK(env->NewRandomAccessFile(path, &raf));
-  CHECK_OK(env->GetFileSize(path, &size));
-
-  shared_ptr<RandomAccessFile> f(raf);
-
-  CFileReader reader(ReaderOptions(), f, size);
-  CHECK_OK(reader.Init());
+  gscoped_ptr<CFileReader> reader;
+  CHECK_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {
-    cout << "Header:\n" << reader.header().DebugString() << endl;
-    cout << "Footer:\n" << reader.footer().DebugString() << endl;
+    cout << "Header:\n" << reader->header().DebugString() << endl;
+    cout << "Footer:\n" << reader->footer().DebugString() << endl;
   }
 
   if (FLAGS_iterate_rows) {
     gscoped_ptr<CFileIterator> it;
-    CHECK_OK(reader.NewIterator(&it));
+    CHECK_OK(reader->NewIterator(&it));
 
     for (int i = 0; i < FLAGS_num_iterations; i++) {
       CHECK_OK(it->SeekToOrdinal(0));
-      DumpIterator(reader, it.get());
+      DumpIterator(*reader, it.get());
     }
   }
 }

@@ -102,26 +102,26 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 ////////////////////////////////////////////////////////////
 
 Status BloomFileReader::Open(Env *env, const string &path,
-                             BloomFileReader **reader) {
-  RandomAccessFile *raf;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &raf));
-  shared_ptr<RandomAccessFile> f(raf);
+                             gscoped_ptr<BloomFileReader> *reader) {
 
-  uint64_t size;
-  RETURN_NOT_OK(env->GetFileSize(path, &size));
+  gscoped_ptr<CFileReader> cf_reader;
+  RETURN_NOT_OK(CFileReader::Open(env, path, ReaderOptions(), &cf_reader));
 
-  *reader = new BloomFileReader(f, size);
-  return (*reader)->Init();
+  gscoped_ptr<BloomFileReader> bf_reader(
+    new BloomFileReader(cf_reader.release()));
+  RETURN_NOT_OK(bf_reader->Init());
+
+  reader->reset(bf_reader.release());
+  return Status::OK();
 }
 
-BloomFileReader::BloomFileReader(const shared_ptr<RandomAccessFile> &file,
-                                 uint64_t file_size) :
-  reader_(new CFileReader(ReaderOptions(), file, file_size))
+BloomFileReader::BloomFileReader(CFileReader *reader) :
+  reader_(reader)
 {
 }
 
 Status BloomFileReader::Init() {
-  RETURN_NOT_OK(reader_->Init());
+  // The CFileReader is already initialized at this point.
   if (!reader_->has_validx()) {
     // TODO: include path!
     return Status::Corruption("bloom file missing value index");

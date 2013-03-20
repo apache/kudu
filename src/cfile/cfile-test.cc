@@ -139,23 +139,16 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
   Env *env = Env::Default();
   Status s;
 
-  RandomAccessFile *raf;
-  uint64_t size;
-  ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
-  ASSERT_STATUS_OK(env->GetFileSize(path, &size));
-
-  shared_ptr<RandomAccessFile> f(raf);
-
-  CFileReader reader(ReaderOptions(), f, size);
-  ASSERT_STATUS_OK(reader.Init());
+  gscoped_ptr<CFileReader> reader;
+  ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK( reader.NewIterator(&iter) );
+  ASSERT_STATUS_OK( reader->NewIterator(&iter) );
   iter->SeekToOrdinal(0);
 
   Arena arena(8192, 8*1024*1024);
   int count = 0;
-  switch (reader.data_type()) {
+  switch (reader->data_type()) {
     case UINT32:
     {
       ScopedColumnBlock<UINT32> cb(8192);
@@ -190,7 +183,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
       break;
     }
     default:
-      FAIL() << "Unknown type: " << reader.data_type();
+      FAIL() << "Unknown type: " << reader->data_type();
   }
   *count_ret = count;
 }
@@ -239,20 +232,13 @@ TEST(TestCFile, TestReadWriteInts) {
   string path = "/tmp/cfile-TestReadWrite";
   WriteTestFile(path, 10000);
 
-  RandomAccessFile *raf;
-  uint64_t size;
-  ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
-  ASSERT_STATUS_OK(env->GetFileSize(path, &size));
-
-  shared_ptr<RandomAccessFile> f(raf);
-
-  CFileReader reader(ReaderOptions(), f, size);
-  ASSERT_STATUS_OK(reader.Init());
+  gscoped_ptr<CFileReader> reader;
+  ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
   BlockPointer ptr;
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK( reader.NewIterator(&iter) );
+  ASSERT_STATUS_OK( reader->NewIterator(&iter) );
 
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
@@ -325,24 +311,18 @@ TEST(TestCFile, TestReadWriteStrings) {
   const int nrows = 10000;
   string path = "/tmp/cfile-TestReadWriteStrings";
   WriteTestFileStrings(path, nrows, "hello %04d");
-  RandomAccessFile *raf;
-  uint64_t size;
-  ASSERT_STATUS_OK(env->NewRandomAccessFile(path, &raf));
-  ASSERT_STATUS_OK(env->GetFileSize(path, &size));
 
-  shared_ptr<RandomAccessFile> f(raf);
-
-  CFileReader reader(ReaderOptions(), f, size);
-  ASSERT_STATUS_OK(reader.Init());
+  gscoped_ptr<CFileReader> reader;
+  ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
   size_t reader_nrows;
-  ASSERT_STATUS_OK(reader.CountRows(&reader_nrows));
+  ASSERT_STATUS_OK(reader->CountRows(&reader_nrows));
   ASSERT_EQ(nrows, reader_nrows);
 
   BlockPointer ptr;
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK( reader.NewIterator(&iter) );
+  ASSERT_STATUS_OK( reader->NewIterator(&iter) );
 
   Arena arena(1024, 1024*1024);
 

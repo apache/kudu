@@ -73,7 +73,7 @@ public:
   // Open the Delta File at the given path.
   static Status Open(Env *env, const string &path,
                      const Schema &schema,
-                     DeltaFileReader **reader);
+                     gscoped_ptr<DeltaFileReader> *reader);
 
   virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection);
 
@@ -88,8 +88,7 @@ private:
     return reader_;
   }
 
-  DeltaFileReader(const shared_ptr<RandomAccessFile> &file,
-                  uint64_t file_size,
+  DeltaFileReader(cfile::CFileReader *cf_reader,
                   const Schema &schema);
 
   Status Init();

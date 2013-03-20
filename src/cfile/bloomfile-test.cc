@@ -62,9 +62,8 @@ static void WriteTestBloomFile(Env *env, const string &path) {
 // present, and verify that entries we didn't put in have the
 // expected false positive rate.
 static void VerifyBloomFile(Env *env, const string &path) {
-  BloomFileReader *bfr_ptr;
-  ASSERT_STATUS_OK( BloomFileReader::Open(env, path, &bfr_ptr) );
-  gscoped_ptr<BloomFileReader> bfr(bfr_ptr);
+  gscoped_ptr<BloomFileReader> bfr;
+  ASSERT_STATUS_OK( BloomFileReader::Open(env, path, &bfr) );
 
   // Verify all the keys that we inserted probe as present.
   for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
@@ -113,9 +112,8 @@ TEST(TestBloomFile, Benchmark) {
   ASSERT_NO_FATAL_FAILURE(
     WriteTestBloomFile(env.get(), path));
 
-  BloomFileReader *bfr_ptr;
-  ASSERT_STATUS_OK( BloomFileReader::Open(env.get(), path, &bfr_ptr) );
-  gscoped_ptr<BloomFileReader> bfr(bfr_ptr);
+  gscoped_ptr<BloomFileReader> bfr;
+  ASSERT_STATUS_OK( BloomFileReader::Open(env.get(), path, &bfr) );
 
   uint64_t count_present = 0;
   LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {

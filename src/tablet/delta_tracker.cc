@@ -52,7 +52,7 @@ Status DeltaTracker::Open() {
         return Status::IOError(string("Bad delta file: ") + absolute_path);
       }
 
-      DeltaFileReader *dfr;
+      gscoped_ptr<DeltaFileReader> dfr;
       Status s = DeltaFileReader::Open(env_, absolute_path, schema_, &dfr);
       if (!s.ok()) {
         LOG(ERROR) << "Failed to open delta file " << absolute_path << ": "
@@ -61,7 +61,7 @@ Status DeltaTracker::Open() {
       }
       LOG(INFO) << "Successfully opened delta file " << absolute_path;
 
-      delta_trackers_.push_back(shared_ptr<DeltaTrackerInterface>(dfr));
+      delta_trackers_.push_back(shared_ptr<DeltaTrackerInterface>(dfr.release()));
 
       next_delta_idx_ = std::max(next_delta_idx_,
                                  delta_idx + 1);
@@ -99,7 +99,7 @@ void DeltaTracker::Update(uint32_t row_idx, const RowChangeList &update) {
 
 
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
-                       DeltaFileReader **dfr) {
+                              gscoped_ptr<DeltaFileReader> *dfr) {
   int delta_idx = next_delta_idx_++;
   string path = Layer::GetDeltaPath(dir_, delta_idx);
 
@@ -159,7 +159,7 @@ Status DeltaTracker::Flush() {
   // Now, actually flush the contents of the old DMS.
   // TODO: need another lock to prevent concurrent flushers
   // at some point.
-  DeltaFileReader *dfr;
+  gscoped_ptr<DeltaFileReader> dfr;
   Status s = FlushDMS(*old_dms, &dfr);
   CHECK(s.ok())
     << "Failed to flush DMS: " << s.ToString()
@@ -176,7 +176,7 @@ Status DeltaTracker::Flush() {
 
     CHECK_EQ(delta_trackers_[idx], old_dms)
       << "Another thread modified the delta tracker list during flush";
-    delta_trackers_[idx].reset(dfr);
+    delta_trackers_[idx].reset(dfr.release());
   }
 
   return Status::OK();

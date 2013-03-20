@@ -16,6 +16,7 @@
 #include "cfile/index_btree.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/port.h"
+#include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/object_pool.h"
 #include "util/status.h"
@@ -46,9 +47,13 @@ class CFileIterator;
 
 class CFileReader : boost::noncopyable {
 public:
-  CFileReader(const ReaderOptions &options,
-              const shared_ptr<RandomAccessFile> &file,
-              uint64_t file_size);
+  // Open the cfile at the given path.
+  //
+  // When this method is used, there is no need to explicitly
+  // Init() the reader.
+  static Status Open(Env *env, const string &path,
+                     const ReaderOptions &options,
+                     gscoped_ptr<CFileReader> *reader);
 
   Status Init();
 
@@ -114,6 +119,10 @@ public:
 
 private:
   friend class CFileIterator;
+
+  CFileReader(const ReaderOptions &options,
+              const shared_ptr<RandomAccessFile> &file,
+              uint64_t file_size);
 
   // Create a BlockDecoder for the data in this file.
   // Sets *bd to the newly created decoder, if successful.

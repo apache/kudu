@@ -22,40 +22,12 @@ using std::tr1::shared_ptr;
 ////////////////////////////////////////////////////////////
 
 static Status OpenReader(Env *env, string dir, size_t col_idx,
-                         CFileReader **new_reader) {
+                         gscoped_ptr<CFileReader> *new_reader) {
   string path = Layer::GetColumnPath(dir, col_idx);
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-
-  RandomAccessFile *raf_ptr;
-  Status s = env->NewRandomAccessFile(path, &raf_ptr);
-  if (!s.ok()) {
-    LOG(WARNING) << "Could not open cfile at path "
-                 << path << ": " << s.ToString();
-    return s;
-  }
-  shared_ptr<RandomAccessFile> raf(raf_ptr);
-
-  uint64_t file_size;
-  s = env->GetFileSize(path, &file_size);
-  if (!s.ok()) {
-    LOG(WARNING) << "Could not get cfile length at path "
-                 << path << ": " << s.ToString();
-    return s;
-  }
-
-  gscoped_ptr<CFileReader> reader(
-    new CFileReader(opts, raf, file_size));
-  s = reader->Init();
-  if (!s.ok()) {
-    LOG(WARNING) << "Failed to Init() cfile reader for "
-                 << path << ": " << s.ToString();
-    return s;
-  }
-
-  *new_reader = reader.release();
-  return Status::OK();
+  return CFileReader::Open(env, path, opts, new_reader);
 }
 
 ////////////////////////////////////////////////////////////
@@ -95,9 +67,9 @@ Status CFileBaseData::OpenColumns(size_t num_cols) {
       continue;
     }
 
-    CFileReader *reader;
+    gscoped_ptr<CFileReader> reader;
     RETURN_NOT_OK(OpenReader(env_, dir_, i, &reader));
-    readers_[i].reset(reader);
+    readers_[i].reset(reader.release());
     LOG(INFO) << "Successfully opened cfile for column " <<
       schema_.column(i).ToString() << " in " << dir_;;
   }
@@ -111,13 +83,11 @@ Status CFileBaseData::OpenBloomReader() {
     return Status::OK();
   }
 
-  BloomFileReader *rdr;
-  Status s = BloomFileReader::Open(env_, Layer::GetBloomPath(dir_), &rdr);
+  Status s = BloomFileReader::Open(env_, Layer::GetBloomPath(dir_), &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << dir_ << ": "
                  << s.ToString();
-  } else {
-    bloom_reader_.reset(rdr);
+    // Continue without bloom.
   }
 
   return Status::OK();

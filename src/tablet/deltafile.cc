@@ -25,6 +25,7 @@ using cfile::BlockCacheHandle;
 using cfile::BlockPointer;
 using cfile::IndexTreeIterator;
 using cfile::StringPlainBlockDecoder;
+using cfile::CFileReader;
 
 namespace tablet {
 
@@ -98,31 +99,27 @@ Status DeltaFileWriter::AppendDelta(
 
 Status DeltaFileReader::Open(Env *env, const string &path,
                              const Schema &schema,
-                             DeltaFileReader **reader) {
-  RandomAccessFile *raf;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &raf));
-  shared_ptr<RandomAccessFile> f(raf);
+                             gscoped_ptr<DeltaFileReader> *reader_out) {
+  gscoped_ptr<CFileReader> cf_reader;
+  RETURN_NOT_OK(CFileReader::Open(env, path, cfile::ReaderOptions(), &cf_reader));
 
-  uint64_t size;
-  RETURN_NOT_OK(env->GetFileSize(path, &size));
+  gscoped_ptr<DeltaFileReader> df_reader(
+    new DeltaFileReader(cf_reader.release(), schema));
 
-  *reader = new DeltaFileReader(f, size, schema);
-  return (*reader)->Init();
+  RETURN_NOT_OK(df_reader->Init());
+  reader_out->reset(df_reader.release());
+
+  return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(
-  const shared_ptr<RandomAccessFile> &file,
-  uint64_t file_size,
-  const Schema &schema) :
-  reader_(new cfile::CFileReader(cfile::ReaderOptions(),
-                                 file, file_size)),
+DeltaFileReader::DeltaFileReader(CFileReader *cf_reader, const Schema &schema) :
+  reader_(cf_reader),
   schema_(schema)
 {
 }
 
 Status DeltaFileReader::Init() {
-  RETURN_NOT_OK(reader_->Init());
-
+  // CF reader already initialized
   if (!reader_->has_validx()) {
     return Status::Corruption("file does not have a value index!");
   }
