@@ -34,16 +34,41 @@ namespace {
 static char dummy_buffer[0] = {};
 }
 
+// This function is micro-optimized a bit, since it helps debug
+// mode tests run much faster.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize("-O3")
+#endif
 void OverwriteWithPattern(char* p, size_t len, StringPiece pattern) {
-  CHECK_LT(0, pattern.size());
-  for (size_t i = 0; i < len; ++i) {
-    p[i] = pattern[i % pattern.size()];
+  size_t pat_len = pattern.size();
+  CHECK_LT(0, pat_len);
+  size_t rem = len;
+  const char *pat_ptr = pattern.data();
+
+  while (rem >= pat_len) {
+    memcpy(p, pat_ptr, pat_len);
+    p += pat_len;
+    rem -= pat_len;
+  }
+
+  while (rem-- > 0) {
+    *p++ = *pat_ptr++;
   }
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#endif
 
 Buffer::~Buffer() {
 #ifndef NDEBUG
-  OverwriteWithPattern(reinterpret_cast<char*>(data_), size_, "BAD");
+  // "unrolling" the string "BAD" makes for a much more efficient
+  // OverwriteWithPattern call in debug mode, so we can keep this
+  // useful bit of code without tests going slower!
+  OverwriteWithPattern(reinterpret_cast<char*>(data_), size_,
+                       "BADBADBADBADBADBADBADBADBADBADBAD"
+                       "BADBADBADBADBADBADBADBADBADBADBAD"
+                       "BADBADBADBADBADBADBADBADBADBADBAD");
 #endif
   if (allocator_ != NULL) allocator_->FreeInternal(this);
 }

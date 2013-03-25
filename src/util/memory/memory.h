@@ -78,7 +78,10 @@ class Buffer {
         size_(size),
         allocator_(allocator) {
 #ifndef NDEBUG
-    OverwriteWithPattern(reinterpret_cast<char*>(data_), size_, "NEW");
+    OverwriteWithPattern(reinterpret_cast<char*>(data_), size_,
+                         "NEWNEWNEWNEWNEWNEWNEWNEWNEWNEWNEWNEW"
+                         "NEWNEWNEWNEWNEWNEWNEWNEWNEWNEWNEWNEW"
+                         "NEWNEWNEWNEWNEWNEWNEWNEWNEWNEWNEWNEW");
 #endif
   }
 
