@@ -20,5 +20,5 @@ ADD_KUDU_TEST(deltamemstore-test)
 ADD_KUDU_TEST(deltafile-test)
 
 # cbtree-test doesn't have dependencies on other tablet stuff
-SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} gtest )
+SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(cbtree-test)

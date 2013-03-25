@@ -9,6 +9,7 @@
 #include "gutil/stringprintf.h"
 #include "util/env.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 #include "util/stopwatch.h"
 
 #include "cfile.h"
@@ -23,6 +24,9 @@ DEFINE_int32(cfile_test_block_size, 1024,
              "performance testing");
 
 namespace kudu { namespace cfile {
+
+class TestCFile : public KuduTest {
+};
 
 
 template<DataType type>
@@ -102,6 +106,7 @@ static void WriteTestFile(const string &path,
 
   WritableFile *file;
   s = Env::Default()->NewWritableFile(path, &file);
+  ASSERT_STATUS_OK(s);
 
   shared_ptr<WritableFile> sink(file);
   WriterOptions opts;
@@ -192,26 +197,26 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
 // Only run the 100M entry tests in non-debug mode.
 // They take way too long with debugging enabled.
 
-TEST(TestCFile, TestWrite100MFileInts) {
+TEST_F(TestCFile, TestWrite100MFileInts) {
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFile("/tmp/cfile-Test100M", 100000000);
+    WriteTestFile(GetTestPath("Test100M"), 100000000);
     LOG(INFO) << "Done writing";
   }
 
   LOG_TIMING(INFO, "reading 100M ints") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile("/tmp/cfile-Test100M", &n);
+    TimeReadFile(GetTestPath("Test100M"), &n);
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
 
-TEST(TestCFile, TestWrite100MFileStrings) {
+TEST_F(TestCFile, TestWrite100MFileStrings) {
   LOG_TIMING(INFO, "writing 100M strings") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileStrings("/tmp/cfile-Test100M-Strings", 100000000,
+    WriteTestFileStrings(GetTestPath("Test100M-Strings"), 100000000,
                          "hello %d");
     LOG(INFO) << "Done writing";
   }
@@ -219,17 +224,17 @@ TEST(TestCFile, TestWrite100MFileStrings) {
   LOG_TIMING(INFO, "reading 100M strings") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile("/tmp/cfile-Test100M-Strings", &n);
+    TimeReadFile(GetTestPath("Test100M-Strings"), &n);
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
 #endif
 
-TEST(TestCFile, TestReadWriteInts) {
+TEST_F(TestCFile, TestReadWriteInts) {
   Env *env = Env::Default();
 
-  string path = "/tmp/cfile-TestReadWrite";
+  string path = GetTestPath("ints");
   WriteTestFile(path, 10000);
 
   gscoped_ptr<CFileReader> reader;
@@ -301,15 +306,15 @@ TEST(TestCFile, TestReadWriteInts) {
   }
 
 
-  TimeReadFile("/tmp/cfile-TestReadWrite", &n);
+  TimeReadFile(GetTestPath("ints"), &n);
   ASSERT_EQ(10000, n);
 }
 
-TEST(TestCFile, TestReadWriteStrings) {
+TEST_F(TestCFile, TestReadWriteStrings) {
   Env *env = Env::Default();
 
   const int nrows = 10000;
-  string path = "/tmp/cfile-TestReadWriteStrings";
+  string path = GetTestPath("strings");
   WriteTestFileStrings(path, nrows, "hello %04d");
 
   gscoped_ptr<CFileReader> reader;
@@ -396,10 +401,3 @@ TEST(TestCFile, TestReadWriteStrings) {
 
 } // namespace cfile
 } // namespace kudu
-
-int main(int argc, char **argv) {
-  google::InstallFailureSignalHandler();
-  ::testing::InitGoogleTest(&argc, argv);
-  google::ParseCommandLineFlags(&argc, &argv, true);
-  return RUN_ALL_TESTS();
-}

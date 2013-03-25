@@ -12,11 +12,12 @@ ADD_LIBRARY(kudu_util
   pb_util.cc
   status.cc
   test_graph.cc
-
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 
-SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} gtest )
+ADD_LIBRARY(kudu_test_main test_main.cc)
+
+SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(bitmap-test)
 ADD_KUDU_TEST(cache-test)
 ADD_KUDU_TEST(memory/arena-test)

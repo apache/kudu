@@ -18,6 +18,7 @@
 #include "util/stopwatch.h"
 #include "util/test_graph.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 #include "tablet/tablet.h"
 
 
@@ -121,29 +122,19 @@ public:
 typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup> TabletTestHelperTypes;
 
 template<class TESTSETUP>
-class TabletTestBase : public ::testing::Test {
+class TabletTestBase : public KuduTest {
 public:
   TabletTestBase() :
     setup_(),
-    env_(Env::Default()),
     schema_(setup_.test_schema()),
     arena_(1024, 4*1024*1024)
   {}
 
   virtual void SetUp() {
-    const ::testing::TestInfo* const test_info =
-      ::testing::UnitTest::GetInstance()->current_test_info();
-
-    ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
-
-    test_dir_ += StringPrintf(
-      "/%s.%s.%ld",
-      StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
-      test_info->name(),
-      time(NULL));
-
-    LOG(INFO) << "Creating tablet in: " << test_dir_;
-    tablet_.reset(new Tablet(schema_, test_dir_));
+    KuduTest::SetUp();
+    tablet_dir_ = env_->JoinPathSegments(test_dir_, "tablet");
+    LOG(INFO) << "Creating tablet in: " << tablet_dir_;
+    tablet_.reset(new Tablet(schema_, tablet_dir_));
     ASSERT_STATUS_OK(tablet_->CreateNew());
     ASSERT_STATUS_OK(tablet_->Open());
   }
@@ -268,10 +259,9 @@ public:
 
   TESTSETUP setup_;
 
-  Env *env_;
   const Schema schema_;
-  string test_dir_;
   gscoped_ptr<Tablet> tablet_;
+  string tablet_dir_;
 
   Arena arena_;
 };

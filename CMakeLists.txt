@@ -116,10 +116,13 @@ set(LIBS ${LIBS} ${Boost_LIBRARIES})
 find_package(GLog REQUIRED)
 include_directories(${GLOG_INCLUDE_DIR})
 if ("${KUDU_STATIC_LINK}")
-  set(LIBS ${LIBS} ${GLOG_STATIC_LIB})
+  add_library(glog STATIC IMPORTED)
+  set_target_properties(glog PROPERTIES IMPORTED_LOCATION "${GLOG_STATIC_LIB}")
 else()
-  set(LIBS ${LIBS} ${GLOG_LIBS}/libglog.so)
+  add_library(glog SHARED IMPORTED)
+  set_target_properties(glog PROPERTIES IMPORTED_LOCATION "${GLOG_LIBS}/libglog.so")
 endif()
+SET(LIBS ${LIBS} glog)
 
 ## GFlags
 find_package(GFlags REQUIRED)
@@ -138,7 +141,8 @@ find_package(GTest REQUIRED)
 include_directories(${GTEST_INCLUDE_DIR})
 add_library(gtest STATIC IMPORTED)
 set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
-set(LIBS ${LIBS} ${GTEST_LIBRARIES})
+set(LIBS ${LIBS} ${GTEST_LIBRARY})
+SET(KUDU_MIN_TEST_LIBS ${GTEST_LIBRARY} kudu_test_main glog gflags  )
 
 ## Protobuf
 SET(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -165,7 +169,7 @@ endif()
 ############################################################
 SET(KUDU_DEP_LIBS ${LIBS})
 SET(KUDU_LINK_LIBS tablet cfile kudu_common kudu_util gutil ${LIBS})
-SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} gtest)
+SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
 # "make etags" target

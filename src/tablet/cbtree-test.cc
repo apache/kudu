@@ -14,6 +14,7 @@
 #include "util/memory/memory.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 
 namespace kudu {
 namespace tablet {
@@ -21,7 +22,7 @@ namespace btree {
 
 using boost::unordered_set;
 
-class TestCBTree : public ::testing::Test {
+class TestCBTree : public KuduTest {
 protected:
   template<class T>
   InsertStatus InsertInLeaf(LeafNode<T> *l, ThreadSafeArena *arena,

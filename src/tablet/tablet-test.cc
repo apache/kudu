@@ -33,7 +33,7 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Make sure the files were created as expected.
-  string layer_dir_ = Tablet::GetLayerPath(this->test_dir_, 0);
+  string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 0);
   ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 1));
   ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 2));
@@ -199,7 +199,7 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   ASSERT_EQ(1000, this->TabletCount());
 
   // Close and re-open tablet
-  this->tablet_.reset(new Tablet(this->schema_, this->test_dir_));
+  this->tablet_.reset(new Tablet(this->schema_, this->tablet_dir_));
   ASSERT_STATUS_OK(this->tablet_->Open());
 
   // Ensure that rows exist
@@ -214,21 +214,21 @@ TYPED_TEST(TestTablet, TestCompaction) {
   {
     this->InsertTestRows(0, 1000);
     ASSERT_STATUS_OK(this->tablet_->Flush());
-    string layer_dir_ = Tablet::GetLayerPath(this->test_dir_, 0);
+    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 0);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 
   {
     this->InsertTestRows(1000, 1000);
     ASSERT_STATUS_OK(this->tablet_->Flush());
-    string layer_dir_ = Tablet::GetLayerPath(this->test_dir_, 1);
+    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 1);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 
   {
     this->InsertTestRows(2000, 1000);
     ASSERT_STATUS_OK(this->tablet_->Flush());
-    string layer_dir_ = Tablet::GetLayerPath(this->test_dir_, 2);
+    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 2);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 
@@ -236,14 +236,14 @@ TYPED_TEST(TestTablet, TestCompaction) {
   {
     ASSERT_STATUS_OK(this->tablet_->Compact());
     ASSERT_EQ(3000, this->TabletCount());
-    string layer_dir_ = Tablet::GetLayerPath(this->test_dir_, 3);
+    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 3);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
     ASSERT_FILE_EXISTS(this->env_, Layer::GetBloomPath(layer_dir_))
   }
 
   // Old layers should not exist anymore
   for (int i = 0; i <= 2; i++) {
-    string layer_dir_ = Tablet::GetLayerPath(this->test_dir_, i);
+    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, i);
     ASSERT_FILE_NOT_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 }
@@ -410,10 +410,3 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
 
 } // namespace tablet
 } // namespace kudu
-
-
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  google::ParseCommandLineFlags(&argc, &argv, true);
-  return RUN_ALL_TESTS();
-}

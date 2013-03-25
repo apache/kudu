@@ -16,6 +16,7 @@
 #include "util/env.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 
 DEFINE_int32(roundtrip_num_rows, 10000,
              "Number of rows to use for the round-trip test");
@@ -27,15 +28,19 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-class TestLayer : public ::testing::Test {
+class TestLayer : public KuduTest {
 public:
   TestLayer() :
-    ::testing::Test(),
+    KuduTest(),
     schema_(CreateTestSchema()),
-    env_(Env::Default()),
     n_rows_(FLAGS_roundtrip_num_rows)
   {
     CHECK_GT(n_rows_, 0);
+  }
+
+  virtual void SetUp() {
+    KuduTest::SetUp();
+    layer_dir_ = GetTestPath("layer");
   }
 
 protected:
@@ -48,16 +53,6 @@ protected:
     return Schema(cols, 1);
   }
 
-  virtual void SetUp() {
-    const ::testing::TestInfo* const test_info =
-      ::testing::UnitTest::GetInstance()->current_test_info();
-
-    ASSERT_STATUS_OK(env_->GetTestDirectory(&test_dir_));
-
-    test_dir_ += StringPrintf(
-      "/TestLayer.%s.%d.%ld", test_info->name(), getpid(), time(NULL));
-
-  }
 
   // Write out a test layer with n_rows_ rows.
   // The data in the layer looks like:
@@ -67,7 +62,7 @@ protected:
   void WriteTestLayer() {
     // Write rows into a new Layer.
     LOG_TIMING(INFO, "Writing layer") {
-      LayerWriter lw(env_, schema_, test_dir_,
+      LayerWriter lw(env_.get(), schema_, layer_dir_,
                      BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
       ASSERT_STATUS_OK(lw.Open());
@@ -215,7 +210,7 @@ protected:
   }
 
   Status OpenTestLayer(shared_ptr<Layer> *layer) {
-    return Layer::Open(env_, schema_, test_dir_, layer);
+    return Layer::Open(env_.get(), schema_, layer_dir_, layer);
   }
 
 
@@ -225,9 +220,8 @@ protected:
   }
 
   Schema schema_;
-  string test_dir_;
-  Env *env_;
   size_t n_rows_;
+  string layer_dir_;
 };
 
 
