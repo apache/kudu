@@ -57,9 +57,9 @@ cd $ZLIB_DIR
 ./configure --prefix=$PREFIX
 make -j4 install
 
-# build lz4 (TODO: We've a custom Makefile to produce a lib)
+# build lz4
 cd $LZ4_DIR
-cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
+$TP_DIR/installed/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
 make -j4 install
 
 echo "---------------------"
