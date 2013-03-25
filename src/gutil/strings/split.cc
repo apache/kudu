@@ -69,7 +69,7 @@ struct LiteralPolicy {
 // Finds using StringPiece::find_first_of(), therefore the length of the found
 // delimiter is 1.
 struct AnyOfPolicy {
-  int Find(StringPiece text, StringPiece delimiter) {
+  size_t Find(StringPiece text, StringPiece delimiter) {
     return text.find_first_of(delimiter);
   }
   int Length(StringPiece delimiter) {
@@ -963,7 +963,7 @@ bool SplitStringIntoKeyValues(const string& line,
   values->clear();
 
   // find the key string
-  int end_key_pos = line.find_first_of(key_value_delimiters);
+  size_t end_key_pos = line.find_first_of(key_value_delimiters);
   if (end_key_pos == string::npos) {
     VLOG(1) << "cannot parse key from line: " << line;
     return false;    // no key
@@ -972,7 +972,7 @@ bool SplitStringIntoKeyValues(const string& line,
 
   // find the values string
   string remains(line, end_key_pos, line.size() - end_key_pos);
-  int begin_values_pos = remains.find_first_not_of(key_value_delimiters);
+  size_t begin_values_pos = remains.find_first_not_of(key_value_delimiters);
   if (begin_values_pos == string::npos) {
     VLOG(1) << "cannot parse value from line: " << line;
     return false;   // no value
