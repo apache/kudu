@@ -4,4 +4,7 @@ gperftools-2.0/
 gtest-1.6.0/
 installed/
 protobuf-2.4.1/
+snappy-*
+install_manifest.txt
+zlib-*
 cmake-*
