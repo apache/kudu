@@ -18,12 +18,10 @@
 #include "index_block.h"
 #include "index_btree.h"
 
-DEFINE_int32(cfile_test_block_size, 1024,
-             "Block size to use for testing cfiles. "
-             "Default is low to stress code, but can be set higher for "
-             "performance testing");
-
 namespace kudu { namespace cfile {
+
+class TestCFile : public CFileTestBase {
+};
 
 
 template<DataType type>
@@ -41,26 +39,28 @@ void CopyOne(CFileIterator *it,
 // Only run the 100M entry tests in non-debug mode.
 // They take way too long with debugging enabled.
 
-TEST(TestCFile, TestWrite100MFileInts) {
+TEST_F(TestCFile, TestWrite100MFileInts) {
+  const string path = GetTestPath("Test100M");
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileInts("/tmp/cfile-Test100M", GROUP_VARINT, NO_COMPRESSION, 100000000);
+    WriteTestFileInts(path, GROUP_VARINT, NO_COMPRESSION, 100000000);
     LOG(INFO) << "Done writing";
   }
 
   LOG_TIMING(INFO, "reading 100M ints") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile("/tmp/cfile-Test100M", &n);
+    TimeReadFile(path, &n);
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
 
-TEST(TestCFile, TestWrite100MFileStrings) {
+TEST_F(TestCFile, TestWrite100MFileStrings) {
+  const string path = GetTestPath("Test100MStrings");
   LOG_TIMING(INFO, "writing 100M strings") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileStrings("/tmp/cfile-Test100M-Strings", PREFIX, NO_COMPRESSION,
+    WriteTestFileStrings(path, PREFIX, NO_COMPRESSION,
                          100000000, "hello %d");
     LOG(INFO) << "Done writing";
   }
@@ -68,17 +68,17 @@ TEST(TestCFile, TestWrite100MFileStrings) {
   LOG_TIMING(INFO, "reading 100M strings") {
     LOG(INFO) << "Starting readfile";
     size_t n;
-    TimeReadFile("/tmp/cfile-Test100M-Strings", &n);
+    TimeReadFile(path, &n);
     ASSERT_EQ(100000000, n);
     LOG(INFO) << "End readfile";
   }
 }
 #endif
 
-TEST(TestCFile, TestReadWriteInts) {
-  Env *env = Env::Default();
+TEST_F(TestCFile, TestReadWriteInts) {
+  Env *env = env_.get();
 
-  string path = "/tmp/cfile-TestReadWrite";
+  const string path = GetTestPath("cfile");
   WriteTestFileInts(path, GROUP_VARINT, NO_COMPRESSION, 10000);
 
   gscoped_ptr<CFileReader> reader;
@@ -150,15 +150,15 @@ TEST(TestCFile, TestReadWriteInts) {
   }
 
 
-  TimeReadFile("/tmp/cfile-TestReadWrite", &n);
+  TimeReadFile(path, &n);
   ASSERT_EQ(10000, n);
 }
 
-TEST(TestCFile, TestReadWriteStrings) {
-  Env *env = Env::Default();
+TEST_F(TestCFile, TestReadWriteStrings) {
+  Env *env = env_.get();
 
   const int nrows = 10000;
-  string path = "/tmp/cfile-TestReadWriteStrings";
+  const string path = GetTestPath("cfile");
   WriteTestFileStrings(path, PREFIX, NO_COMPRESSION, nrows, "hello %04d");
 
   gscoped_ptr<CFileReader> reader;
@@ -245,10 +245,3 @@ TEST(TestCFile, TestReadWriteStrings) {
 
 } // namespace cfile
 } // namespace kudu
-
-int main(int argc, char **argv) {
-  google::InstallFailureSignalHandler();
-  ::testing::InitGoogleTest(&argc, argv);
-  google::ParseCommandLineFlags(&argc, &argv, true);
-  return RUN_ALL_TESTS();
-}

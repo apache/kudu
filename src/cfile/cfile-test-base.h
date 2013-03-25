@@ -8,98 +8,99 @@
 #include "common/columnblock.h"
 #include "gutil/stringprintf.h"
 #include "util/env.h"
+#include "util/env_util.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 #include "util/stopwatch.h"
 #include "util/status.h"
-
 #include "cfile-test-base.h"
 #include "cfile.h"
 #include "cfile_reader.h"
 #include "cfile.pb.h"
 
+DEFINE_int32(cfile_test_block_size, 1024,
+             "Block size to use for testing cfiles. "
+             "Default is low to stress code, but can be set higher for "
+             "performance testing");
+
 namespace kudu {
 namespace cfile {
 
-void WriteTestFileStrings(const string &path,
-                          EncodingType encoding,
-                          CompressionType compression,
-                          int num_entries,
-                          const char *format) {
-  Status s;
+class CFileTestBase : public KuduTest {
+protected:
+  void WriteTestFileStrings(const string &path,
+                            EncodingType encoding,
+                            CompressionType compression,
+                            int num_entries,
+                            const char *format) {
+    shared_ptr<WritableFile> sink;
+    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    WriterOptions opts;
+    opts.write_posidx = true;
+    opts.write_validx = true;
+    // Use a smaller block size to exercise multi-level
+    // indexing.
+    opts.block_size = FLAGS_cfile_test_block_size;
+    opts.compression = compression;
+    Writer w(opts, STRING, encoding, sink);
 
-  WritableFile *file;
-  s = Env::Default()->NewWritableFile(path, &file);
+    ASSERT_STATUS_OK(w.Start());
 
-  shared_ptr<WritableFile> sink(file);
-  WriterOptions opts;
-  opts.write_posidx = true;
-  opts.write_validx = true;
-  // Use a smaller block size to exercise multi-level
-  // indexing.
-  opts.block_size = 1024;
-  opts.compression = compression;
-  Writer w(opts, STRING, encoding, sink);
+    // Append given number of values to the test tree
+    char data[20];
+    for (int i = 0; i < num_entries; i++) {
+      int len = snprintf(data, sizeof(data), format, i);
+      Slice slice(data, len);
 
-  ASSERT_STATUS_OK(w.Start());
-
-  // Append given number of values to the test tree
-  char data[20];
-  for (int i = 0; i < num_entries; i++) {
-    int len = snprintf(data, sizeof(data), format, i);
-    Slice slice(data, len);
-
-    Status s = w.AppendEntries(&slice, 1, 0);
-    // Dont use ASSERT because it accumulates all the logs
-    // even for successes
-    if (!s.ok()) {
-      FAIL() << "Failed Append(" << i << ")";
+      Status s = w.AppendEntries(&slice, 1, 0);
+      // Dont use ASSERT because it accumulates all the logs
+      // even for successes
+      if (!s.ok()) {
+        FAIL() << "Failed Append(" << i << ")";
+      }
     }
+
+    ASSERT_STATUS_OK(w.Finish());
   }
 
-  ASSERT_STATUS_OK(w.Finish());
-}
+  void WriteTestFileInts(const string &path,
+                         EncodingType encoding,
+                         CompressionType compression,
+                         int num_entries) {
+    shared_ptr<WritableFile> sink;
+    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    WriterOptions opts;
+    opts.write_posidx = true;
+    // Use a smaller block size to exercise multi-level
+    // indexing.
+    opts.block_size = FLAGS_cfile_test_block_size;
+    opts.compression = compression;
+    Writer w(opts, UINT32, encoding, sink);
 
-void WriteTestFileInts(const string &path,
-                       EncodingType encoding,
-                       CompressionType compression,
-                       int num_entries) {
-  Status s;
+    ASSERT_STATUS_OK(w.Start());
 
-  WritableFile *file;
-  s = Env::Default()->NewWritableFile(path, &file);
+    uint32_t block[8096];
+    size_t stride = sizeof(uint32_t);
 
-  shared_ptr<WritableFile> sink(file);
-  WriterOptions opts;
-  opts.write_posidx = true;
-  // Use a smaller block size to exercise multi-level
-  // indexing.
-  opts.block_size = 100;
-  opts.compression = compression;
-  Writer w(opts, UINT32, encoding, sink);
+    // Append given number of values to the test tree
+    int i = 0;
+    while (i < num_entries) {
+      int towrite = std::min(num_entries - i, 8096);
+      for (int j = 0; j < towrite; j++) {
+        block[j] = i++ * 10;
+      }
 
-  ASSERT_STATUS_OK(w.Start());
-
-  uint32_t block[8096];
-  size_t stride = sizeof(uint32_t);
-
-  // Append given number of values to the test tree
-  int i = 0;
-  while (i < num_entries) {
-    int towrite = std::min(num_entries - i, 8096);
-    for (int j = 0; j < towrite; j++) {
-      block[j] = i++ * 10;
+      Status s = w.AppendEntries(block, towrite, stride);
+      // Dont use ASSERT because it accumulates all the logs
+      // even for successes
+      if (!s.ok()) {
+        FAIL() << "Failed Append(" << (i - towrite) << ")";
+      }
     }
 
-    Status s = w.AppendEntries(block, towrite, stride);
-    // Dont use ASSERT because it accumulates all the logs
-    // even for successes
-    if (!s.ok()) {
-      FAIL() << "Failed Append(" << (i - towrite) << ")";
-    }
+    ASSERT_STATUS_OK(w.Finish());
   }
-
-  ASSERT_STATUS_OK(w.Finish());
-}
+};
 
 // Fast unrolled summing of a vector.
 // GCC's auto-vectorization doesn't work here, because there isn't
