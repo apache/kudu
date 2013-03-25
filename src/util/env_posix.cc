@@ -6,6 +6,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fts.h>
 #include <glog/logging.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -401,6 +402,68 @@ class PosixEnv : public Env {
     return result;
   };
 
+
+  virtual Status DeleteRecursively(const std::string &name) {
+    // Some sanity checks
+    CHECK_NE(name, "/");
+    CHECK_NE(name, "./");
+    CHECK_NE(name, ".");
+
+    // FTS requires a non-const copy of the name. strdup it and free() when
+    // we leave scope.
+    gscoped_ptr<char, base::FreeDeleter> name_dup(strdup(name.c_str()));
+    char *(paths[]) = { name_dup.get(), NULL };
+
+    // FTS_NOCHDIR is important here to make this thread-safe.
+    gscoped_ptr<FTS, FtsCloser> tree(
+      fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, NULL));
+    if (!tree.get()) {
+      return IOError(name, errno);
+    }
+
+    FTSENT *ent = NULL;
+    bool had_errors = false;
+    while ((ent = fts_read(tree.get())) != NULL) {
+      Status s;
+      switch (ent->fts_info) {
+        case FTS_D: // Directory in pre-order
+          break;
+        case FTS_DP: // Directory in post-order
+          s = DeleteDir(ent->fts_accpath);
+          if (!s.ok()) {
+            LOG(WARNING) << "Couldn't delete " << ent->fts_path << ": " << s.ToString();
+            had_errors = true;
+          }
+          break;
+        case FTS_F:         // A regular file
+        case FTS_SL:        // A symbolic link
+        case FTS_SLNONE:    // A broken symbolic link
+        case FTS_DEFAULT:   // Unknown type of file
+          s = DeleteFile(ent->fts_accpath);
+          if (!s.ok()) {
+            LOG(WARNING) << "Couldn't delete file " << ent->fts_path << ": " << s.ToString();
+            had_errors = true;
+          }
+          break;
+        case FTS_ERR:
+          LOG(WARNING) << "Unable to access file " << ent->fts_path << " for deletion: "
+                       << strerror(ent->fts_errno);
+          had_errors = true;
+          break;
+
+        default:
+          LOG(WARNING) << "Unable to access file " << ent->fts_path << " for deletion (code "
+                       << ent->fts_info << ")";
+          break;
+      }
+    }
+
+    if (had_errors) {
+      return Status::IOError(name, "One or more errors occurred");
+    }
+    return Status::OK();
+  }
+
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) {
     Status s;
     struct stat sbuf;
@@ -511,6 +574,13 @@ class PosixEnv : public Env {
     reinterpret_cast<PosixEnv*>(arg)->BGThread();
     return NULL;
   }
+
+  // gscoped_ptr Deleter implementation for fts_close
+  struct FtsCloser {
+    void operator ()(FTS *fts) const {
+      if (fts) { fts_close(fts); }
+    }
+  };
 
   size_t page_size_;
   pthread_mutex_t mu_;

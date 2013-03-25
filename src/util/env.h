@@ -86,6 +86,10 @@ class Env {
   // Delete the specified directory.
   virtual Status DeleteDir(const std::string& dirname) = 0;
 
+  // Recursively delete the specified directory.
+  // This should operate safely, not following any symlinks, etc.
+  virtual Status DeleteRecursively(const std::string &dirname) = 0;
+
   // Store the size of fname in *file_size.
   virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) = 0;
 
@@ -265,6 +269,7 @@ class EnvWrapper : public Env {
   Status DeleteFile(const std::string& f) { return target_->DeleteFile(f); }
   Status CreateDir(const std::string& d) { return target_->CreateDir(d); }
   Status DeleteDir(const std::string& d) { return target_->DeleteDir(d); }
+  Status DeleteRecursively(const std::string& d) { return target_->DeleteRecursively(d); }
   Status GetFileSize(const std::string& f, uint64_t* s) {
     return target_->GetFileSize(f, s);
   }

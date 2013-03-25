@@ -7,6 +7,7 @@
 
 #include <boost/thread/mutex.hpp>
 
+#include <glog/logging.h>
 #include "util/env.h"
 #include "util/memenv/memenv.h"
 #include "util/status.h"
@@ -322,6 +323,26 @@ class InMemoryEnv : public EnvWrapper {
   }
 
   virtual Status DeleteDir(const std::string& dirname) {
+    return Status::OK();
+  }
+
+  virtual Status DeleteRecursively(const std::string& dirname) {
+    CHECK(!dirname.empty());
+    string dir(dirname);
+    if (dir[dir.size() - 1] != '/') {
+      dir.push_back('/');
+    }
+
+    lock_guard<mutex> lock(mutex_);
+
+    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i){
+      const std::string& filename = i->first;
+
+      if (filename.size() >= dir.size() && Slice(filename).starts_with(Slice(dir))) {
+        file_map_.erase(i);
+      }
+    }
+
     return Status::OK();
   }
 

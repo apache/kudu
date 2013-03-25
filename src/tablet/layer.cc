@@ -364,8 +364,9 @@ uint64_t Layer::EstimateOnDiskSize() const {
 
 
 Status Layer::Delete() {
-  // TODO: actually rm -rf, not just rename!
-  return env_->RenameFile(dir_, dir_ + ".deleted");
+  string tmp_path = dir_ + ".deleting";
+  RETURN_NOT_OK(env_->RenameFile(dir_, tmp_path));
+  return env_->DeleteRecursively(tmp_path);
 }
 
 
