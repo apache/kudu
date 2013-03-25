@@ -106,8 +106,8 @@ public:
   Status Init();
 
   Status SeekToOrdinal(uint32_t idx);
-  Status PrepareToApply(RowBlock *dst);
-  Status ApplyUpdates(RowBlock *dst, size_t col_to_apply);
+  Status PrepareBatch(size_t nrows);
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 private:
   friend class DeltaFileReader;
 
@@ -177,9 +177,9 @@ private:
 
   gscoped_ptr<cfile::IndexTreeIterator> index_iter_;
 
-  uint32_t cur_idx_;
   uint32_t prepared_idx_;
-  RowBlock *prepared_block_;
+  uint32_t prepared_count_;
+  bool prepared_;
   bool exhausted_;
 
   // After PrepareToApply(), the set of delta blocks in the delta file

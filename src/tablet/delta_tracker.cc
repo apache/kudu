@@ -76,19 +76,27 @@ Status DeltaTracker::Open() {
 }
 
 
-RowIteratorInterface *DeltaTracker::WrapIterator(
-  const shared_ptr<RowIteratorInterface> &base) const
+void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *deltas) const {
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  deltas->assign(delta_trackers_.begin(), delta_trackers_.end());
+  deltas->push_back(dms_);
+}
+
+
+ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base) const
 {
   std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
-
-  {
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-    deltas.assign(delta_trackers_.begin(), delta_trackers_.end());
-    deltas.push_back(dms_);
-  }
-
-  return new DeltaMergingIterator(base, deltas);
+  CollectTrackers(&deltas);
+  return new DeltaMerger<ColumnwiseIterator>(base, deltas);
 }
+
+RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &base) const
+{
+  std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
+  CollectTrackers(&deltas);
+  return new DeltaMerger<RowwiseIterator>(base, deltas);
+}
+
 
 void DeltaTracker::Update(uint32_t row_idx, const RowChangeList &update) {
   // TODO: can probably lock this more fine-grained.
@@ -184,52 +192,6 @@ Status DeltaTracker::Flush() {
   // TODO: wherever we write stuff, we should write to a tmp path
   // and rename to final path!
 }
-
-////////////////////////////////////////////////////////////
-// Iterator
-////////////////////////////////////////////////////////////
-
-DeltaMergingIterator::DeltaMergingIterator(const shared_ptr<RowIteratorInterface> &base_iter,
-                                           const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers) :
-  base_iter_(base_iter)
-{
-  BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers) {
-    delta_iters_.push_back(tracker->NewDeltaIterator(base_iter_->schema()));
-  }
-}
-
-
-Status DeltaMergingIterator::Init() {
-  RETURN_NOT_OK(base_iter_->Init());
-  BOOST_FOREACH(DeltaIteratorInterface &delta_iter, delta_iters_) {
-    RETURN_NOT_OK(delta_iter.Init());
-    RETURN_NOT_OK(delta_iter.SeekToOrdinal(0));
-  }
-  return Status::OK();
-}
-
-Status DeltaMergingIterator::CopyNextRows(size_t *nrows, RowBlock *dst)
-{
-  // Get base data
-  RETURN_NOT_OK(base_iter_->CopyNextRows(nrows, dst));
-
-  if (*nrows == 0) {
-    // TODO: does this happen?
-    return Status::OK();
-  }
-
-  // Apply updates
-  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
-    RETURN_NOT_OK(iter.PrepareToApply(dst));
-    for (size_t proj_col_idx = 0; proj_col_idx < dst->schema().num_columns(); proj_col_idx++) {
-      RETURN_NOT_OK(iter.ApplyUpdates(dst, proj_col_idx));
-    }
-  }
-
-  return Status::OK();
-}
-
-
 
 } // namespace tablet
 } // namespace kudu

@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "cfile/cfile.h"
-#include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "gutil/strings/numbers.h"
@@ -254,7 +253,7 @@ Status Tablet::Flush() {
 
   Schema keys_only = schema_.CreateKeyProjection();
 
-  gscoped_ptr<MemStore::Iterator> iter(old_ms->NewIterator(keys_only));
+  shared_ptr<RowwiseIterator> iter(old_ms->NewIterator(keys_only));
   RETURN_NOT_OK(iter->Init());
 
   LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
@@ -409,10 +408,10 @@ Status Tablet::Compact()
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
 
   // Dump the selected layers to the log, and collect corresponding iterators.
-  vector<shared_ptr<RowIteratorInterface> > key_iters;
+  vector<shared_ptr<RowwiseIterator> > key_iters;
   LOG(INFO) << "Selected " << input_layers.size() << " layers to compact:";
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
-    shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(keys_only));
+    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(keys_only));
 
     LOG(INFO) << l->ToString() << "(" << l->EstimateOnDiskSize() << " bytes)";
     key_iters.push_back(row_it);
@@ -440,9 +439,9 @@ Status Tablet::Compact()
   // Step 4. Merge non-keys
   LOG(INFO) << "Compaction: entering stage 4 (compacting other columns)";
 
-  vector<shared_ptr<RowIteratorInterface> > full_iters;
+  vector<shared_ptr<RowwiseIterator> > full_iters;
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
-    shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(schema_));
+    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(schema_));
     VLOG(2) << "adding " << row_it->ToString() << " for compaction stage 2";
     full_iters.push_back(row_it);
   }
@@ -488,21 +487,21 @@ Status Tablet::Compact()
 
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
-  vector<shared_ptr<RowIteratorInterface> > *iters) const
+  vector<shared_ptr<RowwiseIterator> > *iters) const
 {
   boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  vector<shared_ptr<RowIteratorInterface> > ret;
+  vector<shared_ptr<RowwiseIterator> > ret;
 
   // Grab the memstore iterator.
-  shared_ptr<RowIteratorInterface> ms_iter(memstore_->NewIterator(projection));
+  shared_ptr<RowwiseIterator> ms_iter(memstore_->NewRowIterator(projection));
   ret.push_back(ms_iter);
 
   // Grab all layer iterators.
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-    shared_ptr<RowIteratorInterface> row_it(l->NewRowIterator(projection));
+    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(projection));
     ret.push_back(row_it);
   }
 

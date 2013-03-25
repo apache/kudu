@@ -5,6 +5,7 @@
 #include <glog/logging.h>
 
 #include "common/common.pb.h"
+#include "common/generic_iterators.h"
 #include "common/row.h"
 #include "gutil/atomicops.h"
 #include "tablet/memstore.h"
@@ -128,10 +129,9 @@ MemStore::Iterator *MemStore::NewIterator() const {
   return NewIterator(schema());
 }
 
-RowIteratorInterface *MemStore::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *MemStore::NewRowIterator(const Schema &projection) const{
   return NewIterator(projection);
 }
-
 
 } // namespace tablet
 } // namespace kudu

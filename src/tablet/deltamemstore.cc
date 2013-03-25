@@ -78,9 +78,9 @@ DMSIterator::DMSIterator(const shared_ptr<DeltaMemStore> &dms,
   dms_(dms),
   projection_(projection),
   iter_(dms->tree_.NewIterator()),
-  cur_idx_(0),
   prepared_idx_(0),
-  prepared_block_(NULL),
+  prepared_count_(0),
+  prepared_(false),
   prepared_buf_(kPreparedBufInitialCapacity)
 {
 }
@@ -95,17 +95,16 @@ Status DMSIterator::SeekToOrdinal(uint32_t row_idx) {
   EncodedKeySlice start_key(row_idx);
   bool exact; /* unused */
   iter_->SeekAtOrAfter(start_key, &exact);
-  cur_idx_ = row_idx;
-  prepared_block_ = NULL;
+  prepared_idx_ = row_idx;
+  prepared_count_ = 0;
+  prepared_ = false;
   return Status::OK();
 }
 
-Status DMSIterator::PrepareToApply(RowBlock *dst) {
+Status DMSIterator::PrepareBatch(size_t nrows) {
   DCHECK(!projection_indexes_.empty()) << "must init";
-  DCHECK(dst->schema().Equals(projection_));
-  DCHECK_GT(dst->nrows(), 0);
-  uint32_t start_row = cur_idx_;
-  uint32_t stop_row = cur_idx_ + dst->nrows() - 1;
+  uint32_t start_row = prepared_idx_ + prepared_count_;
+  uint32_t stop_row = start_row + nrows - 1;
 
   prepared_buf_.clear();
 
@@ -129,9 +128,9 @@ Status DMSIterator::PrepareToApply(RowBlock *dst) {
 
     iter_->Next();
   }
-  prepared_idx_ = cur_idx_;
-  cur_idx_ += dst->nrows();
-  prepared_block_ = dst;
+  prepared_idx_ = start_row;
+  prepared_count_ = nrows;
+  prepared_ = true;
 
   // TODO: this whole process can be made slightly more efficient:
   // the CBTree iterator is already making copies on a per-leaf-node basis
@@ -142,12 +141,12 @@ Status DMSIterator::PrepareToApply(RowBlock *dst) {
   return Status::OK();
 }
 
-Status DMSIterator::ApplyUpdates(RowBlock *dst, size_t col_to_apply) {
-  DCHECK_EQ(prepared_block_, dst);
+Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+  DCHECK(prepared_);
+  DCHECK_LE(prepared_count_, dst->size());
   Slice src(prepared_buf_);
 
   size_t projected_col = projection_indexes_[col_to_apply];
-  ColumnBlock dst_col(dst->column_block(col_to_apply, dst->nrows()));
 
   while (!src.empty()) {
     if (src.size() < sizeof(uint32_t) * 2) {
@@ -171,7 +170,7 @@ Status DMSIterator::ApplyUpdates(RowBlock *dst, size_t col_to_apply) {
     RowChangeListDecoder decoder(dms_->schema(), delta);
 
     Status s = decoder.ApplyToOneColumn(
-      projected_col, dst_col.cell_ptr(idx_in_block), dst->arena());
+      projected_col, dst->cell_ptr(idx_in_block), dst->arena());
     if (!s.ok()) {
       return Status::Corruption(
         StringPrintf("Corrupt prepared updates at row %d: ", idx) +

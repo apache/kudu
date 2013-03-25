@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "common/iterator.h"
+#include "tablet/layer-basedata.h"
 #include "tablet/layer-interfaces.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/deltafile.h"
@@ -24,7 +25,8 @@ public:
                const Schema &schema,
                const string &dir);
 
-  RowIteratorInterface *WrapIterator(const shared_ptr<RowIteratorInterface> &base) const;
+  ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base) const;
+  RowwiseIterator *WrapIterator(const shared_ptr<RowwiseIterator> &base) const;
 
   Status Open();
   Status Flush();
@@ -42,6 +44,7 @@ private:
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
                   gscoped_ptr<DeltaFileReader> *dfr);
+  void CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *deltas) const;
 
 
   Env *env_;
@@ -69,46 +72,119 @@ private:
 };
 
 ////////////////////////////////////////////////////////////
-// DeltaMergingIterator
+// Delta-merging iterators
 ////////////////////////////////////////////////////////////
 
-
-// Iterator over materialized and projected rows of a given
-// layer. This is an "early materialization" iterator.
-class DeltaMergingIterator : public RowIteratorInterface, boost::noncopyable {
+template<class IterClass>
+class DeltaMerger : public IterClass, boost::noncopyable {
 public:
-  virtual Status Init();
+  virtual Status Init() {
+    RETURN_NOT_OK(base_iter_->Init());
+    BOOST_FOREACH(DeltaIteratorInterface &delta_iter, delta_iters_) {
+      RETURN_NOT_OK(delta_iter.Init());
+      RETURN_NOT_OK(delta_iter.SeekToOrdinal(0));
+    }
+    return Status::OK();
+  }
 
-  // Get the next batch of rows from the iterator.
-  // Retrieves up to 'nrows' rows, and writes back the number
-  // of rows actually fetched into the same variable.
-  // Any indirect data (eg strings) are allocated out of
-  // 'dst_arena'
-  Status CopyNextRows(size_t *nrows, RowBlock *dst);
+  Status PrepareBatch(size_t *nrows);
+
+  Status FinishBatch();
 
   bool HasNext() const {
     return base_iter_->HasNext();
   }
 
   string ToString() const {
-    return string("delta merging iterator");
+    string s;
+    s.append("DeltaMerger(");
+    s.append(base_iter_->ToString());
+    StringAppendF(&s, " + %zd delta trackers)", delta_iters_.size());
+    return s;
   }
 
   const Schema &schema() const {
     return base_iter_->schema();
   }
 
+  Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
+  Status MaterializeBlock(RowBlock *dst);
+
 private:
   friend class DeltaTracker;
 
   // Construct. The base_iter should not be Initted.
-  DeltaMergingIterator(const shared_ptr<RowIteratorInterface> &base_iter,
-                       const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers);
+  DeltaMerger(const shared_ptr<IterClass> &base_iter,
+              const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers) :
+    base_iter_(base_iter)
+  {
+    BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers) {
+      delta_iters_.push_back(tracker->NewDeltaIterator(base_iter_->schema()));
+    }
+  }
 
-  // Iterator for the key column in the underlying data.
-  shared_ptr<RowIteratorInterface> base_iter_;
+  shared_ptr<IterClass> base_iter_;
   boost::ptr_vector<DeltaIteratorInterface> delta_iters_;
 };
+
+
+template<class T>
+inline Status DeltaMerger<T>::PrepareBatch(size_t *nrows) {
+  RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
+  if (*nrows == 0) {
+    return Status::NotFound("no more rows left");
+  }
+
+  // Prepare all the update trackers for this block.
+  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
+    RETURN_NOT_OK(iter.PrepareBatch(*nrows));
+  }
+
+  return Status::OK();
+}
+
+template<class T>
+inline Status DeltaMerger<T>::FinishBatch() {
+  return base_iter_->FinishBatch();
+}
+
+
+////////////////////////////////////////////////////////////
+// Column-wise delta merger
+////////////////////////////////////////////////////////////
+
+template<>
+inline Status DeltaMerger<ColumnwiseIterator>::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
+  ColumnwiseIterator *iter = down_cast<ColumnwiseIterator *>(base_iter_.get());
+  // Copy the base data.
+  RETURN_NOT_OK(iter->MaterializeColumn(col_idx, dst));
+
+  // Apply all the updates for this column.
+  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
+    RETURN_NOT_OK(iter.ApplyUpdates(col_idx, dst));
+  }
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// Row-wise delta merger
+////////////////////////////////////////////////////////////
+template<>
+inline Status DeltaMerger<RowwiseIterator>::MaterializeBlock(RowBlock *dst) {
+  // Get base data
+  RETURN_NOT_OK(base_iter_->MaterializeBlock(dst));
+
+  // Apply updates to all the columns.
+  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
+    for (size_t proj_col_idx = 0; proj_col_idx < dst->schema().num_columns(); proj_col_idx++) {
+      ColumnBlock dst_col = dst->column_block(proj_col_idx);
+      RETURN_NOT_OK(iter.ApplyUpdates(proj_col_idx, &dst_col));
+    }
+  }
+
+  return Status::OK();
+}
+
 
 } // namespace tablet
 } // namespace kudu

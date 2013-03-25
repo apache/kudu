@@ -93,7 +93,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
 
   // Now iterate the tablet and make sure the rows show up
-  gscoped_ptr<RowIteratorInterface> iter;
+  gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
   ASSERT_STATUS_OK(iter->Init());
 
@@ -104,21 +104,21 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
 
   // First call to CopyNextRows should fetch the whole memstore.
   size_t n = 100;
-  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
+  ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from memstore";
   this->VerifyRow(&buf[0], kInMemstore, 0);
 
   // Next, should fetch the older layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
-  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
+  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 1";
   this->VerifyRow(&buf[0], kInLayer1, 0);
 
   // Next, should fetch the newer layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
-  ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
+  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 2";
   this->VerifyRow(&buf[0], kInLayer2, 0);
 
@@ -158,9 +158,10 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   }
 
   // Now iterate the tablet and make sure the rows show up.
-  gscoped_ptr<RowIteratorInterface> iter;
+  gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
   ASSERT_STATUS_OK(iter->Init());
+  LOG(INFO) << "Created iter: " << iter->ToString();
 
   ScopedRowBlock block(this->schema_, 100, &this->arena_);
 
@@ -171,7 +172,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   while (iter->HasNext()) {
     this->arena_.Reset();
     size_t n = 100;
-    ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
+    ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
     LOG(INFO) << "Fetched batch of " << n;
     for (size_t i = 0; i < n; i++) {
       uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(block.row_slice(i), 1);

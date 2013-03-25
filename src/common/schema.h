@@ -17,6 +17,13 @@
 #include "util/memory/arena.h"
 #include "util/status.h"
 
+// Check that two schemas are equal, yielding a useful error message in the case that
+// they are not.
+#define DCHECK_SCHEMA_EQ(s1, s2) \
+  do { \
+    DCHECK((s1).Equals((s2))) << "Schema " << s1.ToString() << " does not match " << s2.ToString(); \
+  } while (0);
+
 namespace kudu {
 
 using std::vector;

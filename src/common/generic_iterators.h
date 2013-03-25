@@ -20,21 +20,23 @@ using std::vector;
 
 // An iterator which merges the results of other iterators, comparing
 // based on keys.
-class MergeIterator : public RowIteratorInterface {
+class MergeIterator : public RowwiseIterator {
 public:
 
   // TODO: clarify whether schema is just the projection, or must include the merge
   // key columns. It should probably just be the required projection, which must be
   // a subset of the columns in 'iters'.
   MergeIterator(const Schema &schema,
-                const vector<shared_ptr<RowIteratorInterface> > &iters);
+                const vector<shared_ptr<RowwiseIterator> > &iters);
 
   // The passed-in iterators should be already initialized.
   Status Init();
 
-  virtual Status SeekAtOrAfter(const Slice &key, bool *exact);
+  virtual Status PrepareBatch(size_t *nrows);
 
-  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst);
+  virtual Status MaterializeBlock(RowBlock *dst);
+
+  virtual Status FinishBatch();
 
   virtual bool HasNext() const {
     return !iters_.empty();
@@ -50,6 +52,8 @@ private:
   bool initted_;
 
   vector<shared_ptr<MergeIterState> > iters_;
+
+  size_t prepared_count_;
 };
 
 
@@ -58,19 +62,19 @@ private:
 // rather than merging them based on keys. Hence it is more efficient since there is
 // no comparison needed, and the key column does not need to be read if it is not
 // part of the projection.
-class UnionIterator : public RowIteratorInterface {
+class UnionIterator : public RowwiseIterator {
 public:
 
   // Construct a union iterator of the given iterators.
   // The iterators must have matching schemas.
   // The passed-in iterators should be already initialized.
-  UnionIterator(const vector<shared_ptr<RowIteratorInterface> > &iters);
+  UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
 
   Status Init();
 
-  Status SeekAtOrAfter(const Slice &key, bool *exact);
-
-  Status CopyNextRows(size_t *nrows, RowBlock *dst);
+  Status PrepareBatch(size_t *nrows);
+  Status MaterializeBlock(RowBlock *dst);
+  Status FinishBatch();
 
   bool HasNext() const;
 
@@ -84,7 +88,31 @@ private:
   // Schema: initialized during Init()
   gscoped_ptr<Schema> schema_;
   bool initted_;
-  deque<shared_ptr<RowIteratorInterface> > iters_;
+  deque<shared_ptr<RowwiseIterator> > iters_;
+};
+
+
+// An iterator which wraps a ColumnwiseIterator, materializing it into full rows.
+class MaterializingIterator : public RowwiseIterator {
+public:
+  explicit MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter);
+
+  Status Init();
+
+  Status PrepareBatch(size_t *nrows);
+  Status MaterializeBlock(RowBlock *dst);
+  Status FinishBatch();
+
+  bool HasNext() const;
+
+  string ToString() const;
+
+  const Schema &schema() const {
+    return iter_->schema();
+  }
+
+private:
+  shared_ptr<ColumnwiseIterator> iter_;
 };
 
 

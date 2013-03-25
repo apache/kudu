@@ -60,7 +60,7 @@ string Layer::GetBloomPath(const string &dir) {
 // for use within the various Flush calls.
 class ScopedBatchReader {
 public:
-  ScopedBatchReader(RowIteratorInterface *src_iter,
+  ScopedBatchReader(RowwiseIterator *src_iter,
                     bool need_arena) :
     iter_(src_iter)
   {
@@ -88,7 +88,8 @@ public:
     if (arena_ != NULL) arena_->Reset();
 
     *nrows = batch_size_;
-    return iter_->CopyNextRows(nrows, block_.get());
+    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_, nrows, block_.get()));
+    return Status::OK();
   }
 
   void *col_ptr(size_t col_idx) {
@@ -100,7 +101,7 @@ public:
   }
 
 private:
-  RowIteratorInterface *iter_;
+  RowwiseIterator *iter_;
   gscoped_ptr<Arena> arena_;
   gscoped_ptr<RowBlock> block_;
 
@@ -182,7 +183,7 @@ Status LayerWriter::InitBloomFileWriter(gscoped_ptr<BloomFileWriter> *bfw) const
 
 
 Status LayerWriter::FlushProjection(const Schema &projection,
-                                    RowIteratorInterface *src_iter,
+                                    RowwiseIterator *src_iter,
                                     bool need_arena,
                                     bool write_bloom) {
   const Schema &iter_schema = src_iter->schema();
@@ -323,13 +324,14 @@ Status Layer::FlushDeltas() {
   return delta_tracker_->Flush();
 }
 
-RowIteratorInterface *Layer::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *Layer::NewRowIterator(const Schema &projection) const {
   CHECK(open_);
   //boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   // TODO: need to add back some appropriate locking?
 
-  shared_ptr<RowIteratorInterface> base_iter(base_data_->NewRowIterator(projection));
-  return delta_tracker_->WrapIterator(base_iter);
+  shared_ptr<ColumnwiseIterator> base_iter(base_data_->NewIterator(projection));
+  return new MaterializingIterator(
+    shared_ptr<ColumnwiseIterator>(delta_tracker_->WrapIterator(base_iter)));
 }
 
 Status Layer::UpdateRow(const void *key,
@@ -410,10 +412,10 @@ Status FlushInProgressLayer::Open() {
   return Status::OK();
 }
 
-RowIteratorInterface *FlushInProgressLayer::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *FlushInProgressLayer::NewRowIterator(const Schema &projection) const {
   CHECK(open_);
   // Use memstore as base data, updated by delta tracker
-  shared_ptr<RowIteratorInterface> base_iter(ms_->NewRowIterator(projection));
+  shared_ptr<RowwiseIterator> base_iter(ms_->NewIterator(projection));
   return delta_tracker_->WrapIterator(base_iter);
 }
 
@@ -495,15 +497,15 @@ Status CompactionInProgressLayer::Open() {
   return Status::OK();
 }
 
-RowIteratorInterface *CompactionInProgressLayer::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *CompactionInProgressLayer::NewRowIterator(const Schema &projection) const {
   CHECK(open_);
 
   // Use a union of the input layers as the row iterator.
   // No need to merge with the delta tracker, since we're duplicating all the writes
   // back into the input layers during the compaction.
-  vector<shared_ptr<RowIteratorInterface> > iters;
+  vector<shared_ptr<RowwiseIterator> > iters;
   BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, input_layers_) {
-    shared_ptr<RowIteratorInterface> iter(layer->NewRowIterator(projection));
+    shared_ptr<RowwiseIterator> iter(layer->NewRowIterator(projection));
     iters.push_back(iter);
   }
 

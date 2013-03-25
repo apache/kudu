@@ -64,7 +64,7 @@ public:
   // stable copies of all indirect data, a local arena is needed to hold
   // tmp copies during the flush.
   Status FlushProjection(const Schema &projection,
-                         RowIteratorInterface *src_iter,
+                         RowwiseIterator *src_iter,
                          bool need_arena,
                          bool write_bloom);
 
@@ -150,7 +150,7 @@ public:
   ////////////////////
   // Read functions.
   ////////////////////
-  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection) const;
 
 
   // Count the number of rows in this layer.
@@ -231,7 +231,7 @@ public:
 
   Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
 
-  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection) const;
 
   Status CountRows(size_t *count) const;
 
@@ -299,7 +299,7 @@ public:
 
   Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
 
-  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection) const;
 
   Status CountRows(size_t *count) const;
 

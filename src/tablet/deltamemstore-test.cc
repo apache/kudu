@@ -42,11 +42,8 @@ static void ApplyUpdates(DeltaMemStore *dms,
     dms->NewDeltaIterator(single_col_projection));
   ASSERT_STATUS_OK(iter->Init());
   ASSERT_STATUS_OK(iter->SeekToOrdinal(row_idx));
-
-  RowBlock block(single_col_projection, reinterpret_cast<uint8_t *>(cb->data()),
-                 cb->size(), cb->arena());
-  ASSERT_STATUS_OK(iter->PrepareToApply(&block));
-  ASSERT_STATUS_OK(iter->ApplyUpdates(&block, 0));
+  ASSERT_STATUS_OK(iter->PrepareBatch(cb->nrows()));
+  ASSERT_STATUS_OK(iter->ApplyUpdates(0, cb));
   
 }
 
@@ -212,34 +209,30 @@ TEST(TestDMSIterator, TestIteratorDoesUpdates) {
   }
   ASSERT_EQ(1000, dms->Count());
 
-  Arena arena(1024, 1024);
-  ScopedRowBlock block(schema, 100, &arena);
-
+  ScopedColumnBlock<UINT32> block(100);
   gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(dms->NewDeltaIterator(schema)));
   ASSERT_STATUS_OK(iter->Init(););
 
   int block_start_row = 50;
   ASSERT_STATUS_OK(iter->SeekToOrdinal(block_start_row));
-  ASSERT_STATUS_OK(iter->PrepareToApply(&block));
+  ASSERT_STATUS_OK(iter->PrepareBatch(block.nrows()));
   VLOG(1) << "prepared: " << Slice(iter->prepared_buf_).ToDebugString();
 
-  ASSERT_STATUS_OK(iter->ApplyUpdates(&block, 0));
+  ASSERT_STATUS_OK(iter->ApplyUpdates(0, &block));
 
   for (int i = 0; i < 100; i++) {
     int actual_row = block_start_row + i;
-    ASSERT_EQ(actual_row * 10, *reinterpret_cast<const uint32_t *>(block.row_ptr(i)));
+    ASSERT_EQ(actual_row * 10, block[i]);
   }
 
   // Apply the next block
   block_start_row += block.nrows();
-  ASSERT_STATUS_OK(iter->PrepareToApply(&block));
-  ASSERT_STATUS_OK(iter->ApplyUpdates(&block, 0));
+  ASSERT_STATUS_OK(iter->PrepareBatch(block.nrows()));
+  ASSERT_STATUS_OK(iter->ApplyUpdates(0, &block));
   for (int i = 0; i < 100; i++) {
     int actual_row = block_start_row + i;
-    ASSERT_EQ(actual_row * 10, *reinterpret_cast<const uint32_t *>(block.row_ptr(i)));
+    ASSERT_EQ(actual_row * 10, block[i]);
   }
-
-  
 }
 
 } // namespace tabletype

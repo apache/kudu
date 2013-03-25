@@ -142,9 +142,10 @@ DeltaFileIterator::DeltaFileIterator(DeltaFileReader *dfr,
   dfr_(dfr),
   cfile_reader_(dfr->cfile_reader()),
   projection_(projection),
-  cur_idx_(0),
   prepared_idx_(0xdeadbeef),
-  prepared_block_(NULL)
+  prepared_count_(0),
+  prepared_(false),
+  exhausted_(false)
 {}
 
 Status DeltaFileIterator::Init() {
@@ -175,9 +176,9 @@ Status DeltaFileIterator::SeekToOrdinal(uint32_t idx) {
   }
   RETURN_NOT_OK(s);
 
-  cur_idx_ = idx;
-  prepared_block_ = NULL;
-  prepared_idx_ = 0xdeadbeef;
+  prepared_idx_ = idx;
+  prepared_count_ = 0;
+  prepared_ = false;
   delta_blocks_.clear();
   exhausted_ = false;
   return Status::OK();
@@ -242,12 +243,12 @@ string DeltaFileIterator::PreparedDeltaBlock::ToString() const {
                       block_ptr_.ToString().c_str());
 }
 
-Status DeltaFileIterator::PrepareToApply(RowBlock *dst) {
+Status DeltaFileIterator::PrepareBatch(size_t nrows) {
   CHECK(!projection_indexes_.empty()) << "Must Init()";
-  CHECK_GT(dst->nrows(), 0);
+  CHECK_GT(nrows, 0);
 
-  uint32_t start_row = cur_idx_;
-  uint32_t stop_row = cur_idx_ + dst->nrows() - 1;
+  uint32_t start_row = prepared_idx_ + prepared_count_;
+  uint32_t stop_row = start_row + nrows - 1;
 
   // Remove blocks from our list which are no longer relevant to the range
   // being prepared.
@@ -293,17 +294,17 @@ Status DeltaFileIterator::PrepareToApply(RowBlock *dst) {
   VLOG(2) << "Done preparing deltas for " << start_row << "-" << stop_row
           << ": row block spans " << delta_blocks_.size() << " delta blocks";
   #endif
-  prepared_idx_ = cur_idx_;
-  cur_idx_ += dst->nrows();
-  prepared_block_ = dst;
+  prepared_idx_ = start_row;
+  prepared_count_ = nrows;
+  prepared_ = true;
   return Status::OK();
 }
 
-Status DeltaFileIterator::ApplyUpdates(RowBlock *dst, size_t col_to_apply) {
-  DCHECK_EQ(dst, prepared_block_) << "must Prepare";
+Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+  DCHECK(prepared_) << "must Prepare";
+  DCHECK_LE(prepared_count_, dst->nrows());
 
   size_t projected_col = projection_indexes_[col_to_apply];
-  ColumnBlock dst_col(dst->column_block(col_to_apply, dst->nrows()));
 
   uint32_t start_row = prepared_idx_;
 
@@ -327,7 +328,7 @@ Status DeltaFileIterator::ApplyUpdates(RowBlock *dst, size_t col_to_apply) {
     for (int i = block.prepared_block_start_idx_; i < sbd.Count(); i++) {
       const Slice &slice = sbd.string_at_index(i);
       bool done;
-      Status s = ApplyEncodedDelta(slice, projected_col, start_row, &dst_col, &done);
+      Status s = ApplyEncodedDelta(slice, projected_col, start_row, dst, &done);
       if (!s.ok()) {
         LOG(WARNING) << "Unable to apply delta from block " <<
           block.ToString() << ": " << s.ToString();

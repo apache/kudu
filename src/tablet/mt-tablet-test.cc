@@ -86,14 +86,14 @@ public:
 
     uint64_t updates_since_last_report = 0;
     while (running_insert_count_.count() > 0) {
-      gscoped_ptr<RowIteratorInterface> iter;
+      gscoped_ptr<RowwiseIterator> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
       ASSERT_STATUS_OK(iter->Init());
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
         size_t n = 1;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
+        ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
         CHECK_EQ(n, 1);
 
         // The key is at the start of the row
@@ -137,15 +137,18 @@ public:
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
     while (running_insert_count_.count() > 0) {
-      gscoped_ptr<RowIteratorInterface> iter;
+      gscoped_ptr<RowwiseIterator> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
       ASSERT_STATUS_OK(iter->Init());
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         arena_.Reset();
+
         size_t n = 1;
-        ASSERT_STATUS_OK_FAST(iter->CopyNextRows(&n, &block));
-        
+        ASSERT_STATUS_OK_FAST(iter->PrepareBatch(&n));
+        ASSERT_STATUS_OK_FAST(iter->MaterializeBlock(&block));
+        ASSERT_STATUS_OK_FAST(iter->FinishBatch());
+
         if (running_insert_count_.TimedWait(boost::posix_time::milliseconds(1))) {
           return;
         }
@@ -181,14 +184,15 @@ public:
 
     uint64_t sum = 0;
 
-    gscoped_ptr<RowIteratorInterface> iter;
+    gscoped_ptr<RowwiseIterator> iter;
     CHECK_OK(tablet_->NewRowIterator(projection, &iter));
     CHECK_OK(iter->Init());
 
     while (iter->HasNext()) {
       arena.Reset();
       size_t n = kBufInts;
-      CHECK_OK(iter->CopyNextRows(&n, &block));
+
+      CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
 
       for (size_t j = 0; j < n; j++) {
         sum += buf[j];

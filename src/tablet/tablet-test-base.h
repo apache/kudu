@@ -174,7 +174,7 @@ public:
   }
 
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
-    gscoped_ptr<RowIteratorInterface> iter;
+    gscoped_ptr<RowwiseIterator> iter;
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
     ASSERT_STATUS_OK(iter->Init());
     int batch_size = std::max(
@@ -196,9 +196,9 @@ public:
     while (iter->HasNext()) {
       arena_.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK(iter->CopyNextRows(&n, &block));
-
+      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
       CHECK_GT(n, 0);
+
       LOG(INFO) << "Fetched batch of " << n << "\n"
                 << "First row: " << schema_.DebugRow(block.row_ptr(0));
 
@@ -229,7 +229,7 @@ public:
   // a very small number of rows.
   // The output is sorted by key.
   Status IterateToStringList(vector<string> *out) {
-    gscoped_ptr<RowIteratorInterface> iter;
+    gscoped_ptr<RowwiseIterator> iter;
     RETURN_NOT_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
     RETURN_NOT_OK(iter->Init());
 
@@ -238,7 +238,7 @@ public:
     ScopedRowBlock block(schema, 1, &arena);
     while (iter->HasNext()) {
       size_t n = 1;
-      RETURN_NOT_OK( iter->CopyNextRows(&n, &block) );
+      RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
       CHECK_GT(n, 0);
       out->push_back( schema.DebugRow(block.row_ptr(0)) );
     }

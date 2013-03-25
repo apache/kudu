@@ -290,7 +290,7 @@ CFileIterator::CFileIterator(const CFileReader *reader,
                              const BlockPointer *validx_root) :
   reader_(reader),
   seeked_(NULL),
-  prepared_dst_block_(NULL),
+  prepared_(false),
   last_prepare_idx_(-1),
   last_prepare_count_(-1)
 {
@@ -429,13 +429,13 @@ Status CFileIterator::QueueCurrentDataBlock(const IndexTreeIterator &idx_iter) {
 
 bool CFileIterator::HasNext() const {
   CHECK(seeked_) << "not seeked";
-  CHECK(prepared_dst_block_ == NULL) << "Cannot call HasNext() mid-batch";
+  CHECK(!prepared_) << "Cannot call HasNext() mid-batch";
 
   return !prepared_blocks_.empty() || posidx_iter_->HasNext();
 }
 
-Status CFileIterator::PrepareBatch(ColumnBlock *dst, size_t *n) {
-  CHECK(prepared_dst_block_ == NULL) << "Should call FinishBatch() first";
+Status CFileIterator::PrepareBatch(size_t *n) {
+  CHECK(!prepared_) << "Should call FinishBatch() first";
   CHECK(seeked_ != NULL) << "must be seeked";
 
   CHECK(!prepared_blocks_.empty());
@@ -471,7 +471,7 @@ Status CFileIterator::PrepareBatch(ColumnBlock *dst, size_t *n) {
 
   last_prepare_idx_ = start_idx;
   last_prepare_count_ = *n;
-  prepared_dst_block_ = dst;
+  prepared_ = true;
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     VLOG(1) << "Prepared for " << (*n) << " rows"
@@ -488,8 +488,8 @@ Status CFileIterator::PrepareBatch(ColumnBlock *dst, size_t *n) {
 }
 
 Status CFileIterator::FinishBatch() {
-  CHECK(prepared_dst_block_ != NULL) << "no batch prepared";
-  prepared_dst_block_ = NULL;
+  CHECK(prepared_) << "no batch prepared";
+  prepared_ = false;
 
   DVLOG(1) << "Finishing batch " << last_prepare_idx_ << "-" << (last_prepare_idx_ + last_prepare_count_ - 1);
 
@@ -527,16 +527,16 @@ Status CFileIterator::FinishBatch() {
 }
 
 
-Status CFileIterator::Scan()
+Status CFileIterator::Scan(ColumnBlock *dst)
 {
   CHECK(seeked_) << "not seeked";
 
   // Make a local copy of the destination block so we can
   // Advance it as we read into it.
-  ColumnBlock remaining_dst = *CHECK_NOTNULL(prepared_dst_block_);
+  ColumnBlock remaining_dst = *dst;
 
   size_t rem = last_prepare_count_;
-  DCHECK_LE(rem, prepared_dst_block_->size());
+  DCHECK_LE(rem, dst->size());
 
   BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
     // Fetch as many as we can from the current datablock.
@@ -574,8 +574,8 @@ Status CFileIterator::Scan()
 }
 
 Status CFileIterator::CopyNextValues(size_t *n, ColumnBlock *cb) {
-  RETURN_NOT_OK(PrepareBatch(cb, n));
-  RETURN_NOT_OK(Scan());
+  RETURN_NOT_OK(PrepareBatch(n));
+  RETURN_NOT_OK(Scan(cb));
   RETURN_NOT_OK(FinishBatch());
   return Status::OK();
 }

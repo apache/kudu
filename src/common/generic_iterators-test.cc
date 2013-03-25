@@ -27,7 +27,7 @@ const static Schema kIntSchema(
 
 // Test iterator which just yields integer rows from a provided
 // vector.
-class VectorIterator : public RowIteratorInterface {
+class VectorIterator : public RowwiseIterator {
 public:
   VectorIterator(const vector<uint32_t> &ints) :
     ints_(ints),
@@ -38,28 +38,29 @@ public:
     return Status::OK();
   }
 
-  Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    if (key.size() == 0) {
-      // Seek to start
-      cur_idx_ = 0;
-      return Status::OK();
-    }
-    return Status::NotSupported("test iter doesnt seek");
-  }
-
-  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst) {
-    CHECK_EQ(dst->schema().byte_size(), sizeof(uint32_t));
-
+  virtual Status PrepareBatch(size_t *nrows) {
     int rem = ints_.size() - cur_idx_;
     if (rem < *nrows) {
       *nrows = rem;
     }
+    prepared_ = rem;
+    return Status::OK();
+  }
 
-    for (size_t i = 0; i < *nrows; i++) {
+  virtual Status MaterializeBlock(RowBlock *dst) {
+    CHECK_EQ(dst->schema().byte_size(), sizeof(uint32_t));
+    DCHECK_LE(prepared_, dst->nrows());
+
+    for (size_t i = 0; i < prepared_; i++) {
       uint32_t *dst_cell = reinterpret_cast<uint32_t *>(dst->row_ptr(i));
       *dst_cell = ints_[cur_idx_++];
     }
 
+    return Status::OK();
+  }
+
+  virtual Status FinishBatch() {
+    prepared_ = 0;
     return Status::OK();
   }
 
@@ -78,6 +79,7 @@ public:
 private:
   vector<uint32_t> ints_;
   int cur_idx_;
+  size_t prepared_;
 };
 
 // Test that empty input to a merger behaves correctly.
@@ -85,7 +87,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   vector<uint32_t> empty_vec;
   shared_ptr<VectorIterator> iter(new VectorIterator(empty_vec));
 
-  vector<shared_ptr<RowIteratorInterface> > to_merge;
+  vector<shared_ptr<RowwiseIterator> > to_merge;
   to_merge.push_back(iter);
 
   MergeIterator merger(kIntSchema, to_merge);
@@ -94,7 +96,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
 }
 
 TEST(TestMergeIterator, TestMerge) {
-  vector<shared_ptr<RowIteratorInterface> > to_merge;
+  vector<shared_ptr<RowwiseIterator> > to_merge;
   vector<uint32_t> ints;
   vector<uint32_t> all_ints;
   all_ints.reserve(FLAGS_num_rows * FLAGS_num_lists);
@@ -128,9 +130,11 @@ TEST(TestMergeIterator, TestMerge) {
       size_t total_idx = 0;
       while (merger.HasNext()) {
         size_t n = dst.nrows();
-        ASSERT_STATUS_OK_FAST(merger.CopyNextRows(&n, &dst));
+        ASSERT_STATUS_OK_FAST(merger.PrepareBatch(&n));
         ASSERT_GT(n, 0) <<
           "if HasNext() returns true, must return some rows";
+        ASSERT_STATUS_OK_FAST(merger.MaterializeBlock(&dst));
+        ASSERT_STATUS_OK_FAST(merger.FinishBatch());
 
         for (int i = 0; i < n; i++) {
           uint32_t this_row = *(reinterpret_cast<const uint32_t *>(dst.row_ptr(i)));

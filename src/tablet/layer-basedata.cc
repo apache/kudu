@@ -101,8 +101,8 @@ Status CFileBaseData::NewColumnIterator(size_t col_idx, CFileIterator **iter) co
 }
 
 
-RowIteratorInterface *CFileBaseData::NewRowIterator(const Schema &projection) const {
-  return new CFileBaseData::RowIterator(shared_from_this(), projection);
+CFileBaseData::Iterator *CFileBaseData::NewIterator(const Schema &projection) const {
+  return new CFileBaseData::Iterator(shared_from_this(), projection);
 }
 
 Status CFileBaseData::CountRows(size_t *count) const {
@@ -166,7 +166,7 @@ Status CFileBaseData::CheckRowPresent(const LayerKeyProbe &probe, bool *present)
 // Iterator
 ////////////////////////////////////////////////////////////
 
-Status CFileBaseData::RowIterator::Init() {
+Status CFileBaseData::Iterator::Init() {
   CHECK(!initted_);
 
   RETURN_NOT_OK(projection_.GetProjectionFrom(
@@ -199,54 +199,74 @@ Status CFileBaseData::RowIterator::Init() {
   return SeekToOrdinal(0);
 }
 
-Status CFileBaseData::RowIterator::SeekToOrdinal(uint32_t ord_idx) {
+Status CFileBaseData::Iterator::SeekToOrdinal(uint32_t ord_idx) {
   DCHECK(initted_);
   BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
     RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
   }
 
+  prepared_ = false;
+
   return Status::OK();
 }
 
+Status CFileBaseData::Iterator::PrepareBatch(size_t *n) {
+  size_t n_out = 0;
 
-Status CFileBaseData::RowIterator::CopyNextRows(
-  size_t *nrows, RowBlock *dst)
-{
-  DCHECK(initted_);
-  DCHECK(dst) << "null dst";
-  DCHECK(dst->arena()) << "null dst_arena";
-
-  // Copy the projected columns into 'dst'
-  int proj_col_idx = 0;
-  int fetched_prev_col = -1;
-
-  BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
-    ColumnBlock dst_col = dst->column_block(proj_col_idx, *nrows);
-
-    size_t fetched = *nrows;
-    RETURN_NOT_OK(col_iter.CopyNextValues(&fetched, &dst_col));
-
-    // Sanity check that all iters match up
-    if (proj_col_idx > 0) {
-      CHECK(fetched == fetched_prev_col) <<
-        "Column " << proj_col_idx << " only fetched "
-                  << fetched << " rows whereas the previous "
-                  << "columns fetched " << fetched_prev_col;
+  bool first = true;
+  for (size_t idx = 0; idx < col_iters_.size(); idx++) {
+    CFileIterator &col_iter = col_iters_[idx];
+    size_t this_col_n = *n;
+    Status s = col_iter.PrepareBatch(&this_col_n);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to prepare column " << idx << ": " << s.ToString();
+      return s;
     }
-    fetched_prev_col = fetched;
-
-    if (fetched == 0) {
-      DCHECK_EQ(proj_col_idx, 0) << "all columns should end at the same time!";
-      return Status::NotFound("end of input");
+    if (first) {
+      n_out = this_col_n;
+    } else {
+      if (this_col_n != n_out) {
+        // TODO: better actionable error message indicating which column name and row offset
+        // triggered the issue.
+        return Status::Corruption(
+          StringPrintf("Column %zd had different length %zd compared to prior columns, "
+                       "which had length %zd", idx, this_col_n, n_out));
+      }
     }
-    proj_col_idx++;
   }
 
-  *nrows = fetched_prev_col;
+  if (n_out == 0) {
+    return Status::NotFound("end of input");
+  }
+
+  prepared_ = true;
+  *n = n_out;
+
   return Status::OK();
 }
 
+Status CFileBaseData::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
+  CHECK(prepared_);
+  DCHECK_LT(col_idx, col_iters_.size());
 
+  CFileIterator &iter = col_iters_[col_idx];
+  return iter.Scan(dst);
+}
+
+Status CFileBaseData::Iterator::FinishBatch() {
+  CHECK(prepared_);
+  prepared_ = false;
+
+  for (size_t i = 0; i < col_iters_.size(); i++) {
+    Status s = col_iters_[i].FinishBatch();
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to FinishBatch() on column " << i;
+      return s;
+    }
+  }
+
+  return Status::OK();
+}
 
 } // namespace tablet
 } // namespace kudu

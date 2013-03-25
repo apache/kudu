@@ -27,17 +27,18 @@ using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using std::tr1::shared_ptr;
 
-
 // Base Data made up of a set of CFiles, one for each column.
 class CFileBaseData : public std::tr1::enable_shared_from_this<CFileBaseData>,
                       boost::noncopyable {
 public:
+  class Iterator;
+
   CFileBaseData(Env *env, const string &dir, const Schema &schema);
 
   Status OpenAllColumns();
   Status OpenKeyColumns();
 
-  virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+  virtual Iterator *NewIterator(const Schema &projection) const;
   Status CountRows(size_t *count) const;
   uint64_t EstimateOnDiskSize() const;
 
@@ -55,8 +56,7 @@ public:
   virtual ~CFileBaseData();
 
 private:
-  class RowIterator;
-  friend class RowIterator;
+  friend class Iterator;
 
   Status OpenColumns(size_t num_cols);
   Status OpenBloomReader();
@@ -71,25 +71,35 @@ private:
   gscoped_ptr<BloomFileReader> bloom_reader_;
 };
 
-// Iterator which yields the combined and projected rows from a
-// subset of the columns.
-class CFileBaseData::RowIterator : public RowIteratorInterface, boost::noncopyable {
+
+////////////////////////////////////////////////////////////
+
+// Column-wise iterator implementation over a set of column files.
+//
+// This simply ties together underlying files so that they can be batched
+// together, and iterated in parallel.
+//
+// TODO: write a test for this standalone, including not doing any IO for
+// columns which don't end up needing to be materialized.
+class CFileBaseData::Iterator : public ColumnwiseIterator, public boost::noncopyable {
 public:
   virtual Status Init();
 
-  // Get the next batch of rows from the iterator.
-  // Retrieves up to 'nrows' rows, and writes back the number
-  // of rows actually fetched into the same variable.
-  // Any indirect data (eg strings) are allocated out of
-  // the destination block's arena.
-  Status CopyNextRows(size_t *nrows, RowBlock *dst);
+  // See BaseDataIteratorInterface
+  virtual Status PrepareBatch(size_t *nrows);
 
-  bool HasNext() const {
+  // See ColumnStoreBaseDataIterator
+  virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
+
+  // See BaseDataIteratorInterface
+  virtual Status FinishBatch();
+
+  virtual bool HasNext() const {
     DCHECK(initted_);
     return col_iters_[0].HasNext();
   }
 
-  string ToString() const {
+  virtual string ToString() const {
     return string("layer iterator for ") + base_data_->ToString();
   }
 
@@ -100,11 +110,12 @@ public:
 private:
   friend class CFileBaseData;
 
-  RowIterator(const shared_ptr<CFileBaseData const> &base_data,
-              const Schema &projection) :
+  Iterator(const shared_ptr<CFileBaseData const> &base_data,
+           const Schema &projection) :
     base_data_(base_data),
     projection_(projection),
-    initted_(false)
+    initted_(false),
+    prepared_(false)
   {}
 
   Status SeekToOrdinal(uint32_t ord_idx);
@@ -118,10 +129,9 @@ private:
   ptr_vector<CFileIterator> col_iters_;
 
   bool initted_;
+  bool prepared_;
 
 };
-
-
 
 } // namespace tablet
 } // namespace kudu

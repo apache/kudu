@@ -102,7 +102,7 @@ public:
   Iterator *NewIterator(const Schema &projection) const;
 
   // Alias to conform to Layer interface
-  RowIteratorInterface *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection) const;
 
   // Return the Schema for the rows in this memstore.
   const Schema &schema() const {
@@ -170,8 +170,10 @@ private:
 // at least all rows that were present at the time of construction,
 // and potentially more. Each row will be at least as current as
 // the time of construction, and potentially more current.
-class MemStore::Iterator : public RowIteratorInterface, boost::noncopyable {
+class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
 public:
+  virtual ~Iterator() {}
+
   virtual Status Init() {
     RETURN_NOT_OK(projection_.GetProjectionFrom(
                     memstore_->schema(), &projection_mapping_));
@@ -198,39 +200,59 @@ public:
     }
   }
 
-  virtual Status CopyNextRows(size_t *nrows, RowBlock *dst) {
+  virtual Status PrepareBatch(size_t *nrows) {
+    DCHECK(!projection_mapping_.empty()) << "not initted";
+    if (PREDICT_FALSE(!iter_->IsValid())) {
+      *nrows = 0;
+      return Status::NotFound("end of iter");
+    }
+
+    size_t rem_in_leaf = iter_->remaining_in_leaf();
+    if (PREDICT_TRUE(rem_in_leaf < *nrows)) {
+      *nrows = rem_in_leaf;
+    }
+    prepared_count_ = *nrows;
+    prepared_idx_in_leaf_ = iter_->index_in_leaf();
+    return Status::OK();
+  }
+
+  virtual Status MaterializeBlock(RowBlock *dst) {
     // TODO: add dcheck that dst->schema() matches our schema
     // also above TODO applies to a lot of other CopyNextRows cases
     DCHECK(!projection_mapping_.empty()) << "not initted";
-    DCHECK_GT(*nrows, 0);
-    if (!HasNext()) {
-      return Status::NotFound("no more rows");
-    }
 
+    DCHECK_GE(dst->nrows(), prepared_count_);
+    DCHECK_GT(dst->nrows(), 0);
+
+    Slice k, v;
     size_t fetched = 0;
-    for (size_t i = 0; i < *nrows && HasNext(); i++) {
+    for (size_t i = prepared_idx_in_leaf_; fetched < prepared_count_; i++) {
       // Copy the row into the destination, including projection
       // and relocating slices.
       // TODO: can we share some code here with CopyRowToArena() from row.h
       // or otherwise put this elsewhere?
-      Slice s = GetCurrentRow();
+      iter_->GetEntryInLeaf(i, &k, &v);
       for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
         size_t src_col_idx = projection_mapping_[proj_col_idx];
         void *dst_cell = dst->row_ptr(fetched) + projection_.column_offset(proj_col_idx);
-        const void *src_cell = s.data() + memstore_->schema().column_offset(src_col_idx);
+        const void *src_cell = v.data() + memstore_->schema().column_offset(src_col_idx);
         RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
       }
 
       // advance to next row
       fetched++;
-      Next();
     }
-
-    *nrows = fetched;
 
     return Status::OK();
   }
 
+  virtual Status FinishBatch() {
+    for (int i = 0; i < prepared_count_; i++) {
+      iter_->Next();
+    }
+    prepared_count_ = 0;
+    return Status::OK();
+  }
 
   virtual bool HasNext() const {
     return iter_->IsValid();
@@ -262,7 +284,9 @@ private:
            const Schema &projection) :
     memstore_(ms),
     iter_(iter),
-    projection_(projection)
+    projection_(projection),
+    prepared_count_(0),
+    prepared_idx_in_leaf_(0)
   {
     // TODO: various code assumes that a newly constructed iterator
     // is pointed at the beginning of the dataset. This causes a redundant
@@ -277,6 +301,9 @@ private:
 
   const Schema projection_;
   vector<size_t> projection_mapping_;
+
+  size_t prepared_count_;
+  size_t prepared_idx_in_leaf_;
 
   // Temporary local buffer used for seeking to hold the encoded
   // seek target.

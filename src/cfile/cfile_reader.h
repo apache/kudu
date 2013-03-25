@@ -201,14 +201,14 @@ public:
   // If there are at least dst->size() values remaining in the underlying file,
   // this will always return *n == dst->size(). In other words, this does not
   // ever result in a "short read".
-  Status PrepareBatch(ColumnBlock *dst, size_t *n);
+  Status PrepareBatch(size_t *n);
 
   // Copy values into the prepared column block.
   // Any indirected values (eg strings) are copied into the dst block's
   // arena.
   // This does _not_ advance the position in the underlying file. Multiple
   // calls to Scan() will re-read the same values.
-  Status Scan();
+  Status Scan(ColumnBlock *dst);
 
   // Finish processing the current batch, advancing the iterators
   // such that the next call to PrepareBatch() will start where the previous
@@ -280,7 +280,7 @@ private:
   typedef ObjectPool<PreparedBlock>::scoped_ptr pblock_pool_scoped_ptr;
 
   // State set up by PrepareBatch(...):
-  ColumnBlock *prepared_dst_block_;
+  bool prepared_;
   uint32_t last_prepare_idx_;
   uint32_t last_prepare_count_;
 };

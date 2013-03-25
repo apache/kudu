@@ -23,7 +23,7 @@ static const int kMergeRowBuffer = 1000;
 
 class MergeIterState {
 public:
-  MergeIterState(const shared_ptr<RowIteratorInterface> &iter) :
+  MergeIterState(const shared_ptr<RowwiseIterator> &iter) :
     iter_(iter),
     arena_(1024, 256*1024),
     read_block_(iter->schema(), kMergeRowBuffer, &arena_),
@@ -71,14 +71,18 @@ public:
     }
 
     size_t n = read_block_.nrows();
-    RETURN_NOT_OK( iter_->CopyNextRows(&n, &read_block_) );
+    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_.get(), &n, &read_block_));
     cur_row_ = 0;
     valid_rows_ = n;
     next_row_ptr_ = read_block_.row_ptr(0);
     return Status::OK();
   }
 
-  shared_ptr<RowIteratorInterface> iter_;
+  size_t remaining_in_block() const {
+    return valid_rows_ - cur_row_;
+  }
+
+  shared_ptr<RowwiseIterator> iter_;
   Arena arena_;
   ScopedRowBlock read_block_;
   uint8_t *next_row_ptr_;
@@ -90,12 +94,13 @@ public:
 
 MergeIterator::MergeIterator(
   const Schema &schema,
-  const vector<shared_ptr<RowIteratorInterface> > &iters)
+  const vector<shared_ptr<RowwiseIterator> > &iters)
   : schema_(schema),
-    initted_(false)
+    initted_(false),
+    prepared_count_(0)
 {
   CHECK_GT(iters.size(), 0);
-  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, iters) {
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters) {
     iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
   }
 }
@@ -126,24 +131,37 @@ Status MergeIterator::Init() {
   return Status::OK();
 }
 
-Status MergeIterator::SeekAtOrAfter(const Slice &key, bool *exact) {
-  return Status::NotSupported("Merge iterator doesn't currently support seek");
+Status MergeIterator::PrepareBatch(size_t *nrows) {
+  // We can always provide at least as many rows as are remaining
+  // in the currently queued up blocks.
+  size_t available = 0;
+  BOOST_FOREACH(shared_ptr<MergeIterState> &iter, iters_) {
+    available += iter->remaining_in_block();
+  }
+
+  if (available < *nrows) {
+    *nrows = available;
+  }
+
+  prepared_count_ = *nrows;
+
+  return Status::OK();
 }
 
 // TODO: this is an obvious spot to add codegen - there's a ton of branching
 // and such around the comparisons. A simple experiment indicated there's some
 // 2x to be gained.
-Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
+Status MergeIterator::MaterializeBlock(RowBlock *dst) {
   CHECK(initted_);
 
-  // TODO: check that dst has the same schema
+  DCHECK_SCHEMA_EQ(dst->schema(), schema());
+  DCHECK_LE(prepared_count_, dst->nrows());
 
-  *nrows = 0;
   size_t dst_row_idx = 0;
   size_t row_size = schema_.byte_size();
   uint8_t *dst_ptr = dst->row_ptr(0);
 
-  while (dst_row_idx < dst->nrows()) {
+  while (dst_row_idx < prepared_count_) {
 
     // Find the sub-iterator which is currently smallest
     MergeIterState *smallest = NULL;
@@ -179,7 +197,11 @@ Status MergeIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     dst_row_idx++;
   }
 
-  *nrows = dst_row_idx;
+  return Status::OK();
+}
+
+Status MergeIterator::FinishBatch() {
+  prepared_count_ = 0;
   return Status::OK();
 }
 
@@ -203,7 +225,7 @@ string MergeIterator::ToString() const {
 // Union iterator
 ////////////////////////////////////////////////////////////
 
-UnionIterator::UnionIterator(const vector<shared_ptr<RowIteratorInterface> > &iters) :
+UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters) :
   initted_(false),
   iters_(iters.size())
 {
@@ -216,7 +238,7 @@ Status UnionIterator::Init() {
 
   // Verify schemas match.
   schema_.reset(new Schema(iters_.front()->schema()));
-  BOOST_FOREACH(shared_ptr<RowIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->Init());
     if (!iter->schema().Equals(*schema_)) {
       return Status::InvalidArgument(
@@ -228,28 +250,15 @@ Status UnionIterator::Init() {
   return Status::OK();
 }
 
-Status UnionIterator::SeekAtOrAfter(const Slice &key, bool *exact) {
-  if (key.size() == 0) {
-    // Can seek to start
-    return Status::OK();
-  }
-
-  // it's not clear what SeekAtOrAfter means in this context.
-  // We probably should end up getting rid of this API altogether,
-  // in favor of a more high-level way of specifying the range for a
-  // scan.
-  return Status::NotSupported("TODO: implement me");
-}
-
 bool UnionIterator::HasNext() const {
-  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters_) {
     if (iter->HasNext()) return true;
   }
 
   return false;
 }
 
-Status UnionIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
+Status UnionIterator::PrepareBatch(size_t *nrows) {
   CHECK(initted_);
 
   while (!iters_.empty() &&
@@ -261,10 +270,16 @@ Status UnionIterator::CopyNextRows(size_t *nrows, RowBlock *dst) {
     return Status::OK();
   }
 
-  shared_ptr<RowIteratorInterface> &iter = iters_.front();
+  return iters_.front()->PrepareBatch(nrows);
+}
 
-  RETURN_NOT_OK(iter->CopyNextRows(nrows, dst));
-  if (!iter->HasNext()) {
+Status UnionIterator::MaterializeBlock(RowBlock *dst) {
+  return iters_.front()->MaterializeBlock(dst);
+}
+
+Status UnionIterator::FinishBatch() {
+  RETURN_NOT_OK(iters_.front()->FinishBatch());
+  if (!iters_.front()->HasNext()) {
     // Iterator exhausted, remove it.
     iters_.pop_front();
   }
@@ -276,17 +291,54 @@ string UnionIterator::ToString() const {
   string s;
   s.append("Union(");
   bool first = true;
-  BOOST_FOREACH(const shared_ptr<RowIteratorInterface> &iter, iters_) {
-    s.append(iter->ToString());
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters_) {
     if (!first) {
       s.append(", ");
     }
     first = false;
+    s.append(iter->ToString());
   }
   s.append(")");
   return s;
 }
 
+////////////////////////////////////////////////////////////
+// Materializing iterator
+////////////////////////////////////////////////////////////
 
+MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter) :
+  iter_(iter)
+{
+}
+
+Status MaterializingIterator::Init() {
+  return iter_->Init();
+}
+
+bool MaterializingIterator::HasNext() const {
+  return iter_->HasNext();
+}
+
+Status MaterializingIterator::PrepareBatch(size_t *nrows) {
+  return iter_->PrepareBatch(nrows);
+}
+
+Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
+  for (size_t i = 0; i < schema().num_columns(); i++) {
+    ColumnBlock dst_col(dst->column_block(i));
+    RETURN_NOT_OK(iter_->MaterializeColumn(i, &dst_col));
+  }
+  return Status::OK();
+}
+
+Status MaterializingIterator::FinishBatch() {
+  return iter_->FinishBatch();
+}
+
+string MaterializingIterator::ToString() const {
+  string s;
+  s.append("Materializing(").append(iter_->ToString()).append(")");
+  return s;
+}
 
 } // namespace kudu

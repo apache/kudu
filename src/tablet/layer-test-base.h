@@ -118,7 +118,7 @@ protected:
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
-    gscoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(proj_val));
+    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(proj_val));
     ASSERT_STATUS_OK(row_iter->Init());
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
@@ -129,7 +129,9 @@ protected:
     while (row_iter->HasNext()) {
       arena.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, &dst));
+      ASSERT_STATUS_OK_FAST(row_iter->PrepareBatch(&n));
+      ASSERT_STATUS_OK_FAST(row_iter->MaterializeBlock(&dst));
+      ASSERT_STATUS_OK_FAST(row_iter->FinishBatch());
       VerifyUpdatedBlock(reinterpret_cast<const uint32_t *>(dst.row_ptr(0)),
                          i, n, updated);
       i += n;
@@ -158,7 +160,7 @@ protected:
   // using the given schema as a projection.
   static void IterateProjection(const Layer &l, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
-    gscoped_ptr<RowIteratorInterface> row_iter(l.NewRowIterator(schema));
+    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(schema));
     ASSERT_STATUS_OK(row_iter->Init());
 
     int batch_size = 1000;
@@ -170,7 +172,9 @@ protected:
     while (row_iter->HasNext()) {
       arena.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(row_iter->CopyNextRows(&n, &dst));
+      ASSERT_STATUS_OK_FAST(row_iter->PrepareBatch(&n));
+      ASSERT_STATUS_OK_FAST(row_iter->MaterializeBlock(&dst));
+      ASSERT_STATUS_OK_FAST(row_iter->FinishBatch());
       i += n;
 
       if (do_log) {

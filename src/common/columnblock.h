@@ -67,9 +67,8 @@ public:
   size_t stride() const { return stride_; }
   const void * data() const { return data_; }
   void *data() { return data_; }
-  const size_t size() const {
-    return nrows_;
-  }
+  const size_t size() const { return nrows_; }
+  const size_t nrows() const { return nrows_; }
 
   // Return true if the stride of this column block is
   // equal to the size of its data type -- i.e. if the

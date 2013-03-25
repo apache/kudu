@@ -41,6 +41,10 @@ public:
   const Schema &schema() const { return schema_; }
   Arena *arena() const { return arena_; }
 
+  ColumnBlock column_block(size_t col_idx) {
+    return column_block(col_idx, nrows_);
+  }
+
   ColumnBlock column_block(size_t col_idx, size_t nrows) {
     DCHECK_LE(nrows, nrows_);
     return ColumnBlock(schema_.column(col_idx).type_info(),

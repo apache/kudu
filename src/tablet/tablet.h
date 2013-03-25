@@ -98,7 +98,7 @@ private:
   //
   // The returned iterators are not Init()ed
   Status CaptureConsistentIterators(const Schema &projection,
-                                    vector<shared_ptr<RowIteratorInterface> > *iters) const;
+                                    vector<shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickLayersToCompact(
     LayerVector *out_layers,
@@ -170,7 +170,7 @@ template <class SmartPointer>
 inline Status Tablet::NewRowIterator(const Schema &projection,
                                      SmartPointer *iter) const
 {
-  vector<shared_ptr<RowIteratorInterface> > iters;
+  vector<shared_ptr<RowwiseIterator> > iters;
   RETURN_NOT_OK(CaptureConsistentIterators(projection, &iters));
 
   iter->reset(new UnionIterator(iters));

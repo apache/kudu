@@ -85,9 +85,9 @@ public:
 
   Status SeekToOrdinal(uint32_t row_idx);
 
-  Status PrepareToApply(RowBlock *dst);
+  Status PrepareBatch(size_t nrows);
 
-  Status ApplyUpdates(RowBlock *dst, size_t col_to_apply);
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 
 private:
   FRIEND_TEST(TestDMSIterator, TestIteratorDoesUpdates);
@@ -109,14 +109,14 @@ private:
   gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
 
 
-  // The index at which iter_ is currently pointed
-  uint32_t cur_idx_;
-
   // The index at which the last Prepare call was made
   uint32_t prepared_idx_;
 
+  // The number of rows for which the last Prepare call was made
+  uint32_t prepared_count_;
+
   // The last block that PrepareToApply(...) was called on.
-  RowBlock *prepared_block_;
+  bool prepared_;
 
   faststring prepared_buf_;
 

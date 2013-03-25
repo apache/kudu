@@ -72,7 +72,7 @@ public:
 
   // Return a new RowIterator for this layer, with the given projection.
   // The returned iterator is not Initted.
-  virtual RowIteratorInterface *NewRowIterator(const Schema &projection) const = 0;
+  virtual RowwiseIterator *NewRowIterator(const Schema &projection) const = 0;
 
   // Count the number of rows in this layer.
   virtual Status CountRows(size_t *count) const = 0;
@@ -123,12 +123,12 @@ public:
 //   RowBlock rowblock;
 //   foreach RowBlock in base data {
 //     clear row block
-//     CHECK_OK(iter->PrepareToApply(&rowblock));
-//     ... read one column from base data into row block ...
-//     CHECK_OK(iter->ApplyUpdates(&rowblock, <column index>))
+//     CHECK_OK(iter->PrepareBatch(rowblock.size()));
+//     ... read column 0 from base data into row block ...
+//     CHECK_OK(iter->ApplyUpdates(0, rowblock.column(0))
 //     ... check predicates for column ...
 //     ... read another column from base data...
-//     CHECK_OK(iter->ApplyUpdates(&rowblock, <second column>))
+//     CHECK_OK(iter->ApplyUpdates(1, rowblock.column(1)))
 //     ...
 //  }
 class DeltaIteratorInterface {
@@ -142,16 +142,16 @@ public:
   virtual Status SeekToOrdinal(uint32_t idx) = 0;
 
   // Prepare to apply deltas to a block of rows. This takes a consistent snapshot
-  // of all deltas that will apply to the block, so that subsequent calls to
+  // of all updates to the next 'nrows' rows, so that subsequent calls to
   // ApplyUpdates() will not cause any "tearing"/non-atomicity.
   //
   // Each time this is called, the iterator is advanced by the full length
   // of the previously prepared block.
-  virtual Status PrepareToApply(RowBlock *dst) = 0;
+  virtual Status PrepareBatch(size_t nrows) = 0;
 
   // Apply the snapshotted updates to one of the columns.
-  // 'dst' must be the same row block as was previously passed to PrepareToApply()
-  virtual Status ApplyUpdates(RowBlock *dst, size_t col_to_apply) = 0;
+  // 'dst' must be the same length as was previously passed to PrepareToApply()
+  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
 
   virtual ~DeltaIteratorInterface() {}
 };

@@ -88,8 +88,9 @@ public:
       block.ZeroMemory();
       arena_.Reset();
 
-      ASSERT_STATUS_OK_FAST(it->PrepareToApply(&block));
-      ASSERT_STATUS_OK_FAST(it->ApplyUpdates(&block, 0));
+      ASSERT_STATUS_OK_FAST(it->PrepareBatch(block.nrows()));
+      ColumnBlock dst_col = block.column_block(0);
+      ASSERT_STATUS_OK_FAST(it->ApplyUpdates(0, &dst_col));
 
       for (int i = 0; i < block.nrows(); i++) {
         uint32_t row = start_row + i;
