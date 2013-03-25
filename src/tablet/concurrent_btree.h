@@ -1614,6 +1614,43 @@ public:
     leaf_to_scan_->Get(idx_in_leaf_, key, val);
   }
 
+  ////////////////////////////////////////////////////////////
+  // Advanced functions which expose some of the internal state
+  // of the iterator, allowing for limited "rewind" capability
+  // within a given leaf.
+  //
+  // Single leaf nodes are the unit of "snapshotting" of this iterator.
+  // Hence, within a leaf node, the caller may rewind arbitrarily, but once
+  // moving to the next leaf node, there is no way to go back to the prior
+  // leaf node without losing consistency.
+  ////////////////////////////////////////////////////////////
+
+  // Return the number of entries, including the current one, remaining
+  // in the leaf.
+  // For example, if the leaf has three entries [A, B, C], and GetCurrentEntry
+  // would return 'A', then this will return 3.
+  size_t remaining_in_leaf() const {
+    CHECK(seeked_);
+    return leaf_to_scan_->num_entries() - idx_in_leaf_;
+  }
+
+  // Return the index of the iterator inside the current leaf node.
+  size_t index_in_leaf() const {
+    return idx_in_leaf_;
+  }
+
+  // Rewind the iterator to the given index in the current leaf node,
+  // which was probably saved off from a previous call to
+  // remaining_in_leaf().
+  //
+  // If Next() was called more times than remaining_in_leaf(), then
+  // this call will not be successful.
+  void RewindToIndexInLeaf(size_t new_index_in_leaf) {
+    CHECK(seeked_);
+    DCHECK_LT(new_index_in_leaf, leaf_to_scan_->num_entries());
+    idx_in_leaf_ = new_index_in_leaf;
+  }
+
 private:
   friend class CBTree<Traits>;
 

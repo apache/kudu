@@ -506,6 +506,51 @@ TEST_F(TestCBTree, TestIterator) {
   }
 }
 
+// Test the limited "Rewind" functionality within a given leaf node.
+TEST_F(TestCBTree, TestIteratorRewind) {
+  CBTree<SmallFanoutTraits> t;
+
+  ASSERT_TRUE(t.Insert(Slice("key1"), Slice("val")));
+  ASSERT_TRUE(t.Insert(Slice("key2"), Slice("val")));
+  ASSERT_TRUE(t.Insert(Slice("key3"), Slice("val")));
+
+  gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+  bool exact;
+  ASSERT_TRUE(iter->SeekAtOrAfter(Slice(""), &exact));
+
+  Slice k, v;
+  iter->GetCurrentEntry(&k, &v);
+  ASSERT_EQ("key1", k.ToString());
+  ASSERT_EQ(0, iter->index_in_leaf());
+  ASSERT_EQ(3, iter->remaining_in_leaf());
+  ASSERT_TRUE(iter->Next());
+
+  iter->GetCurrentEntry(&k, &v);
+  ASSERT_EQ("key2", k.ToString());
+  ASSERT_EQ(1, iter->index_in_leaf());
+  ASSERT_EQ(2, iter->remaining_in_leaf());
+  ASSERT_TRUE(iter->Next());
+
+  iter->GetCurrentEntry(&k, &v);
+  ASSERT_EQ("key3", k.ToString());
+  ASSERT_EQ(2, iter->index_in_leaf());
+  ASSERT_EQ(1, iter->remaining_in_leaf());
+
+  // Rewind to beginning of leaf.
+  iter->RewindToIndexInLeaf(0);
+  iter->GetCurrentEntry(&k, &v);
+  ASSERT_EQ("key1", k.ToString());
+  ASSERT_EQ(0, iter->index_in_leaf());
+  ASSERT_EQ(3, iter->remaining_in_leaf());
+  ASSERT_TRUE(iter->Next());
+
+  iter->GetCurrentEntry(&k, &v);
+  ASSERT_EQ("key2", k.ToString());
+  ASSERT_EQ(1, iter->index_in_leaf());
+  ASSERT_EQ(2, iter->remaining_in_leaf());
+  ASSERT_TRUE(iter->Next());
+}
+
 TEST_F(TestCBTree, TestIteratorSeekOnEmptyTree) {
   CBTree<SmallFanoutTraits> t;
 
