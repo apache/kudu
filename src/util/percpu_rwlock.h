@@ -1,3 +1,5 @@
+// Copyright (c) 2013, Cloudera, inc.
+//
 #ifndef KUDU_UTIL_PERCPU_RWLOCK_H
 #define KUDU_UTIL_PERCPU_RWLOCK_H
 
@@ -22,7 +24,17 @@ public:
   }
 };
 
-
+// A reader-writer lock implementation which is biased for use cases where
+// the write lock is taken infrequently, but the read lock is used often.
+//
+// Internally, this creates N underlying mutexes, one per CPU. When a thread
+// wants to lock in read (shared) mode, it locks only its own CPU's mutex. When it
+// wants to lock in write (exclusive) mode, it locks all CPU's mutexes.
+//
+// TODO: the underlying spinlocks should themselves be rwlocks, rather than mutexes.
+// The current implementation won't work well if the threads hold the locks
+// for substantial amounts of time, because other threads may end up getting scheduled
+// on the same CPU.
 struct percpu_rwlock {
   struct padded_lock {
     simple_spinlock lock;
