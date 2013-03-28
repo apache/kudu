@@ -28,7 +28,7 @@ namespace kudu {
 namespace {
 
 static Status IOError(const std::string& context, int err_number) {
-  return Status::IOError(context, strerror(err_number));
+  return Status::IOError(context, strerror(err_number), err_number);
 }
 
 class PosixSequentialFile: public SequentialFile {

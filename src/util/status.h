@@ -68,6 +68,14 @@ class Status {
                          int16_t posix_code = -1) {
     return Status(kAlreadyPresent, msg, msg2, posix_code);
   }
+  static Status RuntimeError(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kRuntimeError, msg, msg2, posix_code);
+  }
+  static Status NetworkError(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kNetworkError, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -86,6 +94,12 @@ class Status {
 
   // Returns true iff the status indicates an AlreadyPresent error
   bool IsAlreadyPresent() const { return code() == kAlreadyPresent; }
+
+  // Returns true iff the status indicates a RuntimeError.
+  bool IsRuntimeError() const { return code() == kRuntimeError; }
+
+  // Returns true iff the status indicates a NetworkError.
+  bool IsNetworkError() const { return code() == kNetworkError; }
 
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
@@ -110,7 +124,9 @@ class Status {
     kNotSupported = 3,
     kInvalidArgument = 4,
     kIOError = 5,
-    kAlreadyPresent = 6
+    kAlreadyPresent = 6,
+    kRuntimeError = 7,
+    kNetworkError = 8
   };
 
   Code code() const {
