@@ -27,13 +27,16 @@ using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using std::tr1::shared_ptr;
 
-// Base Data made up of a set of CFiles, one for each column.
-class CFileBaseData : public std::tr1::enable_shared_from_this<CFileBaseData>,
-                      boost::noncopyable {
+// Set of CFiles which make up the base data for a single layer
+//
+// All of these files have the same number of rows, and thus the positional
+// indexes can be used to seek to corresponding entries in each.
+class CFileSet : public std::tr1::enable_shared_from_this<CFileSet>,
+                 boost::noncopyable {
 public:
   class Iterator;
 
-  CFileBaseData(Env *env, const string &dir, const Schema &schema);
+  CFileSet(Env *env, const string &dir, const Schema &schema);
 
   Status OpenAllColumns();
   Status OpenKeyColumns();
@@ -53,7 +56,7 @@ public:
 
   virtual Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
 
-  virtual ~CFileBaseData();
+  virtual ~CFileSet();
 
 private:
   friend class Iterator;
@@ -81,7 +84,7 @@ private:
 //
 // TODO: write a test for this standalone, including not doing any IO for
 // columns which don't end up needing to be materialized.
-class CFileBaseData::Iterator : public ColumnwiseIterator, public boost::noncopyable {
+class CFileSet::Iterator : public ColumnwiseIterator, public boost::noncopyable {
 public:
   virtual Status Init();
 
@@ -108,9 +111,9 @@ public:
   }
 
 private:
-  friend class CFileBaseData;
+  friend class CFileSet;
 
-  Iterator(const shared_ptr<CFileBaseData const> &base_data,
+  Iterator(const shared_ptr<CFileSet const> &base_data,
            const Schema &projection) :
     base_data_(base_data),
     projection_(projection),
@@ -120,7 +123,7 @@ private:
 
   Status SeekToOrdinal(uint32_t ord_idx);
 
-  const shared_ptr<CFileBaseData const> base_data_;
+  const shared_ptr<CFileSet const> base_data_;
   const Schema projection_;
   vector<size_t> projection_mapping_;
 

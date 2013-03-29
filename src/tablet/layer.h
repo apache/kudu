@@ -22,7 +22,7 @@
 #include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_tracker.h"
-#include "tablet/layer-basedata.h"
+#include "tablet/cfile_set.h"
 #include "util/bloom_filter.h"
 #include "util/memory/arena.h"
 
@@ -200,7 +200,7 @@ private:
 
   // Base data for this layer.
   // This vector contains one entry for each column.
-  shared_ptr<CFileBaseData> base_data_;
+  shared_ptr<CFileSet> base_data_;
   shared_ptr<DeltaTracker> delta_tracker_;
 
   // Lock governing this layer's inclusion in a compact/flush. If locked,
@@ -264,7 +264,7 @@ private:
   const string dir_;
   const Schema schema_;
 
-  shared_ptr<CFileBaseData> base_data_;
+  shared_ptr<CFileSet> base_data_;
   shared_ptr<DeltaTracker> delta_tracker_;
   shared_ptr<MemStore> ms_;
   bool open_;
@@ -332,7 +332,7 @@ private:
   const string dir_;
   const Schema schema_;
 
-  shared_ptr<CFileBaseData> base_data_;
+  shared_ptr<CFileSet> base_data_;
   shared_ptr<DeltaTracker> delta_tracker_;
   LayerVector input_layers_;
   bool open_;

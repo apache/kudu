@@ -7,7 +7,7 @@
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
 #include "tablet/layer.h"
-#include "tablet/layer-basedata.h"
+#include "tablet/cfile_set.h"
 
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
@@ -34,7 +34,7 @@ static Status OpenReader(Env *env, string dir, size_t col_idx,
 // CFile Base
 ////////////////////////////////////////////////////////////
 
-CFileBaseData::CFileBaseData(Env *env,
+CFileSet::CFileSet(Env *env,
                              const string &dir,
                              const Schema &schema) :
   env_(env),
@@ -42,19 +42,19 @@ CFileBaseData::CFileBaseData(Env *env,
   schema_(schema)
 {}
 
-CFileBaseData::~CFileBaseData() {
+CFileSet::~CFileSet() {
 }
 
 
-Status CFileBaseData::OpenAllColumns() {
+Status CFileSet::OpenAllColumns() {
   return OpenColumns(schema_.num_columns());
 }
 
-Status CFileBaseData::OpenKeyColumns() {
+Status CFileSet::OpenKeyColumns() {
   return OpenColumns(schema_.num_key_columns());
 }
 
-Status CFileBaseData::OpenColumns(size_t num_cols) {
+Status CFileSet::OpenColumns(size_t num_cols) {
   CHECK_LE(num_cols, schema_.num_columns());
 
   RETURN_NOT_OK( OpenBloomReader() );
@@ -78,7 +78,7 @@ Status CFileBaseData::OpenColumns(size_t num_cols) {
 }
 
 
-Status CFileBaseData::OpenBloomReader() {
+Status CFileSet::OpenBloomReader() {
   if (bloom_reader_ != NULL) {
     return Status::OK();
   }
@@ -94,23 +94,23 @@ Status CFileBaseData::OpenBloomReader() {
 }
 
 
-Status CFileBaseData::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
+Status CFileSet::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
   CHECK_LT(col_idx, readers_.size());
 
   return CHECK_NOTNULL(readers_[col_idx].get())->NewIterator(iter);
 }
 
 
-CFileBaseData::Iterator *CFileBaseData::NewIterator(const Schema &projection) const {
-  return new CFileBaseData::Iterator(shared_from_this(), projection);
+CFileSet::Iterator *CFileSet::NewIterator(const Schema &projection) const {
+  return new CFileSet::Iterator(shared_from_this(), projection);
 }
 
-Status CFileBaseData::CountRows(size_t *count) const {
+Status CFileSet::CountRows(size_t *count) const {
   const shared_ptr<cfile::CFileReader> &reader = readers_[0];
   return reader->CountRows(count);
 }
 
-uint64_t CFileBaseData::EstimateOnDiskSize() const {
+uint64_t CFileSet::EstimateOnDiskSize() const {
   uint64_t ret = 0;
   BOOST_FOREACH(const shared_ptr<CFileReader> &reader, readers_) {
     ret += reader->file_size();
@@ -118,7 +118,7 @@ uint64_t CFileBaseData::EstimateOnDiskSize() const {
   return ret;
 }
 
-Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
+Status CFileSet::FindRow(const void *key, uint32_t *idx) const {
   CFileIterator *key_iter;
   RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
@@ -135,7 +135,7 @@ Status CFileBaseData::FindRow(const void *key, uint32_t *idx) const {
   return Status::OK();
 }
 
-Status CFileBaseData::CheckRowPresent(const LayerKeyProbe &probe, bool *present) const {
+Status CFileSet::CheckRowPresent(const LayerKeyProbe &probe, bool *present) const {
   if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), present);
     if (s.ok() && !*present) {
@@ -143,7 +143,7 @@ Status CFileBaseData::CheckRowPresent(const LayerKeyProbe &probe, bool *present)
     } else if (!s.ok()) {
       LOG(WARNING) << "Unable to query bloom: " << s.ToString()
                    << " (disabling bloom for this layer from this point forward)";
-      const_cast<CFileBaseData *>(this)->bloom_reader_.reset(NULL);
+      const_cast<CFileSet *>(this)->bloom_reader_.reset(NULL);
       // Continue with the slow path
     }
   }
@@ -166,7 +166,7 @@ Status CFileBaseData::CheckRowPresent(const LayerKeyProbe &probe, bool *present)
 // Iterator
 ////////////////////////////////////////////////////////////
 
-Status CFileBaseData::Iterator::Init() {
+Status CFileSet::Iterator::Init() {
   CHECK(!initted_);
 
   RETURN_NOT_OK(projection_.GetProjectionFrom(
@@ -199,7 +199,7 @@ Status CFileBaseData::Iterator::Init() {
   return SeekToOrdinal(0);
 }
 
-Status CFileBaseData::Iterator::SeekToOrdinal(uint32_t ord_idx) {
+Status CFileSet::Iterator::SeekToOrdinal(uint32_t ord_idx) {
   DCHECK(initted_);
   BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
     RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
@@ -210,7 +210,7 @@ Status CFileBaseData::Iterator::SeekToOrdinal(uint32_t ord_idx) {
   return Status::OK();
 }
 
-Status CFileBaseData::Iterator::PrepareBatch(size_t *n) {
+Status CFileSet::Iterator::PrepareBatch(size_t *n) {
   size_t n_out = 0;
 
   bool first = true;
@@ -245,7 +245,7 @@ Status CFileBaseData::Iterator::PrepareBatch(size_t *n) {
   return Status::OK();
 }
 
-Status CFileBaseData::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
+Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
   CHECK(prepared_);
   DCHECK_LT(col_idx, col_iters_.size());
 
@@ -253,7 +253,7 @@ Status CFileBaseData::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *d
   return iter.Scan(dst);
 }
 
-Status CFileBaseData::Iterator::FinishBatch() {
+Status CFileSet::Iterator::FinishBatch() {
   CHECK(prepared_);
   prepared_ = false;
 

@@ -308,8 +308,8 @@ Layer::Layer(Env *env,
 
 
 Status Layer::Open() {
-  gscoped_ptr<CFileBaseData> new_base(
-    new CFileBaseData(env_, dir_, schema_));
+  gscoped_ptr<CFileSet> new_base(
+    new CFileSet(env_, dir_, schema_));
   RETURN_NOT_OK(new_base->OpenAllColumns());
 
   base_data_.reset(new_base.release());
@@ -394,7 +394,7 @@ FlushInProgressLayer::FlushInProgressLayer(Env *env,
   env_(env),
   dir_(dir),
   schema_(schema),
-  base_data_(new CFileBaseData(env_, dir_, schema_)),
+  base_data_(new CFileSet(env_, dir_, schema_)),
   delta_tracker_(new DeltaTracker(env, schema, dir)),
   ms_(ms),
   open_(false)
@@ -479,7 +479,7 @@ CompactionInProgressLayer::CompactionInProgressLayer(Env *env,
   env_(env),
   dir_(dir),
   schema_(schema),
-  base_data_(new CFileBaseData(env_, dir_, schema_)),
+  base_data_(new CFileSet(env_, dir_, schema_)),
   delta_tracker_(new DeltaTracker(env, schema, dir)),
   input_layers_(input_layers),
   open_(false)

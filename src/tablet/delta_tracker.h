@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "common/iterator.h"
-#include "tablet/layer-basedata.h"
+#include "tablet/cfile_set.h"
 #include "tablet/layer-interfaces.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/deltafile.h"

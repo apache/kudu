@@ -2,7 +2,7 @@
 
 SET(TABLET_SRCS
   tablet.cc tablet-util.cc
-  layer-basedata.cc layer.cc
+  cfile_set.cc layer.cc
   memstore.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
 )
