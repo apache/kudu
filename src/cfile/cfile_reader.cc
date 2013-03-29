@@ -305,6 +305,16 @@ CFileIterator::CFileIterator(const CFileReader *reader,
   }
 }
 
+CFileIterator::IOStatistics::IOStatistics() :
+  data_blocks_read(0),
+  rows_read(0)
+{}
+
+string CFileIterator::IOStatistics::ToString() const {
+  return StringPrintf("data_blocks_read=%d rows_read=%ld",
+                      data_blocks_read, rows_read);
+}
+
 Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
   Unseek();
   if (PREDICT_FALSE(posidx_iter_ == NULL)) {
@@ -403,11 +413,15 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
   RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, &prep_block->dblk_data_));
 
+  io_stats_.data_blocks_read++;
+
   BlockDecoder *bd;
   RETURN_NOT_OK(reader_->CreateBlockDecoder(
                   &bd, prep_block->dblk_data_.data()));
   prep_block->dblk_.reset(bd);
   RETURN_NOT_OK(prep_block->dblk_->ParseHeader());
+
+  io_stats_.rows_read += bd->Count();
 
   prep_block->first_row_idx_ = prep_block->dblk_->ordinal_pos();
 

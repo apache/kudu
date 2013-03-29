@@ -161,6 +161,23 @@ private:
 
 class CFileIterator : boost::noncopyable {
 public:
+  // Statistics on the amount of IO done by the iterator.
+  struct IOStatistics {
+    IOStatistics();
+    string ToString() const;
+
+    // The number of data blocks which were read by this iterator.
+    uint32_t data_blocks_read;
+
+    // The number of rows which were read from disk -- regardless of whether
+    // they were decoded/materialized.
+    uint64_t rows_read;
+
+    // TODO: flesh this out with index blocks, number of bytes read,
+    // rows
+  };
+
+
   CFileIterator(const CFileReader *reader,
                 const BlockPointer *posidx_root,
                 const BlockPointer *validx_root);
@@ -218,10 +235,12 @@ public:
   // Return true if the next call to PrepareBatch will return at least one row.
   bool HasNext() const;
 
-
   // Convenience method to prepare a batch, scan it, and finish it.
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
+  const IOStatistics &io_statistics() const {
+    return io_stats_;
+  }
 
 private:
   struct PreparedBlock {
@@ -283,6 +302,8 @@ private:
   bool prepared_;
   uint32_t last_prepare_idx_;
   uint32_t last_prepare_count_;
+
+  IOStatistics io_stats_;
 };
 
 

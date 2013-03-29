@@ -205,67 +205,102 @@ Status CFileSet::Iterator::SeekToOrdinal(uint32_t ord_idx) {
     RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
   }
 
-  prepared_ = false;
+  cur_idx_ = 0;
+
+  Unprepare();
 
   return Status::OK();
 }
 
+
+void CFileSet::Iterator::Unprepare() {
+  prepared_count_ = 0;
+  cols_prepared_.assign(col_iters_.size(), false);
+}
+
 Status CFileSet::Iterator::PrepareBatch(size_t *n) {
-  size_t n_out = 0;
+  DCHECK_EQ(prepared_count_, 0) << "Already prepared";
 
-  bool first = true;
-  for (size_t idx = 0; idx < col_iters_.size(); idx++) {
-    CFileIterator &col_iter = col_iters_[idx];
-    size_t this_col_n = *n;
-    Status s = col_iter.PrepareBatch(&this_col_n);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to prepare column " << idx << ": " << s.ToString();
-      return s;
-    }
-    if (first) {
-      n_out = this_col_n;
-    } else {
-      if (this_col_n != n_out) {
-        // TODO: better actionable error message indicating which column name and row offset
-        // triggered the issue.
-        return Status::Corruption(
-          StringPrintf("Column %zd had different length %zd compared to prior columns, "
-                       "which had length %zd", idx, this_col_n, n_out));
-      }
-    }
+  size_t remaining = row_count_ - cur_idx_;
+  if (*n > remaining) {
+    *n = remaining;
   }
 
-  if (n_out == 0) {
-    return Status::NotFound("end of input");
+  prepared_count_ = *n;
+
+  // Lazily prepare the first column when it is materialized.
+  return Status::OK();
+}
+
+
+Status CFileSet::Iterator::PrepareColumn(size_t idx) {
+  if (cols_prepared_[idx]) {
+    // Already prepared in this batch.
+    return Status::OK();
   }
 
-  prepared_ = true;
-  *n = n_out;
+  CFileIterator &col_iter = col_iters_[idx];
+  size_t n = prepared_count_;
+
+  if (col_iter.GetCurrentOrdinal() != cur_idx_) {
+    // This column must have not been materialized in a prior block.
+    // We need to seek it to the correct offset.
+    RETURN_NOT_OK(col_iter.SeekToOrdinal(cur_idx_));
+  }
+
+  Status s = col_iter.PrepareBatch(&n);
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to prepare column " << idx << ": " << s.ToString();
+    return s;
+  }
+
+  if (n != prepared_count_) {
+    return Status::Corruption(
+      StringPrintf("Column %zd (%s) didn't yield enough rows at offset %zd: expected "
+                   "%zd but only got %zd", idx, projection_.column(idx).ToString().c_str(),
+                   cur_idx_, prepared_count_, n));
+  }
+
+  cols_prepared_[idx] = true;
 
   return Status::OK();
 }
 
 Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
-  CHECK(prepared_);
+  CHECK_GT(prepared_count_, 0);
   DCHECK_LT(col_idx, col_iters_.size());
 
+  RETURN_NOT_OK(PrepareColumn(col_idx));
   CFileIterator &iter = col_iters_[col_idx];
   return iter.Scan(dst);
 }
 
 Status CFileSet::Iterator::FinishBatch() {
-  CHECK(prepared_);
-  prepared_ = false;
+  CHECK_GT(prepared_count_, 0);
 
   for (size_t i = 0; i < col_iters_.size(); i++) {
-    Status s = col_iters_[i].FinishBatch();
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to FinishBatch() on column " << i;
-      return s;
+    if (cols_prepared_[i]) {
+      Status s = col_iters_[i].FinishBatch();
+      if (!s.ok()) {
+        LOG(WARNING) << "Unable to FinishBatch() on column " << i;
+        return s;
+      }
     }
   }
 
+  cur_idx_ += prepared_count_;
+  Unprepare();
+
   return Status::OK();
+}
+
+
+void CFileSet::Iterator::GetIOStatistics(vector<CFileIterator::IOStatistics> *stats) {
+  stats->clear();
+  stats->reserve(col_iters_.size());
+  BOOST_FOREACH(const CFileIterator &iter, col_iters_) {
+    stats->push_back(iter.io_statistics());
+  }
 }
 
 } // namespace tablet

@@ -81,9 +81,6 @@ private:
 //
 // This simply ties together underlying files so that they can be batched
 // together, and iterated in parallel.
-//
-// TODO: write a test for this standalone, including not doing any IO for
-// columns which don't end up needing to be materialized.
 class CFileSet::Iterator : public ColumnwiseIterator, public boost::noncopyable {
 public:
   virtual Status Init();
@@ -110,6 +107,9 @@ public:
     return projection_;
   }
 
+  // Collect the IO statistics for each of the underlying columns.
+  void GetIOStatistics(vector<CFileIterator::IOStatistics> *stats);
+
 private:
   friend class CFileSet;
 
@@ -118,10 +118,16 @@ private:
     base_data_(base_data),
     projection_(projection),
     initted_(false),
-    prepared_(false)
-  {}
+    prepared_count_(0)
+  {
+    CHECK_OK(base_data_->CountRows(&row_count_));
+  }
 
   Status SeekToOrdinal(uint32_t ord_idx);
+  void Unprepare();
+
+  // Prepare the given column if not already prepared.
+  Status PrepareColumn(size_t col_idx);
 
   const shared_ptr<CFileSet const> base_data_;
   const Schema projection_;
@@ -132,7 +138,16 @@ private:
   ptr_vector<CFileIterator> col_iters_;
 
   bool initted_;
-  bool prepared_;
+
+  size_t cur_idx_;
+  size_t prepared_count_;
+
+  // The total number of rows in the file
+  size_t row_count_;
+
+  // The underlying columns are prepared lazily, so that if a column is never
+  // materialized, it doesn't need to be read off disk.
+  vector<bool> cols_prepared_;
 
 };
 

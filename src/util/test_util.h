@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 #include "util/env.h"
+#include "util/test_macros.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/util.h"
@@ -54,6 +55,7 @@ public:
 
 protected:
   string GetTestPath(const string &relative_path) {
+    CHECK(!test_dir_.empty()) << "Call SetUp() first";
     return env_->JoinPathSegments(test_dir_, relative_path);
   }
 
