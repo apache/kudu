@@ -21,6 +21,7 @@
 
 using std::string;
 
+DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
 DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
 
@@ -50,7 +51,7 @@ static CompressionType GetDefaultCompressionCodec() {
 // Options
 ////////////////////////////////////////////////////////////
 WriterOptions::WriterOptions() :
-  block_size(256*1024),
+  block_size(FLAGS_cfile_default_block_size),
   index_block_size(32*1024),
   block_restart_interval(16),
   write_posidx(false),
