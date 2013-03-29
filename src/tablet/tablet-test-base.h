@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "common/row.h"
+#include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/strings/util.h"
 #include "gutil/walltime.h"
@@ -176,7 +177,7 @@ public:
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-    ASSERT_STATUS_OK(iter->Init());
+    ASSERT_STATUS_OK(iter->Init(NULL));
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
                           4*1024*1024 / schema_.byte_size()));
@@ -231,7 +232,7 @@ public:
   Status IterateToStringList(vector<string> *out) {
     gscoped_ptr<RowwiseIterator> iter;
     RETURN_NOT_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
-    RETURN_NOT_OK(iter->Init());
+    RETURN_NOT_OK(iter->Init(NULL));
 
     Schema schema = iter->schema();
     Arena arena(1024, 1024);

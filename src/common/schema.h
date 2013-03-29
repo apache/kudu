@@ -90,6 +90,17 @@ public:
     return Status::OK();
   }
 
+  int Compare(const void *lhs, const void *rhs) const {
+    return type_info_->Compare(lhs, rhs);
+  }
+
+  // Stringify the given cell.
+  string Stringify(const void *cell) const {
+    string ret;
+    type_info_->AppendDebugStringForValue(cell, &ret);
+    return ret;
+  }
+
 private:
   string name_;
   const TypeInfo *type_info_;
@@ -167,6 +178,17 @@ public:
     return cols_[idx];
   }
 
+  // Return the column index corresponding to the given column,
+  // or -1 if the column is not in this schema.
+  int find_column(const string &col_name) const {
+    NameToIndexMap::const_iterator iter = name_to_index_.find(col_name);
+    if (PREDICT_FALSE(iter == name_to_index_.end())) {
+      return -1;
+    } else {
+      return (*iter).second;
+    }
+  }
+
   // Extract a given column from a row where the type is
   // known at compile-time. The type is checked with a debug
   // assertion -- but if the wrong type is used and these assertions
@@ -213,36 +235,13 @@ public:
     DCHECK(lhs && rhs) << "may not pass null";
 
     for (size_t col = 0; col < num_key_columns_; col++) {
-      const TypeInfo &ti = cols_[col].type_info();
-
-      // TODO: move this into types.cc or something
-      switch (ti.type()) {
-        case UINT32:
-        {
-          uint32_t lhs_int = *reinterpret_cast<const uint32_t *>(lhs);
-          uint32_t rhs_int = *reinterpret_cast<const uint32_t *>(rhs);
-          if (lhs_int < rhs_int) {
-            return -1;
-          } else if (lhs_int > rhs_int) {
-            return 1;
-          }
-          break;
-        }
-        case STRING:
-        {
-          const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
-          const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
-          int cmp = lhs_slice->compare(*rhs_slice);
-          if (cmp != 0) {
-            return cmp;
-          }
-          break;
-        }
-        default:
-        {
-          CHECK(0) << "unable to compare type: " << ti.name();
-        }
+      const ColumnSchema &col_schema = cols_[col];
+      const TypeInfo &ti = col_schema.type_info();
+      int col_compare = column(col).Compare(lhs, rhs);
+      if (col_compare != 0) {
+        return col_compare;
       }
+
       lhs = reinterpret_cast<const uint8_t *>(lhs) + ti.size();
       rhs = reinterpret_cast<const uint8_t *>(rhs) + ti.size();
     }

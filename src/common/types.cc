@@ -17,7 +17,8 @@ TypeInfo::TypeInfo(TypeTraitsClass t) :
   type_(TypeTraitsClass::type),
   name_(TypeTraitsClass::name()),
   size_(TypeTraitsClass::size),
-  append_func_(TypeTraitsClass::AppendDebugStringForValue)
+  append_func_(TypeTraitsClass::AppendDebugStringForValue),
+  compare_func_(TypeTraitsClass::Compare)
 {
 }
 
@@ -25,6 +26,9 @@ void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
   append_func_(ptr, str);
 }
 
+int TypeInfo::Compare(const void *lhs, const void *rhs) const {
+  return compare_func_(lhs, rhs);
+}
 
 class TypeInfoResolver {
 public:
@@ -58,5 +62,22 @@ const TypeInfo &GetTypeInfo(DataType type) {
   return Singleton<TypeInfoResolver>::get()->GetTypeInfo(type);
 }
 
+int DataTypeTraits<STRING>::Compare(const void *lhs, const void *rhs) {
+  const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
+  const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
+  return lhs_slice->compare(*rhs_slice);
+}
+
+int DataTypeTraits<UINT32>::Compare(const void *lhs, const void *rhs) {
+  uint32_t lhs_int = *reinterpret_cast<const uint32_t *>(lhs);
+  uint32_t rhs_int = *reinterpret_cast<const uint32_t *>(rhs);
+  if (lhs_int < rhs_int) {
+    return -1;
+  } else if (lhs_int > rhs_int) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
 
 } // namespace kudu

@@ -78,8 +78,8 @@ private:
 template<class IterClass>
 class DeltaMerger : public IterClass, boost::noncopyable {
 public:
-  virtual Status Init() {
-    RETURN_NOT_OK(base_iter_->Init());
+  virtual Status Init(ScanSpec *spec) {
+    RETURN_NOT_OK(base_iter_->Init(spec));
     BOOST_FOREACH(DeltaIteratorInterface &delta_iter, delta_iters_) {
       RETURN_NOT_OK(delta_iter.Init());
       RETURN_NOT_OK(delta_iter.SeekToOrdinal(0));

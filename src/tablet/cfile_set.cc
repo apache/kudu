@@ -166,7 +166,7 @@ Status CFileSet::CheckRowPresent(const LayerKeyProbe &probe, bool *present) cons
 // Iterator
 ////////////////////////////////////////////////////////////
 
-Status CFileSet::Iterator::Init() {
+Status CFileSet::Iterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
 
   RETURN_NOT_OK(projection_.GetProjectionFrom(

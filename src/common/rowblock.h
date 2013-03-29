@@ -7,9 +7,56 @@
 
 #include "common/columnblock.h"
 #include "common/schema.h"
+#include "gutil/gscoped_ptr.h"
 #include "util/memory/arena.h"
+#include "util/bitmap.h"
 
 namespace kudu {
+
+
+// Bit-vector representing the selection status of each row in a row block.
+// Initially, this vector will be set to 1 for every row, and as predicates
+// are applied, the bits may be changed to 0 for any row which does not match
+// a predicate.
+class SelectionVector {
+public:
+  SelectionVector(size_t n_rows);
+
+  size_t CountSelected() const;
+
+  // Return true if any rows are selected
+  // This is equivalent to (CountSelected() > 0), but faster.
+  bool AnySelected() const;
+
+  bool IsRowSelected(size_t row) const {
+    DCHECK_LT(row, n_rows_);
+    return BitmapTest(&bitmap_[0], row);
+  }
+
+  uint8_t *mutable_bitmap() {
+    return &bitmap_[0];
+  }
+
+  // Set all bits in the bitmap to 1
+  void SetAllTrue() {
+    // Initially all rows should be selected.
+    memset(&bitmap_[0], 0xff, n_bytes_);
+    // the last byte in the bitmap may have a few extra bits - need to
+    // clear those
+
+    int trailer_bits = 8 - (n_rows_ % 8);
+    if (trailer_bits != 8) {
+      bitmap_[n_bytes_ - 1] >>= trailer_bits;
+    }
+  }
+
+private:
+  size_t n_rows_;
+  size_t n_bytes_;
+
+  gscoped_array<uint8_t> bitmap_;
+};
+
 
 // Wrapper around a buffer, which keeps the buffer's size, associated arena,
 // and schema. Provides convenience accessors for indexing by row, column, etc.

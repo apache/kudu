@@ -88,7 +88,7 @@ public:
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-      ASSERT_STATUS_OK(iter->Init());
+      ASSERT_STATUS_OK(iter->Init(NULL));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
@@ -139,7 +139,7 @@ public:
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
       ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-      ASSERT_STATUS_OK(iter->Init());
+      ASSERT_STATUS_OK(iter->Init(NULL));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         arena_.Reset();
@@ -186,7 +186,7 @@ public:
 
     gscoped_ptr<RowwiseIterator> iter;
     CHECK_OK(tablet_->NewRowIterator(projection, &iter));
-    CHECK_OK(iter->Init());
+    CHECK_OK(iter->Init(NULL));
 
     while (iter->HasNext()) {
       arena.Reset();

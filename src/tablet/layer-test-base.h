@@ -10,6 +10,7 @@
 
 #include "common/iterator.h"
 #include "common/rowblock.h"
+#include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
 #include "tablet/layer.h"
@@ -119,7 +120,7 @@ protected:
                     (ColumnSchema("val", UINT32)),
                     1);
     gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(proj_val));
-    ASSERT_STATUS_OK(row_iter->Init());
+    ASSERT_STATUS_OK(row_iter->Init(NULL));
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
     ScopedRowBlock dst(proj_val, batch_size, &arena);
@@ -161,7 +162,7 @@ protected:
   static void IterateProjection(const Layer &l, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
     gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(schema));
-    ASSERT_STATUS_OK(row_iter->Init());
+    ASSERT_STATUS_OK(row_iter->Init(NULL));
 
     int batch_size = 1000;
     Arena arena(1024, 1024*1024);

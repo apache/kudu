@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "common/row.h"
+#include "common/scan_spec.h"
 #include "tablet/memstore.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
@@ -34,7 +35,7 @@ protected:
   void CheckValue(const shared_ptr<MemStore> &ms, string key,
                   uint32_t expected_val) {
     gscoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
-    iter->Init();
+    iter->Init(NULL);
 
     Slice keystr_slice(key);
     Slice key_slice(reinterpret_cast<const char *>(&keystr_slice), sizeof(Slice));

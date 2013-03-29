@@ -106,13 +106,13 @@ MergeIterator::MergeIterator(
 }
 
 
-Status MergeIterator::Init() {
+Status MergeIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
 
   // TODO: check that schemas match up!
 
   BOOST_FOREACH(shared_ptr<MergeIterState> &state, iters_) {
-    RETURN_NOT_OK(state->iter_->Init());
+    RETURN_NOT_OK(state->iter_->Init(spec));
     RETURN_NOT_OK(state->PullNextBlock());
   }
 
@@ -233,13 +233,13 @@ UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters) 
   iters_.assign(iters.begin(), iters.end());
 }
 
-Status UnionIterator::Init() {
+Status UnionIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
 
   // Verify schemas match.
   schema_.reset(new Schema(iters_.front()->schema()));
   BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->Init());
+    RETURN_NOT_OK(iter->Init(spec));
     if (!iter->schema().Equals(*schema_)) {
       return Status::InvalidArgument(
         string("Schemas do not match: ") + schema_->ToString()
@@ -311,8 +311,8 @@ MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator
 {
 }
 
-Status MaterializingIterator::Init() {
-  return iter_->Init();
+Status MaterializingIterator::Init(ScanSpec *spec) {
+  return iter_->Init(spec);
 }
 
 bool MaterializingIterator::HasNext() const {

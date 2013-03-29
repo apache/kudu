@@ -174,7 +174,7 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
 public:
   virtual ~Iterator() {}
 
-  virtual Status Init() {
+  virtual Status Init(ScanSpec *spec) {
     RETURN_NOT_OK(projection_.GetProjectionFrom(
                     memstore_->schema(), &projection_mapping_));
 

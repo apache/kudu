@@ -30,7 +30,7 @@ public:
                 const vector<shared_ptr<RowwiseIterator> > &iters);
 
   // The passed-in iterators should be already initialized.
-  Status Init();
+  Status Init(ScanSpec *spec);
 
   virtual Status PrepareBatch(size_t *nrows);
 
@@ -70,7 +70,7 @@ public:
   // The passed-in iterators should be already initialized.
   UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
 
-  Status Init();
+  Status Init(ScanSpec *spec);
 
   Status PrepareBatch(size_t *nrows);
   Status MaterializeBlock(RowBlock *dst);
@@ -97,7 +97,7 @@ class MaterializingIterator : public RowwiseIterator {
 public:
   explicit MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter);
 
-  Status Init();
+  Status Init(ScanSpec *spec);
 
   Status PrepareBatch(size_t *nrows);
   Status MaterializeBlock(RowBlock *dst);

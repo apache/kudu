@@ -5,6 +5,7 @@
 
 #include "common/iterator.h"
 #include "common/row.h"
+#include "common/scan_spec.h"
 #include <gutil/strings/join.h>
 #include "tablet/memstore.h"
 #include "tablet/tablet.h"
@@ -95,7 +96,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   // Now iterate the tablet and make sure the rows show up
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
-  ASSERT_STATUS_OK(iter->Init());
+  ASSERT_STATUS_OK(iter->Init(NULL));
 
   ASSERT_TRUE(iter->HasNext());
 
@@ -160,7 +161,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // Now iterate the tablet and make sure the rows show up.
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, &iter));
-  ASSERT_STATUS_OK(iter->Init());
+  ASSERT_STATUS_OK(iter->Init(NULL));
   LOG(INFO) << "Created iter: " << iter->ToString();
 
   ScopedRowBlock block(this->schema_, 100, &this->arena_);

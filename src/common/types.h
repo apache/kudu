@@ -27,6 +27,7 @@ public:
   const string& name() const { return name_; }
   const size_t size() const { return size_; }
   void AppendDebugStringForValue(const void *ptr, string *str) const;
+  int Compare(const void *lhs, const void *rhs) const;
 
 private:
   friend class TypeInfoResolver;
@@ -38,6 +39,9 @@ private:
 
   typedef void (*AppendDebugFunc)(const void *, string *);
   const AppendDebugFunc append_func_;
+
+  typedef int (*CompareFunc)(const void *, const void *);
+  const CompareFunc compare_func_;
 };
 
 
@@ -52,6 +56,7 @@ struct DataTypeTraits<UINT32> {
   static void AppendDebugStringForValue(const void *val, string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const uint32_t *>(val)));
   }
+  static int Compare(const void *lhs, const void *rhs);
 };
 
 template<>
@@ -64,6 +69,7 @@ struct DataTypeTraits<STRING> {
     const Slice *s = reinterpret_cast<const Slice *>(val);
     str->append(s->ToString());
   }
+  static int Compare(const void *lhs, const void *rhs);
 };
 
 

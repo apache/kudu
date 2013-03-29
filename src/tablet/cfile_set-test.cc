@@ -72,7 +72,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_STATUS_OK(fileset->OpenAllColumns());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_));
-  ASSERT_STATUS_OK(iter->Init());
+  ASSERT_STATUS_OK(iter->Init(NULL));
 
   Arena arena(4096, 1024*1024);
   ScopedRowBlock block(schema_, 100, &arena);

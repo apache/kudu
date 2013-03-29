@@ -10,6 +10,7 @@
 
 #include "cfile/cfile.h"
 #include "common/iterator.h"
+#include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
@@ -265,7 +266,7 @@ Status Tablet::Flush() {
   Schema keys_only = schema_.CreateKeyProjection();
 
   shared_ptr<RowwiseIterator> iter(old_ms->NewIterator(keys_only));
-  RETURN_NOT_OK(iter->Init());
+  RETURN_NOT_OK(iter->Init(NULL));
 
   LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
   RETURN_NOT_OK(out.Open());
@@ -299,7 +300,7 @@ Status Tablet::Flush() {
   // Step 4. Flush the non-key columns
   Schema non_keys = schema_.CreateNonKeyProjection();
   iter.reset(old_ms->NewIterator(non_keys));
-  RETURN_NOT_OK(iter->Init());
+  RETURN_NOT_OK(iter->Init(NULL));
   RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get(), false, false));
   RETURN_NOT_OK(out.Finish());
 
@@ -432,7 +433,7 @@ Status Tablet::Compact()
   LOG(INFO) << "Compaction: entering stage 2 (compacting keys)";
 
   MergeIterator merge_keys(keys_only, key_iters);
-  RETURN_NOT_OK(merge_keys.Init());
+  RETURN_NOT_OK(merge_keys.Init(NULL));
 
   LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
   RETURN_NOT_OK(out.Open());
@@ -458,7 +459,7 @@ Status Tablet::Compact()
   }
 
   MergeIterator merge_full(schema_, full_iters);
-  RETURN_NOT_OK(merge_full.Init());
+  RETURN_NOT_OK(merge_full.Init(NULL));
   Schema non_keys = schema_.CreateNonKeyProjection();
   RETURN_NOT_OK(out.FlushProjection(non_keys, &merge_full, true, false));
   RETURN_NOT_OK(out.Finish());

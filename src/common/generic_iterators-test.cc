@@ -9,6 +9,7 @@
 #include "common/iterator.h"
 #include "common/generic_iterators.h"
 #include "common/rowblock.h"
+#include "common/scan_spec.h"
 #include "common/schema.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
@@ -34,7 +35,7 @@ public:
     cur_idx_(0)
   {}
 
-  Status Init() {
+  Status Init(ScanSpec *spec) {
     return Status::OK();
   }
 
@@ -91,7 +92,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   to_merge.push_back(iter);
 
   MergeIterator merger(kIntSchema, to_merge);
-  ASSERT_STATUS_OK(merger.Init());
+  ASSERT_STATUS_OK(merger.Init(NULL));
   ASSERT_FALSE(merger.HasNext());
 }
 
@@ -124,7 +125,7 @@ TEST(TestMergeIterator, TestMerge) {
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
     LOG_TIMING(INFO, "Iterate merged lists") {
       MergeIterator merger(kIntSchema, to_merge);
-      ASSERT_STATUS_OK(merger.Init());
+      ASSERT_STATUS_OK(merger.Init(NULL));
 
       ScopedRowBlock dst(kIntSchema, 100, NULL);
       size_t total_idx = 0;
