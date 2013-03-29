@@ -106,6 +106,17 @@ BloomFilterSizing Tablet::bloom_sizing() const {
   return BloomFilterSizing::BySizeAndFPRate(64*1024, 0.01f);
 }
 
+Status Tablet::NewRowIterator(const Schema &projection,
+                              gscoped_ptr<RowwiseIterator> *iter) const
+{
+  vector<shared_ptr<RowwiseIterator> > iters;
+  RETURN_NOT_OK(CaptureConsistentIterators(projection, &iters));
+
+  iter->reset(new UnionIterator(iters));
+
+  return Status::OK();
+}
+
 
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";

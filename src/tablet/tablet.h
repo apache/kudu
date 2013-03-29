@@ -62,9 +62,8 @@ public:
 
   // Create a new row iterator.
   // The returned iterator is not initialized.
-  template <class SmartPointer>
   Status NewRowIterator(const Schema &projection,
-                        SmartPointer *iter) const;
+                        gscoped_ptr<RowwiseIterator> *iter) const;
   Status Flush();
   Status Compact();
 
@@ -165,18 +164,6 @@ public:
   virtual Status PostOpenNewLayer() { return Status::OK(); }
 };
 
-
-template <class SmartPointer>
-inline Status Tablet::NewRowIterator(const Schema &projection,
-                                     SmartPointer *iter) const
-{
-  vector<shared_ptr<RowwiseIterator> > iters;
-  RETURN_NOT_OK(CaptureConsistentIterators(projection, &iters));
-
-  iter->reset(new UnionIterator(iters));
-
-  return Status::OK();
-}
 
 } // namespace table
 } // namespace kudu
