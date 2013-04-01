@@ -69,7 +69,8 @@ public:
     schema_(schema),
     data_(data),
     nrows_(nrows),
-    arena_(arena)
+    arena_(arena),
+    sel_vec_(nrows)
   {
   }
 
@@ -110,11 +111,31 @@ public:
     memset(data_, '\0', schema_.byte_size() * nrows_);
   }
 
+  // Return the selection vector which indicates which rows have passed
+  // predicates so far during evaluation of this block of rows.
+  //
+  // At the beginning of each batch, the vector is set to all 1s, and
+  // as predicates or deletions make rows invalid, they are set to 0s.
+  // After a batch has completed, only those rows with associated true
+  // bits in the selection vector are valid results for the scan.
+  SelectionVector *selection_vector() {
+    return &sel_vec_;
+  }
+
+  const SelectionVector *selection_vector() const {
+    return &sel_vec_;
+  }
+
 private:
   Schema schema_;
   uint8_t *data_;
   size_t nrows_;
   Arena *arena_;
+
+  // The bitmap indicating which rows are valid in this block.
+  // Deleted rows or rows which have failed to pass predicates will be zeroed
+  // in the bitmap, and thus not returned to the end user.
+  SelectionVector sel_vec_;
 };
 
 

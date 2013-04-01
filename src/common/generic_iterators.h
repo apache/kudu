@@ -3,8 +3,11 @@
 #define KUDU_COMMON_MERGE_ITERATOR_H
 
 #include "common/iterator.h"
+#include "common/scan_spec.h"
 
+#include <gtest/gtest.h>
 #include <tr1/memory>
+#include <tr1/unordered_map>
 #include <deque>
 #include <vector>
 
@@ -16,7 +19,7 @@ class MergeIterState;
 using std::deque;
 using std::tr1::shared_ptr;
 using std::vector;
-
+using std::tr1::unordered_multimap;
 
 // An iterator which merges the results of other iterators, comparing
 // based on keys.
@@ -91,12 +94,17 @@ private:
   deque<shared_ptr<RowwiseIterator> > iters_;
 };
 
-
 // An iterator which wraps a ColumnwiseIterator, materializing it into full rows.
+//
+// Predicates which only apply to a single column are pushed down into this iterator.
+// While materializing a block, columns with associated predicates are materialized
+// first, and the predicates evaluated. If the predicates succeed in filtering out
+// an entire batch, then other columns may avoid doing any IO.
 class MaterializingIterator : public RowwiseIterator {
 public:
   explicit MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter);
 
+  // Initialize the iterator, performing predicate pushdown as described above.
   Status Init(ScanSpec *spec);
 
   Status PrepareBatch(size_t *nrows);
@@ -112,7 +120,15 @@ public:
   }
 
 private:
+  FRIEND_TEST(TestMaterialization, TestPredicatePushdown);
+
   shared_ptr<ColumnwiseIterator> iter_;
+  size_t prepared_count_;
+
+  unordered_multimap<size_t, ColumnRangePredicate> preds_by_column_;
+
+  // The order in which the columns will be materialized.
+  vector<size_t> materialization_order_;
 };
 
 

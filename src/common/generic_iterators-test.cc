@@ -13,6 +13,7 @@
 #include "common/schema.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 
 DEFINE_int32(num_lists, 3, "Number of lists to merge");
 DEFINE_int32(num_rows, 1000, "Number of entries per list");
@@ -25,10 +26,12 @@ using std::tr1::shared_ptr;
 const static Schema kIntSchema(
   boost::assign::list_of(ColumnSchema("val", UINT32)), 1);
 
+class TestMaterialization : public KuduTest {
+};
 
 // Test iterator which just yields integer rows from a provided
 // vector.
-class VectorIterator : public RowwiseIterator {
+class VectorIterator : public ColumnwiseIterator {
 public:
   VectorIterator(const vector<uint32_t> &ints) :
     ints_(ints),
@@ -48,12 +51,12 @@ public:
     return Status::OK();
   }
 
-  virtual Status MaterializeBlock(RowBlock *dst) {
-    CHECK_EQ(dst->schema().byte_size(), sizeof(uint32_t));
+  virtual Status MaterializeColumn(size_t col, ColumnBlock *dst) {
+    CHECK_EQ(UINT32, dst->type_info().type());
     DCHECK_LE(prepared_, dst->nrows());
 
     for (size_t i = 0; i < prepared_; i++) {
-      uint32_t *dst_cell = reinterpret_cast<uint32_t *>(dst->row_ptr(i));
+      uint32_t *dst_cell = reinterpret_cast<uint32_t *>(dst->cell_ptr(i));
       *dst_cell = ints_[cur_idx_++];
     }
 
@@ -86,7 +89,9 @@ private:
 // Test that empty input to a merger behaves correctly.
 TEST(TestMergeIterator, TestMergeEmpty) {
   vector<uint32_t> empty_vec;
-  shared_ptr<VectorIterator> iter(new VectorIterator(empty_vec));
+  shared_ptr<RowwiseIterator> iter(
+    new MaterializingIterator(
+      shared_ptr<ColumnwiseIterator>(new VectorIterator(empty_vec))));
 
   vector<shared_ptr<RowwiseIterator> > to_merge;
   to_merge.push_back(iter);
@@ -113,7 +118,9 @@ TEST(TestMergeIterator, TestMerge) {
       all_ints.push_back(entry);
     }
 
-    shared_ptr<VectorIterator> iter(new VectorIterator(ints));
+    shared_ptr<RowwiseIterator> iter(
+      new MaterializingIterator(
+        shared_ptr<ColumnwiseIterator>(new VectorIterator(ints))));
     to_merge.push_back(iter);
   }
 
@@ -148,6 +155,35 @@ TEST(TestMergeIterator, TestMerge) {
       }
     }
   }
+}
+
+TEST_F(TestMaterialization, TestPredicatePushdown) {
+  ScanSpec spec;
+  uint32_t col0_lower = 20;
+  uint32_t col0_upper = 29;
+  ColumnRangePredicate pred1(kIntSchema.column(0), &col0_lower, &col0_upper);
+  spec.AddPredicate(pred1);
+
+  LOG(INFO) << "pred: " << pred1.ToString();
+
+  vector<uint32> ints;
+  for (int i = 0; i < 100; i++) {
+    ints.push_back(i);
+  }
+
+  shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  MaterializingIterator materializing(colwise);
+  ASSERT_STATUS_OK(materializing.Init(&spec));
+  ASSERT_EQ(0, spec.predicates().size())
+    << "Iterator should have pushed down predicate";
+
+  Arena arena(1024, 1024);
+  ScopedRowBlock dst(kIntSchema, 100, &arena);
+  size_t n = 100;
+  ASSERT_STATUS_OK(materializing.PrepareBatch(&n));
+  ASSERT_EQ(n, 100);
+  ASSERT_STATUS_OK(materializing.MaterializeBlock(&dst));
+  ASSERT_STATUS_OK(materializing.FinishBatch());
 }
 
 } // namespace kudu

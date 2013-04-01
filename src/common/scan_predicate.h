@@ -85,6 +85,9 @@ public:
   //
   // On any rows where the current value of *sel is false, the predicate evaluation
   // may be skipped.
+  //
+  // NOTE: the evaluation result is stored into '*sel' which may or may not be the
+  // same vector as block->selection_vector().
   void Evaluate(RowBlock *block, SelectionVector *sel) const;
 
   const ColumnSchema &column() const {

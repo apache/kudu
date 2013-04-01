@@ -307,12 +307,57 @@ string UnionIterator::ToString() const {
 ////////////////////////////////////////////////////////////
 
 MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter) :
-  iter_(iter)
+  iter_(iter),
+  prepared_count_(0)
 {
 }
 
 Status MaterializingIterator::Init(ScanSpec *spec) {
-  return iter_->Init(spec);
+  RETURN_NOT_OK(iter_->Init(spec));
+
+  if (spec != NULL) {
+    // Gather any single-column predicates.
+    ScanSpec::PredicateList *preds = spec->mutable_predicates();
+    for (ScanSpec::PredicateList::iterator iter = preds->begin();
+         iter != preds->end();) {
+      const ColumnRangePredicate &pred = *iter;
+      const string &col_name = pred.column().name();
+      int idx = schema().find_column(col_name);
+      if (idx == -1) {
+        return Status::InvalidArgument("No such column", col_name);
+      }
+
+      VLOG(1) << "Pushing down predicate " << pred.ToString();
+      preds_by_column_.insert(std::make_pair(idx, pred));
+
+      // Since we'll evaluate this predicate ourselves, remove it from the scan spec
+      // so higher layers don't repeat our work.
+      iter = preds->erase(iter);
+    }
+  }
+
+  // Determine a materialization order such that columns with predicates
+  // are materialized first.
+  //
+  // TODO: we can be a little smarter about this, by trying to estimate
+  // predicate selectivity, involve the materialization cost of types, etc.
+  vector<size_t> with_preds, without_preds;
+
+  for (size_t i = 0; i < schema().num_columns(); i++) {
+    int num_preds = preds_by_column_.count(i);
+    if (num_preds > 0) {
+      with_preds.push_back(i);
+    } else {
+      without_preds.push_back(i);
+    }
+  }
+
+  materialization_order_.swap(with_preds);
+  materialization_order_.insert(materialization_order_.end(),
+                                without_preds.begin(), without_preds.end());
+  DCHECK_EQ(materialization_order_.size(), schema().num_columns());
+
+  return Status::OK();
 }
 
 bool MaterializingIterator::HasNext() const {
@@ -320,14 +365,42 @@ bool MaterializingIterator::HasNext() const {
 }
 
 Status MaterializingIterator::PrepareBatch(size_t *nrows) {
-  return iter_->PrepareBatch(nrows);
+  RETURN_NOT_OK( iter_->PrepareBatch(nrows) );
+  prepared_count_ = *nrows;
+  return Status::OK();
 }
 
 Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
-  for (size_t i = 0; i < schema().num_columns(); i++) {
-    ColumnBlock dst_col(dst->column_block(i));
-    RETURN_NOT_OK(iter_->MaterializeColumn(i, &dst_col));
+  bool short_circuit = false;
+  dst->selection_vector()->SetAllTrue();
+
+  BOOST_FOREACH(size_t col_idx, materialization_order_) {
+    // Materialize the column itself into the row block.
+    ColumnBlock dst_col(dst->column_block(col_idx));
+    RETURN_NOT_OK(iter_->MaterializeColumn(col_idx, &dst_col));
+
+    // Evaluate any predicates that apply to this column.
+    typedef std::pair<size_t, ColumnRangePredicate> MapEntry;
+    BOOST_FOREACH(const MapEntry &entry, preds_by_column_.equal_range(col_idx)) {
+      const ColumnRangePredicate &pred = entry.second;
+
+      // TODO: should only evaluate on prepared_count_ rows
+      // Probably worth changing it so that callers pass a truncated RowBlock
+      // into these sorts of functions, shortened to the actual batch size.
+      pred.Evaluate(dst, dst->selection_vector());
+
+      // If after evaluating this predicate, the entire row block has now been
+      // filtered out, we don't need to materialize other columns at all.
+      if (!dst->selection_vector()->AnySelected()) {
+        short_circuit = true;
+        break;
+      }
+    }
+    if (short_circuit) {
+      break;
+    }
   }
+  DVLOG(1) << dst->selection_vector()->CountSelected() << "/" << prepared_count_ << " passed predicate";
   return Status::OK();
 }
 
