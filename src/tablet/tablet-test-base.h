@@ -196,14 +196,12 @@ public:
 
     while (iter->HasNext()) {
       arena_.Reset();
-      size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-      CHECK_GT(n, 0);
+      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
 
-      LOG(INFO) << "Fetched batch of " << n << "\n"
+      LOG(INFO) << "Fetched batch of " << block.nrows() << "\n"
                 << "First row: " << schema_.DebugRow(block.row_ptr(0));
 
-      for (int i = 0; i < n; i++) {
+      for (int i = 0; i < block.nrows(); i++) {
         Slice s(block.row_slice(i));
         int row = *schema_.ExtractColumnFromRow<UINT32>(s, 1);
         if (row >= first_row && row < first_row + expected_count) {
@@ -238,9 +236,8 @@ public:
     Arena arena(1024, 1024);
     RowBlock block(schema, 1, &arena);
     while (iter->HasNext()) {
-      size_t n = 1;
-      RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-      CHECK_GT(n, 0);
+      RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+      CHECK_EQ(block.nrows(), 1);
       out->push_back( schema.DebugRow(block.row_ptr(0)) );
     }
     std::sort(out->begin(), out->end());

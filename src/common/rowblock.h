@@ -18,10 +18,27 @@ namespace kudu {
 // Initially, this vector will be set to 1 for every row, and as predicates
 // are applied, the bits may be changed to 0 for any row which does not match
 // a predicate.
-class SelectionVector {
+class SelectionVector : boost::noncopyable {
 public:
-  SelectionVector(size_t n_rows);
+  SelectionVector(size_t row_capacity);
 
+  // Construct a vector which shares the underlying memory of another vector,
+  // but only exposes up to a given prefix of the number of rows.
+  //
+  // Note that mutating the resulting bitmap may arbitrarily mutate the "extra"
+  // bits of the 'other' bitmap.
+  //
+  // The underlying bytes must not be deallocated or else this object will become
+  // invalid.
+  SelectionVector(SelectionVector *other, size_t prefix_rows);
+
+  // Resize the selection vector to the given number of rows.
+  // This size must be <= the allocated capacity.
+  //
+  // After this call, the state of the values in the bitmap is indeterminate.
+  void Resize(size_t n_rows);
+
+  // Return the number of selected rows.
   size_t CountSelected() const;
 
   // Return true if any rows are selected
@@ -50,7 +67,12 @@ public:
     }
   }
 
+  size_t nrows() const { return n_rows_; }
+
 private:
+  // The number of allocated bytes in bitmap_
+  size_t bytes_capacity_;
+
   size_t n_rows_;
   size_t n_bytes_;
 
@@ -65,6 +87,12 @@ public:
   RowBlock(const Schema &schema,
            size_t nrows,
            Arena *arena);
+
+  // Resize the block to the given number of rows.
+  // This size must be <= the the allocated capacity row_capacity().
+  //
+  // After this call, the state of the underlying data is indeterminate.
+  void Resize(size_t n_rows);
 
   size_t row_capacity() const {
     return row_capacity_;

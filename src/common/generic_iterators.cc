@@ -70,10 +70,10 @@ public:
       return Status::OK();
     }
 
-    size_t n = read_block_.nrows();
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_.get(), &n, &read_block_));
+    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_.get(), &read_block_));
     cur_row_ = 0;
-    valid_rows_ = n;
+    // TODO: do we need valid_rows_ or can we just use read_block_.nrows()?
+    valid_rows_ = read_block_.nrows();
     next_row_ptr_ = read_block_.row_ptr(0);
     return Status::OK();
   }
@@ -371,6 +371,9 @@ Status MaterializingIterator::PrepareBatch(size_t *nrows) {
 }
 
 Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
+  DCHECK_EQ(dst->nrows(), prepared_count_);
+  DCHECK_EQ(dst->selection_vector()->nrows(), prepared_count_);
+
   bool short_circuit = false;
   dst->selection_vector()->SetAllTrue();
 
@@ -384,9 +387,6 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
     BOOST_FOREACH(const MapEntry &entry, preds_by_column_.equal_range(col_idx)) {
       const ColumnRangePredicate &pred = entry.second;
 
-      // TODO: should only evaluate on prepared_count_ rows
-      // Probably worth changing it so that callers pass a truncated RowBlock
-      // into these sorts of functions, shortened to the actual batch size.
       pred.Evaluate(dst, dst->selection_vector());
 
       // If after evaluating this predicate, the entire row block has now been

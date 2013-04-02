@@ -92,9 +92,8 @@ public:
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
-        size_t n = 1;
-        ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-        CHECK_EQ(n, 1);
+        ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+        CHECK_EQ(block.nrows(), 1);
 
         // The key is at the start of the row
         const uint8_t *row_key = row_slice.data();
@@ -189,14 +188,12 @@ public:
 
     while (iter->HasNext()) {
       arena.Reset();
-      size_t n = kBufInts;
+      CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
 
-      CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-
-      for (size_t j = 0; j < n; j++) {
+      for (size_t j = 0; j < block.nrows(); j++) {
         sum += buf[j];
       }
-      count_since_report += n;
+      count_since_report += block.nrows();
 
       // Report metrics if enough time has passed
       if (count_since_report > 100) {

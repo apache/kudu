@@ -103,23 +103,20 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   RowBlock block(this->schema_, 100, &this->arena_);
 
   // First call to CopyNextRows should fetch the whole memstore.
-  size_t n = 100;
-  ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-  ASSERT_EQ(1, n) << "should get only the one row from memstore";
+  ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+  ASSERT_EQ(1, block.nrows()) << "should get only the one row from memstore";
   this->VerifyRow(block.row_ptr(0), kInMemstore, 0);
 
   // Next, should fetch the older layer
   ASSERT_TRUE(iter->HasNext());
-  n = 100;
-  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-  ASSERT_EQ(1, n) << "should get only the one row from layer 1";
+  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+  ASSERT_EQ(1, block.nrows()) << "should get only the one row from layer 1";
   this->VerifyRow(block.row_ptr(0), kInLayer1, 0);
 
   // Next, should fetch the newer layer
   ASSERT_TRUE(iter->HasNext());
-  n = 100;
-  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-  ASSERT_EQ(1, n) << "should get only the one row from layer 2";
+  ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+  ASSERT_EQ(1, block.nrows()) << "should get only the one row from layer 2";
   this->VerifyRow(block.row_ptr(0), kInLayer2, 0);
 
   ASSERT_FALSE(iter->HasNext());
@@ -171,10 +168,9 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
 
   while (iter->HasNext()) {
     this->arena_.Reset();
-    size_t n = 100;
-    ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
-    LOG(INFO) << "Fetched batch of " << n;
-    for (size_t i = 0; i < n; i++) {
+    ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+    LOG(INFO) << "Fetched batch of " << block.nrows();
+    for (size_t i = 0; i < block.nrows(); i++) {
       uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(block.row_slice(i), 1);
       bool removed = inserted.erase(val_read);
       ASSERT_TRUE(removed) << "Got value " << val_read << " but either "

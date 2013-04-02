@@ -83,9 +83,8 @@ public:
 
   Status NextBatch(size_t *nrows) {
     if (arena_ != NULL) arena_->Reset();
-
-    *nrows = batch_size_;
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_, nrows, block_.get()));
+    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_, block_.get()));
+    *nrows = block_->nrows();
     return Status::OK();
   }
 

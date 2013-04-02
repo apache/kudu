@@ -221,9 +221,7 @@ public:
     // also above TODO applies to a lot of other CopyNextRows cases
     DCHECK(!projection_mapping_.empty()) << "not initted";
 
-    DCHECK_GE(dst->nrows(), prepared_count_);
-    DCHECK_GT(dst->nrows(), 0);
-
+    DCHECK_EQ(dst->nrows(), prepared_count_);
     Slice k, v;
     size_t fetched = 0;
     for (size_t i = prepared_idx_in_leaf_; fetched < prepared_count_; i++) {

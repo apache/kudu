@@ -143,7 +143,7 @@ Status DMSIterator::PrepareBatch(size_t nrows) {
 
 Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK(prepared_);
-  DCHECK_LE(prepared_count_, dst->size());
+  DCHECK_EQ(prepared_count_, dst->nrows());
   Slice src(prepared_buf_);
 
   size_t projected_col = projection_indexes_[col_to_apply];

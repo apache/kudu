@@ -267,7 +267,7 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
 }
 
 Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
-  CHECK_GT(prepared_count_, 0);
+  CHECK_EQ(prepared_count_, dst->nrows());
   DCHECK_LT(col_idx, col_iters_.size());
 
   RETURN_NOT_OK(PrepareColumn(col_idx));

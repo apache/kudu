@@ -70,9 +70,9 @@ public:
   virtual Status MaterializeBlock(RowBlock *dst) = 0;
 
   // One-shot function to prepare, materialize, and copy a block of data
-  // from 'iter' into the provided row block. *n is set to the number of rows
-  // copied.
-  static Status CopyBlock(RowwiseIterator *iter, size_t *n, RowBlock *dst);
+  // from 'iter' into the provided row block. The 'dst' block is resized
+  // to the number of rows successfully copied.
+  static Status CopyBlock(RowwiseIterator *iter, RowBlock *dst);
 
 };
 
@@ -89,8 +89,10 @@ public:
 };
 
 
-inline Status RowwiseIterator::CopyBlock(RowwiseIterator *iter, size_t *n, RowBlock *dst) {
-  RETURN_NOT_OK(iter->PrepareBatch(n));
+inline Status RowwiseIterator::CopyBlock(RowwiseIterator *iter, RowBlock *dst) {
+  size_t n = dst->row_capacity();
+  RETURN_NOT_OK(iter->PrepareBatch(&n));
+  dst->Resize(n);
   RETURN_NOT_OK(iter->MaterializeBlock(dst));
   RETURN_NOT_OK(iter->FinishBatch());
   return Status::OK();
