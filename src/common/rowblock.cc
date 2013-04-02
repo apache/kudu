@@ -45,4 +45,19 @@ bool SelectionVector::AnySelected() const {
   return false;
 }
 
+//////////////////////////////
+// RowBlock
+//////////////////////////////
+
+RowBlock::RowBlock(const Schema &schema,
+                   size_t nrows,
+                   Arena *arena) :
+  schema_(schema),
+  data_(new uint8_t[nrows * schema.byte_size()]),
+  nrows_(nrows),
+  arena_(arena),
+  sel_vec_(nrows)
+{}
+
+
 }

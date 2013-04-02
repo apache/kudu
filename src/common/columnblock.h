@@ -32,7 +32,6 @@ public:
     arena_(arena)
   {
     DCHECK(data_) << "null data";
-    DCHECK(arena_) << "null arena";
     DCHECK_GE(stride, type.size());
   }
 

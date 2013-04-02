@@ -80,7 +80,7 @@ public:
     // TODO: move the update code into the SETUP class
 
     Arena tmp_arena(1024, 1024);
-    ScopedRowBlock block(schema_, 1, &tmp_arena);
+    RowBlock block(schema_, 1, &tmp_arena);
     Slice row_slice(block.row_slice(0));
     faststring update_buf;
 
@@ -132,7 +132,7 @@ public:
   // This is meant to test that outstanding iterators don't end up
   // trying to reference already-freed memstore memory.
   void SlowReaderThread(int tid) {
-    ScopedRowBlock block(schema_, 1, &arena_);
+    RowBlock block(schema_, 1, &arena_);
 
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
@@ -176,9 +176,8 @@ public:
 
 
     static const int kBufInts = 1024*1024 / 8;
-    uint32_t buf[kBufInts];
-    RowBlock block(projection, reinterpret_cast<uint8_t *>(&buf[0]),
-                   kBufInts, &arena_);
+    RowBlock block(projection, kBufInts, &arena_);
+    const uint32_t *buf = reinterpret_cast<const uint32_t *>(block.row_ptr(0));
 
     uint64_t count_since_report = 0;
 

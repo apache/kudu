@@ -43,7 +43,7 @@ protected:
   Arena arena_;
   const size_t n_rows_;
   Schema schema_;
-  ScopedRowBlock row_block_;
+  RowBlock row_block_;
 };
 
 TEST_F(TestPredicate, TestSelectionVector) {

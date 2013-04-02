@@ -100,28 +100,27 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
 
   ASSERT_TRUE(iter->HasNext());
 
-  gscoped_array<uint8_t> buf(new uint8_t[this->schema_.byte_size() * 100]);
-  RowBlock block(this->schema_, &buf[0], 100, &this->arena_);
+  RowBlock block(this->schema_, 100, &this->arena_);
 
   // First call to CopyNextRows should fetch the whole memstore.
   size_t n = 100;
   ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from memstore";
-  this->VerifyRow(&buf[0], kInMemstore, 0);
+  this->VerifyRow(block.row_ptr(0), kInMemstore, 0);
 
   // Next, should fetch the older layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
   ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 1";
-  this->VerifyRow(&buf[0], kInLayer1, 0);
+  this->VerifyRow(block.row_ptr(0), kInLayer1, 0);
 
   // Next, should fetch the newer layer
   ASSERT_TRUE(iter->HasNext());
   n = 100;
   ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));
   ASSERT_EQ(1, n) << "should get only the one row from layer 2";
-  this->VerifyRow(&buf[0], kInLayer2, 0);
+  this->VerifyRow(block.row_ptr(0), kInLayer2, 0);
 
   ASSERT_FALSE(iter->HasNext());
 }
@@ -164,7 +163,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   ASSERT_STATUS_OK(iter->Init(NULL));
   LOG(INFO) << "Created iter: " << iter->ToString();
 
-  ScopedRowBlock block(this->schema_, 100, &this->arena_);
+  RowBlock block(this->schema_, 100, &this->arena_);
 
   // Copy schema into local scope, since gcc is getting confused by
   // too many templates.

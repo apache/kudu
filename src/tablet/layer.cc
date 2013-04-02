@@ -68,16 +68,13 @@ public:
       arena_.reset(new Arena(16*1024, 256*1024));
     }
 
-    int buf_size = sizeof(buf_);
+    // 32KB buffer - try to fit in L1 cache
+    size_t buf_size = 32 * 1024;
     batch_size_ = buf_size / iter_->schema().byte_size();
-
-    // TODO: handle big rows
-    CHECK_GE(batch_size_, 1) << "could not fit a row from schema: "
-                             << src_iter->schema().ToString()
-                             << " in " << buf_size << " bytes";
-
-    block_.reset(new RowBlock(iter_->schema(), &buf_[0],
-                              batch_size_, arena_.get()));
+    if (batch_size_ == 0) {
+      batch_size_ = 1;
+    }
+    block_.reset(new RowBlock(iter_->schema(), batch_size_, arena_.get()));
   }
 
   bool HasNext() {
@@ -93,7 +90,7 @@ public:
   }
 
   void *col_ptr(size_t col_idx) {
-    return &buf_[iter_->schema().column_offset(col_idx)];
+    return block_->column_block(col_idx).cell_ptr(0);
   }
 
   uint8_t *row_ptr(size_t row_idx) {
@@ -105,11 +102,6 @@ private:
   gscoped_ptr<Arena> arena_;
   gscoped_ptr<RowBlock> block_;
 
-  // Use a small buffer here -- otherwise we end up with larger-than-requested
-  // blocks in the CFile. This could be considered a bug in the CFile writer.
-  // If flush performance is bad, could consider fetching in larger batches.
-  // TODO: look at above - puts a minimum on real block size
-  uint8_t buf_[32768];
   size_t batch_size_;
 };
 

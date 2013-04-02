@@ -181,7 +181,7 @@ public:
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
                           4*1024*1024 / schema_.byte_size()));
-    ScopedRowBlock block(schema_, batch_size, &arena_);
+    RowBlock block(schema_, batch_size, &arena_);
 
     if (expected_count > INT_MAX) {
       LOG(INFO) << "Not checking rows for duplicates -- duplicates expected since "
@@ -236,7 +236,7 @@ public:
 
     Schema schema = iter->schema();
     Arena arena(1024, 1024);
-    ScopedRowBlock block(schema, 1, &arena);
+    RowBlock block(schema, 1, &arena);
     while (iter->HasNext()) {
       size_t n = 1;
       RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter.get(), &n, &block));

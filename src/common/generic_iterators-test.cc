@@ -134,7 +134,7 @@ TEST(TestMergeIterator, TestMerge) {
       MergeIterator merger(kIntSchema, to_merge);
       ASSERT_STATUS_OK(merger.Init(NULL));
 
-      ScopedRowBlock dst(kIntSchema, 100, NULL);
+      RowBlock dst(kIntSchema, 100, NULL);
       size_t total_idx = 0;
       while (merger.HasNext()) {
         size_t n = dst.nrows();
@@ -178,7 +178,7 @@ TEST_F(TestMaterialization, TestPredicatePushdown) {
     << "Iterator should have pushed down predicate";
 
   Arena arena(1024, 1024);
-  ScopedRowBlock dst(kIntSchema, 100, &arena);
+  RowBlock dst(kIntSchema, 100, &arena);
   size_t n = 100;
   ASSERT_STATUS_OK(materializing.PrepareBatch(&n));
   ASSERT_EQ(n, 100);

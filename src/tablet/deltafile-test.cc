@@ -76,7 +76,7 @@ public:
     gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_));
     ASSERT_STATUS_OK(it->Init());
 
-    ScopedRowBlock block(schema_, 100, &arena_);
+    RowBlock block(schema_, 100, &arena_);
 
     // Iterate through the faked table, starting with batches that
     // come before all of the updates, and extending a bit further

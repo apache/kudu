@@ -123,7 +123,7 @@ protected:
     ASSERT_STATUS_OK(row_iter->Init(NULL));
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
-    ScopedRowBlock dst(proj_val, batch_size, &arena);
+    RowBlock dst(proj_val, batch_size, &arena);
 
 
     int i = 0;
@@ -166,7 +166,7 @@ protected:
 
     int batch_size = 1000;
     Arena arena(1024, 1024*1024);
-    ScopedRowBlock dst(schema, batch_size, &arena);
+    RowBlock dst(schema, batch_size, &arena);
 
     int i = 0;
     int log_interval = expected_rows/20 / batch_size;

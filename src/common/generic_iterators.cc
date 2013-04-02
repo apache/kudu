@@ -84,7 +84,7 @@ public:
 
   shared_ptr<RowwiseIterator> iter_;
   Arena arena_;
-  ScopedRowBlock read_block_;
+  RowBlock read_block_;
   uint8_t *next_row_ptr_;
   size_t cur_row_;
   size_t valid_rows_;

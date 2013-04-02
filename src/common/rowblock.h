@@ -63,23 +63,19 @@ private:
 class RowBlock : boost::noncopyable {
 public:
   RowBlock(const Schema &schema,
-           uint8_t *data,
            size_t nrows,
-           Arena *arena) :
-    schema_(schema),
-    data_(data),
-    nrows_(nrows),
-    arena_(arena),
-    sel_vec_(nrows)
-  {
+           Arena *arena);
+
+  size_t row_capacity() const {
+    return row_capacity_;
   }
 
   uint8_t *row_ptr(size_t idx) {
-    return data_ + schema_.byte_size() * idx;
+    return &data_[schema_.byte_size() * idx];
   }
 
   const uint8_t *row_ptr(size_t idx) const {
-    return data_ + schema_.byte_size() * idx;
+    return &data_[schema_.byte_size() * idx];
   }
 
   const Slice row_slice(size_t idx) const {
@@ -108,7 +104,7 @@ public:
   // This physically zeros the memory, so is not efficient - mostly useful
   // from unit tests.
   void ZeroMemory() {
-    memset(data_, '\0', schema_.byte_size() * nrows_);
+    memset(data_.get(), '\0', schema_.byte_size() * nrows_);
   }
 
   // Return the selection vector which indicates which rows have passed
@@ -128,8 +124,15 @@ public:
 
 private:
   Schema schema_;
-  uint8_t *data_;
+  gscoped_array<uint8_t> data_;
+
+  // The maximum number of rows that can be stored in our allocated buffer.
+  size_t row_capacity_;
+
+  // The number of rows currently being processed in this block.
+  // nrows_ <= row_capacity_
   size_t nrows_;
+
   Arena *arena_;
 
   // The bitmap indicating which rows are valid in this block.
@@ -138,22 +141,6 @@ private:
   SelectionVector sel_vec_;
 };
 
-
-class ScopedRowBlock : public RowBlock {
-public:
-  ScopedRowBlock(const Schema &schema,
-                 size_t nrows,
-                 Arena *arena) :
-    RowBlock(schema,
-             new uint8_t[nrows * schema.byte_size()],
-             nrows,
-             arena)
-  {}
-
-  ~ScopedRowBlock() {
-    delete [] row_ptr(0);
-  }
-};
 
 } // namespace kudu
 
