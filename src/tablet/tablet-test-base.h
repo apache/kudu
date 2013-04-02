@@ -199,7 +199,8 @@ public:
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
                           4*1024*1024 / schema_.byte_size()));
-    RowBlock block(schema_, batch_size, &arena_);
+    Arena arena(32*1024, 256*1024);
+    RowBlock block(schema_, batch_size, &arena);
 
     if (expected_count > INT_MAX) {
       LOG(INFO) << "Not checking rows for duplicates -- duplicates expected since "
@@ -213,7 +214,6 @@ public:
     seen_rows.resize(expected_count);
 
     while (iter->HasNext()) {
-      arena_.Reset();
       ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
 
       LOG(INFO) << "Fetched batch of " << block.nrows() << "\n"

@@ -51,8 +51,6 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   typedef TabletTestBase<SETUP> superclass;
   using superclass::schema_;
   using superclass::tablet_;
-  using superclass::arena_;
-
 public:
   MultiThreadedTabletTest() :
     running_insert_count_(FLAGS_num_insert_threads),
@@ -131,7 +129,8 @@ public:
   // This is meant to test that outstanding iterators don't end up
   // trying to reference already-freed memstore memory.
   void SlowReaderThread(int tid) {
-    RowBlock block(schema_, 1, &arena_);
+    Arena arena(32*1024, 256*1024);
+    RowBlock block(schema_, 1, &arena);
 
     int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
 
@@ -141,8 +140,6 @@ public:
       ASSERT_STATUS_OK(iter->Init(NULL));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
-        arena_.Reset();
-
         size_t n = 1;
         ASSERT_STATUS_OK_FAST(iter->PrepareBatch(&n));
         ASSERT_STATUS_OK_FAST(iter->MaterializeBlock(&block));
@@ -175,7 +172,7 @@ public:
 
 
     static const int kBufInts = 1024*1024 / 8;
-    RowBlock block(projection, kBufInts, &arena_);
+    RowBlock block(projection, kBufInts, &arena);
     const uint32_t *buf = reinterpret_cast<const uint32_t *>(block.row_ptr(0));
 
     uint64_t count_since_report = 0;
