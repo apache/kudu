@@ -62,6 +62,13 @@ public:
     return obj->get();
   }
 
+  template<class Arg1>
+  T *Construct(Arg1 arg1) {
+    ManualConstructor<T> *obj = GetObject();
+    obj->Init(arg1);
+    return obj->get();
+  }
+
   // Destroy an object, running its destructor and returning it to the
   // free-list.
   void Destroy(T *t) {

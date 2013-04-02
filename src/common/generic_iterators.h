@@ -4,6 +4,7 @@
 
 #include "common/iterator.h"
 #include "common/scan_spec.h"
+#include "util/object_pool.h"
 
 #include <gtest/gtest.h>
 #include <tr1/memory>
@@ -50,11 +51,20 @@ public:
   virtual const Schema &schema() const { return schema_; }
 
 private:
+  Status InitSubIterators(ScanSpec *spec);
+
   const Schema schema_;
 
   bool initted_;
 
   vector<shared_ptr<MergeIterState> > iters_;
+
+  // When the underlying iterators are initialized, each needs its own
+  // copy of the scan spec in order to do its own pushdown calculations, etc.
+  // The copies are allocated from this pool so they can be automatically freed
+  // when the UnionIterator goes out of scope.
+  ObjectPool<ScanSpec> scan_spec_copies_;
+
 
   size_t prepared_count_;
 };
@@ -70,7 +80,10 @@ public:
 
   // Construct a union iterator of the given iterators.
   // The iterators must have matching schemas.
-  // The passed-in iterators should be already initialized.
+  // The passed-in iterators should not yet be initialized.
+  //
+  // All passed-in iterators must be fully able to evaluate all predicates - i.e. 
+  // calling iter->Init(spec) should remove all predicates from the spec.
   UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
 
   Status Init(ScanSpec *spec);
@@ -84,14 +97,23 @@ public:
   string ToString() const;
 
   const Schema &schema() const {
+    CHECK(schema_.get() != NULL) << "Bad schema in " << ToString();
     return *CHECK_NOTNULL(schema_.get());
   }
 
 private:
+  Status InitSubIterators(ScanSpec *spec);
+
   // Schema: initialized during Init()
   gscoped_ptr<Schema> schema_;
   bool initted_;
   deque<shared_ptr<RowwiseIterator> > iters_;
+
+  // When the underlying iterators are initialized, each needs its own
+  // copy of the scan spec in order to do its own pushdown calculations, etc.
+  // The copies are allocated from this pool so they can be automatically freed
+  // when the UnionIterator goes out of scope.
+  ObjectPool<ScanSpec> scan_spec_copies_;
 };
 
 // An iterator which wraps a ColumnwiseIterator, materializing it into full rows.
@@ -120,7 +142,8 @@ public:
   }
 
 private:
-  FRIEND_TEST(TestMaterialization, TestPredicatePushdown);
+  FRIEND_TEST(TestMaterializingIterator, TestPredicatePushdown);
+  FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
 
   shared_ptr<ColumnwiseIterator> iter_;
   size_t prepared_count_;
@@ -129,8 +152,55 @@ private:
 
   // The order in which the columns will be materialized.
   vector<size_t> materialization_order_;
+
+  // Set only by test code to disallow pushdown.
+  bool disallow_pushdown_for_tests_;
 };
 
+
+// An iterator which wraps another iterator and evaluates any predicates that the
+// wrapped iterator did not itself handle during push down.
+class PredicateEvaluatingIterator : public RowwiseIterator {
+public:
+  // Initialize the given '*base_iter' with the given 'spec'.
+  //
+  // If the base_iter accepts all predicates, then simply returns.
+  // Otherwise, swaps out *base_iter for a PredicateEvaluatingIterator which wraps
+  // the original iterator and accepts all predicates on its behalf.
+  //
+  // POSTCONDITION: spec->predicates().empty()
+  // POSTCONDITION: base_iter and its wrapper are initialized
+  static Status InitAndMaybeWrap(shared_ptr<RowwiseIterator> *base_iter,
+                                 ScanSpec *spec);
+
+  // Initialize the iterator.
+  // POSTCONDITION: spec->predicates().empty()
+  Status Init(ScanSpec *spec);
+
+  Status PrepareBatch(size_t *nrows);
+  Status MaterializeBlock(RowBlock *dst);
+  Status FinishBatch();
+
+  bool HasNext() const;
+
+  string ToString() const;
+
+  const Schema &schema() const {
+    return base_iter_->schema();
+  }
+
+private:
+  // Construct the evaluating iterator.
+  // This is only called from ::InitAndMaybeWrap()
+  // REQUIRES: base_iter is already Init()ed.
+  explicit PredicateEvaluatingIterator(const shared_ptr<RowwiseIterator> &base_iter);
+
+
+  FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
+
+  shared_ptr<RowwiseIterator> base_iter_;
+  vector<ColumnRangePredicate> predicates_;
+};
 
 } // namespace kudu
 #endif

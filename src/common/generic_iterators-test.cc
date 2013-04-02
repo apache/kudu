@@ -11,6 +11,7 @@
 #include "common/rowblock.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
+#include "gutil/casts.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
@@ -26,8 +27,6 @@ using std::tr1::shared_ptr;
 const static Schema kIntSchema(
   boost::assign::list_of(ColumnSchema("val", UINT32)), 1);
 
-class TestMaterialization : public KuduTest {
-};
 
 // Test iterator which just yields integer rows from a provided
 // vector.
@@ -157,14 +156,25 @@ TEST(TestMergeIterator, TestMerge) {
   }
 }
 
-TEST_F(TestMaterialization, TestPredicatePushdown) {
-  ScanSpec spec;
-  uint32_t col0_lower = 20;
-  uint32_t col0_upper = 29;
-  ColumnRangePredicate pred1(kIntSchema.column(0), &col0_lower, &col0_upper);
-  spec.AddPredicate(pred1);
+class TestIntRangePredicate {
+public:
+  TestIntRangePredicate(uint32_t lower, uint32_t upper) :
+    lower_(lower),
+    upper_(upper),
+    pred_(kIntSchema.column(0), &lower_, &upper_)
+  {}
 
-  LOG(INFO) << "pred: " << pred1.ToString();
+  uint32_t lower_, upper_;
+  ColumnRangePredicate pred_;
+};
+
+// Test that the MaterializingIterator properly evaluates predicates when they apply
+// to single columns.
+TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
+  ScanSpec spec;
+  TestIntRangePredicate pred1(20, 29);
+  spec.AddPredicate(pred1.pred_);
+  LOG(INFO) << "pred: " << pred1.pred_.ToString();
 
   vector<uint32> ints;
   for (int i = 0; i < 100; i++) {
@@ -184,6 +194,77 @@ TEST_F(TestMaterialization, TestPredicatePushdown) {
   ASSERT_EQ(n, 100);
   ASSERT_STATUS_OK(materializing.MaterializeBlock(&dst));
   ASSERT_STATUS_OK(materializing.FinishBatch());
+
+  // Check that the resulting selection vector is correct (rows 20-29 selected)
+  ASSERT_EQ(10, dst.selection_vector()->CountSelected());
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(0));
+  ASSERT_TRUE(dst.selection_vector()->IsRowSelected(20));
+  ASSERT_TRUE(dst.selection_vector()->IsRowSelected(29));
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(30));
+}
+
+// Test that PredicateEvaluatingIterator will properly evaluate predicates on its
+// input.
+TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
+  ScanSpec spec;
+  TestIntRangePredicate pred1(20, 29);
+  spec.AddPredicate(pred1.pred_);
+  LOG(INFO) << "pred: " << pred1.pred_.ToString();
+
+  vector<uint32> ints;
+  for (int i = 0; i < 100; i++) {
+    ints.push_back(i);
+  }
+
+  // Set up a MaterializingIterator with pushdown disabled, so that the
+  // PredicateEvaluatingIterator will wrap it and do evaluation.
+  shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  MaterializingIterator *materializing = new MaterializingIterator(colwise);
+  materializing->disallow_pushdown_for_tests_ = true;
+
+  // Wrap it in another iterator to do the evaluation
+  shared_ptr<RowwiseIterator> outer_iter(materializing);
+  ASSERT_STATUS_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
+
+  ASSERT_NE(reinterpret_cast<uintptr_t>(outer_iter.get()),
+            reinterpret_cast<uintptr_t>(materializing))
+    << "Iterator pointer should differ after wrapping";
+
+  PredicateEvaluatingIterator *pred_eval = down_cast<PredicateEvaluatingIterator *>(
+    outer_iter.get());
+
+  ASSERT_EQ(0, spec.predicates().size())
+    << "Iterator tree should have accepted predicate";
+  ASSERT_EQ(1, pred_eval->predicates_.size())
+    << "Predicate should be evaluated by the outer iterator";
+
+  Arena arena(1024, 1024);
+  RowBlock dst(kIntSchema, 100, &arena);
+  size_t n = 100;
+  ASSERT_STATUS_OK(outer_iter->PrepareBatch(&n));
+  ASSERT_EQ(n, 100);
+  ASSERT_STATUS_OK(outer_iter->MaterializeBlock(&dst));
+  ASSERT_STATUS_OK(outer_iter->FinishBatch());
+
+  // Check that the resulting selection vector is correct (rows 20-29 selected)
+  ASSERT_EQ(10, dst.selection_vector()->CountSelected());
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(0));
+  ASSERT_TRUE(dst.selection_vector()->IsRowSelected(20));
+  ASSERT_TRUE(dst.selection_vector()->IsRowSelected(29));
+  ASSERT_FALSE(dst.selection_vector()->IsRowSelected(30));
+}
+
+// Test that PredicateEvaluatingIterator::InitAndMaybeWrap doesn't wrap an underlying
+// iterator when there are no predicates left.
+TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
+  ScanSpec spec;
+
+  vector<uint32> ints;
+  shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  shared_ptr<RowwiseIterator> materializing(new MaterializingIterator(colwise));
+  shared_ptr<RowwiseIterator> outer_iter(materializing);
+  ASSERT_STATUS_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
+  ASSERT_EQ(outer_iter, materializing) << "InitAndMaybeWrap should not have wrapped iter";
 }
 
 } // namespace kudu

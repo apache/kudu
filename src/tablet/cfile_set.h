@@ -96,7 +96,7 @@ public:
 
   virtual bool HasNext() const {
     DCHECK(initted_);
-    return col_iters_[0].HasNext();
+    return cur_idx_ < row_count_;
   }
 
   virtual string ToString() const {

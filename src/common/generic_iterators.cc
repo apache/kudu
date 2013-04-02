@@ -9,6 +9,10 @@
 #include "gutil/gscoped_ptr.h"
 #include "util/memory/arena.h"
 
+DEFINE_bool(materializing_iterator_do_pushdown, true,
+            "Should MaterializingIterator do predicate pushdown"
+            " (advanced option, only for debugging)");
+
 namespace kudu {
 
 using std::string;
@@ -108,11 +112,11 @@ MergeIterator::MergeIterator(
 
 Status MergeIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
-
   // TODO: check that schemas match up!
 
+  RETURN_NOT_OK(InitSubIterators(spec));
+
   BOOST_FOREACH(shared_ptr<MergeIterState> &state, iters_) {
-    RETURN_NOT_OK(state->iter_->Init(spec));
     RETURN_NOT_OK(state->PullNextBlock());
   }
 
@@ -130,6 +134,20 @@ Status MergeIterator::Init(ScanSpec *spec) {
   initted_ = true;
   return Status::OK();
 }
+
+Status MergeIterator::InitSubIterators(ScanSpec *spec) {
+  BOOST_FOREACH(shared_ptr<MergeIterState> &state, iters_) {
+    ScanSpec *spec_copy = spec != NULL ? scan_spec_copies_.Construct(*spec) : NULL;
+    RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&state->iter_, spec_copy));
+  }
+  // Since we handle predicates in all the wrapped iterators, we can clear
+  // them here.
+  if (spec != NULL) {
+    spec->mutable_predicates()->clear();
+  }
+  return Status::OK();
+}
+
 
 Status MergeIterator::PrepareBatch(size_t *nrows) {
   // We can always provide at least as many rows as are remaining
@@ -236,17 +254,37 @@ UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters) 
 Status UnionIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
 
+  // Initialize the underlying iterators
+  RETURN_NOT_OK(InitSubIterators(spec));
+
   // Verify schemas match.
+  // Important to do the verification after initializing the
+  // sub-iterators, since they may not know their own schemas
+  // until they've been initialized (in the case of a union of unions)
   schema_.reset(new Schema(iters_.front()->schema()));
-  BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->Init(spec));
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters_) {
     if (!iter->schema().Equals(*schema_)) {
       return Status::InvalidArgument(
         string("Schemas do not match: ") + schema_->ToString()
         + " vs " + iter->schema().ToString());
     }
   }
+
   initted_ = true;
+  return Status::OK();
+}
+
+
+Status UnionIterator::InitSubIterators(ScanSpec *spec) {
+  BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, iters_) {  
+    ScanSpec *spec_copy = spec != NULL ? scan_spec_copies_.Construct(*spec) : NULL;
+    RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
+  }
+  // Since we handle predicates in all the wrapped iterators, we can clear
+  // them here.
+  if (spec != NULL) {
+    spec->mutable_predicates()->clear();
+  }
   return Status::OK();
 }
 
@@ -308,14 +346,15 @@ string UnionIterator::ToString() const {
 
 MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter) :
   iter_(iter),
-  prepared_count_(0)
+  prepared_count_(0),
+  disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown)
 {
 }
 
 Status MaterializingIterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(iter_->Init(spec));
 
-  if (spec != NULL) {
+  if (spec != NULL && !disallow_pushdown_for_tests_) {
     // Gather any single-column predicates.
     ScanSpec::PredicateList *preds = spec->mutable_predicates();
     for (ScanSpec::PredicateList::iterator iter = preds->begin();
@@ -375,7 +414,6 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   DCHECK_EQ(dst->selection_vector()->nrows(), prepared_count_);
 
   bool short_circuit = false;
-  dst->selection_vector()->SetAllTrue();
 
   BOOST_FOREACH(size_t col_idx, materialization_order_) {
     // Materialize the column itself into the row block.
@@ -413,5 +451,77 @@ string MaterializingIterator::ToString() const {
   s.append("Materializing(").append(iter_->ToString()).append(")");
   return s;
 }
+
+////////////////////////////////////////////////////////////
+// PredicateEvaluatingIterator
+////////////////////////////////////////////////////////////
+
+
+PredicateEvaluatingIterator::PredicateEvaluatingIterator(
+  const shared_ptr<RowwiseIterator> &base_iter) :
+  base_iter_(base_iter)
+{
+}
+
+Status PredicateEvaluatingIterator::InitAndMaybeWrap(
+  shared_ptr<RowwiseIterator> *base_iter, ScanSpec *spec)
+{
+  RETURN_NOT_OK((*base_iter)->Init(spec));
+  if (spec != NULL &&
+      !spec->predicates().empty()) {
+    // Underlying iterator did not accept all predicates. Wrap it.
+    shared_ptr<RowwiseIterator> wrapper(
+      new PredicateEvaluatingIterator(*base_iter));
+    CHECK_OK(wrapper->Init(spec));
+    base_iter->swap(wrapper);
+  }
+  return Status::OK();
+}
+
+Status PredicateEvaluatingIterator::Init(ScanSpec *spec) {
+  // base_iter_ already Init()ed before this is constructed.
+
+  CHECK_NOTNULL(spec);
+  // Gather any predicates that the base iterator did not pushdown.
+  // This also clears the predicates from the spec.
+  predicates_.swap(*(spec->mutable_predicates()));
+  return Status::OK();
+}
+
+bool PredicateEvaluatingIterator::HasNext() const {
+  return base_iter_->HasNext();
+}
+
+Status PredicateEvaluatingIterator::PrepareBatch(size_t *nrows) {
+  RETURN_NOT_OK( base_iter_->PrepareBatch(nrows) );
+  return Status::OK();
+}
+
+Status PredicateEvaluatingIterator::MaterializeBlock(RowBlock *dst) {
+  RETURN_NOT_OK(base_iter_->MaterializeBlock(dst));
+
+  BOOST_FOREACH(ColumnRangePredicate &pred, predicates_) {
+    pred.Evaluate(dst, dst->selection_vector());
+
+    // If after evaluating this predicate, the entire row block has now been
+    // filtered out, we don't need to evaluate any further predicates.
+    if (!dst->selection_vector()->AnySelected()) {
+      break;
+    }
+  }
+
+  return Status::OK();
+}
+
+Status PredicateEvaluatingIterator::FinishBatch() {
+  return base_iter_->FinishBatch();
+}
+
+string PredicateEvaluatingIterator::ToString() const {
+  string s;
+  s.append("PredicateEvaluating(").append(base_iter_->ToString()).append(")");
+  return s;
+}
+
 
 } // namespace kudu

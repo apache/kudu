@@ -91,8 +91,12 @@ public:
 
 inline Status RowwiseIterator::CopyBlock(RowwiseIterator *iter, RowBlock *dst) {
   size_t n = dst->row_capacity();
+  if (dst->arena()) {
+    dst->arena()->Reset();
+  }
   RETURN_NOT_OK(iter->PrepareBatch(&n));
   dst->Resize(n);
+  dst->selection_vector()->SetAllTrue();
   RETURN_NOT_OK(iter->MaterializeBlock(dst));
   RETURN_NOT_OK(iter->FinishBatch());
   return Status::OK();
