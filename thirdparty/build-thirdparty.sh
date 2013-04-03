@@ -13,8 +13,17 @@ source $TP_DIR/vars.sh
 # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
 # this by setting up lib64 as a symlink to lib.  We have to do this step first
 # to handle cases where one third-party library depends on another.
-mkdir -p "$TP_DIR/installed/lib"
-ln -sf lib "$TP_DIR/installed/lib64"
+mkdir -p "$PREFIX/lib"
+ln -sf lib "$PREFIX/lib64"
+
+# use the compiled tools
+export PATH=$PREFIX/bin:$PATH
+
+# build cmake
+cd $CMAKE_DIR
+./bootstrap --prefix=$PREFIX --parallel=8
+make -j
+make install
 
 # build gflags
 cd $GFLAGS_DIR
@@ -41,12 +50,6 @@ cd $PROTOBUF_DIR
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -j4 install
 
-# build cmake
-cd $CMAKE_DIR
-./bootstrap --prefix=$PREFIX --parallel=8
-make -j
-make install
-
 # build snappy
 cd $SNAPPY_DIR
 ./configure --with-pic --prefix=$PREFIX
@@ -59,7 +62,7 @@ make -j4 install
 
 # build lz4
 cd $LZ4_DIR
-$TP_DIR/installed/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
+$PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
 make -j4 install
 
 echo "---------------------"
