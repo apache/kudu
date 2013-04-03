@@ -1,11 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <algorithm>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <tr1/memory>
 
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
+#include "common/scan_spec.h"
 #include "tablet/layer.h"
 #include "tablet/cfile_set.h"
 
@@ -192,20 +194,93 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
     col_iters_.push_back(iter);
   }
 
+  // If there is a range predicate on the key column, push that down into an
+  // ordinal range.
+  RETURN_NOT_OK(PushdownRangeScanPredicate(spec));
+
   initted_ = true;
 
-  // TODO: later, Init() will probably take some kind of predicate,
-  // which would tell us where to seek to.
-  return SeekToOrdinal(0);
+  return SeekToOrdinal(lower_bound_idx_);
+}
+
+Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
+  CHECK_GT(row_count_, 0);
+
+  lower_bound_idx_ = 0;
+  // since upper_bound_idx is _inclusive_, subtract 1 from row_count
+  upper_bound_idx_ = row_count_ - 1;
+
+  if (spec == NULL) {
+    // No predicate.
+    return Status::OK();
+  }
+
+  const ColumnSchema &key_col = base_data_->schema().column(0);
+
+  ScanSpec::PredicateList *preds = spec->mutable_predicates();
+  for (ScanSpec::PredicateList::iterator iter = preds->begin();
+       iter != preds->end();) {
+    const ColumnRangePredicate &pred = *iter;
+    if (pred.column().Equals(key_col)) {
+      VLOG(1) << "Pushing down predicate " << pred.ToString() << " on key column";
+
+      const ValueRange &range = pred.range();
+      if (range.has_lower_bound()) {
+        bool exact;
+        Status s = key_iter_->SeekAtOrAfter(range.lower_bound(), &exact);
+        if (s.IsNotFound()) {
+          // The lower bound is after the end of the key range.
+          // Thus, no rows will pass the predicate, so we set the lower bound
+          // to the end of the file.
+          lower_bound_idx_ = row_count_;
+          return Status::OK();
+        }
+        RETURN_NOT_OK(s);
+
+        lower_bound_idx_ = std::max(lower_bound_idx_, (size_t)key_iter_->GetCurrentOrdinal());
+        VLOG(1) << "Pushed lower bound value " << key_col.Stringify(range.lower_bound()) << " as "
+                << "row_idx >= " << lower_bound_idx_;
+      }
+      if (range.has_upper_bound()) {
+        bool exact;
+        Status s = key_iter_->SeekAtOrAfter(range.upper_bound(), &exact);
+        if (s.IsNotFound()) {
+          // The upper bound is after the end of the key range - the existing upper bound
+          // at EOF is correct.
+        } else {
+          RETURN_NOT_OK(s);
+
+          if (exact) {
+            upper_bound_idx_ = std::min(upper_bound_idx_, (size_t)key_iter_->GetCurrentOrdinal());
+          } else {
+            upper_bound_idx_ = std::min(upper_bound_idx_, (size_t)key_iter_->GetCurrentOrdinal() - 1);
+          }
+
+          VLOG(1) << "Pushed upper bound value " << key_col.Stringify(range.upper_bound()) << " as "
+                  << "row_idx <= " << upper_bound_idx_;
+        }
+      }
+
+      iter = preds->erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+  return Status::OK();
 }
 
 Status CFileSet::Iterator::SeekToOrdinal(uint32_t ord_idx) {
   DCHECK(initted_);
-  BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
-    RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
+  if (ord_idx < row_count_) {
+    BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+      RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
+    }
+  } else {
+    DCHECK_EQ(ord_idx, row_count_);
+    // Seeking CFileIterator to EOF causes a NotFound error here.
+    // TODO: consider allowing CFileIterator to seek exactly to EOF.
   }
-
-  cur_idx_ = 0;
+  cur_idx_ = ord_idx;
 
   Unprepare();
 
@@ -221,7 +296,7 @@ void CFileSet::Iterator::Unprepare() {
 Status CFileSet::Iterator::PrepareBatch(size_t *n) {
   DCHECK_EQ(prepared_count_, 0) << "Already prepared";
 
-  size_t remaining = row_count_ - cur_idx_;
+  size_t remaining = upper_bound_idx_ + 1 - cur_idx_;
   if (*n > remaining) {
     *n = remaining;
   }

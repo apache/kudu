@@ -6,6 +6,7 @@
 
 #include "tablet/cfile_set.h"
 #include "tablet/layer-test-base.h"
+#include "tablet/tablet-test-base.h"
 #include "util/test_util.h"
 
 DECLARE_int32(cfile_default_block_size);
@@ -28,10 +29,14 @@ public:
   void SetUp() {
     KuduTest::SetUp();
     layer_dir_ = GetTestPath("layer");
+
+    // Use a small cfile block size, so that when we skip materializing a given
+    // column for 10,000 rows, it can actually skip over a number of blocks.
+    FLAGS_cfile_default_block_size = 512;
   }
 
   // Write out a test layer with two int columns.
-  // The first column simply contains the row index.
+  // The first column contains the row index * 2.
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
   void WriteTestLayer(int nrows) {
@@ -43,7 +48,7 @@ public:
     RowBuilder rb(schema_);
     for (int i = 0; i < nrows; i++) {
       rb.Reset();
-      rb.AddUint32(i);
+      rb.AddUint32(i * 2);
       rb.AddUint32(i * 10);
       rb.AddUint32(i * 100);
       ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
@@ -51,18 +56,50 @@ public:
     ASSERT_STATUS_OK(lw.Finish());
   }
 
+  // Issue a range scan between 'lower' and 'upper', and verify that all result
+  // rows indeed fall inside that predicate.
+  void DoTestRangeScan(const shared_ptr<CFileSet> &fileset,
+                       boost::optional<uint32_t> lower,
+                       boost::optional<uint32_t> upper) {
+    // Create iterator.
+    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_));
+    gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+
+    // Create a scan with a range predicate on the key column.
+    ScanSpec spec;
+    ColumnRangePredicate pred1(
+      schema_.column(0),
+      boost::make_optional(lower, reinterpret_cast<const void *>(lower.get_ptr())),
+      boost::make_optional(upper, reinterpret_cast<const void *>(upper.get_ptr())));
+    spec.AddPredicate(pred1);
+    ASSERT_STATUS_OK(iter->Init(&spec));
+
+    // Check that the range was respected on all the results.
+    Arena arena(1024, 1024);
+    RowBlock block(schema_, 100, &arena);
+    while (iter->HasNext()) {
+      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+      for (size_t i = 0; i < block.nrows(); i++) {
+        if (block.selection_vector()->IsRowSelected(i)) {
+          if ((lower && *schema_.ExtractColumnFromRow<UINT32>(block.row_slice(i), 0) < lower.get()) ||
+              (upper && *schema_.ExtractColumnFromRow<UINT32>(block.row_slice(i), 0) > upper.get())) {
+            FAIL() << "Row " << schema_.DebugRow(block.row_ptr(i)) << " should not have "
+                   << "passed predicate " << pred1.ToString();
+          }
+        }
+      }
+    }
+  }
+
+
 protected:
   Schema schema_;
   string layer_dir_;
+  google::FlagSaver saver;
 };
 
 
 TEST_F(TestCFileSet, TestPartiallyMaterialize) {
-  google::FlagSaver saver;
-  // Use a small cfile block size, so that when we skip materializing a given
-  // column for 10,000 rows, it can actually skip over a number of blocks.
-  FLAGS_cfile_default_block_size = 512;
-
   const int kCycleInterval = 10000;
   const int kNumRows = 100000;
   WriteTestLayer(kNumRows);
@@ -82,6 +119,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 
     size_t n = block.nrows();
     ASSERT_STATUS_OK_FAST(iter->PrepareBatch(&n));
+    block.Resize(n);
 
     // Cycle between:
     // 0: materializing just column 0
@@ -97,9 +135,10 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
       // Verify
       for (int i = 0; i < n; i++) {
         uint32_t got = *reinterpret_cast<uint32_t *>(col.cell_ptr(i));
-        if (got != row_idx + i) {
+        uint32_t expected = (row_idx + i) * 2;
+        if (got != expected) {
           FAIL() << "Failed at row index " << (row_idx + i) << ": expected "
-                 << (row_idx + i) << " got " << got;
+                 << expected << " got " << got;
         }
       }
     }
@@ -142,6 +181,82 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_LT(stats[0].rows_read, kNumRows * 3 / 4);
   ASSERT_LT(stats[1].rows_read, kNumRows * 3 / 4);
 }
+
+// Add a range predicate on the key column and ensure that only the relevant small number of rows
+// are read off disk.
+TEST_F(TestCFileSet, TestRangeScan) {
+  const int kNumRows = 10000;
+  WriteTestLayer(kNumRows);
+
+  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), layer_dir_, schema_));
+  ASSERT_STATUS_OK(fileset->OpenAllColumns());
+
+  // Create iterator.
+  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_));
+  gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+
+  // Create a scan with a range predicate on the key column.
+  ScanSpec spec;
+  uint32_t lower = 2000;
+  uint32_t upper = 2009;
+  ColumnRangePredicate pred1(schema_.column(0), &lower, &upper);
+  spec.AddPredicate(pred1);
+  ASSERT_STATUS_OK(iter->Init(&spec));
+
+  // Check that the bounds got pushed as index bounds.
+  // Since the key column is the rowidx * 2, we need to divide the integer bounds
+  // back down.
+  EXPECT_EQ(lower / 2, cfile_iter->lower_bound_idx_);
+  EXPECT_EQ(upper / 2, cfile_iter->upper_bound_idx_);
+
+  // Read all the results.
+  vector<string> results;
+  ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+
+  // Ensure that we got the expected rows.
+  BOOST_FOREACH(const string &str, results) {
+    LOG(INFO) << str;
+  }
+  ASSERT_EQ(5, results.size());
+  EXPECT_EQ("(uint32 c0=2000, uint32 c1=10000, uint32 c2=100000)", results[0]);
+  EXPECT_EQ("(uint32 c0=2008, uint32 c1=10040, uint32 c2=100400)", results[4]);
+
+  // Ensure that we only read the relevant range from all of the columns.
+  // Since it's a small range, it should be all in one data block in each column.
+  vector<CFileIterator::IOStatistics> stats;
+  cfile_iter->GetIOStatistics(&stats);
+  EXPECT_EQ(stats[0].data_blocks_read, 1);
+  EXPECT_EQ(stats[1].data_blocks_read, 1);
+  EXPECT_EQ(stats[2].data_blocks_read, 1);
+}
+
+// Several other black-box tests for range scans. These are similar to
+// TestRangeScan above, except don't inspect internal state.
+TEST_F(TestCFileSet, TestRangePredicates2) {
+  const int kNumRows = 10000;
+  WriteTestLayer(kNumRows);
+
+  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), layer_dir_, schema_));
+  ASSERT_STATUS_OK(fileset->OpenAllColumns());
+
+  // Range scan where rows match on both ends
+  DoTestRangeScan(fileset, 2000, 2010);
+  // Range scan which falls between rows on both ends
+  DoTestRangeScan(fileset, 2001, 2009);
+  // Range scan with open lower bound
+  DoTestRangeScan(fileset, boost::none, 2009);
+  // Range scan with open upper bound
+  DoTestRangeScan(fileset, 2001, boost::none);
+  // Range scan with upper bound coming at end of data
+  DoTestRangeScan(fileset, 2001, kNumRows * 2);
+  // Range scan with upper bound coming after end of data
+  DoTestRangeScan(fileset, 2001, kNumRows * 10);
+  // Range scan with lower bound coming at end of data
+  DoTestRangeScan(fileset, kNumRows * 2, boost::none);
+  // Range scan with lower bound coming after end of data
+  DoTestRangeScan(fileset, kNumRows * 10, boost::none);
+}
+
 
 } // namespace tablet
 } // namespace kudu

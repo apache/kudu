@@ -96,6 +96,9 @@ public:
 
   string ToString() const;
 
+  // Return the value range for which this predicate passes.
+  const ValueRange &range() const { return range_; }
+
 private:
   ColumnSchema col_;
   ValueRange range_;

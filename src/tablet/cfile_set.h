@@ -3,6 +3,7 @@
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
 #include <boost/noncopyable.hpp>
+#include <gtest/gtest.h>
 #include <string>
 #include <tr1/memory>
 
@@ -96,7 +97,7 @@ public:
 
   virtual bool HasNext() const {
     DCHECK(initted_);
-    return cur_idx_ < row_count_;
+    return cur_idx_ <= upper_bound_idx_;
   }
 
   virtual string ToString() const {
@@ -111,6 +112,7 @@ public:
   void GetIOStatistics(vector<CFileIterator::IOStatistics> *stats);
 
 private:
+  FRIEND_TEST(TestCFileSet, TestRangeScan);
   friend class CFileSet;
 
   Iterator(const shared_ptr<CFileSet const> &base_data,
@@ -122,6 +124,12 @@ private:
   {
     CHECK_OK(base_data_->CountRows(&row_count_));
   }
+
+
+  // Look for a predicate which can be converted into a range scan using the key
+  // column's index. If such a predicate exists, remove it from the scan spec and
+  // store it in member fields.
+  Status PushdownRangeScanPredicate(ScanSpec *spec);
 
   Status SeekToOrdinal(uint32_t ord_idx);
   void Unprepare();
@@ -144,6 +152,13 @@ private:
 
   // The total number of rows in the file
   size_t row_count_;
+
+  // Upper and lower (inclusive) bounds for this iterator, in terms of ordinal row indexes.
+  // Both of these bounds are _inclusive_, and are always set (even if there is no predicate).
+  // If there is no predicate, then the bounds will be [0, row_count_-1]
+  size_t lower_bound_idx_;
+  size_t upper_bound_idx_;
+
 
   // The underlying columns are prepared lazily, so that if a column is never
   // materialized, it doesn't need to be read off disk.
