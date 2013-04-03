@@ -6,6 +6,7 @@
 #include <boost/smart_ptr/detail/spinlock.hpp>
 #include <glog/logging.h>
 #include "gutil/port.h"
+#include "util/errno.h"
 
 namespace kudu {
 
@@ -44,7 +45,7 @@ struct percpu_rwlock {
   percpu_rwlock() {
     errno = 0;
     n_cpus_ = sysconf(_SC_NPROCESSORS_CONF);
-    CHECK_EQ(errno, 0) << strerror(errno);
+    CHECK_EQ(errno, 0) << ErrnoToString(errno);
     CHECK_GT(n_cpus_, 0);
     locks_ = new padded_lock[n_cpus_];
   }

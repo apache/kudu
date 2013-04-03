@@ -44,23 +44,37 @@ class Status {
   static Status OK() { return Status(); }
 
   // Return error status of an appropriate type.
-  static Status NotFound(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kNotFound, msg, msg2);
+  static Status NotFound(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kNotFound, msg, msg2, posix_code);
   }
-  static Status Corruption(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kCorruption, msg, msg2);
+  static Status Corruption(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kCorruption, msg, msg2, posix_code);
   }
-  static Status NotSupported(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kNotSupported, msg, msg2);
+  static Status NotSupported(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kNotSupported, msg, msg2, posix_code);
   }
-  static Status InvalidArgument(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kInvalidArgument, msg, msg2);
+  static Status InvalidArgument(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kInvalidArgument, msg, msg2, posix_code);
   }
-  static Status IOError(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kIOError, msg, msg2);
+  static Status IOError(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kIOError, msg, msg2, posix_code);
   }
-  static Status AlreadyPresent(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kAlreadyPresent, msg, msg2);
+  static Status AlreadyPresent(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kAlreadyPresent, msg, msg2, posix_code);
+  }
+  static Status RuntimeError(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kRuntimeError, msg, msg2, posix_code);
+  }
+  static Status NetworkError(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kNetworkError, msg, msg2, posix_code);
   }
 
   // Returns true iff the status indicates success.
@@ -81,16 +95,26 @@ class Status {
   // Returns true iff the status indicates an AlreadyPresent error
   bool IsAlreadyPresent() const { return code() == kAlreadyPresent; }
 
+  // Returns true iff the status indicates a RuntimeError.
+  bool IsRuntimeError() const { return code() == kRuntimeError; }
+
+  // Returns true iff the status indicates a NetworkError.
+  bool IsNetworkError() const { return code() == kNetworkError; }
+
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
   std::string ToString() const;
+
+  // Get the POSIX code associated with this Status, or -1 if there is none.
+  int16_t posix_code() const;
 
  private:
   // OK status has a NULL state_.  Otherwise, state_ is a new[] array
   // of the following form:
   //    state_[0..3] == length of message
   //    state_[4]    == code
-  //    state_[5..]  == message
+  //    state_[5..6] == posix_code
+  //    state_[7..]  == message
   const char* state_;
 
   enum Code {
@@ -100,14 +124,16 @@ class Status {
     kNotSupported = 3,
     kInvalidArgument = 4,
     kIOError = 5,
-    kAlreadyPresent = 6
+    kAlreadyPresent = 6,
+    kRuntimeError = 7,
+    kNetworkError = 8
   };
 
   Code code() const {
     return (state_ == NULL) ? kOk : static_cast<Code>(state_[4]);
   }
 
-  Status(Code code, const Slice& msg, const Slice& msg2);
+  Status(Code code, const Slice& msg, const Slice& msg2, int16_t posix_code);
   static const char* CopyState(const char* s);
 };
 

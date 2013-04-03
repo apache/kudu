@@ -12,6 +12,7 @@ ADD_LIBRARY(kudu_util
   pb_util.cc
   status.cc
   test_graph.cc
+  errno.cc
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 
@@ -26,3 +27,4 @@ ADD_KUDU_TEST(group_varint-test)
 ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(memenv/memenv-test)
 ADD_KUDU_TEST(object_pool-test)
+ADD_KUDU_TEST(status-test)
