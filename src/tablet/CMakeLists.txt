@@ -4,6 +4,7 @@ SET(TABLET_SRCS
   tablet.cc tablet-util.cc
   cfile_set.cc layer.cc
   memstore.cc
+  mvcc.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
 )
 ADD_LIBRARY(tablet ${TABLET_SRCS})
@@ -20,7 +21,8 @@ ADD_KUDU_TEST(deltamemstore-test)
 ADD_KUDU_TEST(deltafile-test)
 ADD_KUDU_TEST(cfile_set-test)
 ADD_KUDU_TEST(tablet-pushdown-test)
+ADD_KUDU_TEST(mvcc-test)
 
-# cbtree-test doesn't have dependencies on other tablet stuff
+# Some tests don't have dependencies on other tablet stuff
 SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(cbtree-test)
