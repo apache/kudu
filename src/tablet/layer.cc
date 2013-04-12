@@ -315,23 +315,26 @@ Status Layer::FlushDeltas() {
   return delta_tracker_->Flush();
 }
 
-RowwiseIterator *Layer::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *Layer::NewRowIterator(const Schema &projection,
+                                       const MvccSnapshot &mvcc_snap) const {
   CHECK(open_);
   //boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   // TODO: need to add back some appropriate locking?
 
   shared_ptr<ColumnwiseIterator> base_iter(base_data_->NewIterator(projection));
   return new MaterializingIterator(
-    shared_ptr<ColumnwiseIterator>(delta_tracker_->WrapIterator(base_iter)));
+    shared_ptr<ColumnwiseIterator>(delta_tracker_->WrapIterator(base_iter,
+                                                                mvcc_snap)));
 }
 
-Status Layer::UpdateRow(const void *key,
+Status Layer::UpdateRow(txid_t txid,
+                        const void *key,
                         const RowChangeList &update) {
   CHECK(open_);
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
-  delta_tracker_->Update(row_idx, update);
+  delta_tracker_->Update(txid, row_idx, update);
 
   return Status::OK();
 }
@@ -403,19 +406,21 @@ Status FlushInProgressLayer::Open() {
   return Status::OK();
 }
 
-RowwiseIterator *FlushInProgressLayer::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *FlushInProgressLayer::NewRowIterator(const Schema &projection,
+                                                      const MvccSnapshot &snap) const {
   CHECK(open_);
   // Use memstore as base data, updated by delta tracker
-  shared_ptr<RowwiseIterator> base_iter(ms_->NewIterator(projection));
-  return delta_tracker_->WrapIterator(base_iter);
+  shared_ptr<RowwiseIterator> base_iter(ms_->NewIterator(projection, snap));
+  return delta_tracker_->WrapIterator(base_iter, snap);
 }
 
-Status FlushInProgressLayer::UpdateRow(const void *key,
+Status FlushInProgressLayer::UpdateRow(txid_t txid,
+                                       const void *key,
                                        const RowChangeList &update) {
   CHECK(open_);
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
-  delta_tracker_->Update(row_idx, update);
+  delta_tracker_->Update(txid, row_idx, update);
 
   return Status::OK();
 }
@@ -488,7 +493,8 @@ Status CompactionInProgressLayer::Open() {
   return Status::OK();
 }
 
-RowwiseIterator *CompactionInProgressLayer::NewRowIterator(const Schema &projection) const {
+RowwiseIterator *CompactionInProgressLayer::NewRowIterator(const Schema &projection,
+                                                           const MvccSnapshot &snap) const {
   CHECK(open_);
 
   // Use a union of the input layers as the row iterator.
@@ -496,14 +502,15 @@ RowwiseIterator *CompactionInProgressLayer::NewRowIterator(const Schema &project
   // back into the input layers during the compaction.
   vector<shared_ptr<RowwiseIterator> > iters;
   BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, input_layers_) {
-    shared_ptr<RowwiseIterator> iter(layer->NewRowIterator(projection));
+    shared_ptr<RowwiseIterator> iter(layer->NewRowIterator(projection, snap));
     iters.push_back(iter);
   }
 
   return new UnionIterator(iters);
 }
 
-Status CompactionInProgressLayer::UpdateRow(const void *key,
+Status CompactionInProgressLayer::UpdateRow(txid_t txid,
+                                            const void *key,
                                             const RowChangeList &update) {
   CHECK(open_);
 
@@ -515,7 +522,7 @@ Status CompactionInProgressLayer::UpdateRow(const void *key,
   // First propagate to the relevant input layer.
   bool updated = false;
   BOOST_FOREACH(shared_ptr<LayerInterface> &layer, input_layers_) {
-    Status s = layer->UpdateRow(key, update);
+    Status s = layer->UpdateRow(txid, key, update);
     if (s.ok()) {
       updated = true;
       break;
@@ -536,7 +543,7 @@ Status CompactionInProgressLayer::UpdateRow(const void *key,
 
   // Then put in the delta tracker corresponding to the post-compaction
   // row index.
-  delta_tracker_->Update(row_idx_in_output, update);
+  delta_tracker_->Update(txid, row_idx_in_output, update);
   return Status::OK();
 }
 

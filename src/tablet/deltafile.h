@@ -15,6 +15,7 @@
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/delta_key.h"
 #include "tablet/layer-interfaces.h"
 
 namespace kudu {
@@ -32,7 +33,7 @@ namespace tablet {
 using std::tr1::shared_ptr;
 
 class DeltaFileIterator;
-
+class DeltaKey;
 
 class DeltaFileWriter : boost::noncopyable {
 public:
@@ -48,7 +49,9 @@ public:
   // object (even if someone else has a reference to the same WritableFile).
   Status Finish();
 
-  Status AppendDelta(rowid_t row_idx, const RowChangeList &delta);
+  // Append a given delta to the file. This must be called in ascending order
+  // of (key, txid).
+  Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
 private:
   const Schema schema_;
@@ -63,7 +66,8 @@ private:
   // The index of the previously written row.
   // This is used in debug mode to make sure that rows are appended
   // in order.
-  rowid_t last_row_idx_;
+  DeltaKey last_key_;
+  bool has_appended_;
   #endif
 };
 
@@ -75,7 +79,9 @@ public:
                      const Schema &schema,
                      gscoped_ptr<DeltaFileReader> *reader);
 
-  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection);
+  // See DeltaTrackerInterface::NewDeltaIterator(...)
+  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection,
+                                                   const MvccSnapshot &snap);
 
   const Schema &schema() const {
     return schema_;
@@ -149,7 +155,8 @@ private:
   };
 
 
-  DeltaFileIterator(DeltaFileReader *dfr, const Schema &projection);
+  DeltaFileIterator(DeltaFileReader *dfr, const Schema &projection,
+                    const MvccSnapshot &snap);
 
 
   // Determine the row index of the first update in the block currently
@@ -164,7 +171,6 @@ private:
   // onto the end of the delta_blocks_ queue.
   Status ReadCurrentBlockOntoQueue();
 
-  static Status DecodeUpdatedIndexFromSlice(const Slice &s, rowid_t *idx);
   Status ApplyEncodedDelta(const Slice &s, size_t col_idx, 
                            rowid_t start_row, ColumnBlock *dst,
                            bool *done) const;
@@ -175,8 +181,12 @@ private:
   const Schema projection_;
   vector<size_t> projection_indexes_;
 
+  // The MVCC state which determines which deltas should be applied.
+  const MvccSnapshot mvcc_snap_;
+
   gscoped_ptr<cfile::IndexTreeIterator> index_iter_;
 
+  // TODO: add better comments here.
   rowid_t prepared_idx_;
   uint32_t prepared_count_;
   bool prepared_;
@@ -185,6 +195,9 @@ private:
   // After PrepareToApply(), the set of delta blocks in the delta file
   // which correspond to prepared_block_.
   boost::ptr_deque<PreparedDeltaBlock> delta_blocks_;
+
+  // Temporary buffer used in seeking.
+  faststring tmp_buf_;
 };
 
 } // namespace tablet

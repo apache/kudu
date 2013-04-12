@@ -60,10 +60,17 @@ public:
   Status UpdateRow(const void *key,
                    const RowChangeList &update);
 
-  // Create a new row iterator.
+  // Create a new row iterator which yields the rows as of the current MVCC
+  // state of this tablet.
   // The returned iterator is not initialized.
   Status NewRowIterator(const Schema &projection,
                         gscoped_ptr<RowwiseIterator> *iter) const;
+
+  // Create a new row iterator for some historical snapshot.
+  Status NewRowIterator(const Schema &projection,
+                        const MvccSnapshot &snap,
+                        gscoped_ptr<RowwiseIterator> *iter) const;
+
   Status Flush();
   Status Compact();
 
@@ -86,6 +93,9 @@ public:
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
 
+  // Return the MVCC manager for this tablet.
+  const MvccManager &mvcc_manager() const { return mvcc_; }
+
 private:
   typedef vector<shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
 
@@ -97,6 +107,7 @@ private:
   //
   // The returned iterators are not Init()ed
   Status CaptureConsistentIterators(const Schema &projection,
+                                    const MvccSnapshot &snap,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickLayersToCompact(
@@ -115,6 +126,8 @@ private:
   string dir_;
   shared_ptr<MemStore> memstore_;
   LayerVector layers_;
+
+  MvccManager mvcc_;
 
   // Lock protecting write access to the components of the tablet (memstore and layers).
   // Shared mode:

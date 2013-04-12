@@ -7,6 +7,7 @@
 
 #include <boost/noncopyable.hpp>
 
+#include "common/schema.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
 #include "util/faststring.h"
@@ -158,6 +159,33 @@ public:
       }
     }
     return Status::OK();
+  }
+
+  // Return a string form of this changelist.
+  string ToString() {
+    Slice save_src_(src_);
+    string ret = "SET ";
+
+    bool first = true;
+    while (HasNext()) {
+      if (!first) {
+        ret.append(", ");
+      }
+      first = false;
+
+      size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
+      const void *new_val = NULL;
+      CHECK_OK(DecodeNext(&updated_col, &new_val));
+
+      ret.append(schema_.column(updated_col).name());
+      ret.append("=");
+      ret.append(schema_.column(updated_col).Stringify(new_val));
+    }
+
+    // Reset state.
+    src_ = save_src_;
+
+    return ret;
   }
 
 

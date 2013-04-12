@@ -8,6 +8,7 @@
 #include "common/row.h"
 #include "common/scan_spec.h"
 #include "tablet/memstore.h"
+#include "tablet/tablet-test-util.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 
@@ -30,10 +31,9 @@ public:
   {}
 
 protected:
-  // Check that the given row in the memstore contains the given
-  // integer value.
+  // Check that the given row in the memstore contains the given data.
   void CheckValue(const shared_ptr<MemStore> &ms, string key,
-                  uint32_t expected_val) {
+                  const string &expected_row) {
     gscoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
     iter->Init(NULL);
 
@@ -44,10 +44,11 @@ protected:
     ASSERT_STATUS_OK(iter->SeekAtOrAfter(key_slice, &exact));
     ASSERT_TRUE(exact) << "unable to seek to key " << key;
     ASSERT_TRUE(iter->HasNext());
-    Slice s = iter->GetCurrentRow();
-    ASSERT_EQ(schema_.byte_size(), s.size());
 
-    ASSERT_EQ(expected_val, *schema_.ExtractColumnFromRow<UINT32>(s, 1));
+    vector<string> out;
+    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &out, 1));
+    ASSERT_EQ(1, out.size());
+    ASSERT_EQ(expected_row, out[0]) << "bad result for key " << key;
   }
 
   const Schema schema_;
@@ -60,12 +61,12 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms->Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
 
   rb.Reset();
   rb.AddString(string("goodbye world"));
   rb.AddUint32(54321);
-  ASSERT_STATUS_OK(ms->Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
 
   ASSERT_EQ(2, ms->entry_count());
 
@@ -74,7 +75,8 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
   ASSERT_TRUE(iter->HasNext());
-  Slice s = iter->GetCurrentRow();
+  MSRow row = iter->GetCurrentRow();
+  Slice s(row.row_slice());
   ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("goodbye world"),
             *schema_.ExtractColumnFromRow<STRING>(s, 0));
@@ -84,7 +86,8 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
   // Next row should be 'hello world'
   ASSERT_TRUE(iter->Next());
   ASSERT_TRUE(iter->HasNext());
-  s = iter->GetCurrentRow();
+  row = iter->GetCurrentRow();
+  s = row.row_slice();
   ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("hello world"),
             *schema_.ExtractColumnFromRow<STRING>(s, 0));
@@ -102,9 +105,9 @@ TEST_F(TestMemStore, TestInsertDuplicate) {
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms->Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
 
-  Status s = ms->Insert(rb.data());
+  Status s = ms->Insert(txid_t(0), rb.data());
   ASSERT_TRUE(s.IsAlreadyPresent()) << "bad status: " << s.ToString();
 }
 
@@ -115,25 +118,26 @@ TEST_F(TestMemStore, TestUpdate) {
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(1);
-  ASSERT_STATUS_OK(ms->Insert(rb.data()));
+  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
 
   // Validate insertion
-  CheckValue(ms, "hello world", 1);
+  CheckValue(ms, "hello world", "(string key=hello world, uint32 val=1)");
 
   // Update a key which exists.
+  txid_t txid(0);
   faststring update_buf;
   RowChangeListEncoder update(schema_, &update_buf);
   Slice key = Slice("hello world");
   uint32_t new_val = 2;
   update.AddColumnUpdate(1, &new_val);
-  ASSERT_STATUS_OK(ms->UpdateRow(&key, RowChangeList(update_buf)));
+  ASSERT_STATUS_OK(ms->UpdateRow(txid, &key, RowChangeList(update_buf)));
 
   // Validate the updated value
-  CheckValue(ms, "hello world", 2);
+  CheckValue(ms, "hello world", "(string key=hello world, uint32 val=2)");
 
   // Try to update a key which doesn't exist - should return NotFound
   key = Slice("does not exist");
-  Status s = ms->UpdateRow(&key, RowChangeList(update_buf));
+  Status s = ms->UpdateRow(txid, &key, RowChangeList(update_buf));
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 }
 
@@ -149,13 +153,14 @@ TEST_F(TestMemStore, TestInsertCopiesToArena) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
     rb.AddString(Slice(keybuf));
     rb.AddUint32(i);
-    ASSERT_STATUS_OK(ms->Insert(rb.data()));
+    ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
   }
 
   // Validate insertion
   for (uint32_t i = 0; i < 100; i++) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
-    CheckValue(ms, keybuf, i);
+    CheckValue(ms, keybuf,
+               StringPrintf("(string key=%s, uint32 val=%d)", keybuf, i));
   }
 
 }
@@ -172,13 +177,107 @@ TEST_F(TestMemStore, TestMemStoreInsertAndScan) {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(ms->Insert(rb.data()));
+      ASSERT_STATUS_OK_FAST(ms->Insert(txid_t(0), rb.data()));
     }
   }
 
   LOG_TIMING(INFO, "Counting rows") {
     int count = ms->entry_count();
     ASSERT_EQ(FLAGS_roundtrip_num_rows, count);
+  }
+}
+
+// Test that scanning at past MVCC snapshots will hide rows which are
+// not committed in that snapshot.
+TEST_F(TestMemStore, TestInsertionMVCC) {
+  MvccManager mvcc;
+  shared_ptr<MemStore> ms(new MemStore(schema_));
+  vector<MvccSnapshot> snapshots;
+
+  // Insert 5 rows in tx 0 through 4
+  for (uint32_t i = 0; i < 5; i++) {
+    {
+      ScopedTransaction tx(&mvcc);
+      RowBuilder rb(schema_);
+      char keybuf[256];
+      rb.Reset();
+      snprintf(keybuf, sizeof(keybuf), "tx%d", i);
+      rb.AddString(Slice(keybuf));
+      rb.AddUint32(i);
+      ASSERT_STATUS_OK_FAST(ms->Insert(tx.txid(), rb.data()));
+    }
+
+    // Transaction is committed. Save the snapshot after this commit.
+    snapshots.push_back(MvccSnapshot(mvcc));
+  }
+  LOG(INFO) << "Memstore after inserts:";
+  ms->DebugDump();
+
+  ASSERT_EQ(5, snapshots.size());
+  for (int i = 0; i < 5; i++) {
+    SCOPED_TRACE(i);
+    // Each snapshot 'i' is taken after row 'i' was committed.
+    vector<string> rows;
+    gscoped_ptr<RowwiseIterator> iter(ms->NewIterator(schema_, snapshots[i]));
+    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_STATUS_OK(kudu::tablet::IterateToStringList(iter.get(), &rows));
+    ASSERT_EQ(1 + i, rows.size());
+    string expected = StringPrintf("(string key=tx%d, uint32 val=%d)", i, i);
+    ASSERT_EQ(expected, rows[i]);
+  }
+}
+
+// Test that updates respect MVCC -- i.e. that scanning with a past MVCC snapshot
+// will yield old versions of a row which has been updated.
+TEST_F(TestMemStore, TestUpdateMVCC) {
+  MvccManager mvcc;
+  shared_ptr<MemStore> ms(new MemStore(schema_));
+
+  // Insert a row ("myrow", 0)
+  {
+    ScopedTransaction tx(&mvcc);
+    RowBuilder rb(schema_);
+    rb.AddString(Slice("my row"));
+    rb.AddUint32(0);
+    ASSERT_STATUS_OK_FAST(ms->Insert(tx.txid(), rb.data()));
+  }
+
+  vector<MvccSnapshot> snapshots;
+  // First snapshot is after insertion
+  snapshots.push_back(MvccSnapshot(mvcc));
+
+  // Update the row 5 times (setting its int column to increasing ints 1-5)
+  for (uint32_t i = 1; i <= 5; i++) {
+    {
+      ScopedTransaction tx(&mvcc);
+      faststring update_buf;
+      RowChangeListEncoder update(schema_, &update_buf);
+      Slice key = Slice("my row");
+      update.AddColumnUpdate(1, &i);
+      ASSERT_STATUS_OK(ms->UpdateRow(tx.txid(), &key, RowChangeList(update_buf)));
+    }
+
+    // Transaction is committed. Save the snapshot after this commit.
+    snapshots.push_back(MvccSnapshot(mvcc));
+  }
+
+  LOG(INFO) << "Memstore after updates:";
+  ms->DebugDump();
+
+  // Validate that each snapshot returns the expected value
+  ASSERT_EQ(6, snapshots.size());
+  for (int i = 0; i <= 5; i++) {
+    SCOPED_TRACE(i);
+    vector<string> rows;
+    gscoped_ptr<RowwiseIterator> iter(ms->NewIterator(schema_, snapshots[i]));
+    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_STATUS_OK(kudu::tablet::IterateToStringList(iter.get(), &rows));
+    ASSERT_EQ(1, rows.size());
+
+    string expected = StringPrintf("(string key=my row, uint32 val=%d)", i);
+    LOG(INFO) << "Reading with snapshot " << snapshots[i].ToString() << ": "
+              << rows[0];
+    EXPECT_EQ(expected, rows[0]);
   }
 }
 

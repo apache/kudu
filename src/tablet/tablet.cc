@@ -108,10 +108,19 @@ BloomFilterSizing Tablet::bloom_sizing() const {
 }
 
 Status Tablet::NewRowIterator(const Schema &projection,
+                              gscoped_ptr<RowwiseIterator> *iter) const {
+  // Yield current rows.
+  MvccSnapshot snap(mvcc_);
+  return NewRowIterator(projection, snap, iter);
+}
+
+
+Status Tablet::NewRowIterator(const Schema &projection,
+                              const MvccSnapshot &snap,
                               gscoped_ptr<RowwiseIterator> *iter) const
 {
   vector<shared_ptr<RowwiseIterator> > iters;
-  RETURN_NOT_OK(CaptureConsistentIterators(projection, &iters));
+  RETURN_NOT_OK(CaptureConsistentIterators(projection, snap, &iters));
 
   iter->reset(new UnionIterator(iters));
 
@@ -142,15 +151,17 @@ Status Tablet::Insert(const Slice &data) {
 
   // Now try to insert into memstore. The memstore itself will return
   // AlreadyPresent if it has already been inserted there.
-  return memstore_->Insert(data);
+  ScopedTransaction tx(&mvcc_);
+  return memstore_->Insert(tx.txid(), data);
 }
 
 Status Tablet::UpdateRow(const void *key,
                          const RowChangeList &update) {
+  ScopedTransaction tx(&mvcc_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // First try to update in memstore.
-  Status s = memstore_->UpdateRow(key, update);
+  Status s = memstore_->UpdateRow(tx.txid(), key, update);
   if (s.ok() || !s.IsNotFound()) {
     // if it succeeded, or if an error occurred, return.
     return s;
@@ -160,7 +171,7 @@ Status Tablet::UpdateRow(const void *key,
   // based on recent statistics - eg if a layer is getting
   // updated frequently, pick that one first.
   BOOST_FOREACH(shared_ptr<LayerInterface> &l, layers_) {
-    s = l->UpdateRow(key, update);
+    s = l->UpdateRow(tx.txid(), key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
       return s;
@@ -265,7 +276,9 @@ Status Tablet::Flush() {
 
   Schema keys_only = schema_.CreateKeyProjection();
 
-  shared_ptr<RowwiseIterator> iter(old_ms->NewIterator(keys_only));
+  // TODO: redo flush/compact with new design.
+  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  shared_ptr<RowwiseIterator> iter(old_ms->NewIterator(keys_only, snap));
   RETURN_NOT_OK(iter->Init(NULL));
 
   LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
@@ -299,7 +312,7 @@ Status Tablet::Flush() {
 
   // Step 4. Flush the non-key columns
   Schema non_keys = schema_.CreateNonKeyProjection();
-  iter.reset(old_ms->NewIterator(non_keys));
+  iter.reset(old_ms->NewIterator(non_keys, snap));
   RETURN_NOT_OK(iter->Init(NULL));
   RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get(), false, false));
   RETURN_NOT_OK(out.Finish());
@@ -419,11 +432,14 @@ Status Tablet::Compact()
 
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
 
+  // TODO: redo flush/compact with new design.
+  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+
   // Dump the selected layers to the log, and collect corresponding iterators.
   vector<shared_ptr<RowwiseIterator> > key_iters;
   LOG(INFO) << "Selected " << input_layers.size() << " layers to compact:";
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
-    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(keys_only));
+    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(keys_only, snap));
 
     LOG(INFO) << l->ToString() << "(" << l->EstimateOnDiskSize() << " bytes)";
     key_iters.push_back(row_it);
@@ -453,7 +469,7 @@ Status Tablet::Compact()
 
   vector<shared_ptr<RowwiseIterator> > full_iters;
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
-    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(schema_));
+    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(schema_, snap));
     VLOG(2) << "adding " << row_it->ToString() << " for compaction stage 2";
     full_iters.push_back(row_it);
   }
@@ -499,6 +515,7 @@ Status Tablet::Compact()
 
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
+  const MvccSnapshot &snap,
   vector<shared_ptr<RowwiseIterator> > *iters) const
 {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
@@ -508,12 +525,12 @@ Status Tablet::CaptureConsistentIterators(
   vector<shared_ptr<RowwiseIterator> > ret;
 
   // Grab the memstore iterator.
-  shared_ptr<RowwiseIterator> ms_iter(memstore_->NewRowIterator(projection));
+  shared_ptr<RowwiseIterator> ms_iter(memstore_->NewRowIterator(projection, snap));
   ret.push_back(ms_iter);
 
   // Grab all layer iterators.
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(projection));
+    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(projection, snap));
     ret.push_back(row_it);
   }
 

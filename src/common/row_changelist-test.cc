@@ -36,6 +36,9 @@ TEST(TestRowChangeList, TestEncodeDecode) {
 
   // Read it back.
   RowChangeListDecoder decoder(schema, Slice(buf));
+  EXPECT_EQ(string("SET col1=update1, col2=update2, col3=12345"),
+            decoder.ToString());
+
   size_t idx;
   const void *val;
 

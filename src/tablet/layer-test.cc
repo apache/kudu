@@ -11,6 +11,7 @@
 #include "gutil/stringprintf.h"
 #include "tablet/layer.h"
 #include "tablet/layer-test-base.h"
+#include "tablet/tablet-test-util.h"
 #include "util/env.h"
 #include "util/status.h"
 #include "util/stopwatch.h"
@@ -114,12 +115,15 @@ TEST_F(TestLayer, TestLayerUpdate) {
   // equal idx*5 (whereas in the original data, value = idx)
   unordered_set<uint32_t> updated;
   UpdateExistingRows(l.get(), FLAGS_update_fraction, &updated);
-  ASSERT_EQ(updated.size(), l->delta_tracker_->dms_->Count());
+  ASSERT_EQ((int)(n_rows_ * FLAGS_update_fraction),
+            l->delta_tracker_->dms_->Count());
 
   // Try to add an update for a key not in the file (but which falls
   // between two valid keys)
+  txid_t txid(0);
   Slice bad_key = Slice("hello 00000000000049x");
-  ASSERT_TRUE(l->UpdateRow(&bad_key, RowChangeList(Slice())).IsNotFound());
+  Status s = l->UpdateRow(txid, &bad_key, RowChangeList(Slice()));
+  ASSERT_TRUE(s.IsNotFound());
 
   // Now read back the value column, and verify that the updates
   // are visible.
@@ -140,7 +144,8 @@ TEST_F(TestLayer, TestDMSFlush) {
     // which exist. These updates will change the value to
     // equal idx*5 (whereas in the original data, value = idx)
     UpdateExistingRows(l.get(), FLAGS_update_fraction, &updated);
-    ASSERT_EQ(updated.size(), l->delta_tracker_->dms_->Count());
+    ASSERT_EQ((int)(n_rows_ * FLAGS_update_fraction),
+              l->delta_tracker_->dms_->Count());
 
     l->FlushDeltas();
 
@@ -162,6 +167,73 @@ TEST_F(TestLayer, TestDMSFlush) {
     // are visible.
     VerifyUpdates(*l, updated);
   }
+}
+
+// Test that when a single row is updated multiple times, we can query the
+// historical values using MVCC, even after it is flushed.
+TEST_F(TestLayer, TestFlushedUpdatesRespectMVCC) {
+  const Slice key_slice("row");
+
+  // Write a single row into a new Layer.
+  LOG_TIMING(INFO, "Writing layer") {
+    LayerWriter lw(env_.get(), schema_, layer_dir_,
+                   BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+
+    ASSERT_STATUS_OK(lw.Open());
+
+    RowBuilder rb(schema_);
+    rb.AddString(key_slice);
+    rb.AddUint32(1);
+    ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
+    ASSERT_STATUS_OK(lw.Finish());
+  }
+
+
+  // Reopen the layer.
+  shared_ptr<Layer> l;
+  ASSERT_STATUS_OK(OpenTestLayer(&l));
+
+  // Take a snapshot of the pre-update state.
+  vector<MvccSnapshot> snaps;
+  snaps.push_back(MvccSnapshot(mvcc_));
+
+
+  // Update the single row multiple times, taking an MVCC snapshot
+  // after each update.
+  faststring update_buf;
+  RowChangeListEncoder update(schema_, &update_buf);
+  for (uint32_t i = 2; i <= 5; i++) {
+    {
+      ScopedTransaction tx(&mvcc_);
+      update_buf.clear();
+      update.AddColumnUpdate(1, &i);
+      ASSERT_STATUS_OK_FAST(l->UpdateRow(tx.txid(),
+                                         &key_slice, RowChangeList(update_buf)));
+    }
+    snaps.push_back(MvccSnapshot(mvcc_));
+  }
+
+  // Ensure that MVCC is respected by reading the value at each of the stored
+  // snapshots.
+  ASSERT_EQ(5, snaps.size());
+  for (int i = 0; i < 5; i++) {
+    SCOPED_TRACE(i);
+    gscoped_ptr<RowwiseIterator> iter(l->NewRowIterator(schema_, snaps[i]));
+    string data = InitAndDumpIterator(iter.Pass());
+    EXPECT_EQ(StringPrintf("(string key=row, uint32 val=%d)", i + 1), data);
+  }
+
+  // Flush deltas to disk and ensure that the historical versions are still
+  // accessible.
+  ASSERT_STATUS_OK(l->FlushDeltas());
+
+  for (int i = 0; i < 5; i++) {
+    SCOPED_TRACE(i);
+    gscoped_ptr<RowwiseIterator> iter(l->NewRowIterator(schema_, snaps[i]));
+    string data = InitAndDumpIterator(iter.Pass());
+    EXPECT_EQ(StringPrintf("(string key=row, uint32 val=%d)", i + 1), data);
+  }
+
 }
 
 // Similar to TestDMSFlush above, except does not actually verify

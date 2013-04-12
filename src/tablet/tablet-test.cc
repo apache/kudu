@@ -43,6 +43,42 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_FILE_EXISTS(this->env_, Layer::GetBloomPath(layer_dir_))
 }
 
+// Test that historical data for a row is maintained even after the row
+// is flushed from the memstore.
+//
+// This test is disabled because the current implementation does not actually
+// Flush/Compact UNDO records or any other MVCC data. Instead, it just writes
+// the most up-to-date version. We should re-enable this once UNDO files are
+// implemented.
+TYPED_TEST(TestTablet, DISABLED_TestMVCCAfterFlush) {
+  // Insert 5 rows into the memstore.
+  // These rows will be inserted with txid 0 through 4.
+  vector<MvccSnapshot> snaps;
+  snaps.push_back(MvccSnapshot(this->tablet_->mvcc_manager()));
+
+  for (int i = 0; i < 5; i++) {
+    this->InsertTestRows(i, 1);
+    snaps.push_back(MvccSnapshot(this->tablet_->mvcc_manager()));
+  }
+
+  // TODO: also update a row in a bunch of transactions and make sure
+  // that update history is maintained.
+  // TODO: when delete is supported, add delete/reinsert.
+
+  // Flush the tablet.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  // Verify that reading past snapshots shows the correct number of rows.
+  for (int i = 0; i < snaps.size(); i++) {
+    vector<string> rows;
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, snaps[i], &iter));
+    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_STATUS_OK(kudu::tablet::IterateToStringList(iter.get(), &rows));
+    ASSERT_EQ(i, rows.size()) << "Bad result: " << JoinStrings(rows, "\n");
+  }
+}
+
 // Test that inserting a row which already exists causes an AlreadyPresent
 // error
 TYPED_TEST(TestTablet, TestInsertDuplicateKey) {

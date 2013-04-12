@@ -10,6 +10,7 @@
 #include "common/row_changelist.h"
 #include "util/bloom_filter.h"
 #include "util/status.h"
+#include "tablet/mvcc.h"
 
 namespace kudu {
 
@@ -68,12 +69,16 @@ public:
   //
   // If the row does not exist in this layer, returns
   // Status::NotFound().
-  virtual Status UpdateRow(const void *key,
+  virtual Status UpdateRow(txid_t txid,
+                           const void *key,
                            const RowChangeList &update) = 0;
 
   // Return a new RowIterator for this layer, with the given projection.
+  // The iterator will return rows/updates which were committed as of the time of
+  // 'snap'.
   // The returned iterator is not Initted.
-  virtual RowwiseIterator *NewRowIterator(const Schema &projection) const = 0;
+  virtual RowwiseIterator *NewRowIterator(const Schema &projection,
+                                          const MvccSnapshot &snap) const = 0;
 
   // Count the number of rows in this layer.
   virtual Status CountRows(rowid_t *count) const = 0;
@@ -105,9 +110,14 @@ class DeltaTrackerInterface {
 public:
 
   // Create a DeltaIteratorInterface for the given projection.
+  //
   // The projection corresponds to whatever scan is currently ongoing.
-  // All RowBlocks passed to this DeltaIterator will have this same schema.
-  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection_) = 0;
+  // All RowBlocks passed to this DeltaIterator must have this same schema.
+  //
+  // 'snapshot' is the MVCC state which determines which transactions
+  // should be considered committed (and thus applied by the iterator).
+  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection_,
+                                                   const MvccSnapshot &snapshot) = 0;
 
   virtual ~DeltaTrackerInterface() {}
 };

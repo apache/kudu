@@ -142,7 +142,8 @@ public:
   ////////////////////
   // Updates
   ////////////////////
-  Status UpdateRow(const void *key,
+  Status UpdateRow(txid_t txid,
+                   const void *key,
                    const RowChangeList &update);
 
   Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
@@ -150,7 +151,8 @@ public:
   ////////////////////
   // Read functions.
   ////////////////////
-  RowwiseIterator *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection,
+                                  const MvccSnapshot &snap) const;
 
 
   // Count the number of rows in this layer.
@@ -227,11 +229,12 @@ public:
                      const shared_ptr<MemStore> &ms,
                      shared_ptr<FlushInProgressLayer> *layer);
 
-  Status UpdateRow(const void *key, const RowChangeList &update);
+  Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
 
   Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
 
-  RowwiseIterator *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection,
+                                  const MvccSnapshot &snap) const;
 
   Status CountRows(rowid_t *count) const;
 
@@ -295,11 +298,12 @@ public:
                      const LayerVector &input_layers,
                      shared_ptr<CompactionInProgressLayer> *layer);
 
-  Status UpdateRow(const void *key, const RowChangeList &update);
+  Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
 
   Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
 
-  RowwiseIterator *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection,
+                                  const MvccSnapshot &snap) const;
 
   Status CountRows(rowid_t *count) const;
 

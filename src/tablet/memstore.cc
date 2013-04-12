@@ -21,6 +21,21 @@ using std::pair;
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
 
+void MSRow::AppendMutation(Mutation *mut)
+{
+  mut->next_ = NULL;
+  if (header_->mutation_head == NULL) {
+    header_->mutation_head = mut;
+  } else {
+    // Find tail and append.
+    Mutation *tail = header_->mutation_head;
+    while (tail->next_ != NULL) {
+      tail = tail->next_;
+    }
+    tail->next_ = mut;
+  }
+}
+
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
@@ -32,14 +47,16 @@ MemStore::MemStore(const Schema &schema) :
 void MemStore::DebugDump() {
   gscoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
-    Slice k, v;
-    LOG(INFO) << "row " << schema_.DebugRow(iter->GetCurrentRow().data());
+    MSRow row = iter->GetCurrentRow();
+    LOG(INFO) << "@" << row.insertion_txid() << ": row "
+              << schema_.DebugRow(row.row_slice().data())
+              << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head);
     iter->Next();
   }
 }
 
 
-Status MemStore::Insert(const Slice &data) {
+Status MemStore::Insert(txid_t txid, const Slice &data) {
   CHECK_EQ(data.size(), schema_.byte_size());
 
   faststring enc_key_buf;
@@ -48,8 +65,11 @@ Status MemStore::Insert(const Slice &data) {
 
   // Copy the non-encoded key onto the stack since we need
   // to mutate it when we relocate its Slices into our arena.
-  uint8_t row_copy[schema_.byte_size()];
-  memcpy(row_copy, data.data(), data.size());
+  DEFINE_MSROW_ON_STACK(schema(), msrow, msrow_slice);
+  msrow.header_->insertion_txid = txid;
+  msrow.header_->mutation_head = NULL;
+  uint8_t *rowdata_ptr = msrow.row_slice_.mutable_data();
+  memcpy(rowdata_ptr, data.data(), data.size());
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
   mutation.Prepare(&tree_);
@@ -64,9 +84,9 @@ Status MemStore::Insert(const Slice &data) {
   }
 
   // Copy any referred-to memory to arena.
-  RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(row_copy, schema_, &arena_));
+  RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(rowdata_ptr, schema_, &arena_));
 
-  CHECK(mutation.Insert(Slice(row_copy, data.size())))
+  CHECK(mutation.Insert(msrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 
@@ -75,7 +95,8 @@ Status MemStore::Insert(const Slice &data) {
   return Status::OK();
 }
 
-Status MemStore::UpdateRow(const void *key,
+Status MemStore::UpdateRow(txid_t txid,
+                           const void *key,
                            const RowChangeList &delta) {
   Slice unencoded_key_slice(reinterpret_cast<const uint8_t *>(key),
                             schema_.key_byte_size());
@@ -91,10 +112,11 @@ Status MemStore::UpdateRow(const void *key,
     return Status::NotFound("not in memstore");
   }
 
-  // Update the row in-place.
-  Slice existing = mutation.current_mutable_value();
-  RowChangeListDecoder decoder(schema_, delta.slice());
-  decoder.ApplyRowUpdate(&existing, &arena_);
+  Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
+
+  // Append to the linked list of mutations for this row.
+  MSRow row(mutation.current_mutable_value());
+  row.AppendMutation(mut);
 
   debug_update_count_++;
   SlowMutators();
@@ -121,16 +143,21 @@ void MemStore::SlowMutators() {
   }
 }
 
-MemStore::Iterator *MemStore::NewIterator(const Schema &projection) const {
-  return new MemStore::Iterator(shared_from_this(), tree_.NewIterator(), projection);
+MemStore::Iterator *MemStore::NewIterator(const Schema &projection,
+                                          const MvccSnapshot &snap) const {
+  // TODO: take into account 'snap'
+  return new MemStore::Iterator(shared_from_this(), tree_.NewIterator(),
+                                projection, snap);
 }
 
 MemStore::Iterator *MemStore::NewIterator() const {
-  return NewIterator(schema());
+  // TODO: can we kill this function? should be only used by tests?
+  return NewIterator(schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 }
 
-RowwiseIterator *MemStore::NewRowIterator(const Schema &projection) const{
-  return NewIterator(projection);
+RowwiseIterator *MemStore::NewRowIterator(const Schema &projection,
+                                          const MvccSnapshot &snap) const{
+  return NewIterator(projection, snap);
 }
 
 } // namespace tablet

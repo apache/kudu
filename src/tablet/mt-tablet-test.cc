@@ -93,6 +93,12 @@ public:
         ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
         CHECK_EQ(block.nrows(), 1);
 
+        if (!block.selection_vector()->IsRowSelected(0)) {
+          // Don't try to update rows which aren't visible yet --
+          // this will crash, since the data in row_slice isn't even copied.
+          continue;
+        }
+
         // The key is at the start of the row
         const uint8_t *row_key = row_slice.data();
         if (rand() % 10 == 7) {

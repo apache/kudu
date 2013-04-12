@@ -29,26 +29,11 @@ using cfile::CFileReader;
 
 namespace tablet {
 
-// TODO: this is duplicated code from deltamemstore.cc
-struct EncodedKeySlice : public Slice {
-public:
-  explicit EncodedKeySlice(rowid_t row_idx) :
-    Slice(reinterpret_cast<const uint8_t *>(&buf_int_),
-          sizeof(rowid_t)),
-    buf_int_(htonl(row_idx))
-  {
-  }
-
-private:
-  rowid_t buf_int_;
-};
-
-
 DeltaFileWriter::DeltaFileWriter(const Schema &schema,
                                  const shared_ptr<WritableFile> &file) :
   schema_(schema)
 #ifndef NDEBUG
-  ,last_row_idx_(~0)
+  ,has_appended_(false)
 #endif
 {
   cfile::WriterOptions opts;
@@ -67,27 +52,25 @@ Status DeltaFileWriter::Finish() {
 }
 
 Status DeltaFileWriter::AppendDelta(
-  rowid_t row_idx, const RowChangeList &delta) {
+  const DeltaKey &key, const RowChangeList &delta) {
   Slice delta_slice(delta.slice());
 
 #ifndef NDEBUG
   // Sanity check insertion order in debug mode.
-  if (last_row_idx_ != ~0) {
-    DCHECK_GT(row_idx, last_row_idx_) <<
-      "must insert deltas in sorted order!";
+  if (has_appended_) {
+    DCHECK(last_key_.CompareTo(key) < 0)
+      << "must insert deltas in sorted order: "
+      << "got key " << key.ToString() << " after "
+      << last_key_.ToString();
   }
-  last_row_idx_ = row_idx;
+  has_appended_ = true;
+  last_key_= key;
 #endif
-
 
   tmp_buf_.clear();
 
-  // Write the row index in big-endian, so that it
-  // sorts correctly
-  // TODO: we could probably varint encode it and save some space, no?
-  // varints still sort lexicographically, no?
-  EncodedKeySlice encoded_slice(row_idx);
-  tmp_buf_.append(encoded_slice.data(), encoded_slice.size());
+  // Write the encoded form of the key to the file.
+  key.EncodeTo(&tmp_buf_);
 
   tmp_buf_.append(delta_slice.data(), delta_slice.size());
   return writer_->AppendEntries(&tmp_buf_, 1, 0);
@@ -126,8 +109,9 @@ Status DeltaFileReader::Init() {
   return Status::OK();
 }
 
-DeltaIteratorInterface *DeltaFileReader::NewDeltaIterator(const Schema &projection) {
-  return new DeltaFileIterator(this, projection);
+DeltaIteratorInterface *DeltaFileReader::NewDeltaIterator(const Schema &projection,
+                                                          const MvccSnapshot &snap) {
+  return new DeltaFileIterator(this, projection, snap);
 }
 
 ////////////////////////////////////////////////////////////
@@ -135,10 +119,12 @@ DeltaIteratorInterface *DeltaFileReader::NewDeltaIterator(const Schema &projecti
 ////////////////////////////////////////////////////////////
 
 DeltaFileIterator::DeltaFileIterator(DeltaFileReader *dfr,
-                                     const Schema &projection) :
+                                     const Schema &projection,
+                                     const MvccSnapshot &snap) :
   dfr_(dfr),
   cfile_reader_(dfr->cfile_reader()),
   projection_(projection),
+  mvcc_snap_(snap),
   prepared_idx_(0xdeadbeef),
   prepared_count_(0),
   prepared_(false),
@@ -160,7 +146,9 @@ Status DeltaFileIterator::Init() {
 Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   CHECK(index_iter_.get() != NULL) << "Must call Init()";
 
-  EncodedKeySlice key_slice(idx);
+  tmp_buf_.clear();
+  DeltaKey(idx, txid_t(0)).EncodeTo(&tmp_buf_);
+  Slice key_slice(tmp_buf_);
 
   Status s = index_iter_->SeekAtOrBefore(&key_slice);
   if (PREDICT_FALSE(s.IsNotFound())) {
@@ -213,27 +201,24 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
 }
 
 Status DeltaFileIterator::GetFirstRowIndexInCurrentBlock(rowid_t *idx) {
-  const Slice *index_entry = DCHECK_NOTNULL(
-    reinterpret_cast<const Slice *>(index_iter_->GetCurrentKey()));
-  return DecodeUpdatedIndexFromSlice(*index_entry, idx);
+  Slice index_entry(*DCHECK_NOTNULL(reinterpret_cast<const Slice *>(
+                                      index_iter_->GetCurrentKey())));
+  DeltaKey k;
+  RETURN_NOT_OK(k.DecodeFrom(&index_entry));
+  *idx = k.row_idx();
+  return Status::OK();
 }
 
 Status DeltaFileIterator::GetLastRowIndexInDecodedBlock(const StringPlainBlockDecoder &dec,
                                                         rowid_t *idx) {
   DCHECK_GT(dec.Count(), 0);
   Slice s(dec.string_at_index(dec.Count() - 1));
-  return DecodeUpdatedIndexFromSlice(s, idx);
-}
-
-inline Status DeltaFileIterator::DecodeUpdatedIndexFromSlice(const Slice &s,
-                                                      rowid_t *idx) {
-  if (PREDICT_FALSE(s.size() < 4)) {
-    return Status::Corruption(string("Bad delta entry: " ) + s.ToDebugString());
-  }
-
-  *idx = ntohl(DecodeFixed32(s.data()));
+  DeltaKey k;
+  RETURN_NOT_OK(k.DecodeFrom(&s));
+  *idx = k.row_idx();
   return Status::OK();
 }
+
 
 string DeltaFileIterator::PreparedDeltaBlock::ToString() const {
   return StringPrintf("%d-%d (%s)", first_updated_idx_, last_updated_idx_,
@@ -279,10 +264,10 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
     for (i = block.prepared_block_start_idx_;
          i < block.decoder_->Count();
          i++) {
-      const Slice &s = block.decoder_->string_at_index(i);
-      rowid_t updated_idx = 0;
-      RETURN_NOT_OK(DecodeUpdatedIndexFromSlice(s, &updated_idx));
-      if (updated_idx >= start_row) break;
+      Slice s(block.decoder_->string_at_index(i));
+      DeltaKey key;
+      RETURN_NOT_OK(key.DecodeFrom(&s));
+      if (key.row_idx() >= start_row) break;
     }
     block.prepared_block_start_idx_ = i;
   }
@@ -350,17 +335,26 @@ Status DeltaFileIterator::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
   Slice s(s_in);
 
   // Decode and check the ID of the row we're going to update.
-  rowid_t row_idx;
-  RETURN_NOT_OK(DecodeUpdatedIndexFromSlice(s, &row_idx));
+  DeltaKey key;
+  RETURN_NOT_OK(key.DecodeFrom(&s));
+  rowid_t row_idx = key.row_idx();
+
+  // Check that the delta is within the block we're currently processing.
   if (row_idx >= start_row + dst->size()) {
+    // Delta is for a row which comes after the block we're processing.
     *done = true;
     return Status::OK();
   } else if (row_idx < start_row) {
+    // Delta is for a row which comes before the block we're processing.
     return Status::OK();
   }
+
+  // Check that the delta is considered committed by the current reader's MVCC state.
+  if (!mvcc_snap_.IsCommitted(key.txid())) {
+    return Status::OK();
+  }
+
   size_t rel_idx = row_idx - start_row;
-  // Skip the rowid we just decoded.
-  s.remove_prefix(sizeof(rowid_t));
 
   RowChangeListDecoder decoder(dfr_->schema(), s);
   return decoder.ApplyToOneColumn(col_idx, dst->cell_ptr(rel_idx), dst->arena());

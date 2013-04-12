@@ -21,28 +21,11 @@
 #include "util/test_macros.h"
 #include "util/test_util.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet-test-util.h"
 
 
 namespace kudu {
 namespace tablet {
-
-static Status IterateToStringList(RowwiseIterator *iter,
-                                  vector<string> *out) {
-  Schema schema = iter->schema();
-  Arena arena(1024, 1024);
-  RowBlock block(schema, 100, &arena);
-  while (iter->HasNext()) {
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter, &block));
-    for (size_t i = 0; i < block.nrows(); i++) {
-      if (block.selection_vector()->IsRowSelected(i)) {
-        out->push_back( schema.DebugRow(block.row_ptr(i)) );
-      }
-    }
-  }
-  std::sort(out->begin(), out->end());
-  return Status::OK();
-}
-
 
 using std::tr1::unordered_set;
 

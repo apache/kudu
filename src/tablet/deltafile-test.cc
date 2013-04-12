@@ -7,6 +7,7 @@
 
 #include "common/schema.h"
 #include "tablet/deltafile.h"
+#include "tablet/delta_tracker.h"
 #include "util/env.h"
 #include "util/env_util.h"
 #include "util/memenv/memenv.h"
@@ -52,7 +53,9 @@ public:
       uint32_t new_val = i;
       update.AddColumnUpdate(0, &new_val);
 
-      ASSERT_STATUS_OK_FAST(dfw.AppendDelta(i, RowChangeList(buf)));
+      DeltaKey key(i, txid_t(0));
+
+      ASSERT_STATUS_OK_FAST(dfw.AppendDelta(key, RowChangeList(buf)));
     }
 
     ASSERT_STATUS_OK(dfw.Finish());
@@ -73,7 +76,8 @@ public:
     gscoped_ptr<DeltaFileReader> reader;
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
 
-    gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_));
+    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_, snap));
     ASSERT_STATUS_OK(it->Init());
 
     RowBlock block(schema_, 100, &arena_);

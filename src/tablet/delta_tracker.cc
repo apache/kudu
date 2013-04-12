@@ -84,26 +84,28 @@ void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *d
 }
 
 
-ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base) const
+ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
+                                               const MvccSnapshot &mvcc_snap) const
 {
   std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
   CollectTrackers(&deltas);
-  return new DeltaMerger<ColumnwiseIterator>(base, deltas);
+  return new DeltaMerger<ColumnwiseIterator>(base, deltas, mvcc_snap);
 }
 
-RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &base) const
+RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &base,
+                                            const MvccSnapshot &mvcc_snap) const
 {
   std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
   CollectTrackers(&deltas);
-  return new DeltaMerger<RowwiseIterator>(base, deltas);
+  return new DeltaMerger<RowwiseIterator>(base, deltas, mvcc_snap);
 }
 
 
-void DeltaTracker::Update(rowid_t row_idx, const RowChangeList &update) {
+void DeltaTracker::Update(txid_t txid, rowid_t row_idx, const RowChangeList &update) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
-  dms_->Update(row_idx, update);
+  dms_->Update(txid, row_idx, update);
 }
 
 

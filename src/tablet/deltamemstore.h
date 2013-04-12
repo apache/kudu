@@ -12,6 +12,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "tablet/concurrent_btree.h"
 #include "tablet/layer-interfaces.h"
+#include "tablet/mvcc.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
@@ -34,7 +35,8 @@ public:
   // Update the given row in the database.
   // Copies the data, as well as any referenced
   // values into this DMS's local arena.
-  void Update(rowid_t row_idx, const RowChangeList &update);
+  Status Update(txid_t txid, rowid_t row_idx,
+                const RowChangeList &update);
 
   size_t Count() const {
     return tree_.count();
@@ -46,7 +48,12 @@ public:
   //
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
-  DeltaIteratorInterface *NewDeltaIterator(const Schema &projection);
+  //
+  // 'snapshot' determines which updates will be applied -- updates which come
+  // from transactions which were not yet committed at the time the snapshot was
+  // created will be ignored.
+  DeltaIteratorInterface *NewDeltaIterator(const Schema &projection,
+                                           const MvccSnapshot &snapshot);
 
   const Schema &schema() const {
     return schema_;
@@ -54,9 +61,6 @@ public:
 
 private:
   friend class DMSIterator;
-
-
-  static rowid_t DecodeKey(const Slice &key);
 
   const Schema schema_;
 
@@ -96,7 +100,8 @@ private:
   // Initialize the iterator.
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
-  DMSIterator(const shared_ptr<DeltaMemStore> &dms, const Schema &projection);
+  DMSIterator(const shared_ptr<DeltaMemStore> &dms, const Schema &projection,
+              const MvccSnapshot &snapshot);
 
 
   enum {
@@ -105,6 +110,9 @@ private:
 
   const shared_ptr<DeltaMemStore> dms_;
   const Schema projection_;
+
+  // MVCC state which allows us to ignore uncommitted transactions.
+  const MvccSnapshot mvcc_snapshot_;
 
   gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
 

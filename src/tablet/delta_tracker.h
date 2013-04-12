@@ -5,6 +5,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
 
 #include "common/iterator.h"
@@ -25,8 +26,10 @@ public:
                const Schema &schema,
                const string &dir);
 
-  ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base) const;
-  RowwiseIterator *WrapIterator(const shared_ptr<RowwiseIterator> &base) const;
+  ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
+                                   const MvccSnapshot &mvcc_snap) const;
+  RowwiseIterator *WrapIterator(const shared_ptr<RowwiseIterator> &base,
+                                const MvccSnapshot &mvcc_snap) const;
 
   Status Open();
   Status Flush();
@@ -34,7 +37,7 @@ public:
   // Update the given row in the database.
   // Copies the data, as well as any referenced
   // values into a local arena.
-  void Update(rowid_t row_idx, const RowChangeList &update);
+  void Update(txid_t txid, rowid_t row_idx, const RowChangeList &update);
 
 private:
   friend class Layer;
@@ -77,6 +80,9 @@ private:
 // Delta-merging iterators
 ////////////////////////////////////////////////////////////
 
+// A DeltaMerger takes in a stack of several DeltaTrackers as well as an underlying
+// iterator (column-wise or row-wise), and is responsible for constructing the delta
+// iterators and performing the merge of updates into the underlying data.)
 template<class IterClass>
 class DeltaMerger : public IterClass, boost::noncopyable {
 public:
@@ -117,11 +123,13 @@ private:
 
   // Construct. The base_iter should not be Initted.
   DeltaMerger(const shared_ptr<IterClass> &base_iter,
-              const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers) :
+              const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers,
+              const MvccSnapshot &snapshot) :
     base_iter_(base_iter)
   {
     BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers) {
-      delta_iters_.push_back(tracker->NewDeltaIterator(base_iter_->schema()));
+      delta_iters_.push_back(tracker->NewDeltaIterator(base_iter_->schema(),
+                                                       snapshot));
     }
   }
 

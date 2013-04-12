@@ -7,9 +7,11 @@
 
 #include "tablet/concurrent_btree.h"
 #include "tablet/layer-interfaces.h"
+#include "tablet/mutation.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
 #include "util/memory/arena.h"
+#include "util/memory/memory.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -17,18 +19,84 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
+//
+// Implementation notes:
+// --------------------------
+// The MemStore is a concurrent b-tree which stores newly inserted data which
+// has not yet been flushed to on-disk layers. In order to provide snapshot
+// consistency, data is never updated in-place in the memstore after insertion.
+// Rather, a chain of mutations hangs off each row, acting as a per-row "redo log".
+//
+// Each row is stored in exactly one CBTree entry. Its key is the encoded form
+// of the row's primary key, such that the entries sort correctly using the default
+// lexicographic comparator. The value for each row is an instance of MSRow.
+//
+// NOTE: all allocations done by the MemStore are done inside its associated
+// thread-safe arena, and then freed in bulk when the MemStore is destructed.
+
+
+// The value stored in the CBTree for a single row.
+class MSRow {
+ public:
+  explicit MSRow(const Slice &s) {
+    DCHECK_GE(s.size(), sizeof(Header));
+    row_slice_ = s;
+    header_ = reinterpret_cast<Header *>(row_slice_.mutable_data());
+    row_slice_.remove_prefix(sizeof(Header));
+  }
+
+  txid_t insertion_txid() const { return header_->insertion_txid; }
+
+  Mutation *mutation_head() { return header_->mutation_head; }
+  const Mutation *mutation_head() const { return header_->mutation_head; }
+
+  const Slice &row_slice() const { return row_slice_; }
+
+  // Append the given mutation to the end of the chain for this row.
+  // The mutation is assumed to already be in the memstore's arena.
+  void AppendMutation(Mutation *mut);
+
+ private:
+  friend class MemStore;
+
+  struct Header {
+    // txid_t for the transaction which inserted this row. If a scanner with an
+    // older snapshot sees this row, it will be ignored.
+    txid_t insertion_txid;
+
+    // Pointer to the first mutation which has been applied to this row. Each
+    // mutation is an instance of the Mutation class, making up a singly-linked
+    // list for any mutations applied to the row.
+    Mutation *mutation_head;
+  };
+
+  Header *header_;
+
+  // Actual row data.
+  Slice row_slice_;
+};
+
+// Define an MSRow instance using on-stack storage.
+// This defines an array on the stack which is sized correctly for an MSRow::Header
+// plus a single row of the given schema, then constructs an MSRow object which
+// points into that stack storage.
+#define DEFINE_MSROW_ON_STACK(schema, varname, slice_name) \
+  uint8_t varname##_size = sizeof(MSRow::Header) + schema.byte_size(); \
+  uint8_t varname##_storage[varname##_size]; \
+  Slice slice_name(varname##_storage, varname##_size); \
+  MSRow varname(slice_name);
+
+
+
 // In-memory storage for data currently being written to the tablet.
 // This is a holding area for inserts, currently held in row form
 // (i.e not columnar)
 //
 // The data is kept sorted.
-//
-// TODO: evaluate whether it makes sense to support non-sorted
-// or lazily sorted storage.
 class MemStore : boost::noncopyable,
                  public LayerInterface,
                  public std::tr1::enable_shared_from_this<MemStore> {
-public:
+ public:
   class Iterator;
 
   explicit MemStore(const Schema &schema);
@@ -44,13 +112,14 @@ public:
   // the provided memory buffer may safely be re-used or freed.
   //
   // Returns Status::OK unless allocation fails.
-  Status Insert(const Slice &data);
+  Status Insert(txid_t txid, const Slice &data);
 
 
   // Update an existing row in the memstore.
   //
   // Returns Status::NotFound if the row doesn't exist.
-  Status UpdateRow(const void *key,
+  Status UpdateRow(txid_t txid,
+                   const void *key,
                    const RowChangeList &update);
 
   // Return the number of entries in the memstore.
@@ -99,10 +168,12 @@ public:
   //
   // TODO: clarify the consistency of this iterator in the method doc
   Iterator *NewIterator() const;
-  Iterator *NewIterator(const Schema &projection) const;
+  Iterator *NewIterator(const Schema &projection,
+                        const MvccSnapshot &snap) const;
 
   // Alias to conform to Layer interface
-  RowwiseIterator *NewRowIterator(const Schema &projection) const;
+  RowwiseIterator *NewRowIterator(const Schema &projection,
+                                  const MvccSnapshot &snap) const;
 
   // Return the Schema for the rows in this memstore.
   const Schema &schema() const {
@@ -134,7 +205,7 @@ public:
     return debug_update_count_;
   }
 
-private:
+ private:
   friend class Iterator;
 
   // Temporary hack to slow down mutators when the memstore is over 1GB.
@@ -171,7 +242,7 @@ private:
 // and potentially more. Each row will be at least as current as
 // the time of construction, and potentially more current.
 class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
-public:
+ public:
   virtual ~Iterator() {}
 
   virtual Status Init(ScanSpec *spec) {
@@ -230,11 +301,34 @@ public:
       // TODO: can we share some code here with CopyRowToArena() from row.h
       // or otherwise put this elsewhere?
       iter_->GetEntryInLeaf(i, &k, &v);
-      for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-        size_t src_col_idx = projection_mapping_[proj_col_idx];
-        void *dst_cell = dst->row_ptr(fetched) + projection_.column_offset(proj_col_idx);
-        const void *src_cell = v.data() + memstore_->schema().column_offset(src_col_idx);
-        RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
+      MSRow row(v);
+      if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
+        v = row.row_slice();
+
+        uint8_t *dst_row = dst->row_ptr(fetched);
+        for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
+          size_t src_col_idx = projection_mapping_[proj_col_idx];
+          void *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
+          const void *src_cell = v.data() + memstore_->schema().column_offset(src_col_idx);
+          RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
+        }
+
+        // Roll-forward MVCC for committed updates.
+        RETURN_NOT_OK(ApplyMutationsToProjectedRow(
+                        row.header_->mutation_head, dst_row, dst->arena()));
+      } else {
+        // This row was not yet committed in the current MVCC snapshot, so zero the selection
+        // bit -- this causes it to not show up in any result set.
+        BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
+
+        // In debug mode, fill the row data for easy debugging
+        #ifndef NDEBUG
+        OverwriteWithPattern(reinterpret_cast<char *>(dst->row_ptr(fetched)),
+                             dst->schema().byte_size(),
+                             "MVCCMVCCMVCCMVCCMVCCMVCC"
+                             "MVCCMVCCMVCCMVCCMVCCMVCC"
+                             "MVCCMVCCMVCCMVCCMVCCMVCC");
+        #endif
       }
 
       // advance to next row
@@ -256,10 +350,10 @@ public:
     return iter_->IsValid();
   }
 
-  const Slice GetCurrentRow() const {
-    Slice dummy, ret;
-    iter_->GetCurrentEntry(&dummy, &ret);
-    return ret;
+  const MSRow GetCurrentRow() const {
+    Slice dummy, msrow_data;
+    iter_->GetCurrentEntry(&dummy, &msrow_data);
+    return MSRow(msrow_data);
   }
 
   bool Next() {
@@ -274,15 +368,17 @@ public:
     return projection_;
   }
 
-private:
+ private:
   friend class MemStore;
 
   Iterator(const shared_ptr<const MemStore> &ms,
            MemStore::MSBTIter *iter,
-           const Schema &projection) :
+           const Schema &projection,
+           const MvccSnapshot &mvcc_snap) :
     memstore_(ms),
     iter_(iter),
     projection_(projection),
+    mvcc_snap_(mvcc_snap),
     prepared_count_(0),
     prepared_idx_in_leaf_(0)
   {
@@ -293,11 +389,51 @@ private:
     iter_->SeekToStart();
   }
 
+  Status ApplyMutationsToProjectedRow(Mutation *mutation_head,
+                                      uint8_t *dst_row,
+                                      Arena *dst_arena) {
+    // Fast short-circuit the likely case of a row which was inserted and never
+    // updated.
+    if (PREDICT_TRUE(mutation_head == NULL)) {
+      return Status::OK();
+    }
+
+    for (Mutation *mut = mutation_head;
+         mut != NULL;
+         mut = mut->next_) {
+      if (!mvcc_snap_.IsCommitted(mut->txid_)) {
+        // Transaction which wasn't committed yet in the reader's snapshot.
+        continue;
+      }
+
+      // Apply the mutation.
+
+      // TODO: this is slow, since it makes multiple passes through the rowchangelist.
+      // Instead, we should keep the backwards mapping of columns.
+      for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
+        RowChangeListDecoder decoder(memstore_->schema(), mut->changelist_slice());
+        int memstore_col_idx = projection_mapping_[proj_col_idx];
+        uint8_t *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
+        RETURN_NOT_OK(decoder.ApplyToOneColumn(memstore_col_idx, dst_cell, dst_arena));
+      }
+    }
+
+    return Status::OK();
+  }
+
 
   const shared_ptr<const MemStore> memstore_;
   gscoped_ptr<MemStore::MSBTIter> iter_;
 
+  // The schema for the output of this iterator.
+  // This may be a reordered subset of the schema of the memstore.
   const Schema projection_;
+
+  // The MVCC snapshot which determines which rows and mutations are visible to
+  // this iterator.
+  const MvccSnapshot mvcc_snap_;
+
+  // Mapping from projected column index back to memstore column index.
   vector<size_t> projection_mapping_;
 
   size_t prepared_count_;

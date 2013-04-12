@@ -90,13 +90,14 @@ protected:
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     for (int i = 0; i < to_update; i++) {
+      ScopedTransaction tx(&mvcc_);
       uint32_t idx_to_update = random() % n_rows_;
       FormatKey(idx_to_update, buf, sizeof(buf));
       Slice key_slice(buf);
       uint32_t new_val = idx_to_update * 5;
       update_buf.clear();
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK_FAST(l->UpdateRow(
+      ASSERT_STATUS_OK_FAST(l->UpdateRow(tx.txid(),
                               &key_slice, RowChangeList(update_buf)));
       if (updated != NULL) {
         updated->insert(idx_to_update);
@@ -119,7 +120,8 @@ protected:
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
-    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(proj_val));
+    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(proj_val, snap));
     ASSERT_STATUS_OK(row_iter->Init(NULL));
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
@@ -161,7 +163,8 @@ protected:
   // using the given schema as a projection.
   static void IterateProjection(const Layer &l, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
-    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(schema));
+    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(schema, snap));
     ASSERT_STATUS_OK(row_iter->Init(NULL));
 
     int batch_size = 1000;
@@ -227,6 +230,8 @@ protected:
   Schema schema_;
   size_t n_rows_;
   string layer_dir_;
+
+  MvccManager mvcc_;
 };
 
 

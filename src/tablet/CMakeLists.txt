@@ -4,6 +4,7 @@ SET(TABLET_SRCS
   tablet.cc tablet-util.cc
   cfile_set.cc layer.cc
   memstore.cc
+  mutation.cc
   mvcc.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
 )

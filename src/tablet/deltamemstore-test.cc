@@ -32,6 +32,7 @@ static void GenerateRandomIndexes(uint32_t range, uint32_t count,
 }
 
 static void ApplyUpdates(DeltaMemStore *dms,
+                         const MvccSnapshot &snapshot,
                          uint32_t row_idx,
                          size_t col_idx,
                          ColumnBlock *cb) {
@@ -39,7 +40,7 @@ static void ApplyUpdates(DeltaMemStore *dms,
   Schema single_col_projection(boost::assign::list_of(col_schema), 0);
 
   gscoped_ptr<DeltaIteratorInterface> iter(
-    dms->NewDeltaIterator(single_col_projection));
+    dms->NewDeltaIterator(single_col_projection, snapshot));
   ASSERT_STATUS_OK(iter->Init());
   ASSERT_STATUS_OK(iter->SeekToOrdinal(row_idx));
   ASSERT_STATUS_OK(iter->PrepareBatch(cb->nrows()));
@@ -55,6 +56,7 @@ TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
   shared_ptr<DeltaMemStore> dms(new DeltaMemStore(schema));
   faststring buf;
   RowChangeListEncoder update(schema, &buf);
+  MvccManager mvcc;
 
   int n_rows = 1000;
 
@@ -63,10 +65,11 @@ TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
   unordered_set<uint32_t> indexes_to_update;
   GenerateRandomIndexes(n_rows, 100, &indexes_to_update);
   BOOST_FOREACH(uint32_t idx_to_update, indexes_to_update) {
+    ScopedTransaction tx(&mvcc);
     buf.clear();
     update.AddColumnUpdate(0, &idx_to_update);
 
-    dms->Update(idx_to_update, RowChangeList(buf));
+    dms->Update(tx.txid(), idx_to_update, RowChangeList(buf));
   }
   ASSERT_EQ(100, dms->Count());
 
@@ -75,7 +78,8 @@ TEST(TestDeltaMemStore, TestDMSSparseUpdates) {
   for (int i = 0; i < 1000; i++) {
     read_back[i] = 0xDEADBEEF;
   }
-  ApplyUpdates(dms.get(), 0, 0, &read_back);
+  MvccSnapshot snap(mvcc);
+  ApplyUpdates(dms.get(), snap, 0, 0, &read_back);
 
   // And verify that only the rows that we updated are modified within
   // the array.
@@ -101,34 +105,44 @@ TEST(TestDeltaMemStore, TestReUpdateSlice) {
   shared_ptr<DeltaMemStore> dms(new DeltaMemStore(schema));
   faststring update_buf;
   RowChangeListEncoder update(schema, &update_buf);
+  MvccManager mvcc;
 
   // Update a cell, taking care that the buffer we use to perform
   // the update gets cleared after usage. This ensures that the
   // underlying data is properly copied into the DMS arena.
   {
+    ScopedTransaction tx(&mvcc);
     char buf[256] = "update 1";
     Slice s(buf);
     update.AddColumnUpdate(0, &s);
-    dms->Update(123, RowChangeList(update_buf));
+    dms->Update(tx.txid(), 123, RowChangeList(update_buf));
     memset(buf, 0xff, sizeof(buf));
   }
+  MvccSnapshot snapshot_after_first_update(mvcc);
 
   // Update the same cell again with a different value
   {
+    ScopedTransaction tx(&mvcc);
     char buf[256] = "update 2";
     Slice s(buf);
     update_buf.clear();
     update.AddColumnUpdate(0, &s);
-    dms->Update(123, RowChangeList(update_buf));
+    dms->Update(tx.txid(), 123, RowChangeList(update_buf));
     memset(buf, 0xff, sizeof(buf));
   }
+  MvccSnapshot snapshot_after_second_update(mvcc);
 
-  // Ensure we only ended up with one entry
-  ASSERT_EQ(1, dms->Count());
+  // Ensure we end up with a second entry for the cell, at the
+  // new txid
+  ASSERT_EQ(2, dms->Count());
 
-  // Ensure that we ended up with the right data.
+  // Ensure that we ended up with the right data, and that the old MVCC snapshot
+  // yields the correct old value.
   ScopedColumnBlock<STRING> read_back(1);
-  ApplyUpdates(dms.get(), 123, 0, &read_back);
+  ApplyUpdates(dms.get(), snapshot_after_first_update, 123, 0, &read_back);
+  ASSERT_EQ("update 1", read_back[0].ToString());
+
+  ApplyUpdates(dms.get(), snapshot_after_second_update, 123, 0, &read_back);
   ASSERT_EQ("update 2", read_back[0].ToString());
 }
 
@@ -140,12 +154,13 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
                  (ColumnSchema("col3", UINT32)),
                 1);
   shared_ptr<DeltaMemStore> dms(new DeltaMemStore(schema));
+  MvccManager mvcc;
   faststring update_buf;
   RowChangeListEncoder update(schema, &update_buf);
 
   char buf[256];
-
   for (uint32_t i = 0; i < 1000; i++) {
+    ScopedTransaction tx(&mvcc);
     update_buf.clear();
 
     uint32_t val = i * 10;
@@ -155,16 +170,17 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
     Slice s(buf);
     update.AddColumnUpdate(0, &s);
 
-    dms->Update(i, RowChangeList(update_buf));
+    dms->Update(tx.txid(), i, RowChangeList(update_buf));
   }
 
   ASSERT_EQ(1000, dms->Count());
 
   // Read back the values and check correctness.
+  MvccSnapshot snap(mvcc);
   ScopedColumnBlock<UINT32> read_back(1000);
   ScopedColumnBlock<STRING> read_back_slices(1000);
-  ApplyUpdates(dms.get(), 0, 2, &read_back);
-  ApplyUpdates(dms.get(), 0, 0, &read_back_slices);
+  ApplyUpdates(dms.get(), snap, 0, 2, &read_back);
+  ApplyUpdates(dms.get(), snap, 0, 0, &read_back_slices);
 
   // When reading back the slice, do so into a different buffer -
   // otherwise if the slice references weren't properly copied above,
@@ -179,17 +195,20 @@ TEST(TestDeltaMemStore, TestDMSBasic) {
   }
 
 
-  // Update the same rows again, and ensure that no new
-  // insertions happen
+  // Update the same rows again, with new transactions. Even though
+  // the same rows are updated, new entries should be added because
+  // these are separate transactions and we need to maintain the
+  // old ones for snapshot consistency purposes.
   for (uint32_t i = 0; i < 1000; i++) {
+    ScopedTransaction tx(&mvcc);
     update_buf.clear();
 
     uint32_t val = i * 20;
     update.AddColumnUpdate(2, &val);
-    dms->Update(i, RowChangeList(update_buf));
+    dms->Update(tx.txid(), i, RowChangeList(update_buf));
   }
 
-  ASSERT_EQ(1000, dms->Count());
+  ASSERT_EQ(2000, dms->Count());
 }
 
 TEST(TestDMSIterator, TestIteratorDoesUpdates) {
@@ -200,17 +219,21 @@ TEST(TestDMSIterator, TestIteratorDoesUpdates) {
   shared_ptr<DeltaMemStore> dms(new DeltaMemStore(schema));
   faststring update_buf;
   RowChangeListEncoder update(schema, &update_buf);
+  MvccManager mvcc;
 
   for (uint32_t i = 0; i < 1000; i++) {
+    ScopedTransaction tx(&mvcc);
     update_buf.clear();
     uint32_t val = i * 10;
     update.AddColumnUpdate(0, &val);
-    dms->Update(i, RowChangeList(update_buf));
+    dms->Update(tx.txid(), i, RowChangeList(update_buf));
   }
   ASSERT_EQ(1000, dms->Count());
 
+  // TODO: test snapshot reads from different points
+  MvccSnapshot snap(mvcc);
   ScopedColumnBlock<UINT32> block(100);
-  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(dms->NewDeltaIterator(schema)));
+  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(dms->NewDeltaIterator(schema, snap)));
   ASSERT_STATUS_OK(iter->Init(););
 
   int block_start_row = 50;
