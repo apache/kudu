@@ -12,7 +12,7 @@
 #include "tablet/memstore.h"
 #include "tablet/layer.h"
 #include "util/env.h"
-#include "util/percpu_rwlock.h"
+#include "util/locks.h"
 #include "util/status.h"
 #include "util/slice.h"
 

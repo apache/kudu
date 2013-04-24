@@ -1,6 +1,7 @@
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/smart_ptr/detail/spinlock.hpp>
+#include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/thread.hpp>
@@ -8,7 +9,9 @@
 #include <glog/logging.h>
 
 #include "gutil/walltime.h"
+#include "gutil/atomicops.h"
 #include "util/errno.h"
+#include "util/locks.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -62,15 +65,15 @@ struct per_cpu_lock {
 
 };
 
-
 struct shared_data {
   shared_data() {
     errno = 0;
   }
 
+  kudu::rw_spinlock rw_spinlock;
   boost::shared_mutex rwlock;
   boost::mutex lock;
-  per_cpu_lock per_cpu;
+  kudu::percpu_rwlock per_cpu;
 };
 
 
@@ -109,6 +112,16 @@ void shared_rwlock_entry(shared_data *shared) {
   depend_on(result);
 }
 
+void shared_rw_spinlock_entry(shared_data *shared) {
+  float result = 1;
+  for (int i = 0; i < 1000000; i++) {
+    shared->rw_spinlock.lock_shared();
+    result += workload(result);
+    shared->rw_spinlock.unlock_shared();
+  }
+  depend_on(result);
+}
+
 void shared_mutex_entry(shared_data *shared) {
   float result = 1;
   for (int i = 0; i < 1000000; i++) {
@@ -132,13 +145,13 @@ void own_mutex_entry() {
   depend_on(result);
 }
 
-void cpuid_spinlock_entry(shared_data *shared) {
+void percpu_rwlock_entry(shared_data *shared) {
   float result = 1;
   for (int i = 0; i < 1000000; i++) {
-    my_spinlock *l = shared->per_cpu.get_lock();
-    l->lock();
+    kudu::rw_spinlock &l = shared->per_cpu.get_lock();
+    l.lock_shared();
     result += workload(result);
-    l->unlock();
+    l.unlock_shared();
   }
 
   depend_on(result);
@@ -150,8 +163,9 @@ enum TestMethod {
   SHARED_MUTEX,
   OWN_MUTEX,
   OWN_SPINLOCK,
-  CPUID_SPINLOCK,
-  NO_LOCK
+  PERCPU_RWLOCK,
+  NO_LOCK,
+  RW_SPINLOCK
 };
 
 void test_shared_lock(int num_threads,
@@ -182,9 +196,13 @@ void test_shared_lock(int num_threads,
         threads.push_back(new boost::thread(
                             own_mutex_entry<noop_lock>));
         break;
-      case CPUID_SPINLOCK:
+      case PERCPU_RWLOCK:
         threads.push_back(new boost::thread(
-                            cpuid_spinlock_entry, &shared));
+                            percpu_rwlock_entry, &shared));
+        break;
+      case RW_SPINLOCK:
+        threads.push_back(new boost::thread(
+                              shared_rw_spinlock_entry, &shared));
         break;
       default:
         CHECK(0) << "bad method: " << method;
@@ -208,12 +226,13 @@ int main(int argc, char **argv) {
   for (int num_threads = 1;
        num_threads < FLAGS_num_threads;
        num_threads++) {
-//    test_shared_lock(num_threads, SHARED_RWLOCK, "shared_rwlock");
-//    test_shared_lock(num_threads, SHARED_MUTEX, "shared_mutex");
+    test_shared_lock(num_threads, SHARED_RWLOCK, "shared_rwlock");
+    test_shared_lock(num_threads, SHARED_MUTEX, "shared_mutex");
     test_shared_lock(num_threads, OWN_MUTEX, "own_mutex");
     test_shared_lock(num_threads, OWN_SPINLOCK, "own_spinlock");
     test_shared_lock(num_threads, NO_LOCK, "no_lock");
-    test_shared_lock(num_threads, CPUID_SPINLOCK, "cpuid_lock");
+    test_shared_lock(num_threads, PERCPU_RWLOCK, "percpu_rwlock");
+    test_shared_lock(num_threads, RW_SPINLOCK, "rw_spinlock");
   }
 
 }

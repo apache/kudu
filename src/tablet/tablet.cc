@@ -124,7 +124,7 @@ Status Tablet::Insert(const Slice &data) {
 
   LayerKeyProbe probe(schema_, data.data());
 
-  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // First, ensure that it is a unique key by checking all the open
   // Layers
@@ -147,7 +147,7 @@ Status Tablet::Insert(const Slice &data) {
 
 Status Tablet::UpdateRow(const void *key,
                          const RowChangeList &update) {
-  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // First try to update in memstore.
   Status s = memstore_->UpdateRow(key, update);
@@ -361,7 +361,7 @@ Status Tablet::PickLayersToCompact(
   LayerVector *out_layers,
   LockVector *out_locks) const
 {
-  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   CHECK_EQ(out_layers->size(), 0);
 
   vector<shared_ptr<LayerInterface> > tmp_layers;
@@ -501,7 +501,7 @@ Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   vector<shared_ptr<RowwiseIterator> > *iters) const
 {
-  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
@@ -527,7 +527,7 @@ Status Tablet::CountRows(size_t *count) const {
   shared_ptr<MemStore> memstore;
   vector<shared_ptr<LayerInterface> > layers;
   {
-    boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
     memstore = memstore_;
     layers = layers_;
   }
@@ -545,7 +545,7 @@ Status Tablet::CountRows(size_t *count) const {
 }
 
 size_t Tablet::num_layers() const {
-  boost::lock_guard<simple_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return layers_.size();
 }
 
