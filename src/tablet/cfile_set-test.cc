@@ -113,7 +113,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 
   Arena arena(4096, 1024*1024);
   RowBlock block(schema_, 100, &arena);
-  size_t row_idx = 0;
+  rowid_t row_idx = 0;
   while (iter->HasNext()) {
     arena.Reset();
 

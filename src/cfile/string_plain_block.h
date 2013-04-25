@@ -33,7 +33,7 @@ public:
   // This Slice points to internal data of this class
   // and becomes invalid after the builder is destroyed
   // or after Finish() is called again.
-  Slice Finish(uint32_t ordinal_pos);
+  Slice Finish(rowid_t ordinal_pos);
 
   void Reset();
 
@@ -84,7 +84,7 @@ public:
     return num_elems_;
   }
 
-  virtual uint32_t ordinal_pos() const {
+  virtual rowid_t ordinal_pos() const {
     DCHECK(parsed_);
     return ordinal_pos_base_ + cur_idx_;
   }
@@ -101,8 +101,9 @@ private:
   vector<uint32_t> offsets_;
 
   uint32_t num_elems_;
-  uint32_t ordinal_pos_base_;
+  rowid_t ordinal_pos_base_;
 
+  // Index of the currently seeked element in the block.
   uint32_t cur_idx_;
 };
 

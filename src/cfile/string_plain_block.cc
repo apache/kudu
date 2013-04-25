@@ -35,7 +35,7 @@ void StringPlainBlockBuilder::Reset(){
   finished_ = false;
 }
 
-Slice StringPlainBlockBuilder::Finish(uint32_t ordinal_pos) {
+Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
   finished_ = true;
 
   size_t offsets_pos = buffer_.size();

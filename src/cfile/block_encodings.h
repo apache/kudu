@@ -9,6 +9,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "common/rowid.h"
 #include "cfile/cfile.pb.h"
 #include "util/faststring.h"
 #include "util/slice.h"
@@ -46,7 +47,7 @@ public:
   // This Slice points to internal data of this class
   // and becomes invalid after the builder is destroyed
   // or after Finish() is called again.
-  virtual Slice Finish(uint32_t ordinal_pos) = 0;
+  virtual Slice Finish(rowid_t ordinal_pos) = 0;
 
   // Reset the internal state of the encoder.
   //
@@ -130,7 +131,7 @@ public:
 
   // Return the ordinal position in the file of the currently seeked
   // entry (ie the entry that will next be returned by CopyNextValues())
-  virtual uint32_t ordinal_pos() const = 0;
+  virtual rowid_t ordinal_pos() const = 0;
 
   virtual ~BlockDecoder() {}
 };

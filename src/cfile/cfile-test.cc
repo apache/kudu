@@ -164,7 +164,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   gscoped_ptr<CFileReader> reader;
   ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
-  size_t reader_nrows;
+  rowid_t reader_nrows;
   ASSERT_STATUS_OK(reader->CountRows(&reader_nrows));
   ASSERT_EQ(nrows, reader_nrows);
 

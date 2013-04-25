@@ -77,7 +77,7 @@ public:
   // Attempt to count the total number of rows in the tablet.
   // This is not super-efficient since it must iterate over the
   // memstore in the current implementation.
-  Status CountRows(size_t *count) const;
+  Status CountRows(uint64_t *count) const;
 
   const Schema &schema() const { return schema_; }
 

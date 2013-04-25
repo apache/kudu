@@ -47,8 +47,8 @@ Status DeltaTracker::Open() {
     if (TryStripPrefixString(child, Layer::kDeltaPrefix, &suffix)) {
       // The file should be named 'delta_<N>'. N here is the index
       // of the delta file (indicating the order in which it was flushed).
-      uint32_t delta_idx;
-      if (!safe_strtou32(suffix.c_str(), &delta_idx)) {
+      uint32_t deltafile_idx;
+      if (!safe_strtou32(suffix.c_str(), &deltafile_idx)) {
         return Status::IOError(string("Bad delta file: ") + absolute_path);
       }
 
@@ -63,8 +63,8 @@ Status DeltaTracker::Open() {
 
       delta_trackers_.push_back(shared_ptr<DeltaTrackerInterface>(dfr.release()));
 
-      next_delta_idx_ = std::max(next_delta_idx_,
-                                 delta_idx + 1);
+      next_deltafile_idx_ = std::max(next_deltafile_idx_,
+                                     deltafile_idx + 1);
     } else if (TryStripPrefixString(child, Layer::kColumnPrefix, &suffix)) {
       // expected: column data
     } else {
@@ -98,7 +98,7 @@ RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &b
 }
 
 
-void DeltaTracker::Update(uint32_t row_idx, const RowChangeList &update) {
+void DeltaTracker::Update(rowid_t row_idx, const RowChangeList &update) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
@@ -108,15 +108,15 @@ void DeltaTracker::Update(uint32_t row_idx, const RowChangeList &update) {
 
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {
-  int delta_idx = next_delta_idx_++;
-  string path = Layer::GetDeltaPath(dir_, delta_idx);
+  int deltafile_idx = next_deltafile_idx_++;
+  string path = Layer::GetDeltaPath(dir_, deltafile_idx);
 
   // Open file for write.
   shared_ptr<WritableFile> out;
   Status s = env_util::OpenFileForWrite(env_, path, &out);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open output file for delta level " <<
-      delta_idx << " at path " << path << ": " << 
+      deltafile_idx << " at path " << path << ": " << 
       s.ToString();
     return s;
   }

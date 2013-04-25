@@ -5,6 +5,8 @@
 #include "cfile/cfile.h"
 #include "cfile/gvint_block.h"
 #include "common/columnblock.h"
+#include "gutil/casts.h"
+#include "gutil/mathlimits.h"
 #include "util/group_varint-inl.h"
 
 namespace kudu { namespace cfile {
@@ -73,7 +75,7 @@ Status GVIntBlockBuilder::GetFirstKey(void *key) const {
   return Status::OK();
 }
 
-Slice GVIntBlockBuilder::Finish(uint32_t ordinal_pos) {
+Slice GVIntBlockBuilder::Finish(rowid_t ordinal_pos) {
   int size_estimate = EstimateEncodedSize();
   buffer_.reserve(size_estimate);
   // TODO: negatives and big ints
@@ -85,10 +87,14 @@ Slice GVIntBlockBuilder::Finish(uint32_t ordinal_pos) {
     min = *std::min_element(ints_.begin(), ints_.end());
   }
 
+  CHECK_LT(ordinal_pos, MathLimits<uint32_t>::kMax) <<
+    "TODO: support large files";
+
   buffer_.clear();
   AppendGroupVarInt32(&buffer_,
-                      (uint32_t)size, (uint32_t)min,
-                      (uint32_t)ordinal_pos, 0);
+                      implicit_cast<uint32_t>(size),
+                      implicit_cast<uint32_t>(min),
+                      implicit_cast<uint32_t>(ordinal_pos), 0);
 
   AppendGroupVarInt32Sequence(&buffer_, min, &ints_[0], size);
 

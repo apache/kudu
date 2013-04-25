@@ -253,8 +253,8 @@ public:
   }
 
   // Return the number of rows in the tablet.
-  size_t TabletCount() const {
-    size_t count;
+  uint64_t TabletCount() const {
+    uint64_t count;
     CHECK_OK(tablet_->CountRows(&count));
     return count;
   }

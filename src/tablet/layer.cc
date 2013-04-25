@@ -329,7 +329,7 @@ Status Layer::UpdateRow(const void *key,
                         const RowChangeList &update) {
   CHECK(open_);
 
-  uint32_t row_idx;
+  rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
   delta_tracker_->Update(row_idx, update);
 
@@ -343,7 +343,7 @@ Status Layer::CheckRowPresent(const LayerKeyProbe &probe,
   return base_data_->CheckRowPresent(probe, present);
 }
 
-Status Layer::CountRows(size_t *count) const {
+Status Layer::CountRows(rowid_t *count) const {
   CHECK(open_);
 
   return base_data_->CountRows(count);
@@ -413,7 +413,7 @@ RowwiseIterator *FlushInProgressLayer::NewRowIterator(const Schema &projection) 
 Status FlushInProgressLayer::UpdateRow(const void *key,
                                        const RowChangeList &update) {
   CHECK(open_);
-  uint32_t row_idx;
+  rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
   delta_tracker_->Update(row_idx, update);
 
@@ -426,7 +426,7 @@ Status FlushInProgressLayer::CheckRowPresent(const LayerKeyProbe &probe,
   return ms_->CheckRowPresent(probe, present);
 }
 
-Status FlushInProgressLayer::CountRows(size_t *count) const {
+Status FlushInProgressLayer::CountRows(rowid_t *count) const {
   CHECK(open_);
   return base_data_->CountRows(count);
 }
@@ -507,7 +507,7 @@ Status CompactionInProgressLayer::UpdateRow(const void *key,
                                             const RowChangeList &update) {
   CHECK(open_);
 
-  uint32_t row_idx_in_output;
+  rowid_t row_idx_in_output;
   RETURN_NOT_OK( base_data_->FindRow(key, &row_idx_in_output) );
 
 
@@ -545,7 +545,7 @@ Status CompactionInProgressLayer::CheckRowPresent(const LayerKeyProbe &probe,
   return base_data_->CheckRowPresent(probe, present);
 }
 
-Status CompactionInProgressLayer::CountRows(size_t *count) const {
+Status CompactionInProgressLayer::CountRows(rowid_t *count) const {
   CHECK(open_);
   return base_data_->CountRows(count);
 }

@@ -74,7 +74,7 @@ public:
   // Return the number of rows in this cfile.
   // This is assumed to be reasonably fast (i.e does not scan
   // the data)
-  Status CountRows(size_t *count) const;
+  Status CountRows(rowid_t *count) const;
 
   uint64_t file_size() const {
     return file_size_;
@@ -187,7 +187,7 @@ public:
   // If provided seek point is past the end of the file,
   // then returns a NotFound Status.
   // TODO: do we ever want to be able to seek to the end of the file?
-  Status SeekToOrdinal(uint32_t ord_idx);
+  Status SeekToOrdinal(rowid_t ord_idx);
 
   // Seek to the given key, or to the entry directly following
   // it. If the largest key in the file is still less than
@@ -207,7 +207,7 @@ public:
   // seek. PrepareBatch() and Scan() do not change the position returned by this
   // function. FinishBatch() advances the ordinal to the position of the next
   // block to be prepared.
-  uint32_t GetCurrentOrdinal() const;
+  rowid_t GetCurrentOrdinal() const;
 
   // Prepare to read up to *n into the given column block.
   // On return sets *n to the number of prepared rows, which is always
@@ -249,7 +249,7 @@ private:
     gscoped_ptr<BlockDecoder> dblk_;
 
     // The index of the first row in this block.
-    uint32_t first_row_idx_;
+    rowid_t first_row_idx_;
 
     // When the block is first read, it is seeked to the proper position
     // and rewind_idx_ is set to that offset in the block. needs_rewind_
@@ -257,10 +257,11 @@ private:
     // it becomes true. This indicates that dblk_ is pointed at a later
     // position in the block, and should be rewound if a second call to
     // Scan() is made.
+    // rewind_idx is relative to the first entry in the block (i.e. not a rowid)
     bool needs_rewind_;
     uint32_t rewind_idx_;
 
-    uint32_t last_row_idx() const {
+    rowid_t last_row_idx() const {
       return first_row_idx_ + dblk_->Count() - 1;
     }
 
@@ -300,7 +301,7 @@ private:
 
   // State set up by PrepareBatch(...):
   bool prepared_;
-  uint32_t last_prepare_idx_;
+  rowid_t last_prepare_idx_;
   uint32_t last_prepare_count_;
 
   IOStatistics io_stats_;

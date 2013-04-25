@@ -62,7 +62,7 @@ void StringPrefixBlockBuilder::Reset() {
   last_val_.clear();
 }
 
-Slice StringPrefixBlockBuilder::Finish(uint32_t ordinal_pos) {
+Slice StringPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
   CHECK(!finished_) << "already finished";
   DCHECK_GE(buffer_.size(), kHeaderReservedLength);
 

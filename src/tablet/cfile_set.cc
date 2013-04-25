@@ -107,7 +107,7 @@ CFileSet::Iterator *CFileSet::NewIterator(const Schema &projection) const {
   return new CFileSet::Iterator(shared_from_this(), projection);
 }
 
-Status CFileSet::CountRows(size_t *count) const {
+Status CFileSet::CountRows(rowid_t *count) const {
   const shared_ptr<cfile::CFileReader> &reader = readers_[0];
   return reader->CountRows(count);
 }
@@ -120,7 +120,7 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
   return ret;
 }
 
-Status CFileSet::FindRow(const void *key, uint32_t *idx) const {
+Status CFileSet::FindRow(const void *key, rowid_t *idx) const {
   CFileIterator *key_iter;
   RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
@@ -150,7 +150,7 @@ Status CFileSet::CheckRowPresent(const LayerKeyProbe &probe, bool *present) cons
     }
   }
 
-  uint32_t junk;
+  rowid_t junk;
   Status s = FindRow(probe.raw_key(), &junk);
   if (s.IsNotFound()) {
     // In the case that the key comes past the end of the file, Seek
@@ -237,7 +237,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
         }
         RETURN_NOT_OK(s);
 
-        lower_bound_idx_ = std::max(lower_bound_idx_, (size_t)key_iter_->GetCurrentOrdinal());
+        lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
         VLOG(1) << "Pushed lower bound value " << key_col.Stringify(range.lower_bound()) << " as "
                 << "row_idx >= " << lower_bound_idx_;
       }
@@ -251,9 +251,9 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
           RETURN_NOT_OK(s);
 
           if (exact) {
-            upper_bound_idx_ = std::min(upper_bound_idx_, (size_t)key_iter_->GetCurrentOrdinal());
+            upper_bound_idx_ = std::min(upper_bound_idx_, key_iter_->GetCurrentOrdinal());
           } else {
-            upper_bound_idx_ = std::min(upper_bound_idx_, (size_t)key_iter_->GetCurrentOrdinal() - 1);
+            upper_bound_idx_ = std::min(upper_bound_idx_, key_iter_->GetCurrentOrdinal() - 1);
           }
 
           VLOG(1) << "Pushed upper bound value " << key_col.Stringify(range.upper_bound()) << " as "
@@ -269,7 +269,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   return Status::OK();
 }
 
-Status CFileSet::Iterator::SeekToOrdinal(uint32_t ord_idx) {
+Status CFileSet::Iterator::SeekToOrdinal(rowid_t ord_idx) {
   DCHECK(initted_);
   if (ord_idx < row_count_) {
     BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {

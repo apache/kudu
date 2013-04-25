@@ -116,9 +116,9 @@ public:
   // Thread which repeatedly issues CountRows() and makes sure
   // that the count doesn't go ever down.
   void CountThread(int tid) {
-    size_t last_count = 0;
+    rowid_t last_count = 0;
     while (running_insert_count_.count() > 0) {
-      size_t count;
+      uint64_t count;
       ASSERT_STATUS_OK_FAST(tablet_->CountRows(&count));
       ASSERT_GE(count, last_count);
       last_count = count;

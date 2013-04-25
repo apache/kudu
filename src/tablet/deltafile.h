@@ -48,7 +48,7 @@ public:
   // object (even if someone else has a reference to the same WritableFile).
   Status Finish();
 
-  Status AppendDelta(uint32_t row_idx, const RowChangeList &delta);
+  Status AppendDelta(rowid_t row_idx, const RowChangeList &delta);
 
 private:
   const Schema schema_;
@@ -63,7 +63,7 @@ private:
   // The index of the previously written row.
   // This is used in debug mode to make sure that rows are appended
   // in order.
-  uint32_t last_row_idx_;
+  rowid_t last_row_idx_;
   #endif
 };
 
@@ -105,7 +105,7 @@ class DeltaFileIterator : boost::noncopyable, public DeltaIteratorInterface {
 public:
   Status Init();
 
-  Status SeekToOrdinal(uint32_t idx);
+  Status SeekToOrdinal(rowid_t idx);
   Status PrepareBatch(size_t nrows);
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 private:
@@ -129,10 +129,10 @@ private:
     gscoped_ptr<cfile::StringPlainBlockDecoder> decoder_;
 
     // The first row index for which there is an update in this delta block.
-    uint32_t first_updated_idx_;
+    rowid_t first_updated_idx_;
 
     // The last row index for which there is an update in this delta block.
-    uint32_t last_updated_idx_;
+    rowid_t last_updated_idx_;
 
     // Within this block, the index of the update which is the first one that
     // needs to be consulted. This allows deltas to be skipped at the beginning
@@ -142,7 +142,7 @@ private:
     //                   <--- prepared row block --->
     // Here, we can skip a bunch of deltas at the beginning of the delta block
     // which we know don't apply to the prepared row block.
-    uint32_t prepared_block_start_idx_;
+    rowid_t prepared_block_start_idx_;
 
     // Return a string description of this prepared block, for logging.
     string ToString() const;
@@ -154,19 +154,19 @@ private:
 
   // Determine the row index of the first update in the block currently
   // pointed to by index_iter_.
-  Status GetFirstRowIndexInCurrentBlock(uint32_t *idx);
+  Status GetFirstRowIndexInCurrentBlock(rowid_t *idx);
 
   // Determine the last updated row index contained in the given decoded block.
   static Status GetLastRowIndexInDecodedBlock(
-    const cfile::StringPlainBlockDecoder &dec, uint32_t *idx);
+    const cfile::StringPlainBlockDecoder &dec, rowid_t *idx);
 
   // Read the current block of data from the current position in the file
   // onto the end of the delta_blocks_ queue.
   Status ReadCurrentBlockOntoQueue();
 
-  static Status DecodeUpdatedIndexFromSlice(const Slice &s, uint32_t *idx);
+  static Status DecodeUpdatedIndexFromSlice(const Slice &s, rowid_t *idx);
   Status ApplyEncodedDelta(const Slice &s, size_t col_idx, 
-                           uint32_t start_row, ColumnBlock *dst,
+                           rowid_t start_row, ColumnBlock *dst,
                            bool *done) const;
 
 
@@ -177,7 +177,7 @@ private:
 
   gscoped_ptr<cfile::IndexTreeIterator> index_iter_;
 
-  uint32_t prepared_idx_;
+  rowid_t prepared_idx_;
   uint32_t prepared_count_;
   bool prepared_;
   bool exhausted_;

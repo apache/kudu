@@ -228,7 +228,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   return Status::OK();
 }
 
-Status CFileReader::CountRows(size_t *count) const {
+Status CFileReader::CountRows(rowid_t *count) const {
   CHECK_EQ(state_, kInitialized);
   *count = footer_->num_values();
   return Status::OK();
@@ -315,7 +315,7 @@ string CFileIterator::IOStatistics::ToString() const {
                       data_blocks_read, rows_read);
 }
 
-Status CFileIterator::SeekToOrdinal(uint32_t ord_idx) {
+Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   Unseek();
   if (PREDICT_FALSE(posidx_iter_ == NULL)) {
     return Status::NotSupported("no positional index in file");
@@ -394,7 +394,7 @@ void CFileIterator::Unseek() {
   prepared_blocks_.clear();
 }
 
-uint32_t CFileIterator::GetCurrentOrdinal() const {
+rowid_t CFileIterator::GetCurrentOrdinal() const {
   CHECK(seeked_) << "not seeked";
   DCHECK(!prepared_blocks_.empty());
 
@@ -454,8 +454,8 @@ Status CFileIterator::PrepareBatch(size_t *n) {
 
   CHECK(!prepared_blocks_.empty());
 
-  uint32_t start_idx = last_prepare_idx_ + last_prepare_count_;
-  uint32_t end_idx = start_idx + *n;
+  rowid_t start_idx = last_prepare_idx_ + last_prepare_count_;
+  rowid_t end_idx = start_idx + *n;
 
   // Read blocks until all blocks covering the requested range are in the
   // prepared_blocks_ queue.

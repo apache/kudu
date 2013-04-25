@@ -34,7 +34,7 @@ public:
   // Update the given row in the database.
   // Copies the data, as well as any referenced
   // values into a local arena.
-  void Update(uint32_t row_idx, const RowChangeList &update);
+  void Update(rowid_t row_idx, const RowChangeList &update);
 
 private:
   friend class Layer;
@@ -53,7 +53,9 @@ private:
 
   bool open_;
 
-  uint32_t next_delta_idx_;
+  // The suffix to use on the next flushed deltafile. Delta files are named
+  // delta_<N> to designate the order in which they were flushed.
+  uint32_t next_deltafile_idx_;
 
   // The current delta memstore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;

@@ -237,14 +237,14 @@ Status Writer::FinishCurDataBlock() {
     return Status::OK();
   }
 
-  OrdinalIndex first_elem_ord = value_count_ - num_elems_in_block;
+  rowid_t first_elem_ord = value_count_ - num_elems_in_block;
 
   VLOG(1) << "Appending data block for values " <<
     first_elem_ord << "-" << (first_elem_ord + num_elems_in_block);
 
   // The current data block is full, need to push it
   // into the file, and add to index
-  Slice data = data_block_->Finish((uint32_t)first_elem_ord);
+  Slice data = data_block_->Finish(first_elem_ord);
   VLOG(2) << "estimated size=" << data_block_->EstimateEncodedSize()
           << " actual=" << data.size();
 

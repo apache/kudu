@@ -29,8 +29,6 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 
-typedef uint32_t OrdinalIndex;
-
 class BlockPointer;
 class BTreeInfoPB;
 class GVIntBlockBuilder;
@@ -134,7 +132,7 @@ private:
   uint64_t off_;
 
   // Current number of values that have been appended.
-  int value_count_;
+  rowid_t value_count_;
 
   WriterOptions options_;
 

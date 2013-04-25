@@ -34,7 +34,7 @@ public:
   // Update the given row in the database.
   // Copies the data, as well as any referenced
   // values into this DMS's local arena.
-  void Update(uint32_t row_idx, const RowChangeList &update);
+  void Update(rowid_t row_idx, const RowChangeList &update);
 
   size_t Count() const {
     return tree_.count();
@@ -56,7 +56,7 @@ private:
   friend class DMSIterator;
 
 
-  static uint32_t DecodeKey(const Slice &key);
+  static rowid_t DecodeKey(const Slice &key);
 
   const Schema schema_;
 
@@ -83,7 +83,7 @@ class DMSIterator : boost::noncopyable, public DeltaIteratorInterface {
 public:
   Status Init();
 
-  Status SeekToOrdinal(uint32_t row_idx);
+  Status SeekToOrdinal(rowid_t row_idx);
 
   Status PrepareBatch(size_t nrows);
 
@@ -110,7 +110,7 @@ private:
 
 
   // The index at which the last Prepare call was made
-  uint32_t prepared_idx_;
+  rowid_t prepared_idx_;
 
   // The number of rows for which the last Prepare call was made
   uint32_t prepared_count_;

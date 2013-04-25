@@ -56,12 +56,12 @@ public:
   // Return the number of entries in the memstore.
   // NOTE: this requires iterating all data, and is thus
   // not very fast.
-  size_t entry_count() const {
+  uint64_t entry_count() const {
     return tree_.count();
   }
 
   // Conform entry_count to LayerInterface
-  Status CountRows(size_t *count) const {
+  Status CountRows(rowid_t *count) const {
     *count = entry_count();
     return Status::OK();
   }

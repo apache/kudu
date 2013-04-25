@@ -6,6 +6,7 @@
 
 #include "common/iterator.h"
 #include "common/row.h"
+#include "common/rowid.h"
 #include "common/row_changelist.h"
 #include "util/bloom_filter.h"
 #include "util/status.h"
@@ -75,7 +76,7 @@ public:
   virtual RowwiseIterator *NewRowIterator(const Schema &projection) const = 0;
 
   // Count the number of rows in this layer.
-  virtual Status CountRows(size_t *count) const = 0;
+  virtual Status CountRows(rowid_t *count) const = 0;
 
   // Return a displayable string for this layer.
   virtual string ToString() const = 0;
@@ -84,7 +85,7 @@ public:
   virtual Status Delete() = 0;
 
   // Estimate the number of bytes on-disk
-  virtual size_t EstimateOnDiskSize() const = 0;
+  virtual uint64_t EstimateOnDiskSize() const = 0;
 
   // Return the lock used for including this Layer in a compaction.
   // This prevents multiple compactions and flushes from trying to include
@@ -139,7 +140,7 @@ public:
 
   // Seek to a particular ordinal position in the delta data. This cancels any prepared
   // block, and must be called at least once prior to PrepareToApply.
-  virtual Status SeekToOrdinal(uint32_t idx) = 0;
+  virtual Status SeekToOrdinal(rowid_t idx) = 0;
 
   // Prepare to apply deltas to a block of rows. This takes a consistent snapshot
   // of all updates to the next 'nrows' rows, so that subsequent calls to

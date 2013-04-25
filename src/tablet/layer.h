@@ -86,7 +86,7 @@ public:
 
   Status Finish();
 
-  size_t written_count() const {
+  rowid_t written_count() const {
     CHECK(finished_);
     return column_flushed_counts_[0];
   }
@@ -103,7 +103,7 @@ private:
 
   bool finished_;
   ptr_vector<cfile::Writer> cfile_writers_;
-  vector<size_t> column_flushed_counts_;
+  vector<rowid_t> column_flushed_counts_;
 };
 
 ////////////////////////////////////////////////////////////
@@ -154,7 +154,7 @@ public:
 
 
   // Count the number of rows in this layer.
-  Status CountRows(size_t *count) const;
+  Status CountRows(rowid_t *count) const;
 
   // Estimate the number of bytes on-disk
   uint64_t EstimateOnDiskSize() const;
@@ -233,11 +233,11 @@ public:
 
   RowwiseIterator *NewRowIterator(const Schema &projection) const;
 
-  Status CountRows(size_t *count) const;
+  Status CountRows(rowid_t *count) const;
 
   uint64_t EstimateOnDiskSize() const;
 
-  Status FindRow(const void *key, uint32_t *idx) const;
+  Status FindRow(const void *key, rowid_t *idx) const;
 
   string ToString() const {
     return string("FlushInProgress at ") + dir_;
@@ -301,11 +301,11 @@ public:
 
   RowwiseIterator *NewRowIterator(const Schema &projection) const;
 
-  Status CountRows(size_t *count) const;
+  Status CountRows(rowid_t *count) const;
 
   uint64_t EstimateOnDiskSize() const;
 
-  Status FindRow(const void *key, uint32_t *idx) const;
+  Status FindRow(const void *key, rowid_t *idx) const;
 
   string ToString() const {
     return string("CompactionInProgress at ") + dir_;

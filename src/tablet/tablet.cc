@@ -522,7 +522,7 @@ Status Tablet::CaptureConsistentIterators(
   return Status::OK();
 }
 
-Status Tablet::CountRows(size_t *count) const {
+Status Tablet::CountRows(uint64_t *count) const {
   // First grab a consistent view of the components of the tablet.
   shared_ptr<MemStore> memstore;
   vector<shared_ptr<LayerInterface> > layers;
@@ -536,7 +536,7 @@ Status Tablet::CountRows(size_t *count) const {
   *count = memstore->entry_count();
 
   BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, layers) {
-    size_t l_count;
+    rowid_t l_count;
     RETURN_NOT_OK(layer->CountRows(&l_count));
     *count += l_count;
   }

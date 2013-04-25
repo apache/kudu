@@ -31,7 +31,7 @@ public:
 
   int Add(const uint8_t *vals, size_t count, size_t stride);
 
-  Slice Finish(uint32_t ordinal_pos);
+  Slice Finish(rowid_t ordinal_pos);
 
   void Reset();
 
@@ -79,7 +79,7 @@ public:
 
   Status CopyNextValues(size_t *n, ColumnBlock *dst);
 
-  uint32_t ordinal_pos() const {
+  rowid_t ordinal_pos() const {
     DCHECK(parsed_) << "must parse header first";
     return ordinal_pos_base_ + cur_idx_;
   }
@@ -104,7 +104,7 @@ private:
   const uint8_t *ints_start_;
   uint32_t num_elems_;
   uint32_t min_elem_;
-  uint32_t ordinal_pos_base_;
+  rowid_t ordinal_pos_base_;
 
   const uint8_t *cur_pos_;
   size_t cur_idx_;

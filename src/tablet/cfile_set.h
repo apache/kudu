@@ -43,11 +43,11 @@ public:
   Status OpenKeyColumns();
 
   virtual Iterator *NewIterator(const Schema &projection) const;
-  Status CountRows(size_t *count) const;
+  Status CountRows(rowid_t *count) const;
   uint64_t EstimateOnDiskSize() const;
 
   // Determine the index of the given row key.
-  Status FindRow(const void *key, uint32_t *idx) const;
+  Status FindRow(const void *key, rowid_t *idx) const;
 
   const Schema &schema() const { return schema_; }
 
@@ -131,7 +131,7 @@ private:
   // store it in member fields.
   Status PushdownRangeScanPredicate(ScanSpec *spec);
 
-  Status SeekToOrdinal(uint32_t ord_idx);
+  Status SeekToOrdinal(rowid_t ord_idx);
   void Unprepare();
 
   // Prepare the given column if not already prepared.
@@ -151,13 +151,13 @@ private:
   size_t prepared_count_;
 
   // The total number of rows in the file
-  size_t row_count_;
+  rowid_t row_count_;
 
   // Upper and lower (inclusive) bounds for this iterator, in terms of ordinal row indexes.
   // Both of these bounds are _inclusive_, and are always set (even if there is no predicate).
   // If there is no predicate, then the bounds will be [0, row_count_-1]
-  size_t lower_bound_idx_;
-  size_t upper_bound_idx_;
+  rowid_t lower_bound_idx_;
+  rowid_t upper_bound_idx_;
 
 
   // The underlying columns are prepared lazily, so that if a column is never

@@ -32,15 +32,15 @@ namespace tablet {
 // TODO: this is duplicated code from deltamemstore.cc
 struct EncodedKeySlice : public Slice {
 public:
-  explicit EncodedKeySlice(uint32_t row_idx) :
+  explicit EncodedKeySlice(rowid_t row_idx) :
     Slice(reinterpret_cast<const uint8_t *>(&buf_int_),
-          sizeof(uint32_t)),
+          sizeof(rowid_t)),
     buf_int_(htonl(row_idx))
   {
   }
 
 private:
-  uint32_t buf_int_;
+  rowid_t buf_int_;
 };
 
 
@@ -70,7 +70,7 @@ Status DeltaFileWriter::Finish() {
 }
 
 Status DeltaFileWriter::AppendDelta(
-  uint32_t row_idx, const RowChangeList &delta) {
+  rowid_t row_idx, const RowChangeList &delta) {
   Slice delta_slice(delta.slice());
 
 #ifndef NDEBUG
@@ -160,7 +160,7 @@ Status DeltaFileIterator::Init() {
   return Status::OK();
 }
 
-Status DeltaFileIterator::SeekToOrdinal(uint32_t idx) {
+Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   CHECK(index_iter_.get() != NULL) << "Must call Init()";
 
   EncodedKeySlice key_slice(idx);
@@ -215,21 +215,21 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
   return Status::OK();
 }
 
-Status DeltaFileIterator::GetFirstRowIndexInCurrentBlock(uint32_t *idx) {
+Status DeltaFileIterator::GetFirstRowIndexInCurrentBlock(rowid_t *idx) {
   const Slice *index_entry = DCHECK_NOTNULL(
     reinterpret_cast<const Slice *>(index_iter_->GetCurrentKey()));
   return DecodeUpdatedIndexFromSlice(*index_entry, idx);
 }
 
 Status DeltaFileIterator::GetLastRowIndexInDecodedBlock(const StringPlainBlockDecoder &dec,
-                                                        uint32_t *idx) {
+                                                        rowid_t *idx) {
   DCHECK_GT(dec.Count(), 0);
   Slice s(dec.string_at_index(dec.Count() - 1));
   return DecodeUpdatedIndexFromSlice(s, idx);
 }
 
 inline Status DeltaFileIterator::DecodeUpdatedIndexFromSlice(const Slice &s,
-                                                      uint32_t *idx) {
+                                                      rowid_t *idx) {
   if (PREDICT_FALSE(s.size() < 4)) {
     return Status::Corruption(string("Bad delta entry: " ) + s.ToDebugString());
   }
@@ -247,8 +247,8 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
   CHECK(!projection_indexes_.empty()) << "Must Init()";
   CHECK_GT(nrows, 0);
 
-  uint32_t start_row = prepared_idx_ + prepared_count_;
-  uint32_t stop_row = start_row + nrows - 1;
+  rowid_t start_row = prepared_idx_ + prepared_count_;
+  rowid_t stop_row = start_row + nrows - 1;
 
   // Remove blocks from our list which are no longer relevant to the range
   // being prepared.
@@ -258,7 +258,7 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
   }
 
   while (!exhausted_) {
-    uint32_t next_block_rowidx;
+    rowid_t next_block_rowidx;
     RETURN_NOT_OK(GetFirstRowIndexInCurrentBlock(&next_block_rowidx));
     VLOG(2) << "Current delta block starting at row " << next_block_rowidx;
 
@@ -283,7 +283,7 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
          i < block.decoder_->Count();
          i++) {
       const Slice &s = block.decoder_->string_at_index(i);
-      uint32_t updated_idx = 0;
+      rowid_t updated_idx = 0;
       RETURN_NOT_OK(DecodeUpdatedIndexFromSlice(s, &updated_idx));
       if (updated_idx >= start_row) break;
     }
@@ -306,7 +306,7 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
   size_t projected_col = projection_indexes_[col_to_apply];
 
-  uint32_t start_row = prepared_idx_;
+  rowid_t start_row = prepared_idx_;
 
   BOOST_FOREACH(PreparedDeltaBlock &block, delta_blocks_) {
     StringPlainBlockDecoder &sbd = *block.decoder_;
@@ -345,7 +345,7 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 }
 
 Status DeltaFileIterator::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
-                                            uint32_t start_row, ColumnBlock *dst,
+                                            rowid_t start_row, ColumnBlock *dst,
                                             bool *done) const
 {
   *done = false;
@@ -353,7 +353,7 @@ Status DeltaFileIterator::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
   Slice s(s_in);
 
   // Decode and check the ID of the row we're going to update.
-  uint32_t row_idx;
+  rowid_t row_idx;
   RETURN_NOT_OK(DecodeUpdatedIndexFromSlice(s, &row_idx));
   if (row_idx >= start_row + dst->size()) {
     *done = true;
@@ -363,7 +363,7 @@ Status DeltaFileIterator::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
   }
   size_t rel_idx = row_idx - start_row;
   // Skip the rowid we just decoded.
-  s.remove_prefix(sizeof(uint32_t));
+  s.remove_prefix(sizeof(rowid_t));
 
   RowChangeListDecoder decoder(dfr_->schema(), s);
   return decoder.ApplyToOneColumn(col_idx, dst->cell_ptr(rel_idx), dst->arena());
