@@ -11,6 +11,11 @@
 
 namespace kudu {
 
+// Copy any indirect (eg STRING) data referenced by the given row into the
+// provided arena.
+//
+// The row itself is mutated so that the indirect data points to the relocated
+// storage.
 template <class ArenaType>
 inline Status CopyRowIndirectDataToArena(uint8_t *row,
                                          const Schema &schema,
@@ -34,25 +39,8 @@ inline Status CopyRowIndirectDataToArena(uint8_t *row,
   return Status::OK();
 }
 
-template <class ArenaType>
-inline Status CopyRowToArena(const Slice &row,
-                             const Schema &schema,
-                             ArenaType *dst_arena,
-                             Slice *copied) {
-  // Copy the direct row data to arena
-  if (!dst_arena->RelocateSlice(row, copied)) {
-    return Status::IOError("no space for row data in arena");
-  }
-
-  RETURN_NOT_OK(CopyRowIndirectDataToArena(
-                  copied->mutable_data(), schema, dst_arena));
-  return Status::OK();
-}
-
 // Utility class for building rows corresponding to a given schema.
 // This is used when inserting data into the MemStore or a new Layer.
-// TODO: maybe this should not have an internal Arena, but instead
-// should just take a destination arena.
 class RowBuilder : boost::noncopyable {
 public:
   RowBuilder(const Schema &schema) :
@@ -106,14 +94,6 @@ public:
     Advance();
   }
 
-  // Copy the currently built row into the destination arena.
-  // This copies all referenced data as well, such as strings.
-  // After using this method, the RowBuilder may be Reset.
-  Status CopyRowToArena(Arena *dst_arena,
-                        Slice *copied) const {
-    return kudu::CopyRowToArena(data(), schema_, dst_arena, copied);
-  }
-
   // Retrieve the data slice from the current row.
   // The Add*() functions must have been called an appropriate
   // number of times such that all columns are filled in, or else
@@ -123,8 +103,8 @@ public:
   // call to Reset().
   // Note that the Slice may also contain pointers which refer to
   // other parts of the internal Arena, so even if the returned
-  // data is copied, it is not safe to Reset(). Use CopyToArena()
-  // to make a deep copy of the current row.
+  // data is copied, it is not safe to Reset() before also calling
+  // CopyRowIndirectDataToArena.
   const Slice data() const {
     CHECK_EQ(byte_idx_, schema_.byte_size());
     return Slice(buf_, byte_idx_);

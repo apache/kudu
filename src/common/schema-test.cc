@@ -17,6 +17,23 @@ namespace tablet {
 
 using std::vector;
 
+// Copy a row and its referenced data into the given Arena.
+static Status CopyRowToArena(const Slice &row,
+                             const Schema &schema,
+                             Arena *dst_arena,
+                             Slice *copied) {
+  // Copy the direct row data to arena
+  if (!dst_arena->RelocateSlice(row, copied)) {
+    return Status::IOError("no space for row data in arena");
+  }
+
+  RETURN_NOT_OK(CopyRowIndirectDataToArena(
+                  copied->mutable_data(), schema, dst_arena));
+  return Status::OK();
+}
+
+
+
 // Test basic functionality of Schema definition
 TEST(TestSchema, TestSchema) {
   ColumnSchema col1("key", STRING);
@@ -111,14 +128,14 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddString(string("row_a_2"));
   rb.AddUint32(3);
   Slice row_a;
-  ASSERT_STATUS_OK(rb.CopyRowToArena(&arena, &row_a));
+  ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
 
   rb.Reset();
   rb.AddString(string("row_b_1"));
   rb.AddString(string("row_b_2"));
   rb.AddUint32(3);
   Slice row_b;
-  ASSERT_STATUS_OK(rb.CopyRowToArena(&arena, &row_b));
+  ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
 
   ASSERT_GT(schema.Compare(row_b.data(), row_a.data()), 0);
   ASSERT_LT(schema.Compare(row_a.data(), row_b.data()), 0);
