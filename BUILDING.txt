@@ -36,3 +36,31 @@ Building kudu
 $ cmake .
 $ make -j4
 $ make test
+
+
+Running tests with the clang AddressSanitizer enabled
+------------------------------------------------------------
+
+AddressSanitizer is a nice clang feature which can detect many types of memory
+errors. The Jenkins setup for kudu runs these tests automatically on a regular
+basis, but if you make large changes it can be a good idea to run it locally
+before pushing. To do so, you'll need a local install of clang.
+
+$ rm -Rf CMakeCache.txt CMakeFiles/
+$ CXX=/opt/bin/clang++ cmake -DKUDU_USE_ASAN=1 .   # or whatever your path to clang++
+$ make -j
+$ make test
+
+The tests will run significantly slower than without ASAN enabled, and if any
+memory error occurs, the test that triggered it will fail. You can then use a
+command like:
+
+$ src/tablet/failing-test 2>&1 | asan_symbolize.py | c++filt | less
+
+to get a proper symbolized stack trace. The asan_symbolize program can be found
+in the llvm source distribution:
+https://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/scripts/asan_symbolize.py
+
+
+For more information on AddressSanitizer, please see:
+  http://clang.llvm.org/docs/AddressSanitizer.html
