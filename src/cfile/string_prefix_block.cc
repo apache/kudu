@@ -193,7 +193,7 @@ Status StringPrefixBlockDecoder::ParseHeader() {
   // First parse the actual header.
   uint32_t unused;
   data_start_ =
-    coding::DecodeGroupVarInt32_SSE(
+    coding::DecodeGroupVarInt32_SlowButSafe(
       reinterpret_cast<const uint8_t *>(data_.data()),
       &num_elems_, &ordinal_pos_base_,
       &restart_interval_, &unused);
