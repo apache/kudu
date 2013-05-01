@@ -26,6 +26,7 @@ DeltaTracker::DeltaTracker(Env *env,
   schema_(schema),
   dir_(dir),
   open_(false),
+  next_deltafile_idx_(0),
   dms_(new DeltaMemStore(schema))
 {}
 
