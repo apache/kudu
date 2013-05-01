@@ -24,6 +24,8 @@ namespace kudu {
 //   - Null terminate with "\x00\x00" (unless this is the last column in the key)
 //   - escape '\0' with "\x00\x01" so that shorter strings compare before longer.
 // unsigned ints: encode as big-endian so that smaller ints compare before larger
+//
+// TODO: use memcmpable_varint code here to make denser int keys
 class KeyEncoder : boost::noncopyable {
 public:
   KeyEncoder(faststring *dst) : dst_(dst) {}

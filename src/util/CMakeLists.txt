@@ -5,6 +5,7 @@ ADD_LIBRARY(kudu_util
   cache.cc
   coding.cc
   group_varint.cc
+  memcmpable_varint.cc
   logging.cc
   hexdump.cc
   memory/arena.cc memory/memory.cc
@@ -28,3 +29,4 @@ ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(memenv/memenv-test)
 ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(status-test)
+ADD_KUDU_TEST(memcmpable_varint-test)

@@ -1,0 +1,147 @@
+// Copyright (c) 2013, Cloudera,inc.
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+#include "util/hexdump.h"
+#include "util/memcmpable_varint.h"
+#include "util/stopwatch.h"
+
+// Add operator<< to print pairs, used in a test below.
+// This has to be done in the 'std' namespace due to the way that
+// template resolution works.
+namespace std {
+template<typename T1, typename T2>
+ostream & operator <<(ostream &os, const pair<T1, T2> &pair) {
+  return os << "(" << pair.first << ", " << pair.second << ")";
+}
+}
+
+namespace kudu {
+
+static uint64_t Rand64() {
+  return (random() << 32) ^ random();
+}
+
+
+// Random number generator that generates different length integers
+// with equal probability -- i.e it is equally as likely to generate
+// a number with 8 bits as it is to generate one with 64 bits.
+// This is useful for testing varint implementations, where a uniform
+// random is skewed towards generating longer integers.
+static uint64_t Rand64WithRandomBitLength() {
+  return Rand64() >> (random() % 64);
+}
+
+
+static void DoRoundTripTest(uint64_t to_encode) {
+  static faststring buf;
+  buf.clear();
+  PutMemcmpableVarint64(&buf, to_encode);
+
+  uint64_t decoded;
+  Slice slice(buf);
+  bool success = GetMemcmpableVarint64(&slice, &decoded);
+  ASSERT_TRUE(success);
+  ASSERT_EQ(to_encode, decoded);
+  ASSERT_TRUE(slice.empty());
+}
+
+TEST(TestMemcmpableVarint, TestRoundTrip) {
+  srand(time(NULL));
+
+  // Test the first 100K integers
+  // (exercises the special cases for <= 67823 in the code)
+  for (int i = 0; i < 100000; i++) {
+    DoRoundTripTest(i);
+  }
+
+  // Test a bunch of random integers (which are likely to be many bytes)
+  for (int i = 0; i < 100000; i++) {
+    DoRoundTripTest(Rand64());
+  }
+}
+
+
+// Test that a composite key can be made up of multiple memcmpable
+// varints strung together, and that the resulting key compares the
+// same as the original pair of integers (i.e left-to-right).
+TEST(TestMemcmpableVarint, TestCompositeKeys) {
+  faststring buf1;
+  faststring buf2;
+
+  const int n_trials = 1000;
+
+  for (int i = 0; i < n_trials; i++) {
+    buf1.clear();
+    buf2.clear();
+
+    std::pair<uint64_t, uint64_t> p1 =
+      std::make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
+    PutMemcmpableVarint64(&buf1, p1.first);
+    PutMemcmpableVarint64(&buf1, p1.second);
+
+    std::pair<uint64_t, uint64_t> p2 =
+      std::make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
+    PutMemcmpableVarint64(&buf2, p2.first);
+    PutMemcmpableVarint64(&buf2, p2.second);
+
+    SCOPED_TRACE(testing::Message() << p1 << "\n" << HexDump(Slice(buf1))
+                 << "  vs\n" << p2 << "\n" << HexDump(Slice(buf2)));
+    if (p1 < p2) {
+      ASSERT_LT(Slice(buf1).compare(Slice(buf2)), 0);
+    } else if (p1 > p2) {
+      ASSERT_GT(Slice(buf1).compare(Slice(buf2)), 0);
+    } else {
+      ASSERT_EQ(Slice(buf1).compare(Slice(buf2)), 0);
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////
+// Benchmarks
+////////////////////////////////////////////////////////////
+
+#ifdef NDEBUG
+TEST(TestMemcmpableVarint, BenchmarkEncode) {
+  faststring buf;
+
+  int sum_sizes = 0; // need to do something with results to force evaluation
+
+  LOG_TIMING(INFO, "Encoding integers") {
+    for (int trial = 0; trial < 100; trial++) {
+      for (uint64_t i = 0; i < 1000000; i++) {
+        buf.clear();
+        PutMemcmpableVarint64(&buf, i);
+        sum_sizes += buf.size();
+      }
+    }
+  }
+  ASSERT_GT(sum_sizes, 1); // use 'sum_sizes' to avoid optimizing it out.
+}
+
+TEST(TestMemcmpableVarint, BenchmarkDecode) {
+  faststring buf;
+
+  // Encode 1M integers into the buffer
+  for (uint64_t i = 0; i < 1000000; i++) {
+    PutMemcmpableVarint64(&buf, i);
+  }
+
+  // Decode the whole buffer 100 times.
+  LOG_TIMING(INFO, "Decoding integers") {
+    uint64_t sum_vals = 0;
+    for (int trial = 0; trial < 100; trial++) {
+      Slice s(buf);
+      while (!s.empty()) {
+        uint64_t decoded;
+        CHECK(GetMemcmpableVarint64(&s, &decoded));
+        sum_vals += decoded;
+      }
+    }
+    ASSERT_GT(sum_vals, 1); // use 'sum_vals' to avoid optimizing it out.
+  }
+}
+
+#endif
+
+}
