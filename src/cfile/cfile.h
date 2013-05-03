@@ -28,6 +28,7 @@ namespace cfile {
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using google::protobuf::RepeatedPtrField;
 
 class BlockPointer;
 class BTreeInfoPB;
@@ -93,6 +94,13 @@ public:
     return state_ == kWriterFinished;
   }
 
+  // Add a key-value pair of metadata to the file. Keys should be human-readable,
+  // values may be arbitrary binary.
+  //
+  // If this is called prior to Start(), then the metadata pairs will be added in
+  // the header. Otherwise, the pairs will be added in the footer during Finish().
+  void AddMetadataPair(const Slice &key, const Slice &value);
+
   // Append a set of values to the file.
   Status AppendEntries(const void *entries, size_t count, size_t stride);
 
@@ -122,6 +130,9 @@ private:
 
   Status FinishCurDataBlock();
 
+  // Flush the current unflushed_metadata_ entries into the given protobuf
+  // field, clearing the buffer.
+  void FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field);
 
   Status CreateBlockBuilder(BlockBuilder **builder) const;
 
@@ -140,6 +151,9 @@ private:
   DataType datatype_;
   const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
+
+  // Metadata which has been added to the writer but not yet flushed.
+  vector<pair<string, string> > unflushed_metadata_;
 
   gscoped_ptr<BlockBuilder> data_block_;
   gscoped_ptr<IndexTreeBuilder> posidx_builder_;

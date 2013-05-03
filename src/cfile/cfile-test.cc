@@ -242,6 +242,38 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   ASSERT_EQ(10000, n);
 }
 
+// Test that metadata entries stored in the cfile are persisted.
+TEST_F(TestCFile, TestMetadata) {
+  const string path = GetTestPath("cfile");
+
+  // Write the file.
+  {
+    shared_ptr<WritableFile> sink;
+    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    Writer w(WriterOptions(), UINT32, GROUP_VARINT, sink);
+
+    w.AddMetadataPair("key_in_header", "header value");
+    ASSERT_STATUS_OK(w.Start());
+
+    uint32_t val = 1;
+    ASSERT_STATUS_OK(w.AppendEntries(&val, 1, 0));
+
+    w.AddMetadataPair("key_in_footer", "footer value");
+    ASSERT_STATUS_OK(w.Finish());
+  }
+
+  // Read the file and ensure metadata is present.
+  {
+    gscoped_ptr<CFileReader> reader;
+    ASSERT_STATUS_OK(CFileReader::Open(env_.get(), path, ReaderOptions(), &reader));
+    string val;
+    ASSERT_TRUE(reader->GetMetadataEntry("key_in_header", &val));
+    ASSERT_EQ(val, "header value");
+    ASSERT_TRUE(reader->GetMetadataEntry("key_in_footer", &val));
+    ASSERT_EQ(val, "footer value");
+    ASSERT_FALSE(reader->GetMetadataEntry("not a key", &val));
+  }
+}
 
 } // namespace cfile
 } // namespace kudu

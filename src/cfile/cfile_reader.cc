@@ -234,6 +234,24 @@ Status CFileReader::CountRows(rowid_t *count) const {
   return Status::OK();
 }
 
+bool CFileReader::GetMetadataEntry(const string &key, string *val) {
+  CHECK_EQ(state_, kInitialized);
+  BOOST_FOREACH(const FileMetadataPairPB &pair, header_->metadata()) {
+    if (pair.key() == key) {
+      *val = pair.value();
+      return true;
+    }
+  }
+  BOOST_FOREACH(const FileMetadataPairPB &pair, footer_->metadata()) {
+    if (pair.key() == key) {
+      *val = pair.value();
+      return true;
+    }
+  }
+  return false;
+}
+
+
 // TODO: perhaps decoders should be able to be Reset
 // to point to a different slice? any benefit to that?
 Status CFileReader::CreateBlockDecoder(

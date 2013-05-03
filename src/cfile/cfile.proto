@@ -16,9 +16,16 @@ enum CompressionType {
   ZLIB = 3;
 }
 
+message FileMetadataPairPB {
+  required string key = 1;
+  required bytes value = 2;
+}
+
 message CFileHeaderPB {
   required int32 major_version = 1;
   required int32 minor_version = 2;
+
+  repeated FileMetadataPairPB metadata = 3;
 }
 
 message BlockPointerPB {
@@ -52,6 +59,8 @@ message CFileFooterPB {
   optional BTreeInfoPB validx_info = 5;
 
   optional CompressionType compression = 6 [default=NO_COMPRESSION];
+
+  repeated FileMetadataPairPB metadata = 7;
 }
 
 

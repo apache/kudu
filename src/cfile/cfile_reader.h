@@ -76,6 +76,13 @@ public:
   // the data)
   Status CountRows(rowid_t *count) const;
 
+  // Retrieve the given metadata entry into 'val'.
+  // Returns true if the entry was found, otherwise returns false.
+  //
+  // Note that this implementation is currently O(n), so should not be used
+  // in a hot path.
+  bool GetMetadataEntry(const string &key, string *val);
+
   uint64_t file_size() const {
     return file_size_;
   }

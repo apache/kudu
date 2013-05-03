@@ -104,6 +104,8 @@ Status Writer::Start() {
   CFileHeaderPB header;
   header.set_major_version(kCFileMajorVersion);
   header.set_minor_version(kCFileMinorVersion);
+  FlushMetadataToPB(header.mutable_metadata());
+
   uint32_t pb_size = header.ByteSize();
 
   faststring buf;
@@ -190,6 +192,9 @@ Status Writer::Finish() {
     footer.mutable_validx_info()->CopyFrom(validx_info);
   }
 
+  // Flush metadata.
+  FlushMetadataToPB(footer.mutable_metadata());
+
   faststring footer_str;
   if (!pb_util::SerializeToString(footer, &footer_str)) {
     return Status::Corruption("unable to serialize footer");
@@ -202,6 +207,22 @@ Status Writer::Finish() {
   RETURN_NOT_OK(file_->Flush());
 
   return file_->Close();
+}
+
+void Writer::AddMetadataPair(const Slice &key, const Slice &value) {
+  CHECK_NE(state_, kWriterFinished);
+
+  unflushed_metadata_.push_back(make_pair(key.ToString(), value.ToString()));
+}
+
+void Writer::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
+  typedef pair<string, string> ss_pair;
+  BOOST_FOREACH(const ss_pair &entry, unflushed_metadata_) {
+    FileMetadataPairPB *pb = field->Add();
+    pb->set_key(entry.first);
+    pb->set_value(entry.second);
+  }
+  unflushed_metadata_.clear();
 }
 
 Status Writer::AppendEntries(const void *entries, size_t count, size_t stride) {
