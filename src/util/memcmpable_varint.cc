@@ -81,6 +81,8 @@
 //      9      2**64-1      19.2
 //
 
+#include <glog/logging.h>
+
 #include "gutil/endian.h"
 #include "util/faststring.h"
 #include "util/memcmpable_varint.h"
@@ -223,11 +225,11 @@ static int sqlite4GetVarint64(
 ////////////////////////////////////////////////////////////
 // End code ripped from sqlite4
 ////////////////////////////////////////////////////////////
- 
 
 void PutMemcmpableVarint64(faststring *dst, uint64_t value) {
   uint8_t buf[9];
   int used = sqlite4PutVarint64(buf, value);
+  DCHECK_LE(used, sizeof(buf));
   dst->append(buf, used);
 }
 

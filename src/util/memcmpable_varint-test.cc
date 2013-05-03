@@ -1,7 +1,10 @@
 // Copyright (c) 2013, Cloudera,inc.
 
+#include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+
 #include "util/hexdump.h"
 #include "util/memcmpable_varint.h"
 #include "util/stopwatch.h"
@@ -11,7 +14,7 @@
 // template resolution works.
 namespace std {
 template<typename T1, typename T2>
-ostream & operator <<(ostream &os, const pair<T1, T2> &pair) {
+ostream &operator <<(ostream &os, const pair<T1, T2> &pair) {
   return os << "(" << pair.first << ", " << pair.second << ")";
 }
 }
@@ -22,7 +25,6 @@ static uint64_t Rand64() {
   return (random() << 32) ^ random();
 }
 
-
 // Random number generator that generates different length integers
 // with equal probability -- i.e it is equally as likely to generate
 // a number with 8 bits as it is to generate one with 64 bits.
@@ -31,7 +33,6 @@ static uint64_t Rand64() {
 static uint64_t Rand64WithRandomBitLength() {
   return Rand64() >> (random() % 64);
 }
-
 
 static void DoRoundTripTest(uint64_t to_encode) {
   static faststring buf;
@@ -45,6 +46,7 @@ static void DoRoundTripTest(uint64_t to_encode) {
   ASSERT_EQ(to_encode, decoded);
   ASSERT_TRUE(slice.empty());
 }
+
 
 TEST(TestMemcmpableVarint, TestRoundTrip) {
   srand(time(NULL));
@@ -75,13 +77,13 @@ TEST(TestMemcmpableVarint, TestCompositeKeys) {
     buf1.clear();
     buf2.clear();
 
-    std::pair<uint64_t, uint64_t> p1 =
-      std::make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
+    pair<uint64_t, uint64_t> p1 =
+      make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
     PutMemcmpableVarint64(&buf1, p1.first);
     PutMemcmpableVarint64(&buf1, p1.second);
 
-    std::pair<uint64_t, uint64_t> p2 =
-      std::make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
+    pair<uint64_t, uint64_t> p2 =
+      make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
     PutMemcmpableVarint64(&buf2, p2.first);
     PutMemcmpableVarint64(&buf2, p2.second);
 
@@ -93,6 +95,50 @@ TEST(TestMemcmpableVarint, TestCompositeKeys) {
       ASSERT_GT(Slice(buf1).compare(Slice(buf2)), 0);
     } else {
       ASSERT_EQ(Slice(buf1).compare(Slice(buf2)), 0);
+    }
+  }
+}
+
+// Similar to the above test, but instead of being randomized, specifically
+// tests "interesting" values -- i.e values around the boundaries of where
+// the encoding changes its number of bytes.
+TEST(TestMemcmpableVarint, TestInterestingCompositeKeys) {
+  vector<uint64_t> interesting_values =
+    boost::assign::list_of
+    (0)(1)(240) // 1 byte
+    (241)(2000)(2287) // 2 bytes
+    (2288)(40000)(67823) // 3 bytes
+    (67824)(1ULL << 23)((1ULL << 24) - 1) // 4 bytes
+    (1ULL << 24)(1ULL << 30)((1ULL << 32) - 1); // 5 bytes
+
+  faststring buf1;
+  faststring buf2;
+
+  BOOST_FOREACH(uint64_t v1, interesting_values) {
+    BOOST_FOREACH(uint64_t v2, interesting_values) {
+      buf1.clear();
+      pair<uint64_t, uint64_t> p1 = make_pair(v1, v2);
+      PutMemcmpableVarint64(&buf1, p1.first);
+      PutMemcmpableVarint64(&buf1, p1.second);
+
+      BOOST_FOREACH(uint64_t v3, interesting_values) {
+        BOOST_FOREACH(uint64_t v4, interesting_values) {
+          buf2.clear();
+          pair<uint64_t, uint64_t> p2 = make_pair(v3, v4);
+          PutMemcmpableVarint64(&buf2, p2.first);
+          PutMemcmpableVarint64(&buf2, p2.second);
+
+          SCOPED_TRACE(testing::Message() << p1 << "\n" << HexDump(Slice(buf1))
+                       << "  vs\n" << p2 << "\n" << HexDump(Slice(buf2)));
+          if (p1 < p2) {
+            ASSERT_LT(Slice(buf1).compare(Slice(buf2)), 0);
+          } else if (p1 > p2) {
+            ASSERT_GT(Slice(buf1).compare(Slice(buf2)), 0);
+          } else {
+            ASSERT_EQ(Slice(buf1).compare(Slice(buf2)), 0);
+          }
+        }
+      }
     }
   }
 }
@@ -144,4 +190,4 @@ TEST(TestMemcmpableVarint, BenchmarkDecode) {
 
 #endif
 
-}
+} // namespace kudu
