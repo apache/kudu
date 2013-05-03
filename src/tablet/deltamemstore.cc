@@ -212,5 +212,9 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   return Status::OK();
 }
 
+string DMSIterator::ToString() const {
+  return "DMSIterator";
+}
+
 } // namespace tablet
 } // namespace kudu

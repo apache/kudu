@@ -87,6 +87,8 @@ public:
     return schema_;
   }
 
+  const string path() const { return path_; }
+
 private:
   friend class DeltaFileIterator;
 
@@ -95,12 +97,16 @@ private:
   }
 
   DeltaFileReader(cfile::CFileReader *cf_reader,
+                  const string &path,
                   const Schema &schema);
 
   Status Init();
 
   shared_ptr<cfile::CFileReader> reader_;
   const Schema schema_;
+
+  // The path of the file being read (should be used only for debugging)
+  const string path_;
 };
 
 
@@ -114,6 +120,8 @@ public:
   Status SeekToOrdinal(rowid_t idx);
   Status PrepareBatch(size_t nrows);
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  string ToString() const;
+
 private:
   friend class DeltaFileReader;
 

@@ -164,6 +164,9 @@ public:
   // 'dst' must be the same length as was previously passed to PrepareToApply()
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
 
+  // Return a string representation suitable for debug printouts.
+  virtual string ToString() const = 0;
+
   virtual ~DeltaIteratorInterface() {}
 };
 

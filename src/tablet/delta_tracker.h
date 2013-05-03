@@ -76,22 +76,50 @@ private:
 
 };
 
+// DeltaIteratorInterface that simply combines together other DeltaIteratorInterfaces,
+// applying deltas from each in order.
+class DeltaIteratorMerger : public DeltaIteratorInterface {
+ public:
+  // Create a new DeltaIteratorInterface which combines the deltas from
+  // all of the input delta trackers.
+  //
+  // If only one tracker is input, this will automatically return an unwrapped
+  // iterator for greater efficiency.
+  static shared_ptr<DeltaIteratorInterface> Create(
+    const vector<shared_ptr<DeltaTrackerInterface> > &trackers,
+    const Schema &projection,
+    const MvccSnapshot &snapshot);
+
+  ////////////////////////////////////////////////////////////
+  // Implementations of DeltaIteratorInterface
+  ////////////////////////////////////////////////////////////
+  virtual Status Init();
+  virtual Status SeekToOrdinal(rowid_t idx);
+  virtual Status PrepareBatch(size_t nrows);
+  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  virtual string ToString() const;
+
+ private:
+  DeltaIteratorMerger(const vector<shared_ptr<DeltaIteratorInterface> > &iters);
+
+  vector<shared_ptr<DeltaIteratorInterface> > iters_;
+};
+
+
 ////////////////////////////////////////////////////////////
-// Delta-merging iterators
+// Delta-applying iterators
 ////////////////////////////////////////////////////////////
 
-// A DeltaMerger takes in a stack of several DeltaTrackers as well as an underlying
+// A DeltaApplier takes in a stack of several DeltaTrackers as well as an underlying
 // iterator (column-wise or row-wise), and is responsible for constructing the delta
-// iterators and performing the merge of updates into the underlying data.)
+// iterators and applying the updates to the underlying data.
 template<class IterClass>
-class DeltaMerger : public IterClass, boost::noncopyable {
+class DeltaApplier : public IterClass, boost::noncopyable {
 public:
   virtual Status Init(ScanSpec *spec) {
     RETURN_NOT_OK(base_iter_->Init(spec));
-    BOOST_FOREACH(DeltaIteratorInterface &delta_iter, delta_iters_) {
-      RETURN_NOT_OK(delta_iter.Init());
-      RETURN_NOT_OK(delta_iter.SeekToOrdinal(0));
-    }
+    RETURN_NOT_OK(delta_iter_->Init());
+    RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
     return Status::OK();
   }
 
@@ -105,9 +133,11 @@ public:
 
   string ToString() const {
     string s;
-    s.append("DeltaMerger(");
+    s.append("DeltaApplier(");
     s.append(base_iter_->ToString());
-    StringAppendF(&s, " + %zd delta trackers)", delta_iters_.size());
+    s.append(" + ");
+    s.append(delta_iter_->ToString());
+    s.append(")");
     return s;
   }
 
@@ -122,39 +152,32 @@ private:
   friend class DeltaTracker;
 
   // Construct. The base_iter should not be Initted.
-  DeltaMerger(const shared_ptr<IterClass> &base_iter,
-              const vector<shared_ptr<DeltaTrackerInterface> > &delta_trackers,
-              const MvccSnapshot &snapshot) :
-    base_iter_(base_iter)
+  DeltaApplier(const shared_ptr<IterClass> &base_iter,
+               const shared_ptr<DeltaIteratorInterface> delta_iter) :
+    base_iter_(base_iter),
+    delta_iter_(delta_iter)
   {
-    BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, delta_trackers) {
-      delta_iters_.push_back(tracker->NewDeltaIterator(base_iter_->schema(),
-                                                       snapshot));
-    }
   }
 
   shared_ptr<IterClass> base_iter_;
-  boost::ptr_vector<DeltaIteratorInterface> delta_iters_;
+  shared_ptr<DeltaIteratorInterface> delta_iter_;
 };
 
 
 template<class T>
-inline Status DeltaMerger<T>::PrepareBatch(size_t *nrows) {
+inline Status DeltaApplier<T>::PrepareBatch(size_t *nrows) {
   RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
   if (*nrows == 0) {
     return Status::NotFound("no more rows left");
   }
 
-  // Prepare all the update trackers for this block.
-  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
-    RETURN_NOT_OK(iter.PrepareBatch(*nrows));
-  }
+  RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows));
 
   return Status::OK();
 }
 
 template<class T>
-inline Status DeltaMerger<T>::FinishBatch() {
+inline Status DeltaApplier<T>::FinishBatch() {
   return base_iter_->FinishBatch();
 }
 
@@ -164,15 +187,13 @@ inline Status DeltaMerger<T>::FinishBatch() {
 ////////////////////////////////////////////////////////////
 
 template<>
-inline Status DeltaMerger<ColumnwiseIterator>::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
+inline Status DeltaApplier<ColumnwiseIterator>::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
   ColumnwiseIterator *iter = down_cast<ColumnwiseIterator *>(base_iter_.get());
   // Copy the base data.
   RETURN_NOT_OK(iter->MaterializeColumn(col_idx, dst));
 
   // Apply all the updates for this column.
-  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
-    RETURN_NOT_OK(iter.ApplyUpdates(col_idx, dst));
-  }
+  RETURN_NOT_OK(delta_iter_->ApplyUpdates(col_idx, dst));
   return Status::OK();
 }
 
@@ -180,16 +201,14 @@ inline Status DeltaMerger<ColumnwiseIterator>::MaterializeColumn(size_t col_idx,
 // Row-wise delta merger
 ////////////////////////////////////////////////////////////
 template<>
-inline Status DeltaMerger<RowwiseIterator>::MaterializeBlock(RowBlock *dst) {
+inline Status DeltaApplier<RowwiseIterator>::MaterializeBlock(RowBlock *dst) {
   // Get base data
   RETURN_NOT_OK(base_iter_->MaterializeBlock(dst));
 
   // Apply updates to all the columns.
-  BOOST_FOREACH(DeltaIteratorInterface &iter, delta_iters_) {
-    for (size_t proj_col_idx = 0; proj_col_idx < dst->schema().num_columns(); proj_col_idx++) {
-      ColumnBlock dst_col = dst->column_block(proj_col_idx);
-      RETURN_NOT_OK(iter.ApplyUpdates(proj_col_idx, &dst_col));
-    }
+  for (size_t proj_col_idx = 0; proj_col_idx < dst->schema().num_columns(); proj_col_idx++) {
+    ColumnBlock dst_col = dst->column_block(proj_col_idx);
+    RETURN_NOT_OK(delta_iter_->ApplyUpdates(proj_col_idx, &dst_col));
   }
 
   return Status::OK();

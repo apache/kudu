@@ -89,7 +89,10 @@ ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterat
 {
   std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
   CollectTrackers(&deltas);
-  return new DeltaMerger<ColumnwiseIterator>(base, deltas, mvcc_snap);
+  shared_ptr<DeltaIteratorInterface> merged_deltas(
+    DeltaIteratorMerger::Create(deltas, base->schema(), mvcc_snap));
+
+  return new DeltaApplier<ColumnwiseIterator>(base, merged_deltas);
 }
 
 RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &base,
@@ -97,7 +100,10 @@ RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &b
 {
   std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
   CollectTrackers(&deltas);
-  return new DeltaMerger<RowwiseIterator>(base, deltas, mvcc_snap);
+  shared_ptr<DeltaIteratorInterface> merged_deltas(
+    DeltaIteratorMerger::Create(deltas, base->schema(), mvcc_snap));
+
+  return new DeltaApplier<RowwiseIterator>(base, merged_deltas);
 }
 
 
@@ -194,6 +200,81 @@ Status DeltaTracker::Flush() {
 
   // TODO: wherever we write stuff, we should write to a tmp path
   // and rename to final path!
+}
+
+////////////////////////////////////////////////////////////
+// Delta merger
+////////////////////////////////////////////////////////////
+
+DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIteratorInterface> > &iters) :
+  iters_(iters)
+{}
+
+Status DeltaIteratorMerger::Init() {
+  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->Init());
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
+  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->SeekToOrdinal(idx));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
+  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->PrepareBatch(nrows));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
+  }
+  return Status::OK();
+}
+
+string DeltaIteratorMerger::ToString() const {
+  string ret;
+  ret.append("DeltaIteratorMerger(");
+
+  bool first = true;
+  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+    if (!first) {
+      ret.append(", ");
+    }
+    first = false;
+
+    ret.append(iter->ToString());
+  }
+  ret.append(")");
+  return ret;
+}
+
+
+shared_ptr<DeltaIteratorInterface> DeltaIteratorMerger::Create(
+  const vector<shared_ptr<DeltaTrackerInterface> > &trackers,
+  const Schema &projection,
+  const MvccSnapshot &snapshot)
+{
+  vector<shared_ptr<DeltaIteratorInterface> > delta_iters;
+
+  BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, trackers) {
+    shared_ptr<DeltaIteratorInterface> iter(tracker->NewDeltaIterator(projection, snapshot));
+    delta_iters.push_back(iter);
+  }
+
+  if (delta_iters.size() == 1) {
+    // If we only have one input to the "merge", we can just directly
+    // return that iterator.
+    return delta_iters[0];
+  }
+
+  return shared_ptr<DeltaIteratorInterface>(new DeltaIteratorMerger(delta_iters));
 }
 
 } // namespace tablet

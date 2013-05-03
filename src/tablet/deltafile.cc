@@ -87,7 +87,7 @@ Status DeltaFileReader::Open(Env *env, const string &path,
   RETURN_NOT_OK(CFileReader::Open(env, path, cfile::ReaderOptions(), &cf_reader));
 
   gscoped_ptr<DeltaFileReader> df_reader(
-    new DeltaFileReader(cf_reader.release(), schema));
+    new DeltaFileReader(cf_reader.release(), path, schema));
 
   RETURN_NOT_OK(df_reader->Init());
   reader_out->reset(df_reader.release());
@@ -95,9 +95,11 @@ Status DeltaFileReader::Open(Env *env, const string &path,
   return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(CFileReader *cf_reader, const Schema &schema) :
+DeltaFileReader::DeltaFileReader(CFileReader *cf_reader, const string &path,
+                                 const Schema &schema) :
   reader_(cf_reader),
-  schema_(schema)
+  schema_(schema),
+  path_(path)
 {
 }
 
@@ -358,6 +360,10 @@ Status DeltaFileIterator::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
 
   RowChangeListDecoder decoder(dfr_->schema(), s);
   return decoder.ApplyToOneColumn(col_idx, dst->cell_ptr(rel_idx), dst->arena());
+}
+
+string DeltaFileIterator::ToString() const {
+  return "DeltaFileIterator(" + dfr_->path() + ")";
 }
 
 } // namespace tablet

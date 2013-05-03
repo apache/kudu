@@ -93,6 +93,8 @@ public:
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 
+  string ToString() const;
+
 private:
   FRIEND_TEST(TestDMSIterator, TestIteratorDoesUpdates);
   friend class DeltaMemStore;
