@@ -124,6 +124,7 @@ public:
 
 private:
   friend class DeltaFileReader;
+  friend struct ApplyingVisitor;
 
   // PrepareToApply() will read forward all blocks from the deltafile
   // which overlap with the block being prepared, enqueueing them onto
@@ -179,10 +180,10 @@ private:
   // onto the end of the delta_blocks_ queue.
   Status ReadCurrentBlockOntoQueue();
 
-  Status ApplyEncodedDelta(const Slice &s, size_t col_idx, 
-                           rowid_t start_row, ColumnBlock *dst,
-                           bool *done) const;
-
+  // Visit all updates in the currently prepared row range with the specified
+  // visitor class.
+  template<class Visitor>
+  Status VisitUpdates(Visitor &visitor);
 
   DeltaFileReader *dfr_;
   shared_ptr<cfile::CFileReader> cfile_reader_;

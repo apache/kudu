@@ -284,20 +284,19 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
   return Status::OK();
 }
 
-Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
-  DCHECK(prepared_) << "must Prepare";
-  DCHECK_LE(prepared_count_, dst->nrows());
 
-  size_t projected_col = projection_indexes_[col_to_apply];
+
+
+template<class Visitor>
+Status DeltaFileIterator::VisitUpdates(Visitor &visitor) {
+  DCHECK(prepared_) << "must Prepare";
 
   rowid_t start_row = prepared_idx_;
 
   BOOST_FOREACH(PreparedDeltaBlock &block, delta_blocks_) {
     StringPlainBlockDecoder &sbd = *block.decoder_;
-    #ifndef NDEBUG
-    VLOG(2) << "Applying delta block " << block.first_updated_idx_ << "-" << block.last_updated_idx_
+    DVLOG(2) << "Visiting delta block " << block.first_updated_idx_ << "-" << block.last_updated_idx_
       << " for row block starting at " << start_row;
-    #endif
 
     if (PREDICT_FALSE(start_row > block.last_updated_idx_)) {
       // The block to be updated completely falls after this delta block:
@@ -310,56 +309,57 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
     }
 
     for (int i = block.prepared_block_start_idx_; i < sbd.Count(); i++) {
-      const Slice &slice = sbd.string_at_index(i);
-      bool done;
-      Status s = ApplyEncodedDelta(slice, projected_col, start_row, dst, &done);
-      if (!s.ok()) {
-        LOG(WARNING) << "Unable to apply delta from block " <<
-          block.ToString() << ": " << s.ToString();
-        return s;
-      }
-      if (done) {
-        //VLOG(2) << "early done, processing deltas from block " << block.ToString();
+      Slice slice = sbd.string_at_index(i);
+
+      // Decode and check the ID of the row we're going to update.
+      DeltaKey key;
+      RETURN_NOT_OK(key.DecodeFrom(&slice));
+      rowid_t row_idx = key.row_idx();
+
+      // Check that the delta is within the block we're currently processing.
+      if (row_idx >= start_row + prepared_count_) {
+        // Delta is for a row which comes after the block we're processing.
         return Status::OK();
+      } else if (row_idx < start_row) {
+        // Delta is for a row which comes before the block we're processing.
+        continue;
       }
+
+      RETURN_NOT_OK(visitor.Visit(key, slice));
     }
   }
 
   return Status::OK();
 }
 
-Status DeltaFileIterator::ApplyEncodedDelta(const Slice &s_in, size_t col_idx,
-                                            rowid_t start_row, ColumnBlock *dst,
-                                            bool *done) const
-{
-  *done = false;
+// Visitor which applies updates to a specific column.
+struct ApplyingVisitor {
+  Status Visit(const DeltaKey &key, const Slice &deltas) {
 
-  Slice s(s_in);
+    // Check that the delta is considered committed by the current reader's MVCC state.
+    if (!dfi->mvcc_snap_.IsCommitted(key.txid())) {
+      return Status::OK();
+    }
 
-  // Decode and check the ID of the row we're going to update.
-  DeltaKey key;
-  RETURN_NOT_OK(key.DecodeFrom(&s));
-  rowid_t row_idx = key.row_idx();
+    int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
+    DCHECK_GE(rel_idx, 0);
 
-  // Check that the delta is within the block we're currently processing.
-  if (row_idx >= start_row + dst->size()) {
-    // Delta is for a row which comes after the block we're processing.
-    *done = true;
-    return Status::OK();
-  } else if (row_idx < start_row) {
-    // Delta is for a row which comes before the block we're processing.
-    return Status::OK();
+    RowChangeListDecoder decoder(dfi->dfr_->schema(), deltas);
+    return decoder.ApplyToOneColumn(col_to_apply, dst->cell_ptr(rel_idx), dst->arena());
   }
 
-  // Check that the delta is considered committed by the current reader's MVCC state.
-  if (!mvcc_snap_.IsCommitted(key.txid())) {
-    return Status::OK();
-  }
+  DeltaFileIterator *dfi;
+  size_t col_to_apply;
+  ColumnBlock *dst;
+};
 
-  size_t rel_idx = row_idx - start_row;
 
-  RowChangeListDecoder decoder(dfr_->schema(), s);
-  return decoder.ApplyToOneColumn(col_idx, dst->cell_ptr(rel_idx), dst->arena());
+Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+  DCHECK_LE(prepared_count_, dst->nrows());
+  size_t projected_col = projection_indexes_[col_to_apply];
+  ApplyingVisitor visitor = {this, projected_col, dst};
+
+  return VisitUpdates(visitor);
 }
 
 string DeltaFileIterator::ToString() const {
