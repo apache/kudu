@@ -96,7 +96,7 @@ public:
   string ToString() const;
 
 private:
-  FRIEND_TEST(TestDMSIterator, TestIteratorDoesUpdates);
+  FRIEND_TEST(TestDeltaMemStore, TestIteratorDoesUpdates);
   friend class DeltaMemStore;
 
   // Initialize the iterator.
