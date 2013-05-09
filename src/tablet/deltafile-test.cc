@@ -135,5 +135,43 @@ TEST_F(TestDeltaFile, TestRoundTrip) {
   DoTestRoundTrip();
 }
 
+TEST_F(TestDeltaFile, TestCollectMutations) {
+  WriteTestFile();
+
+  {
+    gscoped_ptr<DeltaFileReader> reader;
+    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
+
+    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_, snap));
+    ASSERT_STATUS_OK(it->Init());
+    ASSERT_STATUS_OK(it->SeekToOrdinal(0));
+
+    vector<Mutation *> mutations;
+    mutations.resize(100);
+
+    int start_row = 0;
+    while (start_row < FLAGS_last_row_to_update + 10000) {
+      std::fill(mutations.begin(), mutations.end(), reinterpret_cast<Mutation *>(NULL));
+
+      arena_.Reset();
+      ASSERT_STATUS_OK_FAST(it->PrepareBatch(mutations.size()));
+      ASSERT_STATUS_OK(it->CollectMutations(&mutations, &arena_));
+
+      for (int i = 0; i < mutations.size(); i++) {
+        Mutation *mut_head = mutations[i];
+        if (mut_head != NULL) {
+          rowid_t row = start_row + i;
+          string str = Mutation::StringifyMutationList(schema_, mut_head);
+          VLOG(1) << "Mutation on row " << row << ": " << str;
+        }
+      }
+
+      start_row += mutations.size();
+    }
+  }
+
+}
+
 } // namespace tablet
 } // namespace kudu

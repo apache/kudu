@@ -21,6 +21,7 @@ namespace tablet {
 using std::tr1::shared_ptr;
 
 class DeltaIteratorInterface;
+class Mutation;
 
 // Structure which caches an encoded and hashed key, suitable
 // for probing against layers.
@@ -163,6 +164,16 @@ public:
   // Apply the snapshotted updates to one of the columns.
   // 'dst' must be the same length as was previously passed to PrepareToApply()
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
+
+  // Collect the mutations associated with each row in the current prepared batch.
+  //
+  // Each entry in the vector will be treated as a singly linked list of Mutation
+  // objects. If there are no mutations for that row, the entry will be unmodified.
+  // If there are mutations, they will be appended at the tail of the linked list
+  // (i.e in ascending txid order)
+  //
+  // The Mutation objects will be allocated out of the provided Arena, which must be non-NULL.
+  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) = 0;
 
   // Return a string representation suitable for debug printouts.
   virtual string ToString() const = 0;

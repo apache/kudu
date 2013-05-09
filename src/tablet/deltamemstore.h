@@ -11,6 +11,7 @@
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "tablet/concurrent_btree.h"
+#include "tablet/delta_key.h"
 #include "tablet/layer-interfaces.h"
 #include "tablet/mvcc.h"
 #include "util/memory/arena.h"
@@ -18,9 +19,9 @@
 namespace kudu {
 namespace tablet {
 
-
 class DeltaFileWriter;
 class DMSIterator;
+class Mutation;
 
 // In-memory storage for data which has been recently updated.
 // This essentially tracks a 'diff' per row, which contains the
@@ -41,6 +42,10 @@ public:
   size_t Count() const {
     return tree_.count();
   }
+
+  // Dump a debug version of the tree to the logs. This is not thread-safe, so
+  // is only really useful in unit tests.
+  void DebugPrint() const;
 
   Status FlushToFile(DeltaFileWriter *dfw) const;
 
@@ -93,10 +98,13 @@ public:
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 
+  Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+
   string ToString() const;
 
 private:
   FRIEND_TEST(TestDeltaMemStore, TestIteratorDoesUpdates);
+  FRIEND_TEST(TestDeltaMemStore, TestCollectMutations);
   friend class DeltaMemStore;
 
   // Initialize the iterator.
@@ -105,6 +113,9 @@ private:
   DMSIterator(const shared_ptr<DeltaMemStore> &dms, const Schema &projection,
               const MvccSnapshot &snapshot);
 
+
+  // Decode a mutation as stored in the memstore.
+  Status DecodeMutation(Slice *src, DeltaKey *key, Slice *changelist_data) const;
 
   enum {
     kPreparedBufInitialCapacity = 512
@@ -127,6 +138,9 @@ private:
 
   // The last block that PrepareToApply(...) was called on.
   bool prepared_;
+
+  // True if SeekToOrdinal() been called at least once.
+  bool seeked_;
 
   faststring prepared_buf_;
 

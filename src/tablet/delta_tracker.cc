@@ -238,6 +238,16 @@ Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) 
   return Status::OK();
 }
 
+Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
+  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+    RETURN_NOT_OK(iter->CollectMutations(dst, arena));
+  }
+  // TODO: do we need to do some kind of sorting here to deal with out-of-order
+  // txids?
+  return Status::OK();
+}
+
+
 string DeltaIteratorMerger::ToString() const {
   string ret;
   ret.append("DeltaIteratorMerger(");

@@ -23,17 +23,7 @@ static const int kMaxArenaBufferSize = 4*1024*1024;
 
 void MSRow::AppendMutation(Mutation *mut)
 {
-  mut->next_ = NULL;
-  if (header_->mutation_head == NULL) {
-    header_->mutation_head = mut;
-  } else {
-    // Find tail and append.
-    Mutation *tail = header_->mutation_head;
-    while (tail->next_ != NULL) {
-      tail = tail->next_;
-    }
-    tail->next_ = mut;
-  }
+  mut->AppendToList(&header_->mutation_head);
 }
 
 MemStore::MemStore(const Schema &schema) :

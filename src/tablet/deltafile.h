@@ -120,11 +120,13 @@ public:
   Status SeekToOrdinal(rowid_t idx);
   Status PrepareBatch(size_t nrows);
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
   string ToString() const;
 
 private:
   friend class DeltaFileReader;
   friend struct ApplyingVisitor;
+  friend struct CollectingVisitor;
 
   // PrepareToApply() will read forward all blocks from the deltafile
   // which overlap with the block being prepared, enqueueing them onto

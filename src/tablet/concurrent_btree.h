@@ -925,7 +925,7 @@ public:
     return mutation.Insert(val);
   }
 
-  void DebugPrint() {
+  void DebugPrint() const {
     AtomicVersion v;
     DebugPrint(StableRoot(&v), NULL, 0);
     CHECK_EQ(root_.base_ptr()->AcquireVersion(), v)
@@ -1160,7 +1160,7 @@ private:
   // Requires that there are no concurrent modifications/
   void DebugPrint(NodePtr<Traits> node,
                   InternalNode<Traits> *expected_parent,
-                  int indent) {
+                  int indent) const {
 
     std::string buf;
     switch (node.type()) {

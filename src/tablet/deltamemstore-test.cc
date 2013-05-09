@@ -10,6 +10,7 @@
 #include "gutil/casts.h"
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/mutation.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 
@@ -29,7 +30,8 @@ class TestDeltaMemStore : public KuduTest {
     dms_(new DeltaMemStore(schema_))
   {}
 
-  void UpdateIntsAtIndexes(const unordered_set<uint32_t> &indexes_to_update) {
+  template<class Iterable>
+  void UpdateIntsAtIndexes(const Iterable &indexes_to_update) {
     faststring buf;
     RowChangeListEncoder update(schema_, &buf);
 
@@ -162,6 +164,37 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   ASSERT_EQ("update 2", read_back[0].ToString());
 }
 
+// Test that if two updates come in with out-of-order transaction IDs,
+// the one with the higher transaction ID ends up winning.
+//
+// This is important during flushing when updates against the old layer
+// are carried forward, but may fall behind newer transactions.
+TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
+  faststring update_buf;
+  RowChangeListEncoder update(schema_, &update_buf);
+
+  {
+    ScopedTransaction tx1(&mvcc_);
+    ScopedTransaction tx2(&mvcc_);
+
+    Slice s("update 2");
+    update.AddColumnUpdate(kStringColumn, &s);
+    dms_->Update(tx2.txid(), 123, RowChangeList(update_buf));
+
+    update_buf.clear();
+    s = Slice("update 1");
+    update.AddColumnUpdate(kStringColumn, &s);
+    dms_->Update(tx1.txid(), 123, RowChangeList(update_buf));
+  }
+
+  // Ensure we end up two entries for the cell.
+  ASSERT_EQ(2, dms_->Count());
+
+  // Ensure that we ended up with the right data.
+  ScopedColumnBlock<STRING> read_back(1);
+  ApplyUpdates(MvccSnapshot(mvcc_), 123, kStringColumn, &read_back);
+  ASSERT_EQ("update 2", read_back[0].ToString());
+}
 
 TEST_F(TestDeltaMemStore, TestDMSBasic) {
   faststring update_buf;
@@ -254,6 +287,60 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
     int actual_row = block_start_row + i;
     ASSERT_EQ(actual_row * 10, block[i]) << "at row " << actual_row;
   }
+}
+
+TEST_F(TestDeltaMemStore, TestCollectMutations) {
+  Arena arena(1024, 1024);
+
+  // Update rows 5 and 12
+  vector<uint32_t> to_update;
+  to_update.push_back(5);
+  to_update.push_back(12);
+  UpdateIntsAtIndexes(to_update);
+
+  ASSERT_EQ(2, dms_->Count());
+
+  MvccSnapshot snap(mvcc_);
+
+  const int kBatchSize = 10;
+  vector<Mutation *> mutations;
+  mutations.resize(kBatchSize);
+
+  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(dms_->NewDeltaIterator(schema_, snap)));
+  ASSERT_STATUS_OK(iter->Init(););
+  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+  ASSERT_STATUS_OK(iter->PrepareBatch(kBatchSize));
+  ASSERT_STATUS_OK(iter->CollectMutations(&mutations, &arena));
+
+  // Only row 5 is updated, everything else should be NULL.
+  for (int i = 0; i < kBatchSize; i++) {
+    string str = Mutation::StringifyMutationList(schema_, mutations[i]);
+    VLOG(1) << "row " << i << ": " << str;
+    if (i != 5) {
+      EXPECT_EQ("[]", str);
+    } else {
+      EXPECT_EQ("[@0(SET col3=50)]", str);
+    }
+  }
+
+  // Collect the next batch of 10.
+  arena.Reset();
+  std::fill(mutations.begin(), mutations.end(), reinterpret_cast<Mutation *>(NULL));
+  ASSERT_STATUS_OK(iter->PrepareBatch(kBatchSize));
+  ASSERT_STATUS_OK(iter->CollectMutations(&mutations, &arena));
+
+  // Only row 2 is updated, everything else should be NULL.
+  for (int i = 0; i < 10; i++) {
+    string str = Mutation::StringifyMutationList(schema_, mutations[i]);
+    VLOG(1) << "row " << i << ": " << str;
+    if (i != 2) {
+      EXPECT_EQ("[]", str);
+    } else {
+      EXPECT_EQ("[@1(SET col3=120)]", str);
+    }
+  }
+  
+
 }
 
 } // namespace tabletype

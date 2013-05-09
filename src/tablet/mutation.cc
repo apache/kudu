@@ -20,7 +20,6 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
 
     RowChangeListDecoder decoder(schema, head->changelist_slice());
     StringAppendF(&ret, "@%"TXID_PRINT_FORMAT"(", head->txid().v);
-    ret.append("@(");
     ret.append(decoder.ToString());
     ret.append(")");
 
@@ -29,6 +28,20 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
 
   ret.append("]");
   return ret;
+}
+
+void Mutation::AppendToList(Mutation **list) {
+  next_ = NULL;
+  if (*list == NULL) {
+    *list = this;
+  } else {
+    // Find tail and append.
+    Mutation *tail = *list;
+    while (tail->next_ != NULL) {
+      tail = tail->next_;
+    }
+    tail->next_ = this;
+  }
 }
 
 } // namespace tablet

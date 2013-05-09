@@ -244,6 +244,53 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   // TODO: add some more data, re-flush
 }
 
+// Test that when a row has been updated many times, it always yields
+// the most recent value.
+TYPED_TEST(TestTablet, TestMultipleUpdates) {
+  // Insert and update several times in MemStore
+  this->InsertTestRows(0, 1);
+  this->UpdateTestRow(0, 1);
+  this->UpdateTestRow(0, 2);
+  this->UpdateTestRow(0, 3);
+
+  // Should see most recent value.
+  vector<string> out_rows;
+  ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  ASSERT_EQ(this->setup_.FormatDebugRow(0, 3), out_rows[0]);
+
+  // Flush it.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  // Should still see most recent value.
+  out_rows.clear();
+  ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  ASSERT_EQ(this->setup_.FormatDebugRow(0, 3), out_rows[0]);
+
+  // Update the row a few times in DeltaMemStore
+  this->UpdateTestRow(0, 4);
+  this->UpdateTestRow(0, 5);
+  this->UpdateTestRow(0, 6);
+
+  // Should still see most recent value.
+  out_rows.clear();
+  ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  ASSERT_EQ(this->setup_.FormatDebugRow(0, 6), out_rows[0]);
+
+
+  // Force a compaction after adding a new layer with one row.
+  this->InsertTestRows(1, 1);
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+  ASSERT_STATUS_OK(this->tablet_->Compact());
+  ASSERT_EQ(1, this->tablet_->num_layers());
+
+  // Should still see most recent value.
+  out_rows.clear();
+  ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  ASSERT_EQ(this->setup_.FormatDebugRow(0, 6), out_rows[0]);
+}
+
+
+
 TYPED_TEST(TestTablet, TestCompaction) {
   uint64_t n_rows = FLAGS_testcompaction_num_rows;
   // Create three layers by inserting and flushing

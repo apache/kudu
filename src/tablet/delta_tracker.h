@@ -97,6 +97,7 @@ class DeltaIteratorMerger : public DeltaIteratorInterface {
   virtual Status SeekToOrdinal(rowid_t idx);
   virtual Status PrepareBatch(size_t nrows);
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
   virtual string ToString() const;
 
  private:

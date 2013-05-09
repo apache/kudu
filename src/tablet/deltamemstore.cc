@@ -68,6 +68,10 @@ DeltaIteratorInterface *DeltaMemStore::NewDeltaIterator(const Schema &projection
   return new DMSIterator(shared_from_this(), projection, snapshot);
 }
 
+void DeltaMemStore::DebugPrint() const {
+  tree_.DebugPrint();
+}
+
 ////////////////////////////////////////////////////////////
 // DMSIterator
 ////////////////////////////////////////////////////////////
@@ -82,6 +86,7 @@ DMSIterator::DMSIterator(const shared_ptr<DeltaMemStore> &dms,
   prepared_idx_(0),
   prepared_count_(0),
   prepared_(false),
+  seeked_(false),
   prepared_buf_(kPreparedBufInitialCapacity)
 {
 }
@@ -102,6 +107,7 @@ Status DMSIterator::SeekToOrdinal(rowid_t row_idx) {
   prepared_idx_ = row_idx;
   prepared_count_ = 0;
   prepared_ = false;
+  seeked_ = true;
   return Status::OK();
 }
 
@@ -118,7 +124,7 @@ Status DMSIterator::PrepareBatch(size_t nrows) {
   // local copies as they progress in order to shield from concurrent mutation,
   // so with N columns, we'd end up making N copies of the data. Making a local
   // copy here is instead a single copy of the data, so is likely faster.
-
+  CHECK(seeked_);
   DCHECK(!projection_indexes_.empty()) << "must init";
   rowid_t start_row = prepared_idx_ + prepared_count_;
   rowid_t stop_row = start_row + nrows - 1;
@@ -178,39 +184,70 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   size_t projected_col = projection_indexes_[col_to_apply];
 
   while (!src.empty()) {
-    if (src.size() < sizeof(DeltaKey) + sizeof(uint32_t)) {
-      return Status::Corruption("Corrupt prepared updates");
-    }
     DeltaKey key;
-    memcpy(&key, src.data(), sizeof(key));
-    src.remove_prefix(sizeof(key));
-    rowid_t idx = key.row_idx();
-    DCHECK_GE(idx, prepared_idx_);
-    DCHECK_LT(idx, prepared_idx_ + dst->nrows());
-    uint32_t idx_in_block = idx - prepared_idx_;
+    Slice changelist_data;
 
-    uint32_t delta_len = DecodeFixed32(src.data());
-    src.remove_prefix(sizeof(uint32_t));
+    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist_data));
+    uint32_t idx_in_block = key.row_idx() - prepared_idx_;
 
-    if (delta_len > src.size()) {
-      return Status::Corruption(StringPrintf("Corrupt prepared updates at row %d", idx));
-    }
-    Slice delta(src.data(), delta_len);
-    src.remove_prefix(delta_len);
-
-    RowChangeListDecoder decoder(dms_->schema(), delta);
+    RowChangeListDecoder decoder(dms_->schema(), changelist_data);
 
     Status s = decoder.ApplyToOneColumn(
       projected_col, dst->cell_ptr(idx_in_block), dst->arena());
     if (!s.ok()) {
       return Status::Corruption(
-        StringPrintf("Corrupt prepared updates at row %d: ", idx) +
+        StringPrintf("Corrupt prepared updates at row %d: ", key.row_idx()) +
         s.ToString());
     }
   }
 
   return Status::OK();
 }
+
+
+Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
+  DCHECK(prepared_);
+  Slice src(prepared_buf_);
+
+  while (!src.empty()) {
+    DeltaKey key;
+    Slice changelist_data;
+
+    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist_data));
+    uint32_t rel_idx = key.row_idx() - prepared_idx_;
+
+    Mutation *mutation = Mutation::CreateInArena(
+      arena, key.txid(), RowChangeList(changelist_data));
+    mutation->AppendToList(&dst->at(rel_idx));
+  }
+
+  return Status::OK();
+}
+
+
+Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, Slice *changelist_data) const {
+  if (src->size() < sizeof(DeltaKey) + sizeof(uint32_t)) {
+    return Status::Corruption("Corrupt prepared updates");
+  }
+
+  memcpy(key, src->data(), sizeof(*key));
+  src->remove_prefix(sizeof(*key));
+  rowid_t idx = key->row_idx();
+  DCHECK_GE(idx, prepared_idx_);
+  DCHECK_LT(idx, prepared_idx_ + prepared_count_);
+
+  uint32_t delta_len = DecodeFixed32(src->data());
+  src->remove_prefix(sizeof(uint32_t));
+
+  if (delta_len > src->size()) {
+    return Status::Corruption(StringPrintf("Corrupt prepared updates at row %d", idx));
+  }
+  *changelist_data = Slice(src->data(), delta_len);
+  src->remove_prefix(delta_len);
+
+  return Status::OK();
+}
+
 
 string DMSIterator::ToString() const {
   return "DMSIterator";

@@ -3,7 +3,9 @@
 #ifndef KUDU_TABLET_DELTA_KEY_H
 #define KUDU_TABLET_DELTA_KEY_H
 
+#include "common/rowid.h"
 #include "gutil/endian.h"
+#include "tablet/mvcc.h"
 
 namespace kudu {
 namespace tablet {

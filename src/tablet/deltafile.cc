@@ -10,6 +10,7 @@
 #include "cfile/string_plain_block.h"
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltafile.h"
+#include "tablet/mutation.h"
 #include "util/coding-inl.h"
 #include "util/env.h"
 #include "util/hexdump.h"
@@ -359,6 +360,31 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   size_t projected_col = projection_indexes_[col_to_apply];
   ApplyingVisitor visitor = {this, projected_col, dst};
 
+  return VisitUpdates(visitor);
+}
+
+// Visitor which, for each mutation, appends it into a ColumnBlock of
+// Mutation *s. See CollectMutations()
+struct CollectingVisitor {
+  Status Visit(const DeltaKey &key, const Slice &deltas) {
+    int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
+    DCHECK_GE(rel_idx, 0);
+
+    Mutation *mutation = Mutation::CreateInArena(
+      dst_arena, key.txid(), RowChangeList(deltas));
+    mutation->AppendToList(&dst->at(rel_idx));
+
+    return Status::OK();
+  }
+
+  DeltaFileIterator *dfi;
+  vector<Mutation *> *dst;
+  Arena *dst_arena;
+};
+
+Status DeltaFileIterator::CollectMutations(vector<Mutation *> *dst, Arena *dst_arena) {
+  DCHECK_LE(prepared_count_, dst->size());
+  CollectingVisitor visitor = {this, dst, dst_arena};
   return VisitUpdates(visitor);
 }
 
