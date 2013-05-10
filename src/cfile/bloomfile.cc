@@ -28,6 +28,9 @@ BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
   cfile::WriterOptions opts;
   opts.write_posidx = false;
   opts.write_validx = true;
+  // Never use compression, regardless of the default settings, since
+  // bloom filters are high-entropy data structures by their nature.
+  opts.compression = cfile::NO_COMPRESSION;
   writer_.reset(new cfile::Writer(opts, STRING, PLAIN, file));
 }
 
@@ -106,6 +109,9 @@ Status BloomFileReader::Open(Env *env, const string &path,
 
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(env, path, ReaderOptions(), &cf_reader));
+  if (cf_reader->is_compressed()) {
+    return Status::Corruption("Unexpected compression for bloom file", path);
+  }
 
   gscoped_ptr<BloomFileReader> bf_reader(
     new BloomFileReader(cf_reader.release()));

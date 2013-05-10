@@ -54,9 +54,6 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
   cfile::WriterOptions opts;
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
-  // Never use compression, regardless of the default settings, since
-  // bloom filters are high-entropy data structures by their nature.
-  opts.compression = cfile::NO_COMPRESSION;
   writer_.reset(new cfile::Writer(opts, STRING, cfile::PLAIN, file));
 }
 

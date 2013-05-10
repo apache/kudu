@@ -98,6 +98,10 @@ public:
     return *CHECK_NOTNULL(footer_.get());
   }
 
+  bool is_compressed() const {
+    return footer().compression() != cfile::NO_COMPRESSION;
+  }
+
   // Advanced access to the cfile. This is used by the
   // delta reader code. TODO: think about reorganizing this:
   // delta files can probably be done more cleanly.

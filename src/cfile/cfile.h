@@ -73,7 +73,7 @@ struct WriterOptions {
 
   // Block compression codec type
   //
-  // Default: NO_COMPRESSION
+  // Default: specified by --cfile_default_compression_codec
   CompressionType compression;
 
   WriterOptions();
