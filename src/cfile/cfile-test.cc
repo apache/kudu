@@ -21,6 +21,53 @@
 namespace kudu { namespace cfile {
 
 class TestCFile : public CFileTestBase {
+ protected:
+  void TestReadWriteRawBlocks(const string &path, CompressionType compression, int num_entries) {
+    // Test Write
+    shared_ptr<WritableFile> sink;
+    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    WriterOptions opts;
+    opts.write_posidx = true;
+    opts.write_validx = false;
+    opts.block_size = FLAGS_cfile_test_block_size;
+    opts.compression = compression;
+    Writer w(opts, STRING, PLAIN, sink);
+    ASSERT_STATUS_OK(w.Start());
+    for (uint32_t i = 0; i < num_entries; i++) {
+      vector<Slice> slices;
+      slices.push_back(Slice("Head"));
+      slices.push_back(Slice("Body"));
+      slices.push_back(Slice("Tail"));
+      slices.push_back(Slice(reinterpret_cast<uint8_t *>(&i), 4));
+      ASSERT_STATUS_OK(w.AppendRawBlock(slices, i, NULL, "raw-data"));
+    }
+    ASSERT_STATUS_OK(w.Finish());
+
+    // Test Read
+    gscoped_ptr<CFileReader> reader;
+    ASSERT_STATUS_OK(CFileReader::Open(env_.get(), path, ReaderOptions(), &reader));
+
+    gscoped_ptr<IndexTreeIterator> iter;
+    iter.reset(IndexTreeIterator::Create(reader.get(), UINT32, reader->posidx_root()));
+    ASSERT_STATUS_OK(iter->SeekToFirst());
+
+    uint8_t data[16];
+    Slice expected_data(data, 16);
+    memcpy(data, "HeadBodyTail", 12);
+
+    uint32_t count = 0;
+    do {
+      BlockCacheHandle dblk_data;
+      BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
+      ASSERT_STATUS_OK(reader->ReadBlock(blk_ptr, &dblk_data));
+
+      memcpy(data + 12, &count, 4);
+      ASSERT_EQ(expected_data, dblk_data.data());
+
+      count++;
+    } while (iter->Next().ok());
+    ASSERT_EQ(num_entries, count);
+  }
 };
 
 
@@ -117,7 +164,7 @@ TEST_F(TestCFile, TestReadWriteInts) {
     }
     out[i] = 0;
   }
-  
+
 
   // Fetch all data using small batches of only a few rows.
   // This should catch edge conditions like a batch lining up exactly
@@ -148,7 +195,6 @@ TEST_F(TestCFile, TestReadWriteInts) {
     }
     out[i] = 0;
   }
-
 
   TimeReadFile(path, &n);
   ASSERT_EQ(10000, n);
@@ -273,6 +319,14 @@ TEST_F(TestCFile, TestMetadata) {
     ASSERT_EQ(val, "footer value");
     ASSERT_FALSE(reader->GetMetadataEntry("not a key", &val));
   }
+}
+
+TEST_F(TestCFile, TestAppendRaw) {
+  const string path = GetTestPath("testRaw");
+  TestReadWriteRawBlocks(path, NO_COMPRESSION, 1000);
+  TestReadWriteRawBlocks(path, SNAPPY, 1000);
+  TestReadWriteRawBlocks(path, LZ4, 1000);
+  TestReadWriteRawBlocks(path, ZLIB, 1000);
 }
 
 } // namespace cfile

@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/foreach.hpp>
 #include <algorithm>
 #include <glog/logging.h>
 
@@ -20,8 +21,19 @@ CompressedBlockBuilder::CompressedBlockBuilder(const shared_ptr<CompressionCodec
 }
 
 Status CompressedBlockBuilder::Compress(const Slice& data, Slice *result) {
+  vector<Slice> v;
+  v.push_back(data);
+  return Compress(v, result);
+}
+
+Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice *result) {
+  size_t data_size = 0;
+  BOOST_FOREACH(const Slice& data, data_slices) {
+    data_size += data.size();
+  }
+
   // Ensure that the buffer for header + compressed data is large enough
-  size_t max_compressed_size = codec_->MaxCompressedLength(data.size());
+  size_t max_compressed_size = codec_->MaxCompressedLength(data_size);
   if (max_compressed_size > compressed_size_limit_) {
     return Status::InvalidArgument(
       StringPrintf("estimated max size %lu is greater than the expected %lu",
@@ -32,11 +44,12 @@ Status CompressedBlockBuilder::Compress(const Slice& data, Slice *result) {
 
   // Compress
   size_t compressed_size;
-  RETURN_NOT_OK(codec_->Compress(data, buffer_.data() + kHeaderReservedLength, &compressed_size));
+  RETURN_NOT_OK(codec_->Compress(data_slices,
+                                 buffer_.data() + kHeaderReservedLength, &compressed_size));
 
   // Set up the header
   InlineEncodeFixed32(&buffer_[0], compressed_size);
-  InlineEncodeFixed32(&buffer_[4], data.size());
+  InlineEncodeFixed32(&buffer_[4], data_size);
   *result = Slice(buffer_.data(), compressed_size + kHeaderReservedLength);
 
   return Status::OK();

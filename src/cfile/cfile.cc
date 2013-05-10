@@ -330,27 +330,23 @@ Status Writer::AddBlock(const vector<Slice> &data_slices,
                         const char *name_for_log) {
   uint64_t start_offset = off_;
 
-  BOOST_FOREACH(const Slice &data, data_slices) {
-    Slice cdata = data;
-
-    if (block_compressor_ != NULL) {
-      Status s = block_compressor_->Compress(data, &cdata);
-      if (!s.ok()) {
-        LOG(WARNING) << "Unable to compress slice of size "
-                     << cdata.size() << " at offset " << off_
-                     << ": " << s.ToString();
-        return(s);
-      }
-    }
-
-    Status s = file_->Append(cdata);
+  if (block_compressor_ != NULL) {
+    // Write compressed block
+    Slice cdata;
+    Status s = block_compressor_->Compress(data_slices, &cdata);
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to append slice of size "
+      LOG(WARNING) << "Unable to compress slice of size "
                    << cdata.size() << " at offset " << off_
                    << ": " << s.ToString();
-      return s;
+      return(s);
     }
-    off_ += cdata.size();
+
+    RETURN_NOT_OK(WriteRawData(cdata));
+  } else {
+    // Write uncompressed block
+    BOOST_FOREACH(const Slice &data, data_slices) {
+      RETURN_NOT_OK(WriteRawData(data));
+    }
   }
 
   uint64_t total_size = off_ - start_offset;
@@ -359,6 +355,17 @@ Status Writer::AddBlock(const vector<Slice> &data_slices,
   VLOG(1) << "Appended " << name_for_log
           << " with " << total_size << " bytes at " << start_offset;
   return Status::OK();
+}
+
+Status Writer::WriteRawData(const Slice& data) {
+  Status s = file_->Append(data);
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to append slice of size "
+                << data.size() << " at offset " << off_
+                << ": " << s.ToString();
+  }
+  off_ += data.size();
+  return s;
 }
 
 Writer::~Writer() {

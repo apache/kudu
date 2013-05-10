@@ -31,7 +31,7 @@ static void TestCompressionCodec(CompressionType compression) {
   size_t compressed;
 
   // Fill the test input buffer
-  for (int i = 0 ; i < kInputSize; ++i) ibuffer[i] = '0';
+  memset(ibuffer, 'Z', kInputSize);
 
   // Get the specified compression codec
   ASSERT_STATUS_OK(GetCompressionCodec(compression, &codec));
@@ -42,6 +42,15 @@ static void TestCompressionCodec(CompressionType compression) {
   gscoped_array<uint8_t> cbuffer(new uint8_t[max_compressed]);
 
   // Compress and uncompress
+  ASSERT_STATUS_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
+  ASSERT_STATUS_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
+  ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));
+
+  // Compress slices and uncompress
+  vector<Slice> v;
+  v.push_back(Slice(ibuffer, 1));
+  for (int i = 1; i <= kInputSize; i += 7)
+    v.push_back(Slice(ibuffer + i, 7));
   ASSERT_STATUS_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
   ASSERT_STATUS_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
   ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));

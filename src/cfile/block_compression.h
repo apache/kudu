@@ -27,6 +27,7 @@ public:
   //
   // If an error was encountered, returns a non-OK status.
   Status Compress(const Slice& data, Slice *result);
+  Status Compress(const vector<Slice> &data_slices, Slice *result);
 
   // header includes a 32-bit compressed length, 32-bit uncompressed length
   static const size_t kHeaderReservedLength = (2 * sizeof(uint32_t));

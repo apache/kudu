@@ -127,6 +127,7 @@ private:
                   BlockPointer *block_ptr,
                   const char *name_for_log);
 
+  Status WriteRawData(const Slice& data);
 
   Status FinishCurDataBlock();
 
