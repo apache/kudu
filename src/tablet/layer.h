@@ -53,48 +53,30 @@ public:
     dir_(layer_dir),
     bloom_sizing_(bloom_sizing),
     finished_(false),
-    column_flushed_counts_(schema.num_columns(), 0)
+    written_count_(0)
   {}
 
   Status Open();
 
-  // TODO: doc me
-  //
-  // need_arena: if true, then the input iterators do not maintain
-  // stable copies of all indirect data, a local arena is needed to hold
-  // tmp copies during the flush.
-  Status FlushProjection(const Schema &projection,
-                         RowwiseIterator *src_iter,
-                         bool need_arena,
-                         bool write_bloom);
-
-  // TODO: this is only used by tests. Kill this off.
-  Status WriteRow(const Slice &row) {
-    CHECK(!finished_);
-    DCHECK_EQ(row.size(), schema_.byte_size());
-
-    for (int i = 0; i < schema_.num_columns(); i++) {
-      int off = schema_.column_offset(i);
-      const void *p = row.data() + off;
-      RETURN_NOT_OK( cfile_writers_[i].AppendEntries(p, 1, 0) );
-
-      column_flushed_counts_[i]++;
-    }
-
-    return Status::OK();
-  }
+  // Append a new row into the layer.
+  // The row is written to all column writers as well as the bloom filter,
+  // if configured.
+  // Rows must be appended in ascending order.
+  Status WriteRow(const Slice &row);
 
   Status Finish();
 
   rowid_t written_count() const {
     CHECK(finished_);
-    return column_flushed_counts_[0];
+    return written_count_;
   }
 
 
 private:
 
-  Status InitBloomFileWriter(gscoped_ptr<BloomFileWriter> *bfw) const;
+  Status InitBloomFileWriter();
+
+  Status AppendBlock(const RowBlock &block);
 
   Env *env_;
   const Schema schema_;
@@ -102,8 +84,9 @@ private:
   BloomFilterSizing bloom_sizing_;
 
   bool finished_;
+  rowid_t written_count_;
   ptr_vector<cfile::Writer> cfile_writers_;
-  vector<rowid_t> column_flushed_counts_;
+  gscoped_ptr<BloomFileWriter> bloom_writer_;
 };
 
 ////////////////////////////////////////////////////////////
@@ -134,6 +117,9 @@ public:
   // Delete the layer directory.
   Status Delete();
 
+  // Rename the directory where this layer is stored.
+  Status RenameLayerDir(const string &new_dir);
+
 
   ////////////////////////////////////////////////////////////
   // LayerInterface implementation
@@ -154,6 +140,7 @@ public:
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 
+  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
 
   // Count the number of rows in this layer.
   Status CountRows(rowid_t *count) const;
@@ -180,7 +167,9 @@ public:
 private:
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);
+  FRIEND_TEST(TestCompaction, TestOneToOne);
   friend class Tablet;
+  friend class CompactionInput;
 
   // TODO: should 'schema' be stored with the layer? quite likely
   // so that we can support cheap alter table.
@@ -212,22 +201,18 @@ private:
 
 
 
-// Layer which is used during the middle of a flush. This layer type is constructed
-// after all of the keys from the memstore have been written to disk, but before
-// the rest of the columns have been written.
+// Layer which is used during the middle of a flush or compaction.
+// It consists of a set of one or more input layers, and a single
+// output layer. All mutations are duplicated to the appropriate input
+// layer as well as the output layer. All reads are directed to the
+// union of the input layers.
 //
-// Given that the keys have been flushed, there are static row indexes for the
-// keys in this layer, and thus updates use a DeltaTracker the same as a normal
-// (already-flushed) Layer. However, given that not all of the columns have been
-// flushed, data is still _read_ from the frozen MemStore, with updates applied
-// from the DeltaTracker.
-//
-// See Tablet::Flush() for a little more detail on how this is used.
-class FlushInProgressLayer : public LayerInterface, boost::noncopyable {
+// See compaction.txt for a little more detail on how this is used.
+class DuplicatingLayer : public LayerInterface, boost::noncopyable {
 public:
-  static Status Open(Env *env, const Schema &schema, const string &dir,
-                     const shared_ptr<MemStore> &ms,
-                     shared_ptr<FlushInProgressLayer> *layer);
+  DuplicatingLayer(const vector<shared_ptr<LayerInterface> > &old_layers,
+                   const shared_ptr<LayerInterface> &new_layer);
+
 
   Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
 
@@ -236,15 +221,13 @@ public:
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 
+  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
+
   Status CountRows(rowid_t *count) const;
 
   uint64_t EstimateOnDiskSize() const;
 
-  Status FindRow(const void *key, rowid_t *idx) const;
-
-  string ToString() const {
-    return string("FlushInProgress at ") + dir_;
-  }
+  string ToString() const;
 
   Status Delete();
 
@@ -253,93 +236,17 @@ public:
     return &always_locked_;
   }
 
-  ~FlushInProgressLayer();
+  ~DuplicatingLayer();
+
+  const Schema &schema() const {
+    return new_layer_->schema();
+  }
 
 private:
   friend class Tablet;
 
-  Status Open();
-
-  FlushInProgressLayer(Env *env, const Schema &schema, const string &dir,
-                       const shared_ptr<MemStore> &ms);
-
-  Env *env_;
-  const string dir_;
-  const Schema schema_;
-
-  shared_ptr<CFileSet> base_data_;
-  shared_ptr<DeltaTracker> delta_tracker_;
-  shared_ptr<MemStore> ms_;
-  bool open_;
-
-  boost::mutex always_locked_;
-};
-
-
-// An in-progress layer for the output of a compaction. While several files are
-// being compacted together, they are replaced in the tablet by a single
-// CompactionInProgressLayer instance which forwards its calls to the input layers.
-//
-// Concurrent access in a compaction is somewhat tricky because the indices of the
-// rows are changing, since multiple input files are being merged, and deletions
-// may be processed. This layer type is constructed after the input keys have
-// been merged, but before the input columns have been merged.
-//
-// This layer implementation has the following properties:
-//
-// - Reads access the union of the input layers
-// - Updates are duplicated:
-//   ... to the appropriate input layer, so that reads _during_ compaction reflect updates
-//   ... to the output layer, so that reads _after_ compaction reflect updates
-class CompactionInProgressLayer : public LayerInterface, boost::noncopyable {
-public:
-
-  static Status Open(Env *env, const Schema &schema, const string &dir,
-                     const LayerVector &input_layers,
-                     shared_ptr<CompactionInProgressLayer> *layer);
-
-  Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
-
-  Status CheckRowPresent(const LayerKeyProbe &key, bool *present) const;
-
-  RowwiseIterator *NewRowIterator(const Schema &projection,
-                                  const MvccSnapshot &snap) const;
-
-  Status CountRows(rowid_t *count) const;
-
-  uint64_t EstimateOnDiskSize() const;
-
-  Status FindRow(const void *key, rowid_t *idx) const;
-
-  string ToString() const {
-    return string("CompactionInProgress at ") + dir_;
-  }
-
-  Status Delete();
-
-  // A compaction-in-progress layer should never be selected for compaction.
-  boost::mutex *compact_flush_lock() {
-    return &always_locked_;
-  }
-
-  ~CompactionInProgressLayer();
-
-private:
-  friend class Tablet;
-
-  Status Open();
-
-  CompactionInProgressLayer(Env *env, const Schema &schema, const string &dir,
-                            const LayerVector &input_layers);
-
-  Env *env_;
-  const string dir_;
-  const Schema schema_;
-
-  shared_ptr<CFileSet> base_data_;
-  shared_ptr<DeltaTracker> delta_tracker_;
-  LayerVector input_layers_;
-  bool open_;
+  vector<shared_ptr<LayerInterface> > old_layers_;
+  shared_ptr<LayerInterface> new_layer_;
 
   boost::mutex always_locked_;
 };

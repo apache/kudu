@@ -175,6 +175,9 @@ class MemStore : boost::noncopyable,
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 
+  // Create compaction input.
+  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
+
   // Return the Schema for the rows in this memstore.
   const Schema &schema() const {
     return schema_;
@@ -189,8 +192,9 @@ class MemStore : boost::noncopyable,
   }
 
   Status Delete() {
-    CHECK(0) << "Cannot Delete a memstore!";
-    return Status::NotSupported("Delete of MemStore not supported");
+    // After a flush, the flush/compact code will call Delete(). This
+    // has no effect since there is nothing on-disk to remove.
+    return Status::OK();
   }
 
   // Mark the memstore as frozen. See CBTree::Freeze()

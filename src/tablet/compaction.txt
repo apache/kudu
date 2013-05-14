@@ -9,7 +9,7 @@ any rows which were deleted by the old layer.
 ------------------------------
 
 Let's start with the simple example of compacting from 1 input layer to
-1 output layer. This has the effect of removing deleted data and
+1 output layer. This has the effect of removing GC-able data and
 applying updates. The compaction has two main phases:
 
 
@@ -32,14 +32,8 @@ System steady state:
   - Updates are applied only to the "source layer"
 
 Transition into Phase 1:
-  - Collect the current set of delta trackers (ie deltamemstore and files)
-    for the layer. Create an iterator which includes these delta trackers.
-  - Atomically with the above, create a new deltamemstore for any mutations
-    that arrive during the compaction.
-
-  - Because all new updates after the above steps go into a new deltamemstore,
-    the iterator created is a pure snapshot which does not reflect updates
-    which arrive during the compaction.
+  - Create a snapshot iterator to merge the input layers, and save the
+    associated MVCC snapshot state.
 
 Phase 1: merge data:
   - Use the iterator created above to create a new set of data for the output
@@ -50,17 +44,17 @@ Phase 1: merge data:
     an entry for each of the rows in the input layer. The value of this column
     is the corresponding row ID in the output layer.
 
-    For example, if there were no deletes at all in the layer being compacted,
+    For example, if there were no garbage-collected rows at all in the layer being compacted,
     this column will simply contain the sequence (1, 2, 3 ... N) where N is the
     number of rows in the input layer.
 
-    If rowid 3 had been deleted, this will contain the sequence (1, 2, x, 3...)
+    If rowid 3 had been GCed, this will contain the sequence (1, 2, x, 3...)
     where 'x' is any special value indicating that the row has been deleted in
     the output.
 
   - Any mutations which arrive during this phase are applied only to the input
-    layer's delta tracking structures. Because the merge operates on a snapshot,
-    it will not take into account in the output layer.
+    layers' delta tracking structures. Because the merge operates on a snapshot,
+    it will not take these into account in the output layer.
 
 Phase 2: migrate deltas from phase 1
   - Any mutations which arrive during this phase should be applied to both the

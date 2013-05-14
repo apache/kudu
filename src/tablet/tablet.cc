@@ -14,6 +14,7 @@
 #include "common/schema.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
+#include "tablet/compaction.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-util.h"
 #include "tablet/layer.h"
@@ -182,7 +183,8 @@ Status Tablet::UpdateRow(const void *key,
 }
 
 void Tablet::AtomicSwapLayers(const LayerVector old_layers,
-                              const shared_ptr<LayerInterface> &new_layer) {
+                              const shared_ptr<LayerInterface> &new_layer,
+                              MvccSnapshot *snap_under_lock = NULL) {
   LayerVector new_layers;
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
@@ -191,7 +193,6 @@ void Tablet::AtomicSwapLayers(const LayerVector old_layers,
   int num_replaced = 0;
 
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-
     // Determine if it should be removed
     bool should_remove = false;
     BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, old_layers) {
@@ -212,25 +213,33 @@ void Tablet::AtomicSwapLayers(const LayerVector old_layers,
   new_layers.push_back(new_layer);
 
   layers_.swap(new_layers);
+
+  if (snap_under_lock != NULL) {
+    // TODO: is there some race here where transactions that are "uncommitted"
+    // in this snapshot may still end up writing into the "old" layer? probably,
+    // since transaction scope is outside of the update lock scope. Instead, we
+    // probably want to just wait around for a while after doing the swap, until
+    // all live transactions that might have written into the pre-swap layer are
+    // committed, and then use that state.
+    *snap_under_lock = MvccSnapshot(mvcc_);
+  }
 }
 
 Status Tablet::Flush() {
   CHECK(open_);
 
-  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PreFlush());
-
-  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
-  string tmp_layer_dir = new_layer_dir + Layer::kTmpLayerSuffix;
-
+  LayersInCompaction input;
   uint64_t start_insert_count;
 
-  shared_ptr<MemStore> old_ms(new MemStore(schema_));
-  boost::mutex::scoped_try_lock old_ms_lock;
+  // Step 1. Freeze the old memstore by blocking readers and swapping
+  // it in as a new layer, replacing it with an empty one.
+
+  // TODO(perf): there's a memstore.Freeze() call which we might be able to
+  // use to improve iteration performance during the flush. The old design
+  // used this, but not certain whether it's still doable with the new design.
 
   LOG(INFO) << "Flush: entering stage 1 (freezing old memstore from inserts)";
-
-  // Step 1. Freeze the old memstore by blocking readers and swapping
-  // it in as a new layer.
+  shared_ptr<MemStore> old_ms(new MemStore(schema_));
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
@@ -249,110 +258,29 @@ Status Tablet::Flush() {
     }
 
     // Mark the memstore layer as locked, so compactions won't consider it
-    // for inclusion.
-    old_ms_lock.swap(boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
-    CHECK(old_ms_lock.owns_lock());
+    // for inclusion in any concurrent compactions.
+    shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
+      new boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
+    CHECK(ms_lock->owns_lock());
+    input.AddLayer(old_ms, ms_lock);
+
+    // Put it back on the layer list.
     layers_.push_back(old_ms);
   }
-
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemStore());
 
-
-  // At this point:
-  //   Inserts: go into the new memstore
-  //   Updates: can go to either memstore as appropriate
-  //   Deletes: TODO
-  //
-  // Crucially, the *key set* of the old memstore has been frozen,
-  // so we can flush it to disk without it changing under us.
-
-  // Step 2. Flush the key column of the old memstore. This doesn't need
-  // any lock, since updates go on concurrently.
-  // TODO: deletes are a little bit tricky here -- need to make sure
-  // that deletes at this point are just marking entries in the btree
-  // rather than actually deleting them.
-  LOG(INFO) << "Flush: entering stage 2 (flushing keys)";
+  input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
-  Schema keys_only = schema_.CreateKeyProjection();
 
-  // TODO: redo flush/compact with new design.
-  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-  shared_ptr<RowwiseIterator> iter(old_ms->NewIterator(keys_only, snap));
-  RETURN_NOT_OK(iter->Init(NULL));
+  RETURN_NOT_OK(DoCompactionOrFlush(input));
 
-  LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
-  RETURN_NOT_OK(out.Open());
-  RETURN_NOT_OK(out.FlushProjection(keys_only, iter.get(), false, true));
-
-  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostFlushKeys());
-
-  // Step 3. Freeze old memstore contents.
-  // Because the key column exists on disk, we can create a new layer
-  // which does positional updating instead of in-place updating,
-  // and swap that in.
-
-  LOG(INFO) << "Flush: entering stage 3 (freezing old memstore from in-place updates)";
-
-  shared_ptr<FlushInProgressLayer> inprogress_layer;
-  RETURN_NOT_OK(FlushInProgressLayer::Open(
-                  env_, schema_, tmp_layer_dir, old_ms,
-                  &inprogress_layer));
-
-  uint64_t start_update_count;
-  AtomicSwapLayers(boost::assign::list_of(old_ms), inprogress_layer);
-
-  // We shouldn't have any more updates after this point.
-  start_update_count = old_ms->debug_update_count();
-  old_ms->Freeze();
-
-  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostFreezeOldMemStore());
-
-  LOG(INFO) << "Flush: entering stage 4 (flushing the rest of the columns)";
-
-  // Step 4. Flush the non-key columns
-  Schema non_keys = schema_.CreateNonKeyProjection();
-  iter.reset(old_ms->NewIterator(non_keys, snap));
-  RETURN_NOT_OK(iter->Init(NULL));
-  RETURN_NOT_OK(out.FlushProjection(non_keys, iter.get(), false, false));
-  RETURN_NOT_OK(out.Finish());
-
-
-  // Sanity check that no mutations happened during our flush.
+  // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
     << "Sanity check failed: insertions continued in memstore "
     << "after flush was triggered! Aborting to prevent dataloss.";
-  CHECK_EQ(start_update_count, old_ms->debug_update_count())
-    << "Sanity check failed: updates continued in memstore "
-    << "after flush was triggered! Aborting to prevent dataloss.";
-
-  // Flush to tmp was successful. Finish the flush.
-  // TODO: move this to be a method in FlushInProgressLayer
-  RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
-
-  shared_ptr<Layer> final_layer;
-  Status s = Layer::Open(env_, schema_, new_layer_dir, &final_layer);
-  if (!s.ok()) {
-    LOG(WARNING) << "Unable to open flush result " << new_layer_dir
-                 << ": " << s.ToString();
-    return s;
-  }
-
-  final_layer->set_delta_tracker(inprogress_layer->delta_tracker_);
-  AtomicSwapLayers(boost::assign::list_of(inprogress_layer), final_layer);
-
-  LOG(INFO) << "Successfully flushed " << out.written_count() << " rows";
-
-  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostOpenNewLayer());
-
-  // unlock these now. Although no other thread should ever see them,
-  // we trigger pthread assertions in DEBUG mode if we don't unlock.
-  old_ms_lock.unlock();
 
   return Status::OK();
-
-  // TODO: explicitly track iterators somehow so that a slow
-  // memstore reader can't hold on to too much memory in the tablet.
 }
 
 void Tablet::SetCompactionHooksForTests(
@@ -365,17 +293,21 @@ void Tablet::SetFlushHooksForTests(
   flush_hooks_ = hooks;
 }
 
+void Tablet::SetFlushCompactCommonHooksForTests(
+  const shared_ptr<Tablet::FlushCompactCommonHooks> &hooks) {
+  common_hooks_ = hooks;
+}
+
 static bool CompareBySize(const shared_ptr<LayerInterface> &a,
                           const shared_ptr<LayerInterface> &b) {
   return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
 }
 
-Status Tablet::PickLayersToCompact(
-  LayerVector *out_layers,
-  LockVector *out_locks) const
+
+Status Tablet::PickLayersToCompact(LayersInCompaction *picked) const
 {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  CHECK_EQ(out_layers->size(), 0);
+  CHECK_EQ(picked->num_layers(), 0);
 
   vector<shared_ptr<LayerInterface> > tmp_layers;
   tmp_layers.assign(layers_.begin(), layers_.end());
@@ -385,7 +317,7 @@ Status Tablet::PickLayersToCompact(
   uint64_t accumulated_size = 0;
   BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
     uint64_t this_size = l->EstimateOnDiskSize();
-    if (out_layers->size() < 2 || this_size < accumulated_size * 2) {
+    if (picked->num_layers() < 2 || this_size < accumulated_size * 2) {
       // Grab the compact_flush_lock: this prevents any other concurrent
       // compaction from selecting this same layer, and also ensures that
       // we don't select a layer which is currently in the middle of being
@@ -398,8 +330,7 @@ Status Tablet::PickLayersToCompact(
       }
 
       // Push the lock on our scoped list, so we unlock when done.
-      out_locks->push_back(lock);
-      out_layers->push_back(l);
+      picked->AddLayer(l, lock);
       accumulated_size += this_size;
     } else {
       break;
@@ -409,108 +340,115 @@ Status Tablet::PickLayersToCompact(
   return Status::OK();
 }
 
-
-Status Tablet::Compact()
-{
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PreCompaction());
-
+Status Tablet::DoCompactionOrFlush(const LayersInCompaction &input) {
   string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
   string tmp_layer_dir = new_layer_dir + ".compact-tmp";
 
-  Schema keys_only = schema_.CreateKeyProjection();
+  LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
+  MvccSnapshot flush_snap(mvcc_);
 
-  LOG(INFO) << "Compaction: entering stage 1 (collecting layers)";
+  shared_ptr<CompactionInput> merge;
+  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
-  // Step 1. Capture the layers to be merged
-  LayerVector input_layers;
-  LockVector compact_locks;
-  RETURN_NOT_OK(PickLayersToCompact(&input_layers, &compact_locks));
-  if (input_layers.size() < 2) {
-    LOG(INFO) << "Not enough layers to run compaction! Aborting...";
-    return Status::OK();
+  LayerWriter lw(env_, schema_, tmp_layer_dir, bloom_sizing());
+  RETURN_NOT_OK(lw.Open());
+  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &lw));
+  RETURN_NOT_OK(lw.Finish());
+
+  // Open the written-out snapshot as a new layer.
+  shared_ptr<Layer> new_layer;
+  Status s = Layer::Open(env_, schema_, tmp_layer_dir, &new_layer);
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to open snapshot compaction results in " << tmp_layer_dir
+                 << ": " << s.ToString();
+    return s;
   }
 
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
 
-  // TODO: redo flush/compact with new design.
-  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  // Finished Phase 1. Start duplicating any new updates into the new on-disk layer.
+  //
+  // During Phase 1, we may have missed some updates which came into the input layers
+  // while we were writing. So, we can't immediately start reading from the on-disk
+  // layer alone. Starting here, we continue to read from the original layer(s), but
+  // mirror updates to both the input and the output data.
+  //
+  LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new layer)";
+  shared_ptr<DuplicatingLayer> inprogress_layer(new DuplicatingLayer(input.layers(), new_layer));
+  MvccSnapshot snap2;
+  AtomicSwapLayers(input.layers(), inprogress_layer, &snap2);
 
-  // Dump the selected layers to the log, and collect corresponding iterators.
-  vector<shared_ptr<RowwiseIterator> > key_iters;
-  LOG(INFO) << "Selected " << input_layers.size() << " layers to compact:";
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
-    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(keys_only, snap));
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingLayer());
 
-    LOG(INFO) << l->ToString() << "(" << l->EstimateOnDiskSize() << " bytes)";
-    key_iters.push_back(row_it);
-  }
 
-  // Step 2. Merge their key columns.
-  LOG(INFO) << "Compaction: entering stage 2 (compacting keys)";
+  // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
+  // memstore, but not in the new layer. Here we re-scan the memstore, copying those
+  // missed updates into the new layer's DeltaTracker.
+  //
+  // TODO: is there some bug here? Here's a potentially bad scenario:
+  // - during flush, txid 1 updates a flushed row
+  // - At the beginning of step 4, txid 2 updates the same flushed row, followed by ~1000
+  //   more updates against the new layer. This causes the new layer to flush its deltas
+  //   before txid 1 is transferred to it.
+  // - Now the redos_0 deltafile in the new layer includes txid 2-1000, and the DMS is empty.
+  // - This code proceeds, and pushes txid1 into the DMS.
+  // - DMS eventually flushes again, and redos_1 includes an _earlier_ update than redos_0.
+  // At read time, since we apply updates from the redo logs in order, we might end up reading
+  // the earlier data instead of the later data.
+  //
+  // Potential solutions:
+  // 1) don't apply the changes in step 4 directly into the new layer's DMS. Instead, reserve
+  //    redos_0 for these edits, and write them directly to that file, even though it will likely
+  //    be very small.
+  // 2) at read time, as deltas are applied, keep track of the max txid for each of the columns
+  //    and don't let an earlier update overwrite a later one.
+  // 3) don't allow DMS to flush in an in-progress layer.
+  LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
+  RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
+  RETURN_NOT_OK(merge->Init()); // TODO: why is init required here but not above?
+  RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_layer->delta_tracker_.get()));
 
-  MergeIterator merge_keys(keys_only, key_iters);
-  RETURN_NOT_OK(merge_keys.Init(NULL));
 
-  LayerWriter out(env_, schema_, tmp_layer_dir, bloom_sizing());
-  RETURN_NOT_OK(out.Open());
-  RETURN_NOT_OK(out.FlushProjection(keys_only, &merge_keys, true, true));
-
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostMergeKeys());
-  
-  // Step 3. Swap in the UpdateDuplicatingLayer
-  shared_ptr<CompactionInProgressLayer> inprogress_layer;
-  RETURN_NOT_OK(CompactionInProgressLayer::Open(
-                  env_, schema_, tmp_layer_dir, input_layers,
-                  &inprogress_layer));
-  AtomicSwapLayers(input_layers, inprogress_layer);
-
-  // Step 4. Merge non-keys
-  LOG(INFO) << "Compaction: entering stage 4 (compacting other columns)";
-
-  vector<shared_ptr<RowwiseIterator> > full_iters;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, input_layers) {
-    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(schema_, snap));
-    VLOG(2) << "adding " << row_it->ToString() << " for compaction stage 2";
-    full_iters.push_back(row_it);
-  }
-
-  MergeIterator merge_full(schema_, full_iters);
-  RETURN_NOT_OK(merge_full.Init(NULL));
-  Schema non_keys = schema_.CreateNonKeyProjection();
-  RETURN_NOT_OK(out.FlushProjection(non_keys, &merge_full, true, false));
-  RETURN_NOT_OK(out.Finish());
-
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostMergeNonKeys());
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
 
   // ------------------------------
   // Flush to tmp was successful. Rename it to its real location.
 
-  RETURN_NOT_OK(env_->RenameFile(tmp_layer_dir, new_layer_dir));
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostRenameFile());
+  RETURN_NOT_OK(new_layer->RenameLayerDir(new_layer_dir));
 
-  LOG(INFO) << "Successfully compacted " << out.written_count() << " rows";
-
-  // Open it.
-  shared_ptr<Layer> new_layer;
-  RETURN_NOT_OK(Layer::Open(env_, schema_, new_layer_dir, &new_layer));
-  new_layer->set_delta_tracker(inprogress_layer->delta_tracker_);
+  LOG(INFO) << "Successfully flush/compacted " << lw.written_count() << " rows";
 
   // Replace the compacted layers with the new on-disk layer.
-  AtomicSwapLayers(boost::assign::list_of(inprogress_layer),
-                   new_layer);
+  AtomicSwapLayers(boost::assign::list_of(inprogress_layer), new_layer);
 
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSwapNewLayer());
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewLayer());
 
   // Remove old layers
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input_layers) {
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input.layers()) {
     LOG(INFO) << "Removing compaction input layer " << l_input->ToString();
     RETURN_NOT_OK(l_input->Delete());
   }
 
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostCompaction());
-
   return Status::OK();
+}
 
+Status Tablet::Compact()
+{
+  CHECK(open_);
+
+  LOG(INFO) << "Compaction: entering stage 1 (collecting layers)";
+  LayersInCompaction input;
+  // Step 1. Capture the layers to be merged
+  RETURN_NOT_OK(PickLayersToCompact(&input));
+  if (input.num_layers() < 2) {
+    LOG(INFO) << "Not enough layers to run compaction! Aborting...";
+    return Status::OK();
+  }
+  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
+
+  input.DumpToLog();
+
+  return DoCompactionOrFlush(input);
 }
 
 Status Tablet::CaptureConsistentIterators(

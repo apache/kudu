@@ -83,27 +83,23 @@ void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *d
   deltas->push_back(dms_);
 }
 
+shared_ptr<DeltaIteratorInterface> DeltaTracker::NewDeltaIterator(const Schema &schema,
+                                                                  const MvccSnapshot &snap) const {
+  std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
+  CollectTrackers(&deltas);
+  return DeltaIteratorMerger::Create(deltas, schema, snap);
+}
 
 ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                                const MvccSnapshot &mvcc_snap) const
 {
-  std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
-  CollectTrackers(&deltas);
-  shared_ptr<DeltaIteratorInterface> merged_deltas(
-    DeltaIteratorMerger::Create(deltas, base->schema(), mvcc_snap));
-
-  return new DeltaApplier<ColumnwiseIterator>(base, merged_deltas);
+  return new DeltaApplier<ColumnwiseIterator>(base, NewDeltaIterator(base->schema(), mvcc_snap));
 }
 
 RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &base,
                                             const MvccSnapshot &mvcc_snap) const
 {
-  std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
-  CollectTrackers(&deltas);
-  shared_ptr<DeltaIteratorInterface> merged_deltas(
-    DeltaIteratorMerger::Create(deltas, base->schema(), mvcc_snap));
-
-  return new DeltaApplier<RowwiseIterator>(base, merged_deltas);
+  return new DeltaApplier<RowwiseIterator>(base, NewDeltaIterator(base->schema(), mvcc_snap));
 }
 
 

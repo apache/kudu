@@ -21,9 +21,12 @@ namespace kudu { namespace tablet {
 using std::string;
 using std::tr1::shared_ptr;
 
+class LayersInCompaction;
+
 class Tablet {
 public:
   class CompactionFaultHooks;
+  class FlushCompactCommonHooks;
   class FlushFaultHooks;
 
   Tablet(const Schema &schema,
@@ -92,13 +95,12 @@ public:
 
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
+  void SetFlushCompactCommonHooksForTests(const shared_ptr<FlushCompactCommonHooks> &hooks);
 
   // Return the MVCC manager for this tablet.
   const MvccManager &mvcc_manager() const { return mvcc_; }
 
 private:
-  typedef vector<shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
-
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
   // These iterators are not true snapshot iterators, but they are safe against
@@ -110,14 +112,15 @@ private:
                                     const MvccSnapshot &snap,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;
 
-  Status PickLayersToCompact(
-    LayerVector *out_layers,
-    LockVector *out_locks) const;
+  Status PickLayersToCompact(LayersInCompaction *picked) const;
+
+  Status DoCompactionOrFlush(const LayersInCompaction &input);
 
   // Swap out a set of layers, atomically replacing them with the new layer
   // under the lock.
   void AtomicSwapLayers(const LayerVector old_layers,
-                        const shared_ptr<LayerInterface> &new_layer);
+                        const shared_ptr<LayerInterface> &new_layer,
+                        MvccSnapshot *snap_under_lock);
     
 
   BloomFilterSizing bloom_sizing() const;
@@ -150,6 +153,7 @@ private:
   // Fault hooks. In production code, these will always be NULL.
   shared_ptr<CompactionFaultHooks> compaction_hooks_;
   shared_ptr<FlushFaultHooks> flush_hooks_;
+  shared_ptr<FlushCompactCommonHooks> common_hooks_;
 };
 
 
@@ -157,24 +161,22 @@ private:
 // parts of the compaction code.
 class Tablet::CompactionFaultHooks {
 public:
-  virtual Status PreCompaction() { return Status::OK(); }
   virtual Status PostSelectIterators() { return Status::OK(); }
-  virtual Status PostMergeKeys() { return Status::OK(); }
-  virtual Status PostMergeNonKeys() { return Status::OK(); }
-  virtual Status PostRenameFile() { return Status::OK(); }
+};
+
+class Tablet::FlushCompactCommonHooks {
+ public:
+  virtual Status PostWriteSnapshot() { return Status::OK(); }
+  virtual Status PostSwapInDuplicatingLayer() { return Status::OK(); }
+  virtual Status PostReupdateMissedDeltas() { return Status::OK(); }
   virtual Status PostSwapNewLayer() { return Status::OK(); }
-  virtual Status PostCompaction() { return Status::OK(); }
 };
 
 // Hooks used in test code to inject faults or other code into interesting
 // parts of the Flush() code.
 class Tablet::FlushFaultHooks {
 public:
-  virtual Status PreFlush() { return Status::OK(); }
   virtual Status PostSwapNewMemStore() { return Status::OK(); }
-  virtual Status PostFlushKeys() { return Status::OK(); }
-  virtual Status PostFreezeOldMemStore() { return Status::OK(); }
-  virtual Status PostOpenNewLayer() { return Status::OK(); }
 };
 
 

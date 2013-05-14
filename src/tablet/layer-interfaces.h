@@ -20,6 +20,7 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
+class CompactionInput;
 class DeltaIteratorInterface;
 class Mutation;
 
@@ -81,6 +82,9 @@ public:
   virtual RowwiseIterator *NewRowIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const = 0;
 
+  // Create the input to be used for a compaction.
+  virtual CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const = 0;
+
   // Count the number of rows in this layer.
   virtual Status CountRows(rowid_t *count) const = 0;
 
@@ -97,6 +101,9 @@ public:
   // This prevents multiple compactions and flushes from trying to include
   // the same layer.
   virtual boost::mutex *compact_flush_lock() = 0;
+
+  // Return the schema for data in this layer.
+  virtual const Schema &schema() const = 0;
 
   virtual ~LayerInterface() {}
 };

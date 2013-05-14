@@ -72,11 +72,6 @@ TEST(TestSchema, TestProjection) {
   Schema key_cols = schema1.CreateKeyProjection();
   ASSERT_EQ(1, key_cols.num_columns());
   ASSERT_EQ("col1", key_cols.column(0).name());
-
-  Schema non_key_cols = schema1.CreateNonKeyProjection();
-  ASSERT_EQ(2, non_key_cols.num_columns());
-  ASSERT_EQ("col2", non_key_cols.column(0).name());
-  ASSERT_EQ("col3", non_key_cols.column(1).name());
 }
 
 // Test projection when the type of the projected column

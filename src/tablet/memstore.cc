@@ -9,6 +9,7 @@
 #include "common/row.h"
 #include "gutil/atomicops.h"
 #include "tablet/memstore.h"
+#include "tablet/compaction.h"
 
 DEFINE_int32(memstore_throttle_mb, 0,
              "number of MB of RAM beyond which memstore inserts will be throttled");
@@ -135,7 +136,6 @@ void MemStore::SlowMutators() {
 
 MemStore::Iterator *MemStore::NewIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const {
-  // TODO: take into account 'snap'
   return new MemStore::Iterator(shared_from_this(), tree_.NewIterator(),
                                 projection, snap);
 }
@@ -148,6 +148,10 @@ MemStore::Iterator *MemStore::NewIterator() const {
 RowwiseIterator *MemStore::NewRowIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const{
   return NewIterator(projection, snap);
+}
+
+CompactionInput *MemStore::NewCompactionInput(const MvccSnapshot &snap) const  {
+  return CompactionInput::Create(*this, snap);
 }
 
 } // namespace tablet

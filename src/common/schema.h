@@ -295,15 +295,6 @@ public:
     return Schema(key_cols, num_key_columns_);
   }
 
-  // Return the projection of this schema which contains only
-  // the non-key columns.
-  Schema CreateNonKeyProjection() const {
-    vector<ColumnSchema> non_key_cols(cols_.begin() + num_key_columns_,
-                                      cols_.end());
-    return Schema(non_key_cols, 0);
-  }
-
-
   // Encode the key portion of the given row into a buffer
   // such that the buffer's lexicographic comparison represents
   // the proper comparison order of the underlying types.

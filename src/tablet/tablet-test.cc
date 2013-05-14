@@ -24,7 +24,15 @@ DEFINE_int32(testcompaction_num_rows, 1000,
              "Number of rows per layer in TestCompaction");
 
 template<class SETUP>
-class TestTablet : public TabletTestBase<SETUP> {};
+class TestTablet : public TabletTestBase<SETUP> {
+ public:
+  // Verify that iteration doesn't fail
+  void CheckCanIterate() {
+    vector<string> out_rows;
+    ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  }
+
+};
 TYPED_TEST_CASE(TestTablet, TabletTestHelperTypes);
 
 
@@ -346,50 +354,64 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 
   // Inject hooks which mutate those rows and add more rows at
   // each key stage of flushing.
-  class MyHooks : public Tablet::FlushFaultHooks {
+  class MyFlushHooks : public Tablet::FlushFaultHooks {
   public:
-    MyHooks(TestFixture *test) : test_(test) {}
+    MyFlushHooks(TestFixture *test) : test_(test) {}
 
     Status PostSwapNewMemStore() {
       test_->InsertTestRows(5, 1);
       test_->UpdateTestRow(0, 12345);
-      CheckCanIterate();
+      test_->CheckCanIterate();
       return Status::OK();
     }
-    Status PostFlushKeys() {
+  private:
+    TestFixture *test_;
+  };
+  shared_ptr<Tablet::FlushFaultHooks> flush_hooks(
+    reinterpret_cast<Tablet::FlushFaultHooks *>(new MyFlushHooks(this)));
+  this->tablet_->SetFlushHooksForTests(flush_hooks);
+
+  class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
+  public:
+    MyCommonHooks(TestFixture *test) : test_(test) {}
+
+    Status PostWriteSnapshot() {
       test_->InsertTestRows(6, 1);
       test_->UpdateTestRow(1, 12345);
-      CheckCanIterate();
+      test_->CheckCanIterate();
       return Status::OK();
     }
 
-    Status PostFreezeOldMemStore() {
+    Status PostSwapInDuplicatingLayer() {
       test_->InsertTestRows(7, 1);
       test_->UpdateTestRow(2, 12345);
-      CheckCanIterate();
+      test_->CheckCanIterate();
       return Status::OK();
     }
 
-    Status PostOpenNewLayer() {
+    Status PostReupdateMissedDeltas() {
       test_->InsertTestRows(8, 1);
       test_->UpdateTestRow(3, 12345);
-      CheckCanIterate();
+      test_->CheckCanIterate();
       return Status::OK();
     }
 
-    // Verify that iteration doesn't fail
-    void CheckCanIterate() {
-      vector<string> out_rows;
-      ASSERT_STATUS_OK(test_->IterateToStringList(&out_rows));
+    Status PostSwapNewLayer() {
+      test_->InsertTestRows(9, 1);
+      test_->UpdateTestRow(4, 12345);
+      test_->CheckCanIterate();
+      return Status::OK();
     }
 
   private:
     TestFixture *test_;
   };
-  shared_ptr<Tablet::FlushFaultHooks> hooks(
-    reinterpret_cast<Tablet::FlushFaultHooks *>(new MyHooks(this)));
-  this->tablet_->SetFlushHooksForTests(hooks);
-  this->tablet_->Flush();
+  shared_ptr<Tablet::FlushCompactCommonHooks> common_hooks(
+    reinterpret_cast<Tablet::FlushCompactCommonHooks *>(new MyCommonHooks(this)));
+  this->tablet_->SetFlushCompactCommonHooksForTests(common_hooks);
+
+
+  ASSERT_STATUS_OK(this->tablet_->Flush());
 
   vector<string> out_rows;
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
@@ -397,17 +419,18 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
-  ASSERT_EQ(9, out_rows.size());
+  ASSERT_EQ(10, out_rows.size());
 
   ASSERT_EQ(this->setup_.FormatDebugRow(0, 12345), out_rows[0]);
   ASSERT_EQ(this->setup_.FormatDebugRow(1, 12345), out_rows[1]);
   ASSERT_EQ(this->setup_.FormatDebugRow(2, 12345), out_rows[2]);
   ASSERT_EQ(this->setup_.FormatDebugRow(3, 12345), out_rows[3]);
-  ASSERT_EQ(this->setup_.FormatDebugRow(4, 0), out_rows[4]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(4, 12345), out_rows[4]);
   ASSERT_EQ(this->setup_.FormatDebugRow(5, 0), out_rows[5]);
   ASSERT_EQ(this->setup_.FormatDebugRow(6, 0), out_rows[6]);
   ASSERT_EQ(this->setup_.FormatDebugRow(7, 0), out_rows[7]);
   ASSERT_EQ(this->setup_.FormatDebugRow(8, 0), out_rows[8]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(9, 0), out_rows[9]);
 }
 
 
@@ -425,55 +448,65 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   this->InsertTestRows(3, 1);
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  class MyHooks : public Tablet::CompactionFaultHooks {
-  public:
-    MyHooks(TestFixture *test) : test_(test) {}
+  class MyCompactHooks : public Tablet::CompactionFaultHooks {
+   public:
+    MyCompactHooks(TestFixture *test) : test_(test) {}
 
-    Status PostMergeKeys() {
+    Status PostSelectIterators() {
       test_->InsertTestRows(4, 1);
       test_->UpdateTestRow(0, 12345);
 
-      CheckCanIterate();
+      test_->CheckCanIterate();
       return Status::OK();
     }
+   private:
+    TestFixture *test_;
+  };
+  shared_ptr<Tablet::CompactionFaultHooks> hooks(
+    reinterpret_cast<Tablet::CompactionFaultHooks *>(new MyCompactHooks(this)));
+  this->tablet_->SetCompactionHooksForTests(hooks);
 
-    Status PostMergeNonKeys() {
+  class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
+   public:
+    MyCommonHooks(TestFixture *test) : test_(test) {}
+
+    Status PostWriteSnapshot() {
       test_->InsertTestRows(5, 1);
       test_->UpdateTestRow(1, 12345);
 
-      CheckCanIterate();
+      test_->CheckCanIterate();
       return Status::OK();
     }
 
-    Status PostRenameFile() {
+    Status PostSwapInDuplicatingLayer() {
       test_->InsertTestRows(6, 1);
       test_->UpdateTestRow(2, 12345);
 
-      CheckCanIterate();
+      test_->CheckCanIterate();
+      return Status::OK();
+    }
+
+    Status PostReupdateMissedDeltas() {
+      test_->InsertTestRows(7, 1);
+      test_->UpdateTestRow(3, 12345);
+      test_->CheckCanIterate();
       return Status::OK();
     }
 
     Status PostSwapNewLayer() {
-      test_->InsertTestRows(7, 1);
-      test_->UpdateTestRow(3, 12345);
-      CheckCanIterate();
+      test_->InsertTestRows(8, 1);
+      test_->UpdateTestRow(4, 12345);
+      test_->CheckCanIterate();
       return Status::OK();
     }
 
-    // Verify that iteration doesn't fail
-    void CheckCanIterate() {
-      vector<string> out_rows;
-      ASSERT_STATUS_OK(test_->IterateToStringList(&out_rows));
-    }
-
-  private:
+   private:
     TestFixture *test_;
   };
+  shared_ptr<Tablet::FlushCompactCommonHooks> common_hooks(
+    reinterpret_cast<Tablet::FlushCompactCommonHooks *>(new MyCommonHooks(this)));
+  this->tablet_->SetFlushCompactCommonHooksForTests(common_hooks);
 
-  shared_ptr<Tablet::CompactionFaultHooks> hooks(
-    reinterpret_cast<Tablet::CompactionFaultHooks *>(new MyHooks(this)));
-
-  this->tablet_->SetCompactionHooksForTests(hooks);
 
   // Issue compaction
   ASSERT_STATUS_OK(this->tablet_->Compact());
@@ -485,16 +518,17 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
-  ASSERT_EQ(8, out_rows.size());
+  ASSERT_EQ(9, out_rows.size());
 
   ASSERT_EQ(this->setup_.FormatDebugRow(0, 12345), out_rows[0]);
   ASSERT_EQ(this->setup_.FormatDebugRow(1, 12345), out_rows[1]);
   ASSERT_EQ(this->setup_.FormatDebugRow(2, 12345), out_rows[2]);
   ASSERT_EQ(this->setup_.FormatDebugRow(3, 12345), out_rows[3]);
-  ASSERT_EQ(this->setup_.FormatDebugRow(4, 0), out_rows[4]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(4, 12345), out_rows[4]);
   ASSERT_EQ(this->setup_.FormatDebugRow(5, 0), out_rows[5]);
   ASSERT_EQ(this->setup_.FormatDebugRow(6, 0), out_rows[6]);
   ASSERT_EQ(this->setup_.FormatDebugRow(7, 0), out_rows[7]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(8, 0), out_rows[8]);
 }
 
 

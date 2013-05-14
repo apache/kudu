@@ -31,6 +31,12 @@ public:
   RowwiseIterator *WrapIterator(const shared_ptr<RowwiseIterator> &base,
                                 const MvccSnapshot &mvcc_snap) const;
 
+  // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
+  // where this has bled around.
+  shared_ptr<DeltaIteratorInterface> NewDeltaIterator(const Schema &schema,
+                                                      const MvccSnapshot &snap) const;
+
+
   Status Open();
   Status Flush();
 
@@ -41,6 +47,7 @@ public:
 
 private:
   friend class Layer;
+
   FRIEND_TEST(TestLayer, TestLayerUpdate);
   FRIEND_TEST(TestLayer, TestDMSFlush);
 
@@ -48,7 +55,6 @@ private:
   Status FlushDMS(const DeltaMemStore &dms,
                   gscoped_ptr<DeltaFileReader> *dfr);
   void CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *deltas) const;
-
 
   Env *env_;
   const Schema schema_;

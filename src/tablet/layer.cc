@@ -14,6 +14,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
+#include "tablet/compaction.h"
 #include "tablet/layer.h"
 #include "util/env.h"
 #include "util/env_util.h"
@@ -110,7 +111,7 @@ Status LayerWriter::Open() {
   // Create the directory for the new layer
   RETURN_NOT_OK(env_->CreateDir(dir_));
 
-
+  // Open columns.
   for (int i = 0; i < schema_.num_columns(); i++) {
     const ColumnSchema &col = schema_.column(i);
 
@@ -161,94 +162,73 @@ Status LayerWriter::Open() {
     cfile_writers_.push_back(writer.release());
   }
 
+  // Open bloom filter.
+  RETURN_NOT_OK(InitBloomFileWriter());
+
   return Status::OK();
 }
 
-Status LayerWriter::InitBloomFileWriter(gscoped_ptr<BloomFileWriter> *bfw) const {
+Status LayerWriter::InitBloomFileWriter() {
   string path(Layer::GetBloomPath(dir_));
   shared_ptr<WritableFile> file;
   RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
-  bfw->reset(new BloomFileWriter(file, bloom_sizing_));
-  return bfw->get()->Start();
+  bloom_writer_.reset(new BloomFileWriter(file, bloom_sizing_));
+  return bloom_writer_->Start();
+}
+
+Status LayerWriter::WriteRow(const Slice &row) {
+  CHECK(!finished_);
+  DCHECK_EQ(row.size(), schema_.byte_size());
+
+
+  // TODO(perf): this is a kind of slow implementation since it
+  // causes an extra unnecessary copy, and only appends one
+  // at a time. Would be nice to change RowBlock so that it can
+  // be used in scenarios where it just points to existing memory.
+  RowBlock block(schema_, 1, NULL);
+  memcpy(block.row_ptr(0), row.data(), schema_.byte_size());
+
+  return AppendBlock(block);
 }
 
 
-Status LayerWriter::FlushProjection(const Schema &projection,
-                                    RowwiseIterator *src_iter,
-                                    bool need_arena,
-                                    bool write_bloom) {
-  const Schema &iter_schema = src_iter->schema();
-
+Status LayerWriter::AppendBlock(const RowBlock &block) {
+  DCHECK_EQ(block.schema().num_columns(), schema_.num_columns());
   CHECK(!finished_);
-  vector<size_t> orig_projection;
-  vector<size_t> iter_projection;
-  projection.GetProjectionFrom(schema_, &orig_projection);
-  projection.GetProjectionFrom(iter_schema, &iter_projection);
 
+  size_t stride = schema_.byte_size();
+
+  // Write the batch to each of the columns
+  for (int i = 0; i < schema_.num_columns(); i++) {
+    // TODO: need to look at the selection vector here and only append the
+    // selected rows?
+    const void *p = block.row_ptr(0) + block.schema().column_offset(i);
+    RETURN_NOT_OK(
+      cfile_writers_[i].AppendEntries(p, block.nrows(), stride));
+  }
+
+  // Write the batch to the bloom
   faststring encoded_key_buf; // for blooms
-  gscoped_ptr<BloomFileWriter> bfw;
-  if (write_bloom) {
-    InitBloomFileWriter(&bfw);
+
+  const uint8_t *row = block.row_ptr(0);
+  for (size_t i = 0; i < block.nrows(); i++) {
+    // TODO: performance might be better if we actually batch this -
+    // encode a bunch of key slices, then pass them all in one go.
+
+    // Encode the row into sortable form
+    encoded_key_buf.clear();
+    Slice row_slice(row, stride);
+    schema_.EncodeComparableKey(row_slice, &encoded_key_buf);
+
+    // Insert the encoded row into the bloom.
+    Slice encoded_key_slice(encoded_key_buf);
+    RETURN_NOT_OK( bloom_writer_->AppendKeys(&encoded_key_slice, 1) );
+
+    // Advance.
+    row += stride;
   }
 
-
-  ScopedBatchReader batcher(src_iter, need_arena);
-
-  size_t written = 0;
-  while (batcher.HasNext()) {
-    // Read a batch from the iterator.
-    size_t nrows;
-    RETURN_NOT_OK(batcher.NextBatch(&nrows));
-    CHECK_GT(nrows, 0);
-
-    // Write the batch to the each of the columns
-    for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
-      size_t orig_col = orig_projection[proj_col];
-      size_t iter_col = iter_projection[proj_col];
-
-      size_t stride = iter_schema.byte_size();
-      const void *p = batcher.col_ptr(iter_col);
-      RETURN_NOT_OK( cfile_writers_[orig_col].AppendEntries(p, nrows, stride) );
-    }
-
-    // Write the batch to the bloom, if applicable
-    if (write_bloom) {
-      const uint8_t *row = batcher.row_ptr(0);
-      for (size_t i = 0; i < nrows; i++) {
-        // TODO: performance might be better if we actually batch this -
-        // encode a bunch of key slices, then pass them all in one go.
-
-        // Encode the row into sortable form
-        encoded_key_buf.clear();
-        Slice row_slice(row, iter_schema.byte_size());
-        iter_schema.EncodeComparableKey(row_slice, &encoded_key_buf);
-
-        // Insert the encoded row into the bloom.
-        Slice encoded_key_slice(encoded_key_buf);
-        RETURN_NOT_OK( bfw->AppendKeys(&encoded_key_slice, 1) );
-
-        // Advance.
-        row += iter_schema.byte_size();
-      }
-    }
-
-    written += nrows;
-  }
-
-  // Finish columns.
-  for (int proj_col = 0; proj_col < projection.num_columns(); proj_col++) {
-    size_t orig_col = orig_projection[proj_col];
-    CHECK_EQ(column_flushed_counts_[orig_col], 0);
-    column_flushed_counts_[orig_col] = written;
-
-    RETURN_NOT_OK(cfile_writers_[orig_col].Finish());
-  }
-
-  // Finish bloom.
-  if (write_bloom) {
-    RETURN_NOT_OK(bfw->Finish());
-  }
-
+  written_count_ += block.nrows();
 
   return Status::OK();
 }
@@ -256,12 +236,20 @@ Status LayerWriter::FlushProjection(const Schema &projection,
 Status LayerWriter::Finish() {
   CHECK(!finished_);
   for (int i = 0; i < schema_.num_columns(); i++) {
-    CHECK_EQ(column_flushed_counts_[i], column_flushed_counts_[0])
-      << "Uneven flush. Column " << schema_.column(i).ToString() << " didn't match count "
-      << "of column " << schema_.column(0).ToString();
-    if (!cfile_writers_[i].finished()) {
-      RETURN_NOT_OK(cfile_writers_[i].Finish());
+    cfile::Writer &writer = cfile_writers_[i];
+    Status s = writer.Finish();
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to Finish writer for column " <<
+        schema_.column(i).ToString() << ": " << s.ToString();
+      return s;
     }
+  }
+
+  // Finish bloom.
+  Status s = bloom_writer_->Finish();
+  if (!s.ok()) {
+    LOG(WARNING) << "Unable to Finish bloom filter writer: " << s.ToString();
+    return s;
   }
 
   finished_ = true;
@@ -327,6 +315,10 @@ RowwiseIterator *Layer::NewRowIterator(const Schema &projection,
                                                                 mvcc_snap)));
 }
 
+CompactionInput *Layer::NewCompactionInput(const MvccSnapshot &snap) const  {
+  return CompactionInput::Create(*this, snap);
+}
+
 Status Layer::UpdateRow(txid_t txid,
                         const void *key,
                         const RowChangeList &update) {
@@ -365,170 +357,86 @@ Status Layer::Delete() {
   return env_->DeleteRecursively(tmp_path);
 }
 
+Status Layer::RenameLayerDir(const string &new_dir) {
+  RETURN_NOT_OK(env_->RenameFile(dir_, new_dir));
+  dir_ = new_dir;
+  return Status::OK();
+}
 
 ////////////////////////////////////////
 
-Status FlushInProgressLayer::Open(Env *env,
-                                  const Schema &schema,
-                                  const string &layer_dir,
-                                  const shared_ptr<MemStore> &ms,
-                                  shared_ptr<FlushInProgressLayer> *layer) {
-  shared_ptr<FlushInProgressLayer> l(new FlushInProgressLayer(env, schema, layer_dir, ms));
-
-  RETURN_NOT_OK(l->Open());
-
-  layer->swap(l);
-  return Status::OK();
-}
-
-FlushInProgressLayer::FlushInProgressLayer(Env *env,
-                                           const Schema &schema,
-                                           const string &dir,
-                                           const shared_ptr<MemStore> &ms) :
-  env_(env),
-  dir_(dir),
-  schema_(schema),
-  base_data_(new CFileSet(env_, dir_, schema_)),
-  delta_tracker_(new DeltaTracker(env, schema, dir)),
-  ms_(ms),
-  open_(false)
+DuplicatingLayer::DuplicatingLayer(const vector<shared_ptr<LayerInterface> > &old_layers,
+                                   const shared_ptr<LayerInterface> &new_layer) :
+  old_layers_(old_layers),
+  new_layer_(new_layer)
 {
+  CHECK_GT(old_layers_.size(), 0);
   always_locked_.lock();
 }
 
-FlushInProgressLayer::~FlushInProgressLayer() {
+DuplicatingLayer::~DuplicatingLayer() {
   always_locked_.unlock();
 }
 
-Status FlushInProgressLayer::Open() {
-  RETURN_NOT_OK( base_data_->OpenKeyColumns() );
-  open_ = true;
-  return Status::OK();
+string DuplicatingLayer::ToString() const {
+  string ret;
+  ret.append("DuplicatingLayer([");
+  bool first = true;
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, old_layers_) {
+    if (!first) {
+      ret.append(", ");
+    }
+    first = false;
+    ret.append(l->ToString());
+  }
+  ret.append("] + ");
+  ret.append(new_layer_->ToString());
+  ret.append(")");
+  return ret;
 }
 
-RowwiseIterator *FlushInProgressLayer::NewRowIterator(const Schema &projection,
-                                                      const MvccSnapshot &snap) const {
-  CHECK(open_);
-  // Use memstore as base data, updated by delta tracker
-  shared_ptr<RowwiseIterator> base_iter(ms_->NewIterator(projection, snap));
-  return delta_tracker_->WrapIterator(base_iter, snap);
+RowwiseIterator *DuplicatingLayer::NewRowIterator(const Schema &projection,
+                                                  const MvccSnapshot &snap) const {
+  // Use the original layer.
+  if (old_layers_.size() == 1) {
+    return old_layers_[0]->NewRowIterator(projection, snap);
+  } else {
+    // Union between them
+
+    vector<shared_ptr<RowwiseIterator> > iters;
+    BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, old_layers_) {
+      shared_ptr<RowwiseIterator> iter(layer->NewRowIterator(projection, snap));
+      iters.push_back(iter);
+    }
+
+    return new UnionIterator(iters);
+  }
 }
 
-Status FlushInProgressLayer::UpdateRow(txid_t txid,
+CompactionInput *DuplicatingLayer::NewCompactionInput(const MvccSnapshot &snap) const  {
+  LOG(FATAL) << "duplicating layers do not act as compaction input";
+  return NULL;
+}
+
+
+Status DuplicatingLayer::UpdateRow(txid_t txid,
                                        const void *key,
                                        const RowChangeList &update) {
-  CHECK(open_);
-  rowid_t row_idx;
-  RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
-  delta_tracker_->Update(txid, row_idx, update);
+  // First update the new layer
+  RETURN_NOT_OK(new_layer_->UpdateRow(txid, key, update));
 
-  return Status::OK();
-}
-
-Status FlushInProgressLayer::CheckRowPresent(const LayerKeyProbe &probe,
-                              bool *present) const {
-  CHECK(open_);
-  return ms_->CheckRowPresent(probe, present);
-}
-
-Status FlushInProgressLayer::CountRows(rowid_t *count) const {
-  CHECK(open_);
-  return base_data_->CountRows(count);
-}
-
-uint64_t FlushInProgressLayer::EstimateOnDiskSize() const {
-  // The actual value of this doesn't matter, since it won't be selected
-  // for compaction.
-  return 0;
-}
-
-
-Status FlushInProgressLayer::Delete() {
-  LOG(FATAL) << "Unsupported op";
-  return Status::NotSupported("");
-}
-
-////////////////////////////////////////////////////////////
-// CompactionInProgressLayer
-////////////////////////////////////////////////////////////
-
-Status CompactionInProgressLayer::Open(
-  Env *env,
-  const Schema &schema,
-  const string &layer_dir,
-  const LayerVector &input_layers,
-  shared_ptr<CompactionInProgressLayer> *layer)
-{
-  shared_ptr<CompactionInProgressLayer> l(
-    new CompactionInProgressLayer(env, schema, layer_dir, input_layers));
-
-  RETURN_NOT_OK(l->Open());
-
-  layer->swap(l);
-  return Status::OK();
-}
-
-CompactionInProgressLayer::CompactionInProgressLayer(Env *env,
-                                                     const Schema &schema,
-                                                     const string &dir,
-                                                     const LayerVector &input_layers) :
-  env_(env),
-  dir_(dir),
-  schema_(schema),
-  base_data_(new CFileSet(env_, dir_, schema_)),
-  delta_tracker_(new DeltaTracker(env, schema, dir)),
-  input_layers_(input_layers),
-  open_(false)
-{
-  always_locked_.lock();
-}
-
-CompactionInProgressLayer::~CompactionInProgressLayer() {
-  always_locked_.unlock();
-}
-
-Status CompactionInProgressLayer::Open() {
-  RETURN_NOT_OK( base_data_->OpenKeyColumns() );
-  open_ = true;
-  return Status::OK();
-}
-
-RowwiseIterator *CompactionInProgressLayer::NewRowIterator(const Schema &projection,
-                                                           const MvccSnapshot &snap) const {
-  CHECK(open_);
-
-  // Use a union of the input layers as the row iterator.
-  // No need to merge with the delta tracker, since we're duplicating all the writes
-  // back into the input layers during the compaction.
-  vector<shared_ptr<RowwiseIterator> > iters;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, input_layers_) {
-    shared_ptr<RowwiseIterator> iter(layer->NewRowIterator(projection, snap));
-    iters.push_back(iter);
-  }
-
-  return new UnionIterator(iters);
-}
-
-Status CompactionInProgressLayer::UpdateRow(txid_t txid,
-                                            const void *key,
-                                            const RowChangeList &update) {
-  CHECK(open_);
-
-  rowid_t row_idx_in_output;
-  RETURN_NOT_OK( base_data_->FindRow(key, &row_idx_in_output) );
-
-
+  // If it succeeded there, we also need to mirror into the old layer.
   // Duplicate the update to both the relevant input layer and the output layer.
   // First propagate to the relevant input layer.
   bool updated = false;
-  BOOST_FOREACH(shared_ptr<LayerInterface> &layer, input_layers_) {
+  BOOST_FOREACH(shared_ptr<LayerInterface> &layer, old_layers_) {
     Status s = layer->UpdateRow(txid, key, update);
     if (s.ok()) {
       updated = true;
       break;
     } else if (!s.IsNotFound()) {
       LOG(ERROR) << "Unable to update key "
-                 << schema_.CreateKeyProjection().DebugRow(key)
+                 << schema().CreateKeyProjection().DebugRow(key)
                  << " (failed on layer " << layer->ToString() << "): "
                  << s.ToString();
       return s;
@@ -537,38 +445,39 @@ Status CompactionInProgressLayer::UpdateRow(txid_t txid,
 
   if (!updated) {
     LOG(DFATAL) << "Found row in compaction output but not in any input layer: "
-                << schema_.CreateKeyProjection().DebugRow(key);
+                << schema().CreateKeyProjection().DebugRow(key);
     return Status::NotFound("not found in any input layer of compaction");
   }
 
-  // Then put in the delta tracker corresponding to the post-compaction
-  // row index.
-  delta_tracker_->Update(txid, row_idx_in_output, update);
   return Status::OK();
 }
 
-Status CompactionInProgressLayer::CheckRowPresent(const LayerKeyProbe &probe,
+Status DuplicatingLayer::CheckRowPresent(const LayerKeyProbe &probe,
                               bool *present) const {
-  return base_data_->CheckRowPresent(probe, present);
+  *present = false;
+  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, old_layers_) {
+    RETURN_NOT_OK(layer->CheckRowPresent(probe, present));
+    if (present) {
+      return Status::OK();
+    }
+  }
+  return Status::OK();
 }
 
-Status CompactionInProgressLayer::CountRows(rowid_t *count) const {
-  CHECK(open_);
-  return base_data_->CountRows(count);
+Status DuplicatingLayer::CountRows(rowid_t *count) const {
+  return new_layer_->CountRows(count);
 }
 
-uint64_t CompactionInProgressLayer::EstimateOnDiskSize() const {
+uint64_t DuplicatingLayer::EstimateOnDiskSize() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.
-  return 0;
+  return new_layer_->EstimateOnDiskSize();
 }
 
-
-Status CompactionInProgressLayer::Delete() {
+Status DuplicatingLayer::Delete() {
   LOG(FATAL) << "Unsupported op";
   return Status::NotSupported("");
 }
-
 
 } // namespace tablet
 } // namespace kudu
