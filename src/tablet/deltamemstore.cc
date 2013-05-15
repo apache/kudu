@@ -196,7 +196,7 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
       projected_col, dst->cell_ptr(idx_in_block), dst->arena());
     if (!s.ok()) {
       return Status::Corruption(
-        StringPrintf("Corrupt prepared updates at row %d: ", key.row_idx()) +
+        StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT": ", key.row_idx()) +
         s.ToString());
     }
   }
@@ -239,7 +239,8 @@ Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *cha
   src->remove_prefix(sizeof(uint32_t));
 
   if (delta_len > src->size()) {
-    return Status::Corruption(StringPrintf("Corrupt prepared updates at row %d", idx));
+    return Status::Corruption(
+      StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT, idx));
   }
   *changelist = RowChangeList(Slice(src->data(), delta_len));
   src->remove_prefix(delta_len);

@@ -2,6 +2,8 @@
 #ifndef KUDU_COMMON_ROWID_H
 #define KUDU_COMMON_ROWID_H
 
+#include <inttypes.h>
+
 #include "util/memcmpable_varint.h"
 #include "util/faststring.h"
 #include "util/slice.h"
@@ -16,6 +18,8 @@ namespace kudu {
 // is necessary to support larger layers without overflow.
 typedef uint32_t rowid_t;
 
+// Substitution to use in printf() format arguments.
+#define ROWID_PRINT_FORMAT PRIu32
 
 // Serialize a rowid into the 'dst' buffer.
 // The serialized form of row IDs is comparable using memcmp().
