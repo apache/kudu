@@ -6,6 +6,7 @@
 #define KUDU_COMMON_ROW_CHANGELIST_H
 
 #include <boost/noncopyable.hpp>
+#include <gtest/gtest.h>
 
 #include "common/schema.h"
 #include "util/coding.h"
@@ -17,6 +18,8 @@ namespace kudu {
 
 class RowChangeList {
 public:
+  RowChangeList() {}
+
   explicit RowChangeList(const faststring &fs) :
     encoded_data_(fs)
   {}
@@ -27,9 +30,11 @@ public:
 
   const Slice &slice() const { return encoded_data_; }
 
+  // Return a string form of this changelist.
+  string ToString(const Schema &schema) const;
+
 private:
   Slice encoded_data_;
-
 };
 
 class RowChangeListEncoder {
@@ -82,54 +87,13 @@ public:
   // It is assumed that this class is only used in tightly scoped contexts where
   // this is appropriate.
   RowChangeListDecoder(const Schema &schema,
-                       const Slice &src) :
+                       const RowChangeList &src) :
     schema_(schema),
-    src_(src)
+    remaining_(src.slice())
   {}
 
   bool HasNext() const {
-    return !src_.empty();
-  }
-
-  // Decode the next changed row.
-  // Sets *col_idx to the changed column index.
-  // Sets *val_out to point to the new value.
-  //
-  // *val_out may be set to temporary storage which is part of the
-  // RowChangeListDecoder instance. So, the value is only valid until
-  // the next call to DecodeNext.
-  //
-  // That is to say, in the case of a string column, *val_out will
-  // be a temporary Slice object which is only temporarily valid.
-  // But, that Slice object will itself point to data which is part
-  // of the source data that was passed in.
-  Status DecodeNext(size_t *col_idx, const void ** val_out) {
-    CHECK(HasNext()) << "Should not call DecodeNext() when !HasNext()";
-
-    // Decode the column index.
-    uint32_t idx;
-    if (!GetVarint32(&src_, &idx)) {
-      return Status::Corruption("Invalid column index varint in delta");
-    }
-
-    *col_idx = idx;
-
-    const TypeInfo &ti = schema_.column(idx).type_info();
-
-    // Decode the value itself
-    if (ti.type() == STRING) {
-      if (!GetLengthPrefixedSlice(&src_, &last_decoded_slice_)) {
-        return Status::Corruption("invalid slice in delta");
-      }
-
-      *val_out = &last_decoded_slice_;
-
-    } else {
-      *val_out = src_.data();
-      src_.remove_prefix(ti.size());
-    }
-
-    return Status::OK();
+    return !remaining_.empty();
   }
 
   template<class ARENA>
@@ -161,42 +125,60 @@ public:
     return Status::OK();
   }
 
-  // Return a string form of this changelist.
-  string ToString() {
-    Slice save_src_(src_);
-    string ret = "SET ";
+private:
+  FRIEND_TEST(TestRowChangeList, TestEncodeDecode);
+  friend class RowChangeList;
 
-    bool first = true;
-    while (HasNext()) {
-      if (!first) {
-        ret.append(", ");
-      }
-      first = false;
-
-      size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
-      const void *new_val = NULL;
-      CHECK_OK(DecodeNext(&updated_col, &new_val));
-
-      ret.append(schema_.column(updated_col).name());
-      ret.append("=");
-      ret.append(schema_.column(updated_col).Stringify(new_val));
+  // Decode the next changed column.
+  // Sets *col_idx to the changed column index.
+  // Sets *val_out to point to the new value.
+  //
+  // *val_out may be set to temporary storage which is part of the
+  // RowChangeListDecoder instance. So, the value is only valid until
+  // the next call to DecodeNext.
+  //
+  // That is to say, in the case of a string column, *val_out will
+  // be a temporary Slice object which is only temporarily valid.
+  // But, that Slice object will itself point to data which is part
+  // of the source data that was passed in.
+  Status DecodeNext(size_t *col_idx, const void ** val_out) {
+    // Decode the column index.
+    uint32_t idx;
+    if (!GetVarint32(&remaining_, &idx)) {
+      return Status::Corruption("Invalid column index varint in delta");
     }
 
-    // Reset state.
-    src_ = save_src_;
+    *col_idx = idx;
 
-    return ret;
+    const TypeInfo &ti = schema_.column(idx).type_info();
+
+    // Decode the value itself
+    if (ti.type() == STRING) {
+      if (!GetLengthPrefixedSlice(&remaining_, &last_decoded_slice_)) {
+        return Status::Corruption("invalid slice in delta");
+      }
+
+      *val_out = &last_decoded_slice_;
+
+    } else {
+      *val_out = remaining_.data();
+      remaining_.remove_prefix(ti.size());
+    }
+
+    return Status::OK();
   }
 
 
-private:
   const Schema &schema_;
 
-  // The source data being decoded. This slice is advanced forward
-  // as entries are decoded.
-  Slice src_;
+  // The source data being decoded.
+  const Slice src_;
 
+  // Data remaining in src_. This slice is advanced forward as entries are decoded.
+  Slice remaining_;
 
+  // If an update is encountered which uses indirect data (eg a string update), then
+  // this Slice is used as temporary storage to point to that indirected data.
   Slice last_decoded_slice_;
 };
 

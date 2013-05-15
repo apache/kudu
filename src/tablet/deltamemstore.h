@@ -115,7 +115,7 @@ private:
 
 
   // Decode a mutation as stored in the memstore.
-  Status DecodeMutation(Slice *src, DeltaKey *key, Slice *changelist_data) const;
+  Status DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *changelist) const;
 
   enum {
     kPreparedBufInitialCapacity = 512

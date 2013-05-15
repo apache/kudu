@@ -345,7 +345,7 @@ struct ApplyingVisitor {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
-    RowChangeListDecoder decoder(dfi->dfr_->schema(), deltas);
+    RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
     return decoder.ApplyToOneColumn(col_to_apply, dst->cell_ptr(rel_idx), dst->arena());
   }
 

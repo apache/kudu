@@ -26,8 +26,8 @@ class Mutation : boost::noncopyable {
   static Mutation *CreateInArena(
     ArenaType *arena, txid_t txid, const RowChangeList &rcl);
 
-  Slice changelist_slice() const {
-    return Slice(changelist_data_, changelist_size_);
+  RowChangeList changelist() const {
+    return RowChangeList(Slice(changelist_data_, changelist_size_));
   }
 
   txid_t txid() const { return txid_; }

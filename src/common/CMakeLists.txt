@@ -3,6 +3,7 @@
 SET(COMMON_SRCS
   generic_iterators.cc
   rowblock.cc
+  row_changelist.cc
   scan_predicate.cc
   scan_spec.cc
   types.cc

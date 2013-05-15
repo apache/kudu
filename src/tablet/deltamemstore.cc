@@ -185,12 +185,12 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
   while (!src.empty()) {
     DeltaKey key;
-    Slice changelist_data;
+    RowChangeList changelist;
 
-    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist_data));
+    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
     uint32_t idx_in_block = key.row_idx() - prepared_idx_;
 
-    RowChangeListDecoder decoder(dms_->schema(), changelist_data);
+    RowChangeListDecoder decoder(dms_->schema(), changelist);
 
     Status s = decoder.ApplyToOneColumn(
       projected_col, dst->cell_ptr(idx_in_block), dst->arena());
@@ -211,13 +211,12 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
 
   while (!src.empty()) {
     DeltaKey key;
-    Slice changelist_data;
+    RowChangeList changelist;
 
-    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist_data));
+    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
     uint32_t rel_idx = key.row_idx() - prepared_idx_;
 
-    Mutation *mutation = Mutation::CreateInArena(
-      arena, key.txid(), RowChangeList(changelist_data));
+    Mutation *mutation = Mutation::CreateInArena(arena, key.txid(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
   }
 
@@ -225,7 +224,7 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
 }
 
 
-Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, Slice *changelist_data) const {
+Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *changelist) const {
   if (src->size() < sizeof(DeltaKey) + sizeof(uint32_t)) {
     return Status::Corruption("Corrupt prepared updates");
   }
@@ -242,7 +241,7 @@ Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, Slice *changelist_
   if (delta_len > src->size()) {
     return Status::Corruption(StringPrintf("Corrupt prepared updates at row %d", idx));
   }
-  *changelist_data = Slice(src->data(), delta_len);
+  *changelist = RowChangeList(Slice(src->data(), delta_len));
   src->remove_prefix(delta_len);
 
   return Status::OK();

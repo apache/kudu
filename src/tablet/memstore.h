@@ -415,7 +415,7 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
       // TODO: this is slow, since it makes multiple passes through the rowchangelist.
       // Instead, we should keep the backwards mapping of columns.
       for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-        RowChangeListDecoder decoder(memstore_->schema(), mut->changelist_slice());
+        RowChangeListDecoder decoder(memstore_->schema(), mut->changelist());
         int memstore_col_idx = projection_mapping_[proj_col_idx];
         uint8_t *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
         RETURN_NOT_OK(decoder.ApplyToOneColumn(memstore_col_idx, dst_cell, dst_arena));

@@ -18,9 +18,8 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
     }
     first = false;
 
-    RowChangeListDecoder decoder(schema, head->changelist_slice());
     StringAppendF(&ret, "@%"TXID_PRINT_FORMAT"(", head->txid().v);
-    ret.append(decoder.ToString());
+    ret.append(head->changelist().ToString(schema));
     ret.append(")");
 
     head = head->next();

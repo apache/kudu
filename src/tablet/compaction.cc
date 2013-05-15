@@ -300,8 +300,8 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mut
   for (const Mutation *mut = mutation_head;
        mut != NULL;
        mut = mut->next()) {
-    RowChangeListDecoder decoder(schema, mut->changelist_slice());
-    DVLOG(2) << "  @" << mut->txid() << ": " << decoder.ToString();
+    RowChangeListDecoder decoder(schema, mut->changelist());
+    DVLOG(2) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
     Status s = decoder.ApplyRowUpdate(&row_slice, reinterpret_cast<Arena *>(NULL));
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to apply delta to row " << schema.DebugRow(row_slice.data()) << " during flush/compact";
@@ -362,19 +362,18 @@ Status ReupdateMissedDeltas(CompactionInput *input,
           // Was already taken into account in the main flush.
           continue;
         }
-        RowChangeListDecoder decoder(schema, mut->changelist_slice());
         if (!snap_to_include.IsCommitted(mut->txid())) {
           DVLOG(2) << "Skipping already-duplicated delta for row " << row_idx
-                   << " @" << mut->txid() << ": " << decoder.ToString();
+                   << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
 
           // Already duplicated into the new layer, no need to transfer it over.
           continue;
         }
 
-        LOG(INFO) << "Flushing missed delta for row " << row_idx
-                  << " @" << mut->txid() << ": " << decoder.ToString();
+        DVLOG(1) << "Flushing missed delta for row " << row_idx
+                  << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
 
-        delta_tracker->Update(mut->txid(), row_idx, RowChangeList(mut->changelist_slice()));
+        delta_tracker->Update(mut->txid(), row_idx, mut->changelist());
       }
       row_idx++;
     }
