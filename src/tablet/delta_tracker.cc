@@ -93,13 +93,7 @@ shared_ptr<DeltaIteratorInterface> DeltaTracker::NewDeltaIterator(const Schema &
 ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                                const MvccSnapshot &mvcc_snap) const
 {
-  return new DeltaApplier<ColumnwiseIterator>(base, NewDeltaIterator(base->schema(), mvcc_snap));
-}
-
-RowwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<RowwiseIterator> &base,
-                                            const MvccSnapshot &mvcc_snap) const
-{
-  return new DeltaApplier<RowwiseIterator>(base, NewDeltaIterator(base->schema(), mvcc_snap));
+  return new DeltaApplier(base, NewDeltaIterator(base->schema(), mvcc_snap));
 }
 
 

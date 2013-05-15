@@ -28,8 +28,6 @@ public:
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                    const MvccSnapshot &mvcc_snap) const;
-  RowwiseIterator *WrapIterator(const shared_ptr<RowwiseIterator> &base,
-                                const MvccSnapshot &mvcc_snap) const;
 
   // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
   // where this has bled around.
@@ -117,11 +115,10 @@ class DeltaIteratorMerger : public DeltaIteratorInterface {
 // Delta-applying iterators
 ////////////////////////////////////////////////////////////
 
-// A DeltaApplier takes in a stack of several DeltaTrackers as well as an underlying
-// iterator (column-wise or row-wise), and is responsible for constructing the delta
-// iterators and applying the updates to the underlying data.
-template<class IterClass>
-class DeltaApplier : public IterClass, boost::noncopyable {
+// A DeltaApplier takes in a base ColumnwiseIterator along with a a
+// DeltaIterator. It is responsible for applying the updates coming
+// from the delta iterator to the results of the base iterator.
+class DeltaApplier : public ColumnwiseIterator, boost::noncopyable {
 public:
   virtual Status Init(ScanSpec *spec) {
     RETURN_NOT_OK(base_iter_->Init(spec));
@@ -153,74 +150,44 @@ public:
   }
 
   Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
-  Status MaterializeBlock(RowBlock *dst);
-
 private:
   friend class DeltaTracker;
 
-  // Construct. The base_iter should not be Initted.
-  DeltaApplier(const shared_ptr<IterClass> &base_iter,
+  // Construct. The base_iter and delta_iter should not be Initted.
+  DeltaApplier(const shared_ptr<ColumnwiseIterator> &base_iter,
                const shared_ptr<DeltaIteratorInterface> delta_iter) :
     base_iter_(base_iter),
     delta_iter_(delta_iter)
   {
   }
 
-  shared_ptr<IterClass> base_iter_;
+  shared_ptr<ColumnwiseIterator> base_iter_;
   shared_ptr<DeltaIteratorInterface> delta_iter_;
 };
 
 
-template<class T>
-inline Status DeltaApplier<T>::PrepareBatch(size_t *nrows) {
+inline Status DeltaApplier::PrepareBatch(size_t *nrows) {
   RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
   if (*nrows == 0) {
     return Status::NotFound("no more rows left");
   }
 
   RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows));
-
   return Status::OK();
 }
 
-template<class T>
-inline Status DeltaApplier<T>::FinishBatch() {
+inline Status DeltaApplier::FinishBatch() {
   return base_iter_->FinishBatch();
 }
 
-
-////////////////////////////////////////////////////////////
-// Column-wise delta merger
-////////////////////////////////////////////////////////////
-
-template<>
-inline Status DeltaApplier<ColumnwiseIterator>::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
-  ColumnwiseIterator *iter = down_cast<ColumnwiseIterator *>(base_iter_.get());
+inline Status DeltaApplier::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
   // Copy the base data.
-  RETURN_NOT_OK(iter->MaterializeColumn(col_idx, dst));
+  RETURN_NOT_OK(base_iter_->MaterializeColumn(col_idx, dst));
 
   // Apply all the updates for this column.
   RETURN_NOT_OK(delta_iter_->ApplyUpdates(col_idx, dst));
   return Status::OK();
 }
-
-////////////////////////////////////////////////////////////
-// Row-wise delta merger
-////////////////////////////////////////////////////////////
-template<>
-inline Status DeltaApplier<RowwiseIterator>::MaterializeBlock(RowBlock *dst) {
-  // Get base data
-  RETURN_NOT_OK(base_iter_->MaterializeBlock(dst));
-
-  // Apply updates to all the columns.
-  for (size_t proj_col_idx = 0; proj_col_idx < dst->schema().num_columns(); proj_col_idx++) {
-    ColumnBlock dst_col = dst->column_block(proj_col_idx);
-    RETURN_NOT_OK(delta_iter_->ApplyUpdates(proj_col_idx, &dst_col));
-  }
-
-  return Status::OK();
-}
-
 
 } // namespace tablet
 } // namespace kudu
