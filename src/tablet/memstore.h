@@ -52,10 +52,6 @@ class MSRow {
 
   const Slice &row_slice() const { return row_slice_; }
 
-  // Append the given mutation to the end of the chain for this row.
-  // The mutation is assumed to already be in the memstore's arena.
-  void AppendMutation(Mutation *mut);
-
  private:
   friend class MemStore;
 

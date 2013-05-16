@@ -22,11 +22,6 @@ using std::pair;
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
 
-void MSRow::AppendMutation(Mutation *mut)
-{
-  mut->AppendToList(&header_->mutation_head);
-}
-
 MemStore::MemStore(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
@@ -96,19 +91,29 @@ Status MemStore::UpdateRow(txid_t txid,
   schema_.EncodeComparableKey(unencoded_key_slice, &key_buf);
   Slice encoded_key_slice(key_buf);
 
-  btree::PreparedMutation<btree::BTreeTraits> mutation(encoded_key_slice);
-  mutation.Prepare(&tree_);
+  {
+    btree::PreparedMutation<btree::BTreeTraits> mutation(encoded_key_slice);
+    mutation.Prepare(&tree_);
 
-  if (!mutation.exists()) {
-    return Status::NotFound("not in memstore");
+    if (!mutation.exists()) {
+      return Status::NotFound("not in memstore");
+    }
+
+    Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
+
+    // Append to the linked list of mutations for this row.
+    MSRow row(mutation.current_mutable_value());
+
+    // Ensure that all of the creation of the mutation is published before
+    // publishing the pointer itself.
+    // We don't need to do a CAS or anything since the CBTree code has already
+    // locked the relevant leaf node from concurrent writes.
+    base::subtle::MemoryBarrier();
+    mut->AppendToList(&row.header_->mutation_head);
   }
 
-  Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
-
-  // Append to the linked list of mutations for this row.
-  MSRow row(mutation.current_mutable_value());
-  row.AppendMutation(mut);
-
+  // Throttle the writer if we're low on memory, but do this outside of the lock
+  // so we don't slow down readers.
   debug_update_count_++;
   SlowMutators();
   return Status::OK();
