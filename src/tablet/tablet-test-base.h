@@ -216,8 +216,8 @@ public:
     while (iter->HasNext()) {
       ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
 
-      LOG(INFO) << "Fetched batch of " << block.nrows() << "\n"
-                << "First row: " << schema_.DebugRow(block.row_ptr(0));
+      DLOG(INFO) << "Fetched batch of " << block.nrows() << "\n"
+                 << "First row: " << schema_.DebugRow(block.row_ptr(0));
 
       for (int i = 0; i < block.nrows(); i++) {
         Slice s(block.row_slice(i));
