@@ -287,6 +287,10 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
     return Status::OK();
   }
 
+  size_t remaining_in_leaf() const {
+    return iter_->remaining_in_leaf();
+  }
+
   virtual Status MaterializeBlock(RowBlock *dst) {
     // TODO: add dcheck that dst->schema() matches our schema
     // also above TODO applies to a lot of other CopyNextRows cases

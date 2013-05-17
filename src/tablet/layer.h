@@ -59,10 +59,14 @@ public:
   Status Open();
 
   // Append a new row into the layer.
-  // The row is written to all column writers as well as the bloom filter,
+  // This is inefficient and should only be used by tests. Real code should use
+  // AppendBlock() instead.
+  Status WriteRow(const Slice &row);
+
+  // The block is written to all column writers as well as the bloom filter,
   // if configured.
   // Rows must be appended in ascending order.
-  Status WriteRow(const Slice &row);
+  Status AppendBlock(const RowBlock &block);
 
   Status Finish();
 
@@ -76,8 +80,6 @@ private:
 
   Status InitBloomFileWriter();
 
-  Status AppendBlock(const RowBlock &block);
-
   Env *env_;
   const Schema schema_;
   const string dir_;
@@ -87,6 +89,8 @@ private:
   rowid_t written_count_;
   ptr_vector<cfile::Writer> cfile_writers_;
   gscoped_ptr<BloomFileWriter> bloom_writer_;
+
+  faststring tmp_buf_;
 };
 
 ////////////////////////////////////////////////////////////

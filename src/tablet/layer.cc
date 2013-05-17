@@ -208,20 +208,18 @@ Status LayerWriter::AppendBlock(const RowBlock &block) {
   }
 
   // Write the batch to the bloom
-  faststring encoded_key_buf; // for blooms
-
   const uint8_t *row = block.row_ptr(0);
   for (size_t i = 0; i < block.nrows(); i++) {
     // TODO: performance might be better if we actually batch this -
     // encode a bunch of key slices, then pass them all in one go.
 
     // Encode the row into sortable form
-    encoded_key_buf.clear();
+    tmp_buf_.clear();
     Slice row_slice(row, stride);
-    schema_.EncodeComparableKey(row_slice, &encoded_key_buf);
+    schema_.EncodeComparableKey(row_slice, &tmp_buf_);
 
     // Insert the encoded row into the bloom.
-    Slice encoded_key_slice(encoded_key_buf);
+    Slice encoded_key_slice(tmp_buf_);
     RETURN_NOT_OK( bloom_writer_->AppendKeys(&encoded_key_slice, 1) );
 
     // Advance.

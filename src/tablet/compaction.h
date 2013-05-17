@@ -32,7 +32,7 @@ class CompactionInput {
                                 const Schema &schema);
 
   virtual Status Init() = 0;
-  virtual Status PrepareBlock(deque<CompactionInputRow> *block) = 0;
+  virtual Status PrepareBlock(vector<CompactionInputRow> *block) = 0;
   virtual Status FinishBlock() = 0;
 
   virtual bool HasMoreBlocks() = 0;

@@ -63,7 +63,7 @@ class TestCompaction : public KuduTest {
   // yielded row to *out
   void IterateInput(CompactionInput *input, vector<string> *out) {
     ASSERT_STATUS_OK(input->Init());
-    deque<CompactionInputRow> rows;
+    vector<CompactionInputRow> rows;
 
     while (input->HasMoreBlocks()) {
       ASSERT_STATUS_OK(input->PrepareBlock(&rows));

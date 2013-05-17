@@ -26,21 +26,23 @@ class MemstoreCompactionInput : boost::noncopyable, public CompactionInput {
     return iter_->HasNext();
   }
 
-  virtual Status PrepareBlock(deque<CompactionInputRow> *block) {
-    // To keep things simple for now, instead of yielding multiple
-    // rows per "block", each block here is just a single row. This
-    // means we don't need to make any extra copies or worry about
-    // mutation, since the memstore iterator is already making a
-    // local copy of whatever row it's pointed at. If this is a perf
-    // bottleneck, we can re-evaluate.
-    MSRow ms_row = iter_->GetCurrentRow();
+  virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
 
-    block->resize(1);
-    CompactionInputRow &row = block->front();
-    // The ms_row slice is non-const because we're given a copy of it, so it's
-    // OK to mutate.
-    row.row_ptr = const_cast<uint8_t *>(ms_row.row_slice().data());
-    row.mutation_head = ms_row.mutation_head();
+    int num_in_block = iter_->remaining_in_leaf();
+    block->resize(num_in_block);
+
+    for (int i = 0; i < num_in_block; i++) {
+      if (i > 0) {
+        iter_->Next();
+      }
+
+      MSRow ms_row = iter_->GetCurrentRow();
+      CompactionInputRow &row = block->at(i);
+      // The ms_row slice is non-const because we're given a copy of it, so it's
+      // OK to mutate.
+      row.row_ptr = const_cast<uint8_t *>(ms_row.row_slice().data());
+      row.mutation_head = ms_row.mutation_head();
+    }
 
     return Status::OK();
   }
@@ -84,7 +86,7 @@ class LayerCompactionInput : boost::noncopyable, public CompactionInput {
     return base_iter_->HasNext();
   }
 
-  virtual Status PrepareBlock(deque<CompactionInputRow> *block) {
+  virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
     RETURN_NOT_OK( RowwiseIterator::CopyBlock(base_iter_.get(), &block_) );
     std::fill(mutation_block_.begin(), mutation_block_.end(),
               reinterpret_cast<Mutation *>(NULL));
@@ -130,8 +132,30 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
  private:
   // State kept for each of the inputs.
   struct MergeState {
+    MergeState() :
+      pending_idx(0)
+    {}
+
+    bool empty() const {
+      return pending_idx >= pending.size();
+    }
+
+    const CompactionInputRow &next() const {
+      return pending[pending_idx];
+    }
+
+    void pop_front() {
+      pending_idx++;
+    }
+
+    void Reset() {
+      pending.clear();
+      pending_idx = 0;
+    }
+
     shared_ptr<CompactionInput> input;
-    deque<CompactionInputRow> pending;
+    vector<CompactionInputRow> pending;
+    int pending_idx;
   };
 
  public:
@@ -160,7 +184,7 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
     // Return true if any of the input blocks has more rows pending
     // or more blocks which have yet to be pulled.
     BOOST_FOREACH(MergeState &state, states_) {
-      if (!state.pending.empty() ||
+      if (!state.empty() ||
           state.input->HasMoreBlocks()) {
         return true;
       }
@@ -169,7 +193,7 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
     return false;
   }
 
-  virtual Status PrepareBlock(deque<CompactionInputRow> *block) {
+  virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
     CHECK(!states_.empty());
 
     block->clear();
@@ -185,7 +209,7 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
       for (int i = 0; i < states_.size(); i++) {
         MergeState &state = states_[i];
 
-        if (state.pending.empty()) {
+        if (state.empty()) {
           // If any of our inputs runs out of pending entries, then we can't keep
           // merging -- this input may have further blocks to process.
           // Rather than pulling another block here, stop the loop. If it's truly
@@ -194,15 +218,15 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
         }
 
         if (smallest_idx < 0 ||
-            schema_.Compare(state.pending.front().row_ptr,
+            schema_.Compare(state.next().row_ptr,
                             smallest.row_ptr) < 0) {
           smallest_idx = i;
-          smallest = state.pending.front();
+          smallest = state.next();
         }
       }
       DCHECK_GE(smallest_idx, 0);
 
-      states_[smallest_idx].pending.pop_front();
+      states_[smallest_idx].pop_front();
       block->push_back(smallest);
     }
 
@@ -228,9 +252,10 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
     vector<MergeState>::iterator it = states_.begin();
     while (it != states_.end()) {
       MergeState &state = *it;
-      if (state.pending.empty()) {
+      if (state.empty()) {
         RETURN_NOT_OK(state.input->FinishBlock());
         if (state.input->HasMoreBlocks()) {
+          state.Reset();
           RETURN_NOT_OK(state.input->PrepareBlock(&state.pending));
         } else {
           it = states_.erase(it);
@@ -315,19 +340,35 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mut
 
 Status Flush(CompactionInput *input, LayerWriter *out) {
   RETURN_NOT_OK(input->Init());
-  deque<CompactionInputRow> rows;
+  vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
+
+  RowBlock block(schema, 100, NULL);
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
+    int n = 0;
+    uint8_t *dst = block.row_ptr(0);
     BOOST_FOREACH(const CompactionInputRow &row, rows) {
-      Slice row_slice((uint8_t *)row.row_ptr, schema.byte_size());
-      DVLOG(2) << "Row: " << schema.DebugRow(row.row_ptr) <<
+      memcpy(dst, row.row_ptr, schema.byte_size());
+      Slice row_slice(dst, schema.byte_size());
+      DVLOG(2) << "Row: " << schema.DebugRow(dst) <<
         " mutations: " << Mutation::StringifyMutationList(schema, row.mutation_head);
       ApplyMutationsAndGenerateUndos(schema, row.mutation_head, row_slice);
 
-      RETURN_NOT_OK(out->WriteRow(row_slice));
+      dst += schema.byte_size();
+      n++;
+      if (n == block.nrows()) {
+        RETURN_NOT_OK(out->AppendBlock(block));
+        n = 0;
+        dst = block.row_ptr(0);
+      }
+    }
+
+    if (n > 0) {
+      block.Resize(n);
+      RETURN_NOT_OK(out->AppendBlock(block));
     }
 
     RETURN_NOT_OK(input->FinishBlock());
@@ -342,7 +383,7 @@ Status ReupdateMissedDeltas(CompactionInput *input,
                             DeltaTracker *delta_tracker) {
   // TODO: on this pass, we don't actually need the row data, just the
   // updates. So, this can be made much faster.
-  deque<CompactionInputRow> rows;
+  vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
 
   rowid_t row_idx = 0;
