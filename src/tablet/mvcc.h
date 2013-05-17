@@ -4,10 +4,10 @@
 #define KUDU_TABLET_MVCC_H
 
 #include "gutil/endian.h"
-
 #include "util/memcmpable_varint.h"
+#include "util/locks.h"
+
 #include <boost/noncopyable.hpp>
-#include <boost/thread/mutex.hpp>
 #include <inttypes.h>
 #include <string>
 #include <tr1/unordered_set>
@@ -152,7 +152,8 @@ class MvccManager : boost::noncopyable {
   void TakeSnapshot(MvccSnapshot *snapshot) const;
 
  private:
-  mutable boost::mutex lock_;
+  typedef simple_spinlock LockType;
+  mutable LockType lock_;
   MvccSnapshot cur_snap_;
 };
 

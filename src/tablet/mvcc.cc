@@ -2,6 +2,7 @@
 // All rights reserved.
 
 #include <boost/foreach.hpp>
+#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 
 #include "gutil/mathlimits.h"
@@ -18,7 +19,7 @@ MvccManager::MvccManager()
 {}
 
 txid_t MvccManager::StartTransaction() {
-  boost::lock_guard<boost::mutex> l(lock_);
+  boost::lock_guard<LockType> l(lock_);
   txid_t my_txid(cur_snap_.none_committed_after_txid_.v++);
   bool was_inserted = cur_snap_.txids_in_flight_.insert(my_txid.v).second;
   DCHECK(was_inserted) << "Already had txid " << my_txid.v << " in in-flight list";
@@ -26,7 +27,7 @@ txid_t MvccManager::StartTransaction() {
 }
 
 void MvccManager::CommitTransaction(txid_t txid) {
-  boost::lock_guard<boost::mutex> l(lock_);
+  boost::lock_guard<LockType> l(lock_);
   DCHECK_LT(txid.v, cur_snap_.none_committed_after_txid_.v)
     << "Trying to commit txid which isn't in the in-flight range yet";
   unordered_set<txid_t::val_type>::iterator it = cur_snap_.txids_in_flight_.find(txid.v);
@@ -49,7 +50,7 @@ void MvccManager::CommitTransaction(txid_t txid) {
 }
 
 void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
-  boost::lock_guard<boost::mutex> l(lock_);
+  boost::lock_guard<LockType> l(lock_);
   *snap = cur_snap_;
 }
 
