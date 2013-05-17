@@ -20,6 +20,8 @@ using std::tr1::unordered_set;
 
 DEFINE_int32(testflush_num_inserts, 1000,
              "Number of rows inserted in TestFlush");
+DEFINE_int32(testcompaction_num_rows, 1000,
+             "Number of rows per layer in TestCompaction");
 
 template<class SETUP>
 class TestTablet : public TabletTestBase<SETUP> {};
@@ -207,32 +209,40 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
 }
 
 TYPED_TEST(TestTablet, TestCompaction) {
+  uint64_t n_rows = FLAGS_testcompaction_num_rows;
   // Create three layers by inserting and flushing
-  {
-    this->InsertTestRows(0, 1000);
-    ASSERT_STATUS_OK(this->tablet_->Flush());
+  LOG_TIMING(INFO, "Inserting rows") {
+    this->InsertTestRows(0, n_rows);
+
+    LOG_TIMING(INFO, "Flushing rows") {
+      ASSERT_STATUS_OK(this->tablet_->Flush());
+    }
     string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 0);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 
-  {
-    this->InsertTestRows(1000, 1000);
-    ASSERT_STATUS_OK(this->tablet_->Flush());
+  LOG_TIMING(INFO, "Inserting rows") {
+    this->InsertTestRows(n_rows, n_rows);
+    LOG_TIMING(INFO, "Flushing rows") {
+      ASSERT_STATUS_OK(this->tablet_->Flush());
+    }
     string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 1);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 
-  {
-    this->InsertTestRows(2000, 1000);
-    ASSERT_STATUS_OK(this->tablet_->Flush());
+  LOG_TIMING(INFO, "Inserting rows") {
+    this->InsertTestRows(n_rows * 2, n_rows);
+    LOG_TIMING(INFO, "Flushing rows") {
+      ASSERT_STATUS_OK(this->tablet_->Flush());
+    }
     string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 2);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
   }
 
   // Issue compaction
-  {
+  LOG_TIMING(INFO, "Compacting rows") {
     ASSERT_STATUS_OK(this->tablet_->Compact());
-    ASSERT_EQ(3000, this->TabletCount());
+    ASSERT_EQ(n_rows * 3, this->TabletCount());
     string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 3);
     ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
     ASSERT_FILE_EXISTS(this->env_, Layer::GetBloomPath(layer_dir_))
