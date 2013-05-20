@@ -119,7 +119,7 @@ private:
   // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
   void AtomicSwapRowSets(const RowSetVector old_rowsets,
-                        const shared_ptr<RowSetInterface> &new_rowset,
+                        const shared_ptr<RowSet> &new_rowset,
                         MvccSnapshot *snap_under_lock);
     
 

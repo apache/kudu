@@ -90,7 +90,7 @@ class MSRow {
 //
 // The data is kept sorted.
 class MemStore : boost::noncopyable,
-                 public RowSetInterface,
+                 public RowSet,
                  public std::tr1::enable_shared_from_this<MemStore> {
  public:
   class Iterator;
@@ -125,7 +125,7 @@ class MemStore : boost::noncopyable,
     return tree_.count();
   }
 
-  // Conform entry_count to RowSetInterface
+  // Conform entry_count to RowSet
   Status CountRows(rowid_t *count) const {
     *count = entry_count();
     return Status::OK();

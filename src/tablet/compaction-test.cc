@@ -43,7 +43,7 @@ class TestCompaction : public KuduTest {
   // Update n_rows rows of data.
   // Each row has the key (string key=hello <n*10 + delta>) and its 'val' column
   // is set to new_val.
-  void UpdateRows(RowSetInterface *rowset, int n_rows, int delta, uint32_t new_val) {
+  void UpdateRows(RowSet *rowset, int n_rows, int delta, uint32_t new_val) {
     char keybuf[256];
     faststring update_buf;
     for (uint32_t i = 0; i < n_rows; i++) {

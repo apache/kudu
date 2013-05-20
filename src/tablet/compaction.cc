@@ -299,7 +299,7 @@ CompactionInput *CompactionInput::Merge(const vector<shared_ptr<CompactionInput>
 Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
                                                  shared_ptr<CompactionInput> *out) const {
   vector<shared_ptr<CompactionInput> > inputs;
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
     shared_ptr<CompactionInput> input(rs->NewCompactionInput(snap));
     inputs.push_back(input);
   }
@@ -316,7 +316,7 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap, cons
 void RowSetsInCompaction::DumpToLog() const {
   LOG(INFO) << "Selected " << rowsets_.size() << " rowsets to compact:";
   // Dump the selected rowsets to the log, and collect corresponding iterators.
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
     LOG(INFO) << rs->ToString() << "(" << rs->EstimateOnDiskSize() << " bytes)";
   }
 }

@@ -60,7 +60,7 @@ private:
   BloomKeyProbe bloom_probe_;
 };
 
-class RowSetInterface {
+class RowSet {
 public:
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
@@ -105,11 +105,11 @@ public:
   // Return the schema for data in this rowset.
   virtual const Schema &schema() const = 0;
 
-  virtual ~RowSetInterface() {}
+  virtual ~RowSet() {}
 };
 
 // Used often enough, may as well typedef it.
-typedef vector<shared_ptr<RowSetInterface> > RowSetVector;
+typedef vector<shared_ptr<RowSet> > RowSetVector;
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaTracker, which reads

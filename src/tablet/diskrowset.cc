@@ -363,8 +363,8 @@ Status DiskRowSet::RenameRowSetDir(const string &new_dir) {
 
 ////////////////////////////////////////
 
-DuplicatingRowSet::DuplicatingRowSet(const vector<shared_ptr<RowSetInterface> > &old_rowsets,
-                                   const shared_ptr<RowSetInterface> &new_rowset) :
+DuplicatingRowSet::DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
+                                   const shared_ptr<RowSet> &new_rowset) :
   old_rowsets_(old_rowsets),
   new_rowset_(new_rowset)
 {
@@ -380,7 +380,7 @@ string DuplicatingRowSet::ToString() const {
   string ret;
   ret.append("DuplicatingRowSet([");
   bool first = true;
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, old_rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, old_rowsets_) {
     if (!first) {
       ret.append(", ");
     }
@@ -402,7 +402,7 @@ RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema &projection,
     // Union between them
 
     vector<shared_ptr<RowwiseIterator> > iters;
-    BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, old_rowsets_) {
+    BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
       shared_ptr<RowwiseIterator> iter(rowset->NewRowIterator(projection, snap));
       iters.push_back(iter);
     }
@@ -427,7 +427,7 @@ Status DuplicatingRowSet::UpdateRow(txid_t txid,
   // Duplicate the update to both the relevant input rowset and the output rowset.
   // First propagate to the relevant input rowset.
   bool updated = false;
-  BOOST_FOREACH(shared_ptr<RowSetInterface> &rowset, old_rowsets_) {
+  BOOST_FOREACH(shared_ptr<RowSet> &rowset, old_rowsets_) {
     Status s = rowset->UpdateRow(txid, key, update);
     if (s.ok()) {
       updated = true;
@@ -453,7 +453,7 @@ Status DuplicatingRowSet::UpdateRow(txid_t txid,
 Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                               bool *present) const {
   *present = false;
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, old_rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
     RETURN_NOT_OK(rowset->CheckRowPresent(probe, present));
     if (present) {
       return Status::OK();

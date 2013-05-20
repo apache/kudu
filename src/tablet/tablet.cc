@@ -171,7 +171,7 @@ Status Tablet::UpdateRow(const void *key,
   // TODO: could iterate the rowsets in a smart order
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
-  BOOST_FOREACH(shared_ptr<RowSetInterface> &rs, rowsets_) {
+  BOOST_FOREACH(shared_ptr<RowSet> &rs, rowsets_) {
     s = rs->UpdateRow(tx.txid(), key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
@@ -183,7 +183,7 @@ Status Tablet::UpdateRow(const void *key,
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
-                              const shared_ptr<RowSetInterface> &new_rowset,
+                              const shared_ptr<RowSet> &new_rowset,
                               MvccSnapshot *snap_under_lock = NULL) {
   RowSetVector new_rowsets;
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
@@ -192,10 +192,10 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
   // the rowsets that were included in the compaction
   int num_replaced = 0;
 
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
     // Determine if it should be removed
     bool should_remove = false;
-    BOOST_FOREACH(const shared_ptr<RowSetInterface> &l_input, old_rowsets) {
+    BOOST_FOREACH(const shared_ptr<RowSet> &l_input, old_rowsets) {
       if (l_input == rs) {
         should_remove = true;
         num_replaced++;
@@ -298,8 +298,8 @@ void Tablet::SetFlushCompactCommonHooksForTests(
   common_hooks_ = hooks;
 }
 
-static bool CompareBySize(const shared_ptr<RowSetInterface> &a,
-                          const shared_ptr<RowSetInterface> &b) {
+static bool CompareBySize(const shared_ptr<RowSet> &a,
+                          const shared_ptr<RowSet> &b) {
   return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
 }
 
@@ -309,13 +309,13 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   CHECK_EQ(picked->num_rowsets(), 0);
 
-  vector<shared_ptr<RowSetInterface> > tmp_rowsets;
+  vector<shared_ptr<RowSet> > tmp_rowsets;
   tmp_rowsets.assign(rowsets_.begin(), rowsets_.end());
 
   // Sort the rowsets by their on-disk size
   std::sort(tmp_rowsets.begin(), tmp_rowsets.end(), CompareBySize);
   uint64_t accumulated_size = 0;
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, tmp_rowsets) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, tmp_rowsets) {
     uint64_t this_size = rs->EstimateOnDiskSize();
     if (picked->num_rowsets() < 2 || this_size < accumulated_size * 2) {
       // Grab the compact_flush_lock: this prevents any other concurrent
@@ -424,7 +424,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
 
   // Remove old rowsets
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &l_input, input.rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
     LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
     RETURN_NOT_OK(l_input->Delete());
   }
@@ -467,7 +467,7 @@ Status Tablet::CaptureConsistentIterators(
   ret.push_back(ms_iter);
 
   // Grab all rowset iterators.
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
     shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
     ret.push_back(row_it);
   }
@@ -480,7 +480,7 @@ Status Tablet::CaptureConsistentIterators(
 Status Tablet::CountRows(uint64_t *count) const {
   // First grab a consistent view of the components of the tablet.
   shared_ptr<MemStore> memstore;
-  vector<shared_ptr<RowSetInterface> > rowsets;
+  vector<shared_ptr<RowSet> > rowsets;
   {
     boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
     memstore = memstore_;
@@ -490,7 +490,7 @@ Status Tablet::CountRows(uint64_t *count) const {
   // Now sum up the counts.
   *count = memstore->entry_count();
 
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, rowsets) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets) {
     rowid_t l_count;
     RETURN_NOT_OK(rowset->CountRows(&l_count));
     *count += l_count;

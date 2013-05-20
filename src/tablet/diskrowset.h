@@ -97,7 +97,7 @@ private:
 // DiskRowSet
 ////////////////////////////////////////////////////////////
 
-class DiskRowSet : public RowSetInterface, boost::noncopyable {
+class DiskRowSet : public RowSet, boost::noncopyable {
 public:
   static const char *kDeltaPrefix;
   static const char *kColumnPrefix;
@@ -126,7 +126,7 @@ public:
 
 
   ////////////////////////////////////////////////////////////
-  // RowSetInterface implementation
+  // RowSet implementation
   ////////////////////////////////////////////////////////////
 
   ////////////////////
@@ -212,10 +212,10 @@ private:
 // union of the input rowsets.
 //
 // See compaction.txt for a little more detail on how this is used.
-class DuplicatingRowSet : public RowSetInterface, boost::noncopyable {
+class DuplicatingRowSet : public RowSet, boost::noncopyable {
 public:
-  DuplicatingRowSet(const vector<shared_ptr<RowSetInterface> > &old_rowsets,
-                   const shared_ptr<RowSetInterface> &new_rowset);
+  DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
+                   const shared_ptr<RowSet> &new_rowset);
 
 
   Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
@@ -249,8 +249,8 @@ public:
 private:
   friend class Tablet;
 
-  vector<shared_ptr<RowSetInterface> > old_rowsets_;
-  shared_ptr<RowSetInterface> new_rowset_;
+  vector<shared_ptr<RowSet> > old_rowsets_;
+  shared_ptr<RowSet> new_rowset_;
 
   boost::mutex always_locked_;
 };

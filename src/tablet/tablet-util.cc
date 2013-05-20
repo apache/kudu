@@ -17,7 +17,7 @@ Status CheckRowPresentInAnyRowSet(const RowSetVector &rowsets,
                                  bool *present) {
   *present = false;
 
-  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, rowsets) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets) {
     RETURN_NOT_OK(rowset->CheckRowPresent(probe, present));
     if (*present) {
       break;

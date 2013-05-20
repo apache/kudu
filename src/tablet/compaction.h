@@ -44,7 +44,7 @@ class CompactionInput {
 // The set of rowsets which are taking part in a given compaction.
 class RowSetsInCompaction {
  public:
-  void AddRowSet(const shared_ptr<RowSetInterface> &rowset,
+  void AddRowSet(const shared_ptr<RowSet> &rowset,
                 const shared_ptr<boost::mutex::scoped_try_lock> &lock) {
     CHECK(lock->owns_lock());
 
