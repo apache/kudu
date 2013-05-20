@@ -9,7 +9,7 @@
 // This implementation is only the B-tree component, and not the "trie of trees"
 // which make up their full data structure. In addition to this, there are
 // some other key differences:
-// - We do not support removal of elements from the tree -- in the Kudu memstore
+// - We do not support removal of elements from the tree -- in the Kudu memrowset
 //   use case, we use a deletion bit to indicate a removed record, and end up
 //   actually removing the storage at compaction time.
 // - The leaf nodes are linked together with a "next" pointer. This makes

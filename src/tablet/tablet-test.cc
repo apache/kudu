@@ -37,7 +37,7 @@ TYPED_TEST_CASE(TestTablet, TabletTestHelperTypes);
 
 
 TYPED_TEST(TestTablet, TestFlush) {
-  // Insert 1000 rows into memstore
+  // Insert 1000 rows into memrowset
   this->InsertTestRows(0, FLAGS_testflush_num_inserts);
 
   // Flush it.
@@ -52,14 +52,14 @@ TYPED_TEST(TestTablet, TestFlush) {
 }
 
 // Test that historical data for a row is maintained even after the row
-// is flushed from the memstore.
+// is flushed from the memrowset.
 //
 // This test is disabled because the current implementation does not actually
 // Flush/Compact UNDO records or any other MVCC data. Instead, it just writes
 // the most up-to-date version. We should re-enable this once UNDO files are
 // implemented.
 TYPED_TEST(TestTablet, DISABLED_TestMVCCAfterFlush) {
-  // Insert 5 rows into the memstore.
+  // Insert 5 rows into the memrowset.
   // These rows will be inserted with txid 0 through 4.
   vector<MvccSnapshot> snaps;
   snaps.push_back(MvccSnapshot(this->tablet_->mvcc_manager()));
@@ -115,12 +115,12 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 }
 
 // Test iterating over a tablet which contains data
-// in the memstore as well as two rowsets. This simple test
+// in the memrowset as well as two rowsets. This simple test
 // only puts one row in each with no updates.
 TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   const int kInRowSet1 = 1;
   const int kInRowSet2 = 2;
-  const int kInMemstore = 3;
+  const int kInMemRowSet = 3;
 
   // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
@@ -134,9 +134,9 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  // Put a row in memstore
+  // Put a row in memrowset
   rb.Reset();
-  this->setup_.BuildRow(&rb, kInMemstore);
+  this->setup_.BuildRow(&rb, kInMemRowSet);
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
 
   // Now iterate the tablet and make sure the rows show up
@@ -148,10 +148,10 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
 
   RowBlock block(this->schema_, 100, &this->arena_);
 
-  // First call to CopyNextRows should fetch the whole memstore.
+  // First call to CopyNextRows should fetch the whole memrowset.
   ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
-  ASSERT_EQ(1, block.nrows()) << "should get only the one row from memstore";
-  this->VerifyRow(block.row_ptr(0), kInMemstore, 0);
+  ASSERT_EQ(1, block.nrows()) << "should get only the one row from memrowset";
+  this->VerifyRow(block.row_ptr(0), kInMemRowSet, 0);
 
   // Next, should fetch the older rowset
   ASSERT_TRUE(iter->HasNext());
@@ -168,7 +168,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_FALSE(iter->HasNext());
 }
 
-// Test iterating over a tablet which has a memstore
+// Test iterating over a tablet which has a memrowset
 // and several rowsets, each with many rows of data.
 TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // Put a row in disk rowset 1 (insert and flush)
@@ -188,7 +188,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   LOG(INFO) << "Successfully inserted " << inserted.size() << " rows";
 
   // At this point, we should have several rowsets as well
-  // as some data in memstore.
+  // as some data in memrowset.
 
   // Update a subset of the rows
   for (uint32_t i = 0; i < 1000; i += 15) {
@@ -255,7 +255,7 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
 // Test that when a row has been updated many times, it always yields
 // the most recent value.
 TYPED_TEST(TestTablet, TestMultipleUpdates) {
-  // Insert and update several times in MemStore
+  // Insert and update several times in MemRowSet
   this->InsertTestRows(0, 1);
   this->UpdateTestRow(0, 1);
   this->UpdateTestRow(0, 2);
@@ -349,7 +349,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
 // Test for Flush with concurrent update and insert during the
 // various phases.
 TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
-  // Insert several rows into memstore
+  // Insert several rows into memrowset
   this->InsertTestRows(0, 5);
 
   // Inject hooks which mutate those rows and add more rows at
@@ -358,7 +358,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   public:
     MyFlushHooks(TestFixture *test) : test_(test) {}
 
-    Status PostSwapNewMemStore() {
+    Status PostSwapNewMemRowSet() {
       test_->InsertTestRows(5, 1);
       test_->UpdateTestRow(0, 12345);
       test_->CheckCanIterate();

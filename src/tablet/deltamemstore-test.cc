@@ -119,7 +119,7 @@ TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {
 }
 
 // Test when a slice column has been updated multiple times in the
-// memstore that the referred to values properly end up in the
+// memrowset that the referred to values properly end up in the
 // right arena.
 TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   faststring update_buf;

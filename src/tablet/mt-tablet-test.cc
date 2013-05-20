@@ -22,9 +22,9 @@ DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
 
 DEFINE_int64(inserts_per_thread, 50000,
              "Number of rows inserted by each inserter thread");
-DEFINE_int32(flush_threshold_mb, 0, "Minimum memstore size to flush");
+DEFINE_int32(flush_threshold_mb, 0, "Minimum memrowset size to flush");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
-DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
+DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of mrs to wait between flushes");
 
 namespace kudu {
 namespace tablet {
@@ -133,7 +133,7 @@ public:
 
   // Thread which iterates slowly over the first 10% of the data.
   // This is meant to test that outstanding iterators don't end up
-  // trying to reference already-freed memstore memory.
+  // trying to reference already-freed memrowset memory.
   void SlowReaderThread(int tid) {
     Arena arena(32*1024, 256*1024);
     RowBlock block(schema_, 1, &arena);
@@ -224,11 +224,11 @@ public:
     int wait_time = FLAGS_flusher_initial_frequency_ms;
     while (running_insert_count_.count() > 0) {
 
-      if (tablet_->MemStoreSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      if (tablet_->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
         ASSERT_STATUS_OK(tablet_->Flush());
 
       } else {
-        LOG(INFO) << "Not flushing, memstore not very full";
+        LOG(INFO) << "Not flushing, memrowset not very full";
       }
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
@@ -246,19 +246,19 @@ public:
     }
   }
 
-  // Thread which wakes up periodically and collects metrics like memstore
+  // Thread which wakes up periodically and collects metrics like memrowset
   // size, etc. Eventually we should have a metrics system to collect things
   // like this, but for now, this is what we've got.
   void CollectStatisticsThread(int tid) {
     shared_ptr<TimeSeries> num_rowsets_ts = ts_collector_.GetTimeSeries(
       "num_rowsets");
-    shared_ptr<TimeSeries> memstore_size_ts = ts_collector_.GetTimeSeries(
-      "memstore_kb");
+    shared_ptr<TimeSeries> memrowset_size_ts = ts_collector_.GetTimeSeries(
+      "memrowset_kb");
 
     while (running_insert_count_.count() > 0) {
 
       num_rowsets_ts->SetValue( tablet_->num_rowsets() );
-      memstore_size_ts->SetValue( tablet_->MemStoreSize() / 1024);
+      memrowset_size_ts->SetValue( tablet_->MemRowSetSize() / 1024);
 
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(250));

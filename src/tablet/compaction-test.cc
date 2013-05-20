@@ -27,7 +27,7 @@ class TestCompaction : public KuduTest {
 
   // Insert n_rows rows of data.
   // Each row is the tuple: (string key=hello <n*10 + delta>, val=<n>)
-  void InsertRows(MemStore *ms, int n_rows, int delta) {
+  void InsertRows(MemRowSet *mrs, int n_rows, int delta) {
     RowBuilder rb(schema_);
     char keybuf[256];
     for (uint32_t i = 0; i < n_rows; i++) {
@@ -36,7 +36,7 @@ class TestCompaction : public KuduTest {
       snprintf(keybuf, sizeof(keybuf), "hello %03d", i * 10 + delta);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK(ms->Insert(tx.txid(), rb.data()));
+      ASSERT_STATUS_OK(mrs->Insert(tx.txid(), rb.data()));
     }
   }
 
@@ -88,8 +88,8 @@ class TestCompaction : public KuduTest {
     ASSERT_FILE_EXISTS(env_, DiskRowSet::GetBloomPath(out_dir));
   }
 
-  void FlushAndReopen(const MemStore &ms, const string &out_dir, shared_ptr<DiskRowSet> *rs) {
-    gscoped_ptr<CompactionInput> input(CompactionInput::Create(ms, MvccSnapshot(mvcc_)));
+  void FlushAndReopen(const MemRowSet &mrs, const string &out_dir, shared_ptr<DiskRowSet> *rs) {
+    gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, MvccSnapshot(mvcc_)));
     DoFlush(input.get(), out_dir);
     // Re-open it
     ASSERT_STATUS_OK(DiskRowSet::Open(env_.get(), schema_, out_dir, rs));
@@ -102,18 +102,18 @@ class TestCompaction : public KuduTest {
   string rowset_dir_;
 };
 
-TEST_F(TestCompaction, TestMemstoreInput) {
-  // Create a memstore with 10 rows and several updates.
-  shared_ptr<MemStore> ms(new MemStore(schema_));
-  InsertRows(ms.get(), 10, 0);
-  UpdateRows(ms.get(), 10, 0, 1);
-  UpdateRows(ms.get(), 10, 0, 2);
+TEST_F(TestCompaction, TestMemRowSetInput) {
+  // Create a memrowset with 10 rows and several updates.
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  InsertRows(mrs.get(), 10, 0);
+  UpdateRows(mrs.get(), 10, 0, 1);
+  UpdateRows(mrs.get(), 10, 0, 2);
 
   // Ensure that the compaction input yields the expected rows
   // and mutations.
   vector<string> out;
   MvccSnapshot snap(mvcc_);
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*ms, snap));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 000, uint32 val=0) mutations: [@10(SET val=1), @20(SET val=2)]",
@@ -123,12 +123,12 @@ TEST_F(TestCompaction, TestMemstoreInput) {
 }
 
 TEST_F(TestCompaction, TestRowSetInput) {
-  // Create a memstore with a bunch of rows, flush and reopen.
+  // Create a memrowset with a bunch of rows, flush and reopen.
   shared_ptr<DiskRowSet> rs;
   {
-    shared_ptr<MemStore> ms(new MemStore(schema_));
-    InsertRows(ms.get(), 10, 0);
-    FlushAndReopen(*ms, rowset_dir_, &rs);
+    shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+    InsertRows(mrs.get(), 10, 0);
+    FlushAndReopen(*mrs, rowset_dir_, &rs);
     ASSERT_NO_FATAL_FAILURE();
   }
 
@@ -154,26 +154,26 @@ TEST_F(TestCompaction, TestRowSetInput) {
 }
 
 // Test case which doesn't do any merging -- just compacts
-// a single input rowset (which may be the memstore) into a single
+// a single input rowset (which may be the memrowset) into a single
 // output rowset (on disk).
 TEST_F(TestCompaction, TestOneToOne) {
-  // Create a memstore with a bunch of rows and updates.
-  shared_ptr<MemStore> ms(new MemStore(schema_));
-  InsertRows(ms.get(), 1000, 0);
-  UpdateRows(ms.get(), 1000, 0, 1);
+  // Create a memrowset with a bunch of rows and updates.
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  InsertRows(mrs.get(), 1000, 0);
+  UpdateRows(mrs.get(), 1000, 0, 1);
   MvccSnapshot snap(mvcc_);
 
   // Flush it to disk and re-open.
   shared_ptr<DiskRowSet> rs;
-  FlushAndReopen(*ms, rowset_dir_, &rs);
+  FlushAndReopen(*mrs, rowset_dir_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
   // Update the rows with some updates that weren't in the snapshot.
-  UpdateRows(ms.get(), 1000, 0, 2);
+  UpdateRows(mrs.get(), 1000, 0, 2);
 
   // Catch the updates that came in after the snapshot flush was made.
   MvccSnapshot snap2(mvcc_);
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*ms, snap2));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, snap2));
 
   // Add some more updates which come into the new rowset while the "reupdate" is happening.
   UpdateRows(rs.get(), 1000, 0, 3);
@@ -200,16 +200,16 @@ TEST_F(TestCompaction, TestMerge) {
 
   // Create three input rowsets
   for (int delta = 0; delta < 3; delta++) {
-    // Create a memstore with a bunch of rows and updates.
-    shared_ptr<MemStore> ms(new MemStore(schema_));
-    InsertRows(ms.get(), 1000, delta);
-    UpdateRows(ms.get(), 1000, delta, 1);
+    // Create a memrowset with a bunch of rows and updates.
+    shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+    InsertRows(mrs.get(), 1000, delta);
+    UpdateRows(mrs.get(), 1000, delta, 1);
 
     string dir = GetTestPath(StringPrintf("rowset-%d", delta));
 
     // Flush it to disk and re-open it.
     shared_ptr<DiskRowSet> rs;
-    FlushAndReopen(*ms, dir, &rs);
+    FlushAndReopen(*mrs, dir, &rs);
     ASSERT_NO_FATAL_FAILURE();
     rowsets.push_back(rs);
 

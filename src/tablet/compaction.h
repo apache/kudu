@@ -22,9 +22,9 @@ class CompactionInput {
   // prior to the given snapshot.
   static CompactionInput *Create(const DiskRowSet &rowset, const MvccSnapshot &snap);
 
-  // Create an input which reads from the given memstore, yielding base rows and updates
+  // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionInput *Create(const MemStore &memstore, const MvccSnapshot &snap);
+  static CompactionInput *Create(const MemRowSet &memrowset, const MvccSnapshot &snap);
 
   // Create an input which merges several other compaction inputs. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.

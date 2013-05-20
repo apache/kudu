@@ -45,7 +45,7 @@ class Mutation : boost::noncopyable {
 
  private:
   friend class MSRow;
-  friend class MemStore;
+  friend class MemRowSet;
 
   // The transaction ID which made this mutation. If this transaction is not
   // committed in the snapshot of the reader, this mutation should be ignored.

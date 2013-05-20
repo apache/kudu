@@ -77,8 +77,8 @@ public:
   Status Flush();
   Status Compact();
 
-  size_t MemStoreSize() const {
-    return memstore_->memory_footprint();
+  size_t MemRowSetSize() const {
+    return memrowset_->memory_footprint();
   }
 
   // Return the current number of rowsets in the tablet.
@@ -86,7 +86,7 @@ public:
 
   // Attempt to count the total number of rows in the tablet.
   // This is not super-efficient since it must iterate over the
-  // memstore in the current implementation.
+  // memrowset in the current implementation.
   Status CountRows(uint64_t *count) const;
 
   const Schema &schema() const { return schema_; }
@@ -127,18 +127,18 @@ private:
 
   Schema schema_;
   string dir_;
-  shared_ptr<MemStore> memstore_;
+  shared_ptr<MemRowSet> memrowset_;
   RowSetVector rowsets_;
 
   MvccManager mvcc_;
 
-  // Lock protecting write access to the components of the tablet (memstore and rowsets).
+  // Lock protecting write access to the components of the tablet (memrowset and rowsets).
   // Shared mode:
   // - Inserters, updaters take this in shared mode during their mutation.
   // - Readers take this in shared mode while capturing their iterators.
   // Exclusive mode:
   // - Flushers take this lock in order to lock out concurrent updates when swapping in
-  //   a new memstore.
+  //   a new memrowset.
   //
   // TODO: this could probably done more efficiently with a single atomic swap of a list
   // and an RCU-style quiesce phase, but not worth it for now.
@@ -176,7 +176,7 @@ class Tablet::FlushCompactCommonHooks {
 // parts of the Flush() code.
 class Tablet::FlushFaultHooks {
 public:
-  virtual Status PostSwapNewMemStore() { return Status::OK(); }
+  virtual Status PostSwapNewMemRowSet() { return Status::OK(); }
 };
 
 

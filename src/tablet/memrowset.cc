@@ -11,8 +11,8 @@
 #include "tablet/memrowset.h"
 #include "tablet/compaction.h"
 
-DEFINE_int32(memstore_throttle_mb, 0,
-             "number of MB of RAM beyond which memstore inserts will be throttled");
+DEFINE_int32(memrowset_throttle_mb, 0,
+             "number of MB of RAM beyond which memrowset inserts will be throttled");
 
 
 namespace kudu { namespace tablet {
@@ -22,7 +22,7 @@ using std::pair;
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
 
-MemStore::MemStore(const Schema &schema) :
+MemRowSet::MemRowSet(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
   debug_insert_count_(0),
@@ -30,7 +30,7 @@ MemStore::MemStore(const Schema &schema) :
   has_logged_throttling_(0)
 {}
 
-void MemStore::DebugDump() {
+void MemRowSet::DebugDump() {
   gscoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
     MSRow row = iter->GetCurrentRow();
@@ -42,7 +42,7 @@ void MemStore::DebugDump() {
 }
 
 
-Status MemStore::Insert(txid_t txid, const Slice &data) {
+Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   CHECK_EQ(data.size(), schema_.byte_size());
 
   faststring enc_key_buf;
@@ -66,7 +66,7 @@ Status MemStore::Insert(txid_t txid, const Slice &data) {
   // That's not very memory-efficient!
 
   if (mutation.exists()) {
-    return Status::AlreadyPresent("entry already present in memstore");
+    return Status::AlreadyPresent("entry already present in memrowset");
   }
 
   // Copy any referred-to memory to arena.
@@ -81,7 +81,7 @@ Status MemStore::Insert(txid_t txid, const Slice &data) {
   return Status::OK();
 }
 
-Status MemStore::UpdateRow(txid_t txid,
+Status MemRowSet::UpdateRow(txid_t txid,
                            const void *key,
                            const RowChangeList &delta) {
   Slice unencoded_key_slice(reinterpret_cast<const uint8_t *>(key),
@@ -96,7 +96,7 @@ Status MemStore::UpdateRow(txid_t txid,
     mutation.Prepare(&tree_);
 
     if (!mutation.exists()) {
-      return Status::NotFound("not in memstore");
+      return Status::NotFound("not in memrowset");
     }
 
     Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
@@ -119,19 +119,19 @@ Status MemStore::UpdateRow(txid_t txid,
   return Status::OK();
 }
 
-Status MemStore::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
+Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
   *present = tree_.ContainsKey(probe.encoded_key());
   return Status::OK();
 }
 
-void MemStore::SlowMutators() {
-  if (FLAGS_memstore_throttle_mb == 0) return;
+void MemRowSet::SlowMutators() {
+  if (FLAGS_memrowset_throttle_mb == 0) return;
 
-  ssize_t over_mem = memory_footprint() - FLAGS_memstore_throttle_mb * 1024 * 1024;
+  ssize_t over_mem = memory_footprint() - FLAGS_memrowset_throttle_mb * 1024 * 1024;
   if (over_mem > 0) {
     if (!has_logged_throttling_ &&
         base::subtle::NoBarrier_AtomicExchange(&has_logged_throttling_, 1) == 0) {
-      LOG(WARNING) << "Throttling memstore insert rate";
+      LOG(WARNING) << "Throttling memrowset insert rate";
     }
 
     size_t us_to_sleep = over_mem / 1024 / 512;
@@ -139,23 +139,23 @@ void MemStore::SlowMutators() {
   }
 }
 
-MemStore::Iterator *MemStore::NewIterator(const Schema &projection,
+MemRowSet::Iterator *MemRowSet::NewIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const {
-  return new MemStore::Iterator(shared_from_this(), tree_.NewIterator(),
+  return new MemRowSet::Iterator(shared_from_this(), tree_.NewIterator(),
                                 projection, snap);
 }
 
-MemStore::Iterator *MemStore::NewIterator() const {
+MemRowSet::Iterator *MemRowSet::NewIterator() const {
   // TODO: can we kill this function? should be only used by tests?
   return NewIterator(schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 }
 
-RowwiseIterator *MemStore::NewRowIterator(const Schema &projection,
+RowwiseIterator *MemRowSet::NewRowIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const{
   return NewIterator(projection, snap);
 }
 
-CompactionInput *MemStore::NewCompactionInput(const MvccSnapshot &snap) const  {
+CompactionInput *MemRowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
   return CompactionInput::Create(*this, snap);
 }
 

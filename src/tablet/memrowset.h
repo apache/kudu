@@ -1,6 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
-#ifndef KUDU_TABLET_MEMSTORE_H
-#define KUDU_TABLET_MEMSTORE_H
+#ifndef KUDU_TABLET_MEMROWSET_H
+#define KUDU_TABLET_MEMROWSET_H
 
 #include <boost/noncopyable.hpp>
 #include <tr1/memory>
@@ -22,17 +22,17 @@ using std::tr1::shared_ptr;
 //
 // Implementation notes:
 // --------------------------
-// The MemStore is a concurrent b-tree which stores newly inserted data which
+// The MemRowSet is a concurrent b-tree which stores newly inserted data which
 // has not yet been flushed to on-disk rowsets. In order to provide snapshot
-// consistency, data is never updated in-place in the memstore after insertion.
+// consistency, data is never updated in-place in the memrowset after insertion.
 // Rather, a chain of mutations hangs off each row, acting as a per-row "redo log".
 //
 // Each row is stored in exactly one CBTree entry. Its key is the encoded form
 // of the row's primary key, such that the entries sort correctly using the default
 // lexicographic comparator. The value for each row is an instance of MSRow.
 //
-// NOTE: all allocations done by the MemStore are done inside its associated
-// thread-safe arena, and then freed in bulk when the MemStore is destructed.
+// NOTE: all allocations done by the MemRowSet are done inside its associated
+// thread-safe arena, and then freed in bulk when the MemRowSet is destructed.
 
 
 // The value stored in the CBTree for a single row.
@@ -53,7 +53,7 @@ class MSRow {
   const Slice &row_slice() const { return row_slice_; }
 
  private:
-  friend class MemStore;
+  friend class MemRowSet;
 
   struct Header {
     // txid_t for the transaction which inserted this row. If a scanner with an
@@ -89,36 +89,36 @@ class MSRow {
 // (i.e not columnar)
 //
 // The data is kept sorted.
-class MemStore : boost::noncopyable,
+class MemRowSet : boost::noncopyable,
                  public RowSet,
-                 public std::tr1::enable_shared_from_this<MemStore> {
+                 public std::tr1::enable_shared_from_this<MemRowSet> {
  public:
   class Iterator;
 
-  explicit MemStore(const Schema &schema);
+  explicit MemRowSet(const Schema &schema);
 
 
-  // Insert a new row into the memstore.
+  // Insert a new row into the memrowset.
   //
   // The provided 'data' slice should have length equivalent to this
-  // memstore's Schema.byte_size().
+  // memrowset's Schema.byte_size().
   //
   // After insert, the row and any referred-to memory (eg for strings)
-  // have been copied into this MemStore's internal storage, and thus
+  // have been copied into this MemRowSet's internal storage, and thus
   // the provided memory buffer may safely be re-used or freed.
   //
   // Returns Status::OK unless allocation fails.
   Status Insert(txid_t txid, const Slice &data);
 
 
-  // Update an existing row in the memstore.
+  // Update an existing row in the memrowset.
   //
   // Returns Status::NotFound if the row doesn't exist.
   Status UpdateRow(txid_t txid,
                    const void *key,
                    const RowChangeList &update);
 
-  // Return the number of entries in the memstore.
+  // Return the number of entries in the memrowset.
   // NOTE: this requires iterating all data, and is thus
   // not very fast.
   uint64_t entry_count() const {
@@ -139,7 +139,7 @@ class MemStore : boost::noncopyable,
     return &compact_flush_lock_;
   }
 
-  // Return true if there are no entries in the memstore.
+  // Return true if there are no entries in the memrowset.
   bool empty() const {
     return tree_.empty();
   }
@@ -147,19 +147,19 @@ class MemStore : boost::noncopyable,
   // TODO: unit test me
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 
-  // Return the memory footprint of this memstore.
+  // Return the memory footprint of this memrowset.
   // Note that this may be larger than the sum of the data
-  // inserted into the memstore, due to arena and data structure
+  // inserted into the memrowset, due to arena and data structure
   // overhead.
   size_t memory_footprint() const {
     // TODO: merge the two into the same arena?
     return arena_.memory_footprint() + tree_.estimate_memory_usage();
   }
 
-  // Return an iterator over the items in this memstore.
+  // Return an iterator over the items in this memrowset.
   //
   // NOTE: for this function to work, there must be a shared_ptr
-  // referring to this MemStore. Otherwise, this will throw
+  // referring to this MemRowSet. Otherwise, this will throw
   // a C++ exception and all bets are off.
   //
   // TODO: clarify the consistency of this iterator in the method doc
@@ -174,17 +174,17 @@ class MemStore : boost::noncopyable,
   // Create compaction input.
   CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
 
-  // Return the Schema for the rows in this memstore.
+  // Return the Schema for the rows in this memrowset.
   const Schema &schema() const {
     return schema_;
   }
 
-  // Dump the contents of the memstore to the INFO log.
+  // Dump the contents of the memrowset to the INFO log.
   // This dumps every row, so should only be used in tests, etc
   void DebugDump();
 
   string ToString() const {
-    return string("memstore");
+    return string("memrowset");
   }
 
   Status Delete() {
@@ -193,7 +193,7 @@ class MemStore : boost::noncopyable,
     return Status::OK();
   }
 
-  // Mark the memstore as frozen. See CBTree::Freeze()
+  // Mark the memrowset as frozen. See CBTree::Freeze()
   void Freeze() {
     tree_.Freeze();
   }
@@ -208,7 +208,7 @@ class MemStore : boost::noncopyable,
  private:
   friend class Iterator;
 
-  // Temporary hack to slow down mutators when the memstore is over 1GB.
+  // Temporary hack to slow down mutators when the memrowset is over 1GB.
   void SlowMutators();
 
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
@@ -231,8 +231,8 @@ class MemStore : boost::noncopyable,
   Atomic32 has_logged_throttling_;
 };
 
-// An iterator through in-memory data stored in a MemStore.
-// This holds a reference to the MemStore, and so the memstore
+// An iterator through in-memory data stored in a MemRowSet.
+// This holds a reference to the MemRowSet, and so the memrowset
 // must not be freed while this iterator is outstanding.
 //
 // This iterator is not a full snapshot, but individual rows
@@ -241,13 +241,13 @@ class MemStore : boost::noncopyable,
 // at least all rows that were present at the time of construction,
 // and potentially more. Each row will be at least as current as
 // the time of construction, and potentially more current.
-class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
+class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
  public:
   virtual ~Iterator() {}
 
   virtual Status Init(ScanSpec *spec) {
     RETURN_NOT_OK(projection_.GetProjectionFrom(
-                    memstore_->schema(), &projection_mapping_));
+                    memrowset_->schema(), &projection_mapping_));
 
     return Status::OK();
   }
@@ -257,7 +257,7 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
 
     if (key.size() > 0) {
       tmp_buf.clear();
-      memstore_->schema().EncodeComparableKey(key, &tmp_buf);
+      memrowset_->schema().EncodeComparableKey(key, &tmp_buf);
     } else {
       // Seeking to empty key shouldn't try to run any encoding.
       tmp_buf.resize(0);
@@ -267,7 +267,7 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
         key.size() == 0) {
       return Status::OK();
     } else {
-      return Status::NotFound("no match in memstore");
+      return Status::NotFound("no match in memrowset");
     }
   }
 
@@ -313,7 +313,7 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
         for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
           size_t src_col_idx = projection_mapping_[proj_col_idx];
           void *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
-          const void *src_cell = v.data() + memstore_->schema().column_offset(src_col_idx);
+          const void *src_cell = v.data() + memrowset_->schema().column_offset(src_col_idx);
           RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
         }
 
@@ -365,7 +365,7 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
   }
 
   string ToString() const {
-    return "memstore iterator";
+    return "memrowset iterator";
   }
 
   const Schema &schema() const {
@@ -373,13 +373,13 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
   }
 
  private:
-  friend class MemStore;
+  friend class MemRowSet;
 
-  Iterator(const shared_ptr<const MemStore> &ms,
-           MemStore::MSBTIter *iter,
+  Iterator(const shared_ptr<const MemRowSet> &mrs,
+           MemRowSet::MSBTIter *iter,
            const Schema &projection,
            const MvccSnapshot &mvcc_snap) :
-    memstore_(ms),
+    memrowset_(mrs),
     iter_(iter),
     projection_(projection),
     mvcc_snap_(mvcc_snap),
@@ -415,10 +415,10 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
       // TODO: this is slow, since it makes multiple passes through the rowchangelist.
       // Instead, we should keep the backwards mapping of columns.
       for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-        RowChangeListDecoder decoder(memstore_->schema(), mut->changelist());
-        int memstore_col_idx = projection_mapping_[proj_col_idx];
+        RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
+        int memrowset_col_idx = projection_mapping_[proj_col_idx];
         uint8_t *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
-        RETURN_NOT_OK(decoder.ApplyToOneColumn(memstore_col_idx, dst_cell, dst_arena));
+        RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
       }
     }
 
@@ -426,18 +426,18 @@ class MemStore::Iterator : public RowwiseIterator, boost::noncopyable {
   }
 
 
-  const shared_ptr<const MemStore> memstore_;
-  gscoped_ptr<MemStore::MSBTIter> iter_;
+  const shared_ptr<const MemRowSet> memrowset_;
+  gscoped_ptr<MemRowSet::MSBTIter> iter_;
 
   // The schema for the output of this iterator.
-  // This may be a reordered subset of the schema of the memstore.
+  // This may be a reordered subset of the schema of the memrowset.
   const Schema projection_;
 
   // The MVCC snapshot which determines which rows and mutations are visible to
   // this iterator.
   const MvccSnapshot mvcc_snap_;
 
-  // Mapping from projected column index back to memstore column index.
+  // Mapping from projected column index back to memrowset column index.
   vector<size_t> projection_mapping_;
 
   size_t prepared_count_;

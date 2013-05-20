@@ -114,7 +114,7 @@ private:
               const MvccSnapshot &snapshot);
 
 
-  // Decode a mutation as stored in the memstore.
+  // Decode a mutation as stored in the DMS.
   Status DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *changelist) const;
 
   enum {

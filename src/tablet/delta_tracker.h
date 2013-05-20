@@ -64,7 +64,7 @@ private:
   // delta_<N> to designate the order in which they were flushed.
   uint32_t next_deltafile_idx_;
 
-  // The current delta memstore into which updates should be written.
+  // The current delta memrowset into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;
   vector<shared_ptr<DeltaTrackerInterface> > delta_trackers_;
 

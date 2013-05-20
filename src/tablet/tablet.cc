@@ -45,7 +45,7 @@ Tablet::Tablet(const Schema &schema,
                const string &dir) :
   schema_(schema),
   dir_(dir),
-  memstore_(new MemStore(schema)),
+  memrowset_(new MemRowSet(schema)),
   next_rowset_idx_(0),
   env_(Env::Default()),
   open_(false)
@@ -150,10 +150,10 @@ Status Tablet::Insert(const Slice &data) {
   // TODO: the Insert() call below will re-encode the key, which is a
   // waste. Should pass through the KeyProbe structure perhaps.
 
-  // Now try to insert into memstore. The memstore itself will return
+  // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
   ScopedTransaction tx(&mvcc_);
-  return memstore_->Insert(tx.txid(), data);
+  return memrowset_->Insert(tx.txid(), data);
 }
 
 Status Tablet::UpdateRow(const void *key,
@@ -161,8 +161,8 @@ Status Tablet::UpdateRow(const void *key,
   ScopedTransaction tx(&mvcc_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
-  // First try to update in memstore.
-  Status s = memstore_->UpdateRow(tx.txid(), key, update);
+  // First try to update in memrowset.
+  Status s = memrowset_->UpdateRow(tx.txid(), key, update);
   if (s.ok() || !s.IsNotFound()) {
     // if it succeeded, or if an error occurred, return.
     return s;
@@ -231,33 +231,33 @@ Status Tablet::Flush() {
   RowSetsInCompaction input;
   uint64_t start_insert_count;
 
-  // Step 1. Freeze the old memstore by blocking readers and swapping
+  // Step 1. Freeze the old memrowset by blocking readers and swapping
   // it in as a new rowset, replacing it with an empty one.
 
-  // TODO(perf): there's a memstore.Freeze() call which we might be able to
+  // TODO(perf): there's a memrowset.Freeze() call which we might be able to
   // use to improve iteration performance during the flush. The old design
   // used this, but not certain whether it's still doable with the new design.
 
-  LOG(INFO) << "Flush: entering stage 1 (freezing old memstore from inserts)";
-  shared_ptr<MemStore> old_ms(new MemStore(schema_));
+  LOG(INFO) << "Flush: entering stage 1 (freezing old memrowset from inserts)";
+  shared_ptr<MemRowSet> old_ms(new MemRowSet(schema_));
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
     // as the swap takes.
     boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
-    start_insert_count = memstore_->debug_insert_count();
+    start_insert_count = memrowset_->debug_insert_count();
 
-    // swap in a new memstore
-    old_ms.swap(memstore_);
+    // swap in a new memrowset
+    old_ms.swap(memrowset_);
 
     if (old_ms->empty()) {
-      // flushing empty memstore is a no-op
-      LOG(INFO) << "Flush requested on empty memstore";
+      // flushing empty memrowset is a no-op
+      LOG(INFO) << "Flush requested on empty memrowset";
       return Status::OK();
     }
 
-    // Mark the memstore rowset as locked, so compactions won't consider it
+    // Mark the memrowset rowset as locked, so compactions won't consider it
     // for inclusion in any concurrent compactions.
     shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
       new boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
@@ -267,7 +267,7 @@ Status Tablet::Flush() {
     // Put it back on the rowset list.
     rowsets_.push_back(old_ms);
   }
-  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemStore());
+  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemRowSet());
 
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
@@ -277,7 +277,7 @@ Status Tablet::Flush() {
 
   // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
-    << "Sanity check failed: insertions continued in memstore "
+    << "Sanity check failed: insertions continued in memrowset "
     << "after flush was triggered! Aborting to prevent dataloss.";
 
   return Status::OK();
@@ -382,7 +382,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
 
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
-  // memstore, but not in the new rowset. Here we re-scan the memstore, copying those
+  // memrowset, but not in the new rowset. Here we re-scan the memrowset, copying those
   // missed updates into the new rowset's DeltaTracker.
   //
   // TODO: is there some bug here? Here's a potentially bad scenario:
@@ -462,8 +462,8 @@ Status Tablet::CaptureConsistentIterators(
   // in the middle, we don't modify the output arguments.
   vector<shared_ptr<RowwiseIterator> > ret;
 
-  // Grab the memstore iterator.
-  shared_ptr<RowwiseIterator> ms_iter(memstore_->NewRowIterator(projection, snap));
+  // Grab the memrowset iterator.
+  shared_ptr<RowwiseIterator> ms_iter(memrowset_->NewRowIterator(projection, snap));
   ret.push_back(ms_iter);
 
   // Grab all rowset iterators.
@@ -479,16 +479,16 @@ Status Tablet::CaptureConsistentIterators(
 
 Status Tablet::CountRows(uint64_t *count) const {
   // First grab a consistent view of the components of the tablet.
-  shared_ptr<MemStore> memstore;
+  shared_ptr<MemRowSet> memrowset;
   vector<shared_ptr<RowSet> > rowsets;
   {
     boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-    memstore = memstore_;
+    memrowset = memrowset_;
     rowsets = rowsets_;
   }
 
   // Now sum up the counts.
-  *count = memstore->entry_count();
+  *count = memrowset->entry_count();
 
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets) {
     rowid_t l_count;

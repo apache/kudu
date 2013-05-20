@@ -10,7 +10,7 @@
 namespace kudu {
 namespace tablet {
 
-// Each entry in the delta memstore or delta files is keyed by the rowid
+// Each entry in the delta memrowset or delta files is keyed by the rowid
 // which has been updated, as well as the txid which performed the update.
 class DeltaKey {
  public:

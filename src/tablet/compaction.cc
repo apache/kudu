@@ -10,12 +10,12 @@ namespace tablet {
 
 namespace {
 
-// CompactionInput yielding rows and mutations from a MemStore.
-class MemstoreCompactionInput : boost::noncopyable, public CompactionInput {
+// CompactionInput yielding rows and mutations from a MemRowSet.
+class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
  public:
-  MemstoreCompactionInput(const MemStore &memstore,
+  MemRowSetCompactionInput(const MemRowSet &memrowset,
                           const MvccSnapshot &snap) :
-    iter_(memstore.NewIterator(memstore.schema(), snap))
+    iter_(memrowset.NewIterator(memrowset.schema(), snap))
   {}
 
   virtual Status Init() {
@@ -57,7 +57,7 @@ class MemstoreCompactionInput : boost::noncopyable, public CompactionInput {
   }
 
  private:
-  gscoped_ptr<MemStore::Iterator> iter_;
+  gscoped_ptr<MemRowSet::Iterator> iter_;
 };
 
 ////////////////////////////////////////////////////////////
@@ -285,9 +285,9 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
   return new RowSetCompactionInput(base_iter.Pass(), deltas);
 }
 
-CompactionInput *CompactionInput::Create(const MemStore &memstore,
+CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
                                          const MvccSnapshot &snap) {
-  return new MemstoreCompactionInput(memstore, snap);
+  return new MemRowSetCompactionInput(memrowset, snap);
 }
 
 CompactionInput *CompactionInput::Merge(const vector<shared_ptr<CompactionInput> > &inputs,

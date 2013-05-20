@@ -49,7 +49,7 @@ public:
 
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
 
-      // Flush at 90% so we have some rows on disk and some in memstore
+      // Flush at 90% so we have some rows on disk and some in memrowset
       if (i == nrows * 9 / 10) {
         ASSERT_STATUS_OK(tablet_->Flush());
       }

@@ -20,9 +20,9 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
-class TestMemStore : public ::testing::Test {
+class TestMemRowSet : public ::testing::Test {
 public:
-  TestMemStore() :
+  TestMemRowSet() :
     ::testing::Test(),
     schema_(boost::assign::list_of
             (ColumnSchema("key", STRING))
@@ -31,10 +31,10 @@ public:
   {}
 
 protected:
-  // Check that the given row in the memstore contains the given data.
-  void CheckValue(const shared_ptr<MemStore> &ms, string key,
+  // Check that the given row in the memrowset contains the given data.
+  void CheckValue(const shared_ptr<MemRowSet> &mrs, string key,
                   const string &expected_row) {
-    gscoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
+    gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
     iter->Init(NULL);
 
     Slice keystr_slice(key);
@@ -55,22 +55,22 @@ protected:
 };
 
 
-TEST_F(TestMemStore, TestInsertAndIterate) {
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+TEST_F(TestMemRowSet, TestInsertAndIterate) {
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
+  ASSERT_STATUS_OK(mrs->Insert(txid_t(0), rb.data()));
 
   rb.Reset();
   rb.AddString(string("goodbye world"));
   rb.AddUint32(54321);
-  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
+  ASSERT_STATUS_OK(mrs->Insert(txid_t(0), rb.data()));
 
-  ASSERT_EQ(2, ms->entry_count());
+  ASSERT_EQ(2, mrs->entry_count());
 
-  gscoped_ptr<MemStore::Iterator> iter(ms->NewIterator());
+  gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
@@ -99,29 +99,29 @@ TEST_F(TestMemStore, TestInsertAndIterate) {
 }
 
 // Test that inserting duplicate key data fails with Status::AlreadyPresent
-TEST_F(TestMemStore, TestInsertDuplicate) {
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+TEST_F(TestMemRowSet, TestInsertDuplicate) {
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(12345);
-  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
+  ASSERT_STATUS_OK(mrs->Insert(txid_t(0), rb.data()));
 
-  Status s = ms->Insert(txid_t(0), rb.data());
+  Status s = mrs->Insert(txid_t(0), rb.data());
   ASSERT_TRUE(s.IsAlreadyPresent()) << "bad status: " << s.ToString();
 }
 
-// Test for updating rows in memstore
-TEST_F(TestMemStore, TestUpdate) {
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+// Test for updating rows in memrowset
+TEST_F(TestMemRowSet, TestUpdate) {
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
   RowBuilder rb(schema_);
   rb.AddString(string("hello world"));
   rb.AddUint32(1);
-  ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
+  ASSERT_STATUS_OK(mrs->Insert(txid_t(0), rb.data()));
 
   // Validate insertion
-  CheckValue(ms, "hello world", "(string key=hello world, uint32 val=1)");
+  CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=1)");
 
   // Update a key which exists.
   txid_t txid(0);
@@ -130,21 +130,21 @@ TEST_F(TestMemStore, TestUpdate) {
   Slice key = Slice("hello world");
   uint32_t new_val = 2;
   update.AddColumnUpdate(1, &new_val);
-  ASSERT_STATUS_OK(ms->UpdateRow(txid, &key, RowChangeList(update_buf)));
+  ASSERT_STATUS_OK(mrs->UpdateRow(txid, &key, RowChangeList(update_buf)));
 
   // Validate the updated value
-  CheckValue(ms, "hello world", "(string key=hello world, uint32 val=2)");
+  CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=2)");
 
   // Try to update a key which doesn't exist - should return NotFound
   key = Slice("does not exist");
-  Status s = ms->UpdateRow(txid, &key, RowChangeList(update_buf));
+  Status s = mrs->UpdateRow(txid, &key, RowChangeList(update_buf));
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 }
 
-// Test which inserts many rows into memstore and checks for their
+// Test which inserts many rows into memrowset and checks for their
 // existence
-TEST_F(TestMemStore, TestInsertCopiesToArena) {
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
   RowBuilder rb(schema_);
   char keybuf[256];
@@ -153,21 +153,21 @@ TEST_F(TestMemStore, TestInsertCopiesToArena) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
     rb.AddString(Slice(keybuf));
     rb.AddUint32(i);
-    ASSERT_STATUS_OK(ms->Insert(txid_t(0), rb.data()));
+    ASSERT_STATUS_OK(mrs->Insert(txid_t(0), rb.data()));
   }
 
   // Validate insertion
   for (uint32_t i = 0; i < 100; i++) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
-    CheckValue(ms, keybuf,
+    CheckValue(mrs, keybuf,
                StringPrintf("(string key=%s, uint32 val=%d)", keybuf, i));
   }
 
 }
 
 
-TEST_F(TestMemStore, TestMemStoreInsertAndScan) {
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
   LOG_TIMING(INFO, "Inserting rows") {
     RowBuilder rb(schema_);
@@ -177,21 +177,21 @@ TEST_F(TestMemStore, TestMemStoreInsertAndScan) {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(ms->Insert(txid_t(0), rb.data()));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(txid_t(0), rb.data()));
     }
   }
 
   LOG_TIMING(INFO, "Counting rows") {
-    int count = ms->entry_count();
+    int count = mrs->entry_count();
     ASSERT_EQ(FLAGS_roundtrip_num_rows, count);
   }
 }
 
 // Test that scanning at past MVCC snapshots will hide rows which are
 // not committed in that snapshot.
-TEST_F(TestMemStore, TestInsertionMVCC) {
+TEST_F(TestMemRowSet, TestInsertionMVCC) {
   MvccManager mvcc;
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
   vector<MvccSnapshot> snapshots;
 
   // Insert 5 rows in tx 0 through 4
@@ -204,21 +204,21 @@ TEST_F(TestMemStore, TestInsertionMVCC) {
       snprintf(keybuf, sizeof(keybuf), "tx%d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(ms->Insert(tx.txid(), rb.data()));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), rb.data()));
     }
 
     // Transaction is committed. Save the snapshot after this commit.
     snapshots.push_back(MvccSnapshot(mvcc));
   }
-  LOG(INFO) << "Memstore after inserts:";
-  ms->DebugDump();
+  LOG(INFO) << "MemRowSet after inserts:";
+  mrs->DebugDump();
 
   ASSERT_EQ(5, snapshots.size());
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     // Each snapshot 'i' is taken after row 'i' was committed.
     vector<string> rows;
-    gscoped_ptr<RowwiseIterator> iter(ms->NewIterator(schema_, snapshots[i]));
+    gscoped_ptr<RowwiseIterator> iter(mrs->NewIterator(schema_, snapshots[i]));
     ASSERT_STATUS_OK(iter->Init(NULL));
     ASSERT_STATUS_OK(kudu::tablet::IterateToStringList(iter.get(), &rows));
     ASSERT_EQ(1 + i, rows.size());
@@ -229,9 +229,9 @@ TEST_F(TestMemStore, TestInsertionMVCC) {
 
 // Test that updates respect MVCC -- i.e. that scanning with a past MVCC snapshot
 // will yield old versions of a row which has been updated.
-TEST_F(TestMemStore, TestUpdateMVCC) {
+TEST_F(TestMemRowSet, TestUpdateMVCC) {
   MvccManager mvcc;
-  shared_ptr<MemStore> ms(new MemStore(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
   // Insert a row ("myrow", 0)
   {
@@ -239,7 +239,7 @@ TEST_F(TestMemStore, TestUpdateMVCC) {
     RowBuilder rb(schema_);
     rb.AddString(Slice("my row"));
     rb.AddUint32(0);
-    ASSERT_STATUS_OK_FAST(ms->Insert(tx.txid(), rb.data()));
+    ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), rb.data()));
   }
 
   vector<MvccSnapshot> snapshots;
@@ -254,22 +254,22 @@ TEST_F(TestMemStore, TestUpdateMVCC) {
       RowChangeListEncoder update(schema_, &update_buf);
       Slice key = Slice("my row");
       update.AddColumnUpdate(1, &i);
-      ASSERT_STATUS_OK(ms->UpdateRow(tx.txid(), &key, RowChangeList(update_buf)));
+      ASSERT_STATUS_OK(mrs->UpdateRow(tx.txid(), &key, RowChangeList(update_buf)));
     }
 
     // Transaction is committed. Save the snapshot after this commit.
     snapshots.push_back(MvccSnapshot(mvcc));
   }
 
-  LOG(INFO) << "Memstore after updates:";
-  ms->DebugDump();
+  LOG(INFO) << "MemRowSet after updates:";
+  mrs->DebugDump();
 
   // Validate that each snapshot returns the expected value
   ASSERT_EQ(6, snapshots.size());
   for (int i = 0; i <= 5; i++) {
     SCOPED_TRACE(i);
     vector<string> rows;
-    gscoped_ptr<RowwiseIterator> iter(ms->NewIterator(schema_, snapshots[i]));
+    gscoped_ptr<RowwiseIterator> iter(mrs->NewIterator(schema_, snapshots[i]));
     ASSERT_STATUS_OK(iter->Init(NULL));
     ASSERT_STATUS_OK(kudu::tablet::IterateToStringList(iter.get(), &rows));
     ASSERT_EQ(1, rows.size());
