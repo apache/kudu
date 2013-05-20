@@ -33,7 +33,7 @@ MemRowSet::MemRowSet(const Schema &schema) :
 void MemRowSet::DebugDump() {
   gscoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
-    MSRow row = iter->GetCurrentRow();
+    MRSRow row = iter->GetCurrentRow();
     LOG(INFO) << "@" << row.insertion_txid() << ": row "
               << schema_.DebugRow(row.row_slice().data())
               << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head);
@@ -51,10 +51,10 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
 
   // Copy the non-encoded key onto the stack since we need
   // to mutate it when we relocate its Slices into our arena.
-  DEFINE_MSROW_ON_STACK(schema(), msrow, msrow_slice);
-  msrow.header_->insertion_txid = txid;
-  msrow.header_->mutation_head = NULL;
-  uint8_t *rowdata_ptr = msrow.row_slice_.mutable_data();
+  DEFINE_MRSROW_ON_STACK(schema(), mrsrow, mrsrow_slice);
+  mrsrow.header_->insertion_txid = txid;
+  mrsrow.header_->mutation_head = NULL;
+  uint8_t *rowdata_ptr = mrsrow.row_slice_.mutable_data();
   memcpy(rowdata_ptr, data.data(), data.size());
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
@@ -72,7 +72,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   // Copy any referred-to memory to arena.
   RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(rowdata_ptr, schema_, &arena_));
 
-  CHECK(mutation.Insert(msrow_slice))
+  CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 
@@ -102,7 +102,7 @@ Status MemRowSet::UpdateRow(txid_t txid,
     Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
 
     // Append to the linked list of mutations for this row.
-    MSRow row(mutation.current_mutable_value());
+    MRSRow row(mutation.current_mutable_value());
 
     // Ensure that all of the creation of the mutation is published before
     // publishing the pointer itself.

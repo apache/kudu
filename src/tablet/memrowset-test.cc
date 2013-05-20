@@ -75,7 +75,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
   ASSERT_TRUE(iter->HasNext());
-  MSRow row = iter->GetCurrentRow();
+  MRSRow row = iter->GetCurrentRow();
   Slice s(row.row_slice());
   ASSERT_EQ(schema_.byte_size(), s.size());
   ASSERT_EQ(Slice("goodbye world"),

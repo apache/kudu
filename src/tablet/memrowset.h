@@ -29,16 +29,16 @@ using std::tr1::shared_ptr;
 //
 // Each row is stored in exactly one CBTree entry. Its key is the encoded form
 // of the row's primary key, such that the entries sort correctly using the default
-// lexicographic comparator. The value for each row is an instance of MSRow.
+// lexicographic comparator. The value for each row is an instance of MRSRow.
 //
 // NOTE: all allocations done by the MemRowSet are done inside its associated
 // thread-safe arena, and then freed in bulk when the MemRowSet is destructed.
 
 
 // The value stored in the CBTree for a single row.
-class MSRow {
+class MRSRow {
  public:
-  explicit MSRow(const Slice &s) {
+  explicit MRSRow(const Slice &s) {
     DCHECK_GE(s.size(), sizeof(Header));
     row_slice_ = s;
     header_ = reinterpret_cast<Header *>(row_slice_.mutable_data());
@@ -72,15 +72,15 @@ class MSRow {
   Slice row_slice_;
 };
 
-// Define an MSRow instance using on-stack storage.
-// This defines an array on the stack which is sized correctly for an MSRow::Header
-// plus a single row of the given schema, then constructs an MSRow object which
+// Define an MRSRow instance using on-stack storage.
+// This defines an array on the stack which is sized correctly for an MRSRow::Header
+// plus a single row of the given schema, then constructs an MRSRow object which
 // points into that stack storage.
-#define DEFINE_MSROW_ON_STACK(schema, varname, slice_name) \
-  uint8_t varname##_size = sizeof(MSRow::Header) + schema.byte_size(); \
+#define DEFINE_MRSROW_ON_STACK(schema, varname, slice_name) \
+  uint8_t varname##_size = sizeof(MRSRow::Header) + schema.byte_size(); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
-  MSRow varname(slice_name);
+  MRSRow varname(slice_name);
 
 
 
@@ -305,7 +305,7 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
       // TODO: can we share some code here with CopyRowToArena() from row.h
       // or otherwise put this elsewhere?
       iter_->GetEntryInLeaf(i, &k, &v);
-      MSRow row(v);
+      MRSRow row(v);
       if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
         v = row.row_slice();
 
@@ -354,10 +354,10 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
     return iter_->IsValid();
   }
 
-  const MSRow GetCurrentRow() const {
-    Slice dummy, msrow_data;
-    iter_->GetCurrentEntry(&dummy, &msrow_data);
-    return MSRow(msrow_data);
+  const MRSRow GetCurrentRow() const {
+    Slice dummy, mrsrow_data;
+    iter_->GetCurrentEntry(&dummy, &mrsrow_data);
+    return MRSRow(mrsrow_data);
   }
 
   bool Next() {

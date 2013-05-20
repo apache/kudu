@@ -36,12 +36,12 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
         iter_->Next();
       }
 
-      MSRow ms_row = iter_->GetCurrentRow();
+      MRSRow mrs_row = iter_->GetCurrentRow();
       CompactionInputRow &row = block->at(i);
-      // The ms_row slice is non-const because we're given a copy of it, so it's
+      // The mrs_row slice is non-const because we're given a copy of it, so it's
       // OK to mutate.
-      row.row_ptr = const_cast<uint8_t *>(ms_row.row_slice().data());
-      row.mutation_head = ms_row.mutation_head();
+      row.row_ptr = const_cast<uint8_t *>(mrs_row.row_slice().data());
+      row.mutation_head = mrs_row.mutation_head();
     }
 
     return Status::OK();
