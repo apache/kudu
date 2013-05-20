@@ -96,15 +96,16 @@ public:
     return !remaining_.empty();
   }
 
-  template<class ARENA>
-  Status ApplyRowUpdate(Slice *dst_row, ARENA *arena) {
-    DCHECK_EQ(dst_row->size(), schema_.byte_size());
+  template<class RowType, class ARENA>
+  Status ApplyRowUpdate(RowType *dst_row, ARENA *arena) {
+    // TODO: Handle different schema
+    DCHECK(schema_.Equals(dst_row->schema()));
 
     while (HasNext()) {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-      uint8_t *dst_cell = dst_row->mutable_data() + schema_.column_offset(updated_col);
+      uint8_t *dst_cell = dst_row->cell_ptr(schema_, updated_col);
       schema_.column(updated_col).CopyCell(dst_cell, new_val, arena);
     }
     return Status::OK();

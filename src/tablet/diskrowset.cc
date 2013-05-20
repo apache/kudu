@@ -93,10 +93,6 @@ public:
     return block_->column_block(col_idx).cell_ptr(0);
   }
 
-  uint8_t *row_ptr(size_t row_idx) {
-    return block_->row_ptr(row_idx);
-  }
-
 private:
   RowwiseIterator *iter_;
   gscoped_ptr<Arena> arena_;
@@ -137,7 +133,7 @@ Status RowSetWriter::Open() {
     Status s = env_util::OpenFileForWrite(env_, path, &out);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to open output file for column " <<
-        col.ToString() << " at path " << path << ": " << 
+        col.ToString() << " at path " << path << ": " <<
         s.ToString();
       return s;
     }
@@ -152,7 +148,7 @@ Status RowSetWriter::Open() {
     s = writer->Start();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Start() writer for column " <<
-        col.ToString() << " at path " << path << ": " << 
+        col.ToString() << " at path " << path << ": " <<
         s.ToString();
       return s;
     }
@@ -186,44 +182,41 @@ Status RowSetWriter::WriteRow(const Slice &row) {
   // at a time. Would be nice to change RowBlock so that it can
   // be used in scenarios where it just points to existing memory.
   RowBlock block(schema_, 1, NULL);
-  memcpy(block.row_ptr(0), row.data(), schema_.byte_size());
+
+  ConstContiguousRow row_slice(schema_, row.data());
+
+  RowBlockRow dst_row = block.row(0);
+  dst_row.CopyCellsFrom(schema_, row_slice);
 
   return AppendBlock(block);
 }
-
 
 Status RowSetWriter::AppendBlock(const RowBlock &block) {
   DCHECK_EQ(block.schema().num_columns(), schema_.num_columns());
   CHECK(!finished_);
 
-  size_t stride = schema_.byte_size();
-
   // Write the batch to each of the columns
   for (int i = 0; i < schema_.num_columns(); i++) {
     // TODO: need to look at the selection vector here and only append the
     // selected rows?
-    const void *p = block.row_ptr(0) + block.schema().column_offset(i);
+    ColumnBlock column = block.column_block(i);
     RETURN_NOT_OK(
-      cfile_writers_[i].AppendEntries(p, block.nrows(), stride));
+      cfile_writers_[i].AppendEntries(column.data(), block.nrows(), column.stride()));
   }
 
   // Write the batch to the bloom
-  const uint8_t *row = block.row_ptr(0);
   for (size_t i = 0; i < block.nrows(); i++) {
     // TODO: performance might be better if we actually batch this -
     // encode a bunch of key slices, then pass them all in one go.
+    RowBlockRow row = block.row(i);
 
     // Encode the row into sortable form
     tmp_buf_.clear();
-    Slice row_slice(row, stride);
-    schema_.EncodeComparableKey(row_slice, &tmp_buf_);
+    schema_.EncodeComparableKey(row, &tmp_buf_);
 
     // Insert the encoded row into the bloom.
     Slice encoded_key_slice(tmp_buf_);
     RETURN_NOT_OK( bloom_writer_->AppendKeys(&encoded_key_slice, 1) );
-
-    // Advance.
-    row += stride;
   }
 
   written_count_ += block.nrows();
@@ -420,6 +413,8 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap)
 Status DuplicatingRowSet::UpdateRow(txid_t txid,
                                        const void *key,
                                        const RowChangeList &update) {
+  ConstContiguousRow row_key(schema(), key);
+
   // First update the new rowset
   RETURN_NOT_OK(new_rowset_->UpdateRow(txid, key, update));
 
@@ -434,7 +429,7 @@ Status DuplicatingRowSet::UpdateRow(txid_t txid,
       break;
     } else if (!s.IsNotFound()) {
       LOG(ERROR) << "Unable to update key "
-                 << schema().CreateKeyProjection().DebugRow(key)
+                 << schema().CreateKeyProjection().DebugRow(row_key)
                  << " (failed on rowset " << rowset->ToString() << "): "
                  << s.ToString();
       return s;
@@ -443,7 +438,7 @@ Status DuplicatingRowSet::UpdateRow(txid_t txid,
 
   if (!updated) {
     LOG(DFATAL) << "Found row in compaction output but not in any input rowset: "
-                << schema().CreateKeyProjection().DebugRow(key);
+                << schema().CreateKeyProjection().DebugRow(row_key);
     return Status::NotFound("not found in any input rowset of compaction");
   }
 

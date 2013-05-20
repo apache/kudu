@@ -144,8 +144,8 @@ TEST(TestMergeIterator, TestMerge) {
         ASSERT_STATUS_OK_FAST(merger.FinishBatch());
 
         for (int i = 0; i < n; i++) {
-          uint32_t this_row = *(reinterpret_cast<const uint32_t *>(dst.row_ptr(i)));
-          if (all_ints[total_idx] != this_row) { 
+          uint32_t this_row = *kIntSchema.ExtractColumnFromRow<UINT32>(dst.row(i), 0);
+          if (all_ints[total_idx] != this_row) {
             ASSERT_EQ(all_ints[total_idx], this_row) <<
               "Yielded out of order at idx " << total_idx;
           }

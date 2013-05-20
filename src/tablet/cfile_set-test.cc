@@ -81,9 +81,10 @@ public:
       ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
       for (size_t i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
-          if ((lower && *schema_.ExtractColumnFromRow<UINT32>(block.row_slice(i), 0) < lower.get()) ||
-              (upper && *schema_.ExtractColumnFromRow<UINT32>(block.row_slice(i), 0) > upper.get())) {
-            FAIL() << "Row " << schema_.DebugRow(block.row_ptr(i)) << " should not have "
+          RowBlockRow row = block.row(i);
+          if ((lower && *schema_.ExtractColumnFromRow<UINT32>(row, 0) < lower.get()) ||
+              (upper && *schema_.ExtractColumnFromRow<UINT32>(row, 0) > upper.get())) {
+            FAIL() << "Row " << schema_.DebugRow(row) << " should not have "
                    << "passed predicate " << pred1.ToString();
           }
         }

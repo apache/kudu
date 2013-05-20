@@ -135,8 +135,7 @@ protected:
       ASSERT_STATUS_OK_FAST(row_iter->PrepareBatch(&n));
       ASSERT_STATUS_OK_FAST(row_iter->MaterializeBlock(&dst));
       ASSERT_STATUS_OK_FAST(row_iter->FinishBatch());
-      VerifyUpdatedBlock(reinterpret_cast<const uint32_t *>(dst.row_ptr(0)),
-                         i, n, updated);
+      VerifyUpdatedBlock(proj_val.ExtractColumnFromRow<UINT32>(dst.row(0), 0), i, n, updated);
       i += n;
     }
   }
@@ -182,8 +181,7 @@ protected:
       i += n;
 
       if (do_log) {
-        LOG_EVERY_N(INFO, log_interval) << "Got row: " <<
-          schema.DebugRow(dst.row_ptr(0));
+        LOG_EVERY_N(INFO, log_interval) << "Got row: " << schema.DebugRow(dst.row(0));
       }
     }
 
@@ -210,7 +208,7 @@ protected:
       }
     }
 
-    LOG_TIMING(INFO, log_message + " (both columns)") { 
+    LOG_TIMING(INFO, log_message + " (both columns)") {
       for (int i = 0; i < FLAGS_n_read_passes; i++) {
         IterateProjection(rs, schema_, n_rows_, false);
       }

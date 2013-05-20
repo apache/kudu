@@ -35,7 +35,7 @@ void MemRowSet::DebugDump() {
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
     LOG(INFO) << "@" << row.insertion_txid() << ": row "
-              << schema_.DebugRow(row.row_slice().data())
+              << schema_.DebugRow(row)
               << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head);
     iter->Next();
   }
@@ -45,13 +45,15 @@ void MemRowSet::DebugDump() {
 Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   CHECK_EQ(data.size(), schema_.byte_size());
 
+  ConstContiguousRow row_slice(schema_, data.data());
+
   faststring enc_key_buf;
-  schema_.EncodeComparableKey(data, &enc_key_buf);
+  schema_.EncodeComparableKey(row_slice, &enc_key_buf);
   Slice enc_key(enc_key_buf);
 
   // Copy the non-encoded key onto the stack since we need
   // to mutate it when we relocate its Slices into our arena.
-  DEFINE_MRSROW_ON_STACK(schema(), mrsrow, mrsrow_slice);
+  DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_txid = txid;
   mrsrow.header_->mutation_head = NULL;
   uint8_t *rowdata_ptr = mrsrow.row_slice_.mutable_data();
@@ -70,7 +72,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   }
 
   // Copy any referred-to memory to arena.
-  RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(rowdata_ptr, schema_, &arena_));
+  RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(&mrsrow, &arena_));
 
   CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
@@ -84,11 +86,10 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
 Status MemRowSet::UpdateRow(txid_t txid,
                            const void *key,
                            const RowChangeList &delta) {
-  Slice unencoded_key_slice(reinterpret_cast<const uint8_t *>(key),
-                            schema_.key_byte_size());
+  ConstContiguousRow row_slice(schema_, key);
 
   faststring key_buf;
-  schema_.EncodeComparableKey(unencoded_key_slice, &key_buf);
+  schema_.EncodeComparableKey(row_slice, &key_buf);
   Slice encoded_key_slice(key_buf);
 
   {
@@ -102,7 +103,7 @@ Status MemRowSet::UpdateRow(txid_t txid,
     Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
 
     // Append to the linked list of mutations for this row.
-    MRSRow row(mutation.current_mutable_value());
+    MRSRow row(this, mutation.current_mutable_value());
 
     // Ensure that all of the creation of the mutation is published before
     // publishing the pointer itself.

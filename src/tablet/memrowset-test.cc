@@ -76,23 +76,21 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
   // be "goodbye" because 'g' sorts before 'h'
   ASSERT_TRUE(iter->HasNext());
   MRSRow row = iter->GetCurrentRow();
-  Slice s(row.row_slice());
-  ASSERT_EQ(schema_.byte_size(), s.size());
+  ASSERT_EQ(schema_.byte_size(), row.row_slice().size());
   ASSERT_EQ(Slice("goodbye world"),
-            *schema_.ExtractColumnFromRow<STRING>(s, 0));
+            *schema_.ExtractColumnFromRow<STRING>(row, 0));
   ASSERT_EQ(54321,
-            *schema_.ExtractColumnFromRow<UINT32>(s, 1));
+            *schema_.ExtractColumnFromRow<UINT32>(row, 1));
 
   // Next row should be 'hello world'
   ASSERT_TRUE(iter->Next());
   ASSERT_TRUE(iter->HasNext());
   row = iter->GetCurrentRow();
-  s = row.row_slice();
-  ASSERT_EQ(schema_.byte_size(), s.size());
+  ASSERT_EQ(schema_.byte_size(), row.row_slice().size());
   ASSERT_EQ(Slice("hello world"),
-            *schema_.ExtractColumnFromRow<STRING>(s, 0));
+            *schema_.ExtractColumnFromRow<STRING>(row, 0));
   ASSERT_EQ(12345,
-            *schema_.ExtractColumnFromRow<UINT32>(s, 1));
+            *schema_.ExtractColumnFromRow<UINT32>(row, 1));
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->HasNext());

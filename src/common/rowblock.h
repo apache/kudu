@@ -7,12 +7,14 @@
 
 #include "common/columnblock.h"
 #include "common/schema.h"
+#include "common/row.h"
 #include "gutil/gscoped_ptr.h"
 #include "util/memory/arena.h"
 #include "util/bitmap.h"
 
 namespace kudu {
 
+class RowBlockRow;
 
 // Bit-vector representing the selection status of each row in a row block.
 // Initially, this vector will be set to 1 for every row, and as predicates
@@ -82,6 +84,16 @@ private:
 
 // Wrapper around a buffer, which keeps the buffer's size, associated arena,
 // and schema. Provides convenience accessors for indexing by row, column, etc.
+//
+// NOTE: TODO: We don't have any separate class for ConstRowBlock and ConstColumnBlock
+// vs RowBlock and ColumnBlock. So, we use "const" in various places to either
+// mean const-ness of the wrapper structure vs const-ness of the referred-to data.
+// Typically in C++ this is done with separate wrapper classes for const vs non-const
+// referred-to data, but that would require a lot of duplication elsewhere in the code,
+// so for now, we just use convention: if you have a RowBlock or ColumnBlock parameter
+// that you expect to be modifying, use a "RowBlock *param". Otherwise, use a
+// "const RowBlock& param". Just because you _could_ modify the referred-to contents
+// of the latter doesn't mean you _should_.
 class RowBlock : boost::noncopyable {
 public:
   RowBlock(const Schema &schema,
@@ -98,29 +110,20 @@ public:
     return row_capacity_;
   }
 
-  uint8_t *row_ptr(size_t idx) {
-    return &data_[schema_.byte_size() * idx];
-  }
-
-  const uint8_t *row_ptr(size_t idx) const {
-    return &data_[schema_.byte_size() * idx];
-  }
-
-  const Slice row_slice(size_t idx) const {
-    return Slice(row_ptr(idx), schema_.byte_size());
-  }
+  RowBlockRow row(size_t idx) const;
 
   const Schema &schema() const { return schema_; }
   Arena *arena() const { return arena_; }
 
-  ColumnBlock column_block(size_t col_idx) {
+  ColumnBlock column_block(size_t col_idx) const {
     return column_block(col_idx, nrows_);
   }
 
-  ColumnBlock column_block(size_t col_idx, size_t nrows) {
+  ColumnBlock column_block(size_t col_idx, size_t nrows) const {
     DCHECK_LE(nrows, nrows_);
+
     return ColumnBlock(schema_.column(col_idx).type_info(),
-                       row_ptr(0) + schema_.column_offset(col_idx),
+                       &data_[schema_.column_offset(col_idx)],
                        schema_.byte_size(),
                        nrows,
                        arena_);
@@ -169,6 +172,76 @@ private:
   SelectionVector sel_vec_;
 };
 
+// Provides an abstraction to interact with a RowBlock row.
+//  Example usage:
+//    RowBlock row_block(schema, 10, NULL);
+//    RowBlockRow row = row_block.row(5);       // Get row 5
+//    void *cell_data = row.cell_ptr(3);        // Get column 3 of row 5
+//    ...
+class RowBlockRow {
+ public:
+  RowBlockRow(const RowBlock *row_block = NULL, size_t row_index = 0)
+    : row_block_(row_block), row_index_(row_index)
+  {
+  }
+
+  RowBlockRow *Reset(const RowBlock *row_block, size_t row_index) {
+    row_block_= row_block;
+    row_index_ = row_index;
+    return this;
+  }
+
+  const Schema& schema() const {
+    return row_block_->schema();
+  }
+
+  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(row_block_->schema()));
+    return reinterpret_cast<uint8_t *>(row_block_->column_block(col_idx).cell_ptr(row_index_));
+  }
+
+  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(row_block_->schema()));
+    return reinterpret_cast<uint8_t *>(row_block_->column_block(col_idx).cell_ptr(row_index_));
+  }
+
+  template <class RowType>
+  void CopyCellsFrom(const Schema& schema, const RowType& row) {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(row_block_->schema()));
+
+    for (size_t col = 0; col < schema.num_columns(); col++) {
+      size_t col_size = schema.column(col).type_info().size();
+      strings::memcpy_inlined(cell_ptr(schema, col), row.cell_ptr(schema, col), col_size);
+    }
+  }
+
+  template <class ArenaType>
+  Status CopyIndirectDataToArena(ArenaType *arena) {
+    return kudu::CopyRowIndirectDataToArena(this, arena);
+  }
+
+#ifndef NDEBUG
+  void OverwriteWithPattern(StringPiece pattern) {
+    const Schema& schema = row_block_->schema();
+    for (size_t col = 0; col < schema.num_columns(); col++) {
+      size_t col_size = schema.column(col).type_info().size();
+      char *col_data = reinterpret_cast<char *>(cell_ptr(schema, col));
+      kudu::OverwriteWithPattern(col_data, col_size, pattern);
+    }
+  }
+#endif
+
+ private:
+  const RowBlock *row_block_;
+  size_t row_index_;
+};
+
+inline RowBlockRow RowBlock::row(size_t idx) const {
+  return RowBlockRow(this, idx);
+}
 
 } // namespace kudu
 

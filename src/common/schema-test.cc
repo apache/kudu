@@ -21,14 +21,16 @@ using std::vector;
 static Status CopyRowToArena(const Slice &row,
                              const Schema &schema,
                              Arena *dst_arena,
-                             Slice *copied) {
+                             ContiguousRow *copied) {
+  Slice row_data;
+
   // Copy the direct row data to arena
-  if (!dst_arena->RelocateSlice(row, copied)) {
+  if (!dst_arena->RelocateSlice(row, &row_data)) {
     return Status::IOError("no space for row data in arena");
   }
 
-  RETURN_NOT_OK(CopyRowIndirectDataToArena(
-                  copied->mutable_data(), schema, dst_arena));
+  copied->Reset(row_data.mutable_data());
+  RETURN_NOT_OK(CopyRowIndirectDataToArena(copied, dst_arena));
   return Status::OK();
 }
 
@@ -122,21 +124,21 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddString(string("row_a_1"));
   rb.AddString(string("row_a_2"));
   rb.AddUint32(3);
-  Slice row_a;
+  ContiguousRow row_a(schema);
   ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
 
   rb.Reset();
   rb.AddString(string("row_b_1"));
   rb.AddString(string("row_b_2"));
   rb.AddUint32(3);
-  Slice row_b;
+  ContiguousRow row_b(schema);
   ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
 
-  ASSERT_GT(schema.Compare(row_b.data(), row_a.data()), 0);
-  ASSERT_LT(schema.Compare(row_a.data(), row_b.data()), 0);
+  ASSERT_GT(schema.Compare(row_b, row_a), 0);
+  ASSERT_LT(schema.Compare(row_a, row_b), 0);
 
   ASSERT_EQ(string("(string col1=row_a_1, string col2=row_a_2, uint32 col3=3)"),
-            schema.DebugRow(row_a.data()));
+            schema.DebugRow(row_a));
 }
 
 TEST(TestKeyEncoder, TestKeyEncoder) {
@@ -184,8 +186,7 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
                 (ColumnSchema("col1", STRING)), 1);
 
   Slice key("hello world");
-  Slice row(reinterpret_cast<const uint8_t *>(&key),  
-            sizeof(key));
+  ContiguousRow row(schema, &key);
 
   LOG_TIMING(INFO, "Encoding") {
     for (int i = 0; i < 10000000; i++) {

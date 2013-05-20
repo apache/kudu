@@ -16,7 +16,8 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
   MemRowSetCompactionInput(const MemRowSet &memrowset,
                           const MvccSnapshot &snap) :
     iter_(memrowset.NewIterator(memrowset.schema(), snap))
-  {}
+  {
+  }
 
   virtual Status Init() {
     return iter_->Init(NULL);
@@ -31,17 +32,22 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
     int num_in_block = iter_->remaining_in_leaf();
     block->resize(num_in_block);
 
+    // Realloc the internal block storage if we don't have enough space to
+    // copy the whole leaf node's worth of data into it.
+    if (PREDICT_FALSE(!row_block_ || num_in_block > row_block_->nrows())) {
+      row_block_.reset(new RowBlock(iter_->schema(), num_in_block, NULL));
+    }
+
     for (int i = 0; i < num_in_block; i++) {
       if (i > 0) {
         iter_->Next();
       }
 
-      MRSRow mrs_row = iter_->GetCurrentRow();
-      CompactionInputRow &row = block->at(i);
-      // The mrs_row slice is non-const because we're given a copy of it, so it's
-      // OK to mutate.
-      row.row_ptr = const_cast<uint8_t *>(mrs_row.row_slice().data());
-      row.mutation_head = mrs_row.mutation_head();
+      // TODO: A copy is performed to have all CompactionInputRow of the same type
+      CompactionInputRow &input_row = block->at(i);
+      MRSRow ms_row = iter_->GetCurrentRow();
+      input_row.row.Reset(row_block_.get(), i)->CopyCellsFrom(iter_->schema(), ms_row);
+      input_row.mutation_head = ms_row.mutation_head();
     }
 
     return Status::OK();
@@ -57,6 +63,7 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
   }
 
  private:
+  gscoped_ptr<RowBlock> row_block_;
   gscoped_ptr<MemRowSet::Iterator> iter_;
 };
 
@@ -95,9 +102,9 @@ class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
 
     block->resize(block_.nrows());
     for (int i = 0; i < block_.nrows(); i++) {
-      CompactionInputRow &row = block->at(i);
-      row.row_ptr = block_.row_ptr(i);
-      row.mutation_head = mutation_block_[i];
+      CompactionInputRow &input_row = block->at(i);
+      input_row.row.Reset(&block_, i);
+      input_row.mutation_head = mutation_block_[i];
     }
 
     first_rowid_in_block_ += block_.nrows();
@@ -217,9 +224,7 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
           return Status::OK();
         }
 
-        if (smallest_idx < 0 ||
-            schema_.Compare(state.next().row_ptr,
-                            smallest.row_ptr) < 0) {
+        if (smallest_idx < 0 || schema_.Compare(state.next().row, smallest.row) < 0) {
           smallest_idx = i;
           smallest = state.next();
         }
@@ -321,15 +326,14 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mutation_head, Slice row_slice) {
-  for (const Mutation *mut = mutation_head;
-       mut != NULL;
-       mut = mut->next()) {
+template <class RowType>
+static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mutation_head, RowType *row) {
+  for (const Mutation *mut = mutation_head; mut != NULL; mut = mut->next()) {
     RowChangeListDecoder decoder(schema, mut->changelist());
     DVLOG(2) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
-    Status s = decoder.ApplyRowUpdate(&row_slice, reinterpret_cast<Arena *>(NULL));
+    Status s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
     if (PREDICT_FALSE(!s.ok())) {
-      LOG(ERROR) << "Unable to apply delta to row " << schema.DebugRow(row_slice.data()) << " during flush/compact";
+      LOG(ERROR) << "Unable to apply delta to row " << schema.DebugRow(*row) << " during flush/compact";
       return s;
     }
 
@@ -349,20 +353,17 @@ Status Flush(CompactionInput *input, RowSetWriter *out) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     int n = 0;
-    uint8_t *dst = block.row_ptr(0);
-    BOOST_FOREACH(const CompactionInputRow &row, rows) {
-      memcpy(dst, row.row_ptr, schema.byte_size());
-      Slice row_slice(dst, schema.byte_size());
-      DVLOG(2) << "Row: " << schema.DebugRow(dst) <<
-        " mutations: " << Mutation::StringifyMutationList(schema, row.mutation_head);
-      ApplyMutationsAndGenerateUndos(schema, row.mutation_head, row_slice);
+    BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+      RowBlockRow dst_row = block.row(n);
+      dst_row.CopyCellsFrom(schema, input_row.row);
+      DVLOG(2) << "Row: " << schema.DebugRow(dst_row) <<
+        " mutations: " << Mutation::StringifyMutationList(schema, input_row.mutation_head);
+      ApplyMutationsAndGenerateUndos(schema, input_row.mutation_head, &dst_row);
 
-      dst += schema.byte_size();
       n++;
       if (n == block.nrows()) {
         RETURN_NOT_OK(out->AppendBlock(block));
         n = 0;
-        dst = block.row_ptr(0);
       }
     }
 
@@ -391,9 +392,8 @@ Status ReupdateMissedDeltas(CompactionInput *input,
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     BOOST_FOREACH(const CompactionInputRow &row, rows) {
-      Slice row_slice((uint8_t *)row.row_ptr, schema.byte_size());
-      DVLOG(2) << "Revisiting row: " << schema.DebugRow(row.row_ptr) <<
-        " mutations: " << Mutation::StringifyMutationList(schema, row.mutation_head);
+      DVLOG(2) << "Revisiting row: " << schema.DebugRow(row.row) <<
+          " mutations: " << Mutation::StringifyMutationList(schema, row.mutation_head);
 
       for (const Mutation *mut = row.mutation_head;
            mut != NULL;

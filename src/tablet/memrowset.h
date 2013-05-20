@@ -34,16 +34,20 @@ using std::tr1::shared_ptr;
 // NOTE: all allocations done by the MemRowSet are done inside its associated
 // thread-safe arena, and then freed in bulk when the MemRowSet is destructed.
 
+class MemRowSet;
 
 // The value stored in the CBTree for a single row.
 class MRSRow {
  public:
-  explicit MRSRow(const Slice &s) {
+  MRSRow(const MemRowSet *memrowset, const Slice &s) {
     DCHECK_GE(s.size(), sizeof(Header));
     row_slice_ = s;
     header_ = reinterpret_cast<Header *>(row_slice_.mutable_data());
     row_slice_.remove_prefix(sizeof(Header));
+    memrowset_ = memrowset;
   }
+
+  const Schema& schema() const;
 
   txid_t insertion_txid() const { return header_->insertion_txid; }
 
@@ -51,6 +55,14 @@ class MRSRow {
   const Mutation *mutation_head() const { return header_->mutation_head; }
 
   const Slice &row_slice() const { return row_slice_; }
+
+  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) {
+    return row_slice_.mutable_data() + schema.column_offset(col_idx);
+  }
+
+  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    return row_slice_.data() + schema.column_offset(col_idx);
+  }
 
  private:
   friend class MemRowSet;
@@ -70,18 +82,19 @@ class MRSRow {
 
   // Actual row data.
   Slice row_slice_;
+
+  const MemRowSet *memrowset_;
 };
 
 // Define an MRSRow instance using on-stack storage.
 // This defines an array on the stack which is sized correctly for an MRSRow::Header
 // plus a single row of the given schema, then constructs an MRSRow object which
 // points into that stack storage.
-#define DEFINE_MRSROW_ON_STACK(schema, varname, slice_name) \
-  uint8_t varname##_size = sizeof(MRSRow::Header) + schema.byte_size(); \
+#define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
+  uint8_t varname##_size = sizeof(MRSRow::Header) + (memrowset)->schema().byte_size(); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
-  MRSRow varname(slice_name);
-
+  MRSRow varname(memrowset, slice_name);
 
 
 // In-memory storage for data currently being written to the tablet.
@@ -257,7 +270,8 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
 
     if (key.size() > 0) {
       tmp_buf.clear();
-      memrowset_->schema().EncodeComparableKey(key, &tmp_buf);
+      ConstContiguousRow row_slice(memrowset_->schema(), key.data());
+      memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
     } else {
       // Seeking to empty key shouldn't try to run any encoding.
       tmp_buf.resize(0);
@@ -300,26 +314,26 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
     Slice k, v;
     size_t fetched = 0;
     for (size_t i = prepared_idx_in_leaf_; fetched < prepared_count_; i++) {
+      RowBlockRow dst_row = dst->row(fetched);
+
       // Copy the row into the destination, including projection
       // and relocating slices.
       // TODO: can we share some code here with CopyRowToArena() from row.h
       // or otherwise put this elsewhere?
       iter_->GetEntryInLeaf(i, &k, &v);
-      MRSRow row(v);
-      if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
-        v = row.row_slice();
 
-        uint8_t *dst_row = dst->row_ptr(fetched);
+      MRSRow row(memrowset_.get(), v);
+      if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
         for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
           size_t src_col_idx = projection_mapping_[proj_col_idx];
-          void *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
-          const void *src_cell = v.data() + memrowset_->schema().column_offset(src_col_idx);
+          uint8_t *dst_cell = dst_row.cell_ptr(projection_, proj_col_idx);
+          const void *src_cell = row.cell_ptr(memrowset_->schema(), src_col_idx);
           RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
         }
 
         // Roll-forward MVCC for committed updates.
         RETURN_NOT_OK(ApplyMutationsToProjectedRow(
-                        row.header_->mutation_head, dst_row, dst->arena()));
+                        row.header_->mutation_head, &dst_row, dst->arena()));
       } else {
         // This row was not yet committed in the current MVCC snapshot, so zero the selection
         // bit -- this causes it to not show up in any result set.
@@ -327,11 +341,9 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
 
         // In debug mode, fill the row data for easy debugging
         #ifndef NDEBUG
-        OverwriteWithPattern(reinterpret_cast<char *>(dst->row_ptr(fetched)),
-                             dst->schema().byte_size(),
-                             "MVCCMVCCMVCCMVCCMVCCMVCC"
-                             "MVCCMVCCMVCCMVCCMVCCMVCC"
-                             "MVCCMVCCMVCCMVCCMVCCMVCC");
+        dst_row.OverwriteWithPattern("MVCCMVCCMVCCMVCCMVCCMVCC"
+                                     "MVCCMVCCMVCCMVCCMVCCMVCC"
+                                     "MVCCMVCCMVCCMVCCMVCCMVCC");
         #endif
       }
 
@@ -357,7 +369,7 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
   const MRSRow GetCurrentRow() const {
     Slice dummy, mrsrow_data;
     iter_->GetCurrentEntry(&dummy, &mrsrow_data);
-    return MRSRow(mrsrow_data);
+    return MRSRow(memrowset_.get(), mrsrow_data);
   }
 
   bool Next() {
@@ -393,8 +405,9 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
     iter_->SeekToStart();
   }
 
+  template <class RowType>
   Status ApplyMutationsToProjectedRow(Mutation *mutation_head,
-                                      uint8_t *dst_row,
+                                      RowType *dst_row,
                                       Arena *dst_arena) {
     // Fast short-circuit the likely case of a row which was inserted and never
     // updated.
@@ -417,7 +430,7 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
       for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
         RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
         int memrowset_col_idx = projection_mapping_[proj_col_idx];
-        uint8_t *dst_cell = dst_row + projection_.column_offset(proj_col_idx);
+        uint8_t *dst_cell = dst_row->cell_ptr(projection_, proj_col_idx);
         RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
       }
     }
@@ -447,6 +460,10 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
   // seek target.
   faststring tmp_buf;
 };
+
+inline const Schema& MRSRow::schema() const {
+  return memrowset_->schema();
+}
 
 } // namespace tablet
 } // namespace kudu

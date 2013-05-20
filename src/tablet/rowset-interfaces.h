@@ -35,12 +35,11 @@ public:
   //
   // NOTE: raw_key is not copied and must be valid for the liftime
   // of this object.
-  RowSetKeyProbe(const Schema &schema, const void *raw_key) :
-    raw_key_(raw_key) {
-
-    Slice raw_slice(reinterpret_cast<const uint8_t *>(raw_key),
-                    schema.key_byte_size());
-    schema.EncodeComparableKey(raw_slice, &encoded_key_);
+  RowSetKeyProbe(const Schema &schema, const void *raw_key)
+    : raw_key_(raw_key)
+  {
+    ConstContiguousRow row_slice(schema, raw_key);
+    schema.EncodeComparableKey(row_slice, &encoded_key_);
     bloom_probe_ = BloomKeyProbe(Slice(encoded_key_));
   }
 
@@ -153,7 +152,7 @@ public:
 class DeltaIteratorInterface {
 public:
   // Initialize the iterator. This must be called once before any other
-  // call.  
+  // call.
   virtual Status Init() = 0;
 
   // Seek to a particular ordinal position in the delta data. This cancels any prepared

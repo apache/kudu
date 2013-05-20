@@ -16,14 +16,15 @@ namespace kudu {
 //
 // The row itself is mutated so that the indirect data points to the relocated
 // storage.
-template <class ArenaType>
-inline Status CopyRowIndirectDataToArena(uint8_t *row,
-                                         const Schema &schema,
+template <class ArenaType, class RowType>
+inline Status CopyRowIndirectDataToArena(RowType *row,
                                          ArenaType *dst_arena) {
+  const Schema &schema = row->schema();
   // For any Slice columns, copy the sliced data into the arena
   // and update the pointers
-  uint8_t *ptr = row;
   for (int i = 0; i < schema.num_columns(); i++) {
+    uint8_t *ptr = row->cell_ptr(schema, i);
+
     if (schema.column(i).type_info().type() == STRING) {
       Slice *slice = reinterpret_cast<Slice *>(ptr);
       Slice copied_slice;
@@ -33,9 +34,7 @@ inline Status CopyRowIndirectDataToArena(uint8_t *row,
 
       *slice = copied_slice;
     }
-    ptr += schema.column(i).type_info().size();
   }
-  DCHECK_EQ(ptr, row + schema.byte_size());
   return Status::OK();
 }
 

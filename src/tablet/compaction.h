@@ -76,7 +76,7 @@ class RowSetsInCompaction {
 
 // One row yielded by CompactionInput::PrepareBlock.
 struct CompactionInputRow {
-  void *row_ptr;
+  RowBlockRow row;
   Mutation *mutation_head;
 };
 

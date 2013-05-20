@@ -68,9 +68,9 @@ class TestCompaction : public KuduTest {
     while (input->HasMoreBlocks()) {
       ASSERT_STATUS_OK(input->PrepareBlock(&rows));
 
-      BOOST_FOREACH(const CompactionInputRow &row, rows) {
-        string row_str = schema_.DebugRow(row.row_ptr) +
-          " mutations: " + Mutation::StringifyMutationList(schema_, row.mutation_head);
+      BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+        string row_str = schema_.DebugRow(input_row.row) +
+            " mutations: " + Mutation::StringifyMutationList(schema_, input_row.mutation_head);
         DVLOG(1) << "Iterating row: " << row_str;
         out->push_back(row_str);
       }
@@ -189,7 +189,7 @@ TEST_F(TestCompaction, TestOneToOne) {
             out[0]);
 
   // And compact (1 input to 1 output)
-  MvccSnapshot snap3(mvcc_);  
+  MvccSnapshot snap3(mvcc_);
   gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, snap3));
   string compact_dir = GetTestPath("rowset-compacted");
   DoFlush(compact_input.get(), compact_dir);

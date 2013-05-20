@@ -25,7 +25,7 @@ static inline Status IterateToStringList(RowwiseIterator *iter,
     RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter, &block));
     for (size_t i = 0; i < block.nrows() && fetched < limit; i++) {
       if (block.selection_vector()->IsRowSelected(i)) {
-        out->push_back( schema.DebugRow(block.row_ptr(i)) );
+        out->push_back( schema.DebugRow(block.row(i)) );
         fetched++;
       }
     }

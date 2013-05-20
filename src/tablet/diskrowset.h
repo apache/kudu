@@ -132,6 +132,10 @@ public:
   ////////////////////
   // Updates
   ////////////////////
+
+  // Update the given row.
+  // 'key' should be the key portion of the row -- i.e a contiguous
+  // encoding of the key columns.
   Status UpdateRow(txid_t txid,
                    const void *key,
                    const RowChangeList &update);

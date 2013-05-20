@@ -69,7 +69,7 @@ public:
                          FLAGS_inserts_per_thread,
                          inserts.get());
   }
-  
+
   void UpdateThread(int tid) {
     const Schema &schema = schema_;
 
@@ -79,7 +79,7 @@ public:
 
     Arena tmp_arena(1024, 1024);
     RowBlock block(schema_, 1, &tmp_arena);
-    Slice row_slice(block.row_slice(0));
+    RowBlockRow rb_row = block.row(0);
     faststring update_buf;
 
     uint64_t updates_since_last_report = 0;
@@ -100,10 +100,10 @@ public:
         }
 
         // The key is at the start of the row
-        const uint8_t *row_key = row_slice.data();
+        const uint8_t *row_key = rb_row.cell_ptr(schema, 0); // TODO: Fix me on multiple keys
         if (rand() % 10 == 7) {
           // Increment the "update count"
-          uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(row_slice, 2);
+          uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(rb_row, 2);
           // Issue an update
           uint32_t new_val = old_val + 1;
           update_buf.clear();
@@ -179,7 +179,7 @@ public:
 
     static const int kBufInts = 1024*1024 / 8;
     RowBlock block(projection, kBufInts, &arena);
-    const uint32_t *buf = reinterpret_cast<const uint32_t *>(block.row_ptr(0));
+    ColumnBlock column = block.column_block(0);
 
     uint64_t count_since_report = 0;
 
@@ -194,7 +194,7 @@ public:
       CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
 
       for (size_t j = 0; j < block.nrows(); j++) {
-        sum += buf[j];
+        sum += *reinterpret_cast<const uint32_t *>(column.cell_ptr(j));
       }
       count_since_report += block.nrows();
 
@@ -213,7 +213,7 @@ public:
 
     return sum;
   }
-  
+
 
 
   void FlushThread(int tid) {

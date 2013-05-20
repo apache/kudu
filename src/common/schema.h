@@ -196,21 +196,21 @@ public:
   //
   // This is mostly useful for tests at this point.
   // TODO: consider removing it.
-  template<DataType Type>
+  template<DataType Type, class RowType>
   const typename DataTypeTraits<Type>::cpp_type *
-  ExtractColumnFromRow(const Slice &row, size_t idx) const {
+  ExtractColumnFromRow(const RowType& row, size_t idx) const {
     DCHECK_LT(idx, cols_.size());
     DCHECK_EQ(cols_[idx].type_info().type(), Type);
 
     return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type *>(
-      row.data() + col_offsets_[idx]);
+      row.cell_ptr(*this, idx) );
   }
 
   // Stringify the given row, which conforms to this schema,
   // in a way suitable for debugging. This isn't currently optimized
   // so should be avoided in hot paths.
-  string DebugRow(const void *row_v) const {
-    const uint8_t *row = reinterpret_cast<const uint8_t *>(row_v);
+  template<class RowType>
+  string DebugRow(const RowType& row) const {
     string ret;
     ret.append("(");
 
@@ -224,26 +224,23 @@ public:
       ret.append(" ");
       ret.append(cols_[col].name());
       ret.append("=");
-      ti.AppendDebugStringForValue(&row[col_offsets_[col]], &ret);
+      ti.AppendDebugStringForValue(row.cell_ptr(*this, col), &ret);
     }
     ret.append(")");
     return ret;
   }
 
   // Compare two rows of this schema.
-  int Compare(const void *lhs, const void *rhs) const {
-    DCHECK(lhs && rhs) << "may not pass null";
+  template<class RowTypeA, class RowTypeB>
+  int Compare(const RowTypeA& lhs, const RowTypeB& rhs) const {
+    // TODO: Handle rows with different schema?
+    DCHECK(Equals(lhs.schema()) && Equals(rhs.schema()));
 
     for (size_t col = 0; col < num_key_columns_; col++) {
-      const ColumnSchema &col_schema = cols_[col];
-      const TypeInfo &ti = col_schema.type_info();
-      int col_compare = column(col).Compare(lhs, rhs);
+      int col_compare = column(col).Compare(lhs.cell_ptr(*this, col), rhs.cell_ptr(*this, col));
       if (col_compare != 0) {
         return col_compare;
       }
-
-      lhs = reinterpret_cast<const uint8_t *>(lhs) + ti.size();
-      rhs = reinterpret_cast<const uint8_t *>(rhs) + ti.size();
     }
     return 0;
   }
@@ -300,8 +297,8 @@ public:
   // the proper comparison order of the underlying types.
   //
   // The encoded key is appended into the destination buffer.
-  void EncodeComparableKey(const Slice &row,
-                           faststring *dst) const {
+  template <class RowType>
+  void EncodeComparableKey(const RowType& row, faststring *dst) const {
     KeyEncoder enc(dst);
     for (size_t i = 0; i < num_key_columns_; i++) {
       const TypeInfo &ti = cols_[i].type_info();
@@ -318,7 +315,7 @@ public:
           CHECK(0) << "Unknown type: " << ti.name();
       }
     }
-    
+
   }
 
   // Stringify this Schema. This is not particularly efficient,
@@ -356,6 +353,67 @@ private:
   typedef unordered_map<string, size_t> NameToIndexMap;
   NameToIndexMap name_to_index_;
 };
+
+// TODO: Currently used only for testing and as memstore row wrapper
+
+// The row has all columns layed out in memory based on the schema.column_offset()
+class ContiguousRow {
+ public:
+  ContiguousRow(const Schema& schema, void *row_data = NULL)
+    : schema_(schema), row_data_(reinterpret_cast<uint8_t *>(row_data))
+  {
+  }
+
+  const Schema& schema() const {
+    return schema_;
+  }
+
+  void Reset(void *row_data) {
+    row_data_ = reinterpret_cast<uint8_t *>(row_data);
+  }
+
+  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return row_data_ + schema.column_offset(col_idx);
+  }
+
+ private:
+  friend class ConstContiguousRow;
+
+  const Schema& schema_;
+  uint8_t *row_data_;
+};
+
+// This is the same as ContiguousRow except it refers to a const area of memory that
+// should not be mutated.
+class ConstContiguousRow {
+ public:
+  ConstContiguousRow(const ContiguousRow &row) :
+    schema_(row.schema_),
+    row_data_(row.row_data_)
+  {}
+
+  ConstContiguousRow(const Schema& schema, const void *row_data = NULL)
+    : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data))
+  {
+  }
+
+  const Schema& schema() const {
+    return schema_;
+  }
+
+  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return row_data_ + schema.column_offset(col_idx);
+  }
+
+ private:
+  const Schema& schema_;
+  const uint8_t *row_data_;
+};
+
 
 } // namespace kudu
 

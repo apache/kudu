@@ -35,9 +35,9 @@ public:
     valid_rows_(0)
   {}
 
-  const void *next_row_ptr() {
+  const RowBlockRow& next_row() {
     DCHECK_LT(cur_row_, valid_rows_);
-    return next_row_ptr_;
+    return next_row_;
   }
 
   Status Advance() {
@@ -46,10 +46,10 @@ public:
       arena_.Reset();
       return PullNextBlock();
     } else {
-      // Manually advancing next_row_ptr_ is some 20% faster
+      // TODO: Manually advancing next_row_ptr_ is some 20% faster
       // than calling row_ptr(cur_row_), since it avoids an expensive multiplication
       // in the inner loop.
-      next_row_ptr_ += read_block_.schema().byte_size();
+      next_row_.Reset(&read_block_, cur_row_);
 
       return Status::OK();
     }
@@ -78,7 +78,7 @@ public:
     cur_row_ = 0;
     // TODO: do we need valid_rows_ or can we just use read_block_.nrows()?
     valid_rows_ = read_block_.nrows();
-    next_row_ptr_ = read_block_.row_ptr(0);
+    next_row_.Reset(&read_block_, 0);
     return Status::OK();
   }
 
@@ -89,10 +89,9 @@ public:
   shared_ptr<RowwiseIterator> iter_;
   Arena arena_;
   RowBlock read_block_;
-  uint8_t *next_row_ptr_;
+  RowBlockRow next_row_;
   size_t cur_row_;
   size_t valid_rows_;
-
 };
 
 
@@ -175,11 +174,8 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
   DCHECK_SCHEMA_EQ(dst->schema(), schema());
   DCHECK_LE(prepared_count_, dst->nrows());
 
-  size_t dst_row_idx = 0;
-  size_t row_size = schema_.byte_size();
-  uint8_t *dst_ptr = dst->row_ptr(0);
-
-  while (dst_row_idx < prepared_count_) {
+  for (size_t dst_row_idx = 0; dst_row_idx < prepared_count_; dst_row_idx++) {
+    RowBlockRow dst_row = dst->row(dst_row_idx);
 
     // Find the sub-iterator which is currently smallest
     MergeIterState *smallest = NULL;
@@ -189,7 +185,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
       shared_ptr<MergeIterState> &state = iters_[i];
 
       if (smallest == NULL ||
-          schema_.Compare(state->next_row_ptr(), smallest->next_row_ptr()) < 0) {
+          schema_.Compare(state->next_row(), smallest->next_row()) < 0) {
         smallest = state.get();
         smallest_idx = i;
       }
@@ -199,20 +195,16 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     if (PREDICT_FALSE(smallest == NULL)) break;
 
     // Otherwise, copy the row from the smallest one, and advance it
-    strings::memcpy_inlined(dst_ptr, smallest->next_row_ptr(), row_size);
+    dst_row.CopyCellsFrom(schema_, smallest->next_row());
     if (dst->arena() != NULL) {
-      RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(dst_ptr, schema_, dst->arena()));
+      RETURN_NOT_OK(dst_row.CopyIndirectDataToArena(dst->arena()));
     }
-
-    dst_ptr += row_size;
 
     RETURN_NOT_OK(smallest->Advance());
 
     if (smallest->IsFullyExhausted()) {
       iters_.erase(iters_.begin() + smallest_idx);
     }
-
-    dst_row_idx++;
   }
 
   return Status::OK();
@@ -276,7 +268,7 @@ Status UnionIterator::Init(ScanSpec *spec) {
 
 
 Status UnionIterator::InitSubIterators(ScanSpec *spec) {
-  BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, iters_) {  
+  BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, iters_) {
     ScanSpec *spec_copy = spec != NULL ? scan_spec_copies_.Construct(*spec) : NULL;
     RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
   }

@@ -151,19 +151,19 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   // First call to CopyNextRows should fetch the whole memrowset.
   ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from memrowset";
-  this->VerifyRow(block.row_ptr(0), kInMemRowSet, 0);
+  this->VerifyRow(block.row(0), kInMemRowSet, 0);
 
   // Next, should fetch the older rowset
   ASSERT_TRUE(iter->HasNext());
   ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from rowset 1";
-  this->VerifyRow(block.row_ptr(0), kInRowSet1, 0);
+  this->VerifyRow(block.row(0), kInRowSet1, 0);
 
   // Next, should fetch the newer rowset
   ASSERT_TRUE(iter->HasNext());
   ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from rowset 2";
-  this->VerifyRow(block.row_ptr(0), kInRowSet2, 0);
+  this->VerifyRow(block.row(0), kInRowSet2, 0);
 
   ASSERT_FALSE(iter->HasNext());
 }
@@ -217,7 +217,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
     ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
     LOG(INFO) << "Fetched batch of " << block.nrows();
     for (size_t i = 0; i < block.nrows(); i++) {
-      uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(block.row_slice(i), 1);
+      uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(block.row(i), 1);
       bool removed = inserted.erase(val_read);
       ASSERT_TRUE(removed) << "Got value " << val_read << " but either "
                            << "the value was invalid or was already "

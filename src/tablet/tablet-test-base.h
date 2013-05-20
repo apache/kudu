@@ -170,9 +170,9 @@ public:
     ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(rb.data().data(), RowChangeList(buf)));
   }
 
-  void VerifyRow(uint8_t *row, uint64_t row_idx, uint32_t update_count) {
-    ASSERT_EQ(setup_.FormatDebugRow(row_idx, update_count),
-              schema_.DebugRow(row));
+  template <class RowType>
+  void VerifyRow(const RowType& row, uint64_t row_idx, uint32_t update_count) {
+    ASSERT_EQ(setup_.FormatDebugRow(row_idx, update_count), schema_.DebugRow(row));
   }
 
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
@@ -199,18 +199,18 @@ public:
     while (iter->HasNext()) {
       ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
 
+      RowBlockRow rb_row = block.row(0);
       DLOG(INFO) << "Fetched batch of " << block.nrows() << "\n"
-                 << "First row: " << schema_.DebugRow(block.row_ptr(0));
+                 << "First row: " << schema_.DebugRow(rb_row);
 
       for (int i = 0; i < block.nrows(); i++) {
-        Slice s(block.row_slice(i));
-        int row = *schema_.ExtractColumnFromRow<UINT32>(s, 1);
+        rb_row.Reset(&block, i);
+        int row = *schema_.ExtractColumnFromRow<UINT32>(rb_row, 1);
         if (row >= first_row && row < first_row + expected_count) {
           size_t idx = row - first_row;
           if (seen_rows[idx]) {
             FAIL() << "Saw row " << row << " twice!\n"
-                   << "Slice: " << s.ToDebugString() << "\n"
-                   << "Row: " << schema_.DebugRow(s.data());
+                   << "Row: " << schema_.DebugRow(rb_row);
           }
           seen_rows[idx] = true;
         }
