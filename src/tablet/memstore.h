@@ -167,7 +167,7 @@ class MemStore : boost::noncopyable,
   Iterator *NewIterator(const Schema &projection,
                         const MvccSnapshot &snap) const;
 
-  // Alias to conform to RowSet interface
+  // Alias to conform to DiskRowSet interface
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 

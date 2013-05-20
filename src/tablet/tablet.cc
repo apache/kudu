@@ -82,8 +82,8 @@ Status Tablet::Open() {
         return Status::IOError(string("Bad rowset file: ") + absolute_path);
       }
 
-      shared_ptr<RowSet> rowset;
-      Status s = RowSet::Open(env_, schema_, absolute_path, &rowset);
+      shared_ptr<DiskRowSet> rowset;
+      Status s = DiskRowSet::Open(env_, schema_, absolute_path, &rowset);
       if (!s.ok()) {
         LOG(ERROR) << "Failed to open rowset " << absolute_path << ": "
                    << s.ToString();
@@ -356,8 +356,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   RETURN_NOT_OK(lw.Finish());
 
   // Open the written-out snapshot as a new rowset.
-  shared_ptr<RowSet> new_rowset;
-  Status s = RowSet::Open(env_, schema_, tmp_rowset_dir, &new_rowset);
+  shared_ptr<DiskRowSet> new_rowset;
+  Status s = DiskRowSet::Open(env_, schema_, tmp_rowset_dir, &new_rowset);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open snapshot compaction results in " << tmp_rowset_dir
                  << ": " << s.ToString();

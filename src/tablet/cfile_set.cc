@@ -25,7 +25,7 @@ using std::tr1::shared_ptr;
 
 static Status OpenReader(Env *env, string dir, size_t col_idx,
                          gscoped_ptr<CFileReader> *new_reader) {
-  string path = RowSet::GetColumnPath(dir, col_idx);
+  string path = DiskRowSet::GetColumnPath(dir, col_idx);
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
@@ -85,7 +85,7 @@ Status CFileSet::OpenBloomReader() {
     return Status::OK();
   }
 
-  Status s = BloomFileReader::Open(env_, RowSet::GetBloomPath(dir_), &bloom_reader_);
+  Status s = BloomFileReader::Open(env_, DiskRowSet::GetBloomPath(dir_), &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << dir_ << ": "
                  << s.ToString();

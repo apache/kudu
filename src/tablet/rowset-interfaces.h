@@ -97,7 +97,7 @@ public:
   // Estimate the number of bytes on-disk
   virtual uint64_t EstimateOnDiskSize() const = 0;
 
-  // Return the lock used for including this RowSet in a compaction.
+  // Return the lock used for including this DiskRowSet in a compaction.
   // This prevents multiple compactions and flushes from trying to include
   // the same rowset.
   virtual boost::mutex *compact_flush_lock() = 0;

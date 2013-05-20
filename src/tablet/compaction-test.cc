@@ -85,14 +85,14 @@ class TestCompaction : public KuduTest {
     ASSERT_STATUS_OK(rsw.Open());
     ASSERT_STATUS_OK(Flush(input, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
-    ASSERT_FILE_EXISTS(env_, RowSet::GetBloomPath(out_dir));
+    ASSERT_FILE_EXISTS(env_, DiskRowSet::GetBloomPath(out_dir));
   }
 
-  void FlushAndReopen(const MemStore &ms, const string &out_dir, shared_ptr<RowSet> *rs) {
+  void FlushAndReopen(const MemStore &ms, const string &out_dir, shared_ptr<DiskRowSet> *rs) {
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(ms, MvccSnapshot(mvcc_)));
     DoFlush(input.get(), out_dir);
     // Re-open it
-    ASSERT_STATUS_OK(RowSet::Open(env_.get(), schema_, out_dir, rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(env_.get(), schema_, out_dir, rs));
   }
 
  protected:
@@ -124,7 +124,7 @@ TEST_F(TestCompaction, TestMemstoreInput) {
 
 TEST_F(TestCompaction, TestRowSetInput) {
   // Create a memstore with a bunch of rows, flush and reopen.
-  shared_ptr<RowSet> rs;
+  shared_ptr<DiskRowSet> rs;
   {
     shared_ptr<MemStore> ms(new MemStore(schema_));
     InsertRows(ms.get(), 10, 0);
@@ -164,7 +164,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   MvccSnapshot snap(mvcc_);
 
   // Flush it to disk and re-open.
-  shared_ptr<RowSet> rs;
+  shared_ptr<DiskRowSet> rs;
   FlushAndReopen(*ms, rowset_dir_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
@@ -180,7 +180,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   ASSERT_STATUS_OK(ReupdateMissedDeltas(input.get(), snap, snap2, rs->delta_tracker_.get()));
 
-  // If we look at the contents of the RowSet now, we should see the "re-updated" data.
+  // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
   input.reset(CompactionInput::Create(*rs, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
@@ -196,7 +196,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 }
 
 TEST_F(TestCompaction, TestMerge) {
-  vector<shared_ptr<RowSet> > rowsets;
+  vector<shared_ptr<DiskRowSet> > rowsets;
 
   // Create three input rowsets
   for (int delta = 0; delta < 3; delta++) {
@@ -208,7 +208,7 @@ TEST_F(TestCompaction, TestMerge) {
     string dir = GetTestPath(StringPrintf("rowset-%d", delta));
 
     // Flush it to disk and re-open it.
-    shared_ptr<RowSet> rs;
+    shared_ptr<DiskRowSet> rs;
     FlushAndReopen(*ms, dir, &rs);
     ASSERT_NO_FATAL_FAILURE();
     rowsets.push_back(rs);
@@ -220,7 +220,7 @@ TEST_F(TestCompaction, TestMerge) {
   // Merge them.
   MvccSnapshot merge_snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets) {
+  BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
     merge_inputs.push_back(shared_ptr<CompactionInput>(CompactionInput::Create(*rs, merge_snap)));
   }
 

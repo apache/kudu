@@ -1,7 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 //
-// A RowSet is a horizontal slice of a Kudu tablet.
-// Each RowSet contains data for a a disjoint set of keys.
+// A DiskRowSet is a horizontal slice of a Kudu tablet.
+// Each DiskRowSet contains data for a a disjoint set of keys.
 // See src/tablet/README for a detailed description.
 
 #ifndef KUDU_TABLET_LAYER_H
@@ -94,10 +94,10 @@ private:
 };
 
 ////////////////////////////////////////////////////////////
-// RowSet
+// DiskRowSet
 ////////////////////////////////////////////////////////////
 
-class RowSet : public RowSetInterface, boost::noncopyable {
+class DiskRowSet : public RowSetInterface, boost::noncopyable {
 public:
   static const char *kDeltaPrefix;
   static const char *kColumnPrefix;
@@ -109,7 +109,7 @@ public:
   static Status Open(Env *env,
                      const Schema &schema,
                      const string &rowset_dir,
-                     shared_ptr<RowSet> *rowset);
+                     shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions
@@ -177,7 +177,7 @@ private:
 
   // TODO: should 'schema' be stored with the rowset? quite likely
   // so that we can support cheap alter table.
-  RowSet(Env *env,
+  DiskRowSet(Env *env,
         const Schema &schema,
         const string &rowset_dir);
 
@@ -205,7 +205,7 @@ private:
 
 
 
-// RowSet which is used during the middle of a flush or compaction.
+// DiskRowSet which is used during the middle of a flush or compaction.
 // It consists of a set of one or more input rowsets, and a single
 // output rowset. All mutations are duplicated to the appropriate input
 // rowset as well as the output rowset. All reads are directed to the

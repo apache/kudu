@@ -16,19 +16,19 @@ using std::tr1::unordered_set;
 
 class TestMultiThreadedRowSet : public TestRowSet {
 public:
-  void RowSetUpdateThread(RowSet *rs) {
+  void RowSetUpdateThread(DiskRowSet *rs) {
     unordered_set<uint32_t> updated;
     UpdateExistingRows(rs, 0.5f, &updated);
   }
 
-  void FlushThread(RowSet *rs) {
+  void FlushThread(DiskRowSet *rs) {
     for (int i = 0; i < 10; i++) {
       rs->FlushDeltas();
     }
   }
 
   void StartUpdaterThreads(boost::ptr_vector<boost::thread> *threads,
-                           RowSet *rs,
+                           DiskRowSet *rs,
                            int n_threads) {
     for (int i = 0; i < n_threads; i++) {
       threads->push_back(new boost::thread(
@@ -38,7 +38,7 @@ public:
   }
 
   void StartFlushThread(boost::ptr_vector<boost::thread> *threads,
-                        RowSet *rs) {
+                        DiskRowSet *rs) {
     threads->push_back(new boost::thread(
                          &TestMultiThreadedRowSet::FlushThread, this, rs));
   }
@@ -55,7 +55,7 @@ TEST_F(TestMultiThreadedRowSet, TestMTUpdate) {
   WriteTestRowSet();
 
   // Re-open the rowset
-  shared_ptr<RowSet> rs;
+  shared_ptr<DiskRowSet> rs;
   ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // Spawn a bunch of threads, each of which will do updates.
@@ -69,7 +69,7 @@ TEST_F(TestMultiThreadedRowSet, TestMTUpdateAndFlush) {
   WriteTestRowSet();
 
   // Re-open the rowset
-  shared_ptr<RowSet> rs;
+  shared_ptr<DiskRowSet> rs;
   ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // Spawn a bunch of threads, each of which will do updates.

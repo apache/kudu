@@ -45,10 +45,10 @@ TYPED_TEST(TestTablet, TestFlush) {
 
   // Make sure the files were created as expected.
   string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
-  ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
-  ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 1));
-  ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 2));
-  ASSERT_FILE_EXISTS(this->env_, RowSet::GetBloomPath(rowset_dir_))
+  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
+  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 1));
+  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 2));
+  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetBloomPath(rowset_dir_))
 }
 
 // Test that historical data for a row is maintained even after the row
@@ -309,7 +309,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
     string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
-    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -318,7 +318,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
     string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 1);
-    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -327,7 +327,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
     string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 2);
-    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 
   // Issue compaction
@@ -335,14 +335,14 @@ TYPED_TEST(TestTablet, TestCompaction) {
     ASSERT_STATUS_OK(this->tablet_->Compact());
     ASSERT_EQ(n_rows * 3, this->TabletCount());
     string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 3);
-    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
-    ASSERT_FILE_EXISTS(this->env_, RowSet::GetBloomPath(rowset_dir_))
+    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetBloomPath(rowset_dir_))
   }
 
   // Old rowsets should not exist anymore
   for (int i = 0; i <= 2; i++) {
     string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, i);
-    ASSERT_FILE_NOT_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_FILE_NOT_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 }
 

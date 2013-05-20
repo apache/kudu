@@ -27,14 +27,14 @@ using cfile::ReaderOptions;
 using std::string;
 using std::tr1::shared_ptr;
 
-const char *RowSet::kDeltaPrefix = "delta_";
-const char *RowSet::kColumnPrefix = "col_";
-const char *RowSet::kBloomFileName = "bloom";
-const char *RowSet::kTmpRowSetSuffix = ".tmp";
+const char *DiskRowSet::kDeltaPrefix = "delta_";
+const char *DiskRowSet::kColumnPrefix = "col_";
+const char *DiskRowSet::kBloomFileName = "bloom";
+const char *DiskRowSet::kTmpRowSetSuffix = ".tmp";
 
 // Return the path at which the given column's cfile
 // is stored within the rowset directory.
-string RowSet::GetColumnPath(const string &dir,
+string DiskRowSet::GetColumnPath(const string &dir,
                             int col_idx) {
   return dir + "/" + kColumnPrefix +
     boost::lexical_cast<string>(col_idx);
@@ -42,7 +42,7 @@ string RowSet::GetColumnPath(const string &dir,
 
 // Return the path at which the given delta file
 // is stored within the rowset directory.
-string RowSet::GetDeltaPath(const string &dir,
+string DiskRowSet::GetDeltaPath(const string &dir,
                            int delta_idx) {
   return dir + "/" + kDeltaPrefix +
     boost::lexical_cast<string>(delta_idx);
@@ -50,7 +50,7 @@ string RowSet::GetDeltaPath(const string &dir,
 
 // Return the path at which the bloom filter
 // is stored within the rowset directory.
-string RowSet::GetBloomPath(const string &dir) {
+string DiskRowSet::GetBloomPath(const string &dir) {
   return dir + "/" + kBloomFileName;
 }
 
@@ -130,7 +130,7 @@ Status RowSetWriter::Open() {
     // the corresponding rows.
     opts.write_posidx = true;
 
-    string path = RowSet::GetColumnPath(dir_, i);
+    string path = DiskRowSet::GetColumnPath(dir_, i);
 
     // Open file for write.
     shared_ptr<WritableFile> out;
@@ -169,7 +169,7 @@ Status RowSetWriter::Open() {
 }
 
 Status RowSetWriter::InitBloomFileWriter() {
-  string path(RowSet::GetBloomPath(dir_));
+  string path(DiskRowSet::GetBloomPath(dir_));
   shared_ptr<WritableFile> file;
   RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
   bloom_writer_.reset(new BloomFileWriter(file, bloom_sizing_));
@@ -260,11 +260,11 @@ Status RowSetWriter::Finish() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status RowSet::Open(Env *env,
+Status DiskRowSet::Open(Env *env,
                    const Schema &schema,
                    const string &rowset_dir,
-                   shared_ptr<RowSet> *rowset) {
-  shared_ptr<RowSet> rs(new RowSet(env, schema, rowset_dir));
+                   shared_ptr<DiskRowSet> *rowset) {
+  shared_ptr<DiskRowSet> rs(new DiskRowSet(env, schema, rowset_dir));
 
   RETURN_NOT_OK(rs->Open());
 
@@ -273,7 +273,7 @@ Status RowSet::Open(Env *env,
 }
 
 
-RowSet::RowSet(Env *env,
+DiskRowSet::DiskRowSet(Env *env,
              const Schema &schema,
              const string &rowset_dir) :
     env_(env),
@@ -284,7 +284,7 @@ RowSet::RowSet(Env *env,
 {}
 
 
-Status RowSet::Open() {
+Status DiskRowSet::Open() {
   gscoped_ptr<CFileSet> new_base(
     new CFileSet(env_, dir_, schema_));
   RETURN_NOT_OK(new_base->OpenAllColumns());
@@ -297,11 +297,11 @@ Status RowSet::Open() {
   return Status::OK();
 }
 
-Status RowSet::FlushDeltas() {
+Status DiskRowSet::FlushDeltas() {
   return delta_tracker_->Flush();
 }
 
-RowwiseIterator *RowSet::NewRowIterator(const Schema &projection,
+RowwiseIterator *DiskRowSet::NewRowIterator(const Schema &projection,
                                        const MvccSnapshot &mvcc_snap) const {
   CHECK(open_);
   //boost::shared_lock<boost::shared_mutex> lock(component_lock_);
@@ -313,11 +313,11 @@ RowwiseIterator *RowSet::NewRowIterator(const Schema &projection,
                                                                 mvcc_snap)));
 }
 
-CompactionInput *RowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
+CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
   return CompactionInput::Create(*this, snap);
 }
 
-Status RowSet::UpdateRow(txid_t txid,
+Status DiskRowSet::UpdateRow(txid_t txid,
                         const void *key,
                         const RowChangeList &update) {
   CHECK(open_);
@@ -329,33 +329,33 @@ Status RowSet::UpdateRow(txid_t txid,
   return Status::OK();
 }
 
-Status RowSet::CheckRowPresent(const RowSetKeyProbe &probe,
+Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                               bool *present) const {
   CHECK(open_);
 
   return base_data_->CheckRowPresent(probe, present);
 }
 
-Status RowSet::CountRows(rowid_t *count) const {
+Status DiskRowSet::CountRows(rowid_t *count) const {
   CHECK(open_);
 
   return base_data_->CountRows(count);
 }
 
-uint64_t RowSet::EstimateOnDiskSize() const {
+uint64_t DiskRowSet::EstimateOnDiskSize() const {
   CHECK(open_);
   // TODO: should probably add the delta trackers as well.
   return base_data_->EstimateOnDiskSize();
 }
 
 
-Status RowSet::Delete() {
+Status DiskRowSet::Delete() {
   string tmp_path = dir_ + ".deleting";
   RETURN_NOT_OK(env_->RenameFile(dir_, tmp_path));
   return env_->DeleteRecursively(tmp_path);
 }
 
-Status RowSet::RenameRowSetDir(const string &new_dir) {
+Status DiskRowSet::RenameRowSetDir(const string &new_dir) {
   RETURN_NOT_OK(env_->RenameFile(dir_, new_dir));
   dir_ = new_dir;
   return Status::OK();

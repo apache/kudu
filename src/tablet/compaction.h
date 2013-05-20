@@ -20,7 +20,7 @@ class CompactionInput {
  public:
   // Create an input which reads from the given rowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionInput *Create(const RowSet &rowset, const MvccSnapshot &snap);
+  static CompactionInput *Create(const DiskRowSet &rowset, const MvccSnapshot &snap);
 
   // Create an input which reads from the given memstore, yielding base rows and updates
   // prior to the given snapshot.

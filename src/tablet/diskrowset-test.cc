@@ -33,8 +33,8 @@ using std::tr1::unordered_set;
 TEST_F(TestRowSet, TestRowSetRoundTrip) {
   WriteTestRowSet();
 
-  // Now open the RowSet for read
-  shared_ptr<RowSet> rs;
+  // Now open the DiskRowSet for read
+  shared_ptr<DiskRowSet> rs;
   ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // First iterate over all columns
@@ -106,8 +106,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 TEST_F(TestRowSet, TestRowSetUpdate) {
   WriteTestRowSet();
 
-  // Now open the RowSet for read
-  shared_ptr<RowSet> rs;
+  // Now open the DiskRowSet for read
+  shared_ptr<DiskRowSet> rs;
   ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // Add an update to the delta tracker for a number of keys
@@ -135,9 +135,9 @@ TEST_F(TestRowSet, TestDMSFlush) {
 
   unordered_set<uint32_t> updated;
 
-  // Now open the RowSet for read
+  // Now open the DiskRowSet for read
   {
-    shared_ptr<RowSet> rs;
+    shared_ptr<DiskRowSet> rs;
     ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
     // Add an update to the delta tracker for a number of keys
@@ -149,7 +149,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
 
     rs->FlushDeltas();
 
-    // Check that the RowSet's DMS has now been emptied.
+    // Check that the DiskRowSet's DMS has now been emptied.
     ASSERT_EQ(0, rs->delta_tracker_->dms_->Count());
 
     // Now read back the value column, and verify that the updates
@@ -160,7 +160,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
   // Close and re-open the rowset and ensure that the updates were
   // persistent.
   {
-    shared_ptr<RowSet> rs;
+    shared_ptr<DiskRowSet> rs;
     ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
     // Now read back the value column, and verify that the updates
@@ -174,7 +174,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
 TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   const Slice key_slice("row");
 
-  // Write a single row into a new RowSet.
+  // Write a single row into a new DiskRowSet.
   LOG_TIMING(INFO, "Writing rowset") {
     RowSetWriter lw(env_.get(), schema_, rowset_dir_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
@@ -190,7 +190,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
 
   // Reopen the rowset.
-  shared_ptr<RowSet> rs;
+  shared_ptr<DiskRowSet> rs;
   ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // Take a snapshot of the pre-update state.
@@ -247,9 +247,9 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
   WriteTestRowSet();
 
-  // Now open the RowSet for read
+  // Now open the DiskRowSet for read
   {
-    shared_ptr<RowSet> rs;
+    shared_ptr<DiskRowSet> rs;
     ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
     BenchmarkIterationPerformance(*rs.get(),

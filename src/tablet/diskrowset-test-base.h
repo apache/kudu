@@ -61,7 +61,7 @@ protected:
   // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
   void WriteTestRowSet() {
-    // Write rows into a new RowSet.
+    // Write rows into a new DiskRowSet.
     LOG_TIMING(INFO, "Writing rowset") {
       RowSetWriter lw(env_.get(), schema_, rowset_dir_,
                      BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
@@ -83,7 +83,7 @@ protected:
 
   // Picks some number of rows from the given rowset and updates
   // them. Stores the indexes of the updated rows in *updated.
-  void UpdateExistingRows(RowSet *rs, float update_ratio,
+  void UpdateExistingRows(DiskRowSet *rs, float update_ratio,
                           unordered_set<uint32_t> *updated) {
     int to_update = (int)(n_rows_ * update_ratio);
     char buf[256];
@@ -109,13 +109,13 @@ protected:
   // Updated rows (those whose index is present in 'updated') should have
   // a 'val' column equal to idx*5.
   // Other rows should have val column equal to idx.
-  void VerifyUpdates(const RowSet &rs, const unordered_set<uint32_t> &updated) {
+  void VerifyUpdates(const DiskRowSet &rs, const unordered_set<uint32_t> &updated) {
     LOG_TIMING(INFO, "Reading updated rows with row iter") {
       VerifyUpdatesWithRowIter(rs, updated);
     }
   }
 
-  void VerifyUpdatesWithRowIter(const RowSet &rs,
+  void VerifyUpdatesWithRowIter(const DiskRowSet &rs,
                                 const unordered_set<uint32_t> &updated) {
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
@@ -159,9 +159,9 @@ protected:
       }
   }
 
-  // Iterate over a RowSet, dumping occasional rows to the console,
+  // Iterate over a DiskRowSet, dumping occasional rows to the console,
   // using the given schema as a projection.
-  static void IterateProjection(const RowSet &rs, const Schema &schema,
+  static void IterateProjection(const DiskRowSet &rs, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(schema, snap));
@@ -190,7 +190,7 @@ protected:
     EXPECT_EQ(expected_rows, i);
   }
 
-  void BenchmarkIterationPerformance(const RowSet &rs,
+  void BenchmarkIterationPerformance(const DiskRowSet &rs,
                                      const string &log_message) {
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
@@ -217,8 +217,8 @@ protected:
     }
   }
 
-  Status OpenTestRowSet(shared_ptr<RowSet> *rowset) {
-    return RowSet::Open(env_.get(), schema_, rowset_dir_, rowset);
+  Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
+    return DiskRowSet::Open(env_.get(), schema_, rowset_dir_, rowset);
   }
 
 

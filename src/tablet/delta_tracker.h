@@ -44,7 +44,7 @@ public:
   void Update(txid_t txid, rowid_t row_idx, const RowChangeList &update);
 
 private:
-  friend class RowSet;
+  friend class DiskRowSet;
 
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);

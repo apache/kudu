@@ -62,7 +62,7 @@ class MemstoreCompactionInput : boost::noncopyable, public CompactionInput {
 
 ////////////////////////////////////////////////////////////
 
-// CompactionInput yielding rows and mutations from an on-disk RowSet.
+// CompactionInput yielding rows and mutations from an on-disk DiskRowSet.
 class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
  public:
   RowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
@@ -275,7 +275,7 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
 
 ////////////////////////////////////////////////////////////
 
-CompactionInput *CompactionInput::Create(const RowSet &rowset,
+CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
                                          const MvccSnapshot &snap) {
 
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(rowset.schema()));
