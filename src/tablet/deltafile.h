@@ -16,7 +16,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_key.h"
-#include "tablet/layer-interfaces.h"
+#include "tablet/rowset-interfaces.h"
 
 namespace kudu {
 

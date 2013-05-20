@@ -12,7 +12,7 @@
 
 #include "common/iterator.h"
 #include "common/schema.h"
-#include "tablet/layer-interfaces.h"
+#include "tablet/rowset-interfaces.h"
 #include "tablet/memstore.h"
 #include "util/env.h"
 #include "util/memory/arena.h"

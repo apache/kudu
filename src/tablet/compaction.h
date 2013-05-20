@@ -7,7 +7,7 @@
 
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 #include "tablet/memstore.h"
 
 namespace kudu {

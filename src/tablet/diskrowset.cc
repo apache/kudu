@@ -15,7 +15,7 @@
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 #include "util/env.h"
 #include "util/env_util.h"
 #include "util/status.h"

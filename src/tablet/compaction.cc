@@ -3,7 +3,7 @@
 #include <glog/logging.h>
 
 #include "tablet/compaction.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 
 namespace kudu {
 namespace tablet {

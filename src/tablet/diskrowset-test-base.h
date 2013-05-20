@@ -13,7 +13,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 #include "util/env.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"

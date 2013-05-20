@@ -6,7 +6,7 @@
 #include <tr1/memory>
 
 #include "tablet/concurrent_btree.h"
-#include "tablet/layer-interfaces.h"
+#include "tablet/rowset-interfaces.h"
 #include "tablet/mutation.h"
 #include "common/rowblock.h"
 #include "common/schema.h"

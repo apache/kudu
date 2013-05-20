@@ -5,7 +5,7 @@
 #include <tr1/memory>
 
 #include "tablet/cfile_set.h"
-#include "tablet/layer-test-base.h"
+#include "tablet/diskrowset-test-base.h"
 #include "tablet/tablet-test-base.h"
 #include "util/test_util.h"
 

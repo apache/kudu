@@ -17,7 +17,7 @@
 #include "tablet/compaction.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-util.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
 

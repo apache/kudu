@@ -10,7 +10,7 @@
 
 #include "common/iterator.h"
 #include "tablet/cfile_set.h"
-#include "tablet/layer-interfaces.h"
+#include "tablet/rowset-interfaces.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/deltafile.h"
 #include "util/status.h"

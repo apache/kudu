@@ -12,7 +12,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "tablet/concurrent_btree.h"
 #include "tablet/delta_key.h"
-#include "tablet/layer-interfaces.h"
+#include "tablet/rowset-interfaces.h"
 #include "tablet/mvcc.h"
 #include "util/memory/arena.h"
 

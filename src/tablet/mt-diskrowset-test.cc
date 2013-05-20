@@ -4,7 +4,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/thread.hpp>
 
-#include "tablet/layer-test-base.h"
+#include "tablet/diskrowset-test-base.h"
 
 DEFINE_int32(num_threads, 16, "Number of threads to test");
 

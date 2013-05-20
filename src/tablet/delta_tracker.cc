@@ -11,7 +11,7 @@
 #include "util/status.h"
 #include "tablet/deltafile.h"
 #include "tablet/delta_tracker.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 
 namespace kudu { namespace tablet {
 

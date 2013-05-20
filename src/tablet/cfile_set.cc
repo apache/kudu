@@ -8,7 +8,7 @@
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
 #include "common/scan_spec.h"
-#include "tablet/layer.h"
+#include "tablet/diskrowset.h"
 #include "tablet/cfile_set.h"
 
 

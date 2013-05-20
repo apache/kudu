@@ -3,8 +3,8 @@
 #ifndef KUDU_TABLET_TABLET_UTIL_H
 #define KUDU_TABLET_TABLET_UTIL_H
 
-#include "tablet/layer.h"
-#include "tablet/layer-interfaces.h"
+#include "tablet/diskrowset.h"
+#include "tablet/rowset-interfaces.h"
 
 namespace kudu {
 namespace tablet {

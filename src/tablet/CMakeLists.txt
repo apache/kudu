@@ -4,7 +4,7 @@ SET(TABLET_SRCS
   tablet.cc tablet-util.cc
   cfile_set.cc
   compaction.cc
-  layer.cc
+  diskrowset.cc
   memstore.cc
   mutation.cc
   mvcc.cc
@@ -17,8 +17,8 @@ ADD_DEPENDENCIES(tablet cfile_proto)
 # tablet-test
 ADD_KUDU_TEST(tablet-test)
 ADD_KUDU_TEST(mt-tablet-test)
-ADD_KUDU_TEST(layer-test)
-ADD_KUDU_TEST(mt-layer-test)
+ADD_KUDU_TEST(diskrowset-test)
+ADD_KUDU_TEST(mt-diskrowset-test)
 ADD_KUDU_TEST(memstore-test)
 ADD_KUDU_TEST(deltamemstore-test)
 ADD_KUDU_TEST(deltafile-test)
