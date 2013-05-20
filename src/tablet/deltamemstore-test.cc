@@ -37,7 +37,7 @@ class TestDeltaMemStore : public KuduTest {
 
     BOOST_FOREACH(uint32_t idx_to_update, indexes_to_update) {
       ScopedTransaction tx(&mvcc_);
-      buf.clear();
+      update.Reset();
       uint32_t new_val = idx_to_update * 10;
       update.AddColumnUpdate(kIntColumn, &new_val);
 
@@ -143,7 +143,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     ScopedTransaction tx(&mvcc_);
     char buf[256] = "update 2";
     Slice s(buf);
-    update_buf.clear();
+    update.Reset();
     update.AddColumnUpdate(0, &s);
     dms_->Update(tx.txid(), 123, RowChangeList(update_buf));
     memset(buf, 0xff, sizeof(buf));
@@ -181,7 +181,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
     update.AddColumnUpdate(kStringColumn, &s);
     dms_->Update(tx2.txid(), 123, RowChangeList(update_buf));
 
-    update_buf.clear();
+    update.Reset();
     s = Slice("update 1");
     update.AddColumnUpdate(kStringColumn, &s);
     dms_->Update(tx1.txid(), 123, RowChangeList(update_buf));
@@ -203,7 +203,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
   char buf[256];
   for (uint32_t i = 0; i < 1000; i++) {
     ScopedTransaction tx(&mvcc_);
-    update_buf.clear();
+    update.Reset();
 
     uint32_t val = i * 10;
     update.AddColumnUpdate(kIntColumn, &val);
@@ -243,7 +243,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
   // old ones for snapshot consistency purposes.
   for (uint32_t i = 0; i < 1000; i++) {
     ScopedTransaction tx(&mvcc_);
-    update_buf.clear();
+    update.Reset();
 
     uint32_t val = i * 20;
     update.AddColumnUpdate(kIntColumn, &val);

@@ -430,9 +430,10 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
       // TODO: this is slow, since it makes multiple passes through the rowchangelist.
       // Instead, we should keep the backwards mapping of columns.
       for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-        RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
         int memrowset_col_idx = projection_mapping_[proj_col_idx];
         uint8_t *dst_cell = dst_row->cell_ptr(projection_, proj_col_idx);
+        RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
+        RETURN_NOT_OK(decoder.Init());
         RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
       }
     }

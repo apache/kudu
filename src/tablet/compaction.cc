@@ -330,8 +330,13 @@ template <class RowType>
 static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mutation_head, RowType *row) {
   for (const Mutation *mut = mutation_head; mut != NULL; mut = mut->next()) {
     RowChangeListDecoder decoder(schema, mut->changelist());
+    
     DVLOG(2) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
-    Status s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
+    Status s = decoder.Init();
+    if (PREDICT_TRUE(s.ok())) {
+      s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
+    }
+
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to apply delta to row " << schema.DebugRow(*row) << " during flush/compact";
       return s;

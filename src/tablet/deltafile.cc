@@ -56,6 +56,11 @@ Status DeltaFileWriter::AppendDelta(
   const DeltaKey &key, const RowChangeList &delta) {
   Slice delta_slice(delta.slice());
 
+  // See TODO in RowChangeListEncoder::SetToReinsert
+  CHECK(!delta.is_reinsert())
+    << "TODO: REINSERT deltas cannot currently be written to disk "
+    << "since they don't have a standalone encoded form.";
+
 #ifndef NDEBUG
   // Sanity check insertion order in debug mode.
   if (has_appended_) {
@@ -346,6 +351,7 @@ struct ApplyingVisitor {
     DCHECK_GE(rel_idx, 0);
 
     RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
+    RETURN_NOT_OK(decoder.Init());
     return decoder.ApplyToOneColumn(col_to_apply, dst->cell_ptr(rel_idx), dst->arena());
   }
 

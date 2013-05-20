@@ -95,7 +95,7 @@ protected:
       FormatKey(idx_to_update, buf, sizeof(buf));
       Slice key_slice(buf);
       uint32_t new_val = idx_to_update * 5;
-      update_buf.clear();
+      update.Reset();
       update.AddColumnUpdate(1, &new_val);
       ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
                               &key_slice, RowChangeList(update_buf)));

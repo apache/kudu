@@ -118,11 +118,15 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   ASSERT_EQ((int)(n_rows_ * FLAGS_update_fraction),
             rs->delta_tracker_->dms_->Count());
 
-  // Try to add an update for a key not in the file (but which falls
+  // Try to add a mutation for a key not in the file (but which falls
   // between two valid keys)
+  faststring buf;
+  RowChangeListEncoder enc(schema_, &buf);
+  enc.SetToDelete();
+
   txid_t txid(0);
   Slice bad_key = Slice("hello 00000000000049x");
-  Status s = rs->UpdateRow(txid, &bad_key, RowChangeList(Slice()));
+  Status s = rs->UpdateRow(txid, &bad_key, enc.as_changelist());
   ASSERT_TRUE(s.IsNotFound());
 
   // Now read back the value column, and verify that the updates
@@ -205,7 +209,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   for (uint32_t i = 2; i <= 5; i++) {
     {
       ScopedTransaction tx(&mvcc_);
-      update_buf.clear();
+      update.Reset();
       update.AddColumnUpdate(1, &i);
       ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
                                          &key_slice, RowChangeList(update_buf)));

@@ -192,9 +192,12 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
     RowChangeListDecoder decoder(dms_->schema(), changelist);
 
-    Status s = decoder.ApplyToOneColumn(
-      projected_col, dst->cell_ptr(idx_in_block), dst->arena());
-    if (!s.ok()) {
+    Status s = decoder.Init();
+    if (PREDICT_TRUE(s.ok())) {
+      s = decoder.ApplyToOneColumn(
+        projected_col, dst->cell_ptr(idx_in_block), dst->arena());
+    }
+    if (PREDICT_FALSE(!s.ok())) {
       return Status::Corruption(
         StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT": ", key.row_idx()) +
         s.ToString());

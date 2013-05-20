@@ -6,22 +6,31 @@
 
 #include "common/schema.h"
 #include "common/row_changelist.h"
+#include "common/row.h"
 #include "util/faststring.h"
 #include "util/hexdump.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 
 namespace kudu {
 
+class TestRowChangeList : public KuduTest {
+ public:
+  TestRowChangeList() :
+    schema_(boost::assign::list_of
+            (ColumnSchema("col1", STRING))
+            (ColumnSchema("col2", STRING))
+            (ColumnSchema("col3", UINT32)),
+            1)
+  {}
 
-TEST(TestRowChangeList, TestEncodeDecode) {
-  Schema schema(boost::assign::list_of
-                (ColumnSchema("col1", STRING))
-                (ColumnSchema("col2", STRING))
-                (ColumnSchema("col3", UINT32)),
-                1);
-  
+ protected:
+  Schema schema_;
+};
+
+TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   faststring buf;
-  RowChangeListEncoder rcl(schema, &buf);
+  RowChangeListEncoder rcl(schema_, &buf);
 
   // Construct an update with several columns changed
   Slice update1("update1");
@@ -35,10 +44,11 @@ TEST(TestRowChangeList, TestEncodeDecode) {
   LOG(INFO) << "Encoded: " << HexDump(buf);
 
   // Read it back.
-  RowChangeListDecoder decoder(schema, RowChangeList(buf));
   EXPECT_EQ(string("SET col1=update1, col2=update2, col3=12345"),
-            RowChangeList(Slice(buf)).ToString(schema));
+            RowChangeList(Slice(buf)).ToString(schema_));
 
+  RowChangeListDecoder decoder(schema_, RowChangeList(buf));
+  ASSERT_STATUS_OK(decoder.Init());
   size_t idx;
   const void *val;
 
@@ -57,6 +67,46 @@ TEST(TestRowChangeList, TestEncodeDecode) {
   ASSERT_EQ(2, idx);
 
   ASSERT_FALSE(decoder.HasNext());
+}
+
+TEST_F(TestRowChangeList, TestDeletes) {
+  faststring buf;
+  RowChangeListEncoder rcl(schema_, &buf);
+
+  // Construct a deletion.
+  rcl.SetToDelete();
+
+  LOG(INFO) << "Encoded: " << HexDump(buf);
+
+  // Read it back.
+  EXPECT_EQ(string("DELETE"), RowChangeList(Slice(buf)).ToString(schema_));
+
+  RowChangeListDecoder decoder(schema_, RowChangeList(buf));
+  ASSERT_STATUS_OK(decoder.Init());
+  ASSERT_TRUE(decoder.is_delete());
+}
+
+TEST_F(TestRowChangeList, TestReinserts) {
+  RowBuilder rb(schema_);
+  rb.AddString(Slice("hello"));
+  rb.AddString(Slice("world"));
+  rb.AddUint32(12345);
+
+  // Construct a REINSERT.
+  faststring buf;
+  RowChangeListEncoder rcl(schema_, &buf);
+  rcl.SetToReinsert(rb.data());
+
+  LOG(INFO) << "Encoded: " << HexDump(buf);
+
+  // Read it back.
+  EXPECT_EQ(string("REINSERT (string col1=hello, string col2=world, uint32 col3=12345)"),
+            RowChangeList(Slice(buf)).ToString(schema_));
+
+  RowChangeListDecoder decoder(schema_, RowChangeList(buf));
+  ASSERT_STATUS_OK(decoder.Init());
+  ASSERT_TRUE(decoder.is_reinsert());
+  ASSERT_EQ(decoder.reinserted_row_slice(), rb.data());
 }
 
 } // namespace kudu
