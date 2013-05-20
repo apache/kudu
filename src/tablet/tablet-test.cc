@@ -21,7 +21,7 @@ using std::tr1::unordered_set;
 DEFINE_int32(testflush_num_inserts, 1000,
              "Number of rows inserted in TestFlush");
 DEFINE_int32(testcompaction_num_rows, 1000,
-             "Number of rows per layer in TestCompaction");
+             "Number of rows per rowset in TestCompaction");
 
 template<class SETUP>
 class TestTablet : public TabletTestBase<SETUP> {
@@ -44,11 +44,11 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Make sure the files were created as expected.
-  string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 0);
-  ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
-  ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 1));
-  ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 2));
-  ASSERT_FILE_EXISTS(this->env_, Layer::GetBloomPath(layer_dir_))
+  string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
+  ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
+  ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 1));
+  ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 2));
+  ASSERT_FILE_EXISTS(this->env_, RowSet::GetBloomPath(rowset_dir_))
 }
 
 // Test that historical data for a row is maintained even after the row
@@ -115,22 +115,22 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 }
 
 // Test iterating over a tablet which contains data
-// in the memstore as well as two layers. This simple test
+// in the memstore as well as two rowsets. This simple test
 // only puts one row in each with no updates.
 TYPED_TEST(TestTablet, TestRowIteratorSimple) {
-  const int kInLayer1 = 1;
-  const int kInLayer2 = 2;
+  const int kInRowSet1 = 1;
+  const int kInRowSet2 = 2;
   const int kInMemstore = 3;
 
-  // Put a row in disk layer 1 (insert and flush)
+  // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
-  this->setup_.BuildRow(&rb, kInLayer1);
+  this->setup_.BuildRow(&rb, kInRowSet1);
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  // Put a row in disk layer 2 (insert and flush)
+  // Put a row in disk rowset 2 (insert and flush)
   rb.Reset();
-  this->setup_.BuildRow(&rb, kInLayer2);
+  this->setup_.BuildRow(&rb, kInRowSet2);
   ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
@@ -153,25 +153,25 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_EQ(1, block.nrows()) << "should get only the one row from memstore";
   this->VerifyRow(block.row_ptr(0), kInMemstore, 0);
 
-  // Next, should fetch the older layer
+  // Next, should fetch the older rowset
   ASSERT_TRUE(iter->HasNext());
   ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
-  ASSERT_EQ(1, block.nrows()) << "should get only the one row from layer 1";
-  this->VerifyRow(block.row_ptr(0), kInLayer1, 0);
+  ASSERT_EQ(1, block.nrows()) << "should get only the one row from rowset 1";
+  this->VerifyRow(block.row_ptr(0), kInRowSet1, 0);
 
-  // Next, should fetch the newer layer
+  // Next, should fetch the newer rowset
   ASSERT_TRUE(iter->HasNext());
   ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
-  ASSERT_EQ(1, block.nrows()) << "should get only the one row from layer 2";
-  this->VerifyRow(block.row_ptr(0), kInLayer2, 0);
+  ASSERT_EQ(1, block.nrows()) << "should get only the one row from rowset 2";
+  this->VerifyRow(block.row_ptr(0), kInRowSet2, 0);
 
   ASSERT_FALSE(iter->HasNext());
 }
 
 // Test iterating over a tablet which has a memstore
-// and several layers, each with many rows of data.
+// and several rowsets, each with many rows of data.
 TYPED_TEST(TestTablet, TestRowIteratorComplex) {
-  // Put a row in disk layer 1 (insert and flush)
+  // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
   unordered_set<uint32_t> inserted;
   for (uint32_t i = 0; i < 1000; i++) {
@@ -187,7 +187,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   }
   LOG(INFO) << "Successfully inserted " << inserted.size() << " rows";
 
-  // At this point, we should have several layers as well
+  // At this point, we should have several rowsets as well
   // as some data in memstore.
 
   // Update a subset of the rows
@@ -285,11 +285,11 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   ASSERT_EQ(this->setup_.FormatDebugRow(0, 6), out_rows[0]);
 
 
-  // Force a compaction after adding a new layer with one row.
+  // Force a compaction after adding a new rowset with one row.
   this->InsertTestRows(1, 1);
   ASSERT_STATUS_OK(this->tablet_->Flush());
   ASSERT_STATUS_OK(this->tablet_->Compact());
-  ASSERT_EQ(1, this->tablet_->num_layers());
+  ASSERT_EQ(1, this->tablet_->num_rowsets());
 
   // Should still see most recent value.
   out_rows.clear();
@@ -301,15 +301,15 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
 
 TYPED_TEST(TestTablet, TestCompaction) {
   uint64_t n_rows = FLAGS_testcompaction_num_rows;
-  // Create three layers by inserting and flushing
+  // Create three rowsets by inserting and flushing
   LOG_TIMING(INFO, "Inserting rows") {
     this->InsertTestRows(0, n_rows);
 
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 0);
-    ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
+    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -317,8 +317,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 1);
-    ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 1);
+    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -326,23 +326,23 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 2);
-    ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 2);
+    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
   }
 
   // Issue compaction
   LOG_TIMING(INFO, "Compacting rows") {
     ASSERT_STATUS_OK(this->tablet_->Compact());
     ASSERT_EQ(n_rows * 3, this->TabletCount());
-    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, 3);
-    ASSERT_FILE_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
-    ASSERT_FILE_EXISTS(this->env_, Layer::GetBloomPath(layer_dir_))
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 3);
+    ASSERT_FILE_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_FILE_EXISTS(this->env_, RowSet::GetBloomPath(rowset_dir_))
   }
 
-  // Old layers should not exist anymore
+  // Old rowsets should not exist anymore
   for (int i = 0; i <= 2; i++) {
-    string layer_dir_ = Tablet::GetLayerPath(this->tablet_dir_, i);
-    ASSERT_FILE_NOT_EXISTS(this->env_, Layer::GetColumnPath(layer_dir_, 0));
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, i);
+    ASSERT_FILE_NOT_EXISTS(this->env_, RowSet::GetColumnPath(rowset_dir_, 0));
   }
 }
 
@@ -382,7 +382,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
       return Status::OK();
     }
 
-    Status PostSwapInDuplicatingLayer() {
+    Status PostSwapInDuplicatingRowSet() {
       test_->InsertTestRows(7, 1);
       test_->UpdateTestRow(2, 12345);
       test_->CheckCanIterate();
@@ -396,7 +396,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
       return Status::OK();
     }
 
-    Status PostSwapNewLayer() {
+    Status PostSwapNewRowSet() {
       test_->InsertTestRows(9, 1);
       test_->UpdateTestRow(4, 12345);
       test_->CheckCanIterate();
@@ -437,7 +437,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 // Test for compaction with concurrent update and insert during the
 // various phases.
 TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
-  // Create three layers by inserting and flushing
+  // Create three rowsets by inserting and flushing
   this->InsertTestRows(0, 1);
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
@@ -478,7 +478,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
       return Status::OK();
     }
 
-    Status PostSwapInDuplicatingLayer() {
+    Status PostSwapInDuplicatingRowSet() {
       test_->InsertTestRows(6, 1);
       test_->UpdateTestRow(2, 12345);
 
@@ -493,7 +493,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
       return Status::OK();
     }
 
-    Status PostSwapNewLayer() {
+    Status PostSwapNewRowSet() {
       test_->InsertTestRows(8, 1);
       test_->UpdateTestRow(4, 12345);
       test_->CheckCanIterate();

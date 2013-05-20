@@ -27,30 +27,30 @@ using cfile::ReaderOptions;
 using std::string;
 using std::tr1::shared_ptr;
 
-const char *Layer::kDeltaPrefix = "delta_";
-const char *Layer::kColumnPrefix = "col_";
-const char *Layer::kBloomFileName = "bloom";
-const char *Layer::kTmpLayerSuffix = ".tmp";
+const char *RowSet::kDeltaPrefix = "delta_";
+const char *RowSet::kColumnPrefix = "col_";
+const char *RowSet::kBloomFileName = "bloom";
+const char *RowSet::kTmpRowSetSuffix = ".tmp";
 
 // Return the path at which the given column's cfile
-// is stored within the layer directory.
-string Layer::GetColumnPath(const string &dir,
+// is stored within the rowset directory.
+string RowSet::GetColumnPath(const string &dir,
                             int col_idx) {
   return dir + "/" + kColumnPrefix +
     boost::lexical_cast<string>(col_idx);
 }
 
 // Return the path at which the given delta file
-// is stored within the layer directory.
-string Layer::GetDeltaPath(const string &dir,
+// is stored within the rowset directory.
+string RowSet::GetDeltaPath(const string &dir,
                            int delta_idx) {
   return dir + "/" + kDeltaPrefix +
     boost::lexical_cast<string>(delta_idx);
 }
 
 // Return the path at which the bloom filter
-// is stored within the layer directory.
-string Layer::GetBloomPath(const string &dir) {
+// is stored within the rowset directory.
+string RowSet::GetBloomPath(const string &dir) {
   return dir + "/" + kBloomFileName;
 }
 
@@ -105,10 +105,10 @@ private:
   size_t batch_size_;
 };
 
-Status LayerWriter::Open() {
+Status RowSetWriter::Open() {
   CHECK(cfile_writers_.empty());
 
-  // Create the directory for the new layer
+  // Create the directory for the new rowset
   RETURN_NOT_OK(env_->CreateDir(dir_));
 
   // Open columns.
@@ -130,7 +130,7 @@ Status LayerWriter::Open() {
     // the corresponding rows.
     opts.write_posidx = true;
 
-    string path = Layer::GetColumnPath(dir_, i);
+    string path = RowSet::GetColumnPath(dir_, i);
 
     // Open file for write.
     shared_ptr<WritableFile> out;
@@ -168,15 +168,15 @@ Status LayerWriter::Open() {
   return Status::OK();
 }
 
-Status LayerWriter::InitBloomFileWriter() {
-  string path(Layer::GetBloomPath(dir_));
+Status RowSetWriter::InitBloomFileWriter() {
+  string path(RowSet::GetBloomPath(dir_));
   shared_ptr<WritableFile> file;
   RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
   bloom_writer_.reset(new BloomFileWriter(file, bloom_sizing_));
   return bloom_writer_->Start();
 }
 
-Status LayerWriter::WriteRow(const Slice &row) {
+Status RowSetWriter::WriteRow(const Slice &row) {
   CHECK(!finished_);
   DCHECK_EQ(row.size(), schema_.byte_size());
 
@@ -192,7 +192,7 @@ Status LayerWriter::WriteRow(const Slice &row) {
 }
 
 
-Status LayerWriter::AppendBlock(const RowBlock &block) {
+Status RowSetWriter::AppendBlock(const RowBlock &block) {
   DCHECK_EQ(block.schema().num_columns(), schema_.num_columns());
   CHECK(!finished_);
 
@@ -231,7 +231,7 @@ Status LayerWriter::AppendBlock(const RowBlock &block) {
   return Status::OK();
 }
 
-Status LayerWriter::Finish() {
+Status RowSetWriter::Finish() {
   CHECK(!finished_);
   for (int i = 0; i < schema_.num_columns(); i++) {
     cfile::Writer &writer = cfile_writers_[i];
@@ -260,31 +260,31 @@ Status LayerWriter::Finish() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status Layer::Open(Env *env,
+Status RowSet::Open(Env *env,
                    const Schema &schema,
-                   const string &layer_dir,
-                   shared_ptr<Layer> *layer) {
-  shared_ptr<Layer> l(new Layer(env, schema, layer_dir));
+                   const string &rowset_dir,
+                   shared_ptr<RowSet> *rowset) {
+  shared_ptr<RowSet> rs(new RowSet(env, schema, rowset_dir));
 
-  RETURN_NOT_OK(l->Open());
+  RETURN_NOT_OK(rs->Open());
 
-  layer->swap(l);
+  rowset->swap(rs);
   return Status::OK();
 }
 
 
-Layer::Layer(Env *env,
+RowSet::RowSet(Env *env,
              const Schema &schema,
-             const string &layer_dir) :
+             const string &rowset_dir) :
     env_(env),
     schema_(schema),
-    dir_(layer_dir),
+    dir_(rowset_dir),
     open_(false),
-    delta_tracker_(new DeltaTracker(env, schema, layer_dir))
+    delta_tracker_(new DeltaTracker(env, schema, rowset_dir))
 {}
 
 
-Status Layer::Open() {
+Status RowSet::Open() {
   gscoped_ptr<CFileSet> new_base(
     new CFileSet(env_, dir_, schema_));
   RETURN_NOT_OK(new_base->OpenAllColumns());
@@ -297,11 +297,11 @@ Status Layer::Open() {
   return Status::OK();
 }
 
-Status Layer::FlushDeltas() {
+Status RowSet::FlushDeltas() {
   return delta_tracker_->Flush();
 }
 
-RowwiseIterator *Layer::NewRowIterator(const Schema &projection,
+RowwiseIterator *RowSet::NewRowIterator(const Schema &projection,
                                        const MvccSnapshot &mvcc_snap) const {
   CHECK(open_);
   //boost::shared_lock<boost::shared_mutex> lock(component_lock_);
@@ -313,11 +313,11 @@ RowwiseIterator *Layer::NewRowIterator(const Schema &projection,
                                                                 mvcc_snap)));
 }
 
-CompactionInput *Layer::NewCompactionInput(const MvccSnapshot &snap) const  {
+CompactionInput *RowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
   return CompactionInput::Create(*this, snap);
 }
 
-Status Layer::UpdateRow(txid_t txid,
+Status RowSet::UpdateRow(txid_t txid,
                         const void *key,
                         const RowChangeList &update) {
   CHECK(open_);
@@ -329,33 +329,33 @@ Status Layer::UpdateRow(txid_t txid,
   return Status::OK();
 }
 
-Status Layer::CheckRowPresent(const LayerKeyProbe &probe,
+Status RowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                               bool *present) const {
   CHECK(open_);
 
   return base_data_->CheckRowPresent(probe, present);
 }
 
-Status Layer::CountRows(rowid_t *count) const {
+Status RowSet::CountRows(rowid_t *count) const {
   CHECK(open_);
 
   return base_data_->CountRows(count);
 }
 
-uint64_t Layer::EstimateOnDiskSize() const {
+uint64_t RowSet::EstimateOnDiskSize() const {
   CHECK(open_);
   // TODO: should probably add the delta trackers as well.
   return base_data_->EstimateOnDiskSize();
 }
 
 
-Status Layer::Delete() {
+Status RowSet::Delete() {
   string tmp_path = dir_ + ".deleting";
   RETURN_NOT_OK(env_->RenameFile(dir_, tmp_path));
   return env_->DeleteRecursively(tmp_path);
 }
 
-Status Layer::RenameLayerDir(const string &new_dir) {
+Status RowSet::RenameRowSetDir(const string &new_dir) {
   RETURN_NOT_OK(env_->RenameFile(dir_, new_dir));
   dir_ = new_dir;
   return Status::OK();
@@ -363,47 +363,47 @@ Status Layer::RenameLayerDir(const string &new_dir) {
 
 ////////////////////////////////////////
 
-DuplicatingLayer::DuplicatingLayer(const vector<shared_ptr<LayerInterface> > &old_layers,
-                                   const shared_ptr<LayerInterface> &new_layer) :
-  old_layers_(old_layers),
-  new_layer_(new_layer)
+DuplicatingRowSet::DuplicatingRowSet(const vector<shared_ptr<RowSetInterface> > &old_rowsets,
+                                   const shared_ptr<RowSetInterface> &new_rowset) :
+  old_rowsets_(old_rowsets),
+  new_rowset_(new_rowset)
 {
-  CHECK_GT(old_layers_.size(), 0);
+  CHECK_GT(old_rowsets_.size(), 0);
   always_locked_.lock();
 }
 
-DuplicatingLayer::~DuplicatingLayer() {
+DuplicatingRowSet::~DuplicatingRowSet() {
   always_locked_.unlock();
 }
 
-string DuplicatingLayer::ToString() const {
+string DuplicatingRowSet::ToString() const {
   string ret;
-  ret.append("DuplicatingLayer([");
+  ret.append("DuplicatingRowSet([");
   bool first = true;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, old_layers_) {
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, old_rowsets_) {
     if (!first) {
       ret.append(", ");
     }
     first = false;
-    ret.append(l->ToString());
+    ret.append(rs->ToString());
   }
   ret.append("] + ");
-  ret.append(new_layer_->ToString());
+  ret.append(new_rowset_->ToString());
   ret.append(")");
   return ret;
 }
 
-RowwiseIterator *DuplicatingLayer::NewRowIterator(const Schema &projection,
+RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema &projection,
                                                   const MvccSnapshot &snap) const {
-  // Use the original layer.
-  if (old_layers_.size() == 1) {
-    return old_layers_[0]->NewRowIterator(projection, snap);
+  // Use the original rowset.
+  if (old_rowsets_.size() == 1) {
+    return old_rowsets_[0]->NewRowIterator(projection, snap);
   } else {
     // Union between them
 
     vector<shared_ptr<RowwiseIterator> > iters;
-    BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, old_layers_) {
-      shared_ptr<RowwiseIterator> iter(layer->NewRowIterator(projection, snap));
+    BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, old_rowsets_) {
+      shared_ptr<RowwiseIterator> iter(rowset->NewRowIterator(projection, snap));
       iters.push_back(iter);
     }
 
@@ -411,50 +411,50 @@ RowwiseIterator *DuplicatingLayer::NewRowIterator(const Schema &projection,
   }
 }
 
-CompactionInput *DuplicatingLayer::NewCompactionInput(const MvccSnapshot &snap) const  {
-  LOG(FATAL) << "duplicating layers do not act as compaction input";
+CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
+  LOG(FATAL) << "duplicating rowsets do not act as compaction input";
   return NULL;
 }
 
 
-Status DuplicatingLayer::UpdateRow(txid_t txid,
+Status DuplicatingRowSet::UpdateRow(txid_t txid,
                                        const void *key,
                                        const RowChangeList &update) {
-  // First update the new layer
-  RETURN_NOT_OK(new_layer_->UpdateRow(txid, key, update));
+  // First update the new rowset
+  RETURN_NOT_OK(new_rowset_->UpdateRow(txid, key, update));
 
-  // If it succeeded there, we also need to mirror into the old layer.
-  // Duplicate the update to both the relevant input layer and the output layer.
-  // First propagate to the relevant input layer.
+  // If it succeeded there, we also need to mirror into the old rowset.
+  // Duplicate the update to both the relevant input rowset and the output rowset.
+  // First propagate to the relevant input rowset.
   bool updated = false;
-  BOOST_FOREACH(shared_ptr<LayerInterface> &layer, old_layers_) {
-    Status s = layer->UpdateRow(txid, key, update);
+  BOOST_FOREACH(shared_ptr<RowSetInterface> &rowset, old_rowsets_) {
+    Status s = rowset->UpdateRow(txid, key, update);
     if (s.ok()) {
       updated = true;
       break;
     } else if (!s.IsNotFound()) {
       LOG(ERROR) << "Unable to update key "
                  << schema().CreateKeyProjection().DebugRow(key)
-                 << " (failed on layer " << layer->ToString() << "): "
+                 << " (failed on rowset " << rowset->ToString() << "): "
                  << s.ToString();
       return s;
     }
   }
 
   if (!updated) {
-    LOG(DFATAL) << "Found row in compaction output but not in any input layer: "
+    LOG(DFATAL) << "Found row in compaction output but not in any input rowset: "
                 << schema().CreateKeyProjection().DebugRow(key);
-    return Status::NotFound("not found in any input layer of compaction");
+    return Status::NotFound("not found in any input rowset of compaction");
   }
 
   return Status::OK();
 }
 
-Status DuplicatingLayer::CheckRowPresent(const LayerKeyProbe &probe,
+Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                               bool *present) const {
   *present = false;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, old_layers_) {
-    RETURN_NOT_OK(layer->CheckRowPresent(probe, present));
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, old_rowsets_) {
+    RETURN_NOT_OK(rowset->CheckRowPresent(probe, present));
     if (present) {
       return Status::OK();
     }
@@ -462,17 +462,17 @@ Status DuplicatingLayer::CheckRowPresent(const LayerKeyProbe &probe,
   return Status::OK();
 }
 
-Status DuplicatingLayer::CountRows(rowid_t *count) const {
-  return new_layer_->CountRows(count);
+Status DuplicatingRowSet::CountRows(rowid_t *count) const {
+  return new_rowset_->CountRows(count);
 }
 
-uint64_t DuplicatingLayer::EstimateOnDiskSize() const {
+uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.
-  return new_layer_->EstimateOnDiskSize();
+  return new_rowset_->EstimateOnDiskSize();
 }
 
-Status DuplicatingLayer::Delete() {
+Status DuplicatingRowSet::Delete() {
   LOG(FATAL) << "Unsupported op";
   return Status::NotSupported("");
 }

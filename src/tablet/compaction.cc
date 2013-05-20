@@ -62,10 +62,10 @@ class MemstoreCompactionInput : boost::noncopyable, public CompactionInput {
 
 ////////////////////////////////////////////////////////////
 
-// CompactionInput yielding rows and mutations from an on-disk Layer.
-class LayerCompactionInput : boost::noncopyable, public CompactionInput {
+// CompactionInput yielding rows and mutations from an on-disk RowSet.
+class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
  public:
-  LayerCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
+  RowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
                        shared_ptr<DeltaIteratorInterface> delta_iter) :
     base_iter_(base_iter.Pass()),
     delta_iter_(delta_iter),
@@ -275,14 +275,14 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
 
 ////////////////////////////////////////////////////////////
 
-CompactionInput *CompactionInput::Create(const Layer &layer,
+CompactionInput *CompactionInput::Create(const RowSet &rowset,
                                          const MvccSnapshot &snap) {
 
-  shared_ptr<ColumnwiseIterator> base_cwise(layer.base_data_->NewIterator(layer.schema()));
+  shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(rowset.schema()));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
-  shared_ptr<DeltaIteratorInterface> deltas(layer.delta_tracker_->NewDeltaIterator(layer.schema(), snap));
+  shared_ptr<DeltaIteratorInterface> deltas(rowset.delta_tracker_->NewDeltaIterator(rowset.schema(), snap));
 
-  return new LayerCompactionInput(base_iter.Pass(), deltas);
+  return new RowSetCompactionInput(base_iter.Pass(), deltas);
 }
 
 CompactionInput *CompactionInput::Create(const MemStore &memstore,
@@ -296,11 +296,11 @@ CompactionInput *CompactionInput::Merge(const vector<shared_ptr<CompactionInput>
 }
 
 
-Status LayersInCompaction::CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
+Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
                                                  shared_ptr<CompactionInput> *out) const {
   vector<shared_ptr<CompactionInput> > inputs;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-    shared_ptr<CompactionInput> input(l->NewCompactionInput(snap));
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+    shared_ptr<CompactionInput> input(rs->NewCompactionInput(snap));
     inputs.push_back(input);
   }
 
@@ -313,11 +313,11 @@ Status LayersInCompaction::CreateCompactionInput(const MvccSnapshot &snap, const
   return Status::OK();
 }
 
-void LayersInCompaction::DumpToLog() const {
-  LOG(INFO) << "Selected " << layers_.size() << " layers to compact:";
-  // Dump the selected layers to the log, and collect corresponding iterators.
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-    LOG(INFO) << l->ToString() << "(" << l->EstimateOnDiskSize() << " bytes)";
+void RowSetsInCompaction::DumpToLog() const {
+  LOG(INFO) << "Selected " << rowsets_.size() << " rowsets to compact:";
+  // Dump the selected rowsets to the log, and collect corresponding iterators.
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+    LOG(INFO) << rs->ToString() << "(" << rs->EstimateOnDiskSize() << " bytes)";
   }
 }
 
@@ -338,7 +338,7 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mut
   return Status::OK();
 }
 
-Status Flush(CompactionInput *input, LayerWriter *out) {
+Status Flush(CompactionInput *input, RowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
@@ -407,7 +407,7 @@ Status ReupdateMissedDeltas(CompactionInput *input,
           DVLOG(2) << "Skipping already-duplicated delta for row " << row_idx
                    << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
 
-          // Already duplicated into the new layer, no need to transfer it over.
+          // Already duplicated into the new rowset, no need to transfer it over.
           continue;
         }
 

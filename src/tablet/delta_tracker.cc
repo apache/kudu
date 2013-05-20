@@ -31,7 +31,7 @@ DeltaTracker::DeltaTracker(Env *env,
 {}
 
 
-// Open any previously flushed DeltaFiles in this layer
+// Open any previously flushed DeltaFiles in this rowset
 Status DeltaTracker::Open() {
   CHECK(delta_trackers_.empty()) << "should call before opening any readers";
   CHECK(!open_);
@@ -45,7 +45,7 @@ Status DeltaTracker::Open() {
     string absolute_path = env_->JoinPathSegments(dir_, child);
 
     string suffix;
-    if (TryStripPrefixString(child, Layer::kDeltaPrefix, &suffix)) {
+    if (TryStripPrefixString(child, RowSet::kDeltaPrefix, &suffix)) {
       // The file should be named 'delta_<N>'. N here is the index
       // of the delta file (indicating the order in which it was flushed).
       uint32_t deltafile_idx;
@@ -66,7 +66,7 @@ Status DeltaTracker::Open() {
 
       next_deltafile_idx_ = std::max(next_deltafile_idx_,
                                      deltafile_idx + 1);
-    } else if (TryStripPrefixString(child, Layer::kColumnPrefix, &suffix)) {
+    } else if (TryStripPrefixString(child, RowSet::kColumnPrefix, &suffix)) {
       // expected: column data
     } else {
       LOG(WARNING) << "ignoring unknown file: " << absolute_path;
@@ -108,7 +108,7 @@ void DeltaTracker::Update(txid_t txid, rowid_t row_idx, const RowChangeList &upd
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {
   int deltafile_idx = next_deltafile_idx_++;
-  string path = Layer::GetDeltaPath(dir_, deltafile_idx);
+  string path = RowSet::GetDeltaPath(dir_, deltafile_idx);
 
   // Open file for write.
   shared_ptr<WritableFile> out;

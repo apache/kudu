@@ -32,13 +32,13 @@ using std::vector;
 using std::tr1::shared_ptr;
 
 
-const char *kLayerPrefix = "layer_";
+const char *kRowSetPrefix = "rowset_";
 
-string Tablet::GetLayerPath(const string &tablet_dir,
-                            int layer_idx) {
-  return StringPrintf("%s/layer_%010d",
+string Tablet::GetRowSetPath(const string &tablet_dir,
+                            int rowset_idx) {
+  return StringPrintf("%s/rowset_%010d",
                       tablet_dir.c_str(),
-                      layer_idx);
+                      rowset_idx);
 }
 
 Tablet::Tablet(const Schema &schema,
@@ -46,7 +46,7 @@ Tablet::Tablet(const Schema &schema,
   schema_(schema),
   dir_(dir),
   memstore_(new MemStore(schema)),
-  next_layer_idx_(0),
+  next_rowset_idx_(0),
   env_(Env::Default()),
   open_(false)
 {
@@ -74,25 +74,25 @@ Status Tablet::Open() {
     string absolute_path = env_->JoinPathSegments(dir_, child);
 
     string suffix;
-    if (TryStripPrefixString(child, kLayerPrefix, &suffix)) {
-      // The file should be named 'layer_<N>'. N here is the index
-      // of the layer (indicating the order in which it was flushed).
-      uint32_t layer_idx;
-      if (!safe_strtou32(suffix.c_str(), &layer_idx)) {
-        return Status::IOError(string("Bad layer file: ") + absolute_path);
+    if (TryStripPrefixString(child, kRowSetPrefix, &suffix)) {
+      // The file should be named 'rowset_<N>'. N here is the index
+      // of the rowset (indicating the order in which it was flushed).
+      uint32_t rowset_idx;
+      if (!safe_strtou32(suffix.c_str(), &rowset_idx)) {
+        return Status::IOError(string("Bad rowset file: ") + absolute_path);
       }
 
-      shared_ptr<Layer> layer;
-      Status s = Layer::Open(env_, schema_, absolute_path, &layer);
+      shared_ptr<RowSet> rowset;
+      Status s = RowSet::Open(env_, schema_, absolute_path, &rowset);
       if (!s.ok()) {
-        LOG(ERROR) << "Failed to open layer " << absolute_path << ": "
+        LOG(ERROR) << "Failed to open rowset " << absolute_path << ": "
                    << s.ToString();
         return s;
       }
-      layers_.push_back(layer);
+      rowsets_.push_back(rowset);
 
-      next_layer_idx_ = std::max(next_layer_idx_,
-                                 (size_t)layer_idx + 1);
+      next_rowset_idx_ = std::max(next_rowset_idx_,
+                                 (size_t)rowset_idx + 1);
     } else {
       LOG(WARNING) << "ignoring unknown file: " << absolute_path;
     }
@@ -132,16 +132,16 @@ Status Tablet::NewRowIterator(const Schema &projection,
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
-  LayerKeyProbe probe(schema_, data.data());
+  RowSetKeyProbe probe(schema_, data.data());
 
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // First, ensure that it is a unique key by checking all the open
-  // Layers
+  // RowSets
   if (FLAGS_tablet_do_dup_key_checks) {
     bool present;
-    RETURN_NOT_OK(tablet_util::CheckRowPresentInAnyLayer(
-                    layers_, probe, &present));
+    RETURN_NOT_OK(tablet_util::CheckRowPresentInAnyRowSet(
+                    rowsets_, probe, &present));
     if (present) {
       return Status::AlreadyPresent("key already present");
     }
@@ -168,11 +168,11 @@ Status Tablet::UpdateRow(const void *key,
     return s;
   }
 
-  // TODO: could iterate the layers in a smart order
-  // based on recent statistics - eg if a layer is getting
+  // TODO: could iterate the rowsets in a smart order
+  // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
-  BOOST_FOREACH(shared_ptr<LayerInterface> &l, layers_) {
-    s = l->UpdateRow(tx.txid(), key, update);
+  BOOST_FOREACH(shared_ptr<RowSetInterface> &rs, rowsets_) {
+    s = rs->UpdateRow(tx.txid(), key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
       return s;
@@ -182,44 +182,44 @@ Status Tablet::UpdateRow(const void *key,
   return Status::NotFound("key not found");
 }
 
-void Tablet::AtomicSwapLayers(const LayerVector old_layers,
-                              const shared_ptr<LayerInterface> &new_layer,
+void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
+                              const shared_ptr<RowSetInterface> &new_rowset,
                               MvccSnapshot *snap_under_lock = NULL) {
-  LayerVector new_layers;
+  RowSetVector new_rowsets;
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
-  // O(n^2) diff algorithm to collect the set of layers excluding
-  // the layers that were included in the compaction
+  // O(n^2) diff algorithm to collect the set of rowsets excluding
+  // the rowsets that were included in the compaction
   int num_replaced = 0;
 
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
     // Determine if it should be removed
     bool should_remove = false;
-    BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, old_layers) {
-      if (l_input == l) {
+    BOOST_FOREACH(const shared_ptr<RowSetInterface> &l_input, old_rowsets) {
+      if (l_input == rs) {
         should_remove = true;
         num_replaced++;
         break;
       }
     }
     if (!should_remove) {
-      new_layers.push_back(l);
+      new_rowsets.push_back(rs);
     }
   }
 
-  CHECK_EQ(num_replaced, old_layers.size());
+  CHECK_EQ(num_replaced, old_rowsets.size());
 
-  // Then push the new layer on the end.
-  new_layers.push_back(new_layer);
+  // Then push the new rowset on the end.
+  new_rowsets.push_back(new_rowset);
 
-  layers_.swap(new_layers);
+  rowsets_.swap(new_rowsets);
 
   if (snap_under_lock != NULL) {
     // TODO: is there some race here where transactions that are "uncommitted"
-    // in this snapshot may still end up writing into the "old" layer? probably,
+    // in this snapshot may still end up writing into the "old" rowset? probably,
     // since transaction scope is outside of the update lock scope. Instead, we
     // probably want to just wait around for a while after doing the swap, until
-    // all live transactions that might have written into the pre-swap layer are
+    // all live transactions that might have written into the pre-swap rowset are
     // committed, and then use that state.
     *snap_under_lock = MvccSnapshot(mvcc_);
   }
@@ -228,11 +228,11 @@ void Tablet::AtomicSwapLayers(const LayerVector old_layers,
 Status Tablet::Flush() {
   CHECK(open_);
 
-  LayersInCompaction input;
+  RowSetsInCompaction input;
   uint64_t start_insert_count;
 
   // Step 1. Freeze the old memstore by blocking readers and swapping
-  // it in as a new layer, replacing it with an empty one.
+  // it in as a new rowset, replacing it with an empty one.
 
   // TODO(perf): there's a memstore.Freeze() call which we might be able to
   // use to improve iteration performance during the flush. The old design
@@ -257,15 +257,15 @@ Status Tablet::Flush() {
       return Status::OK();
     }
 
-    // Mark the memstore layer as locked, so compactions won't consider it
+    // Mark the memstore rowset as locked, so compactions won't consider it
     // for inclusion in any concurrent compactions.
     shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
       new boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
     CHECK(ms_lock->owns_lock());
-    input.AddLayer(old_ms, ms_lock);
+    input.AddRowSet(old_ms, ms_lock);
 
-    // Put it back on the layer list.
-    layers_.push_back(old_ms);
+    // Put it back on the rowset list.
+    rowsets_.push_back(old_ms);
   }
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemStore());
 
@@ -298,39 +298,39 @@ void Tablet::SetFlushCompactCommonHooksForTests(
   common_hooks_ = hooks;
 }
 
-static bool CompareBySize(const shared_ptr<LayerInterface> &a,
-                          const shared_ptr<LayerInterface> &b) {
+static bool CompareBySize(const shared_ptr<RowSetInterface> &a,
+                          const shared_ptr<RowSetInterface> &b) {
   return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
 }
 
 
-Status Tablet::PickLayersToCompact(LayersInCompaction *picked) const
+Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const
 {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  CHECK_EQ(picked->num_layers(), 0);
+  CHECK_EQ(picked->num_rowsets(), 0);
 
-  vector<shared_ptr<LayerInterface> > tmp_layers;
-  tmp_layers.assign(layers_.begin(), layers_.end());
+  vector<shared_ptr<RowSetInterface> > tmp_rowsets;
+  tmp_rowsets.assign(rowsets_.begin(), rowsets_.end());
 
-  // Sort the layers by their on-disk size
-  std::sort(tmp_layers.begin(), tmp_layers.end(), CompareBySize);
+  // Sort the rowsets by their on-disk size
+  std::sort(tmp_rowsets.begin(), tmp_rowsets.end(), CompareBySize);
   uint64_t accumulated_size = 0;
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, tmp_layers) {
-    uint64_t this_size = l->EstimateOnDiskSize();
-    if (picked->num_layers() < 2 || this_size < accumulated_size * 2) {
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, tmp_rowsets) {
+    uint64_t this_size = rs->EstimateOnDiskSize();
+    if (picked->num_rowsets() < 2 || this_size < accumulated_size * 2) {
       // Grab the compact_flush_lock: this prevents any other concurrent
-      // compaction from selecting this same layer, and also ensures that
-      // we don't select a layer which is currently in the middle of being
+      // compaction from selecting this same rowset, and also ensures that
+      // we don't select a rowset which is currently in the middle of being
       // flushed.
       shared_ptr<boost::mutex::scoped_try_lock> lock(
-        new boost::mutex::scoped_try_lock(*l->compact_flush_lock()));
+        new boost::mutex::scoped_try_lock(*rs->compact_flush_lock()));
       if (!lock->owns_lock()) {
-        LOG(INFO) << "Unable to select " << l->ToString() << " for compaction: it is busy";
+        LOG(INFO) << "Unable to select " << rs->ToString() << " for compaction: it is busy";
         continue;
       }
 
       // Push the lock on our scoped list, so we unlock when done.
-      picked->AddLayer(l, lock);
+      picked->AddRowSet(rs, lock);
       accumulated_size += this_size;
     } else {
       break;
@@ -340,9 +340,9 @@ Status Tablet::PickLayersToCompact(LayersInCompaction *picked) const
   return Status::OK();
 }
 
-Status Tablet::DoCompactionOrFlush(const LayersInCompaction &input) {
-  string new_layer_dir = GetLayerPath(dir_, next_layer_idx_++);
-  string tmp_layer_dir = new_layer_dir + ".compact-tmp";
+Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
+  string new_rowset_dir = GetRowSetPath(dir_, next_rowset_idx_++);
+  string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
   MvccSnapshot flush_snap(mvcc_);
@@ -350,63 +350,63 @@ Status Tablet::DoCompactionOrFlush(const LayersInCompaction &input) {
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
-  LayerWriter lw(env_, schema_, tmp_layer_dir, bloom_sizing());
+  RowSetWriter lw(env_, schema_, tmp_rowset_dir, bloom_sizing());
   RETURN_NOT_OK(lw.Open());
   RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &lw));
   RETURN_NOT_OK(lw.Finish());
 
-  // Open the written-out snapshot as a new layer.
-  shared_ptr<Layer> new_layer;
-  Status s = Layer::Open(env_, schema_, tmp_layer_dir, &new_layer);
+  // Open the written-out snapshot as a new rowset.
+  shared_ptr<RowSet> new_rowset;
+  Status s = RowSet::Open(env_, schema_, tmp_rowset_dir, &new_rowset);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to open snapshot compaction results in " << tmp_layer_dir
+    LOG(WARNING) << "Unable to open snapshot compaction results in " << tmp_rowset_dir
                  << ": " << s.ToString();
     return s;
   }
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
 
-  // Finished Phase 1. Start duplicating any new updates into the new on-disk layer.
+  // Finished Phase 1. Start duplicating any new updates into the new on-disk rowset.
   //
-  // During Phase 1, we may have missed some updates which came into the input layers
+  // During Phase 1, we may have missed some updates which came into the input rowsets
   // while we were writing. So, we can't immediately start reading from the on-disk
-  // layer alone. Starting here, we continue to read from the original layer(s), but
+  // rowset alone. Starting here, we continue to read from the original rowset(s), but
   // mirror updates to both the input and the output data.
   //
-  LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new layer)";
-  shared_ptr<DuplicatingLayer> inprogress_layer(new DuplicatingLayer(input.layers(), new_layer));
+  LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new rowset)";
+  shared_ptr<DuplicatingRowSet> inprogress_rowset(new DuplicatingRowSet(input.rowsets(), new_rowset));
   MvccSnapshot snap2;
-  AtomicSwapLayers(input.layers(), inprogress_layer, &snap2);
+  AtomicSwapRowSets(input.rowsets(), inprogress_rowset, &snap2);
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingLayer());
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingRowSet());
 
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
-  // memstore, but not in the new layer. Here we re-scan the memstore, copying those
-  // missed updates into the new layer's DeltaTracker.
+  // memstore, but not in the new rowset. Here we re-scan the memstore, copying those
+  // missed updates into the new rowset's DeltaTracker.
   //
   // TODO: is there some bug here? Here's a potentially bad scenario:
   // - during flush, txid 1 updates a flushed row
   // - At the beginning of step 4, txid 2 updates the same flushed row, followed by ~1000
-  //   more updates against the new layer. This causes the new layer to flush its deltas
+  //   more updates against the new rowset. This causes the new rowset to flush its deltas
   //   before txid 1 is transferred to it.
-  // - Now the redos_0 deltafile in the new layer includes txid 2-1000, and the DMS is empty.
+  // - Now the redos_0 deltafile in the new rowset includes txid 2-1000, and the DMS is empty.
   // - This code proceeds, and pushes txid1 into the DMS.
   // - DMS eventually flushes again, and redos_1 includes an _earlier_ update than redos_0.
   // At read time, since we apply updates from the redo logs in order, we might end up reading
   // the earlier data instead of the later data.
   //
   // Potential solutions:
-  // 1) don't apply the changes in step 4 directly into the new layer's DMS. Instead, reserve
+  // 1) don't apply the changes in step 4 directly into the new rowset's DMS. Instead, reserve
   //    redos_0 for these edits, and write them directly to that file, even though it will likely
   //    be very small.
   // 2) at read time, as deltas are applied, keep track of the max txid for each of the columns
   //    and don't let an earlier update overwrite a later one.
-  // 3) don't allow DMS to flush in an in-progress layer.
+  // 3) don't allow DMS to flush in an in-progress rowset.
   LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
   RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
   RETURN_NOT_OK(merge->Init()); // TODO: why is init required here but not above?
-  RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_layer->delta_tracker_.get()));
+  RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_rowset->delta_tracker_.get()));
 
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
@@ -414,18 +414,18 @@ Status Tablet::DoCompactionOrFlush(const LayersInCompaction &input) {
   // ------------------------------
   // Flush to tmp was successful. Rename it to its real location.
 
-  RETURN_NOT_OK(new_layer->RenameLayerDir(new_layer_dir));
+  RETURN_NOT_OK(new_rowset->RenameRowSetDir(new_rowset_dir));
 
   LOG(INFO) << "Successfully flush/compacted " << lw.written_count() << " rows";
 
-  // Replace the compacted layers with the new on-disk layer.
-  AtomicSwapLayers(boost::assign::list_of(inprogress_layer), new_layer);
+  // Replace the compacted rowsets with the new on-disk rowset.
+  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowset);
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewLayer());
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
 
-  // Remove old layers
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l_input, input.layers()) {
-    LOG(INFO) << "Removing compaction input layer " << l_input->ToString();
+  // Remove old rowsets
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &l_input, input.rowsets()) {
+    LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
     RETURN_NOT_OK(l_input->Delete());
   }
 
@@ -436,12 +436,12 @@ Status Tablet::Compact()
 {
   CHECK(open_);
 
-  LOG(INFO) << "Compaction: entering stage 1 (collecting layers)";
-  LayersInCompaction input;
-  // Step 1. Capture the layers to be merged
-  RETURN_NOT_OK(PickLayersToCompact(&input));
-  if (input.num_layers() < 2) {
-    LOG(INFO) << "Not enough layers to run compaction! Aborting...";
+  LOG(INFO) << "Compaction: entering stage 1 (collecting rowsets)";
+  RowSetsInCompaction input;
+  // Step 1. Capture the rowsets to be merged
+  RETURN_NOT_OK(PickRowSetsToCompact(&input));
+  if (input.num_rowsets() < 2) {
+    LOG(INFO) << "Not enough rowsets to run compaction! Aborting...";
     return Status::OK();
   }
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
@@ -466,9 +466,9 @@ Status Tablet::CaptureConsistentIterators(
   shared_ptr<RowwiseIterator> ms_iter(memstore_->NewRowIterator(projection, snap));
   ret.push_back(ms_iter);
 
-  // Grab all layer iterators.
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &l, layers_) {
-    shared_ptr<RowwiseIterator> row_it(l->NewRowIterator(projection, snap));
+  // Grab all rowset iterators.
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rs, rowsets_) {
+    shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
     ret.push_back(row_it);
   }
 
@@ -480,28 +480,28 @@ Status Tablet::CaptureConsistentIterators(
 Status Tablet::CountRows(uint64_t *count) const {
   // First grab a consistent view of the components of the tablet.
   shared_ptr<MemStore> memstore;
-  vector<shared_ptr<LayerInterface> > layers;
+  vector<shared_ptr<RowSetInterface> > rowsets;
   {
     boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
     memstore = memstore_;
-    layers = layers_;
+    rowsets = rowsets_;
   }
 
   // Now sum up the counts.
   *count = memstore->entry_count();
 
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, layers) {
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, rowsets) {
     rowid_t l_count;
-    RETURN_NOT_OK(layer->CountRows(&l_count));
+    RETURN_NOT_OK(rowset->CountRows(&l_count));
     *count += l_count;
   }
 
   return Status::OK();
 }
 
-size_t Tablet::num_layers() const {
+size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  return layers_.size();
+  return rowsets_.size();
 }
 
 } // namespace table

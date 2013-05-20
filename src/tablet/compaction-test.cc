@@ -22,7 +22,7 @@ class TestCompaction : public KuduTest {
 
   virtual void SetUp() {
     KuduTest::SetUp();
-    layer_dir_ = GetTestPath("layer");
+    rowset_dir_ = GetTestPath("rowset");
   }
 
   // Insert n_rows rows of data.
@@ -43,7 +43,7 @@ class TestCompaction : public KuduTest {
   // Update n_rows rows of data.
   // Each row has the key (string key=hello <n*10 + delta>) and its 'val' column
   // is set to new_val.
-  void UpdateRows(LayerInterface *layer, int n_rows, int delta, uint32_t new_val) {
+  void UpdateRows(RowSetInterface *rowset, int n_rows, int delta, uint32_t new_val) {
     char keybuf[256];
     faststring update_buf;
     for (uint32_t i = 0; i < n_rows; i++) {
@@ -55,7 +55,7 @@ class TestCompaction : public KuduTest {
       update_buf.clear();
       RowChangeListEncoder update(schema_, &update_buf);
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK(layer->UpdateRow(tx.txid(), &key, RowChangeList(update_buf)));
+      ASSERT_STATUS_OK(rowset->UpdateRow(tx.txid(), &key, RowChangeList(update_buf)));
     }
   }
 
@@ -80,26 +80,26 @@ class TestCompaction : public KuduTest {
   }
 
   void DoFlush(CompactionInput *input, const string &out_dir) {
-    LayerWriter lw(env_.get(), schema_, out_dir,
+    RowSetWriter rsw(env_.get(), schema_, out_dir,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
-    ASSERT_STATUS_OK(lw.Open());
-    ASSERT_STATUS_OK(Flush(input, &lw));
-    ASSERT_STATUS_OK(lw.Finish());
-    ASSERT_FILE_EXISTS(env_, Layer::GetBloomPath(out_dir));
+    ASSERT_STATUS_OK(rsw.Open());
+    ASSERT_STATUS_OK(Flush(input, &rsw));
+    ASSERT_STATUS_OK(rsw.Finish());
+    ASSERT_FILE_EXISTS(env_, RowSet::GetBloomPath(out_dir));
   }
 
-  void FlushAndReopen(const MemStore &ms, const string &out_dir, shared_ptr<Layer> *l) {
+  void FlushAndReopen(const MemStore &ms, const string &out_dir, shared_ptr<RowSet> *rs) {
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(ms, MvccSnapshot(mvcc_)));
     DoFlush(input.get(), out_dir);
     // Re-open it
-    ASSERT_STATUS_OK(Layer::Open(env_.get(), schema_, out_dir, l));
+    ASSERT_STATUS_OK(RowSet::Open(env_.get(), schema_, out_dir, rs));
   }
 
  protected:
   MvccManager mvcc_;
   Schema schema_;
 
-  string layer_dir_;
+  string rowset_dir_;
 };
 
 TEST_F(TestCompaction, TestMemstoreInput) {
@@ -122,27 +122,27 @@ TEST_F(TestCompaction, TestMemstoreInput) {
             out[9]);
 }
 
-TEST_F(TestCompaction, TestLayerInput) {
+TEST_F(TestCompaction, TestRowSetInput) {
   // Create a memstore with a bunch of rows, flush and reopen.
-  shared_ptr<Layer> l;
+  shared_ptr<RowSet> rs;
   {
     shared_ptr<MemStore> ms(new MemStore(schema_));
     InsertRows(ms.get(), 10, 0);
-    FlushAndReopen(*ms, layer_dir_, &l);
+    FlushAndReopen(*ms, rowset_dir_, &rs);
     ASSERT_NO_FATAL_FAILURE();
   }
 
-  // Update the rows in the layer.
-  UpdateRows(l.get(), 10, 0, 1);
-  UpdateRows(l.get(), 10, 0, 2);
+  // Update the rows in the rowset.
+  UpdateRows(rs.get(), 10, 0, 1);
+  UpdateRows(rs.get(), 10, 0, 2);
   // Flush DMS, update some more.
-  ASSERT_STATUS_OK(l->FlushDeltas());
-  UpdateRows(l.get(), 10, 0, 3);
-  UpdateRows(l.get(), 10, 0, 4);
+  ASSERT_STATUS_OK(rs->FlushDeltas());
+  UpdateRows(rs.get(), 10, 0, 3);
+  UpdateRows(rs.get(), 10, 0, 4);
 
   // Check compaction input
   vector<string> out;
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*l, MvccSnapshot(mvcc_)));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*rs, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 000, uint32 val=0) "
@@ -154,8 +154,8 @@ TEST_F(TestCompaction, TestLayerInput) {
 }
 
 // Test case which doesn't do any merging -- just compacts
-// a single input layer (which may be the memstore) into a single
-// output layer (on disk).
+// a single input rowset (which may be the memstore) into a single
+// output rowset (on disk).
 TEST_F(TestCompaction, TestOneToOne) {
   // Create a memstore with a bunch of rows and updates.
   shared_ptr<MemStore> ms(new MemStore(schema_));
@@ -164,8 +164,8 @@ TEST_F(TestCompaction, TestOneToOne) {
   MvccSnapshot snap(mvcc_);
 
   // Flush it to disk and re-open.
-  shared_ptr<Layer> l;
-  FlushAndReopen(*ms, layer_dir_, &l);
+  shared_ptr<RowSet> rs;
+  FlushAndReopen(*ms, rowset_dir_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
   // Update the rows with some updates that weren't in the snapshot.
@@ -175,14 +175,14 @@ TEST_F(TestCompaction, TestOneToOne) {
   MvccSnapshot snap2(mvcc_);
   gscoped_ptr<CompactionInput> input(CompactionInput::Create(*ms, snap2));
 
-  // Add some more updates which come into the new layer while the "reupdate" is happening.
-  UpdateRows(l.get(), 1000, 0, 3);
+  // Add some more updates which come into the new rowset while the "reupdate" is happening.
+  UpdateRows(rs.get(), 1000, 0, 3);
 
-  ASSERT_STATUS_OK(ReupdateMissedDeltas(input.get(), snap, snap2, l->delta_tracker_.get()));
+  ASSERT_STATUS_OK(ReupdateMissedDeltas(input.get(), snap, snap2, rs->delta_tracker_.get()));
 
-  // If we look at the contents of the Layer now, we should see the "re-updated" data.
+  // If we look at the contents of the RowSet now, we should see the "re-updated" data.
   vector<string> out;
-  input.reset(CompactionInput::Create(*l, MvccSnapshot(mvcc_)));
+  input.reset(CompactionInput::Create(*rs, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   ASSERT_EQ("(string key=hello 000, uint32 val=1) mutations: [@2000(SET val=2), @3000(SET val=3)]",
@@ -190,42 +190,42 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);  
-  gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*l, snap3));
-  string compact_dir = GetTestPath("layer-compacted");
+  gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, snap3));
+  string compact_dir = GetTestPath("rowset-compacted");
   DoFlush(compact_input.get(), compact_dir);
 }
 
 TEST_F(TestCompaction, TestMerge) {
-  vector<shared_ptr<Layer> > layers;
+  vector<shared_ptr<RowSet> > rowsets;
 
-  // Create three input layers
+  // Create three input rowsets
   for (int delta = 0; delta < 3; delta++) {
     // Create a memstore with a bunch of rows and updates.
     shared_ptr<MemStore> ms(new MemStore(schema_));
     InsertRows(ms.get(), 1000, delta);
     UpdateRows(ms.get(), 1000, delta, 1);
 
-    string dir = GetTestPath(StringPrintf("layer-%d", delta));
+    string dir = GetTestPath(StringPrintf("rowset-%d", delta));
 
     // Flush it to disk and re-open it.
-    shared_ptr<Layer> l;
-    FlushAndReopen(*ms, dir, &l);
+    shared_ptr<RowSet> rs;
+    FlushAndReopen(*ms, dir, &rs);
     ASSERT_NO_FATAL_FAILURE();
-    layers.push_back(l);
+    rowsets.push_back(rs);
 
     // Perform some updates into DMS
-    UpdateRows(l.get(), 1000, delta, 2);
+    UpdateRows(rs.get(), 1000, delta, 2);
   }
 
   // Merge them.
   MvccSnapshot merge_snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs;
-  BOOST_FOREACH(const shared_ptr<Layer> &l, layers) {
-    merge_inputs.push_back(shared_ptr<CompactionInput>(CompactionInput::Create(*l, merge_snap)));
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets) {
+    merge_inputs.push_back(shared_ptr<CompactionInput>(CompactionInput::Create(*rs, merge_snap)));
   }
 
   gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, schema_));
-  string compact_dir = GetTestPath("layer-compacted");
+  string compact_dir = GetTestPath("rowset-compacted");
   DoFlush(compact_input.get(), compact_dir);
 
 }

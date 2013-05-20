@@ -14,33 +14,33 @@ namespace tablet {
 using std::tr1::unordered_set;
 
 
-class TestMultiThreadedLayer : public TestLayer {
+class TestMultiThreadedRowSet : public TestRowSet {
 public:
-  void LayerUpdateThread(Layer *l) {
+  void RowSetUpdateThread(RowSet *rs) {
     unordered_set<uint32_t> updated;
-    UpdateExistingRows(l, 0.5f, &updated);
+    UpdateExistingRows(rs, 0.5f, &updated);
   }
 
-  void FlushThread(Layer *l) {
+  void FlushThread(RowSet *rs) {
     for (int i = 0; i < 10; i++) {
-      l->FlushDeltas();
+      rs->FlushDeltas();
     }
   }
 
   void StartUpdaterThreads(boost::ptr_vector<boost::thread> *threads,
-                           Layer *l,
+                           RowSet *rs,
                            int n_threads) {
     for (int i = 0; i < n_threads; i++) {
       threads->push_back(new boost::thread(
-                           &TestMultiThreadedLayer::LayerUpdateThread, this,
-                           l));
+                           &TestMultiThreadedRowSet::RowSetUpdateThread, this,
+                           rs));
     }
   }
 
   void StartFlushThread(boost::ptr_vector<boost::thread> *threads,
-                        Layer *l) {
+                        RowSet *rs) {
     threads->push_back(new boost::thread(
-                         &TestMultiThreadedLayer::FlushThread, this, l));
+                         &TestMultiThreadedRowSet::FlushThread, this, rs));
   }
 
   void JoinThreads(boost::ptr_vector<boost::thread> *threads) {
@@ -51,31 +51,31 @@ public:
 };
 
 
-TEST_F(TestMultiThreadedLayer, TestMTUpdate) {
-  WriteTestLayer();
+TEST_F(TestMultiThreadedRowSet, TestMTUpdate) {
+  WriteTestRowSet();
 
-  // Re-open the layer
-  shared_ptr<Layer> l;
-  ASSERT_STATUS_OK(OpenTestLayer(&l));
+  // Re-open the rowset
+  shared_ptr<RowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;
-  StartUpdaterThreads(&threads, l.get(), FLAGS_num_threads);
+  StartUpdaterThreads(&threads, rs.get(), FLAGS_num_threads);
 
   JoinThreads(&threads);
 }
 
-TEST_F(TestMultiThreadedLayer, TestMTUpdateAndFlush) {
-  WriteTestLayer();
+TEST_F(TestMultiThreadedRowSet, TestMTUpdateAndFlush) {
+  WriteTestRowSet();
 
-  // Re-open the layer
-  shared_ptr<Layer> l;
-  ASSERT_STATUS_OK(OpenTestLayer(&l));
+  // Re-open the rowset
+  shared_ptr<RowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;
-  StartUpdaterThreads(&threads, l.get(), FLAGS_num_threads);
-  StartFlushThread(&threads, l.get());
+  StartUpdaterThreads(&threads, rs.get(), FLAGS_num_threads);
+  StartFlushThread(&threads, rs.get());
 
   JoinThreads(&threads);
 

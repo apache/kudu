@@ -167,7 +167,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
 // Test that if two updates come in with out-of-order transaction IDs,
 // the one with the higher transaction ID ends up winning.
 //
-// This is important during flushing when updates against the old layer
+// This is important during flushing when updates against the old rowset
 // are carried forward, but may fall behind newer transactions.
 TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
   faststring update_buf;

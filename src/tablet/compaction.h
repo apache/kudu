@@ -18,9 +18,9 @@ struct CompactionInputRow;
 // Interface for an input feeding into a compaction or flush.
 class CompactionInput {
  public:
-  // Create an input which reads from the given layer, yielding base rows and updates
+  // Create an input which reads from the given rowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionInput *Create(const Layer &layer, const MvccSnapshot &snap);
+  static CompactionInput *Create(const RowSet &rowset, const MvccSnapshot &snap);
 
   // Create an input which reads from the given memstore, yielding base rows and updates
   // prior to the given snapshot.
@@ -41,15 +41,15 @@ class CompactionInput {
   virtual ~CompactionInput() {}
 };
 
-// The set of layers which are taking part in a given compaction.
-class LayersInCompaction {
+// The set of rowsets which are taking part in a given compaction.
+class RowSetsInCompaction {
  public:
-  void AddLayer(const shared_ptr<LayerInterface> &layer,
+  void AddRowSet(const shared_ptr<RowSetInterface> &rowset,
                 const shared_ptr<boost::mutex::scoped_try_lock> &lock) {
     CHECK(lock->owns_lock());
 
     locks_.push_back(lock);
-    layers_.push_back(layer);
+    rowsets_.push_back(rowset);
   }
 
   // Create the appropriate compaction input for this compaction -- either a merge
@@ -57,19 +57,19 @@ class LayersInCompaction {
   Status CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
                                shared_ptr<CompactionInput> *out) const;
 
-  // Dump a log message indicating the chosen layers.
+  // Dump a log message indicating the chosen rowsets.
   void DumpToLog() const;
 
-  const LayerVector &layers() const { return layers_; }
+  const RowSetVector &rowsets() const { return rowsets_; }
 
-  size_t num_layers() const {
-    return layers_.size();
+  size_t num_rowsets() const {
+    return rowsets_.size();
   }
 
  private:
   typedef vector<shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
 
-  LayerVector layers_;
+  RowSetVector rowsets_;
   LockVector locks_;
 };
 
@@ -80,14 +80,14 @@ struct CompactionInputRow {
   Mutation *mutation_head;
 };
 
-// Iterate through this compaction input, flushing all rows to the given LayerWriter.
+// Iterate through this compaction input, flushing all rows to the given RowSetWriter.
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // no longer be useful.
 //
 // TODO: when we support actually flushing UNDO files, this will also have to take
 // a delta file writer.
-Status Flush(CompactionInput *input, LayerWriter *out);
+Status Flush(CompactionInput *input, RowSetWriter *out);
 
 // Iterate through this compaction input, finding any mutations which came between
 // snap_to_exclude and snap_to_include (ie those transactions that were not yet

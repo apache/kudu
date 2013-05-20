@@ -12,13 +12,13 @@ namespace tablet_util {
 
 using std::tr1::shared_ptr;
 
-Status CheckRowPresentInAnyLayer(const LayerVector &layers,
-                                 const LayerKeyProbe &probe,
+Status CheckRowPresentInAnyRowSet(const RowSetVector &rowsets,
+                                 const RowSetKeyProbe &probe,
                                  bool *present) {
   *present = false;
 
-  BOOST_FOREACH(const shared_ptr<LayerInterface> &layer, layers) {
-    RETURN_NOT_OK(layer->CheckRowPresent(probe, present));
+  BOOST_FOREACH(const shared_ptr<RowSetInterface> &rowset, rowsets) {
+    RETURN_NOT_OK(rowset->CheckRowPresent(probe, present));
     if (*present) {
       break;
     }

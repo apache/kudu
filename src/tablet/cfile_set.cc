@@ -25,7 +25,7 @@ using std::tr1::shared_ptr;
 
 static Status OpenReader(Env *env, string dir, size_t col_idx,
                          gscoped_ptr<CFileReader> *new_reader) {
-  string path = Layer::GetColumnPath(dir, col_idx);
+  string path = RowSet::GetColumnPath(dir, col_idx);
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
@@ -85,7 +85,7 @@ Status CFileSet::OpenBloomReader() {
     return Status::OK();
   }
 
-  Status s = BloomFileReader::Open(env_, Layer::GetBloomPath(dir_), &bloom_reader_);
+  Status s = BloomFileReader::Open(env_, RowSet::GetBloomPath(dir_), &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << dir_ << ": "
                  << s.ToString();
@@ -137,14 +137,14 @@ Status CFileSet::FindRow(const void *key, rowid_t *idx) const {
   return Status::OK();
 }
 
-Status CFileSet::CheckRowPresent(const LayerKeyProbe &probe, bool *present) const {
+Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
   if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), present);
     if (s.ok() && !*present) {
       return Status::OK();
     } else if (!s.ok()) {
       LOG(WARNING) << "Unable to query bloom: " << s.ToString()
-                   << " (disabling bloom for this layer from this point forward)";
+                   << " (disabling bloom for this rowset from this point forward)";
       const_cast<CFileSet *>(this)->bloom_reader_.reset(NULL);
       // Continue with the slow path
     }
@@ -187,10 +187,10 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   // Setup column iterators.
 
   for (size_t i = 0; i < projection_.num_columns(); i++) {
-    size_t col_in_layer = projection_mapping_[i];
+    size_t col_in_rowset = projection_mapping_[i];
 
     CFileIterator *iter;
-    RETURN_NOT_OK(base_data_->NewColumnIterator(col_in_layer, &iter));
+    RETURN_NOT_OK(base_data_->NewColumnIterator(col_in_rowset, &iter));
     col_iters_.push_back(iter);
   }
 

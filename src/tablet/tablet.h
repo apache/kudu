@@ -21,7 +21,7 @@ namespace kudu { namespace tablet {
 using std::string;
 using std::tr1::shared_ptr;
 
-class LayersInCompaction;
+class RowSetsInCompaction;
 
 class Tablet {
 public:
@@ -81,8 +81,8 @@ public:
     return memstore_->memory_footprint();
   }
 
-  // Return the current number of layers in the tablet.
-  size_t num_layers() const;
+  // Return the current number of rowsets in the tablet.
+  size_t num_rowsets() const;
 
   // Attempt to count the total number of rows in the tablet.
   // This is not super-efficient since it must iterate over the
@@ -91,7 +91,7 @@ public:
 
   const Schema &schema() const { return schema_; }
 
-  static string GetLayerPath(const string &tablet_dir, int layer_idx);
+  static string GetRowSetPath(const string &tablet_dir, int rowset_idx);
 
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
@@ -112,14 +112,14 @@ private:
                                     const MvccSnapshot &snap,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;
 
-  Status PickLayersToCompact(LayersInCompaction *picked) const;
+  Status PickRowSetsToCompact(RowSetsInCompaction *picked) const;
 
-  Status DoCompactionOrFlush(const LayersInCompaction &input);
+  Status DoCompactionOrFlush(const RowSetsInCompaction &input);
 
-  // Swap out a set of layers, atomically replacing them with the new layer
+  // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
-  void AtomicSwapLayers(const LayerVector old_layers,
-                        const shared_ptr<LayerInterface> &new_layer,
+  void AtomicSwapRowSets(const RowSetVector old_rowsets,
+                        const shared_ptr<RowSetInterface> &new_rowset,
                         MvccSnapshot *snap_under_lock);
     
 
@@ -128,11 +128,11 @@ private:
   Schema schema_;
   string dir_;
   shared_ptr<MemStore> memstore_;
-  LayerVector layers_;
+  RowSetVector rowsets_;
 
   MvccManager mvcc_;
 
-  // Lock protecting write access to the components of the tablet (memstore and layers).
+  // Lock protecting write access to the components of the tablet (memstore and rowsets).
   // Shared mode:
   // - Inserters, updaters take this in shared mode during their mutation.
   // - Readers take this in shared mode while capturing their iterators.
@@ -144,7 +144,7 @@ private:
   // and an RCU-style quiesce phase, but not worth it for now.
   mutable percpu_rwlock component_lock_;
 
-  size_t next_layer_idx_;
+  size_t next_rowset_idx_;
 
   Env *env_;
 
@@ -167,9 +167,9 @@ public:
 class Tablet::FlushCompactCommonHooks {
  public:
   virtual Status PostWriteSnapshot() { return Status::OK(); }
-  virtual Status PostSwapInDuplicatingLayer() { return Status::OK(); }
+  virtual Status PostSwapInDuplicatingRowSet() { return Status::OK(); }
   virtual Status PostReupdateMissedDeltas() { return Status::OK(); }
-  virtual Status PostSwapNewLayer() { return Status::OK(); }
+  virtual Status PostSwapNewRowSet() { return Status::OK(); }
 };
 
 // Hooks used in test code to inject faults or other code into interesting

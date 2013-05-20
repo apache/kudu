@@ -11,9 +11,9 @@ namespace tablet {
 namespace tablet_util {
 
 // Set *present to indicate whether the given key is present in any of the
-// layers in 'layers'.
-Status CheckRowPresentInAnyLayer(const LayerVector &layers,
-                                 const LayerKeyProbe &probe,
+// rowsets in 'rowsets'.
+Status CheckRowPresentInAnyRowSet(const RowSetVector &rowsets,
+                                 const RowSetKeyProbe &probe,
                                  bool *present);
 
 

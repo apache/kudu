@@ -44,10 +44,10 @@ public:
   void Update(txid_t txid, rowid_t row_idx, const RowChangeList &update);
 
 private:
-  friend class Layer;
+  friend class RowSet;
 
-  FRIEND_TEST(TestLayer, TestLayerUpdate);
-  FRIEND_TEST(TestLayer, TestDMSFlush);
+  FRIEND_TEST(TestRowSet, TestRowSetUpdate);
+  FRIEND_TEST(TestRowSet, TestDMSFlush);
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
@@ -72,7 +72,7 @@ private:
   // read-write lock protecting dms_ and delta_trackers_.
   // - Readers and mutators take this lock in shared mode.
   // - Flushers take this lock in exclusive mode before they modify the
-  //   structure of the layer.
+  //   structure of the rowset.
   //
   // TODO(perf): convert this to a reader-biased lock to avoid any cacheline
   // contention between threads.

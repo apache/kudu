@@ -29,9 +29,9 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-class TestLayer : public KuduTest {
+class TestRowSet : public KuduTest {
 public:
-  TestLayer() :
+  TestRowSet() :
     KuduTest(),
     schema_(CreateTestSchema()),
     n_rows_(FLAGS_roundtrip_num_rows)
@@ -41,7 +41,7 @@ public:
 
   virtual void SetUp() {
     KuduTest::SetUp();
-    layer_dir_ = GetTestPath("layer");
+    rowset_dir_ = GetTestPath("rowset");
   }
 
 protected:
@@ -55,15 +55,15 @@ protected:
   }
 
 
-  // Write out a test layer with n_rows_ rows.
-  // The data in the layer looks like:
+  // Write out a test rowset with n_rows_ rows.
+  // The data in the rowset looks like:
   //   ("hello <00n>", <n>)
-  // ... where n is the index of the row in the layer
+  // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
-  void WriteTestLayer() {
-    // Write rows into a new Layer.
-    LOG_TIMING(INFO, "Writing layer") {
-      LayerWriter lw(env_.get(), schema_, layer_dir_,
+  void WriteTestRowSet() {
+    // Write rows into a new RowSet.
+    LOG_TIMING(INFO, "Writing rowset") {
+      RowSetWriter lw(env_.get(), schema_, rowset_dir_,
                      BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
       ASSERT_STATUS_OK(lw.Open());
@@ -81,9 +81,9 @@ protected:
     }
   }
 
-  // Picks some number of rows from the given layer and updates
+  // Picks some number of rows from the given rowset and updates
   // them. Stores the indexes of the updated rows in *updated.
-  void UpdateExistingRows(Layer *l, float update_ratio,
+  void UpdateExistingRows(RowSet *rs, float update_ratio,
                           unordered_set<uint32_t> *updated) {
     int to_update = (int)(n_rows_ * update_ratio);
     char buf[256];
@@ -97,7 +97,7 @@ protected:
       uint32_t new_val = idx_to_update * 5;
       update_buf.clear();
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK_FAST(l->UpdateRow(tx.txid(),
+      ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
                               &key_slice, RowChangeList(update_buf)));
       if (updated != NULL) {
         updated->insert(idx_to_update);
@@ -105,23 +105,23 @@ protected:
     }
   }
 
-  // Verify the contents of the given layer.
+  // Verify the contents of the given rowset.
   // Updated rows (those whose index is present in 'updated') should have
   // a 'val' column equal to idx*5.
   // Other rows should have val column equal to idx.
-  void VerifyUpdates(const Layer &l, const unordered_set<uint32_t> &updated) {
+  void VerifyUpdates(const RowSet &rs, const unordered_set<uint32_t> &updated) {
     LOG_TIMING(INFO, "Reading updated rows with row iter") {
-      VerifyUpdatesWithRowIter(l, updated);
+      VerifyUpdatesWithRowIter(rs, updated);
     }
   }
 
-  void VerifyUpdatesWithRowIter(const Layer &l,
+  void VerifyUpdatesWithRowIter(const RowSet &rs,
                                 const unordered_set<uint32_t> &updated) {
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(proj_val, snap));
+    gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(proj_val, snap));
     ASSERT_STATUS_OK(row_iter->Init(NULL));
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
@@ -159,12 +159,12 @@ protected:
       }
   }
 
-  // Iterate over a Layer, dumping occasional rows to the console,
+  // Iterate over a RowSet, dumping occasional rows to the console,
   // using the given schema as a projection.
-  static void IterateProjection(const Layer &l, const Schema &schema,
+  static void IterateProjection(const RowSet &rs, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<RowwiseIterator> row_iter(l.NewRowIterator(schema, snap));
+    gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(schema, snap));
     ASSERT_STATUS_OK(row_iter->Init(NULL));
 
     int batch_size = 1000;
@@ -190,14 +190,14 @@ protected:
     EXPECT_EQ(expected_rows, i);
   }
 
-  void BenchmarkIterationPerformance(const Layer &l,
+  void BenchmarkIterationPerformance(const RowSet &rs,
                                      const string &log_message) {
     Schema proj_val(boost::assign::list_of
                     (ColumnSchema("val", UINT32)),
                     1);
     LOG_TIMING(INFO, log_message + " (val column only)") {
       for (int i = 0; i < FLAGS_n_read_passes; i++) {
-        IterateProjection(l, proj_val, n_rows_, false);
+        IterateProjection(rs, proj_val, n_rows_, false);
       }
     }
 
@@ -206,19 +206,19 @@ protected:
                     1);
     LOG_TIMING(INFO, log_message + " (key string column only)") {
       for (int i = 0; i < FLAGS_n_read_passes; i++) {
-        IterateProjection(l, proj_key, n_rows_, false);
+        IterateProjection(rs, proj_key, n_rows_, false);
       }
     }
 
     LOG_TIMING(INFO, log_message + " (both columns)") { 
       for (int i = 0; i < FLAGS_n_read_passes; i++) {
-        IterateProjection(l, schema_, n_rows_, false);
+        IterateProjection(rs, schema_, n_rows_, false);
       }
     }
   }
 
-  Status OpenTestLayer(shared_ptr<Layer> *layer) {
-    return Layer::Open(env_.get(), schema_, layer_dir_, layer);
+  Status OpenTestRowSet(shared_ptr<RowSet> *rowset) {
+    return RowSet::Open(env_.get(), schema_, rowset_dir_, rowset);
   }
 
 
@@ -229,7 +229,7 @@ protected:
 
   Schema schema_;
   size_t n_rows_;
-  string layer_dir_;
+  string rowset_dir_;
 
   MvccManager mvcc_;
 };

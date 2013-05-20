@@ -25,8 +25,8 @@ class DeltaIteratorInterface;
 class Mutation;
 
 // Structure which caches an encoded and hashed key, suitable
-// for probing against layers.
-class LayerKeyProbe {
+// for probing against rowsets.
+class RowSetKeyProbe {
 public:
 
   // schema: the schema containing the key
@@ -35,7 +35,7 @@ public:
   //
   // NOTE: raw_key is not copied and must be valid for the liftime
   // of this object.
-  LayerKeyProbe(const Schema &schema, const void *raw_key) :
+  RowSetKeyProbe(const Schema &schema, const void *raw_key) :
     raw_key_(raw_key) {
 
     Slice raw_slice(reinterpret_cast<const uint8_t *>(raw_key),
@@ -60,22 +60,22 @@ private:
   BloomKeyProbe bloom_probe_;
 };
 
-class LayerInterface {
+class RowSetInterface {
 public:
-  // Check if a given row key is present in this layer.
+  // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
-  virtual Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const = 0;
+  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const = 0;
 
-  // Update a row in this layer.
+  // Update a row in this rowset.
   //
-  // If the row does not exist in this layer, returns
+  // If the row does not exist in this rowset, returns
   // Status::NotFound().
   virtual Status UpdateRow(txid_t txid,
                            const void *key,
                            const RowChangeList &update) = 0;
 
-  // Return a new RowIterator for this layer, with the given projection.
+  // Return a new RowIterator for this rowset, with the given projection.
   // The iterator will return rows/updates which were committed as of the time of
   // 'snap'.
   // The returned iterator is not Initted.
@@ -85,31 +85,31 @@ public:
   // Create the input to be used for a compaction.
   virtual CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const = 0;
 
-  // Count the number of rows in this layer.
+  // Count the number of rows in this rowset.
   virtual Status CountRows(rowid_t *count) const = 0;
 
-  // Return a displayable string for this layer.
+  // Return a displayable string for this rowset.
   virtual string ToString() const = 0;
 
-  // Delete the underlying storage for this layer.
+  // Delete the underlying storage for this rowset.
   virtual Status Delete() = 0;
 
   // Estimate the number of bytes on-disk
   virtual uint64_t EstimateOnDiskSize() const = 0;
 
-  // Return the lock used for including this Layer in a compaction.
+  // Return the lock used for including this RowSet in a compaction.
   // This prevents multiple compactions and flushes from trying to include
-  // the same layer.
+  // the same rowset.
   virtual boost::mutex *compact_flush_lock() = 0;
 
-  // Return the schema for data in this layer.
+  // Return the schema for data in this rowset.
   virtual const Schema &schema() const = 0;
 
-  virtual ~LayerInterface() {}
+  virtual ~RowSetInterface() {}
 };
 
 // Used often enough, may as well typedef it.
-typedef vector<shared_ptr<LayerInterface> > LayerVector;
+typedef vector<shared_ptr<RowSetInterface> > RowSetVector;
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaTracker, which reads
@@ -132,7 +132,7 @@ public:
 
 
 // Iterator over deltas.
-// For each layer, this iterator is constructed alongside the base data iterator,
+// For each rowset, this iterator is constructed alongside the base data iterator,
 // and used to apply any updates which haven't been yet compacted into the base
 // (i.e. those edits in the DeltaMemStore or in delta files)
 //

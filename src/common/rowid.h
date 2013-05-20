@@ -10,12 +10,12 @@
 
 namespace kudu {
 
-// Type to represent the ordinal ID of a row within a layer.
+// Type to represent the ordinal ID of a row within a RowSet.
 // This type should be used instead of uint32_t when referring to row indexes
 // for better clarity.
 //
-// TODO: Currently we only support up to 4B rows per layer - some work
-// is necessary to support larger layers without overflow.
+// TODO: Currently we only support up to 4B rows per RowSet - some work
+// is necessary to support larger RowSets without overflow.
 typedef uint32_t rowid_t;
 
 // Substitution to use in printf() format arguments.

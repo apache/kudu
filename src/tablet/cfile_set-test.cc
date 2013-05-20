@@ -28,22 +28,22 @@ public:
 
   void SetUp() {
     KuduTest::SetUp();
-    layer_dir_ = GetTestPath("layer");
+    rowset_dir_ = GetTestPath("rowset");
 
     // Use a small cfile block size, so that when we skip materializing a given
     // column for 10,000 rows, it can actually skip over a number of blocks.
     FLAGS_cfile_default_block_size = 512;
   }
 
-  // Write out a test layer with two int columns.
+  // Write out a test rowset with two int columns.
   // The first column contains the row index * 2.
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
-  void WriteTestLayer(int nrows) {
-    LayerWriter lw(env_.get(), schema_, layer_dir_,
+  void WriteTestRowSet(int nrows) {
+    RowSetWriter rsw(env_.get(), schema_, rowset_dir_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
-    ASSERT_STATUS_OK(lw.Open());
+    ASSERT_STATUS_OK(rsw.Open());
 
     RowBuilder rb(schema_);
     for (int i = 0; i < nrows; i++) {
@@ -51,9 +51,9 @@ public:
       rb.AddUint32(i * 2);
       rb.AddUint32(i * 10);
       rb.AddUint32(i * 100);
-      ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
+      ASSERT_STATUS_OK_FAST(rsw.WriteRow(rb.data()));
     }
-    ASSERT_STATUS_OK(lw.Finish());
+    ASSERT_STATUS_OK(rsw.Finish());
   }
 
   // Issue a range scan between 'lower' and 'upper', and verify that all result
@@ -94,7 +94,7 @@ public:
 
 protected:
   Schema schema_;
-  string layer_dir_;
+  string rowset_dir_;
   google::FlagSaver saver;
 };
 
@@ -102,10 +102,10 @@ protected:
 TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   const int kCycleInterval = 10000;
   const int kNumRows = 100000;
-  WriteTestLayer(kNumRows);
+  WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(
-    new CFileSet(env_.get(), layer_dir_, schema_));
+    new CFileSet(env_.get(), rowset_dir_, schema_));
   ASSERT_STATUS_OK(fileset->OpenAllColumns());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_));
@@ -186,9 +186,9 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 // are read off disk.
 TEST_F(TestCFileSet, TestRangeScan) {
   const int kNumRows = 10000;
-  WriteTestLayer(kNumRows);
+  WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), layer_dir_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), rowset_dir_, schema_));
   ASSERT_STATUS_OK(fileset->OpenAllColumns());
 
   // Create iterator.
@@ -234,9 +234,9 @@ TEST_F(TestCFileSet, TestRangeScan) {
 // TestRangeScan above, except don't inspect internal state.
 TEST_F(TestCFileSet, TestRangePredicates2) {
   const int kNumRows = 10000;
-  WriteTestLayer(kNumRows);
+  WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), layer_dir_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), rowset_dir_, schema_));
   ASSERT_STATUS_OK(fileset->OpenAllColumns());
 
   // Range scan where rows match on both ends

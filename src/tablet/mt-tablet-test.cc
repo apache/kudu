@@ -250,14 +250,14 @@ public:
   // size, etc. Eventually we should have a metrics system to collect things
   // like this, but for now, this is what we've got.
   void CollectStatisticsThread(int tid) {
-    shared_ptr<TimeSeries> num_layers_ts = ts_collector_.GetTimeSeries(
-      "num_layers");
+    shared_ptr<TimeSeries> num_rowsets_ts = ts_collector_.GetTimeSeries(
+      "num_rowsets");
     shared_ptr<TimeSeries> memstore_size_ts = ts_collector_.GetTimeSeries(
       "memstore_kb");
 
     while (running_insert_count_.count() > 0) {
 
-      num_layers_ts->SetValue( tablet_->num_layers() );
+      num_rowsets_ts->SetValue( tablet_->num_rowsets() );
       memstore_size_ts->SetValue( tablet_->MemStoreSize() / 1024);
 
       // Wait, unless the inserters are all done.

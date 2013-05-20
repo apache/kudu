@@ -23,7 +23,7 @@ using std::tr1::shared_ptr;
 // Implementation notes:
 // --------------------------
 // The MemStore is a concurrent b-tree which stores newly inserted data which
-// has not yet been flushed to on-disk layers. In order to provide snapshot
+// has not yet been flushed to on-disk rowsets. In order to provide snapshot
 // consistency, data is never updated in-place in the memstore after insertion.
 // Rather, a chain of mutations hangs off each row, acting as a per-row "redo log".
 //
@@ -90,7 +90,7 @@ class MSRow {
 //
 // The data is kept sorted.
 class MemStore : boost::noncopyable,
-                 public LayerInterface,
+                 public RowSetInterface,
                  public std::tr1::enable_shared_from_this<MemStore> {
  public:
   class Iterator;
@@ -125,7 +125,7 @@ class MemStore : boost::noncopyable,
     return tree_.count();
   }
 
-  // Conform entry_count to LayerInterface
+  // Conform entry_count to RowSetInterface
   Status CountRows(rowid_t *count) const {
     *count = entry_count();
     return Status::OK();
@@ -145,7 +145,7 @@ class MemStore : boost::noncopyable,
   }
 
   // TODO: unit test me
-  Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 
   // Return the memory footprint of this memstore.
   // Note that this may be larger than the sum of the data
@@ -167,7 +167,7 @@ class MemStore : boost::noncopyable,
   Iterator *NewIterator(const Schema &projection,
                         const MvccSnapshot &snap) const;
 
-  // Alias to conform to Layer interface
+  // Alias to conform to RowSet interface
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 

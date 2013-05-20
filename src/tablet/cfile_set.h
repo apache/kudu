@@ -28,7 +28,7 @@ using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using std::tr1::shared_ptr;
 
-// Set of CFiles which make up the base data for a single layer
+// Set of CFiles which make up the base data for a single rowset
 //
 // All of these files have the same number of rows, and thus the positional
 // indexes can be used to seek to corresponding entries in each.
@@ -55,7 +55,7 @@ public:
     return string("CFile base data in ") + dir_;
   }
 
-  virtual Status CheckRowPresent(const LayerKeyProbe &probe, bool *present) const;
+  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 
   virtual ~CFileSet();
 
@@ -101,7 +101,7 @@ public:
   }
 
   virtual string ToString() const {
-    return string("layer iterator for ") + base_data_->ToString();
+    return string("rowset iterator for ") + base_data_->ToString();
   }
 
   const Schema &schema() const {

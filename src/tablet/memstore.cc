@@ -119,7 +119,7 @@ Status MemStore::UpdateRow(txid_t txid,
   return Status::OK();
 }
 
-Status MemStore::CheckRowPresent(const LayerKeyProbe &probe, bool *present) const {
+Status MemStore::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
   *present = tree_.ContainsKey(probe.encoded_key());
   return Status::OK();
 }
