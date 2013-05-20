@@ -8,7 +8,7 @@
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "tablet/diskrowset.h"
-#include "tablet/memstore.h"
+#include "tablet/memrowset.h"
 
 namespace kudu {
 namespace tablet {

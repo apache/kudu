@@ -5,7 +5,7 @@ SET(TABLET_SRCS
   cfile_set.cc
   compaction.cc
   diskrowset.cc
-  memstore.cc
+  memrowset.cc
   mutation.cc
   mvcc.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
@@ -19,7 +19,7 @@ ADD_KUDU_TEST(tablet-test)
 ADD_KUDU_TEST(mt-tablet-test)
 ADD_KUDU_TEST(diskrowset-test)
 ADD_KUDU_TEST(mt-diskrowset-test)
-ADD_KUDU_TEST(memstore-test)
+ADD_KUDU_TEST(memrowset-test)
 ADD_KUDU_TEST(deltamemstore-test)
 ADD_KUDU_TEST(deltafile-test)
 ADD_KUDU_TEST(cfile_set-test)

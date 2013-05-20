@@ -9,7 +9,7 @@
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
-#include "tablet/memstore.h"
+#include "tablet/memrowset.h"
 #include "tablet/diskrowset.h"
 #include "util/env.h"
 #include "util/locks.h"

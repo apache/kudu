@@ -8,7 +8,7 @@
 #include "common/generic_iterators.h"
 #include "common/row.h"
 #include "gutil/atomicops.h"
-#include "tablet/memstore.h"
+#include "tablet/memrowset.h"
 #include "tablet/compaction.h"
 
 DEFINE_int32(memstore_throttle_mb, 0,

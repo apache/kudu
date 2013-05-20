@@ -7,7 +7,7 @@
 #include "common/row.h"
 #include "common/scan_spec.h"
 #include <gutil/strings/join.h>
-#include "tablet/memstore.h"
+#include "tablet/memrowset.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-test-base.h"
 #include "util/slice.h"

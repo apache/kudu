@@ -7,7 +7,7 @@
 
 #include "common/row.h"
 #include "common/scan_spec.h"
-#include "tablet/memstore.h"
+#include "tablet/memrowset.h"
 #include "tablet/tablet-test-util.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
