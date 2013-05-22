@@ -60,20 +60,20 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap)
 }
 
 
-Status DuplicatingRowSet::UpdateRow(txid_t txid,
+Status DuplicatingRowSet::MutateRow(txid_t txid,
                                        const void *key,
                                        const RowChangeList &update) {
   ConstContiguousRow row_key(schema(), key);
 
   // First update the new rowset
-  RETURN_NOT_OK(new_rowset_->UpdateRow(txid, key, update));
+  RETURN_NOT_OK(new_rowset_->MutateRow(txid, key, update));
 
   // If it succeeded there, we also need to mirror into the old rowset.
   // Duplicate the update to both the relevant input rowset and the output rowset.
   // First propagate to the relevant input rowset.
   bool updated = false;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
-    Status s = rowset->UpdateRow(txid, key, update);
+    Status s = rowset->MutateRow(txid, key, update);
     if (s.ok()) {
       updated = true;
       break;

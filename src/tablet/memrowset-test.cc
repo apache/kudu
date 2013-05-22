@@ -79,7 +79,7 @@ protected:
     RowChangeListEncoder update(schema_, &update_buf_);
     Slice key_slice = Slice(key);
     update.AddColumnUpdate(1, &new_val);
-    return mrs->UpdateRow(tx.txid(), &key_slice, RowChangeList(update_buf_));
+    return mrs->MutateRow(tx.txid(), &key_slice, RowChangeList(update_buf_));
   }
 
   MvccManager mvcc_;

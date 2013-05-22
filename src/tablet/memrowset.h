@@ -124,10 +124,10 @@ class MemRowSet : boost::noncopyable,
   Status Insert(txid_t txid, const Slice &data);
 
 
-  // Update an existing row in the memrowset.
+  // Update or delete an existing row in the memrowset.
   //
   // Returns Status::NotFound if the row doesn't exist.
-  Status UpdateRow(txid_t txid,
+  Status MutateRow(txid_t txid,
                    const void *key,
                    const RowChangeList &update);
 

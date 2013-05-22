@@ -61,7 +61,7 @@ public:
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status UpdateRow(const void *key,
+  Status MutateRow(const void *key,
                    const RowChangeList &update);
 
   // Create a new row iterator which yields the rows as of the current MVCC

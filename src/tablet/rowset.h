@@ -28,11 +28,11 @@ public:
   // occurs.
   virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const = 0;
 
-  // Update a row in this rowset.
+  // Update/delete a row in this rowset.
   //
   // If the row does not exist in this rowset, returns
   // Status::NotFound().
-  virtual Status UpdateRow(txid_t txid,
+  virtual Status MutateRow(txid_t txid,
                            const void *key,
                            const RowChangeList &update) = 0;
 
@@ -126,7 +126,7 @@ public:
                    const shared_ptr<RowSet> &new_rowset);
 
 
-  Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
+  Status MutateRow(txid_t txid, const void *key, const RowChangeList &update);
 
   Status CheckRowPresent(const RowSetKeyProbe &key, bool *present) const;
 

@@ -82,7 +82,7 @@ public:
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, &new_val);
-    return tablet->UpdateRow(&row_key, RowChangeList(ubuf));
+    return tablet->MutateRow(&row_key, RowChangeList(ubuf));
   }
 
   Schema test_schema_;
@@ -121,7 +121,7 @@ public:
     uint32_t row_key = row_idx;
     faststring buf;
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, &new_val);
-    return tablet->UpdateRow(&row_key, RowChangeList(buf));
+    return tablet->MutateRow(&row_key, RowChangeList(buf));
   }
 
 
@@ -176,7 +176,7 @@ public:
 
     faststring buf;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(2, &new_val);
-    return tablet_->UpdateRow(rb.data().data(), RowChangeList(buf));
+    return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
   }
 
   template <class RowType>

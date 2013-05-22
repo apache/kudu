@@ -55,7 +55,7 @@ class TestCompaction : public KuduTest {
       update_buf.clear();
       RowChangeListEncoder update(schema_, &update_buf);
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK(rowset->UpdateRow(tx.txid(), &key, RowChangeList(update_buf)));
+      ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(), &key, RowChangeList(update_buf)));
     }
   }
 

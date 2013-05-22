@@ -97,7 +97,7 @@ protected:
       uint32_t new_val = idx_to_update * 5;
       update.Reset();
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
+      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
                               &key_slice, RowChangeList(update_buf)));
       if (updated != NULL) {
         updated->insert(idx_to_update);

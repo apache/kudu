@@ -262,7 +262,7 @@ CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const 
   return CompactionInput::Create(*this, snap);
 }
 
-Status DiskRowSet::UpdateRow(txid_t txid,
+Status DiskRowSet::MutateRow(txid_t txid,
                         const void *key,
                         const RowChangeList &update) {
   CHECK(open_);

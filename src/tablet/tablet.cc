@@ -160,7 +160,7 @@ Status Tablet::Insert(const Slice &data) {
   return memrowset_->Insert(tx.txid(), data);
 }
 
-Status Tablet::UpdateRow(const void *key,
+Status Tablet::MutateRow(const void *key,
                          const RowChangeList &update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   RowSetKeyProbe probe(key_schema_, key);
@@ -214,7 +214,7 @@ Status Tablet::UpdateRow(const void *key,
   ScopedTransaction tx(&mvcc_);
 
   // First try to update in memrowset.
-  Status s = memrowset_->UpdateRow(tx.txid(), key, update);
+  Status s = memrowset_->MutateRow(tx.txid(), key, update);
   if (s.ok() || !s.IsNotFound()) {
     // if it succeeded, or if an error occurred, return.
     return s;
@@ -224,7 +224,7 @@ Status Tablet::UpdateRow(const void *key,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
-    s = rs->UpdateRow(tx.txid(), key, update);
+    s = rs->MutateRow(tx.txid(), key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
       return s;

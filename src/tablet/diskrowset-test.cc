@@ -126,7 +126,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
 
   txid_t txid(0);
   Slice bad_key = Slice("hello 00000000000049x");
-  Status s = rs->UpdateRow(txid, &bad_key, enc.as_changelist());
+  Status s = rs->MutateRow(txid, &bad_key, enc.as_changelist());
   ASSERT_TRUE(s.IsNotFound());
 
   // Now read back the value column, and verify that the updates
@@ -211,7 +211,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       ScopedTransaction tx(&mvcc_);
       update.Reset();
       update.AddColumnUpdate(1, &i);
-      ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
+      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
                                          &key_slice, RowChangeList(update_buf)));
     }
     snaps.push_back(MvccSnapshot(mvcc_));

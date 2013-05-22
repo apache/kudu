@@ -85,7 +85,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   return Status::OK();
 }
 
-Status MemRowSet::UpdateRow(txid_t txid,
+Status MemRowSet::MutateRow(txid_t txid,
                            const void *key,
                            const RowChangeList &delta) {
   ConstContiguousRow row_slice(schema_, key);
