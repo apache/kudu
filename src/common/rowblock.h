@@ -52,6 +52,11 @@ public:
     return BitmapTest(&bitmap_[0], row);
   }
 
+  void SetRowUnselected(size_t row) const {
+    DCHECK_LT(row, n_rows_);
+    BitmapClear(&bitmap_[0], row);
+  }
+
   uint8_t *mutable_bitmap() {
     return &bitmap_[0];
   }
@@ -224,6 +229,14 @@ class RowBlockRow {
   template <class ArenaType>
   Status CopyIndirectDataToArena(ArenaType *arena) {
     return kudu::CopyRowIndirectDataToArena(this, arena);
+  }
+
+  // Mark this row as unselected in the selection vector.
+  void SetRowUnselected() {
+    // TODO: const-ness issues since this class holds a const RowBlock *.
+    // hack around this for now
+    SelectionVector *vec = const_cast<SelectionVector *>(row_block_->selection_vector());
+    vec->SetRowUnselected(row_index_);
   }
 
 #ifndef NDEBUG

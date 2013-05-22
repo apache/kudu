@@ -231,6 +231,21 @@ public:
     return Status::OK();
   }
 
+  // If this changelist is a DELETE or REINSERT, twiddle '*deleted' to reference
+  // the new state of the row. If it is an UPDATE, this call has no effect.
+  //
+  // This is used during mutation traversal, to keep track of whether a row is
+  // deleted or not.
+  void TwiddleDeleteStatus(bool *deleted) {
+    if (is_delete()) {
+      DCHECK(!*deleted);
+      *deleted = true;
+    } else if (is_reinsert()) {
+      DCHECK(*deleted);
+      *deleted = false;
+    }
+  }
+
 private:
   FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
   friend class RowChangeList;

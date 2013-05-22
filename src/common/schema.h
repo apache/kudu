@@ -394,6 +394,7 @@ class ConstContiguousRow {
     row_data_(row.row_data_)
   {}
 
+  // TODO: take Slice here instead so we can DCHECK length
   ConstContiguousRow(const Schema& schema, const void *row_data = NULL)
     : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data))
   {

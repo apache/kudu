@@ -64,6 +64,16 @@ class MRSRow {
     return row_slice_.data() + schema.column_offset(col_idx);
   }
 
+  // Return true if this row is a "ghost" -- i.e its most recent mutation is
+  // a deletion.
+  //
+  // NOTE: this call is O(n) in the number of mutations, since it has to walk
+  // the linked list all the way to the end, checking if each mutation is a
+  // DELETE or REINSERT. We expect the list is usually short (low-update use
+  // cases) but if this becomes a bottleneck, we could cache the 'ghost' status
+  // as a bit inside the row header.
+  bool IsGhost() const;
+
  private:
   friend class MemRowSet;
 
@@ -226,6 +236,10 @@ class MemRowSet : boost::noncopyable,
   // Temporary hack to slow down mutators when the memrowset is over 1GB.
   void SlowMutators();
 
+  // Perform a "Reinsert" -- handle an insertion into a row which was previously
+  // inserted and deleted, but still has an entry in the MemRowSet.
+  Status Reinsert(txid_t txid, const Slice &row_data, MRSRow *row);
+
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 
   const Schema schema_;
@@ -326,12 +340,7 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
 
       MRSRow row(memrowset_.get(), v);
       if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
-        for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-          size_t src_col_idx = projection_mapping_[proj_col_idx];
-          uint8_t *dst_cell = dst_row.cell_ptr(projection_, proj_col_idx);
-          const void *src_cell = row.cell_ptr(memrowset_->schema(), src_col_idx);
-          RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
-        }
+        RETURN_NOT_OK(ProjectRow(row, projection_mapping_, &dst_row, dst->arena()));
 
         // Roll-forward MVCC for committed updates.
         RETURN_NOT_OK(ApplyMutationsToProjectedRow(
@@ -407,15 +416,16 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
     iter_->SeekToStart();
   }
 
-  template <class RowType>
   Status ApplyMutationsToProjectedRow(Mutation *mutation_head,
-                                      RowType *dst_row,
+                                      RowBlockRow *dst_row,
                                       Arena *dst_arena) {
     // Fast short-circuit the likely case of a row which was inserted and never
     // updated.
     if (PREDICT_TRUE(mutation_head == NULL)) {
       return Status::OK();
     }
+
+    bool is_deleted = false;
 
     for (Mutation *mut = mutation_head;
          mut != NULL;
@@ -427,15 +437,36 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
 
       // Apply the mutation.
 
-      // TODO: this is slow, since it makes multiple passes through the rowchangelist.
-      // Instead, we should keep the backwards mapping of columns.
-      for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-        int memrowset_col_idx = projection_mapping_[proj_col_idx];
-        uint8_t *dst_cell = dst_row->cell_ptr(projection_, proj_col_idx);
-        RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
-        RETURN_NOT_OK(decoder.Init());
-        RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
+      // Check if it's a deletion.
+      // TODO: can we reuse the 'decoder' object by adding a Reset or something?
+      RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
+      RETURN_NOT_OK(decoder.Init());
+      if (decoder.is_delete()) {
+        decoder.TwiddleDeleteStatus(&is_deleted);
+      } else if (decoder.is_reinsert()) {
+        decoder.TwiddleDeleteStatus(&is_deleted);
+
+        ConstContiguousRow reinserted(memrowset_->schema(), decoder.reinserted_row_slice().data());
+        RETURN_NOT_OK(ProjectRow(reinserted, projection_mapping_, dst_row, dst_arena));
+      } else {
+        DCHECK(decoder.is_update());
+
+        // TODO: this is slow, since it makes multiple passes through the rowchangelist.
+        // Instead, we should keep the backwards mapping of columns.
+        for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
+          int memrowset_col_idx = projection_mapping_[proj_col_idx];
+          uint8_t *dst_cell = dst_row->cell_ptr(projection_, proj_col_idx);
+          RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
+          RETURN_NOT_OK(decoder.Init());
+          RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
+        }
       }
+    }
+
+    // If the most recent mutation seen for the row was a DELETE, then set the selection
+    // vector bit to 0, so it doesn't show up in the results.
+    if (is_deleted) {
+      dst_row->SetRowUnselected();
     }
 
     return Status::OK();

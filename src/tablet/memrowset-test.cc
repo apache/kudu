@@ -75,17 +75,27 @@ protected:
 
   Status UpdateRow(MemRowSet *mrs, const string &key, uint32_t new_val) {
     ScopedTransaction tx(&mvcc_);
-    update_buf_.clear();
-    RowChangeListEncoder update(schema_, &update_buf_);
+    mutation_buf_.clear();
+    RowChangeListEncoder update(schema_, &mutation_buf_);
     Slice key_slice = Slice(key);
     update.AddColumnUpdate(1, &new_val);
-    return mrs->MutateRow(tx.txid(), &key_slice, RowChangeList(update_buf_));
+    return mrs->MutateRow(tx.txid(), &key_slice, RowChangeList(mutation_buf_));
+  }
+
+  Status DeleteRow(MemRowSet *mrs, const string &key) {
+    ScopedTransaction tx(&mvcc_);
+    mutation_buf_.clear();
+    RowChangeListEncoder update(schema_, &mutation_buf_);
+    Slice key_slice = Slice(key);
+    update.SetToDelete();
+    return mrs->MutateRow(tx.txid(), &key_slice, RowChangeList(mutation_buf_));
   }
 
   MvccManager mvcc_;
 
-  faststring update_buf_;
+  faststring mutation_buf_;
   const Schema schema_;
+
 };
 
 
@@ -157,7 +167,58 @@ TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
     CheckValue(mrs, keybuf,
                StringPrintf("(string key=%s, uint32 val=%d)", keybuf, i));
   }
+}
 
+TEST_F(TestMemRowSet, TestDelete) {
+  const char kRowKey[] = "hello world";
+
+  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+
+  // Insert row.
+  ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 1));
+  MvccSnapshot snapshot_before_delete(mvcc_);
+
+  // Delete it.
+  ASSERT_STATUS_OK(DeleteRow(mrs.get(), kRowKey));
+  MvccSnapshot snapshot_after_delete(mvcc_);
+
+  // Trying to Delete again or Update should get an error.
+  Status s = DeleteRow(mrs.get(), kRowKey);
+  ASSERT_TRUE(s.IsNotFound()) << "Unexpected status: " << s.ToString();
+
+  s = UpdateRow(mrs.get(), kRowKey, 12345);
+  ASSERT_TRUE(s.IsNotFound()) << "Unexpected status: " << s.ToString();
+
+  // Re-insert a new row with the same key.
+  ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 2));
+  MvccSnapshot snapshot_after_reinsert(mvcc_);
+
+  // Verify the MVCC contents of the memrowset.
+  // NOTE: the REINSERT has txid 4 because of the two failed attempts
+  // at mutating the deleted row above -- each of them grabs a txid even
+  // though it doesn't actually make any successful mutations.
+  vector<string> rows;
+  mrs->DebugDump(&rows);
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ("@0: row (string key=hello world, uint32 val=1) mutations="
+            "[@1(DELETE), "
+            "@4(REINSERT (string key=hello world, uint32 val=2))]",
+            rows[0]);
+
+  // Verify that iterating the rowset at the first snapshot shows the row.
+  ASSERT_STATUS_OK(DumpRowSet(*mrs, schema_, snapshot_before_delete, &rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ("(string key=hello world, uint32 val=1)", rows[0]);
+
+  // Verify that iterating the rowset at the snapshot where it's deleted
+  // doesn't show the row.
+  ASSERT_STATUS_OK(DumpRowSet(*mrs, schema_, snapshot_after_delete, &rows));
+  ASSERT_EQ(0, rows.size());
+
+  // Verify that iterating the rowset after it's re-inserted shows the row.
+  ASSERT_STATUS_OK(DumpRowSet(*mrs, schema_, snapshot_after_reinsert, &rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ("(string key=hello world, uint32 val=2)", rows[0]);
 }
 
 TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {

@@ -22,6 +22,29 @@ using std::pair;
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
 
+bool MRSRow::IsGhost() const {
+  bool is_ghost = false;
+  for (const Mutation *mut = header_->mutation_head;
+       mut != NULL;
+       mut = mut->next()) {
+    RowChangeListDecoder decoder(schema(), mut->changelist());
+    Status s = decoder.Init();
+    if (!PREDICT_TRUE(s.ok())) {
+      LOG(FATAL) << "Failed to decode: " << mut->changelist().ToString(schema())
+                  << " (" << s.ToString() << ")";
+    }
+    if (decoder.is_delete()) {
+      DCHECK(!is_ghost);
+      is_ghost = true;
+    } else if (decoder.is_reinsert()) {
+      DCHECK(is_ghost);
+      is_ghost = false;
+    }
+  }
+  return is_ghost;
+}
+
+
 MemRowSet::MemRowSet(const Schema &schema) :
   schema_(schema),
   arena_(kInitialArenaSize, kMaxArenaBufferSize),
@@ -34,9 +57,11 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
-    LOG(INFO) << "@" << row.insertion_txid() << ": row "
-              << schema_.DebugRow(row)
-              << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head);
+    LOG_STRING(INFO, lines)
+      << "@" << row.insertion_txid() << ": row "
+      << schema_.DebugRow(row)
+      << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head)
+      << std::endl;
     iter->Next();
   }
 
@@ -53,14 +78,6 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   schema_.EncodeComparableKey(row_slice, &enc_key_buf);
   Slice enc_key(enc_key_buf);
 
-  // Copy the non-encoded key onto the stack since we need
-  // to mutate it when we relocate its Slices into our arena.
-  DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
-  mrsrow.header_->insertion_txid = txid;
-  mrsrow.header_->mutation_head = NULL;
-  uint8_t *rowdata_ptr = mrsrow.row_slice_.mutable_data();
-  memcpy(rowdata_ptr, data.data(), data.size());
-
   btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
   mutation.Prepare(&tree_);
 
@@ -70,8 +87,26 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   // That's not very memory-efficient!
 
   if (mutation.exists()) {
-    return Status::AlreadyPresent("entry already present in memrowset");
+    // It's OK for it to exist if it's just a "ghost" row -- i.e the
+    // row is deleted.
+    MRSRow row(this, mutation.current_mutable_value());
+    if (!row.IsGhost()) {
+      return Status::AlreadyPresent("entry already present in memrowset");
+    }
+
+    // Insert a "reinsert" mutation.
+    return Reinsert(txid, data, &row);
   }
+
+  // Copy the non-encoded key onto the stack since we need
+  // to mutate it when we relocate its Slices into our arena.
+  DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
+  mrsrow.header_->insertion_txid = txid;
+  mrsrow.header_->mutation_head = NULL;
+  uint8_t *rowdata_ptr = mrsrow.row_slice_.mutable_data();
+  // TODO: use mrsrow.CopyCellsFrom(...) once Matteo's NULL support branch
+  // is merged with this one.
+  memcpy(rowdata_ptr, data.data(), data.size());
 
   // Copy any referred-to memory to arena.
   RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(&mrsrow, &arena_));
@@ -82,6 +117,38 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
 
   debug_insert_count_++;
   SlowMutators();
+  return Status::OK();
+}
+
+Status MemRowSet::Reinsert(txid_t txid, const Slice &row_data, MRSRow *row) {
+
+  // TODO(perf): This path makes some unnecessary copies that could be reduced,
+  // but let's assume that REINSERT is really rare and code for clarity over speed
+  // here.
+
+  // Make a copy of the row, and relocate any of its indirected data into
+  // our Arena.
+  uint8_t row_copy_buf[row_data.size()];
+  memcpy(row_copy_buf, row_data.data(), row_data.size());
+  ContiguousRow row_copy(schema_, row_copy_buf);
+  RETURN_NOT_OK(CopyRowIndirectDataToArena(&row_copy, &arena_));
+
+  // Encode the REINSERT mutation from the relocated row copy.
+  faststring buf;
+  RowChangeListEncoder encoder(schema_, &buf);
+  encoder.SetToReinsert(Slice(row_copy_buf, row_data.size()));
+
+  // Move the REINSERT mutation itself into our Arena.
+  Mutation *mut = Mutation::CreateInArena(&arena_, txid, encoder.as_changelist());
+
+  // Ensure that all of the creation of the mutation is published before
+  // publishing the pointer itself.
+  // We don't need to do a CAS or anything since the CBTree code has already
+  // locked the relevant leaf node from concurrent writes.
+  base::subtle::MemoryBarrier();
+
+  // Append the mutation into the row's mutation list.
+  mut->AppendToList(&row->header_->mutation_head);
   return Status::OK();
 }
 
@@ -102,10 +169,18 @@ Status MemRowSet::MutateRow(txid_t txid,
       return Status::NotFound("not in memrowset");
     }
 
-    Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
+    MRSRow row(this, mutation.current_mutable_value());
+
+    // If the row exists, it may still be a "ghost" row -- i.e a row
+    // that's been deleted. If that's the case, we should not treat it as
+    // NotFound.
+    if (row.IsGhost()) {
+      return Status::NotFound("not in memrowset (ghost)");
+    }
+
 
     // Append to the linked list of mutations for this row.
-    MRSRow row(this, mutation.current_mutable_value());
+    Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
 
     // Ensure that all of the creation of the mutation is published before
     // publishing the pointer itself.
