@@ -30,7 +30,19 @@ static inline Status IterateToStringList(RowwiseIterator *iter,
       }
     }
   }
-  std::sort(out->begin(), out->end());
+  return Status::OK();
+}
+
+// Construct a new iterator from the given rowset, and dump
+// all of its results into 'out'.
+static inline Status DumpRowSet(const RowSet &rs,
+                                const Schema &projection,
+                                const MvccSnapshot &snap,
+                                vector<string> *out,
+                                int limit = INT_MAX) {
+  gscoped_ptr<RowwiseIterator> iter(rs.NewRowIterator(projection, snap));
+  RETURN_NOT_OK(iter->Init(NULL));
+  RETURN_NOT_OK(IterateToStringList(iter.get(), out, limit));
   return Status::OK();
 }
 

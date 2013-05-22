@@ -415,6 +415,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 
   vector<string> out_rows;
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  std::sort(out_rows.begin(), out_rows.end());
 
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
@@ -514,6 +515,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   // Grab the resulting data into a vector.
   vector<string> out_rows;
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  std::sort(out_rows.begin(), out_rows.end());
 
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
