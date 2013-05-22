@@ -289,7 +289,7 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
 
 
 template<class Visitor>
-Status DeltaFileIterator::VisitUpdates(Visitor &visitor) {
+Status DeltaFileIterator::VisitUpdates(Visitor *visitor) {
   DCHECK(prepared_) << "must Prepare";
 
   rowid_t start_row = prepared_idx_;
@@ -326,7 +326,7 @@ Status DeltaFileIterator::VisitUpdates(Visitor &visitor) {
         continue;
       }
 
-      RETURN_NOT_OK(visitor.Visit(key, slice));
+      RETURN_NOT_OK(visitor->Visit(key, slice));
     }
   }
 
@@ -360,7 +360,7 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   size_t projected_col = projection_indexes_[col_to_apply];
   ApplyingVisitor visitor = {this, projected_col, dst};
 
-  return VisitUpdates(visitor);
+  return VisitUpdates(&visitor);
 }
 
 // Visitor which, for each mutation, appends it into a ColumnBlock of
@@ -385,7 +385,7 @@ struct CollectingVisitor {
 Status DeltaFileIterator::CollectMutations(vector<Mutation *> *dst, Arena *dst_arena) {
   DCHECK_LE(prepared_count_, dst->size());
   CollectingVisitor visitor = {this, dst, dst_arena};
-  return VisitUpdates(visitor);
+  return VisitUpdates(&visitor);
 }
 
 string DeltaFileIterator::ToString() const {

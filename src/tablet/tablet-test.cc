@@ -356,7 +356,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   // each key stage of flushing.
   class MyFlushHooks : public Tablet::FlushFaultHooks {
   public:
-    MyFlushHooks(TestFixture *test) : test_(test) {}
+    explicit MyFlushHooks(TestFixture *test) : test_(test) {}
 
     Status PostSwapNewMemRowSet() {
       test_->InsertTestRows(5, 1);
@@ -373,7 +373,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 
   class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
   public:
-    MyCommonHooks(TestFixture *test) : test_(test) {}
+    explicit MyCommonHooks(TestFixture *test) : test_(test) {}
 
     Status PostWriteSnapshot() {
       test_->InsertTestRows(6, 1);
@@ -450,7 +450,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
 
   class MyCompactHooks : public Tablet::CompactionFaultHooks {
    public:
-    MyCompactHooks(TestFixture *test) : test_(test) {}
+    explicit MyCompactHooks(TestFixture *test) : test_(test) {}
 
     Status PostSelectIterators() {
       test_->InsertTestRows(4, 1);
@@ -468,7 +468,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
 
   class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
    public:
-    MyCommonHooks(TestFixture *test) : test_(test) {}
+    explicit MyCommonHooks(TestFixture *test) : test_(test) {}
 
     Status PostWriteSnapshot() {
       test_->InsertTestRows(5, 1);

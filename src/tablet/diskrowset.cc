@@ -422,7 +422,7 @@ Status DuplicatingRowSet::UpdateRow(txid_t txid,
   // Duplicate the update to both the relevant input rowset and the output rowset.
   // First propagate to the relevant input rowset.
   bool updated = false;
-  BOOST_FOREACH(shared_ptr<RowSet> &rowset, old_rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
     Status s = rowset->UpdateRow(txid, key, update);
     if (s.ok()) {
       updated = true;

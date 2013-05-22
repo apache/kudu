@@ -36,11 +36,11 @@ static Status ParseMagicAndLength(const Slice &data,
     return Status::Corruption("Bad size data");
   }
 
-  if (memcmp(kMagicString.c_str(), data.data(), kMagicString.size()) != 0) {
+  if (memcmp(kMagicString, data.data(), strlen(kMagicString)) != 0) {
     return Status::Corruption("bad magic");
   }
 
-  *parsed_len = DecodeFixed32(data.data() + kMagicString.size());
+  *parsed_len = DecodeFixed32(data.data() + strlen(kMagicString));
   if (*parsed_len <= 0 || *parsed_len > kMaxHeaderFooterPBSize) {
     return Status::Corruption("invalid data size");
   }

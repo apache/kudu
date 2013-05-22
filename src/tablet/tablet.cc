@@ -171,7 +171,7 @@ Status Tablet::UpdateRow(const void *key,
   // TODO: could iterate the rowsets in a smart order
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
-  BOOST_FOREACH(shared_ptr<RowSet> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
     s = rs->UpdateRow(tx.txid(), key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.

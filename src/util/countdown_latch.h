@@ -14,7 +14,7 @@ namespace kudu {
 class CountDownLatch : boost::noncopyable {
 public:
   // Initialize the latch with the given initial count.
-  CountDownLatch(int count) :
+  explicit CountDownLatch(int count) :
     count_(count)
   {}
 

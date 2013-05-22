@@ -105,7 +105,7 @@ class DeltaIteratorMerger : public DeltaIteratorInterface {
   virtual string ToString() const;
 
  private:
-  DeltaIteratorMerger(const vector<shared_ptr<DeltaIteratorInterface> > &iters);
+  explicit DeltaIteratorMerger(const vector<shared_ptr<DeltaIteratorInterface> > &iters);
 
   vector<shared_ptr<DeltaIteratorInterface> > iters_;
 };

@@ -86,7 +86,7 @@ class MvccSnapshot {
   MvccSnapshot();
 
   // Create a snapshot with the current state of the given manager
-  MvccSnapshot(const MvccManager &manager);
+  explicit MvccSnapshot(const MvccManager &manager);
 
   // Create a snapshot which considers all transactions as committed.
   // This is mostly useful in test contexts.

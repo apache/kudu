@@ -40,7 +40,7 @@ private:
 
 class TimeSeriesCollector : boost::noncopyable {
 public:
-  TimeSeriesCollector(const string &scope) :
+  explicit TimeSeriesCollector(const string &scope) :
     scope_(scope),
     exit_latch_(0),
     started_(false)

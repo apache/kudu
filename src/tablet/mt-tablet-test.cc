@@ -35,7 +35,7 @@ using std::tr1::unordered_set;
 // Utility class which calls latch->CountDown() in its destructor.
 class CountDownOnScopeExit : boost::noncopyable {
 public:
-  CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
+  explicit CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
   ~CountDownOnScopeExit() {
     latch_->CountDown();
   }

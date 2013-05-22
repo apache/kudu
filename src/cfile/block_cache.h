@@ -20,7 +20,7 @@ public:
 
   static BlockCache *GetSingleton();
 
-  BlockCache(size_t capacity);
+  explicit BlockCache(size_t capacity);
   BlockCache();
 
   // Return a unique ID suitable for use as part of a cache key.

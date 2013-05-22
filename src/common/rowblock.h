@@ -22,7 +22,7 @@ class RowBlockRow;
 // a predicate.
 class SelectionVector : boost::noncopyable {
 public:
-  SelectionVector(size_t row_capacity);
+  explicit SelectionVector(size_t row_capacity);
 
   // Construct a vector which shares the underlying memory of another vector,
   // but only exposes up to a given prefix of the number of rows.

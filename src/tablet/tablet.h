@@ -162,6 +162,7 @@ private:
 class Tablet::CompactionFaultHooks {
 public:
   virtual Status PostSelectIterators() { return Status::OK(); }
+  virtual ~CompactionFaultHooks() {}
 };
 
 class Tablet::FlushCompactCommonHooks {
@@ -170,6 +171,7 @@ class Tablet::FlushCompactCommonHooks {
   virtual Status PostSwapInDuplicatingRowSet() { return Status::OK(); }
   virtual Status PostReupdateMissedDeltas() { return Status::OK(); }
   virtual Status PostSwapNewRowSet() { return Status::OK(); }
+  virtual ~FlushCompactCommonHooks() {}
 };
 
 // Hooks used in test code to inject faults or other code into interesting
@@ -177,6 +179,7 @@ class Tablet::FlushCompactCommonHooks {
 class Tablet::FlushFaultHooks {
 public:
   virtual Status PostSwapNewMemRowSet() { return Status::OK(); }
+  virtual ~FlushFaultHooks() {}
 };
 
 

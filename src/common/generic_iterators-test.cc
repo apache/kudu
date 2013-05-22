@@ -32,7 +32,7 @@ const static Schema kIntSchema(
 // vector.
 class VectorIterator : public ColumnwiseIterator {
 public:
-  VectorIterator(const vector<uint32_t> &ints) :
+  explicit VectorIterator(const vector<uint32_t> &ints) :
     ints_(ints),
     cur_idx_(0)
   {}

@@ -105,7 +105,7 @@ class ScopedColumnBlock : public ColumnBlock {
 public:
   typedef typename TypeTraits<type>::cpp_type cpp_type;
 
-  ScopedColumnBlock(size_t n_rows) :
+  explicit ScopedColumnBlock(size_t n_rows) :
     ColumnBlock(GetTypeInfo(type),
                 new cpp_type[n_rows],
                 TypeTraits<type>::size,

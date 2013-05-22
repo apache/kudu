@@ -783,7 +783,7 @@ public:
   //
   // The data referred to by the 'key' Slice passed in themust remain
   // valid for the lifetime of the PreparedMutation object.
-  PreparedMutation(const Slice &key) :
+  explicit PreparedMutation(const Slice &key) :
     key_(key),
     tree_(NULL),
     leaf_(NULL),

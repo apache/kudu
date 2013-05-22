@@ -10,7 +10,7 @@
 template<class LockType>
 class lock_guard_maybe {
 public:
-  lock_guard_maybe(LockType *l) :
+  explicit lock_guard_maybe(LockType *l) :
     lock_(l) {
     if (l != NULL) {
       l->lock();

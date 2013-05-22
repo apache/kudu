@@ -185,7 +185,7 @@ private:
   // Visit all updates in the currently prepared row range with the specified
   // visitor class.
   template<class Visitor>
-  Status VisitUpdates(Visitor &visitor);
+  Status VisitUpdates(Visitor *visitor);
 
   DeltaFileReader *dfr_;
   shared_ptr<cfile::CFileReader> cfile_reader_;

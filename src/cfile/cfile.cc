@@ -27,7 +27,7 @@ DEFINE_string(cfile_default_compression_codec, "none",
 
 namespace kudu { namespace cfile {
 
-const string kMagicString = "kuducfil";
+const char kMagicString[] = "kuducfil";
 
 static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
 

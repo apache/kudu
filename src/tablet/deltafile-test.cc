@@ -25,7 +25,7 @@ namespace tablet {
 using std::tr1::shared_ptr;
 
 // Test path to write delta file to (in in-memory environment)
-const string kTestPath = "/tmp/test";
+const char kTestPath[] = "/tmp/test";
 
 class TestDeltaFile : public ::testing::Test {
 public:

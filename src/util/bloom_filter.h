@@ -32,7 +32,7 @@ public:
   //
   // NOTE: proper operation requires that the referenced memory remain
   // valid for the lifetime of this object.
-  BloomKeyProbe(const Slice &key) : key_(key) {
+  explicit BloomKeyProbe(const Slice &key) : key_(key) {
     uint64_t h = util_hash::CityHash64(
       reinterpret_cast<const char *>(key.data()),
       key.size());
@@ -99,7 +99,7 @@ class BloomFilterBuilder : boost::noncopyable {
 public:
   // Create a bloom filter.
   // See BloomFilterSizing static methods to specify this argument.
-  BloomFilterBuilder(const BloomFilterSizing &sizing);
+  explicit BloomFilterBuilder(const BloomFilterSizing &sizing);
 
   // Clear all entries, reset insertion count.
   void Clear();

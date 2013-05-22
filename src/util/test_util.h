@@ -22,7 +22,7 @@ public:
   {}
 
   // env passed in from subclass, for tests that run in-memory
-  KuduTest(Env *env) :
+  explicit KuduTest(Env *env) :
     env_(env)
   {}
 

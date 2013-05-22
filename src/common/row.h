@@ -42,7 +42,7 @@ inline Status CopyRowIndirectDataToArena(RowType *row,
 // This is used when inserting data into the MemStore or a new Layer.
 class RowBuilder : boost::noncopyable {
 public:
-  RowBuilder(const Schema &schema) :
+  explicit RowBuilder(const Schema &schema) :
     schema_(schema),
     arena_(1024, 1024*1024)
   {

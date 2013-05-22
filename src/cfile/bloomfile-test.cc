@@ -71,7 +71,7 @@ static void VerifyBloomFile(Env *env, const string &path) {
     Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
     bool present = false;
-    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(s, &present) );
+    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(BloomKeyProbe(s), &present) );
     ASSERT_TRUE(present);
   }
 
@@ -82,7 +82,7 @@ static void VerifyBloomFile(Env *env, const string &path) {
     Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 
     bool present = false;
-    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(s, &present) );
+    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(BloomKeyProbe(s), &present) );
     if (present) {
       positive_count++;
     }
@@ -131,7 +131,7 @@ TEST(TestBloomFile, Benchmark) {
 
       Slice s(reinterpret_cast<uint8_t *>(&key), sizeof(key));
       bool present;
-      CHECK_OK( bfr->CheckKeyPresent(s, &present) ); 
+      CHECK_OK( bfr->CheckKeyPresent(BloomKeyProbe(s), &present) );
       if (present) count_present++;
     }
   }

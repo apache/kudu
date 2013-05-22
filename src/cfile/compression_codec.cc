@@ -16,7 +16,7 @@ namespace cfile {
 
 class SlicesSource : public snappy::Source {
  public:
-  SlicesSource(const std::vector<Slice>& slices)
+  explicit SlicesSource(const std::vector<Slice>& slices)
       : slice_index_(0), slice_offset_(0), slices_(slices)
   {
     available_ = TotalSize();

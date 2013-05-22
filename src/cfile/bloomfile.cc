@@ -55,7 +55,7 @@ Status BloomFileWriter::AppendKeys(
 
   for (size_t i = 0; i < n_keys; i++) {
 
-    bloom_builder_.AddKey(keys[i]);
+    bloom_builder_.AddKey(BloomKeyProbe(keys[i]));
 
     // Bloom has reached optimal occupancy: flush it to the file
     if (PREDICT_FALSE(bloom_builder_.count() >= bloom_builder_.expected_count())) {

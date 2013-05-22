@@ -162,8 +162,8 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
   pairs.push_back(test_pair(list_of(Slice("xxx\x00yyy", 7)),
                             Slice("xxx" "\x00\x01" "yyy", 8)));
 
-  BOOST_FOREACH(test_pair &t, pairs) {
-    vector<Slice> &in = boost::get<0>(t);
+  BOOST_FOREACH(const test_pair &t, pairs) {
+    const vector<Slice> &in = boost::get<0>(t);
     Slice expected = boost::get<1>(t);
 
     fs.clear();

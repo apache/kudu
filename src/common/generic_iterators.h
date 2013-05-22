@@ -84,7 +84,7 @@ public:
   //
   // All passed-in iterators must be fully able to evaluate all predicates - i.e. 
   // calling iter->Init(spec) should remove all predicates from the spec.
-  UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
+  explicit UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
 
   Status Init(ScanSpec *spec);
 

@@ -28,7 +28,7 @@ namespace kudu {
 // TODO: use memcmpable_varint code here to make denser int keys
 class KeyEncoder : boost::noncopyable {
 public:
-  KeyEncoder(faststring *dst) : dst_(dst) {}
+  explicit KeyEncoder(faststring *dst) : dst_(dst) {}
 
   void EncodeUInt32(uint32_t x, bool is_last) {
     // Byteswap so it is correctly comparable
