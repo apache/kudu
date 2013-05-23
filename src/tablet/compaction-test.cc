@@ -80,7 +80,7 @@ class TestCompaction : public KuduTest {
   }
 
   void DoFlush(CompactionInput *input, const string &out_dir) {
-    RowSetWriter rsw(env_.get(), schema_, out_dir,
+    DiskRowSetWriter rsw(env_.get(), schema_, out_dir,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
     ASSERT_STATUS_OK(rsw.Open());
     ASSERT_STATUS_OK(Flush(input, &rsw));

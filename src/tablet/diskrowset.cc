@@ -54,7 +54,7 @@ string DiskRowSet::GetBloomPath(const string &dir) {
   return dir + "/" + kBloomFileName;
 }
 
-Status RowSetWriter::Open() {
+Status DiskRowSetWriter::Open() {
   CHECK(cfile_writers_.empty());
 
   // Create the directory for the new rowset
@@ -117,7 +117,7 @@ Status RowSetWriter::Open() {
   return Status::OK();
 }
 
-Status RowSetWriter::InitBloomFileWriter() {
+Status DiskRowSetWriter::InitBloomFileWriter() {
   string path(DiskRowSet::GetBloomPath(dir_));
   shared_ptr<WritableFile> file;
   RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
@@ -125,7 +125,7 @@ Status RowSetWriter::InitBloomFileWriter() {
   return bloom_writer_->Start();
 }
 
-Status RowSetWriter::WriteRow(const Slice &row) {
+Status DiskRowSetWriter::WriteRow(const Slice &row) {
   CHECK(!finished_);
   DCHECK_EQ(row.size(), schema_.byte_size());
 
@@ -144,7 +144,7 @@ Status RowSetWriter::WriteRow(const Slice &row) {
   return AppendBlock(block);
 }
 
-Status RowSetWriter::AppendBlock(const RowBlock &block) {
+Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
   DCHECK_EQ(block.schema().num_columns(), schema_.num_columns());
   CHECK(!finished_);
 
@@ -177,7 +177,7 @@ Status RowSetWriter::AppendBlock(const RowBlock &block) {
   return Status::OK();
 }
 
-Status RowSetWriter::Finish() {
+Status DiskRowSetWriter::Finish() {
   CHECK(!finished_);
   for (int i = 0; i < schema_.num_columns(); i++) {
     cfile::Writer &writer = cfile_writers_[i];

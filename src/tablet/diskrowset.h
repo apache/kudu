@@ -42,9 +42,9 @@ using kudu::cfile::BloomFileWriter;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
-class RowSetWriter : boost::noncopyable {
+class DiskRowSetWriter : boost::noncopyable {
 public:
-  RowSetWriter(Env *env,
+  DiskRowSetWriter(Env *env,
               const Schema &schema,
               const string &rowset_dir,
               const BloomFilterSizing &bloom_sizing) :

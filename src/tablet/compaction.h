@@ -80,14 +80,14 @@ struct CompactionInputRow {
   Mutation *mutation_head;
 };
 
-// Iterate through this compaction input, flushing all rows to the given RowSetWriter.
+// Iterate through this compaction input, flushing all rows to the given DiskRowSetWriter.
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // no longer be useful.
 //
 // TODO: when we support actually flushing UNDO files, this will also have to take
 // a delta file writer.
-Status Flush(CompactionInput *input, RowSetWriter *out);
+Status Flush(CompactionInput *input, DiskRowSetWriter *out);
 
 // Iterate through this compaction input, finding any mutations which came between
 // snap_to_exclude and snap_to_include (ie those transactions that were not yet

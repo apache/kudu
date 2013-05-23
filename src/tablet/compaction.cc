@@ -342,7 +342,7 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mut
   return Status::OK();
 }
 
-Status Flush(CompactionInput *input, RowSetWriter *out) {
+Status Flush(CompactionInput *input, DiskRowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());

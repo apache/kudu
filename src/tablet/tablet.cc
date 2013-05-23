@@ -350,10 +350,10 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
-  RowSetWriter lw(env_, schema_, tmp_rowset_dir, bloom_sizing());
-  RETURN_NOT_OK(lw.Open());
-  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &lw));
-  RETURN_NOT_OK(lw.Finish());
+  DiskRowSetWriter drsw(env_, schema_, tmp_rowset_dir, bloom_sizing());
+  RETURN_NOT_OK(drsw.Open());
+  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &drsw));
+  RETURN_NOT_OK(drsw.Finish());
 
   // Open the written-out snapshot as a new rowset.
   shared_ptr<DiskRowSet> new_rowset;
@@ -416,7 +416,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
 
   RETURN_NOT_OK(new_rowset->RenameRowSetDir(new_rowset_dir));
 
-  LOG(INFO) << "Successfully flush/compacted " << lw.written_count() << " rows";
+  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
 
   // Replace the compacted rowsets with the new on-disk rowset.
   AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowset);

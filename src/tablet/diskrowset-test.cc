@@ -176,16 +176,16 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Write a single row into a new DiskRowSet.
   LOG_TIMING(INFO, "Writing rowset") {
-    RowSetWriter lw(env_.get(), schema_, rowset_dir_,
+    DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
-    ASSERT_STATUS_OK(lw.Open());
+    ASSERT_STATUS_OK(drsw.Open());
 
     RowBuilder rb(schema_);
     rb.AddString(key_slice);
     rb.AddUint32(1);
-    ASSERT_STATUS_OK_FAST(lw.WriteRow(rb.data()));
-    ASSERT_STATUS_OK(lw.Finish());
+    ASSERT_STATUS_OK_FAST(drsw.WriteRow(rb.data()));
+    ASSERT_STATUS_OK(drsw.Finish());
   }
 
 

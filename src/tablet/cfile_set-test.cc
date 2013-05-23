@@ -40,7 +40,7 @@ public:
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
   void WriteTestRowSet(int nrows) {
-    RowSetWriter rsw(env_.get(), schema_, rowset_dir_,
+    DiskRowSetWriter rsw(env_.get(), schema_, rowset_dir_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_STATUS_OK(rsw.Open());
