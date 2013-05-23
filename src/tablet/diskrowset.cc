@@ -54,53 +54,6 @@ string DiskRowSet::GetBloomPath(const string &dir) {
   return dir + "/" + kBloomFileName;
 }
 
-// Utility class for pulling batches of rows from an iterator, storing
-// the resulting data in local scope.
-//
-// This is probably useful more generally, but for now just lives here
-// for use within the various Flush calls.
-class ScopedBatchReader {
-public:
-  ScopedBatchReader(RowwiseIterator *src_iter,
-                    bool need_arena) :
-    iter_(src_iter)
-  {
-    if (need_arena) {
-      arena_.reset(new Arena(16*1024, 256*1024));
-    }
-
-    // 32KB buffer - try to fit in L1 cache
-    size_t buf_size = 32 * 1024;
-    batch_size_ = buf_size / iter_->schema().byte_size();
-    if (batch_size_ == 0) {
-      batch_size_ = 1;
-    }
-    block_.reset(new RowBlock(iter_->schema(), batch_size_, arena_.get()));
-  }
-
-  bool HasNext() {
-    return iter_->HasNext();
-  }
-
-  Status NextBatch(size_t *nrows) {
-    if (arena_ != NULL) arena_->Reset();
-    RETURN_NOT_OK(RowwiseIterator::CopyBlock(iter_, block_.get()));
-    *nrows = block_->nrows();
-    return Status::OK();
-  }
-
-  void *col_ptr(size_t col_idx) {
-    return block_->column_block(col_idx).cell_ptr(0);
-  }
-
-private:
-  RowwiseIterator *iter_;
-  gscoped_ptr<Arena> arena_;
-  gscoped_ptr<RowBlock> block_;
-
-  size_t batch_size_;
-};
-
 Status RowSetWriter::Open() {
   CHECK(cfile_writers_.empty());
 
