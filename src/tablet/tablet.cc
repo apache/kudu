@@ -235,8 +235,8 @@ Status Tablet::MutateRow(const void *key,
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
-                              const shared_ptr<RowSet> &new_rowset,
-                              MvccSnapshot *snap_under_lock = NULL) {
+                               const shared_ptr<RowSet> &new_rowset,
+                               MvccSnapshot *snap_under_lock = NULL) {
   RowSetVector new_rowsets;
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
@@ -261,8 +261,10 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
 
   CHECK_EQ(num_replaced, old_rowsets.size());
 
-  // Then push the new rowset on the end.
-  new_rowsets.push_back(new_rowset);
+  if (new_rowset != NULL) {
+    // Then push the new rowset on the end.
+    new_rowsets.push_back(new_rowset);
+  }
 
   rowsets_.swap(new_rowsets);
 
@@ -282,6 +284,14 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
     // released.
     CHECK_EQ(snap_under_lock->num_transactions_in_flight(), 0);
   }
+}
+
+Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
+    LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
+    RETURN_NOT_OK(l_input->Delete());
+  }
+  return Status::OK();
 }
 
 Status Tablet::Flush() {
@@ -415,6 +425,18 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &drsw));
   RETURN_NOT_OK(drsw.Finish());
 
+  // Though unlikely, it's possible that all of the input rows were actually
+  // GCed in this compaction. In that case, we don't actually want to reopen.
+  bool gced_all_input = drsw.written_count() == 0;
+  if (gced_all_input) {
+    LOG(INFO) << "Compaction resulted in no output rows (all input rows were GCed!)";
+    LOG(INFO) << "Removing all input rowsets.";
+    AtomicSwapRowSets(input.rowsets(), shared_ptr<RowSet>((RowSet *)NULL), NULL);
+    // Remove old rowsets
+    DeleteCompactionInputs(input);
+    return Status::OK();
+  }
+
   // Open the written-out snapshot as a new rowset.
   shared_ptr<DiskRowSet> new_rowset;
   Status s = DiskRowSet::Open(env_, schema_, tmp_rowset_dir, &new_rowset);
@@ -485,10 +507,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
 
   // Remove old rowsets
-  BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
-    LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
-    RETURN_NOT_OK(l_input->Delete());
-  }
+  DeleteCompactionInputs(input);
 
   return Status::OK();
 }

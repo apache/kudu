@@ -128,7 +128,9 @@ private:
   void AtomicSwapRowSets(const RowSetVector old_rowsets,
                         const shared_ptr<RowSet> &new_rowset,
                         MvccSnapshot *snap_under_lock);
-    
+
+  // Delete the underlying storage for the input layers in a compaction.
+  Status DeleteCompactionInputs(const RowSetsInCompaction &input);
 
   BloomFilterSizing bloom_sizing() const;
 

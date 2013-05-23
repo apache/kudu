@@ -179,6 +179,15 @@ public:
     return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
   }
 
+  Status DeleteTestRow(uint64_t row_idx) {
+    RowBuilder rb(schema_.CreateKeyProjection());
+    setup_.BuildRowKey(&rb, row_idx);
+
+    faststring buf;
+    RowChangeListEncoder(schema_, &buf).SetToDelete();
+    return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
+  }
+
   template <class RowType>
   void VerifyRow(const RowType& row, uint64_t row_idx, uint32_t update_count) {
     ASSERT_EQ(setup_.FormatDebugRow(row_idx, update_count), schema_.DebugRow(row));

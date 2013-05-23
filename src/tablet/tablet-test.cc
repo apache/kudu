@@ -114,6 +114,79 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_EQ(1, this->TabletCount());
 }
 
+
+// Test flushes and compactions dealing with deleted rows.
+TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
+  this->InsertTestRows(0, 1, 0);
+  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+
+  // The row is deleted, so we shouldn't see it in the iterator.
+  vector<string> rows;
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // Flush the tablet and make sure the data doesn't re-appear.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // Re-inserting should succeed. This will reinsert into the MemRowSet.
+  // Set the int column to '1' this time, so we can differentiate the two
+  // versions of the row.
+  this->InsertTestRows(0, 1, 1);
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 1), rows[0]);
+
+  // Flush again, so the DiskRowSet has the row.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 1), rows[0]);
+
+  // Delete it again, now that it's in DRS.
+  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // We now have an INSERT in the MemRowSet and the
+  // deleted row in the DiskRowSet. The new version
+  // of the row has '2' in the int column.
+  this->InsertTestRows(0, 1, 2);
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 2), rows[0]);
+
+  // Flush - now we have the row in two different DRSs.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 2), rows[0]);
+
+  // Compaction should succeed even with the duplicate rows.
+  ASSERT_STATUS_OK(this->tablet_->Compact());
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 2), rows[0]);
+}
+
+// Test flushes dealing with REINSERT mutations in the MemRowSet.
+TYPED_TEST(TestTablet, TestFlushWithReinsert) {
+  // Insert, delete, and re-insert a row in the MRS.
+  this->InsertTestRows(0, 1, 0);
+  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+  this->InsertTestRows(0, 1, 1);
+
+  // Flush the tablet and make sure the data doesn't re-appear.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  // The row was reinserted, so it should be present in flushed data.
+  vector<string> rows;
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 1), rows[0]);
+}
+
 // Test iterating over a tablet which contains data
 // in the memrowset as well as two rowsets. This simple test
 // only puts one row in each with no updates.
@@ -356,6 +429,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
  public:
   explicit MyCommonHooks(TestFixture *test) : test_(test), i_(0) {}
   Status DoHook() {
+    RETURN_NOT_OK(test_->DeleteTestRow(i_));
     RETURN_NOT_OK(test_->UpdateTestRow(10 + i_, 1000 + i_));
     test_->InsertTestRows(20 + i_, 1, 0);
     test_->CheckCanIterate();
@@ -386,9 +460,10 @@ class MyCompactHooks : public Tablet::CompactionFaultHooks, public MyCommonHooks
   Status PostSelectIterators() { return this->DoHook(); }
 };
 
-// Test for Flush with concurrent update and insert during the
+// Test for Flush with concurrent update, delete and insert during the
 // various phases.
 TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
+  this->InsertTestRows(0, 6, 0); // 0-5 inclusive: these rows will be deleted
   this->InsertTestRows(10, 6, 0); // 10-15 inclusive: these rows will be updated
   // Rows 20-25 inclusive will be inserted during the flush
 
@@ -434,13 +509,19 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 // various phases.
 TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   // Create three rowsets by inserting and flushing.
-  // The rows from these layers wil get updated during the flush.
+  // The rows from these layers will get updated or deleted during the flush:
+  // - rows 0-5 inclusive will be deleted
+  // - rows 10-15 inclusive will be updated
+
+  this->InsertTestRows(0, 2, 0);  // rows 0-1
   this->InsertTestRows(10, 2, 0); // rows 10-11
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
+  this->InsertTestRows(2, 2, 0);  // rows 2-3
   this->InsertTestRows(12, 2, 0); // rows 12-13
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
+  this->InsertTestRows(4, 2, 0);  // rows 4-5
   this->InsertTestRows(14, 2, 0); // rows 14-15
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
