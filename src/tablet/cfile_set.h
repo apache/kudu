@@ -12,7 +12,6 @@
 
 #include "common/iterator.h"
 #include "common/schema.h"
-#include "tablet/rowset-interfaces.h"
 #include "tablet/memrowset.h"
 #include "util/env.h"
 #include "util/memory/arena.h"

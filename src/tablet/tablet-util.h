@@ -4,7 +4,7 @@
 #define KUDU_TABLET_TABLET_UTIL_H
 
 #include "tablet/diskrowset.h"
-#include "tablet/rowset-interfaces.h"
+#include "tablet/rowset.h"
 
 namespace kudu {
 namespace tablet {

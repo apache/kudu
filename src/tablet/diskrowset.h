@@ -23,6 +23,7 @@
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_tracker.h"
 #include "tablet/cfile_set.h"
+#include "tablet/rowset.h"
 #include "util/bloom_filter.h"
 #include "util/memory/arena.h"
 
@@ -186,10 +187,6 @@ private:
         const string &rowset_dir);
 
   Status Open();
-
-  void set_delta_tracker(const shared_ptr<DeltaTracker> &dt) {
-    delta_tracker_ = dt;
-  }
 
   Env *env_;
   const Schema schema_;

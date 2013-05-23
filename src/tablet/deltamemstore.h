@@ -12,7 +12,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "tablet/concurrent_btree.h"
 #include "tablet/delta_key.h"
-#include "tablet/rowset-interfaces.h"
+#include "tablet/delta_tracker.h"
 #include "tablet/mvcc.h"
 #include "util/memory/arena.h"
 
@@ -27,7 +27,7 @@ class Mutation;
 // This essentially tracks a 'diff' per row, which contains the
 // modified columns.
 
-class DeltaMemStore : public DeltaTrackerInterface, 
+class DeltaMemStore : public DeltaStore, 
                       public std::tr1::enable_shared_from_this<DeltaMemStore>,
                       boost::noncopyable {
 public:
@@ -86,7 +86,7 @@ private:
 // column-by-column predicate evaluation, and lazily loading columns
 // only after predicates have passed.
 //
-// See DeltaTrackerInterface for more details on usage and the implemented
+// See DeltaStore for more details on usage and the implemented
 // functions.
 class DMSIterator : boost::noncopyable, public DeltaIteratorInterface {
 public:

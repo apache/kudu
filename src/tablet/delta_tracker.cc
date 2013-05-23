@@ -62,7 +62,7 @@ Status DeltaTracker::Open() {
       }
       LOG(INFO) << "Successfully opened delta file " << absolute_path;
 
-      delta_trackers_.push_back(shared_ptr<DeltaTrackerInterface>(dfr.release()));
+      delta_trackers_.push_back(shared_ptr<DeltaStore>(dfr.release()));
 
       next_deltafile_idx_ = std::max(next_deltafile_idx_,
                                      deltafile_idx + 1);
@@ -77,7 +77,7 @@ Status DeltaTracker::Open() {
 }
 
 
-void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *deltas) const {
+void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaStore> > *deltas) const {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
   deltas->assign(delta_trackers_.begin(), delta_trackers_.end());
   deltas->push_back(dms_);
@@ -85,7 +85,7 @@ void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaTrackerInterface> > *d
 
 shared_ptr<DeltaIteratorInterface> DeltaTracker::NewDeltaIterator(const Schema &schema,
                                                                   const MvccSnapshot &snap) const {
-  std::vector<shared_ptr<DeltaTrackerInterface> > deltas;
+  std::vector<shared_ptr<DeltaStore> > deltas;
   CollectTrackers(&deltas);
   return DeltaIteratorMerger::Create(deltas, schema, snap);
 }
@@ -257,13 +257,13 @@ string DeltaIteratorMerger::ToString() const {
 
 
 shared_ptr<DeltaIteratorInterface> DeltaIteratorMerger::Create(
-  const vector<shared_ptr<DeltaTrackerInterface> > &trackers,
+  const vector<shared_ptr<DeltaStore> > &trackers,
   const Schema &projection,
   const MvccSnapshot &snapshot)
 {
   vector<shared_ptr<DeltaIteratorInterface> > delta_iters;
 
-  BOOST_FOREACH(const shared_ptr<DeltaTrackerInterface> &tracker, trackers) {
+  BOOST_FOREACH(const shared_ptr<DeltaStore> &tracker, trackers) {
     shared_ptr<DeltaIteratorInterface> iter(tracker->NewDeltaIterator(projection, snapshot));
     delta_iters.push_back(iter);
   }

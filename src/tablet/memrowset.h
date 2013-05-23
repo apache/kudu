@@ -5,11 +5,11 @@
 #include <boost/noncopyable.hpp>
 #include <tr1/memory>
 
-#include "tablet/concurrent_btree.h"
-#include "tablet/rowset-interfaces.h"
-#include "tablet/mutation.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
+#include "tablet/concurrent_btree.h"
+#include "tablet/mutation.h"
+#include "tablet/rowset.h"
 #include "util/memory/arena.h"
 #include "util/memory/memory.h"
 #include "util/status.h"

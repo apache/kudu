@@ -16,7 +16,6 @@
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_key.h"
-#include "tablet/rowset-interfaces.h"
 
 namespace kudu {
 
@@ -72,14 +71,14 @@ private:
 };
 
 
-class DeltaFileReader : public DeltaTrackerInterface, boost::noncopyable {
+class DeltaFileReader : public DeltaStore, boost::noncopyable {
 public:
   // Open the Delta File at the given path.
   static Status Open(Env *env, const string &path,
                      const Schema &schema,
                      gscoped_ptr<DeltaFileReader> *reader);
 
-  // See DeltaTrackerInterface::NewDeltaIterator(...)
+  // See DeltaStore::NewDeltaIterator(...)
   virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection,
                                                    const MvccSnapshot &snap);
 
