@@ -1,5 +1,12 @@
+// Copyright (c) 2013, Cloudera, inc.
+// All rights reserved.
 #ifndef KUDU_TABLET_DELTA_STORE_H
 #define KUDU_TABLET_DELTA_STORE_H
+
+#include "common/columnblock.h"
+#include "common/schema.h"
+#include "util/status.h"
+#include "tablet/mvcc.h"
 
 namespace kudu { namespace tablet {
 
