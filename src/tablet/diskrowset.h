@@ -205,58 +205,6 @@ private:
 };
 
 
-
-// DiskRowSet which is used during the middle of a flush or compaction.
-// It consists of a set of one or more input rowsets, and a single
-// output rowset. All mutations are duplicated to the appropriate input
-// rowset as well as the output rowset. All reads are directed to the
-// union of the input rowsets.
-//
-// See compaction.txt for a little more detail on how this is used.
-class DuplicatingRowSet : public RowSet, boost::noncopyable {
-public:
-  DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
-                   const shared_ptr<RowSet> &new_rowset);
-
-
-  Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
-
-  Status CheckRowPresent(const RowSetKeyProbe &key, bool *present) const;
-
-  RowwiseIterator *NewRowIterator(const Schema &projection,
-                                  const MvccSnapshot &snap) const;
-
-  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
-
-  Status CountRows(rowid_t *count) const;
-
-  uint64_t EstimateOnDiskSize() const;
-
-  string ToString() const;
-
-  Status Delete();
-
-  // A flush-in-progress rowset should never be selected for compaction.
-  boost::mutex *compact_flush_lock() {
-    return &always_locked_;
-  }
-
-  ~DuplicatingRowSet();
-
-  const Schema &schema() const {
-    return new_rowset_->schema();
-  }
-
-private:
-  friend class Tablet;
-
-  vector<shared_ptr<RowSet> > old_rowsets_;
-  shared_ptr<RowSet> new_rowset_;
-
-  boost::mutex always_locked_;
-};
-
-
 } // namespace tablet
 } // namespace kudu
 

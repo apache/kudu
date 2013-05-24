@@ -8,6 +8,7 @@ SET(TABLET_SRCS
   memrowset.cc
   mutation.cc
   mvcc.cc
+  rowset.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
 )
 ADD_LIBRARY(tablet ${TABLET_SRCS})
