@@ -10,21 +10,21 @@
 
 namespace kudu { namespace tablet {
 
-class DeltaIteratorInterface;
+class DeltaIterator;
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaFileReader.
 class DeltaStore {
 public:
 
-  // Create a DeltaIteratorInterface for the given projection.
+  // Create a DeltaIterator for the given projection.
   //
   // The projection corresponds to whatever scan is currently ongoing.
   // All RowBlocks passed to this DeltaIterator must have this same schema.
   //
   // 'snapshot' is the MVCC state which determines which transactions
   // should be considered committed (and thus applied by the iterator).
-  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection_,
+  virtual DeltaIterator *NewDeltaIterator(const Schema &projection_,
                                                    const MvccSnapshot &snapshot) = 0;
 
   virtual ~DeltaStore() {}
@@ -49,7 +49,7 @@ public:
 //     CHECK_OK(iter->ApplyUpdates(1, rowblock.column(1)))
 //     ...
 //  }
-class DeltaIteratorInterface {
+class DeltaIterator {
 public:
   // Initialize the iterator. This must be called once before any other
   // call.
@@ -84,7 +84,7 @@ public:
   // Return a string representation suitable for debug printouts.
   virtual string ToString() const = 0;
 
-  virtual ~DeltaIteratorInterface() {}
+  virtual ~DeltaIterator() {}
 };
 
 

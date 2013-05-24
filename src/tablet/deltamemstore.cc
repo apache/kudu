@@ -63,7 +63,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
   return Status::OK();
 }
 
-DeltaIteratorInterface *DeltaMemStore::NewDeltaIterator(const Schema &projection,
+DeltaIterator *DeltaMemStore::NewDeltaIterator(const Schema &projection,
                                                         const MvccSnapshot &snapshot) {
   return new DMSIterator(shared_from_this(), projection, snapshot);
 }

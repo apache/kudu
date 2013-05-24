@@ -57,7 +57,7 @@ public:
   // 'snapshot' determines which updates will be applied -- updates which come
   // from transactions which were not yet committed at the time the snapshot was
   // created will be ignored.
-  DeltaIteratorInterface *NewDeltaIterator(const Schema &projection,
+  DeltaIterator *NewDeltaIterator(const Schema &projection,
                                            const MvccSnapshot &snapshot);
 
   const Schema &schema() const {
@@ -88,7 +88,7 @@ private:
 //
 // See DeltaStore for more details on usage and the implemented
 // functions.
-class DMSIterator : boost::noncopyable, public DeltaIteratorInterface {
+class DMSIterator : boost::noncopyable, public DeltaIterator {
 public:
   Status Init();
 

@@ -79,7 +79,7 @@ public:
                      gscoped_ptr<DeltaFileReader> *reader);
 
   // See DeltaStore::NewDeltaIterator(...)
-  virtual DeltaIteratorInterface *NewDeltaIterator(const Schema &projection,
+  virtual DeltaIterator *NewDeltaIterator(const Schema &projection,
                                                    const MvccSnapshot &snap);
 
   const Schema &schema() const {
@@ -111,8 +111,8 @@ private:
 
 // Iterator over the deltas contained in a delta file.
 //
-// See DeltaIteratorInterface for details.
-class DeltaFileIterator : boost::noncopyable, public DeltaIteratorInterface {
+// See DeltaIterator for details.
+class DeltaFileIterator : boost::noncopyable, public DeltaIterator {
 public:
   Status Init();
 

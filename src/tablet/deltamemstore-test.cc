@@ -52,7 +52,7 @@ class TestDeltaMemStore : public KuduTest {
     ColumnSchema col_schema(dms_->schema().column(col_idx));
     Schema single_col_projection(boost::assign::list_of(col_schema), 0);
 
-    gscoped_ptr<DeltaIteratorInterface> iter(
+    gscoped_ptr<DeltaIterator> iter(
       dms_->NewDeltaIterator(single_col_projection, snapshot));
     ASSERT_STATUS_OK(iter->Init());
     ASSERT_STATUS_OK(iter->SeekToOrdinal(row_idx));

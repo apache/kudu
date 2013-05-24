@@ -83,7 +83,7 @@ void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaStore> > *deltas) cons
   deltas->push_back(dms_);
 }
 
-shared_ptr<DeltaIteratorInterface> DeltaTracker::NewDeltaIterator(const Schema &schema,
+shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema &schema,
                                                                   const MvccSnapshot &snap) const {
   std::vector<shared_ptr<DeltaStore> > deltas;
   CollectTrackers(&deltas);
@@ -196,40 +196,40 @@ Status DeltaTracker::Flush() {
 // Delta merger
 ////////////////////////////////////////////////////////////
 
-DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIteratorInterface> > &iters) :
+DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters) :
   iters_(iters)
 {}
 
 Status DeltaIteratorMerger::Init() {
-  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->Init());
   }
   return Status::OK();
 }
 
 Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
-  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->SeekToOrdinal(idx));
   }
   return Status::OK();
 }
 
 Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
-  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->PrepareBatch(nrows));
   }
   return Status::OK();
 }
 
 Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
-  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
   }
   return Status::OK();
 }
 
 Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
-  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->CollectMutations(dst, arena));
   }
   // TODO: do we need to do some kind of sorting here to deal with out-of-order
@@ -243,7 +243,7 @@ string DeltaIteratorMerger::ToString() const {
   ret.append("DeltaIteratorMerger(");
 
   bool first = true;
-  BOOST_FOREACH(const shared_ptr<DeltaIteratorInterface> &iter, iters_) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     if (!first) {
       ret.append(", ");
     }
@@ -256,15 +256,15 @@ string DeltaIteratorMerger::ToString() const {
 }
 
 
-shared_ptr<DeltaIteratorInterface> DeltaIteratorMerger::Create(
+shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
   const vector<shared_ptr<DeltaStore> > &trackers,
   const Schema &projection,
   const MvccSnapshot &snapshot)
 {
-  vector<shared_ptr<DeltaIteratorInterface> > delta_iters;
+  vector<shared_ptr<DeltaIterator> > delta_iters;
 
   BOOST_FOREACH(const shared_ptr<DeltaStore> &tracker, trackers) {
-    shared_ptr<DeltaIteratorInterface> iter(tracker->NewDeltaIterator(projection, snapshot));
+    shared_ptr<DeltaIterator> iter(tracker->NewDeltaIterator(projection, snapshot));
     delta_iters.push_back(iter);
   }
 
@@ -274,7 +274,7 @@ shared_ptr<DeltaIteratorInterface> DeltaIteratorMerger::Create(
     return delta_iters[0];
   }
 
-  return shared_ptr<DeltaIteratorInterface>(new DeltaIteratorMerger(delta_iters));
+  return shared_ptr<DeltaIterator>(new DeltaIteratorMerger(delta_iters));
 }
 
 } // namespace tablet

@@ -37,7 +37,7 @@ public:
 
   // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
   // where this has bled around.
-  shared_ptr<DeltaIteratorInterface> NewDeltaIterator(const Schema &schema,
+  shared_ptr<DeltaIterator> NewDeltaIterator(const Schema &schema,
                                                       const MvccSnapshot &snap) const;
 
 
@@ -86,22 +86,22 @@ private:
 
 };
 
-// DeltaIteratorInterface that simply combines together other DeltaIteratorInterfaces,
+// DeltaIterator that simply combines together other DeltaIterators,
 // applying deltas from each in order.
-class DeltaIteratorMerger : public DeltaIteratorInterface {
+class DeltaIteratorMerger : public DeltaIterator {
  public:
-  // Create a new DeltaIteratorInterface which combines the deltas from
+  // Create a new DeltaIterator which combines the deltas from
   // all of the input delta trackers.
   //
   // If only one tracker is input, this will automatically return an unwrapped
   // iterator for greater efficiency.
-  static shared_ptr<DeltaIteratorInterface> Create(
+  static shared_ptr<DeltaIterator> Create(
     const vector<shared_ptr<DeltaStore> > &trackers,
     const Schema &projection,
     const MvccSnapshot &snapshot);
 
   ////////////////////////////////////////////////////////////
-  // Implementations of DeltaIteratorInterface
+  // Implementations of DeltaIterator
   ////////////////////////////////////////////////////////////
   virtual Status Init();
   virtual Status SeekToOrdinal(rowid_t idx);
@@ -111,9 +111,9 @@ class DeltaIteratorMerger : public DeltaIteratorInterface {
   virtual string ToString() const;
 
  private:
-  explicit DeltaIteratorMerger(const vector<shared_ptr<DeltaIteratorInterface> > &iters);
+  explicit DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters);
 
-  vector<shared_ptr<DeltaIteratorInterface> > iters_;
+  vector<shared_ptr<DeltaIterator> > iters_;
 };
 
 
@@ -161,14 +161,14 @@ private:
 
   // Construct. The base_iter and delta_iter should not be Initted.
   DeltaApplier(const shared_ptr<ColumnwiseIterator> &base_iter,
-               const shared_ptr<DeltaIteratorInterface> delta_iter) :
+               const shared_ptr<DeltaIterator> delta_iter) :
     base_iter_(base_iter),
     delta_iter_(delta_iter)
   {
   }
 
   shared_ptr<ColumnwiseIterator> base_iter_;
-  shared_ptr<DeltaIteratorInterface> delta_iter_;
+  shared_ptr<DeltaIterator> delta_iter_;
 };
 
 

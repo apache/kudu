@@ -77,7 +77,7 @@ public:
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_, snap));
+    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));
     ASSERT_STATUS_OK(it->Init());
 
     RowBlock block(schema_, 100, &arena_);
@@ -143,7 +143,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<DeltaIteratorInterface> it(reader->NewDeltaIterator(schema_, snap));
+    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));
     ASSERT_STATUS_OK(it->Init());
     ASSERT_STATUS_OK(it->SeekToOrdinal(0));
 

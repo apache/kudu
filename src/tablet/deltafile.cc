@@ -112,7 +112,7 @@ Status DeltaFileReader::Init() {
   return Status::OK();
 }
 
-DeltaIteratorInterface *DeltaFileReader::NewDeltaIterator(const Schema &projection,
+DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema &projection,
                                                           const MvccSnapshot &snap) {
   return new DeltaFileIterator(this, projection, snap);
 }

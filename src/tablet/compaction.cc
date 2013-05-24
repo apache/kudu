@@ -73,7 +73,7 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
 class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
  public:
   RowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
-                       shared_ptr<DeltaIteratorInterface> delta_iter) :
+                       shared_ptr<DeltaIterator> delta_iter) :
     base_iter_(base_iter.Pass()),
     delta_iter_(delta_iter),
     arena_(32*1024, 128*1024),
@@ -120,7 +120,7 @@ class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
   }
  private:
   gscoped_ptr<RowwiseIterator> base_iter_;
-  shared_ptr<DeltaIteratorInterface> delta_iter_;
+  shared_ptr<DeltaIterator> delta_iter_;
 
   Arena arena_;
 
@@ -285,7 +285,7 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
 
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(rowset.schema()));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
-  shared_ptr<DeltaIteratorInterface> deltas(rowset.delta_tracker_->NewDeltaIterator(rowset.schema(), snap));
+  shared_ptr<DeltaIterator> deltas(rowset.delta_tracker_->NewDeltaIterator(rowset.schema(), snap));
 
   return new RowSetCompactionInput(base_iter.Pass(), deltas);
 }
