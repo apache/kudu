@@ -21,9 +21,14 @@ string RowChangeList::ToString(const Schema &schema) const {
     const void *new_val = NULL;
     CHECK_OK(decoder.DecodeNext(&updated_col, &new_val));
 
-    ret.append(schema.column(updated_col).name());
+    const ColumnSchema& col_schema = schema.column(updated_col);
+    ret.append(col_schema.name());
     ret.append("=");
-    ret.append(schema.column(updated_col).Stringify(new_val));
+    if (col_schema.is_nullable() && new_val == NULL) {
+      ret.append("NULL");
+    } else {
+      ret.append(col_schema.Stringify(new_val));
+    }
   }
 
   return ret;

@@ -67,7 +67,7 @@ public:
   virtual void SeekToPositionInBlock(uint pos);
   virtual Status SeekAtOrAfterValue(const void *value,
                                     bool *exact_match);
-  Status CopyNextValues(size_t *n, ColumnBlock *dst);
+  Status CopyNextValues(size_t *n, ColumnDataView *dst);
 
   virtual bool HasNext() const {
     DCHECK(parsed_);

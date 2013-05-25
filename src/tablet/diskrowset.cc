@@ -95,6 +95,7 @@ Status DiskRowSetWriter::Open() {
     gscoped_ptr<cfile::Writer> writer(new cfile::Writer(
                                         opts,
                                         col.type_info().type(),
+                                        col.is_nullable(),
                                         cfile::GetDefaultEncoding(col.type_info().type()),
                                         out));
 
@@ -153,7 +154,12 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     // TODO: need to look at the selection vector here and only append the
     // selected rows?
     ColumnBlock column = block.column_block(i);
-    RETURN_NOT_OK(cfile_writers_[i].AppendEntries(column.data(), block.nrows()));
+    if (column.is_nullable()) {
+      RETURN_NOT_OK(cfile_writers_[i].AppendNullableEntries(column.null_bitmap(),
+          column.data(), column.nrows()));
+    } else {
+      RETURN_NOT_OK(cfile_writers_[i].AppendEntries(column.data(), column.nrows()));
+    }
   }
 
   // Write the batch to the bloom

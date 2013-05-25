@@ -1,48 +1,45 @@
 // Copyright (c) 2013, Cloudera, inc.
-
+#include <glog/logging.h>
 #include "gutil/stringprintf.h"
 #include "util/bitmap.h"
 
 namespace kudu {
 
 void BitmapChangeBits(uint8_t *bitmap, size_t offset, size_t num_bits, bool value) {
-  const uint64_t pattern64[2] = { 0x0000000000000000, 0xffffffffffffffff };
-  const uint8_t pattern8[2] = { 0x00, 0xff };
-  size_t bit;
+  DCHECK_GT(num_bits, 0);
 
-  // Jump to the byte at specified offset
-  uint8_t *p = bitmap + (offset >> 3);
+  size_t start_byte = (offset >> 3);
+  size_t end_byte = (offset + num_bits - 1) >> 3;
+  int single_byte = (start_byte == end_byte);
 
   // Change the last bits of the first byte
-  if ((bit = offset & 0x7)) {
-    // TODO(perf): change me with a mask
-    for (; bit < 8 && num_bits > 0; ++bit) {
-      BitmapChange(p, bit, value);
-      num_bits--;
-    }
-
-    p++;
+  size_t left = offset & 0x7;
+  size_t right = (single_byte) ? (left + num_bits) : 8;
+  uint8_t mask = ((0xff << left) & (0xff >> (8 - right)));
+  if (value) {
+    bitmap[start_byte++] |= mask;
+  } else {
+    bitmap[start_byte++] &= ~mask;
   }
 
-  // change 64bit at the time
-  uint64_t *u64 = (uint64_t *)p;
-  while (num_bits >= 64) {
-    *u64++ = pattern64[value];
-    num_bits -= 64;
+  // Nothing left... I'm done
+  if (single_byte) {
+    return;
   }
 
-  // change 8bit at the time
-  p = (uint8_t *)u64;
-  while (num_bits >= 8) {
-    *p++ = pattern8[value];
-    num_bits -= 8;
+  // change the middle bits
+  if (end_byte > start_byte) {
+    const uint8_t pattern8[2] = { 0x00, 0xff };
+    memset(bitmap + start_byte, pattern8[value], end_byte - start_byte);
   }
 
   // change the first bits of the last byte
-  for (bit = 0; num_bits > 0; ++bit) {
-    // TODO(perf): change me with a mask
-    BitmapChange(p, bit, value);
-    num_bits--;
+  right = offset + num_bits - (end_byte << 3);
+  mask = (0xff >> (8 - right));
+  if (value) {
+    bitmap[end_byte] |= mask;
+  } else {
+    bitmap[end_byte] &= ~mask;
   }
 }
 

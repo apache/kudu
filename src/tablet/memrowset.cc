@@ -45,7 +45,7 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 
 
 Status MemRowSet::Insert(txid_t txid, const Slice &data) {
-  CHECK_EQ(data.size(), schema_.byte_size());
+  CHECK_EQ(data.size(), ContiguousRowHelper::row_size(schema_));
 
   ConstContiguousRow row_slice(schema_, data.data());
 
@@ -58,8 +58,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_txid = txid;
   mrsrow.header_->mutation_head = NULL;
-  uint8_t *rowdata_ptr = mrsrow.row_slice_.mutable_data();
-  memcpy(rowdata_ptr, data.data(), data.size());
+  mrsrow.CopyCellsFrom(row_slice);
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
   mutation.Prepare(&tree_);

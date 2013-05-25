@@ -17,6 +17,7 @@
 #include "cfile/cfile.pb.h"
 #include "common/types.h"
 #include "gutil/gscoped_ptr.h"
+#include "util/rle-encoding.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -80,11 +81,47 @@ struct WriterOptions {
   WriterOptions();
 };
 
+class NullBitmapBuilder {
+ public:
+  explicit NullBitmapBuilder(size_t initial_row_capacity) :
+    nitems_(0),
+    bitmap_(BitmapSize(initial_row_capacity)),
+    rle_encoder_(&bitmap_)
+  {
+  }
+
+  size_t nitems() const {
+    return nitems_;
+  }
+
+  void AddRun(bool value, size_t run_length = 1) {
+    nitems_ += run_length;
+    rle_encoder_.Put(value, run_length);
+  }
+
+  // the returned Slice is only valid until this Builder is destroyed or Reset
+  Slice Finish() {
+    int len = rle_encoder_.Flush();
+    return Slice(bitmap_.data(), len);
+  }
+
+  void Reset() {
+    nitems_ = 0;
+    rle_encoder_.Clear();
+  }
+
+ private:
+  size_t nitems_;
+  faststring bitmap_;
+  RleEncoder rle_encoder_;
+};
+
 // Main class used to write a CFile.
 class Writer : boost::noncopyable {
 public:
   explicit Writer(const WriterOptions &options,
                   DataType type,
+                  bool is_nullable,
                   EncodingType encoding,
                   shared_ptr<WritableFile> file);
   Status Start();
@@ -103,6 +140,11 @@ public:
 
   // Append a set of values to the file.
   Status AppendEntries(const void *entries, size_t count);
+
+  // Append a set of values to the file with the relative null bitmap.
+  // "entries" is not "compact" - ie if you're appending 10 rows, and 9 are NULL,
+  // 'entries' still will have 10 elements in it
+  Status AppendNullableEntries(const uint8_t *bitmap, const void *entries, size_t count);
 
   // Append a raw block to the file, adding it to the various indexes.
   //
@@ -149,6 +191,7 @@ private:
   WriterOptions options_;
 
   // Type of data being written
+  bool is_nullable_;
   DataType datatype_;
   const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
@@ -159,6 +202,7 @@ private:
   gscoped_ptr<BlockBuilder> data_block_;
   gscoped_ptr<IndexTreeBuilder> posidx_builder_;
   gscoped_ptr<IndexTreeBuilder> validx_builder_;
+  gscoped_ptr<NullBitmapBuilder> null_bitmap_builder_;
   gscoped_ptr<CompressedBlockBuilder> block_compressor_;
 
   enum State {

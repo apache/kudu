@@ -14,6 +14,7 @@
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/strcat.h"
+#include "util/bitmap.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
 
@@ -37,13 +38,19 @@ using std::tr1::unordered_map;
 class ColumnSchema {
 public:
   ColumnSchema(const string &name,
-               DataType type) :
+               DataType type,
+               bool is_nullable = false) :
     name_(name),
-    type_info_(&GetTypeInfo(type))
+    type_info_(&GetTypeInfo(type)),
+    is_nullable_(is_nullable)
   {}
 
   const TypeInfo &type_info() const {
     return *type_info_;
+  }
+
+  bool is_nullable() const {
+    return is_nullable_;
   }
 
   const string &name() const {
@@ -64,32 +71,6 @@ public:
     return EqualsType(other) && this->name_ == other.name_;
   }
 
-  template<class ArenaType>
-  Status CopyCell(void *dst, const void *src, ArenaType *dst_arena) const {
-    if (type_info().type() == STRING) {
-      // If it's a Slice column, need to relocate the referred-to data
-      // as well as the slice itself.
-      // TODO: potential optimization here: if the new value is smaller than
-      // the old value, we could potentially just overwrite in some cases.
-      const Slice *src_slice = reinterpret_cast<const Slice *>(src);
-      Slice *dst_slice = reinterpret_cast<Slice *>(dst);
-      if (dst_arena != NULL) {
-        if (PREDICT_FALSE(!dst_arena->RelocateSlice(*src_slice, dst_slice))) {
-          return Status::IOError("out of memory copying slice", src_slice->ToString());
-        }
-      } else {
-        // Just copy the slice without relocating.
-        // This is used by callers who know that the source row's data is going
-        // to stick around for the scope of the destination.
-        *dst_slice = *src_slice;
-      }
-    } else {
-      size_t size = type_info().size();
-      memcpy(dst, src, size); // TODO: inline?
-    }
-    return Status::OK();
-  }
-
   int Compare(const void *lhs, const void *rhs) const {
     return type_info_->Compare(lhs, rhs);
   }
@@ -104,6 +85,7 @@ public:
 private:
   string name_;
   const TypeInfo *type_info_;
+  bool is_nullable_;
 };
 
 
@@ -189,6 +171,16 @@ public:
     }
   }
 
+  // Returns true if the schema contains nullable columns
+  bool has_nullables() const {
+    BOOST_FOREACH(const ColumnSchema& col, cols_) {
+      if (col.is_nullable()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Extract a given column from a row where the type is
   // known at compile-time. The type is checked with a debug
   // assertion -- but if the wrong type is used and these assertions
@@ -199,11 +191,18 @@ public:
   template<DataType Type, class RowType>
   const typename DataTypeTraits<Type>::cpp_type *
   ExtractColumnFromRow(const RowType& row, size_t idx) const {
+    const ColumnSchema& col_schema = cols_[idx];
     DCHECK_LT(idx, cols_.size());
-    DCHECK_EQ(cols_[idx].type_info().type(), Type);
+    DCHECK_EQ(col_schema.type_info().type(), Type);
 
-    return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type *>(
-      row.cell_ptr(*this, idx) );
+    const void *val;
+    if (col_schema.is_nullable()) {
+      val = row.nullable_cell_ptr(*this, idx);
+    } else {
+      val = row.cell_ptr(*this, idx);
+    }
+
+    return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type *>(val);
   }
 
   // Stringify the given row, which conforms to this schema,
@@ -215,7 +214,8 @@ public:
     ret.append("(");
 
     for (size_t col = 0; col < num_columns(); col++) {
-      const TypeInfo &ti = cols_[col].type_info();
+      const ColumnSchema& col_schema = cols_[col];
+      const TypeInfo &ti = col_schema.type_info();
 
       if (col > 0) {
         ret.append(", ");
@@ -224,7 +224,11 @@ public:
       ret.append(" ");
       ret.append(cols_[col].name());
       ret.append("=");
-      ti.AppendDebugStringForValue(row.cell_ptr(*this, col), &ret);
+      if (col_schema.is_nullable() && row.is_null(*this, col)) {
+        ret.append("NULL");
+      } else {
+        ti.AppendDebugStringForValue(row.cell_ptr(*this, col), &ret);
+      }
     }
     ret.append(")");
     return ret;
@@ -353,67 +357,6 @@ private:
   typedef unordered_map<string, size_t> NameToIndexMap;
   NameToIndexMap name_to_index_;
 };
-
-// TODO: Currently used only for testing and as memstore row wrapper
-
-// The row has all columns layed out in memory based on the schema.column_offset()
-class ContiguousRow {
- public:
-  ContiguousRow(const Schema& schema, void *row_data = NULL)
-    : schema_(schema), row_data_(reinterpret_cast<uint8_t *>(row_data))
-  {
-  }
-
-  const Schema& schema() const {
-    return schema_;
-  }
-
-  void Reset(void *row_data) {
-    row_data_ = reinterpret_cast<uint8_t *>(row_data);
-  }
-
-  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return row_data_ + schema.column_offset(col_idx);
-  }
-
- private:
-  friend class ConstContiguousRow;
-
-  const Schema& schema_;
-  uint8_t *row_data_;
-};
-
-// This is the same as ContiguousRow except it refers to a const area of memory that
-// should not be mutated.
-class ConstContiguousRow {
- public:
-  ConstContiguousRow(const ContiguousRow &row) :
-    schema_(row.schema_),
-    row_data_(row.row_data_)
-  {}
-
-  ConstContiguousRow(const Schema& schema, const void *row_data = NULL)
-    : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data))
-  {
-  }
-
-  const Schema& schema() const {
-    return schema_;
-  }
-
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return row_data_ + schema.column_offset(col_idx);
-  }
-
- private:
-  const Schema& schema_;
-  const uint8_t *row_data_;
-};
-
 
 } // namespace kudu
 

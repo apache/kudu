@@ -16,7 +16,7 @@
 #include "util/status.h"
 
 namespace kudu {
-class ColumnBlock;
+class ColumnDataView;
 
 namespace cfile {
 
@@ -119,7 +119,7 @@ public:
   // In the case that the values are themselves references
   // to other memory (eg Slices), the referred-to memory is
   // allocated in the dst block's arena.
-  virtual Status CopyNextValues(size_t *n, ColumnBlock *dst) = 0;
+  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) = 0;
 
   // Return true if there are more values remaining to be iterated.
   // (i.e that the next call to CopyNextValues will return at least 1

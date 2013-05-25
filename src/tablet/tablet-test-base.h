@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <boost/thread/thread.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 #include <vector>
@@ -75,14 +76,29 @@ public:
       buf, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t new_val) {
+  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
     char keybuf[256];
     FormatKey(keybuf, sizeof(keybuf), row_idx);
     Slice row_key(keybuf);
+    *new_val = 10000 + row_idx;
 
     faststring ubuf;
-    RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, &new_val);
+    RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, new_val);
     return tablet->UpdateRow(&row_key, RowChangeList(ubuf));
+  }
+
+  template <class RowType>
+  uint64_t GetRowIndex(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
+  }
+
+  template <class RowType>
+  uint64_t GetRowValueAfterUpdate(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
+  }
+
+  bool ShouldUpdateRow(uint64_t row_idx) const {
+    return (row_idx % 15) == 0;
   }
 
   Schema test_schema_;
@@ -117,19 +133,126 @@ public:
       (uint32_t)row_idx, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t new_val) {
+  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
     uint32_t row_key = row_idx;
     faststring buf;
-    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, &new_val);
+    *new_val = 10000 + row_idx;
+    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
     return tablet->UpdateRow(&row_key, RowChangeList(buf));
   }
 
+  template <class RowType>
+  uint64_t GetRowIndex(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
+  }
+
+  template <class RowType>
+  uint64_t GetRowValueAfterUpdate(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
+  }
+
+  bool ShouldUpdateRow(uint64_t row_idx) const {
+    return (row_idx % 15) == 0;
+  }
 
   Schema test_schema_;
 };
 
+// Setup for testing nullable columns
+struct NullableValueTestSetup {
+ public:
+  NullableValueTestSetup() :
+    test_schema_(boost::assign::list_of
+                 (ColumnSchema("key", UINT32))
+                 (ColumnSchema("val", UINT32, true))
+                 (ColumnSchema("update_count", UINT32)), 1)
+  {}
+
+  void BuildRowKey(RowBuilder *rb, uint64_t i) {
+    rb->AddUint32((uint32_t)i);
+  }
+
+  void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {
+    BuildRowKey(rb, row_idx);
+    if (IsNullRow(row_idx)) {
+      rb->AddNull();
+    } else {
+      rb->AddUint32((uint32_t)row_idx);
+    }
+    rb->AddUint32(update_count_val);
+  }
+
+  const Schema &test_schema() const { return test_schema_; }
+
+  string FormatDebugRow(uint64_t row_idx, uint32_t update_count) {
+    if (IsNullRow(row_idx)) {
+      return StringPrintf(
+      "(uint32 key=%d, uint32 val=NULL, uint32 update_count=%d)",
+        (uint32_t)row_idx, update_count);
+    }
+
+    return StringPrintf(
+      "(uint32 key=%d, uint32 val=%ld, uint32 update_count=%d)",
+      (uint32_t)row_idx, row_idx, update_count);
+  }
+
+  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
+    uint32_t row_key = row_idx;
+    faststring buf;
+    *new_val = CalcUpdateValue(row_idx);
+    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, IsNullRow(row_idx) ? new_val : NULL);
+    return tablet->UpdateRow(&row_key, RowChangeList(buf));
+  }
+
+  template <class RowType>
+  uint64_t GetRowIndex(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 0);
+  }
+
+  template <class RowType>
+  uint64_t GetRowValueAfterUpdate(const RowType& row) const {
+    uint64_t row_idx = GetRowIndex(row);
+    bool is_updated = ShouldUpdateRow(row_idx);
+    bool is_null = IsNullRow(row_idx);
+
+    uint64_t expected_val = is_updated ? CalcUpdateValue(row_idx) : row_idx;
+    const uint32_t *val = test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
+    if (is_updated) {
+      if (is_null) {
+        DCHECK_EQ(expected_val, *val);
+      } else {
+        DCHECK(val == NULL) << "Expected NULL found: " << *val;
+      }
+    } else {
+      if (is_null) {
+        DCHECK(val == NULL) << "Expected NULL found: " << *val;
+      } else {
+        DCHECK_EQ(expected_val, *val);
+      }
+    }
+
+    return expected_val;
+  }
+
+  bool IsNullRow(uint64_t row_idx) const {
+    return !!(row_idx & 2);
+  }
+
+  bool ShouldUpdateRow(uint64_t row_idx) const {
+    return (row_idx % 10) == 0;
+  }
+
+  uint32_t CalcUpdateValue(uint64_t row_idx) const {
+    return 10000 + row_idx;
+  }
+
+  Schema test_schema_;
+};
+
+
 // Use this with TYPED_TEST_CASE from gtest
-typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup> TabletTestHelperTypes;
+typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup,
+                         NullableValueTestSetup> TabletTestHelperTypes;
 
 template<class TESTSETUP>
 class TabletTestBase : public KuduTest {
@@ -214,7 +337,7 @@ public:
 
       for (int i = 0; i < block.nrows(); i++) {
         rb_row.Reset(&block, i);
-        int row = *schema_.ExtractColumnFromRow<UINT32>(rb_row, 1);
+        uint64_t row = setup_.GetRowIndex(rb_row);
         if (row >= first_row && row < first_row + expected_count) {
           size_t idx = row - first_row;
           if (seen_rows[idx]) {

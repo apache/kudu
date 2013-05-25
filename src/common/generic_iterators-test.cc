@@ -55,8 +55,7 @@ public:
     DCHECK_LE(prepared_, dst->nrows());
 
     for (size_t i = 0; i < prepared_; i++) {
-      uint32_t *dst_cell = reinterpret_cast<uint32_t *>(dst->cell_ptr(i));
-      *dst_cell = ints_[cur_idx_++];
+      dst->SetCellValue(i, &(ints_[cur_idx_++]));
     }
 
     return Status::OK();

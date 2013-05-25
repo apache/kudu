@@ -80,7 +80,7 @@ public:
 
   Status SeekAtOrAfterValue(const void *value, bool *exact_match);
 
-  Status CopyNextValues(size_t *n, ColumnBlock *dst);
+  Status CopyNextValues(size_t *n, ColumnDataView *dst);
 
   rowid_t ordinal_pos() const {
     DCHECK(parsed_) << "must parse header first";

@@ -56,12 +56,34 @@ class MRSRow {
 
   const Slice &row_slice() const { return row_slice_; }
 
-  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) {
-    return row_slice_.mutable_data() + schema.column_offset(col_idx);
+  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    ContiguousRowHelper::SetCellValue(schema, row_slice_.mutable_data(), col_idx, value);
+  }
+
+  bool is_null(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    return ContiguousRowHelper::is_null(schema, row_slice_.data(), col_idx);
   }
 
   const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    return row_slice_.data() + schema.column_offset(col_idx);
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    return ContiguousRowHelper::cell_ptr(schema, row_slice_.data(), col_idx);
+  }
+
+  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    return ContiguousRowHelper::nullable_cell_ptr(schema, row_slice_.data(), col_idx);
+  }
+
+  void CopyCellsFrom(const ConstContiguousRow& row) {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(row.schema()));
+    memcpy(row_slice_.mutable_data(), row.row_data(), row_slice_.size());
   }
 
  private:
@@ -91,9 +113,11 @@ class MRSRow {
 // plus a single row of the given schema, then constructs an MRSRow object which
 // points into that stack storage.
 #define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
-  uint8_t varname##_size = sizeof(MRSRow::Header) + (memrowset)->schema().byte_size(); \
+  uint8_t varname##_size = sizeof(MRSRow::Header) + \
+                           ContiguousRowHelper::row_size((memrowset)->schema()); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
+  ContiguousRowHelper::InitNullsBitmap((memrowset)->schema(), slice_name); \
   MRSRow varname(memrowset, slice_name);
 
 
@@ -328,9 +352,19 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
       if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
         for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
           size_t src_col_idx = projection_mapping_[proj_col_idx];
-          uint8_t *dst_cell = dst_row.cell_ptr(projection_, proj_col_idx);
-          const void *src_cell = row.cell_ptr(memrowset_->schema(), src_col_idx);
-          RETURN_NOT_OK(projection_.column(proj_col_idx).CopyCell(dst_cell, src_cell, dst->arena()));
+
+          const void *src_cell;
+          if (memrowset_->schema().column(src_col_idx).is_nullable()) {
+            src_cell = row.nullable_cell_ptr(memrowset_->schema(), src_col_idx);
+          } else {
+            src_cell = row.cell_ptr(memrowset_->schema(), src_col_idx);
+          }
+
+          if (projection_.column(proj_col_idx).is_nullable()) {
+            RETURN_NOT_OK(dst_row.CopyNullableCell(projection_, proj_col_idx, src_cell, dst->arena()));
+          } else {
+            RETURN_NOT_OK(dst_row.CopyCell(projection_, proj_col_idx, src_cell, dst->arena()));
+          }
         }
 
         // Roll-forward MVCC for committed updates.
@@ -432,8 +466,9 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
       for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
         RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
         int memrowset_col_idx = projection_mapping_[proj_col_idx];
-        uint8_t *dst_cell = dst_row->cell_ptr(projection_, proj_col_idx);
-        RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
+        ColumnBlock dst_col = dst_row->column_block(projection_, proj_col_idx);
+        RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
+                                               memrowset_col_idx, dst_arena));
       }
     }
 

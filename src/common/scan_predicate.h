@@ -81,7 +81,7 @@ public:
   // - wherever the predicate evaluates false, set the appropriate bit in the selection
   //   vector to 0.
   // - If the predicate evalutes true, does not make any change to the
-  //   selection vector. 
+  //   selection vector.
   //
   // On any rows where the current value of *sel is false, the predicate evaluation
   // may be skipped.

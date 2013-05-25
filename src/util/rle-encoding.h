@@ -272,7 +272,7 @@ inline size_t RleDecoder::Skip(size_t to_skip) {
       literal_count_ -= nskip;
       to_skip -= nskip;
       while (nskip--) {
-        bool value;
+        bool value = false;
         bool result = bit_reader_.GetBool(&value);
         DCHECK(result);
         set_count += value;

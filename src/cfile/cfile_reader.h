@@ -95,6 +95,10 @@ public:
     return type_info_;
   }
 
+  bool is_nullable() const {
+    return footer().is_type_nullable();
+  }
+
   const CFileHeaderPB &header() const {
     return *CHECK_NOTNULL(header_.get());
   }
@@ -260,6 +264,12 @@ private:
     // The index of the first row in this block.
     rowid_t first_row_idx_;
 
+    // The index of the seeked position.
+    // in case of null bitmap present, dblk_->ordinal_pos() is not aligned
+    // with the row number, since null values are not written to the block.
+    // check CFileIterator::SeekToPositionInBlock()
+    size_t row_index_;
+
     // When the block is first read, it is seeked to the proper position
     // and rewind_idx_ is set to that offset in the block. needs_rewind_
     // is initially false, but after any values are read from the block,
@@ -270,12 +280,18 @@ private:
     bool needs_rewind_;
     uint32_t rewind_idx_;
 
+    // Total number of rows in the block (nulls + not nulls)
+    uint32_t num_rows_in_block_;
+    Slice rle_bitmap;
+
     rowid_t last_row_idx() const {
-      return first_row_idx_ + dblk_->Count() - 1;
+      return first_row_idx_ + num_rows_in_block_ - 1;
     }
 
     string ToString() const;
   };
+
+  void SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx);
 
   // Read the data block currently pointed to by idx_iter_
   // into the given PreparedBlock structure.

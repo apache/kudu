@@ -62,7 +62,7 @@ TEST(BitArray, TestBool) {
   // Use the reader and validate
   BitReader reader(buffer.data(), len);
   for (int i = 0; i < 8; ++i) {
-    bool val;
+    bool val = false;
     bool result = reader.GetBool(&val);
     EXPECT_TRUE(result);
     EXPECT_EQ(val, i % 2);

@@ -123,10 +123,15 @@ public:
   ColumnBlock column_block(size_t col_idx, size_t nrows) const {
     DCHECK_LE(nrows, nrows_);
 
-    return ColumnBlock(schema_.column(col_idx).type_info(),
-                       columns_data_[col_idx],
-                       nrows,
-                       arena_);
+    const ColumnSchema& col_schema = schema_.column(col_idx);
+    uint8_t *col_data = columns_data_[col_idx];
+    uint8_t *nulls_bitmap = NULL;
+    if (col_schema.is_nullable()) {
+      nulls_bitmap = col_data;
+      col_data += BitmapSize(row_capacity_);
+    }
+
+    return ColumnBlock(col_schema.type_info(), nulls_bitmap, col_data, nrows, arena_);
   }
 
   size_t nrows() const { return nrows_; }
@@ -135,9 +140,14 @@ public:
   // This physically zeros the memory, so is not efficient - mostly useful
   // from unit tests.
   void ZeroMemory() {
+    size_t bitmap_size = BitmapSize(row_capacity_);
     for (size_t i = 0; i < schema_.num_columns(); ++i) {
       const ColumnSchema& col_schema = schema_.column(i);
-      memset(columns_data_[i], '\0', col_schema.type_info().size() * nrows_);
+      size_t col_size = col_schema.type_info().size() * row_capacity_;
+      if (col_schema.is_nullable()) {
+        col_size += bitmap_size;
+      }
+      memset(columns_data_[i], '\0', col_size);
     }
   }
 
@@ -156,7 +166,19 @@ public:
     return &sel_vec_;
   }
 
-private:
+ private:
+  static size_t RowBlockSize(const Schema& schema, size_t nrows) {
+    size_t block_size = schema.num_columns() * sizeof(size_t);
+    size_t bitmap_size = BitmapSize(nrows);
+    for (size_t col = 0; col < schema.num_columns(); col++) {
+      const ColumnSchema& col_schema = schema.column(col);
+      block_size += nrows * col_schema.type_info().size();
+      if (col_schema.is_nullable())
+        block_size += bitmap_size;
+    }
+    return block_size;
+  }
+
   Schema schema_;
   std::vector<uint8_t *> columns_data_;
 
@@ -194,20 +216,56 @@ class RowBlockRow {
     return this;
   }
 
+  size_t row_index() const {
+    return row_index_;
+  }
+
   const Schema& schema() const {
     return row_block_->schema();
   }
 
-  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(row_block_->schema()));
-    return reinterpret_cast<uint8_t *>(row_block_->column_block(col_idx).cell_ptr(row_index_));
+  bool is_null(const Schema& schema, size_t col_idx) const {
+    return column_block(schema, col_idx).is_null(row_index_);
   }
 
   const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    return column_block(schema, col_idx).cell_ptr(row_index_);
+  }
+
+  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    return column_block(schema, col_idx).nullable_cell_ptr(row_index_);
+  }
+
+  ColumnBlock column_block(const Schema& schema, size_t col_idx) const {
     // TODO: Handle different schema
     DCHECK(schema.Equals(row_block_->schema()));
-    return reinterpret_cast<uint8_t *>(row_block_->column_block(col_idx).cell_ptr(row_index_));
+    return row_block_->column_block(col_idx);
+  }
+
+  // Used only for testing
+  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(row_block_->schema()));
+
+    if (schema.column(col_idx).is_nullable()) {
+      column_block(schema, col_idx).SetNullableCellValue(row_index_, value);
+    } else {
+      column_block(schema, col_idx).SetCellValue(row_index_, value);
+    }
+  }
+
+  template <class ArenaType>
+  Status CopyCell(const Schema& schema, size_t col_idx, const void *value, ArenaType *arena) {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(row_block_->schema()));
+    return column_block(schema, col_idx).CopyCell(row_index_, value, arena);
+  }
+
+  template <class ArenaType>
+  Status CopyNullableCell(const Schema& schema, size_t col_idx, const void *value, ArenaType *arena) {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(row_block_->schema()));
+    return column_block(schema, col_idx).CopyNullableCell(row_index_, value, arena);
   }
 
   template <class RowType>
@@ -216,8 +274,13 @@ class RowBlockRow {
     DCHECK(schema.Equals(row_block_->schema()));
 
     for (size_t col = 0; col < schema.num_columns(); col++) {
-      size_t col_size = schema.column(col).type_info().size();
-      strings::memcpy_inlined(cell_ptr(schema, col), row.cell_ptr(schema, col), col_size);
+      const ColumnSchema& col_schema = schema.column(col);
+      ColumnBlock column_block = row_block_->column_block(col);
+      if (col_schema.is_nullable()) {
+        column_block.SetNullableCellValue(row_index_, row.nullable_cell_ptr(schema, col));
+      } else {
+        column_block.SetCellValue(row_index_, row.cell_ptr(schema, col));
+      }
     }
   }
 
@@ -230,9 +293,7 @@ class RowBlockRow {
   void OverwriteWithPattern(StringPiece pattern) {
     const Schema& schema = row_block_->schema();
     for (size_t col = 0; col < schema.num_columns(); col++) {
-      size_t col_size = schema.column(col).type_info().size();
-      char *col_data = reinterpret_cast<char *>(cell_ptr(schema, col));
-      kudu::OverwriteWithPattern(col_data, col_size, pattern);
+      row_block_->column_block(col).OverwriteWithPattern(row_index_, pattern);
     }
   }
 #endif

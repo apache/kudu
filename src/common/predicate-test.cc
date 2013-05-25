@@ -33,9 +33,10 @@ public:
     ColumnBlock col0 = row_block_.column_block(0, n_rows_);
     ColumnBlock col1 = row_block_.column_block(1, n_rows_);
 
-    for (size_t i = 0; i < n_rows_; i++) {
-      *(reinterpret_cast<uint32_t *>(col0.cell_ptr(i))) = i;
-      *(reinterpret_cast<uint32_t *>(col1.cell_ptr(i))) = i * 10;
+    for (uint32_t i = 0; i < n_rows_; i++) {
+      uint32_t i1 = i * 10;
+      col0.SetCellValue(i, &i);
+      col1.SetCellValue(i, &i1);
     }
   }
 

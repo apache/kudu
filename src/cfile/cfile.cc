@@ -67,12 +67,14 @@ WriterOptions::WriterOptions() :
 
 Writer::Writer(const WriterOptions &options,
                DataType type,
+               bool is_nullable,
                EncodingType encoding,
                shared_ptr<WritableFile> file) :
   file_(file),
   off_(0),
   value_count_(0),
   options_(options),
+  is_nullable_(is_nullable),
   datatype_(type),
   typeinfo_(GetTypeInfo(type)),
   encoding_type_(encoding),
@@ -123,6 +125,11 @@ Status Writer::Start() {
   BlockBuilder *bb;
   RETURN_NOT_OK( CreateBlockBuilder(&bb) );
   data_block_.reset(bb);
+
+  if (is_nullable_) {
+    size_t nrows = ((options_.block_size + typeinfo_.size() - 1) / typeinfo_.size());
+    null_bitmap_builder_.reset(new NullBitmapBuilder(nrows * 8));
+  }
 
   state_ = kWriterWriting;
 
@@ -175,6 +182,7 @@ Status Writer::Finish() {
   // Start preparing the footer.
   CFileFooterPB footer;
   footer.set_data_type(datatype_);
+  footer.set_is_type_nullable(is_nullable_);
   footer.set_encoding(encoding_type_);
   footer.set_num_values(value_count_);
   footer.set_compression(options_.compression);
@@ -226,6 +234,8 @@ void Writer::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
 }
 
 Status Writer::AppendEntries(const void *entries, size_t count) {
+  DCHECK(!is_nullable_);
+
   int rem = count;
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
@@ -248,14 +258,53 @@ Status Writer::AppendEntries(const void *entries, size_t count) {
   return Status::OK();
 }
 
+Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries, size_t count)
+{
+  DCHECK(is_nullable_ && bitmap != NULL);
+
+  const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
+
+  size_t nblock;
+  bool not_null = false;
+  BitmapIterator bmap_iter(bitmap, count);
+  while ((nblock = bmap_iter.Next(&not_null)) > 0) {
+    if (not_null) {
+      size_t rem = nblock;
+      do {
+        int n = data_block_->Add(ptr, rem);
+        DCHECK_GE(n, 0);
+
+        null_bitmap_builder_->AddRun(true, n);
+        ptr += n * typeinfo_.size();
+        value_count_ += n;
+        rem -= n;
+
+        size_t est_size = data_block_->EstimateEncodedSize();
+        if (est_size > options_.block_size) {
+          RETURN_NOT_OK(FinishCurDataBlock());
+        }
+      } while (rem > 0);
+    } else {
+      null_bitmap_builder_->AddRun(false, nblock);
+      ptr += nblock * typeinfo_.size();
+      value_count_ += nblock;
+    }
+  }
+
+  return Status::OK();
+}
+
 Status Writer::FinishCurDataBlock() {
-  size_t num_elems_in_block = data_block_->Count();
-  if (num_elems_in_block == 0) {
+  uint32_t num_elems_in_block = data_block_->Count();
+  if (is_nullable_) {
+    num_elems_in_block = null_bitmap_builder_->nitems();
+  }
+
+  if (PREDICT_FALSE(num_elems_in_block == 0)) {
     return Status::OK();
   }
 
   rowid_t first_elem_ord = value_count_ - num_elems_in_block;
-
   VLOG(1) << "Appending data block for values " <<
     first_elem_ord << "-" << (first_elem_ord + num_elems_in_block);
 
@@ -276,11 +325,22 @@ Status Writer::FinishCurDataBlock() {
   }
 
   vector<Slice> v;
+  faststring null_headers;
+  if (is_nullable_) {
+    Slice null_bitmap = null_bitmap_builder_->Finish();
+    PutVarint32(&null_headers, num_elems_in_block);
+    PutVarint32(&null_headers, null_bitmap.size());
+    v.push_back(Slice(null_headers.data(), null_headers.size()));
+    v.push_back(null_bitmap);
+  }
   v.push_back(data);
   Status s = AppendRawBlock(v, first_elem_ord,
                             reinterpret_cast<const void *>(key_tmp_space),
                             "data block");
 
+  if (is_nullable_) {
+    null_bitmap_builder_->Reset();
+  }
   data_block_->Reset();
 
   return s;

@@ -33,7 +33,7 @@ public:
 
 private:
   vector<ColumnRangePredicate> predicates_;
-  
+
 };
 
 } // namespace kudu

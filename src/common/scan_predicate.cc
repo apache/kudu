@@ -61,11 +61,19 @@ void ColumnRangePredicate::Evaluate(RowBlock *block, SelectionVector *vec) const
   // to the TypeInfo so we only make one virtual call, or use codegen.
   // Not concerned for now -- plan of record is to eventually embed Impala
   // expression evaluation somewhere here, so this is just a stub.
-  for (size_t i = 0; i < block->nrows(); i++) {
-    void *cell = cblock.cell_ptr(i);
-
-    if (!range_.ContainsCell(cell)) {
-      BitmapClear(vec->mutable_bitmap(), i);
+  if (cblock.is_nullable()) {
+    for (size_t i = 0; i < block->nrows(); i++) {
+      const void *cell = cblock.nullable_cell_ptr(i);
+      if (cell == NULL || !range_.ContainsCell(cell)) {
+        BitmapClear(vec->mutable_bitmap(), i);
+      }
+    }
+  } else {
+    for (size_t i = 0; i < block->nrows(); i++) {
+      const void *cell = cblock.cell_ptr(i);
+      if (!range_.ContainsCell(cell)) {
+        BitmapClear(vec->mutable_bitmap(), i);
+      }
     }
   }
 }
