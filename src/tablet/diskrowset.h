@@ -19,7 +19,6 @@
 #include "common/rowblock.h"
 #include "common/row_changelist.h"
 #include "common/schema.h"
-#include "tablet/deltafile.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_tracker.h"
 #include "tablet/cfile_set.h"

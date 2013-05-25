@@ -6,6 +6,7 @@
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "util/status.h"
+#include "tablet/mutation.h"
 #include "tablet/mvcc.h"
 
 namespace kudu { namespace tablet {

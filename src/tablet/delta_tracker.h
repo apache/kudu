@@ -8,11 +8,13 @@
 #include <gtest/gtest.h>
 
 #include "common/iterator.h"
-#include "tablet/cfile_set.h"
 #include "tablet/delta_store.h"
 #include "util/status.h"
 
 namespace kudu {
+
+class Env;
+
 namespace tablet {
 
 using std::tr1::shared_ptr;
