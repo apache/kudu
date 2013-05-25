@@ -83,15 +83,15 @@ private:
 // together, and iterated in parallel.
 class CFileSet::Iterator : public ColumnwiseIterator, public boost::noncopyable {
 public:
+
   virtual Status Init(ScanSpec *spec);
 
-  // See BaseDataIteratorInterface
   virtual Status PrepareBatch(size_t *nrows);
 
-  // See ColumnStoreBaseDataIterator
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
+
   virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
 
-  // See BaseDataIteratorInterface
   virtual Status FinishBatch();
 
   virtual bool HasNext() const {

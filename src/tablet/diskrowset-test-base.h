@@ -60,7 +60,11 @@ protected:
   //   ("hello <00n>", <n>)
   // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
-  void WriteTestRowSet() {
+  void WriteTestRowSet(int n_rows = 0) {
+    if (n_rows == 0) {
+      n_rows = n_rows_;
+    }
+
     // Write rows into a new DiskRowSet.
     LOG_TIMING(INFO, "Writing rowset") {
       DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
@@ -70,7 +74,7 @@ protected:
 
       char buf[256];
       RowBuilder rb(schema_);
-      for (int i = 0; i < n_rows_; i++) {
+      for (int i = 0; i < n_rows; i++) {
         rb.Reset();
         FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));
@@ -103,6 +107,21 @@ protected:
         updated->insert(idx_to_update);
       }
     }
+  }
+
+  // Delete the row with the given identifier.
+  Status DeleteRow(DiskRowSet *rs, uint32_t row_idx) {
+    char buf[256];
+    faststring update_buf;
+    RowChangeListEncoder update(schema_, &update_buf);
+
+    ScopedTransaction tx(&mvcc_);
+    FormatKey(row_idx, buf, sizeof(buf));
+    Slice key_slice(buf);
+    update.Reset();
+    update.SetToDelete();
+    return rs->MutateRow(tx.txid(),
+                         &key_slice, RowChangeList(update_buf));
   }
 
   // Verify the contents of the given rowset.

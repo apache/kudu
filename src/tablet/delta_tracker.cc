@@ -42,6 +42,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual Status SeekToOrdinal(rowid_t idx);
   virtual Status PrepareBatch(size_t nrows);
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  virtual Status ApplyDeletes(SelectionVector *sel_vec);
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
   virtual string ToString() const;
 
@@ -79,6 +80,13 @@ Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
 Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::ApplyDeletes(SelectionVector *sel_vec) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->ApplyDeletes(sel_vec));
   }
   return Status::OK();
 }

@@ -80,6 +80,13 @@ class ColumnwiseIterator : public virtual BatchedIterator {
 public:
   virtual bool is_column_store() const { return true; }
 
+  // Initialize the given SelectionVector to indicate which rows in the currently
+  // prepared batch are live vs deleted.
+  //
+  // The SelectionVector passed in is uninitialized -- i.e its bits are in
+  // an undefined state and need to be explicitly set to 1 if the row is live.
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec) = 0;
+
   // Materialize the given column into the given column block.
   // col_idx is within the projection schema, not the underlying schema.
   //
@@ -96,7 +103,6 @@ inline Status RowwiseIterator::CopyBlock(RowwiseIterator *iter, RowBlock *dst) {
   }
   RETURN_NOT_OK(iter->PrepareBatch(&n));
   dst->Resize(n);
-  dst->selection_vector()->SetAllTrue();
   RETURN_NOT_OK(iter->MaterializeBlock(dst));
   RETURN_NOT_OK(iter->FinishBatch());
   return Status::OK();

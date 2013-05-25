@@ -126,6 +126,11 @@ public:
     return base_iter_->schema();
   }
 
+  // Initialize the selection vector for the current batch.
+  // This processes DELETEs -- any deleted rows are set to 0 in 'sel_vec'.
+  // All other rows are set to 1.
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
+
   Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
 private:
   friend class DeltaTracker;
@@ -155,6 +160,11 @@ inline Status DeltaApplier::PrepareBatch(size_t *nrows) {
 
 inline Status DeltaApplier::FinishBatch() {
   return base_iter_->FinishBatch();
+}
+
+inline Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
+  RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
+  return delta_iter_->ApplyDeletes(sel_vec);
 }
 
 inline Status DeltaApplier::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {

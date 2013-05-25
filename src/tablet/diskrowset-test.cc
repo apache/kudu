@@ -134,6 +134,52 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   VerifyUpdates(*rs, updated);
 }
 
+// Test Delete() support within a DiskRowSet.
+TEST_F(TestRowSet, TestDelete) {
+  // Write and open a DiskRowSet with 2 rows.
+  WriteTestRowSet(2);
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  MvccSnapshot snap_before_delete(mvcc_);
+
+  // Delete one of the two rows
+  ASSERT_STATUS_OK(DeleteRow(rs.get(), 0));
+  MvccSnapshot snap_after_delete(mvcc_);
+
+  vector<string> rows;
+
+  // Reading the MVCC snapshot prior to deletion should show the row.
+  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
+  ASSERT_EQ(2, rows.size());
+  EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
+  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
+
+  // Reading the MVCC snapshot after the deletion should hide the row.
+  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
+
+  // Flush DMS and ensure that the verification still succeeds with the
+  // deletions now in a DeltaFile.
+  ASSERT_STATUS_OK(rs->FlushDeltas());
+
+  // Reading the MVCC snapshot prior to deletion should show the row.
+  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
+  ASSERT_EQ(2, rows.size());
+  EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
+  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
+
+  // Reading the MVCC snapshot after the deletion should hide the row.
+  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
+
+
+  // TODO: check that update or re-delete of same row fails
+  // TODO: check that reinsert succeeds
+}
+
+
 TEST_F(TestRowSet, TestDMSFlush) {
   WriteTestRowSet();
 

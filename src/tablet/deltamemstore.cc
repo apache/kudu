@@ -189,18 +189,53 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
     RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
     uint32_t idx_in_block = key.row_idx() - prepared_idx_;
-
     RowChangeListDecoder decoder(dms_->schema(), changelist);
 
-    Status s = decoder.Init();
-    if (PREDICT_TRUE(s.ok())) {
-      s = decoder.ApplyToOneColumn(
-        projected_col, dst->cell_ptr(idx_in_block), dst->arena());
+    RETURN_NOT_OK_RET(decoder.Init(),
+                      CorruptionStatus(string("Unable to decode changelist: ") + s.ToString(),
+                                       key.row_idx(), &changelist));
+
+    if (decoder.is_update()) {
+      RETURN_NOT_OK_RET(
+        decoder.ApplyToOneColumn(projected_col, dst->cell_ptr(idx_in_block), dst->arena()),
+        CorruptionStatus(string("Unable to apply changelist: ") + s.ToString(),
+                         key.row_idx(), &changelist));
+    } else if (decoder.is_delete()) {
+      // Handled by ApplyDeletes()
+    } else {
+      LOG(FATAL) << "TODO: unhandled mutation type. " << changelist.ToString(dms_->schema());
     }
-    if (PREDICT_FALSE(!s.ok())) {
-      return Status::Corruption(
-        StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT": ", key.row_idx()) +
-        s.ToString());
+
+#undef CORRUPTION_MSG
+  }
+
+
+  return Status::OK();
+}
+
+
+Status DMSIterator::ApplyDeletes(SelectionVector *sel_vec) {
+  // TODO: tihs shares lots of code with ApplyUpdates
+  // probably Prepare() should just separate out the updates into deletes, and then
+  // a set of updates for each column.
+  DCHECK(prepared_);
+  DCHECK_EQ(prepared_count_, sel_vec->nrows());
+  Slice src(prepared_buf_);
+
+  while (!src.empty()) {
+    DeltaKey key;
+    RowChangeList changelist;
+
+    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
+
+    uint32_t idx_in_block = key.row_idx() - prepared_idx_;
+    RowChangeListDecoder decoder(dms_->schema(), changelist);
+
+    RETURN_NOT_OK_RET(decoder.Init(),
+                      CorruptionStatus(string("Unable to decode changelist: ") + s.ToString(),
+                                       key.row_idx(), &changelist));
+    if (decoder.is_delete()) {
+      sel_vec->SetRowUnselected(idx_in_block);
     }
   }
 
@@ -242,8 +277,7 @@ Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *cha
   src->remove_prefix(sizeof(uint32_t));
 
   if (delta_len > src->size()) {
-    return Status::Corruption(
-      StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT, idx));
+    return CorruptionStatus("Corrupt prepared updates", idx, NULL);
   }
   *changelist = RowChangeList(Slice(src->data(), delta_len));
   src->remove_prefix(delta_len);
@@ -251,6 +285,18 @@ Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *cha
   return Status::OK();
 }
 
+Status DMSIterator::CorruptionStatus(const string &message, rowid_t row,
+                                     const RowChangeList *changelist) const {
+  string ret = message;
+  StringAppendF(&ret, "[row=%"ROWID_PRINT_FORMAT"", row);
+  if (changelist != NULL) {
+    ret.append(" CL=");
+    ret.append(changelist->ToString(dms_->schema()));
+  }
+  ret.append("]");
+
+  return Status::Corruption(ret);
+}
 
 string DMSIterator::ToString() const {
   return "DMSIterator";

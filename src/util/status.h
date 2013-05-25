@@ -23,6 +23,15 @@
     if (PREDICT_FALSE(!_s.ok())) return _s;     \
   } while (0);
 
+// Return 'to_return' if 'to_call' returns a bad status.
+// The substitution for 'to_return' may reference the variable
+// 's' for the bad status.
+#define RETURN_NOT_OK_RET(to_call, to_return) do { \
+    Status s = (to_call); \
+    if (PREDICT_FALSE(!s.ok())) return (to_return);  \
+  } while (0);
+
+
 #define CHECK_OK(s) do { \
   Status _s = (s); \
   CHECK(_s.ok()) << "Bad status: " << _s.ToString(); \

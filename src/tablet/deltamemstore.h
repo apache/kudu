@@ -98,6 +98,8 @@ public:
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 
+  Status ApplyDeletes(SelectionVector *sel_vec);
+
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
 
   string ToString() const;
@@ -116,6 +118,10 @@ private:
 
   // Decode a mutation as stored in the DMS.
   Status DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *changelist) const;
+
+  // Format a Corruption status
+  Status CorruptionStatus(const string &message, rowid_t row,
+                          const RowChangeList *changelist) const;
 
   enum {
     kPreparedBufInitialCapacity = 512

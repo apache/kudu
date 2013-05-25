@@ -341,6 +341,11 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
   return Status::OK();
 }
 
+Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
+  sel_vec->SetAllTrue();
+  return Status::OK();
+}
+
 Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
   CHECK_EQ(prepared_count_, dst->nrows());
   DCHECK_LT(col_idx, col_iters_.size());

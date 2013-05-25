@@ -15,6 +15,10 @@ SelectionVector::SelectionVector(size_t row_capacity) :
 {
   CHECK_GT(n_bytes_, 0);
 
+  // TODO: we can probably do away with SetAllTrue here and assume
+  // that callers will initialize it at first use. Tried this and
+  // got some test failures, so should come back to this and figure
+  // out why.
   SetAllTrue();
 }
 

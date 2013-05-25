@@ -72,6 +72,11 @@ public:
   // 'dst' must be the same length as was previously passed to PrepareToApply()
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
 
+  // Apply any deletes to the given selection vector.
+  // Rows which have been deleted in the associated MVCC snapshot are set to
+  // 0 in the selection vector so that they don't show up in the output.
+  virtual Status ApplyDeletes(SelectionVector *sel_vec) = 0;
+
   // Collect the mutations associated with each row in the current prepared batch.
   //
   // Each entry in the vector will be treated as a singly linked list of Mutation
