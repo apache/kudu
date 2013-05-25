@@ -86,36 +86,6 @@ private:
 
 };
 
-// DeltaIterator that simply combines together other DeltaIterators,
-// applying deltas from each in order.
-class DeltaIteratorMerger : public DeltaIterator {
- public:
-  // Create a new DeltaIterator which combines the deltas from
-  // all of the input delta trackers.
-  //
-  // If only one tracker is input, this will automatically return an unwrapped
-  // iterator for greater efficiency.
-  static shared_ptr<DeltaIterator> Create(
-    const vector<shared_ptr<DeltaStore> > &trackers,
-    const Schema &projection,
-    const MvccSnapshot &snapshot);
-
-  ////////////////////////////////////////////////////////////
-  // Implementations of DeltaIterator
-  ////////////////////////////////////////////////////////////
-  virtual Status Init();
-  virtual Status SeekToOrdinal(rowid_t idx);
-  virtual Status PrepareBatch(size_t nrows);
-  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
-  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
-  virtual string ToString() const;
-
- private:
-  explicit DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters);
-
-  vector<shared_ptr<DeltaIterator> > iters_;
-};
-
 
 ////////////////////////////////////////////////////////////
 // Delta-applying iterators

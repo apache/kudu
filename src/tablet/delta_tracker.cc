@@ -19,6 +19,122 @@ using std::string;
 using std::tr1::shared_ptr;
 
 
+namespace {
+
+// DeltaIterator that simply combines together other DeltaIterators,
+// applying deltas from each in order.
+class DeltaIteratorMerger : public DeltaIterator {
+ public:
+  // Create a new DeltaIterator which combines the deltas from
+  // all of the input delta trackers.
+  //
+  // If only one tracker is input, this will automatically return an unwrapped
+  // iterator for greater efficiency.
+  static shared_ptr<DeltaIterator> Create(
+    const vector<shared_ptr<DeltaStore> > &trackers,
+    const Schema &projection,
+    const MvccSnapshot &snapshot);
+
+  ////////////////////////////////////////////////////////////
+  // Implementations of DeltaIterator
+  ////////////////////////////////////////////////////////////
+  virtual Status Init();
+  virtual Status SeekToOrdinal(rowid_t idx);
+  virtual Status PrepareBatch(size_t nrows);
+  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+  virtual string ToString() const;
+
+ private:
+  explicit DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters);
+
+  vector<shared_ptr<DeltaIterator> > iters_;
+};
+
+DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters) :
+  iters_(iters)
+{}
+
+Status DeltaIteratorMerger::Init() {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->Init());
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->SeekToOrdinal(idx));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->PrepareBatch(nrows));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->CollectMutations(dst, arena));
+  }
+  // TODO: do we need to do some kind of sorting here to deal with out-of-order
+  // txids?
+  return Status::OK();
+}
+
+
+string DeltaIteratorMerger::ToString() const {
+  string ret;
+  ret.append("DeltaIteratorMerger(");
+
+  bool first = true;
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    if (!first) {
+      ret.append(", ");
+    }
+    first = false;
+
+    ret.append(iter->ToString());
+  }
+  ret.append(")");
+  return ret;
+}
+
+
+shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
+  const vector<shared_ptr<DeltaStore> > &trackers,
+  const Schema &projection,
+  const MvccSnapshot &snapshot)
+{
+  vector<shared_ptr<DeltaIterator> > delta_iters;
+
+  BOOST_FOREACH(const shared_ptr<DeltaStore> &tracker, trackers) {
+    shared_ptr<DeltaIterator> iter(tracker->NewDeltaIterator(projection, snapshot));
+    delta_iters.push_back(iter);
+  }
+
+  if (delta_iters.size() == 1) {
+    // If we only have one input to the "merge", we can just directly
+    // return that iterator.
+    return delta_iters[0];
+  }
+
+  return shared_ptr<DeltaIterator>(new DeltaIteratorMerger(delta_iters));
+}
+
+} // anonymous namespace
+
+
 DeltaTracker::DeltaTracker(Env *env,
                            const Schema &schema,
                            const string &dir) :
@@ -195,87 +311,6 @@ Status DeltaTracker::Flush() {
 ////////////////////////////////////////////////////////////
 // Delta merger
 ////////////////////////////////////////////////////////////
-
-DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters) :
-  iters_(iters)
-{}
-
-Status DeltaIteratorMerger::Init() {
-  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->Init());
-  }
-  return Status::OK();
-}
-
-Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
-  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->SeekToOrdinal(idx));
-  }
-  return Status::OK();
-}
-
-Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
-  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->PrepareBatch(nrows));
-  }
-  return Status::OK();
-}
-
-Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
-  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
-  }
-  return Status::OK();
-}
-
-Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
-  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->CollectMutations(dst, arena));
-  }
-  // TODO: do we need to do some kind of sorting here to deal with out-of-order
-  // txids?
-  return Status::OK();
-}
-
-
-string DeltaIteratorMerger::ToString() const {
-  string ret;
-  ret.append("DeltaIteratorMerger(");
-
-  bool first = true;
-  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    if (!first) {
-      ret.append(", ");
-    }
-    first = false;
-
-    ret.append(iter->ToString());
-  }
-  ret.append(")");
-  return ret;
-}
-
-
-shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
-  const vector<shared_ptr<DeltaStore> > &trackers,
-  const Schema &projection,
-  const MvccSnapshot &snapshot)
-{
-  vector<shared_ptr<DeltaIterator> > delta_iters;
-
-  BOOST_FOREACH(const shared_ptr<DeltaStore> &tracker, trackers) {
-    shared_ptr<DeltaIterator> iter(tracker->NewDeltaIterator(projection, snapshot));
-    delta_iters.push_back(iter);
-  }
-
-  if (delta_iters.size() == 1) {
-    // If we only have one input to the "merge", we can just directly
-    // return that iterator.
-    return delta_iters[0];
-  }
-
-  return shared_ptr<DeltaIterator>(new DeltaIteratorMerger(delta_iters));
-}
 
 } // namespace tablet
 } // namespace kudu
