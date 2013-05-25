@@ -1,12 +1,13 @@
 A Tablet is a horizontal partition of a Kudu table, similar to tablets
 in BigTable or regions in HBase. Each tablet hosts a contiguous range
-of rows which does not overlap any other tablet's range. Together,
-all the tablets in a table make up the entirety of the tablet's key space.
+of rows which does not overlap with any other tablet's range. Together,
+all the tablets in a table comprise the table's entire key space.
 
-Each tablet is further subdivided into a number of disjoint sets of
-rows called RowSets. Each RowSet consists of the data for a set of
-rows, and the set of rows for different RowSets do not intersect: that
-is to say, for any given key, it is present in at most one RowSet.
+Each tablet is further subdivided into a number of sets of rows called
+RowSets. Each RowSet consists of the data for a set of rows. RowSets
+are disjoint, ie the set of rows for different RowSets do not
+intersect, so any given key is present in at most one RowSet. While
+RowSets are disjoint, their key spaces may overlap.
 
 ============================================================
 Handling Insertions
@@ -197,17 +198,9 @@ When the MemRowSet fills up, a Flush occurs, which persists the data to disk.
      |
      | Flush process writes entries in memory to a new DiskRowSet on disk
      v
-+--------------+
-| DiskRowSet 0 |
-+--------------+
-
-+----------------+
-| DiskRowSet ... |
-+----------------+
-
-+--------------+
-| DiskRowSet N |
-+--------------+
++--------------+  +--------------+    +--------------+
+| DiskRowSet 0 |  | DiskRowSet 1 | .. | DiskRowSet N |
++-------------+-  +--------------+    +--------------+
 
 When the data is flushed, it is stored as a set of CFiles (see src/cfile/README).
 Each of the rows in the data is addressable by a sequential "row ID", which is
@@ -541,7 +534,7 @@ Go go gadget ASCII art!
 +-----------+
 | MemRowSet |
 +-----------+
-
+  |
   | flush: creates a new DiskRowSet 0
   v
 +---------------+
