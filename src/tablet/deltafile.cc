@@ -118,15 +118,35 @@ Status DeltaFileReader::Init() {
 }
 
 DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema &projection,
-                                                          const MvccSnapshot &snap) {
+                                                 const MvccSnapshot &snap) const {
   return new DeltaFileIterator(this, projection, snap);
 }
+
+Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+
+  // TODO: can use an empty schema here? also, would be nice to avoid the
+  // allocations, but would probably require some refactoring.
+  gscoped_ptr<DeltaIterator> iter(NewDeltaIterator(schema_, snap_all));
+  RETURN_NOT_OK(iter->Init());
+  RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));
+  RETURN_NOT_OK(iter->PrepareBatch(1));
+
+  // TODO: this does an allocation - can we stack-allocate the bitmap
+  // and make SelectionVector able to "release" its buffer?
+  SelectionVector sel_vec(1);
+  sel_vec.SetAllTrue();
+  RETURN_NOT_OK(iter->ApplyDeletes(&sel_vec));
+  *deleted = !sel_vec.IsRowSelected(0);
+  return Status::OK();
+}
+
 
 ////////////////////////////////////////////////////////////
 // DeltaFileIterator
 ////////////////////////////////////////////////////////////
 
-DeltaFileIterator::DeltaFileIterator(DeltaFileReader *dfr,
+DeltaFileIterator::DeltaFileIterator(const DeltaFileReader *dfr,
                                      const Schema &projection,
                                      const MvccSnapshot &snap) :
   dfr_(dfr),

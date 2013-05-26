@@ -58,7 +58,9 @@ public:
   // from transactions which were not yet committed at the time the snapshot was
   // created will be ignored.
   DeltaIterator *NewDeltaIterator(const Schema &projection,
-                                           const MvccSnapshot &snapshot);
+                                  const MvccSnapshot &snapshot) const;
+
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
   const Schema &schema() const {
     return schema_;
@@ -112,7 +114,7 @@ private:
   // Initialize the iterator.
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
-  DMSIterator(const shared_ptr<DeltaMemStore> &dms, const Schema &projection,
+  DMSIterator(const shared_ptr<const DeltaMemStore> &dms, const Schema &projection,
               const MvccSnapshot &snapshot);
 
 
@@ -127,7 +129,7 @@ private:
     kPreparedBufInitialCapacity = 512
   };
 
-  const shared_ptr<DeltaMemStore> dms_;
+  const shared_ptr<const DeltaMemStore> dms_;
   const Schema projection_;
 
   // MVCC state which allows us to ignore uncommitted transactions.

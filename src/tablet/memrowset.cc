@@ -198,7 +198,28 @@ Status MemRowSet::MutateRow(txid_t txid,
 }
 
 Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
-  *present = tree_.ContainsKey(probe.encoded_key());
+  // Use a PreparedMutation here even though we don't plan to mutate. Even though
+  // this takes a lock rather than an optimistic copy, it should be a very short
+  // critical section, and this call is only made on updates, which are rare.
+
+  btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key());
+  mutation.Prepare(const_cast<MSBTree *>(&tree_));
+
+  if (!mutation.exists()) {
+    *present = false;
+    return Status::OK();
+  }
+
+  // TODO(perf): using current_mutable_value() will actually change the data's
+  // version number, even though we're not going to do any mutation. This would
+  // make concurrent readers retry, even though they don't have to (we aren't
+  // actually mutating anything here!)
+  MRSRow row(this, mutation.current_mutable_value());
+
+  // If the row exists, it may still be a "ghost" row -- i.e a row
+  // that's been deleted. If that's the case, we should not treat it as
+  // NotFound.
+  *present = !row.IsGhost();
   return Status::OK();
 }
 

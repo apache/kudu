@@ -228,6 +228,26 @@ void DeltaTracker::Update(txid_t txid, rowid_t row_idx, const RowChangeList &upd
   dms_->Update(txid, row_idx, update);
 }
 
+Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
+  *deleted = false;
+  // Check if the row has a deletion in DeltaMemStore.
+  RETURN_NOT_OK(dms_->CheckRowDeleted(row_idx, deleted));
+  if (*deleted) {
+    return Status::OK();
+  }
+
+  // Then check backwards through the list of trackers.
+  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore> &ds, delta_stores_) {
+    RETURN_NOT_OK(ds->CheckRowDeleted(row_idx, deleted));
+    if (*deleted) {
+      return Status::OK();
+    }
+  }
+
+  return Status::OK();
+}
 
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {

@@ -26,7 +26,10 @@ public:
   // 'snapshot' is the MVCC state which determines which transactions
   // should be considered committed (and thus applied by the iterator).
   virtual DeltaIterator *NewDeltaIterator(const Schema &projection_,
-                                                   const MvccSnapshot &snapshot) = 0;
+                                          const MvccSnapshot &snapshot) const = 0;
+
+  // Set *deleted to true if the latest update for the given row is a deletion.
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const = 0;
 
   virtual ~DeltaStore() {}
 };

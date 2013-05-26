@@ -64,9 +64,46 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
 }
 
 DeltaIterator *DeltaMemStore::NewDeltaIterator(const Schema &projection,
-                                                        const MvccSnapshot &snapshot) {
+                                               const MvccSnapshot &snapshot) const {
   return new DMSIterator(shared_from_this(), projection, snapshot);
 }
+
+Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  *deleted = false;
+
+  DeltaKey key(row_idx, txid_t(0));
+  faststring buf;
+  key.EncodeTo(&buf);
+  Slice key_slice(buf);
+
+  bool exact;
+
+  // TODO: can we avoid the allocation here?
+  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  if (!iter->SeekAtOrAfter(key_slice, &exact)) {
+    return Status::OK();
+  }
+
+  while (iter->IsValid()) {
+    // Iterate forward until reaching an entry with a larger row idx.
+    Slice key_slice, v;
+    iter->GetCurrentEntry(&key_slice, &v);
+    RETURN_NOT_OK(key.DecodeFrom(&key_slice));
+    DCHECK_EQ(0, key_slice.size()) << "Key should not have leftover data";
+    DCHECK_GE(key.row_idx(), row_idx);
+    if (key.row_idx() != row_idx) break;
+
+    // Mutation is for the target row, check deletion status.
+    RowChangeListDecoder decoder(schema_, RowChangeList(v));
+    RETURN_NOT_OK(decoder.Init());
+    decoder.TwiddleDeleteStatus(deleted);
+
+    iter->Next();
+  }
+
+  return Status::OK();
+}
+
 
 void DeltaMemStore::DebugPrint() const {
   tree_.DebugPrint();
@@ -76,7 +113,7 @@ void DeltaMemStore::DebugPrint() const {
 // DMSIterator
 ////////////////////////////////////////////////////////////
 
-DMSIterator::DMSIterator(const shared_ptr<DeltaMemStore> &dms,
+DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
                          const Schema &projection,
                          const MvccSnapshot &snapshot) :
   dms_(dms),

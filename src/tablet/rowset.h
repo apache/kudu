@@ -26,6 +26,10 @@ public:
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
+  //
+  // If the row was once present in this rowset, but no longer present
+  // due to a DELETE, then this should set *present = false, as if
+  // it were never there.
   virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const = 0;
 
   // Update/delete a row in this rowset.

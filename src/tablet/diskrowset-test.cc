@@ -147,36 +147,38 @@ TEST_F(TestRowSet, TestDelete) {
   MvccSnapshot snap_after_delete(mvcc_);
 
   vector<string> rows;
+  Status s;
 
-  // Reading the MVCC snapshot prior to deletion should show the row.
-  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
-  ASSERT_EQ(2, rows.size());
-  EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
-  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
+  for (int i = 0; i < 2; i++) {
+    // Reading the MVCC snapshot prior to deletion should show the row.
+    ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
+    ASSERT_EQ(2, rows.size());
+    EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
+    EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
 
-  // Reading the MVCC snapshot after the deletion should hide the row.
-  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
-  ASSERT_EQ(1, rows.size());
-  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
+    // Reading the MVCC snapshot after the deletion should hide the row.
+    ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
 
-  // Flush DMS and ensure that the verification still succeeds with the
-  // deletions now in a DeltaFile.
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+    // Trying to delete or update the same row again should fail.
+    s = DeleteRow(rs.get(), 0);
+    ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
+    s = UpdateRow(rs.get(), 0, 12345);
+    ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
 
-  // Reading the MVCC snapshot prior to deletion should show the row.
-  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
-  ASSERT_EQ(2, rows.size());
-  EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
-  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
+    // CheckRowPresent should return false.
+    bool present;
+    ASSERT_STATUS_OK(CheckRowPresent(*rs, 0, &present));
+    EXPECT_FALSE(present);
 
-  // Reading the MVCC snapshot after the deletion should hide the row.
-  ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
-  ASSERT_EQ(1, rows.size());
-  EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
-
-
-  // TODO: check that update or re-delete of same row fails
-  // TODO: check that reinsert succeeds
+    if (i == 1) {
+      // Flush DMS. The second pass through the loop will re-verify that the
+      // externally visible state of the layer has not changed.
+      // deletions now in a DeltaFile.
+      ASSERT_STATUS_OK(rs->FlushDeltas());
+    }
+  }
 }
 
 

@@ -54,7 +54,10 @@ public:
     return string("CFile base data in ") + dir_;
   }
 
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
+  // Check if the given row is present. If it is, sets *rowid to the
+  // row's index.
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                         rowid_t *rowid) const;
 
   virtual ~CFileSet();
 

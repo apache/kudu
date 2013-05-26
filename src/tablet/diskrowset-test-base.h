@@ -90,19 +90,15 @@ protected:
   void UpdateExistingRows(DiskRowSet *rs, float update_ratio,
                           unordered_set<uint32_t> *updated) {
     int to_update = (int)(n_rows_ * update_ratio);
-    char buf[256];
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     for (int i = 0; i < to_update; i++) {
-      ScopedTransaction tx(&mvcc_);
       uint32_t idx_to_update = random() % n_rows_;
-      FormatKey(idx_to_update, buf, sizeof(buf));
-      Slice key_slice(buf);
       uint32_t new_val = idx_to_update * 5;
       update.Reset();
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
-                              &key_slice, RowChangeList(update_buf)));
+
+      ASSERT_STATUS_OK_FAST(MutateRow(rs, idx_to_update, RowChangeList(update_buf)));
       if (updated != NULL) {
         updated->insert(idx_to_update);
       }
@@ -111,17 +107,40 @@ protected:
 
   // Delete the row with the given identifier.
   Status DeleteRow(DiskRowSet *rs, uint32_t row_idx) {
-    char buf[256];
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
-
-    ScopedTransaction tx(&mvcc_);
-    FormatKey(row_idx, buf, sizeof(buf));
-    Slice key_slice(buf);
     update.Reset();
     update.SetToDelete();
-    return rs->MutateRow(tx.txid(),
-                         &key_slice, RowChangeList(update_buf));
+
+    return MutateRow(rs, row_idx, RowChangeList(update_buf));
+  }
+
+  Status UpdateRow(DiskRowSet *rs, uint32_t row_idx, uint32_t new_val)  {
+    faststring update_buf;
+    RowChangeListEncoder update(schema_, &update_buf);
+    update.Reset();
+    update.AddColumnUpdate(1, &new_val);
+
+    return MutateRow(rs, row_idx, RowChangeList(update_buf));
+  }
+
+  // Mutate the given row.
+  Status MutateRow(DiskRowSet *rs, uint32_t row_idx, const RowChangeList &mutation) {
+    char buf[256];
+    FormatKey(row_idx, buf, sizeof(buf));
+    Slice key_slice(buf);
+
+    ScopedTransaction tx(&mvcc_);
+    return rs->MutateRow(tx.txid(), &key_slice, mutation);
+  }
+
+  Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {
+    char buf[256];
+    FormatKey(row_idx, buf, sizeof(buf));
+    Slice key_slice(buf);
+    RowSetKeyProbe probe(schema_, &key_slice);
+
+    return rs.CheckRowPresent(probe, present);
   }
 
   // Verify the contents of the given rowset.

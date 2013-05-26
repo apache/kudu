@@ -51,6 +51,12 @@ public:
   // values into a local arena.
   void Update(txid_t txid, rowid_t row_idx, const RowChangeList &update);
 
+  // Check if the given row has been deleted -- i.e if the most recent
+  // delta for this row is a deletion.
+  //
+  // Sets *deleted to true if so; otherwise sets it to false.
+  Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
+
 private:
   friend class DiskRowSet;
 

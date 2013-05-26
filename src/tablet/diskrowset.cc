@@ -269,6 +269,15 @@ Status DiskRowSet::MutateRow(txid_t txid,
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
+
+  // It's possible that the row key exists in this DiskRowSet, but it has
+  // in fact been Deleted already. Check with the delta tracker to be sure.
+  bool deleted;
+  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted));
+  if (deleted) {
+    return Status::NotFound("row not found");
+  }
+
   delta_tracker_->Update(txid, row_idx, update);
 
   return Status::OK();
@@ -278,7 +287,18 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                               bool *present) const {
   CHECK(open_);
 
-  return base_data_->CheckRowPresent(probe, present);
+  rowid_t row_idx;
+  RETURN_NOT_OK(base_data_->CheckRowPresent(probe, present, &row_idx));
+  if (!*present) {
+    // If it wasn't in the base data, then it's definitely not in the rowset.
+    return Status::OK();
+  }
+
+  // Otherwise it might be in the base data but deleted.
+  bool deleted = false;
+  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted));
+  *present = !deleted;
+  return Status::OK();
 }
 
 Status DiskRowSet::CountRows(rowid_t *count) const {

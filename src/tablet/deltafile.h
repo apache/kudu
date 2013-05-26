@@ -80,7 +80,10 @@ public:
 
   // See DeltaStore::NewDeltaIterator(...)
   virtual DeltaIterator *NewDeltaIterator(const Schema &projection,
-                                                   const MvccSnapshot &snap);
+                                          const MvccSnapshot &snap) const;
+
+  // See DeltaStore::CheckRowDeleted
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
   const Schema &schema() const {
     return schema_;
@@ -167,7 +170,7 @@ private:
   };
 
 
-  DeltaFileIterator(DeltaFileReader *dfr, const Schema &projection,
+  DeltaFileIterator(const DeltaFileReader *dfr, const Schema &projection,
                     const MvccSnapshot &snap);
 
 
@@ -191,7 +194,7 @@ private:
   // Log a FATAL error message about a bad delta.
   void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas, const string &msg);
 
-  DeltaFileReader *dfr_;
+  const DeltaFileReader *dfr_;
   shared_ptr<cfile::CFileReader> cfile_reader_;
   const Schema projection_;
   vector<size_t> projection_indexes_;

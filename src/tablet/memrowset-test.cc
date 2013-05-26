@@ -51,6 +51,14 @@ protected:
     ASSERT_EQ(expected_row, out[0]) << "bad result for key " << key;
   }
 
+  Status CheckRowPresent(const MemRowSet &mrs, 
+                         const string &key, bool *present) {
+    Slice keystr_slice(key);
+    RowSetKeyProbe probe(schema_, &keystr_slice);
+
+    return mrs.CheckRowPresent(probe, present);
+  }
+
   Status InsertRows(MemRowSet *mrs, int num_rows) {
     RowBuilder rb(schema_);
     char keybuf[256];
@@ -171,6 +179,7 @@ TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
 
 TEST_F(TestMemRowSet, TestDelete) {
   const char kRowKey[] = "hello world";
+  bool present;
 
   shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
 
@@ -178,9 +187,17 @@ TEST_F(TestMemRowSet, TestDelete) {
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 1));
   MvccSnapshot snapshot_before_delete(mvcc_);
 
+  // CheckRowPresent should return true
+  ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
+  EXPECT_TRUE(present);
+
   // Delete it.
   ASSERT_STATUS_OK(DeleteRow(mrs.get(), kRowKey));
   MvccSnapshot snapshot_after_delete(mvcc_);
+
+  // CheckRowPresent should return false
+  ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
+  EXPECT_FALSE(present);
 
   // Trying to Delete again or Update should get an error.
   Status s = DeleteRow(mrs.get(), kRowKey);
@@ -192,6 +209,10 @@ TEST_F(TestMemRowSet, TestDelete) {
   // Re-insert a new row with the same key.
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 2));
   MvccSnapshot snapshot_after_reinsert(mvcc_);
+
+  // CheckRowPresent should return now return true
+  ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
+  EXPECT_TRUE(present);
 
   // Verify the MVCC contents of the memrowset.
   // NOTE: the REINSERT has txid 4 because of the two failed attempts
