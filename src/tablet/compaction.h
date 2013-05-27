@@ -102,6 +102,10 @@ Status ReupdateMissedDeltas(CompactionInput *input,
                             DeltaTracker *delta_tracker);
 
 
+// Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.
+// This consumes all of the input in the compaction input.
+Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines);
+
 } // namespace tablet
 } // namespace kudu
 

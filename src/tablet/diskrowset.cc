@@ -307,7 +307,13 @@ Status DiskRowSet::RenameRowSetDir(const string &new_dir) {
   return Status::OK();
 }
 
-////////////////////////////////////////
+Status DiskRowSet::DebugDump(vector<string> *lines) {
+  // Using CompactionInput to dump our data is an easy way of seeing all the
+  // rows and deltas.
+  gscoped_ptr<CompactionInput> input(
+    NewCompactionInput(MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+  return DebugDumpCompactionInput(input.get(), lines);
+}
 
 } // namespace tablet
 } // namespace kudu

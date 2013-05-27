@@ -192,9 +192,11 @@ class MemRowSet : boost::noncopyable,
     return schema_;
   }
 
-  // Dump the contents of the memrowset to the INFO log.
-  // This dumps every row, so should only be used in tests, etc
-  void DebugDump();
+  // Dump the contents of the memrowset to the given vector.
+  // If 'lines' is NULL, dumps to LOG(INFO).
+  //
+  // This dumps every row, so should only be used in tests, etc.
+  virtual Status DebugDump(vector<string> *lines = NULL);
 
   string ToString() const {
     return string("memrowset");

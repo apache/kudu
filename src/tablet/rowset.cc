@@ -122,6 +122,19 @@ Status DuplicatingRowSet::Delete() {
   return Status::NotSupported("");
 }
 
+Status DuplicatingRowSet::DebugDump(vector<string> *lines) {
+  int i = 1;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, old_rowsets_) {
+    LOG_STRING(INFO, lines) << "Duplicating rowset input " << ToString() << " "
+                            << i << "/" << old_rowsets_.size() << ":";
+    RETURN_NOT_OK(rs->DebugDump(lines));
+    i++;
+  }
+  LOG_STRING(INFO, lines) << "Duplicating rowset output " << ToString() << ":";
+  RETURN_NOT_OK(new_rowset_->DebugDump(lines));
+
+  return Status::OK();
+}
 
 } // namespace tablet
 } // namespace kudu

@@ -168,6 +168,8 @@ public:
     return dir_;
   }
 
+  virtual Status DebugDump(vector<string> *out = NULL);
+
   static string GetColumnPath(const string &dir, int col_idx);
   static string GetDeltaPath(const string &dir, int delta_idx);
   static string GetBloomPath(const string &dir);

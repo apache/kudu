@@ -451,6 +451,23 @@ Status Tablet::Compact()
   return DoCompactionOrFlush(input);
 }
 
+Status Tablet::DebugDump(vector<string> *lines) {
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+
+  LOG_STRING(INFO, lines) << "Dumping tablet:";
+  LOG_STRING(INFO, lines) << "---------------------------";
+
+  LOG_STRING(INFO, lines) << "MRS " << memrowset_->ToString() << ":";
+  RETURN_NOT_OK(memrowset_->DebugDump(lines));
+
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+    LOG_STRING(INFO, lines) << "RowSet " << rs->ToString() << ":";
+    RETURN_NOT_OK(rs->DebugDump(lines));
+  }
+
+  return Status::OK();
+}
+
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   const MvccSnapshot &snap,

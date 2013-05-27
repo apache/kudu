@@ -52,6 +52,10 @@ public:
   // Return a displayable string for this rowset.
   virtual string ToString() const = 0;
 
+  // Dump the full contents of this rowset, for debugging.
+  // This is very verbose so only useful within unit tests.
+  virtual Status DebugDump(vector<string> *lines = NULL) = 0;
+
   // Delete the underlying storage for this rowset.
   virtual Status Delete() = 0;
 
@@ -136,6 +140,8 @@ public:
   uint64_t EstimateOnDiskSize() const;
 
   string ToString() const;
+
+  virtual Status DebugDump(vector<string> *lines = NULL);
 
   Status Delete();
 

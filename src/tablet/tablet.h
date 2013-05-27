@@ -89,6 +89,12 @@ public:
   // memrowset in the current implementation.
   Status CountRows(uint64_t *count) const;
 
+
+  // Verbosely dump this entire tablet to the logs. This is only
+  // really useful when debugging unit tests failures where the tablet
+  // has a very small number of rows.
+  Status DebugDump(vector<string> *lines = NULL);
+
   const Schema &schema() const { return schema_; }
 
   static string GetRowSetPath(const string &tablet_dir, int rowset_idx);

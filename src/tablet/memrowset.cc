@@ -30,7 +30,7 @@ MemRowSet::MemRowSet(const Schema &schema) :
   has_logged_throttling_(0)
 {}
 
-void MemRowSet::DebugDump() {
+Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
@@ -39,6 +39,8 @@ void MemRowSet::DebugDump() {
               << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head);
     iter->Next();
   }
+
+  return Status::OK();
 }
 
 

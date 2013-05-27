@@ -62,21 +62,7 @@ class TestCompaction : public KuduTest {
   // Iterate over the given compaction input, stringifying and dumping each
   // yielded row to *out
   void IterateInput(CompactionInput *input, vector<string> *out) {
-    ASSERT_STATUS_OK(input->Init());
-    vector<CompactionInputRow> rows;
-
-    while (input->HasMoreBlocks()) {
-      ASSERT_STATUS_OK(input->PrepareBlock(&rows));
-
-      BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
-        string row_str = schema_.DebugRow(input_row.row) +
-            " mutations: " + Mutation::StringifyMutationList(schema_, input_row.mutation_head);
-        DVLOG(1) << "Iterating row: " << row_str;
-        out->push_back(row_str);
-      }
-
-      ASSERT_STATUS_OK(input->FinishBlock());
-    }
+    ASSERT_STATUS_OK(DebugDumpCompactionInput(input, out));
   }
 
   void DoFlush(CompactionInput *input, const string &out_dir) {

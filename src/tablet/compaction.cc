@@ -426,6 +426,24 @@ Status ReupdateMissedDeltas(CompactionInput *input,
 }
 
 
+Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
+  RETURN_NOT_OK(input->Init());
+  vector<CompactionInputRow> rows;
+  const Schema &schema = input->schema();
+
+  while (input->HasMoreBlocks()) {
+    RETURN_NOT_OK(input->PrepareBlock(&rows));
+
+    BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+      LOG_STRING(INFO, lines) << schema.DebugRow(input_row.row) <<
+        " mutations: " + Mutation::StringifyMutationList(schema, input_row.mutation_head);
+    }
+
+    RETURN_NOT_OK(input->FinishBlock());
+  }
+  return Status::OK();
+}
+
 
 } // namespace tablet
 } // namespace kudu
