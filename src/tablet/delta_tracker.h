@@ -60,7 +60,7 @@ private:
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
                   gscoped_ptr<DeltaFileReader> *dfr);
-  void CollectTrackers(vector<shared_ptr<DeltaStore> > *deltas) const;
+  void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
 
   Env *env_;
   const Schema schema_;
@@ -72,12 +72,11 @@ private:
   // delta_<N> to designate the order in which they were flushed.
   uint32_t next_deltafile_idx_;
 
-  // The current delta memrowset into which updates should be written.
+  // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;
-  vector<shared_ptr<DeltaStore> > delta_trackers_;
+  vector<shared_ptr<DeltaStore> > delta_stores_;
 
-
-  // read-write lock protecting dms_ and delta_trackers_.
+  // read-write lock protecting dms_ and delta_stores_.
   // - Readers and mutators take this lock in shared mode.
   // - Flushers take this lock in exclusive mode before they modify the
   //   structure of the rowset.

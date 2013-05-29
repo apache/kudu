@@ -10,7 +10,7 @@
 #include "util/env_util.h"
 #include "util/status.h"
 #include "tablet/deltafile.h"
-#include "tablet/delta_tracker.h"
+#include "tablet/delta_store.h"
 #include "tablet/diskrowset.h"
 
 namespace kudu { namespace tablet {
@@ -26,12 +26,12 @@ namespace {
 class DeltaIteratorMerger : public DeltaIterator {
  public:
   // Create a new DeltaIterator which combines the deltas from
-  // all of the input delta trackers.
+  // all of the input delta stores.
   //
-  // If only one tracker is input, this will automatically return an unwrapped
+  // If only one store is input, this will automatically return an unwrapped
   // iterator for greater efficiency.
   static shared_ptr<DeltaIterator> Create(
-    const vector<shared_ptr<DeltaStore> > &trackers,
+    const vector<shared_ptr<DeltaStore> > &stores,
     const Schema &projection,
     const MvccSnapshot &snapshot);
 
@@ -112,14 +112,14 @@ string DeltaIteratorMerger::ToString() const {
 
 
 shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
-  const vector<shared_ptr<DeltaStore> > &trackers,
+  const vector<shared_ptr<DeltaStore> > &stores,
   const Schema &projection,
   const MvccSnapshot &snapshot)
 {
   vector<shared_ptr<DeltaIterator> > delta_iters;
 
-  BOOST_FOREACH(const shared_ptr<DeltaStore> &tracker, trackers) {
-    shared_ptr<DeltaIterator> iter(tracker->NewDeltaIterator(projection, snapshot));
+  BOOST_FOREACH(const shared_ptr<DeltaStore> &store, stores) {
+    shared_ptr<DeltaIterator> iter(store->NewDeltaIterator(projection, snapshot));
     delta_iters.push_back(iter);
   }
 
@@ -149,7 +149,7 @@ DeltaTracker::DeltaTracker(Env *env,
 
 // Open any previously flushed DeltaFiles in this rowset
 Status DeltaTracker::Open() {
-  CHECK(delta_trackers_.empty()) << "should call before opening any readers";
+  CHECK(delta_stores_.empty()) << "should call before opening any readers";
   CHECK(!open_);
 
   vector<string> children;
@@ -178,7 +178,7 @@ Status DeltaTracker::Open() {
       }
       LOG(INFO) << "Successfully opened delta file " << absolute_path;
 
-      delta_trackers_.push_back(shared_ptr<DeltaStore>(dfr.release()));
+      delta_stores_.push_back(shared_ptr<DeltaStore>(dfr.release()));
 
       next_deltafile_idx_ = std::max(next_deltafile_idx_,
                                      deltafile_idx + 1);
@@ -193,17 +193,17 @@ Status DeltaTracker::Open() {
 }
 
 
-void DeltaTracker::CollectTrackers(vector<shared_ptr<DeltaStore> > *deltas) const {
+void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-  deltas->assign(delta_trackers_.begin(), delta_trackers_.end());
+  deltas->assign(delta_stores_.begin(), delta_stores_.end());
   deltas->push_back(dms_);
 }
 
 shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema &schema,
                                                                   const MvccSnapshot &snap) const {
-  std::vector<shared_ptr<DeltaStore> > deltas;
-  CollectTrackers(&deltas);
-  return DeltaIteratorMerger::Create(deltas, schema, snap);
+  std::vector<shared_ptr<DeltaStore> > stores;
+  CollectStores(&stores);
+  return DeltaIteratorMerger::Create(stores, schema, snap);
 }
 
 ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
@@ -256,7 +256,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
 
 Status DeltaTracker::Flush() {
   // First, swap out the old DeltaMemStore with a new one,
-  // and add it to the list of delta trackers to be reflected
+  // and add it to the list of delta stores to be reflected
   // in reads.
   shared_ptr<DeltaMemStore> old_dms;
   size_t count;
@@ -274,7 +274,7 @@ Status DeltaTracker::Flush() {
     old_dms = dms_;
     dms_.reset(new DeltaMemStore(schema_));
 
-    delta_trackers_.push_back(old_dms);
+    delta_stores_.push_back(old_dms);
   }
 
   LOG(INFO) << "Flushing " << count << " deltas...";
@@ -288,18 +288,18 @@ Status DeltaTracker::Flush() {
     << "Failed to flush DMS: " << s.ToString()
     << "\nTODO: need to figure out what to do with error handling "
     << "if this fails -- we end up with a DeltaMemStore permanently "
-    << "in the tracker list. For now, abort.";
+    << "in the store list. For now, abort.";
 
 
   // Now, re-take the lock and swap in the DeltaFileReader in place of
   // of the DeltaMemStore
   {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-    size_t idx = delta_trackers_.size() - 1;
+    size_t idx = delta_stores_.size() - 1;
 
-    CHECK_EQ(delta_trackers_[idx], old_dms)
-      << "Another thread modified the delta tracker list during flush";
-    delta_trackers_[idx].reset(dfr.release());
+    CHECK_EQ(delta_stores_[idx], old_dms)
+      << "Another thread modified the delta store list during flush";
+    delta_stores_[idx].reset(dfr.release());
   }
 
   return Status::OK();
