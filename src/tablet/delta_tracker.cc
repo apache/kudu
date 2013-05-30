@@ -145,10 +145,12 @@ shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
 
 DeltaTracker::DeltaTracker(Env *env,
                            const Schema &schema,
-                           const string &dir) :
+                           const string &dir,
+                           rowid_t num_rows) :
   env_(env),
   schema_(schema),
   dir_(dir),
+  num_rows_(num_rows),
   open_(false),
   next_deltafile_idx_(0),
   dms_(new DeltaMemStore(schema))
@@ -225,11 +227,15 @@ void DeltaTracker::Update(txid_t txid, rowid_t row_idx, const RowChangeList &upd
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
+  DCHECK_LT(row_idx, num_rows_);
+
   dms_->Update(txid, row_idx, update);
 }
 
 Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
+  DCHECK_LT(row_idx, num_rows_);
 
   *deleted = false;
   // Check if the row has a deletion in DeltaMemStore.

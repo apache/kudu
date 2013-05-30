@@ -224,8 +224,7 @@ DiskRowSet::DiskRowSet(Env *env,
     env_(env),
     schema_(schema),
     dir_(rowset_dir),
-    open_(false),
-    delta_tracker_(new DeltaTracker(env, schema, rowset_dir))
+    open_(false)
 {}
 
 
@@ -235,6 +234,10 @@ Status DiskRowSet::Open() {
   RETURN_NOT_OK(new_base->OpenAllColumns());
 
   base_data_.reset(new_base.release());
+
+  rowid_t num_rows;
+  RETURN_NOT_OK(base_data_->CountRows(&num_rows));
+  delta_tracker_.reset(new DeltaTracker(env_, schema_, dir_, num_rows));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;

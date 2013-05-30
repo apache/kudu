@@ -32,7 +32,8 @@ class DeltaTracker : public boost::noncopyable {
 public:
   DeltaTracker(Env *env,
                const Schema &schema,
-               const string &dir);
+               const string &dir,
+               rowid_t num_rows);
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                    const MvccSnapshot &mvcc_snap) const;
@@ -71,6 +72,11 @@ private:
   Env *env_;
   const Schema schema_;
   string dir_;
+
+  // The number of rows in the DiskRowSet that this tracker is associated with.
+  // This is just used for assertions to make sure that we don't update a row
+  // which doesn't exist.
+  rowid_t num_rows_;
 
   bool open_;
 
