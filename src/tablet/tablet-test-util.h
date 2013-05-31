@@ -17,6 +17,7 @@ using std::vector;
 static inline Status IterateToStringList(RowwiseIterator *iter,
                                          vector<string> *out,
                                          int limit = INT_MAX) {
+  out->clear();
   Schema schema = iter->schema();
   Arena arena(1024, 1024);
   RowBlock block(schema, 100, &arena);
@@ -34,7 +35,8 @@ static inline Status IterateToStringList(RowwiseIterator *iter,
 }
 
 // Construct a new iterator from the given rowset, and dump
-// all of its results into 'out'.
+// all of its results into 'out'. The previous contents
+// of 'out' are cleared.
 static inline Status DumpRowSet(const RowSet &rs,
                                 const Schema &projection,
                                 const MvccSnapshot &snap,

@@ -42,7 +42,7 @@ public:
                  1)
   {}
 
-  void BuildRow(RowBuilder *rb, uint64_t row_idx)
+  void BuildRowKey(RowBuilder *rb, uint64_t row_idx)
   {
     // This is called from multiple threads, so can't move this buffer
     // to be a class member. However, it's likely to get inlined anyway
@@ -50,8 +50,12 @@ public:
     char buf[256];
     FormatKey(buf, sizeof(buf), row_idx);
     rb->AddString(Slice(buf));
+  }
+
+  void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {
+    BuildRowKey(rb, row_idx);
     rb->AddUint32(row_idx);
-    rb->AddUint32(0);
+    rb->AddUint32(update_count_val);
   }
 
   const Schema &test_schema() const {
@@ -95,10 +99,14 @@ public:
                  (ColumnSchema("update_count", UINT32)), 1)
   {}
 
-  void BuildRow(RowBuilder *rb, uint64_t i) {
+  void BuildRowKey(RowBuilder *rb, uint64_t i) {
     rb->AddUint32((uint32_t)i);
-    rb->AddUint32((uint32_t)i);
-    rb->AddUint32((uint32_t)0);
+  }
+
+  void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {
+    BuildRowKey(rb, row_idx);
+    rb->AddUint32((uint32_t)row_idx);
+    rb->AddUint32(update_count_val);
   }
 
   const Schema &test_schema() const { return test_schema_; }
@@ -141,13 +149,14 @@ public:
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
-  void InsertTestRows(uint64_t first_row, uint64_t count, TimeSeries *ts=NULL) {
+  void InsertTestRows(uint64_t first_row, uint64_t count, uint32_t update_count_val,
+                      TimeSeries *ts=NULL) {
     RowBuilder rb(schema_);
 
     uint64_t inserted_since_last_report = 0;
     for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
-      setup_.BuildRow(&rb, i);
+      setup_.BuildRow(&rb, i, update_count_val);
       ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
@@ -161,13 +170,13 @@ public:
     }
   }
 
-  void UpdateTestRow(uint64_t row_idx, uint32_t new_val) {
-    RowBuilder rb(schema_);
-    setup_.BuildRow(&rb, row_idx);
+  Status UpdateTestRow(uint64_t row_idx, uint32_t new_val) {
+    RowBuilder rb(schema_.CreateKeyProjection());
+    setup_.BuildRowKey(&rb, row_idx);
 
     faststring buf;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(2, &new_val);
-    ASSERT_STATUS_OK_FAST(tablet_->UpdateRow(rb.data().data(), RowChangeList(buf)));
+    return tablet_->UpdateRow(rb.data().data(), RowChangeList(buf));
   }
 
   template <class RowType>

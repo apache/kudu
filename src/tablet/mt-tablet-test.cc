@@ -66,7 +66,7 @@ public:
     // TODO: add a test where some of the inserts actually conflict
     // on the same row.
     this->InsertTestRows(tid * FLAGS_inserts_per_thread,
-                         FLAGS_inserts_per_thread,
+                         FLAGS_inserts_per_thread, 0,
                          inserts.get());
   }
 
