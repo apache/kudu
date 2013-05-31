@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
