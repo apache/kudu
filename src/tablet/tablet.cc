@@ -414,16 +414,21 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
+ 
   MvccSnapshot flush_snap(mvcc_);
   VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
+
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostTakeMvccSnapshot());
 
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
   DiskRowSetWriter drsw(env_, schema_, tmp_rowset_dir, bloom_sizing());
   RETURN_NOT_OK(drsw.Open());
-  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &drsw));
+  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
   RETURN_NOT_OK(drsw.Finish());
+
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
 
   // Though unlikely, it's possible that all of the input rows were actually
   // GCed in this compaction. In that case, we don't actually want to reopen.
@@ -446,8 +451,6 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
     return s;
   }
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
-
   // Finished Phase 1. Start duplicating any new updates into the new on-disk rowset.
   //
   // During Phase 1, we may have missed some updates which came into the input rowsets
@@ -461,7 +464,6 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   AtomicSwapRowSets(input.rowsets(), inprogress_rowset, &snap2);
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingRowSet());
-
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
   // memrowset, but not in the new rowset. Here we re-scan the memrowset, copying those

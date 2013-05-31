@@ -65,18 +65,19 @@ class TestCompaction : public KuduTest {
     ASSERT_STATUS_OK(DebugDumpCompactionInput(input, out));
   }
 
-  void DoFlush(CompactionInput *input, const string &out_dir) {
+  void DoFlush(CompactionInput *input, const MvccSnapshot &snap, const string &out_dir) {
     DiskRowSetWriter rsw(env_.get(), schema_, out_dir,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
     ASSERT_STATUS_OK(rsw.Open());
-    ASSERT_STATUS_OK(Flush(input, &rsw));
+    ASSERT_STATUS_OK(Flush(input, snap, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
     ASSERT_FILE_EXISTS(env_, DiskRowSet::GetBloomPath(out_dir));
   }
 
   void FlushAndReopen(const MemRowSet &mrs, const string &out_dir, shared_ptr<DiskRowSet> *rs) {
-    gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, MvccSnapshot(mvcc_)));
-    DoFlush(input.get(), out_dir);
+    MvccSnapshot snap(mvcc_);
+    gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, snap));
+    DoFlush(input.get(), snap, out_dir);
     // Re-open it
     ASSERT_STATUS_OK(DiskRowSet::Open(env_.get(), schema_, out_dir, rs));
   }
@@ -178,7 +179,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   MvccSnapshot snap3(mvcc_);
   gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, snap3));
   string compact_dir = GetTestPath("rowset-compacted");
-  DoFlush(compact_input.get(), compact_dir);
+  DoFlush(compact_input.get(), snap3, compact_dir);
 }
 
 TEST_F(TestCompaction, TestMerge) {
@@ -212,7 +213,7 @@ TEST_F(TestCompaction, TestMerge) {
 
   gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, schema_));
   string compact_dir = GetTestPath("rowset-compacted");
-  DoFlush(compact_input.get(), compact_dir);
+  DoFlush(compact_input.get(), merge_snap, compact_dir);
 
 }
 

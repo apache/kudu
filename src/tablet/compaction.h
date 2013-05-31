@@ -18,8 +18,15 @@ struct CompactionInputRow;
 // Interface for an input feeding into a compaction or flush.
 class CompactionInput {
  public:
-  // Create an input which reads from the given rowset, yielding base rows and updates
+  // Create an input which reads from the given rowset, yielding base rows
   // prior to the given snapshot.
+  //
+  // NOTE: For efficiency, this doesn't currently filter the mutations to only
+  // include those committed in the given snapshot. It does, however, filter out
+  // rows that weren't inserted prior to this snapshot. Users of this input still
+  // need to call snap.IsCommitted() on each mutation.
+  //
+  // TODO: can we make the above less messy?
   static CompactionInput *Create(const DiskRowSet &rowset, const MvccSnapshot &snap);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
@@ -81,13 +88,14 @@ struct CompactionInputRow {
 };
 
 // Iterate through this compaction input, flushing all rows to the given DiskRowSetWriter.
+// The 'snap' argument should match the MvccSnapshot used to create the compaction input.
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // no longer be useful.
 //
 // TODO: when we support actually flushing UNDO files, this will also have to take
 // a delta file writer.
-Status Flush(CompactionInput *input, DiskRowSetWriter *out);
+Status Flush(CompactionInput *input, const MvccSnapshot &snap, DiskRowSetWriter *out);
 
 // Iterate through this compaction input, finding any mutations which came between
 // snap_to_exclude and snap_to_include (ie those transactions that were not yet

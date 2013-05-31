@@ -177,15 +177,53 @@ TYPED_TEST(TestTablet, TestFlushWithReinsert) {
   ASSERT_STATUS_OK(this->DeleteTestRow(0));
   this->InsertTestRows(0, 1, 1);
 
-  // Flush the tablet and make sure the data doesn't re-appear.
+  // Flush the tablet and make sure the data persists.
   ASSERT_STATUS_OK(this->tablet_->Flush());
-
-  // The row was reinserted, so it should be present in flushed data.
   vector<string> rows;
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 1), rows[0]);
 }
+
+// Test flushes dealing with REINSERT mutations if they arrive in the middle
+// of a flush.
+TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
+  // Insert/delete/insert/delete in MemRowStore.
+  this->InsertTestRows(0, 1, 0);
+  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+  this->InsertTestRows(0, 1, 1);
+  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+
+  // During the snapshot flush, insert/delete/insert some more during the flush.
+  class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
+   public:
+    explicit MyCommonHooks(TestFixture *test) : test_(test) {}
+
+    Status PostWriteSnapshot() {
+      test_->InsertTestRows(0, 1, 1);
+      CHECK_OK(test_->DeleteTestRow(0));
+      test_->InsertTestRows(0, 1, 2);
+      CHECK_OK(test_->DeleteTestRow(0));
+      test_->InsertTestRows(0, 1, 3);
+      return Status::OK();
+    }
+
+   private:
+    TestFixture *test_;
+  };
+  shared_ptr<Tablet::FlushCompactCommonHooks> common_hooks(
+    reinterpret_cast<Tablet::FlushCompactCommonHooks *>(new MyCommonHooks(this)));
+  this->tablet_->SetFlushCompactCommonHooksForTests(common_hooks);
+
+  // Flush the tablet and make sure the data persists.
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+  vector<string> rows;
+  ASSERT_STATUS_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(this->setup_.FormatDebugRow(0, 3), rows[0]);
+}
+
+
 
 // Test iterating over a tablet which contains data
 // in the memrowset as well as two rowsets. This simple test
@@ -437,6 +475,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
     return Status::OK();
   }
 
+  virtual Status PostTakeMvccSnapshot() { return DoHook(); }
   virtual Status PostWriteSnapshot() { return DoHook(); }
   virtual Status PostSwapInDuplicatingRowSet() { return DoHook(); }
   virtual Status PostReupdateMissedDeltas() { return DoHook(); }
@@ -463,9 +502,9 @@ class MyCompactHooks : public Tablet::CompactionFaultHooks, public MyCommonHooks
 // Test for Flush with concurrent update, delete and insert during the
 // various phases.
 TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
-  this->InsertTestRows(0, 6, 0); // 0-5 inclusive: these rows will be deleted
-  this->InsertTestRows(10, 6, 0); // 10-15 inclusive: these rows will be updated
-  // Rows 20-25 inclusive will be inserted during the flush
+  this->InsertTestRows(0, 7, 0); // 0-6 inclusive: these rows will be deleted
+  this->InsertTestRows(10, 7, 0); // 10-16 inclusive: these rows will be updated
+  // Rows 20-26 inclusive will be inserted during the flush
 
   // Inject hooks which mutate those rows and add more rows at
   // each key stage of flushing.
@@ -487,7 +526,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results:\n" << JoinStrings(out_rows, "\n");
 
-  ASSERT_EQ(12, out_rows.size());
+  ASSERT_EQ(14, out_rows.size());
   vector<string>::const_iterator it = out_rows.begin();
 
   ASSERT_EQ(this->setup_.FormatDebugRow(10, 1000), *it); it++;
@@ -496,12 +535,14 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   ASSERT_EQ(this->setup_.FormatDebugRow(13, 1003), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(14, 1004), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(15, 1005), *it); it++;
+  ASSERT_EQ(this->setup_.FormatDebugRow(16, 1006), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(20, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(21, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(22, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(23, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(24, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(25, 0), *it); it++;
+  ASSERT_EQ(this->setup_.FormatDebugRow(26, 0), *it); it++;
 }
 
 
@@ -510,8 +551,8 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   // Create three rowsets by inserting and flushing.
   // The rows from these layers will get updated or deleted during the flush:
-  // - rows 0-5 inclusive will be deleted
-  // - rows 10-15 inclusive will be updated
+  // - rows 0-6 inclusive will be deleted
+  // - rows 10-16 inclusive will be updated
 
   this->InsertTestRows(0, 2, 0);  // rows 0-1
   this->InsertTestRows(10, 2, 0); // rows 10-11
@@ -521,11 +562,11 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   this->InsertTestRows(12, 2, 0); // rows 12-13
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  this->InsertTestRows(4, 2, 0);  // rows 4-5
-  this->InsertTestRows(14, 2, 0); // rows 14-15
+  this->InsertTestRows(4, 3, 0);  // rows 4-6
+  this->InsertTestRows(14, 3, 0); // rows 14-16
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  // Rows 20-25 inclusive will be inserted during the flush.
+  // Rows 20-26 inclusive will be inserted during the flush.
 
   shared_ptr<MyCompactHooks<TestFixture> > hooks(new MyCompactHooks<TestFixture>(this));
   this->tablet_->SetCompactionHooksForTests(hooks);
@@ -545,7 +586,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
-  ASSERT_EQ(12, out_rows.size());
+  ASSERT_EQ(14, out_rows.size());
   vector<string>::const_iterator it = out_rows.begin();
 
   ASSERT_EQ(this->setup_.FormatDebugRow(10, 1000), *it); it++;
@@ -554,12 +595,14 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   ASSERT_EQ(this->setup_.FormatDebugRow(13, 1003), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(14, 1004), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(15, 1005), *it); it++;
+  ASSERT_EQ(this->setup_.FormatDebugRow(16, 1006), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(20, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(21, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(22, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(23, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(24, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(25, 0), *it); it++;
+  ASSERT_EQ(this->setup_.FormatDebugRow(26, 0), *it); it++;
 }
 
 

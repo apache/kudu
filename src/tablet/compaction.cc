@@ -326,7 +326,10 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mutation_head, RowBlockRow *row,
+static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
+                                             const MvccSnapshot &snap,
+                                             Mutation *mutation_head,
+                                             RowBlockRow *row,
                                              bool *is_deleted) {
   *is_deleted = false;
 
@@ -337,7 +340,12 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mut
   for (const Mutation *mut = mutation_head; mut != NULL; mut = mut->next()) {
     RowChangeListDecoder decoder(schema, mut->changelist());
 
-    DVLOG(2) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+    // Skip anything not committed.
+    if (!snap.IsCommitted(mut->txid())) {
+      continue;
+    }
+
+    DVLOG(3) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
     Status s = decoder.Init();
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
@@ -367,7 +375,7 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mut
   #undef ERROR_LOG_CONTEXT
 }
 
-Status Flush(CompactionInput *input, DiskRowSetWriter *out) {
+Status Flush(CompactionInput *input, const MvccSnapshot &snap, DiskRowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
@@ -385,9 +393,11 @@ Status Flush(CompactionInput *input, DiskRowSetWriter *out) {
         " mutations: " << Mutation::StringifyMutationList(schema, input_row.mutation_head);
 
       bool is_deleted;
-      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(schema, input_row.mutation_head, &dst_row, &is_deleted));
+      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
+                      schema, snap, input_row.mutation_head, &dst_row, &is_deleted));
 
       if (is_deleted) {
+        DVLOG(2) << "Deleted!";
         // Don't flush the row.
         continue;
       }

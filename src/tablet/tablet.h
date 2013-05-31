@@ -178,6 +178,7 @@ public:
 
 class Tablet::FlushCompactCommonHooks {
  public:
+  virtual Status PostTakeMvccSnapshot() { return Status::OK(); }
   virtual Status PostWriteSnapshot() { return Status::OK(); }
   virtual Status PostSwapInDuplicatingRowSet() { return Status::OK(); }
   virtual Status PostReupdateMissedDeltas() { return Status::OK(); }
