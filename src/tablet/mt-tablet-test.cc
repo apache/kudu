@@ -246,6 +246,35 @@ public:
     }
   }
 
+  // Thread which cycles between inserting and deleting a test row, each time
+  // with a different value.
+  void DeleteAndReinsertCycleThread(int tid) {
+    uint32_t iteration = 0;
+    while (running_insert_count_.count() > 0) {
+      for (int i = 0; i < 100; i++) {
+        this->InsertTestRows(tid, 1, iteration++);
+        ASSERT_STATUS_OK_FAST(this->DeleteTestRow(tid));
+      }
+    }
+  }
+
+  // Thread which continuously sends updates at the same row, ignoring any
+  // "not found" errors that might come back. This is used simultaneously with
+  // DeleteAndReinsertCycleThread to check for races where we might accidentally
+  // succeed in UPDATING a ghost row.
+  void StubbornlyUpdateSameRowThread(int tid) {
+    uint32_t iteration = 0;
+    while (running_insert_count_.count() > 0) {
+      for (int i = 0; i < 100; i++) {
+        Status s = this->UpdateTestRow(tid, iteration++);
+        if (!s.ok() && !s.IsNotFound()) {
+          // We expect "not found", but not any other errors.
+          ASSERT_STATUS_OK(s);
+        }
+      }
+    }
+  }
+
   // Thread which wakes up periodically and collects metrics like memrowset
   // size, etc. Eventually we should have a metrics system to collect things
   // like this, but for now, this is what we've got.
@@ -310,6 +339,33 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
     LOG(INFO) << "Sum = " << sum;
   }
   this->VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
+}
+
+// Start up a bunch of threads which repeatedly insert and delete the same
+// row, while flushing and compacting. This checks various concurrent handling
+// of DELETE/REINSERT during flushes.
+TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
+  google::FlagSaver saver;
+  FLAGS_flusher_backoff = 1.0f;
+  FLAGS_flusher_initial_frequency_ms = 1;
+  this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
+  this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
+  this->StartThreads(10, &TestFixture::DeleteAndReinsertCycleThread);
+  this->StartThreads(10, &TestFixture::StubbornlyUpdateSameRowThread);
+
+  // Run very quickly in dev builds, 20 seconds in slow builds.
+  float runtime_seconds = this->AllowSlowTests() ? 20 : 0.2;
+  Stopwatch sw;
+  sw.start();
+  while (sw.elapsed().wall < runtime_seconds * NANOS_PER_SECOND &&
+         !this->HasFatalFailure()) {
+    usleep(5000);
+  }
+
+  // This is sort of a hack -- the flusher thread stops when it sees this
+  // countdown latch go to 0.
+  this->running_insert_count_.Reset(0);
+  this->JoinThreads();
 }
 
 } // namespace tablet

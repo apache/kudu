@@ -353,6 +353,7 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
     }
 
     if (decoder.is_update()) {
+      DCHECK(!*is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
       s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
 
     } else if (decoder.is_delete() || decoder.is_reinsert()) {

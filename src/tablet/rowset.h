@@ -157,7 +157,7 @@ public:
   ~DuplicatingRowSet();
 
   const Schema &schema() const {
-    return new_rowset_->schema();
+    return schema_;
   }
 
 private:
@@ -165,6 +165,9 @@ private:
 
   vector<shared_ptr<RowSet> > old_rowsets_;
   shared_ptr<RowSet> new_rowset_;
+
+  const Schema &schema_;
+  const Schema key_schema_;
 
   boost::mutex always_locked_;
 };
