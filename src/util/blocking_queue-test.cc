@@ -67,7 +67,7 @@ public:
   MultiThreadTest()
     : iterations_(4),
       nthreads_(5),
-      queue_(iterations_),
+      queue_(nthreads_ * iterations_),
       num_inserters_(nthreads_)
   {
   }
@@ -108,8 +108,9 @@ public:
     threads_.push_back(shared_ptr<boost::thread>(
             new boost::thread(boost::bind(
               &MultiThreadTest::RemoverThread, this))));
-    for (int i = 0; i < nthreads_; i++) {
-      threads_[i]->join();
+    for (thread_vec_t::iterator t = threads_.begin();
+         t != threads_.end(); ++t) {
+      (*t)->join();
     }
     // Let's check to make sure we got what we should have.
     boost::lock_guard<boost::mutex> guard(lock_);
