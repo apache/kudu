@@ -20,7 +20,7 @@ DEFINE_int32(num_flush_threads, 1, "Number of flusher reader threads to launch")
 DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
 
 
-DEFINE_int64(inserts_per_thread, 50000,
+DEFINE_int64(inserts_per_thread, 1000,
              "Number of rows inserted by each inserter thread");
 DEFINE_int32(flush_threshold_mb, 0, "Minimum memrowset size to flush");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
@@ -289,6 +289,12 @@ TYPED_TEST_CASE(MultiThreadedTabletTest, TabletTestHelperTypes);
 
 
 TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
+  if (1000 == FLAGS_inserts_per_thread) {
+    if (this->AllowSlowTests()) {
+      FLAGS_inserts_per_thread = 50000;
+    }
+  }
+
   // Spawn a bunch of threads, each of which will do updates.
   this->StartThreads(1, &TestFixture::CollectStatisticsThread);
   this->StartThreads(FLAGS_num_insert_threads, &TestFixture::InsertThread);

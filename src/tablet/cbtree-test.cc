@@ -328,7 +328,11 @@ TEST_F(TestCBTree, TestInsertAndVerifyRandom) {
   char kbuf[64];
   char vbuf_out[64];
 
-  int n_keys = 100000;
+  int n_keys = 1000;
+  if (AllowSlowTests()) {
+    n_keys = 100000;
+  }
+
   unordered_set<int> inserted(n_keys);
 
   InsertRandomKeys(&t, n_keys, &inserted);
@@ -684,8 +688,12 @@ TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
   int num_ins_threads = 4;
   int num_scan_threads = 4;
   int num_threads = num_ins_threads + num_scan_threads;
-  int ins_per_thread = 30000;
+  int ins_per_thread = 1000;
   int trials = 2;
+
+  if (AllowSlowTests()) {
+    ins_per_thread = 30000;
+  }
 
   boost::ptr_vector<boost::thread> threads;
   boost::barrier go_barrier(num_threads + 1);

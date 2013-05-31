@@ -39,7 +39,10 @@ public:
 
     RowBuilder rb(schema_);
 
-    const uint64_t nrows = 100000;
+    uint64_t nrows = 2100;
+    if (AllowSlowTests()) {
+      nrows = 100000;
+    }
 
     for (uint64_t i = 0; i < nrows; i++) {
       rb.Reset();

@@ -6,7 +6,7 @@
 
 #include "tablet/diskrowset-test-base.h"
 
-DEFINE_int32(num_threads, 16, "Number of threads to test");
+DEFINE_int32(num_threads, 2, "Number of threads to test");
 
 namespace kudu {
 namespace tablet {
@@ -52,6 +52,12 @@ public:
 
 
 TEST_F(TestMultiThreadedRowSet, TestMTUpdate) {
+  if (2 == FLAGS_num_threads) {
+    if (AllowSlowTests()) {
+      FLAGS_num_threads = 16;
+    }
+  }
+
   WriteTestRowSet();
 
   // Re-open the rowset
@@ -66,6 +72,12 @@ TEST_F(TestMultiThreadedRowSet, TestMTUpdate) {
 }
 
 TEST_F(TestMultiThreadedRowSet, TestMTUpdateAndFlush) {
+  if (2 == FLAGS_num_threads) {
+    if (AllowSlowTests()) {
+      FLAGS_num_threads = 16;
+    }
+  }
+
   WriteTestRowSet();
 
   // Re-open the rowset

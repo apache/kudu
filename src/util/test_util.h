@@ -59,6 +59,10 @@ protected:
     return env_->JoinPathSegments(test_dir_, relative_path);
   }
 
+  bool AllowSlowTests() {
+    return getenv("KUDU_ALLOW_SLOW_TESTS");
+  }
+
   gscoped_ptr<Env> env_;
   string test_dir_;
 };
