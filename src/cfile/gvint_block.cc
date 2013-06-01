@@ -31,18 +31,13 @@ void GVIntBlockBuilder::Reset() {
   estimated_raw_size_ = 0;
 }
 
-int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count, size_t stride) {
-  if (count > 1) {
-    DCHECK_GE(stride, sizeof(uint32_t));
-  }
-
-  const uint8_t *vals = reinterpret_cast<const uint8_t *>(vals_void);
+int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count) {
+  const uint32_t *vals = reinterpret_cast<const uint32_t *>(vals_void);
 
   int added = 0;
   while (estimated_raw_size_ < options_->block_size &&
          added < count) {
-    uint32_t val = *reinterpret_cast<const uint32_t *>(vals);
-    vals += stride;
+    uint32_t val = *vals++;
     estimated_raw_size_ += CalcRequiredBytes32(val);
     ints_.push_back(val);
     added++;
@@ -145,21 +140,18 @@ public:
 };
 
 template<typename T>
-class PtrSinkWithStride {
+class PtrSink {
 public:
-  PtrSinkWithStride(uint8_t *ptr, size_t stride) :
-    ptr_(ptr),
-    stride_(stride)
+  PtrSink(uint8_t *ptr) :
+    ptr_(reinterpret_cast<T *>(ptr))
   {}
 
   void push_back(const T &t) {
-    *reinterpret_cast<T *>(ptr_) = t;
-    ptr_ += stride_;
+    *ptr_++ = t;
   }
 
 private:
-  uint8_t *ptr_;
-  const size_t stride_;
+  T *ptr_;
 };
 
 void GVIntBlockDecoder::SeekToPositionInBlock(uint pos) {
@@ -232,8 +224,7 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   // We're now pointed at the correct group. Decode it
 
   uint32_t chunk[4];
-  PtrSinkWithStride<uint32_t> sink(reinterpret_cast<uint8_t *>(chunk),
-                                   sizeof(uint32_t));
+  PtrSink<uint32_t> sink(reinterpret_cast<uint8_t *>(chunk));
   size_t count = 4;
   RETURN_NOT_OK( DoGetNextValues(&count, &sink) );
 
@@ -271,9 +262,9 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 
 Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK_EQ(dst->type_info().type(), UINT32);
+  DCHECK_EQ(dst->stride(), sizeof(uint32_t));
 
-  PtrSinkWithStride<uint32_t> sink(
-    reinterpret_cast<uint8_t *>(dst->data()), dst->stride());
+  PtrSink<uint32_t> sink(reinterpret_cast<uint8_t *>(dst->data()));
   return DoGetNextValues(n, &sink);
 }
 

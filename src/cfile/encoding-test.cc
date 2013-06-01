@@ -66,7 +66,7 @@ protected:
     Slice *ptr = &slices[0];
     while (rem > 0) {
       int added = sbb->Add(reinterpret_cast<const uint8_t *>(ptr),
-                           rem, sizeof(Slice));
+                           rem);
       CHECK(added > 0);
       rem -= added;
       ptr += added;
@@ -269,8 +269,8 @@ protected:
 
     gscoped_ptr<WriterOptions> opts(new WriterOptions());
     GVIntBlockBuilder ibb(opts.get());
-    CHECK_EQ(num_ints, ibb.Add(reinterpret_cast<uint8_t *>(&data),
-                               num_ints, sizeof(uint32_t)));
+    CHECK_EQ(num_ints, ibb.Add(reinterpret_cast<uint8_t *>(&data[0]),
+                               num_ints));
 
     Slice s = ibb.Finish(0);
     GVIntBlockDecoder ibd(s);
@@ -321,7 +321,7 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
   for (int i = 0; i < 10000; i++) {
     ints[i] = random();
   }
-  ibb.Add(reinterpret_cast<const uint8_t *>(ints), 10000, sizeof(int));
+  ibb.Add(reinterpret_cast<const uint8_t *>(ints), 10000);
   delete[] ints;
 
   Slice s = ibb.Finish(12345);
@@ -347,7 +347,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
 
   GVIntBlockBuilder ibb(opts.get());
   ibb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
-          to_insert.size(), sizeof(uint32_t));
+          to_insert.size());
   Slice s = ibb.Finish(kOrdinalPosBase);
 
   GVIntBlockDecoder ibd(s);

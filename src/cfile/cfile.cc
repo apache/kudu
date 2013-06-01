@@ -231,7 +231,7 @@ Status Writer::AppendEntries(const void *entries, size_t count) {
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
 
   while (rem > 0) {
-    int n = data_block_->Add(ptr, rem, typeinfo_.size());
+    int n = data_block_->Add(ptr, rem);
     DCHECK_GE(n, 0);
 
     ptr += typeinfo_.size() * n;

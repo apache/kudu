@@ -29,7 +29,7 @@ class GVIntBlockBuilder : public BlockBuilder {
 public:
   explicit GVIntBlockBuilder(const WriterOptions *options);
 
-  int Add(const uint8_t *vals, size_t count, size_t stride);
+  int Add(const uint8_t *vals, size_t count);
 
   Slice Finish(rowid_t ordinal_pos);
 

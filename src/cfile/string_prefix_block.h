@@ -16,7 +16,7 @@ class StringPrefixBlockBuilder : public BlockBuilder {
 public:
   explicit StringPrefixBlockBuilder(const WriterOptions *options);
 
-  int Add(const uint8_t *vals, size_t count, size_t stride);
+  int Add(const uint8_t *vals, size_t count);
 
   // Return a Slice which represents the encoded data.
   //

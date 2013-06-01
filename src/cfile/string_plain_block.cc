@@ -51,15 +51,9 @@ Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
   return Slice(buffer_);
 }
 
-int StringPlainBlockBuilder::Add(const uint8_t *vals,
-                                 size_t count,
-                                 size_t stride) {
+int StringPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
   DCHECK(!finished_);
   DCHECK_GT(count, 0);
-  if (count > 1) {
-    DCHECK_GE(stride, sizeof(Slice));
-  }
-
   size_t i;
   for (i = 0; i < count; i++) {
 
@@ -78,7 +72,7 @@ int StringPlainBlockBuilder::Add(const uint8_t *vals,
     buffer_.append(src->data(), src->size());
     size_estimate_ += src->size();
 
-    vals += stride;
+    vals += sizeof(Slice);
   }
 
   end_of_data_offset_ = buffer_.size();
@@ -235,6 +229,7 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
   DCHECK_LE(*n, dst->size());
+  DCHECK_EQ(dst->stride(), sizeof(Slice));
 
   Arena *out_arena = dst->arena();
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
@@ -244,7 +239,7 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
 
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
-  uint8_t *out = reinterpret_cast<uint8_t *>(dst->data());
+  Slice *out = reinterpret_cast<Slice *>(dst->data());
   size_t i;
   for (i = 0; i < max_fetch; i++) {
     Slice elem(string_at_index(cur_idx_));
@@ -252,8 +247,8 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
     // TODO: in a lot of cases, we might be able to get away with the decoder
     // owning it and not truly copying. But, we should extend the CopyNextValues
     // API so that the caller can specify if they truly _need_ copies or not.
-    CHECK( out_arena->RelocateSlice(elem, reinterpret_cast<Slice *>(out)) );
-    out += dst->stride();
+    CHECK( out_arena->RelocateSlice(elem, out) );
+    out++;
     cur_idx_++;
   }
 

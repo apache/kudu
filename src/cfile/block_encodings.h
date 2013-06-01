@@ -38,9 +38,10 @@ inline EncodingType GetDefaultEncoding(DataType type) {
 
 class BlockBuilder : boost::noncopyable {
 public:
-  // TODO: add a more type-checkable wrapper for void *,
-  // like ConstVariantPointer in Supersonic
-  virtual int Add(const uint8_t *vals, size_t count, size_t stride) = 0;
+  // Add a sequence of values to the block.
+  // Returns the number of values actually added, which may be less
+  // than requested if the block is full.
+  virtual int Add(const uint8_t *vals, size_t count) = 0;
 
   // Return a Slice which represents the encoded data.
   //

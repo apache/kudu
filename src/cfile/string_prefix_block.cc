@@ -100,14 +100,10 @@ Slice StringPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
   return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
 }
 
-int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count, size_t stride) {
+int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   DCHECK_GT(count, 0);
   DCHECK(!finished_);
   DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
-  if (count > 1) {
-    DCHECK_GE(stride, sizeof(Slice));
-  }
-
 
   const Slice &val = *reinterpret_cast<const Slice *>(vals);
 
@@ -322,10 +318,11 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
+  DCHECK_EQ(dst->stride(), sizeof(Slice));
   DCHECK_LE(*n, dst->size());
 
   Arena *out_arena = dst->arena();
-  uint8_t *out = reinterpret_cast<uint8_t *>(dst->data());
+  Slice *out = reinterpret_cast<Slice *>(dst->data());
 
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
     *n = 0;
@@ -346,8 +343,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
 
   // Put a slice to it in the output array
   Slice prev_val(out_data, cur_val_.size());
-  *reinterpret_cast<Slice *>(out) = prev_val;
-  out += dst->stride();
+  *out++ = prev_val;
   i++;
   cur_idx_++;
 
@@ -361,8 +357,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   for (; i < max_fetch; i++) {
     Slice copied;
     RETURN_NOT_OK(ParseNextIntoArena(prev_val, dst->arena(), &copied));
-    *reinterpret_cast<Slice *>(out) = copied;
-    out += dst->stride();
+    *out++  = copied;
     prev_val = copied;
     cur_idx_++;
   }
