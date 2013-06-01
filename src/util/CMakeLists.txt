@@ -1,5 +1,6 @@
 ADD_LIBRARY(kudu_util
   env.cc env_posix.cc env_util.cc
+  bitmap.cc
   bloom_filter.cc
   cache.cc
   coding.cc
