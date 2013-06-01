@@ -40,8 +40,7 @@ protected:
   template<DataType type>
   void CopyOne(BlockDecoder *decoder,
                typename TypeTraits<type>::cpp_type *ret) {
-    ColumnBlock cb(GetTypeInfo(type), ret,
-                   TypeTraits<type>::size, 1, &arena_);
+    ColumnBlock cb(GetTypeInfo(type), ret, 1, &arena_);
     size_t n = 1;
     ASSERT_STATUS_OK(decoder->CopyNextValues(&n, &cb));
     ASSERT_EQ(1, n);
@@ -361,7 +360,6 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
 
   ColumnBlock dst_block(GetTypeInfo(UINT32),
                         &decoded[0],
-                        sizeof(uint32_t),
                         to_insert.size(),
                         &arena_);
   int dec_count = 0;

@@ -102,7 +102,7 @@ public:
   void AddMetadataPair(const Slice &key, const Slice &value);
 
   // Append a set of values to the file.
-  Status AppendEntries(const void *entries, size_t count, size_t stride);
+  Status AppendEntries(const void *entries, size_t count);
 
   // Append a raw block to the file, adding it to the various indexes.
   //

@@ -225,20 +225,16 @@ void Writer::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
   unflushed_metadata_.clear();
 }
 
-Status Writer::AppendEntries(const void *entries, size_t count, size_t stride) {
+Status Writer::AppendEntries(const void *entries, size_t count) {
   int rem = count;
-  if (count > 1) {
-    CHECK_GE(stride, typeinfo_.size())
-      << "stride " << stride << " too small for type " << typeinfo_.name();
-  }
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
 
   while (rem > 0) {
-    int n = data_block_->Add(ptr, rem, stride);
+    int n = data_block_->Add(ptr, rem, typeinfo_.size());
     DCHECK_GE(n, 0);
 
-    ptr += stride * n;
+    ptr += typeinfo_.size() * n;
     rem -= n;
     value_count_ += n;
 

@@ -4,7 +4,6 @@
 #define KUDU_CFILE_CFILE_READER_H
 
 #include <boost/noncopyable.hpp>
-#include <boost/shared_array.hpp>
 #include <vector>
 #include <tr1/memory>
 #include <string>
@@ -32,7 +31,6 @@ class CFileHeaderPB;
 class CFileFooterPB;
 
 using std::string;
-using boost::shared_array;
 using std::tr1::shared_ptr;
 
 
@@ -127,7 +125,7 @@ public:
     return BlockPointer(footer_->validx_info().root_block());
   }
 
-  
+
 
 private:
   friend class CFileIterator;

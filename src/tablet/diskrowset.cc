@@ -153,8 +153,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     // TODO: need to look at the selection vector here and only append the
     // selected rows?
     ColumnBlock column = block.column_block(i);
-    RETURN_NOT_OK(
-      cfile_writers_[i].AppendEntries(column.data(), block.nrows(), column.stride()));
+    RETURN_NOT_OK(cfile_writers_[i].AppendEntries(column.data(), block.nrows()));
   }
 
   // Write the batch to the bloom

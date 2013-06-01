@@ -1,7 +1,6 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/foreach.hpp>
-#include <boost/shared_array.hpp>
 #include <glog/logging.h>
 
 #include "cfile/block_cache.h"

@@ -74,7 +74,7 @@ Status DeltaFileWriter::AppendDelta(
   key.EncodeTo(&tmp_buf_);
 
   tmp_buf_.append(delta_slice.data(), delta_slice.size());
-  return writer_->AppendEntries(&tmp_buf_, 1, 0);
+  return writer_->AppendEntries(&tmp_buf_, 1);
 }
 
 ////////////////////////////////////////////////////////////

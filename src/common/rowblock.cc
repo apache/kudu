@@ -61,15 +61,25 @@ RowBlock::RowBlock(const Schema &schema,
                    size_t nrows,
                    Arena *arena) :
   schema_(schema),
-  data_(new uint8_t[nrows * schema.byte_size()]),
+  columns_data_(schema.num_columns()),
   row_capacity_(nrows),
   nrows_(nrows),
   arena_(arena),
   sel_vec_(nrows)
 {
   CHECK_GT(row_capacity_, 0);
+
+  for (size_t i = 0; i < schema.num_columns(); ++i) {
+    const ColumnSchema& col_schema = schema.column(i);
+    columns_data_[i] = new uint8_t[row_capacity_ * col_schema.type_info().size()];
+  }
 }
 
+RowBlock::~RowBlock() {
+  BOOST_FOREACH(uint8_t *column_data, columns_data_) {
+    delete[] column_data;
+  }
+}
 
 void RowBlock::Resize(size_t new_size) {
   CHECK_LE(new_size, row_capacity_);

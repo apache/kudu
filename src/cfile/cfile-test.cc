@@ -75,8 +75,7 @@ template<DataType type>
 void CopyOne(CFileIterator *it,
              typename TypeTraits<type>::cpp_type *ret,
              Arena *arena) {
-  ColumnBlock cb(GetTypeInfo(type), ret,
-                 TypeTraits<type>::size, 1, arena);
+  ColumnBlock cb(GetTypeInfo(type), ret, 1, arena);
   size_t n = 1;
   ASSERT_STATUS_OK(it->CopyNextValues(&n, &cb));
   ASSERT_EQ(1, n);
@@ -302,7 +301,7 @@ TEST_F(TestCFile, TestMetadata) {
     ASSERT_STATUS_OK(w.Start());
 
     uint32_t val = 1;
-    ASSERT_STATUS_OK(w.AppendEntries(&val, 1, 0));
+    ASSERT_STATUS_OK(w.AppendEntries(&val, 1));
 
     w.AddMetadataPair("key_in_footer", "footer value");
     ASSERT_STATUS_OK(w.Finish());

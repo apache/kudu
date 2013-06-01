@@ -99,6 +99,7 @@ public:
   RowBlock(const Schema &schema,
            size_t nrows,
            Arena *arena);
+  ~RowBlock();
 
   // Resize the block to the given number of rows.
   // This size must be <= the the allocated capacity row_capacity().
@@ -123,8 +124,7 @@ public:
     DCHECK_LE(nrows, nrows_);
 
     return ColumnBlock(schema_.column(col_idx).type_info(),
-                       &data_[schema_.column_offset(col_idx)],
-                       schema_.byte_size(),
+                       columns_data_[col_idx],
                        nrows,
                        arena_);
   }
@@ -135,7 +135,10 @@ public:
   // This physically zeros the memory, so is not efficient - mostly useful
   // from unit tests.
   void ZeroMemory() {
-    memset(data_.get(), '\0', schema_.byte_size() * nrows_);
+    for (size_t i = 0; i < schema_.num_columns(); ++i) {
+      const ColumnSchema& col_schema = schema_.column(i);
+      memset(columns_data_[i], '\0', col_schema.type_info().size() * nrows_);
+    }
   }
 
   // Return the selection vector which indicates which rows have passed
@@ -155,7 +158,7 @@ public:
 
 private:
   Schema schema_;
-  gscoped_array<uint8_t> data_;
+  std::vector<uint8_t *> columns_data_;
 
   // The maximum number of rows that can be stored in our allocated buffer.
   size_t row_capacity_;

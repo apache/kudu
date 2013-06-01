@@ -52,7 +52,7 @@ protected:
       int len = snprintf(data, sizeof(data), format, i);
       Slice slice(data, len);
 
-      Status s = w.AppendEntries(&slice, 1, 0);
+      Status s = w.AppendEntries(&slice, 1);
       // Dont use ASSERT because it accumulates all the logs
       // even for successes
       if (!s.ok()) {
@@ -80,7 +80,6 @@ protected:
     ASSERT_STATUS_OK(w.Start());
 
     uint32_t block[8096];
-    size_t stride = sizeof(uint32_t);
 
     // Append given number of values to the test tree
     int i = 0;
@@ -90,7 +89,7 @@ protected:
         block[j] = i++ * 10;
       }
 
-      Status s = w.AppendEntries(block, towrite, stride);
+      Status s = w.AppendEntries(block, towrite);
       // Dont use ASSERT because it accumulates all the logs
       // even for successes
       if (!s.ok()) {

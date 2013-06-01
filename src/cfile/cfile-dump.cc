@@ -25,9 +25,8 @@ void DumpIterator(const CFileReader &reader, CFileIterator *it) {
   Arena arena(8192, 8*1024*1024);
   uint8_t buf[kBufSize];
   const TypeInfo *type = reader.type_info();
-  size_t type_size = type->size();
-  int max_rows = kBufSize/type_size;
-  ColumnBlock cb(*type, buf, type_size, max_rows, &arena);
+  int max_rows = kBufSize/type->size();
+  ColumnBlock cb(*type, buf, max_rows, &arena);
 
   string strbuf;
 
