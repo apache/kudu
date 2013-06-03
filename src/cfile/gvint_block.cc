@@ -115,15 +115,14 @@ GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice) :
 
 Status GVIntBlockDecoder::ParseHeader() {
   // TODO: better range check
-  CHECK(data_.size() > 5);
+  CHECK_GE(data_.size(), GVIntBlockBuilder::kMinHeaderSize);
 
   uint32_t unused;
   ints_start_ = DecodeGroupVarInt32(
     (const uint8_t *)data_.data(), &num_elems_, &min_elem_,
     &ordinal_pos_base_, &unused);
 
-  if (num_elems_ <= 0 ||
-      num_elems_ * 5 / 4 > data_.size()) {
+  if (num_elems_ > 0 && num_elems_ * 5 / 4 > data_.size()) {
     return Status::Corruption("bad number of elems in int block");
   }
 
@@ -327,7 +326,7 @@ inline Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink)
     cur_pos_, &ints[0], &ints[1], &ints[2], &ints[3]);
 
   DCHECK_LE(cur_pos_, &data_[0] + data_.size())
-    << "Overflowed end of buffer! cur_pos=" << cur_pos_ 
+    << "Overflowed end of buffer! cur_pos=" << cur_pos_
     << " data=" << data_.data() << " size=" << data_.size();
 
   ints[0] += min_elem_;

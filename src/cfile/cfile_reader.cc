@@ -11,6 +11,7 @@
 #include "cfile/gvint_block.h"
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
+#include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
 #include "gutil/gscoped_ptr.h"
 #include "util/coding.h"
@@ -270,6 +271,9 @@ Status CFileReader::CreateBlockDecoder(
       switch (footer_->encoding()) {
         case PREFIX:
           *bd = new StringPrefixBlockDecoder(slice);
+          break;
+        case PLAIN:
+          *bd = new StringPlainBlockDecoder(slice);
           break;
         default:
           return Status::NotFound("bad string encoding");

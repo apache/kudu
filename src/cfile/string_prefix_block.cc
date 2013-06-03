@@ -190,7 +190,7 @@ Status StringPrefixBlockDecoder::ParseHeader() {
   uint32_t unused;
   data_start_ =
     coding::DecodeGroupVarInt32_SlowButSafe(
-      reinterpret_cast<const uint8_t *>(data_.data()),
+      data_.data(),
       &num_elems_, &ordinal_pos_base_,
       &restart_interval_, &unused);
   if (data_start_ == NULL) {
@@ -228,6 +228,11 @@ void StringPrefixBlockDecoder::SeekToStart() {
 }
 
 void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
+  if (PREDICT_FALSE(num_elems_ == 0)) {
+    DCHECK_EQ(0, pos);
+    return;
+  }
+
   DCHECK_LT(pos, num_elems_);
 
   int target_restart = pos/restart_interval_;
@@ -257,6 +262,11 @@ const uint8_t * StringPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
 
 // Note: see GetRestartPoint() for 'idx' semantics
 void StringPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
+  if (PREDICT_FALSE(num_elems_ == 0)) {
+    DCHECK_EQ(0, idx);
+    return;
+  }
+
   next_ptr_ = GetRestartPoint(idx);
   cur_idx_ = idx * restart_interval_;
   ParseNextValue();
@@ -318,8 +328,9 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
+
   DCHECK_EQ(dst->stride(), sizeof(Slice));
-  DCHECK_LE(*n, dst->size());
+  DCHECK_LE(*n, dst->nrows());
 
   Arena *out_arena = dst->arena();
   Slice *out = reinterpret_cast<Slice *>(dst->data());

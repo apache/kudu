@@ -139,8 +139,8 @@ Status StringPlainBlockDecoder::ParseHeader() {
   }
 
   // Decode the string offsets themselves
-  const uint8_t *p = reinterpret_cast<const uint8_t *>(&data_[offsets_pos]);
-  const uint8_t *limit = reinterpret_cast<const uint8_t *>(data_.data() + data_.size());
+  const uint8_t *p = data_.data() + offsets_pos;
+  const uint8_t *limit = data_.data() + data_.size();
 
   offsets_.clear();
   offsets_.reserve(num_elems_);
@@ -189,6 +189,11 @@ Status StringPlainBlockDecoder::ParseHeader() {
 }
 
 void StringPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
+  if (PREDICT_FALSE(num_elems_ == 0)) {
+    DCHECK_EQ(0, pos);
+    return;
+  }
+
   DCHECK_LT(pos, num_elems_);
   cur_idx_ = pos;
 }
@@ -228,7 +233,7 @@ Status StringPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool 
 Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
-  DCHECK_LE(*n, dst->size());
+  DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
 
   Arena *out_arena = dst->arena();

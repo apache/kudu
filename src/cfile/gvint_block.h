@@ -43,6 +43,9 @@ public:
   // key should be a uint32_t *
   Status GetFirstKey(void *key) const;
 
+  // Min Length of a header. (prefix + 4 tags)
+  static const size_t kMinHeaderSize = 5;
+
 private:
   friend class TestEncoding;
   FRIEND_TEST(TestEncoding, TestGroupVarInt);

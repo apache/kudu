@@ -309,9 +309,22 @@ protected:
     }
   }
 
+  template <class BlockBuilderType, class BlockDecoderType>
+  void TestEmptyBlockEncodeDecode() {
+    gscoped_ptr<WriterOptions> opts(new WriterOptions());
+    BlockBuilderType bb(opts.get());
+    Slice s = bb.Finish(0);
+    ASSERT_GT(s.size(), 0);
+    LOG(INFO) << "Encoded size for 0 items: " << s.size();
+
+    BlockDecoderType bd(s);
+    ASSERT_STATUS_OK(bd.ParseHeader());
+    ASSERT_EQ(0, bd.Count());
+    ASSERT_FALSE(bd.HasNext());
+  }
+
   Arena arena_;
 };
-
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
@@ -375,7 +388,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     dec_count += n;
   }
 
-  ASSERT_EQ(0, dst_block.size())
+  ASSERT_EQ(0, dst_block.nrows())
     << "Should have no space left in the buffer after "
     << "decoding all rows";
 
@@ -397,6 +410,10 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     CopyOne<UINT32>(&ibd, &ret);
     EXPECT_EQ(decoded[seek_off], ret);
   }
+}
+
+TEST_F(TestEncoding, TestIntEmptyBlockEncodeDecode) {
+  TestEmptyBlockEncodeDecode<GVIntBlockBuilder, GVIntBlockDecoder>();
 }
 
 // Test seeking to a value in a small block.
@@ -427,6 +444,15 @@ TEST_F(TestEncoding, TestStringPrefixBlockBuilderRoundTrip) {
 
 TEST_F(TestEncoding, TestStringPlainBlockBuilderRoundTrip) {
   TestStringBlockRoundTrip<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+}
+
+// Test empty block encode/decode
+TEST_F(TestEncoding, TestStringPlainEmptyBlockEncodeDecode) {
+  TestEmptyBlockEncodeDecode<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+}
+
+TEST_F(TestEncoding, TestStringPrefixEmptyBlockEncodeDecode) {
+  TestEmptyBlockEncodeDecode<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
 #ifdef NDEBUG
