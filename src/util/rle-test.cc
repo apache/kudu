@@ -22,6 +22,7 @@
 
 #include "util/rle-encoding.h"
 #include "util/bit-stream-utils.h"
+#include "util/test_util.h"
 
 using namespace std;
 
@@ -158,8 +159,11 @@ TEST(Rle, AlternateTest) {
   ValidateRle(values, NULL, -1);
 }
 
+class BitRle : public KuduTest {
+};
+
 // Tests all true/false values
-TEST(BitRle, AllSame) {
+TEST_F(BitRle, AllSame) {
   const int len = 1024;
   vector<bool> values;
 
@@ -175,7 +179,7 @@ TEST(BitRle, AllSame) {
 
 // Test that writes out a repeated group and then a literal
 // group but flush before finishing.
-TEST(BitRle, Flush) {
+TEST_F(BitRle, Flush) {
   vector<bool> values;
   for (int i = 0; i < 16; ++i) values.push_back(1);
   values.push_back(0);
@@ -189,9 +193,10 @@ TEST(BitRle, Flush) {
 }
 
 // Test some random sequences.
-TEST(BitRle, Random) {
+TEST_F(BitRle, Random) {
   int iters = 0;
-  while (iters < 1000) {
+  const int n_iters = AllowSlowTests() ? 1000 : 20;
+  while (iters < n_iters) {
     srand(iters++);
     if (iters % 10000 == 0) LOG(ERROR) << "Seed: " << iters;
     vector<bool> values;
@@ -212,7 +217,7 @@ TEST(BitRle, Random) {
 
 // Test a sequence of 1 0's, 2 1's, 3 0's. etc
 // e.g. 011000111100000
-TEST(BitRle, RepeatedPattern) {
+TEST_F(BitRle, RepeatedPattern) {
   vector<bool> values;
   const int min_run = 1;
   const int max_run = 32;
