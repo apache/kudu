@@ -112,6 +112,10 @@ std::string MvccSnapshot::ToString() const {
   return ret;
 }
 
+size_t MvccSnapshot::num_transactions_in_flight() const {
+  return txids_in_flight_.size();
+}
+
 ////////////////////////////////////////////////////////////
 // ScopedTransaction
 ////////////////////////////////////////////////////////////

@@ -44,6 +44,7 @@ string Tablet::GetRowSetPath(const string &tablet_dir,
 Tablet::Tablet(const Schema &schema,
                const string &dir) :
   schema_(schema),
+  key_schema_(schema.CreateKeyProjection()),
   dir_(dir),
   memrowset_(new MemRowSet(schema)),
   next_rowset_idx_(0),
@@ -132,8 +133,11 @@ Status Tablet::NewRowIterator(const Schema &projection,
 Status Tablet::Insert(const Slice &data) {
   CHECK(open_) << "must Open() first!";
 
-  RowSetKeyProbe probe(schema_, data.data());
+  RowSetKeyProbe probe(key_schema_, data.data());
 
+  // The order of the various locks is critical!
+  // See comment block in MutateRow(...) below for details.
+  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key(), LockManager::LOCK_EXCLUSIVE);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // First, ensure that it is a unique key by checking all the open
@@ -158,8 +162,56 @@ Status Tablet::Insert(const Slice &data) {
 
 Status Tablet::UpdateRow(const void *key,
                          const RowChangeList &update) {
-  ScopedTransaction tx(&mvcc_);
+  // TODO: use 'probe' when calling UpdateRow on each rowset.
+  RowSetKeyProbe probe(key_schema_, key);
+
+  // The order of the next three lines is critical!
+  //
+  // Row-lock before ScopedTransaction:
+  // -------------------------------------
+  // We must take the row-lock before we assign a transaction ID in order to ensure
+  // that within each row, transaction IDs only move forward. If we took a txid before
+  // getting the row lock, we could have the following situation:
+  //
+  //   Thread 1         |  Thread 2
+  //   ----------------------
+  //   Start tx 1       |
+  //                    |  Start tx 2
+  //                    |  Obtain row lock
+  //                    |  Update row
+  //                    |  Commit tx 2
+  //   Obtain row lock  |
+  //   Delete row       |
+  //   Commit tx 1
+  //
+  // This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE
+  // which is invalid, since we expect to be able to be able to replay mutations
+  // in increasing txid order on a given row.
+  //
+  // This requirement is basically two-phase-locking: the order in which row locks
+  // are acquired for transactions determines their serialization order. If/when
+  // we support multi-row serializable transactions, we'll have to acquire _all_
+  // row locks before obtaining a txid.
+  //
+  // component_lock_ before ScopedTransaction:
+  // -------------------------------------
+  // Obtaining the txid inside of component_lock_ ensures that, in AtomicSwapRowSets,
+  // we can cleanly differentiate a set of transactions that saw the "old" rowsets
+  // vs the "new" rowsets. If we created the txid before taking the lock, then
+  // the in-flight transaction could either have mutated the old rowsets or the new.
+  //
+  // There may be a more "fuzzy" way of doing this barrier which would cause less of
+  // a locking hiccup during the swap, but let's keep things simple for now.
+  //
+  // RowLock before component_lock
+  // ------------------------------
+  // It currently doesn't matter which order these happen, but it makes more sense
+  // to logically lock the rows before doing anything on the "physical" layer.
+  // It is critical, however, that we're consistent with this choice between here
+  // and Insert() or else there's a possibility of deadlock.
+  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key(), LockManager::LOCK_EXCLUSIVE);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  ScopedTransaction tx(&mvcc_);
 
   // First try to update in memrowset.
   Status s = memrowset_->UpdateRow(tx.txid(), key, update);
@@ -215,13 +267,20 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
   rowsets_.swap(new_rowsets);
 
   if (snap_under_lock != NULL) {
-    // TODO: is there some race here where transactions that are "uncommitted"
-    // in this snapshot may still end up writing into the "old" rowset? probably,
-    // since transaction scope is outside of the update lock scope. Instead, we
-    // probably want to just wait around for a while after doing the swap, until
-    // all live transactions that might have written into the pre-swap rowset are
-    // committed, and then use that state.
     *snap_under_lock = MvccSnapshot(mvcc_);
+
+    // We expect that there are no transactions in flight, since we hold component_lock_
+    // in exclusive mode. For our compaction logic to be correct, we need to ensure that
+    // no mutations in the 'old_rowsets' are associated with transactions that are
+    // uncommitted in 'snap_under_lock'. If there were an in-flight transaction in
+    // 'snap_under_lock', it would be possible that it wrote some mutations into
+    // 'old_rowsets'.
+    //
+    // This property is ensured by the ordering between shared-locking 'component_lock_'
+    // and creating the ScopedTransaction during mutations.  The transaction should be
+    // started only after the 'component_lock' is taken, and committed before it is
+    // released.
+    CHECK_EQ(snap_under_lock->num_transactions_in_flight(), 0);
   }
 }
 
@@ -346,6 +405,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
   MvccSnapshot flush_snap(mvcc_);
+  VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
 
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
@@ -404,6 +464,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   //    and don't let an earlier update overwrite a later one.
   // 3) don't allow DMS to flush in an in-progress rowset.
   LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
+  LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
   RETURN_NOT_OK(merge->Init()); // TODO: why is init required here but not above?
   RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_rowset->delta_tracker_.get()));

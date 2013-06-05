@@ -100,6 +100,9 @@ class MvccSnapshot {
   // in this snapshot, suitable for debug printouts.
   string ToString() const;
 
+  // Return the number of transactions in flight during this snapshot.
+  size_t num_transactions_in_flight() const;
+
  private:
   friend class MvccManager;
 

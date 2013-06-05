@@ -382,6 +382,9 @@ Status ReupdateMissedDeltas(CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             DeltaTracker *delta_tracker) {
+  VLOG(1) << "Re-updating missed deltas between snapshot " <<
+    snap_to_exclude.ToString() << " and " << snap_to_include.ToString();
+
   // TODO: on this pass, we don't actually need the row data, just the
   // updates. So, this can be made much faster.
   vector<CompactionInputRow> rows;

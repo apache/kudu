@@ -5,6 +5,7 @@ SET(TABLET_SRCS
   cfile_set.cc
   compaction.cc
   diskrowset.cc
+  lock_manager.cc
   memrowset.cc
   mutation.cc
   mvcc.cc

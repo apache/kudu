@@ -9,8 +9,9 @@
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
-#include "tablet/memrowset.h"
 #include "tablet/diskrowset.h"
+#include "tablet/memrowset.h"
+#include "tablet/lock_manager.h"
 #include "util/env.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -132,11 +133,13 @@ private:
   BloomFilterSizing bloom_sizing() const;
 
   Schema schema_;
+  Schema key_schema_;
   string dir_;
   shared_ptr<MemRowSet> memrowset_;
   RowSetVector rowsets_;
 
   MvccManager mvcc_;
+  LockManager lock_manager_;
 
   // Lock protecting write access to the components of the tablet (memrowset and rowsets).
   // Shared mode:
