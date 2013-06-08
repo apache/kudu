@@ -31,7 +31,7 @@ BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
   // Never use compression, regardless of the default settings, since
   // bloom filters are high-entropy data structures by their nature.
   opts.compression = cfile::NO_COMPRESSION;
-  writer_.reset(new cfile::Writer(opts, STRING, PLAIN, file));
+  writer_.reset(new cfile::Writer(opts, STRING, false, PLAIN, file));
 }
 
 Status BloomFileWriter::Start() {

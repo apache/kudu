@@ -40,7 +40,7 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
   cfile::WriterOptions opts;
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
-  writer_.reset(new cfile::Writer(opts, STRING, cfile::PLAIN, file));
+  writer_.reset(new cfile::Writer(opts, STRING, false, cfile::PLAIN, file));
 }
 
 
@@ -376,7 +376,7 @@ struct ApplyingVisitor {
     RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
-      return decoder.ApplyToOneColumn(col_to_apply, dst->cell_ptr(rel_idx), dst->arena());
+      return decoder.ApplyToOneColumn(rel_idx, dst, col_to_apply, dst->arena());
     } else if (decoder.is_delete()) {
       // If it's a DELETE, then it will be processed by DeletingVisitor.
       return Status::OK();

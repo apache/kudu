@@ -42,7 +42,7 @@ protected:
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.compression = compression;
-    Writer w(opts, STRING, encoding, sink);
+    Writer w(opts, STRING, false, encoding, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -75,7 +75,7 @@ protected:
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.compression = compression;
-    Writer w(opts, UINT32, encoding, sink);
+    Writer w(opts, UINT32, false, encoding, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -134,7 +134,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
 
   gscoped_ptr<CFileIterator> iter;
   ASSERT_STATUS_OK( reader->NewIterator(&iter) );
-  iter->SeekToOrdinal(0);
+  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
 
   Arena arena(8192, 8*1024*1024);
   int count = 0;
@@ -145,7 +145,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
 
       uint64_t sum = 0;
       while (iter->HasNext()) {
-        size_t n = cb.size();
+        size_t n = cb.nrows();
         ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
         sum += FastSum(cb, n);
         count += n;
@@ -160,7 +160,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
       ScopedColumnBlock<STRING> cb(100);
       uint64_t sum_lens = 0;
       while (iter->HasNext()) {
-        size_t n = cb.size();
+        size_t n = cb.nrows();
         ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
         for (int i = 0; i < n; i++) {
           sum_lens += cb[i].size();

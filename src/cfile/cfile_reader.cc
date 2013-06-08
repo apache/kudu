@@ -18,6 +18,7 @@
 #include "util/env.h"
 #include "util/env_util.h"
 #include "util/object_pool.h"
+#include "util/rle-encoding.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -363,15 +364,31 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
          ord_idx <= b->last_row_idx())
     << "got wrong data block. looking for ord_idx=" << ord_idx
     << " but got dblk " << b->ToString();
-  b->dblk_->SeekToPositionInBlock(ord_idx - b->first_row_idx_);
-
-  DCHECK_EQ(ord_idx, b->dblk_->ordinal_pos()) << "failed seek";
+  SeekToPositionInBlock(b.get(), ord_idx - b->first_row_idx_);
 
   prepared_blocks_.push_back(b.release());
   last_prepare_idx_ = ord_idx;
   last_prepare_count_ = 0;
   seeked_ = posidx_iter_.get();
   return Status::OK();
+}
+
+void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx) {
+  pb->row_index_ = ord_idx + pb->first_row_idx_;
+
+  // Since the data block only holds the non-null values,
+  // we need to translate from 'ord_idx' (the absolute row id)
+  // to the index within the non-null entries.
+  uint32_t index_within_nonnulls;
+  if (reader_->is_nullable()) {
+    RleDecoder rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size());
+    index_within_nonnulls = rle_decoder.Skip(ord_idx);
+  } else {
+    index_within_nonnulls = ord_idx;
+  }
+
+  pb->dblk_->SeekToPositionInBlock(index_within_nonnulls);
+  DCHECK_EQ(index_within_nonnulls + pb->first_row_idx_, pb->dblk_->ordinal_pos()) << "failed seek";
 }
 
 Status CFileIterator::SeekAtOrAfter(const void *key,
@@ -429,6 +446,22 @@ string CFileIterator::PreparedBlock::ToString() const {
                       last_row_idx());
 }
 
+// Decode the null header in the beginning of the data block
+Status DecodeNullInfo(Slice *data_block, uint32_t *num_rows_in_block, Slice *null_bitmap) {
+  if (!GetVarint32(data_block, num_rows_in_block)) {
+    return Status::Corruption("bad null header, num elements in block");
+  }
+
+  uint32_t null_bitmap_size;
+  if (!GetVarint32(data_block, &null_bitmap_size)) {
+    return Status::Corruption("bad null header, bitmap size");
+  }
+
+  *null_bitmap = Slice(data_block->data(), null_bitmap_size);
+  data_block->remove_prefix(null_bitmap_size);
+  return Status::OK();
+}
+
 Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
                                            PreparedBlock *prep_block) {
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
@@ -436,21 +469,33 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
 
   io_stats_.data_blocks_read++;
 
+  uint32_t num_rows_in_block = 0;
+  Slice data_block = prep_block->dblk_data_.data();
+  if (reader_->is_nullable()) {
+    RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
+  }
+
   BlockDecoder *bd;
-  RETURN_NOT_OK(reader_->CreateBlockDecoder(
-                  &bd, prep_block->dblk_data_.data()));
+  RETURN_NOT_OK(reader_->CreateBlockDecoder(&bd, data_block));
   prep_block->dblk_.reset(bd);
   RETURN_NOT_OK(prep_block->dblk_->ParseHeader());
 
-  io_stats_.rows_read += bd->Count();
+  // For nullable blocks, we filled in the row count from the null information above,
+  // since the data block decoder only knows about the non-null values.
+  // For non-nullable ones, we use the information from the block decoder.
+  if (!reader_->is_nullable()) {
+    num_rows_in_block = bd->Count();
+  }
+
+  io_stats_.rows_read += num_rows_in_block;
 
   prep_block->first_row_idx_ = prep_block->dblk_->ordinal_pos();
-
+  prep_block->row_index_ = prep_block->first_row_idx_;
+  prep_block->num_rows_in_block_ = num_rows_in_block;
   prep_block->needs_rewind_ = false;
   prep_block->rewind_idx_ = 0;
 
   DVLOG(2) << "Read dblk " << prep_block->ToString();
-
   return Status::OK();
 }
 
@@ -517,8 +562,6 @@ Status CFileIterator::PrepareBatch(size_t *n) {
     VLOG(1) << "-------------";
   }
 
-
-
   return Status::OK();
 }
 
@@ -566,45 +609,96 @@ Status CFileIterator::Scan(ColumnBlock *dst)
 {
   CHECK(seeked_) << "not seeked";
 
-  // Make a local copy of the destination block so we can
-  // Advance it as we read into it.
-  ColumnBlock remaining_dst = *dst;
+  // Use a column data view to been able to advance it as we read into it.
+  ColumnDataView remaining_dst(dst);
 
   size_t rem = last_prepare_count_;
-  DCHECK_LE(rem, dst->size());
+  DCHECK_LE(rem, dst->nrows());
 
   BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
-    // Fetch as many as we can from the current datablock.
-
-    size_t this_batch = rem;
-
     if (pb->needs_rewind_) {
       // Seek back to the saved position.
-      pb->dblk_->SeekToPositionInBlock(pb->rewind_idx_);
+      SeekToPositionInBlock(pb, pb->rewind_idx_);
       // TODO: we could add a mark/reset like interface in BlockDecoder interface
       // that might be more efficient (allowing the decoder to save internal state
       // instead of having to reconstruct it)
     }
-    RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
 
-    pb->needs_rewind_ = true;
+    if (reader_->is_nullable()) {
+      DCHECK(dst->is_nullable());
 
-    DCHECK_LE(this_batch, rem);
-    rem -= this_batch;
-    remaining_dst.Advance(this_batch);
+      RleDecoder rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size());
+
+      size_t index = pb->row_index_ - pb->first_row_idx_;
+      rle_decoder.Skip(index);
+
+      size_t nrows = std::min(rem, pb->num_rows_in_block_ - index);
+
+      // Fill column bitmap
+      size_t count = nrows;
+      while (count > 0) {
+        size_t nblock = 0;
+        bool not_null = false;
+        bool result = rle_decoder.GetNextRun(&not_null, &nblock);
+        if (PREDICT_FALSE(!result)) {
+          return Status::Corruption("Unexpected EOF on NULL bitmap read");
+        }
+
+        DCHECK_GT(nblock, 0);
+        if (PREDICT_FALSE(nblock > count)) {
+          nblock = count;
+        }
+
+        size_t this_batch = nblock;
+        if (not_null) {
+          // TODO: Maybe copy all and shift later?
+          RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+          DCHECK_EQ(nblock, this_batch);
+          pb->needs_rewind_ = true;
+        } else {
+#ifndef NDEBUG
+          kudu::OverwriteWithPattern(reinterpret_cast<char *>(remaining_dst.data()),
+                                     remaining_dst.stride() * nblock,
+                                     "NULLNULLNULLNULLNULL");
+#endif
+        }
+
+        // Set the ColumnBlock bitmap
+        remaining_dst.SetNullBits(this_batch, not_null);
+
+        rem -= this_batch;
+        count -= this_batch;
+        pb->row_index_ += this_batch;
+        remaining_dst.Advance(this_batch);
+      }
+    } else {
+      // Fetch as many as we can from the current datablock.
+      size_t this_batch = rem;
+      RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+      pb->needs_rewind_ = true;
+      DCHECK_LE(this_batch, rem);
+
+      // If the column is nullable, set all bits to true
+      if (dst->is_nullable()) {
+        remaining_dst.SetNullBits(this_batch, true);
+      }
+
+      rem -= this_batch;
+      remaining_dst.Advance(this_batch);
+    }
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
     if (rem > 0) {
-      DCHECK_EQ(pb->dblk_->ordinal_pos(), pb->last_row_idx() + 1) <<
-        "dblk stopped yielding values before it was empty";
+      rowid_t last_row_idx = pb->first_row_idx_ + pb->dblk_->Count();
+      DCHECK_EQ(pb->dblk_->ordinal_pos(), last_row_idx) <<
+        "dblk stopped yielding values before it was empty.";
     } else {
       break;
     }
   }
 
   DCHECK_EQ(rem, 0) << "Should have fetched exactly the number of prepared rows";
-
   return Status::OK();
 }
 

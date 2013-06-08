@@ -40,9 +40,10 @@ protected:
   template<DataType type>
   void CopyOne(BlockDecoder *decoder,
                typename TypeTraits<type>::cpp_type *ret) {
-    ColumnBlock cb(GetTypeInfo(type), ret, 1, &arena_);
+    ColumnBlock cb(GetTypeInfo(type), NULL, ret, 1, &arena_);
+    ColumnDataView cdv(&cb);
     size_t n = 1;
-    ASSERT_STATUS_OK(decoder->CopyNextValues(&n, &cb));
+    ASSERT_STATUS_OK(decoder->CopyNextValues(&n, &cdv));
     ASSERT_EQ(1, n);
   }
 
@@ -245,9 +246,10 @@ protected:
 
     // Try to request a bunch of data in one go
     ScopedColumnBlock<STRING> cb(kCount + 10);
+    ColumnDataView cdv(&cb);
     sbd.SeekToPositionInBlock(0);
     size_t n = kCount + 10;
-    ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cb));
+    ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cdv));
     ASSERT_EQ(kCount, n);
     ASSERT_FALSE(sbd.HasNext());
 
@@ -371,7 +373,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   std::vector<uint32_t> decoded;
   decoded.resize(to_insert.size());
 
-  ColumnBlock dst_block(GetTypeInfo(UINT32),
+  ColumnBlock dst_block(GetTypeInfo(UINT32), NULL,
                         &decoded[0],
                         to_insert.size(),
                         &arena_);
@@ -382,15 +384,15 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
 
     size_t to_decode = (random() % 30) + 1;
     size_t n = to_decode;
-    ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(&n, &dst_block));
+    ColumnDataView dst_data(&dst_block, dec_count);
+    DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
+    ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(&n, &dst_data));
     ASSERT_GE(to_decode, n);
-    dst_block.Advance(n);
     dec_count += n;
   }
 
-  ASSERT_EQ(0, dst_block.nrows())
-    << "Should have no space left in the buffer after "
-    << "decoding all rows";
+  ASSERT_EQ(dec_count, dst_block.nrows())
+    << "Should have decoded all rows to fill the buffer";
 
   for (uint i = 0; i < to_insert.size(); i++) {
     if (to_insert[i] != decoded[i]) {

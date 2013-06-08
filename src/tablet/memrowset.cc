@@ -70,7 +70,7 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 
 
 Status MemRowSet::Insert(txid_t txid, const Slice &data) {
-  CHECK_EQ(data.size(), schema_.byte_size());
+  CHECK_EQ(data.size(), ContiguousRowHelper::row_size(schema_));
 
   ConstContiguousRow row_slice(schema_, data.data());
 
@@ -103,10 +103,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_txid = txid;
   mrsrow.header_->mutation_head = NULL;
-  uint8_t *rowdata_ptr = mrsrow.row_slice_.mutable_data();
-  // TODO: use mrsrow.CopyCellsFrom(...) once Matteo's NULL support branch
-  // is merged with this one.
-  memcpy(rowdata_ptr, data.data(), data.size());
+  mrsrow.CopyCellsFrom(row_slice);
 
   // Copy any referred-to memory to arena.
   RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(&mrsrow, &arena_));

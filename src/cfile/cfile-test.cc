@@ -20,8 +20,195 @@
 
 namespace kudu { namespace cfile {
 
+// Abstract test data generator.
+// You must implement BuildTestValue() to return your test value.
+//    Usage example:
+//        StringDataGenerator datagen;
+//        datagen.Build(10);
+//        for (int i = 0; i < datagen.block_entries(); ++i) {
+//          bool is_null = BitmpTest(datagen.null_bitmap(), i);
+//          Slice& v = datagen[i];
+//        }
+template <class T>
+class DataGenerator {
+ public:
+  DataGenerator() :
+    values_(NULL),
+    null_bitmap_(NULL),
+    block_entries_(0),
+    total_entries_(0)
+  {}
+
+  void Build(size_t num_entries) {
+    Build(total_entries_, num_entries);
+    total_entries_ += num_entries;
+  }
+
+  // Build "num_entries" using (offset + i) as value
+  // You can get the data values and the null bitmap using values() and null_bitmap()
+  // both are valid until the class is destructed or until Build() is called again.
+  void Build(size_t offset, size_t num_entries) {
+    Resize(num_entries);
+
+    for (size_t i = 0; i < num_entries; ++i) {
+      BitmapChange(null_bitmap_.get(), i, !TestValueShouldBeNull(offset + i));
+      values_[i] = BuildTestValue(i, offset + i);
+    }
+  }
+
+  virtual T BuildTestValue(size_t block_index, size_t value) = 0;
+
+  bool TestValueShouldBeNull(size_t n) {
+    return !(n & 2);
+  }
+
+  virtual void Resize(size_t num_entries) {
+    if (block_entries_ >= num_entries) {
+      block_entries_ = num_entries;
+      return;
+    }
+
+    values_.reset(new T[num_entries]);
+    null_bitmap_.reset(new uint8_t[BitmapSize(num_entries)]);
+    block_entries_ = num_entries;
+  }
+
+  size_t block_entries() const { return block_entries_; }
+  size_t total_entries() const { return total_entries_; }
+
+  const T *values() const { return values_.get(); }
+  const uint8_t *null_bitmap() const { return null_bitmap_.get(); }
+
+  const T& operator[](size_t index) const {
+    return values_[index];
+  }
+
+ private:
+  gscoped_array<T> values_;
+  gscoped_array<uint8_t> null_bitmap_;
+  size_t block_entries_;
+  size_t total_entries_;
+};
+
+class UInt32DataGenerator : public DataGenerator<uint32_t> {
+ public:
+  uint32_t BuildTestValue(size_t block_index, size_t value) {
+    return value;
+  }
+};
+
+class StringDataGenerator : public DataGenerator<Slice> {
+ public:
+  Slice BuildTestValue(size_t block_index, size_t value) {
+    char *buf = data_buffer_[block_index].data;
+    int len = snprintf(buf, kItemBufferSize - 1, "ITEM-%zu", value);
+    DCHECK_LT(len, kItemBufferSize);
+    return Slice(buf, len);
+  }
+
+  void Resize(size_t num_entries) {
+    if (num_entries > block_entries()) {
+      data_buffer_.reset(new Buffer[num_entries]);
+    }
+    DataGenerator<Slice>::Resize(num_entries);
+  }
+
+ private:
+  static const int kItemBufferSize = 16;
+
+  struct Buffer {
+    char data[kItemBufferSize];
+  };
+
+  gscoped_array<Buffer> data_buffer_;
+};
+
 class TestCFile : public CFileTestBase {
  protected:
+  template <class DataGeneratorType, DataType data_type>
+  void WriteTestFileWithNulls(const string &path,
+                              EncodingType encoding,
+                              CompressionType compression,
+                              int num_entries) {
+    shared_ptr<WritableFile> sink;
+    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    WriterOptions opts;
+    opts.write_posidx = true;
+    // Use a smaller block size to exercise multi-level indexing.
+    opts.block_size = 128;
+    opts.compression = compression;
+    Writer w(opts, data_type, true, encoding, sink);
+
+    ASSERT_STATUS_OK(w.Start());
+
+    DataGeneratorType data_generator;
+
+    // Append given number of values to the test tree
+    const size_t kBufferSize = 8192;
+    size_t i = 0;
+    while (i < num_entries) {
+      int towrite = std::min(num_entries - i, kBufferSize);
+
+      data_generator.Build(towrite);
+      DCHECK_EQ(towrite, data_generator.block_entries());
+
+      ASSERT_STATUS_OK_FAST(w.AppendNullableEntries(data_generator.null_bitmap(),
+                                                    data_generator.values(),
+                                                    towrite));
+
+      i += towrite;
+    }
+
+    ASSERT_STATUS_OK(w.Finish());
+  }
+
+  template <class DataGeneratorType, DataType data_type>
+  void TimeSeekAndReadFileWithNulls(const string &path, size_t num_entries) {
+    gscoped_ptr<CFileReader> reader;
+    ASSERT_STATUS_OK(CFileReader::Open(env_.get(), path, ReaderOptions(), &reader));
+    ASSERT_EQ(data_type, reader->data_type());
+
+    gscoped_ptr<CFileIterator> iter;
+    ASSERT_STATUS_OK(reader->NewIterator(&iter) );
+
+    Arena arena(8192, 8*1024*1024);
+    ScopedColumnBlock<data_type> cb(10);
+
+    DataGeneratorType data_generator;
+    for (size_t i = 0; i < num_entries; ++i) {
+      ASSERT_STATUS_OK(iter->SeekToOrdinal(i));
+      ASSERT_TRUE(iter->HasNext());
+
+      size_t n = cb.nrows();
+      ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
+      ASSERT_EQ(n, (i < (num_entries - cb.nrows())) ? cb.nrows() : num_entries - i);
+
+      data_generator.Build(i, n);
+      for (size_t j = 0; j < n; ++j) {
+        bool expected_null = data_generator.TestValueShouldBeNull(i + j);
+        ASSERT_EQ(expected_null, cb.is_null(j));
+        if (!expected_null) {
+          ASSERT_EQ(data_generator[j], cb[j]);
+        }
+      }
+
+      cb.arena()->Reset();
+    }
+  }
+
+  template <class DataGeneratorType, DataType data_type>
+  void TestNullTypes(EncodingType encoding, CompressionType compression) {
+    const string path = GetTestPath("testRaw");
+    WriteTestFileWithNulls<DataGeneratorType, data_type>(path, encoding, compression, 10000);
+
+    size_t n;
+    TimeReadFile(path, &n);
+    ASSERT_EQ(n, 10000);
+
+    TimeSeekAndReadFileWithNulls<DataGeneratorType, data_type>(path, n);
+  }
+
+
   void TestReadWriteRawBlocks(const string &path, CompressionType compression, int num_entries) {
     // Test Write
     shared_ptr<WritableFile> sink;
@@ -31,7 +218,7 @@ class TestCFile : public CFileTestBase {
     opts.write_validx = false;
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.compression = compression;
-    Writer w(opts, STRING, PLAIN, sink);
+    Writer w(opts, STRING, false, PLAIN, sink);
     ASSERT_STATUS_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
@@ -75,7 +262,7 @@ template<DataType type>
 void CopyOne(CFileIterator *it,
              typename TypeTraits<type>::cpp_type *ret,
              Arena *arena) {
-  ColumnBlock cb(GetTypeInfo(type), ret, 1, arena);
+  ColumnBlock cb(GetTypeInfo(type), NULL, ret, 1, arena);
   size_t n = 1;
   ASSERT_STATUS_OK(it->CopyNextValues(&n, &cb));
   ASSERT_EQ(1, n);
@@ -172,15 +359,16 @@ TEST_F(TestCFile, TestReadWriteInts) {
   LOG(INFO) << "Using random seed: " << seed;
   srand(seed);
   iter->SeekToOrdinal(0);
-  ColumnBlock advancing_block = out;
   size_t fetched = 0;
   while (fetched < 10000) {
+    ColumnBlock advancing_block(out.type_info(), NULL,
+                                out.data() + (fetched * out.stride()),
+                                out.nrows() - fetched, out.arena());
     ASSERT_TRUE(iter->HasNext());
     size_t batch_size = random() % 5 + 1;
     size_t n = batch_size;
     ASSERT_STATUS_OK(iter->CopyNextValues(&n, &advancing_block));
     ASSERT_LE(n, batch_size);
-    advancing_block.Advance(n);
     fetched += n;
   }
   ASSERT_FALSE(iter->HasNext());
@@ -295,7 +483,7 @@ TEST_F(TestCFile, TestMetadata) {
   {
     shared_ptr<WritableFile> sink;
     ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
-    Writer w(WriterOptions(), UINT32, GROUP_VARINT, sink);
+    Writer w(WriterOptions(), UINT32, false, GROUP_VARINT, sink);
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_STATUS_OK(w.Start());
@@ -327,6 +515,22 @@ TEST_F(TestCFile, TestAppendRaw) {
   TestReadWriteRawBlocks(path, LZ4, 1000);
   TestReadWriteRawBlocks(path, ZLIB, 1000);
 }
+
+TEST_F(TestCFile, TestNullInts) {
+  TestNullTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT, NO_COMPRESSION);
+  TestNullTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT, LZ4);
+}
+
+TEST_F(TestCFile, TestNullPrefixStrings) {
+  TestNullTypes<StringDataGenerator, STRING>(PLAIN, NO_COMPRESSION);
+  TestNullTypes<StringDataGenerator, STRING>(PLAIN, LZ4);
+}
+
+TEST_F(TestCFile, TestNullPlainStrings) {
+  TestNullTypes<StringDataGenerator, STRING>(PREFIX, NO_COMPRESSION);
+  TestNullTypes<StringDataGenerator, STRING>(PREFIX, LZ4);
+}
+
 
 } // namespace cfile
 } // namespace kudu

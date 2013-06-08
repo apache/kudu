@@ -26,19 +26,31 @@ void DumpIterator(const CFileReader &reader, CFileIterator *it) {
   uint8_t buf[kBufSize];
   const TypeInfo *type = reader.type_info();
   int max_rows = kBufSize/type->size();
-  ColumnBlock cb(*type, buf, max_rows, &arena);
+  uint8_t nulls[BitmapSize(max_rows)];
+  ColumnBlock cb(*type, reader.is_nullable() ? nulls : NULL, buf, max_rows, &arena);
 
   string strbuf;
-
   uint64_t count = 0;
   while (it->HasNext()) {
     size_t n = max_rows;
     CHECK_OK(it->CopyNextValues(&n, &cb));
 
     if (FLAGS_print_rows) {
-      for (size_t i = 0; i < n; i++) {
-        type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
-        strbuf.push_back('\n');
+      if (reader.is_nullable()) {
+        for (size_t i = 0; i < n; i++) {
+          const void *ptr = cb.nullable_cell_ptr(i);
+          if (ptr != NULL) {
+            type->AppendDebugStringForValue(ptr, &strbuf);
+          } else {
+            strbuf.append("NULL");
+          }
+          strbuf.push_back('\n');
+        }
+      } else {
+        for (size_t i = 0; i < n; i++) {
+          type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
+          strbuf.push_back('\n');
+        }
       }
     }
     arena.Reset();

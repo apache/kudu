@@ -35,7 +35,6 @@ class TestTablet : public TabletTestBase<SETUP> {
 };
 TYPED_TEST_CASE(TestTablet, TabletTestHelperTypes);
 
-
 TYPED_TEST(TestTablet, TestFlush) {
   // Insert 1000 rows into memrowset
   this->InsertTestRows(0, FLAGS_testflush_num_inserts, 0);
@@ -302,11 +301,14 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // as some data in memrowset.
 
   // Update a subset of the rows
-  for (uint32_t i = 0; i < 1000; i += 15) {
+  for (uint32_t i = 0; i < 1000; i++) {
+    if (!this->setup_.ShouldUpdateRow(i)) {
+      continue;
+    }
+
     SCOPED_TRACE(StringPrintf("update %d", i));
-    uint32_t new_val = 10000 + i;
-    ASSERT_STATUS_OK_FAST(
-      this->setup_.DoUpdate(this->tablet_.get(), i, new_val));
+    uint32_t new_val = 0;
+    ASSERT_STATUS_OK_FAST(this->setup_.DoUpdate(this->tablet_.get(), i, &new_val));
     inserted.erase(i);
     inserted.insert(new_val);
   }
@@ -318,17 +320,12 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   LOG(INFO) << "Created iter: " << iter->ToString();
 
   RowBlock block(this->schema_, 100, &this->arena_);
-
-  // Copy schema into local scope, since gcc is getting confused by
-  // too many templates.
-  const Schema &schema = this->schema_;
-
   while (iter->HasNext()) {
     this->arena_.Reset();
     ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
     LOG(INFO) << "Fetched batch of " << block.nrows();
     for (size_t i = 0; i < block.nrows(); i++) {
-      uint32_t val_read = *schema.ExtractColumnFromRow<UINT32>(block.row(i), 1);
+      uint32_t val_read = this->setup_.GetRowValueAfterUpdate(block.row(i));
       bool removed = inserted.erase(val_read);
       ASSERT_TRUE(removed) << "Got value " << val_read << " but either "
                            << "the value was invalid or was already "
@@ -545,7 +542,6 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   ASSERT_EQ(this->setup_.FormatDebugRow(26, 0), *it); it++;
 }
 
-
 // Test for compaction with concurrent update and insert during the
 // various phases.
 TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
@@ -604,7 +600,6 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   ASSERT_EQ(this->setup_.FormatDebugRow(25, 0), *it); it++;
   ASSERT_EQ(this->setup_.FormatDebugRow(26, 0), *it); it++;
 }
-
 
 } // namespace tablet
 } // namespace kudu

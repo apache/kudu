@@ -56,12 +56,34 @@ class MRSRow {
 
   const Slice &row_slice() const { return row_slice_; }
 
-  uint8_t *cell_ptr(const Schema& schema, size_t col_idx) {
-    return row_slice_.mutable_data() + schema.column_offset(col_idx);
+  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    ContiguousRowHelper::SetCellValue(schema, row_slice_.mutable_data(), col_idx, value);
+  }
+
+  bool is_null(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    return ContiguousRowHelper::is_null(schema, row_slice_.data(), col_idx);
   }
 
   const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    return row_slice_.data() + schema.column_offset(col_idx);
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    return ContiguousRowHelper::cell_ptr(schema, row_slice_.data(), col_idx);
+  }
+
+  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(schema));
+    return ContiguousRowHelper::nullable_cell_ptr(schema, row_slice_.data(), col_idx);
+  }
+
+  void CopyCellsFrom(const ConstContiguousRow& row) {
+    // TODO: Handle different schema
+    DCHECK(this->schema().Equals(row.schema()));
+    memcpy(row_slice_.mutable_data(), row.row_data(), row_slice_.size());
   }
 
   // Return true if this row is a "ghost" -- i.e its most recent mutation is
@@ -101,9 +123,11 @@ class MRSRow {
 // plus a single row of the given schema, then constructs an MRSRow object which
 // points into that stack storage.
 #define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
-  uint8_t varname##_size = sizeof(MRSRow::Header) + (memrowset)->schema().byte_size(); \
+  uint8_t varname##_size = sizeof(MRSRow::Header) + \
+                           ContiguousRowHelper::row_size((memrowset)->schema()); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
+  ContiguousRowHelper::InitNullsBitmap((memrowset)->schema(), slice_name); \
   MRSRow varname(memrowset, slice_name);
 
 
@@ -454,11 +478,12 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
         // TODO: this is slow, since it makes multiple passes through the rowchangelist.
         // Instead, we should keep the backwards mapping of columns.
         for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
-          int memrowset_col_idx = projection_mapping_[proj_col_idx];
-          uint8_t *dst_cell = dst_row->cell_ptr(projection_, proj_col_idx);
           RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
           RETURN_NOT_OK(decoder.Init());
-          RETURN_NOT_OK(decoder.ApplyToOneColumn(memrowset_col_idx, dst_cell, dst_arena));
+          int memrowset_col_idx = projection_mapping_[proj_col_idx];
+          ColumnBlock dst_col = dst_row->column_block(projection_, proj_col_idx);
+          RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
+                                                 memrowset_col_idx, dst_arena));
         }
       }
     }

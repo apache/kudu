@@ -115,10 +115,17 @@ public:
       DCHECK_EQ(RowChangeList::kUpdate, type_);
     }
 
-    const TypeInfo &ti = schema_.column(col_idx).type_info();\
+    const ColumnSchema& col_schema = schema_.column(col_idx);
+    const TypeInfo &ti = col_schema.type_info();
 
     // Encode the column index
     InlinePutVarint32(dst_, col_idx);
+
+    // If the column is nullable set the null flag
+    if (col_schema.is_nullable()) {
+      dst_->push_back(new_val == NULL);
+      if (new_val == NULL) return;
+    }
 
     // Copy the new value itself
     if (ti.type() == STRING) {
@@ -199,9 +206,8 @@ public:
     return remaining_;
   }
 
-  template<class RowType, class ARENA>
-  Status ApplyRowUpdate(RowType *dst_row, ARENA *arena) {
-    DCHECK_EQ(RowChangeList::kUpdate, type_);
+  template<class RowType, class ArenaType>
+  Status ApplyRowUpdate(RowType *dst_row, ArenaType *arena) {
     // TODO: Handle different schema
     DCHECK(schema_.Equals(dst_row->schema()));
 
@@ -209,21 +215,28 @@ public:
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-      uint8_t *dst_cell = dst_row->cell_ptr(schema_, updated_col);
-      schema_.column(updated_col).CopyCell(dst_cell, new_val, arena);
+      if (schema_.column(updated_col).is_nullable()) {
+        RETURN_NOT_OK(dst_row->CopyNullableCell(schema_, updated_col, new_val, arena));
+      } else {
+        RETURN_NOT_OK(dst_row->CopyCell(schema_, updated_col, new_val, arena));
+      }
     }
     return Status::OK();
   }
 
-  template<class ARENA>
-  Status ApplyToOneColumn(size_t col_idx, void *dst_cell, ARENA *arena) {
+  template<class ColumnType, class ArenaType>
+  Status ApplyToOneColumn(size_t row_idx, ColumnType *dst_col, size_t col_idx, ArenaType *arena) {
     DCHECK_EQ(RowChangeList::kUpdate, type_);
     while (HasNext()) {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
       if (updated_col == col_idx) {
-        schema_.column(col_idx).CopyCell(dst_cell, new_val, arena);
+        if (schema_.column(updated_col).is_nullable()) {
+          RETURN_NOT_OK(dst_col->CopyNullableCell(row_idx, new_val, arena));
+        } else {
+          RETURN_NOT_OK(dst_col->CopyCell(row_idx, new_val, arena));
+        }
         // TODO: could potentially break; here if we're guaranteed to only have one update
         // per column in a RowChangeList (which would make sense!)
       }
@@ -272,7 +285,24 @@ private:
 
     *col_idx = idx;
 
-    const TypeInfo &ti = schema_.column(idx).type_info();
+    const ColumnSchema& col_schema = schema_.column(idx);
+    const TypeInfo &ti = col_schema.type_info();
+
+    // If the column is nullable check the null flag
+    if (col_schema.is_nullable()) {
+      if (remaining_.size() < 1) {
+        return Status::Corruption("Missing column nullable varint in delta");
+      }
+
+      int is_null = *remaining_.data();
+      remaining_.remove_prefix(1);
+
+      // The value is null
+      if (is_null) {
+        *val_out = NULL;
+        return Status::OK();
+      }
+    }
 
     // Decode the value itself
     if (ti.type() == STRING) {

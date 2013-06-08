@@ -234,7 +234,7 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
     if (decoder.is_update()) {
       RETURN_NOT_OK_RET(
-        decoder.ApplyToOneColumn(projected_col, dst->cell_ptr(idx_in_block), dst->arena()),
+        decoder.ApplyToOneColumn(idx_in_block, dst, projected_col, dst->arena()),
         CorruptionStatus(string("Unable to apply changelist: ") + s.ToString(),
                          key.row_idx(), &changelist));
     } else if (decoder.is_delete()) {

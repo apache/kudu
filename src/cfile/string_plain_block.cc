@@ -230,7 +230,7 @@ Status StringPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool 
   return Status::OK();
 }
 
-Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
+Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
   DCHECK_LE(*n, dst->nrows());

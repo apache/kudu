@@ -60,7 +60,6 @@ bool SelectionVector::AnySelected() const {
 //////////////////////////////
 // RowBlock
 //////////////////////////////
-
 RowBlock::RowBlock(const Schema &schema,
                    size_t nrows,
                    Arena *arena) :
@@ -73,9 +72,15 @@ RowBlock::RowBlock(const Schema &schema,
 {
   CHECK_GT(row_capacity_, 0);
 
+  size_t bitmap_size = BitmapSize(row_capacity_);
   for (size_t i = 0; i < schema.num_columns(); ++i) {
     const ColumnSchema& col_schema = schema.column(i);
-    columns_data_[i] = new uint8_t[row_capacity_ * col_schema.type_info().size()];
+    size_t col_size = row_capacity_ * col_schema.type_info().size();
+    if (col_schema.is_nullable()) {
+      col_size += bitmap_size;
+    }
+
+    columns_data_[i] = new uint8_t[col_size];
   }
 }
 

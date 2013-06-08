@@ -173,7 +173,7 @@ public:
     // Scan a projection with only an int column.
     // This is provided by both harnesses.
     Schema projection = Schema(boost::assign::list_of
-                               (ColumnSchema("val", UINT32)),
+                               (ColumnSchema("val", UINT32, true)), // TODO: This should pick the test one
                                1);
 
 

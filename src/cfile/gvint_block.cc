@@ -259,11 +259,11 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   return Status::OK();
 }
 
-Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
+Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK_EQ(dst->type_info().type(), UINT32);
   DCHECK_EQ(dst->stride(), sizeof(uint32_t));
 
-  PtrSink<uint32_t> sink(reinterpret_cast<uint8_t *>(dst->data()));
+  PtrSink<uint32_t> sink(dst->data());
   return DoGetNextValues(n, &sink);
 }
 

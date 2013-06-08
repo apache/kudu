@@ -325,7 +325,7 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   }
 }
 
-Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnBlock *dst) {
+Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info().type(), STRING);
 

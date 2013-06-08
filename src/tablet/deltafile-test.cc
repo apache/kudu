@@ -102,6 +102,7 @@ public:
           (row <= FLAGS_last_row_to_update) &&
           (row % 2 == 0);
 
+        DCHECK_EQ(block.row(i).cell_ptr(schema_, 0), dst_col.cell_ptr(i));
         uint32_t updated_val = *schema_.ExtractColumnFromRow<UINT32>(block.row(i), 0);
         VLOG(2) << "row " << row << ": " << updated_val;
         uint32_t expected_val = should_be_updated ? row : 0;

@@ -135,7 +135,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 
       // Verify
       for (int i = 0; i < n; i++) {
-        uint32_t got = *reinterpret_cast<uint32_t *>(col.cell_ptr(i));
+        uint32_t got = *reinterpret_cast<const uint32_t *>(col.cell_ptr(i));
         uint32_t expected = (row_idx + i) * 2;
         if (got != expected) {
           FAIL() << "Failed at row index " << (row_idx + i) << ": expected "
@@ -149,7 +149,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 
       // Verify
       for (int i = 0; i < n; i++) {
-        uint32_t got = *reinterpret_cast<uint32_t *>(col.cell_ptr(i));
+        uint32_t got = *reinterpret_cast<const uint32_t *>(col.cell_ptr(i));
         if (got != 10 * (row_idx + i)) {
           FAIL() << "Failed at row index " << (row_idx + i) << ": expected "
                  << 10 * (row_idx + i) << " got " << got;

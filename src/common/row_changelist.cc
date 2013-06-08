@@ -2,6 +2,7 @@
 // All rights reserved.
 
 #include <string>
+#include "common/row.h"
 #include "common/row_changelist.h"
 #include "common/schema.h"
 
@@ -40,9 +41,14 @@ string RowChangeList::ToString(const Schema &schema) const {
       return "[invalid: " + s.ToString() + ", before corruption: " + ret + "]";
     }
 
-    ret.append(schema.column(updated_col).name());
+    const ColumnSchema& col_schema = schema.column(updated_col);
+    ret.append(col_schema.name());
     ret.append("=");
-    ret.append(schema.column(updated_col).Stringify(new_val));
+    if (col_schema.is_nullable() && new_val == NULL) {
+      ret.append("NULL");
+    } else {
+      ret.append(col_schema.Stringify(new_val));
+    }
   }
 
   return ret;
