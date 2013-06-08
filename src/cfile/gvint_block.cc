@@ -118,7 +118,7 @@ Status GVIntBlockDecoder::ParseHeader() {
   CHECK_GE(data_.size(), GVIntBlockBuilder::kMinHeaderSize);
 
   uint32_t unused;
-  ints_start_ = DecodeGroupVarInt32(
+  ints_start_ = DecodeGroupVarInt32_SlowButSafe(
     (const uint8_t *)data_.data(), &num_elems_, &min_elem_,
     &ordinal_pos_base_, &unused);
 
