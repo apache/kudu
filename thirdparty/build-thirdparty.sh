@@ -65,5 +65,10 @@ cd $LZ4_DIR
 $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
 make -j4 install
 
+## build libev
+cd $LIBEV_DIR
+./configure --with-pic --disable-shared --prefix=$PREFIX
+make -j4 install
+
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"
