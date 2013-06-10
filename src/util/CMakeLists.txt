@@ -16,6 +16,7 @@ ADD_LIBRARY(kudu_util
   string_case.cc
   test_graph.cc
   errno.cc
+  monotime.cc
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 
@@ -36,3 +37,4 @@ ADD_KUDU_TEST(rle-test)
 ADD_KUDU_TEST(status-test)
 ADD_KUDU_TEST(string_case-test)
 ADD_KUDU_TEST(memcmpable_varint-test)
+ADD_KUDU_TEST(monotime-test)
