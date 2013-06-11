@@ -22,6 +22,7 @@
 
 #include "util/rle-encoding.h"
 #include "util/bit-stream-utils.h"
+#include "util/hexdump.h"
 #include "util/test_util.h"
 
 using namespace std;
@@ -103,7 +104,10 @@ void ValidateRle(const vector<bool>& values,
     EXPECT_EQ(encoded_len, expected_len);
   }
   if (expected_encoding != NULL) {
-    EXPECT_TRUE(memcmp(buffer.data(), expected_encoding, expected_len) == 0);
+    EXPECT_TRUE(memcmp(buffer.data(), expected_encoding, expected_len) == 0)
+      << "\n"
+      << "Expected: " << HexDump(Slice(expected_encoding, expected_len)) << "\n"
+      << "Got:      " << HexDump(Slice(buffer));
   }
 
   // Verify read
@@ -142,10 +146,10 @@ TEST(Rle, SpecificSequences) {
   int num_groups = BitmapSize(100);
   expected_buffer[0] = (num_groups << 1) | 1;
   for (int i = 0; i < 100/8; ++i) {
-    expected_buffer[i + 1] = BOOST_BINARY(1 0 1 0 1 0 1 0);
+    expected_buffer[i + 1] = BOOST_BINARY(1 0 1 0 1 0 1 0); // 0xaa
   }
   // Values for the last 4 0 and 1's
-  expected_buffer[1 + 100/8] = BOOST_BINARY(0 0 0 0 1 0 1 0);
+  expected_buffer[1 + 100/8] = BOOST_BINARY(0 0 0 0 1 0 1 0); // 0x0a
   ValidateRle(values, expected_buffer, 1 + num_groups);
 }
 

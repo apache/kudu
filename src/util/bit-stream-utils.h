@@ -40,6 +40,13 @@ class BitWriter {
   faststring *buffer() const { return buffer_; }
   int bytes_written() const { return byte_offset_ + (bit_offset_ != 0); }
 
+  int Finish() {
+    if (bit_offset_ > 0) {
+      buffer_->data()[byte_offset_] &= ((1 << bit_offset_) - 1);
+    }
+    return bytes_written();
+  }
+
   // Writes a bool to the buffer.
   void PutBool(bool b);
 

@@ -402,7 +402,7 @@ inline int RleEncoder::Flush() {
   DCHECK_EQ(num_buffered_values_, 0);
   DCHECK_EQ(literal_count_, 0);
   DCHECK_EQ(repeat_count_, 0);
-  return bit_writer_.bytes_written();
+  return bit_writer_.Finish();
 }
 
 inline void RleEncoder::Clear() {
