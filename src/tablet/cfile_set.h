@@ -54,7 +54,10 @@ public:
     return string("CFile base data in ") + dir_;
   }
 
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
+  // Check if the given row is present. If it is, sets *rowid to the
+  // row's index.
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                         rowid_t *rowid) const;
 
   virtual ~CFileSet();
 
@@ -83,15 +86,15 @@ private:
 // together, and iterated in parallel.
 class CFileSet::Iterator : public ColumnwiseIterator, public boost::noncopyable {
 public:
+
   virtual Status Init(ScanSpec *spec);
 
-  // See BaseDataIteratorInterface
   virtual Status PrepareBatch(size_t *nrows);
 
-  // See ColumnStoreBaseDataIterator
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
+
   virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
 
-  // See BaseDataIteratorInterface
   virtual Status FinishBatch();
 
   virtual bool HasNext() const {

@@ -405,6 +405,10 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   DCHECK_EQ(dst->nrows(), prepared_count_);
   DCHECK_EQ(dst->selection_vector()->nrows(), prepared_count_);
 
+  // Initialize the selection vector indicating which rows have been
+  // been deleted.
+  RETURN_NOT_OK(iter_->InitializeSelectionVector(dst->selection_vector()));
+
   bool short_circuit = false;
 
   BOOST_FOREACH(size_t col_idx, materialization_order_) {

@@ -42,6 +42,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual Status SeekToOrdinal(rowid_t idx);
   virtual Status PrepareBatch(size_t nrows);
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  virtual Status ApplyDeletes(SelectionVector *sel_vec);
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
   virtual string ToString() const;
 
@@ -79,6 +80,13 @@ Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
 Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
     RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
+  }
+  return Status::OK();
+}
+
+Status DeltaIteratorMerger::ApplyDeletes(SelectionVector *sel_vec) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
+    RETURN_NOT_OK(iter->ApplyDeletes(sel_vec));
   }
   return Status::OK();
 }
@@ -137,10 +145,12 @@ shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
 
 DeltaTracker::DeltaTracker(Env *env,
                            const Schema &schema,
-                           const string &dir) :
+                           const string &dir,
+                           rowid_t num_rows) :
   env_(env),
   schema_(schema),
   dir_(dir),
+  num_rows_(num_rows),
   open_(false),
   next_deltafile_idx_(0),
   dms_(new DeltaMemStore(schema))
@@ -217,9 +227,33 @@ void DeltaTracker::Update(txid_t txid, rowid_t row_idx, const RowChangeList &upd
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
+  DCHECK_LT(row_idx, num_rows_);
+
   dms_->Update(txid, row_idx, update);
 }
 
+Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
+  DCHECK_LT(row_idx, num_rows_);
+
+  *deleted = false;
+  // Check if the row has a deletion in DeltaMemStore.
+  RETURN_NOT_OK(dms_->CheckRowDeleted(row_idx, deleted));
+  if (*deleted) {
+    return Status::OK();
+  }
+
+  // Then check backwards through the list of trackers.
+  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore> &ds, delta_stores_) {
+    RETURN_NOT_OK(ds->CheckRowDeleted(row_idx, deleted));
+    if (*deleted) {
+      return Status::OK();
+    }
+  }
+
+  return Status::OK();
+}
 
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {

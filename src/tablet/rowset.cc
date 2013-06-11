@@ -7,9 +7,11 @@
 namespace kudu { namespace tablet {
 
 DuplicatingRowSet::DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
-                                   const shared_ptr<RowSet> &new_rowset) :
+                                     const shared_ptr<RowSet> &new_rowset) :
   old_rowsets_(old_rowsets),
-  new_rowset_(new_rowset)
+  new_rowset_(new_rowset),
+  schema_(new_rowset->schema()),
+  key_schema_(schema_.CreateKeyProjection())
 {
   CHECK_GT(old_rowsets_.size(), 0);
   always_locked_.lock();
@@ -60,20 +62,23 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap)
 }
 
 
-Status DuplicatingRowSet::UpdateRow(txid_t txid,
-                                       const void *key,
-                                       const RowChangeList &update) {
-  ConstContiguousRow row_key(schema(), key);
+Status DuplicatingRowSet::MutateRow(txid_t txid,
+                                    const void *key,
+                                    const RowChangeList &update) {
+  ConstContiguousRow row_key(key_schema_, key);
 
-  // First update the new rowset
-  RETURN_NOT_OK(new_rowset_->UpdateRow(txid, key, update));
-
-  // If it succeeded there, we also need to mirror into the old rowset.
   // Duplicate the update to both the relevant input rowset and the output rowset.
-  // First propagate to the relevant input rowset.
+  //
+  // It's crucial to do the mutation against the input side first, due to the potential
+  // for a race during flush: the output rowset may not yet hold a DELETE which
+  // is present in the input rowset. In that case, the UPDATE against the output rowset would
+  // succeed whereas it can't be applied to the input rowset. So, we update the input rowset first,
+  // and if it succeeds, propagate to the output.
+
+  // First mutate the relevant input rowset.
   bool updated = false;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
-    Status s = rowset->UpdateRow(txid, key, update);
+    Status s = rowset->MutateRow(txid, key, update);
     if (s.ok()) {
       updated = true;
       break;
@@ -87,9 +92,14 @@ Status DuplicatingRowSet::UpdateRow(txid_t txid,
   }
 
   if (!updated) {
-    LOG(DFATAL) << "Found row in compaction output but not in any input rowset: "
-                << schema().CreateKeyProjection().DebugRow(row_key);
-    return Status::NotFound("not found in any input rowset of compaction");
+    return Status::NotFound("not found in any compaction input");
+  }
+
+  // If it succeeded there, we also need to mirror into the new rowset.
+  Status s = new_rowset_->MutateRow(txid, key, update);
+  if (!s.ok()) {
+    LOG(FATAL) << "Updated row in compaction input, but didn't exist in any compaction output: "
+               << schema().CreateKeyProjection().DebugRow(row_key);
   }
 
   return Status::OK();

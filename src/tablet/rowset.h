@@ -26,13 +26,17 @@ public:
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
+  //
+  // If the row was once present in this rowset, but no longer present
+  // due to a DELETE, then this should set *present = false, as if
+  // it were never there.
   virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const = 0;
 
-  // Update a row in this rowset.
+  // Update/delete a row in this rowset.
   //
   // If the row does not exist in this rowset, returns
   // Status::NotFound().
-  virtual Status UpdateRow(txid_t txid,
+  virtual Status MutateRow(txid_t txid,
                            const void *key,
                            const RowChangeList &update) = 0;
 
@@ -126,7 +130,7 @@ public:
                    const shared_ptr<RowSet> &new_rowset);
 
 
-  Status UpdateRow(txid_t txid, const void *key, const RowChangeList &update);
+  Status MutateRow(txid_t txid, const void *key, const RowChangeList &update);
 
   Status CheckRowPresent(const RowSetKeyProbe &key, bool *present) const;
 
@@ -153,7 +157,7 @@ public:
   ~DuplicatingRowSet();
 
   const Schema &schema() const {
-    return new_rowset_->schema();
+    return schema_;
   }
 
 private:
@@ -161,6 +165,9 @@ private:
 
   vector<shared_ptr<RowSet> > old_rowsets_;
   shared_ptr<RowSet> new_rowset_;
+
+  const Schema &schema_;
+  const Schema key_schema_;
 
   boost::mutex always_locked_;
 };

@@ -50,6 +50,11 @@ public:
     return Status::OK();
   }
 
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec) {
+    sel_vec->SetAllTrue();
+    return Status::OK();
+  }
+
   virtual Status MaterializeColumn(size_t col, ColumnBlock *dst) {
     CHECK_EQ(UINT32, dst->type_info().type());
     DCHECK_LE(prepared_, dst->nrows());

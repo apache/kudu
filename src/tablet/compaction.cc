@@ -326,23 +326,57 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-template <class RowType>
-static Status ApplyMutationsAndGenerateUndos(const Schema &schema, Mutation *mutation_head, RowType *row) {
+static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
+                                             const MvccSnapshot &snap,
+                                             Mutation *mutation_head,
+                                             RowBlockRow *row,
+                                             bool *is_deleted) {
+  *is_deleted = false;
+
+  #define ERROR_LOG_CONTEXT \
+    "Row: " << schema.DebugRow(*row) << \
+    " Mutations: " << Mutation::StringifyMutationList(schema, mutation_head)
+
   for (const Mutation *mut = mutation_head; mut != NULL; mut = mut->next()) {
     RowChangeListDecoder decoder(schema, mut->changelist());
-    DVLOG(2) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
-    Status s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
+
+    // Skip anything not committed.
+    if (!snap.IsCommitted(mut->txid())) {
+      continue;
+    }
+
+    DVLOG(3) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+    Status s = decoder.Init();
     if (PREDICT_FALSE(!s.ok())) {
-      LOG(ERROR) << "Unable to apply delta to row " << schema.DebugRow(*row) << " during flush/compact";
+      LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
       return s;
+    }
+
+    if (decoder.is_update()) {
+      DCHECK(!*is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
+      s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
+
+    } else if (decoder.is_delete() || decoder.is_reinsert()) {
+      decoder.TwiddleDeleteStatus(is_deleted);
+
+      if (decoder.is_reinsert()) {
+        // On reinsert, we have to copy the reinserted row over.
+        ConstContiguousRow reinserted(schema, decoder.reinserted_row_slice().data());
+        row->CopyCellsFrom(schema, reinserted);
+      }
+    } else {
+      LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
     }
 
     // TODO: write UNDO
   }
+
   return Status::OK();
+
+  #undef ERROR_LOG_CONTEXT
 }
 
-Status Flush(CompactionInput *input, DiskRowSetWriter *out) {
+Status Flush(CompactionInput *input, const MvccSnapshot &snap, DiskRowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
@@ -358,7 +392,16 @@ Status Flush(CompactionInput *input, DiskRowSetWriter *out) {
       dst_row.CopyCellsFrom(schema, input_row.row);
       DVLOG(2) << "Row: " << schema.DebugRow(dst_row) <<
         " mutations: " << Mutation::StringifyMutationList(schema, input_row.mutation_head);
-      ApplyMutationsAndGenerateUndos(schema, input_row.mutation_head, &dst_row);
+
+      bool is_deleted;
+      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
+                      schema, snap, input_row.mutation_head, &dst_row, &is_deleted));
+
+      if (is_deleted) {
+        DVLOG(2) << "Deleted!";
+        // Don't flush the row.
+        continue;
+      }
 
       n++;
       if (n == block.nrows()) {
@@ -398,28 +441,71 @@ Status ReupdateMissedDeltas(CompactionInput *input,
       DVLOG(2) << "Revisiting row: " << schema.DebugRow(row.row) <<
           " mutations: " << Mutation::StringifyMutationList(schema, row.mutation_head);
 
+      bool is_deleted_in_main_flush = false;
+
       for (const Mutation *mut = row.mutation_head;
            mut != NULL;
            mut = mut->next()) {
+        RowChangeListDecoder decoder(schema, mut->changelist());
+        RETURN_NOT_OK(decoder.Init());
 
         if (snap_to_exclude.IsCommitted(mut->txid())) {
-          // Was already taken into account in the main flush.
+          // This update was already taken into account in the first phase of the
+          // compaction.
+
+          // If it's a DELETE or REINSERT, though, we need to track the state of the
+          // row - this lets us account the current rowid on the output side of the
+          // compaction below.
+          decoder.TwiddleDeleteStatus(&is_deleted_in_main_flush);
           continue;
         }
+
+        // We should never see a REINSERT in an input RowSet which was not
+        // caught in the original flush. REINSERT only occurs when an INSERT is
+        // done to a row when a ghost is already present for that row in
+        // MemRowSet. If the ghost is in a disk RowSet, it is ignored and the
+        // new row is inserted in the MemRowSet instead.
+        //
+        // At the beginning of a compaction/flush, a new empty MRS is swapped in for
+        // the one to be flushed. Therefore, any INSERT that happens _after_ this swap
+        // is made will not trigger a REINSERT: it sees the row as "deleted" in the
+        // snapshotted MRS, and insert triggers an INSERT into the new MRS.
+        //
+        // Any INSERT that happened _before_ the swap-out would create a
+        // REINSERT in the MRS to be flushed, but it would also be considered as
+        // part of the MvccSnapshot which we flush from ('snap_to_exclude' here)
+        // and therefore won't make it to this point in the code.
+        CHECK(!decoder.is_reinsert())
+          << "Shouldn't see REINSERT missed by first flush pass in compaction."
+          << " snap_to_exclude=" << snap_to_exclude.ToString()
+          << " row=" << schema.DebugRow(row.row)
+          << " mutations=" << Mutation::StringifyMutationList(schema, row.mutation_head);
+
         if (!snap_to_include.IsCommitted(mut->txid())) {
+          // The mutation was inserted after the DuplicatingRowSet was swapped in.
+          // Therefore, it's already present in the output rowset, and we don't need
+          // to copy it in.
+
           DVLOG(2) << "Skipping already-duplicated delta for row " << row_idx
                    << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
-
-          // Already duplicated into the new rowset, no need to transfer it over.
           continue;
         }
 
+        // Otherwise, this is an update that arrived after the snapshot for the first
+        // pass, but before the DuplicatingRowSet was swapped in. We need to transfer
+        // this over to the output rowset.
         DVLOG(1) << "Flushing missed delta for row " << row_idx
                   << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
 
         delta_tracker->Update(mut->txid(), row_idx, mut->changelist());
       }
-      row_idx++;
+
+      // If the first pass of the flush counted this row as deleted, then it isn't
+      // in the output at all, and therefore we shouldn't count it when determining
+      // the row id of the output rows.
+      if (!is_deleted_in_main_flush) {
+        row_idx++;
+      }
     }
 
     RETURN_NOT_OK(input->FinishBlock());

@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "common/schema.h"
+#include "gutil/casts.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
 #include "util/faststring.h"
@@ -16,24 +17,62 @@
 
 namespace kudu {
 
+
+// A RowChangeList is a wrapper around a Slice which contains a "changelist".
+//
+// A changelist is a single mutation to a row -- it may be one of three types:
+//  - UPDATE (set a new value for one or more columns)
+//  - DELETE (remove the row)
+//  - REINSERT (re-insert a "ghost" row, used only in the MemRowSet)
+//
+// RowChangeLists should be constructed using RowChangeListEncoder, and read
+// using RowChangeListDecoder.
 class RowChangeList {
 public:
   RowChangeList() {}
 
   explicit RowChangeList(const faststring &fs) :
     encoded_data_(fs)
-  {}
+  {
+    DebugChecks();
+  }
 
   explicit RowChangeList(const Slice &s) :
     encoded_data_(s)
-  {}
+  {
+    DebugChecks();
+  }
 
   const Slice &slice() const { return encoded_data_; }
 
   // Return a string form of this changelist.
   string ToString(const Schema &schema) const;
 
+  bool is_reinsert() const {
+    return encoded_data_[0] == kReinsert;
+  }
+
+  enum ChangeType {
+    ChangeType_min = 0,
+    kUninitialized = 0,
+    kUpdate = 1,
+    kDelete = 2,
+    kReinsert = 3,
+    ChangeType_max = 3
+  };
+
 private:
+  // Sanity-checks run in debug mode that this is a valid RowChangeList.
+  void DebugChecks() {
+    DCHECK_GT(encoded_data_.size(), 0);
+    DCHECK(encoded_data_[0] == kUpdate ||
+           encoded_data_[0] == kDelete ||
+           encoded_data_[0] == kReinsert);
+    if (encoded_data_[0] == kDelete) {
+      DCHECK_EQ(1, encoded_data_.size());
+    }
+  }
+
   Slice encoded_data_;
 };
 
@@ -46,10 +85,36 @@ public:
   RowChangeListEncoder(const Schema &schema,
                        faststring *dst) :
     schema_(schema),
+    type_(RowChangeList::kUninitialized),
     dst_(dst)
   {}
 
+  void Reset() {
+    dst_->clear();
+    type_ = RowChangeList::kUninitialized;
+  }
+
+  void SetToDelete() {
+    SetType(RowChangeList::kDelete);
+  }
+
+  // TODO: This doesn't currently copy the indirected data, so
+  // REINSERT deltas can't possibly work anywhere but in memory.
+  // For now, there is an assertion in the DeltaFile flush code
+  // that prevents us from accidentally depending on this anywhere
+  // but in-memory.
+  void SetToReinsert(const Slice &row_data) {
+    SetType(RowChangeList::kReinsert);
+    dst_->append(row_data.data(), row_data.size());
+  }
+
   void AddColumnUpdate(size_t col_idx, const void *new_val) {
+    if (type_ == RowChangeList::kUninitialized) {
+      SetType(RowChangeList::kUpdate);
+    } else {
+      DCHECK_EQ(RowChangeList::kUpdate, type_);
+    }
+
     const ColumnSchema& col_schema = schema_.column(col_idx);
     const TypeInfo &ti = col_schema.type_info();
 
@@ -80,8 +145,14 @@ public:
   }
 
 private:
-  const Schema &schema_;
+  void SetType(RowChangeList::ChangeType type) {
+    DCHECK_EQ(type_, RowChangeList::kUninitialized);
+    type_ = type;
+    dst_->push_back(type);
+  }
 
+  const Schema &schema_;
+  RowChangeList::ChangeType type_;
   faststring *dst_;
 };
 
@@ -96,11 +167,43 @@ public:
   RowChangeListDecoder(const Schema &schema,
                        const RowChangeList &src) :
     schema_(schema),
-    remaining_(src.slice())
-  {}
+    remaining_(src.slice()),
+    type_(RowChangeList::kUninitialized)
+  {
+  }
+
+  Status Init() {
+    if (PREDICT_FALSE(remaining_.empty())) {
+      return Status::Corruption("empty changelist - expected type");
+    }
+    bool was_valid = tight_enum_test_cast<RowChangeList::ChangeType>(remaining_[0], &type_);
+    if (PREDICT_FALSE(!was_valid || type_ == RowChangeList::kUninitialized)) {
+      return Status::Corruption(StringPrintf("bad type enum value: %d", (int)remaining_[0]));
+    }
+    remaining_.remove_prefix(1);
+    return Status::OK();
+  }
 
   bool HasNext() const {
+    DCHECK(!is_delete());
     return !remaining_.empty();
+  }
+
+  bool is_update() const {
+    return type_ == RowChangeList::kUpdate;
+  }
+
+  bool is_delete() const {
+    return type_ == RowChangeList::kDelete;
+  }
+
+  bool is_reinsert() const {
+    return type_ == RowChangeList::kReinsert;
+  }
+
+  Slice reinserted_row_slice() const {
+    DCHECK(is_reinsert());
+    return remaining_;
   }
 
   template<class RowType, class ArenaType>
@@ -123,6 +226,7 @@ public:
 
   template<class ColumnType, class ArenaType>
   Status ApplyToOneColumn(size_t row_idx, ColumnType *dst_col, size_t col_idx, ArenaType *arena) {
+    DCHECK_EQ(RowChangeList::kUpdate, type_);
     while (HasNext()) {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
@@ -140,8 +244,23 @@ public:
     return Status::OK();
   }
 
+  // If this changelist is a DELETE or REINSERT, twiddle '*deleted' to reference
+  // the new state of the row. If it is an UPDATE, this call has no effect.
+  //
+  // This is used during mutation traversal, to keep track of whether a row is
+  // deleted or not.
+  void TwiddleDeleteStatus(bool *deleted) {
+    if (is_delete()) {
+      DCHECK(!*deleted);
+      *deleted = true;
+    } else if (is_reinsert()) {
+      DCHECK(*deleted);
+      *deleted = false;
+    }
+  }
+
 private:
-  FRIEND_TEST(TestRowChangeList, TestEncodeDecode);
+  FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
   friend class RowChangeList;
 
   // Decode the next changed column.
@@ -157,6 +276,7 @@ private:
   // But, that Slice object will itself point to data which is part
   // of the source data that was passed in.
   Status DecodeNext(size_t *col_idx, const void ** val_out) {
+    DCHECK_NE(type_, RowChangeList::kUninitialized) << "Must call Init()";
     // Decode the column index.
     uint32_t idx;
     if (!GetVarint32(&remaining_, &idx)) {
@@ -203,11 +323,11 @@ private:
 
   const Schema &schema_;
 
-  // The source data being decoded.
-  const Slice src_;
-
-  // Data remaining in src_. This slice is advanced forward as entries are decoded.
+  // Data remaining in the source buffer.
+  // This slice is advanced forward as entries are decoded.
   Slice remaining_;
+
+  RowChangeList::ChangeType type_;
 
   // If an update is encountered which uses indirect data (eg a string update), then
   // this Slice is used as temporary storage to point to that indirected data.
@@ -217,5 +337,9 @@ private:
 
 } // namespace kudu
 
+// Defined for tight_enum_test_cast<> -- has to be defined outside of any namespace.
+MAKE_ENUM_LIMITS(kudu::RowChangeList::ChangeType,
+                 kudu::RowChangeList::ChangeType_min,
+                 kudu::RowChangeList::ChangeType_max);
 
 #endif

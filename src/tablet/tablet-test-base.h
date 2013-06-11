@@ -84,7 +84,7 @@ public:
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, new_val);
-    return tablet->UpdateRow(&row_key, RowChangeList(ubuf));
+    return tablet->MutateRow(&row_key, RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -138,7 +138,7 @@ public:
     faststring buf;
     *new_val = 10000 + row_idx;
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
-    return tablet->UpdateRow(&row_key, RowChangeList(buf));
+    return tablet->MutateRow(&row_key, RowChangeList(buf));
   }
 
   template <class RowType>
@@ -201,7 +201,7 @@ struct NullableValueTestSetup {
     faststring buf;
     *new_val = CalcUpdateValue(row_idx);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, IsNullRow(row_idx) ? new_val : NULL);
-    return tablet->UpdateRow(&row_key, RowChangeList(buf));
+    return tablet->MutateRow(&row_key, RowChangeList(buf));
   }
 
   template <class RowType>
@@ -299,7 +299,16 @@ public:
 
     faststring buf;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(2, &new_val);
-    return tablet_->UpdateRow(rb.data().data(), RowChangeList(buf));
+    return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
+  }
+
+  Status DeleteTestRow(uint64_t row_idx) {
+    RowBuilder rb(schema_.CreateKeyProjection());
+    setup_.BuildRowKey(&rb, row_idx);
+
+    faststring buf;
+    RowChangeListEncoder(schema_, &buf).SetToDelete();
+    return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
   }
 
   template <class RowType>

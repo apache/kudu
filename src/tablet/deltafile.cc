@@ -56,6 +56,11 @@ Status DeltaFileWriter::AppendDelta(
   const DeltaKey &key, const RowChangeList &delta) {
   Slice delta_slice(delta.slice());
 
+  // See TODO in RowChangeListEncoder::SetToReinsert
+  CHECK(!delta.is_reinsert())
+    << "TODO: REINSERT deltas cannot currently be written to disk "
+    << "since they don't have a standalone encoded form.";
+
 #ifndef NDEBUG
   // Sanity check insertion order in debug mode.
   if (has_appended_) {
@@ -113,15 +118,35 @@ Status DeltaFileReader::Init() {
 }
 
 DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema &projection,
-                                                          const MvccSnapshot &snap) {
+                                                 const MvccSnapshot &snap) const {
   return new DeltaFileIterator(this, projection, snap);
 }
+
+Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+
+  // TODO: can use an empty schema here? also, would be nice to avoid the
+  // allocations, but would probably require some refactoring.
+  gscoped_ptr<DeltaIterator> iter(NewDeltaIterator(schema_, snap_all));
+  RETURN_NOT_OK(iter->Init());
+  RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));
+  RETURN_NOT_OK(iter->PrepareBatch(1));
+
+  // TODO: this does an allocation - can we stack-allocate the bitmap
+  // and make SelectionVector able to "release" its buffer?
+  SelectionVector sel_vec(1);
+  sel_vec.SetAllTrue();
+  RETURN_NOT_OK(iter->ApplyDeletes(&sel_vec));
+  *deleted = !sel_vec.IsRowSelected(0);
+  return Status::OK();
+}
+
 
 ////////////////////////////////////////////////////////////
 // DeltaFileIterator
 ////////////////////////////////////////////////////////////
 
-DeltaFileIterator::DeltaFileIterator(DeltaFileReader *dfr,
+DeltaFileIterator::DeltaFileIterator(const DeltaFileReader *dfr,
                                      const Schema &projection,
                                      const MvccSnapshot &snap) :
   dfr_(dfr),
@@ -289,7 +314,7 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
 
 
 template<class Visitor>
-Status DeltaFileIterator::VisitUpdates(Visitor *visitor) {
+Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
   DCHECK(prepared_) << "must Prepare";
 
   rowid_t start_row = prepared_idx_;
@@ -345,8 +370,20 @@ struct ApplyingVisitor {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
+    // TODO: this code looks eerily similar to DMSIterator::ApplyUpdates!
+    // I bet it can be combined.
+
     RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
-    return decoder.ApplyToOneColumn(rel_idx, dst, col_to_apply, dst->arena());
+    RETURN_NOT_OK(decoder.Init());
+    if (decoder.is_update()) {
+      return decoder.ApplyToOneColumn(rel_idx, dst, col_to_apply, dst->arena());
+    } else if (decoder.is_delete()) {
+      // If it's a DELETE, then it will be processed by DeletingVisitor.
+      return Status::OK();
+    } else {
+      dfi->FatalUnexpectedDelta(key, deltas, "Expect only UPDATE or DELETE deltas on disk");
+    }
+    return Status::OK();
   }
 
   DeltaFileIterator *dfi;
@@ -354,13 +391,46 @@ struct ApplyingVisitor {
   ColumnBlock *dst;
 };
 
-
 Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
   size_t projected_col = projection_indexes_[col_to_apply];
   ApplyingVisitor visitor = {this, projected_col, dst};
 
-  return VisitUpdates(&visitor);
+  return VisitMutations(&visitor);
+}
+
+// Visitor which applies deletes to the selection vector.
+struct DeletingVisitor {
+  Status Visit(const DeltaKey &key, const Slice &deltas) {
+
+    // Check that the delta is considered committed by the current reader's MVCC state.
+    if (!dfi->mvcc_snap_.IsCommitted(key.txid())) {
+      return Status::OK();
+    }
+
+    int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
+    DCHECK_GE(rel_idx, 0);
+
+    RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
+    RETURN_NOT_OK(decoder.Init());
+    if (decoder.is_update()) {
+      return Status::OK();
+    } else if (decoder.is_delete()) {
+      sel_vec->SetRowUnselected(rel_idx);
+    } else {
+      dfi->FatalUnexpectedDelta(key, deltas, "Expect only UPDATE or DELETE deltas on disk");
+    }
+    return Status::OK();
+  }
+
+  DeltaFileIterator *dfi;
+  SelectionVector *sel_vec;
+};
+
+Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
+  DCHECK_LE(prepared_count_, sel_vec->nrows());
+  DeletingVisitor visitor = {this, sel_vec};
+  return VisitMutations(&visitor);
 }
 
 // Visitor which, for each mutation, appends it into a ColumnBlock of
@@ -385,11 +455,18 @@ struct CollectingVisitor {
 Status DeltaFileIterator::CollectMutations(vector<Mutation *> *dst, Arena *dst_arena) {
   DCHECK_LE(prepared_count_, dst->size());
   CollectingVisitor visitor = {this, dst, dst_arena};
-  return VisitUpdates(&visitor);
+  return VisitMutations(&visitor);
 }
 
 string DeltaFileIterator::ToString() const {
   return "DeltaFileIterator(" + dfr_->path() + ")";
+}
+
+void DeltaFileIterator::FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas,
+                                             const string &msg) {
+  LOG(FATAL) << "Saw unexpected delta type in deltafile " << dfr_->path() << ": "
+             << " rcl=" << RowChangeList(deltas).ToString(dfr_->schema())
+             << " key=" << key.ToString() << " (" << msg << ")";
 }
 
 } // namespace tablet

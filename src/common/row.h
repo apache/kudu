@@ -42,6 +42,40 @@ inline Status CopyRowIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
   return Status::OK();
 }
 
+// Project a row from one schema into another, using the given
+// projection mapping:
+//   projection_mapping[dst_row_column] = src_row_column
+// i.e. projection_mapping should have the same number of entries
+// as dst_row->schema().num_columns()
+//
+// The projection_mapping can be built using Schema::GetProjectionFrom(...).
+//
+// Indirected data is copied into the provided dst arena.
+template<class RowType1, class RowType2, class ArenaType>
+inline Status ProjectRow(const RowType1 &src_row, const vector<size_t> &projection_mapping,
+                         RowType2 *dst_row, ArenaType *dst_arena) {
+  DCHECK_EQ(projection_mapping.size(), dst_row->schema().num_columns());
+
+  for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping.size(); proj_col_idx++) {
+    size_t src_col_idx = projection_mapping[proj_col_idx];
+
+    const void *src_cell;
+    if (src_row.schema().column(src_col_idx).is_nullable()) {
+      src_cell = src_row.nullable_cell_ptr(src_row.schema(), src_col_idx);
+    } else {
+      src_cell = src_row.cell_ptr(src_row.schema(), src_col_idx);
+    }
+
+    if (dst_row->schema().column(proj_col_idx).is_nullable()) {
+      RETURN_NOT_OK(dst_row->CopyNullableCell(dst_row->schema(), proj_col_idx,src_cell, dst_arena));
+    } else {
+      RETURN_NOT_OK(dst_row->CopyCell(dst_row->schema(), proj_col_idx, src_cell, dst_arena));
+    }
+  }
+
+  return Status::OK();
+}
+
 class ContiguousRowHelper {
  public:
   static size_t null_bitmap_size(const Schema& schema) {

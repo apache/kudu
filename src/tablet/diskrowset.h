@@ -136,7 +136,7 @@ public:
   // Update the given row.
   // 'key' should be the key portion of the row -- i.e a contiguous
   // encoding of the key columns.
-  Status UpdateRow(txid_t txid,
+  Status MutateRow(txid_t txid,
                    const void *key,
                    const RowChangeList &update);
 
@@ -204,7 +204,6 @@ private:
   // no other compactor will attempt to include this rowset.
   boost::mutex compact_flush_lock_;
 };
-
 
 } // namespace tablet
 } // namespace kudu

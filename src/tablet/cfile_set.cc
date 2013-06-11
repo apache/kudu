@@ -137,7 +137,8 @@ Status CFileSet::FindRow(const void *key, rowid_t *idx) const {
   return Status::OK();
 }
 
-Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
+Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                                 rowid_t *rowid) const {
   if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), present);
     if (s.ok() && !*present) {
@@ -150,8 +151,7 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) con
     }
   }
 
-  rowid_t junk;
-  Status s = FindRow(probe.raw_key(), &junk);
+  Status s = FindRow(probe.raw_key(), rowid);
   if (s.IsNotFound()) {
     // In the case that the key comes past the end of the file, Seek
     // will return NotFound. In that case, it is OK from this function's
@@ -338,6 +338,11 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
 
   cols_prepared_[idx] = true;
 
+  return Status::OK();
+}
+
+Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
+  sel_vec->SetAllTrue();
   return Status::OK();
 }
 

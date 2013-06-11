@@ -58,7 +58,9 @@ public:
   // from transactions which were not yet committed at the time the snapshot was
   // created will be ignored.
   DeltaIterator *NewDeltaIterator(const Schema &projection,
-                                           const MvccSnapshot &snapshot);
+                                  const MvccSnapshot &snapshot) const;
+
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
   const Schema &schema() const {
     return schema_;
@@ -98,6 +100,8 @@ public:
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
 
+  Status ApplyDeletes(SelectionVector *sel_vec);
+
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
 
   string ToString() const;
@@ -110,18 +114,22 @@ private:
   // Initialize the iterator.
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
-  DMSIterator(const shared_ptr<DeltaMemStore> &dms, const Schema &projection,
+  DMSIterator(const shared_ptr<const DeltaMemStore> &dms, const Schema &projection,
               const MvccSnapshot &snapshot);
 
 
   // Decode a mutation as stored in the DMS.
   Status DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *changelist) const;
 
+  // Format a Corruption status
+  Status CorruptionStatus(const string &message, rowid_t row,
+                          const RowChangeList *changelist) const;
+
   enum {
     kPreparedBufInitialCapacity = 512
   };
 
-  const shared_ptr<DeltaMemStore> dms_;
+  const shared_ptr<const DeltaMemStore> dms_;
   const Schema projection_;
 
   // MVCC state which allows us to ignore uncommitted transactions.

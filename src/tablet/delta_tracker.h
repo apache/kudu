@@ -32,7 +32,8 @@ class DeltaTracker : public boost::noncopyable {
 public:
   DeltaTracker(Env *env,
                const Schema &schema,
-               const string &dir);
+               const string &dir,
+               rowid_t num_rows);
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                    const MvccSnapshot &mvcc_snap) const;
@@ -51,6 +52,12 @@ public:
   // values into a local arena.
   void Update(txid_t txid, rowid_t row_idx, const RowChangeList &update);
 
+  // Check if the given row has been deleted -- i.e if the most recent
+  // delta for this row is a deletion.
+  //
+  // Sets *deleted to true if so; otherwise sets it to false.
+  Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
+
 private:
   friend class DiskRowSet;
 
@@ -65,6 +72,11 @@ private:
   Env *env_;
   const Schema schema_;
   string dir_;
+
+  // The number of rows in the DiskRowSet that this tracker is associated with.
+  // This is just used for assertions to make sure that we don't update a row
+  // which doesn't exist.
+  rowid_t num_rows_;
 
   bool open_;
 
@@ -126,6 +138,11 @@ public:
     return base_iter_->schema();
   }
 
+  // Initialize the selection vector for the current batch.
+  // This processes DELETEs -- any deleted rows are set to 0 in 'sel_vec'.
+  // All other rows are set to 1.
+  virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
+
   Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
 private:
   friend class DeltaTracker;
@@ -155,6 +172,11 @@ inline Status DeltaApplier::PrepareBatch(size_t *nrows) {
 
 inline Status DeltaApplier::FinishBatch() {
   return base_iter_->FinishBatch();
+}
+
+inline Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
+  RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
+  return delta_iter_->ApplyDeletes(sel_vec);
 }
 
 inline Status DeltaApplier::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {

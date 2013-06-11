@@ -135,10 +135,8 @@ correct snapshot of the row:
 Note that "mutation" in this case can be one of three types:
 - UPDATE: changes the value of one or more columns
 - DELETE: removes the row from the database
-- REINSERT: reinsert the row with a new set of data (only occurs on a row with a prior
-            DELETE mutation)
-  ** TODO: it's possible that the REINSERT mutation will not in fact exist. Update this
-  section once DELETED is fully implemented.
+- REINSERT: reinsert the row with a new set of data (only occurs on a MemRowSet row
+            with a prior DELETE mutation)
 
 As a concrete example, consider the following sequence on a table with schema
 (key STRING, val UINT32):

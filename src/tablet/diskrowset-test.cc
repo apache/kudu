@@ -118,17 +118,69 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   ASSERT_EQ((int)(n_rows_ * FLAGS_update_fraction),
             rs->delta_tracker_->dms_->Count());
 
-  // Try to add an update for a key not in the file (but which falls
+  // Try to add a mutation for a key not in the file (but which falls
   // between two valid keys)
+  faststring buf;
+  RowChangeListEncoder enc(schema_, &buf);
+  enc.SetToDelete();
+
   txid_t txid(0);
   Slice bad_key = Slice("hello 00000000000049x");
-  Status s = rs->UpdateRow(txid, &bad_key, RowChangeList(Slice()));
+  Status s = rs->MutateRow(txid, &bad_key, enc.as_changelist());
   ASSERT_TRUE(s.IsNotFound());
 
   // Now read back the value column, and verify that the updates
   // are visible.
   VerifyUpdates(*rs, updated);
 }
+
+// Test Delete() support within a DiskRowSet.
+TEST_F(TestRowSet, TestDelete) {
+  // Write and open a DiskRowSet with 2 rows.
+  WriteTestRowSet(2);
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  MvccSnapshot snap_before_delete(mvcc_);
+
+  // Delete one of the two rows
+  ASSERT_STATUS_OK(DeleteRow(rs.get(), 0));
+  MvccSnapshot snap_after_delete(mvcc_);
+
+  vector<string> rows;
+  Status s;
+
+  for (int i = 0; i < 2; i++) {
+    // Reading the MVCC snapshot prior to deletion should show the row.
+    ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
+    ASSERT_EQ(2, rows.size());
+    EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
+    EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
+
+    // Reading the MVCC snapshot after the deletion should hide the row.
+    ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
+
+    // Trying to delete or update the same row again should fail.
+    s = DeleteRow(rs.get(), 0);
+    ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
+    s = UpdateRow(rs.get(), 0, 12345);
+    ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
+
+    // CheckRowPresent should return false.
+    bool present;
+    ASSERT_STATUS_OK(CheckRowPresent(*rs, 0, &present));
+    EXPECT_FALSE(present);
+
+    if (i == 1) {
+      // Flush DMS. The second pass through the loop will re-verify that the
+      // externally visible state of the layer has not changed.
+      // deletions now in a DeltaFile.
+      ASSERT_STATUS_OK(rs->FlushDeltas());
+    }
+  }
+}
+
 
 TEST_F(TestRowSet, TestDMSFlush) {
   WriteTestRowSet();
@@ -205,9 +257,9 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   for (uint32_t i = 2; i <= 5; i++) {
     {
       ScopedTransaction tx(&mvcc_);
-      update_buf.clear();
+      update.Reset();
       update.AddColumnUpdate(1, &i);
-      ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
+      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
                                          &key_slice, RowChangeList(update_buf)));
     }
     snaps.push_back(MvccSnapshot(mvcc_));

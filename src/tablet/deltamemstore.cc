@@ -64,9 +64,46 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
 }
 
 DeltaIterator *DeltaMemStore::NewDeltaIterator(const Schema &projection,
-                                                        const MvccSnapshot &snapshot) {
+                                               const MvccSnapshot &snapshot) const {
   return new DMSIterator(shared_from_this(), projection, snapshot);
 }
+
+Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  *deleted = false;
+
+  DeltaKey key(row_idx, txid_t(0));
+  faststring buf;
+  key.EncodeTo(&buf);
+  Slice key_slice(buf);
+
+  bool exact;
+
+  // TODO: can we avoid the allocation here?
+  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  if (!iter->SeekAtOrAfter(key_slice, &exact)) {
+    return Status::OK();
+  }
+
+  while (iter->IsValid()) {
+    // Iterate forward until reaching an entry with a larger row idx.
+    Slice key_slice, v;
+    iter->GetCurrentEntry(&key_slice, &v);
+    RETURN_NOT_OK(key.DecodeFrom(&key_slice));
+    DCHECK_EQ(0, key_slice.size()) << "Key should not have leftover data";
+    DCHECK_GE(key.row_idx(), row_idx);
+    if (key.row_idx() != row_idx) break;
+
+    // Mutation is for the target row, check deletion status.
+    RowChangeListDecoder decoder(schema_, RowChangeList(v));
+    RETURN_NOT_OK(decoder.Init());
+    decoder.TwiddleDeleteStatus(deleted);
+
+    iter->Next();
+  }
+
+  return Status::OK();
+}
+
 
 void DeltaMemStore::DebugPrint() const {
   tree_.DebugPrint();
@@ -76,7 +113,7 @@ void DeltaMemStore::DebugPrint() const {
 // DMSIterator
 ////////////////////////////////////////////////////////////
 
-DMSIterator::DMSIterator(const shared_ptr<DeltaMemStore> &dms,
+DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
                          const Schema &projection,
                          const MvccSnapshot &snapshot) :
   dms_(dms),
@@ -189,14 +226,53 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
     RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
     uint32_t idx_in_block = key.row_idx() - prepared_idx_;
-
     RowChangeListDecoder decoder(dms_->schema(), changelist);
 
-    Status s = decoder.ApplyToOneColumn(idx_in_block, dst, projected_col, dst->arena());
-    if (!s.ok()) {
-      return Status::Corruption(
-        StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT": ", key.row_idx()) +
-        s.ToString());
+    RETURN_NOT_OK_RET(decoder.Init(),
+                      CorruptionStatus(string("Unable to decode changelist: ") + s.ToString(),
+                                       key.row_idx(), &changelist));
+
+    if (decoder.is_update()) {
+      RETURN_NOT_OK_RET(
+        decoder.ApplyToOneColumn(idx_in_block, dst, projected_col, dst->arena()),
+        CorruptionStatus(string("Unable to apply changelist: ") + s.ToString(),
+                         key.row_idx(), &changelist));
+    } else if (decoder.is_delete()) {
+      // Handled by ApplyDeletes()
+    } else {
+      LOG(FATAL) << "TODO: unhandled mutation type. " << changelist.ToString(dms_->schema());
+    }
+
+#undef CORRUPTION_MSG
+  }
+
+
+  return Status::OK();
+}
+
+
+Status DMSIterator::ApplyDeletes(SelectionVector *sel_vec) {
+  // TODO: tihs shares lots of code with ApplyUpdates
+  // probably Prepare() should just separate out the updates into deletes, and then
+  // a set of updates for each column.
+  DCHECK(prepared_);
+  DCHECK_EQ(prepared_count_, sel_vec->nrows());
+  Slice src(prepared_buf_);
+
+  while (!src.empty()) {
+    DeltaKey key;
+    RowChangeList changelist;
+
+    RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
+
+    uint32_t idx_in_block = key.row_idx() - prepared_idx_;
+    RowChangeListDecoder decoder(dms_->schema(), changelist);
+
+    RETURN_NOT_OK_RET(decoder.Init(),
+                      CorruptionStatus(string("Unable to decode changelist: ") + s.ToString(),
+                                       key.row_idx(), &changelist));
+    if (decoder.is_delete()) {
+      sel_vec->SetRowUnselected(idx_in_block);
     }
   }
 
@@ -238,8 +314,7 @@ Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *cha
   src->remove_prefix(sizeof(uint32_t));
 
   if (delta_len > src->size()) {
-    return Status::Corruption(
-      StringPrintf("Corrupt prepared updates at row %"ROWID_PRINT_FORMAT, idx));
+    return CorruptionStatus("Corrupt prepared updates", idx, NULL);
   }
   *changelist = RowChangeList(Slice(src->data(), delta_len));
   src->remove_prefix(delta_len);
@@ -247,6 +322,18 @@ Status DMSIterator::DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *cha
   return Status::OK();
 }
 
+Status DMSIterator::CorruptionStatus(const string &message, rowid_t row,
+                                     const RowChangeList *changelist) const {
+  string ret = message;
+  StringAppendF(&ret, "[row=%"ROWID_PRINT_FORMAT"", row);
+  if (changelist != NULL) {
+    ret.append(" CL=");
+    ret.append(changelist->ToString(dms_->schema()));
+  }
+  ret.append("]");
+
+  return Status::Corruption(ret);
+}
 
 string DMSIterator::ToString() const {
   return "DMSIterator";

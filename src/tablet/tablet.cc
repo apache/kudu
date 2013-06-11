@@ -160,7 +160,7 @@ Status Tablet::Insert(const Slice &data) {
   return memrowset_->Insert(tx.txid(), data);
 }
 
-Status Tablet::UpdateRow(const void *key,
+Status Tablet::MutateRow(const void *key,
                          const RowChangeList &update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   RowSetKeyProbe probe(key_schema_, key);
@@ -214,7 +214,7 @@ Status Tablet::UpdateRow(const void *key,
   ScopedTransaction tx(&mvcc_);
 
   // First try to update in memrowset.
-  Status s = memrowset_->UpdateRow(tx.txid(), key, update);
+  Status s = memrowset_->MutateRow(tx.txid(), key, update);
   if (s.ok() || !s.IsNotFound()) {
     // if it succeeded, or if an error occurred, return.
     return s;
@@ -224,7 +224,7 @@ Status Tablet::UpdateRow(const void *key,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
-    s = rs->UpdateRow(tx.txid(), key, update);
+    s = rs->MutateRow(tx.txid(), key, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
       return s;
@@ -235,8 +235,8 @@ Status Tablet::UpdateRow(const void *key,
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
-                              const shared_ptr<RowSet> &new_rowset,
-                              MvccSnapshot *snap_under_lock = NULL) {
+                               const shared_ptr<RowSet> &new_rowset,
+                               MvccSnapshot *snap_under_lock = NULL) {
   RowSetVector new_rowsets;
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
@@ -261,8 +261,10 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
 
   CHECK_EQ(num_replaced, old_rowsets.size());
 
-  // Then push the new rowset on the end.
-  new_rowsets.push_back(new_rowset);
+  if (new_rowset != NULL) {
+    // Then push the new rowset on the end.
+    new_rowsets.push_back(new_rowset);
+  }
 
   rowsets_.swap(new_rowsets);
 
@@ -282,6 +284,14 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
     // released.
     CHECK_EQ(snap_under_lock->num_transactions_in_flight(), 0);
   }
+}
+
+Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
+    LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
+    RETURN_NOT_OK(l_input->Delete());
+  }
+  return Status::OK();
 }
 
 Status Tablet::Flush() {
@@ -404,16 +414,33 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
+ 
   MvccSnapshot flush_snap(mvcc_);
   VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
+
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostTakeMvccSnapshot());
 
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
   DiskRowSetWriter drsw(env_, schema_, tmp_rowset_dir, bloom_sizing());
   RETURN_NOT_OK(drsw.Open());
-  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), &drsw));
+  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
   RETURN_NOT_OK(drsw.Finish());
+
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
+
+  // Though unlikely, it's possible that all of the input rows were actually
+  // GCed in this compaction. In that case, we don't actually want to reopen.
+  bool gced_all_input = drsw.written_count() == 0;
+  if (gced_all_input) {
+    LOG(INFO) << "Compaction resulted in no output rows (all input rows were GCed!)";
+    LOG(INFO) << "Removing all input rowsets.";
+    AtomicSwapRowSets(input.rowsets(), shared_ptr<RowSet>((RowSet *)NULL), NULL);
+    // Remove old rowsets
+    DeleteCompactionInputs(input);
+    return Status::OK();
+  }
 
   // Open the written-out snapshot as a new rowset.
   shared_ptr<DiskRowSet> new_rowset;
@@ -423,8 +450,6 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
                  << ": " << s.ToString();
     return s;
   }
-
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
 
   // Finished Phase 1. Start duplicating any new updates into the new on-disk rowset.
   //
@@ -439,7 +464,6 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   AtomicSwapRowSets(input.rowsets(), inprogress_rowset, &snap2);
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingRowSet());
-
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
   // memrowset, but not in the new rowset. Here we re-scan the memrowset, copying those
@@ -485,10 +509,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
 
   // Remove old rowsets
-  BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
-    LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
-    RETURN_NOT_OK(l_input->Delete());
-  }
+  DeleteCompactionInputs(input);
 
   return Status::OK();
 }

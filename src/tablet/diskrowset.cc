@@ -230,8 +230,7 @@ DiskRowSet::DiskRowSet(Env *env,
     env_(env),
     schema_(schema),
     dir_(rowset_dir),
-    open_(false),
-    delta_tracker_(new DeltaTracker(env, schema, rowset_dir))
+    open_(false)
 {}
 
 
@@ -241,6 +240,10 @@ Status DiskRowSet::Open() {
   RETURN_NOT_OK(new_base->OpenAllColumns());
 
   base_data_.reset(new_base.release());
+
+  rowid_t num_rows;
+  RETURN_NOT_OK(base_data_->CountRows(&num_rows));
+  delta_tracker_.reset(new DeltaTracker(env_, schema_, dir_, num_rows));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;
@@ -268,13 +271,22 @@ CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const 
   return CompactionInput::Create(*this, snap);
 }
 
-Status DiskRowSet::UpdateRow(txid_t txid,
+Status DiskRowSet::MutateRow(txid_t txid,
                         const void *key,
                         const RowChangeList &update) {
   CHECK(open_);
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
+
+  // It's possible that the row key exists in this DiskRowSet, but it has
+  // in fact been Deleted already. Check with the delta tracker to be sure.
+  bool deleted;
+  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted));
+  if (deleted) {
+    return Status::NotFound("row not found");
+  }
+
   delta_tracker_->Update(txid, row_idx, update);
 
   return Status::OK();
@@ -284,7 +296,18 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                               bool *present) const {
   CHECK(open_);
 
-  return base_data_->CheckRowPresent(probe, present);
+  rowid_t row_idx;
+  RETURN_NOT_OK(base_data_->CheckRowPresent(probe, present, &row_idx));
+  if (!*present) {
+    // If it wasn't in the base data, then it's definitely not in the rowset.
+    return Status::OK();
+  }
+
+  // Otherwise it might be in the base data but deleted.
+  bool deleted = false;
+  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted));
+  *present = !deleted;
+  return Status::OK();
 }
 
 Status DiskRowSet::CountRows(rowid_t *count) const {

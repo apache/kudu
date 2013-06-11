@@ -61,7 +61,7 @@ public:
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status UpdateRow(const void *key,
+  Status MutateRow(const void *key,
                    const RowChangeList &update);
 
   // Create a new row iterator which yields the rows as of the current MVCC
@@ -128,7 +128,9 @@ private:
   void AtomicSwapRowSets(const RowSetVector old_rowsets,
                         const shared_ptr<RowSet> &new_rowset,
                         MvccSnapshot *snap_under_lock);
-    
+
+  // Delete the underlying storage for the input layers in a compaction.
+  Status DeleteCompactionInputs(const RowSetsInCompaction &input);
 
   BloomFilterSizing bloom_sizing() const;
 
@@ -176,6 +178,7 @@ public:
 
 class Tablet::FlushCompactCommonHooks {
  public:
+  virtual Status PostTakeMvccSnapshot() { return Status::OK(); }
   virtual Status PostWriteSnapshot() { return Status::OK(); }
   virtual Status PostSwapInDuplicatingRowSet() { return Status::OK(); }
   virtual Status PostReupdateMissedDeltas() { return Status::OK(); }

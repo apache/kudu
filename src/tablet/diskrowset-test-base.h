@@ -60,7 +60,11 @@ protected:
   //   ("hello <00n>", <n>)
   // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
-  void WriteTestRowSet() {
+  void WriteTestRowSet(int n_rows = 0) {
+    if (n_rows == 0) {
+      n_rows = n_rows_;
+    }
+
     // Write rows into a new DiskRowSet.
     LOG_TIMING(INFO, "Writing rowset") {
       DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
@@ -70,7 +74,7 @@ protected:
 
       char buf[256];
       RowBuilder rb(schema_);
-      for (int i = 0; i < n_rows_; i++) {
+      for (int i = 0; i < n_rows; i++) {
         rb.Reset();
         FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));
@@ -86,23 +90,57 @@ protected:
   void UpdateExistingRows(DiskRowSet *rs, float update_ratio,
                           unordered_set<uint32_t> *updated) {
     int to_update = (int)(n_rows_ * update_ratio);
-    char buf[256];
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     for (int i = 0; i < to_update; i++) {
-      ScopedTransaction tx(&mvcc_);
       uint32_t idx_to_update = random() % n_rows_;
-      FormatKey(idx_to_update, buf, sizeof(buf));
-      Slice key_slice(buf);
       uint32_t new_val = idx_to_update * 5;
-      update_buf.clear();
+      update.Reset();
       update.AddColumnUpdate(1, &new_val);
-      ASSERT_STATUS_OK_FAST(rs->UpdateRow(tx.txid(),
-                              &key_slice, RowChangeList(update_buf)));
+
+      ASSERT_STATUS_OK_FAST(MutateRow(rs, idx_to_update, RowChangeList(update_buf)));
       if (updated != NULL) {
         updated->insert(idx_to_update);
       }
     }
+  }
+
+  // Delete the row with the given identifier.
+  Status DeleteRow(DiskRowSet *rs, uint32_t row_idx) {
+    faststring update_buf;
+    RowChangeListEncoder update(schema_, &update_buf);
+    update.Reset();
+    update.SetToDelete();
+
+    return MutateRow(rs, row_idx, RowChangeList(update_buf));
+  }
+
+  Status UpdateRow(DiskRowSet *rs, uint32_t row_idx, uint32_t new_val)  {
+    faststring update_buf;
+    RowChangeListEncoder update(schema_, &update_buf);
+    update.Reset();
+    update.AddColumnUpdate(1, &new_val);
+
+    return MutateRow(rs, row_idx, RowChangeList(update_buf));
+  }
+
+  // Mutate the given row.
+  Status MutateRow(DiskRowSet *rs, uint32_t row_idx, const RowChangeList &mutation) {
+    char buf[256];
+    FormatKey(row_idx, buf, sizeof(buf));
+    Slice key_slice(buf);
+
+    ScopedTransaction tx(&mvcc_);
+    return rs->MutateRow(tx.txid(), &key_slice, mutation);
+  }
+
+  Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {
+    char buf[256];
+    FormatKey(row_idx, buf, sizeof(buf));
+    Slice key_slice(buf);
+    RowSetKeyProbe probe(schema_, &key_slice);
+
+    return rs.CheckRowPresent(probe, present);
   }
 
   // Verify the contents of the given rowset.

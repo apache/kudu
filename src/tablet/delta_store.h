@@ -26,7 +26,10 @@ public:
   // 'snapshot' is the MVCC state which determines which transactions
   // should be considered committed (and thus applied by the iterator).
   virtual DeltaIterator *NewDeltaIterator(const Schema &projection_,
-                                                   const MvccSnapshot &snapshot) = 0;
+                                          const MvccSnapshot &snapshot) const = 0;
+
+  // Set *deleted to true if the latest update for the given row is a deletion.
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const = 0;
 
   virtual ~DeltaStore() {}
 };
@@ -71,6 +74,11 @@ public:
   // Apply the snapshotted updates to one of the columns.
   // 'dst' must be the same length as was previously passed to PrepareToApply()
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
+
+  // Apply any deletes to the given selection vector.
+  // Rows which have been deleted in the associated MVCC snapshot are set to
+  // 0 in the selection vector so that they don't show up in the output.
+  virtual Status ApplyDeletes(SelectionVector *sel_vec) = 0;
 
   // Collect the mutations associated with each row in the current prepared batch.
   //

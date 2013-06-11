@@ -80,7 +80,10 @@ public:
 
   // See DeltaStore::NewDeltaIterator(...)
   virtual DeltaIterator *NewDeltaIterator(const Schema &projection,
-                                                   const MvccSnapshot &snap);
+                                          const MvccSnapshot &snap) const;
+
+  // See DeltaStore::CheckRowDeleted
+  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
   const Schema &schema() const {
     return schema_;
@@ -119,6 +122,7 @@ public:
   Status SeekToOrdinal(rowid_t idx);
   Status PrepareBatch(size_t nrows);
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
+  Status ApplyDeletes(SelectionVector *sel_vec);
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
   string ToString() const;
 
@@ -126,6 +130,7 @@ private:
   friend class DeltaFileReader;
   friend struct ApplyingVisitor;
   friend struct CollectingVisitor;
+  friend struct DeletingVisitor;
 
   // PrepareToApply() will read forward all blocks from the deltafile
   // which overlap with the block being prepared, enqueueing them onto
@@ -165,7 +170,7 @@ private:
   };
 
 
-  DeltaFileIterator(DeltaFileReader *dfr, const Schema &projection,
+  DeltaFileIterator(const DeltaFileReader *dfr, const Schema &projection,
                     const MvccSnapshot &snap);
 
 
@@ -181,12 +186,15 @@ private:
   // onto the end of the delta_blocks_ queue.
   Status ReadCurrentBlockOntoQueue();
 
-  // Visit all updates in the currently prepared row range with the specified
+  // Visit all mutations in the currently prepared row range with the specified
   // visitor class.
   template<class Visitor>
-  Status VisitUpdates(Visitor *visitor);
+  Status VisitMutations(Visitor *visitor);
 
-  DeltaFileReader *dfr_;
+  // Log a FATAL error message about a bad delta.
+  void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas, const string &msg);
+
+  const DeltaFileReader *dfr_;
   shared_ptr<cfile::CFileReader> cfile_reader_;
   const Schema projection_;
   vector<size_t> projection_indexes_;
