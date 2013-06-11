@@ -10,7 +10,7 @@
 namespace kudu { namespace tablet {
 
 class LockManager;
-class LockEntry;
+struct LockEntry;
 
 // The entry returned to a thread which has taken a lock.
 // Callers should generally use ScopedRowLock (see below).
