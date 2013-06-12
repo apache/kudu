@@ -33,6 +33,8 @@ etc, you can find these in thirdparty/installed/bin/
 Building kudu
 ------------------------------------------------------------
 
+# Add ./thirdparty/installed/bin to your $PATH before other parts of 
+# $PATH that may contain cmake, such as /usr/bin
 $ cmake .
 $ make -j4
 $ make test
