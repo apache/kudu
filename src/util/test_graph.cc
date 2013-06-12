@@ -49,8 +49,8 @@ void TimeSeriesCollector::StartDumperThread() {
   LOG(INFO) << "Starting metrics dumper";
   CHECK(!started_);
   exit_latch_.Reset(1);
-  dumper_thread_.reset(new boost::thread(&TimeSeriesCollector::DumperThread, this));
   started_ = true;
+  dumper_thread_.reset(new boost::thread(&TimeSeriesCollector::DumperThread, this));
 }
 
 void TimeSeriesCollector::StopDumperThread() {
