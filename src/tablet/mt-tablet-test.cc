@@ -85,12 +85,12 @@ public:
     uint64_t updates_since_last_report = 0;
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
-      ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-      ASSERT_STATUS_OK(iter->Init(NULL));
+      CHECK_OK(tablet_->NewRowIterator(schema_, &iter));
+      CHECK_OK(iter->Init(NULL));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
-        ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+        CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
         CHECK_EQ(block.nrows(), 1);
 
         if (!block.selection_vector()->IsRowSelected(0)) {
@@ -108,7 +108,7 @@ public:
           uint32_t new_val = old_val + 1;
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(2, &new_val);
-          ASSERT_STATUS_OK_FAST(tablet_->MutateRow(row_key, RowChangeList(update_buf)));
+          CHECK_OK(tablet_->MutateRow(row_key, RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
             updates->AddValue(updates_since_last_report);
@@ -125,7 +125,7 @@ public:
     rowid_t last_count = 0;
     while (running_insert_count_.count() > 0) {
       uint64_t count;
-      ASSERT_STATUS_OK_FAST(tablet_->CountRows(&count));
+      CHECK_OK(tablet_->CountRows(&count));
       ASSERT_GE(count, last_count);
       last_count = count;
     }
@@ -142,14 +142,14 @@ public:
 
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
-      ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
-      ASSERT_STATUS_OK(iter->Init(NULL));
+      CHECK_OK(tablet_->NewRowIterator(schema_, &iter));
+      CHECK_OK(iter->Init(NULL));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         size_t n = 1;
-        ASSERT_STATUS_OK_FAST(iter->PrepareBatch(&n));
-        ASSERT_STATUS_OK_FAST(iter->MaterializeBlock(&block));
-        ASSERT_STATUS_OK_FAST(iter->FinishBatch());
+        CHECK_OK(iter->PrepareBatch(&n));
+        CHECK_OK(iter->MaterializeBlock(&block));
+        CHECK_OK(iter->FinishBatch());
 
         if (running_insert_count_.TimedWait(boost::posix_time::milliseconds(1))) {
           return;
@@ -225,7 +225,7 @@ public:
     while (running_insert_count_.count() > 0) {
 
       if (tablet_->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
-        ASSERT_STATUS_OK(tablet_->Flush());
+        CHECK_OK(tablet_->Flush());
 
       } else {
         LOG(INFO) << "Not flushing, memrowset not very full";
@@ -239,7 +239,7 @@ public:
   void CompactThread(int tid) {
     int wait_time = 100;
     while (running_insert_count_.count() > 0) {
-      ASSERT_STATUS_OK(tablet_->Compact());
+      CHECK_OK(tablet_->Compact());
 
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
@@ -253,7 +253,7 @@ public:
     while (running_insert_count_.count() > 0) {
       for (int i = 0; i < 100; i++) {
         this->InsertTestRows(tid, 1, iteration++);
-        ASSERT_STATUS_OK_FAST(this->DeleteTestRow(tid));
+        CHECK_OK(this->DeleteTestRow(tid));
       }
     }
   }
@@ -269,7 +269,7 @@ public:
         Status s = this->UpdateTestRow(tid, iteration++);
         if (!s.ok() && !s.IsNotFound()) {
           // We expect "not found", but not any other errors.
-          ASSERT_STATUS_OK(s);
+          CHECK_OK(s);
         }
       }
     }

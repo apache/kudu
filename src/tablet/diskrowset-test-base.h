@@ -70,7 +70,7 @@ protected:
       DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
                      BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
-      ASSERT_STATUS_OK(drsw.Open());
+      CHECK_OK(drsw.Open());
 
       char buf[256];
       RowBuilder rb(schema_);
@@ -79,9 +79,9 @@ protected:
         FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));
         rb.AddUint32(i);
-        ASSERT_STATUS_OK_FAST(drsw.WriteRow(rb.data()));
+        CHECK_OK(drsw.WriteRow(rb.data()));
       }
-      ASSERT_STATUS_OK(drsw.Finish());
+      CHECK_OK(drsw.Finish());
     }
   }
 
@@ -98,7 +98,7 @@ protected:
       update.Reset();
       update.AddColumnUpdate(1, &new_val);
 
-      ASSERT_STATUS_OK_FAST(MutateRow(rs, idx_to_update, RowChangeList(update_buf)));
+      CHECK_OK(MutateRow(rs, idx_to_update, RowChangeList(update_buf)));
       if (updated != NULL) {
         updated->insert(idx_to_update);
       }
@@ -160,7 +160,7 @@ protected:
                     1);
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(proj_val, snap));
-    ASSERT_STATUS_OK(row_iter->Init(NULL));
+    CHECK_OK(row_iter->Init(NULL));
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
     RowBlock dst(proj_val, batch_size, &arena);
@@ -170,9 +170,9 @@ protected:
     while (row_iter->HasNext()) {
       arena.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(row_iter->PrepareBatch(&n));
-      ASSERT_STATUS_OK_FAST(row_iter->MaterializeBlock(&dst));
-      ASSERT_STATUS_OK_FAST(row_iter->FinishBatch());
+      CHECK_OK(row_iter->PrepareBatch(&n));
+      CHECK_OK(row_iter->MaterializeBlock(&dst));
+      CHECK_OK(row_iter->FinishBatch());
       VerifyUpdatedBlock(proj_val.ExtractColumnFromRow<UINT32>(dst.row(0), 0), i, n, updated);
       i += n;
     }
@@ -202,7 +202,7 @@ protected:
                                 int expected_rows, bool do_log = true) {
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter(rs.NewRowIterator(schema, snap));
-    ASSERT_STATUS_OK(row_iter->Init(NULL));
+    CHECK_OK(row_iter->Init(NULL));
 
     int batch_size = 1000;
     Arena arena(1024, 1024*1024);
@@ -213,9 +213,9 @@ protected:
     while (row_iter->HasNext()) {
       arena.Reset();
       size_t n = batch_size;
-      ASSERT_STATUS_OK_FAST(row_iter->PrepareBatch(&n));
-      ASSERT_STATUS_OK_FAST(row_iter->MaterializeBlock(&dst));
-      ASSERT_STATUS_OK_FAST(row_iter->FinishBatch());
+      CHECK_OK(row_iter->PrepareBatch(&n));
+      CHECK_OK(row_iter->MaterializeBlock(&dst));
+      CHECK_OK(row_iter->FinishBatch());
       i += n;
 
       if (do_log) {

@@ -280,7 +280,7 @@ public:
     for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
       setup_.BuildRow(&rb, i, update_count_val);
-      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
+      CHECK_OK(tablet_->Insert(rb.data()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
