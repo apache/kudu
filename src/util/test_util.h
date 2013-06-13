@@ -12,6 +12,7 @@
 #include "gutil/strings/util.h"
 
 DECLARE_bool(test_leave_files);
+DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
 namespace kudu {
 
@@ -61,6 +62,23 @@ protected:
 
   bool AllowSlowTests() {
     return getenv("KUDU_ALLOW_SLOW_TESTS");
+  }
+
+  // Call srand() with a random seed based on the current time, reporting
+  // that seed to the logs. The time-based seed may be overridden by passing
+  // --test_random_seed= from the CLI in order to reproduce a failed randomized
+  // test.
+  void SeedRandom() {
+    int seed;
+    // Initialize random seed
+    if (FLAGS_test_random_seed == 0) {
+      // Not specified by user
+      seed = time(NULL);
+    } else {
+      seed = FLAGS_test_random_seed;
+    }
+    LOG(INFO) << "Using random seed: " << seed;
+    srand(seed);
   }
 
   gscoped_ptr<Env> env_;
