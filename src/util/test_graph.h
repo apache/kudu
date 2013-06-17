@@ -2,13 +2,13 @@
 #ifndef KUDU_TEST_GRAPH_COLLECTOR_H
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/thread/thread.hpp>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "gutil/walltime.h"
 #include "util/countdown_latch.h"
 #include "util/faststring.h"
@@ -20,7 +20,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 
-class TimeSeries : boost::noncopyable {
+class TimeSeries {
 public:
   void AddValue(double val);
   void SetValue(double val);
@@ -30,6 +30,8 @@ public:
 private:
   friend class TimeSeriesCollector;
 
+  DISALLOW_COPY_AND_ASSIGN(TimeSeries);
+
   TimeSeries() :
     val_(0)
   {}
@@ -38,7 +40,7 @@ private:
   double val_;
 };
 
-class TimeSeriesCollector : boost::noncopyable {
+class TimeSeriesCollector {
 public:
   explicit TimeSeriesCollector(const string &scope) :
     scope_(scope),
@@ -53,6 +55,8 @@ public:
   void StopDumperThread();
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(TimeSeriesCollector);
+
   void DumperThread();
   void BuildMetricsString(WallTime time_since_start, faststring *dst_buf) const;
 

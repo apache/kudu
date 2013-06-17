@@ -14,6 +14,9 @@
 namespace kudu {
 namespace cfile {
 
+CompressionCodec::CompressionCodec() {
+}
+
 class SlicesSource : public snappy::Source {
  public:
   explicit SlicesSource(const std::vector<Slice>& slices)

@@ -3,13 +3,13 @@
 #ifndef KUDU_COMMON_KEYENCODER_H
 #define KUDU_COMMON_KEYENCODER_H
 
-#include <boost/noncopyable.hpp>
 
 #include <arpa/inet.h>
 #include <emmintrin.h>
 #include <smmintrin.h>
 #include <string.h>
 
+#include "gutil/macros.h"
 #include "util/faststring.h"
 
 // The SSE-based encoding is not yet working. Don't define this!
@@ -26,7 +26,7 @@ namespace kudu {
 // unsigned ints: encode as big-endian so that smaller ints compare before larger
 //
 // TODO: use memcmpable_varint code here to make denser int keys
-class KeyEncoder : boost::noncopyable {
+class KeyEncoder {
 public:
   explicit KeyEncoder(faststring *dst) : dst_(dst) {}
 
@@ -143,6 +143,7 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(KeyEncoder);
   faststring *dst_;
 };
 

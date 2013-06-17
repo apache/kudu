@@ -18,13 +18,13 @@
 #ifndef KUDU_TABLET_CONCURRENT_BTREE_H
 #define KUDU_TABLET_CONCURRENT_BTREE_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/static_assert.hpp>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
 #include "util/inline_slice.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
+#include "gutil/macros.h"
 #include "gutil/spinlock_wait.h"
 #include "gutil/stringprintf.h"
 #include "gutil/port.h"
@@ -272,7 +272,7 @@ static void InsertInSliceArray(ISlice *array, size_t num_entries,
 
 
 template<class Traits>
-class NodeBase : boost::noncopyable {
+class NodeBase {
 public:
   AtomicVersion StableVersion() {
     return VersionField::StableVersion(&version_);
@@ -348,6 +348,9 @@ public:
   // field to occur after a split without gathering locks for all
   // the children.
   InternalNode<Traits> *parent_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(NodeBase);
 } PACKED;
 
 
@@ -777,7 +780,7 @@ private:
 // Instances should be prepared with CBTree::PrepareMutation()
 // and then used with a further Insert() or Update() call.
 template<class Traits>
-class PreparedMutation : boost::noncopyable {
+class PreparedMutation {
 public:
   // Construct a PreparedMutation.
   //
@@ -877,6 +880,8 @@ private:
   friend class LeafNode<Traits>;
   friend class TestCBTree;
 
+  DISALLOW_COPY_AND_ASSIGN(PreparedMutation);
+
   void mark_done() {
     // set leaf_ back to NULL without unlocking it,
     // since the caller will unlock it.
@@ -899,7 +904,7 @@ private:
 
 
 template<class Traits = BTreeTraits>
-class CBTree : boost::noncopyable {
+class CBTree {
 public:
   CBTree() :
     arena_(512*1024, 4*1024*1024),
@@ -1074,6 +1079,8 @@ public:
 private:
   friend class PreparedMutation<Traits>;
   friend class CBTreeIterator<Traits>;
+
+  DISALLOW_COPY_AND_ASSIGN(CBTree);
 
   NodePtr<Traits> StableRoot(AtomicVersion *stable_version) const {
     while (true) {
@@ -1582,7 +1589,7 @@ private:
 };
 
 template<class Traits>
-class CBTreeIterator : boost::noncopyable {
+class CBTreeIterator {
 public:
   bool SeekToStart() {
     bool exact;

@@ -3,7 +3,6 @@
 #ifndef KUDU_CFILE_BLOCK_ENCODINGS_H
 #define KUDU_CFILE_BLOCK_ENCODINGS_H
 
-#include <boost/noncopyable.hpp>
 #include <stdint.h>
 
 #include <glog/logging.h>
@@ -11,6 +10,7 @@
 
 #include "common/rowid.h"
 #include "cfile/cfile.pb.h"
+#include "gutil/macros.h"
 #include "util/faststring.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -38,8 +38,10 @@ inline EncodingType GetDefaultEncoding(DataType type) {
 }
 
 
-class BlockBuilder : boost::noncopyable {
+class BlockBuilder {
 public:
+  BlockBuilder() { }
+
   // Add a sequence of values to the block.
   // Returns the number of values actually added, which may be less
   // than requested if the block is full.
@@ -77,11 +79,15 @@ public:
   virtual Status GetFirstKey(void *key) const = 0;
 
   virtual ~BlockBuilder() {}
+private:
+  DISALLOW_COPY_AND_ASSIGN(BlockBuilder);
 };
 
 
-class BlockDecoder : boost::noncopyable {
+class BlockDecoder {
 public:
+  BlockDecoder() { }
+
   virtual Status ParseHeader() = 0;
 
   // Seek the decoder to the given positional index of the block.
@@ -137,6 +143,8 @@ public:
   virtual rowid_t ordinal_pos() const = 0;
 
   virtual ~BlockDecoder() {}
+private:
+  DISALLOW_COPY_AND_ASSIGN(BlockDecoder);
 };
 
 } // namespace cfile

@@ -12,6 +12,7 @@
 #include "common/types.h"
 #include "cfile/block_pointer.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "gutil/port.h"
 #include "util/coding-inl.h"
 
@@ -31,7 +32,7 @@ struct WriterOptions;
 // This works like the rest of the builders in the cfile package.
 // After repeatedly calling Add(), call Finish() to encode it
 // into a Slice, then you may Reset to re-use buffers.
-class IndexBlockBuilder : boost::noncopyable {
+class IndexBlockBuilder {
 public:
   explicit IndexBlockBuilder(const WriterOptions *options,
                              bool is_leaf);
@@ -62,6 +63,8 @@ public:
   void Reset();
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(IndexBlockBuilder);
+
 #ifdef __clang__
   __attribute__((__unused__))
 #endif
@@ -77,7 +80,7 @@ private:
   vector<uint32_t> entry_offsets_;
 };
 
-class IndexBlockReader : boost::noncopyable {
+class IndexBlockReader {
 public:
 
   IndexBlockReader();
@@ -120,9 +123,11 @@ private:
   IndexBlockTrailerPB trailer_;
   const uint8_t *key_offsets_;
   bool parsed_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexBlockReader);
 };
 
-class IndexBlockIterator : boost::noncopyable {
+class IndexBlockIterator {
 public:
 
   explicit IndexBlockIterator(const IndexBlockReader *reader);
@@ -159,6 +164,8 @@ private:
   Slice cur_key_;
   BlockPointer cur_ptr_;
   bool seeked_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexBlockIterator);
 };
 
 } // namespace kudu

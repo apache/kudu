@@ -2,11 +2,11 @@
 #ifndef KUDU_COMMON_ROW_H
 #define KUDU_COMMON_ROW_H
 
-#include <boost/noncopyable.hpp>
 #include <glog/logging.h>
 
 #include "common/types.h"
 #include "common/schema.h"
+#include "gutil/macros.h"
 #include "util/memory/arena.h"
 #include "util/bitmap.h"
 
@@ -124,7 +124,7 @@ class ContiguousRowHelper {
 
 // Utility class for building rows corresponding to a given schema.
 // This is used when inserting data into the MemStore or a new Layer.
-class RowBuilder : boost::noncopyable {
+class RowBuilder {
 public:
   explicit RowBuilder(const Schema &schema) :
     schema_(schema),
@@ -207,6 +207,8 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(RowBuilder);
+
   void CheckNextType(DataType type) {
     CHECK_EQ(schema_.column(col_idx_).type_info().type(),
              type);

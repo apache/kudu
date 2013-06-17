@@ -2,7 +2,6 @@
 #ifndef KUDU_TABLET_LAYER_BASEDATA_H
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
-#include <boost/noncopyable.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <tr1/memory>
@@ -12,6 +11,7 @@
 
 #include "common/iterator.h"
 #include "common/schema.h"
+#include "gutil/macros.h"
 #include "tablet/memrowset.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
@@ -31,8 +31,7 @@ using std::tr1::shared_ptr;
 //
 // All of these files have the same number of rows, and thus the positional
 // indexes can be used to seek to corresponding entries in each.
-class CFileSet : public std::tr1::enable_shared_from_this<CFileSet>,
-                 boost::noncopyable {
+class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 public:
   class Iterator;
 
@@ -64,6 +63,8 @@ public:
 private:
   friend class Iterator;
 
+  DISALLOW_COPY_AND_ASSIGN(CFileSet);
+
   Status OpenColumns(size_t num_cols);
   Status OpenBloomReader();
   Status OpenAdHocIndexReader();
@@ -93,7 +94,7 @@ private:
 //
 // This simply ties together underlying files so that they can be batched
 // together, and iterated in parallel.
-class CFileSet::Iterator : public ColumnwiseIterator, public boost::noncopyable {
+class CFileSet::Iterator : public ColumnwiseIterator {
 public:
 
   virtual Status Init(ScanSpec *spec);
@@ -123,6 +124,7 @@ public:
   void GetIOStatistics(vector<CFileIterator::IOStatistics> *stats);
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(Iterator);
   FRIEND_TEST(TestCFileSet, TestRangeScan);
   friend class CFileSet;
 

@@ -2,6 +2,7 @@
 
 #include <glog/logging.h>
 
+#include "gutil/macros.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
 
@@ -11,7 +12,7 @@ namespace tablet {
 namespace {
 
 // CompactionInput yielding rows and mutations from a MemRowSet.
-class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
+class MemRowSetCompactionInput : public CompactionInput {
  public:
   MemRowSetCompactionInput(const MemRowSet &memrowset,
                           const MvccSnapshot &snap) :
@@ -63,6 +64,7 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
   }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MemRowSetCompactionInput);
   gscoped_ptr<RowBlock> row_block_;
   gscoped_ptr<MemRowSet::Iterator> iter_;
 };
@@ -70,7 +72,7 @@ class MemRowSetCompactionInput : boost::noncopyable, public CompactionInput {
 ////////////////////////////////////////////////////////////
 
 // CompactionInput yielding rows and mutations from an on-disk DiskRowSet.
-class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
+class RowSetCompactionInput : public CompactionInput {
  public:
   RowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
                        shared_ptr<DeltaIterator> delta_iter) :
@@ -119,6 +121,7 @@ class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
     return base_iter_->schema();
   }
  private:
+  DISALLOW_COPY_AND_ASSIGN(RowSetCompactionInput);
   gscoped_ptr<RowwiseIterator> base_iter_;
   shared_ptr<DeltaIterator> delta_iter_;
 
@@ -135,7 +138,7 @@ class RowSetCompactionInput : boost::noncopyable, public CompactionInput {
   };
 };
 
-class MergeCompactionInput : boost::noncopyable, public CompactionInput {
+class MergeCompactionInput : public CompactionInput {
  private:
   // State kept for each of the inputs.
   struct MergeState {
@@ -247,6 +250,7 @@ class MergeCompactionInput : boost::noncopyable, public CompactionInput {
   }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MergeCompactionInput);
 
   // Look through our current set of inputs. For any that are empty,
   // pull the next block into its pending list. If there is no next

@@ -2,13 +2,13 @@
 #ifndef KUDU_CFILE_BLOOMFILE_H
 #define KUDU_CFILE_BLOOMFILE_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <tr1/memory>
 #include <vector>
 
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
+#include "gutil/macros.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
 #include "util/faststring.h"
@@ -20,7 +20,7 @@ namespace cfile {
 
 using std::tr1::shared_ptr;
 
-class BloomFileWriter : boost::noncopyable {
+class BloomFileWriter {
 public:
   BloomFileWriter(const shared_ptr<WritableFile> &file,
                   const BloomFilterSizing &sizing);
@@ -30,6 +30,7 @@ public:
   Status Finish();
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(BloomFileWriter);
 
   Status FinishCurrentBloomBlock();
 
@@ -46,7 +47,7 @@ private:
 // When making it thread-safe, should make sure that the threads
 // share a single CFileReader, or else the cache keys won't end up
 // shared!
-class BloomFileReader : boost::noncopyable {
+class BloomFileReader {
 public:
   static Status Open(Env *env, const string &path,
                      gscoped_ptr<BloomFileReader> *reader);
@@ -59,6 +60,8 @@ public:
                          bool *maybe_present);
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(BloomFileReader);
+
   // Constructor. Takes ownership of 'reader'
   //
   // 'reader' should already have had CFileReader::Init() called.

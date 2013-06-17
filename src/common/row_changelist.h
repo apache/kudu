@@ -5,7 +5,6 @@
 #ifndef KUDU_COMMON_ROW_CHANGELIST_H
 #define KUDU_COMMON_ROW_CHANGELIST_H
 
-#include <boost/noncopyable.hpp>
 #include <gtest/gtest.h>
 
 #include "common/schema.h"

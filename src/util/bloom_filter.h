@@ -4,6 +4,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/hash/city.h"
+#include "gutil/macros.h"
 #include "util/bitmap.h"
 #include "util/slice.h"
 
@@ -95,7 +96,7 @@ private:
 
 
 // Builder for a BloomFilter structure.
-class BloomFilterBuilder : boost::noncopyable {
+class BloomFilterBuilder {
 public:
   // Create a bloom filter.
   // See BloomFilterSizing static methods to specify this argument.
@@ -134,6 +135,8 @@ public:
   size_t count() const { return n_inserted_; }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(BloomFilterBuilder);
+
   size_t n_bits_;
   gscoped_array<uint8_t> bitmap_;
 

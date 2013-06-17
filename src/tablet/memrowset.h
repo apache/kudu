@@ -2,7 +2,6 @@
 #ifndef KUDU_TABLET_MEMROWSET_H
 #define KUDU_TABLET_MEMROWSET_H
 
-#include <boost/noncopyable.hpp>
 #include <tr1/memory>
 
 #include "common/rowblock.h"
@@ -136,8 +135,7 @@ class MRSRow {
 // (i.e not columnar)
 //
 // The data is kept sorted.
-class MemRowSet : boost::noncopyable,
-                 public RowSet,
+class MemRowSet : public RowSet,
                  public std::tr1::enable_shared_from_this<MemRowSet> {
  public:
   class Iterator;
@@ -257,6 +255,8 @@ class MemRowSet : boost::noncopyable,
  private:
   friend class Iterator;
 
+  DISALLOW_COPY_AND_ASSIGN(MemRowSet);
+
   // Temporary hack to slow down mutators when the memrowset is over 1GB.
   void SlowMutators();
 
@@ -294,7 +294,7 @@ class MemRowSet : boost::noncopyable,
 // at least all rows that were present at the time of construction,
 // and potentially more. Each row will be at least as current as
 // the time of construction, and potentially more current.
-class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
+class MemRowSet::Iterator : public RowwiseIterator {
  public:
   virtual ~Iterator() {}
 
@@ -421,6 +421,8 @@ class MemRowSet::Iterator : public RowwiseIterator, boost::noncopyable {
 
  private:
   friend class MemRowSet;
+
+  DISALLOW_COPY_AND_ASSIGN(Iterator);
 
   Iterator(const shared_ptr<const MemRowSet> &mrs,
            MemRowSet::MSBTIter *iter,

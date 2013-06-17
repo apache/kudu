@@ -5,6 +5,7 @@
 #include <glog/logging.h>
 
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "util/cache.h"
 
 namespace kudu {
@@ -14,7 +15,7 @@ class BlockCacheHandle;
 
 // Wrapper around kudu::Cache specifically for caching blocks of CFiles.
 // Provides a singleton and LRU cache for CFile blocks.
-class BlockCache : boost::noncopyable {
+class BlockCache {
 public:
   typedef uint64_t FileId;
 
@@ -46,6 +47,7 @@ public:
               BlockCacheHandle *inserted);
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
   static void ValueDeleter(const Slice &key, void *value);
 
@@ -53,7 +55,7 @@ private:
 };
 
 // Scoped reference to a block from the block cache.
-class BlockCacheHandle : boost::noncopyable {
+class BlockCacheHandle {
 public:
   BlockCacheHandle() :
     handle_(NULL)
@@ -94,6 +96,7 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(BlockCacheHandle);
   friend class BlockCache;
 
   void SetHandle(Cache *cache, Cache::Handle *handle) {

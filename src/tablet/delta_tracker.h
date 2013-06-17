@@ -3,11 +3,11 @@
 #ifndef KUDU_TABLET_DELTATRACKER_H
 #define KUDU_TABLET_DELTATRACKER_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
 
 #include "common/iterator.h"
+#include "gutil/macros.h"
 #include "tablet/delta_store.h"
 #include "util/status.h"
 
@@ -28,7 +28,7 @@ class DeltaFileReader;
 // These DeltaStores may be on disk (DeltaFileReader) or in-memory (DeltaMemStore).
 //
 // This class is also responsible for flushing the in-memory deltas to disk.
-class DeltaTracker : public boost::noncopyable {
+class DeltaTracker {
 public:
   DeltaTracker(Env *env,
                const Schema &schema,
@@ -60,6 +60,8 @@ public:
 
 private:
   friend class DiskRowSet;
+
+  DISALLOW_COPY_AND_ASSIGN(DeltaTracker);
 
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
@@ -107,7 +109,7 @@ private:
 // A DeltaApplier takes in a base ColumnwiseIterator along with a a
 // DeltaIterator. It is responsible for applying the updates coming
 // from the delta iterator to the results of the base iterator.
-class DeltaApplier : public ColumnwiseIterator, boost::noncopyable {
+class DeltaApplier : public ColumnwiseIterator {
 public:
   virtual Status Init(ScanSpec *spec) {
     RETURN_NOT_OK(base_iter_->Init(spec));
@@ -146,6 +148,8 @@ public:
   Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
 private:
   friend class DeltaTracker;
+
+  DISALLOW_COPY_AND_ASSIGN(DeltaApplier);
 
   // Construct. The base_iter and delta_iter should not be Initted.
   DeltaApplier(const shared_ptr<ColumnwiseIterator> &base_iter,

@@ -2,8 +2,8 @@
 #ifndef KUDU_UTIL_FASTSTRING_H
 #define KUDU_UTIL_FASTSTRING_H
 
-#include <boost/noncopyable.hpp>
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "gutil/strings/fastmem.h"
 
 #include <string>
@@ -13,7 +13,7 @@ namespace kudu {
 // A faststring is similar to a std::string, except that it is faster for many
 // common use cases (in particular, resize() will fill with uninitialized data
 // instead of memsetting to \0)
-class faststring : public boost::noncopyable {
+class faststring {
 public:
   faststring() :
     data_(new uint8_t[kInitialCapacity]),
@@ -171,6 +171,8 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(faststring);
+
   enum {
     kInitialCapacity = 16
   };

@@ -2,12 +2,12 @@
 #ifndef KUDU_CFILE_BLOCK_COMPRESSION_H
 #define KUDU_CFILE_BLOCK_COMPRESSION_H
 
-#include <boost/noncopyable.hpp>
 #include <tr1/memory>
 
 #include "cfile/cfile.pb.h"
 #include "cfile/compression_codec.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "util/faststring.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -17,7 +17,7 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace cfile {
 
-class CompressedBlockBuilder : public boost::noncopyable {
+class CompressedBlockBuilder {
 public:
   explicit CompressedBlockBuilder(const shared_ptr<CompressionCodec> &codec, size_t size_limit);
 
@@ -33,12 +33,13 @@ public:
   static const size_t kHeaderReservedLength = (2 * sizeof(uint32_t));
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(CompressedBlockBuilder);
   shared_ptr<CompressionCodec> codec_;
   faststring buffer_;
   size_t compressed_size_limit_;
 };
 
-class CompressedBlockDecoder : public boost::noncopyable {
+class CompressedBlockDecoder {
 public:
   explicit CompressedBlockDecoder(const shared_ptr<CompressionCodec> &codec, size_t size_limit);
 
@@ -49,6 +50,7 @@ public:
   Status Uncompress(const Slice& data, Slice *result);
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
   shared_ptr<CompressionCodec> codec_;
   size_t uncompressed_size_limit_;
 };

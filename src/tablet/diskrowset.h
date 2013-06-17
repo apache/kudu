@@ -19,6 +19,7 @@
 #include "common/rowblock.h"
 #include "common/row_changelist.h"
 #include "common/schema.h"
+#include "gutil/macros.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_tracker.h"
 #include "tablet/cfile_set.h"
@@ -42,7 +43,7 @@ using kudu::cfile::BloomFileWriter;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
-class DiskRowSetWriter : boost::noncopyable {
+class DiskRowSetWriter {
 public:
   DiskRowSetWriter(Env *env,
               const Schema &schema,
@@ -77,6 +78,7 @@ public:
 
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(DiskRowSetWriter);
 
   Status InitBloomFileWriter();
 
@@ -102,7 +104,7 @@ private:
 // DiskRowSet
 ////////////////////////////////////////////////////////////
 
-class DiskRowSet : public RowSet, boost::noncopyable {
+class DiskRowSet : public RowSet {
 public:
   static const char *kDeltaPrefix;
   static const char *kColumnPrefix;
@@ -185,6 +187,7 @@ private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestCompaction, TestOneToOne);
+  DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
   friend class Tablet;
   friend class CompactionInput;
 

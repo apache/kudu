@@ -7,6 +7,7 @@
 #include "common/iterator.h"
 #include "common/rowid.h"
 #include "common/schema.h"
+#include "gutil/macros.h"
 #include "tablet/mvcc.h"
 #include "util/bloom_filter.h"
 #include "util/faststring.h"
@@ -135,7 +136,7 @@ private:
 // union of the input rowsets.
 //
 // See compaction.txt for a little more detail on how this is used.
-class DuplicatingRowSet : public RowSet, boost::noncopyable {
+class DuplicatingRowSet : public RowSet {
 public:
   DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
                    const shared_ptr<RowSet> &new_rowset);
@@ -173,6 +174,8 @@ public:
 
 private:
   friend class Tablet;
+
+  DISALLOW_COPY_AND_ASSIGN(DuplicatingRowSet);
 
   vector<shared_ptr<RowSet> > old_rowsets_;
   shared_ptr<RowSet> new_rowset_;

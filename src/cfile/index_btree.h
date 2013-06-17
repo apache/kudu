@@ -4,11 +4,11 @@
 #define KUDU_CFILE_INDEX_BTREE_H
 
 #include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/noncopyable.hpp>
 #include <memory>
 
 #include "cfile.pb.h"
 #include "cfile/block_cache.h"
+#include "gutil/macros.h"
 #include "index_block.h"
 #include "util/logging.h"
 
@@ -50,9 +50,11 @@ private:
   Writer *writer_;
 
   ptr_vector<IndexBlockBuilder> idx_blocks_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexTreeBuilder);
 };
 
-class IndexTreeIterator : boost::noncopyable {
+class IndexTreeIterator {
 public:
   explicit IndexTreeIterator(
       const CFileReader *reader,
@@ -103,6 +105,7 @@ private:
 
   ptr_vector<SeekedIndex> seeked_indexes_;
 
+  DISALLOW_COPY_AND_ASSIGN(IndexTreeIterator);
 };
 
 } // namespace cfile

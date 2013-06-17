@@ -3,7 +3,6 @@
 #ifndef KUDU_CFILE_CFILE_READER_H
 #define KUDU_CFILE_CFILE_READER_H
 
-#include <boost/noncopyable.hpp>
 #include <vector>
 #include <tr1/memory>
 #include <string>
@@ -16,6 +15,7 @@
 #include "cfile/block_compression.h"
 #include "cfile/index_btree.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "gutil/port.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
@@ -46,7 +46,7 @@ class BlockPointer;
 class CFileIterator;
 
 
-class CFileReader : boost::noncopyable {
+class CFileReader {
 public:
   // Open the cfile at the given path.
   //
@@ -134,6 +134,8 @@ public:
 
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(CFileReader);
+
   friend class CFileIterator;
 
   CFileReader(const ReaderOptions &options,
@@ -175,7 +177,7 @@ private:
 };
 
 
-class CFileIterator : boost::noncopyable {
+class CFileIterator {
 public:
   // Statistics on the amount of IO done by the iterator.
   struct IOStatistics {
@@ -259,6 +261,8 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(CFileIterator);
+
   struct PreparedBlock {
     BlockPointer dblk_ptr_;
     BlockCacheHandle dblk_data_;

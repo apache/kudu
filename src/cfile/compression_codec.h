@@ -2,11 +2,11 @@
 #ifndef KUDU_CFILE_COMPRESSION_CODEC_H
 #define KUDU_CFILE_COMPRESSION_CODEC_H
 
-#include <boost/noncopyable.hpp>
 #include <tr1/memory>
 #include <vector>
 
 #include "cfile/cfile.pb.h"
+#include "gutil/macros.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -15,8 +15,10 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace cfile {
 
-class CompressionCodec : public boost::noncopyable {
+class CompressionCodec {
 public:
+  CompressionCodec();
+
   // REQUIRES: "compressed" must point to an area of memory that is at
   // least "MaxCompressedLength(input_length)" bytes in length.
   //
@@ -40,6 +42,8 @@ public:
   // Returns the maximal size of the compressed representation of
   // input data that is "source_bytes" bytes in length.
   virtual size_t MaxCompressedLength(size_t source_bytes) = 0;
+private:
+  DISALLOW_COPY_AND_ASSIGN(CompressionCodec);
 };
 
 // Returns the compression codec for the specified type

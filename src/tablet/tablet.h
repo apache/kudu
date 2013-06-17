@@ -2,7 +2,6 @@
 #ifndef KUDU_TABLET_TABLET_H
 #define KUDU_TABLET_TABLET_H
 
-#include <boost/noncopyable.hpp>
 #include <string>
 
 #include "common/generic_iterators.h"
@@ -10,6 +9,7 @@
 #include "common/schema.h"
 #include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "tablet/diskrowset.h"
 #include "tablet/memrowset.h"
 #include "tablet/lock_manager.h"
@@ -109,6 +109,8 @@ public:
   const MvccManager &mvcc_manager() const { return mvcc_; }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(Tablet);
+
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
   // These iterators are not true snapshot iterators, but they are safe against

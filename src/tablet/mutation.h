@@ -5,6 +5,7 @@
 
 #include "common/row_changelist.h"
 #include "common/schema.h"
+#include "gutil/macros.h"
 #include "gutil/port.h"
 #include "util/memory/arena.h"
 #include "util/slice.h"
@@ -18,8 +19,10 @@ namespace tablet {
 // mutations in the row.
 //
 // This is a variable-length object.
-class Mutation : boost::noncopyable {
+class Mutation {
  public:
+  Mutation() { }
+
   // Create a new Mutation object with a copy of the given changelist.
   // The object is allocated from the provided Arena.
   template<class ArenaType>
@@ -46,6 +49,8 @@ class Mutation : boost::noncopyable {
  private:
   friend class MSRow;
   friend class MemRowSet;
+
+  DISALLOW_COPY_AND_ASSIGN(Mutation);
 
   // The transaction ID which made this mutation. If this transaction is not
   // committed in the snapshot of the reader, this mutation should be ignored.

@@ -2,7 +2,6 @@
 #ifndef KUDU_TABLET_DELTAFILE_H
 #define KUDU_TABLET_DELTAFILE_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/ptr_container/ptr_deque.hpp>
 #include <tr1/memory>
 #include <vector>
@@ -14,6 +13,7 @@
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_key.h"
 
@@ -34,7 +34,7 @@ using std::tr1::shared_ptr;
 class DeltaFileIterator;
 class DeltaKey;
 
-class DeltaFileWriter : boost::noncopyable {
+class DeltaFileWriter {
 public:
   // Construct a new delta file writer.
   // The writer takes ownership over the file and will Close it
@@ -55,6 +55,8 @@ public:
 private:
   const Schema schema_;
 
+  DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);
+
   gscoped_ptr<cfile::Writer> writer_;
 
   // Buffer used as a temporary for storing the serialized form
@@ -71,7 +73,7 @@ private:
 };
 
 
-class DeltaFileReader : public DeltaStore, boost::noncopyable {
+class DeltaFileReader : public DeltaStore {
 public:
   // Open the Delta File at the given path.
   static Status Open(Env *env, const string &path,
@@ -94,6 +96,8 @@ public:
 private:
   friend class DeltaFileIterator;
 
+  DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
+
   const shared_ptr<cfile::CFileReader> &cfile_reader() const {
     return reader_;
   }
@@ -115,7 +119,7 @@ private:
 // Iterator over the deltas contained in a delta file.
 //
 // See DeltaIterator for details.
-class DeltaFileIterator : boost::noncopyable, public DeltaIterator {
+class DeltaFileIterator : public DeltaIterator {
 public:
   Status Init();
 
@@ -131,6 +135,8 @@ private:
   friend struct ApplyingVisitor;
   friend struct CollectingVisitor;
   friend struct DeletingVisitor;
+
+  DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
 
   // PrepareToApply() will read forward all blocks from the deltafile
   // which overlap with the block being prepared, enqueueing them onto

@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 
+#include "gutil/macros.h"
 #include "tablet/tablet-test-base.h"
 #include "util/countdown_latch.h"
 #include "util/test_graph.h"
@@ -33,7 +34,7 @@ using std::tr1::unordered_set;
 
 
 // Utility class which calls latch->CountDown() in its destructor.
-class CountDownOnScopeExit : boost::noncopyable {
+class CountDownOnScopeExit {
 public:
   explicit CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
   ~CountDownOnScopeExit() {
@@ -41,6 +42,8 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(CountDownOnScopeExit);
+
   CountDownLatch *latch_;
 };
 

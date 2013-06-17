@@ -3,8 +3,8 @@
 #ifndef KUDU_TABLET_LOCK_MANAGER_H
 #define KUDU_TABLET_LOCK_MANAGER_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/thread/mutex.hpp>
+#include "gutil/macros.h"
 #include "util/slice.h"
 
 namespace kudu { namespace tablet {
@@ -14,8 +14,10 @@ struct LockEntry;
 
 // The entry returned to a thread which has taken a lock.
 // Callers should generally use ScopedRowLock (see below).
-struct LockEntry : boost::noncopyable {
+struct LockEntry {
+  LockEntry() { }
   boost::mutex *mutex;
+  DISALLOW_COPY_AND_ASSIGN(LockEntry);
 };
 
 // Super-simple lock manager implementation. This only supports exclusive
@@ -26,7 +28,7 @@ struct LockEntry : boost::noncopyable {
 // In the future when we want to support multi-row transactions of some kind
 // we'll have to implement a proper lock manager with all its trappings,
 // but this should be enough for the single-row use case.
-class LockManager : boost::noncopyable {
+class LockManager {
  public:
   LockManager();
 
@@ -49,6 +51,8 @@ class LockManager : boost::noncopyable {
   enum {
     kNumShards = 1024
   };
+
+  DISALLOW_COPY_AND_ASSIGN(LockManager);
 };
 
 
@@ -59,7 +63,7 @@ class LockManager : boost::noncopyable {
 //     .. do stuff with the row ..
 //   }
 //   // lock is released when the object exits its scope.
-class ScopedRowLock : boost::noncopyable {
+class ScopedRowLock {
  public:
   // Lock row in the given LockManager. The 'key' slice must remain
   // valid and un-changed for the duration of this object's lifetime.
@@ -71,6 +75,8 @@ class ScopedRowLock : boost::noncopyable {
   ~ScopedRowLock();
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedRowLock);
+
   LockManager *manager_;
   const Slice key_;
   const LockManager::LockMode mode_;

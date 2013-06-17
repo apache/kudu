@@ -2,7 +2,6 @@
 #ifndef KUDU_TABLET_DELTAMEMSTORE_H
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
-#include <boost/noncopyable.hpp>
 #include <gtest/gtest.h>
 
 #include "common/columnblock.h"
@@ -10,6 +9,7 @@
 #include "common/rowblock.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "tablet/concurrent_btree.h"
 #include "tablet/delta_key.h"
 #include "tablet/delta_tracker.h"
@@ -28,8 +28,7 @@ class Mutation;
 // modified columns.
 
 class DeltaMemStore : public DeltaStore, 
-                      public std::tr1::enable_shared_from_this<DeltaMemStore>,
-                      boost::noncopyable {
+                      public std::tr1::enable_shared_from_this<DeltaMemStore> {
 public:
   explicit DeltaMemStore(const Schema &schema);
 
@@ -69,6 +68,8 @@ public:
 private:
   friend class DMSIterator;
 
+  DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
+
   const Schema schema_;
 
   typedef btree::CBTree<btree::BTreeTraits> DMSTree;
@@ -90,7 +91,7 @@ private:
 //
 // See DeltaStore for more details on usage and the implemented
 // functions.
-class DMSIterator : boost::noncopyable, public DeltaIterator {
+class DMSIterator : public DeltaIterator {
 public:
   Status Init();
 
@@ -107,6 +108,7 @@ public:
   string ToString() const;
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(DMSIterator);
   FRIEND_TEST(TestDeltaMemStore, TestIteratorDoesUpdates);
   FRIEND_TEST(TestDeltaMemStore, TestCollectMutations);
   friend class DeltaMemStore;

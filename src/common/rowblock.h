@@ -3,12 +3,11 @@
 #ifndef KUDU_COMMON_ROWBLOCK_H
 #define KUDU_COMMON_ROWBLOCK_H
 
-#include <boost/noncopyable.hpp>
-
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "common/row.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "util/memory/arena.h"
 #include "util/bitmap.h"
 
@@ -20,7 +19,7 @@ class RowBlockRow;
 // Initially, this vector will be set to 1 for every row, and as predicates
 // are applied, the bits may be changed to 0 for any row which does not match
 // a predicate.
-class SelectionVector : boost::noncopyable {
+class SelectionVector {
 public:
   explicit SelectionVector(size_t row_capacity);
 
@@ -77,6 +76,8 @@ public:
   size_t nrows() const { return n_rows_; }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(SelectionVector);
+
   // The number of allocated bytes in bitmap_
   size_t bytes_capacity_;
 
@@ -99,7 +100,7 @@ private:
 // that you expect to be modifying, use a "RowBlock *param". Otherwise, use a
 // "const RowBlock& param". Just because you _could_ modify the referred-to contents
 // of the latter doesn't mean you _should_.
-class RowBlock : boost::noncopyable {
+class RowBlock {
 public:
   RowBlock(const Schema &schema,
            size_t nrows,
@@ -172,6 +173,8 @@ public:
   }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(RowBlock);
+
   static size_t RowBlockSize(const Schema& schema, size_t nrows) {
     size_t block_size = schema.num_columns() * sizeof(size_t);
     size_t bitmap_size = BitmapSize(nrows);

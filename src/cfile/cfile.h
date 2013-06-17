@@ -17,6 +17,7 @@
 #include "cfile/cfile.pb.h"
 #include "common/types.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/macros.h"
 #include "util/rle-encoding.h"
 #include "util/status.h"
 #include "common/key_encoder.h"
@@ -118,7 +119,7 @@ class NullBitmapBuilder {
 };
 
 // Main class used to write a CFile.
-class Writer : boost::noncopyable {
+class Writer {
 public:
   explicit Writer(const WriterOptions &options,
                   DataType type,
@@ -161,6 +162,8 @@ public:
   ~Writer();
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(Writer);
+
   friend class IndexTreeBuilder;
 
   // Append the given block into the file.

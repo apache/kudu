@@ -4,10 +4,10 @@
 #define KUDU_TABLET_MVCC_H
 
 #include "gutil/endian.h"
+#include "gutil/macros.h"
 #include "util/memcmpable_varint.h"
 #include "util/locks.h"
 
-#include <boost/noncopyable.hpp>
 #include <inttypes.h>
 #include <string>
 #include <tr1/unordered_set>
@@ -133,7 +133,7 @@ class MvccSnapshot {
 // transaction support is quite simple. Transactions are only used to
 // defer visibility of updates until commit time, and allow iterators to
 // operate on a snapshot which contains only committed transactions.
-class MvccManager : boost::noncopyable {
+class MvccManager {
  public:
   MvccManager();
 
@@ -155,6 +155,8 @@ class MvccManager : boost::noncopyable {
   void TakeSnapshot(MvccSnapshot *snapshot) const;
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MvccManager);
+
   typedef simple_spinlock LockType;
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
@@ -163,7 +165,7 @@ class MvccManager : boost::noncopyable {
 // A scoped handle to a running transaction.
 // When this object goes out of scope, the transaction is automatically
 // committed.
-class ScopedTransaction : boost::noncopyable {
+class ScopedTransaction {
  public:
   // Create a new transaction from the given MvccManager.
   //
@@ -182,6 +184,8 @@ class ScopedTransaction : boost::noncopyable {
   void Commit();
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedTransaction);
+
   bool committed_;
   MvccManager * const manager_;
   const txid_t txid_;

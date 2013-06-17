@@ -18,9 +18,9 @@
 #ifndef KUDU_UTIL_CACHE_H_
 #define KUDU_UTIL_CACHE_H_
 
-#include <boost/noncopyable.hpp>
 #include <stdint.h>
 
+#include "gutil/macros.h"
 #include "util/slice.h"
 
 namespace kudu {
@@ -31,7 +31,7 @@ class Cache;
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity);
 
-class Cache : boost::noncopyable {
+class Cache {
  public:
   Cache() { }
 
@@ -84,16 +84,14 @@ class Cache : boost::noncopyable {
   virtual uint64_t NewId() = 0;
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Cache);
+
   void LRU_Remove(Handle* e);
   void LRU_Append(Handle* e);
   void Unref(Handle* e);
 
   struct Rep;
   Rep* rep_;
-
-  // No copying allowed
-  Cache(const Cache&);
-  void operator=(const Cache&);
 };
 
 }  // namespace kudu

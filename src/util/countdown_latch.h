@@ -3,16 +3,17 @@
 #ifndef KUDU_UTIL_COUNTDOWN_LATCH_H
 #define KUDU_UTIL_COUNTDOWN_LATCH_H
 
-#include <boost/noncopyable.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
+
+#include "gutil/macros.h"
 
 namespace kudu {
 
 // This is a C++ implementation of the Java CountDownLatch
 // class.
 // See http://docs.oracle.com/javase/6/docs/api/java/util/concurrent/CountDownLatch.html
-class CountDownLatch : boost::noncopyable {
+class CountDownLatch {
 public:
   // Initialize the latch with the given initial count.
   explicit CountDownLatch(int count) :
@@ -79,6 +80,7 @@ public:
   }
 
 private:
+  DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
   mutable boost::mutex lock_;
   boost::condition_variable cond_;
 
