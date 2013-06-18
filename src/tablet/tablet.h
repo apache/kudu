@@ -8,6 +8,7 @@
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
+#include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "tablet/diskrowset.h"
 #include "tablet/memrowset.h"
@@ -155,7 +156,7 @@ private:
   // and an RCU-style quiesce phase, but not worth it for now.
   mutable percpu_rwlock component_lock_;
 
-  size_t next_rowset_idx_;
+  Atomic32 next_rowset_idx_;
 
   Env *env_;
 

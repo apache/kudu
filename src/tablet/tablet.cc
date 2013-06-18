@@ -12,6 +12,7 @@
 #include "common/iterator.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
+#include "gutil/atomicops.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
@@ -30,7 +31,7 @@ namespace kudu { namespace tablet {
 using std::string;
 using std::vector;
 using std::tr1::shared_ptr;
-
+using base::subtle::Barrier_AtomicIncrement;
 
 const char *kRowSetPrefix = "rowset_";
 
@@ -78,8 +79,8 @@ Status Tablet::Open() {
     if (TryStripPrefixString(child, kRowSetPrefix, &suffix)) {
       // The file should be named 'rowset_<N>'. N here is the index
       // of the rowset (indicating the order in which it was flushed).
-      uint32_t rowset_idx;
-      if (!safe_strtou32(suffix.c_str(), &rowset_idx)) {
+      int32_t rowset_idx;
+      if (!safe_strto32(suffix.c_str(), &rowset_idx)) {
         return Status::IOError(string("Bad rowset file: ") + absolute_path);
       }
 
@@ -92,8 +93,7 @@ Status Tablet::Open() {
       }
       rowsets_.push_back(rowset);
 
-      next_rowset_idx_ = std::max(next_rowset_idx_,
-                                 (size_t)rowset_idx + 1);
+      next_rowset_idx_ = std::max(next_rowset_idx_, rowset_idx + 1);
     } else {
       LOG(WARNING) << "ignoring unknown file: " << absolute_path;
     }
@@ -410,7 +410,8 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const
 }
 
 Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
-  string new_rowset_dir = GetRowSetPath(dir_, next_rowset_idx_++);
+  AtomicWord my_index = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
+  string new_rowset_dir = GetRowSetPath(dir_, my_index);
   string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
