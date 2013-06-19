@@ -187,7 +187,7 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
     boost::lock_guard<PThreadSpinLock> lock(iter_locks_[cpu]);
     cfile::IndexTreeIterator *index_iter = &index_iters_[cpu];
 
-    Status s = index_iter->SeekAtOrBefore(&probe.key());
+    Status s = index_iter->SeekAtOrBefore(probe.key());
     if (PREDICT_FALSE(s.IsNotFound())) {
       // Seek to before the first entry in the file.
       *maybe_present = false;

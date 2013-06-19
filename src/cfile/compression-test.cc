@@ -67,7 +67,7 @@ protected:
     TimeReadFile(path, &rdrows);
     ASSERT_EQ(nrows, rdrows);
 
-    WriteTestFileInts(path, GROUP_VARINT, compression, nrows);
+    WriteTestFileUInt32(path, GROUP_VARINT, compression, nrows);
     TimeReadFile(path, &rdrows);
     ASSERT_EQ(nrows, rdrows);
   }

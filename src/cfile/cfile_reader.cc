@@ -13,6 +13,7 @@
 #include "cfile/index_btree.h"
 #include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
+#include "cfile/plain_block.h"
 #include "gutil/gscoped_ptr.h"
 #include "util/coding.h"
 #include "util/env.h"
@@ -134,7 +135,7 @@ Status CFileReader::ReadAndParseHeader() {
 
 Status CFileReader::ReadAndParseFooter() {
   CHECK(state_ == kUninitialized) << "bad state: " << state_;
-  CHECK(file_size_ > kMagicAndLengthSize * 2) <<
+  CHECK_GT(file_size_, kMagicAndLengthSize) <<
     "file too short: " << file_size_;
 
   // First read and parse the "post-footer", which has magic
@@ -261,8 +262,20 @@ Status CFileReader::CreateBlockDecoder(
   switch (footer_->data_type()) {
     case UINT32:
       switch (footer_->encoding()) {
+        case PLAIN:
+          *bd = new PlainBlockDecoder<UINT32>(slice);
+          break;
         case GROUP_VARINT:
           *bd = new GVIntBlockDecoder(slice);
+          break;
+        default:
+          return Status::NotFound("bad uint encoding");
+      }
+      break;
+    case INT32:
+      switch (footer_->encoding()) {
+        case PLAIN:
+          *bd = new PlainBlockDecoder<INT32>(slice);
           break;
         default:
           return Status::NotFound("bad int encoding");
@@ -343,7 +356,9 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
     return Status::NotSupported("no positional index in file");
   }
 
-  RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(&ord_idx));
+  KeyEncoder encoder(&tmp_buf_);
+  Slice slice = encoder.ResetBufferAndEncodeToSlice(UINT32, ord_idx);
+  RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(slice));
 
   // TODO: fast seek within block (without reseeking index)
   pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
@@ -398,7 +413,9 @@ Status CFileIterator::SeekAtOrAfter(const void *key,
     return Status::NotSupported("no value index present");
   }
 
-  Status s = validx_iter_->SeekAtOrBefore(key);
+  KeyEncoder encoder(&tmp_buf_);
+  Slice slice = encoder.ResetBufferAndEncodeToSlice(reader_->type_info()->type(), key);
+  Status s = validx_iter_->SeekAtOrBefore(slice);
   if (PREDICT_FALSE(s.IsNotFound())) {
     // Seeking to a value before the first value in the file
     // will return NotFound, due to the way the index seek

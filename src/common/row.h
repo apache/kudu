@@ -172,6 +172,12 @@ public:
     Advance();
   }
 
+  void AddInt32(int32_t val) {
+    CheckNextType(INT32);
+    *reinterpret_cast<int32_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
   void AddUint32(uint32_t val) {
     CheckNextType(UINT32);
     *reinterpret_cast<uint32_t *>(&buf_[byte_idx_]) = val;

@@ -13,11 +13,13 @@
 #include "cfile/string_plain_block.h"
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
+#include "cfile/plain_block.h"
 #include "util/env.h"
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/pb_util.h"
 #include "util/hexdump.h"
+#include "common/key_encoder.h"
 
 using std::string;
 
@@ -82,13 +84,11 @@ Writer::Writer(const WriterOptions &options,
 {
   if (options.write_posidx) {
     posidx_builder_.reset(new IndexTreeBuilder(&options_,
-                                               UINT32,
                                                this));
   }
 
   if (options.write_validx) {
     validx_builder_.reset(new IndexTreeBuilder(&options_,
-                                               datatype_,
                                                this));
   }
 }
@@ -143,11 +143,23 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
   switch (datatype_) {
     case UINT32:
       switch (encoding_type_) {
+        case PLAIN:
+          *bb = new PlainBlockBuilder<UINT32>(&options_);
+          break;
         case GROUP_VARINT:
           *bb = new GVIntBlockBuilder(&options_);
           break;
         default:
-          return Status::NotFound("bad int encoding");
+          return Status::NotFound("bad uint encoding: "+ encoding_type_);
+      }
+      break;
+    case INT32:
+      switch (encoding_type_) {
+        case PLAIN:
+          *bb = new PlainBlockBuilder<INT32>(&options_);
+          break;
+        default:
+          return Status::NotFound("bad int encoding: "+ encoding_type_);
       }
       break;
     case STRING:
@@ -354,15 +366,16 @@ Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
 
   BlockPointer ptr;
   Status s = AddBlock(data_slices, &ptr, "data");
+  KeyEncoder encoder(&tmp_buf_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to append block to file: " << s.ToString();
     return s;
   }
 
-
   // Now add to the index blocks
   if (posidx_builder_ != NULL) {
-    RETURN_NOT_OK(posidx_builder_->Append(&ordinal_pos, ptr));
+    Slice slice = encoder.ResetBufferAndEncodeToSlice(UINT32, ordinal_pos);
+    RETURN_NOT_OK(posidx_builder_->Append(slice, ptr));
   }
 
   if (validx_builder_ != NULL) {
@@ -371,7 +384,8 @@ Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
     VLOG(1) << "Appending validx entry\n" <<
       kudu::HexDump(Slice(reinterpret_cast<const uint8_t *>(validx_key),
                           typeinfo_.size()));
-    s = validx_builder_->Append(validx_key, ptr);
+    Slice slice = encoder.ResetBufferAndEncodeToSlice(datatype_, validx_key);
+    s = validx_builder_->Append(slice, ptr);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to append to value index: " << s.ToString();
       return s;

@@ -42,6 +42,7 @@ public:
 private:
   TypeInfoResolver() {
     AddMapping<UINT32>();
+    AddMapping<INT32>();
     AddMapping<STRING>();
   }
 
@@ -62,12 +63,6 @@ const TypeInfo &GetTypeInfo(DataType type) {
   return Singleton<TypeInfoResolver>::get()->GetTypeInfo(type);
 }
 
-int DataTypeTraits<STRING>::Compare(const void *lhs, const void *rhs) {
-  const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
-  const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
-  return lhs_slice->compare(*rhs_slice);
-}
-
 int DataTypeTraits<UINT32>::Compare(const void *lhs, const void *rhs) {
   uint32_t lhs_int = *reinterpret_cast<const uint32_t *>(lhs);
   uint32_t rhs_int = *reinterpret_cast<const uint32_t *>(rhs);
@@ -79,5 +74,25 @@ int DataTypeTraits<UINT32>::Compare(const void *lhs, const void *rhs) {
     return 0;
   }
 }
+
+int DataTypeTraits<INT32>::Compare(const void *lhs, const void *rhs) {
+  int32_t lhs_int = *reinterpret_cast<const int32_t *>(lhs);
+  int32_t rhs_int = *reinterpret_cast<const int32_t *>(rhs);
+  if (lhs_int < rhs_int) {
+    return -1;
+  } else if (lhs_int > rhs_int) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+int DataTypeTraits<STRING>::Compare(const void *lhs, const void *rhs) {
+  const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
+  const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
+  return lhs_slice->compare(*rhs_slice);
+}
+
+
 
 } // namespace kudu

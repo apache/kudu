@@ -520,26 +520,36 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
   std::sort(out_rows.begin(), out_rows.end());
 
+  vector<string> expected_rows;
+  expected_rows.push_back(this->setup_.FormatDebugRow(10, 1000));
+  expected_rows.push_back(this->setup_.FormatDebugRow(11, 1001));
+  expected_rows.push_back(this->setup_.FormatDebugRow(12, 1002));
+  expected_rows.push_back(this->setup_.FormatDebugRow(13, 1003));
+  expected_rows.push_back(this->setup_.FormatDebugRow(14, 1004));
+  expected_rows.push_back(this->setup_.FormatDebugRow(15, 1005));
+  expected_rows.push_back(this->setup_.FormatDebugRow(16, 1006));
+  expected_rows.push_back(this->setup_.FormatDebugRow(20, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(21, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(22, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(23, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(24, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(25, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(26, 0));
+
+  std::sort(expected_rows.begin(), expected_rows.end());
+
+  ASSERT_EQ(expected_rows.size(), out_rows.size());
+
   // Verify that all the inserts and updates arrived and persisted.
-  LOG(INFO) << "Results:\n" << JoinStrings(out_rows, "\n");
+  LOG(INFO) << "Expected: " << JoinStrings(expected_rows, "\n");
 
-  ASSERT_EQ(14, out_rows.size());
-  vector<string>::const_iterator it = out_rows.begin();
+  // Verify that all the inserts and updates arrived and persisted.
+  LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
-  ASSERT_EQ(this->setup_.FormatDebugRow(10, 1000), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(11, 1001), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(12, 1002), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(13, 1003), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(14, 1004), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(15, 1005), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(16, 1006), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(20, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(21, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(22, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(23, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(24, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(25, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(26, 0), *it); it++;
+  vector<string>::const_iterator exp_it = expected_rows.begin();
+  for (vector<string>::const_iterator out_it = out_rows.begin(); out_it!= out_rows.end();) {
+    ASSERT_EQ(*out_it, *exp_it); out_it++; exp_it++;
+  }
 }
 
 // Test for compaction with concurrent update and insert during the
@@ -579,26 +589,36 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
   std::sort(out_rows.begin(), out_rows.end());
 
+  vector<string> expected_rows;
+  expected_rows.push_back(this->setup_.FormatDebugRow(10, 1000));
+  expected_rows.push_back(this->setup_.FormatDebugRow(11, 1001));
+  expected_rows.push_back(this->setup_.FormatDebugRow(12, 1002));
+  expected_rows.push_back(this->setup_.FormatDebugRow(13, 1003));
+  expected_rows.push_back(this->setup_.FormatDebugRow(14, 1004));
+  expected_rows.push_back(this->setup_.FormatDebugRow(15, 1005));
+  expected_rows.push_back(this->setup_.FormatDebugRow(16, 1006));
+  expected_rows.push_back(this->setup_.FormatDebugRow(20, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(21, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(22, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(23, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(24, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(25, 0));
+  expected_rows.push_back(this->setup_.FormatDebugRow(26, 0));
+
+  std::sort(expected_rows.begin(), expected_rows.end());
+
+  ASSERT_EQ(expected_rows.size(), out_rows.size());
+
+  // Verify that all the inserts and updates arrived and persisted.
+  LOG(INFO) << "Expected: " << JoinStrings(expected_rows, "\n");
+
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
-  ASSERT_EQ(14, out_rows.size());
-  vector<string>::const_iterator it = out_rows.begin();
-
-  ASSERT_EQ(this->setup_.FormatDebugRow(10, 1000), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(11, 1001), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(12, 1002), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(13, 1003), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(14, 1004), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(15, 1005), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(16, 1006), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(20, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(21, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(22, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(23, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(24, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(25, 0), *it); it++;
-  ASSERT_EQ(this->setup_.FormatDebugRow(26, 0), *it); it++;
+  vector<string>::const_iterator exp_it = expected_rows.begin();
+  for (vector<string>::const_iterator out_it = out_rows.begin(); out_it!= out_rows.end();) {
+    ASSERT_EQ(*out_it, *exp_it); out_it++; exp_it++;
+  }
 }
 
 } // namespace tablet

@@ -30,10 +30,63 @@ class KeyEncoder : boost::noncopyable {
 public:
   explicit KeyEncoder(faststring *dst) : dst_(dst) {}
 
+  const Slice ResetBufferAndEncodeToSlice(DataType type, const Slice &key) {
+    Reset();
+    dst_->append(key.data(), key.size());
+    return Slice(*dst_);
+  }
+
+  const Slice ResetBufferAndEncodeToSlice(DataType type, const void* key) {
+    Reset();
+    switch (type) {
+      case UINT32:
+        EncodeUInt32(*reinterpret_cast<const uint32_t*>(key), false);
+        break;
+      case INT32:
+        EncodeInt32(*reinterpret_cast<const int32_t*>(key), false);
+        break;
+      case STRING:
+        const Slice* slice = reinterpret_cast<const Slice *>(key);
+        dst_->append(slice->data(), slice->size());
+        break;
+    }
+    return Slice(*dst_);
+  }
+
+  const Slice ResetBufferAndEncodeToSlice(DataType type, uint32_t key) {
+    Reset();
+    switch (type) {
+      case UINT32:
+        EncodeUInt32(key, false);
+        break;
+      case INT32:
+        EncodeInt32(key, false);
+        break;
+      default:
+        CHECK(false) << "Unexpected Type";
+    }
+    return Slice(*dst_);
+  }
+
+  void Reset() {
+    dst_->clear();
+  }
+
+  faststring* Buffer() {
+    return dst_;
+  }
+
   void EncodeUInt32(uint32_t x, bool is_last) {
     // Byteswap so it is correctly comparable
     x = htonl(x);
+    dst_->append(reinterpret_cast<uint8_t *>(&x), sizeof(x));
+  }
 
+  void EncodeInt32(int32_t x, bool is_last) {
+    // flip the sign bit
+    x ^= 1 << 31;
+    // Byteswap so it is correctly comparable
+    x = htonl(x);
     dst_->append(reinterpret_cast<uint8_t *>(&x), sizeof(x));
   }
 

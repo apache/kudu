@@ -178,7 +178,7 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   DeltaKey(idx, txid_t(0)).EncodeTo(&tmp_buf_);
   Slice key_slice(tmp_buf_);
 
-  Status s = index_iter_->SeekAtOrBefore(&key_slice);
+  Status s = index_iter_->SeekAtOrBefore(key_slice);
   if (PREDICT_FALSE(s.IsNotFound())) {
     // Seeking to a value before the first value in the file
     // will return NotFound, due to the way the index seek
@@ -229,8 +229,7 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
 }
 
 Status DeltaFileIterator::GetFirstRowIndexInCurrentBlock(rowid_t *idx) {
-  Slice index_entry(*DCHECK_NOTNULL(reinterpret_cast<const Slice *>(
-                                      index_iter_->GetCurrentKey())));
+  Slice index_entry = index_iter_->GetCurrentKey();
   DeltaKey k;
   RETURN_NOT_OK(k.DecodeFrom(&index_entry));
   *idx = k.row_idx();

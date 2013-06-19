@@ -28,6 +28,8 @@ inline EncodingType GetDefaultEncoding(DataType type) {
   switch (type) {
     case STRING:
       return PREFIX;
+    case INT32:
+      return PLAIN;
     case UINT32:
       return GROUP_VARINT;
     default:

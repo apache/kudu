@@ -19,6 +19,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "util/rle-encoding.h"
 #include "util/status.h"
+#include "common/key_encoder.h"
 
 namespace kudu {
 
@@ -195,6 +196,9 @@ private:
   DataType datatype_;
   const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
+
+  // a temporary buffer for encoding
+  faststring tmp_buf_;
 
   // Metadata which has been added to the writer but not yet flushed.
   vector<pair<string, string> > unflushed_metadata_;

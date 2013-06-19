@@ -4,34 +4,31 @@
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
 #include "cfile/index_btree.h"
+#include "common/key_encoder.h"
 
 namespace kudu {
 namespace cfile {
 
-
 IndexTreeBuilder::IndexTreeBuilder(
   const WriterOptions *options,
-  DataType type,
   Writer *writer) :
   options_(options),
-  writer_(writer),
-  type_info_(GetTypeInfo(type)) {
-
+  writer_(writer) {
   idx_blocks_.push_back(CreateBlockBuilder(true));
 }
 
 
 IndexBlockBuilder *IndexTreeBuilder::CreateBlockBuilder(bool is_leaf) {
-  return new IndexBlockBuilder(options_, type_info_.type(), is_leaf);
+  return new IndexBlockBuilder(options_, is_leaf);
 }
 
-Status IndexTreeBuilder::Append(const void *key,
+Status IndexTreeBuilder::Append(const Slice &key,
                                 const BlockPointer &block) {
   return Append(key, block, 0);
 }
 
 Status IndexTreeBuilder::Append(
-  const void *key, const BlockPointer &block_ptr,
+  const Slice &key, const BlockPointer &block_ptr,
   size_t level) {
   if (level >= idx_blocks_.size()) {
     // Need to create a new level
@@ -103,9 +100,8 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
   RETURN_NOT_OK(FinishAndWriteBlock(level, &idx_block_ptr));
 
   // Get the first key of the finished block.
-  char space[type_info_.size()];
-  void *first_in_idx_block = space;
-  Status s = idx_block.GetFirstKey(first_in_idx_block);
+  Slice first_in_idx_block;
+  Status s = idx_block.GetFirstKey(&first_in_idx_block);
 
   if (!s.ok()) {
     LOG(ERROR) << "Unable to get first key of level-" << level
@@ -147,211 +143,166 @@ Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer *written
 
 ////////////////////////////////////////////////////////////
 
-template <DataType KeyTypeEnum>
-class TemplatizedIndexTreeIterator : public IndexTreeIterator {
-public:
-  typedef DataTypeTraits<KeyTypeEnum> KeyTypeTraits;
-  typedef typename KeyTypeTraits::cpp_type KeyType;
 
-  explicit TemplatizedIndexTreeIterator(
-    const CFileReader *reader,
-    const BlockPointer &root_blockptr)
+IndexTreeIterator::IndexTreeIterator(const CFileReader *reader,
+                                              const BlockPointer &root_blockptr)
     : reader_(reader),
-      root_block_(root_blockptr)
-  {}
+      root_block_(root_blockptr) {
+}
 
-  Status SeekAtOrBefore(const void *search_key) {
-    KeyType key = *reinterpret_cast<const KeyType *>(search_key);
-    return SeekDownward(key, root_block_, 0);
+Status IndexTreeIterator::SeekAtOrBefore(const Slice &search_key) {
+  return SeekDownward(search_key, root_block_, 0);
+}
+
+Status IndexTreeIterator::SeekToFirst() {
+  return SeekToFirstDownward(root_block_, 0);
+}
+
+bool IndexTreeIterator::HasNext() {
+  for (int i = seeked_indexes_.size() - 1; i >= 0; i--) {
+    if (seeked_indexes_[i].iter.HasNext())
+      return true;
   }
+  return false;
+}
 
-  Status SeekToFirst() {
-    return SeekToFirstDownward(root_block_, 0);
-  }
+Status IndexTreeIterator::Next() {
+  CHECK(!seeked_indexes_.empty()) << "not seeked";
 
-  bool HasNext() {
-    for (int i = seeked_indexes_.size() - 1;
-         i >= 0;
-         i--) {
-      if (seeked_indexes_[i].iter.HasNext())
-        return true;
-    }
-    return false;
-  }
-
-  Status Next() {
-    CHECK(!seeked_indexes_.empty()) <<
-      "not seeked";
-
-    // Start at the bottom level of the BTree, calling Next(),
-    // until one succeeds. If any does not succeed, then
-    // that block is exhausted, and gets removed.
-    while (!seeked_indexes_.empty()) {
-      Status s = BottomIter()->Next();
-      if (s.IsNotFound()) {
-        seeked_indexes_.pop_back();
-      } else if (s.ok()) {
-        break;
-      } else {
-        // error
-        return s;
-      }
-    }
-
-    // If we're now empty, then the root block was exhausted,
-    // so we're entirely out of data.
-    if (seeked_indexes_.empty()) {
-      return Status::NotFound("end of iterator");
-    }
-
-    // Otherwise, the last layer points to the valid
-    // next block. Propagate downward if it is not a leaf.
-    while (!BottomReader()->IsLeaf()) {
-      RETURN_NOT_OK(LoadBlock(BottomIter()->GetCurrentBlockPointer(),
-                              seeked_indexes_.size()));
-      RETURN_NOT_OK(BottomIter()->SeekToIndex(0));
-    }
-
-    return Status::OK();
-  }
-
-  const void *GetCurrentKey() const {
-    return seeked_indexes_.back().iter.GetCurrentKey();
-  }
-
-  const BlockPointer &GetCurrentBlockPointer() const {
-    return seeked_indexes_.back().iter.GetCurrentBlockPointer();
-  }
-
-private:
-  IndexBlockIterator<KeyTypeEnum> *BottomIter() {
-    return &seeked_indexes_.back().iter;
-  }
-
-  IndexBlockReader<KeyTypeEnum> *BottomReader() {
-    return &seeked_indexes_.back().reader;
-  }
-
-  IndexBlockIterator<KeyTypeEnum> *seeked_iter(int depth) {
-    return &seeked_indexes_[depth].iter;
-  }
-
-  IndexBlockReader<KeyTypeEnum> *seeked_reader(int depth) {
-    return &seeked_indexes_[depth].reader;
-  }
-  
-  Status LoadBlock(const BlockPointer &block, int depth) {
-    
-    SeekedIndex *seeked;
-    if (depth < seeked_indexes_.size()) {
-      // We have a cached instance from previous seek.
-      seeked = &seeked_indexes_[depth];
-
-      if (seeked->block_ptr.offset() == block.offset()) {
-        // We're already seeked to this block - no need to re-parse it.
-        // This is handy on the root block as well as for the case
-        // when a lot of requests are traversing down the same part of
-        // the tree.
-        return Status::OK();
-      }
-
-      // Seeked to a different block: reset the reader
-      seeked->reader.Reset();
-      seeked->iter.Reset();
+  // Start at the bottom level of the BTree, calling Next(),
+  // until one succeeds. If any does not succeed, then
+  // that block is exhausted, and gets removed.
+  while (!seeked_indexes_.empty()) {
+    Status s = BottomIter()->Next();
+    if (s.IsNotFound()) {
+      seeked_indexes_.pop_back();
+    } else if (s.ok()) {
+      break;
     } else {
-      // No cached instance, make a new one.
-      seeked_indexes_.push_back(new SeekedIndex());
-      seeked = &seeked_indexes_.back();
+      // error
+      return s;
     }
-
-    RETURN_NOT_OK(reader_->ReadBlock(block, &seeked->data));
-    seeked->block_ptr = block;
-
-    // Parse the new block.
-    RETURN_NOT_OK(seeked->reader.Parse(seeked->data.data()));
-
-    return Status::OK();
   }
 
-  Status SeekDownward(const KeyType &search_key,
-                      const BlockPointer &in_block,
-                      int cur_depth) {
+  // If we're now empty, then the root block was exhausted,
+  // so we're entirely out of data.
+  if (seeked_indexes_.empty()) {
+    return Status::NotFound("end of iterator");
+  }
 
-    // Read the block.
-    RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
-    IndexBlockIterator<KeyTypeEnum> *iter = seeked_iter(cur_depth);
+  // Otherwise, the last layer points to the valid
+  // next block. Propagate downward if it is not a leaf.
+  while (!BottomReader()->IsLeaf()) {
+    RETURN_NOT_OK(
+        LoadBlock(BottomIter()->GetCurrentBlockPointer(),
+                  seeked_indexes_.size()));
+    RETURN_NOT_OK(BottomIter()->SeekToIndex(0));
+  }
 
-    RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
+  return Status::OK();
+}
 
-    // If the block is a leaf block, we're done,
-    // otherwise recurse downward into next layer
-    // of B-Tree
-    if (seeked_reader(cur_depth)->IsLeaf()) {
-      seeked_indexes_.resize(cur_depth + 1);
+const Slice IndexTreeIterator::GetCurrentKey() const {
+  return seeked_indexes_.back().iter.GetCurrentKey();
+}
+
+const BlockPointer &IndexTreeIterator::GetCurrentBlockPointer() const {
+  return seeked_indexes_.back().iter.GetCurrentBlockPointer();
+}
+
+IndexBlockIterator *IndexTreeIterator::BottomIter() {
+  return &seeked_indexes_.back().iter;
+}
+
+IndexBlockReader *IndexTreeIterator::BottomReader() {
+  return &seeked_indexes_.back().reader;
+}
+
+IndexBlockIterator *IndexTreeIterator::seeked_iter(int depth) {
+  return &seeked_indexes_[depth].iter;
+}
+
+IndexBlockReader *IndexTreeIterator::seeked_reader(int depth) {
+  return &seeked_indexes_[depth].reader;
+}
+
+Status IndexTreeIterator::LoadBlock(const BlockPointer &block, int depth) {
+
+  SeekedIndex *seeked;
+  if (depth < seeked_indexes_.size()) {
+    // We have a cached instance from previous seek.
+    seeked = &seeked_indexes_[depth];
+
+    if (seeked->block_ptr.offset() == block.offset()) {
+      // We're already seeked to this block - no need to re-parse it.
+      // This is handy on the root block as well as for the case
+      // when a lot of requests are traversing down the same part of
+      // the tree.
       return Status::OK();
-    } else {
-      return SeekDownward(search_key,
-                          iter->GetCurrentBlockPointer(),
-                          cur_depth + 1);
     }
+
+    // Seeked to a different block: reset the reader
+    seeked->reader.Reset();
+    seeked->iter.Reset();
+  } else {
+    // No cached instance, make a new one.
+    seeked_indexes_.push_back(new SeekedIndex());
+    seeked = &seeked_indexes_.back();
   }
 
-  Status SeekToFirstDownward(const BlockPointer &in_block,
-                             int cur_depth) {
-    // Read the block.
-    RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
-    IndexBlockIterator<KeyTypeEnum> *iter = seeked_iter(cur_depth);
+  RETURN_NOT_OK(reader_->ReadBlock(block, &seeked->data));
+  seeked->block_ptr = block;
 
-    RETURN_NOT_OK(iter->SeekToIndex(0));
+  // Parse the new block.
+  RETURN_NOT_OK(seeked->reader.Parse(seeked->data.data()));
 
-    // If the block is a leaf block, we're done,
-    // otherwise recurse downward into next layer
-    // of B-Tree
-    if (seeked_reader(cur_depth)->IsLeaf()) {
-      seeked_indexes_.resize(cur_depth + 1);
-      return Status::OK();
-    } else {
-      return SeekToFirstDownward(
-        iter->GetCurrentBlockPointer(), cur_depth + 1);
-    }
+  return Status::OK();
+}
+
+Status IndexTreeIterator::SeekDownward(const Slice &search_key, const BlockPointer &in_block,
+                    int cur_depth) {
+
+  // Read the block.
+  RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
+  IndexBlockIterator *iter = seeked_iter(cur_depth);
+
+  RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
+
+  // If the block is a leaf block, we're done,
+  // otherwise recurse downward into next layer
+  // of B-Tree
+  if (seeked_reader(cur_depth)->IsLeaf()) {
+    seeked_indexes_.resize(cur_depth + 1);
+    return Status::OK();
+  } else {
+    return SeekDownward(search_key, iter->GetCurrentBlockPointer(),
+                        cur_depth + 1);
   }
+}
 
-  struct SeekedIndex {
-    SeekedIndex() :
-      iter(&reader)
-    {}
+Status IndexTreeIterator::SeekToFirstDownward(const BlockPointer &in_block, int cur_depth) {
+  // Read the block.
+  RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
+  IndexBlockIterator *iter = seeked_iter(cur_depth);
 
-    // Hold a copy of the underlying block data, which would
-    // otherwise go out of scope. The reader and iter
-    // do not themselves retain the data.
-    BlockPointer block_ptr;
-    BlockCacheHandle data;
-    IndexBlockReader<KeyTypeEnum> reader;
-    IndexBlockIterator<KeyTypeEnum> iter;
-  };
+  RETURN_NOT_OK(iter->SeekToIndex(0));
 
+  // If the block is a leaf block, we're done,
+  // otherwise recurse downward into next layer
+  // of B-Tree
+  if (seeked_reader(cur_depth)->IsLeaf()) {
+    seeked_indexes_.resize(cur_depth + 1);
+    return Status::OK();
+  } else {
+    return SeekToFirstDownward(iter->GetCurrentBlockPointer(), cur_depth + 1);
+  }
+}
 
-  const CFileReader *reader_;
-
-  BlockPointer root_block_;
-
-  ptr_vector<SeekedIndex> seeked_indexes_;
-};
-
-
-IndexTreeIterator *IndexTreeIterator::Create(
+IndexTreeIterator *IndexTreeIterator::IndexTreeIterator::Create(
     const CFileReader *reader,
     DataType type,
     const BlockPointer &root_blockptr) {
-  switch (type) {
-    case UINT32:
-      return new TemplatizedIndexTreeIterator<UINT32>(reader, root_blockptr);
-    case STRING:
-      return new TemplatizedIndexTreeIterator<STRING>(reader, root_blockptr);
-    default:
-      CHECK(0) << "invalid type: " << type;
-      break;
-  }
+  return new IndexTreeIterator(reader, root_blockptr);
 }
 
 

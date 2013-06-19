@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "cfile.pb.h"
+#include "cfile/block_cache.h"
 #include "index_block.h"
 #include "util/logging.h"
 
@@ -23,17 +24,16 @@ class IndexTreeBuilder {
 public:
   explicit IndexTreeBuilder(
     const WriterOptions *options,
-    DataType type,
     Writer *writer);
 
   // Append the given key into the index.
   // The key is copied into the builder's internal
   // memory.
-  Status Append(const void *key, const BlockPointer &block);
+  Status Append(const Slice &key, const BlockPointer &block);
   Status Finish(BTreeInfoPB *info);
 private:
   IndexBlockBuilder *CreateBlockBuilder(bool is_leaf);
-  Status Append(const void *key, const BlockPointer &block_ptr,
+  Status Append(const Slice &key, const BlockPointer &block_ptr,
                 size_t level);
 
   // Finish the current block at the given index level, and then
@@ -49,30 +49,60 @@ private:
   const WriterOptions *options_;
   Writer *writer_;
 
-  const TypeInfo &type_info_;
-
   ptr_vector<IndexBlockBuilder> idx_blocks_;
 };
 
 class IndexTreeIterator : boost::noncopyable {
 public:
-  virtual Status SeekToFirst() = 0;
-  virtual Status SeekAtOrBefore(const void *search_key) = 0;
-  virtual bool HasNext() = 0;
-  virtual Status Next() = 0;
+  explicit IndexTreeIterator(
+      const CFileReader *reader,
+      const BlockPointer &root_blockptr);
 
-  // Return a pointer to the key at which the iterator
-  // is currently seeked. This pointer will become invalid
-  // upon any non-const call.
-  virtual const void *GetCurrentKey() const = 0;
-  virtual const BlockPointer &GetCurrentBlockPointer() const = 0;
+  Status SeekToFirst();
+  Status SeekAtOrBefore(const Slice &search_key);
+  bool HasNext();
+  Status Next();
 
-  virtual ~IndexTreeIterator() {}
+  // The slice key at which the iterator
+  // is currently seeked to.
+  const Slice GetCurrentKey() const;
+  const BlockPointer &GetCurrentBlockPointer() const;
 
   static IndexTreeIterator *Create(
     const CFileReader *reader,
     DataType type,
     const BlockPointer &idx_root);
+
+private:
+  IndexBlockIterator *BottomIter();
+  IndexBlockReader *BottomReader();
+  IndexBlockIterator *seeked_iter(int depth);
+  IndexBlockReader *seeked_reader(int depth);
+  Status LoadBlock(const BlockPointer &block, int dept);
+  Status SeekDownward(const Slice &search_key, const BlockPointer &in_block,
+                      int cur_depth);
+  Status SeekToFirstDownward(const BlockPointer &in_block, int cur_depth);
+
+  struct SeekedIndex {
+    SeekedIndex() :
+      iter(&reader)
+    {}
+
+    // Hold a copy of the underlying block data, which would
+    // otherwise go out of scope. The reader and iter
+    // do not themselves retain the data.
+    BlockPointer block_ptr;
+    BlockCacheHandle data;
+    IndexBlockReader reader;
+    IndexBlockIterator iter;
+  };
+
+  const CFileReader *reader_;
+
+  BlockPointer root_block_;
+
+  ptr_vector<SeekedIndex> seeked_indexes_;
+
 };
 
 } // namespace cfile

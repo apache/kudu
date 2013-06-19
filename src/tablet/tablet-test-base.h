@@ -107,51 +107,53 @@ public:
 
 // Setup for testing integer keys
 struct IntKeyTestSetup {
-public:
+ public:
   IntKeyTestSetup() :
     test_schema_(boost::assign::list_of
-                 (ColumnSchema("key", UINT32))
-                 (ColumnSchema("val", UINT32))
-                 (ColumnSchema("update_count", UINT32)), 1)
-  {}
-
-  void BuildRowKey(RowBuilder *rb, uint64_t i) {
-    rb->AddUint32((uint32_t)i);
+              (ColumnSchema("key", INT32))
+              (ColumnSchema("val", UINT32))
+              (ColumnSchema("update_count", UINT32)), 1) {
   }
 
-  void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {
+  void BuildRowKey(RowBuilder *rb, int64_t i) {
+    rb->AddInt32((int32_t) i * (i % 2 == 0 ? -1 : 1));
+  }
+
+  void BuildRow(RowBuilder *rb, int64_t row_idx,
+                uint32_t update_count_val = 0) {
     BuildRowKey(rb, row_idx);
-    rb->AddUint32((uint32_t)row_idx);
+    rb->AddUint32((int32_t) row_idx);
     rb->AddUint32(update_count_val);
   }
 
-  const Schema &test_schema() const { return test_schema_; }
-
-  string FormatDebugRow(uint64_t row_idx, uint32_t update_count) {
-    return StringPrintf(
-      "(uint32 key=%d, uint32 val=%ld, uint32 update_count=%d)",
-      (uint32_t)row_idx, row_idx, update_count);
+  const Schema &test_schema() const {
+    return test_schema_;
   }
 
-  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
-    uint32_t row_key = row_idx;
+  string FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+    return StringPrintf("(int32 key=%d, uint32 val=%ld, uint32 update_count=%d)",
+        (int32_t) row_idx * (row_idx % 2 == 0 ? -1 : 1), row_idx, update_count);
+  }
+
+  Status DoUpdate(Tablet *tablet, int64_t row_idx, uint32_t *new_val) {
+    int32_t row_key = row_idx * (row_idx % 2 == 0 ? -1 : 1);
     faststring buf;
-    *new_val = 10000 + row_idx;
+    *new_val = (10000 + row_idx) * (row_idx % 2 == 0 ? -1 : 1);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
     return tablet->MutateRow(&row_key, RowChangeList(buf));
   }
 
-  template <class RowType>
+  template<class RowType>
   uint64_t GetRowIndex(const RowType& row) const {
     return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
   }
 
-  template <class RowType>
+  template<class RowType>
   uint64_t GetRowValueAfterUpdate(const RowType& row) const {
     return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
   }
 
-  bool ShouldUpdateRow(uint64_t row_idx) const {
+  bool ShouldUpdateRow(int64_t row_idx) const {
     return (row_idx % 15) == 0;
   }
 

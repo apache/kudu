@@ -39,15 +39,16 @@ static Status CopyRowToArena(const Slice &row,
 // Test basic functionality of Schema definition
 TEST(TestSchema, TestSchema) {
   ColumnSchema col1("key", STRING);
-  ColumnSchema col2("val", UINT32);
+  ColumnSchema col2("uint32val", UINT32);
+  ColumnSchema col3("int32val", INT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
-    (col1)(col2);
+    (col1)(col2)(col3);
   Schema schema(cols, 1);
 
-  ASSERT_EQ(sizeof(Slice) + sizeof(uint32_t),
+  ASSERT_EQ(sizeof(Slice) + sizeof(uint32_t) + sizeof(int32_t),
             schema.byte_size());
-  ASSERT_EQ(2, schema.num_columns());
+  ASSERT_EQ(3, schema.num_columns());
   ASSERT_EQ(0, schema.column_offset(0));
   ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
 }
@@ -115,7 +116,8 @@ TEST(TestSchema, TestRowOperations) {
   Schema schema(boost::assign::list_of
                  (ColumnSchema("col1", STRING))
                  (ColumnSchema("col2", STRING))
-                 (ColumnSchema("col3", UINT32)),
+                 (ColumnSchema("col3", UINT32))
+                 (ColumnSchema("col4", INT32)),
                  1);
 
   Arena arena(1024, 256*1024);
@@ -124,6 +126,7 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddString(string("row_a_1"));
   rb.AddString(string("row_a_2"));
   rb.AddUint32(3);
+  rb.AddInt32(-3);
   ContiguousRow row_a(schema);
   ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
 
@@ -131,13 +134,14 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddString(string("row_b_1"));
   rb.AddString(string("row_b_2"));
   rb.AddUint32(3);
+  rb.AddInt32(-3);
   ContiguousRow row_b(schema);
   ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
 
   ASSERT_GT(schema.Compare(row_b, row_a), 0);
   ASSERT_LT(schema.Compare(row_a, row_b), 0);
 
-  ASSERT_EQ(string("(string col1=row_a_1, string col2=row_a_2, uint32 col3=3)"),
+  ASSERT_EQ(string("(string col1=row_a_1, string col2=row_a_2, uint32 col3=3, int32 col4=-3)"),
             schema.DebugRow(row_a));
 }
 

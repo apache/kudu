@@ -83,6 +83,8 @@ class DataGenerator {
     return values_[index];
   }
 
+  virtual ~DataGenerator(){}
+
  private:
   gscoped_array<T> values_;
   gscoped_array<uint8_t> null_bitmap_;
@@ -93,7 +95,14 @@ class DataGenerator {
 class UInt32DataGenerator : public DataGenerator<uint32_t> {
  public:
   uint32_t BuildTestValue(size_t block_index, size_t value) {
-    return value;
+    return value * 10;
+  }
+};
+
+class Int32DataGenerator : public DataGenerator<int32_t> {
+ public:
+  int32_t BuildTestValue(size_t block_index, size_t value) {
+    return (value * 10) *(value % 2 == 0 ? -1 : 1);
   }
 };
 
@@ -160,6 +169,124 @@ class TestCFile : public CFileTestBase {
     }
 
     ASSERT_STATUS_OK(w.Finish());
+  }
+
+  template <class DataGeneratorType, DataType data_type>
+  void WriteTestFileFixedSizeTypes(const string &path,
+                                   EncodingType encoding,
+                                   CompressionType compression,
+                                   int num_entries) {
+    shared_ptr<WritableFile> sink;
+    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    WriterOptions opts;
+    opts.write_posidx = true;
+    opts.block_size = 128;
+    opts.compression = compression;
+    Writer w(opts, data_type, false, encoding, sink);
+
+    ASSERT_STATUS_OK(w.Start());
+
+    DataGeneratorType data_generator;
+
+    // Append given number of values to the test tree
+    const size_t kBufferSize = 8192;
+    size_t i = 0;
+    while (i < num_entries) {
+      int towrite = std::min(num_entries - i, kBufferSize);
+
+      data_generator.Build(towrite);
+      DCHECK_EQ(towrite, data_generator.block_entries());
+
+      ASSERT_STATUS_OK_FAST(w.AppendEntries(data_generator.values(), towrite));
+      i += towrite;
+    }
+
+    ASSERT_STATUS_OK(w.Finish());
+  }
+
+  template <class DataGeneratorType, DataType data_type>
+  void TestReadWriteFixedSizeTypes(EncodingType encoding) {
+    Env *env = env_.get();
+
+    const string path = GetTestPath("cfile");
+    WriteTestFileFixedSizeTypes<DataGeneratorType, data_type>(path, encoding,
+                                                              NO_COMPRESSION,
+                                                              10000);
+
+    gscoped_ptr<CFileReader> reader;
+    ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
+
+    BlockPointer ptr;
+
+    gscoped_ptr<CFileIterator> iter;
+    ASSERT_STATUS_OK( reader->NewIterator(&iter) );
+
+    ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
+    ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
+
+    // Seek to last key exactly, should succeed
+    ASSERT_STATUS_OK(iter->SeekToOrdinal(9999));
+    ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
+
+    // Seek to after last key. Should result in not found.
+    ASSERT_TRUE(iter->SeekToOrdinal(10000).IsNotFound());
+
+    // Seek to start of file
+    ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+    ASSERT_EQ(0u, iter->GetCurrentOrdinal());
+
+    // Fetch all data.
+    ScopedColumnBlock<data_type> out(10000);
+    size_t n = 10000;
+    ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out));
+    ASSERT_EQ(10000, n);
+
+    DataGeneratorType data_generator_pre;
+
+    for (int i = 0; i < 10000; i++) {
+      if (out[i] != data_generator_pre.BuildTestValue(0,i)) {
+        FAIL() << "mismatch at index " << i
+               << " expected: " << data_generator_pre.BuildTestValue(0,i)
+               << " got: " << out[i];
+      }
+      out[i] = 0;
+    }
+
+    // Fetch all data using small batches of only a few rows.
+    // This should catch edge conditions like a batch lining up exactly
+    // with the end of a block.
+    unsigned int seed = time(NULL);
+    LOG(INFO) << "Using random seed: " << seed;
+    srand(seed);
+    iter->SeekToOrdinal(0);
+    size_t fetched = 0;
+    while (fetched < 10000) {
+      ColumnBlock advancing_block(out.type_info(), NULL,
+                                  out.data() + (fetched * out.stride()),
+                                  out.nrows() - fetched, out.arena());
+      ASSERT_TRUE(iter->HasNext());
+      size_t batch_size = random() % 5 + 1;
+      size_t n = batch_size;
+      ASSERT_STATUS_OK(iter->CopyNextValues(&n, &advancing_block));
+      ASSERT_LE(n, batch_size);
+      fetched += n;
+    }
+    ASSERT_FALSE(iter->HasNext());
+
+    DataGeneratorType data_generator_post;
+
+    // Re-verify
+    for (int i = 0; i < 10000; i++) {
+      if (out[i] != data_generator_post.BuildTestValue(0,i)) {
+        FAIL() << "mismatch at index " << i
+               << " expected: " << data_generator_post.BuildTestValue(0,i)
+               << " got: " << out[i];
+      }
+      out[i] = 0;
+    }
+
+    TimeReadFile(path, &n);
+    ASSERT_EQ(10000, n);
   }
 
   template <class DataGeneratorType, DataType data_type>
@@ -276,7 +403,7 @@ TEST_F(TestCFile, TestWrite100MFileInts) {
   const string path = GetTestPath("Test100M");
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileInts(path, GROUP_VARINT, NO_COMPRESSION, 100000000);
+    WriteTestFileUInt32(path, GROUP_VARINT, NO_COMPRESSION, 100000000);
     LOG(INFO) << "Done writing";
   }
 
@@ -308,83 +435,13 @@ TEST_F(TestCFile, TestWrite100MFileStrings) {
 }
 #endif
 
-TEST_F(TestCFile, TestReadWriteInts) {
-  Env *env = env_.get();
+TEST_F(TestCFile, TestFixedSizeReadWriteUInt32) {
+  TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT);
+  TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(PLAIN);
+}
 
-  const string path = GetTestPath("cfile");
-  WriteTestFileInts(path, GROUP_VARINT, NO_COMPRESSION, 10000);
-
-  gscoped_ptr<CFileReader> reader;
-  ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
-
-  BlockPointer ptr;
-
-  gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK( reader->NewIterator(&iter) );
-
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
-  ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
-
-  // Seek to last key exactly, should succeed
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(9999));
-  ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
-
-  // Seek to after last key. Should result in not found.
-  ASSERT_TRUE(iter->SeekToOrdinal(10000).IsNotFound());
-
-  // Seek to start of file
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
-  ASSERT_EQ(0u, iter->GetCurrentOrdinal());
-
-  // Fetch all data.
-  ScopedColumnBlock<UINT32> out(10000);
-  size_t n = 10000;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out));
-  ASSERT_EQ(10000, n);
-
-  for (int i = 0; i < 10000; i++) {
-    if (out[i] != i * 10) {
-      FAIL() << "mismatch at index " << i
-             << " expected: " << (i * 10)
-             << " got: " << out[i];
-    }
-    out[i] = 0;
-  }
-
-
-  // Fetch all data using small batches of only a few rows.
-  // This should catch edge conditions like a batch lining up exactly
-  // with the end of a block.
-  unsigned int seed = time(NULL);
-  LOG(INFO) << "Using random seed: " << seed;
-  srand(seed);
-  iter->SeekToOrdinal(0);
-  size_t fetched = 0;
-  while (fetched < 10000) {
-    ColumnBlock advancing_block(out.type_info(), NULL,
-                                out.data() + (fetched * out.stride()),
-                                out.nrows() - fetched, out.arena());
-    ASSERT_TRUE(iter->HasNext());
-    size_t batch_size = random() % 5 + 1;
-    size_t n = batch_size;
-    ASSERT_STATUS_OK(iter->CopyNextValues(&n, &advancing_block));
-    ASSERT_LE(n, batch_size);
-    fetched += n;
-  }
-  ASSERT_FALSE(iter->HasNext());
-
-  // Re-verify
-  for (int i = 0; i < 10000; i++) {
-    if (out[i] != i * 10) {
-      FAIL() << "mismatch at index " << i
-             << " expected: " << (i * 10)
-             << " got: " << out[i];
-    }
-    out[i] = 0;
-  }
-
-  TimeReadFile(path, &n);
-  ASSERT_EQ(10000, n);
+TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
+  TestReadWriteFixedSizeTypes<Int32DataGenerator, INT32>(PLAIN);
 }
 
 TEST_F(TestCFile, TestReadWriteStrings) {

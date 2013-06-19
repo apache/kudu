@@ -60,6 +60,18 @@ struct DataTypeTraits<UINT32> {
 };
 
 template<>
+struct DataTypeTraits<INT32> {
+  typedef int32_t cpp_type;
+  static const char *name() {
+    return "int32";
+  }
+  static void AppendDebugStringForValue(const void *val, string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const int32_t *>(val)));
+  }
+  static int Compare(const void *lhs, const void *rhs);
+};
+
+template<>
 struct DataTypeTraits<STRING> {
   typedef Slice cpp_type;
   static const char *name() {

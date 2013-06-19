@@ -20,6 +20,7 @@
 #include "util/memory/arena.h"
 #include "util/object_pool.h"
 #include "util/status.h"
+#include "common/key_encoder.h"
 
 namespace kudu {
 
@@ -169,6 +170,7 @@ private:
 
   BlockCache *cache_;
   BlockCache::FileId cache_id_;
+
 };
 
 
@@ -330,6 +332,9 @@ private:
   uint32_t last_prepare_count_;
 
   IOStatistics io_stats_;
+
+  // a temporary buffer for encoding
+  faststring tmp_buf_;
 };
 
 

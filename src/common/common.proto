@@ -4,5 +4,6 @@ package kudu;
 
 enum DataType {
   UINT32 = 0;
-  STRING = 1;
+  INT32 = 1;
+  STRING = 3;
 }

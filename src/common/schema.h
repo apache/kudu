@@ -312,6 +312,9 @@ public:
         case UINT32:
           enc.EncodeUInt32(*ExtractColumnFromRow<UINT32>(row, i), is_last);
           break;
+        case INT32:
+          enc.EncodeInt32(*ExtractColumnFromRow<INT32>(row, i), is_last);
+          break;
         case STRING:
           enc.EncodeBytes(*ExtractColumnFromRow<STRING>(row, i), is_last);
           break;

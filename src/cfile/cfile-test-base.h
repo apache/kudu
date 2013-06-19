@@ -63,7 +63,7 @@ protected:
     ASSERT_STATUS_OK(w.Finish());
   }
 
-  void WriteTestFileInts(const string &path,
+  void WriteTestFileUInt32(const string &path,
                          EncodingType encoding,
                          CompressionType compression,
                          int num_entries) {
@@ -103,7 +103,7 @@ protected:
 
 // Fast unrolled summing of a vector.
 // GCC's auto-vectorization doesn't work here, because there isn't
-// enough guarantees on alignment and it can't seem to decude the
+// enough guarantees on alignment and it can't seem to decode the
 // constant stride.
 template<class Indexable>
 uint64_t FastSum(const Indexable &data, size_t n) {
@@ -125,6 +125,22 @@ uint64_t FastSum(const Indexable &data, size_t n) {
   return sums[0] + sums[1] + sums[2] + sums[3];
 }
 
+template<DataType Type>
+static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count){
+  ScopedColumnBlock<Type> cb(8192);
+
+  uint64_t sum = 0;
+  while (iter->HasNext()) {
+    size_t n = cb.nrows();
+    ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
+    sum += FastSum(cb, n);
+    count += n;
+    cb.arena()->Reset();
+  }
+  LOG(INFO)<< "Sum: " << sum;
+  LOG(INFO)<< "Count: " << count;
+}
+
 static void TimeReadFile(const string &path, size_t *count_ret) {
   Env *env = Env::Default();
   Status s;
@@ -141,6 +157,12 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
   switch (reader->data_type()) {
     case UINT32:
     {
+      TimeReadFileForDataType<UINT32>(iter, count);
+      break;
+    }
+    case INT32:
+    {
+      TimeReadFileForDataType<INT32>(iter, count);
       ScopedColumnBlock<UINT32> cb(8192);
 
       uint64_t sum = 0;

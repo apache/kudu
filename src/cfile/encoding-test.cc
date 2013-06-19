@@ -12,6 +12,7 @@
 #include "cfile/gvint_block.h"
 #include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
+#include "cfile/plain_block.h"
 #include "common/columnblock.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
@@ -325,8 +326,78 @@ protected:
     ASSERT_FALSE(bd.HasNext());
   }
 
+  template <DataType Type>
+  void TestEncodeDecodePlainBlockEncoder(typename TypeTraits<Type>::cpp_type* src, uint32_t size) {
+
+    typedef typename TypeTraits<Type>::cpp_type CppType;
+
+    const uint32_t kOrdinalPosBase = 12345;
+
+    gscoped_ptr<WriterOptions> opts(new WriterOptions());
+    PlainBlockBuilder<Type> pbb(opts.get());
+
+    pbb.Add(reinterpret_cast<const uint8_t *>(src), size);
+    Slice s = pbb.Finish(kOrdinalPosBase);
+
+    LOG(INFO)<< "Encoded size for 10k elems: " << s.size();
+
+    PlainBlockDecoder<Type> pbd(s);
+    ASSERT_STATUS_OK(pbd.ParseHeader());
+    ASSERT_EQ(kOrdinalPosBase, pbd.ordinal_pos());
+
+    std::vector<CppType> decoded;
+    decoded.resize(size);
+
+    ColumnBlock dst_block(GetTypeInfo(Type), NULL, &decoded[0], size, &arena_);
+    ColumnDataView view (&dst_block);
+    int dec_count = 0;
+    while (pbd.HasNext()) {
+      ASSERT_EQ((int32_t )(kOrdinalPosBase + dec_count), pbd.ordinal_pos());
+
+      size_t to_decode = (random() % 30) + 1;
+      size_t n = to_decode > view.nrows() ? view.nrows() : to_decode;
+      ASSERT_STATUS_OK_FAST(pbd.CopyNextValues(&n, &view));
+      ASSERT_GE(to_decode, n);
+      view.Advance(n);
+      dec_count += n;
+    }
+
+    ASSERT_EQ(0, view.nrows())<< "Should have no space left in the buffer after "
+        << "decoding all rows";
+
+    for (uint i = 0; i < size; i++) {
+      if (src[i] != decoded[i]) {
+        FAIL()<< "Fail at index " << i <<
+            " inserted=" << src[i] << " got=" << decoded[i];
+      }
+    }
+
+    // Test Seek within block by ordinal
+    for (int i = 0; i < 100; i++) {
+      int seek_off = random() % decoded.size();
+      pbd.SeekToPositionInBlock(seek_off);
+
+      EXPECT_EQ((int32_t )(kOrdinalPosBase + seek_off), pbd.ordinal_pos());
+      CppType ret;
+      CopyOne<Type>(&pbd, &ret);
+      EXPECT_EQ(decoded[seek_off], ret);
+    }
+  }
+
   Arena arena_;
 };
+
+TEST_F(TestEncoding, TestPlainBlockEncoder) {
+  const uint32_t kSize = 10000;
+
+  int32_t *ints = new int32_t[kSize];
+  for (int i = 0; i < kSize; i++) {
+    ints[i] = random();
+  }
+
+  TestEncodeDecodePlainBlockEncoder<INT32>(ints, kSize);
+
+}
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
