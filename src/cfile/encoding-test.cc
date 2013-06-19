@@ -390,13 +390,12 @@ protected:
 TEST_F(TestEncoding, TestPlainBlockEncoder) {
   const uint32_t kSize = 10000;
 
-  int32_t *ints = new int32_t[kSize];
+  gscoped_ptr<int32_t> ints(new int32_t[kSize]);
   for (int i = 0; i < kSize; i++) {
-    ints[i] = random();
+    ints.get()[i] = random();
   }
 
-  TestEncodeDecodePlainBlockEncoder<INT32>(ints, kSize);
-
+  TestEncodeDecodePlainBlockEncoder<INT32>(ints.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
