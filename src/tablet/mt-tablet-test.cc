@@ -51,6 +51,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   typedef TabletTestBase<SETUP> superclass;
   using superclass::schema_;
   using superclass::tablet_;
+  using superclass::setup_;
 public:
   MultiThreadedTabletTest() :
     running_insert_count_(FLAGS_num_insert_threads),
@@ -83,6 +84,10 @@ public:
     faststring update_buf;
 
     uint64_t updates_since_last_report = 0;
+    int col_idx = schema.num_key_columns() == 1 ? 2 : 3;
+    LOG(INFO) << "Update thread using schema: " << schema.ToString();
+    RowBuilder rb(schema.CreateKeyProjection());
+
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
       CHECK_OK(tablet_->NewRowIterator(schema_, &iter));
@@ -99,16 +104,17 @@ public:
           continue;
         }
 
+        rb.Reset();
         // The key is at the start of the row
-        const uint8_t *row_key = rb_row.cell_ptr(schema, 0); // TODO: Fix me on multiple keys
+        setup_.BuildRowKey(&rb, rb_row.row_index());
         if (rand() % 10 == 7) {
           // Increment the "update count"
-          uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(rb_row, 2);
+          uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(rb_row, col_idx);
           // Issue an update
           uint32_t new_val = old_val + 1;
           update_buf.clear();
-          RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(2, &new_val);
-          CHECK_OK(tablet_->MutateRow(row_key, RowChangeList(update_buf)));
+          RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
+          CHECK_OK(tablet_->MutateRow(rb.data().data(), RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
             updates->AddValue(updates_since_last_report);

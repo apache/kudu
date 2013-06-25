@@ -131,7 +131,7 @@ protected:
     Slice key_slice(buf);
 
     ScopedTransaction tx(&mvcc_);
-    return rs->MutateRow(tx.txid(), &key_slice, mutation);
+    return rs->MutateRow(tx.txid(), RowSetKeyProbe(schema_, &key_slice), mutation);
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {

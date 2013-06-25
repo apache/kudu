@@ -406,16 +406,14 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx) {
   DCHECK_EQ(index_within_nonnulls + pb->first_row_idx_, pb->dblk_->ordinal_pos()) << "failed seek";
 }
 
-Status CFileIterator::SeekAtOrAfter(const void *key,
+Status CFileIterator::SeekAtOrAfter(const CFileKeyProbe &probe,
                                     bool *exact_match) {
   Unseek();
   if (PREDICT_FALSE(validx_iter_ == NULL)) {
     return Status::NotSupported("no value index present");
   }
 
-  KeyEncoder encoder(&tmp_buf_);
-  Slice slice = encoder.ResetBufferAndEncodeToSlice(reader_->type_info()->type(), key);
-  Status s = validx_iter_->SeekAtOrBefore(slice);
+  Status s = validx_iter_->SeekAtOrBefore(probe.encoded_key());
   if (PREDICT_FALSE(s.IsNotFound())) {
     // Seeking to a value before the first value in the file
     // will return NotFound, due to the way the index seek
@@ -430,7 +428,13 @@ Status CFileIterator::SeekAtOrAfter(const void *key,
     prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_, b.get()));
 
-  RETURN_NOT_OK(b->dblk_->SeekAtOrAfterValue(key, exact_match));
+  if (probe.num_key_columns() > 1) {
+    Slice slice = probe.encoded_key();
+    RETURN_NOT_OK(b->dblk_->SeekAtOrAfterValue(&slice, exact_match));
+  } else {
+    RETURN_NOT_OK(b->dblk_->SeekAtOrAfterValue(probe.raw_key(), exact_match));
+  }
+
 
   last_prepare_idx_ = b->dblk_->ordinal_pos();
   last_prepare_count_ = 0;
@@ -528,7 +532,7 @@ bool CFileIterator::HasNext() const {
   CHECK(seeked_) << "not seeked";
   CHECK(!prepared_) << "Cannot call HasNext() mid-batch";
 
-  return !prepared_blocks_.empty() || posidx_iter_->HasNext();
+  return !prepared_blocks_.empty() || seeked_->HasNext();
 }
 
 Status CFileIterator::PrepareBatch(size_t *n) {

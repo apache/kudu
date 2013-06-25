@@ -80,6 +80,10 @@ private:
 
   Status InitBloomFileWriter();
 
+  // Initializes the index writer required for compound keys
+  // this index is written to a new file instead of embedded in the col_* files
+  Status InitAdHocIndexWriter();
+
   Env *env_;
   const Schema schema_;
   const string dir_;
@@ -89,6 +93,7 @@ private:
   rowid_t written_count_;
   ptr_vector<cfile::Writer> cfile_writers_;
   gscoped_ptr<BloomFileWriter> bloom_writer_;
+  gscoped_ptr<cfile::Writer> ad_hoc_index_writer_;
 
   faststring tmp_buf_;
 };
@@ -102,6 +107,7 @@ public:
   static const char *kDeltaPrefix;
   static const char *kColumnPrefix;
   static const char *kBloomFileName;
+  static const char *kAdHocIdxFileName;
   static const char *kTmpRowSetSuffix;
 
   // Open a rowset from disk.
@@ -137,7 +143,7 @@ public:
   // 'key' should be the key portion of the row -- i.e a contiguous
   // encoding of the key columns.
   Status MutateRow(txid_t txid,
-                   const void *key,
+                   const RowSetKeyProbe &probe,
                    const RowChangeList &update);
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
@@ -173,6 +179,7 @@ public:
   static string GetColumnPath(const string &dir, int col_idx);
   static string GetDeltaPath(const string &dir, int delta_idx);
   static string GetBloomPath(const string &dir);
+  static string GetAdHocIndexPath(const string &dir);
 
 private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);

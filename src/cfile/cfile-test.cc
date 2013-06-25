@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <stdlib.h>
 
+#include <boost/assign/list_of.hpp>
 #include "common/columnblock.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
@@ -14,6 +15,7 @@
 #include "cfile-test-base.h"
 #include "cfile.h"
 #include "cfile_reader.h"
+#include "cfile.h"
 #include "cfile.pb.h"
 #include "index_block.h"
 #include "index_btree.h"
@@ -445,6 +447,10 @@ TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
 }
 
 TEST_F(TestCFile, TestReadWriteStrings) {
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("key", STRING)),
+                1);
+
   Env *env = env_.get();
 
   const int nrows = 10000;
@@ -468,6 +474,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
   Slice s;
+
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 5000"), s.ToString());
 
@@ -482,40 +489,57 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   ////////
   // Now try some seeks by the value instead of position
   /////////
+
+  faststring encoded_key;
   bool exact;
   s = "hello 5000.5";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  EncodeKey(schema, &s, &encoded_key);
+  ASSERT_STATUS_OK(
+      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_FALSE(exact);
   ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 5001"), s.ToString());
+  encoded_key.clear();
 
   s = "hello 9000";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  EncodeKey(schema, &s, &encoded_key);
+  ASSERT_STATUS_OK(
+      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_TRUE(exact);
   ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9000"), s.ToString());
+  encoded_key.clear();
 
   // after last entry
   s = "hello 9999x";
-  EXPECT_TRUE(iter->SeekAtOrAfter(&s, &exact).IsNotFound());
+  EncodeKey(schema, &s, &encoded_key);
+  EXPECT_TRUE(
+      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact).IsNotFound());
+  encoded_key.clear();
 
   // before first entry
   s = "hello";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  EncodeKey(schema, &s, &encoded_key);
+  ASSERT_STATUS_OK(
+      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_FALSE(exact);
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 0000"), s.ToString());
+  encoded_key.clear();
 
   // to last entry
   s = "hello 9999";
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(&s, &exact));
+  EncodeKey(schema, &s, &encoded_key);
+  ASSERT_STATUS_OK(
+      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_TRUE(exact);
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9999"), s.ToString());
+  encoded_key.clear();
 
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));

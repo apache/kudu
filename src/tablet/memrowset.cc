@@ -150,16 +150,11 @@ Status MemRowSet::Reinsert(txid_t txid, const Slice &row_data, MRSRow *row) {
 }
 
 Status MemRowSet::MutateRow(txid_t txid,
-                           const void *key,
-                           const RowChangeList &delta) {
-  ConstContiguousRow row_slice(schema_, key);
-
-  faststring key_buf;
-  schema_.EncodeComparableKey(row_slice, &key_buf);
-  Slice encoded_key_slice(key_buf);
-
+                            const RowSetKeyProbe &probe,
+                            const RowChangeList &delta) {
+  ConstContiguousRow row_slice(schema_, probe.raw_key());
   {
-    btree::PreparedMutation<btree::BTreeTraits> mutation(encoded_key_slice);
+    btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key());
     mutation.Prepare(&tree_);
 
     if (!mutation.exists()) {

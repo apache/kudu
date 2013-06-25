@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
@@ -68,6 +69,10 @@ void DumpFile(const string &path) {
   gscoped_ptr<CFileReader> reader;
   CHECK_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("col", reader->data_type())),
+                1);
+
   if (FLAGS_print_meta) {
     cout << "Header:\n" << reader->header().DebugString() << endl;
     cout << "Footer:\n" << reader->footer().DebugString() << endl;
@@ -77,8 +82,15 @@ void DumpFile(const string &path) {
     gscoped_ptr<CFileIterator> it;
     CHECK_OK(reader->NewIterator(&it));
 
+    faststring encoded_key;
     for (int i = 0; i < FLAGS_num_iterations; i++) {
-      CHECK_OK(it->SeekToOrdinal(0));
+      Slice empty("");
+      encoded_key.clear();
+      EncodeKey(schema, &empty, &encoded_key);
+      bool exact_match = false;
+      CHECK_OK(
+          it->SeekAtOrAfter(CFileKeyProbe(&empty, encoded_key, 1),
+                            &exact_match));
       DumpIterator(*reader, it.get());
     }
   }

@@ -30,6 +30,7 @@ using std::tr1::shared_ptr;
 const char *DiskRowSet::kDeltaPrefix = "delta_";
 const char *DiskRowSet::kColumnPrefix = "col_";
 const char *DiskRowSet::kBloomFileName = "bloom";
+const char *DiskRowSet::kAdHocIdxFileName = "idx";
 const char *DiskRowSet::kTmpRowSetSuffix = ".tmp";
 
 // Return the path at which the given column's cfile
@@ -54,6 +55,12 @@ string DiskRowSet::GetBloomPath(const string &dir) {
   return dir + "/" + kBloomFileName;
 }
 
+// Return the path at which the ad hoc index
+// is stored within the rowset directory.
+string DiskRowSet::GetAdHocIndexPath(const string &dir) {
+  return dir + "/" + kAdHocIdxFileName;
+}
+
 Status DiskRowSetWriter::Open() {
   CHECK(cfile_writers_.empty());
 
@@ -71,13 +78,14 @@ Status DiskRowSetWriter::Open() {
     // to figure out the encoding on the fly.
     cfile::WriterOptions opts;
 
-    // Index the key column by its value.
-    if (i < schema_.num_key_columns()) {
-      opts.write_validx = true;
-    }
     // Index all columns by ordinal position, so we can match up
     // the corresponding rows.
     opts.write_posidx = true;
+
+    // If the schema has a single PK and this is the PK col
+    if (i == 0 && schema_.num_key_columns() == 1) {
+      opts.write_validx = true;
+    }
 
     string path = DiskRowSet::GetColumnPath(dir_, i);
 
@@ -115,6 +123,11 @@ Status DiskRowSetWriter::Open() {
   // Open bloom filter.
   RETURN_NOT_OK(InitBloomFileWriter());
 
+  if (schema_.num_key_columns() > 1) {
+    // Open ad-hoc index writer
+    RETURN_NOT_OK(InitAdHocIndexWriter());
+  }
+
   return Status::OK();
 }
 
@@ -124,6 +137,33 @@ Status DiskRowSetWriter::InitBloomFileWriter() {
   RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
   bloom_writer_.reset(new BloomFileWriter(file, bloom_sizing_));
   return bloom_writer_->Start();
+}
+
+Status DiskRowSetWriter::InitAdHocIndexWriter() {
+  string path(DiskRowSet::GetAdHocIndexPath(dir_));
+  shared_ptr<WritableFile> file;
+  RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
+  // TODO: allow options to be configured, perhaps on a per-column
+  // basis as part of the schema. For now use defaults.
+  //
+  // Also would be able to set encoding here, or do something smart
+  // to figure out the encoding on the fly.
+  cfile::WriterOptions opts;
+
+  // Index all columns by value
+  opts.write_validx = true;
+
+  // no need to index positions
+  opts.write_posidx = false;
+
+  // Create the CFile writer for the ad-hoc index.
+  ad_hoc_index_writer_.reset(new cfile::Writer(
+      opts,
+      STRING,
+      false,
+      cfile::PREFIX,
+      file));
+  return ad_hoc_index_writer_->Start();
 }
 
 Status DiskRowSetWriter::WriteRow(const Slice &row) {
@@ -162,6 +202,18 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     }
   }
 
+  // Write the batch to the ad hoc index if we're using one
+  if (ad_hoc_index_writer_ != NULL) {
+    for (int i = 0; i < block.nrows(); i++) {
+      // TODO merge this loop with the bloom loop below to
+      // avoid re-encoding the keys
+      tmp_buf_.clear();
+      schema_.EncodeComparableKey(block.row(i), &tmp_buf_);
+      Slice encoded_key_slice(tmp_buf_);
+      RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&encoded_key_slice, 1));
+    }
+  }
+
   // Write the batch to the bloom
   for (size_t i = 0; i < block.nrows(); i++) {
     // TODO: performance might be better if we actually batch this -
@@ -190,6 +242,15 @@ Status DiskRowSetWriter::Finish() {
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish writer for column " <<
         schema_.column(i).ToString() << ": " << s.ToString();
+      return s;
+    }
+  }
+
+  if (ad_hoc_index_writer_ != NULL) {
+    // Finish bloom.
+    Status s = ad_hoc_index_writer_->Finish();
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to Finish ad hoc index writer: " << s.ToString();
       return s;
     }
   }
@@ -272,12 +333,12 @@ CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const 
 }
 
 Status DiskRowSet::MutateRow(txid_t txid,
-                        const void *key,
-                        const RowChangeList &update) {
+                             const RowSetKeyProbe &probe,
+                             const RowChangeList &update) {
   CHECK(open_);
 
   rowid_t row_idx;
-  RETURN_NOT_OK(base_data_->FindRow(key, &row_idx));
+  RETURN_NOT_OK(base_data_->FindRow(probe, &row_idx));
 
   // It's possible that the row key exists in this DiskRowSet, but it has
   // in fact been Deleted already. Check with the delta tracker to be sure.

@@ -46,7 +46,7 @@ public:
   uint64_t EstimateOnDiskSize() const;
 
   // Determine the index of the given row key.
-  Status FindRow(const void *key, rowid_t *idx) const;
+  Status FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const;
 
   const Schema &schema() const { return schema_; }
 
@@ -66,14 +66,23 @@ private:
 
   Status OpenColumns(size_t num_cols);
   Status OpenBloomReader();
+  Status OpenAdHocIndexReader();
 
   Status NewColumnIterator(size_t col_idx, CFileIterator **iter) const;
+  Status NewAdHocIndexIterator(CFileIterator **iter) const;
+
+  Status NewKeyIterator(CFileIterator **iter) const;
 
   Env *env_;
   const string dir_;
   const Schema schema_;
 
   vector<shared_ptr<CFileReader> > readers_;
+
+  // A file reader for an ad-hoc index, i.e. an index that sits in its own file
+  // and is not embedded with the column's data blocks. This is used when the
+  // index pertains to more than one column, as in the case of composite keys.
+  gscoped_ptr<CFileReader> ad_hoc_idx_reader_;
   gscoped_ptr<BloomFileReader> bloom_reader_;
 };
 

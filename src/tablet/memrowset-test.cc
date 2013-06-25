@@ -87,7 +87,7 @@ protected:
     RowChangeListEncoder update(schema_, &mutation_buf_);
     Slice key_slice = Slice(key);
     update.AddColumnUpdate(1, &new_val);
-    return mrs->MutateRow(tx.txid(), &key_slice, RowChangeList(mutation_buf_));
+    return mrs->MutateRow(tx.txid(), tablet::RowSetKeyProbe(schema_,&key_slice), RowChangeList(mutation_buf_));
   }
 
   Status DeleteRow(MemRowSet *mrs, const string &key) {
@@ -96,7 +96,7 @@ protected:
     RowChangeListEncoder update(schema_, &mutation_buf_);
     Slice key_slice = Slice(key);
     update.SetToDelete();
-    return mrs->MutateRow(tx.txid(), &key_slice, RowChangeList(mutation_buf_));
+    return mrs->MutateRow(tx.txid(), tablet::RowSetKeyProbe(schema_,&key_slice), RowChangeList(mutation_buf_));
   }
 
   MvccManager mvcc_;
@@ -128,6 +128,74 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
   ASSERT_TRUE(iter->HasNext());
   row = iter->GetCurrentRow();
   EXPECT_EQ("(string key=hello world, uint32 val=12345)", schema_.DebugRow(row));
+
+  ASSERT_FALSE(iter->Next());
+  ASSERT_FALSE(iter->HasNext());
+}
+
+TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
+
+  Schema compound_key_schema(boost::assign::list_of
+                              (ColumnSchema("key1", STRING))
+                              (ColumnSchema("key2", INT32))
+                              (ColumnSchema("val", UINT32)), 2);
+
+  shared_ptr<MemRowSet> mrs(new MemRowSet(compound_key_schema));
+
+  RowBuilder rb(compound_key_schema);
+  {
+    ScopedTransaction tx(&mvcc_);
+    rb.AddString(string("hello world"));
+    rb.AddInt32(1);
+    rb.AddUint32(12345);
+    Status row1 = mrs->Insert(tx.txid(), rb.data());
+    ASSERT_STATUS_OK(row1);
+  }
+
+  {
+    ScopedTransaction tx2(&mvcc_);
+    rb.Reset();
+    rb.AddString(string("goodbye world"));
+    rb.AddInt32(2);
+    rb.AddUint32(54321);
+    Status row2 = mrs->Insert(tx2.txid(), rb.data());
+    ASSERT_STATUS_OK(row2);
+  }
+
+  {
+    ScopedTransaction tx3(&mvcc_);
+    rb.Reset();
+    rb.AddString(string("goodbye world"));
+    rb.AddInt32(1);
+    rb.AddUint32(12345);
+    Status row3 = mrs->Insert(tx3.txid(), rb.data());
+    ASSERT_STATUS_OK(row3);
+  }
+
+  ASSERT_EQ(3, mrs->entry_count());
+
+  gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
+
+  // The first row returned from the iterator should
+  // be "goodbye" (row3) sorted on the second key
+  ASSERT_TRUE(iter->HasNext());
+  MRSRow row = iter->GetCurrentRow();
+  EXPECT_EQ("(string key1=goodbye world, int32 key2=1, uint32 val=12345)",
+            compound_key_schema.DebugRow(row));
+
+  // Next row should be "goodbye" (row2)
+  ASSERT_TRUE(iter->Next());
+  ASSERT_TRUE(iter->HasNext());
+  row = iter->GetCurrentRow();
+  EXPECT_EQ("(string key1=goodbye world, int32 key2=2, uint32 val=54321)",
+            compound_key_schema.DebugRow(row));
+
+  // Next row should be 'hello world' (row1)
+  ASSERT_TRUE(iter->Next());
+  ASSERT_TRUE(iter->HasNext());
+  row = iter->GetCurrentRow();
+  EXPECT_EQ("(string key1=hello world, int32 key2=1, uint32 val=12345)",
+            compound_key_schema.DebugRow(row));
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->HasNext());

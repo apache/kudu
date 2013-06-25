@@ -25,6 +25,8 @@ DEFINE_int32(testcompaction_num_rows, 1000,
 
 template<class SETUP>
 class TestTablet : public TabletTestBase<SETUP> {
+  typedef SETUP Type;
+
  public:
   // Verify that iteration doesn't fail
   void CheckCanIterate() {
@@ -116,6 +118,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
 // Test flushes and compactions dealing with deleted rows.
 TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
+
   this->InsertTestRows(0, 1, 0);
   ASSERT_STATUS_OK(this->DeleteTestRow(0));
 
@@ -171,6 +174,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
 
 // Test flushes dealing with REINSERT mutations in the MemRowSet.
 TYPED_TEST(TestTablet, TestFlushWithReinsert) {
+
   // Insert, delete, and re-insert a row in the MRS.
   this->InsertTestRows(0, 1, 0);
   ASSERT_STATUS_OK(this->DeleteTestRow(0));

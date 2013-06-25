@@ -104,6 +104,78 @@ public:
   Schema test_schema_;
 };
 
+// Setup for testing composite keys
+struct CompositeKeyTestSetup {
+public:
+  CompositeKeyTestSetup() :
+    test_schema_(boost::assign::list_of
+                 (ColumnSchema("key1", STRING))
+                 (ColumnSchema("key2", UINT32))
+                 (ColumnSchema("val", UINT32))
+                 (ColumnSchema("update_count", UINT32)),
+                 2)
+  {}
+
+  void BuildRowKey(RowBuilder *rb, uint64_t row_idx)
+  {
+    // This is called from multiple threads, so can't move this buffer
+    // to be a class member. However, it's likely to get inlined anyway
+    // and loop-hosted.
+    char buf[256];
+    FormatKey(buf, sizeof(buf), row_idx);
+    rb->AddString(Slice(buf));
+    rb->AddUint32(row_idx);
+  }
+
+  void BuildRow(RowBuilder *rb, uint64_t row_idx,
+                uint32_t update_count_val = 0) {
+    BuildRowKey(rb, row_idx);
+    rb->AddUint32(row_idx);
+    rb->AddUint32(update_count_val);
+  }
+
+  const Schema &test_schema() const {
+    return test_schema_;
+  }
+
+  static void FormatKey(char *buf, size_t buf_size, uint64_t row_idx) {
+    snprintf(buf, buf_size, "hello %ld", row_idx);
+  }
+
+  string FormatDebugRow(uint64_t row_idx, uint32_t update_count) {
+    char buf[256];
+    FormatKey(buf, sizeof(buf), row_idx);
+    return StringPrintf(
+      "(string key1=%s, uint32 key2=%ld, uint32 val=%ld, uint32 update_count=%d)",
+      buf, row_idx, row_idx, update_count);
+  }
+
+  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
+    RowBuilder rb(test_schema_.CreateKeyProjection());
+    BuildRowKey(&rb, row_idx);
+    *new_val = 10000 + row_idx;
+
+    faststring ubuf;
+    RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(2, new_val);
+    return tablet->MutateRow(rb.data().data(), RowChangeList(ubuf));
+  }
+
+  template <class RowType>
+  uint64_t GetRowIndex(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 1);
+  }
+
+  template <class RowType>
+  uint64_t GetRowValueAfterUpdate(const RowType& row) const {
+    return *test_schema_.ExtractColumnFromRow<UINT32>(row, 2);
+  }
+
+  bool ShouldUpdateRow(uint64_t row_idx) const {
+    return (row_idx % 15) == 0;
+  }
+
+  Schema test_schema_;
+};
 
 // Setup for testing integer keys
 struct IntKeyTestSetup {
@@ -254,7 +326,7 @@ struct NullableValueTestSetup {
 
 // Use this with TYPED_TEST_CASE from gtest
 typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup,
-                         NullableValueTestSetup> TabletTestHelperTypes;
+                         NullableValueTestSetup, CompositeKeyTestSetup> TabletTestHelperTypes;
 
 template<class TESTSETUP>
 class TabletTestBase : public KuduTest {
@@ -300,7 +372,10 @@ public:
     setup_.BuildRowKey(&rb, row_idx);
 
     faststring buf;
-    RowChangeListEncoder(schema_, &buf).AddColumnUpdate(2, &new_val);
+    // select the col to update (the third if there is only one key
+    // or the fourth if there are two col keys).
+    int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
+    RowChangeListEncoder(schema_, &buf).AddColumnUpdate(col_idx, &new_val);
     return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
   }
 

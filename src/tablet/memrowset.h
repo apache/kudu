@@ -162,7 +162,7 @@ class MemRowSet : boost::noncopyable,
   //
   // Returns Status::NotFound if the row doesn't exist.
   Status MutateRow(txid_t txid,
-                   const void *key,
+                   const RowSetKeyProbe &probe,
                    const RowChangeList &update);
 
   // Return the number of entries in the memrowset.

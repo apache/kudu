@@ -103,9 +103,6 @@ public:
     CHECK_GT(cols_.size(), 0);
     CHECK_LE(key_columns, cols_.size());
 
-    CHECK_GE(1, key_columns) <<
-      "TODO: Currently only support a single key-column.";
-
     // Calculate the offset of each column in the row format.
     col_offsets_.reserve(cols_.size());
     size_t off = 0;

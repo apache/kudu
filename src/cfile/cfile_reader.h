@@ -10,6 +10,7 @@
 
 #include "common/columnblock.h"
 #include "common/types.h"
+#include "cfile/cfile_util.h"
 #include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
 #include "cfile/block_compression.h"
@@ -204,16 +205,16 @@ public:
   // TODO: do we ever want to be able to seek to the end of the file?
   Status SeekToOrdinal(rowid_t ord_idx);
 
-  // Seek to the given key, or to the entry directly following
-  // it. If the largest key in the file is still less than
-  // the given key, then returns a NotFound Status.
+  // Seek the index to the given row_key, or to the index entry immediately
+  // before it. Then (if the index is sparse) seek the data block to the
+  // value matching value or to the value immediately after it.
   //
   // Sets *exact_match to indicate whether the seek found the exact
   // key requested.
   //
   // If this iterator was constructed without no value index,
   // then this will return a NotSupported status.
-  Status SeekAtOrAfter(const void *key,
+  Status SeekAtOrAfter(const CFileKeyProbe &probe,
                        bool *exact_match);
 
   // Get the ordinal index that the iterator is currently pointed to.
@@ -336,7 +337,6 @@ private:
   // a temporary buffer for encoding
   faststring tmp_buf_;
 };
-
 
 } // namespace cfile
 } // namespace kudu

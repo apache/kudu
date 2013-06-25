@@ -2,6 +2,8 @@
 #ifndef KUDU_TABLET_ROWSET_H
 #define KUDU_TABLET_ROWSET_H
 
+#include "cfile/cfile_reader.h"
+#include "cfile/cfile_util.h"
 #include "common/iterator.h"
 #include "common/rowid.h"
 #include "common/schema.h"
@@ -37,7 +39,7 @@ public:
   // If the row does not exist in this rowset, returns
   // Status::NotFound().
   virtual Status MutateRow(txid_t txid,
-                           const void *key,
+                           const RowSetKeyProbe &probe,
                            const RowChangeList &update) = 0;
 
   // Return a new RowIterator for this rowset, with the given projection.
@@ -80,7 +82,6 @@ public:
 // Used often enough, may as well typedef it.
 typedef vector<shared_ptr<RowSet> > RowSetVector;
 
-
 // Structure which caches an encoded and hashed key, suitable
 // for probing against rowsets.
 class RowSetKeyProbe {
@@ -93,10 +94,11 @@ public:
   // NOTE: raw_key is not copied and must be valid for the liftime
   // of this object.
   RowSetKeyProbe(const Schema &schema, const void *raw_key)
-    : raw_key_(raw_key)
+    : raw_key_(raw_key), schema_(schema)
   {
-    ConstContiguousRow row_slice(schema, raw_key);
-    schema.EncodeComparableKey(row_slice, &encoded_key_);
+    cfile::EncodeKey(schema,
+                     raw_key,
+                     &encoded_key_);
     bloom_probe_ = BloomKeyProbe(Slice(encoded_key_));
   }
 
@@ -110,10 +112,19 @@ public:
   // Return the cached structure used to query bloom filters.
   const BloomKeyProbe &bloom_probe() const { return bloom_probe_; }
 
+  const Schema &schema() const { return schema_; }
+
+  const cfile::CFileKeyProbe ToCFileKeyProbe() const {
+    return cfile::CFileKeyProbe(raw_key_,
+                                encoded_key_,
+                                schema_.num_key_columns());
+  }
+
 private:
   const void *raw_key_;
   faststring encoded_key_;
   BloomKeyProbe bloom_probe_;
+  const Schema &schema_;
 };
 
 
@@ -130,9 +141,9 @@ public:
                    const shared_ptr<RowSet> &new_rowset);
 
 
-  Status MutateRow(txid_t txid, const void *key, const RowChangeList &update);
+  Status MutateRow(txid_t txid, const RowSetKeyProbe &probe, const RowChangeList &update);
 
-  Status CheckRowPresent(const RowSetKeyProbe &key, bool *present) const;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;

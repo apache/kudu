@@ -214,7 +214,7 @@ Status Tablet::MutateRow(const void *key,
   ScopedTransaction tx(&mvcc_);
 
   // First try to update in memrowset.
-  Status s = memrowset_->MutateRow(tx.txid(), key, update);
+  Status s = memrowset_->MutateRow(tx.txid(), probe, update);
   if (s.ok() || !s.IsNotFound()) {
     // if it succeeded, or if an error occurred, return.
     return s;
@@ -224,7 +224,7 @@ Status Tablet::MutateRow(const void *key,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
-    s = rs->MutateRow(tx.txid(), key, update);
+    s = rs->MutateRow(tx.txid(), probe, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
       return s;

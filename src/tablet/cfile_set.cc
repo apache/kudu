@@ -59,7 +59,11 @@ Status CFileSet::OpenKeyColumns() {
 Status CFileSet::OpenColumns(size_t num_cols) {
   CHECK_LE(num_cols, schema_.num_columns());
 
-  RETURN_NOT_OK( OpenBloomReader() );
+  RETURN_NOT_OK(OpenBloomReader());
+
+  if (schema_.num_key_columns() > 1) {
+    RETURN_NOT_OK(OpenAdHocIndexReader());
+  }
 
   readers_.resize(num_cols);
 
@@ -77,6 +81,15 @@ Status CFileSet::OpenColumns(size_t num_cols) {
   }
 
   return Status::OK();
+}
+
+Status CFileSet::OpenAdHocIndexReader() {
+  if (ad_hoc_idx_reader_ != NULL) {
+    return Status::OK();
+  }
+
+  ReaderOptions opts;
+  return CFileReader::Open(env_, DiskRowSet::GetAdHocIndexPath(dir_), opts, &ad_hoc_idx_reader_);
 }
 
 
@@ -102,6 +115,10 @@ Status CFileSet::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
   return CHECK_NOTNULL(readers_[col_idx].get())->NewIterator(iter);
 }
 
+Status CFileSet::NewAdHocIndexIterator(CFileIterator **iter) const {
+  return CHECK_NOTNULL(ad_hoc_idx_reader_.get())->NewIterator(iter);
+}
+
 
 CFileSet::Iterator *CFileSet::NewIterator(const Schema &projection) const {
   return new CFileSet::Iterator(shared_from_this(), projection);
@@ -120,15 +137,28 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
   return ret;
 }
 
-Status CFileSet::FindRow(const void *key, rowid_t *idx) const {
-  CFileIterator *key_iter;
-  RETURN_NOT_OK( NewColumnIterator(0, &key_iter) );
+Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
+
+  if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
+    bool present;
+    Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), &present);
+    if (s.ok() && !present) {
+      return Status::NotFound("not present in bloom filter");
+    } else if (!s.ok()) {
+      LOG(WARNING) << "Unable to query bloom: " << s.ToString()
+                   << " (disabling bloom for this rowset from this point forward)";
+      const_cast<CFileSet *>(this)->bloom_reader_.reset(NULL);
+      // Continue with the slow path
+    }
+  }
+
+  CFileIterator *key_iter = NULL;
+  RETURN_NOT_OK(NewKeyIterator(&key_iter));
+
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
-  // TODO: check bloom filter
-
   bool exact;
-  RETURN_NOT_OK( key_iter->SeekAtOrAfter(key, &exact) );
+  RETURN_NOT_OK( key_iter->SeekAtOrAfter(probe.ToCFileKeyProbe(), &exact) );
   if (!exact) {
     return Status::NotFound("not present in storefile (failed seek)");
   }
@@ -139,19 +169,8 @@ Status CFileSet::FindRow(const void *key, rowid_t *idx) const {
 
 Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                                  rowid_t *rowid) const {
-  if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
-    Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), present);
-    if (s.ok() && !*present) {
-      return Status::OK();
-    } else if (!s.ok()) {
-      LOG(WARNING) << "Unable to query bloom: " << s.ToString()
-                   << " (disabling bloom for this rowset from this point forward)";
-      const_cast<CFileSet *>(this)->bloom_reader_.reset(NULL);
-      // Continue with the slow path
-    }
-  }
 
-  Status s = FindRow(probe.raw_key(), rowid);
+  Status s = FindRow(probe, rowid);
   if (s.IsNotFound()) {
     // In the case that the key comes past the end of the file, Seek
     // will return NotFound. In that case, it is OK from this function's
@@ -162,6 +181,16 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
   *present = true;
   return s;
 }
+
+Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
+  if (schema_.num_key_columns() > 1) {
+    RETURN_NOT_OK(NewAdHocIndexIterator(*&key_iter));
+  } else {
+    RETURN_NOT_OK(NewColumnIterator(0, *&key_iter));
+  }
+  return Status::OK();
+}
+
 
 
 ////////////////////////////////////////////////////////////
@@ -174,14 +203,9 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(projection_.GetProjectionFrom(
                   base_data_->schema(), &projection_mapping_));
 
-  // Setup Key Iterator.
-
-  // Only support single key column for now.
-  CHECK_EQ(base_data_->schema().num_key_columns(), 1);
-  int key_col = 0;
-
+  // Setup Key Iterator
   CFileIterator *tmp;
-  RETURN_NOT_OK(base_data_->NewColumnIterator(key_col, &tmp));
+  RETURN_NOT_OK(base_data_->NewKeyIterator(&tmp));
   key_iter_.reset(tmp);
 
   // Setup column iterators.
@@ -204,11 +228,18 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
 }
 
 Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
+
   CHECK_GT(row_count_, 0);
 
   lower_bound_idx_ = 0;
   // since upper_bound_idx is _inclusive_, subtract 1 from row_count
   upper_bound_idx_ = row_count_ - 1;
+
+  if (base_data_->schema().num_key_columns() > 1){
+    VLOG(1) << "Range scan predicate pushdowns are not implemented for composite keys";
+    return Status::OK();
+  }
+
 
   if (spec == NULL) {
     // No predicate.
@@ -227,7 +258,9 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       const ValueRange &range = pred.range();
       if (range.has_lower_bound()) {
         bool exact;
-        Status s = key_iter_->SeekAtOrAfter(range.lower_bound(), &exact);
+        Status s = key_iter_->SeekAtOrAfter(
+            RowSetKeyProbe(base_data_->schema(), range.lower_bound()).ToCFileKeyProbe(),
+            &exact);
         if (s.IsNotFound()) {
           // The lower bound is after the end of the key range.
           // Thus, no rows will pass the predicate, so we set the lower bound
@@ -243,7 +276,9 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       }
       if (range.has_upper_bound()) {
         bool exact;
-        Status s = key_iter_->SeekAtOrAfter(range.upper_bound(), &exact);
+        Status s = key_iter_->SeekAtOrAfter(
+            RowSetKeyProbe(base_data_->schema(), range.upper_bound()).ToCFileKeyProbe(),
+            &exact);
         if (s.IsNotFound()) {
           // The upper bound is after the end of the key range - the existing upper bound
           // at EOF is correct.
