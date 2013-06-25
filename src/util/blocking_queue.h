@@ -87,6 +87,10 @@ public:
     cond_.notify_all();
   }
 
+  size_t max_elements() const {
+    return max_elements_;
+  }
+
 private:
   bool shutdown_;
   size_t max_elements_;
