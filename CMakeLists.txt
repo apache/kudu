@@ -167,6 +167,11 @@ else()
   set(LIBS ${LIBS} ${SNAPPY_LIBS}/libsnappy.so)
 endif()
 
+## Libev
+find_package(LibEv REQUIRED)
+set(LIBS ${LIBS} ${LIBEV_STATIC_LIB})
+include_directories(${LIBEV_INCLUDE_DIR})
+
 ## LZ4
 find_package(Lz4 REQUIRED)
 include_directories(${LZ4_INCLUDE_DIR})
@@ -224,5 +229,8 @@ set(LIBS ${LIBS} ${CFILE_LIBS})
 
 add_subdirectory(src/tablet)
 set(LIBS ${LIBS} ${TABLET_LIBS})
+
+add_subdirectory(src/rpc) 
+set(LIBS ${LIBS} ${RPC_LIBS})
 
 add_subdirectory(src/experiments)

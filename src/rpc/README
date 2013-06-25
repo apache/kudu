@@ -1,0 +1,131 @@
+===============================================================================
+RPC
+===============================================================================
+
+-------------------------------------------------------------------------------
+Intro
+-------------------------------------------------------------------------------
+The RPC layer makes communication with remote processes look like local
+function calls.  You can make either asynchronous calls, in which you provide a
+callback which is invoked later, or synchronous calls, where your thread blocks
+until the remote system responds.
+
+This code will be compatible with the Hadoop IPC layer in hadoop-3 and beyond.
+This will allow us to re-use the Hadoop IPC code in our Java client. The current
+implementation is a step along the way, but is missing the connection setup
+step which performs authentication, the SASL handshake, etc.
+
+We use protocol buffers for serialization, and libev for non-blocking I/O.
+
+For some code examples, look in rpc-test.cc.
+
+-------------------------------------------------------------------------------
+Overview
+-------------------------------------------------------------------------------
+
+                                        +------------------------------------+
+                                        | AcceptorPool                       |
+                                        |   a pool of threads which          |
+  +-------------------------+           |   call accept()                    |
+  | Proxy                   |           +------------------------------------+
+  |                         |                          | new socket
+  | The proxy is the object |                          V
+  | which has the remote    |           +------------------------------------+
+  | method definitions.     | --------> | Messenger                          |
+  |                         |           |                                    |
+  +-------------------------+           | +-----------+ +-----------+        |
+                                        | | reactor 1 | | reactor 2 | ...    |
+  +-------------------------+           | +-----------+ +-----------+        |
+  | ResponseCallback        | <-------- |                                    |<-.
+  |                         |           +------------------------------------+  |
+  | The callback which gets |                          |                        |
+  | invoked when the remote |                          V                        |
+  | end replies or the call |           +------------------------------------+  |
+  | otherwise terminates.   |           | ServicePool                        |  |
+  +-------------------------+           |   a pool of threads which          |  | Call responses
+                                        |   pull new inbound calls from a    |  | sent back via
+                                        |   work queue.                      |  | messenger.
+                                        +------------------------------------+  |
+                                                       |                        |
+                                                       v                        |
+                                        +------------------------------------+  |
+                                        | ServiceIf                          |  |
+                                        |   user-implemented class which     | /
+                                        |   handles new inbound RPCs         |
+                                        +------------------------------------+
+
+Each reactor has a thread which uses epoll to handle many sockets using
+non-blocking I/O.  Blocking calls are implemented by the Proxy using
+non-blocking calls-- from the point of view of the Messenger, all calls are
+non-blocking.
+
+The acceptor pool and the service pool are optional components.  If you don't
+expect anyone to be connecting to you, you do not have to start them. If a server
+expects to listen on multiple ports (eg for different protocols), multiple
+AcceptorPools may be attached.
+
+In general, clients will use auto-generated subclasses of Proxy and ServiceIf.
+
+-------------------------------------------------------------------------------
+Generated Code
+-------------------------------------------------------------------------------
+
+TODO: this will be described in the next commit, which adds the code generation.
+
+-------------------------------------------------------------------------------
+Proxy classes
+-------------------------------------------------------------------------------
+
+Proxy classes are used by the client to send calls to a remote service.
+Calls may be made synchronously or asynchronously -- the synchronous calls are simply
+a wrapper around the asynchronous version, which makes the call and then waits
+on the callback to be triggered.
+
+In order to make a call, the user must provide a method name, a request protobuf,
+a response protobuf, an RpcController, and a callback.
+
+Each RpcController object corresponds to exactly one in-flight call on the client.
+This class is where per-call settings may be adjusted before making an RPC --
+currently this is just timeout functionality, but in the future may include
+other call properties such as tracing information, priority classes, deadline
+propagation, etc.
+
+Upon issuing the asynchronous request, the RPC layer enqueues the call to be sent
+to the server and immediately returns. During this period, the caller thread
+may continue to send other RPCs or perform other processing while waiting for
+the callback to be triggered. In the future, we will provide an RPC cancellation
+function on the RpcController object in case the user determines that the call
+is no longer required.
+
+When the call completes, the RPC layer will invoke the provided ResponseCallback
+function from within the context of the reactor thread. Given this,
+ResponseCallbacks should be careful to never block, as it would prevent other
+threads from concurrent sending or receiving RPCs.
+
+The callback is invoked exactly one time, regardless of the call's termination state.
+The user can determine the call's state by invoking methods on the RpcController object,
+for example to determine whether the call succeded, timed out, or suffered a
+transport error. In the case that the call succeeds, the user-provided response protobuf
+will have been initialized to contain the result.
+
+Please see the accompanying documentation in the Proxy and RpcController classes
+for more information on the specific API, as well as the test cases in rpc-test.cc
+for example usage.
+
+-------------------------------------------------------------------------------
+ServiceIf classes
+-------------------------------------------------------------------------------
+ServiceIf classes are abstract interfaces that the server implements to handle
+incoming RPCs.  In general, each generated service has several virtual methods
+which you can override in order to implement the relevant function call.
+
+There is a ServicePool which you can use to coordinate several worker threads
+handling callbacks.
+
+-------------------------------------------------------------------------------
+Wire Protocol
+-------------------------------------------------------------------------------
+Current wire protocol (this will change slightly in the future when we add
+Hadoop compatibility)
+
+TODO: rewrite this section.
