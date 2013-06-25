@@ -23,10 +23,13 @@ public:
 
   // Construct a string with the given capacity, in bytes.
   explicit faststring(size_t capacity) :
-    data_(new uint8_t[capacity]),
     len_(0),
     capacity_(capacity)
-  {}
+  {
+    if (capacity > 0) {
+      data_.reset(new uint8_t[capacity]);
+    }
+  }
 
   // Reset the valid length of the string to 0.
   //
@@ -53,7 +56,9 @@ public:
     if (PREDICT_TRUE(newcapacity <= capacity_)) return;
 
     gscoped_array<uint8_t> newdata(new uint8_t[newcapacity]);
-    strings::memcpy_inlined(&newdata[0], &data_[0], len_);
+    if (len_ > 0) {
+      strings::memcpy_inlined(&newdata[0], &data_[0], len_);
+    }
     capacity_ = newcapacity;
     data_.swap(newdata);
   }
