@@ -54,5 +54,8 @@ add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
 ADD_KUDU_TEST(rpc-test)
 TARGET_LINK_LIBRARIES(rpc-test rtest_krpc krpc)
 
+ADD_KUDU_TEST(rpc-bench)
+TARGET_LINK_LIBRARIES(rpc-bench rtest_krpc krpc)
+
 ADD_KUDU_TEST(rpc_stub-test)
 TARGET_LINK_LIBRARIES(rpc_stub-test rtest_krpc krpc)
