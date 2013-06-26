@@ -4,6 +4,7 @@
 
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <tr1/memory>
+#include <string>
 #include <vector>
 
 #include "cfile/cfile.h"
@@ -21,7 +22,7 @@ namespace cfile {
 using std::tr1::shared_ptr;
 
 class BloomFileWriter {
-public:
+ public:
   BloomFileWriter(const shared_ptr<WritableFile> &file,
                   const BloomFilterSizing &sizing);
 
@@ -29,7 +30,7 @@ public:
   Status AppendKeys(const Slice *keys, size_t n_keys);
   Status Finish();
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BloomFileWriter);
 
   Status FinishCurrentBloomBlock();
@@ -48,10 +49,10 @@ private:
 // share a single CFileReader, or else the cache keys won't end up
 // shared!
 class BloomFileReader {
-public:
+ public:
   static Status Open(Env *env, const string &path,
                      gscoped_ptr<BloomFileReader> *reader);
-  
+
   // Check if the given key may be present in the file.
   //
   // Sets *maybe_present to false if the key is definitely not
@@ -59,13 +60,13 @@ public:
   Status CheckKeyPresent(const BloomKeyProbe &probe,
                          bool *maybe_present);
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BloomFileReader);
 
   // Constructor. Takes ownership of 'reader'
   //
   // 'reader' should already have had CFileReader::Init() called.
-  BloomFileReader(CFileReader *reader);
+  explicit BloomFileReader(CFileReader *reader);
   Status Init();
 
   // Parse the header present in the given block.

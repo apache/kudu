@@ -43,18 +43,17 @@ Status CopyCellData(const TypeInfo& type_info, void *dst, const void *src, Arena
 // storage in and of itself. It does, however, maintain its type
 // information, which can be used for extra type safety in debug mode.
 class ColumnBlock {
-public:
+ public:
   ColumnBlock(const TypeInfo &type,
               uint8_t *null_bitmap,
               void *data,
               size_t nrows,
-              Arena *arena) :
-    type_(type),
-    null_bitmap_(null_bitmap),
-    data_(reinterpret_cast<uint8_t *>(data)),
-    nrows_(nrows),
-    arena_(arena)
-  {
+              Arena *arena)
+    : type_(type),
+      null_bitmap_(null_bitmap),
+      data_(reinterpret_cast<uint8_t *>(data)),
+      nrows_(nrows),
+      arena_(arena) {
     DCHECK(data_) << "null data";
   }
 
@@ -122,7 +121,7 @@ public:
     return type_;
   }
 
-private:
+ private:
   // Return a pointer to the given cell.
   uint8_t *mutable_cell_ptr(size_t idx) {
     DCHECK_LT(idx, nrows_);
@@ -145,8 +144,7 @@ private:
 class ColumnDataView {
  public:
   ColumnDataView(ColumnBlock *column_block, size_t first_row_idx = 0)
-    : column_block_(column_block), row_offset_(0)
-  {
+    : column_block_(column_block), row_offset_(0) {
     Advance(first_row_idx);
   }
 
@@ -200,19 +198,18 @@ class ColumnDataView {
 // since it doesn't allocate from an arena, etc.
 template<DataType type>
 class ScopedColumnBlock : public ColumnBlock {
-public:
+ public:
   typedef typename TypeTraits<type>::cpp_type cpp_type;
 
-  explicit ScopedColumnBlock(size_t n_rows) :
-    ColumnBlock(GetTypeInfo(type),
-                new uint8_t[BitmapSize(n_rows)],
-                new cpp_type[n_rows],
-                n_rows,
-                new Arena(1024, 1*1024*1024)),
-    null_bitmap_(null_bitmap()),
-    data_(reinterpret_cast<cpp_type *>(data())),
-    arena_(arena())
-  {
+  explicit ScopedColumnBlock(size_t n_rows)
+    : ColumnBlock(GetTypeInfo(type),
+                  new uint8_t[BitmapSize(n_rows)],
+                  new cpp_type[n_rows],
+                  n_rows,
+                  new Arena(1024, 1*1024*1024)),
+      null_bitmap_(null_bitmap()),
+      data_(reinterpret_cast<cpp_type *>(data())),
+      arena_(arena()) {
   }
 
   const cpp_type &operator[](size_t idx) const {
@@ -223,7 +220,7 @@ public:
     return data_[idx];
   }
 
-private:
+ private:
   gscoped_array<uint8_t> null_bitmap_;
   gscoped_array<cpp_type> data_;
   gscoped_ptr<Arena> arena_;

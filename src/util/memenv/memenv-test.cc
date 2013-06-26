@@ -6,13 +6,11 @@
 // - use gtest
 
 #include <gtest/gtest.h>
-
+#include <string>
+#include <vector>
 #include "util/env.h"
 #include "util/memenv/memenv.h"
 #include "util/test_macros.h"
-
-#include <string>
-#include <vector>
 
 namespace kudu {
 

@@ -3,6 +3,8 @@
 #define KUDU_COMMON_ROW_H
 
 #include <glog/logging.h>
+#include <string>
+#include <vector>
 
 #include "common/types.h"
 #include "common/schema.h"
@@ -125,12 +127,11 @@ class ContiguousRowHelper {
 // Utility class for building rows corresponding to a given schema.
 // This is used when inserting data into the MemStore or a new Layer.
 class RowBuilder {
-public:
-  explicit RowBuilder(const Schema &schema) :
-    schema_(schema),
-    arena_(1024, 1024*1024),
-    bitmap_size_(ContiguousRowHelper::null_bitmap_size(schema))
-  {
+ public:
+  explicit RowBuilder(const Schema &schema)
+    : schema_(schema),
+      arena_(1024, 1024*1024),
+      bitmap_size_(ContiguousRowHelper::null_bitmap_size(schema)) {
     Reset();
   }
 
@@ -206,7 +207,7 @@ public:
     return Slice(buf_, byte_idx_ + bitmap_size_);
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(RowBuilder);
 
   void CheckNextType(DataType type) {
@@ -236,8 +237,7 @@ private:
 class ContiguousRow {
  public:
   ContiguousRow(const Schema& schema, void *row_data = NULL)
-    : schema_(schema), row_data_(reinterpret_cast<uint8_t *>(row_data))
-  {
+    : schema_(schema), row_data_(reinterpret_cast<uint8_t *>(row_data)) {
   }
 
   const Schema& schema() const {
@@ -283,14 +283,13 @@ class ContiguousRow {
 // should not be mutated.
 class ConstContiguousRow {
  public:
-  ConstContiguousRow(const ContiguousRow &row) :
-    schema_(row.schema_),
-    row_data_(row.row_data_)
-  {}
+  explicit ConstContiguousRow(const ContiguousRow &row)
+    : schema_(row.schema_),
+      row_data_(row.row_data_) {
+  }
 
   ConstContiguousRow(const Schema& schema, const void *row_data = NULL)
-    : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data))
-  {
+    : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data)) {
   }
 
   const Schema& schema() const {

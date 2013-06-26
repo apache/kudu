@@ -8,7 +8,7 @@ namespace kudu {
 // Simple class which maintains a count of how many objects
 // are currently alive.
 class MyClass {
-public:
+ public:
   MyClass() {
     instance_count_++;
   }
@@ -25,7 +25,7 @@ public:
     instance_count_ = 0;
   }
 
-private:
+ private:
   static int instance_count_;
 };
 int MyClass::instance_count_ = 0;

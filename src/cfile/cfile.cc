@@ -2,8 +2,9 @@
 
 #include <boost/foreach.hpp>
 #include <endian.h>
-#include <string>
 #include <glog/logging.h>
+#include <string>
+#include <utility>
 
 #include "cfile/cfile.h"
 #include "cfile/cfile.pb.h"
@@ -52,14 +53,14 @@ static CompressionType GetDefaultCompressionCodec() {
 ////////////////////////////////////////////////////////////
 // Options
 ////////////////////////////////////////////////////////////
-WriterOptions::WriterOptions() :
-  block_size(FLAGS_cfile_default_block_size),
-  index_block_size(32*1024),
-  block_restart_interval(16),
-  write_posidx(false),
-  write_validx(false),
-  compression(GetDefaultCompressionCodec())
-{}
+WriterOptions::WriterOptions()
+  : block_size(FLAGS_cfile_default_block_size),
+    index_block_size(32*1024),
+    block_restart_interval(16),
+    write_posidx(false),
+    write_validx(false),
+    compression(GetDefaultCompressionCodec()) {
+}
 
 
 ////////////////////////////////////////////////////////////
@@ -71,17 +72,16 @@ Writer::Writer(const WriterOptions &options,
                DataType type,
                bool is_nullable,
                EncodingType encoding,
-               shared_ptr<WritableFile> file) :
-  file_(file),
-  off_(0),
-  value_count_(0),
-  options_(options),
-  is_nullable_(is_nullable),
-  datatype_(type),
-  typeinfo_(GetTypeInfo(type)),
-  encoding_type_(encoding),
-  state_(kWriterInitialized)
-{
+               shared_ptr<WritableFile> file)
+  : file_(file),
+    off_(0),
+    value_count_(0),
+    options_(options),
+    is_nullable_(is_nullable),
+    datatype_(type),
+    typeinfo_(GetTypeInfo(type)),
+    encoding_type_(encoding),
+    state_(kWriterInitialized) {
   if (options.write_posidx) {
     posidx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
@@ -123,7 +123,7 @@ Status Writer::Start() {
   off_ += buf.size();
 
   BlockBuilder *bb;
-  RETURN_NOT_OK( CreateBlockBuilder(&bb) );
+  RETURN_NOT_OK(CreateBlockBuilder(&bb));
   data_block_.reset(bb);
 
   if (is_nullable_) {
@@ -270,8 +270,7 @@ Status Writer::AppendEntries(const void *entries, size_t count) {
   return Status::OK();
 }
 
-Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries, size_t count)
-{
+Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries, size_t count) {
   DCHECK(is_nullable_ && bitmap != NULL);
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);

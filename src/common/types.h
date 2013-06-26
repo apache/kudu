@@ -3,8 +3,8 @@
 #ifndef KUDU_COMMON_TYPES_H
 #define KUDU_COMMON_TYPES_H
 
-#include <string>
 #include <stdint.h>
+#include <string>
 #include "common/common.pb.h"
 #include "util/slice.h"
 #include "gutil/strings/numbers.h"
@@ -22,14 +22,14 @@ extern const TypeInfo &GetTypeInfo(DataType type);
 // Information about a given type.
 // This is a runtime equivalent of the TypeTraits template below.
 class TypeInfo {
-public:
+ public:
   DataType type() const { return type_; }
   const string& name() const { return name_; }
   const size_t size() const { return size_; }
   void AppendDebugStringForValue(const void *ptr, string *str) const;
   int Compare(const void *lhs, const void *rhs) const;
 
-private:
+ private:
   friend class TypeInfoResolver;
   template<typename Type> TypeInfo(Type t);
 
@@ -86,8 +86,8 @@ struct DataTypeTraits<STRING> {
 
 
 // Instantiate this template to get static access to the type traits.
-template<DataType datatype> struct TypeTraits :
-    public DataTypeTraits<datatype> {
+template<DataType datatype>
+struct TypeTraits : public DataTypeTraits<datatype> {
   typedef typename DataTypeTraits<datatype>::cpp_type cpp_type;
 
   static const DataType type = datatype;

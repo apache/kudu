@@ -34,7 +34,7 @@ TEST(TestMvcc, TestMvccBasic) {
 
   // State should show 0 as committed, 1 as uncommitted.
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString()); 
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
   ASSERT_TRUE(snap.IsCommitted(txid_t(0)));
   ASSERT_FALSE(snap.IsCommitted(txid_t(1)));
 }

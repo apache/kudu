@@ -16,12 +16,15 @@ namespace cfile {
 
 CompressionCodec::CompressionCodec() {
 }
+CompressionCodec::~CompressionCodec() {
+}
 
 class SlicesSource : public snappy::Source {
  public:
   explicit SlicesSource(const std::vector<Slice>& slices)
-      : slice_index_(0), slice_offset_(0), slices_(slices)
-  {
+    : slice_index_(0),
+      slice_offset_(0),
+      slices_(slices) {
     available_ = TotalSize();
   }
 
@@ -82,7 +85,7 @@ class SlicesSource : public snappy::Source {
 };
 
 class SnappyCodec : public CompressionCodec {
-public:
+ public:
   static SnappyCodec *GetSingleton() {
     return Singleton<SnappyCodec>::get();
   }
@@ -93,8 +96,7 @@ public:
     return Status::OK();
   }
 
-  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length)
-  {
+  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length) {
     SlicesSource source(input_slices);
     snappy::UncheckedByteArraySink sink(reinterpret_cast<char *>(compressed));
     if ((*compressed_length = snappy::Compress(&source, &sink)) <= 0) {
@@ -115,7 +117,7 @@ public:
 };
 
 class Lz4Codec : public CompressionCodec {
-public:
+ public:
   static Lz4Codec *GetSingleton() {
     return Singleton<Lz4Codec>::get();
   }
@@ -127,8 +129,7 @@ public:
     return Status::OK();
   }
 
-  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length)
-  {
+  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length) {
     if (input_slices.size() == 1) {
       return Compress(input_slices[0], compressed, compressed_length);
     }
@@ -160,7 +161,7 @@ public:
  * so that it allocates from the arena.
  */
 class ZlibCodec : public CompressionCodec {
-public:
+ public:
   static ZlibCodec *GetSingleton() {
     return Singleton<ZlibCodec>::get();
   }
@@ -168,11 +169,10 @@ public:
   Status Compress(const Slice& input, uint8_t *compressed, size_t *compressed_length) {
     *compressed_length = MaxCompressedLength(input.size());
     int err = ::compress(compressed, compressed_length, input.data(), input.size());
-    return err == Z_OK ? Status::OK() : Status::IOError("unable to compress the buffer");;
+    return err == Z_OK ? Status::OK() : Status::IOError("unable to compress the buffer");
   }
 
-  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length)
-  {
+  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length) {
     if (input_slices.size() == 1) {
       return Compress(input_slices[0], compressed, compressed_length);
     }
@@ -195,7 +195,7 @@ public:
   }
 };
 
-Status GetCompressionCodec (CompressionType compression, shared_ptr<CompressionCodec> *codec) {
+Status GetCompressionCodec(CompressionType compression, shared_ptr<CompressionCodec> *codec) {
   switch (compression) {
     case NO_COMPRESSION:
       codec->reset();

@@ -16,10 +16,9 @@ namespace kudu { namespace tablet {
 // DeltaMemStore implementation
 ////////////////////////////////////////////////////////////
 
-DeltaMemStore::DeltaMemStore(const Schema &schema) :
-  schema_(schema),
-  arena_(8*1024, 1*1024*1024)
-{
+DeltaMemStore::DeltaMemStore(const Schema &schema)
+  : schema_(schema),
+    arena_(8*1024, 1*1024*1024) {
 }
 
 
@@ -115,17 +114,16 @@ void DeltaMemStore::DebugPrint() const {
 
 DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
                          const Schema &projection,
-                         const MvccSnapshot &snapshot) :
-  dms_(dms),
-  projection_(projection),
-  mvcc_snapshot_(snapshot),
-  iter_(dms->tree_.NewIterator()),
-  prepared_idx_(0),
-  prepared_count_(0),
-  prepared_(false),
-  seeked_(false),
-  prepared_buf_(kPreparedBufInitialCapacity)
-{
+                         const MvccSnapshot &snapshot)
+  : dms_(dms),
+    projection_(projection),
+    mvcc_snapshot_(snapshot),
+    iter_(dms->tree_.NewIterator()),
+    prepared_idx_(0),
+    prepared_count_(0),
+    prepared_(false),
+    seeked_(false),
+    prepared_buf_(kPreparedBufInitialCapacity) {
 }
 
 Status DMSIterator::Init() {

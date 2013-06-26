@@ -36,7 +36,7 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
 #ifndef NDEBUG
   ,has_appended_(false)
 #endif
-{
+{ // NOLINT(*)
   cfile::WriterOptions opts;
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
@@ -102,11 +102,10 @@ Status DeltaFileReader::Open(Env *env, const string &path,
 }
 
 DeltaFileReader::DeltaFileReader(CFileReader *cf_reader, const string &path,
-                                 const Schema &schema) :
-  reader_(cf_reader),
-  schema_(schema),
-  path_(path)
-{
+                                 const Schema &schema)
+  : reader_(cf_reader),
+    schema_(schema),
+    path_(path) {
 }
 
 Status DeltaFileReader::Init() {

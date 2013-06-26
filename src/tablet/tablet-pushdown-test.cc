@@ -15,17 +15,16 @@ namespace kudu {
 namespace tablet {
 
 class TabletPushdownTest : public KuduTest {
-public:
-  TabletPushdownTest() :
-    schema_(boost::assign::list_of
-            (ColumnSchema("key", UINT32))
-            (ColumnSchema("int_val", UINT32))
-            (ColumnSchema("string_val", STRING)),
-            1)
-  {
+ public:
+  TabletPushdownTest()
+    : schema_(boost::assign::list_of
+              (ColumnSchema("key", UINT32))
+              (ColumnSchema("int_val", UINT32))
+              (ColumnSchema("string_val", STRING)),
+              1) {
   }
 
-  virtual void SetUp() {  
+  virtual void SetUp() {
     KuduTest::SetUp();
     tablet_dir_ = env_->JoinPathSegments(test_dir_, "tablet");
 
@@ -58,8 +57,8 @@ public:
       }
     }
   }
-  
-protected:
+
+ protected:
   const Schema schema_;
   string tablet_dir_;
   gscoped_ptr<Tablet> tablet_;

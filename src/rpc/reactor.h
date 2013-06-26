@@ -7,9 +7,11 @@
 #include <boost/utility.hpp>
 #include <ev++.h>
 #include <gutil/gscoped_ptr.h>
-#include <string>
 #include <stdint.h>
 #include <tr1/memory>
+
+#include <map>
+#include <string>
 
 #include "rpc/connection.h"
 #include "rpc/socket.h"
@@ -153,7 +155,7 @@ class ReactorThread {
   // Collect metrics -- called within the loop.
   void GetMetricsInternal(ReactorMetrics *metrics);
 
-  gscoped_ptr<boost::thread> thread_; 
+  gscoped_ptr<boost::thread> thread_;
 
   // our epoll object (or kqueue, etc).
   ev::dynamic_loop loop_;
@@ -171,7 +173,7 @@ class ReactorThread {
   MonoTime last_unused_tcp_scan_;
 
   // Map of sockaddrs to Connection objects for outbound (client) connections.
-  conn_map_t client_conns_; 
+  conn_map_t client_conns_;
 
   // List of current connections coming into the server.
   conn_list_t server_conns_;
@@ -242,7 +244,7 @@ class Reactor {
   bool closing_;
 
   // Tasks to be run within the reactor thread.
-  boost::intrusive::list<ReactorTask> pending_tasks_;
+  boost::intrusive::list<ReactorTask> pending_tasks_; // NOLINT(build/include_what_you_use)
 
   ReactorThread thread_;
 

@@ -33,8 +33,7 @@ class RpcContext {
              google::protobuf::Message *response_pb)
     : call_(call),
       request_pb_(request_pb),
-      response_pb_(response_pb)
-  {
+      response_pb_(response_pb) {
   }
 
   ~RpcContext();

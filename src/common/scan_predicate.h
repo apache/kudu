@@ -15,7 +15,7 @@ using std::string;
 
 
 class ValueRange {
-public:
+ public:
   // Construct a new column range predicate.
   //
   // The min_value and upper_bound pointers should point to storage
@@ -50,7 +50,7 @@ public:
 
   bool ContainsCell(const void *cell) const;
 
-private:
+ private:
   const TypeInfo *type_info_;
   boost::optional<const void *> lower_bound_;
   boost::optional<const void *> upper_bound_;
@@ -62,7 +62,7 @@ private:
 // TODO: extract an interface for this once it's clearer what the interface should
 // look like. Column range is not the only predicate in the world.
 class ColumnRangePredicate {
-public:
+ public:
 
   // Construct a new column range predicate.
   // The lower_bound and upper_bound pointers should point to storage
@@ -99,7 +99,7 @@ public:
   // Return the value range for which this predicate passes.
   const ValueRange &range() const { return range_; }
 
-private:
+ private:
   ColumnSchema col_;
   ValueRange range_;
 };

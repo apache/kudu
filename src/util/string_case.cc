@@ -1,9 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
+#include "util/string_case.h"
+
 #include <glog/logging.h>
 #include <ctype.h>
-#include "string_case.h"
 
 namespace kudu {
 

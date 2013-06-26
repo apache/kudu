@@ -1,18 +1,19 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
-#include "common/generic_iterators.h"
 #include "tablet/rowset.h"
+#include <string>
+#include <vector>
+#include "common/generic_iterators.h"
 
 namespace kudu { namespace tablet {
 
 DuplicatingRowSet::DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
-                                     const shared_ptr<RowSet> &new_rowset) :
-  old_rowsets_(old_rowsets),
-  new_rowset_(new_rowset),
-  schema_(new_rowset->schema()),
-  key_schema_(schema_.CreateKeyProjection())
-{
+                                     const shared_ptr<RowSet> &new_rowset)
+  : old_rowsets_(old_rowsets),
+    new_rowset_(new_rowset),
+    schema_(new_rowset->schema()),
+    key_schema_(schema_.CreateKeyProjection()) {
   CHECK_GT(old_rowsets_.size(), 0);
   always_locked_.lock();
 }

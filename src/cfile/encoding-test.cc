@@ -26,14 +26,13 @@ namespace kudu { namespace cfile {
 extern void DumpSSETable();
 
 class TestEncoding : public ::testing::Test {
-public:
-  TestEncoding() :
-    ::testing::Test(),
-    arena_(1024, 1024*1024)
-  {
+ public:
+  TestEncoding()
+    : ::testing::Test(),
+      arena_(1024, 1024*1024) {
   }
 
-protected:
+ protected:
   virtual void SetUp() {
     arena_.Reset();
   }
@@ -349,7 +348,7 @@ protected:
     decoded.resize(size);
 
     ColumnBlock dst_block(GetTypeInfo(Type), NULL, &decoded[0], size, &arena_);
-    ColumnDataView view (&dst_block);
+    ColumnDataView view(&dst_block);
     int dec_count = 0;
     while (pbd.HasNext()) {
       ASSERT_EQ((int32_t )(kOrdinalPosBase + dec_count), pbd.ordinal_pos());

@@ -6,6 +6,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <time.h>
+#include <string>
 
 #include "gutil/stringprintf.h"
 
@@ -29,8 +30,7 @@ class Stopwatch;
 typedef uint64_t nanosecond_type;
 
 // Structure which contains an elapsed amount of wall/user/sys time.
-struct CpuTimes
-{
+struct CpuTimes {
   nanosecond_type wall;
   nanosecond_type user;
   nanosecond_type system;
@@ -67,7 +67,7 @@ struct CpuTimes
 // hot paths, but is useful for timing anything on the granularity of seconds
 // or more.
 class Stopwatch {
-public:
+ public:
 
   enum Mode {
     // Collect usage only about the calling thread.
@@ -78,10 +78,9 @@ public:
   };
 
   // Construct a new stopwatch. The stopwatch is initially stopped.
-  Stopwatch(Mode mode = THIS_THREAD)
+  explicit Stopwatch(Mode mode = THIS_THREAD)
     : stopped_(true),
-      mode_(mode)
-  {
+      mode_(mode) {
     times_.clear();
   }
 
@@ -132,7 +131,7 @@ public:
   void resume() {
     if (!stopped_) return;
 
-    CpuTimes current (times_);
+    CpuTimes current(times_);
     start();
     times_.wall   -= current.wall;
     times_.user   -= current.user;
@@ -143,7 +142,7 @@ public:
     return stopped_;
   }
 
-private:
+ private:
   void GetTimes(CpuTimes *times) const {
     struct rusage usage;
     CHECK_EQ(0, getrusage((mode_ == THIS_THREAD) ? RUSAGE_THREAD : RUSAGE_SELF, &usage));
@@ -166,15 +165,14 @@ namespace sw_internal {
 
 // Internal class used by the LOG_TIMING macro.
 class LogTiming {
-public:
+ public:
   LogTiming(const char *file, int line, google::LogSeverity severity,
-            const std::string &description) :
-    file_(file),
-    line_(line),
-    severity_(severity),
-    description_(description),
-    has_printed_(false)
-  {
+            const std::string &description)
+    : file_(file),
+      line_(line),
+      severity_(severity),
+      description_(description),
+      has_printed_(false) {
     stopwatch_.start();
   }
 
@@ -190,7 +188,7 @@ public:
     return has_printed_;
   }
 
-private:
+ private:
   Stopwatch stopwatch_;
   const char *file_;
   const int line_;

@@ -19,9 +19,9 @@
 #include <stddef.h>
 #include <string.h>
 #include <string>
-#include "faststring.h"
 #include "gutil/strings/fastmem.h"
 #include "gutil/stringprintf.h"
+#include "util/faststring.h"
 
 namespace kudu {
 
@@ -40,18 +40,18 @@ class Slice {
     size_(n) { }
 
   // Create a slice that refers to the contents of "s"
-  Slice(const std::string& s) :
+  Slice(const std::string& s) : // NOLINT(runtime/explicit)
     data_(reinterpret_cast<const uint8_t *>(s.data())),
     size_(s.size()) { }
 
   // Create a slice that refers to s[0,strlen(s)-1]
-  Slice(const char* s) :
+  Slice(const char* s) : // NOLINT(runtime/explicit)
     data_(reinterpret_cast<const uint8_t *>(s)),
     size_(strlen(s)) { }
 
   // Create a slice that refers to the contents of the faststring.
   // Note that further appends to the faststring may invalidate this slice.
-  Slice(const faststring &s) : data_(s.data()), size_(s.size()) { }
+  Slice(const faststring &s) : data_(s.data()), size_(s.size()) { }  // NOLINT(runtime/explicit)
 
   // Return a pointer to the beginning of the referenced data
   const uint8_t* data() const { return data_; }
@@ -90,7 +90,7 @@ class Slice {
     return std::string(reinterpret_cast<const char *>(data_), size_);
   }
 
-  std::string ToDebugString(size_t max_len=0) const {
+  std::string ToDebugString(size_t max_len = 0) const {
     size_t bytes_to_print = size_;
     bool abbreviated = false;
     if (max_len != 0 && bytes_to_print > max_len) {

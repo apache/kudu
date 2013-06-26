@@ -7,8 +7,11 @@
 #include <boost/lexical_cast.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <iostream>
 #include <stdint.h>
+
+#include <iostream>
+#include <string>
+#include <vector>
 
 #include "gutil/map-util.h"
 #include "rpc/messenger.h"
@@ -35,8 +38,7 @@ Connection::Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
     connect_in_progress_(connect_in_progress),
     direction_(direction),
     last_activity_time_(reactor_thread_->cur_time()),
-    next_call_id_(1)
-{
+    next_call_id_(1) {
 }
 
 void Connection::EpollRegister(ev::loop_ref& loop) {
@@ -161,9 +163,9 @@ void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
 // has been fully transmitted.
 struct CallTransferCallbacks : public TransferCallbacks {
  public:
-  CallTransferCallbacks(const shared_ptr<OutboundCall> &call) :
-    call_(call)
-  {}
+  explicit CallTransferCallbacks(const shared_ptr<OutboundCall> &call)
+    : call_(call) {
+  }
 
   virtual void NotifyTransferFinished() {
     call_->CallSent();
@@ -218,7 +220,8 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   float timeout_secs = call->controller()->timeout().ToSeconds();
   if (timeout_secs > 0) {
     reactor_thread_->RegisterTimeout(&car->timeout_timer);
-    car->timeout_timer.set<CallAwaitingResponse, &CallAwaitingResponse::HandleTimeout>(car.get());
+    car->timeout_timer.set<CallAwaitingResponse, // NOLINT(*)
+                           &CallAwaitingResponse::HandleTimeout>(car.get());
     car->timeout_timer.start(timeout_secs, 0);
   }
 

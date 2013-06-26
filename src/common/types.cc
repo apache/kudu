@@ -5,7 +5,7 @@
 
 #include "gutil/singleton.h"
 
-#include "types.h"
+#include "common/types.h"
 
 namespace kudu {
 
@@ -13,13 +13,12 @@ using std::tr1::unordered_map;
 using boost::shared_ptr;
 
 template<typename TypeTraitsClass>
-TypeInfo::TypeInfo(TypeTraitsClass t) :
-  type_(TypeTraitsClass::type),
-  name_(TypeTraitsClass::name()),
-  size_(TypeTraitsClass::size),
-  append_func_(TypeTraitsClass::AppendDebugStringForValue),
-  compare_func_(TypeTraitsClass::Compare)
-{
+TypeInfo::TypeInfo(TypeTraitsClass t)
+  : type_(TypeTraitsClass::type),
+    name_(TypeTraitsClass::name()),
+    size_(TypeTraitsClass::size),
+    append_func_(TypeTraitsClass::AppendDebugStringForValue),
+    compare_func_(TypeTraitsClass::Compare) {
 }
 
 void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
@@ -31,7 +30,7 @@ int TypeInfo::Compare(const void *lhs, const void *rhs) const {
 }
 
 class TypeInfoResolver {
-public:
+ public:
   const TypeInfo &GetTypeInfo(DataType t) {
     const TypeInfo *type_info = mapping_[t].get();
     CHECK(type_info != NULL) <<
@@ -39,7 +38,7 @@ public:
     return *type_info;
   }
 
-private:
+ private:
   TypeInfoResolver() {
     AddMapping<UINT32>();
     AddMapping<INT32>();

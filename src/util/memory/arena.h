@@ -18,17 +18,16 @@
 #ifndef SUPERSONIC_BASE_MEMORY_ARENA_H_
 #define SUPERSONIC_BASE_MEMORY_ARENA_H_
 
-#include <stddef.h>
-#include <string.h>
-
-#include <memory>
-#include <new>
-#include <tr1/memory>
-
 #include <boost/signals2/dummy_mutex.hpp>
 #include <boost/thread/mutex.hpp>
-
 #include <glog/logging.h>
+#include <stddef.h>
+#include <string.h>
+#include <tr1/memory>
+#include <memory>
+#include <new>
+#include <vector>
+
 #include "gutil/logging-inl.h"
 #include "gutil/macros.h"
 #include "gutil/gscoped_ptr.h"
@@ -232,14 +231,14 @@ template<class T, bool THREADSAFE> class ArenaAllocator {
 
 
 class Arena : public ArenaBase<false> {
-public:
+ public:
   explicit Arena(size_t initial_buffer_size, size_t max_buffer_size) :
     ArenaBase<false>(initial_buffer_size, max_buffer_size)
   {}
 };
 
 class ThreadSafeArena : public ArenaBase<true> {
-public:
+ public:
   explicit ThreadSafeArena(size_t initial_buffer_size, size_t max_buffer_size) :
     ArenaBase<true>(initial_buffer_size, max_buffer_size)
   {}

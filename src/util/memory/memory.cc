@@ -15,6 +15,7 @@
 
 #include "util/memory/memory.h"
 
+#include <gflags/gflags.h>
 #include <string.h>
 
 #include <algorithm>
@@ -26,7 +27,6 @@ using std::sort;
 using std::swap;
 #include <cstdlib>
 
-#include <gflags/gflags.h>
 
 namespace kudu {
 

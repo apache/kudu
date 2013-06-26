@@ -3,9 +3,9 @@
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
 #include <boost/thread/thread.hpp>
-#include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
+#include <string>
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
@@ -21,13 +21,13 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 
 class TimeSeries {
-public:
+ public:
   void AddValue(double val);
   void SetValue(double val);
 
   double value() const;
 
-private:
+ private:
   friend class TimeSeriesCollector;
 
   DISALLOW_COPY_AND_ASSIGN(TimeSeries);
@@ -41,7 +41,7 @@ private:
 };
 
 class TimeSeriesCollector {
-public:
+ public:
   explicit TimeSeriesCollector(const string &scope) :
     scope_(scope),
     exit_latch_(0),
@@ -54,7 +54,7 @@ public:
   void StartDumperThread();
   void StopDumperThread();
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(TimeSeriesCollector);
 
   void DumperThread();

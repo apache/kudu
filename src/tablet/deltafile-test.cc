@@ -28,7 +28,7 @@ using std::tr1::shared_ptr;
 const char kTestPath[] = "/tmp/test";
 
 class TestDeltaFile : public ::testing::Test {
-public:
+ public:
   TestDeltaFile() :
     env_(NewMemEnv(Env::Default())),
     schema_(boost::assign::list_of
@@ -39,7 +39,7 @@ public:
 
   void WriteTestFile() {
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), kTestPath, &file) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
 
     DeltaFileWriter dfw(schema_, file);
     ASSERT_STATUS_OK(dfw.Start());
@@ -117,7 +117,7 @@ public:
     }
   }
 
-protected:
+ protected:
   gscoped_ptr<Env> env_;
   Schema schema_;
   Arena arena_;

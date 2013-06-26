@@ -20,13 +20,13 @@ class Socket;
 
 // A pool of threads that handle new incoming RPC calls.
 class ServicePool {
-public:
+ public:
   ServicePool(const std::tr1::shared_ptr<Messenger> &messenger,
               gscoped_ptr<ServiceIf> service);
   ~ServicePool();
   Status Init(int num_threads);
 
-private:
+ private:
   void RunThread();
   std::tr1::shared_ptr<Messenger> messenger_;
   gscoped_ptr<ServiceIf> service_;

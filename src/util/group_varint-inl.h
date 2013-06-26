@@ -13,7 +13,7 @@ namespace kudu {
 namespace coding {
 
 extern bool SSE_TABLE_INITTED;
-extern uint8_t SSE_TABLE[256 * 16] __attribute__ ((aligned(16)));
+extern uint8_t SSE_TABLE[256 * 16] __attribute__((aligned(16)));
 extern uint8_t VARINT_SELECTOR_LENGTHS[256];
 
 const uint32_t MASKS[4] = { 0xff, 0xffff, 0xffffff, 0xffffffff };
@@ -35,10 +35,10 @@ inline const uint8_t *DecodeGroupVarInt32(
   const uint8_t *src,
   uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
 
-  uint8_t a_sel = (*src & BOOST_BINARY( 11 00 00 00)) >> 6;
-  uint8_t b_sel = (*src & BOOST_BINARY( 00 11 00 00)) >> 4;
-  uint8_t c_sel = (*src & BOOST_BINARY( 00 00 11 00)) >> 2;
-  uint8_t d_sel = (*src & BOOST_BINARY( 00 00 00 11 ));
+  uint8_t a_sel = (*src & BOOST_BINARY(11 00 00 00)) >> 6;
+  uint8_t b_sel = (*src & BOOST_BINARY(00 11 00 00)) >> 4;
+  uint8_t c_sel = (*src & BOOST_BINARY(00 00 11 00)) >> 2;
+  uint8_t d_sel = (*src & BOOST_BINARY(00 00 00 11 ));
 
   src++; // skip past selector byte
 
@@ -55,7 +55,7 @@ inline const uint8_t *DecodeGroupVarInt32(
   src += d_sel + 1;
 
   return src;
-} 
+}
 
 // Decode a set of 4 group-varint encoded integers from the given pointer.
 //
@@ -70,12 +70,11 @@ inline const uint8_t *DecodeGroupVarInt32_SlowButSafe(
   memcpy(safe_buf, src, total_len);
   DecodeGroupVarInt32(safe_buf, a, b, c, d);
   return src + total_len;
-} 
+}
 
 
 inline void DoExtractM128(__m128i results,
-                          uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d)
-{
+                          uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
 #define SSE_USE_EXTRACT_PS
 #ifdef SSE_USE_EXTRACT_PS
   // _mm_extract_ps turns into extractps, which is slightly faster
@@ -88,7 +87,7 @@ inline void DoExtractM128(__m128i results,
   *b = _mm_extract_ps((__v4sf)results, 1);
   *c = _mm_extract_ps((__v4sf)results, 2);
   *d = _mm_extract_ps((__v4sf)results, 3);
-#else 
+#else
   *a = _mm_extract_epi32(results, 0);
   *b = _mm_extract_epi32(results, 1);
   *c = _mm_extract_epi32(results, 2);
@@ -210,10 +209,8 @@ inline void AppendGroupVarInt32(
 //
 // For best performance, users should already have reserved adequate
 // space in 's' (CalcRequiredBytes32 can be handy here)
-inline void AppendGroupVarInt32Sequence(
-  faststring *s, uint32_t frame_of_reference,
-  uint32_t *ints, size_t size)
-{
+inline void AppendGroupVarInt32Sequence(faststring *s, uint32_t frame_of_reference,
+                                        uint32_t *ints, size_t size) {
   uint32_t *p = ints;
   while (size >= 4) {
     AppendGroupVarInt32(s,

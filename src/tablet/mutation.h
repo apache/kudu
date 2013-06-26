@@ -3,6 +3,8 @@
 #ifndef KUDU_TABLET_MUTATION_H
 #define KUDU_TABLET_MUTATION_H
 
+#include <string>
+
 #include "common/row_changelist.h"
 #include "common/schema.h"
 #include "gutil/macros.h"
@@ -67,12 +69,12 @@ class Mutation {
 
 template<class ArenaType>
 inline Mutation *Mutation::CreateInArena(
-  ArenaType *arena, txid_t txid, const RowChangeList &rcl)
-{
+  ArenaType *arena, txid_t txid, const RowChangeList &rcl) {
+
   size_t size = sizeof(Mutation) + rcl.slice().size();
   void *storage = arena->AllocateBytesAligned(size, BASE_PORT_H_ALIGN_OF(Mutation));
   CHECK(storage) << "failed to allocate storage from arena";
-  Mutation *ret = new (storage) Mutation();
+  Mutation *ret = new(storage) Mutation();
   ret->txid_ = txid;
   ret->next_ = NULL;
   ret->changelist_size_ = rcl.slice().size();

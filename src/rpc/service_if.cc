@@ -1,7 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "rpc/server_call.h"
 #include "rpc/service_if.h"
+
+#include <string>
+
+#include "rpc/server_call.h"
+
+using std::string;
 
 namespace kudu {
 namespace rpc {

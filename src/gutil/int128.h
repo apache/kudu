@@ -13,7 +13,7 @@ struct uint128_pod;
 
 // An unsigned 128-bit integer type. Thread-compatible.
 class uint128 {
-public:
+ public:
   uint128();  // Sets to 0, but don't trust on this behavior.
   uint128(uint64 top, uint64 bottom);
 #ifndef SWIG
@@ -49,7 +49,7 @@ public:
   // We add "std::" to avoid including all of port.h.
   friend std::ostream& operator<<(std::ostream& o, const uint128& b);
 
-private:
+ private:
   // Little-endian memory order optimizations can benefit from
   // having lo_ first, hi_ last.
   // See util/endian/endian.h and Load128/Store128 for storing a uint128.

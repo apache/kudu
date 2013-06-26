@@ -5,20 +5,18 @@
 #include <stdlib.h>
 
 #include <boost/assign/list_of.hpp>
+#include "cfile/cfile-test-base.h"
+#include "cfile/cfile.h"
+#include "cfile/cfile_reader.h"
+#include "cfile/cfile.pb.h"
+#include "cfile/index_block.h"
+#include "cfile/index_btree.h"
 #include "common/columnblock.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
 #include "util/env.h"
 #include "util/test_macros.h"
 #include "util/stopwatch.h"
-
-#include "cfile-test-base.h"
-#include "cfile.h"
-#include "cfile_reader.h"
-#include "cfile.h"
-#include "cfile.pb.h"
-#include "index_block.h"
-#include "index_btree.h"
 
 namespace kudu { namespace cfile {
 
@@ -85,7 +83,7 @@ class DataGenerator {
     return values_[index];
   }
 
-  virtual ~DataGenerator(){}
+  virtual ~DataGenerator() {}
 
  private:
   gscoped_array<T> values_;
@@ -142,7 +140,7 @@ class TestCFile : public CFileTestBase {
                               CompressionType compression,
                               int num_entries) {
     shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     WriterOptions opts;
     opts.write_posidx = true;
     // Use a smaller block size to exercise multi-level indexing.
@@ -179,7 +177,7 @@ class TestCFile : public CFileTestBase {
                                    CompressionType compression,
                                    int num_entries) {
     shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     WriterOptions opts;
     opts.write_posidx = true;
     opts.block_size = 128;
@@ -221,7 +219,7 @@ class TestCFile : public CFileTestBase {
     BlockPointer ptr;
 
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_STATUS_OK( reader->NewIterator(&iter) );
+    ASSERT_STATUS_OK(reader->NewIterator(&iter));
 
     ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
     ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
@@ -341,7 +339,7 @@ class TestCFile : public CFileTestBase {
   void TestReadWriteRawBlocks(const string &path, CompressionType compression, int num_entries) {
     // Test Write
     shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     WriterOptions opts;
     opts.write_posidx = true;
     opts.write_validx = false;
@@ -467,7 +465,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   BlockPointer ptr;
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK( reader->NewIterator(&iter) );
+  ASSERT_STATUS_OK(reader->NewIterator(&iter));
 
   Arena arena(1024, 1024*1024);
 
@@ -563,7 +561,7 @@ TEST_F(TestCFile, TestMetadata) {
   // Write the file.
   {
     shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     Writer w(WriterOptions(), UINT32, false, GROUP_VARINT, sink);
 
     w.AddMetadataPair("key_in_header", "header value");

@@ -16,7 +16,7 @@ class BlockCacheHandle;
 // Wrapper around kudu::Cache specifically for caching blocks of CFiles.
 // Provides a singleton and LRU cache for CFile blocks.
 class BlockCache {
-public:
+ public:
   typedef uint64_t FileId;
 
   static BlockCache *GetSingleton();
@@ -46,7 +46,7 @@ public:
   void Insert(FileId file_id, uint64_t offset, const Slice &block_data,
               BlockCacheHandle *inserted);
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
   static void ValueDeleter(const Slice &key, void *value);
@@ -56,7 +56,7 @@ private:
 
 // Scoped reference to a block from the block cache.
 class BlockCacheHandle {
-public:
+ public:
   BlockCacheHandle() :
     handle_(NULL)
   {}
@@ -75,7 +75,7 @@ public:
   // Swap this handle with another handle.
   // This can be useful to transfer ownership of a handle by swapping
   // with an empty BlockCacheHandle.
-  void swap(BlockCacheHandle *dst) {
+  void swap(BlockCacheHandle *dst) { // NOLINT(*) false positive
     uint8_t buf[sizeof(*this)];
     memcpy(buf, dst, sizeof(*this));
     memcpy(dst, this, sizeof(*this));
@@ -95,7 +95,7 @@ public:
     return handle_ != NULL;
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BlockCacheHandle);
   friend class BlockCache;
 

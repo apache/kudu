@@ -4,6 +4,7 @@
 #include <sched.h>
 #include <unistd.h>
 #include <tr1/memory>
+#include <string>
 
 #include "cfile/cfile.h"
 #include "cfile/bloomfile.h"
@@ -22,9 +23,8 @@ namespace kudu { namespace cfile {
 ////////////////////////////////////////////////////////////
 
 BloomFileWriter::BloomFileWriter(const shared_ptr<WritableFile> &file,
-                                 const BloomFilterSizing &sizing) :
-  bloom_builder_(sizing)
-{
+                                 const BloomFilterSizing &sizing)
+  : bloom_builder_(sizing) {
   cfile::WriterOptions opts;
   opts.write_posidx = false;
   opts.write_validx = true;
@@ -40,7 +40,7 @@ Status BloomFileWriter::Start() {
 
 Status BloomFileWriter::Finish() {
   if (bloom_builder_.count() > 0) {
-    RETURN_NOT_OK( FinishCurrentBloomBlock() );
+    RETURN_NOT_OK(FinishCurrentBloomBlock());
   }
   return writer_->Finish();
 }
@@ -59,7 +59,7 @@ Status BloomFileWriter::AppendKeys(
 
     // Bloom has reached optimal occupancy: flush it to the file
     if (PREDICT_FALSE(bloom_builder_.count() >= bloom_builder_.expected_count())) {
-      RETURN_NOT_OK( FinishCurrentBloomBlock() );
+      RETURN_NOT_OK(FinishCurrentBloomBlock());
 
       // Copy the next key as the first key of the next block.
       // Doing this here avoids having to do it in normal code path of the loop.
@@ -89,7 +89,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 
   // Append to the file.
   Slice start_key(first_key_);
-  RETURN_NOT_OK( writer_->AppendRawBlock(slices, 0, &start_key, "bloom block") );
+  RETURN_NOT_OK(writer_->AppendRawBlock(slices, 0, &start_key, "bloom block"));
 
   bloom_builder_.Clear();
 
@@ -121,9 +121,8 @@ Status BloomFileReader::Open(Env *env, const string &path,
   return Status::OK();
 }
 
-BloomFileReader::BloomFileReader(CFileReader *reader) :
-  reader_(reader)
-{
+BloomFileReader::BloomFileReader(CFileReader *reader)
+  : reader_(reader) {
 }
 
 Status BloomFileReader::Init() {
@@ -205,7 +204,7 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   // Parse the header in the block.
   BloomBlockHeaderPB hdr;
   Slice bloom_data;
-  RETURN_NOT_OK( ParseBlockHeader(dblk_data.data(), &hdr, &bloom_data) );
+  RETURN_NOT_OK(ParseBlockHeader(dblk_data.data(), &hdr, &bloom_data));
 
   // Actually check the bloom filter.
   BloomFilter bf(bloom_data, hdr.num_hash_functions());

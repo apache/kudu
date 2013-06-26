@@ -26,7 +26,7 @@ namespace kudu {
 // If buf_[0] == 0xff:
 //   buf_[1..sizeof(uint8_t *)] == pointer to indirect data, minus the MSB.
 //   buf_[sizeof(uint8_t *)..] == inline prefix of stored key
-// 
+//
 // The indirect data which is pointed to is stored as a 4 byte length followed by
 // the actual data.
 //
@@ -36,7 +36,7 @@ template<size_t STORAGE_SIZE>
 class InlineSlice {
   BOOST_STATIC_ASSERT(STORAGE_SIZE >= sizeof(uint8_t *));
   BOOST_STATIC_ASSERT(STORAGE_SIZE <= 256);
-public:
+ public:
   InlineSlice() {
   }
 
@@ -79,7 +79,7 @@ public:
     }
   }
 
-private:
+ private:
   bool is_indirect() const {
     return buf_[0] == 0xff;
   }

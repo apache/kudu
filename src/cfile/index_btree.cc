@@ -1,5 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include <vector>
+
 #include "cfile/block_cache.h"
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"

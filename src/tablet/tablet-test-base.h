@@ -2,12 +2,13 @@
 #ifndef KUDU_TABLET_TABLET_TEST_BASE_H
 #define KUDU_TABLET_TABLET_TEST_BASE_H
 
-#include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
+#include <algorithm>
+#include <string>
 #include <vector>
 
 #include "common/row.h"
@@ -34,7 +35,7 @@ using std::tr1::unordered_set;
 // which can customize the schema for the tests. This way we can
 // get coverage on various schemas without duplicating test code.
 struct StringKeyTestSetup {
-public:
+ public:
   StringKeyTestSetup() :
     test_schema_(boost::assign::list_of
                  (ColumnSchema("key", STRING))
@@ -43,8 +44,7 @@ public:
                  1)
   {}
 
-  void BuildRowKey(RowBuilder *rb, uint64_t row_idx)
-  {
+  void BuildRowKey(RowBuilder *rb, uint64_t row_idx) {
     // This is called from multiple threads, so can't move this buffer
     // to be a class member. However, it's likely to get inlined anyway
     // and loop-hosted.
@@ -112,7 +112,7 @@ public:
 
 // Setup for testing composite keys
 struct CompositeKeyTestSetup {
-public:
+ public:
   CompositeKeyTestSetup() :
     test_schema_(boost::assign::list_of
                  (ColumnSchema("key1", STRING))
@@ -122,8 +122,7 @@ public:
                  2)
   {}
 
-  void BuildRowKey(RowBuilder *rb, uint64_t row_idx)
-  {
+  void BuildRowKey(RowBuilder *rb, uint64_t row_idx) {
     // This is called from multiple threads, so can't move this buffer
     // to be a class member. However, it's likely to get inlined anyway
     // and loop-hosted.
@@ -355,7 +354,7 @@ typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup,
 
 template<class TESTSETUP>
 class TabletTestBase : public KuduTest {
-public:
+ public:
   TabletTestBase() :
     setup_(),
     schema_(setup_.test_schema()),
@@ -372,7 +371,7 @@ public:
   }
 
   void InsertTestRows(uint64_t first_row, uint64_t count, uint32_t update_count_val,
-                      TimeSeries *ts=NULL) {
+                      TimeSeries *ts = NULL) {
     RowBuilder rb(schema_);
 
     uint64_t inserted_since_last_report = 0;

@@ -3,6 +3,8 @@
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
 #include <gtest/gtest.h>
+#include <string>
+#include <vector>
 
 #include "common/columnblock.h"
 #include "common/row_changelist.h"
@@ -27,9 +29,9 @@ class Mutation;
 // This essentially tracks a 'diff' per row, which contains the
 // modified columns.
 
-class DeltaMemStore : public DeltaStore, 
+class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
-public:
+ public:
   explicit DeltaMemStore(const Schema &schema);
 
   // Update the given row in the database.
@@ -65,7 +67,7 @@ public:
     return schema_;
   }
 
-private:
+ private:
   friend class DMSIterator;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
@@ -92,7 +94,7 @@ private:
 // See DeltaStore for more details on usage and the implemented
 // functions.
 class DMSIterator : public DeltaIterator {
-public:
+ public:
   Status Init();
 
   Status SeekToOrdinal(rowid_t row_idx);
@@ -107,7 +109,7 @@ public:
 
   string ToString() const;
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);
   FRIEND_TEST(TestDeltaMemStore, TestIteratorDoesUpdates);
   FRIEND_TEST(TestDeltaMemStore, TestCollectMutations);

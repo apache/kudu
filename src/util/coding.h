@@ -13,8 +13,9 @@
 #include <stdint.h>
 #include <string.h>
 #include <string>
-#include "slice.h"
-#include "faststring.h"
+
+#include "util/slice.h"
+#include "util/faststring.h"
 
 namespace kudu {
 extern void PutFixed32(faststring* dst, uint32_t value);

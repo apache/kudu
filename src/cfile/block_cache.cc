@@ -28,13 +28,13 @@ struct CacheKey {
   uint64_t offset_;
 } PACKED;
 
-BlockCache::BlockCache() :
-  cache_(CHECK_NOTNULL(NewLRUCache(FLAGS_block_cache_capacity_mb * 1024 * 1024)))
-{}
+BlockCache::BlockCache()
+  : cache_(CHECK_NOTNULL(NewLRUCache(FLAGS_block_cache_capacity_mb * 1024 * 1024))) {
+}
 
-BlockCache::BlockCache(size_t capacity) :
-  cache_(CHECK_NOTNULL(NewLRUCache(capacity)))
-{}
+BlockCache::BlockCache(size_t capacity)
+  : cache_(CHECK_NOTNULL(NewLRUCache(capacity))) {
+}
 
 BlockCache *BlockCache::GetSingleton() {
   return Singleton<BlockCache>::get();

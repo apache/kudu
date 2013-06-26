@@ -32,10 +32,10 @@ class RpcBench : public RpcTestBase {
 
 class ClientThread {
  public:
-  ClientThread(RpcBench *bench) :
-    bench_(bench),
-    request_count_(0)
-  {}
+  explicit ClientThread(RpcBench *bench)
+    : bench_(bench),
+      request_count_(0) {
+  }
 
   void Start() {
     thread_.reset(new boost::thread(&ClientThread::Run, this));
@@ -100,9 +100,9 @@ TEST_F(RpcBench, BenchmarkCalls) {
   }
   sw.stop();
 
-  float reqs_per_second = (float)total_reqs / sw.elapsed().wall_seconds();
-  float user_cpu_micros_per_req = (float)sw.elapsed().user / 1000.0 / total_reqs;
-  float sys_cpu_micros_per_req = (float)sw.elapsed().system / 1000.0 / total_reqs;
+  float reqs_per_second = static_cast<float>(total_reqs / sw.elapsed().wall_seconds());
+  float user_cpu_micros_per_req = static_cast<float>(sw.elapsed().user / 1000.0 / total_reqs);
+  float sys_cpu_micros_per_req = static_cast<float>(sw.elapsed().system / 1000.0 / total_reqs);
 
   LOG(INFO) << "Reqs/sec:         " << reqs_per_second;
   LOG(INFO) << "User CPU per req: " << user_cpu_micros_per_req << "us";

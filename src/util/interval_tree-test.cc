@@ -131,9 +131,9 @@ static void VerifyFindIntersectingInterval(const vector<IntInterval> all_interva
 
 TEST_F(TestIntervalTree, TestBasic) {
   vector<IntInterval> intervals;
-  intervals.push_back( IntInterval(1, 2) );
-  intervals.push_back( IntInterval(3, 4) );
-  intervals.push_back( IntInterval(1, 4) );
+  intervals.push_back(IntInterval(1, 2));
+  intervals.push_back(IntInterval(3, 4));
+  intervals.push_back(IntInterval(1, 4));
   IntervalTree<IntTraits> t(intervals);
 
   for (int i = 0; i <= 5; i++) {
@@ -151,9 +151,9 @@ TEST_F(TestIntervalTree, TestRandomized) {
   // Generate 100 random intervals spanning 0-200 and build an interval tree from them.
   vector<IntInterval> intervals;
   for (int i = 0; i < 100; i++) {
-    int l = rand() % 100;
-    int r = l + rand() % 100;
-    intervals.push_back( IntInterval(l, r) );
+    int l = rand() % 100; // NOLINT(runtime/threadsafe_fn)
+    int r = l + rand() % 100; // NOLINT(runtime/threadsafe_fn)
+    intervals.push_back(IntInterval(l, r));
   }
   IntervalTree<IntTraits> t(intervals);
 
@@ -164,8 +164,8 @@ TEST_F(TestIntervalTree, TestRandomized) {
 
   // Test that we get the correct result for random intervals
   for (int i = 0; i < 100; i++) {
-    int l = rand() % 100;
-    int r = l + rand() % 100;
+    int l = rand() % 100; // NOLINT(runtime/threadsafe_fn)
+    int r = l + rand() % 100; // NOLINT(runtime/threadsafe_fn)
     VerifyFindIntersectingInterval(intervals, t, IntInterval(l, r));
   }
 }

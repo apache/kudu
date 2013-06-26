@@ -3,14 +3,14 @@
 #ifndef KUDU_TABLET_MVCC_H
 #define KUDU_TABLET_MVCC_H
 
+#include <inttypes.h>
+#include <tr1/unordered_set>
+#include <string>
+
 #include "gutil/endian.h"
 #include "gutil/macros.h"
 #include "util/memcmpable_varint.h"
 #include "util/locks.h"
-
-#include <inttypes.h>
-#include <string>
-#include <tr1/unordered_set>
 
 namespace kudu {
 namespace tablet {

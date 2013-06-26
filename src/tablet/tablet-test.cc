@@ -2,11 +2,10 @@
 
 #include <glog/logging.h>
 #include <time.h>
-
+#include <gutil/strings/join.h>
 #include "common/iterator.h"
 #include "common/row.h"
 #include "common/scan_spec.h"
-#include <gutil/strings/join.h>
 #include "tablet/memrowset.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-test-base.h"
@@ -552,7 +551,9 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 
   vector<string>::const_iterator exp_it = expected_rows.begin();
   for (vector<string>::const_iterator out_it = out_rows.begin(); out_it!= out_rows.end();) {
-    ASSERT_EQ(*out_it, *exp_it); out_it++; exp_it++;
+    ASSERT_EQ(*out_it, *exp_it);
+    out_it++;
+    exp_it++;
   }
 }
 
@@ -621,7 +622,9 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
 
   vector<string>::const_iterator exp_it = expected_rows.begin();
   for (vector<string>::const_iterator out_it = out_rows.begin(); out_it!= out_rows.end();) {
-    ASSERT_EQ(*out_it, *exp_it); out_it++; exp_it++;
+    ASSERT_EQ(*out_it, *exp_it);
+    out_it++;
+    exp_it++;
   }
 }
 

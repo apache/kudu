@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include <tr1/memory>
 
-#include "blocking_queue.h"
+#include "util/blocking_queue.h"
 
 using std::tr1::shared_ptr;
 
@@ -61,15 +61,14 @@ TEST(BlockingQueueTest, TestGscopedPtrMethods) {
 }
 
 class MultiThreadTest {
-public:
+ public:
   typedef std::vector<std::tr1::shared_ptr<boost::thread> > thread_vec_t;
 
   MultiThreadTest()
     : iterations_(4),
       nthreads_(5),
       queue_(nthreads_ * iterations_),
-      num_inserters_(nthreads_)
-  {
+      num_inserters_(nthreads_) {
   }
 
   void InserterThread(int arg) {

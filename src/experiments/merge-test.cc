@@ -1,10 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <algorithm>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -20,7 +20,7 @@ using std::string;
 typedef string MergeType;
 
 struct CompareIters {
-  CompareIters(vector<vector<MergeType>::const_iterator> *iters) :
+  explicit CompareIters(vector<vector<MergeType>::const_iterator> *iters) :
     iters_(iters)
   {}
 
@@ -33,8 +33,7 @@ struct CompareIters {
 
 void HeapMerge(
   const vector<vector<MergeType> > &in_lists,
-  vector<MergeType> *out)
-{
+  vector<MergeType> *out) {
   typedef vector<MergeType>::const_iterator MergeTypeIter;
 
   vector<MergeTypeIter> iters;
@@ -64,10 +63,8 @@ void HeapMerge(
   }
 }
 
-void SimpleMerge(
-  const vector<vector<MergeType> > &in_lists,
-  vector<MergeType> *out)
-{
+void SimpleMerge(const vector<vector<MergeType> > &in_lists,
+                 vector<MergeType> *out) {
   typedef vector<MergeType>::const_iterator MergeTypeIter;
   vector<MergeTypeIter> iters;
   BOOST_FOREACH(const vector<MergeType> &list, in_lists) {

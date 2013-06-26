@@ -1,11 +1,14 @@
 // Copyright (c) 2012, Cloudera, inc.
 
+#include "cfile/cfile_reader.h"
+
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 
+#include <algorithm>
+
 #include "cfile/block_cache.h"
 #include "cfile/block_pointer.h"
-#include "cfile/cfile_reader.h"
 #include "cfile/cfile.h"
 #include "cfile/cfile.pb.h"
 #include "cfile/gvint_block.h"
@@ -58,8 +61,7 @@ CFileReader::CFileReader(const ReaderOptions &options,
   file_size_(file_size),
   state_(kUninitialized),
   cache_(BlockCache::GetSingleton()),
-  cache_id_(cache_->GenerateFileId())
-{
+  cache_id_(cache_->GenerateFileId()) {
 }
 
 
@@ -198,8 +200,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   // Cache miss: need to read ourselves.
   gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice block;
-  RETURN_NOT_OK( file_->Read(ptr.offset(), ptr.size(),
-                             &block, scratch.get()) );
+  RETURN_NOT_OK(file_->Read(ptr.offset(), ptr.size(),
+                            &block, scratch.get()));
   if (block.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }
@@ -322,13 +324,12 @@ Status CFileReader::NewIterator(CFileIterator **iter) const {
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(const CFileReader *reader,
                              const BlockPointer *posidx_root,
-                             const BlockPointer *validx_root) :
-  reader_(reader),
-  seeked_(NULL),
-  prepared_(false),
-  last_prepare_idx_(-1),
-  last_prepare_count_(-1)
-{
+                             const BlockPointer *validx_root)
+  : reader_(reader),
+    seeked_(NULL),
+    prepared_(false),
+    last_prepare_idx_(-1),
+    last_prepare_count_(-1) {
   if (posidx_root != NULL) {
     posidx_iter_.reset(IndexTreeIterator::Create(
                          reader, UINT32, *posidx_root));
@@ -340,10 +341,10 @@ CFileIterator::CFileIterator(const CFileReader *reader,
   }
 }
 
-CFileIterator::IOStatistics::IOStatistics() :
-  data_blocks_read(0),
-  rows_read(0)
-{}
+CFileIterator::IOStatistics::IOStatistics()
+ : data_blocks_read(0),
+   rows_read(0) {
+}
 
 string CFileIterator::IOStatistics::ToString() const {
   return StringPrintf("data_blocks_read=%d rows_read=%ld",
@@ -370,7 +371,7 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   // block in the file.
   // TODO: could assert that each of the index layers is
   // at its last entry (ie HasNext() is false for each)
-  if (PREDICT_FALSE(ord_idx > b->last_row_idx())){
+  if (PREDICT_FALSE(ord_idx > b->last_row_idx())) {
     return Status::NotFound("trying to seek past highest ordinal in file");
   }
 
@@ -626,8 +627,7 @@ Status CFileIterator::FinishBatch() {
 }
 
 
-Status CFileIterator::Scan(ColumnBlock *dst)
-{
+Status CFileIterator::Scan(ColumnBlock *dst) {
   CHECK(seeked_) << "not seeked";
 
   // Use a column data view to been able to advance it as we read into it.

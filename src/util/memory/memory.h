@@ -29,6 +29,10 @@
 
 #include <stddef.h>
 
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/locks.hpp>
+#include <glog/logging.h>
+
 #include <algorithm>
 using std::copy;
 using std::max;
@@ -40,10 +44,6 @@ using std::swap;
 using std::numeric_limits;
 #include <vector>
 using std::vector;
-
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/locks.hpp>
-#include <glog/logging.h>
 
 #include "util/boost_mutex_utils.h"
 #include "gutil/gscoped_ptr.h"
@@ -846,7 +846,7 @@ class GuaranteeMemory : public BufferAllocator {
                                   Buffer* buffer,
                                   BufferAllocator* originator) {
     int64 additional_memory = requested - (buffer != NULL ? buffer->size() : 0);
-    return additional_memory <= (int64)Available()
+    return additional_memory <= static_cast<int64>(Available())
         && DelegateReallocate(&limit_, requested, requested,
                               buffer, originator);
   }

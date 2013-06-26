@@ -1,6 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
+#include <tr1/memory>
+#include <vector>
+
 #include "rpc/call-inl.h"
 #include "rpc/connection.h"
 #include "rpc/server_call.h"
@@ -9,6 +12,7 @@ using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::io::CodedOutputStream;
 using std::tr1::shared_ptr;
+using std::vector;
 
 namespace kudu { namespace rpc {
 

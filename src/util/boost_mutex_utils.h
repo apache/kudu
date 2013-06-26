@@ -9,7 +9,7 @@
 // with the lock.
 template<class LockType>
 class lock_guard_maybe {
-public:
+ public:
   explicit lock_guard_maybe(LockType *l) :
     lock_(l) {
     if (l != NULL) {
@@ -23,7 +23,7 @@ public:
     }
   }
 
-private:
+ private:
   LockType *lock_;
 };
 

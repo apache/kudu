@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
+#include <algorithm>
+#include <string>
 
 #include "cfile/cfile.h"
 #include "cfile/string_prefix_block.h"
@@ -40,12 +42,11 @@ static const uint8_t *DecodeEntryLengths(
 // StringPrefixBlockBuilder encoding
 ////////////////////////////////////////////////////////////
 
-StringPrefixBlockBuilder::StringPrefixBlockBuilder(const WriterOptions *options) :
-  val_count_(0),
-  vals_since_restart_(0),
-  finished_(false),
-  options_(options)
-{
+StringPrefixBlockBuilder::StringPrefixBlockBuilder(const WriterOptions *options)
+  : val_count_(0),
+    vals_since_restart_(0),
+    finished_(false),
+    options_(options) {
   Reset();
 }
 
@@ -89,7 +90,7 @@ Slice StringPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
                   + restarts_.size() * sizeof(uint32_t) // the data
                   + sizeof(uint32_t)); // the restart count);
   BOOST_FOREACH(uint32_t restart, restarts_) {
-    DCHECK_GE((int)restart, header_offset);
+    DCHECK_GE(static_cast<int>(restart), header_offset);
     uint32_t relative_to_block = restart - header_offset;
     VLOG(2) << "appending restart " << relative_to_block;
     InlinePutFixed32(&buffer_, relative_to_block);
@@ -172,17 +173,16 @@ Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
 // StringPrefixBlockDecoder
 ////////////////////////////////////////////////////////////
 
-StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice) :
-  data_(slice),
-  parsed_(false),
-  num_elems_(0),
-  ordinal_pos_base_(0),
-  num_restarts_(0),
-  restarts_(NULL),
-  data_start_(0),
-  cur_idx_(0),
-  next_ptr_(NULL)
-{
+StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice)
+  : data_(slice),
+    parsed_(false),
+    num_elems_(0),
+    ordinal_pos_base_(0),
+    num_restarts_(0),
+    restarts_(NULL),
+    data_start_(0),
+    cur_idx_(0),
+    next_ptr_(NULL) {
 }
 
 Status StringPrefixBlockDecoder::ParseHeader() {
@@ -207,7 +207,7 @@ Status StringPrefixBlockDecoder::ParseHeader() {
   if (restarts_size > data_.size()) {
     return Status::Corruption(
       StringPrintf("restart count %d too big to fit in block size %d",
-                   num_restarts_, (int)data_.size()));
+                   num_restarts_, static_cast<int>(data_.size())));
   }
 
   // TODO: check relationship between num_elems, num_restarts_,
@@ -289,7 +289,7 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
     const uint8_t *key_ptr = DecodeEntryLengths(entry, &shared, &non_shared);
     if (key_ptr == NULL || (shared != 0)) {
       string err =
-        StringPrintf( "bad entry restart=%d shared=%d\n", mid, shared) +
+        StringPrintf("bad entry restart=%d shared=%d\n", mid, shared) +
         HexDump(Slice(entry, 16));
       return Status::Corruption(err);
     }
@@ -349,7 +349,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) 
     return Status::IOError(
       "Out of memory",
       StringPrintf("Failed to allocate %d bytes in output arena",
-                   (int)cur_val_.size()));
+                   static_cast<int>(cur_val_.size())));
   }
 
   // Put a slice to it in the output array

@@ -2,10 +2,13 @@
 #ifndef KUDU_CFILE_PLAIN_BLOCK_H
 #define KUDU_CFILE_PLAIN_BLOCK_H
 
-#include "block_encodings.h"
+#include <algorithm>
+#include <string>
+
+#include "cfile/block_encodings.h"
+#include "common/columnblock.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
-#include "common/columnblock.h"
 #include "util/hexdump.h"
 
 namespace kudu {
@@ -85,11 +88,11 @@ template<DataType Type>
 class PlainBlockDecoder : public BlockDecoder {
  public:
   explicit PlainBlockDecoder(const Slice &slice)
-      : data_(slice),
-        parsed_(false),
-        num_elems_(0),
-        ordinal_pos_base_(0),
-        cur_idx_(0) {
+    : data_(slice),
+      parsed_(false),
+      num_elems_(0),
+      ordinal_pos_base_(0),
+      cur_idx_(0) {
   }
 
   virtual Status ParseHeader() {

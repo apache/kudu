@@ -6,10 +6,11 @@
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <inttypes.h>
-#include <iostream>
-#include <sstream>
 #include <stdint.h>
 #include <tr1/memory>
+
+#include <iostream>
+#include <sstream>
 #include <vector>
 
 #include "rpc/client_call.h"
@@ -30,8 +31,7 @@ namespace rpc {
 Proxy::Proxy(const std::tr1::shared_ptr<Messenger> &messenger,
              const Sockaddr &remote)
   : messenger_(messenger),
-    remote_(remote)
-{
+    remote_(remote) {
 }
 
 Proxy::~Proxy() {

@@ -23,7 +23,7 @@ namespace btree {
 using boost::unordered_set;
 
 class TestCBTree : public KuduTest {
-protected:
+ protected:
   template<class T>
   InsertStatus InsertInLeaf(LeafNode<T> *l, ThreadSafeArena *arena,
                                    const Slice &k, const Slice &v) {
@@ -135,7 +135,7 @@ TEST_F(TestCBTree, TestLeafNodeBigKVs) {
 
 // Setup the tree to fanout quicker, so we test internal node
 // splitting, etc.
-struct SmallFanoutTraits : public BTreeTraits{
+struct SmallFanoutTraits : public BTreeTraits {
   static const size_t internal_node_size = 256;
   static const size_t fanout = 4;
 
@@ -144,7 +144,6 @@ struct SmallFanoutTraits : public BTreeTraits{
   // TODO: this should probably be dynamic, since we'd
   // know the size of the value for fixed size tables
   static const size_t leaf_max_entries = 4;
-  
 };
 
 void MakeKey(char *kbuf, size_t len, int i) {
@@ -198,7 +197,7 @@ void VerifyGet(const CBTree<T> &tree,
   ASSERT_EQ(CBTree<T>::GET_SUCCESS,
             tree.GetCopy(key, vbuf, &len))
     << "Failed on key " << HexDump(key);
-    
+
   Slice got_val(vbuf, len);
   ASSERT_EQ(0, expected_val.compare(got_val))
     << "Failure!\n"
@@ -424,29 +423,29 @@ TEST_F(TestCBTree, TestVersionLockConcurrent) {
 // read them back.
 TEST_F(TestCBTree, TestConcurrentInsert) {
   gscoped_ptr<CBTree<SmallFanoutTraits> > tree;
-  
-    int num_threads = 16;
-    int ins_per_thread = 30;
+
+  int num_threads = 16;
+  int ins_per_thread = 30;
 #ifdef NDEBUG
-    int n_trials = 600;
+  int n_trials = 600;
 #else
-    int n_trials = 30;
+  int n_trials = 30;
 #endif
 
-    boost::ptr_vector<boost::thread> threads;
-    boost::barrier go_barrier(num_threads + 1);
-    boost::barrier done_barrier(num_threads + 1);
+  boost::ptr_vector<boost::thread> threads;
+  boost::barrier go_barrier(num_threads + 1);
+  boost::barrier done_barrier(num_threads + 1);
 
 
-    for (int i = 0; i < num_threads; i++) {
-      threads.push_back(new boost::thread(
-                          InsertAndVerify<SmallFanoutTraits>,
-                          &go_barrier,
-                          &done_barrier,
-                          &tree,
-                          ins_per_thread * i,
-                          ins_per_thread * (i + 1)));
-    }
+  for (int i = 0; i < num_threads; i++) {
+    threads.push_back(new boost::thread(
+                        InsertAndVerify<SmallFanoutTraits>,
+                        &go_barrier,
+                        &done_barrier,
+                        &tree,
+                        ins_per_thread * i,
+                        ins_per_thread * (i + 1)));
+  }
 
 
   // Rather than running one long trial, better to run

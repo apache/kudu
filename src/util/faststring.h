@@ -2,11 +2,11 @@
 #ifndef KUDU_UTIL_FASTSTRING_H
 #define KUDU_UTIL_FASTSTRING_H
 
+#include <string>
+
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "gutil/strings/fastmem.h"
-
-#include <string>
 
 namespace kudu {
 
@@ -14,7 +14,7 @@ namespace kudu {
 // common use cases (in particular, resize() will fill with uninitialized data
 // instead of memsetting to \0)
 class faststring {
-public:
+ public:
   faststring() :
     data_(new uint8_t[kInitialCapacity]),
     len_(0),
@@ -22,10 +22,9 @@ public:
   }
 
   // Construct a string with the given capacity, in bytes.
-  explicit faststring(size_t capacity) :
-    len_(0),
-    capacity_(capacity)
-  {
+  explicit faststring(size_t capacity)
+    : len_(0),
+      capacity_(capacity) {
     if (capacity > 0) {
       data_.reset(new uint8_t[capacity]);
     }
@@ -170,7 +169,7 @@ public:
                        len_);
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(faststring);
 
   enum {

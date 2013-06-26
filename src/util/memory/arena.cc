@@ -14,10 +14,10 @@
 //
 
 #include <boost/thread/mutex.hpp>
+#include <algorithm>
 
 #include "util/memory/arena.h"
 
-#include <algorithm>
 using std::copy;
 using std::max;
 using std::min;
@@ -35,7 +35,7 @@ ArenaBase<THREADSAFE>::ArenaBase(
     : buffer_allocator_(buffer_allocator),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
-  AddComponent( CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)) );
+  AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
 template <bool THREADSAFE>
@@ -43,7 +43,7 @@ ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_s
     : buffer_allocator_(HeapBufferAllocator::Get()),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
-  AddComponent( CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)) );
+  AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
 template <bool THREADSAFE>
@@ -127,7 +127,7 @@ void ArenaBase<THREADSAFE>::Reset() {
   // detection of memory-related bugs (invalid shallow copies, etc.).
   size_t last_size = arena_.back()->size();
   arena_.clear();
-  AddComponent( CHECK_NOTNULL(NewComponent(last_size, 0)) );
+  AddComponent(CHECK_NOTNULL(NewComponent(last_size, 0)));
 #endif
 }
 

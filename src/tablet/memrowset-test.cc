@@ -21,7 +21,7 @@ namespace tablet {
 using std::tr1::shared_ptr;
 
 class TestMemRowSet : public ::testing::Test {
-public:
+ public:
   TestMemRowSet() :
     ::testing::Test(),
     schema_(boost::assign::list_of
@@ -30,7 +30,7 @@ public:
             1)
   {}
 
-protected:
+ protected:
   // Check that the given row in the memrowset contains the given data.
   void CheckValue(const shared_ptr<MemRowSet> &mrs, string key,
                   const string &expected_row) {
@@ -51,7 +51,7 @@ protected:
     ASSERT_EQ(expected_row, out[0]) << "bad result for key " << key;
   }
 
-  Status CheckRowPresent(const MemRowSet &mrs, 
+  Status CheckRowPresent(const MemRowSet &mrs,
                          const string &key, bool *present) {
     Slice keystr_slice(key);
     RowSetKeyProbe probe(schema_, &keystr_slice);

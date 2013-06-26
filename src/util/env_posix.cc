@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <deque>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -19,10 +18,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "env.h"
-#include "slice.h"
-#include "util/logging.h"
+#include <deque>
+
+#include "util/env.h"
 #include "util/errno.h"
+#include "util/logging.h"
+#include "util/slice.h"
 
 namespace kudu {
 
@@ -328,7 +329,7 @@ class PosixEnv : public Env {
     int fd = open(fname.c_str(), O_RDONLY);
     if (fd < 0) {
       s = IOError(fname, errno);
-    } else if (sizeof(void*) >= 8) {
+    } else if (sizeof(void*) >= 8) { // NOLINT(runtime/sizeof)
       // Use mmap when virtual address-space is plentiful.
       uint64_t size;
       s = GetFileSize(fname, &size);
@@ -372,6 +373,7 @@ class PosixEnv : public Env {
       return IOError(dir, errno);
     }
     struct dirent* entry;
+    // TODO: lint: Consider using readdir_r(...) instead of readdir(...) for improved thread safety.
     while ((entry = readdir(d)) != NULL) {
       result->push_back(entry->d_name);
     }
@@ -526,7 +528,7 @@ class PosixEnv : public Env {
     return result;
   }
 
-  virtual void Schedule(void (*function)(void*), void* arg);
+  virtual void Schedule(void (*function)(void*), void* arg); // NOLINT(*)
 
   virtual void StartThread(void (*function)(void* arg), void* arg);
 
@@ -536,7 +538,7 @@ class PosixEnv : public Env {
       *result = env;
     } else {
       char buf[100];
-      snprintf(buf, sizeof(buf), "/tmp/kudutest-%d", int(geteuid()));
+      snprintf(buf, sizeof(buf), "/tmp/kudutest-%d", static_cast<int>(geteuid()));
       *result = buf;
     }
     // Directory may already exist
@@ -578,7 +580,7 @@ class PosixEnv : public Env {
 
   // gscoped_ptr Deleter implementation for fts_close
   struct FtsCloser {
-    void operator ()(FTS *fts) const {
+    void operator()(FTS *fts) const {
       if (fts) { fts_close(fts); }
     }
   };
@@ -590,7 +592,10 @@ class PosixEnv : public Env {
   bool started_bgthread_;
 
   // Entry per Schedule() call
-  struct BGItem { void* arg; void (*function)(void*); };
+  struct BGItem {
+    void* arg;
+    void (*function)(void*); // NOLINT(*)
+  };
   typedef std::deque<BGItem> BGQueue;
   BGQueue queue_;
 };
@@ -601,7 +606,7 @@ PosixEnv::PosixEnv() : page_size_(getpagesize()),
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
 }
 
-void PosixEnv::Schedule(void (*function)(void*), void* arg) {
+void PosixEnv::Schedule(void (*function)(void*), void* arg) { // NOLINT(*)
   PthreadCall("lock", pthread_mutex_lock(&mu_));
 
   // Start background thread if necessary
@@ -634,7 +639,7 @@ void PosixEnv::BGThread() {
       PthreadCall("wait", pthread_cond_wait(&bgsignal_, &mu_));
     }
 
-    void (*function)(void*) = queue_.front().function;
+    void (*function)(void*) = queue_.front().function; // NOLINT(*)
     void* arg = queue_.front().arg;
     queue_.pop_front();
 
@@ -645,7 +650,7 @@ void PosixEnv::BGThread() {
 
 namespace {
 struct StartThreadState {
-  void (*user_function)(void*);
+  void (*user_function)(void*); // NOLINT(*)
   void* arg;
 };
 }

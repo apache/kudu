@@ -24,7 +24,7 @@ namespace kudu {
 // TODO: an SSE CRC32 hash is probably ~20% faster. Come back to this
 // at some point.
 class BloomKeyProbe {
-public:
+ public:
   // Default constructor - this is only used to instantiate an object
   // and later reassign by assignment from another instance
   BloomKeyProbe() {}
@@ -40,8 +40,8 @@ public:
 
     // Use the top and bottom halves of the 64-bit hash
     // as the two independent hash functions for mixing.
-    h_1_ = (uint32)h;
-    h_2_ = (uint32)(h >> 32);
+    h_1_ = static_cast<uint32>(h);
+    h_2_ = static_cast<uint32>(h >> 32);
   }
 
   const Slice &key() const { return key_; }
@@ -58,7 +58,7 @@ public:
     return h + h_2_;
   }
 
-private:
+ private:
   Slice key_;
 
   // The two hashes.
@@ -70,7 +70,7 @@ private:
 // This is simply to provide a nicer API than a bunch of overloaded
 // constructors.
 class BloomFilterSizing {
-public:
+ public:
   // Size the bloom filter by a fixed size and false positive rate.
   //
   // Picks the number of entries to achieve the above.
@@ -84,7 +84,7 @@ public:
   size_t n_bytes() const { return n_bytes_; }
   size_t expected_count() const { return expected_count_; }
 
-private:
+ private:
   BloomFilterSizing(size_t n_bytes, size_t expected_count) :
     n_bytes_(n_bytes),
     expected_count_(expected_count)
@@ -97,7 +97,7 @@ private:
 
 // Builder for a BloomFilter structure.
 class BloomFilterBuilder {
-public:
+ public:
   // Create a bloom filter.
   // See BloomFilterSizing static methods to specify this argument.
   explicit BloomFilterBuilder(const BloomFilterSizing &sizing);
@@ -134,7 +134,7 @@ public:
   // Return the number of keys inserted.
   size_t count() const { return n_inserted_; }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BloomFilterBuilder);
 
   size_t n_bits_;
@@ -153,13 +153,13 @@ private:
 
 // Wrapper around a byte array for reading it as a bloom filter.
 class BloomFilter {
-public:
+ public:
   BloomFilter(const Slice &data, size_t n_hashes);
 
   // Return true if the filter may contain the given key.
   bool MayContainKey(const BloomKeyProbe &probe) const;
 
-private:
+ private:
   friend class BloomFilterBuilder;
   static uint32_t PickBit(uint32_t hash, size_t n_bits);
 

@@ -22,7 +22,7 @@ class Socket;
 // Acceptor pool threads terminate when they notice that the messenger has been
 // shut down.
 class AcceptorPool {
-public:
+ public:
   // Create a new acceptor pool.  Calls socket::Release to take ownership of the
   // socket.
   AcceptorPool(Messenger *messenger,
@@ -32,7 +32,7 @@ public:
   void Shutdown();
   Sockaddr bind_address() const;
 
-private:
+ private:
   void RunThread();
 
   Messenger *messenger_;

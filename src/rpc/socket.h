@@ -13,8 +13,8 @@ namespace rpc {
 class Sockaddr;
 
 class Socket {
-public:
-  const static int FLAG_NONBLOCKING = 0x1;
+ public:
+  static const int FLAG_NONBLOCKING = 0x1;
 
   // Create a new invalid Socket object.
   Socket();
@@ -71,7 +71,7 @@ public:
 
   Status Recv(uint8_t *buf, int32_t amt, int32_t *nread);
 
-private:
+ private:
   int fd_;
 
   DISALLOW_COPY_AND_ASSIGN(Socket);

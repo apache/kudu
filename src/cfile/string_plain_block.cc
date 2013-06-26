@@ -1,7 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <algorithm>
 #include <glog/logging.h>
+
+#include <algorithm>
 
 #include "cfile/cfile.h"
 #include "cfile/string_plain_block.h"
@@ -16,15 +17,14 @@
 namespace kudu {
 namespace cfile {
 
-StringPlainBlockBuilder::StringPlainBlockBuilder(const WriterOptions *options) :
-  end_of_data_offset_(0),
-  size_estimate_(0),
-  options_(options)
-{
+StringPlainBlockBuilder::StringPlainBlockBuilder(const WriterOptions *options)
+  : end_of_data_offset_(0),
+    size_estimate_(0),
+    options_(options) {
   Reset();
 }
 
-void StringPlainBlockBuilder::Reset(){
+void StringPlainBlockBuilder::Reset() {
   offsets_.clear();
   buffer_.clear();
   buffer_.resize(kHeaderSize);
@@ -111,13 +111,13 @@ Status StringPlainBlockBuilder::GetFirstKey(void *key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-StringPlainBlockDecoder::StringPlainBlockDecoder(const Slice &slice) :
-  data_(slice),
-  parsed_(false),
-  num_elems_(0),
-  ordinal_pos_base_(0),
-  cur_idx_(0)
-{}
+StringPlainBlockDecoder::StringPlainBlockDecoder(const Slice &slice)
+  : data_(slice),
+    parsed_(false),
+    num_elems_(0),
+    ordinal_pos_base_(0),
+    cur_idx_(0) {
+}
 
 Status StringPlainBlockDecoder::ParseHeader() {
   CHECK(!parsed_);
@@ -252,7 +252,7 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
     // TODO: in a lot of cases, we might be able to get away with the decoder
     // owning it and not truly copying. But, we should extend the CopyNextValues
     // API so that the caller can specify if they truly _need_ copies or not.
-    CHECK( out_arena->RelocateSlice(elem, out) );
+    CHECK(out_arena->RelocateSlice(elem, out));
     out++;
     cur_idx_++;
   }

@@ -4,6 +4,7 @@
 
 #include <boost/ptr_container/ptr_deque.hpp>
 #include <tr1/memory>
+#include <string>
 #include <vector>
 
 #include "cfile/block_cache.h"
@@ -35,7 +36,7 @@ class DeltaFileIterator;
 class DeltaKey;
 
 class DeltaFileWriter {
-public:
+ public:
   // Construct a new delta file writer.
   // The writer takes ownership over the file and will Close it
   // in Finish().
@@ -52,7 +53,7 @@ public:
   // of (key, txid).
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
-private:
+ private:
   const Schema schema_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);
@@ -74,7 +75,7 @@ private:
 
 
 class DeltaFileReader : public DeltaStore {
-public:
+ public:
   // Open the Delta File at the given path.
   static Status Open(Env *env, const string &path,
                      const Schema &schema,
@@ -93,7 +94,7 @@ public:
 
   const string path() const { return path_; }
 
-private:
+ private:
   friend class DeltaFileIterator;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
@@ -120,7 +121,7 @@ private:
 //
 // See DeltaIterator for details.
 class DeltaFileIterator : public DeltaIterator {
-public:
+ public:
   Status Init();
 
   Status SeekToOrdinal(rowid_t idx);
@@ -130,7 +131,7 @@ public:
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
   string ToString() const;
 
-private:
+ private:
   friend class DeltaFileReader;
   friend struct ApplyingVisitor;
   friend struct CollectingVisitor;

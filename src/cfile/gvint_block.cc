@@ -18,10 +18,10 @@ using kudu::coding::DecodeGroupVarInt32_SlowButSafe;
 using kudu::coding::DecodeGroupVarInt32_SSE_Add;
 using kudu::coding::AppendGroupVarInt32Sequence;
 
-GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options) :
-  estimated_raw_size_(0),
-  options_(options)
-{}
+GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options)
+ : estimated_raw_size_(0),
+   options_(options) {
+}
 
 
 void GVIntBlockBuilder::Reset() {
@@ -105,11 +105,10 @@ Slice GVIntBlockBuilder::Finish(rowid_t ordinal_pos) {
 ////////////////////////////////////////////////////////////
 
 
-GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice) :
-  data_(slice),
-  parsed_(false),
-  cur_pos_(NULL)
-{
+GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice)
+  : data_(slice),
+    parsed_(false),
+    cur_pos_(NULL) {
 }
 
 
@@ -133,23 +132,23 @@ Status GVIntBlockDecoder::ParseHeader() {
 }
 
 class NullSink {
-public:
+ public:
   template <typename T>
   void push_back(T t) {}
 };
 
 template<typename T>
 class PtrSink {
-public:
-  PtrSink(uint8_t *ptr) :
-    ptr_(reinterpret_cast<T *>(ptr))
+ public:
+  explicit PtrSink(uint8_t *ptr)
+    : ptr_(reinterpret_cast<T *>(ptr))
   {}
 
   void push_back(const T &t) {
     *ptr_++ = t;
   }
 
-private:
+ private:
   T *ptr_;
 };
 
@@ -193,7 +192,7 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   // Search for the group which contains the target
   while (cur_idx_ < num_elems_) {
     uint8_t tag = *cur_pos_++;
-    uint8_t a_sel = (tag & BOOST_BINARY( 11 00 00 00)) >> 6;
+    uint8_t a_sel = (tag & BOOST_BINARY(11 00 00 00)) >> 6;
 
     // Determine length of first in this block
     uint32_t first_elem = *reinterpret_cast<const uint32_t *>(cur_pos_)
@@ -225,7 +224,7 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   uint32_t chunk[4];
   PtrSink<uint32_t> sink(reinterpret_cast<uint8_t *>(chunk));
   size_t count = 4;
-  RETURN_NOT_OK( DoGetNextValues(&count, &sink) );
+  RETURN_NOT_OK(DoGetNextValues(&count, &sink));
 
   // Reset the index back to the start of this block
   cur_idx_ -= count;

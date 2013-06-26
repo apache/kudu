@@ -31,7 +31,7 @@ class ReturnToPool;
 // This class is not thread-safe.
 template<typename T>
 class ObjectPool {
-public:
+ public:
   typedef ReturnToPool<T> deleter_type;
   typedef gscoped_ptr<T, deleter_type> scoped_ptr;
 
@@ -92,7 +92,7 @@ public:
     return scoped_ptr(ptr, deleter_);
   }
 
-private:
+ private:
   class ListNode : ManualConstructor<T> {
     friend class ObjectPool<T>;
 
@@ -135,8 +135,8 @@ private:
 // an object back to a pool when it goes out of scope.
 template<class T>
 class ReturnToPool {
-public:
-  ReturnToPool(ObjectPool<T> *pool) :
+ public:
+  explicit ReturnToPool(ObjectPool<T> *pool) :
     pool_(pool) {
   }
 
@@ -144,7 +144,7 @@ public:
     pool_->Destroy(ptr);
   }
 
-private:
+ private:
   ObjectPool<T> *pool_;
 };
 

@@ -15,7 +15,7 @@ using std::tr1::unordered_set;
 
 
 class TestMultiThreadedRowSet : public TestRowSet {
-public:
+ public:
   void RowSetUpdateThread(DiskRowSet *rs) {
     unordered_set<uint32_t> updated;
     UpdateExistingRows(rs, 0.5f, &updated);

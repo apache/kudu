@@ -1,5 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include <glog/logging.h>
+#include <string>
+
 #include "gutil/stringprintf.h"
 #include "util/bitmap.h"
 
@@ -44,8 +46,7 @@ void BitmapChangeBits(uint8_t *bitmap, size_t offset, size_t num_bits, bool valu
 }
 
 bool BitmapFindFirst(const uint8_t *bitmap, size_t offset, size_t bitmap_size,
-                     bool value, size_t *idx)
-{
+                     bool value, size_t *idx) {
   const uint64_t pattern64[2] = { 0xffffffffffffffff, 0x0000000000000000 };
   const uint8_t pattern8[2] = { 0xff, 0x00 };
   size_t bit;

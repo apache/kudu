@@ -100,11 +100,10 @@ void DumpFile(const string &path) {
 }
 
 int main(int argc, char **argv) {
-  using namespace std;
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 2) {
-    cerr << "usage: " << argv[0] << " <path>" << endl;
+    std::cerr << "usage: " << argv[0] << " <path>" << std::endl;
     return 1;
   }
 

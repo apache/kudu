@@ -17,7 +17,7 @@ TEST(TestMonotime, TestMonotonicity) {
   do {
     next = MonoTime::Now(MonoTime::FINE);
     //LOG(INFO) << " next = " << next.ToString();
-  } while(!prev.ComesBefore(next));
+  } while (!prev.ComesBefore(next));
   ASSERT_FALSE(next.ComesBefore(prev));
   alarm(0);
 }

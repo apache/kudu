@@ -4,9 +4,10 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <stdint.h>
+
 #include <iostream>
 #include <sstream>
-#include <stdint.h>
 
 #include "gutil/endian.h"
 #include "rpc/messenger.h"

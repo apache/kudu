@@ -14,7 +14,7 @@ namespace kudu {
 // class.
 // See http://docs.oracle.com/javase/6/docs/api/java/util/concurrent/CountDownLatch.html
 class CountDownLatch {
-public:
+ public:
   // Initialize the latch with the given initial count.
   explicit CountDownLatch(int count) :
     count_(count)
@@ -79,7 +79,7 @@ public:
     return count_;
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
   mutable boost::mutex lock_;
   boost::condition_variable cond_;

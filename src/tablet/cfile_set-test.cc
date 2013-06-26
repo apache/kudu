@@ -17,7 +17,7 @@ namespace tablet {
 using std::tr1::shared_ptr;
 
 class TestCFileSet : public KuduTest {
-public:
+ public:
   TestCFileSet() :
     KuduTest(),
     schema_(boost::assign::list_of
@@ -92,8 +92,7 @@ public:
     }
   }
 
-
-protected:
+ protected:
   Schema schema_;
   string rowset_dir_;
   google::FlagSaver saver;

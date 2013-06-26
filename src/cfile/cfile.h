@@ -4,13 +4,13 @@
 #define KUDU_CFILE_CFILE_H
 
 #include <boost/utility.hpp>
+#include <gtest/gtest.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <stdint.h>
 #include <string>
+#include <utility>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 #include "cfile/block_encodings.h"
 #include "cfile/block_compression.h"
@@ -85,11 +85,10 @@ struct WriterOptions {
 
 class NullBitmapBuilder {
  public:
-  explicit NullBitmapBuilder(size_t initial_row_capacity) :
-    nitems_(0),
-    bitmap_(BitmapSize(initial_row_capacity)),
-    rle_encoder_(&bitmap_)
-  {
+  explicit NullBitmapBuilder(size_t initial_row_capacity)
+    : nitems_(0),
+      bitmap_(BitmapSize(initial_row_capacity)),
+      rle_encoder_(&bitmap_) {
   }
 
   size_t nitems() const {
@@ -120,7 +119,7 @@ class NullBitmapBuilder {
 
 // Main class used to write a CFile.
 class Writer {
-public:
+ public:
   explicit Writer(const WriterOptions &options,
                   DataType type,
                   bool is_nullable,
@@ -161,7 +160,7 @@ public:
 
   ~Writer();
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(Writer);
 
   friend class IndexTreeBuilder;

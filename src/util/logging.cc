@@ -8,9 +8,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <glog/logging.h>
+
 #include "util/env.h"
 #include "util/slice.h"
-#include <glog/logging.h>
+
 
 // Evil hack to grab a function from glog
 namespace google {
@@ -22,7 +25,7 @@ namespace kudu {
 
 void AppendNumberTo(std::string* str, uint64_t num) {
   char buf[30];
-  snprintf(buf, sizeof(buf), "%llu", (unsigned long long) num);
+  snprintf(buf, sizeof(buf), "%"PRIu64, num);
   str->append(buf);
 }
 

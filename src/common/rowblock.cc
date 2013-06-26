@@ -7,12 +7,11 @@
 
 namespace kudu {
 
-SelectionVector::SelectionVector(size_t row_capacity) :
-  bytes_capacity_(BitmapSize(row_capacity)),
-  n_rows_(row_capacity),
-  n_bytes_(bytes_capacity_),
-  bitmap_(new uint8_t[n_bytes_])
-{
+SelectionVector::SelectionVector(size_t row_capacity)
+  : bytes_capacity_(BitmapSize(row_capacity)),
+    n_rows_(row_capacity),
+    n_bytes_(bytes_capacity_),
+    bitmap_(new uint8_t[n_bytes_]) {
   CHECK_GT(n_bytes_, 0);
 
   // TODO: we can probably do away with SetAllTrue here and assume
@@ -62,14 +61,13 @@ bool SelectionVector::AnySelected() const {
 //////////////////////////////
 RowBlock::RowBlock(const Schema &schema,
                    size_t nrows,
-                   Arena *arena) :
-  schema_(schema),
-  columns_data_(schema.num_columns()),
-  row_capacity_(nrows),
-  nrows_(nrows),
-  arena_(arena),
-  sel_vec_(nrows)
-{
+                   Arena *arena)
+  : schema_(schema),
+    columns_data_(schema.num_columns()),
+    row_capacity_(nrows),
+    nrows_(nrows),
+    arena_(arena),
+    sel_vec_(nrows) {
   CHECK_GT(row_capacity_, 0);
 
   size_t bitmap_size = BitmapSize(row_capacity_);

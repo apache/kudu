@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 
 #include "gutil/atomicops.h"
+#include "gutil/macros.h"
 #include "gutil/port.h"
 #include "util/errno.h"
 
@@ -18,16 +19,14 @@ using base::subtle::Release_Store;
 
 // Simple subclass of boost::detail::spinlock since the superclass doesn't
 // initialize its member to "unlocked" (for unknown reasons)
-class simple_spinlock : public boost::detail::spinlock
-{ 
- private:
-  simple_spinlock( simple_spinlock const& ); 
-  simple_spinlock & operator=( simple_spinlock const& ); 
-
+class simple_spinlock : public boost::detail::spinlock {
  public:
   simple_spinlock() {
     v_ = 0;
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(simple_spinlock);
 };
 
 // Read-Write lock. 32bit uint that contains the number of readers.

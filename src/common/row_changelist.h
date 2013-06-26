@@ -6,6 +6,7 @@
 #define KUDU_COMMON_ROW_CHANGELIST_H
 
 #include <gtest/gtest.h>
+#include <string>
 
 #include "common/schema.h"
 #include "gutil/casts.h"
@@ -27,18 +28,16 @@ namespace kudu {
 // RowChangeLists should be constructed using RowChangeListEncoder, and read
 // using RowChangeListDecoder.
 class RowChangeList {
-public:
+ public:
   RowChangeList() {}
 
-  explicit RowChangeList(const faststring &fs) :
-    encoded_data_(fs)
-  {
+  explicit RowChangeList(const faststring &fs)
+    : encoded_data_(fs) {
     DebugChecks();
   }
 
-  explicit RowChangeList(const Slice &s) :
-    encoded_data_(s)
-  {
+  explicit RowChangeList(const Slice &s)
+    : encoded_data_(s) {
     DebugChecks();
   }
 
@@ -60,7 +59,7 @@ public:
     ChangeType_max = 3
   };
 
-private:
+ private:
   // Sanity-checks run in debug mode that this is a valid RowChangeList.
   void DebugChecks() {
     DCHECK_GT(encoded_data_.size(), 0);
@@ -76,7 +75,7 @@ private:
 };
 
 class RowChangeListEncoder {
-public:
+ public:
   // Construct a new encoder.
   // NOTE: The 'schema' parameter is stored by reference, rather than copied.
   // It is assumed that this class is only used in tightly scoped contexts where
@@ -143,7 +142,7 @@ public:
     return RowChangeList(*dst_);
   }
 
-private:
+ private:
   void SetType(RowChangeList::ChangeType type) {
     DCHECK_EQ(type_, RowChangeList::kUninitialized);
     type_ = type;
@@ -157,18 +156,17 @@ private:
 
 
 class RowChangeListDecoder {
-public:
+ public:
 
   // Construct a new encoder.
   // NOTE: The 'schema' parameter is stored by reference, rather than copied.
   // It is assumed that this class is only used in tightly scoped contexts where
   // this is appropriate.
   RowChangeListDecoder(const Schema &schema,
-                       const RowChangeList &src) :
-    schema_(schema),
-    remaining_(src.slice()),
-    type_(RowChangeList::kUninitialized)
-  {
+                       const RowChangeList &src)
+    : schema_(schema),
+      remaining_(src.slice()),
+      type_(RowChangeList::kUninitialized) {
   }
 
   Status Init() {
@@ -177,7 +175,8 @@ public:
     }
     bool was_valid = tight_enum_test_cast<RowChangeList::ChangeType>(remaining_[0], &type_);
     if (PREDICT_FALSE(!was_valid || type_ == RowChangeList::kUninitialized)) {
-      return Status::Corruption(StringPrintf("bad type enum value: %d", (int)remaining_[0]));
+      return Status::Corruption(StringPrintf("bad type enum value: %d",
+                                             static_cast<int>(remaining_[0])));
     }
     remaining_.remove_prefix(1);
     return Status::OK();
@@ -258,7 +257,7 @@ public:
     }
   }
 
-private:
+ private:
   FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
   friend class RowChangeList;
 

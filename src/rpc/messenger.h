@@ -5,8 +5,10 @@
 #include <gtest/gtest.h>
 #include <gutil/gscoped_ptr.h>
 #include <stdint.h>
-#include <string>
 #include <tr1/memory>
+
+#include <list>
+#include <string>
 #include <vector>
 
 #include "rpc/client_call.h"
@@ -28,25 +30,22 @@ class Reactor;
 class ReactorThread;
 
 struct AcceptorPoolInfo {
-public:
+ public:
   explicit AcceptorPoolInfo(const Sockaddr &bind_address)
-    : bind_address_(bind_address)
-  {
+    : bind_address_(bind_address) {
   }
 
   Sockaddr bind_address() const {
     return bind_address_;
   }
 
-private:
+ private:
   Sockaddr bind_address_;
 };
 
-//
-// Used to construct a Messenger. 
-//
+// Used to construct a Messenger.
 class MessengerBuilder {
-public:
+ public:
   friend class Messenger;
   friend class ReactorThread;
 
@@ -68,7 +67,7 @@ public:
 
   Status Build(Messenger **msgr);
   Status Build(std::tr1::shared_ptr<Messenger> *msgr);
-private:
+ private:
   const std::string name_;
   MonoDelta connection_keepalive_time_;
   int num_reactors_;
@@ -81,7 +80,7 @@ private:
 // traffic.
 //
 class Messenger {
-public:
+ public:
   friend class MessengerBuilder;
   friend class Proxy;
   friend class Reactor;
@@ -123,7 +122,7 @@ public:
     return closing_;
   }
 
-private:
+ private:
   FRIEND_TEST(TestRpc, TestConnectionKeepalive);
 
   explicit Messenger(const MessengerBuilder &bld);

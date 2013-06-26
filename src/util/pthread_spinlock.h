@@ -8,7 +8,7 @@ namespace kudu {
 
 // Wrapper around pthread spinlocks to satisfy the boost lock interface.
 class PThreadSpinLock {
-public:
+ public:
   PThreadSpinLock() {
     pthread_spin_init(&lock_, PTHREAD_PROCESS_PRIVATE);
   }
@@ -29,7 +29,7 @@ public:
     return pthread_spin_trylock(&lock_) == 0;
   }
 
-private:
+ private:
   pthread_spinlock_t lock_;
 };
 

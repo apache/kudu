@@ -7,6 +7,7 @@
 #include <boost/function.hpp>
 #include <boost/utility.hpp>
 #include <stdint.h>
+#include <string>
 #include <vector>
 
 #include "rpc/rpc_header.pb.h"

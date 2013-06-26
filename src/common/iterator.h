@@ -17,7 +17,7 @@ class RowBlock;
 class ScanSpec;
 
 class BatchedIterator {
-public:
+ public:
   // Initialize the iterator with the given scan spec.
   //
   // The scan spec may be transformed by this call to remove predicates
@@ -60,7 +60,7 @@ public:
 };
 
 class RowwiseIterator : public virtual BatchedIterator {
-public:
+ public:
   virtual bool is_column_store() const { return false; }
 
   // Materialize all columns in the destination block.
@@ -77,7 +77,7 @@ public:
 };
 
 class ColumnwiseIterator : public virtual BatchedIterator {
-public:
+ public:
   virtual bool is_column_store() const { return true; }
 
   // Initialize the given SelectionVector to indicate which rows in the currently

@@ -33,7 +33,7 @@ struct WriterOptions;
 // After repeatedly calling Add(), call Finish() to encode it
 // into a Slice, then you may Reset to re-use buffers.
 class IndexBlockBuilder {
-public:
+ public:
   explicit IndexBlockBuilder(const WriterOptions *options,
                              bool is_leaf);
 
@@ -62,7 +62,7 @@ public:
 
   void Reset();
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(IndexBlockBuilder);
 
 #ifdef __clang__
@@ -81,8 +81,7 @@ private:
 };
 
 class IndexBlockReader {
-public:
-
+ public:
   IndexBlockReader();
 
   void Reset();
@@ -102,7 +101,7 @@ public:
 
   bool IsLeaf();
 
-private:
+ private:
   friend class IndexBlockIterator;
 
   int CompareKey(int idx_in_block, const Slice &search_key) const;
@@ -128,8 +127,7 @@ private:
 };
 
 class IndexBlockIterator {
-public:
-
+ public:
   explicit IndexBlockIterator(const IndexBlockReader *reader);
 
   // Reset the state of this iterator. This should be used
@@ -158,7 +156,7 @@ public:
 
   const Slice GetCurrentKey() const;
 
-private:
+ private:
   const IndexBlockReader *reader_;
   size_t cur_idx_;
   Slice cur_key_;

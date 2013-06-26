@@ -27,7 +27,7 @@ namespace kudu {
 //
 // TODO: use memcmpable_varint code here to make denser int keys
 class KeyEncoder {
-public:
+ public:
   explicit KeyEncoder(faststring *dst) : dst_(dst) {}
 
   const Slice ResetBufferAndEncodeToSlice(DataType type, const Slice &key) {
@@ -142,7 +142,7 @@ public:
 #endif
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(KeyEncoder);
   faststring *dst_;
 };

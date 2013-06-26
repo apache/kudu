@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <string>
+
 #include "rpc/sockaddr.h"
 #include "util/errno.h"
 
@@ -17,13 +19,11 @@ namespace kudu {
 namespace rpc {
 
 Socket::Socket()
-  : fd_(-1)
-{
+  : fd_(-1) {
 }
 
 Socket::Socket(int fd)
-  : fd_(fd)
-{
+  : fd_(fd) {
 }
 
 void Socket::Reset(int fd) {
@@ -37,8 +37,7 @@ int Socket::Release() {
   return fd;
 }
 
-Socket::~Socket()
-{
+Socket::~Socket() {
   Close();
 }
 
@@ -137,7 +136,7 @@ Status Socket::SetNoDelay(bool enabled) {
     return Status::NetworkError(std::string("failed to set TCP_NODELAY: ") +
                                 ErrnoToString(err), Slice(), err);
   }
-  return Status::OK(); 
+  return Status::OK();
 }
 
 Status Socket::BindAndListen(const Sockaddr &sockaddr,

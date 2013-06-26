@@ -3,6 +3,8 @@
 #include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <string>
+#include <vector>
 
 #include "common/common.pb.h"
 #include "common/generic_iterators.h"
@@ -45,13 +47,13 @@ bool MRSRow::IsGhost() const {
 }
 
 
-MemRowSet::MemRowSet(const Schema &schema) :
-  schema_(schema),
-  arena_(kInitialArenaSize, kMaxArenaBufferSize),
-  debug_insert_count_(0),
-  debug_update_count_(0),
-  has_logged_throttling_(0)
-{}
+MemRowSet::MemRowSet(const Schema &schema)
+  : schema_(schema),
+    arena_(kInitialArenaSize, kMaxArenaBufferSize),
+    debug_insert_count_(0),
+    debug_update_count_(0),
+    has_logged_throttling_(0) {
+}
 
 Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
@@ -242,7 +244,7 @@ MemRowSet::Iterator *MemRowSet::NewIterator() const {
 }
 
 RowwiseIterator *MemRowSet::NewRowIterator(const Schema &projection,
-                                          const MvccSnapshot &snap) const{
+                                           const MvccSnapshot &snap) const {
   return NewIterator(projection, snap);
 }
 

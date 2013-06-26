@@ -95,7 +95,7 @@ namespace kudu {
 ////////////////////////////////////////////////////////////
 
 // This function is borrowed from sqlite4/varint.c
-static void varintWrite32(uint8_t *z, uint32_t y){
+static void varintWrite32(uint8_t *z, uint32_t y) {
   z[0] = (uint8_t)(y>>24);
   z[1] = (uint8_t)(y>>16);
   z[2] = (uint8_t)(y>>8);
@@ -110,17 +110,17 @@ static void varintWrite32(uint8_t *z, uint32_t y){
 // This function is borrowed from sqlite4/varint.c
 static size_t sqlite4PutVarint64(uint8_t *z, uint64_t x) {
   uint64_t w, y;
-  if( x<=240 ){
+  if (x <= 240) {
     z[0] = (uint8_t)x;
     return 1;
   }
-  if( x<=2287 ){
+  if (x <= 2287) {
     y = (uint64_t)(x - 240);
     z[0] = (uint8_t)(y/256 + 241);
     z[1] = (uint8_t)(y%256);
     return 2;
   }
-  if( x<=67823 ){
+  if (x <= 67823) {
     y = (uint64_t)(x - 2288);
     z[0] = 249;
     z[1] = (uint8_t)(y/256);
@@ -129,8 +129,8 @@ static size_t sqlite4PutVarint64(uint8_t *z, uint64_t x) {
   }
   y = (uint64_t)x;
   w = (uint64_t)(x>>32);
-  if( w==0 ){
-    if( y<=16777215 ){
+  if (w == 0) {
+    if (y <= 16777215) {
       z[0] = 250;
       z[1] = (uint8_t)(y>>16);
       z[2] = (uint8_t)(y>>8);
@@ -141,20 +141,20 @@ static size_t sqlite4PutVarint64(uint8_t *z, uint64_t x) {
     varintWrite32(z+1, y);
     return 5;
   }
-  if( w<=255 ){
+  if (w <= 255) {
     z[0] = 252;
     z[1] = (uint8_t)w;
     varintWrite32(z+2, y);
     return 6;
   }
-  if( w<=65535 ){
+  if (w <= 65535) {
     z[0] = 253;
     z[1] = (uint8_t)(w>>8);
     z[2] = (uint8_t)w;
     varintWrite32(z+3, y);
     return 7;
   }
-  if( w<=16777215 ){
+  if (w <= 16777215) {
     z[0] = 254;
     z[1] = (uint8_t)(w>>16);
     z[2] = (uint8_t)(w>>8);
@@ -178,42 +178,41 @@ static size_t sqlite4PutVarint64(uint8_t *z, uint64_t x) {
 static int sqlite4GetVarint64(
   const uint8_t *z,
   int n,
-  uint64_t *pResult
-){
+  uint64_t *pResult) {
   unsigned int x;
-  if( n<1 ) return 0;
-  if( z[0]<=240 ){
+  if ( n < 1) return 0;
+  if (z[0] <= 240) {
     *pResult = z[0];
     return 1;
   }
-  if( z[0]<=248 ){
-    if( n<2 ) return 0;
+  if (z[0] <= 248) {
+    if ( n < 2) return 0;
     *pResult = (z[0]-241)*256 + z[1] + 240;
     return 2;
   }
-  if( n<z[0]-246 ) return 0;
-  if( z[0]==249 ){
+  if (n < z[0]-246 ) return 0;
+  if (z[0] == 249) {
     *pResult = 2288 + 256*z[1] + z[2];
     return 3;
   }
-  if( z[0]==250 ){
+  if (z[0] == 250) {
     *pResult = (z[1]<<16) + (z[2]<<8) + z[3];
     return 4;
   }
   x = (z[1]<<24) + (z[2]<<16) + (z[3]<<8) + z[4];
-  if( z[0]==251 ){
+  if (z[0] == 251) {
     *pResult = x;
     return 5;
   }
-  if( z[0]==252 ){
+  if (z[0] == 252) {
     *pResult = (((uint64_t)x)<<8) + z[5];
     return 6;
   }
-  if( z[0]==253 ){
+  if (z[0] == 253) {
     *pResult = (((uint64_t)x)<<16) + (z[5]<<8) + z[6];
     return 7;
   }
-  if( z[0]==254 ){
+  if (z[0] == 254) {
     *pResult = (((uint64_t)x)<<24) + (z[5]<<16) + (z[6]<<8) + z[7];
     return 8;
   }

@@ -115,7 +115,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   // equal idx*5 (whereas in the original data, value = idx)
   unordered_set<uint32_t> updated;
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, &updated);
-  ASSERT_EQ((int)(n_rows_ * FLAGS_update_fraction),
+  ASSERT_EQ(static_cast<int>(n_rows_ * FLAGS_update_fraction),
             rs->delta_tracker_->dms_->Count());
 
   // Try to add a mutation for a key not in the file (but which falls
@@ -197,7 +197,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
     // which exist. These updates will change the value to
     // equal idx*5 (whereas in the original data, value = idx)
     UpdateExistingRows(rs.get(), FLAGS_update_fraction, &updated);
-    ASSERT_EQ((int)(n_rows_ * FLAGS_update_fraction),
+    ASSERT_EQ(static_cast<int>(n_rows_ * FLAGS_update_fraction),
               rs->delta_tracker_->dms_->Count());
 
     rs->FlushDeltas();

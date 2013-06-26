@@ -35,13 +35,13 @@ using std::tr1::unordered_set;
 
 // Utility class which calls latch->CountDown() in its destructor.
 class CountDownOnScopeExit {
-public:
+ public:
   explicit CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
   ~CountDownOnScopeExit() {
     latch_->CountDown();
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CountDownOnScopeExit);
 
   CountDownLatch *latch_;
@@ -55,11 +55,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   using superclass::schema_;
   using superclass::tablet_;
   using superclass::setup_;
-public:
-  MultiThreadedTabletTest() :
-    running_insert_count_(FLAGS_num_insert_threads),
-    ts_collector_(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name())
-  {
+ public:
+  MultiThreadedTabletTest()
+    : running_insert_count_(FLAGS_num_insert_threads),
+      ts_collector_(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) {
     ts_collector_.StartDumperThread();
   }
 
@@ -294,9 +293,8 @@ public:
       "memrowset_kb");
 
     while (running_insert_count_.count() > 0) {
-
-      num_rowsets_ts->SetValue( tablet_->num_rowsets() );
-      memrowset_size_ts->SetValue( tablet_->MemRowSetSize() / 1024);
+      num_rowsets_ts->SetValue(tablet_->num_rowsets());
+      memrowset_size_ts->SetValue(tablet_->MemRowSetSize() / 1024);
 
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(250));

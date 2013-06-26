@@ -4,7 +4,13 @@
 #define KUDU_CFILE_TEST_BASE_H
 
 #include <glog/logging.h>
+#include <algorithm>
+#include <string>
 
+#include "cfile/cfile-test-base.h"
+#include "cfile/cfile.h"
+#include "cfile/cfile_reader.h"
+#include "cfile/cfile.pb.h"
 #include "common/columnblock.h"
 #include "gutil/stringprintf.h"
 #include "util/env.h"
@@ -13,10 +19,6 @@
 #include "util/test_util.h"
 #include "util/stopwatch.h"
 #include "util/status.h"
-#include "cfile-test-base.h"
-#include "cfile.h"
-#include "cfile_reader.h"
-#include "cfile.pb.h"
 
 DEFINE_int32(cfile_test_block_size, 1024,
              "Block size to use for testing cfiles. "
@@ -27,14 +29,14 @@ namespace kudu {
 namespace cfile {
 
 class CFileTestBase : public KuduTest {
-protected:
+ protected:
   void WriteTestFileStrings(const string &path,
                             EncodingType encoding,
                             CompressionType compression,
                             int num_entries,
                             const char *format) {
     shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     WriterOptions opts;
     opts.write_posidx = true;
     opts.write_validx = true;
@@ -68,7 +70,7 @@ protected:
                          CompressionType compression,
                          int num_entries) {
     shared_ptr<WritableFile> sink;
-    ASSERT_STATUS_OK( env_util::OpenFileForWrite(env_.get(), path, &sink) );
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
     WriterOptions opts;
     opts.write_posidx = true;
     // Use a smaller block size to exercise multi-level
@@ -126,7 +128,7 @@ uint64_t FastSum(const Indexable &data, size_t n) {
 }
 
 template<DataType Type>
-static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count){
+static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
   ScopedColumnBlock<Type> cb(8192);
 
   uint64_t sum = 0;
@@ -149,7 +151,7 @@ static void TimeReadFile(const string &path, size_t *count_ret) {
   ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK( reader->NewIterator(&iter) );
+  ASSERT_STATUS_OK(reader->NewIterator(&iter));
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
 
   Arena arena(8192, 8*1024*1024);

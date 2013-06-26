@@ -4,8 +4,10 @@
 #define KUDU_RPC_CLIENT_CALL_H
 
 #include <glog/logging.h>
-#include <string>
 #include <tr1/memory>
+
+#include <string>
+#include <vector>
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"

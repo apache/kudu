@@ -1,8 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
-#include <algorithm>
 #include <glog/logging.h>
+#include <algorithm>
 
 #include "cfile/block_compression.h"
 #include "util/coding.h"
@@ -13,10 +13,9 @@ namespace kudu {
 namespace cfile {
 
 CompressedBlockBuilder::CompressedBlockBuilder(const shared_ptr<CompressionCodec> &codec,
-                                               size_t size_limit) :
-  codec_(codec),
-  compressed_size_limit_(size_limit)
-{
+                                               size_t size_limit)
+  : codec_(codec),
+    compressed_size_limit_(size_limit) {
   CHECK_NOTNULL(codec_.get());
 }
 
@@ -56,10 +55,9 @@ Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice 
 }
 
 CompressedBlockDecoder::CompressedBlockDecoder(const shared_ptr<CompressionCodec> &codec,
-                                               size_t size_limit) :
-  codec_(codec),
-  uncompressed_size_limit_(size_limit)
-{
+                                               size_t size_limit)
+  : codec_(codec),
+    uncompressed_size_limit_(size_limit) {
   CHECK_NOTNULL(codec_.get());
 }
 

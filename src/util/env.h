@@ -13,10 +13,10 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_ENV_H_
 #define STORAGE_LEVELDB_INCLUDE_ENV_H_
 
+#include <stdint.h>
 #include <cstdarg>
 #include <string>
 #include <vector>
-#include <stdint.h>
 #include "util/status.h"
 
 namespace kudu {
@@ -284,10 +284,10 @@ class EnvWrapper : public Env {
     return target_->LockFile(f, l);
   }
   Status UnlockFile(FileLock* l) { return target_->UnlockFile(l); }
-  void Schedule(void (*f)(void*), void* a) {
+  void Schedule(void (*f)(void*), void* a) { // NOLINT(*)
     return target_->Schedule(f, a);
   }
-  void StartThread(void (*f)(void*), void* a) {
+  void StartThread(void (*f)(void*), void* a) { // NOLINT(*)
     return target_->StartThread(f, a);
   }
   virtual Status GetTestDirectory(std::string* path) {

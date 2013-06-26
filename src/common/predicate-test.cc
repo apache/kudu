@@ -11,7 +11,7 @@
 namespace kudu {
 
 class TestPredicate : public KuduTest {
-public:
+ public:
   TestPredicate() :
     arena_(1024, 4096),
     n_rows_(100),
@@ -40,7 +40,7 @@ public:
     }
   }
 
-protected:
+ protected:
   Arena arena_;
   const size_t n_rows_;
   Schema schema_;

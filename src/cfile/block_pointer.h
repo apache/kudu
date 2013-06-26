@@ -3,18 +3,19 @@
 #define KUDU_CFILE_BLOCK_POINTER_H
 
 #include <stdio.h>
+#include <string>
 
+#include "cfile/cfile.pb.h"
 #include "util/coding-inl.h"
 #include "util/coding.h"
 #include "util/status.h"
-#include "cfile.pb.h"
 
 namespace kudu { namespace cfile {
 
 using std::string;
 
 class BlockPointer {
-public:
+ public:
   BlockPointer() {}
   BlockPointer(const BlockPointer &from) :
     offset_(from.offset_),
@@ -69,7 +70,7 @@ public:
     return size_;
   }
 
-private:
+ private:
   uint64_t offset_;
   uint32_t size_;
 };

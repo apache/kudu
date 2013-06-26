@@ -5,16 +5,15 @@
 // Modified for kudu:
 // - use boost mutexes instead of port mutexes
 
+#include <string.h>
 #include <boost/thread/mutex.hpp>
-
 #include <glog/logging.h>
+#include <map>
+#include <string>
+#include <vector>
 #include "util/env.h"
 #include "util/memenv/memenv.h"
 #include "util/status.h"
-#include <map>
-#include <string.h>
-#include <string>
-#include <vector>
 
 namespace kudu {
 
@@ -232,7 +231,7 @@ class InMemoryEnv : public EnvWrapper {
   explicit InMemoryEnv(Env* base_env) : EnvWrapper(base_env) { }
 
   virtual ~InMemoryEnv() {
-    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i){
+    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i) {
       i->second->Unref();
     }
   }
@@ -287,7 +286,7 @@ class InMemoryEnv : public EnvWrapper {
     lock_guard<mutex> lock(mutex_);
     result->clear();
 
-    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i){
+    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i) {
       const std::string& filename = i->first;
 
       if (filename.size() >= dir.size() + 1 && filename[dir.size()] == '/' &&
@@ -335,7 +334,7 @@ class InMemoryEnv : public EnvWrapper {
 
     lock_guard<mutex> lock(mutex_);
 
-    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i){
+    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i) {
       const std::string& filename = i->first;
 
       if (filename.size() >= dir.size() && Slice(filename).starts_with(Slice(dir))) {

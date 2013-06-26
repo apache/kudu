@@ -4,8 +4,9 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-
 #include <tr1/unordered_map>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "common/types.h"
@@ -36,7 +37,7 @@ using std::tr1::unordered_map;
 // will probably hold other information like nullability, column name,
 // annotations, etc.
 class ColumnSchema {
-public:
+ public:
   ColumnSchema(const string &name,
                DataType type,
                bool is_nullable = false) :
@@ -82,7 +83,7 @@ public:
     return ret;
   }
 
-private:
+ private:
   string name_;
   const TypeInfo *type_info_;
   bool is_nullable_;
@@ -94,12 +95,11 @@ private:
 // A Schema is simply a set of columns, along with information about
 // which prefix of columns makes up the primary key.
 class Schema {
-public:
+ public:
   Schema(const vector<ColumnSchema> &cols,
-         int key_columns) :
-    cols_(cols),
-    num_key_columns_(key_columns)
-  {
+         int key_columns)
+    : cols_(cols),
+      num_key_columns_(key_columns) {
     CHECK_GT(cols_.size(), 0);
     CHECK_LE(key_columns, cols_.size());
 
@@ -349,7 +349,7 @@ public:
     return true;
   }
 
-private:
+ private:
   const vector<ColumnSchema> cols_;
   const size_t num_key_columns_;
   vector<size_t> col_offsets_;

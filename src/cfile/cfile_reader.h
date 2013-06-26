@@ -3,9 +3,9 @@
 #ifndef KUDU_CFILE_CFILE_READER_H
 #define KUDU_CFILE_CFILE_READER_H
 
-#include <vector>
 #include <tr1/memory>
 #include <string>
+#include <vector>
 
 #include "common/columnblock.h"
 #include "common/types.h"
@@ -47,7 +47,7 @@ class CFileIterator;
 
 
 class CFileReader {
-public:
+ public:
   // Open the cfile at the given path.
   //
   // When this method is used, there is no need to explicitly
@@ -131,9 +131,7 @@ public:
     return BlockPointer(footer_->validx_info().root_block());
   }
 
-
-
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);
 
   friend class CFileIterator;
@@ -178,7 +176,7 @@ private:
 
 
 class CFileIterator {
-public:
+ public:
   // Statistics on the amount of IO done by the iterator.
   struct IOStatistics {
     IOStatistics();
@@ -260,7 +258,7 @@ public:
     return io_stats_;
   }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CFileIterator);
 
   struct PreparedBlock {

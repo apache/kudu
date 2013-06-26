@@ -10,12 +10,11 @@
 namespace kudu { namespace tablet {
 
 ScopedRowLock::ScopedRowLock(LockManager *manager, const Slice &key,
-                             LockManager::LockMode mode) :
-  manager_(manager),
-  key_(key),
-  mode_(mode),
-  acquired_(false)
-{
+                             LockManager::LockMode mode)
+  : manager_(manager),
+    key_(key),
+    mode_(mode),
+    acquired_(false) {
   DCHECK_NOTNULL(manager_);
   LockManager::LockStatus ls = manager_->Lock(key, mode, &entry_);
 
@@ -38,9 +37,9 @@ void ScopedRowLock::Release() {
   acquired_ = false;
 }
 
-LockManager::LockManager() :
-  locks_(new boost::mutex[kNumShards])
-{}
+LockManager::LockManager()
+  : locks_(new boost::mutex[kNumShards]) {
+}
 
 LockManager::LockStatus LockManager::Lock(const Slice &key,
                                           LockManager::LockMode mode,

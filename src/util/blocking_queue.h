@@ -5,8 +5,8 @@
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
-#include <list>
 #include <unistd.h>
+#include <list>
 
 #include "gutil/basictypes.h"
 #include "gutil/gscoped_ptr.h"
@@ -15,16 +15,15 @@ namespace kudu {
 
 template <typename T>
 class BlockingQueue {
-public:
+ public:
   // If T is a pointer, this will be the base type.  If T is not a pointer, you
   // can ignore this and the functions which make use of it.
   // Template substitution failure is not an error.
   typedef typename boost::remove_pointer<T>::type T_VAL;
 
-  BlockingQueue(size_t max_elements)
+  explicit BlockingQueue(size_t max_elements)
     : shutdown_(false),
-      max_elements_(max_elements)
-  {
+      max_elements_(max_elements) {
   }
 
   // Get an element from the queue.  Returns false if we were shut down prior to
@@ -91,7 +90,7 @@ public:
     return max_elements_;
   }
 
-private:
+ private:
   bool shutdown_;
   size_t max_elements_;
   boost::condition_variable cond_;

@@ -1,5 +1,4 @@
 // Copyright (c) 2013, Cloudera, inc.
-
 #ifndef KUDU_RPC_SOCKADDR_H
 #define KUDU_RPC_SOCKADDR_H
 
@@ -19,7 +18,7 @@ namespace rpc {
 ///
 class Sockaddr {
  public:
-  explicit Sockaddr();
+  Sockaddr();
   explicit Sockaddr(const struct sockaddr_in *addr);
 
   Sockaddr& operator=(const struct sockaddr_in &addr);
@@ -40,7 +39,6 @@ class Sockaddr {
   struct sockaddr_in addr_;
 };
 
-}
-}
-
-#endif  
+} // namespace kudu
+} // namespace rpc
+#endif

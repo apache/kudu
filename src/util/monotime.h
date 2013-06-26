@@ -23,7 +23,7 @@ class MonoDelta {
 
  private:
   friend class MonoTime;
-  MonoDelta(int64_t delta);
+  explicit MonoDelta(int64_t delta);
   int64_t nano_delta_;
 };
 

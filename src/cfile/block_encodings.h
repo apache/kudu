@@ -39,7 +39,7 @@ inline EncodingType GetDefaultEncoding(DataType type) {
 
 
 class BlockBuilder {
-public:
+ public:
   BlockBuilder() { }
 
   // Add a sequence of values to the block.
@@ -79,13 +79,13 @@ public:
   virtual Status GetFirstKey(void *key) const = 0;
 
   virtual ~BlockBuilder() {}
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BlockBuilder);
 };
 
 
 class BlockDecoder {
-public:
+ public:
   BlockDecoder() { }
 
   virtual Status ParseHeader() = 0;
@@ -143,7 +143,7 @@ public:
   virtual rowid_t ordinal_pos() const = 0;
 
   virtual ~BlockDecoder() {}
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(BlockDecoder);
 };
 

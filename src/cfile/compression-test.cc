@@ -1,23 +1,20 @@
 // Copyright (c) 2012, Cloudera, inc
-
 #include <boost/scoped_array.hpp>
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 #include <stdlib.h>
 
+#include "cfile/cfile.h"
+#include "cfile/cfile_reader.h"
+#include "cfile/cfile.pb.h"
+#include "cfile/cfile-test-base.h"
+#include "cfile/compression_codec.h"
+#include "cfile/index_block.h"
+#include "cfile/index_btree.h"
 #include "util/env.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 #include "util/status.h"
-
-#include "cfile.h"
-#include "cfile_reader.h"
-#include "cfile.pb.h"
-#include "cfile-test-base.h"
-#include "compression_codec.h"
-#include "index_block.h"
-#include "index_btree.h"
-
 
 namespace kudu {
 namespace cfile {
@@ -57,7 +54,7 @@ static void TestCompressionCodec(CompressionType compression) {
 }
 
 class TestCompression : public CFileTestBase {
-protected:
+ protected:
   void TestReadWriteCompressed(CompressionType compression) {
     const size_t nrows = 10000;
     string path = GetTestPath("TestReadWriteCompressed");

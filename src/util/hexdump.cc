@@ -3,14 +3,13 @@
 #include <algorithm>
 #include <string>
 
-#include "hexdump.h"
-#include "slice.h"
 #include "gutil/stringprintf.h"
+#include "util/hexdump.h"
+#include "util/slice.h"
 
 namespace kudu {
 
 std::string HexDump(const Slice &slice) {
-
   std::string output;
   output.reserve(slice.size() * 5);
 
@@ -57,5 +56,4 @@ std::string HexDump(const Slice &slice) {
   }
   return output;
 }
-
-}
+} // namespace kudu

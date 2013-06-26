@@ -3,6 +3,8 @@
 #ifndef KUDU_TABLET_COMPACTION_H
 #define KUDU_TABLET_COMPACTION_H
 
+#include <vector>
+#include <string>
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "tablet/diskrowset.h"

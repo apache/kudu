@@ -16,8 +16,7 @@ extern void DumpSSETable();
 // decodes and ensures the result is the same.
 static void DoTestRoundTripGVI32(
   uint32_t a, uint32_t b, uint32_t c, uint32_t d,
-  bool use_sse=false) {
-
+  bool use_sse = false) {
   faststring buf;
   AppendGroupVarInt32(&buf, a, b, c, d);
 
@@ -66,7 +65,7 @@ TEST(TestGroupVarInt, TestGroupVarInt) {
   // Mixed 1-byte and 2-byte
   AppendGroupVarInt32(&buf, 256, 2, 3, 65535);
   ASSERT_EQ(7UL, buf.size());
-  ASSERT_EQ( BOOST_BINARY( 01 00 00 01 ), buf.at(0));
+  ASSERT_EQ(BOOST_BINARY(01 00 00 01), buf.at(0));
   ASSERT_EQ(256, *reinterpret_cast<const uint16_t *>(&buf[1]));
   ASSERT_EQ(2, *reinterpret_cast<const uint8_t *>(&buf[3]));
   ASSERT_EQ(3, *reinterpret_cast<const uint8_t *>(&buf[4]));
@@ -109,6 +108,5 @@ TEST(TestGroupVarInt, EncodingBenchmark) {
   }
 }
 #endif
-
 }
-}
+} // namespace kudu

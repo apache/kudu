@@ -6,10 +6,11 @@
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <inttypes.h>
-#include <iostream>
-#include <string>
 #include <stdint.h>
 #include <tr1/memory>
+
+#include <iostream>
+#include <string>
 #include <vector>
 
 #include "rpc/messenger.h"
@@ -29,8 +30,7 @@ AcceptorPool::AcceptorPool(Messenger *messenger,
  : messenger_(messenger),
    socket_(socket->Release()),
    bind_address_(bind_address),
-   closing_(false)
-{
+   closing_(false) {
 }
 
 AcceptorPool::~AcceptorPool() {
@@ -43,7 +43,7 @@ Status AcceptorPool::Init(int num_threads) {
       threads_.push_back(shared_ptr<boost::thread>(
           new boost::thread(boost::bind(&AcceptorPool::RunThread, this))));
     }
-  } catch (const boost::thread_resource_error &exception) {
+  } catch(const boost::thread_resource_error &exception) {
     Shutdown();
     return Status::RuntimeError(string("boost thread creation error: ") +
                                 exception.what());

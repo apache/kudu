@@ -3,6 +3,10 @@
 #ifndef KUDU_RPC_RPC_TEST_BASE_H
 #define KUDU_RPC_RPC_TEST_BASE_H
 
+#include <algorithm>
+#include <list>
+#include <string>
+
 #include "rpc/messenger.h"
 #include "rpc/proxy.h"
 #include "rpc/reactor.h"
@@ -33,8 +37,8 @@ using std::tr1::shared_ptr;
 // RPC handler (no generated code).
 class GenericCalculatorService : public ServiceIf {
  public:
-  const static char *kAddMethodName;
-  const static char *kSleepMethodName;
+  static const char *kAddMethodName;
+  static const char *kSleepMethodName;
 
   virtual void Handle(InboundCall *incoming) {
     if (incoming->method_name() == kAddMethodName) {

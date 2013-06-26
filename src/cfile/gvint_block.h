@@ -2,10 +2,11 @@
 #ifndef KUDU_CFILE_GVINT_BLOCK_H
 #define KUDU_CFILE_GVINT_BLOCK_H
 
-#include "block_encodings.h"
-
 #include <stdint.h>
+
 #include <vector>
+
+#include "cfile/block_encodings.h"
 
 namespace kudu {
 namespace cfile {
@@ -26,7 +27,7 @@ using std::vector;
 // See AppendGroupVarInt32(...) for details on the varint
 // encoding.
 class GVIntBlockBuilder : public BlockBuilder {
-public:
+ public:
   explicit GVIntBlockBuilder(const WriterOptions *options);
 
   int Add(const uint8_t *vals, size_t count);
@@ -46,7 +47,7 @@ public:
   // Min Length of a header. (prefix + 4 tags)
   static const size_t kMinHeaderSize = 5;
 
-private:
+ private:
   friend class TestEncoding;
   FRIEND_TEST(TestEncoding, TestGroupVarInt);
   FRIEND_TEST(TestEncoding, TestIntBlockEncoder);
@@ -68,7 +69,7 @@ private:
 
 // Decoder for UINT32 type, GROUP_VARINT coding
 class GVIntBlockDecoder : public BlockDecoder {
-public:
+ public:
   explicit GVIntBlockDecoder(const Slice &slice);
 
   Status ParseHeader();
@@ -95,7 +96,7 @@ public:
     return (num_elems_ - cur_idx_) > 0;
   }
 
-private:
+ private:
   friend class TestEncoding;
 
   template<class IntSink>

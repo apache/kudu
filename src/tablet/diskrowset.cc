@@ -1,9 +1,9 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#include <algorithm>
 #include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
+#include <algorithm>
 #include <vector>
 
 #include "common/generic_iterators.h"
@@ -134,7 +134,7 @@ Status DiskRowSetWriter::Open() {
 Status DiskRowSetWriter::InitBloomFileWriter() {
   string path(DiskRowSet::GetBloomPath(dir_));
   shared_ptr<WritableFile> file;
-  RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
+  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, &file));
   bloom_writer_.reset(new BloomFileWriter(file, bloom_sizing_));
   return bloom_writer_->Start();
 }
@@ -142,7 +142,7 @@ Status DiskRowSetWriter::InitBloomFileWriter() {
 Status DiskRowSetWriter::InitAdHocIndexWriter() {
   string path(DiskRowSet::GetAdHocIndexPath(dir_));
   shared_ptr<WritableFile> file;
-  RETURN_NOT_OK( env_util::OpenFileForWrite(env_, path, &file) );
+  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, &file));
   // TODO: allow options to be configured, perhaps on a per-column
   // basis as part of the schema. For now use defaults.
   //
@@ -226,7 +226,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
     // Insert the encoded row into the bloom.
     Slice encoded_key_slice(tmp_buf_);
-    RETURN_NOT_OK( bloom_writer_->AppendKeys(&encoded_key_slice, 1) );
+    RETURN_NOT_OK(bloom_writer_->AppendKeys(&encoded_key_slice, 1));
   }
 
   written_count_ += block.nrows();

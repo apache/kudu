@@ -14,8 +14,7 @@
 #define KUDU_UTIL_STATUS_H_
 
 #include <string>
-#include "slice.h"
-
+#include "util/slice.h"
 
 // Return the given status if it is not OK.
 #define RETURN_NOT_OK(s) do { \

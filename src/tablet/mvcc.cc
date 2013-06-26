@@ -4,6 +4,7 @@
 #include <boost/foreach.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
+#include <algorithm>
 
 #include "gutil/mathlimits.h"
 #include "gutil/port.h"
@@ -40,8 +41,8 @@ void MvccManager::CommitTransaction(txid_t txid) {
   if (txid.v == cur_snap_.all_committed_before_txid_.v) {
 
     if (!cur_snap_.txids_in_flight_.empty()) {
-      txid_t new_min( *std::min_element(cur_snap_.txids_in_flight_.begin(),
-                                        cur_snap_.txids_in_flight_.end()) );
+      txid_t new_min(*std::min_element(cur_snap_.txids_in_flight_.begin(),
+                                       cur_snap_.txids_in_flight_.end()));
       cur_snap_.all_committed_before_txid_ = new_min;
     } else {
       cur_snap_.all_committed_before_txid_ = cur_snap_.none_committed_after_txid_;
@@ -58,10 +59,10 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
 // MvccSnapshot
 ////////////////////////////////////////////////////////////
 
-MvccSnapshot::MvccSnapshot() :
-  all_committed_before_txid_(0),
-  none_committed_after_txid_(0)
-{}
+MvccSnapshot::MvccSnapshot()
+ : all_committed_before_txid_(0),
+   none_committed_after_txid_(0) {
+}
 
 MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
   manager.TakeSnapshot(this);
@@ -119,11 +120,11 @@ size_t MvccSnapshot::num_transactions_in_flight() const {
 ////////////////////////////////////////////////////////////
 // ScopedTransaction
 ////////////////////////////////////////////////////////////
-ScopedTransaction::ScopedTransaction(MvccManager *mgr) :
-  committed_(false),
-  manager_(DCHECK_NOTNULL(mgr)),
-  txid_(mgr->StartTransaction())
-{}
+ScopedTransaction::ScopedTransaction(MvccManager *mgr)
+  : committed_(false),
+    manager_(DCHECK_NOTNULL(mgr)),
+    txid_(mgr->StartTransaction()) {
+}
 
 ScopedTransaction::~ScopedTransaction() {
   if (!committed_) {

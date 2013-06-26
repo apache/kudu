@@ -5,6 +5,8 @@
 
 #include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
+#include <string>
+#include <vector>
 
 #include "common/iterator.h"
 #include "gutil/macros.h"
@@ -29,7 +31,7 @@ class DeltaFileReader;
 //
 // This class is also responsible for flushing the in-memory deltas to disk.
 class DeltaTracker {
-public:
+ public:
   DeltaTracker(Env *env,
                const Schema &schema,
                const string &dir,
@@ -58,7 +60,7 @@ public:
   // Sets *deleted to true if so; otherwise sets it to false.
   Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
-private:
+ private:
   friend class DiskRowSet;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaTracker);
@@ -110,7 +112,7 @@ private:
 // DeltaIterator. It is responsible for applying the updates coming
 // from the delta iterator to the results of the base iterator.
 class DeltaApplier : public ColumnwiseIterator {
-public:
+ public:
   virtual Status Init(ScanSpec *spec) {
     RETURN_NOT_OK(base_iter_->Init(spec));
     RETURN_NOT_OK(delta_iter_->Init());
@@ -146,17 +148,16 @@ public:
   virtual Status InitializeSelectionVector(SelectionVector *sel_vec);
 
   Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
-private:
+ private:
   friend class DeltaTracker;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaApplier);
 
   // Construct. The base_iter and delta_iter should not be Initted.
   DeltaApplier(const shared_ptr<ColumnwiseIterator> &base_iter,
-               const shared_ptr<DeltaIterator> delta_iter) :
-    base_iter_(base_iter),
-    delta_iter_(delta_iter)
-  {
+               const shared_ptr<DeltaIterator> delta_iter)
+    : base_iter_(base_iter),
+      delta_iter_(delta_iter) {
   }
 
   shared_ptr<ColumnwiseIterator> base_iter_;

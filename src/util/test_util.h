@@ -7,6 +7,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <string>
 #include "util/env.h"
 #include "util/test_macros.h"
 #include "gutil/gscoped_ptr.h"
@@ -19,7 +20,7 @@ DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 namespace kudu {
 
 class KuduTest : public ::testing::Test {
-public:
+ public:
   KuduTest() :
     env_(new EnvWrapper(Env::Default()))
   {}
@@ -56,7 +57,7 @@ public:
     }
   }
 
-protected:
+ protected:
   string GetTestPath(const string &relative_path) {
     CHECK(!test_dir_.empty()) << "Call SetUp() first";
     return env_->JoinPathSegments(test_dir_, relative_path);

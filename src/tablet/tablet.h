@@ -3,6 +3,7 @@
 #define KUDU_TABLET_TABLET_H
 
 #include <string>
+#include <vector>
 
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
@@ -26,7 +27,7 @@ using std::tr1::shared_ptr;
 class RowSetsInCompaction;
 
 class Tablet {
-public:
+ public:
   class CompactionFaultHooks;
   class FlushCompactCommonHooks;
   class FlushFaultHooks;
@@ -108,7 +109,7 @@ public:
   // Return the MVCC manager for this tablet.
   const MvccManager &mvcc_manager() const { return mvcc_; }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
@@ -174,7 +175,7 @@ private:
 // Hooks used in test code to inject faults or other code into interesting
 // parts of the compaction code.
 class Tablet::CompactionFaultHooks {
-public:
+ public:
   virtual Status PostSelectIterators() { return Status::OK(); }
   virtual ~CompactionFaultHooks() {}
 };
@@ -192,7 +193,7 @@ class Tablet::FlushCompactCommonHooks {
 // Hooks used in test code to inject faults or other code into interesting
 // parts of the Flush() code.
 class Tablet::FlushFaultHooks {
-public:
+ public:
   virtual Status PostSwapNewMemRowSet() { return Status::OK(); }
   virtual ~FlushFaultHooks() {}
 };

@@ -2,6 +2,9 @@
 #ifndef KUDU_TABLET_ROWSET_H
 #define KUDU_TABLET_ROWSET_H
 
+#include <string>
+#include <vector>
+
 #include "cfile/cfile_reader.h"
 #include "cfile/cfile_util.h"
 #include "common/iterator.h"
@@ -25,7 +28,7 @@ class MvccSnapshot;
 class RowSetKeyProbe;
 
 class RowSet {
-public:
+ public:
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
@@ -86,8 +89,7 @@ typedef vector<shared_ptr<RowSet> > RowSetVector;
 // Structure which caches an encoded and hashed key, suitable
 // for probing against rowsets.
 class RowSetKeyProbe {
-public:
-
+ public:
   // schema: the schema containing the key
   // raw_key: a pointer to the key portion of a row in memory
   // to probe for.
@@ -95,8 +97,8 @@ public:
   // NOTE: raw_key is not copied and must be valid for the liftime
   // of this object.
   RowSetKeyProbe(const Schema &schema, const void *raw_key)
-    : raw_key_(raw_key), schema_(schema)
-  {
+    : raw_key_(raw_key),
+      schema_(schema) {
     cfile::EncodeKey(schema,
                      raw_key,
                      &encoded_key_);
@@ -121,7 +123,7 @@ public:
                                 schema_.num_key_columns());
   }
 
-private:
+ private:
   const void *raw_key_;
   faststring encoded_key_;
   BloomKeyProbe bloom_probe_;
@@ -137,7 +139,7 @@ private:
 //
 // See compaction.txt for a little more detail on how this is used.
 class DuplicatingRowSet : public RowSet {
-public:
+ public:
   DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
                    const shared_ptr<RowSet> &new_rowset);
 
@@ -172,7 +174,7 @@ public:
     return schema_;
   }
 
-private:
+ private:
   friend class Tablet;
 
   DISALLOW_COPY_AND_ASSIGN(DuplicatingRowSet);

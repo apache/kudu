@@ -6,10 +6,10 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <memory>
 
-#include "cfile.pb.h"
 #include "cfile/block_cache.h"
+#include "cfile/cfile.pb.h"
+#include "cfile/index_block.h"
 #include "gutil/macros.h"
-#include "index_block.h"
 #include "util/logging.h"
 
 namespace kudu {
@@ -21,7 +21,7 @@ class CFileReader;
 class Writer;
 
 class IndexTreeBuilder {
-public:
+ public:
   explicit IndexTreeBuilder(
     const WriterOptions *options,
     Writer *writer);
@@ -31,7 +31,7 @@ public:
   // memory.
   Status Append(const Slice &key, const BlockPointer &block);
   Status Finish(BTreeInfoPB *info);
-private:
+ private:
   IndexBlockBuilder *CreateBlockBuilder(bool is_leaf);
   Status Append(const Slice &key, const BlockPointer &block_ptr,
                 size_t level);
@@ -55,7 +55,7 @@ private:
 };
 
 class IndexTreeIterator {
-public:
+ public:
   explicit IndexTreeIterator(
       const CFileReader *reader,
       const BlockPointer &root_blockptr);
@@ -75,7 +75,7 @@ public:
     DataType type,
     const BlockPointer &idx_root);
 
-private:
+ private:
   IndexBlockIterator *BottomIter();
   IndexBlockReader *BottomReader();
   IndexBlockIterator *seeked_iter(int depth);

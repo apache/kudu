@@ -26,9 +26,8 @@ namespace kudu {
 class BitWriter {
  public:
   // buffer: buffer to write bits to.
-  BitWriter(faststring *buffer)
-    : buffer_(buffer), byte_offset_(0), bit_offset_(0)
-  {
+  explicit BitWriter(faststring *buffer)
+    : buffer_(buffer), byte_offset_(0), bit_offset_(0) {
   }
 
   void Clear() {

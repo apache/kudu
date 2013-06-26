@@ -21,6 +21,8 @@
 #include <boost/static_assert.hpp>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
+#include <algorithm>
+#include <string>
 #include "util/inline_slice.h"
 #include "util/memory/arena.h"
 #include "util/status.h"
@@ -83,7 +85,7 @@ template<class Traits> class CBTreeIterator;
 typedef base::subtle::Atomic64 AtomicVersion;
 
 struct VersionField {
-public:
+ public:
   static AtomicVersion StableVersion(volatile AtomicVersion *version) {
     for (int loop_count = 0; true; loop_count++) {
       AtomicVersion v_acq = base::subtle::Acquire_Load(version);
@@ -177,7 +179,7 @@ public:
                         GetVSplit(v));
   }
 
-private:
+ private:
   enum {
     BTREE_LOCK_BIT = 63,
     BTREE_SPLITTING_BIT = 62,
@@ -273,7 +275,7 @@ static void InsertInSliceArray(ISlice *array, size_t num_entries,
 
 template<class Traits>
 class NodeBase {
-public:
+ public:
   AtomicVersion StableVersion() {
     return VersionField::StableVersion(&version_);
   }
@@ -322,7 +324,7 @@ public:
     }
   }
 
-protected:
+ protected:
   friend class CBTree<Traits>;
 
   NodeBase() : version_(0), parent_(NULL)
@@ -340,7 +342,7 @@ protected:
   }
 
 
-public:
+ public:
   volatile AtomicVersion version_;
 
   // parent_ field is protected not by this node's lock, but by
@@ -349,7 +351,7 @@ public:
   // the children.
   InternalNode<Traits> *parent_;
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(NodeBase);
 } PACKED;
 
@@ -372,13 +374,13 @@ struct NodePtr {
 
   NodePtr() : p_(NULL) {}
 
-  NodePtr(InternalNode<T> *p) {
+  NodePtr(InternalNode<T> *p) { // NOLINT(runtime/explicit)
     uintptr_t p_int = reinterpret_cast<uintptr_t>(p);
     DCHECK(!(p_int & kDiscriminatorBit)) << "Pointer must not use most significant bit";
     p_ = p;
   }
 
-  NodePtr(LeafNode<T> *p) {
+  NodePtr(LeafNode<T> *p) { // NOLINT(runtime/explicit)
     uintptr_t p_int = reinterpret_cast<uintptr_t>(p);
     DCHECK(!(p_int & kDiscriminatorBit)) << "Pointer must not use most significant bit";
     p_ = reinterpret_cast<void *>(p_int | kDiscriminatorBit);
@@ -416,7 +418,7 @@ struct NodePtr {
 
   void *p_;
 
-private:
+ private:
   enum {
     kDiscriminatorBit = (1L << (sizeof(uintptr_t) * 8 - 1))
   };
@@ -434,7 +436,7 @@ enum InsertStatus {
 
 template<class Traits>
 class PACKED InternalNode : public NodeBase<Traits> {
-public:
+  public:
 
   // Construct a new internal node, containing the given children.
   // This also reassigns the parent pointer of the children.
@@ -445,9 +447,8 @@ public:
   InternalNode(const Slice &split_key,
                NodePtr<Traits> lchild,
                NodePtr<Traits> rchild,
-               ThreadSafeArena *arena) :
-    num_children_(0)
-  {
+               ThreadSafeArena *arena)
+    : num_children_(0) {
     DCHECK_EQ(lchild.type(), rchild.type())
       << "Only expect to create a new internal node on account of a "
       << "split: child nodes should have same type";
@@ -605,15 +606,13 @@ public:
 
 template<class Traits>
 class LeafNode : public NodeBase<Traits> {
-public:
-
+ public:
   // Construct a new leaf node.
   // If initially_locked is true, then the new node is created
   // with LOCKED and INSERTING set.
-  explicit LeafNode(bool initially_locked) :
-    next_(NULL),
-    num_entries_(0)
-  {
+  explicit LeafNode(bool initially_locked)
+    : next_(NULL),
+      num_entries_(0) {
     if (initially_locked) {
       // Just assign the version, instead of using the proper ->Lock()
       // since we don't need a CAS here.
@@ -747,7 +746,7 @@ public:
     return ret;
   }
 
-private:
+ private:
   friend class CBTree<Traits>;
   friend class InternalNode<Traits>;
   friend class CBTreeIterator<Traits>;
@@ -764,7 +763,7 @@ private:
     val_inline_size = kv_space / 2 / Traits::leaf_max_entries
   };
 
-  typedef InlineSlice<key_inline_size> KeyInlineSlice; 
+  typedef InlineSlice<key_inline_size> KeyInlineSlice;
   typedef InlineSlice<val_inline_size> ValInlineSlice;
 
   KeyInlineSlice keys_[Traits::leaf_max_entries];
@@ -781,7 +780,7 @@ private:
 // and then used with a further Insert() or Update() call.
 template<class Traits>
 class PreparedMutation {
-public:
+ public:
   // Construct a PreparedMutation.
   //
   // The data referred to by the 'key' Slice passed in themust remain
@@ -875,7 +874,7 @@ public:
     return arena_;
   }
 
-private:
+ private:
   friend class CBTree<Traits>;
   friend class LeafNode<Traits>;
   friend class TestCBTree;
@@ -905,12 +904,11 @@ private:
 
 template<class Traits = BTreeTraits>
 class CBTree {
-public:
-  CBTree() :
-    arena_(512*1024, 4*1024*1024),
-    root_(NewLeaf(false)),
-    frozen_(false)
-  {
+ public:
+  CBTree()
+    : arena_(512*1024, 4*1024*1024),
+      root_(NewLeaf(false)),
+      frozen_(false) {
   }
 
   ~CBTree() {
@@ -1076,7 +1074,7 @@ public:
     frozen_ = true;
   }
 
-private:
+ private:
   friend class PreparedMutation<Traits>;
   friend class CBTreeIterator<Traits>;
 
@@ -1318,7 +1316,6 @@ private:
   //   Postcondition:
   //     node is still locked and marked SPLITTING
   //     new_inode is locked and marked INSERTING
-  
   InternalNode<Traits> *SplitInternalNode(InternalNode<Traits> *node,
                                           faststring *separator_key) {
     DCHECK(node->IsLocked());
@@ -1402,7 +1399,7 @@ private:
     DCHECK(node->IsLocked());
 
 #ifdef DEBUG_DUMP_SPLIT_STATS
-    {
+    do {
       size_t key_size = 0, val_size = 0;
       for (size_t i = 0; i < node->num_entries(); i++) {
         Slice k, v;
@@ -1413,7 +1410,7 @@ private:
       LOG(INFO) << "split leaf. entries=" << node->num_entries()
                 << " keysize=" << key_size
                 << " valsize=" << val_size;
-    }
+    } while (0);
 #endif
 
     LeafNode<Traits> *new_leaf = NewLeaf(true);
@@ -1590,7 +1587,7 @@ private:
 
 template<class Traits>
 class CBTreeIterator {
-public:
+ public:
   bool SeekToStart() {
     bool exact;
     return SeekAtOrAfter(Slice(""), &exact);
@@ -1665,7 +1662,7 @@ public:
     leaf_to_scan_->Get(idx, key, val);
   }
 
-private:
+ private:
   friend class CBTree<Traits>;
 
   CBTreeIterator(const CBTree<Traits> *tree,

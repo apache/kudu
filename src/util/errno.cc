@@ -21,11 +21,10 @@ void ErrnoToCString(int err, char *buf, size_t buf_len) {
   if (strerror_r(err, buf, buf_len)) {
     static const char UNKNOWN_ERROR[] = "unknown error";
     if (buf_len >= sizeof(UNKNOWN_ERROR)) {
-      strcpy(buf, UNKNOWN_ERROR);
+      strcpy(buf, UNKNOWN_ERROR); // NOLINT(runtime/printf)
     } else {
       memset(buf, 0, buf_len);
     }
   }
 }
-
-}
+} // namespace kudu

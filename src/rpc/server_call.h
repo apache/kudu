@@ -4,8 +4,10 @@
 #define KUDU_RPC_SERVER_CALL_H
 
 #include <glog/logging.h>
-#include <string>
 #include <tr1/memory>
+
+#include <string>
+#include <vector>
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
@@ -31,7 +33,7 @@ class InboundCall {
 
   // Parse an inbound call message.
   //
-  // This only deserializes the call header, populating the 'header_' and 
+  // This only deserializes the call header, populating the 'header_' and
   // 'serialized_request_' member variables. The actual call parameter is
   // not deserialized, as this may be CPU-expensive, and this is called
   // from the reactor thread.

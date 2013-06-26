@@ -14,6 +14,8 @@
 #ifndef KUDU_CFILE_STRING_PLAIN_BLOCK_H
 #define KUDU_CFILE_STRING_PLAIN_BLOCK_H
 
+#include <vector>
+
 #include "cfile/block_encodings.h"
 #include "util/faststring.h"
 
@@ -23,7 +25,7 @@ namespace cfile {
 struct WriterOptions;
 
 class StringPlainBlockBuilder : public BlockBuilder {
-public:
+ public:
   explicit StringPlainBlockBuilder(const WriterOptions *options);
 
   int Add(const uint8_t *vals, size_t count);
@@ -48,7 +50,7 @@ public:
   // Length of a header.
   static const size_t kHeaderSize = sizeof(uint32_t) * 3;
 
-private:
+ private:
   faststring buffer_;
 
   size_t end_of_data_offset_;
@@ -65,7 +67,7 @@ private:
 
 
 class StringPlainBlockDecoder : public BlockDecoder {
-public:
+ public:
   explicit StringPlainBlockDecoder(const Slice &slice);
 
   virtual Status ParseHeader();
@@ -91,7 +93,7 @@ public:
 
   Slice string_at_index(size_t indx) const;
 
-private:
+ private:
   Slice data_;
   bool parsed_;
 

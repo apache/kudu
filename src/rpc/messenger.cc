@@ -3,14 +3,16 @@
 #include "rpc/messenger.h"
 
 #include <arpa/inet.h>
-#include <boost/foreach.hpp>
-#include <boost/thread.hpp>
-#include <glog/logging.h>
-#include <set>
-#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <boost/foreach.hpp>
+#include <boost/thread.hpp>
+#include <glog/logging.h>
+#include <list>
+#include <set>
+#include <string>
 
 #include "gutil/gscoped_ptr.h"
 #include "rpc/acceptor_pool.h"
@@ -39,8 +41,7 @@ MessengerBuilder::MessengerBuilder(const std::string &name)
     connection_keepalive_time_(MonoDelta::FromSeconds(10)),
     num_reactors_(4),
     coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
-    service_queue_length_(50)
-{
+    service_queue_length_(50) {
 }
 
 MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelta &keepalive) {
@@ -155,8 +156,7 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 Messenger::Messenger(const MessengerBuilder &bld)
   : closing_(false),
     service_queue_(bld.service_queue_length_),
-    name_(bld.name_)
-{
+    name_(bld.name_) {
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(this, i, bld));
   }

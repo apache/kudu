@@ -3,6 +3,7 @@
 #ifndef KUDU_COMMON_ROWBLOCK_H
 #define KUDU_COMMON_ROWBLOCK_H
 
+#include <vector>
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "common/row.h"
@@ -20,7 +21,7 @@ class RowBlockRow;
 // are applied, the bits may be changed to 0 for any row which does not match
 // a predicate.
 class SelectionVector {
-public:
+ public:
   explicit SelectionVector(size_t row_capacity);
 
   // Construct a vector which shares the underlying memory of another vector,
@@ -75,7 +76,7 @@ public:
 
   size_t nrows() const { return n_rows_; }
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(SelectionVector);
 
   // The number of allocated bytes in bitmap_
@@ -101,7 +102,7 @@ private:
 // "const RowBlock& param". Just because you _could_ modify the referred-to contents
 // of the latter doesn't mean you _should_.
 class RowBlock {
-public:
+ public:
   RowBlock(const Schema &schema,
            size_t nrows,
            Arena *arena);
@@ -214,8 +215,7 @@ public:
 class RowBlockRow {
  public:
   RowBlockRow(const RowBlock *row_block = NULL, size_t row_index = 0)
-    : row_block_(row_block), row_index_(row_index)
-  {
+    : row_block_(row_block), row_index_(row_index) {
   }
 
   RowBlockRow *Reset(const RowBlock *row_block, size_t row_index) {

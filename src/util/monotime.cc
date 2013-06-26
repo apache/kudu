@@ -12,8 +12,8 @@
 
 namespace kudu {
 
-static const long kNanosecondsPerSecond = 1000000000L;
-static const long kNanosecondsPerMillisecond = 1000000L;
+static const uint64_t kNanosecondsPerSecond = 1000000000L;
+static const uint64_t kNanosecondsPerMillisecond = 1000000L;
 
 #define MAX_MONOTONIC_SECONDS \
   (((1ULL<<63) - 1ULL) /(int64_t)kNanosecondsPerSecond)
@@ -34,8 +34,7 @@ MonoDelta MonoDelta::FromNanoseconds(int ns) {
 }
 
 MonoDelta::MonoDelta()
-  : nano_delta_(0)
-{
+  : nano_delta_(0) {
 }
 
 bool MonoDelta::LessThan(const MonoDelta &rhs) const {
@@ -51,8 +50,7 @@ std::string MonoDelta::ToString() const {
 }
 
 MonoDelta::MonoDelta(int64_t delta)
-  : nano_delta_(delta)
-{
+  : nano_delta_(delta) {
 }
 
 double MonoDelta::ToSeconds() const {
@@ -69,8 +67,7 @@ MonoTime MonoTime::Now(enum Granularity granularity) {
 }
 
 MonoTime::MonoTime()
-  : nanos_(0)
-{
+  : nanos_(0) {
 }
 
 bool MonoTime::Initialized() const {

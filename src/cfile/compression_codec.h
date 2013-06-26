@@ -16,8 +16,9 @@ namespace kudu {
 namespace cfile {
 
 class CompressionCodec {
-public:
+ public:
   CompressionCodec();
+  virtual ~CompressionCodec();
 
   // REQUIRES: "compressed" must point to an area of memory that is at
   // least "MaxCompressedLength(input_length)" bytes in length.
@@ -42,13 +43,13 @@ public:
   // Returns the maximal size of the compressed representation of
   // input data that is "source_bytes" bytes in length.
   virtual size_t MaxCompressedLength(size_t source_bytes) = 0;
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CompressionCodec);
 };
 
 // Returns the compression codec for the specified type
-Status GetCompressionCodec (CompressionType compression,
-                            shared_ptr<CompressionCodec> *codec);
+Status GetCompressionCodec(CompressionType compression,
+                           shared_ptr<CompressionCodec> *codec);
 
 } // namespace cfile
 } // namespace kudu

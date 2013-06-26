@@ -10,10 +10,11 @@
 #include <glog/logging.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <string>
 
 #include "gutil/gscoped_ptr.h"
 #include "rpc/connection.h"
@@ -40,8 +41,7 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
     last_unused_tcp_scan_(cur_time_),
     reactor_(reactor),
     connection_keepalive_time_(bld.connection_keepalive_time_),
-    coarse_timer_granularity_(bld.coarse_timer_granularity_)
-{
+    coarse_timer_granularity_(bld.coarse_timer_granularity_) {
 }
 
 Status ReactorThread::Init() {
@@ -54,7 +54,7 @@ Status ReactorThread::Init() {
   // The timer is used for closing old TCP connections and applying
   // backpressure.
   timer_.set(loop_);
-  timer_.set<ReactorThread, &ReactorThread::TimerHandler>(this);
+  timer_.set<ReactorThread, &ReactorThread::TimerHandler>(this); // NOLINT(*)
   timer_.start(coarse_timer_granularity_.ToSeconds(),
                coarse_timer_granularity_.ToSeconds());
 
@@ -62,7 +62,7 @@ Status ReactorThread::Init() {
   try {
     thread_.reset(new boost::thread(
           boost::bind(&ReactorThread::RunThread, this)));
-  } catch (boost::thread_resource_error &e) {
+  } catch(boost::thread_resource_error &e) {
     // boost::thread uses exceptions to signal failure to create a thread
     return Status::RuntimeError(e.what());
   }
@@ -212,7 +212,7 @@ void ReactorThread::ScanIdleConnections() {
   // TODO: above only times out on the server side.
   // Clients may want to set their keepalive timeout as well.
 
-  VLOG_IF(1, timed_out > 0) << name() << ": timed out " << timed_out << " TCP connections."; 
+  VLOG_IF(1, timed_out > 0) << name() << ": timed out " << timed_out << " TCP connections.";
 }
 
 const std::string &ReactorThread::name() const {
@@ -322,8 +322,7 @@ Reactor::Reactor(Messenger *messenger,
   : messenger_(messenger),
     name_(StringPrintf("%s_R%03d", messenger->name().c_str(), index)),
     closing_(false),
-    thread_(this, bld)
-{
+    thread_(this, bld) {
 }
 
 Status Reactor::Init() {
@@ -359,7 +358,7 @@ const std::string &Reactor::name() const {
 // Task to call GetMetricsInternal within the thread.
 class GetMetricsTask : public ReactorTask {
  public:
-  GetMetricsTask(ReactorMetrics *metrics) :
+  explicit GetMetricsTask(ReactorMetrics *metrics) :
     metrics_(metrics),
     latch_(1)
   {}
@@ -392,7 +391,7 @@ Status Reactor::GetMetrics(ReactorMetrics *metrics) {
 
 class RegisterConnectionTask : public ReactorTask {
  public:
-  RegisterConnectionTask(const shared_ptr<Connection> &conn) :
+  explicit RegisterConnectionTask(const shared_ptr<Connection> &conn) :
     conn_(conn)
   {}
 
@@ -422,7 +421,7 @@ void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
 // to a connection.
 class AssignOutboundCallTask : public ReactorTask {
  public:
-  AssignOutboundCallTask(const shared_ptr<OutboundCall> &call) :
+  explicit AssignOutboundCallTask(const shared_ptr<OutboundCall> &call) :
     call_(call)
   {}
 
@@ -459,7 +458,7 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
   thread_.WakeThread();
 }
 
-bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks) {
+bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks) { // NOLINT(*)
   boost::lock_guard<LockType> lock_guard(lock_);
   if (closing_) {
     return false;

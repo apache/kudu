@@ -2,6 +2,7 @@
 
 #include <boost/foreach.hpp>
 #include <string>
+#include <utility>
 
 #include "common/generic_iterators.h"
 #include "common/row.h"
@@ -26,8 +27,8 @@ using std::tr1::shared_ptr;
 static const int kMergeRowBuffer = 1000;
 
 class MergeIterState {
-public:
-  MergeIterState(const shared_ptr<RowwiseIterator> &iter) :
+ public:
+  explicit MergeIterState(const shared_ptr<RowwiseIterator> &iter) :
     iter_(iter),
     arena_(1024, 256*1024),
     read_block_(iter->schema(), kMergeRowBuffer, &arena_),
@@ -100,8 +101,7 @@ MergeIterator::MergeIterator(
   const vector<shared_ptr<RowwiseIterator> > &iters)
   : schema_(schema),
     initted_(false),
-    prepared_count_(0)
-{
+    prepared_count_(0) {
   CHECK_GT(iters.size(), 0);
   BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters) {
     iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
@@ -235,10 +235,9 @@ string MergeIterator::ToString() const {
 // Union iterator
 ////////////////////////////////////////////////////////////
 
-UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters) :
-  initted_(false),
-  iters_(iters.size())
-{
+UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters)
+  : initted_(false),
+    iters_(iters.size()) {
   CHECK_GT(iters.size(), 0);
   iters_.assign(iters.begin(), iters.end());
 }
@@ -336,11 +335,10 @@ string UnionIterator::ToString() const {
 // Materializing iterator
 ////////////////////////////////////////////////////////////
 
-MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter) :
-  iter_(iter),
-  prepared_count_(0),
-  disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown)
-{
+MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter)
+  : iter_(iter),
+    prepared_count_(0),
+    disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown) {
 }
 
 Status MaterializingIterator::Init(ScanSpec *spec) {
@@ -396,7 +394,7 @@ bool MaterializingIterator::HasNext() const {
 }
 
 Status MaterializingIterator::PrepareBatch(size_t *nrows) {
-  RETURN_NOT_OK( iter_->PrepareBatch(nrows) );
+  RETURN_NOT_OK(iter_->PrepareBatch(nrows));
   prepared_count_ = *nrows;
   return Status::OK();
 }
@@ -455,13 +453,11 @@ string MaterializingIterator::ToString() const {
 
 PredicateEvaluatingIterator::PredicateEvaluatingIterator(
   const shared_ptr<RowwiseIterator> &base_iter) :
-  base_iter_(base_iter)
-{
+  base_iter_(base_iter) {
 }
 
 Status PredicateEvaluatingIterator::InitAndMaybeWrap(
-  shared_ptr<RowwiseIterator> *base_iter, ScanSpec *spec)
-{
+  shared_ptr<RowwiseIterator> *base_iter, ScanSpec *spec) {
   RETURN_NOT_OK((*base_iter)->Init(spec));
   if (spec != NULL &&
       !spec->predicates().empty()) {
@@ -489,7 +485,7 @@ bool PredicateEvaluatingIterator::HasNext() const {
 }
 
 Status PredicateEvaluatingIterator::PrepareBatch(size_t *nrows) {
-  RETURN_NOT_OK( base_iter_->PrepareBatch(nrows) );
+  RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
   return Status::OK();
 }
 

@@ -3,6 +3,8 @@
 #define KUDU_TABLET_MEMROWSET_H
 
 #include <tr1/memory>
+#include <string>
+#include <vector>
 
 #include "common/rowblock.h"
 #include "common/schema.h"
@@ -427,14 +429,13 @@ class MemRowSet::Iterator : public RowwiseIterator {
   Iterator(const shared_ptr<const MemRowSet> &mrs,
            MemRowSet::MSBTIter *iter,
            const Schema &projection,
-           const MvccSnapshot &mvcc_snap) :
-    memrowset_(mrs),
-    iter_(iter),
-    projection_(projection),
-    mvcc_snap_(mvcc_snap),
-    prepared_count_(0),
-    prepared_idx_in_leaf_(0)
-  {
+           const MvccSnapshot &mvcc_snap)
+    : memrowset_(mrs),
+      iter_(iter),
+      projection_(projection),
+      mvcc_snap_(mvcc_snap),
+      prepared_count_(0),
+      prepared_idx_in_leaf_(0) {
     // TODO: various code assumes that a newly constructed iterator
     // is pointed at the beginning of the dataset. This causes a redundant
     // seek. Could make this lazy instead, or change the semantics so that

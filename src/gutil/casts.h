@@ -246,7 +246,7 @@ class enum_limits {
 #define MAKE_ENUM_LIMITS(ENUM_TYPE, ENUM_MIN, ENUM_MAX) \
 template <> \
 class enum_limits<ENUM_TYPE> { \
-public: \
+ public: \
   static const ENUM_TYPE min_enumerator = ENUM_MIN; \
   static const ENUM_TYPE max_enumerator = ENUM_MAX; \
   static const bool is_specialized = true; \

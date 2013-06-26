@@ -10,8 +10,9 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
-#include <string>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "cfile/cfile.h"
 #include "cfile/cfile_reader.h"
@@ -44,7 +45,7 @@ using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
 class DiskRowSetWriter {
-public:
+ public:
   DiskRowSetWriter(Env *env,
               const Schema &schema,
               const string &rowset_dir,
@@ -77,7 +78,7 @@ public:
   }
 
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(DiskRowSetWriter);
 
   Status InitBloomFileWriter();
@@ -105,7 +106,7 @@ private:
 ////////////////////////////////////////////////////////////
 
 class DiskRowSet : public RowSet {
-public:
+ public:
   static const char *kDeltaPrefix;
   static const char *kColumnPrefix;
   static const char *kBloomFileName;
@@ -183,7 +184,7 @@ public:
   static string GetBloomPath(const string &dir);
   static string GetAdHocIndexPath(const string &dir);
 
-private:
+ private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestCompaction, TestOneToOne);

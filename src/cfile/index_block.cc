@@ -1,7 +1,9 @@
 // Copyright (c) 2012, Cloudera, inc.
-#include "index_block.h"
-#include "boost/foreach.hpp"
-#include "cfile.h"
+
+#include <boost/foreach.hpp>
+
+#include "cfile/cfile.h"
+#include "cfile/index_block.h"
 #include "util/protobuf_util.h"
 
 namespace kudu {
@@ -35,8 +37,7 @@ IndexBlockBuilder::IndexBlockBuilder(
   bool is_leaf)
   : options_(options),
     finished_(false),
-    is_leaf_(is_leaf)
-{
+    is_leaf_(is_leaf) {
 }
 
 
@@ -105,9 +106,9 @@ size_t IndexBlockBuilder::EstimateEncodedSize() const {
 
 // Construct a reader.
 // After construtoin, call
-IndexBlockReader::IndexBlockReader() :
-  parsed_(false)
-{}
+IndexBlockReader::IndexBlockReader()
+  : parsed_(false) {
+}
 
 void IndexBlockReader::Reset() {
   data_ = Slice();
@@ -229,11 +230,10 @@ void IndexBlockBuilder::Reset() {
   finished_ = false;
 }
 
-IndexBlockIterator::IndexBlockIterator(const IndexBlockReader *reader) :
-  reader_(reader),
-  cur_idx_(-1),
-  seeked_(false)
-{
+IndexBlockIterator::IndexBlockIterator(const IndexBlockReader *reader)
+  : reader_(reader),
+    cur_idx_(-1),
+    seeked_(false) {
 }
 
 void IndexBlockIterator::Reset() {

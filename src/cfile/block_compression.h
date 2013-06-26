@@ -3,6 +3,7 @@
 #define KUDU_CFILE_BLOCK_COMPRESSION_H
 
 #include <tr1/memory>
+#include <vector>
 
 #include "cfile/cfile.pb.h"
 #include "cfile/compression_codec.h"
@@ -18,7 +19,7 @@ namespace kudu {
 namespace cfile {
 
 class CompressedBlockBuilder {
-public:
+ public:
   explicit CompressedBlockBuilder(const shared_ptr<CompressionCodec> &codec, size_t size_limit);
 
   // Sets "*result" to the compressed version of the "data".
@@ -32,7 +33,7 @@ public:
   // header includes a 32-bit compressed length, 32-bit uncompressed length
   static const size_t kHeaderReservedLength = (2 * sizeof(uint32_t));
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockBuilder);
   shared_ptr<CompressionCodec> codec_;
   faststring buffer_;
@@ -40,7 +41,7 @@ private:
 };
 
 class CompressedBlockDecoder {
-public:
+ public:
   explicit CompressedBlockDecoder(const shared_ptr<CompressionCodec> &codec, size_t size_limit);
 
   // Sets "*result" to the uncompressed version of the "data".
@@ -49,7 +50,7 @@ public:
   // If an error was encountered, returns a non-OK status.
   Status Uncompress(const Slice& data, Slice *result);
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
   shared_ptr<CompressionCodec> codec_;
   size_t uncompressed_size_limit_;

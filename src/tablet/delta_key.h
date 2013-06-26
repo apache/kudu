@@ -3,6 +3,7 @@
 #ifndef KUDU_TABLET_DELTA_KEY_H
 #define KUDU_TABLET_DELTA_KEY_H
 
+#include <string>
 #include "common/rowid.h"
 #include "gutil/endian.h"
 #include "tablet/mvcc.h"
@@ -64,7 +65,7 @@ class DeltaKey {
   int CompareTo(const DeltaKey &other) {
     if (row_idx_ < other.row_idx_) {
       return -1;
-    } else if (row_idx_ > other.row_idx_ ) {
+    } else if (row_idx_ > other.row_idx_) {
       return 1;
     }
 

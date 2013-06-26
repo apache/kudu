@@ -40,13 +40,13 @@ static void AppendBlooms(BloomFileWriter *bfw) {
 
 static void WriteTestBloomFile(Env *env, const string &path) {
   WritableFile *file;
-  ASSERT_STATUS_OK( env->NewWritableFile(path, &file) );
+  ASSERT_STATUS_OK(env->NewWritableFile(path, &file));
   shared_ptr<WritableFile> sink(file);
 
   // Set sizing based on flags
   BloomFilterSizing sizing = BloomFilterSizing::BySizeAndFPRate(
     FLAGS_bloom_size_bytes, FLAGS_fp_rate);
-  ASSERT_NEAR( sizing.n_bytes(), FLAGS_bloom_size_bytes, FLAGS_bloom_size_bytes * 0.05 );
+  ASSERT_NEAR(sizing.n_bytes(), FLAGS_bloom_size_bytes, FLAGS_bloom_size_bytes * 0.05);
   ASSERT_GT(FLAGS_n_keys, sizing.expected_count())
     << "Invalid parameters: --n_keys isn't set large enough to fill even "
     << "one bloom filter of the requested --bloom_size_bytes";
@@ -55,7 +55,7 @@ static void WriteTestBloomFile(Env *env, const string &path) {
 
   ASSERT_STATUS_OK(bfw.Start());
   AppendBlooms(&bfw);
-  ASSERT_STATUS_OK( bfw.Finish() );
+  ASSERT_STATUS_OK(bfw.Finish());
 }
 
 // Verify that all the entries we put in the bloom file check as
@@ -63,7 +63,7 @@ static void WriteTestBloomFile(Env *env, const string &path) {
 // expected false positive rate.
 static void VerifyBloomFile(Env *env, const string &path) {
   gscoped_ptr<BloomFileReader> bfr;
-  ASSERT_STATUS_OK( BloomFileReader::Open(env, path, &bfr) );
+  ASSERT_STATUS_OK(BloomFileReader::Open(env, path, &bfr));
 
   // Verify all the keys that we inserted probe as present.
   for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
@@ -71,7 +71,7 @@ static void VerifyBloomFile(Env *env, const string &path) {
     Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
     bool present = false;
-    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(BloomKeyProbe(s), &present) );
+    ASSERT_STATUS_OK_FAST(bfr->CheckKeyPresent(BloomKeyProbe(s), &present));
     ASSERT_TRUE(present);
   }
 
@@ -82,13 +82,13 @@ static void VerifyBloomFile(Env *env, const string &path) {
     Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 
     bool present = false;
-    ASSERT_STATUS_OK_FAST( bfr->CheckKeyPresent(BloomKeyProbe(s), &present) );
+    ASSERT_STATUS_OK_FAST(bfr->CheckKeyPresent(BloomKeyProbe(s), &present));
     if (present) {
       positive_count++;
     }
   }
 
-  double fp_rate = (double)positive_count / (double)FLAGS_n_keys;
+  double fp_rate = static_cast<double>(positive_count) / FLAGS_n_keys;
   LOG(INFO) << "fp_rate: " << fp_rate << "(" << positive_count << "/" << FLAGS_n_keys << ")";
   ASSERT_LT(fp_rate, FLAGS_fp_rate + FLAGS_fp_rate * 0.20f)
     << "Should be no more than 1.2x the expected FP rate";
@@ -113,7 +113,7 @@ TEST(TestBloomFile, Benchmark) {
     WriteTestBloomFile(env.get(), path));
 
   gscoped_ptr<BloomFileReader> bfr;
-  ASSERT_STATUS_OK( BloomFileReader::Open(env.get(), path, &bfr) );
+  ASSERT_STATUS_OK(BloomFileReader::Open(env.get(), path, &bfr));
 
   uint64_t count_present = 0;
   LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {
@@ -131,12 +131,13 @@ TEST(TestBloomFile, Benchmark) {
 
       Slice s(reinterpret_cast<uint8_t *>(&key), sizeof(key));
       bool present;
-      CHECK_OK( bfr->CheckKeyPresent(BloomKeyProbe(s), &present) );
+      CHECK_OK(bfr->CheckKeyPresent(BloomKeyProbe(s), &present));
       if (present) count_present++;
     }
   }
 
-  double hit_rate = (double)count_present / (double)FLAGS_benchmark_queries;
+  double hit_rate = static_cast<double>(count_present) /
+    static_cast<double>(FLAGS_benchmark_queries);
   LOG(INFO) << "Hit Rate: " << hit_rate <<
     "(" << count_present << "/" << FLAGS_benchmark_queries << ")";
 

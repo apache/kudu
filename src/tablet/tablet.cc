@@ -1,11 +1,10 @@
 // Copyright (c) 2012, Cloudera, inc.
-
-#include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
+#include <algorithm>
 #include <vector>
 
 #include "cfile/cfile.h"
@@ -43,15 +42,14 @@ string Tablet::GetRowSetPath(const string &tablet_dir,
 }
 
 Tablet::Tablet(const Schema &schema,
-               const string &dir) :
-  schema_(schema),
-  key_schema_(schema.CreateKeyProjection()),
-  dir_(dir),
-  memrowset_(new MemRowSet(schema)),
-  next_rowset_idx_(0),
-  env_(Env::Default()),
-  open_(false)
-{
+               const string &dir)
+  : schema_(schema),
+    key_schema_(schema.CreateKeyProjection()),
+    dir_(dir),
+    memrowset_(new MemRowSet(schema)),
+    next_rowset_idx_(0),
+    env_(Env::Default()),
+    open_(false) {
 }
 
 Status Tablet::CreateNew() {
@@ -119,8 +117,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
 
 Status Tablet::NewRowIterator(const Schema &projection,
                               const MvccSnapshot &snap,
-                              gscoped_ptr<RowwiseIterator> *iter) const
-{
+                              gscoped_ptr<RowwiseIterator> *iter) const {
   vector<shared_ptr<RowwiseIterator> > iters;
   RETURN_NOT_OK(CaptureConsistentIterators(projection, snap, &iters));
 
@@ -373,8 +370,7 @@ static bool CompareBySize(const shared_ptr<RowSet> &a,
 }
 
 
-Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const
-{
+Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   CHECK_EQ(picked->num_rowsets(), 0);
 
@@ -415,7 +411,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
- 
+
   MvccSnapshot flush_snap(mvcc_);
   VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
 
@@ -437,7 +433,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   if (gced_all_input) {
     LOG(INFO) << "Compaction resulted in no output rows (all input rows were GCed!)";
     LOG(INFO) << "Removing all input rowsets.";
-    AtomicSwapRowSets(input.rowsets(), shared_ptr<RowSet>((RowSet *)NULL), NULL);
+    AtomicSwapRowSets(input.rowsets(),
+                      shared_ptr<RowSet>(reinterpret_cast<RowSet *>(NULL)), NULL);
     // Remove old rowsets
     DeleteCompactionInputs(input);
     return Status::OK();
@@ -515,8 +512,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   return Status::OK();
 }
 
-Status Tablet::Compact()
-{
+Status Tablet::Compact() {
   CHECK(open_);
 
   LOG(INFO) << "Compaction: entering stage 1 (collecting rowsets)";
@@ -554,8 +550,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   const MvccSnapshot &snap,
-  vector<shared_ptr<RowwiseIterator> > *iters) const
-{
+  vector<shared_ptr<RowwiseIterator> > *iters) const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // Construct all the iterators locally first, so that if we fail

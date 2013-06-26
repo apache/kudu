@@ -3,8 +3,9 @@
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
 #include <gtest/gtest.h>
-#include <string>
 #include <tr1/memory>
+#include <string>
+#include <vector>
 
 #include "cfile/bloomfile.h"
 #include "cfile/cfile_reader.h"
@@ -32,7 +33,7 @@ using std::tr1::shared_ptr;
 // All of these files have the same number of rows, and thus the positional
 // indexes can be used to seek to corresponding entries in each.
 class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
-public:
+ public:
   class Iterator;
 
   CFileSet(Env *env, const string &dir, const Schema &schema);
@@ -59,7 +60,7 @@ public:
 
   virtual ~CFileSet();
 
-private:
+ private:
   friend class Iterator;
 
   DISALLOW_COPY_AND_ASSIGN(CFileSet);
@@ -93,7 +94,7 @@ private:
 // This simply ties together underlying files so that they can be batched
 // together, and iterated in parallel.
 class CFileSet::Iterator : public ColumnwiseIterator {
-public:
+ public:
 
   virtual Status Init(ScanSpec *spec);
 
@@ -121,18 +122,17 @@ public:
   // Collect the IO statistics for each of the underlying columns.
   void GetIOStatistics(vector<CFileIterator::IOStatistics> *stats);
 
-private:
+ private:
   DISALLOW_COPY_AND_ASSIGN(Iterator);
   FRIEND_TEST(TestCFileSet, TestRangeScan);
   friend class CFileSet;
 
   Iterator(const shared_ptr<CFileSet const> &base_data,
-           const Schema &projection) :
-    base_data_(base_data),
-    projection_(projection),
-    initted_(false),
-    prepared_count_(0)
-  {
+           const Schema &projection)
+    : base_data_(base_data),
+      projection_(projection),
+      initted_(false),
+      prepared_count_(0) {
     CHECK_OK(base_data_->CountRows(&row_count_));
   }
 

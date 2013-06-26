@@ -16,14 +16,13 @@ static int ComputeOptimalHashCount(size_t n_bits, size_t elems) {
 }
 
 BloomFilterSizing BloomFilterSizing::ByCountAndFPRate(
-  size_t expected_count, double fp_rate)
-{
+  size_t expected_count, double fp_rate) {
   CHECK_GT(fp_rate, 0);
   CHECK_LT(fp_rate, 1);
 
-  double n_bits = -(double)expected_count * log(fp_rate)
+  double n_bits = -static_cast<double>(expected_count) * log(fp_rate)
     / kNaturalLog2 / kNaturalLog2;
-  int n_bytes = (int)ceil(n_bits / 8);
+  int n_bytes = static_cast<int>(ceil(n_bits / 8));
   CHECK_GT(n_bytes, 0)
     << "expected_count: " << expected_count
     << " fp_rate: " << fp_rate;
@@ -32,20 +31,19 @@ BloomFilterSizing BloomFilterSizing::ByCountAndFPRate(
 
 BloomFilterSizing BloomFilterSizing::BySizeAndFPRate(size_t n_bytes, double fp_rate) {
   size_t n_bits = n_bytes * 8;
-  double expected_elems = -(double)n_bits * kNaturalLog2 * kNaturalLog2 /
+  double expected_elems = -static_cast<double>(n_bits) * kNaturalLog2 * kNaturalLog2 /
     log(fp_rate);
   DCHECK_GT(expected_elems, 1);
   return BloomFilterSizing(n_bytes, (size_t)ceil(expected_elems));
 }
 
 
-BloomFilterBuilder::BloomFilterBuilder(const BloomFilterSizing &sizing) :
-  n_bits_(sizing.n_bytes() * 8),
-  bitmap_(new uint8_t[sizing.n_bytes()]),
-  n_hashes_(ComputeOptimalHashCount(n_bits_, sizing.expected_count())),
-  expected_count_(sizing.expected_count()),
-  n_inserted_(0)
-{
+BloomFilterBuilder::BloomFilterBuilder(const BloomFilterSizing &sizing)
+  : n_bits_(sizing.n_bytes() * 8),
+    bitmap_(new uint8_t[sizing.n_bytes()]),
+    n_hashes_(ComputeOptimalHashCount(n_bits_, sizing.expected_count())),
+    expected_count_(sizing.expected_count()),
+    n_inserted_(0) {
   Clear();
 }
 
@@ -55,17 +53,17 @@ void BloomFilterBuilder::Clear() {
 }
 
 double BloomFilterBuilder::false_positive_rate() const {
-  CHECK(expected_count_ != 0)
+  CHECK_NE(expected_count_, 0)
     << "expected_count_ not initialized: can't call this function on "
     << "a BloomFilter initialized from external data";
 
-  return pow(1 - exp(-(double)n_hashes_ * expected_count_ / n_bits_), n_hashes_);
+  return pow(1 - exp(-static_cast<double>(n_hashes_) * expected_count_ / n_bits_), n_hashes_);
 }
 
-BloomFilter::BloomFilter(const Slice &data, size_t n_hashes) :
-  n_bits_(data.size() * 8),
-  bitmap_(reinterpret_cast<const uint8_t *>(data.data())),
-  n_hashes_(n_hashes)
+BloomFilter::BloomFilter(const Slice &data, size_t n_hashes)
+  : n_bits_(data.size() * 8),
+    bitmap_(reinterpret_cast<const uint8_t *>(data.data())),
+    n_hashes_(n_hashes)
 {}
 
 

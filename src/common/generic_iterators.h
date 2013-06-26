@@ -2,15 +2,16 @@
 #ifndef KUDU_COMMON_MERGE_ITERATOR_H
 #define KUDU_COMMON_MERGE_ITERATOR_H
 
-#include "common/iterator.h"
-#include "common/scan_spec.h"
-#include "util/object_pool.h"
-
 #include <gtest/gtest.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <deque>
+#include <string>
 #include <vector>
+
+#include "common/iterator.h"
+#include "common/scan_spec.h"
+#include "util/object_pool.h"
 
 namespace kudu {
 
@@ -25,8 +26,7 @@ using std::tr1::unordered_multimap;
 // An iterator which merges the results of other iterators, comparing
 // based on keys.
 class MergeIterator : public RowwiseIterator {
-public:
-
+ public:
   // TODO: clarify whether schema is just the projection, or must include the merge
   // key columns. It should probably just be the required projection, which must be
   // a subset of the columns in 'iters'.
@@ -50,7 +50,7 @@ public:
 
   virtual const Schema &schema() const { return schema_; }
 
-private:
+ private:
   Status InitSubIterators(ScanSpec *spec);
 
   const Schema schema_;
@@ -76,13 +76,12 @@ private:
 // no comparison needed, and the key column does not need to be read if it is not
 // part of the projection.
 class UnionIterator : public RowwiseIterator {
-public:
-
+ public:
   // Construct a union iterator of the given iterators.
   // The iterators must have matching schemas.
   // The passed-in iterators should not yet be initialized.
   //
-  // All passed-in iterators must be fully able to evaluate all predicates - i.e. 
+  // All passed-in iterators must be fully able to evaluate all predicates - i.e.
   // calling iter->Init(spec) should remove all predicates from the spec.
   explicit UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters);
 
@@ -101,7 +100,7 @@ public:
     return *CHECK_NOTNULL(schema_.get());
   }
 
-private:
+ private:
   Status InitSubIterators(ScanSpec *spec);
 
   // Schema: initialized during Init()
@@ -123,7 +122,7 @@ private:
 // first, and the predicates evaluated. If the predicates succeed in filtering out
 // an entire batch, then other columns may avoid doing any IO.
 class MaterializingIterator : public RowwiseIterator {
-public:
+ public:
   explicit MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter);
 
   // Initialize the iterator, performing predicate pushdown as described above.
@@ -141,7 +140,7 @@ public:
     return iter_->schema();
   }
 
-private:
+ private:
   FRIEND_TEST(TestMaterializingIterator, TestPredicatePushdown);
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
 
@@ -161,7 +160,7 @@ private:
 // An iterator which wraps another iterator and evaluates any predicates that the
 // wrapped iterator did not itself handle during push down.
 class PredicateEvaluatingIterator : public RowwiseIterator {
-public:
+ public:
   // Initialize the given '*base_iter' with the given 'spec'.
   //
   // If the base_iter accepts all predicates, then simply returns.
@@ -189,7 +188,7 @@ public:
     return base_iter_->schema();
   }
 
-private:
+ private:
   // Construct the evaluating iterator.
   // This is only called from ::InitAndMaybeWrap()
   // REQUIRES: base_iter is already Init()ed.

@@ -11,6 +11,9 @@
 #include <tr1/memory>
 #include <tr1/unordered_map>
 
+#include <string>
+#include <vector>
+
 #include "rpc/client_call.h"
 #include "rpc/server_call.h"
 #include "rpc/sockaddr.h"
@@ -107,7 +110,7 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
 
   Direction direction() const { return direction_; }
 
-private:
+ private:
   friend struct CallAwaitingResponse;
   friend class QueueTransferTask;
   friend struct ResponseTransferCallbacks;
@@ -147,13 +150,13 @@ private:
   void QueueOutbound(gscoped_ptr<OutboundTransfer> transfer);
 
   // The reactor thread that created this connection.
-  ReactorThread * const reactor_thread_; 
+  ReactorThread * const reactor_thread_;
 
   // The socket we're communicating on.
   Socket socket_;
 
   // The remote address we're talking to.
-  Sockaddr remote_; 
+  Sockaddr remote_;
 
   // with non-blocking I/O, connect may not return immediately.
   // This boolean tracks whether we are in the middle of a connect()
@@ -170,13 +173,13 @@ private:
   gscoped_ptr<InboundTransfer> inbound_;
 
   // notifies us when our socket is writable.
-  ev::io write_io_; 
+  ev::io write_io_;
 
   // notifies us when our socket is readable.
   ev::io read_io_;
 
   // waiting to be sent
-  boost::intrusive::list<OutboundTransfer> outbound_transfers_;
+  boost::intrusive::list<OutboundTransfer> outbound_transfers_; // NOLINT(*)
 
   // Calls which have been sent and are now waiting for a response.
   car_map_t awaiting_response_;
@@ -199,7 +202,6 @@ private:
   // Also a funny name.
   ObjectPool<CallAwaitingResponse> car_pool_;
   typedef ObjectPool<CallAwaitingResponse>::scoped_ptr scoped_car;
-  
 };
 
 }

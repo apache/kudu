@@ -61,7 +61,7 @@ TEST(TestBloomFilter, TestInsertAndProbe) {
     }
   }
 
-  double fp_rate = (double)num_positives / (double)num_queries;
+  double fp_rate = static_cast<double>(num_positives) / static_cast<double>(num_queries);
   LOG(INFO) << "FP rate: " << fp_rate << " (" << num_positives << "/" << num_queries << ")";
   LOG(INFO) << "Expected FP rate: " << expected_fp_rate;
 

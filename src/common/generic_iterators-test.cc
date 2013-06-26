@@ -1,10 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
+#include <algorithm>
 
 #include "common/iterator.h"
 #include "common/generic_iterators.h"
@@ -24,14 +24,14 @@ namespace kudu {
 
 using std::tr1::shared_ptr;
 
-const static Schema kIntSchema(
+static const Schema kIntSchema(
   boost::assign::list_of(ColumnSchema("val", UINT32)), 1);
 
 
 // Test iterator which just yields integer rows from a provided
 // vector.
 class VectorIterator : public ColumnwiseIterator {
-public:
+ public:
   explicit VectorIterator(const vector<uint32_t> &ints) :
     ints_(ints),
     cur_idx_(0)
@@ -83,7 +83,7 @@ public:
     return kIntSchema;
   }
 
-private:
+ private:
   vector<uint32_t> ints_;
   int cur_idx_;
   size_t prepared_;
@@ -161,7 +161,7 @@ TEST(TestMergeIterator, TestMerge) {
 }
 
 class TestIntRangePredicate {
-public:
+ public:
   TestIntRangePredicate(uint32_t lower, uint32_t upper) :
     lower_(lower),
     upper_(upper),

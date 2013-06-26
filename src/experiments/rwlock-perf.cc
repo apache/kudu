@@ -1,3 +1,5 @@
+// Copyright (c) 2013, Cloudera, inc.
+
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/smart_ptr/detail/spinlock.hpp>
@@ -7,34 +9,26 @@
 #include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-
-#include "gutil/walltime.h"
-#include "gutil/atomicops.h"
-#include "util/errno.h"
-#include "util/locks.h"
-
 #include <stdio.h>
 #include <unistd.h>
 
+#include "gutil/atomicops.h"
+#include "gutil/macros.h"
+#include "gutil/walltime.h"
+#include "util/errno.h"
+#include "util/locks.h"
+
 DEFINE_int32(num_threads, 8, "Number of threads to test");
 
-using namespace std;
-
-
-class my_spinlock : public boost::detail::spinlock
-{ 
-private: 
-    my_spinlock( my_spinlock const& ); 
-    my_spinlock & operator=( my_spinlock const& ); 
-
-public: 
-
+class my_spinlock : public boost::detail::spinlock {
+ public:
   my_spinlock() {
     v_ = 0;
   }
 
-}; 
-
+ private:
+  DISALLOW_COPY_AND_ASSIGN(my_spinlock);
+};
 
 struct per_cpu_lock {
   struct padded_lock {
@@ -78,7 +72,7 @@ struct shared_data {
 
 
 class noop_lock {
-public:
+ public:
   void lock() {}
   void unlock() {}
 };

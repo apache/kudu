@@ -2,8 +2,8 @@
 // All rights reserved.
 
 #include <boost/thread/shared_mutex.hpp>
-#include <string>
 #include <tr1/memory>
+#include <string>
 
 #include "gutil/strings/strip.h"
 #include "util/env.h"
@@ -52,9 +52,9 @@ class DeltaIteratorMerger : public DeltaIterator {
   vector<shared_ptr<DeltaIterator> > iters_;
 };
 
-DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters) :
-  iters_(iters)
-{}
+DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters)
+  : iters_(iters) {
+}
 
 Status DeltaIteratorMerger::Init() {
   BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
@@ -122,8 +122,7 @@ string DeltaIteratorMerger::ToString() const {
 shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
   const vector<shared_ptr<DeltaStore> > &stores,
   const Schema &projection,
-  const MvccSnapshot &snapshot)
-{
+  const MvccSnapshot &snapshot) {
   vector<shared_ptr<DeltaIterator> > delta_iters;
 
   BOOST_FOREACH(const shared_ptr<DeltaStore> &store, stores) {
@@ -217,8 +216,7 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema &schema,
 }
 
 ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
-                                               const MvccSnapshot &mvcc_snap) const
-{
+                                               const MvccSnapshot &mvcc_snap) const {
   return new DeltaApplier(base, NewDeltaIterator(base->schema(), mvcc_snap));
 }
 
@@ -265,7 +263,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
   Status s = env_util::OpenFileForWrite(env_, path, &out);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open output file for delta level " <<
-      deltafile_idx << " at path " << path << ": " << 
+      deltafile_idx << " at path " << path << ": " <<
       s.ToString();
     return s;
   }

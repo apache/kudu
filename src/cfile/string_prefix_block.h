@@ -2,6 +2,8 @@
 #ifndef KUDU_CFILE_STRING_PREFIX_BLOCK_H
 #define KUDU_CFILE_STRING_PREFIX_BLOCK_H
 
+#include <vector>
+
 #include "common/rowid.h"
 
 namespace kudu {
@@ -13,7 +15,7 @@ namespace cfile {
 // Encoding for data blocks of strings.
 // This encodes in a manner similar to LevelDB (prefix coding)
 class StringPrefixBlockBuilder : public BlockBuilder {
-public:
+ public:
   explicit StringPrefixBlockBuilder(const WriterOptions *options);
 
   int Add(const uint8_t *vals, size_t count);
@@ -35,7 +37,7 @@ public:
   // key should be a Slice *
   Status GetFirstKey(void *key) const;
 
-private:
+ private:
   faststring buffer_;
   faststring last_val_;
 
@@ -60,7 +62,7 @@ private:
 
 // Decoder for STRING type, PREFIX encoding
 class StringPrefixBlockDecoder : public BlockDecoder {
-public:
+ public:
   explicit StringPrefixBlockDecoder(const Slice &slice);
 
   virtual Status ParseHeader();
@@ -84,7 +86,7 @@ public:
     return ordinal_pos_base_ + cur_idx_;
   }
 
-private:
+ private:
   Status SkipForward(int n);
   Status CheckNextPtr();
   Status ParseNextValue();

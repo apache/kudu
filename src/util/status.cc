@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include "util/status.h"
+
 #include <stdio.h>
 #include <stdint.h>
-#include "status.h"
 #include "gutil/strings/fastmem.h"
 
 namespace kudu {
 
-
 const char* Status::CopyState(const char* state) {
   uint32_t size;
-  strings::memcpy_inlined((char *)&size, state, sizeof(size));
+  strings::memcpy_inlined(&size, state, sizeof(size));
   char* result = new char[size + 7];
   strings::memcpy_inlined(result, state, size + 7);
   return result;

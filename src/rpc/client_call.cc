@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
+#include <vector>
+
 #include "rpc/call-inl.h"
 #include "rpc/client_call.h"
 #include "rpc/rpc_controller.h"
@@ -151,9 +153,9 @@ string OutboundCall::ToString() const {
                       method_.c_str(), remote_.ToString().c_str());
 }
 
-CallResponse::CallResponse() :
-  parsed_(false)
-{}
+CallResponse::CallResponse()
+ : parsed_(false) {
+}
 
 Status CallResponse::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   CHECK(!parsed_);

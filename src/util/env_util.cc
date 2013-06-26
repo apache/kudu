@@ -1,8 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
-#include <string>
 #include <tr1/memory>
+
+#include <string>
 
 #include "util/env.h"
 #include "util/env_util.h"

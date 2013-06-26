@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <vector>
 
+#include "gutil/gscoped_ptr.h"
 #include "util/inline_slice.h"
 #include "util/memory/arena.h"
 
@@ -12,12 +13,12 @@ template<size_t N>
 static void TestRoundTrip(InlineSlice<N> *slice,
                           Arena *arena,
                           size_t test_size) {
-  uint8_t buf[test_size];
+  gscoped_ptr<uint8_t[]> buf(new uint8_t[test_size]);
   for (int i = 0; i < test_size; i++) {
     buf[i] = i & 0xff;
   }
 
-  Slice test_input(buf, test_size);
+  Slice test_input(buf.get(), test_size);
 
   slice->set(test_input, arena);
   Slice ret = slice->as_slice();

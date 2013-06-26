@@ -1,7 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <glog/logging.h>
-
+#include <string>
+#include <vector>
 #include "gutil/macros.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
@@ -15,9 +16,8 @@ namespace {
 class MemRowSetCompactionInput : public CompactionInput {
  public:
   MemRowSetCompactionInput(const MemRowSet &memrowset,
-                          const MvccSnapshot &snap) :
-    iter_(memrowset.NewIterator(memrowset.schema(), snap))
-  {
+                          const MvccSnapshot &snap)
+    : iter_(memrowset.NewIterator(memrowset.schema(), snap)) {
   }
 
   virtual Status Init() {
@@ -96,7 +96,7 @@ class RowSetCompactionInput : public CompactionInput {
   }
 
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
-    RETURN_NOT_OK( RowwiseIterator::CopyBlock(base_iter_.get(), &block_) );
+    RETURN_NOT_OK(RowwiseIterator::CopyBlock(base_iter_.get(), &block_));
     std::fill(mutation_block_.begin(), mutation_block_.end(),
               reinterpret_cast<Mutation *>(NULL));
     RETURN_NOT_OK(delta_iter_->PrepareBatch(block_.nrows()));
@@ -170,9 +170,8 @@ class MergeCompactionInput : public CompactionInput {
 
  public:
   MergeCompactionInput(const vector<shared_ptr<CompactionInput> > &inputs,
-                       const Schema &schema) :
-    schema_(schema)
-  {
+                       const Schema &schema)
+    : schema_(schema) {
     BOOST_FOREACH(const shared_ptr<CompactionInput> &input, inputs) {
       MergeState state;
       state.input = input;

@@ -4,6 +4,7 @@
 #define KUDU_RPC_PROXY_H
 
 #include <tr1/memory>
+#include <string>
 
 #include "gutil/macros.h"
 #include "rpc/response_callback.h"
@@ -34,7 +35,7 @@ class Messenger;
 // Proxy objects are fully thread-safe - multiple threads may make calls using
 // the same proxy object.
 class Proxy {
-public:
+ public:
   Proxy(const std::tr1::shared_ptr<Messenger> &messenger,
         const Sockaddr &remote);
   ~Proxy();
@@ -73,14 +74,14 @@ public:
 
   // The same as AsyncRequest(), except that the call blocks until the call
   // finishes. If the call fails, returns a non-OK result.
-  Status SyncRequest(const string &method,
+  Status SyncRequest(const std::string &method,
                      const google::protobuf::Message &req,
                      google::protobuf::Message *resp,
                      RpcController *controller) const;
 
   const Sockaddr &remote() const;
 
-private:
+ private:
   std::tr1::shared_ptr<Messenger> messenger_;
   Sockaddr remote_;
 

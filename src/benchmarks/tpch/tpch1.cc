@@ -44,12 +44,14 @@
 // ====
 #include <stdio.h>
 #include <stdlib.h>
-#include <iostream>
-#include <fstream>
-#include <map>
+
 #include <boost/assign/list_of.hpp>
 #include <boost/tokenizer.hpp>
 #include <glog/logging.h>
+
+#include <iostream>
+#include <fstream>
+#include <map>
 
 #include "common/scan_predicate.h"
 #include "common/scan_spec.h"
@@ -79,16 +81,16 @@ struct Result {
   int l_discount;
   int l_tax;
   int count;
-  Result() : l_quantity(0), l_extendedprice(0), l_discount(0), l_tax(0), count(0)
-  {
+  Result()
+    : l_quantity(0), l_extendedprice(0), l_discount(0), l_tax(0), count(0) {
   }
 };
 
 // This struct is used for the keys while running the GROUP BY instead of manipulating strings
 struct SliceMapKey {
   Slice slice;
-  SliceMapKey(const Slice &sl) : slice(sl)
-  {
+  explicit SliceMapKey(const Slice &sl)
+    : slice(sl) {
   }
 
   // This copies the string out of the result buffer
@@ -183,7 +185,7 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
 
     // grab all the columns individually
     columns.assign(tokens.begin(), tokens.end());
-    
+
     char buf[256];
     snprintf(buf, sizeof(buf), "%s_%s", columns[0].c_str(), columns[3].c_str());
     rb.AddString(Slice(buf));
@@ -275,7 +277,7 @@ void Tpch1(gscoped_ptr<tablet::Tablet> &tablet) {
     for (slice_map::iterator jj = maps->begin(); jj != maps->end(); ++jj) {
       const SliceMapKey linestatus = jj->first;
       Result *r = jj->second;
-      double avg_q = (double)r->l_quantity / r->count;
+      double avg_q = static_cast<double>(r->l_quantity) / r->count;
       double avg_ext_p = r->l_extendedprice / r->count / 100.0;
       double avg_discount = r->l_discount / r->count / 100.0;
       LOG(INFO) << returnflag.slice.ToString() << ", " <<

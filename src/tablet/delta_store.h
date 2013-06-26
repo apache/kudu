@@ -3,6 +3,8 @@
 #ifndef KUDU_TABLET_DELTA_STORE_H
 #define KUDU_TABLET_DELTA_STORE_H
 
+#include <string>
+#include <vector>
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "util/status.h"
@@ -16,8 +18,7 @@ class DeltaIterator;
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaFileReader.
 class DeltaStore {
-public:
-
+ public:
   // Create a DeltaIterator for the given projection.
   //
   // The projection corresponds to whatever scan is currently ongoing.
@@ -54,7 +55,7 @@ public:
 //     ...
 //  }
 class DeltaIterator {
-public:
+ public:
   // Initialize the iterator. This must be called once before any other
   // call.
   virtual Status Init() = 0;
@@ -91,7 +92,7 @@ public:
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) = 0;
 
   // Return a string representation suitable for debug printouts.
-  virtual string ToString() const = 0;
+  virtual std::string ToString() const = 0;
 
   virtual ~DeltaIterator() {}
 };

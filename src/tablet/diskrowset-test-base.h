@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 #include <unistd.h>
+#include <string>
+#include <vector>
 
 #include "common/iterator.h"
 #include "common/rowblock.h"
@@ -30,12 +32,11 @@ namespace tablet {
 using std::tr1::unordered_set;
 
 class TestRowSet : public KuduTest {
-public:
-  TestRowSet() :
-    KuduTest(),
-    schema_(CreateTestSchema()),
-    n_rows_(FLAGS_roundtrip_num_rows)
-  {
+ public:
+  TestRowSet()
+    : KuduTest(),
+      schema_(CreateTestSchema()),
+      n_rows_(FLAGS_roundtrip_num_rows) {
     CHECK_GT(n_rows_, 0);
   }
 
@@ -44,7 +45,7 @@ public:
     rowset_dir_ = GetTestPath("rowset");
   }
 
-protected:
+ protected:
   static Schema CreateTestSchema() {
     ColumnSchema col1("key", STRING);
     ColumnSchema col2("val", UINT32);
@@ -89,7 +90,7 @@ protected:
   // them. Stores the indexes of the updated rows in *updated.
   void UpdateExistingRows(DiskRowSet *rs, float update_ratio,
                           unordered_set<uint32_t> *updated) {
-    int to_update = (int)(n_rows_ * update_ratio);
+    int to_update = static_cast<int>(n_rows_ * update_ratio);
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     for (int i = 0; i < to_update; i++) {

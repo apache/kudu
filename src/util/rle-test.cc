@@ -14,7 +14,6 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <iostream>
 
 #include <boost/utility.hpp>
 #include <gtest/gtest.h>
@@ -24,8 +23,6 @@
 #include "util/bit-stream-utils.h"
 #include "util/hexdump.h"
 #include "util/test_util.h"
-
-using namespace std;
 
 namespace kudu {
 
@@ -39,7 +36,7 @@ TEST(BitArray, TestBool) {
   for (int i = 0; i < 8; ++i) {
     writer.PutBool(i % 2);
   }
-  EXPECT_EQ((int)buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
+  EXPECT_EQ(buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
 
   // Write 00110011
   for (int i = 0; i < 8; ++i) {
@@ -57,8 +54,8 @@ TEST(BitArray, TestBool) {
   }
 
   // Validate the exact bit value
-  EXPECT_EQ((int)buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
-  EXPECT_EQ((int)buffer[1], BOOST_BINARY(1 1 0 0 1 1 0 0));
+  EXPECT_EQ(buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
+  EXPECT_EQ(buffer[1], BOOST_BINARY(1 1 0 0 1 1 0 0));
 
   // Use the reader and validate
   BitReader reader(buffer.data(), len);
@@ -104,7 +101,7 @@ void ValidateRle(const vector<bool>& values,
     EXPECT_EQ(encoded_len, expected_len);
   }
   if (expected_encoding != NULL) {
-    EXPECT_TRUE(memcmp(buffer.data(), expected_encoding, expected_len) == 0)
+    EXPECT_EQ(memcmp(buffer.data(), expected_encoding, expected_len), 0)
       << "\n"
       << "Expected: " << HexDump(Slice(expected_encoding, expected_len)) << "\n"
       << "Got:      " << HexDump(Slice(buffer));
@@ -121,8 +118,8 @@ void ValidateRle(const vector<bool>& values,
 }
 
 TEST(Rle, SpecificSequences) {
-  const int len = 1024;
-  uint8_t expected_buffer[len];
+  const int kTestLen = 1024;
+  uint8_t expected_buffer[kTestLen];
   vector<bool> values;
 
   // Test 50 0' followed by 50 1's
@@ -155,9 +152,9 @@ TEST(Rle, SpecificSequences) {
 
 // Tests alternating true/false values.
 TEST(Rle, AlternateTest) {
-  const int len = 2048;
+  const int kTestLen = 2048;
   vector<bool> values;
-  for (int i = 0; i < len; ++i) {
+  for (int i = 0; i < kTestLen; ++i) {
     values.push_back(i % 2);
   }
   ValidateRle(values, NULL, -1);
@@ -168,12 +165,12 @@ class BitRle : public KuduTest {
 
 // Tests all true/false values
 TEST_F(BitRle, AllSame) {
-  const int len = 1024;
+  const int kTestLen = 1024;
   vector<bool> values;
 
   for (int v = 0; v < 2; ++v) {
     values.clear();
-    for (int i = 0; i < len; ++i) {
+    for (int i = 0; i < kTestLen; ++i) {
       values.push_back(v);
     }
 
@@ -206,7 +203,7 @@ TEST_F(BitRle, Random) {
     vector<bool> values;
     bool parity = 0;
     for (int i = 0; i < 1000; ++i) {
-      int group_size = rand() % 20 + 1;
+      int group_size = rand() % 20 + 1; // NOLINT(*)
       if (group_size > 16) {
         group_size = 1;
       }
@@ -354,5 +351,4 @@ TEST(TestRle, TestSkip) {
 
   encoder.Flush();
 }
-
-}
+} // namespace kudu

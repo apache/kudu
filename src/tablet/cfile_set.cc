@@ -1,9 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <algorithm>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <tr1/memory>
+#include <algorithm>
+#include <vector>
 
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
@@ -66,7 +67,7 @@ Status CFileSet::Open() {
     RETURN_NOT_OK(OpenReader(env_, dir_, i, &reader));
     readers_[i].reset(reader.release());
     LOG(INFO) << "Successfully opened cfile for column " <<
-      schema_.column(i).ToString() << " in " << dir_;;
+      schema_.column(i).ToString() << " in " << dir_;
   }
 
   return Status::OK();
@@ -127,7 +128,6 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
 }
 
 Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
-
   if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
     bool present;
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), &present);
@@ -147,7 +147,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
   bool exact;
-  RETURN_NOT_OK( key_iter->SeekAtOrAfter(probe.ToCFileKeyProbe(), &exact) );
+  RETURN_NOT_OK(key_iter->SeekAtOrAfter(probe.ToCFileKeyProbe(), &exact));
   if (!exact) {
     return Status::NotFound("not present in storefile (failed seek)");
   }
@@ -224,7 +224,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   // since upper_bound_idx is _inclusive_, subtract 1 from row_count
   upper_bound_idx_ = row_count_ - 1;
 
-  if (base_data_->schema().num_key_columns() > 1){
+  if (base_data_->schema().num_key_columns() > 1) {
     VLOG(1) << "Range scan predicate pushdowns are not implemented for composite keys";
     return Status::OK();
   }

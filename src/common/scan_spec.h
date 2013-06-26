@@ -13,7 +13,7 @@ namespace kudu {
 using std::vector;
 
 class ScanSpec {
-public:
+ public:
   typedef vector<ColumnRangePredicate> PredicateList;
 
   void AddPredicate(const ColumnRangePredicate &pred);
@@ -31,7 +31,7 @@ public:
     return &predicates_;
   }
 
-private:
+ private:
   vector<ColumnRangePredicate> predicates_;
 
 };

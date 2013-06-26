@@ -4,6 +4,7 @@
 #ifndef KUDU_UTIL_BITMAP_H
 #define KUDU_UTIL_BITMAP_H
 
+#include <string>
 #include "gutil/bits.h"
 
 namespace kudu {
@@ -129,15 +130,14 @@ class BitmapIterator {
 //     int next_onebit_position = *iter;
 //   }
 class TrueBitIterator {
-public:
-  TrueBitIterator(const uint8_t *bitmap, size_t n_bits) :
-    bitmap_(bitmap),
-    cur_byte_(0),
-    cur_byte_idx_(0),
-    n_bits_(n_bits),
-    n_bytes_(BitmapSize(n_bits_)),
-    bit_idx_(0)
-  {
+ public:
+  TrueBitIterator(const uint8_t *bitmap, size_t n_bits)
+    : bitmap_(bitmap),
+      cur_byte_(0),
+      cur_byte_idx_(0),
+      n_bits_(n_bits),
+      n_bytes_(BitmapSize(n_bits_)),
+      bit_idx_(0) {
     if (n_bits_ == 0) {
       cur_byte_idx_ = 1; // sets done
     } else {
@@ -163,7 +163,7 @@ public:
     return bit_idx_;
   }
 
-private:
+ private:
   void AdvanceToNextOneBit() {
     while (cur_byte_ == 0) {
       cur_byte_idx_++;
@@ -171,8 +171,8 @@ private:
       cur_byte_ = bitmap_[cur_byte_idx_];
       bit_idx_ = cur_byte_idx_ * 8;
     }
-    LOG(INFO) << "Found next nonzero byte at " << (int)cur_byte_idx_
-              << " val=" << (int)cur_byte_;
+    LOG(INFO) << "Found next nonzero byte at " << cur_byte_idx_
+              << " val=" << cur_byte_;
 
     DCHECK_NE(cur_byte_, 0);
     int set_bit = Bits::FindLSBSetNonZero(cur_byte_);
