@@ -64,14 +64,6 @@ expect anyone to be connecting to you, you do not have to start them. If a serve
 expects to listen on multiple ports (eg for different protocols), multiple
 AcceptorPools may be attached.
 
-In general, clients will use auto-generated subclasses of Proxy and ServiceIf.
-
--------------------------------------------------------------------------------
-Generated Code
--------------------------------------------------------------------------------
-
-TODO: this will be described in the next commit, which adds the code generation.
-
 -------------------------------------------------------------------------------
 Proxy classes
 -------------------------------------------------------------------------------
@@ -111,6 +103,41 @@ will have been initialized to contain the result.
 Please see the accompanying documentation in the Proxy and RpcController classes
 for more information on the specific API, as well as the test cases in rpc-test.cc
 for example usage.
+
+-------------------------------------------------------------------------------
+Generated Code
+-------------------------------------------------------------------------------
+
+In general, clients will use auto-generated subclasses of Proxy and ServiceIf to
+get additional type safety and nicer APIs.
+
+The generated proxy object has the same API as the generic Proxy, except that
+methods are generated for each RPC defined within the protobuf service. Each
+RPC has a synchronous and async version, corresponding to Proxy::AsyncRequest and
+Proxy::SyncRequest. These generated methods have an identical API to the generic
+one except that they are type-safe and do not require the method name to be passed.
+
+The generated ServiceIf class contains pure virtual methods for each of the RPCs
+in the service. Each method to be implemented has an API like:
+
+  void MethodName(const RequestPB *req,
+     ResponsePB *resp, ::kudu::rpc::RpcContext *context);
+
+The request PB is the user-provided request, and the response PB is a cleared
+protobuf ready to store the RPC response. Once the RPC response has been filled in,
+the service should call context->RespondSuccess(). This method may be called
+from any thread in the application at any point either before or after the
+actual handler method returns.
+
+In the case of an unexpected error, the generated code may alternatively call
+context->RespondFailure(...). However, for any error responses which should be
+parseable by the client code, it is preferable to define an error response inside
+the response protobuf itself -- this is a much more flexible way of returning
+actionable information with an error, given that Status just holds a string
+and not much else.
+
+See rpc/rpc-test-base.h for an example service implementation, as well as the
+documentation comments in rpc/service_if.h.
 
 -------------------------------------------------------------------------------
 ServiceIf classes

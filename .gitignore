@@ -15,3 +15,8 @@ perf.data
 perf.data.old
 oprofile_data
 *.swp
+*.service.cc
+*.service.h
+*.proxy.cc
+*.proxy.h
+protoc-gen-krpc

@@ -34,8 +34,17 @@ TARGET_LINK_LIBRARIES(krpc
 )
 SET(RPC_LIBS krpc)
 
+### RPC generator tool
+add_executable(protoc-gen-krpc protoc-gen-krpc.cc)
+target_link_libraries(protoc-gen-krpc
+    ${KUDU_DEP_LIBS} 
+    ${PROTOBUF_PROTOC_LIBRARY} 
+    ${PROTOBUF_LIBRARY} 
+    gutil
+    kudu_util)
+
 #### RPC test
-PROTOBUF_GENERATE_CPP(RTEST_KRPC_SRCS RTEST_KRPC_HDRS
+KRPC_GENERATE(RTEST_KRPC_SRCS RTEST_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES rtest.proto)
@@ -44,3 +53,6 @@ add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
 
 ADD_KUDU_TEST(rpc-test)
 TARGET_LINK_LIBRARIES(rpc-test rtest_krpc krpc)
+
+ADD_KUDU_TEST(rpc_stub-test)
+TARGET_LINK_LIBRARIES(rpc_stub-test rtest_krpc krpc)

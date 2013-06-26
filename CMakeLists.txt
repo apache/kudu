@@ -157,6 +157,7 @@ else()
   set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_LIBRARY}")
 endif()
 set(LIBS ${LIBS} protobuf)
+find_package(KRPC REQUIRED)
 
 ## Snappy
 find_package(Snappy REQUIRED)

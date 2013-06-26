@@ -7,6 +7,8 @@
 #include "rpc/proxy.h"
 #include "rpc/reactor.h"
 #include "rpc/rtest.pb.h"
+#include "rpc/rtest.proxy.h"
+#include "rpc/rtest.service.h"
 #include "rpc/service_if.h"
 #include "rpc/service_pool.h"
 #include "rpc/sockaddr.h"
@@ -16,7 +18,10 @@
 namespace kudu { namespace rpc {
 
 using kudu::rpc_test::AddRequestPB;
+using kudu::rpc_test::AddRequestPartialPB;
 using kudu::rpc_test::AddResponsePB;
+using kudu::rpc_test::CalculatorServiceIf;
+using kudu::rpc_test::CalculatorServiceProxy;
 using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
 
@@ -68,6 +73,35 @@ class GenericCalculatorService : public ServiceIf {
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);
   }
+};
+
+class CalculatorService : public CalculatorServiceIf {
+ public:
+  virtual void Add(const AddRequestPB *req,
+                   AddResponsePB *resp,
+                   RpcContext *context) {
+    resp->set_result(req->x() + req->y());
+    context->RespondSuccess();
+  }
+
+  virtual void Sleep(const SleepRequestPB *req,
+                     SleepResponsePB *resp,
+                     RpcContext *context) {
+    if (req->deferred()) {
+      // Spawn a new thread which does the sleep and responds later.
+      boost::thread new_thr(&CalculatorService::DoSleep, this, req, context);
+      return;
+    }
+    DoSleep(req, context);
+  }
+
+ private:
+  void DoSleep(const SleepRequestPB *req,
+               RpcContext *context) {
+    usleep(req->sleep_micros());
+    context->RespondSuccess();
+  }
+
 };
 
 const char *GenericCalculatorService::kAddMethodName = "Add";
@@ -146,6 +180,10 @@ class RpcTestBase : public KuduTest {
 
   void StartTestServer(Sockaddr *server_addr) {
     DoStartTestServer<GenericCalculatorService>(server_addr);
+  }
+
+  void StartTestServerWithGeneratedCode(Sockaddr *server_addr) {
+    DoStartTestServer<CalculatorService>(server_addr);
   }
 
   // Start a simple socket listening on a local port, returning the address.
