@@ -4,6 +4,7 @@
 #define KUDU_RPC_RPC_CONTROLLER_H
 
 #include <glog/logging.h>
+#include <tr1/memory>
 
 #include "gutil/macros.h"
 #include "util/locks.h"
@@ -11,6 +12,8 @@
 #include "util/status.h"
 
 namespace kudu { namespace rpc {
+
+class OutboundCall;
 
 // Controller for managing properties of a single RPC call, on the client side.
 //
@@ -76,6 +79,7 @@ class RpcController {
 
  private:
   friend class OutboundCall;
+  friend class Proxy;
 
   // Various states the call propagates through.
   // NB: if adding another state, be sure to update RpcController::finished()
@@ -104,6 +108,13 @@ class RpcController {
 
   MonoDelta timeout_;
 
+  // Once the call is sent, it is tracked here.
+  // Currently, this is only used so as to tie the deallocation of the
+  // call to the deallocation of the controller object. This makes it
+  // more likely that the call will be deallocated on the user's
+  // caller thread instead of the IO thread, improving tcmalloc
+  // caching behavior.
+  std::tr1::shared_ptr<OutboundCall> call_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcController);
 };

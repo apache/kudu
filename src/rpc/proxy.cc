@@ -42,8 +42,9 @@ void Proxy::AsyncRequest(const string &method,
                          google::protobuf::Message *response,
                          RpcController *controller,
                          const ResponseCallback &callback) const {
-  shared_ptr<OutboundCall> call(
-    new OutboundCall(remote_, method, response, controller, callback));
+  DCHECK(controller->call_.get() == NULL);
+  OutboundCall *call = new OutboundCall(remote_, method, response, controller, callback);
+  controller->call_.reset(call);
   Status s = call->SetRequestParam(req);
   if (PREDICT_FALSE(!s.ok())) {
     // Failed to serialize request: likely the request is missing a required
@@ -55,7 +56,7 @@ void Proxy::AsyncRequest(const string &method,
 
   // If this fails to queue, the callback will get called immediately
   // and the controller will be in an ERROR state.
-  messenger_->QueueOutboundCall(call);
+  messenger_->QueueOutboundCall(controller->call_);
 }
 
 

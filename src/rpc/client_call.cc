@@ -134,6 +134,16 @@ void OutboundCall::CallQueued() {
 
 void OutboundCall::CallSent() {
   controller_->set_state(RpcController::SENT);
+  // This method is called in the reactor thread, so free the header buf,
+  // which was also allocated from this thread. tcmalloc's thread caching
+  // behavior is a lot more efficient if memory is freed from the same thread
+  // which allocated it -- this lets it keep to thread-local operations instead
+  // of taking a mutex to put memory back on the global freelist.
+  header_buf_.reset();
+
+  // request_buf_ is also done being used here, but since it was allocated by
+  // the caller thread, we would rather let that thread free it whenever it
+  // deletes the RpcController.
 }
 
 string OutboundCall::ToString() const {
