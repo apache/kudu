@@ -235,3 +235,5 @@ add_subdirectory(src/rpc)
 set(LIBS ${LIBS} ${RPC_LIBS})
 
 add_subdirectory(src/experiments)
+
+add_subdirectory(src/benchmarks)
