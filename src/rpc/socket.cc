@@ -57,10 +57,7 @@ Status Socket::Close() {
 }
 
 Status Socket::Shutdown(bool shut_read, bool shut_write) {
-  if (fd_ < 0)
-    return Status::OK();
-  int err, fd = fd_;
-  fd_ = -1;
+  DCHECK_GE(fd_, 0);
   int flags = 0;
   if (shut_read && shut_write) {
     flags |= SHUT_RDWR;
@@ -69,8 +66,8 @@ Status Socket::Shutdown(bool shut_read, bool shut_write) {
   } else if (shut_write) {
     flags |= SHUT_WR;
   }
-  if (::shutdown(fd, flags) < 0) {
-    err = errno;
+  if (::shutdown(fd_, flags) < 0) {
+    int err = errno;
     return Status::NetworkError(std::string("shutdown error: ") +
                                 ErrnoToString(err), Slice(), err);
   }

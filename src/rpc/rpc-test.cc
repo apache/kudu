@@ -39,6 +39,19 @@ TEST_F(TestRpc, TestMessengerCreateDestroy) {
   alarm(0);
 }
 
+// Test starting and stopping a messenger. This is a regression
+// test for a segfault seen in early versions of the RPC code,
+// in which shutting down the acceptor would trigger an assert,
+// making our tests flaky.
+TEST_F(TestRpc, TestAcceptorPoolStartStop) {
+  int n_iters = AllowSlowTests() ? 100 : 5;
+  for (int i = 0; i < n_iters; i++) {
+    shared_ptr<Messenger> messenger(CreateMessenger("TestAcceptorPoolStartStop"));
+    ASSERT_STATUS_OK(messenger->AddAcceptorPool(Sockaddr(), 2));
+    messenger->Shutdown();
+  }
+}
+
 // Test making successful RPC calls.
 TEST_F(TestRpc, TestCall) {
   // Set up server.
