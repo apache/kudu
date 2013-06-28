@@ -20,6 +20,8 @@ namespace kudu { namespace rpc {
 using kudu::rpc_test::AddRequestPB;
 using kudu::rpc_test::AddRequestPartialPB;
 using kudu::rpc_test::AddResponsePB;
+using kudu::rpc_test::EchoRequestPB;
+using kudu::rpc_test::EchoResponsePB;
 using kudu::rpc_test::CalculatorServiceIf;
 using kudu::rpc_test::CalculatorServiceProxy;
 using kudu::rpc_test::SleepRequestPB;
@@ -93,6 +95,13 @@ class CalculatorService : public CalculatorServiceIf {
       return;
     }
     DoSleep(req, context);
+  }
+
+  virtual void Echo(const EchoRequestPB *req,
+                    EchoResponsePB *resp,
+                    RpcContext *context) {
+    resp->set_data(req->data());
+    context->RespondSuccess();
   }
 
  private:

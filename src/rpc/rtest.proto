@@ -31,7 +31,15 @@ message SleepRequestPB {
 message SleepResponsePB {
 }
 
+message EchoRequestPB {
+  required string data = 1;
+}
+message EchoResponsePB {
+  required string data = 1;
+}
+
 service CalculatorService {
   rpc Add(AddRequestPB) returns(AddResponsePB);
   rpc Sleep(SleepRequestPB) returns(SleepResponsePB);
+  rpc Echo(EchoRequestPB) returns(EchoResponsePB);
 }
