@@ -26,7 +26,7 @@ OutboundCall::OutboundCall(const Sockaddr &remote,
 {}
 
 Status OutboundCall::SerializeTo(vector<Slice> *slices) {
-  CHECK_GT(serialized_request().size(), 0) <<
+  DCHECK(serialized_request().data() != NULL) <<
     "Must call SetRequestParam() before SerializeTo()";
 
   RequestHeader header;
