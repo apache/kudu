@@ -41,7 +41,19 @@ struct CpuTimes
   std::string ToString() const {
     return StringPrintf(
       "real %.3fs\tuser %.3fs\tsys %.3fs",
-      wall/NANOS_PER_SECOND, user/NANOS_PER_SECOND, system/NANOS_PER_SECOND);
+      wall_seconds(), user_cpu_seconds(), system_cpu_seconds());
+  }
+
+  double wall_seconds() const {
+    return static_cast<double>(wall) / NANOS_PER_SECOND;
+  }
+
+  double user_cpu_seconds() const {
+    return static_cast<double>(user) / NANOS_PER_SECOND;
+  }
+
+  double system_cpu_seconds() const {
+    return static_cast<double>(system) / NANOS_PER_SECOND;
   }
 };
 
@@ -57,9 +69,18 @@ struct CpuTimes
 class Stopwatch {
 public:
 
+  enum Mode {
+    // Collect usage only about the calling thread.
+    // This may not be supported on older versions of Linux.
+    THIS_THREAD,
+    // Collect usage of all threads.
+    ALL_THREADS
+  };
+
   // Construct a new stopwatch. The stopwatch is initially stopped.
-  Stopwatch() :
-      stopped_(true)
+  Stopwatch(Mode mode = THIS_THREAD)
+    : stopped_(true),
+      mode_(mode)
   {
     times_.clear();
   }
@@ -123,21 +144,21 @@ public:
   }
 
 private:
-  static void GetTimes(CpuTimes *times) {
+  void GetTimes(CpuTimes *times) const {
     struct rusage usage;
-    CHECK_EQ(0, getrusage(RUSAGE_THREAD, &usage));
+    CHECK_EQ(0, getrusage((mode_ == THIS_THREAD) ? RUSAGE_THREAD : RUSAGE_SELF, &usage));
     struct timespec wall;
 
     CHECK_EQ(0, clock_gettime(CLOCK_MONOTONIC, &wall));
     times->wall   = wall.tv_sec * 1000000000L + wall.tv_nsec;
     times->user   = usage.ru_utime.tv_sec * 1000000000L + usage.ru_utime.tv_usec * 1000;
     times->system = usage.ru_stime.tv_sec * 1000000000L + usage.ru_stime.tv_usec * 1000;
-
   }
 
   bool stopped_;
 
   CpuTimes times_;
+  Mode mode_;
 };
 
 

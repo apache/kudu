@@ -4,6 +4,7 @@
 #define KUDU_UTIL_COUNTDOWN_LATCH_H
 
 #include <boost/noncopyable.hpp>
+#include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
 
 namespace kudu {

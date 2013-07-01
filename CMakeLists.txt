@@ -157,6 +157,7 @@ else()
   set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_LIBRARY}")
 endif()
 set(LIBS ${LIBS} protobuf)
+find_package(KRPC REQUIRED)
 
 ## Snappy
 find_package(Snappy REQUIRED)
@@ -166,6 +167,11 @@ if (${KUDU_STATIC_LINK})
 else()
   set(LIBS ${LIBS} ${SNAPPY_LIBS}/libsnappy.so)
 endif()
+
+## Libev
+find_package(LibEv REQUIRED)
+set(LIBS ${LIBS} ${LIBEV_STATIC_LIB})
+include_directories(${LIBEV_INCLUDE_DIR})
 
 ## LZ4
 find_package(Lz4 REQUIRED)
@@ -224,5 +230,8 @@ set(LIBS ${LIBS} ${CFILE_LIBS})
 
 add_subdirectory(src/tablet)
 set(LIBS ${LIBS} ${TABLET_LIBS})
+
+add_subdirectory(src/rpc) 
+set(LIBS ${LIBS} ${RPC_LIBS})
 
 add_subdirectory(src/experiments)

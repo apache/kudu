@@ -65,5 +65,12 @@ if [ ! -d zlib-${ZLIB_VERSION} ]; then
   rm zlib-${ZLIB_VERSION}.tar.gz
 fi
 
+if [ ! -d libev-${LIBEV_VERSION} ]; then
+  echo "Fetching libev"
+  wget http://dist.schmorp.de/libev/libev-${LIBEV_VERSION}.tar.gz
+  tar xvzf libev-${LIBEV_VERSION}.tar.gz
+  rm libev-${LIBEV_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
