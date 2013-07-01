@@ -150,7 +150,7 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
           *bb = new GVIntBlockBuilder(&options_);
           break;
         default:
-          return Status::NotFound("bad uint encoding: "+ encoding_type_);
+          return Status::NotFound("bad uint encoding: " + EncodingType_Name(encoding_type_));
       }
       break;
     case INT32:
@@ -159,7 +159,7 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
           *bb = new PlainBlockBuilder<INT32>(&options_);
           break;
         default:
-          return Status::NotFound("bad int encoding: "+ encoding_type_);
+          return Status::NotFound("bad int encoding: " + EncodingType_Name(encoding_type_));
       }
       break;
     case STRING:
@@ -171,7 +171,7 @@ Status Writer::CreateBlockBuilder(BlockBuilder **bb) const {
           *bb = new StringPlainBlockBuilder(&options_);
           break;
         default:
-          return Status::NotFound("bad string encoding");
+          return Status::NotFound("bad string encoding: " + EncodingType_Name(encoding_type_));
       }
       break;
     default:
