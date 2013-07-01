@@ -1,3 +1,6 @@
+This document explains the mechanics of performing a flush/compaction.
+For details explaining how compactions are selected, see compaction-policy.txt.
+
 Compaction design notes
 ------------------------------------------------------------
 
