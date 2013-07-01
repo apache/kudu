@@ -87,7 +87,8 @@ protected:
     RowChangeListEncoder update(schema_, &mutation_buf_);
     Slice key_slice = Slice(key);
     update.AddColumnUpdate(1, &new_val);
-    return mrs->MutateRow(tx.txid(), tablet::RowSetKeyProbe(schema_,&key_slice), RowChangeList(mutation_buf_));
+    RowSetKeyProbe probe(schema_,&key_slice);
+    return mrs->MutateRow(tx.txid(), probe, RowChangeList(mutation_buf_));
   }
 
   Status DeleteRow(MemRowSet *mrs, const string &key) {
@@ -96,7 +97,8 @@ protected:
     RowChangeListEncoder update(schema_, &mutation_buf_);
     Slice key_slice = Slice(key);
     update.SetToDelete();
-    return mrs->MutateRow(tx.txid(), tablet::RowSetKeyProbe(schema_,&key_slice), RowChangeList(mutation_buf_));
+    RowSetKeyProbe probe(schema_,&key_slice);
+    return mrs->MutateRow(tx.txid(), probe, RowChangeList(mutation_buf_));
   }
 
   MvccManager mvcc_;
