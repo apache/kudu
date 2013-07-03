@@ -53,6 +53,12 @@ public:
     rb->AddString(Slice(buf));
   }
 
+  // builds a row key from an existing row for updates
+  template <class RowType>
+  void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+    rb->AddString(*reinterpret_cast<const Slice*>(row.cell_ptr(test_schema_, 0)));
+  }
+
   void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {
     BuildRowKey(rb, row_idx);
     rb->AddUint32(row_idx);
@@ -127,6 +133,13 @@ public:
     rb->AddUint32(row_idx);
   }
 
+  // builds a row key from an existing row for updates
+  template<class RowType>
+  void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+    rb->AddString(*reinterpret_cast<const Slice*>(row.cell_ptr(test_schema_, 0)));
+    rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(test_schema_, 1)));
+  }
+
   void BuildRow(RowBuilder *rb, uint64_t row_idx,
                 uint32_t update_count_val = 0) {
     BuildRowKey(rb, row_idx);
@@ -191,6 +204,12 @@ struct IntKeyTestSetup {
     rb->AddInt32((int32_t) i * (i % 2 == 0 ? -1 : 1));
   }
 
+  // builds a row key from an existing row for updates
+  template<class RowType>
+  void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+    rb->AddInt32(*reinterpret_cast<const int32_t*>(row.cell_ptr(test_schema_, 0)));
+  }
+
   void BuildRow(RowBuilder *rb, int64_t row_idx,
                 uint32_t update_count_val = 0) {
     BuildRowKey(rb, row_idx);
@@ -244,6 +263,12 @@ struct NullableValueTestSetup {
 
   void BuildRowKey(RowBuilder *rb, uint64_t i) {
     rb->AddUint32((uint32_t)i);
+  }
+
+  // builds a row key from an existing row for updates
+  template<class RowType>
+  void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+    rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(test_schema_, 0)));
   }
 
   void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {

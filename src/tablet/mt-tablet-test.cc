@@ -108,8 +108,8 @@ public:
         }
 
         rb.Reset();
-        // The key is at the start of the row
-        setup_.BuildRowKey(&rb, rb_row.row_index());
+        // Rebuild the key by extracting the cells from the row
+        setup_.BuildRowKeyFromExistingRow(&rb, rb_row);
         if (rand() % 10 == 7) {
           // Increment the "update count"
           uint32_t old_val = *schema.ExtractColumnFromRow<UINT32>(rb_row, col_idx);
