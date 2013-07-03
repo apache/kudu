@@ -1,7 +1,7 @@
 # Copyright (c) 2012, Cloudera, inc.
 
 SET(TABLET_SRCS
-  tablet.cc tablet-util.cc
+  tablet.cc
   cfile_set.cc
   compaction.cc
   diskrowset.cc
@@ -10,6 +10,7 @@ SET(TABLET_SRCS
   mutation.cc
   mvcc.cc
   rowset.cc
+  rowset_tree.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
 )
 ADD_LIBRARY(tablet ${TABLET_SRCS})
@@ -28,6 +29,7 @@ ADD_KUDU_TEST(cfile_set-test)
 ADD_KUDU_TEST(tablet-pushdown-test)
 ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)
+ADD_KUDU_TEST(rowset_tree-test)
 
 # Some tests don't have dependencies on other tablet stuff
 SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )

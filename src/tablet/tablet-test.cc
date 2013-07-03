@@ -400,12 +400,16 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   // Force a compaction after adding a new rowset with one row.
   this->InsertTestRows(1, 1, 0);
   ASSERT_STATUS_OK(this->tablet_->Flush());
+  ASSERT_EQ(2, this->tablet_->num_rowsets());
+
   ASSERT_STATUS_OK(this->tablet_->Compact());
   ASSERT_EQ(1, this->tablet_->num_rowsets());
 
   // Should still see most recent value.
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
+  ASSERT_EQ(2, out_rows.size());
   ASSERT_EQ(this->setup_.FormatDebugRow(0, 6), out_rows[0]);
+  ASSERT_EQ(this->setup_.FormatDebugRow(1, 0), out_rows[1]);
 }
 
 

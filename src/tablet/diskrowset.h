@@ -87,6 +87,10 @@ class DiskRowSetWriter {
   // this index is written to a new file instead of embedded in the col_* files
   Status InitAdHocIndexWriter();
 
+  // Return the cfile::Writer responsible for writing the key index.
+  // (the ad-hoc writer for composite keys, otherwise the key column writer)
+  cfile::Writer *key_index_writer();
+
   Env *env_;
   const Schema schema_;
   const string dir_;
@@ -98,7 +102,8 @@ class DiskRowSetWriter {
   gscoped_ptr<BloomFileWriter> bloom_writer_;
   gscoped_ptr<cfile::Writer> ad_hoc_index_writer_;
 
-  faststring tmp_buf_;
+  // The last encoded key written.
+  faststring last_encoded_key_;
 };
 
 ////////////////////////////////////////////////////////////
@@ -112,6 +117,9 @@ class DiskRowSet : public RowSet {
   static const char *kBloomFileName;
   static const char *kAdHocIdxFileName;
   static const char *kTmpRowSetSuffix;
+
+  static const char *kMinKeyMetaEntryName;
+  static const char *kMaxKeyMetaEntryName;
 
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
@@ -161,6 +169,10 @@ class DiskRowSet : public RowSet {
 
   // Count the number of rows in this rowset.
   Status CountRows(rowid_t *count) const;
+
+  // See RowSet::GetBounds(...)
+  virtual Status GetBounds(Slice *min_encoded_key,
+                           Slice *max_encoded_key) const;
 
   // Estimate the number of bytes on-disk
   uint64_t EstimateOnDiskSize() const;

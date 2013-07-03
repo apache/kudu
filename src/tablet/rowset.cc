@@ -122,6 +122,13 @@ Status DuplicatingRowSet::CountRows(rowid_t *count) const {
   return new_rowset_->CountRows(count);
 }
 
+Status DuplicatingRowSet::GetBounds(Slice *min_encoded_key,
+                                    Slice *max_encoded_key) const {
+  // The range out of the output rowset always spans the full range
+  // of the input rowsets, since no new rows can be inserted.
+  return new_rowset_->GetBounds(min_encoded_key, max_encoded_key);
+}
+
 uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.

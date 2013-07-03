@@ -194,7 +194,6 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
 
   LOG_TIMING(INFO, "Encoding") {
     for (int i = 0; i < 10000000; i++) {
-      fs.clear();
       schema.EncodeComparableKey(row, &fs);
     }
   }

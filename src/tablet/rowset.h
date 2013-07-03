@@ -59,6 +59,16 @@ class RowSet {
   // Count the number of rows in this rowset.
   virtual Status CountRows(rowid_t *count) const = 0;
 
+  // Return the bounds for this RowSet. 'min_encoded_key' and 'max_encoded_key'
+  // are set to the first and last encoded keys for this RowSet. The storage
+  // for these slices is part of the RowSet and only guaranteed to stay valid
+  // until the RowSet is destroyed.
+  //
+  // In the case that the rowset is still mutable (eg MemRowSet), this may
+  // return Status::NotImplemented.
+  virtual Status GetBounds(Slice *min_encoded_key,
+                           Slice *max_encoded_key) const = 0;
+
   // Return a displayable string for this rowset.
   virtual string ToString() const = 0;
 
@@ -154,6 +164,9 @@ class DuplicatingRowSet : public RowSet {
   CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
 
   Status CountRows(rowid_t *count) const;
+
+  virtual Status GetBounds(Slice *min_encoded_key,
+                           Slice *max_encoded_key) const;
 
   uint64_t EstimateOnDiskSize() const;
 

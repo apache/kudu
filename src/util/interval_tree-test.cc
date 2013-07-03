@@ -43,6 +43,11 @@ struct IntTraits {
   static point_type get_right(const IntInterval &x) {
     return x.right;
   }
+  static int compare(int a, int b) {
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+  }
 };
 
 // Compare intervals in a consistent way - this is only used for verifying

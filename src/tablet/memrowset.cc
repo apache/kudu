@@ -252,5 +252,10 @@ CompactionInput *MemRowSet::NewCompactionInput(const MvccSnapshot &snap) const  
   return CompactionInput::Create(*this, snap);
 }
 
+Status MemRowSet::GetBounds(Slice *min_encoded_key,
+                            Slice *max_encoded_key) const {
+  return Status::NotSupported("");
+}
+
 } // namespace tablet
 } // namespace kudu

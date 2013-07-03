@@ -33,6 +33,10 @@ const char *DiskRowSet::kBloomFileName = "bloom";
 const char *DiskRowSet::kAdHocIdxFileName = "idx";
 const char *DiskRowSet::kTmpRowSetSuffix = ".tmp";
 
+const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
+const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
+
+
 // Return the path at which the given column's cfile
 // is stored within the rowset directory.
 string DiskRowSet::GetColumnPath(const string &dir,
@@ -189,6 +193,13 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
   DCHECK_EQ(block.schema().num_columns(), schema_.num_columns());
   CHECK(!finished_);
 
+  // If this is the very first block, encode the first key and save it as metadata
+  // in the index column.
+  if (written_count_ == 0) {
+    Slice enc_key = schema_.EncodeComparableKey(block.row(0), &last_encoded_key_);
+    key_index_writer()->AddMetadataPair(DiskRowSet::kMinKeyMetaEntryName, enc_key);
+  }
+
   // Write the batch to each of the columns
   for (int i = 0; i < schema_.num_columns(); i++) {
     // TODO: need to look at the selection vector here and only append the
@@ -207,10 +218,8 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     for (int i = 0; i < block.nrows(); i++) {
       // TODO merge this loop with the bloom loop below to
       // avoid re-encoding the keys
-      tmp_buf_.clear();
-      schema_.EncodeComparableKey(block.row(i), &tmp_buf_);
-      Slice encoded_key_slice(tmp_buf_);
-      RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&encoded_key_slice, 1));
+      Slice enc_key = schema_.EncodeComparableKey(block.row(i), &last_encoded_key_);
+      RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&enc_key, 1));
     }
   }
 
@@ -219,14 +228,9 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     // TODO: performance might be better if we actually batch this -
     // encode a bunch of key slices, then pass them all in one go.
     RowBlockRow row = block.row(i);
-
-    // Encode the row into sortable form
-    tmp_buf_.clear();
-    schema_.EncodeComparableKey(row, &tmp_buf_);
-
-    // Insert the encoded row into the bloom.
-    Slice encoded_key_slice(tmp_buf_);
-    RETURN_NOT_OK(bloom_writer_->AppendKeys(&encoded_key_slice, 1));
+    // Insert the encoded key into the bloom.
+    Slice enc_key = schema_.EncodeComparableKey(row, &last_encoded_key_);
+    RETURN_NOT_OK( bloom_writer_->AppendKeys(&enc_key, 1) );
   }
 
   written_count_ += block.nrows();
@@ -236,6 +240,14 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
 Status DiskRowSetWriter::Finish() {
   CHECK(!finished_);
+
+  // Save the last encoded (max) key
+  if (written_count_ > 0) {
+    CHECK_GT(last_encoded_key_.size(), 0);
+    key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName,
+                                        Slice(last_encoded_key_));
+  }
+
   for (int i = 0; i < schema_.num_columns(); i++) {
     cfile::Writer &writer = cfile_writers_[i];
     Status s = writer.Finish();
@@ -267,6 +279,9 @@ Status DiskRowSetWriter::Finish() {
   return Status::OK();
 }
 
+cfile::Writer *DiskRowSetWriter::key_index_writer() {
+  return ad_hoc_index_writer_ ? ad_hoc_index_writer_.get() : &cfile_writers_[0];
+}
 
 ////////////////////////////////////////////////////////////
 // Reader
@@ -374,6 +389,12 @@ Status DiskRowSet::CountRows(rowid_t *count) const {
   CHECK(open_);
 
   return base_data_->CountRows(count);
+}
+
+Status DiskRowSet::GetBounds(Slice *min_encoded_key,
+                             Slice *max_encoded_key) const {
+  CHECK(open_);
+  return base_data_->GetBounds(min_encoded_key, max_encoded_key);
 }
 
 uint64_t DiskRowSet::EstimateOnDiskSize() const {

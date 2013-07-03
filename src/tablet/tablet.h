@@ -14,6 +14,7 @@
 #include "tablet/diskrowset.h"
 #include "tablet/memrowset.h"
 #include "tablet/lock_manager.h"
+#include "tablet/rowset_tree.h"
 #include "util/env.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -129,9 +130,15 @@ class Tablet {
 
   // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
-  void AtomicSwapRowSets(const RowSetVector old_rowsets,
+  void AtomicSwapRowSets(const RowSetVector &old_rowsets,
                         const shared_ptr<RowSet> &new_rowset,
                         MvccSnapshot *snap_under_lock);
+
+  // Same as the above, but without taking the lock. This should only be used
+  // in cases where the lock is already held.
+  void AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
+                                 const shared_ptr<RowSet> &new_rowset,
+                                 MvccSnapshot *snap_under_lock);
 
   // Delete the underlying storage for the input layers in a compaction.
   Status DeleteCompactionInputs(const RowSetsInCompaction &input);
@@ -142,7 +149,7 @@ class Tablet {
   Schema key_schema_;
   string dir_;
   shared_ptr<MemRowSet> memrowset_;
-  RowSetVector rowsets_;
+  RowSetTree rowsets_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;

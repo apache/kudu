@@ -42,6 +42,11 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   virtual Iterator *NewIterator(const Schema &projection) const;
   Status CountRows(rowid_t *count) const;
+
+  // See RowSet::GetBounds
+  virtual Status GetBounds(Slice *min_encoded_key,
+                           Slice *max_encoded_key) const;
+
   uint64_t EstimateOnDiskSize() const;
 
   // Determine the index of the given row key.
@@ -67,6 +72,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   Status OpenBloomReader();
   Status OpenAdHocIndexReader();
+  Status LoadMinMaxKeys();
 
   Status NewColumnIterator(size_t col_idx, CFileIterator **iter) const;
   Status NewAdHocIndexIterator(CFileIterator **iter) const;
@@ -76,6 +82,9 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   Env *env_;
   const string dir_;
   const Schema schema_;
+
+  std::string min_encoded_key_;
+  std::string max_encoded_key_;
 
   vector<shared_ptr<CFileReader> > readers_;
 

@@ -16,7 +16,6 @@
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
 #include "tablet/tablet.h"
-#include "tablet/tablet-util.h"
 #include "tablet/diskrowset.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
@@ -67,6 +66,8 @@ Status Tablet::Open() {
   vector<string> children;
   RETURN_NOT_OK(env_->GetChildren(dir_, &children));
 
+  RowSetVector rowsets_opened;
+
   BOOST_FOREACH(const string &child, children) {
     // Skip hidden files (also '.' and '..')
     if (child[0] == '.') continue;
@@ -89,13 +90,15 @@ Status Tablet::Open() {
                    << s.ToString();
         return s;
       }
-      rowsets_.push_back(rowset);
+      rowsets_opened.push_back(rowset);
 
       next_rowset_idx_ = std::max(next_rowset_idx_, rowset_idx + 1);
     } else {
       LOG(WARNING) << "ignoring unknown file: " << absolute_path;
     }
   }
+
+  rowsets_.Reset(rowsets_opened);
 
   open_ = true;
 
@@ -140,11 +143,15 @@ Status Tablet::Insert(const Slice &data) {
   // First, ensure that it is a unique key by checking all the open
   // RowSets
   if (FLAGS_tablet_do_dup_key_checks) {
-    bool present;
-    RETURN_NOT_OK(tablet_util::CheckRowPresentInAnyRowSet(
-                    rowsets_, probe, &present));
-    if (present) {
-      return Status::AlreadyPresent("key already present");
+    vector<RowSet *> to_check;
+    rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key(), &to_check);
+
+    BOOST_FOREACH(const RowSet *rowset, to_check) {
+      bool present = false;
+      RETURN_NOT_OK(rowset->CheckRowPresent(probe, &present));
+      if (PREDICT_FALSE(present)) {
+        return Status::AlreadyPresent("key already present");
+      }
     }
   }
 
@@ -220,7 +227,9 @@ Status Tablet::MutateRow(const void *key,
   // TODO: could iterate the rowsets in a smart order
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+  vector<RowSet *> to_check;
+  rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key(), &to_check);
+  BOOST_FOREACH(RowSet *rs, to_check) {
     s = rs->MutateRow(tx.txid(), probe, update);
     if (s.ok() || !s.IsNotFound()) {
       // if it succeeded, or if an error occurred, return.
@@ -231,17 +240,24 @@ Status Tablet::MutateRow(const void *key,
   return Status::NotFound("key not found");
 }
 
-void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
+void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
                                const shared_ptr<RowSet> &new_rowset,
                                MvccSnapshot *snap_under_lock = NULL) {
-  RowSetVector new_rowsets;
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
+  AtomicSwapRowSetsUnlocked(old_rowsets, new_rowset, snap_under_lock);
+}
+
+void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
+                                       const shared_ptr<RowSet> &new_rowset,
+                                       MvccSnapshot *snap_under_lock = NULL) {
+
+  RowSetVector new_rowsets;
 
   // O(n^2) diff algorithm to collect the set of rowsets excluding
   // the rowsets that were included in the compaction
   int num_replaced = 0;
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
     // Determine if it should be removed
     bool should_remove = false;
     BOOST_FOREACH(const shared_ptr<RowSet> &l_input, old_rowsets) {
@@ -263,7 +279,7 @@ void Tablet::AtomicSwapRowSets(const RowSetVector old_rowsets,
     new_rowsets.push_back(new_rowset);
   }
 
-  rowsets_.swap(new_rowsets);
+  rowsets_.Reset(new_rowsets);
 
   if (snap_under_lock != NULL) {
     *snap_under_lock = MvccSnapshot(mvcc_);
@@ -330,14 +346,12 @@ Status Tablet::Flush() {
     CHECK(ms_lock->owns_lock());
     input.AddRowSet(old_ms, ms_lock);
 
-    // Put it back on the rowset list.
-    rowsets_.push_back(old_ms);
+    AtomicSwapRowSetsUnlocked(RowSetVector(), old_ms, NULL);
   }
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemRowSet());
 
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
-
 
   RETURN_NOT_OK(DoCompactionOrFlush(input));
 
@@ -375,7 +389,8 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const {
   CHECK_EQ(picked->num_rowsets(), 0);
 
   vector<shared_ptr<RowSet> > tmp_rowsets;
-  tmp_rowsets.assign(rowsets_.begin(), rowsets_.end());
+  tmp_rowsets.assign(rowsets_.all_rowsets().begin(),
+                     rowsets_.all_rowsets().end());
 
   // Sort the rowsets by their on-disk size
   std::sort(tmp_rowsets.begin(), tmp_rowsets.end(), CompareBySize);
@@ -539,7 +554,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
   LOG_STRING(INFO, lines) << "MRS " << memrowset_->ToString() << ":";
   RETURN_NOT_OK(memrowset_->DebugDump(lines));
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
     LOG_STRING(INFO, lines) << "RowSet " << rs->ToString() << ":";
     RETURN_NOT_OK(rs->DebugDump(lines));
   }
@@ -562,7 +577,7 @@ Status Tablet::CaptureConsistentIterators(
   ret.push_back(ms_iter);
 
   // Grab all rowset iterators.
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
     shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
     ret.push_back(row_it);
   }
@@ -579,7 +594,7 @@ Status Tablet::CountRows(uint64_t *count) const {
   {
     boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
     memrowset = memrowset_;
-    rowsets = rowsets_;
+    rowsets = rowsets_.all_rowsets();
   }
 
   // Now sum up the counts.
@@ -596,7 +611,7 @@ Status Tablet::CountRows(uint64_t *count) const {
 
 size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  return rowsets_.size();
+  return rowsets_.all_rowsets().size();
 }
 
 } // namespace table

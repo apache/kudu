@@ -36,12 +36,18 @@ class ITNode;
 // are inclusive of their start and end points.
 //
 // The Traits class should have the following members:
-//   Traits::point_type    -- a typedef for what a "point" in the range is
-//   Traits::interval_type -- a typedef for an interval
-//   static point_type get_left(const interval_type &) -- accessor which fetches the interval.left
-//   static point_type get_right(const interval_type &) -- accessor which fetches the interval.right
+//   Traits::point_type
+//     a typedef for what a "point" in the range is
 //
-// 'point_type' must be comparable using normal comparison operators.
+//   Traits::interval_type
+//     a typedef for an interval
+//
+//   static point_type get_left(const interval_type &)
+//   static point_type get_right(const interval_type &)
+//     accessors which fetch the left and right bound of the interval, respectively.
+//
+//   static int compare(const point_type &a, const point_type &b)
+//     return < 0 if a < b, 0 if a == b, > 0 if a > b
 //
 // See interval_tree-test.cc for an example Traits class for 'int' ranges.
 template<class Traits>

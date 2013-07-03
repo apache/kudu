@@ -297,9 +297,12 @@ class Schema {
   // such that the buffer's lexicographic comparison represents
   // the proper comparison order of the underlying types.
   //
-  // The encoded key is appended into the destination buffer.
+  // The key is encoded into the given buffer, replacing its current
+  // contents.
+  // Returns the encoded key.
   template <class RowType>
-  void EncodeComparableKey(const RowType& row, faststring *dst) const {
+  Slice EncodeComparableKey(const RowType& row, faststring *dst) const {
+    dst->clear();
     KeyEncoder enc(dst);
     for (size_t i = 0; i < num_key_columns_; i++) {
       const TypeInfo &ti = cols_[i].type_info();
@@ -319,7 +322,7 @@ class Schema {
           CHECK(0) << "Unknown type: " << ti.name();
       }
     }
-
+    return Slice(*dst);
   }
 
   // Stringify this Schema. This is not particularly efficient,

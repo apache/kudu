@@ -178,6 +178,9 @@ class MemRowSet : public RowSet,
     return Status::OK();
   }
 
+  virtual Status GetBounds(Slice *min_encoded_key,
+                           Slice *max_encoded_key) const;
+
   uint64_t EstimateOnDiskSize() const {
     return 0;
   }
@@ -311,7 +314,6 @@ class MemRowSet::Iterator : public RowwiseIterator {
     CHECK(!projection_mapping_.empty()) << "not initted";
 
     if (key.size() > 0) {
-      tmp_buf.clear();
       ConstContiguousRow row_slice(memrowset_->schema(), key.data());
       memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
     } else {

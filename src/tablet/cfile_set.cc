@@ -70,6 +70,9 @@ Status CFileSet::Open() {
       schema_.column(i).ToString() << " in " << dir_;
   }
 
+  // Determine the upper and lower key bounds for this CFileSet.
+  RETURN_NOT_OK(LoadMinMaxKeys());
+
   return Status::OK();
 }
 
@@ -98,6 +101,23 @@ Status CFileSet::OpenBloomReader() {
   return Status::OK();
 }
 
+Status CFileSet::LoadMinMaxKeys() {
+  CFileReader *key_reader = ad_hoc_idx_reader_ ? ad_hoc_idx_reader_.get() : readers_[0].get();
+  if (!key_reader->GetMetadataEntry(DiskRowSet::kMinKeyMetaEntryName, &min_encoded_key_)) {
+    return Status::Corruption("No min key found", ToString());
+  }
+  if (!key_reader->GetMetadataEntry(DiskRowSet::kMaxKeyMetaEntryName, &max_encoded_key_)) {
+    return Status::Corruption("No max key found", ToString());
+  }
+  if (Slice(min_encoded_key_).compare(max_encoded_key_) > 0) {
+    return Status::Corruption(StringPrintf("Min key %s > max key %s",
+                                           Slice(min_encoded_key_).ToDebugString().c_str(),
+                                           Slice(max_encoded_key_).ToDebugString().c_str()),
+                              ToString());
+  }
+
+  return Status::OK();
+}
 
 Status CFileSet::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
   CHECK_LT(col_idx, readers_.size());
@@ -117,6 +137,13 @@ CFileSet::Iterator *CFileSet::NewIterator(const Schema &projection) const {
 Status CFileSet::CountRows(rowid_t *count) const {
   const shared_ptr<cfile::CFileReader> &reader = readers_[0];
   return reader->CountRows(count);
+}
+
+Status CFileSet::GetBounds(Slice *min_encoded_key,
+                           Slice *max_encoded_key) const {
+  *min_encoded_key = Slice(min_encoded_key_);
+  *max_encoded_key = Slice(max_encoded_key_);
+  return Status::OK();
 }
 
 uint64_t CFileSet::EstimateOnDiskSize() const {

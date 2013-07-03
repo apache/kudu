@@ -37,6 +37,12 @@ void IntervalTree<Traits>::FindIntersectingInterval(const interval_type &query,
   }
 }
 
+template<class Traits>
+static bool LessThan(const typename Traits::point_type &a,
+                     const typename Traits::point_type &b) {
+  return Traits::compare(a, b) < 0;
+}
+
 // Select a split point which attempts to evenly divide 'in' into three groups:
 //  (a) those that are fully left of the split point
 //  (b) those that overlap the split point.
@@ -70,17 +76,17 @@ void IntervalTree<Traits>::Partition(const IntervalVector &in,
     endpoints.push_back(Traits::get_left(interval));
     endpoints.push_back(Traits::get_right(interval));
   }
-  std::sort(endpoints.begin(), endpoints.end());
+  std::sort(endpoints.begin(), endpoints.end(), LessThan<Traits>);
   *split_point = endpoints[endpoints.size() / 2];
 
   // Partition into the groups based on the determined split point.
   BOOST_FOREACH(const interval_type &interval, in) {
-    if (Traits::get_right(interval) < *split_point) {
+    if (Traits::compare(Traits::get_right(interval), *split_point) < 0) {
       //                 | split point
       // |------------|  |
       //    interval
       left->push_back(interval);
-    } else if (Traits::get_left(interval) > *split_point) {
+    } else if (Traits::compare(Traits::get_left(interval), *split_point) > 0) {
       //                 | split point
       //                 |    |------------|
       //                         interval
@@ -162,12 +168,12 @@ class ITNode {
 
 template<class Traits>
 bool ITNode<Traits>::SortByAscLeft(const interval_type &a, const interval_type &b) {
-  return Traits::get_left(a) < Traits::get_left(b);
+  return Traits::compare(Traits::get_left(a), Traits::get_left(b)) < 0;
 }
 
 template<class Traits>
 bool ITNode<Traits>::SortByDescRight(const interval_type &a, const interval_type &b) {
-  return Traits::get_right(a) > Traits::get_right(b);
+  return Traits::compare(Traits::get_right(a), Traits::get_right(b)) > 0;
 }
 
 template<class Traits>
@@ -196,7 +202,8 @@ ITNode<Traits>::~ITNode() {
 template<class Traits>
 void ITNode<Traits>::FindContainingPoint(const point_type &query,
                                          IntervalVector *results) const {
-  if (query < split_point_) {
+  int cmp = Traits::compare(query, split_point_);
+  if (cmp < 0) {
     // None of the intervals in right_ may intersect this.
     if (left_ != NULL) {
       left_->FindContainingPoint(query, results);
@@ -205,13 +212,13 @@ void ITNode<Traits>::FindContainingPoint(const point_type &query,
     // Any intervals which start before the query point and overlap the split point
     // must therefore contain the query point.
     BOOST_FOREACH(const interval_type &interval, overlapping_by_asc_left_) {
-      if (Traits::get_left(interval) <= query) {
+      if (Traits::compare(Traits::get_left(interval), query) <= 0) {
         results->push_back(interval);
       } else {
         break;
       }
     }
-  } else if (query > split_point_) {
+  } else if (cmp > 0) {
     // None of the intervals in left_ may intersect this.
     if (right_ != NULL) {
       right_->FindContainingPoint(query, results);
@@ -220,14 +227,14 @@ void ITNode<Traits>::FindContainingPoint(const point_type &query,
     // Any intervals which end after the query point and overlap the split point
     // must therefore contain the query point.
     BOOST_FOREACH(const interval_type &interval, overlapping_by_desc_right_) {
-      if (Traits::get_right(interval) >= query) {
+      if (Traits::compare(Traits::get_right(interval), query) >= 0) {
         results->push_back(interval);
       } else {
         break;
       }
     }
   } else {
-    DCHECK_EQ(query, split_point_);
+    DCHECK_EQ(cmp, 0);
     // The query is exactly our split point -- in this case we've already got
     // the computed list of overlapping intervals.
     results->insert(results->end(), overlapping_by_asc_left_.begin(), overlapping_by_asc_left_.end());
@@ -237,7 +244,7 @@ void ITNode<Traits>::FindContainingPoint(const point_type &query,
 template<class Traits>
 void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
                                               IntervalVector *results) const {
-  if (Traits::get_right(query) < split_point_) {
+  if (Traits::compare(Traits::get_right(query), split_point_) < 0) {
     // The interval is fully left of the split point. So, it may not overlap
     // with any in 'right_'
     if (left_ != NULL) {
@@ -247,7 +254,7 @@ void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
     // Any intervals whose left edge is <= the query interval's right edge
     // intersect the query interval.
     BOOST_FOREACH(const interval_type &interval, overlapping_by_asc_left_) {
-      if (Traits::get_left(interval) <= Traits::get_right(query)) {
+      if (Traits::compare(Traits::get_left(interval),Traits::get_right(query)) <= 0) {
         results->push_back(interval);
       } else {
         break;
@@ -263,7 +270,7 @@ void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
     // Any intervals whose right edge is >= the query interval's left edge
     // intersect the query interval.
     BOOST_FOREACH(const interval_type &interval, overlapping_by_desc_right_) {
-      if (Traits::get_right(interval) >= Traits::get_left(query)) {
+      if (Traits::compare(Traits::get_right(interval), Traits::get_left(query)) >= 0) {
         results->push_back(interval);
       } else {
         break;
