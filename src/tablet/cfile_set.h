@@ -37,8 +37,7 @@ public:
 
   CFileSet(Env *env, const string &dir, const Schema &schema);
 
-  Status OpenAllColumns();
-  Status OpenKeyColumns();
+  Status Open();
 
   virtual Iterator *NewIterator(const Schema &projection) const;
   Status CountRows(rowid_t *count) const;
@@ -65,7 +64,6 @@ private:
 
   DISALLOW_COPY_AND_ASSIGN(CFileSet);
 
-  Status OpenColumns(size_t num_cols);
   Status OpenBloomReader();
   Status OpenAdHocIndexReader();
 

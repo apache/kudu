@@ -37,8 +37,8 @@ static Status OpenReader(Env *env, string dir, size_t col_idx,
 ////////////////////////////////////////////////////////////
 
 CFileSet::CFileSet(Env *env,
-                             const string &dir,
-                             const Schema &schema) :
+                   const string &dir,
+                   const Schema &schema) :
   env_(env),
   dir_(dir),
   schema_(schema)
@@ -48,26 +48,15 @@ CFileSet::~CFileSet() {
 }
 
 
-Status CFileSet::OpenAllColumns() {
-  return OpenColumns(schema_.num_columns());
-}
-
-Status CFileSet::OpenKeyColumns() {
-  return OpenColumns(schema_.num_key_columns());
-}
-
-Status CFileSet::OpenColumns(size_t num_cols) {
-  CHECK_LE(num_cols, schema_.num_columns());
-
+Status CFileSet::Open() {
   RETURN_NOT_OK(OpenBloomReader());
 
   if (schema_.num_key_columns() > 1) {
     RETURN_NOT_OK(OpenAdHocIndexReader());
   }
 
-  readers_.resize(num_cols);
-
-  for (int i = 0; i < num_cols; i++) {
+  readers_.resize(schema_.num_columns());
+  for (int i = 0; i < schema_.num_columns(); i++) {
     if (readers_[i] != NULL) {
       // Already open.
       continue;

@@ -296,9 +296,8 @@ DiskRowSet::DiskRowSet(Env *env,
 
 
 Status DiskRowSet::Open() {
-  gscoped_ptr<CFileSet> new_base(
-    new CFileSet(env_, dir_, schema_));
-  RETURN_NOT_OK(new_base->OpenAllColumns());
+  gscoped_ptr<CFileSet> new_base(new CFileSet(env_, dir_, schema_));
+  RETURN_NOT_OK(new_base->Open());
 
   base_data_.reset(new_base.release());
 

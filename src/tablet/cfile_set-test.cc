@@ -107,7 +107,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
 
   shared_ptr<CFileSet> fileset(
     new CFileSet(env_.get(), rowset_dir_, schema_));
-  ASSERT_STATUS_OK(fileset->OpenAllColumns());
+  ASSERT_STATUS_OK(fileset->Open());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_));
   ASSERT_STATUS_OK(iter->Init(NULL));
@@ -190,7 +190,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), rowset_dir_, schema_));
-  ASSERT_STATUS_OK(fileset->OpenAllColumns());
+  ASSERT_STATUS_OK(fileset->Open());
 
   // Create iterator.
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_));
@@ -238,7 +238,7 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), rowset_dir_, schema_));
-  ASSERT_STATUS_OK(fileset->OpenAllColumns());
+  ASSERT_STATUS_OK(fileset->Open());
 
   // Range scan where rows match on both ends
   DoTestRangeScan(fileset, 2000, 2010);
