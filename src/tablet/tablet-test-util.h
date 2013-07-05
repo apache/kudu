@@ -56,7 +56,21 @@ static inline string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
   vector<string> out;
   CHECK_OK(IterateToStringList(iter.get(), &out));
   return JoinStrings(out, "\n");
+}
 
+// Write a single row to the given RowSetWriter (which may be of the rolling
+// or non-rolling variety).
+template<class RowSetWriterClass>
+static Status WriteRow(const Slice &row, RowSetWriterClass *writer) {
+  const Schema &schema = writer->schema();
+  DCHECK_EQ(row.size(), schema.byte_size());
+
+  RowBlock block(schema, 1, NULL);
+  ConstContiguousRow row_slice(schema, row.data());
+  RowBlockRow dst_row = block.row(0);
+  dst_row.CopyCellsFrom(schema, row_slice);
+
+  return writer->AppendBlock(block);
 }
 
 } // namespace tablet

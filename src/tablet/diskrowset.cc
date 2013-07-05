@@ -13,6 +13,7 @@
 #include "cfile/cfile.h"
 #include "cfile/type_encodings.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/stl_util.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
@@ -169,25 +170,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
       cfile::PREFIX,
       file));
   return ad_hoc_index_writer_->Start();
-}
 
-Status DiskRowSetWriter::WriteRow(const Slice &row) {
-  CHECK(!finished_);
-  DCHECK_EQ(row.size(), schema_.byte_size());
-
-
-  // TODO(perf): this is a kind of slow implementation since it
-  // causes an extra unnecessary copy, and only appends one
-  // at a time. Would be nice to change RowBlock so that it can
-  // be used in scenarios where it just points to existing memory.
-  RowBlock block(schema_, 1, NULL);
-
-  ConstContiguousRow row_slice(schema_, row.data());
-
-  RowBlockRow dst_row = block.row(0);
-  dst_row.CopyCellsFrom(schema_, row_slice);
-
-  return AppendBlock(block);
 }
 
 Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
@@ -207,10 +190,10 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     // selected rows?
     ColumnBlock column = block.column_block(i);
     if (column.is_nullable()) {
-      RETURN_NOT_OK(cfile_writers_[i].AppendNullableEntries(column.null_bitmap(),
+      RETURN_NOT_OK(cfile_writers_[i]->AppendNullableEntries(column.null_bitmap(),
           column.data(), column.nrows()));
     } else {
-      RETURN_NOT_OK(cfile_writers_[i].AppendEntries(column.data(), column.nrows()));
+      RETURN_NOT_OK(cfile_writers_[i]->AppendEntries(column.data(), column.nrows()));
     }
   }
 
@@ -250,8 +233,8 @@ Status DiskRowSetWriter::Finish() {
   }
 
   for (int i = 0; i < schema_.num_columns(); i++) {
-    cfile::Writer &writer = cfile_writers_[i];
-    Status s = writer.Finish();
+    cfile::Writer *writer = cfile_writers_[i];
+    Status s = writer->Finish();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish writer for column " <<
         schema_.column(i).ToString() << ": " << s.ToString();
@@ -281,7 +264,101 @@ Status DiskRowSetWriter::Finish() {
 }
 
 cfile::Writer *DiskRowSetWriter::key_index_writer() {
-  return ad_hoc_index_writer_ ? ad_hoc_index_writer_.get() : &cfile_writers_[0];
+  return ad_hoc_index_writer_ ? ad_hoc_index_writer_.get() : cfile_writers_[0];
+}
+
+size_t DiskRowSetWriter::written_size() const {
+  size_t size = 0;
+  BOOST_FOREACH(const cfile::Writer *writer, cfile_writers_) {
+    size += writer->written_size();
+  }
+
+  if (bloom_writer_) {
+    size += bloom_writer_->written_size();
+  }
+
+  if (ad_hoc_index_writer_) {
+    size += ad_hoc_index_writer_->written_size();
+  }
+
+  return size;
+}
+
+DiskRowSetWriter::~DiskRowSetWriter() {
+  STLDeleteElements(&cfile_writers_);
+}
+
+
+RollingDiskRowSetWriter::RollingDiskRowSetWriter(Env *env,
+                                                 const Schema &schema,
+                                                 const string &base_path,
+                                                 const BloomFilterSizing &bloom_sizing,
+                                                 size_t target_rowset_size)
+  : state_(kInitialized),
+    env_(env),
+    schema_(schema),
+    base_path_(base_path),
+    bloom_sizing_(bloom_sizing),
+    target_rowset_size_(target_rowset_size),
+    output_index_(0),
+    written_count_(0) {
+}
+
+Status RollingDiskRowSetWriter::Open() {
+  CHECK_EQ(state_, kInitialized);
+
+  RETURN_NOT_OK(RollWriter());
+  state_ = kStarted;
+  return Status::OK();
+}
+
+Status RollingDiskRowSetWriter::RollWriter() {
+  // Close current writer if it is open
+  RETURN_NOT_OK(FinishCurrentWriter());
+  cur_path_ = StringPrintf("%s.%d", base_path_.c_str(), output_index_++);
+  cur_writer_.reset(new DiskRowSetWriter(env_, schema_, cur_path_, bloom_sizing_));
+  return cur_writer_->Open();
+}
+
+Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block) {
+  DCHECK_EQ(state_, kStarted);
+  if (cur_writer_->written_size() > target_rowset_size_) {
+    RETURN_NOT_OK(RollWriter());
+  }
+
+  RETURN_NOT_OK(cur_writer_->AppendBlock(block));
+
+  written_count_ += block.nrows();
+
+  return Status::OK();
+}
+
+Status RollingDiskRowSetWriter::FinishCurrentWriter() {
+  if (!cur_writer_) {
+    return Status::OK();
+  }
+  CHECK_EQ(state_, kStarted);
+
+  RETURN_NOT_OK(cur_writer_->Finish());
+  written_paths_.push_back(cur_path_);
+  cur_writer_.reset(NULL);
+  return Status::OK();
+}
+
+Status RollingDiskRowSetWriter::Finish() {
+  DCHECK_EQ(state_, kStarted);
+
+  RETURN_NOT_OK(FinishCurrentWriter());
+  state_ = kFinished;
+  return Status::OK();
+}
+
+void RollingDiskRowSetWriter::GetWrittenPaths(std::vector<std::string> *paths) const {
+  CHECK_EQ(state_, kFinished);
+  paths->assign(written_paths_.begin(), written_paths_.end());
+}
+
+RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
 }
 
 ////////////////////////////////////////////////////////////

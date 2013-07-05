@@ -51,7 +51,7 @@ class TestCFileSet : public KuduTest {
       rb.AddUint32(i * 2);
       rb.AddUint32(i * 10);
       rb.AddUint32(i * 100);
-      ASSERT_STATUS_OK_FAST(rsw.WriteRow(rb.data()));
+      ASSERT_STATUS_OK_FAST(WriteRow(rb.data(), &rsw));
     }
     ASSERT_STATUS_OK(rsw.Finish());
   }

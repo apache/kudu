@@ -45,6 +45,10 @@ Status BloomFileWriter::Finish() {
   return writer_->Finish();
 }
 
+size_t BloomFileWriter::written_size() const {
+  return writer_->written_size();
+}
+
 Status BloomFileWriter::AppendKeys(
   const Slice *keys, size_t n_keys) {
 

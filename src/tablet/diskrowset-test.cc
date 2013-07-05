@@ -18,6 +18,7 @@
 #include "util/test_macros.h"
 
 DEFINE_double(update_fraction, 0.1f, "fraction of rows to update");
+DECLARE_int32(cfile_default_block_size);
 
 namespace kudu {
 namespace tablet {
@@ -237,7 +238,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     RowBuilder rb(schema_);
     rb.AddString(key_slice);
     rb.AddUint32(1);
-    ASSERT_STATUS_OK_FAST(drsw.WriteRow(rb.data()));
+    ASSERT_STATUS_OK_FAST(WriteRow(rb.data(), &drsw));
     ASSERT_STATUS_OK(drsw.Finish());
   }
 
@@ -323,6 +324,28 @@ TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates on disk)",
                    n_rows_, FLAGS_update_fraction * 100.0f,
                    FLAGS_n_read_passes));
+  }
+}
+
+TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
+  // Set small block size so that we can roll frequently. Otherwise
+  // we couldn't output such small files.
+  google::FlagSaver saver;
+  FLAGS_cfile_default_block_size = 4096;
+
+  RollingDiskRowSetWriter writer(env_.get(), schema_, rowset_dir_,
+                                 BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
+                                 64 * 1024); // roll every 64KB
+  DoWriteTestRowSet(30000, &writer);
+
+  // Should have rolled 3 times.
+  vector<string> paths;
+  writer.GetWrittenPaths(&paths);
+  EXPECT_EQ(3, paths.size());
+  for (int i = 0; i < paths.size(); i++) {
+    string path = StringPrintf("%s.%d", rowset_dir_.c_str(), i);
+    EXPECT_EQ(paths[i], path);
+    ASSERT_FILE_EXISTS(env_, path);
   }
 }
 

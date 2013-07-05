@@ -7,7 +7,6 @@
 #ifndef KUDU_TABLET_LAYER_H
 #define KUDU_TABLET_LAYER_H
 
-#include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
 #include <memory>
@@ -38,7 +37,6 @@ class BloomFileWriter;
 
 namespace tablet {
 
-using boost::ptr_vector;
 using std::string;
 using kudu::cfile::BloomFileWriter;
 using kudu::cfile::CFileIterator;
@@ -58,12 +56,9 @@ class DiskRowSetWriter {
     written_count_(0)
   {}
 
-  Status Open();
+  ~DiskRowSetWriter();
 
-  // Append a new row into the rowset.
-  // This is inefficient and should only be used by tests. Real code should use
-  // AppendBlock() instead.
-  Status WriteRow(const Slice &row);
+  Status Open();
 
   // The block is written to all column writers as well as the bloom filter,
   // if configured.
@@ -77,6 +72,12 @@ class DiskRowSetWriter {
     return written_count_;
   }
 
+  // Return the total number of bytes written so far to this DiskRowSet.
+  // Additional bytes may be written by "Finish()", but this should provide
+  // a reasonable estimate for the total data size.
+  size_t written_size() const;
+
+  const Schema &schema() const { return schema_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DiskRowSetWriter);
@@ -98,12 +99,73 @@ class DiskRowSetWriter {
 
   bool finished_;
   rowid_t written_count_;
-  ptr_vector<cfile::Writer> cfile_writers_;
+  std::vector<cfile::Writer *> cfile_writers_;
   gscoped_ptr<BloomFileWriter> bloom_writer_;
   gscoped_ptr<cfile::Writer> ad_hoc_index_writer_;
 
   // The last encoded key written.
   faststring last_encoded_key_;
+};
+
+
+// Wrapper around DiskRowSetWriter which "rolls" to a new DiskRowSet after
+// a certain amount of data has been written. Each output rowset is suffixed
+// with ".N" where N starts at 0 and increases as new rowsets are generated.
+class RollingDiskRowSetWriter {
+ public:
+  RollingDiskRowSetWriter(Env *env,
+                          const Schema &schema,
+                          const string &base_path,
+                          const BloomFilterSizing &bloom_sizing,
+                          size_t target_rowset_size);
+  ~RollingDiskRowSetWriter();
+
+  Status Open();
+
+  // The block is written to all column writers as well as the bloom filter,
+  // if configured.
+  // Rows must be appended in ascending order.
+  Status AppendBlock(const RowBlock &block);
+
+  Status Finish();
+
+  int64_t written_count() const { return written_count_; }
+
+  const Schema &schema() const { return schema_; }
+
+  // Return the set of rowset paths that were written by this writer.
+  // This must only be called after Finish() returns an OK result.
+  void GetWrittenPaths(std::vector<std::string> *paths) const;
+
+ private:
+  Status RollWriter();
+  Status FinishCurrentWriter();
+
+  enum State {
+    kInitialized,
+    kStarted,
+    kFinished
+  };
+  State state_;
+
+  Env * const env_;
+  const Schema schema_;
+  const std::string base_path_;
+  std::string cur_path_;
+  const BloomFilterSizing bloom_sizing_;
+  const size_t target_rowset_size_;
+
+  gscoped_ptr<DiskRowSetWriter> cur_writer_;
+
+  // The index for the next output.
+  int output_index_;
+
+  // DiskRowSet paths which have been successfully written out.
+  std::vector<std::string> written_paths_;
+
+  int64_t written_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(RollingDiskRowSetWriter);
 };
 
 ////////////////////////////////////////////////////////////

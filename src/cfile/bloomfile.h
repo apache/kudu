@@ -30,6 +30,9 @@ class BloomFileWriter {
   Status AppendKeys(const Slice *keys, size_t n_keys);
   Status Finish();
 
+  // Estimate the amount of data already written to this file.
+  size_t written_size() const;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(BloomFileWriter);
 

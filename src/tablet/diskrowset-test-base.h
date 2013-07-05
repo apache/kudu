@@ -16,6 +16,7 @@
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
 #include "tablet/diskrowset.h"
+#include "tablet/tablet-test-util.h"
 #include "util/env.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
@@ -62,16 +63,20 @@ class TestRowSet : public KuduTest {
   // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
   void WriteTestRowSet(int n_rows = 0) {
+    DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
+                          BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+    DoWriteTestRowSet(n_rows, &drsw);
+  }
+
+  template<class WriterClass>
+  void DoWriteTestRowSet(int n_rows, WriterClass *writer) {
     if (n_rows == 0) {
       n_rows = n_rows_;
     }
 
     // Write rows into a new DiskRowSet.
     LOG_TIMING(INFO, "Writing rowset") {
-      DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
-                     BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
-
-      CHECK_OK(drsw.Open());
+      CHECK_OK(writer->Open());
 
       char buf[256];
       RowBuilder rb(schema_);
@@ -80,9 +85,9 @@ class TestRowSet : public KuduTest {
         FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));
         rb.AddUint32(i);
-        CHECK_OK(drsw.WriteRow(rb.data()));
+        CHECK_OK(WriteRow(rb.data(), writer));
       }
-      CHECK_OK(drsw.Finish());
+      CHECK_OK(writer->Finish());
     }
   }
 

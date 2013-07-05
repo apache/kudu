@@ -122,6 +122,11 @@ class Writer {
                         const void *validx_key,
                         const char *name_for_log);
 
+
+  // Return the amount of data written so far to this CFile.
+  // More data may be written by Finish(), but this is an approximation.
+  size_t written_size() const;
+
   ~Writer();
 
  private:
