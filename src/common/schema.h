@@ -147,13 +147,13 @@ class Schema {
 
   // Return the byte offset within the row for the given column index.
   size_t column_offset(size_t col_idx) const {
-    CHECK_LT(col_idx, cols_.size());
+    DCHECK_LT(col_idx, cols_.size());
     return col_offsets_[col_idx];
   }
 
   // Return the ColumnSchema corresponding to the given column index.
-  const ColumnSchema &column(size_t idx) const {
-    CHECK_LT(idx, cols_.size());
+  inline const ColumnSchema &column(size_t idx) const {
+    DCHECK_LT(idx, cols_.size());
     return cols_[idx];
   }
 

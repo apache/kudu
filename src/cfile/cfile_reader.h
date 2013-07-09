@@ -102,11 +102,11 @@ class CFileReader {
   }
 
   const CFileHeaderPB &header() const {
-    return *CHECK_NOTNULL(header_.get());
+    return *DCHECK_NOTNULL(header_.get());
   }
 
   const CFileFooterPB &footer() const {
-    return *CHECK_NOTNULL(footer_.get());
+    return *DCHECK_NOTNULL(footer_.get());
   }
 
   bool is_compressed() const {
