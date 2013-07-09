@@ -60,6 +60,12 @@ class DeltaTracker {
   // Sets *deleted to true if so; otherwise sets it to false.
   Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
+  // Return the number of rows encompassed by this DeltaTracker. Note that
+  // this is _not_ the number of updated rows, but rather the number of rows
+  // in the associated CFileSet base data. All updates must have a rowid
+  // strictly less than num_rows().
+  int64_t num_rows() const { return num_rows_; }
+
  private:
   friend class DiskRowSet;
 

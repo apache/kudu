@@ -379,7 +379,8 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
   #undef ERROR_LOG_CONTEXT
 }
 
-Status Flush(CompactionInput *input, const MvccSnapshot &snap, DiskRowSetWriter *out) {
+Status Flush(CompactionInput *input, const MvccSnapshot &snap,
+             RollingDiskRowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
@@ -427,9 +428,18 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap, DiskRowSetWriter 
 Status ReupdateMissedDeltas(CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
-                            DeltaTracker *delta_tracker) {
+                            const RowSetVector &output_rowsets) {
   VLOG(1) << "Re-updating missed deltas between snapshot " <<
     snap_to_exclude.ToString() << " and " << snap_to_include.ToString();
+
+  // Collect the delta trackers that we'll push the updates into.
+  deque<DeltaTracker *> delta_trackers;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, output_rowsets) {
+    delta_trackers.push_back(down_cast<DiskRowSet *>(rs.get())->delta_tracker());
+  }
+
+  // The rowid where the current (front) delta tracker starts.
+  int64_t delta_tracker_base_row = 0;
 
   // TODO: on this pass, we don't actually need the row data, just the
   // updates. So, this can be made much faster.
@@ -500,7 +510,25 @@ Status ReupdateMissedDeltas(CompactionInput *input,
         DVLOG(1) << "Flushing missed delta for row " << row_idx
                   << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
 
-        delta_tracker->Update(mut->txid(), row_idx, mut->changelist());
+        DeltaTracker *cur_tracker = delta_trackers.front();
+
+        // The index on the input side isn't necessarily the index on the output side:
+        // we may have output several small DiskRowSets, so we need to find the index
+        // relative to the current one.
+        int64_t idx_in_delta_tracker = row_idx - delta_tracker_base_row;
+        while (idx_in_delta_tracker >= cur_tracker->num_rows()) {
+          // If the current index is higher than the total number of rows in the current
+          // DeltaTracker, that means we're now processing the next one in the list.
+          // Pop the current front tracker, and make the indexes relative to the next
+          // in the list.
+          delta_tracker_base_row += cur_tracker->num_rows();
+          idx_in_delta_tracker -= cur_tracker->num_rows();
+          DCHECK_GE(idx_in_delta_tracker, 0);
+          delta_trackers.pop_front();
+          cur_tracker = delta_trackers.front();
+        }
+
+        cur_tracker->Update(mut->txid(), row_idx, mut->changelist());
       }
 
       // If the first pass of the flush counted this row as deleted, then it isn't

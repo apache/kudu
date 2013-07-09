@@ -243,6 +243,10 @@ class DiskRowSet : public RowSet {
     return &compact_flush_lock_;
   }
 
+  DeltaTracker *delta_tracker() {
+    return DCHECK_NOTNULL(delta_tracker_.get());
+  }
+
   const Schema &schema() const {
     return schema_;
   }
@@ -263,7 +267,6 @@ class DiskRowSet : public RowSet {
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestCompaction, TestOneToOne);
   DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
-  friend class Tablet;
   friend class CompactionInput;
 
   // TODO: should 'schema' be stored with the rowset? quite likely

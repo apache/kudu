@@ -67,12 +67,16 @@ class TestCompaction : public KuduTest {
   }
 
   void DoFlush(CompactionInput *input, const MvccSnapshot &snap, const string &out_dir) {
-    DiskRowSetWriter rsw(env_.get(), schema_, out_dir,
-                   BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+    // Flush with a large roll threshold so we only write a single file.
+    // This simplifies the test so we always need to reopen only a single rowset.
+    const size_t kRollThreshold = 1024 * 1024 * 1024; // 1GB
+    RollingDiskRowSetWriter rsw(env_.get(), schema_, out_dir,
+                                BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
+                                kRollThreshold);
     ASSERT_STATUS_OK(rsw.Open());
     ASSERT_STATUS_OK(Flush(input, snap, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
-    ASSERT_FILE_EXISTS(env_, DiskRowSet::GetBloomPath(out_dir));
+    ASSERT_FILE_EXISTS(env_, DiskRowSet::GetBloomPath(out_dir + ".0"));
   }
 
   void FlushAndReopen(const MemRowSet &mrs, const string &out_dir, shared_ptr<DiskRowSet> *rs) {
@@ -80,7 +84,7 @@ class TestCompaction : public KuduTest {
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, snap));
     DoFlush(input.get(), snap, out_dir);
     // Re-open it
-    ASSERT_STATUS_OK(DiskRowSet::Open(env_.get(), schema_, out_dir, rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(env_.get(), schema_, out_dir + ".0", rs));
   }
 
  protected:
@@ -166,7 +170,8 @@ TEST_F(TestCompaction, TestOneToOne) {
   // Add some more updates which come into the new rowset while the "reupdate" is happening.
   UpdateRows(rs.get(), 1000, 0, 3);
 
-  ASSERT_STATUS_OK(ReupdateMissedDeltas(input.get(), snap, snap2, rs->delta_tracker_.get()));
+  ASSERT_STATUS_OK(ReupdateMissedDeltas(input.get(), snap, snap2,
+                                        boost::assign::list_of(rs)));
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;

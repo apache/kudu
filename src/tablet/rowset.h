@@ -150,9 +150,8 @@ class RowSetKeyProbe {
 // See compaction.txt for a little more detail on how this is used.
 class DuplicatingRowSet : public RowSet {
  public:
-  DuplicatingRowSet(const vector<shared_ptr<RowSet> > &old_rowsets,
-                   const shared_ptr<RowSet> &new_rowset);
-
+  DuplicatingRowSet(const RowSetVector &old_rowsets,
+                    const RowSetVector &new_rowsets);
 
   Status MutateRow(txid_t txid, const RowSetKeyProbe &probe, const RowChangeList &update);
 
@@ -192,8 +191,8 @@ class DuplicatingRowSet : public RowSet {
 
   DISALLOW_COPY_AND_ASSIGN(DuplicatingRowSet);
 
-  vector<shared_ptr<RowSet> > old_rowsets_;
-  shared_ptr<RowSet> new_rowset_;
+  RowSetVector old_rowsets_;
+  RowSetVector new_rowsets_;
 
   const Schema &schema_;
   const Schema key_schema_;

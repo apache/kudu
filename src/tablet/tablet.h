@@ -131,13 +131,13 @@ class Tablet {
   // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
   void AtomicSwapRowSets(const RowSetVector &old_rowsets,
-                        const shared_ptr<RowSet> &new_rowset,
-                        MvccSnapshot *snap_under_lock);
+                         const RowSetVector &new_rowsets,
+                         MvccSnapshot *snap_under_lock);
 
   // Same as the above, but without taking the lock. This should only be used
   // in cases where the lock is already held.
   void AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
-                                 const shared_ptr<RowSet> &new_rowset,
+                                 const RowSetVector &new_rowsets,
                                  MvccSnapshot *snap_under_lock);
 
   // Delete the underlying storage for the input layers in a compaction.

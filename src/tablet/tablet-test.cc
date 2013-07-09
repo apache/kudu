@@ -45,13 +45,6 @@ TYPED_TEST(TestTablet, TestFlush) {
 
   // Flush it.
   ASSERT_STATUS_OK(this->tablet_->Flush());
-
-  // Make sure the files were created as expected.
-  string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 1));
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 2));
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetBloomPath(rowset_dir_))
 }
 
 // Test that historical data for a row is maintained even after the row
@@ -433,7 +426,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0) + ".0";
     ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 
@@ -442,7 +435,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 1);
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 1) + ".0";
     ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 
@@ -451,7 +444,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 2);
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 2) + ".0";
     ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 
@@ -459,14 +452,14 @@ TYPED_TEST(TestTablet, TestCompaction) {
   LOG_TIMING(INFO, "Compacting rows") {
     ASSERT_STATUS_OK(this->tablet_->Compact());
     ASSERT_EQ(n_rows * 3, this->TabletCount());
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 3);
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 3) + ".0";
     ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
     ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetBloomPath(rowset_dir_))
   }
 
   // Old rowsets should not exist anymore
   for (int i = 0; i <= 2; i++) {
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, i);
+    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, i) + ".0";
     ASSERT_FILE_NOT_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
   }
 }
@@ -555,14 +548,13 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
 
   std::sort(expected_rows.begin(), expected_rows.end());
 
-  ASSERT_EQ(expected_rows.size(), out_rows.size());
-
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Expected: " << JoinStrings(expected_rows, "\n");
 
   // Verify that all the inserts and updates arrived and persisted.
   LOG(INFO) << "Results: " << JoinStrings(out_rows, "\n");
 
+  ASSERT_EQ(expected_rows.size(), out_rows.size());
   vector<string>::const_iterator exp_it = expected_rows.begin();
   for (vector<string>::const_iterator out_it = out_rows.begin(); out_it!= out_rows.end();) {
     ASSERT_EQ(*out_it, *exp_it);

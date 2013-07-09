@@ -5,6 +5,7 @@
 #include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
 #include <algorithm>
+#include <iterator>
 #include <vector>
 
 #include "cfile/cfile.h"
@@ -13,12 +14,16 @@
 #include "common/schema.h"
 #include "gutil/atomicops.h"
 #include "gutil/strings/numbers.h"
+#include "gutil/strings/split.h"
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
 #include "tablet/tablet.h"
 #include "tablet/diskrowset.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
+
+DEFINE_int32(default_target_diskrowset_size, 32*1024*1024,
+             "The target size for DiskRowSets during flush/compact");
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
@@ -76,11 +81,19 @@ Status Tablet::Open() {
 
     string suffix;
     if (TryStripPrefixString(child, kRowSetPrefix, &suffix)) {
-      // The file should be named 'rowset_<N>'. N here is the index
-      // of the rowset (indicating the order in which it was flushed).
+      // The file should be named 'rowset_<N>.<M>'. N here indicates
+      // the order in which it was flushed, and M indicates which
+      // "roll" of the flush/compaction created it.
+      vector<string> parts = strings::Split(suffix, ".");
+      if (parts.size() != 2) {
+        return Status::IOError("Bad rowset file path (wrong number of suffix parts)",
+                               absolute_path);
+      }
+
       int32_t rowset_idx;
-      if (!safe_strto32(suffix.c_str(), &rowset_idx)) {
-        return Status::IOError(string("Bad rowset file: ") + absolute_path);
+      if (!safe_strto32(parts[0].c_str(), &rowset_idx)) {
+        return Status::IOError("Bad rowset file path (non-integer index part)",
+                               absolute_path);
       }
 
       shared_ptr<DiskRowSet> rowset;
@@ -241,17 +254,17 @@ Status Tablet::MutateRow(const void *key,
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
-                               const shared_ptr<RowSet> &new_rowset,
+                               const RowSetVector &new_rowsets,
                                MvccSnapshot *snap_under_lock = NULL) {
   boost::lock_guard<percpu_rwlock> lock(component_lock_);
-  AtomicSwapRowSetsUnlocked(old_rowsets, new_rowset, snap_under_lock);
+  AtomicSwapRowSetsUnlocked(old_rowsets, new_rowsets, snap_under_lock);
 }
 
 void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
-                                       const shared_ptr<RowSet> &new_rowset,
+                                       const RowSetVector &new_rowsets,
                                        MvccSnapshot *snap_under_lock = NULL) {
 
-  RowSetVector new_rowsets;
+  RowSetVector post_swap;
 
   // O(n^2) diff algorithm to collect the set of rowsets excluding
   // the rowsets that were included in the compaction
@@ -268,18 +281,15 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
       }
     }
     if (!should_remove) {
-      new_rowsets.push_back(rs);
+      post_swap.push_back(rs);
     }
   }
 
   CHECK_EQ(num_replaced, old_rowsets.size());
 
-  if (new_rowset != NULL) {
-    // Then push the new rowset on the end.
-    new_rowsets.push_back(new_rowset);
-  }
-
-  rowsets_.Reset(new_rowsets);
+  // Then push the new rowsets on the end.
+  std::copy(new_rowsets.begin(), new_rowsets.end(), std::back_inserter(post_swap));
+  rowsets_.Reset(post_swap);
 
   if (snap_under_lock != NULL) {
     *snap_under_lock = MvccSnapshot(mvcc_);
@@ -346,7 +356,7 @@ Status Tablet::Flush() {
     CHECK(ms_lock->owns_lock());
     input.AddRowSet(old_ms, ms_lock);
 
-    AtomicSwapRowSetsUnlocked(RowSetVector(), old_ms, NULL);
+    AtomicSwapRowSetsUnlocked(RowSetVector(), boost::assign::list_of(old_ms), NULL);
   }
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemRowSet());
 
@@ -422,8 +432,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const {
 
 Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   AtomicWord my_index = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
-  string new_rowset_dir = GetRowSetPath(dir_, my_index);
-  string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
+  string new_rowset_base = GetRowSetPath(dir_, my_index);
 
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
 
@@ -435,7 +444,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
-  DiskRowSetWriter drsw(env_, schema_, tmp_rowset_dir, bloom_sizing());
+  RollingDiskRowSetWriter drsw(env_, schema_, new_rowset_base, bloom_sizing(),
+                               FLAGS_default_target_diskrowset_size);
   RETURN_NOT_OK(drsw.Open());
   RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
   RETURN_NOT_OK(drsw.Finish());
@@ -448,39 +458,46 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   if (gced_all_input) {
     LOG(INFO) << "Compaction resulted in no output rows (all input rows were GCed!)";
     LOG(INFO) << "Removing all input rowsets.";
-    AtomicSwapRowSets(input.rowsets(),
-                      shared_ptr<RowSet>(reinterpret_cast<RowSet *>(NULL)), NULL);
+    AtomicSwapRowSets(input.rowsets(), RowSetVector(), NULL);
     // Remove old rowsets
     DeleteCompactionInputs(input);
     return Status::OK();
   }
 
-  // Open the written-out snapshot as a new rowset.
-  shared_ptr<DiskRowSet> new_rowset;
-  Status s = DiskRowSet::Open(env_, schema_, tmp_rowset_dir, &new_rowset);
-  if (!s.ok()) {
-    LOG(WARNING) << "Unable to open snapshot compaction results in " << tmp_rowset_dir
-                 << ": " << s.ToString();
-    return s;
+  // The RollingDiskRowSet writer wrote out one or more RowSets as the compaction
+  // output. Open these into 'new_rowsets'.
+  vector<shared_ptr<RowSet> > new_rowsets;
+  vector<string> out_paths;
+  drsw.GetWrittenPaths(&out_paths);
+  CHECK(!out_paths.empty());
+  BOOST_FOREACH(const string &path, out_paths) {
+    shared_ptr<DiskRowSet> new_rowset;
+    Status s = DiskRowSet::Open(env_, schema_, path, &new_rowset);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to open snapshot compaction results in " << path
+                   << ": " << s.ToString();
+      return s;
+    }
+    new_rowsets.push_back(new_rowset);
   }
 
-  // Finished Phase 1. Start duplicating any new updates into the new on-disk rowset.
+  // Finished Phase 1. Start duplicating any new updates into the new on-disk rowsets.
   //
   // During Phase 1, we may have missed some updates which came into the input rowsets
   // while we were writing. So, we can't immediately start reading from the on-disk
-  // rowset alone. Starting here, we continue to read from the original rowset(s), but
+  // rowsets alone. Starting here, we continue to read from the original rowset(s), but
   // mirror updates to both the input and the output data.
   //
-  LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new rowset)";
-  shared_ptr<DuplicatingRowSet> inprogress_rowset(new DuplicatingRowSet(input.rowsets(), new_rowset));
+  LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new rowsets)";
+  shared_ptr<DuplicatingRowSet> inprogress_rowset(new DuplicatingRowSet(input.rowsets(), new_rowsets));
   MvccSnapshot snap2;
-  AtomicSwapRowSets(input.rowsets(), inprogress_rowset, &snap2);
+  AtomicSwapRowSets(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingRowSet());
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
-  // memrowset, but not in the new rowset. Here we re-scan the memrowset, copying those
-  // missed updates into the new rowset's DeltaTracker.
+  // input rowsets, but not in the output rowsets. Here we re-scan the compaction input, copying
+  // those missed updates into the new rowset's DeltaTracker.
   //
   // TODO: is there some bug here? Here's a potentially bad scenario:
   // - during flush, txid 1 updates a flushed row
@@ -504,20 +521,22 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
   RETURN_NOT_OK(merge->Init()); // TODO: why is init required here but not above?
-  RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_rowset->delta_tracker_.get()));
-
+  RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_rowsets));
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
 
   // ------------------------------
-  // Flush to tmp was successful. Rename it to its real location.
+  // Flush was successful.
 
-  RETURN_NOT_OK(new_rowset->RenameRowSetDir(new_rowset_dir));
+  // TODO: Commit the swap. We used to write to a 'tmp' location and then
+  // rename into place, but now that compaction uses a rolling writer, we have
+  // multiple outputs, and we can't do the atomic multi-file rename. This will
+  // be made atomic by Matteo's metadata branch.
 
   LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
 
-  // Replace the compacted rowsets with the new on-disk rowset.
-  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowset);
+  // Replace the compacted rowsets with the new on-disk rowsets.
+  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowsets);
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
 

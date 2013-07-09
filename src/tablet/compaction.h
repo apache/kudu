@@ -87,7 +87,7 @@ struct CompactionInputRow {
   Mutation *mutation_head;
 };
 
-// Iterate through this compaction input, flushing all rows to the given DiskRowSetWriter.
+// Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
 // The 'snap' argument should match the MvccSnapshot used to create the compaction input.
 //
 // After return of this function, this CompactionInput object is "used up" and will
@@ -95,19 +95,22 @@ struct CompactionInputRow {
 //
 // TODO: when we support actually flushing UNDO files, this will also have to take
 // a delta file writer.
-Status Flush(CompactionInput *input, const MvccSnapshot &snap, DiskRowSetWriter *out);
+Status Flush(CompactionInput *input, const MvccSnapshot &snap, RollingDiskRowSetWriter *out);
 
 // Iterate through this compaction input, finding any mutations which came between
 // snap_to_exclude and snap_to_include (ie those transactions that were not yet
 // committed in 'snap_to_exclude' but _are_ committed in 'snap_to_include'). For
-// each such mutation, propagate it into the given delta_tracker.
+// each such mutation, propagate it into the compaction's output rowsets.
+//
+// The output rowsets passed in must be non-overlapping and in ascending key order:
+// typically they are the resulting rowsets from a RollingDiskRowSetWriter.
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // yield no further rows.
 Status ReupdateMissedDeltas(CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
-                            DeltaTracker *delta_tracker);
+                            const RowSetVector &output_rowsets);
 
 
 // Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.
