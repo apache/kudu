@@ -32,6 +32,7 @@ class Tablet {
   class CompactionFaultHooks;
   class FlushCompactCommonHooks;
   class FlushFaultHooks;
+  class Iterator;
 
   Tablet(const Schema &schema,
          const string &dir);
@@ -111,6 +112,8 @@ class Tablet {
   const MvccManager &mvcc_manager() const { return mvcc_; }
 
  private:
+  friend class Iterator;
+
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
@@ -122,6 +125,7 @@ class Tablet {
   // The returned iterators are not Init()ed
   Status CaptureConsistentIterators(const Schema &projection,
                                     const MvccSnapshot &snap,
+                                    const vector<EncodedKeyRange *> &key_ranges,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked) const;
@@ -203,6 +207,42 @@ class Tablet::FlushFaultHooks {
  public:
   virtual Status PostSwapNewMemRowSet() { return Status::OK(); }
   virtual ~FlushFaultHooks() {}
+};
+
+class Tablet::Iterator : public RowwiseIterator {
+ public:
+  virtual ~Iterator();
+
+  virtual Status Init(ScanSpec *spec);
+
+  virtual Status PrepareBatch(size_t *nrows);
+
+  virtual bool HasNext() const;
+
+  virtual Status MaterializeBlock(RowBlock *dst);
+
+  virtual Status FinishBatch();
+
+  string ToString() const;
+
+  const Schema &schema() const {
+    return projection_;
+  }
+
+ private:
+  friend class Tablet;
+
+  DISALLOW_COPY_AND_ASSIGN(Iterator);
+
+  Iterator(const Tablet *tablet,
+           const Schema &projection,
+           const MvccSnapshot &snap);
+
+  const Tablet *tablet_;
+  const Schema projection_;
+  const MvccSnapshot snap_;
+  gscoped_ptr<UnionIterator> iter_;
+  vector<EncodedKeyRange *> encoded_;
 };
 
 

@@ -85,6 +85,31 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   return Status::OK();
 }
 
+void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
+                                                 const Slice &upper_bound,
+                                                 vector<RowSet *> *rowsets) const {
+  DCHECK(initted_);
+
+  // All rowsets with unknown bounds need to be checked.
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+
+  // perf TODO: make it possible to query using raw Slices
+  // instead of copying to strings here
+  RowSetWithBounds query;
+  query.min_key = lower_bound.ToString();
+  query.max_key = upper_bound.ToString();
+
+  vector<RowSetWithBounds *> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  tree_->FindIntersectingInterval(&query, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  BOOST_FOREACH(RowSetWithBounds *rs, from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
 void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
                                            vector<RowSet *> *rowsets) const {
   DCHECK(initted_);

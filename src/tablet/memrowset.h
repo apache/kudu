@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "common/scan_spec.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
 #include "tablet/concurrent_btree.h"
@@ -304,9 +305,11 @@ class MemRowSet::Iterator : public RowwiseIterator {
   virtual ~Iterator() {}
 
   virtual Status Init(ScanSpec *spec) {
+    // TODO: if a lower bound predicate exists, position the iterator
+    // at the lower bound.
     RETURN_NOT_OK(projection_.GetProjectionFrom(
                     memrowset_->schema(), &projection_mapping_));
-
+    spec_ = spec;
     return Status::OK();
   }
 
@@ -368,11 +371,28 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
       MRSRow row(memrowset_.get(), v);
       if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
-        RETURN_NOT_OK(ProjectRow(row, projection_mapping_, &dst_row, dst->arena()));
+        bool include_row = true;
+        if (spec_ != NULL && spec_->has_encoded_ranges()) {
+          // Filter any keys excluded by the tablet layer
+          //
+          // TODO: if an upper bound exists, stop scanning after the
+          // upper bound.
+          BOOST_FOREACH(const EncodedKeyRange *range, spec_->encoded_ranges()) {
+            if (!range->ContainsKey(k)) {
+              include_row = false;
+              break;
+            }
+          }
+        }
+        if (!include_row) {
+          BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
+        } else {
+          RETURN_NOT_OK(ProjectRow(row, projection_mapping_, &dst_row, dst->arena()));
 
-        // Roll-forward MVCC for committed updates.
-        RETURN_NOT_OK(ApplyMutationsToProjectedRow(
-                        row.header_->mutation_head, &dst_row, dst->arena()));
+          // Roll-forward MVCC for committed updates.
+          RETURN_NOT_OK(ApplyMutationsToProjectedRow(
+              row.header_->mutation_head, &dst_row, dst->arena()));
+        }
       } else {
         // This row was not yet committed in the current MVCC snapshot, so zero the selection
         // bit -- this causes it to not show up in any result set.
@@ -523,6 +543,10 @@ class MemRowSet::Iterator : public RowwiseIterator {
   // Temporary local buffer used for seeking to hold the encoded
   // seek target.
   faststring tmp_buf;
+
+  // If there predicates have already been encoded at tablet level,
+  // we need to store the spec in order to access the encoded predicates.
+  ScanSpec *spec_;
 };
 
 inline const Schema& MRSRow::schema() const {
