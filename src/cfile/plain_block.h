@@ -16,9 +16,9 @@ namespace cfile {
 
 struct WriterOptions;
 
-template<typename DataType>
-inline DataType Decode(const uint8_t *ptr) {
-  DataType result;
+template<typename Type>
+inline Type Decode(const uint8_t *ptr) {
+  Type result;
   memcpy(&result, ptr, sizeof(result));
   return result;
 }
@@ -66,7 +66,7 @@ class PlainBlockBuilder : public BlockBuilder {
 
   virtual Status GetFirstKey(void *key) const {
     DCHECK_GT(count_, 0);
-    *reinterpret_cast<CppType *>(key) = Decode<DataType>(&buffer_[kHeaderSize]);
+    *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[kHeaderSize]);
     return Status::OK();
   }
 

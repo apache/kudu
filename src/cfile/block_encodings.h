@@ -20,23 +20,6 @@ class ColumnDataView;
 
 namespace cfile {
 
-// Return the default encoding to use for the given data type.
-// TODO: this probably won't stay around too long - in a real Flush
-// situation, we can look at the content in the memstore and pick the
-// most effective coding.
-inline EncodingType GetDefaultEncoding(DataType type) {
-  switch (type) {
-    case STRING:
-      return PREFIX;
-    case INT32:
-      return PLAIN;
-    case UINT32:
-      return GROUP_VARINT;
-    default:
-      CHECK(0) << "unknown type: " << type;
-  }
-}
-
 
 class BlockBuilder {
  public:

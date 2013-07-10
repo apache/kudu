@@ -2,6 +2,7 @@
 
 SET(COMMON_SRCS
   generic_iterators.cc
+  key_encoder.cc
   rowblock.cc
   row_changelist.cc
   scan_predicate.cc

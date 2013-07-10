@@ -173,6 +173,30 @@ class RowBuilder {
     Advance();
   }
 
+  void AddInt8(int8_t val) {
+    CheckNextType(INT8);
+    *reinterpret_cast<int8_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
+  void AddUint8(uint8_t val) {
+    CheckNextType(UINT8);
+    *reinterpret_cast<uint8_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
+  void AddInt16(int16_t val) {
+    CheckNextType(INT16);
+    *reinterpret_cast<int16_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
+  void AddUint16(uint16_t val) {
+    CheckNextType(UINT16);
+    *reinterpret_cast<uint16_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
   void AddInt32(int32_t val) {
     CheckNextType(INT32);
     *reinterpret_cast<int32_t *>(&buf_[byte_idx_]) = val;
@@ -182,6 +206,18 @@ class RowBuilder {
   void AddUint32(uint32_t val) {
     CheckNextType(UINT32);
     *reinterpret_cast<uint32_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
+  void AddInt64(int64_t val) {
+    CheckNextType(INT64);
+    *reinterpret_cast<int64_t *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
+  void AddUint64(uint64_t val) {
+    CheckNextType(UINT64);
+    *reinterpret_cast<uint64_t *>(&buf_[byte_idx_]) = val;
     Advance();
   }
 

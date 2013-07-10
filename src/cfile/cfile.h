@@ -15,12 +15,14 @@
 #include "cfile/block_encodings.h"
 #include "cfile/block_compression.h"
 #include "cfile/cfile.pb.h"
+#include "cfile/cfile_util.h"
+#include "cfile/type_encodings.h"
+#include "common/key_encoder.h"
 #include "common/types.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "util/rle-encoding.h"
 #include "util/status.h"
-#include "common/key_encoder.h"
 
 namespace kudu {
 
@@ -44,44 +46,6 @@ extern const char kMagicString[];
 
 const int kCFileMajorVersion = 1;
 const int kCFileMinorVersion = 0;
-
-
-struct WriterOptions {
-  // Approximate size of user data packed per block.  Note that the
-  // block size specified here corresponds to uncompressed data.  The
-  // actual size of the unit read from disk may be smaller if
-  // compression is enabled.  This parameter can be changed dynamically.
-  //
-  // Default: 256K
-  size_t block_size;
-
-  // Approximate size of index blocks.
-  //
-  // Default: 32KB.
-  size_t index_block_size;
-
-  // Number of keys between restart points for delta encoding of keys.
-  // This parameter can be changed dynamically.  Most clients should
-  // leave this parameter alone.
-  //
-  // This is currently only used by StringPrefixBlockBuilder
-  //
-  // Default: 16
-  int block_restart_interval;
-
-  // Whether the file needs a positional index.
-  bool write_posidx;
-
-  // Whether the file needs a value index
-  bool write_validx;
-
-  // Block compression codec type
-  //
-  // Default: specified by --cfile_default_compression_codec
-  CompressionType compression;
-
-  WriterOptions();
-};
 
 class NullBitmapBuilder {
  public:
@@ -180,8 +144,6 @@ class Writer {
   // field, clearing the buffer.
   void FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field);
 
-  Status CreateBlockBuilder(BlockBuilder **builder) const;
-
   // File being written.
   shared_ptr<WritableFile> file_;
 
@@ -196,8 +158,10 @@ class Writer {
   // Type of data being written
   bool is_nullable_;
   DataType datatype_;
-  const TypeInfo &typeinfo_;
   EncodingType encoding_type_;
+  const TypeInfo &typeinfo_;
+  const TypeEncodingInfo &type_encoding_info_;
+  const KeyEncoder& key_encoder_;
 
   // a temporary buffer for encoding
   faststring tmp_buf_;

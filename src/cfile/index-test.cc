@@ -10,18 +10,34 @@
 
 namespace kudu { namespace cfile {
 
-
-template<DataType type>
-Status SearchInReader(const IndexBlockReader &reader,
-                      const typename DataTypeTraits<type>::cpp_type &search_key,
-                      BlockPointer *ptr, Slice *match) {
+Status SearchInReaderString(const IndexBlockReader &reader,
+                            string search_key,
+                            BlockPointer *ptr, Slice *match) {
 
   static faststring dst;
 
   gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
+  dst.clear();
+  KeyEncoderTraits<STRING>::Encode(search_key, &dst);
+  Status s = iter->SeekAtOrBefore(Slice(dst));
+  RETURN_NOT_OK(s);
 
-  const Slice slice = KeyEncoder(&dst).ResetBufferAndEncodeToSlice(type, search_key);
-  Status s = iter->SeekAtOrBefore(slice);
+  *ptr = iter->GetCurrentBlockPointer();
+  *match = iter->GetCurrentKey();
+  return Status::OK();
+}
+
+
+Status SearchInReaderUint32(const IndexBlockReader &reader,
+                            uint32_t search_key,
+                            BlockPointer *ptr, Slice *match) {
+
+  static faststring dst;
+
+  gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
+  dst.clear();
+  KeyEncoderTraits<UINT32>::Encode(search_key, &dst);
+  Status s = iter->SeekAtOrBefore(Slice(dst));
   RETURN_NOT_OK(s);
 
   *ptr = iter->GetCurrentBlockPointer();
@@ -34,7 +50,7 @@ static uint32_t SliceAsUInt32(const Slice &slice) {
   CHECK_EQ(slice.size(), 4);
   uint32_t val;
   memcpy(&val, slice.data(), slice.size());
-  val = ntohl(val);
+  val = htobe32(val);
   return val;
 }
 
@@ -42,9 +58,9 @@ static void AddToIndex(IndexBlockBuilder *idx, uint32_t val,
                        const BlockPointer &block_pointer) {
 
   static faststring dst;
-
-  const Slice slice = KeyEncoder(&dst).ResetBufferAndEncodeToSlice(UINT32, val);
-  idx->Add(slice, block_pointer);
+  dst.clear();
+  KeyEncoderTraits<UINT32>::Encode(val, &dst);
+  idx->Add(Slice(dst), block_pointer);
 }
 
 
@@ -89,11 +105,11 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
   // Search for a value prior to first entry
   BlockPointer ptr;
   Slice match;
-  Status status = SearchInReader<UINT32>(reader, 0, &ptr, &match);
+  Status status = SearchInReaderUint32(reader, 0, &ptr, &match);
   EXPECT_TRUE(status.IsNotFound());
 
   // Search for a value equal to first entry
-  status = SearchInReader<UINT32>(reader, 10, &ptr, &match);
+  status = SearchInReaderUint32(reader, 10, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -101,7 +117,7 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Search for a value between 1st and 2nd entries.
   // Should return 1st.
-  status = SearchInReader<UINT32>(reader, 15, &ptr, &match);
+  status = SearchInReaderUint32(reader, 15, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -109,7 +125,7 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Search for a value equal to 2nd
   // Should return 2nd.
-  status = SearchInReader<UINT32>(reader, 20, &ptr, &match);
+  status = SearchInReaderUint32(reader, 20, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -117,35 +133,35 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Between 2nd and 3rd.
   // Should return 2nd
-  status = SearchInReader<UINT32>(reader, 25, &ptr, &match);
+  status = SearchInReaderUint32(reader, 25, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ(20, SliceAsUInt32(match));
 
   // Equal 3rd
-  status = SearchInReader<UINT32>(reader, 30, &ptr, &match);
+  status = SearchInReaderUint32(reader, 30, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ(30, SliceAsUInt32(match));
 
   // Between 3rd and 4th
-  status = SearchInReader<UINT32>(reader, 35, &ptr, &match);
+  status = SearchInReaderUint32(reader, 35, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ(30, SliceAsUInt32(match));
 
   // Equal 4th (last)
-  status = SearchInReader<UINT32>(reader, 40, &ptr, &match);
+  status = SearchInReaderUint32(reader, 40, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ(40, SliceAsUInt32(match));
 
   // Greater than 4th (last)
-  status = SearchInReader<UINT32>(reader, 45, &ptr, &match);
+  status = SearchInReaderUint32(reader, 45, &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -187,11 +203,11 @@ TEST(TestIndexBlock, TestIndexBlockWithStrings) {
   // Search for a value prior to first entry
   BlockPointer ptr;
   Slice match;
-  Status status = SearchInReader<STRING>(reader, "hello", &ptr, &match);
+  Status status = SearchInReaderString(reader, "hello", &ptr, &match);
   EXPECT_TRUE(status.IsNotFound());
 
   // Search for a value equal to first entry
-  status = SearchInReader<STRING>(reader, "hello-10", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-10", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -199,7 +215,7 @@ TEST(TestIndexBlock, TestIndexBlockWithStrings) {
 
   // Search for a value between 1st and 2nd entries.
   // Should return 1st.
-  status = SearchInReader<STRING>(reader, "hello-15", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-15", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90010, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -207,7 +223,7 @@ TEST(TestIndexBlock, TestIndexBlockWithStrings) {
 
   // Search for a value equal to 2nd
   // Should return 2nd.
-  status = SearchInReader<STRING>(reader, "hello-20", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-20", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -215,35 +231,35 @@ TEST(TestIndexBlock, TestIndexBlockWithStrings) {
 
   // Between 2nd and 3rd.
   // Should return 2nd
-  status = SearchInReader<STRING>(reader, "hello-25", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-25", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90020, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ("hello-20", match);
 
   // Equal 3rd
-  status = SearchInReader<STRING>(reader, "hello-30", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-30", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ("hello-30", match);
 
   // Between 3rd and 4th
-  status = SearchInReader<STRING>(reader, "hello-35", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-35", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90030, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ("hello-30", match);
 
   // Equal 4th (last)
-  status = SearchInReader<STRING>(reader, "hello-40", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-40", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
   EXPECT_EQ("hello-40", match);
 
   // Greater than 4th (last)
-  status = SearchInReader<STRING>(reader, "hello-45", &ptr, &match);
+  status = SearchInReaderString(reader, "hello-45", &ptr, &match);
   ASSERT_STATUS_OK(status);
   EXPECT_EQ(90040, static_cast<int>(ptr.offset()));
   EXPECT_EQ(64 * 1024, static_cast<int>(ptr.size()));
@@ -255,12 +271,6 @@ TEST(TestIndexBlock, TestIterator) {
   // Encode an index block with 1000 entries.
   WriterOptions opts;
   IndexBlockBuilder idx(&opts, true);
-
-  // a temporary buffer for encoding
-  faststring buf;
-
-  // the key-to-lexicographically-comparable-slice encoder
-  KeyEncoder encoder(&buf);
 
   for (int i = 0; i < 1000; i++) {
     uint32_t key = i * 10;

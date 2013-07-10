@@ -11,6 +11,7 @@
 #include "common/schema.h"
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
+#include "cfile/type_encodings.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
@@ -108,7 +109,7 @@ Status DiskRowSetWriter::Open() {
                                         opts,
                                         col.type_info().type(),
                                         col.is_nullable(),
-                                        cfile::GetDefaultEncoding(col.type_info().type()),
+                                        cfile::TypeEncodingInfo::GetDefaultEncoding(col.type_info().type()),
                                         out));
 
     s = writer->Start();

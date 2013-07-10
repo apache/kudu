@@ -303,24 +303,10 @@ class Schema {
   template <class RowType>
   Slice EncodeComparableKey(const RowType& row, faststring *dst) const {
     dst->clear();
-    KeyEncoder enc(dst);
     for (size_t i = 0; i < num_key_columns_; i++) {
       const TypeInfo &ti = cols_[i].type_info();
       bool is_last = i == num_key_columns_;
-
-      switch (ti.type()) {
-        case UINT32:
-          enc.EncodeUInt32(*ExtractColumnFromRow<UINT32>(row, i), is_last);
-          break;
-        case INT32:
-          enc.EncodeInt32(*ExtractColumnFromRow<INT32>(row, i), is_last);
-          break;
-        case STRING:
-          enc.EncodeBytes(*ExtractColumnFromRow<STRING>(row, i), is_last);
-          break;
-        default:
-          CHECK(0) << "Unknown type: " << ti.name();
-      }
+      GetKeyEncoder(ti.type()).Encode(row.cell_ptr(*this, i), is_last, dst);
     }
     return Slice(*dst);
   }

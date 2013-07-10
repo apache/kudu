@@ -12,8 +12,10 @@
 #include "cfile/cfile_util.h"
 #include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
+#include "cfile/cfile_util.h"
 #include "cfile/block_compression.h"
 #include "cfile/index_btree.h"
+#include "cfile/type_encodings.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "gutil/port.h"
@@ -34,10 +36,6 @@ class CFileFooterPB;
 
 using std::string;
 using std::tr1::shared_ptr;
-
-
-struct ReaderOptions {
-};
 
 class BlockCache;
 class BlockCacheHandle;
@@ -97,6 +95,11 @@ class CFileReader {
     return type_info_;
   }
 
+  const TypeEncodingInfo *type_encoding_info() const {
+    DCHECK_EQ(state_, kInitialized);
+    return type_encoding_info_;
+  }
+
   bool is_nullable() const {
     return footer().is_type_nullable();
   }
@@ -140,11 +143,6 @@ class CFileReader {
               const shared_ptr<RandomAccessFile> &file,
               uint64_t file_size);
 
-  // Create a BlockDecoder for the data in this file.
-  // Sets *bd to the newly created decoder, if successful.
-  // Otherwise returns a non-OK Status.
-  Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice) const;
-
   Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
@@ -168,6 +166,8 @@ class CFileReader {
   gscoped_ptr<CompressedBlockDecoder> block_uncompressor_;
 
   const TypeInfo *type_info_;
+  const TypeEncodingInfo *type_encoding_info_;
+  const KeyEncoder *key_encoder_;
 
   BlockCache *cache_;
   BlockCache::FileId cache_id_;

@@ -12,6 +12,7 @@ SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 
   block_cache.cc
   bloomfile.cc
+  type_encodings.cc
 
   compression_codec.cc
   block_compression.cc

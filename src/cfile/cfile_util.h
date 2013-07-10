@@ -2,6 +2,10 @@
 #ifndef CFILE_UTIL_H_
 #define CFILE_UTIL_H_
 
+#include <algorithm>
+
+#include "cfile/cfile.pb.h"
+
 #include "common/schema.h"
 #include "common/row.h"
 
@@ -12,8 +16,47 @@
 namespace kudu {
 namespace cfile {
 
-// TODO move WriterOptions and ReaderOptions here when adding new types
-// as that will also require those to be top level dependency wise
+
+struct WriterOptions {
+  // Approximate size of user data packed per block.  Note that the
+  // block size specified here corresponds to uncompressed data.  The
+  // actual size of the unit read from disk may be smaller if
+  // compression is enabled.  This parameter can be changed dynamically.
+  //
+  // Default: 256K
+  size_t block_size;
+
+  // Approximate size of index blocks.
+  //
+  // Default: 32KB.
+  size_t index_block_size;
+
+  // Number of keys between restart points for delta encoding of keys.
+  // This parameter can be changed dynamically.  Most clients should
+  // leave this parameter alone.
+  //
+  // This is currently only used by StringPrefixBlockBuilder
+  //
+  // Default: 16
+  int block_restart_interval;
+
+  // Whether the file needs a positional index.
+  bool write_posidx;
+
+  // Whether the file needs a value index
+  bool write_validx;
+
+  // Block compression codec type
+  //
+  // Default: specified by --cfile_default_compression_codec
+  CompressionType compression;
+
+  WriterOptions();
+};
+
+struct ReaderOptions {
+};
+
 
 // An analogous, simpler version of tablet::RowSetKeyProbe for CFiles
 // that does not know how to encode a key and instead receives it

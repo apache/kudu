@@ -1,9 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <glog/logging.h>
-
 #include <algorithm>
 
+#include "cfile/cfile_util.h"
 #include "cfile/cfile.h"
 #include "cfile/string_plain_block.h"
 #include "common/columnblock.h"

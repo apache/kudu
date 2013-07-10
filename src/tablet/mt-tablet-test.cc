@@ -25,7 +25,7 @@ DEFINE_int64(inserts_per_thread, 1000,
              "Number of rows inserted by each inserter thread");
 DEFINE_int32(flush_threshold_mb, 0, "Minimum memrowset size to flush");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
-DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of mrs to wait between flushes");
+DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
 namespace kudu {
 namespace tablet {
@@ -68,8 +68,16 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     // TODO: add a test where some of the inserts actually conflict
     // on the same row.
-    this->InsertTestRows(tid * FLAGS_inserts_per_thread,
-                         FLAGS_inserts_per_thread, 0,
+
+    uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
+        / FLAGS_num_insert_threads ;
+
+    if (max_rows < FLAGS_inserts_per_thread) {
+      LOG(WARNING) << "Clamping the inserts per thread to " << max_rows << " to prevent overflow";
+    }
+
+    this->InsertTestRows(tid * max_rows,
+                         max_rows, 0,
                          inserts.get());
   }
 
@@ -146,7 +154,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     Arena arena(32*1024, 256*1024);
     RowBlock block(schema_, 1, &arena);
 
-    int max_iters = FLAGS_num_insert_threads * FLAGS_inserts_per_thread / 10;
+    uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
+            / FLAGS_num_insert_threads ;
+
+    int max_iters = FLAGS_num_insert_threads * max_rows / 10;
 
     while (running_insert_count_.count() > 0) {
       gscoped_ptr<RowwiseIterator> iter;
@@ -345,7 +356,11 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
     uint64_t sum = this->CountSum(shared_ptr<TimeSeries>());
     LOG(INFO) << "Sum = " << sum;
   }
-  this->VerifyTestRows(0, FLAGS_inserts_per_thread * FLAGS_num_insert_threads);
+
+  uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
+          / FLAGS_num_insert_threads ;
+
+  this->VerifyTestRows(0, max_rows * FLAGS_num_insert_threads);
 }
 
 // Start up a bunch of threads which repeatedly insert and delete the same

@@ -147,7 +147,7 @@ TEST(TestSchema, TestRowOperations) {
 
 TEST(TestKeyEncoder, TestKeyEncoder) {
   faststring fs;
-  KeyEncoder enc(&fs);
+  const KeyEncoder& encoder = GetKeyEncoder(STRING);
 
   typedef boost::tuple<vector<Slice>, Slice> test_pair;
   using boost::assign::list_of;
@@ -172,7 +172,7 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
 
     fs.clear();
     for (int col = 0; col < in.size(); col++) {
-      enc.EncodeBytes(in[col], col == in.size() - 1);
+      encoder.Encode(&in[col], col == in.size() - 1, &fs);
     }
 
     ASSERT_EQ(0, expected.compare(Slice(fs)))
@@ -185,7 +185,6 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
 #ifdef NDEBUG
 TEST(TestKeyEncoder, BenchmarkSimpleKey) {
   faststring fs;
-  KeyEncoder enc(&fs);
   Schema schema(boost::assign::list_of
                 (ColumnSchema("col1", STRING)), 1);
 

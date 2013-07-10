@@ -24,6 +24,7 @@
 #include "util/test_util.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-test-util.h"
+#include "gutil/strings/numbers.h"
 
 
 namespace kudu {
@@ -107,6 +108,16 @@ struct StringKeyTestSetup {
     return (row_idx % 15) == 0;
   }
 
+  uint64_t GetSizeOfKey() const {
+    return sizeof(DataTypeTraits<STRING>::cpp_type);
+  }
+
+  // Slices can be arbitrarily large
+  // but in practice tests won't overflow a uint64_t
+  uint64_t GetMaxRows() const {
+    return std::numeric_limits<uint64_t>::max() - 1;
+  }
+
   Schema test_schema_;
 };
 
@@ -186,33 +197,47 @@ struct CompositeKeyTestSetup {
     return (row_idx % 15) == 0;
   }
 
+  uint64_t GetSizeOfKey() const {
+    return sizeof(DataTypeTraits<STRING>::cpp_type)
+        + sizeof(DataTypeTraits<UINT32>::cpp_type);
+  }
+
+  // Slices can be arbitrarily large
+  // but in practice tests won't overflow a uint64_t
+  uint64_t GetMaxRows() const {
+    return std::numeric_limits<uint64_t>::max() - 1;
+  }
+
   Schema test_schema_;
 };
 
 // Setup for testing integer keys
+template<DataType Type>
 struct IntKeyTestSetup {
+
  public:
   IntKeyTestSetup() :
     test_schema_(boost::assign::list_of
-              (ColumnSchema("key", INT32))
+              (ColumnSchema("key", Type))
               (ColumnSchema("val", UINT32))
-              (ColumnSchema("update_count", UINT32)), 1) {
+              (ColumnSchema("update_count", UINT32)), 1),
+    type_info_(GetTypeInfo(Type)){
   }
 
   void BuildRowKey(RowBuilder *rb, int64_t i) {
-    rb->AddInt32((int32_t) i * (i % 2 == 0 ? -1 : 1));
+    CHECK(false) << "Unsupported type";
   }
 
   // builds a row key from an existing row for updates
   template<class RowType>
   void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-    rb->AddInt32(*reinterpret_cast<const int32_t*>(row.cell_ptr(test_schema_, 0)));
+    CHECK(false) << "Unsupported type";
   }
 
   void BuildRow(RowBuilder *rb, int64_t row_idx,
                 uint32_t update_count_val = 0) {
     BuildRowKey(rb, row_idx);
-    rb->AddUint32((int32_t) row_idx);
+    rb->AddUint32((uint32_t) row_idx);
     rb->AddUint32(update_count_val);
   }
 
@@ -221,16 +246,17 @@ struct IntKeyTestSetup {
   }
 
   string FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-    return StringPrintf("(int32 key=%d, uint32 val=%ld, uint32 update_count=%d)",
-        (int32_t) row_idx * (row_idx % 2 == 0 ? -1 : 1), row_idx, update_count);
+    CHECK(false) << "Unsupported type";
+    return "";
   }
 
   Status DoUpdate(Tablet *tablet, int64_t row_idx, uint32_t *new_val) {
-    int32_t row_key = row_idx * (row_idx % 2 == 0 ? -1 : 1);
+    RowBuilder rb(test_schema_.CreateKeyProjection());
+    BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = (10000 + row_idx) * (row_idx % 2 == 0 ? -1 : 1);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(&row_key, RowChangeList(buf));
+    return tablet->MutateRow(rb.data().data(), RowChangeList(buf));
   }
 
   template<class RowType>
@@ -247,8 +273,185 @@ struct IntKeyTestSetup {
     return (row_idx % 15) == 0;
   }
 
+  uint64_t GetSizeOfKey() const {
+    return sizeof(typename DataTypeTraits<Type>::cpp_type);
+  }
+
+  uint64_t GetMaxRows() const {
+    return std::numeric_limits<typename DataTypeTraits<Type>::cpp_type>::max() - 1;
+  }
+
   Schema test_schema_;
+  const TypeInfo &type_info_;
 };
+
+template<>
+void IntKeyTestSetup<UINT8>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddUint8((uint8_t) i);
+}
+
+template<>
+void IntKeyTestSetup<INT8>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddInt8((int8_t) i * (i % 2 == 0 ? -1 : 1));
+}
+
+template<>
+void IntKeyTestSetup<UINT16>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddUint16((uint16_t) i);
+}
+
+template<>
+void IntKeyTestSetup<INT16>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddInt16((int16_t) i * (i % 2 == 0 ? -1 : 1));
+}
+
+template<>
+void IntKeyTestSetup<UINT32>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddUint32((uint32_t) i);
+}
+
+template<>
+void IntKeyTestSetup<INT32>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddInt32((int32_t) i * (i % 2 == 0 ? -1 : 1));
+}
+
+template<>
+void IntKeyTestSetup<UINT64>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddUint64((uint64_t) i);
+}
+
+template<>
+void IntKeyTestSetup<INT64>::BuildRowKey(RowBuilder *rb, int64_t i) {
+  rb->AddInt64((int64_t) i * (i % 2 == 0 ? -1 : 1));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<UINT8>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddUint8(*reinterpret_cast<const uint8_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<INT8>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddInt8(*reinterpret_cast<const int8_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<UINT16>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddUint16(*reinterpret_cast<const uint16_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<INT16>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddInt16(*reinterpret_cast<const int16_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<UINT32>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<INT32>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddInt32(*reinterpret_cast<const int32_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<UINT64>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddUint64(*reinterpret_cast<const uint64_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<> template<class RowType>
+void IntKeyTestSetup<INT64>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
+  rb->AddInt64(*reinterpret_cast<const int64_t*>(row.cell_ptr(test_schema_, 0)));
+}
+
+template<>
+string IntKeyTestSetup<UINT8>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(uint8 key=%d, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const uint8_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(int8 key=%d, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const int8_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<UINT16>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(uint16 key=%d, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const uint16_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(int16 key=%d, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const int16_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<UINT32>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(uint32 key=%d, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const uint32_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(int32 key=%d, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const int32_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<UINT64>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(uint64 key=%ld, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const uint64_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
+
+template<>
+string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
+  RowBuilder rb(test_schema_.CreateKeyProjection());
+  BuildRowKey(&rb, row_idx);
+  return StringPrintf(
+      "(int64 key=%ld, uint32 val=%d, uint32 update_count=%d)",
+       *reinterpret_cast<const int64_t *>(rb.data().data()),
+       (uint32_t)row_idx,
+       update_count);
+}
 
 // Setup for testing nullable columns
 struct NullableValueTestSetup {
@@ -344,13 +547,31 @@ struct NullableValueTestSetup {
     return 10000 + row_idx;
   }
 
+  uint64_t GetSizeOfKey() const {
+    return sizeof(DataTypeTraits<UINT32>::cpp_type);
+  }
+
+  uint64_t GetMaxRows() const {
+    return std::numeric_limits<uint32_t>::max() - 1;
+  }
+
   Schema test_schema_;
 };
 
 
 // Use this with TYPED_TEST_CASE from gtest
-typedef ::testing::Types<StringKeyTestSetup, IntKeyTestSetup,
-                         NullableValueTestSetup, CompositeKeyTestSetup> TabletTestHelperTypes;
+typedef ::testing::Types<
+                         StringKeyTestSetup,
+                         IntKeyTestSetup<UINT8>,
+                         IntKeyTestSetup<INT8>,
+                         IntKeyTestSetup<UINT16>,
+                         IntKeyTestSetup<INT16>,
+                         IntKeyTestSetup<UINT32>,
+                         IntKeyTestSetup<INT32>,
+                         IntKeyTestSetup<UINT64>,
+                         IntKeyTestSetup<INT64>,
+                         NullableValueTestSetup
+                         > TabletTestHelperTypes;
 
 template<class TESTSETUP>
 class TabletTestBase : public KuduTest {
@@ -358,6 +579,7 @@ class TabletTestBase : public KuduTest {
   TabletTestBase() :
     setup_(),
     schema_(setup_.test_schema()),
+    max_rows_(setup_.GetMaxRows()),
     arena_(1024, 4*1024*1024)
   {}
 
@@ -488,9 +710,21 @@ class TabletTestBase : public KuduTest {
     return schema_;
   }
 
+  // because some types are small we need to
+  // make sure that we don't overflow the type on inserts
+  // or else we get errors because the key already exists
+  uint64_t ClampRowCount(uint64_t proposal) const {
+    uint64_t num_rows = min(max_rows_, proposal);
+    if (num_rows < proposal) {
+      LOG(WARNING) << "Clamping max rows to " << num_rows << " to prevent overflow";
+    }
+    return num_rows;
+  }
+
   TESTSETUP setup_;
 
   const Schema schema_;
+  const uint64_t max_rows_;
   gscoped_ptr<Tablet> tablet_;
   string tablet_dir_;
 

@@ -3,7 +3,13 @@
 package kudu;
 
 enum DataType {
-  UINT32 = 0;
-  INT32 = 1;
-  STRING = 3;
+  UINT8 = 0;
+  INT8 = 1;
+  UINT16 = 2;
+  INT16 = 3;
+  UINT32 = 4;
+  INT32 = 5;
+  UINT64 = 6;
+  INT64 = 7;
+  STRING = 8;
 }

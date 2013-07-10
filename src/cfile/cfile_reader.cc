@@ -14,9 +14,6 @@
 #include "cfile/gvint_block.h"
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
-#include "cfile/string_plain_block.h"
-#include "cfile/string_prefix_block.h"
-#include "cfile/plain_block.h"
 #include "gutil/gscoped_ptr.h"
 #include "util/coding.h"
 #include "util/env.h"
@@ -99,6 +96,9 @@ Status CFileReader::Init() {
   RETURN_NOT_OK(ReadAndParseFooter());
 
   type_info_ = &GetTypeInfo(footer_->data_type());
+  type_encoding_info_ = &TypeEncodingInfo::Get(footer_->data_type(),
+                                               footer_->encoding());
+  key_encoder_ = &GetKeyEncoder(footer_->data_type());
   VLOG(1) << "Initialized CFile reader. "
           << "Header: " << header_->DebugString()
           << " Footer: " << footer_->DebugString()
@@ -255,54 +255,6 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) {
   return false;
 }
 
-
-// TODO: perhaps decoders should be able to be Reset
-// to point to a different slice? any benefit to that?
-Status CFileReader::CreateBlockDecoder(
-  BlockDecoder **bd, const Slice &slice) const {
-  *bd = NULL;
-  switch (footer_->data_type()) {
-    case UINT32:
-      switch (footer_->encoding()) {
-        case PLAIN:
-          *bd = new PlainBlockDecoder<UINT32>(slice);
-          break;
-        case GROUP_VARINT:
-          *bd = new GVIntBlockDecoder(slice);
-          break;
-        default:
-          return Status::NotFound("bad uint encoding");
-      }
-      break;
-    case INT32:
-      switch (footer_->encoding()) {
-        case PLAIN:
-          *bd = new PlainBlockDecoder<INT32>(slice);
-          break;
-        default:
-          return Status::NotFound("bad int encoding");
-      }
-      break;
-    case STRING:
-      switch (footer_->encoding()) {
-        case PREFIX:
-          *bd = new StringPrefixBlockDecoder(slice);
-          break;
-        case PLAIN:
-          *bd = new StringPlainBlockDecoder(slice);
-          break;
-        default:
-          return Status::NotFound("bad string encoding");
-      }
-      break;
-    default:
-      return Status::NotFound("bad datatype");
-  }
-
-  CHECK(*bd != NULL); // sanity check postcondition
-  return Status::OK();
-}
-
 Status CFileReader::NewIterator(CFileIterator **iter) const {
   gscoped_ptr<BlockPointer> posidx_root;
   if (footer_->has_posidx_info()) {
@@ -357,9 +309,9 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
     return Status::NotSupported("no positional index in file");
   }
 
-  KeyEncoder encoder(&tmp_buf_);
-  Slice slice = encoder.ResetBufferAndEncodeToSlice(UINT32, ord_idx);
-  RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(slice));
+  tmp_buf_.clear();
+  KeyEncoderTraits<UINT32>::Encode(ord_idx, &tmp_buf_);
+  RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(Slice(tmp_buf_)));
 
   // TODO: fast seek within block (without reseeking index)
   pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
@@ -498,7 +450,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   }
 
   BlockDecoder *bd;
-  RETURN_NOT_OK(reader_->CreateBlockDecoder(&bd, data_block));
+  RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(&bd, data_block));
   prep_block->dblk_.reset(bd);
   RETURN_NOT_OK(prep_block->dblk_->ParseHeader());
 
