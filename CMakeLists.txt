@@ -9,7 +9,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 # compiler flags that are common across debug/release builds
 #  - msse4.2: Enable sse4.2 compiler intrinsics.
 #  - Wall: Enable all warnings.
-#  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned 
+#  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned
 #    integers
 #  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
 #  - pthread: enable multithreaded malloc
@@ -204,9 +204,9 @@ SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${KUDU_MIN_TEST_LIBS})
 # "make etags" target
 ############################################################
 IF (UNIX)
-  ADD_CUSTOM_TARGET(tags etags --members --declarations 
-  `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name 
-*.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or 
+  ADD_CUSTOM_TARGET(tags etags --members --declarations
+  `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name
+*.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or
 -name *.f`)
   ADD_CUSTOM_TARGET(etags DEPENDS tags)
 ENDIF (UNIX)
@@ -217,7 +217,7 @@ ENDIF (UNIX)
 IF (UNIX)
   ADD_CUSTOM_TARGET(lint cpplint.py --verbose=4
     --filter=-whitespace/comments,-whitespace/line_length,-readability/todo,-build/header_guard
-    `find ${CMAKE_CURRENT_SOURCE_DIR}/src 
+    `find ${CMAKE_CURRENT_SOURCE_DIR}/src
     -name *.cc -or -name *.h | grep -v .pb. | grep -v gutil`)
 ENDIF (UNIX)
 
@@ -241,7 +241,10 @@ set(LIBS ${LIBS} ${CFILE_LIBS})
 add_subdirectory(src/tablet)
 set(LIBS ${LIBS} ${TABLET_LIBS})
 
-add_subdirectory(src/rpc) 
+add_subdirectory(src/server)
+set(LIBS ${LIBS} ${SERVER_LIBS})
+
+add_subdirectory(src/rpc)
 set(LIBS ${LIBS} ${RPC_LIBS})
 
 add_subdirectory(src/experiments)
