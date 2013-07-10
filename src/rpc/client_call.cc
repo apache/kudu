@@ -34,7 +34,6 @@ Status OutboundCall::SerializeTo(vector<Slice> *slices) {
   RequestHeader header;
   header.set_callid(call_id());
   header.set_methodname(method());
-  header.set_requestparam(true);
   DCHECK(header.IsInitialized());
 
   // Compute all the lengths for the packet.

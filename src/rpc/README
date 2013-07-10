@@ -155,4 +155,40 @@ Wire Protocol
 Current wire protocol (this will change slightly in the future when we add
 Hadoop compatibility)
 
-TODO: rewrite this section.
+Currently, when the client connects to the server, there is no setup/negotation.
+This is a TODO that we will be addressing in coming weeks. After successfully
+connecting, the client may immediately begin sending calls.
+
+Each call that the clients make is serialized as following:
+
+  total_size: (32-bit big-endian integer)
+    the size of the rest of the message, not including this 4-byte header
+
+  header: varint-prefixed RequestHeader protobuf
+    see rpc_header.proto for fields
+
+  request: varint-prefixed user request protobuf
+    this is the user-defined call parameter
+
+An example call (captured with strace on rpc-test.cc) follows:
+
+   "\x00\x00\x00\x17"   (total_size: 23 bytes to follow)
+   "\x09"  RequestHeader varint: 9 bytes
+    "\x08\x0a\x1a\x03\x41\x64\x64\x20\x01" (RequestHeader protobuf)
+      Decoded with protoc --decode=RequestHeader rpc_header.proto:
+      callId: 10
+      methodName: "Add"
+      requestParam: true
+
+   "\x0c"  Request parameter varint: 12 bytes
+    "\x08\xd4\x90\x80\x91\x01\x10\xf8\xcf\xc4\xed\x04" Request parameter
+      Decoded with protoc --decode=kudu.rpc_test.AddRequestPB rpc/rtest.proto 
+      x: 304089172
+      y: 1303455736
+
+The response is serialized similarly, with only some small differences:
+
+  - The header is a ResponseHeader protobuf instead of RequestHeader.
+  - If ResponseHeader.is_error is true, then the response protobuf will
+    be an ErrorStatusPB message, instead of the response protobuf type
+    defined by the service.
