@@ -20,6 +20,9 @@ Status OpenFileForWrite(Env *env, const string &path,
 Status OpenFileForRandom(Env *env, const string &path,
                          shared_ptr<RandomAccessFile> *file);
 
+Status OpenFileForSequential(Env *env, const string &path,
+                             shared_ptr<SequentialFile> *file);
+
 
 }
 }
