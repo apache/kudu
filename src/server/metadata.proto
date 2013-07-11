@@ -1,0 +1,111 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+package kudu.metadata;
+
+import "common/common.proto";
+import "cfile/cfile.proto";
+
+// ============================================================================
+//  Table Metadata
+// ============================================================================
+
+message ColumnSchemaPB {
+  required uint64 id = 1;
+  required string name = 2;
+  required DataType type = 3;
+  optional bool is_key = 4 [default = false];
+  optional bool is_nullable = 5 [default = false];
+}
+
+message ColumnAttributesPB {
+  required uint64 id = 1;
+  optional uint32 block_size = 2;
+  optional cfile.EncodingType encoding_type = 3;
+  optional cfile.CompressionType compression_type = 4;
+}
+
+message TableSchemaPB {
+  repeated ColumnSchemaPB columns = 1;
+  repeated ColumnAttributesPB attributes = 2;
+}
+
+message MetadataPairPB {
+  required string key = 1;
+  required bytes value = 2;
+}
+
+enum TableType {
+  BOOTSTRAP_TABLE = 1;
+  SYSTEM_TABLE = 2;
+  USER_TABLE = 3;
+}
+
+message TableDescriptorPB {
+  optional string oid = 1;
+  optional TableType type = 2 [default = USER_TABLE];
+  required TableSchemaPB schema = 3;
+  repeated MetadataPairPB user_attrs = 4;
+}
+
+// ============================================================================
+//  Tablet Locations
+// ============================================================================
+
+message TabletServerPB {
+  required string hostname = 1;
+  optional uint32 port = 2;
+}
+
+message TabletLocationsPB {
+  required bytes start_key = 1;
+  required bytes end_key = 2;
+  repeated TabletServerPB servers = 3;
+}
+
+// ============================================================================
+//  Tablet Metadata
+// ============================================================================
+
+message BlockIdPB {
+  required string id = 1;
+}
+
+message ColumnDataPB {
+  required uint64 id = 1;
+  required BlockIdPB block = 2;
+}
+
+message DeltaDataPB {
+  required uint64 id = 1;
+  required BlockIdPB block = 2;
+}
+
+message RowSetDataPB {
+  required uint64 id = 1;
+  repeated ColumnDataPB columns = 2;
+  repeated DeltaDataPB deltas = 3;
+  optional BlockIdPB bloom_block = 4;
+  optional BlockIdPB adhoc_index_block = 5;
+}
+
+// The super-block keeps track of the tablet data blocks.
+// A tablet contains one or more RowSets, which contain
+// a set of blocks (one for each column), a set of delta blocks
+// and optionally a block containing the bloom filter
+// and a block containing the compound-keys.
+message TabletSuperBlockPB {
+  required uint64 id = 1;               // SuperBlock Id
+  required string oid = 2;              // Tablet Id
+  required bytes start_key = 3;         // Tablet start-key
+  required bytes end_key = 4;           // Tablet end-key
+  repeated RowSetDataPB rowsets = 5;    // Tablet RowSets
+}
+
+// The master-block contains the two block-ids required to load the
+// tablet super-block. The master-block is immutable and written to the
+// "bootstrap table", on tablet creation, and it is used by the master
+// to load all the tablets in the system at startup.
+message TabletMasterBlockPB {
+  required bytes block_a = 1;
+  required bytes block_b = 2;
+}

@@ -301,6 +301,10 @@ class PosixMmapFile : public WritableFile {
 
     return s;
   }
+
+  virtual uint64_t Size() const {
+    return file_offset_ + (dst_ - base_);
+  }
 };
 
 static int LockOrUnlock(int fd, bool lock) {

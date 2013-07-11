@@ -7,12 +7,76 @@
 
 #include "common/iterator.h"
 #include "gutil/strings/join.h"
+#include "tablet/tablet.h"
+#include "util/test_util.h"
 
 namespace kudu {
 namespace tablet {
 
 using std::string;
 using std::vector;
+
+class KuduTabletTest : public KuduTest {
+ public:
+  KuduTabletTest(const Schema& schema)
+    : schema_(schema)
+  {}
+
+  virtual void SetUp() {
+    KuduTest::SetUp();
+
+    SetUpTestTablet();
+    ASSERT_STATUS_OK(tablet_->CreateNew());
+  }
+
+  void SetUpTestTablet(const string& root_dir = "") {
+    metadata::TabletMasterBlockPB master_block;
+    master_block.set_block_a("00000000000000000000000000000000");
+    master_block.set_block_b("11111111111111111111111111111111");
+
+    fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
+    gscoped_ptr<metadata::TabletMetadata> metadata_(
+      new metadata::TabletMetadata(fs_manager_.get(), "KuduTabletTestId", master_block));
+    tablet_.reset(new Tablet(metadata_.Pass(), schema_));
+  }
+
+  void TabletReOpen(const string& root_dir = "") {
+    SetUpTestTablet(root_dir);
+    ASSERT_STATUS_OK(tablet_->Open());
+  }
+
+  const Schema &schema() const {
+    return schema_;
+  }
+
+ protected:
+  const Schema schema_;
+  gscoped_ptr<Tablet> tablet_;
+  gscoped_ptr<FsManager> fs_manager_;
+};
+
+class KuduRowSetTest : public KuduTabletTest {
+ public:
+  KuduRowSetTest(const Schema& schema)
+    : KuduTabletTest(schema)
+  {}
+
+  virtual void SetUp() {
+    KuduTabletTest::SetUp();
+    ASSERT_STATUS_OK(NewRowSet(&rowset_meta_));
+  }
+
+  Status NewRowSet(shared_ptr<metadata::RowSetMetadata> *rowset_meta) {
+    return const_cast<metadata::TabletMetadata *>(tablet_->metadata())->CreateRowSet(rowset_meta);
+  }
+
+  Status FlushMetadata() {
+    return const_cast<metadata::TabletMetadata *>(tablet_->metadata())->Flush();
+  }
+
+ protected:
+  shared_ptr<metadata::RowSetMetadata> rowset_meta_;
+};
 
 static inline Status IterateToStringList(RowwiseIterator *iter,
                                          vector<string> *out,

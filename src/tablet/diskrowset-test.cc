@@ -235,7 +235,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Write a single row into a new DiskRowSet.
   LOG_TIMING(INFO, "Writing rowset") {
-    DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
+    DiskRowSetWriter drsw(rowset_meta_.get(), schema_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_STATUS_OK(drsw.Open());

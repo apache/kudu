@@ -81,6 +81,12 @@ class DeltaFileReader : public DeltaStore {
                      const Schema &schema,
                      gscoped_ptr<DeltaFileReader> *reader);
 
+  static Status Open(const string& path,
+                     const shared_ptr<RandomAccessFile>& file,
+                     uint64_t file_size,
+                     const Schema& schema,
+                     gscoped_ptr<DeltaFileReader> *reader);
+
   // See DeltaStore::NewDeltaIterator(...)
   virtual DeltaIterator *NewDeltaIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const;
@@ -92,7 +98,7 @@ class DeltaFileReader : public DeltaStore {
     return schema_;
   }
 
-  const string path() const { return path_; }
+  const string& path() const { return path_; }
 
  private:
   friend class DeltaFileIterator;

@@ -11,6 +11,7 @@
 #include "common/rowid.h"
 #include "common/schema.h"
 #include "gutil/macros.h"
+#include "server/metadata.h"
 #include "tablet/mvcc.h"
 #include "util/bloom_filter.h"
 #include "util/faststring.h"
@@ -20,6 +21,10 @@
 namespace kudu {
 
 class RowChangeList;
+
+namespace metadata {
+class RowSetMetadata;
+}
 
 namespace tablet {
 
@@ -76,9 +81,6 @@ class RowSet {
   // This is very verbose so only useful within unit tests.
   virtual Status DebugDump(vector<string> *lines = NULL) = 0;
 
-  // Delete the underlying storage for this rowset.
-  virtual Status Delete() = 0;
-
   // Estimate the number of bytes on-disk
   virtual uint64_t EstimateOnDiskSize() const = 0;
 
@@ -89,6 +91,9 @@ class RowSet {
 
   // Return the schema for data in this rowset.
   virtual const Schema &schema() const = 0;
+
+  // Returns the metadata associated with this rowset.
+  virtual shared_ptr<metadata::RowSetMetadata> metadata() = 0;
 
   virtual ~RowSet() {}
 };
@@ -169,7 +174,7 @@ class DuplicatingRowSet : public RowSet {
 
   virtual Status DebugDump(vector<string> *lines = NULL);
 
-  Status Delete();
+  shared_ptr<metadata::RowSetMetadata> metadata();
 
   // A flush-in-progress rowset should never be selected for compaction.
   boost::mutex *compact_flush_lock() {

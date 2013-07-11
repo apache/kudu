@@ -20,30 +20,30 @@ namespace kudu { namespace tablet {
 
 using cfile::ReaderOptions;
 using cfile::CFileKeyProbe;
+using metadata::RowSetMetadata;
 using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////
 // Utilities
 ////////////////////////////////////////////////////////////
 
-static Status OpenReader(Env *env, string dir, size_t col_idx,
+static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata, size_t col_idx,
                          gscoped_ptr<CFileReader> *new_reader) {
-  string path = DiskRowSet::GetColumnPath(dir, col_idx);
+  uint64_t data_size = 0;
+  shared_ptr<RandomAccessFile> data_reader;
+  RETURN_NOT_OK(rowset_metadata->OpenColumnDataBlock(col_idx, &data_reader, &data_size));
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-  return CFileReader::Open(env, path, opts, new_reader);
+  return CFileReader::Open(data_reader, data_size, opts, new_reader);
 }
 
 ////////////////////////////////////////////////////////////
 // CFile Base
 ////////////////////////////////////////////////////////////
 
-CFileSet::CFileSet(Env *env,
-                   const string &dir,
-                   const Schema &schema) :
-  env_(env),
-  dir_(dir),
+CFileSet::CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata, const Schema &schema) :
+  rowset_metadata_(rowset_metadata),
   schema_(schema)
 {}
 
@@ -66,10 +66,11 @@ Status CFileSet::Open() {
     }
 
     gscoped_ptr<CFileReader> reader;
-    RETURN_NOT_OK(OpenReader(env_, dir_, i, &reader));
+    RETURN_NOT_OK(OpenReader(rowset_metadata_, i, &reader));
     readers_[i].reset(reader.release());
-    LOG(INFO) << "Successfully opened cfile for column " <<
-      schema_.column(i).ToString() << " in " << dir_;
+    LOG(INFO) << "Successfully opened cfile for column "
+              << schema_.column(i).ToString()
+              << " in " << rowset_metadata_->ToString();
   }
 
   // Determine the upper and lower key bounds for this CFileSet.
@@ -83,8 +84,12 @@ Status CFileSet::OpenAdHocIndexReader() {
     return Status::OK();
   }
 
+  uint64_t data_size = 0;
+  shared_ptr<RandomAccessFile> data_reader;
+  RETURN_NOT_OK(rowset_metadata_->OpenAdHocIndexDataBlock(&data_reader, &data_size));
+
   ReaderOptions opts;
-  return CFileReader::Open(env_, DiskRowSet::GetAdHocIndexPath(dir_), opts, &ad_hoc_idx_reader_);
+  return CFileReader::Open(data_reader, data_size, opts, &ad_hoc_idx_reader_);
 }
 
 
@@ -93,9 +98,13 @@ Status CFileSet::OpenBloomReader() {
     return Status::OK();
   }
 
-  Status s = BloomFileReader::Open(env_, DiskRowSet::GetBloomPath(dir_), &bloom_reader_);
+  uint64_t data_size = 0;
+  shared_ptr<RandomAccessFile> data_reader;
+  RETURN_NOT_OK(rowset_metadata_->OpenBloomDataBlock(&data_reader, &data_size));
+
+  Status s = BloomFileReader::Open(data_reader, data_size, &bloom_reader_);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to open bloom file in " << dir_ << ": "
+    LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();
     // Continue without bloom.
   }

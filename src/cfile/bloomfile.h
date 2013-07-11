@@ -53,6 +53,10 @@ class BloomFileReader {
   static Status Open(Env *env, const string &path,
                      gscoped_ptr<BloomFileReader> *reader);
 
+  static Status Open(const shared_ptr<RandomAccessFile> &file,
+                     uint64_t file_size,
+                     gscoped_ptr<BloomFileReader> *reader);
+
   // Check if the given key may be present in the file.
   //
   // Sets *maybe_present to false if the key is definitely not

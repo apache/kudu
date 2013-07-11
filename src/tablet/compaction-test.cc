@@ -8,13 +8,15 @@
 
 #include "gutil/strings/util.h"
 #include "tablet/compaction.h"
+#include "tablet/tablet-test-util.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
 DEFINE_string(merge_benchmark_input_dir, "",
               "Directory to benchmark merge. The benchmark will merge "
-              "all rowsets whose directories match 'input-*' from this "
-              "directory, if this is specified. Otherwise, inputs will "
+              "all rowsets from this directory, pointed by the super-block "
+              "with id 00000 or 1111 and tablet id 'KuduCompactionBenchTablet', "
+              "if this is specified. Otherwise, inputs will "
               "be generated as part of the test itself.");
 DEFINE_int32(merge_benchmark_num_rowsets, 3,
              "Number of rowsets as input to the merge");
@@ -24,22 +26,19 @@ DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
 namespace kudu {
 namespace tablet {
 
+using metadata::RowSetMetadata;
+
 static const char *kRowKeyFormat = "hello %08d";
 
-class TestCompaction : public KuduTest {
+class TestCompaction : public KuduRowSetTest {
  public:
   TestCompaction() :
-    schema_(boost::assign::list_of
+    KuduRowSetTest(Schema(boost::assign::list_of
             (ColumnSchema("key", STRING))
             (ColumnSchema("val", UINT32)),
-            1),
+            1)),
     row_builder_(schema_)
   {}
-
-  virtual void SetUp() {
-    KuduTest::SetUp();
-    rowset_dir_ = GetTestPath("rowset");
-  }
 
   // Insert n_rows rows of data.
   // Each row is the tuple: (string key=hello <n*10 + delta>, val=<n>)
@@ -86,13 +85,12 @@ class TestCompaction : public KuduTest {
     ASSERT_STATUS_OK(DebugDumpCompactionInput(input, out));
   }
 
-  void DoFlush(CompactionInput *input, const MvccSnapshot &snap, const string &out_dir) {
-    DiskRowSetWriter rsw(env_.get(), schema_, out_dir,
-                   BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+  void DoFlush(CompactionInput *input, const MvccSnapshot &snap, RowSetMetadata *rowset_meta) {
+    DiskRowSetWriter rsw(rowset_meta, schema_, BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
     ASSERT_STATUS_OK(rsw.Open());
     ASSERT_STATUS_OK(Flush(input, snap, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
-    ASSERT_FILE_EXISTS(env_, DiskRowSet::GetBloomPath(out_dir));
+    ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
   }
 
   void DoCompact(const vector<shared_ptr<DiskRowSet> > &rowsets) {
@@ -103,16 +101,17 @@ class TestCompaction : public KuduTest {
     }
 
     gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, schema_));
-    string compact_dir = GetTestPath("rowset-compacted");
-    DoFlush(compact_input.get(), merge_snap, compact_dir);
+    shared_ptr<RowSetMetadata> rowset_compact_meta;
+    ASSERT_STATUS_OK(NewRowSet(&rowset_compact_meta));
+    DoFlush(compact_input.get(), merge_snap, rowset_compact_meta.get());
   }
 
-  void FlushAndReopen(const MemRowSet &mrs, const string &out_dir, shared_ptr<DiskRowSet> *rs) {
+  void FlushAndReopen(const MemRowSet &mrs, const shared_ptr<RowSetMetadata>& rowset_meta, shared_ptr<DiskRowSet> *rs) {
     MvccSnapshot snap(mvcc_);
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, snap));
-    DoFlush(input.get(), snap, out_dir);
+    DoFlush(input.get(), snap, rowset_meta.get());
     // Re-open it
-    ASSERT_STATUS_OK(DiskRowSet::Open(env_.get(), schema_, out_dir, rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, schema_, rs));
   }
 
   template<bool OVERLAP_INPUTS>
@@ -141,25 +140,32 @@ class TestCompaction : public KuduTest {
           }
           InsertRow(mrs.get(), row_key, n);
         }
-        string dir = GetTestPath(StringPrintf("input-%d", i));
+        tablet_->Flush();
+        shared_ptr<RowSetMetadata> rowset_compact_meta;
+        ASSERT_STATUS_OK(NewRowSet(&rowset_compact_meta));
         shared_ptr<DiskRowSet> rs;
-        FlushAndReopen(*mrs, dir, &rs);
+        FlushAndReopen(*mrs, rowset_compact_meta, &rs);
         ASSERT_NO_FATAL_FAILURE();
         rowsets.push_back(rs);
       }
     } else {
-      vector<string> children;
-      CHECK_OK(env_->GetChildren(FLAGS_merge_benchmark_input_dir, &children));
-      BOOST_FOREACH(const string &child, children) {
-        if (HasPrefixString(child, "input-")) {
-          string path = env_->JoinPathSegments(FLAGS_merge_benchmark_input_dir, child);
-          shared_ptr<DiskRowSet> rs;
-          CHECK_OK(DiskRowSet::Open(env_.get(), schema_, path, &rs));
-          rowsets.push_back(rs);
-        }
+      // This test will load a tablet with id "KuduTabletTestId" that have
+      // a 0000000 or 1111111 super-block id, in the specified root-dir.
+      metadata::TabletMasterBlockPB master_block;
+      master_block.set_block_a("00000000000000000000000000000000");
+      master_block.set_block_b("11111111111111111111111111111111");
+
+      FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
+      metadata::TabletMetadata input_meta(&fs_manager, "KuduCompactionBenchTablet", master_block);
+      ASSERT_STATUS_OK(input_meta.Load());
+
+      BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta.rowsets()) {
+        shared_ptr<DiskRowSet> rs;
+        CHECK_OK(DiskRowSet::Open(meta, schema_, &rs));
+        rowsets.push_back(rs);
       }
 
-      CHECK(!rowsets.empty()) << "No input-* rowsets found in " << FLAGS_merge_benchmark_input_dir;
+      CHECK(!rowsets.empty()) << "No rowsets found in " << FLAGS_merge_benchmark_input_dir;
     }
 
     LOG_TIMING(INFO, "Compacting") {
@@ -169,9 +175,6 @@ class TestCompaction : public KuduTest {
 
  protected:
   MvccManager mvcc_;
-  Schema schema_;
-
-  string rowset_dir_;
 
   RowBuilder row_builder_;
   char key_buf_[256];
@@ -203,7 +206,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   {
     shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
     InsertRows(mrs.get(), 10, 0);
-    FlushAndReopen(*mrs, rowset_dir_, &rs);
+    FlushAndReopen(*mrs, rowset_meta_, &rs);
     ASSERT_NO_FATAL_FAILURE();
   }
 
@@ -240,7 +243,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // Flush it to disk and re-open.
   shared_ptr<DiskRowSet> rs;
-  FlushAndReopen(*mrs, rowset_dir_, &rs);
+  FlushAndReopen(*mrs, rowset_meta_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
   // Update the rows with some updates that weren't in the snapshot.
@@ -266,8 +269,9 @@ TEST_F(TestCompaction, TestOneToOne) {
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
   gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, snap3));
-  string compact_dir = GetTestPath("rowset-compacted");
-  DoFlush(compact_input.get(), snap3, compact_dir);
+  shared_ptr<RowSetMetadata> rowset_compact_meta;
+  ASSERT_STATUS_OK(NewRowSet(&rowset_compact_meta));
+  DoFlush(compact_input.get(), snap3, rowset_compact_meta.get());
 }
 
 TEST_F(TestCompaction, TestMerge) {
@@ -280,11 +284,12 @@ TEST_F(TestCompaction, TestMerge) {
     InsertRows(mrs.get(), 1000, delta);
     UpdateRows(mrs.get(), 1000, delta, 1);
 
-    string dir = GetTestPath(StringPrintf("rowset-%d", delta));
+    shared_ptr<RowSetMetadata> rowset_meta;
+    ASSERT_STATUS_OK(NewRowSet(&rowset_meta));
 
     // Flush it to disk and re-open it.
     shared_ptr<DiskRowSet> rs;
-    FlushAndReopen(*mrs, dir, &rs);
+    FlushAndReopen(*mrs, rowset_meta, &rs);
     ASSERT_NO_FATAL_FAILURE();
     rowsets.push_back(rs);
 

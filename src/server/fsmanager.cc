@@ -17,9 +17,6 @@ namespace kudu {
 // ==========================================================================
 const char *FsManager::kWalsDirName = "wals";
 const char *FsManager::kDataDirName = "data";
-const char *FsManager::kTablesDirName = "tables";
-const char *FsManager::kTableMetaDirName = "meta";
-const char *FsManager::kTableTabletsDirName = "tablets";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
 
 const char *FsMetadataTypeToString(FsMetadataType type) {
@@ -42,9 +39,6 @@ Status FsManager::CreateInitialFileSystemLayout() {
 
   // Initialize data dir
   RETURN_NOT_OK(CreateDirIfMissing(GetDataRootDir()));
-
-  // Initialize tables dir
-  RETURN_NOT_OK(CreateDirIfMissing(GetTablesRootDir()));
 
   return Status::OK();
 }
@@ -109,100 +103,38 @@ Status FsManager::OpenBlock(const BlockId& block_id, shared_ptr<RandomAccessFile
 //  Metadata read/write interfaces
 // ==========================================================================
 
-Status FsManager::WriteMetadataFile(const string& base_path, const string& meta,
-                                    const MessageLite& msg)
-{
-  std::vector<std::string> meta_files;
-  vector<uint64_t> available_ids;
-
-  RETURN_NOT_OK(env_->GetChildren(base_path, &meta_files));
-  size_t seq_id = GetLastMetadataSeqId(meta_files, meta, &available_ids);
-
-  // TODO: Add a NewWritableFile without O_TRUNC and remove the loop that is not atomic anyway...
-  RETURN_NOT_OK(CreateDirIfMissing(base_path));
-  string file_path;
-  do {
-    file_path = GetMetadataFilePath(base_path, meta, ++seq_id);
-  } while (env_->FileExists(file_path));
-  VLOG(1) << "Creating Metadata " << seq_id << " " << file_path;
+Status FsManager::WriteMetadataBlock(const BlockId& block_id, const MessageLite& msg) {
+  RETURN_NOT_OK(CreateBlockDir(block_id));
+  VLOG(1) << "Writing Metadata Block: " << block_id.ToString();
 
   // Write the new metadata file
   shared_ptr<WritableFile> wfile;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, file_path, &wfile));
+  string path = GetBlockPath(block_id);
+  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, &wfile));
   if (!pb_util::SerializeToWritableFile(msg, wfile.get())) {
-    return Status::IOError("Unable to write the new '" + meta + "' manifest");
+    return Status::IOError("Unable to write the new '" + block_id.ToString() + "' metadata block");
   }
   wfile->Close();
 
-  // Cleanup older versions
-  while (available_ids.size() > 0) {
-    uint64_t seq_id = available_ids.back();
-    available_ids.pop_back();
-    env_->DeleteFile(GetMetadataFilePath(base_path, meta, seq_id));
-  }
-
   return Status::OK();
 }
 
-Status FsManager::ReadMetadataFile(const string& base_path, const string& meta, MessageLite *msg) {
-  std::vector<std::string> meta_files;
-  vector<uint64_t> available_ids;
+Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
+  VLOG(1) << "Reading Metadata Block " << block_id.ToString();
 
-  RETURN_NOT_OK(env_->GetChildren(base_path, &meta_files));
-  GetLastMetadataSeqId(meta_files, meta, &available_ids);
-
-  // Try to open the latest "readable" metadata
-  while (available_ids.size() > 0) {
-    uint64_t seq_id = available_ids.back();
-    available_ids.pop_back();
-
-    string path = GetMetadataFilePath(base_path, meta, seq_id);
-    VLOG(1) << "Opening Metadata " << seq_id << " " << path;
-    shared_ptr<SequentialFile> rfile;
-    RETURN_NOT_OK(env_util::OpenFileForSequential(env_, path, &rfile));
-    if (pb_util::ParseFromSequentialFile(msg, rfile.get())) {
-      return Status::OK();
-    }
-
-    // TODO: Is this failed due to an I/O Problem or because the file is corrupted?
-    //       if is an I/O problem we shouldn't try another one.
-    LOG(WARNING) << "Unable to read '" + meta + "' manifest: " << path;
-    env_->RenameFile(path, path + kCorruptedSuffix);
+  shared_ptr<SequentialFile> rfile;
+  string path = GetBlockPath(block_id);
+  RETURN_NOT_OK(env_util::OpenFileForSequential(env_, path, &rfile));
+  if (pb_util::ParseFromSequentialFile(msg, rfile.get())) {
+    return Status::OK();
   }
 
-  return Status::IOError("Unable to read '" + meta + "' manifest");
-}
-
-Status FsManager::DeleteMetadataFile(const string& base_path, const string& meta) {
-  std::vector<std::string> meta_files;
-  vector<uint64_t> available_ids;
-  RETURN_NOT_OK(env_->GetChildren(base_path, &meta_files));
-  GetLastMetadataSeqId(meta_files, meta, &available_ids);
-  BOOST_FOREACH(uint64_t file_id, available_ids) {
-    RETURN_NOT_OK(env_->DeleteFile(GetMetadataFilePath(base_path, meta, file_id)));
-  }
-  return Status::OK();
-}
-
-uint64_t FsManager::GetLastMetadataSeqId(const vector<string>& meta_files, const string& meta,
-                                         vector<uint64_t> *available_ids)
-{
-  string prefix = meta + ".";
-
-  available_ids->clear();
-  BOOST_FOREACH(const string& name, meta_files) {
-    string suffix;
-    if (TryStripPrefixString(name, prefix, &suffix)) {
-      uint64 file_id;
-      if (!safe_strtou64(suffix, &file_id)) {
-        continue;
-      }
-
-      available_ids->push_back(file_id);
-    }
-  }
-  std::sort(available_ids->begin(), available_ids->end());
-  return available_ids->empty() ? 0 : available_ids->back();
+  // TODO: Is this failed due to an I/O Problem or because the file is corrupted?
+  //       if is an I/O problem we shouldn't try another one.
+  //       Add a (length, checksum) block at the end of the PB.
+  LOG(WARNING) << "Unable to read '"+ block_id.ToString() +"' metadata block, marking as corrupted";
+  env_->RenameFile(path, path + kCorruptedSuffix);
+  return Status::Corruption("Unable to read '" + block_id.ToString() + "' metadata block");
 }
 
 // ==========================================================================

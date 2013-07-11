@@ -89,10 +89,6 @@ const char *FsMetadataTypeToString(FsMetadataType type);
 // The current layout is:
 //    <kudu.root.dir>/data/
 //    <kudu.root.dir>/data/<prefix-0>/<prefix-2>/<prefix-4>/<name>
-//    <kudu.root.dir>/tables/
-//    <kudu.root.dir>/tables/<table-id>/meta/{meta-name}.{id}
-//    <kudu.root.dir>/tables/<table-id>/tablets/{tablet-id}/{meta-name}.{id}
-//    <kudu.root.dir>/wals/<server-id>/{ts-split}/{prefix}.{timestamp}
 class FsManager {
  public:
   FsManager(Env *env, const string& root_path)
@@ -121,35 +117,8 @@ class FsManager {
   //  Metadata read/write interfaces
   // ==========================================================================
 
-  Status WriteTableMetadataFile(const string& table, FsMetadataType meta, const MessageLite& msg) {
-    RETURN_NOT_OK(CreateTableDir(table));
-    return WriteMetadataFile(GetTableMetadataDir(table), FsMetadataTypeToString(meta), msg);
-  }
-
-  Status ReadTableMetadataFile(const string& table, FsMetadataType meta, MessageLite *msg) {
-    return ReadMetadataFile(GetTableMetadataDir(table), FsMetadataTypeToString(meta), msg);
-  }
-
-  Status DeleteTableMetadataFile(const string& table, FsMetadataType meta) {
-    return DeleteMetadataFile(GetTableMetadataDir(table), FsMetadataTypeToString(meta));
-  }
-
-  Status WriteTabletMetadataFile(const string& table, const string& tablet,
-                                 FsMetadataType meta, const MessageLite& msg)
-  {
-    RETURN_NOT_OK(CreateTabletDir(table, tablet));
-    return WriteMetadataFile(GetTabletMetadataDir(table, tablet), FsMetadataTypeToString(meta), msg);
-  }
-
-  Status ReadTabletMetadataFile(const string& table, const string& tablet,
-                                FsMetadataType meta, MessageLite *msg)
-  {
-    return ReadMetadataFile(GetTabletMetadataDir(table, tablet), FsMetadataTypeToString(meta), msg);
-  }
-
-  Status DeleteTabletMetadataFile(const string& table, const string& tablet, FsMetadataType meta) {
-    return DeleteMetadataFile(GetTabletMetadataDir(table, tablet), FsMetadataTypeToString(meta));
-  }
+  Status WriteMetadataBlock(const BlockId& block_id, const MessageLite& msg);
+  Status ReadMetadataBlock(const BlockId& block_id, MessageLite *msg);
 
   // ==========================================================================
   //  Wal read/write interfaces
@@ -180,38 +149,6 @@ class FsManager {
     path = env_->JoinPathSegments(path, block_id.ToString());
     return path;
   }
-
-
-  string GetMetadataFileName(const string& meta, size_t seq_id) const {
-    return meta + '.' + boost::lexical_cast<string>(seq_id);
-  }
-
-  string GetMetadataFilePath(const string& path, const string& meta, size_t seq_id) const {
-    return env_->JoinPathSegments(path, GetMetadataFileName(meta, seq_id));
-  }
-
-
-  string GetTablesRootDir() const {
-    return env_->JoinPathSegments(GetRootDir(), kTablesDirName);
-  }
-
-  string GetTableRootDir(const string& oid) const {
-    return env_->JoinPathSegments(GetTablesRootDir(), oid);
-  }
-
-
-  string GetTabletsRootDir(const string& oid) const {
-    return env_->JoinPathSegments(GetTableRootDir(oid), kTableTabletsDirName);
-  }
-
-  string GetTabletMetadataDir(const string& table, const string& oid) const {
-    return env_->JoinPathSegments(GetTabletsRootDir(table), oid);
-  }
-
-  string GetTableMetadataDir(const string& oid) const {
-    return env_->JoinPathSegments(GetTableRootDir(oid), kTableMetaDirName);
-  }
-
 
   string GetWalsRootDir() const {
     return env_->JoinPathSegments(root_path_, kWalsDirName);
@@ -274,31 +211,6 @@ class FsManager {
     return CreateDirIfMissing(path);
   }
 
-  // TODO: This should be removed, and part of the file creation
-  //       to ensure that the file can be created.
-  Status CreateTableDir(const string& oid) {
-    string path = GetTablesRootDir();
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = env_->JoinPathSegments(path, oid);
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    RETURN_NOT_OK(CreateDirIfMissing(env_->JoinPathSegments(path, kTableMetaDirName)));
-    RETURN_NOT_OK(CreateDirIfMissing(env_->JoinPathSegments(path, kTableTabletsDirName)));
-    return Status::OK();
-  }
-
-  Status CreateTabletDir(const string& table, const string& oid) {
-    string path = GetDataRootDir();
-    RETURN_NOT_OK(CreateTableDir(table));
-
-    path = GetTabletsRootDir(table);
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = env_->JoinPathSegments(path, oid);
-    return CreateDirIfMissing(path);
-  }
-
   Status CreateWalsDir(const string& server, const string& prefix, uint64_t timestamp) {
     string path = GetWalsRootDir();
     RETURN_NOT_OK(CreateDirIfMissing(path));
@@ -311,15 +223,6 @@ class FsManager {
   }
 
   // ==========================================================================
-  //  Generic Metadata read/write interaface
-  // ==========================================================================
-  uint64_t GetLastMetadataSeqId(const vector<string>& meta_files, const string& name,
-                                vector<uint64_t> *available_ids);
-  Status WriteMetadataFile(const string& path, const string& meta, const MessageLite& msg);
-  Status ReadMetadataFile(const string& path, const string& meta, MessageLite *msg);
-  Status DeleteMetadataFile(const string& path, const string& meta);
-
-  // ==========================================================================
   //  file-system helpers
   // ==========================================================================
   void DumpFileSystemTree(ostream& out, const string& prefix,
@@ -327,9 +230,6 @@ class FsManager {
 
   static const char *kDataDirName;
   static const char *kWalsDirName;
-  static const char *kTablesDirName;
-  static const char *kTableMetaDirName;
-  static const char *kTableTabletsDirName;
   static const char *kCorruptedSuffix;
   static const uint64_t kWalPartitionMillis = 3600000;   // 1hour
 

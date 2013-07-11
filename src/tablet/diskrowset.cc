@@ -17,60 +17,24 @@
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
-#include "util/env.h"
-#include "util/env_util.h"
 #include "util/status.h"
 
 namespace kudu { namespace tablet {
 
 using cfile::CFileReader;
 using cfile::ReaderOptions;
+using metadata::RowSetMetadata;
 using std::string;
 using std::tr1::shared_ptr;
-
-const char *DiskRowSet::kDeltaPrefix = "delta_";
-const char *DiskRowSet::kColumnPrefix = "col_";
-const char *DiskRowSet::kBloomFileName = "bloom";
-const char *DiskRowSet::kAdHocIdxFileName = "idx";
-const char *DiskRowSet::kTmpRowSetSuffix = ".tmp";
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
 
-
-// Return the path at which the given column's cfile
-// is stored within the rowset directory.
-string DiskRowSet::GetColumnPath(const string &dir,
-                            int col_idx) {
-  return dir + "/" + kColumnPrefix +
-    boost::lexical_cast<string>(col_idx);
-}
-
-// Return the path at which the given delta file
-// is stored within the rowset directory.
-string DiskRowSet::GetDeltaPath(const string &dir,
-                           int delta_idx) {
-  return dir + "/" + kDeltaPrefix +
-    boost::lexical_cast<string>(delta_idx);
-}
-
-// Return the path at which the bloom filter
-// is stored within the rowset directory.
-string DiskRowSet::GetBloomPath(const string &dir) {
-  return dir + "/" + kBloomFileName;
-}
-
-// Return the path at which the ad hoc index
-// is stored within the rowset directory.
-string DiskRowSet::GetAdHocIndexPath(const string &dir) {
-  return dir + "/" + kAdHocIdxFileName;
-}
-
 Status DiskRowSetWriter::Open() {
   CHECK(cfile_writers_.empty());
 
-  // Create the directory for the new rowset
-  RETURN_NOT_OK(env_->CreateDir(dir_));
+  // Create the metadata for the new rowset
+  RETURN_NOT_OK(rowset_metadata_->Create());
 
   // Open columns.
   for (int i = 0; i < schema_.num_columns(); i++) {
@@ -92,15 +56,12 @@ Status DiskRowSetWriter::Open() {
       opts.write_validx = true;
     }
 
-    string path = DiskRowSet::GetColumnPath(dir_, i);
-
     // Open file for write.
-    shared_ptr<WritableFile> out;
-    Status s = env_util::OpenFileForWrite(env_, path, &out);
+    shared_ptr<WritableFile> data_writer;
+    Status s = rowset_metadata_->NewColumnDataBlock(i, &data_writer);
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to open output file for column " <<
-        col.ToString() << " at path " << path << ": " <<
-        s.ToString();
+      LOG(WARNING) << "Unable to open output file for column " << col.ToString() << ": "
+                   << s.ToString();
       return s;
     }
 
@@ -110,18 +71,16 @@ Status DiskRowSetWriter::Open() {
                                         col.type_info().type(),
                                         col.is_nullable(),
                                         cfile::TypeEncodingInfo::GetDefaultEncoding(col.type_info().type()),
-                                        out));
+                                        data_writer));
 
     s = writer->Start();
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to Start() writer for column " <<
-        col.ToString() << " at path " << path << ": " <<
-        s.ToString();
+      LOG(WARNING) << "Unable to Start() writer for column " << col.ToString() << ": "
+                   << s.ToString();
       return s;
     }
 
-    LOG(INFO) << "Opened CFile writer for column " <<
-      col.ToString() << " at path " << path;
+    LOG(INFO) << "Opened CFile writer for column " << col.ToString();
     cfile_writers_.push_back(writer.release());
   }
 
@@ -137,17 +96,15 @@ Status DiskRowSetWriter::Open() {
 }
 
 Status DiskRowSetWriter::InitBloomFileWriter() {
-  string path(DiskRowSet::GetBloomPath(dir_));
-  shared_ptr<WritableFile> file;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, &file));
-  bloom_writer_.reset(new BloomFileWriter(file, bloom_sizing_));
+  shared_ptr<WritableFile> data_writer;
+  RETURN_NOT_OK(rowset_metadata_->NewBloomDataBlock(&data_writer));
+  bloom_writer_.reset(new BloomFileWriter(data_writer, bloom_sizing_));
   return bloom_writer_->Start();
 }
 
 Status DiskRowSetWriter::InitAdHocIndexWriter() {
-  string path(DiskRowSet::GetAdHocIndexPath(dir_));
-  shared_ptr<WritableFile> file;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, &file));
+  shared_ptr<WritableFile> data_writer;
+  RETURN_NOT_OK(rowset_metadata_->NewAdHocIndexDataBlock(&data_writer));
   // TODO: allow options to be configured, perhaps on a per-column
   // basis as part of the schema. For now use defaults.
   //
@@ -167,7 +124,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
       STRING,
       false,
       cfile::PREFIX,
-      file));
+      data_writer));
   return ad_hoc_index_writer_->Start();
 }
 
@@ -288,11 +245,11 @@ cfile::Writer *DiskRowSetWriter::key_index_writer() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status DiskRowSet::Open(Env *env,
-                   const Schema &schema,
-                   const string &rowset_dir,
-                   shared_ptr<DiskRowSet> *rowset) {
-  shared_ptr<DiskRowSet> rs(new DiskRowSet(env, schema, rowset_dir));
+Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
+                        const Schema &schema,
+                        shared_ptr<DiskRowSet> *rowset)
+{
+  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, schema));
 
   RETURN_NOT_OK(rs->Open());
 
@@ -301,25 +258,23 @@ Status DiskRowSet::Open(Env *env,
 }
 
 
-DiskRowSet::DiskRowSet(Env *env,
-             const Schema &schema,
-             const string &rowset_dir) :
-    env_(env),
+DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
+                       const Schema &schema) :
+    rowset_metadata_(rowset_metadata),
     schema_(schema),
-    dir_(rowset_dir),
     open_(false)
 {}
 
 
 Status DiskRowSet::Open() {
-  gscoped_ptr<CFileSet> new_base(new CFileSet(env_, dir_, schema_));
+  gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_, schema_));
   RETURN_NOT_OK(new_base->Open());
 
   base_data_.reset(new_base.release());
 
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-  delta_tracker_.reset(new DeltaTracker(env_, schema_, dir_, num_rows));
+  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema_, num_rows));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;
@@ -402,19 +357,6 @@ uint64_t DiskRowSet::EstimateOnDiskSize() const {
   CHECK(open_);
   // TODO: should probably add the delta trackers as well.
   return base_data_->EstimateOnDiskSize();
-}
-
-
-Status DiskRowSet::Delete() {
-  string tmp_path = dir_ + ".deleting";
-  RETURN_NOT_OK(env_->RenameFile(dir_, tmp_path));
-  return env_->DeleteRecursively(tmp_path);
-}
-
-Status DiskRowSet::RenameRowSetDir(const string &new_dir) {
-  RETURN_NOT_OK(env_->RenameFile(dir_, new_dir));
-  dir_ = new_dir;
-  return Status::OK();
 }
 
 Status DiskRowSet::DebugDump(vector<string> *lines) {

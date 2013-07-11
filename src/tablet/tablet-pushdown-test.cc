@@ -14,28 +14,23 @@
 namespace kudu {
 namespace tablet {
 
-class TabletPushdownTest : public KuduTest {
+class TabletPushdownTest : public KuduTabletTest {
  public:
   TabletPushdownTest()
-    : schema_(boost::assign::list_of
+    : KuduTabletTest(Schema(boost::assign::list_of
               (ColumnSchema("key", UINT32))
               (ColumnSchema("int_val", UINT32))
               (ColumnSchema("string_val", STRING)),
-              1) {
+              1)) {
   }
 
   virtual void SetUp() {
-    KuduTest::SetUp();
-    tablet_dir_ = env_->JoinPathSegments(test_dir_, "tablet");
+    KuduTabletTest::SetUp();
 
-    CreateTestTablet();
+    FillTestTablet();
   }
 
-  void CreateTestTablet() {
-    tablet_.reset(new Tablet(schema_, tablet_dir_));
-    ASSERT_STATUS_OK(tablet_->CreateNew());
-    ASSERT_STATUS_OK(tablet_->Open());
-
+  void FillTestTablet() {
     RowBuilder rb(schema_);
 
     uint64_t nrows = 2100;
@@ -57,11 +52,6 @@ class TabletPushdownTest : public KuduTest {
       }
     }
   }
-
- protected:
-  const Schema schema_;
-  string tablet_dir_;
-  gscoped_ptr<Tablet> tablet_;
 };
 
 

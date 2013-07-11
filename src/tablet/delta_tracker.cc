@@ -15,9 +15,9 @@
 
 namespace kudu { namespace tablet {
 
+using metadata::RowSetMetadata;
 using std::string;
 using std::tr1::shared_ptr;
-
 
 namespace {
 
@@ -142,16 +142,13 @@ shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
 } // anonymous namespace
 
 
-DeltaTracker::DeltaTracker(Env *env,
+DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                            const Schema &schema,
-                           const string &dir,
                            rowid_t num_rows) :
-  env_(env),
+  rowset_metadata_(rowset_metadata),
   schema_(schema),
-  dir_(dir),
   num_rows_(num_rows),
   open_(false),
-  next_deltafile_idx_(0),
   dms_(new DeltaMemStore(schema))
 {}
 
@@ -161,43 +158,29 @@ Status DeltaTracker::Open() {
   CHECK(delta_stores_.empty()) << "should call before opening any readers";
   CHECK(!open_);
 
-  vector<string> children;
-  RETURN_NOT_OK(env_->GetChildren(dir_, &children));
-  BOOST_FOREACH(const string &child, children) {
-    // Skip hidden files (also '.' and '..')
-    if (child[0] == '.') continue;
-
-    string absolute_path = env_->JoinPathSegments(dir_, child);
-
-    string suffix;
-    if (TryStripPrefixString(child, DiskRowSet::kDeltaPrefix, &suffix)) {
-      // The file should be named 'delta_<N>'. N here is the index
-      // of the delta file (indicating the order in which it was flushed).
-      uint32_t deltafile_idx;
-      if (!safe_strtou32(suffix.c_str(), &deltafile_idx)) {
-        return Status::IOError(string("Bad delta file: ") + absolute_path);
-      }
-
-      gscoped_ptr<DeltaFileReader> dfr;
-      Status s = DeltaFileReader::Open(env_, absolute_path, schema_, &dfr);
-      if (!s.ok()) {
-        LOG(ERROR) << "Failed to open delta file " << absolute_path << ": "
-                   << s.ToString();
-        return s;
-      }
-      LOG(INFO) << "Successfully opened delta file " << absolute_path;
-
-      delta_stores_.push_back(shared_ptr<DeltaStore>(dfr.release()));
-
-      next_deltafile_idx_ = std::max(next_deltafile_idx_,
-                                     deltafile_idx + 1);
-    } else if (TryStripPrefixString(child, DiskRowSet::kColumnPrefix, &suffix)) {
-      // expected: column data
-    } else {
-      LOG(WARNING) << "ignoring unknown file: " << absolute_path;
+  for (size_t idx = 0; idx < rowset_metadata_->delta_blocks_count(); ++idx) {
+    size_t dsize = 0;
+    shared_ptr<RandomAccessFile> dfile;
+    Status s = rowset_metadata_->OpenDeltaDataBlock(idx, &dfile, &dsize);
+    if (!s.ok()) {
+      LOG(ERROR) << "Failed to open delta file " << idx << ": "
+                 << s.ToString();
+      return s;
     }
+
+    gscoped_ptr<DeltaFileReader> dfr;
+    s = DeltaFileReader::Open("---", dfile, dsize, schema_, &dfr);
+    if (!s.ok()) {
+      LOG(ERROR) << "Failed to open delta file " << idx << ": "
+                 << s.ToString();
+      return s;
+    }
+
+    LOG(INFO) << "Successfully opened delta file " << idx;
+    delta_stores_.push_back(shared_ptr<DeltaStore>(dfr.release()));
   }
 
+  open_ = true;
   return Status::OK();
 }
 
@@ -255,33 +238,42 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {
-  int deltafile_idx = next_deltafile_idx_++;
-  string path = DiskRowSet::GetDeltaPath(dir_, deltafile_idx);
+  uint32_t deltafile_idx = next_deltafile_idx_++;
 
   // Open file for write.
-  shared_ptr<WritableFile> out;
-  Status s = env_util::OpenFileForWrite(env_, path, &out);
+  BlockId block_id;
+  shared_ptr<WritableFile> data_writer;
+  Status s = rowset_metadata_->NewDeltaDataBlock(&data_writer, &block_id);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to open output file for delta level " <<
-      deltafile_idx << " at path " << path << ": " <<
-      s.ToString();
+    LOG(WARNING) << "Unable to open delta output block " << block_id.ToString() << ": "
+                 << s.ToString();
     return s;
   }
-  DeltaFileWriter dfw(schema_, out);
 
+  DeltaFileWriter dfw(schema_, data_writer);
   s = dfw.Start();
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to start delta file writer for path " <<
-      path;
+    LOG(WARNING) << "Unable to open delta output block " << block_id.ToString() << ": "
+                 << s.ToString();
     return s;
   }
   RETURN_NOT_OK(dms.FlushToFile(&dfw));
   RETURN_NOT_OK(dfw.Finish());
-  LOG(INFO) << "Flushed delta file: " << path;
+  LOG(INFO) << "Flushed delta block: " << block_id.ToString();
 
   // Now re-open for read
-  RETURN_NOT_OK(DeltaFileReader::Open(env_, path, schema_, dfr));
-  LOG(INFO) << "Reopened delta file for read: " << path;
+  size_t data_size = 0;
+  shared_ptr<RandomAccessFile> data_reader;
+  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, schema_, dfr));
+  LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
+
+  RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(deltafile_idx, block_id));
+  s = rowset_metadata_->Flush();
+  if (!s.ok()) {
+    LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();
+    return s;
+  }
 
   return Status::OK();
 }

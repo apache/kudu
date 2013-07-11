@@ -69,8 +69,14 @@ Status CFileReader::Open(Env *env, const string &path,
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(path, &size));
+  return Open(file, size, options, reader);
+}
 
-  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, file, size));
+Status CFileReader::Open(const shared_ptr<RandomAccessFile>& file,
+                         uint64_t file_size,
+                         const ReaderOptions& options,
+                         gscoped_ptr<CFileReader> *reader) {
+  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, file, file_size));
   RETURN_NOT_OK(reader_local->Init());
   reader->reset(reader_local.release());
   return Status::OK();

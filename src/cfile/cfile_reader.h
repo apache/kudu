@@ -54,6 +54,11 @@ class CFileReader {
                      const ReaderOptions &options,
                      gscoped_ptr<CFileReader> *reader);
 
+  static Status Open(const shared_ptr<RandomAccessFile>& file,
+                     uint64_t file_size,
+                     const ReaderOptions& options,
+                     gscoped_ptr<CFileReader> *reader);
+
   Status Init();
 
   Status NewIterator(CFileIterator **iter) const;

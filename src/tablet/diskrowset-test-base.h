@@ -16,6 +16,7 @@
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
 #include "tablet/diskrowset.h"
+#include "tablet/tablet-test-util.h"
 #include "util/env.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
@@ -31,18 +32,12 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-class TestRowSet : public KuduTest {
+class TestRowSet : public KuduRowSetTest {
  public:
   TestRowSet()
-    : KuduTest(),
-      schema_(CreateTestSchema()),
+    : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows) {
     CHECK_GT(n_rows_, 0);
-  }
-
-  virtual void SetUp() {
-    KuduTest::SetUp();
-    rowset_dir_ = GetTestPath("rowset");
   }
 
  protected:
@@ -73,7 +68,7 @@ class TestRowSet : public KuduTest {
 
     // Write rows into a new DiskRowSet.
     LOG_TIMING(INFO, "Writing rowset") {
-      DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
+      DiskRowSetWriter drsw(rowset_meta_.get(), schema_,
                      BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
       CHECK_OK(drsw.Open());
@@ -259,7 +254,7 @@ class TestRowSet : public KuduTest {
   }
 
   Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(env_.get(), schema_, rowset_dir_, rowset);
+    return DiskRowSet::Open(rowset_meta_, schema_, rowset);
   }
 
 
@@ -268,9 +263,7 @@ class TestRowSet : public KuduTest {
     snprintf(buf, buf_len, "hello %015d", i);
   }
 
-  Schema schema_;
   size_t n_rows_;
-  string rowset_dir_;
 
   MvccManager mvcc_;
 };

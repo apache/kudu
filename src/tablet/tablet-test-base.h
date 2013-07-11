@@ -38,13 +38,17 @@ using std::tr1::unordered_set;
 struct StringKeyTestSetup {
  public:
   StringKeyTestSetup() :
-    test_schema_(boost::assign::list_of
-                 (ColumnSchema("key", STRING))
-                 (ColumnSchema("val", UINT32))
-                 (ColumnSchema("update_count", UINT32)),
-                 1),
+    test_schema_(CreateSchema()),
     test_key_schema_(test_schema_.CreateKeyProjection())
   {}
+
+  static Schema CreateSchema() {
+    return Schema(boost::assign::list_of
+                   (ColumnSchema("key", STRING))
+                   (ColumnSchema("val", UINT32))
+                   (ColumnSchema("update_count", UINT32)),
+                   1);
+  }
 
   void BuildRowKey(RowBuilder *rb, uint64_t row_idx) {
     // This is called from multiple threads, so can't move this buffer
@@ -126,14 +130,18 @@ struct StringKeyTestSetup {
 struct CompositeKeyTestSetup {
  public:
   CompositeKeyTestSetup() :
-    test_schema_(boost::assign::list_of
-                 (ColumnSchema("key1", STRING))
-                 (ColumnSchema("key2", UINT32))
-                 (ColumnSchema("val", UINT32))
-                 (ColumnSchema("update_count", UINT32)),
-                 2),
+    test_schema_(CreateSchema()),
     test_key_schema_(test_schema_.CreateKeyProjection())
   {}
+
+  static Schema CreateSchema() {
+    return Schema(boost::assign::list_of
+                  (ColumnSchema("key1", STRING))
+                  (ColumnSchema("key2", UINT32))
+                  (ColumnSchema("val", UINT32))
+                  (ColumnSchema("update_count", UINT32)),
+                  2);
+  }
 
   void BuildRowKey(RowBuilder *rb, uint64_t row_idx) {
     // This is called from multiple threads, so can't move this buffer
@@ -220,12 +228,16 @@ struct IntKeyTestSetup {
 
  public:
   IntKeyTestSetup() :
-    test_schema_(boost::assign::list_of
-              (ColumnSchema("key", Type))
-              (ColumnSchema("val", UINT32))
-              (ColumnSchema("update_count", UINT32)), 1),
+    test_schema_(CreateSchema()),
     test_key_schema_(test_schema_.CreateKeyProjection()),
     type_info_(GetTypeInfo(Type)) {
+  }
+
+  static Schema CreateSchema() {
+    return Schema(boost::assign::list_of
+              (ColumnSchema("key", Type))
+              (ColumnSchema("val", UINT32))
+              (ColumnSchema("update_count", UINT32)), 1);
   }
 
   void BuildRowKey(RowBuilder *rb, int64_t i) {
@@ -462,12 +474,16 @@ string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t row_idx, uint32_t update_c
 struct NullableValueTestSetup {
  public:
   NullableValueTestSetup() :
-    test_schema_(boost::assign::list_of
-                 (ColumnSchema("key", UINT32))
-                 (ColumnSchema("val", UINT32, true))
-                 (ColumnSchema("update_count", UINT32)), 1),
+    test_schema_(CreateSchema()),
     test_key_schema_(test_schema_.CreateKeyProjection())
   {}
+
+  static Schema CreateSchema() {
+    return Schema(boost::assign::list_of
+                 (ColumnSchema("key", UINT32))
+                 (ColumnSchema("val", UINT32, true))
+                 (ColumnSchema("update_count", UINT32)), 1);
+  }
 
   void BuildRowKey(RowBuilder *rb, uint64_t i) {
     rb->AddUint32((uint32_t)i);
@@ -582,23 +598,14 @@ typedef ::testing::Types<
                          > TabletTestHelperTypes;
 
 template<class TESTSETUP>
-class TabletTestBase : public KuduTest {
+class TabletTestBase : public KuduTabletTest {
  public:
   TabletTestBase() :
+    KuduTabletTest(TESTSETUP::CreateSchema()),
     setup_(),
-    schema_(setup_.test_schema()),
     max_rows_(setup_.GetMaxRows()),
     arena_(1024, 4*1024*1024)
   {}
-
-  virtual void SetUp() {
-    KuduTest::SetUp();
-    tablet_dir_ = env_->JoinPathSegments(test_dir_, "tablet");
-    LOG(INFO) << "Creating tablet in: " << tablet_dir_;
-    tablet_.reset(new Tablet(schema_, tablet_dir_));
-    ASSERT_STATUS_OK(tablet_->CreateNew());
-    ASSERT_STATUS_OK(tablet_->Open());
-  }
 
   void InsertTestRows(uint64_t first_row, uint64_t count, uint32_t update_count_val,
                       TimeSeries *ts = NULL) {
@@ -714,10 +721,6 @@ class TabletTestBase : public KuduTest {
     return count;
   }
 
-  const Schema &schema() const {
-    return schema_;
-  }
-
   // because some types are small we need to
   // make sure that we don't overflow the type on inserts
   // or else we get errors because the key already exists
@@ -731,10 +734,7 @@ class TabletTestBase : public KuduTest {
 
   TESTSETUP setup_;
 
-  const Schema schema_;
   const uint64_t max_rows_;
-  gscoped_ptr<Tablet> tablet_;
-  string tablet_dir_;
 
   Arena arena_;
 };

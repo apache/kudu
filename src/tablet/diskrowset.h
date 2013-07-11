@@ -30,8 +30,6 @@
 
 namespace kudu {
 
-class Env;
-
 namespace cfile {
 class BloomFileWriter;
 }
@@ -46,13 +44,11 @@ using kudu::cfile::CFileReader;
 
 class DiskRowSetWriter {
  public:
-  DiskRowSetWriter(Env *env,
-              const Schema &schema,
-              const string &rowset_dir,
-              const BloomFilterSizing &bloom_sizing) :
-    env_(env),
+  DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
+                   const Schema &schema,
+                   const BloomFilterSizing &bloom_sizing) :
+    rowset_metadata_(rowset_metadata),
     schema_(schema),
-    dir_(rowset_dir),
     bloom_sizing_(bloom_sizing),
     finished_(false),
     written_count_(0)
@@ -91,9 +87,8 @@ class DiskRowSetWriter {
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
   cfile::Writer *key_index_writer();
 
-  Env *env_;
+  metadata::RowSetMetadata *rowset_metadata_;
   const Schema schema_;
-  const string dir_;
   BloomFilterSizing bloom_sizing_;
 
   bool finished_;
@@ -112,20 +107,13 @@ class DiskRowSetWriter {
 
 class DiskRowSet : public RowSet {
  public:
-  static const char *kDeltaPrefix;
-  static const char *kColumnPrefix;
-  static const char *kBloomFileName;
-  static const char *kAdHocIdxFileName;
-  static const char *kTmpRowSetSuffix;
-
   static const char *kMinKeyMetaEntryName;
   static const char *kMaxKeyMetaEntryName;
 
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
-  static Status Open(Env *env,
+  static Status Open(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                      const Schema &schema,
-                     const string &rowset_dir,
                      shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
@@ -134,13 +122,6 @@ class DiskRowSet : public RowSet {
 
   // Flush all accumulated delta data to disk.
   Status FlushDeltas();
-
-  // Delete the rowset directory.
-  Status Delete();
-
-  // Rename the directory where this rowset is stored.
-  Status RenameRowSetDir(const string &new_dir);
-
 
   ////////////////////////////////////////////////////////////
   // RowSet implementation
@@ -181,20 +162,19 @@ class DiskRowSet : public RowSet {
     return &compact_flush_lock_;
   }
 
+  shared_ptr<metadata::RowSetMetadata> metadata() {
+    return rowset_metadata_;
+  }
+
   const Schema &schema() const {
     return schema_;
   }
 
   string ToString() const {
-    return dir_;
+    return rowset_metadata_->ToString();
   }
 
   virtual Status DebugDump(vector<string> *out = NULL);
-
-  static string GetColumnPath(const string &dir, int col_idx);
-  static string GetDeltaPath(const string &dir, int delta_idx);
-  static string GetBloomPath(const string &dir);
-  static string GetAdHocIndexPath(const string &dir);
 
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
@@ -206,15 +186,12 @@ class DiskRowSet : public RowSet {
 
   // TODO: should 'schema' be stored with the rowset? quite likely
   // so that we can support cheap alter table.
-  DiskRowSet(Env *env,
-        const Schema &schema,
-        const string &rowset_dir);
+  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata, const Schema &schema);
 
   Status Open();
 
-  Env *env_;
+  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   const Schema schema_;
-  string dir_;
 
   bool open_;
 

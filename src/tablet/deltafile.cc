@@ -13,6 +13,7 @@
 #include "tablet/mutation.h"
 #include "util/coding-inl.h"
 #include "util/env.h"
+#include "util/env_util.h"
 #include "util/hexdump.h"
 
 DEFINE_int32(deltafile_block_size, 32*1024,
@@ -89,11 +90,23 @@ Status DeltaFileWriter::AppendDelta(
 Status DeltaFileReader::Open(Env *env, const string &path,
                              const Schema &schema,
                              gscoped_ptr<DeltaFileReader> *reader_out) {
-  gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(env, path, cfile::ReaderOptions(), &cf_reader));
+  shared_ptr<RandomAccessFile> file;
+  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
+  uint64_t size;
+  RETURN_NOT_OK(env->GetFileSize(path, &size));
+  return Open(path, file, size, schema, reader_out);
+}
 
-  gscoped_ptr<DeltaFileReader> df_reader(
-    new DeltaFileReader(cf_reader.release(), path, schema));
+Status DeltaFileReader::Open(const string& path,
+                             const shared_ptr<RandomAccessFile> &file,
+                             uint64_t file_size,
+                             const Schema &schema,
+                             gscoped_ptr<DeltaFileReader> *reader_out)
+{
+  gscoped_ptr<CFileReader> cf_reader;
+  RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
+
+  gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(cf_reader.release(), path, schema));
 
   RETURN_NOT_OK(df_reader->Init());
   reader_out->reset(df_reader.release());

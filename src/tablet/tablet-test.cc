@@ -15,6 +15,7 @@
 namespace kudu {
 namespace tablet {
 
+using metadata::RowSetMetadata;
 using std::tr1::unordered_set;
 
 DEFINE_int32(testflush_num_inserts, 1000,
@@ -47,11 +48,11 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Make sure the files were created as expected.
-  string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 1));
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 2));
-  ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetBloomPath(rowset_dir_))
+  const RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(0);
+  ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
+  ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(1));
+  ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(2));
+  ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
 }
 
 // Test that historical data for a row is maintained even after the row
@@ -362,12 +363,11 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   ASSERT_EQ(max_rows, this->TabletCount());
 
   // Close and re-open tablet
-  this->tablet_.reset(new Tablet(this->schema_, this->tablet_dir_));
-  ASSERT_STATUS_OK(this->tablet_->Open());
+  this->TabletReOpen();
 
   // Ensure that rows exist
-  this->VerifyTestRows(0, max_rows);
   ASSERT_EQ(max_rows, this->TabletCount());
+  this->VerifyTestRows(0, max_rows);
 
   // TODO: add some more data, re-flush
 }
@@ -434,8 +434,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 0);
-    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(0)->HasColumnDataBlockForTests(0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -443,8 +442,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 1);
-    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(1)->HasColumnDataBlockForTests(0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -452,23 +450,22 @@ TYPED_TEST(TestTablet, TestCompaction) {
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 2);
-    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
+    ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(2)->HasColumnDataBlockForTests(0));
   }
 
   // Issue compaction
   LOG_TIMING(INFO, "Compacting rows") {
     ASSERT_STATUS_OK(this->tablet_->Compact());
     ASSERT_EQ(n_rows * 3, this->TabletCount());
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, 3);
-    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
-    ASSERT_FILE_EXISTS(this->env_, DiskRowSet::GetBloomPath(rowset_dir_))
+    const RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(3);
+    ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
+    ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
   }
 
   // Old rowsets should not exist anymore
   for (int i = 0; i <= 2; i++) {
-    string rowset_dir_ = Tablet::GetRowSetPath(this->tablet_dir_, i);
-    ASSERT_FILE_NOT_EXISTS(this->env_, DiskRowSet::GetColumnPath(rowset_dir_, 0));
+    const RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(i);
+    ASSERT_TRUE(rowset_meta == NULL);
   }
 }
 

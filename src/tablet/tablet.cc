@@ -27,36 +27,29 @@ DEFINE_bool(tablet_do_dup_key_checks, true,
 
 namespace kudu { namespace tablet {
 
+using metadata::RowSetMetadata;
+using metadata::RowSetMetadataIds;
+using metadata::RowSetMetadataVector;
+using metadata::TabletMetadata;
 using std::string;
 using std::set;
 using std::vector;
 using std::tr1::shared_ptr;
-using base::subtle::Barrier_AtomicIncrement;
 
-const char *kRowSetPrefix = "rowset_";
-
-string Tablet::GetRowSetPath(const string &tablet_dir,
-                            int rowset_idx) {
-  return StringPrintf("%s/rowset_%010d",
-                      tablet_dir.c_str(),
-                      rowset_idx);
-}
-
-Tablet::Tablet(const Schema &schema,
-               const string &dir)
+Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
+               const Schema& schema)
   : schema_(schema),
     key_schema_(schema.CreateKeyProjection()),
-    dir_(dir),
+    metadata_(metadata.Pass()),
     memrowset_(new MemRowSet(schema)),
-    next_rowset_idx_(0),
-    env_(Env::Default()),
     open_(false) {
 }
 
 Status Tablet::CreateNew() {
   CHECK(!open_) << "already open";
-  RETURN_NOT_OK(env_->CreateDir(dir_));
-  // TODO: write a metadata file into the tablet dir
+  RETURN_NOT_OK(metadata_->Create());
+  rowsets_.Reset(RowSetVector());
+  open_ = true;
   return Status::OK();
 }
 
@@ -64,46 +57,26 @@ Status Tablet::Open() {
   CHECK(!open_) << "already open";
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
-  // for now, just list the children, to make sure the dir exists.
-  vector<string> children;
-  RETURN_NOT_OK(env_->GetChildren(dir_, &children));
+  RETURN_NOT_OK(metadata_->Load());
 
   RowSetVector rowsets_opened;
 
-  BOOST_FOREACH(const string &child, children) {
-    // Skip hidden files (also '.' and '..')
-    if (child[0] == '.') continue;
-
-    string absolute_path = env_->JoinPathSegments(dir_, child);
-
-    string suffix;
-    if (TryStripPrefixString(child, kRowSetPrefix, &suffix)) {
-      // The file should be named 'rowset_<N>'. N here is the index
-      // of the rowset (indicating the order in which it was flushed).
-      int32_t rowset_idx;
-      if (!safe_strto32(suffix.c_str(), &rowset_idx)) {
-        return Status::IOError(string("Bad rowset file: ") + absolute_path);
-      }
-
-      shared_ptr<DiskRowSet> rowset;
-      Status s = DiskRowSet::Open(env_, schema_, absolute_path, &rowset);
-      if (!s.ok()) {
-        LOG(ERROR) << "Failed to open rowset " << absolute_path << ": "
-                   << s.ToString();
-        return s;
-      }
-      rowsets_opened.push_back(rowset);
-
-      next_rowset_idx_ = std::max(next_rowset_idx_, rowset_idx + 1);
-    } else {
-      LOG(WARNING) << "ignoring unknown file: " << absolute_path;
+  // open the tablet row-sets
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, metadata_->rowsets()) {
+    shared_ptr<DiskRowSet> rowset;
+    Status s = DiskRowSet::Open(rowset_meta, schema_, &rowset);
+    if (!s.ok()) {
+      LOG(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
+                 << s.ToString();
+      return s;
     }
+
+    rowsets_opened.push_back(rowset);
   }
 
   rowsets_.Reset(rowsets_opened);
 
   open_ = true;
-
   return Status::OK();
 }
 
@@ -300,10 +273,9 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
 }
 
 Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
-  BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
-    LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
-    RETURN_NOT_OK(l_input->Delete());
-  }
+  //BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
+  //  LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
+  //}
   return Status::OK();
 }
 
@@ -420,11 +392,18 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const {
   return Status::OK();
 }
 
-Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
-  AtomicWord my_index = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
-  string new_rowset_dir = GetRowSetPath(dir_, my_index);
-  string tmp_rowset_dir = new_rowset_dir + ".compact-tmp";
+Status Tablet::FlushMetadata(const RowSetVector& to_remove, const RowSetMetadataVector& to_add) {
+  RowSetMetadataIds to_remove_meta;
+  BOOST_FOREACH(const shared_ptr<RowSet>& rowset, to_remove) {
+    // Skip MemRowSet & DuplicatingRowSets which don't have metadata
+    if (rowset->metadata().get() == NULL) continue;
+    to_remove_meta.insert(rowset->metadata()->id());
+  }
 
+  return metadata_->UpdateAndFlush(to_remove_meta, to_add);
+}
+
+Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
 
   MvccSnapshot flush_snap(mvcc_);
@@ -435,7 +414,10 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
-  DiskRowSetWriter drsw(env_, schema_, tmp_rowset_dir, bloom_sizing());
+  shared_ptr<RowSetMetadata> rowset_meta;
+  RETURN_NOT_OK(metadata_->CreateRowSet(&rowset_meta));
+
+  DiskRowSetWriter drsw(rowset_meta.get(), schema_, bloom_sizing());
   RETURN_NOT_OK(drsw.Open());
   RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
   RETURN_NOT_OK(drsw.Finish());
@@ -448,19 +430,21 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   if (gced_all_input) {
     LOG(INFO) << "Compaction resulted in no output rows (all input rows were GCed!)";
     LOG(INFO) << "Removing all input rowsets.";
-    AtomicSwapRowSets(input.rowsets(),
-                      shared_ptr<RowSet>(reinterpret_cast<RowSet *>(NULL)), NULL);
+    AtomicSwapRowSets(input.rowsets(), shared_ptr<RowSet>(reinterpret_cast<RowSet *>(NULL)));
+
     // Remove old rowsets
     DeleteCompactionInputs(input);
-    return Status::OK();
+
+    // Write out the new Tablet Metadata
+    return FlushMetadata(input.rowsets(), RowSetMetadataVector());
   }
 
   // Open the written-out snapshot as a new rowset.
   shared_ptr<DiskRowSet> new_rowset;
-  Status s = DiskRowSet::Open(env_, schema_, tmp_rowset_dir, &new_rowset);
+  Status s = DiskRowSet::Open(rowset_meta, schema_, &new_rowset);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to open snapshot compaction results in " << tmp_rowset_dir
-                 << ": " << s.ToString();
+    LOG(WARNING) << "Unable to open snapshot compaction results " << rowset_meta->ToString() << ": "
+                 << s.ToString();
     return s;
   }
 
@@ -509,20 +493,20 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
 
-  // ------------------------------
-  // Flush to tmp was successful. Rename it to its real location.
-
-  RETURN_NOT_OK(new_rowset->RenameRowSetDir(new_rowset_dir));
-
-  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
-
   // Replace the compacted rowsets with the new on-disk rowset.
   AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowset);
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
-
   // Remove old rowsets
   DeleteCompactionInputs(input);
+
+  // Write out the new Tablet Metadata
+  RowSetMetadataVector meta_to_add;
+  meta_to_add.push_back(new_rowset->metadata());
+  RETURN_NOT_OK(FlushMetadata(input.rowsets(), meta_to_add));
+
+  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
+
+  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
 
   return Status::OK();
 }
@@ -622,7 +606,6 @@ Status Tablet::CountRows(uint64_t *count) const {
 
   // Now sum up the counts.
   *count = memrowset->entry_count();
-
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets) {
     rowid_t l_count;
     RETURN_NOT_OK(rowset->CountRows(&l_count));
