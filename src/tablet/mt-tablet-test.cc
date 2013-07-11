@@ -124,7 +124,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           uint32_t new_val = old_val + 1;
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
-          CHECK_OK(tablet_->MutateRow(rb.data().data(), RowChangeList(update_buf)));
+          CHECK_OK(tablet_->MutateRow(rb.row(), RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
             updates->AddValue(updates_since_last_report);
@@ -193,7 +193,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     // This is provided by both harnesses.
     Schema projection = Schema(boost::assign::list_of
                                (ColumnSchema("val", UINT32, true)), // TODO: This should pick the test one
-                               1);
+                               0);
 
 
     static const int kBufInts = 1024*1024 / 8;

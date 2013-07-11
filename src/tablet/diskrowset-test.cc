@@ -64,8 +64,9 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
   // 1. Check a key which comes before all keys in rowset
   {
-    Slice key("h");
-    RowSetKeyProbe probe(schema_, &key);
+    RowBuilder rb(schema_.CreateKeyProjection());
+    rb.AddString(Slice("h"));
+    RowSetKeyProbe probe(rb.row());
     bool present;
     ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
     ASSERT_FALSE(present);
@@ -73,8 +74,9 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
   // 2. Check a key which comes after all keys in rowset
   {
-    Slice key("z");
-    RowSetKeyProbe probe(schema_, &key);
+    RowBuilder rb(schema_.CreateKeyProjection());
+    rb.AddString(Slice("z"));
+    RowSetKeyProbe probe(rb.row());
     bool present;
     ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
     ASSERT_FALSE(present);
@@ -83,8 +85,9 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   // 3. Check a key which is not present, but comes between present
   // keys
   {
-    Slice key("hello 00000000000049x");
-    RowSetKeyProbe probe(schema_, &key);
+    RowBuilder rb(schema_.CreateKeyProjection());
+    rb.AddString(Slice("hello 00000000000049x"));
+    RowSetKeyProbe probe(rb.row());
     bool present;
     ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
     ASSERT_FALSE(present);
@@ -93,9 +96,10 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   // 4. Check a key which is present
   {
     char buf[256];
+    RowBuilder rb(schema_.CreateKeyProjection());
     FormatKey(49, buf, sizeof(buf));
-    Slice key(buf);
-    RowSetKeyProbe probe(schema_, &key);
+    rb.AddString(Slice(buf));
+    RowSetKeyProbe probe(rb.row());
     bool present;
     ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
     ASSERT_TRUE(present);
@@ -125,8 +129,10 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   enc.SetToDelete();
 
   txid_t txid(0);
-  Slice bad_key = Slice("hello 00000000000049x");
-  RowSetKeyProbe probe(schema_, &bad_key);
+  RowBuilder rb(schema_.CreateKeyProjection());
+  rb.AddString(Slice("hello 00000000000049x"));
+  RowSetKeyProbe probe(rb.row());
+
   Status s = rs->MutateRow(txid, probe, enc.as_changelist());
   ASSERT_TRUE(s.IsNotFound());
 
@@ -260,7 +266,9 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       ScopedTransaction tx(&mvcc_);
       update.Reset();
       update.AddColumnUpdate(1, &i);
-      RowSetKeyProbe probe(schema_, &key_slice);
+      RowBuilder rb(schema_.CreateKeyProjection());
+      rb.AddString(key_slice);
+      RowSetKeyProbe probe(rb.row());
       ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
                                           probe,
                                           RowChangeList(update_buf)));

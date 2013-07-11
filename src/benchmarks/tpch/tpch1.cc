@@ -200,7 +200,7 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
       rb.AddString(Slice(columns[i]));
     }
 
-    CHECK_OK(tablet->Insert(rb.data()));
+    CHECK_OK(tablet->Insert(rb.row()));
   }
   CHECK_OK(tablet->Flush());
 }

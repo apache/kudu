@@ -103,11 +103,9 @@ class CFileKeyProbe {
 };
 
 // inline method to encode a key
-inline void EncodeKey(const Schema &schema,
-                      const void *raw_key,
+inline void EncodeKey(const ConstContiguousRow& row_slice,
                       faststring *encoded_key) {
-  ConstContiguousRow row_slice(schema, raw_key);
-  schema.EncodeComparableKey(row_slice, encoded_key);
+  row_slice.schema().EncodeComparableKey(row_slice, encoded_key);
 }
 
 }  // namespace cfile

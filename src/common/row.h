@@ -124,6 +124,106 @@ class ContiguousRowHelper {
   }
 };
 
+// TODO: Currently used only for testing and as memstore row wrapper
+
+// The row has all columns layed out in memory based on the schema.column_offset()
+class ContiguousRow {
+ public:
+  ContiguousRow(const Schema& schema, uint8_t *row_data = NULL)
+    : schema_(schema), row_data_(row_data) {
+  }
+
+  const Schema& schema() const {
+    return schema_;
+  }
+
+  void Reset(uint8_t *row_data) {
+    row_data_ = row_data;
+  }
+
+  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    ContiguousRowHelper::SetCellValue(schema, row_data_, col_idx, value);
+  }
+
+  bool is_null(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
+  }
+
+  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
+  }
+
+  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
+  }
+
+ private:
+  friend class ConstContiguousRow;
+
+  const Schema& schema_;
+  uint8_t *row_data_;
+};
+
+// This is the same as ContiguousRow except it refers to a const area of memory that
+// should not be mutated.
+class ConstContiguousRow {
+ public:
+  explicit ConstContiguousRow(const ContiguousRow &row)
+    : schema_(row.schema_),
+      row_data_(row.row_data_) {
+  }
+
+  ConstContiguousRow(const Schema& schema, const void *row_data)
+    : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data)) {
+  }
+
+  ConstContiguousRow(const Schema& schema, const Slice& row_slice)
+    : schema_(schema), row_data_(row_slice.data()) {
+  }
+
+  const Schema& schema() const {
+    return schema_;
+  }
+
+  const uint8_t *row_data() const {
+    return row_data_;
+  }
+
+  size_t row_size() const {
+    return ContiguousRowHelper::row_size(schema_);
+  }
+
+  bool is_null(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
+  }
+
+  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
+  }
+
+  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    // TODO: Handle different schema
+    DCHECK(schema.Equals(schema_));
+    return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
+  }
+
+ private:
+  const Schema& schema_;
+  const uint8_t *row_data_;
+};
+
 // Utility class for building rows corresponding to a given schema.
 // This is used when inserting data into the MemStore or a new Layer.
 class RowBuilder {
@@ -243,6 +343,14 @@ class RowBuilder {
     return Slice(buf_, byte_idx_ + bitmap_size_);
   }
 
+  const Schema& schema() const {
+    return schema_;
+  }
+
+  ConstContiguousRow row() const {
+    return ConstContiguousRow(schema_, data());
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(RowBuilder);
 
@@ -264,99 +372,6 @@ class RowBuilder {
   size_t col_idx_;
   size_t byte_idx_;
   size_t bitmap_size_;
-};
-
-
-// TODO: Currently used only for testing and as memstore row wrapper
-
-// The row has all columns layed out in memory based on the schema.column_offset()
-class ContiguousRow {
- public:
-  ContiguousRow(const Schema& schema, void *row_data = NULL)
-    : schema_(schema), row_data_(reinterpret_cast<uint8_t *>(row_data)) {
-  }
-
-  const Schema& schema() const {
-    return schema_;
-  }
-
-  void Reset(void *row_data) {
-    row_data_ = reinterpret_cast<uint8_t *>(row_data);
-  }
-
-  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    ContiguousRowHelper::SetCellValue(schema, row_data_, col_idx, value);
-  }
-
-  bool is_null(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
-  }
-
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
-  }
-
-  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
-  }
-
- private:
-  friend class ConstContiguousRow;
-
-  const Schema& schema_;
-  uint8_t *row_data_;
-};
-
-// This is the same as ContiguousRow except it refers to a const area of memory that
-// should not be mutated.
-class ConstContiguousRow {
- public:
-  explicit ConstContiguousRow(const ContiguousRow &row)
-    : schema_(row.schema_),
-      row_data_(row.row_data_) {
-  }
-
-  ConstContiguousRow(const Schema& schema, const void *row_data = NULL)
-    : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data)) {
-  }
-
-  const Schema& schema() const {
-    return schema_;
-  }
-
-  const uint8_t *row_data() const {
-    return row_data_;
-  }
-
-  bool is_null(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
-  }
-
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
-  }
-
-  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
-  }
-
- private:
-  const Schema& schema_;
-  const uint8_t *row_data_;
 };
 
 } // namespace kudu

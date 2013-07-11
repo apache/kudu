@@ -188,8 +188,9 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
   Schema schema(boost::assign::list_of
                 (ColumnSchema("col1", STRING)), 1);
 
-  Slice key("hello world");
-  ContiguousRow row(schema, &key);
+  RowBuilder rb(schema);
+  rb.AddString(Slice("hello world"));
+  ConstContiguousRow row(rb.schema(), rb.data());
 
   LOG_TIMING(INFO, "Encoding") {
     for (int i = 0; i < 10000000; i++) {

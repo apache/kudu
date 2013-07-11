@@ -262,7 +262,8 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
     return Status::OK();
   }
 
-  const ColumnSchema &key_col = base_data_->schema().column(0);
+  Schema key_schema = base_data_->schema().CreateKeyProjection();
+  const ColumnSchema &key_col = key_schema.column(0);
 
   ScanSpec::PredicateList *preds = spec->mutable_predicates();
   for (ScanSpec::PredicateList::iterator iter = preds->begin();
@@ -274,8 +275,9 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       const ValueRange &range = pred.range();
       if (range.has_lower_bound()) {
         bool exact;
+        ConstContiguousRow row_key(key_schema, range.lower_bound());
         Status s = key_iter_->SeekAtOrAfter(
-            RowSetKeyProbe(base_data_->schema(), range.lower_bound()).ToCFileKeyProbe(),
+            RowSetKeyProbe(row_key).ToCFileKeyProbe(),
             &exact);
         if (s.IsNotFound()) {
           // The lower bound is after the end of the key range.
@@ -292,8 +294,9 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       }
       if (range.has_upper_bound()) {
         bool exact;
+        ConstContiguousRow row_key(key_schema, range.upper_bound());
         Status s = key_iter_->SeekAtOrAfter(
-            RowSetKeyProbe(base_data_->schema(), range.upper_bound()).ToCFileKeyProbe(),
+            RowSetKeyProbe(row_key).ToCFileKeyProbe(),
             &exact);
         if (s.IsNotFound()) {
           // The upper bound is after the end of the key range - the existing upper bound

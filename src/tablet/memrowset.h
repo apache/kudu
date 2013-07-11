@@ -147,15 +147,15 @@ class MemRowSet : public RowSet,
 
   // Insert a new row into the memrowset.
   //
-  // The provided 'data' slice should have length equivalent to this
-  // memrowset's Schema.byte_size().
+  // The provided 'row' must have the same memrowset's Schema.
+  // (TODO: Different schema are not yet supported)
   //
   // After insert, the row and any referred-to memory (eg for strings)
   // have been copied into this MemRowSet's internal storage, and thus
   // the provided memory buffer may safely be re-used or freed.
   //
   // Returns Status::OK unless allocation fails.
-  Status Insert(txid_t txid, const Slice &data);
+  Status Insert(txid_t txid, const ConstContiguousRow& row);
 
 
   // Update or delete an existing row in the memrowset.
@@ -267,7 +267,7 @@ class MemRowSet : public RowSet,
 
   // Perform a "Reinsert" -- handle an insertion into a row which was previously
   // inserted and deleted, but still has an entry in the MemRowSet.
-  Status Reinsert(txid_t txid, const Slice &row_data, MRSRow *row);
+  Status Reinsert(txid_t txid, const ConstContiguousRow& row_data, MRSRow *row);
 
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 
@@ -314,7 +314,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     CHECK(!projection_mapping_.empty()) << "not initted";
 
     if (key.size() > 0) {
-      ConstContiguousRow row_slice(memrowset_->schema(), key.data());
+      ConstContiguousRow row_slice(memrowset_->schema(), key);
       memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
     } else {
       // Seeking to empty key shouldn't try to run any encoding.
@@ -475,7 +475,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
       } else if (decoder.is_reinsert()) {
         decoder.TwiddleDeleteStatus(&is_deleted);
 
-        ConstContiguousRow reinserted(memrowset_->schema(), decoder.reinserted_row_slice().data());
+        ConstContiguousRow reinserted(memrowset_->schema(), decoder.reinserted_row_slice());
         RETURN_NOT_OK(ProjectRow(reinserted, projection_mapping_, dst_row, dst_arena));
       } else {
         DCHECK(decoder.is_update());

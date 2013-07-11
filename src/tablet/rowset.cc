@@ -66,8 +66,6 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap)
 Status DuplicatingRowSet::MutateRow(txid_t txid,
                                     const RowSetKeyProbe &probe,
                                     const RowChangeList &update) {
-  ConstContiguousRow row_key(key_schema_, probe.raw_key());
-
   // Duplicate the update to both the relevant input rowset and the output rowset.
   //
   // It's crucial to do the mutation against the input side first, due to the potential
@@ -85,7 +83,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
       break;
     } else if (!s.IsNotFound()) {
       LOG(ERROR) << "Unable to update key "
-                 << schema().CreateKeyProjection().DebugRow(row_key)
+                 << schema().CreateKeyProjection().DebugRow(probe.row_key())
                  << " (failed on rowset " << rowset->ToString() << "): "
                  << s.ToString();
       return s;
@@ -100,7 +98,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
   Status s = new_rowset_->MutateRow(txid, probe, update);
   if (!s.ok()) {
     LOG(FATAL) << "Updated row in compaction input, but didn't exist in any compaction output: "
-               << schema().CreateKeyProjection().DebugRow(row_key);
+               << schema().CreateKeyProjection().DebugRow(probe.row_key());
   }
 
   return Status::OK();

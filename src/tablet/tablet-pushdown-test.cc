@@ -49,7 +49,7 @@ class TabletPushdownTest : public KuduTest {
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("%08ld", i));
 
-      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
+      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.row()));
 
       // Flush at 90% so we have some rows on disk and some in memrowset
       if (i == nrows * 9 / 10) {

@@ -106,17 +106,13 @@ class RowSetKeyProbe {
   //
   // NOTE: raw_key is not copied and must be valid for the liftime
   // of this object.
-  RowSetKeyProbe(const Schema &schema, const void *raw_key)
-    : raw_key_(raw_key),
-      schema_(schema) {
-    cfile::EncodeKey(schema,
-                     raw_key,
-                     &encoded_key_);
+  RowSetKeyProbe(const ConstContiguousRow& row_key)
+      : row_key_(row_key) {
+    cfile::EncodeKey(row_key, &encoded_key_);
     bloom_probe_ = BloomKeyProbe(Slice(encoded_key_));
   }
 
-  // Pointer to the raw pointer for the key in memory.
-  const void *raw_key() const { return raw_key_; }
+  const ConstContiguousRow& row_key() const { return row_key_; }
 
   // Pointer to the key which has been encoded to be contiguous
   // and lexicographically comparable
@@ -125,19 +121,18 @@ class RowSetKeyProbe {
   // Return the cached structure used to query bloom filters.
   const BloomKeyProbe &bloom_probe() const { return bloom_probe_; }
 
-  const Schema &schema() const { return schema_; }
+  const Schema &schema() const { return row_key_.schema(); }
 
   const cfile::CFileKeyProbe ToCFileKeyProbe() const {
-    return cfile::CFileKeyProbe(raw_key_,
+    return cfile::CFileKeyProbe(row_key_.row_data(),
                                 encoded_key_,
-                                schema_.num_key_columns());
+                                schema().num_key_columns());
   }
 
  private:
-  const void *raw_key_;
+  const ConstContiguousRow& row_key_;
   faststring encoded_key_;
   BloomKeyProbe bloom_probe_;
-  const Schema &schema_;
 };
 
 

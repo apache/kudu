@@ -58,13 +58,13 @@ class Tablet {
   // Returns Status::AlreadyPresent() if an entry with the same key is already
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
-  Status Insert(const Slice &data);
+  Status Insert(const ConstContiguousRow& row);
 
   // Update a row in this tablet.
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status MutateRow(const void *key,
+  Status MutateRow(const ConstContiguousRow& row_key,
                    const RowChangeList &update);
 
   // Create a new row iterator which yields the rows as of the current MVCC
