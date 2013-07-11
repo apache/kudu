@@ -91,7 +91,9 @@ Slice GVIntBlockBuilder::Finish(rowid_t ordinal_pos) {
                       implicit_cast<uint32_t>(min),
                       implicit_cast<uint32_t>(ordinal_pos), 0);
 
-  AppendGroupVarInt32Sequence(&buffer_, min, &ints_[0], size);
+  if (size > 0) {
+    AppendGroupVarInt32Sequence(&buffer_, min, &ints_[0], size);
+  }
 
   // Our estimate should always be an upper bound, or else there's a bunch of
   // extra copies due to resizes here.

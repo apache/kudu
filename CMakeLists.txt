@@ -73,12 +73,30 @@ SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 # Flag to enable clang address sanitizer
 # This will only build if clang is the chosen compiler
 if (${KUDU_USE_ASAN})
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g -fno-omit-frame-pointer")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
   # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
   set(KUDU_STATIC_LINK ON)
 endif ()
+
+# Flag to enable clang undefined behavior sanitizer
+# We explicitly don't enable all of the sanitizer flags:
+# - disable 'vptr' because it currently crashes somewhere in boost::intrusive::list code
+# - disable 'alignment' because unaligned access is really OK on Nehalem and we do it
+#   all over the place.
+if (${KUDU_USE_UBSAN})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover")
+endif ()
+
+if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}")
+  # Don't omit frame pointers, so that our failures have better info included.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointers")
+
+  # Ensure static linking is on -- otherwise can run into llvm bug #56393:
+  # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
+  set(KUDU_STATIC_LINK ON)
+endif()
 
 INCLUDE_DIRECTORIES(src)
 
