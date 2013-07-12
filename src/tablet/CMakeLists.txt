@@ -4,6 +4,7 @@ SET(TABLET_SRCS
   tablet.cc
   cfile_set.cc
   compaction.cc
+  compaction_policy.cc
   diskrowset.cc
   lock_manager.cc
   memrowset.cc

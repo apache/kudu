@@ -26,6 +26,7 @@ using std::string;
 using std::tr1::shared_ptr;
 
 class RowSetsInCompaction;
+class CompactionPolicy;
 
 class Tablet {
  public:
@@ -35,6 +36,7 @@ class Tablet {
 
   Tablet(const Schema &schema,
          const string &dir);
+  ~Tablet();
 
   // Create a new tablet.
   // This will create the directory for this tablet.
@@ -153,6 +155,8 @@ class Tablet {
 
   MvccManager mvcc_;
   LockManager lock_manager_;
+
+  gscoped_ptr<CompactionPolicy> compaction_policy_;
 
   // Lock protecting write access to the components of the tablet (memrowset and rowsets).
   // Shared mode:
