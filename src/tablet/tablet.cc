@@ -13,6 +13,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/atomicops.h"
+#include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/split.h"
@@ -392,9 +393,31 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
   CHECK_EQ(picked->num_rowsets(), 0);
 
-  return compaction_policy_->PickRowSets(rowsets_, picked);
+  unordered_set<RowSet*> picked_set;
+  RETURN_NOT_OK(compaction_policy_->PickRowSets(rowsets_, &picked_set));
+
+  BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_.all_rowsets()) {
+    if (!ContainsKey(picked_set, rs.get())) {
+      continue;
+    }
+
+    // Grab the compact_flush_lock: this prevents any other concurrent
+    // compaction from selecting this same rowset, and also ensures that
+    // we don't select a rowset which is currently in the middle of being
+    // flushed.
+    shared_ptr<boost::mutex::scoped_try_lock> lock(
+      new boost::mutex::scoped_try_lock(*rs->compact_flush_lock()));
+    CHECK(lock->owns_lock()) << rs->ToString() << " appeared available for "
+      "compaction when inputs were selected, but was unable to lock its "
+      "compact_flush_lock to prepare for compaction.";
+
+    // Push the lock on our scoped list, so we unlock when done.
+    picked->AddRowSet(rs, lock);
+  }
+  return Status::OK();
 }
 
 Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {

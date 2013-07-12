@@ -7,11 +7,13 @@
 #include "util/slice.h"
 #include "util/status.h"
 
+#include <tr1/unordered_set>
+
 namespace kudu {
 namespace tablet {
 
+class RowSet;
 class RowSetTree;
-class RowSetsInCompaction;
 
 // A Compaction Policy is responsible for picking which files in a tablet
 // should be compacted together.
@@ -20,7 +22,14 @@ class CompactionPolicy {
   CompactionPolicy() {}
   virtual ~CompactionPolicy() {}
 
-  virtual Status PickRowSets(const RowSetTree &tree, RowSetsInCompaction *picked) = 0;
+  // Select a set of RowSets to compact out of 'tree'.
+  //
+  // Callers are responsible for externally synchronizing selection within a
+  // given Tablet. This will only select rowsets whose compact_flush_lock
+  // is unlocked, but will not itself take the lock. Hence no other threads
+  // should lock or unlock the rowsets' compact_flush_lock while this method
+  // is running.
+  virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked) = 0;
 
   // Return the size at which flush/compact should "roll" to new files. Some
   // compaction policies may prefer to deal with small constant-size files
@@ -41,7 +50,7 @@ class CompactionPolicy {
 // This policy is more-or-less based on HBase.
 class SizeRatioCompactionPolicy : public CompactionPolicy {
  public:
-  virtual Status PickRowSets(const RowSetTree &tree, RowSetsInCompaction *picked);
+  virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked);
 };
 
 // Compaction policy which, given a size budget for a compaction, and a workload,
@@ -52,7 +61,7 @@ class SizeRatioCompactionPolicy : public CompactionPolicy {
 class BudgetedCompactionPolicy : public CompactionPolicy {
  public:
   // TODO: not yet implemented
-  virtual Status PickRowSets(const RowSetTree &tree, RowSetsInCompaction *picked);
+  virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked);
 
  private:
   FRIEND_TEST(TestBudgetedCompactionPolicy, TestStringFractionInRange);

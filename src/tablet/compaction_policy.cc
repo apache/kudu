@@ -3,7 +3,6 @@
 #include "tablet/compaction_policy.h"
 
 #include <boost/foreach.hpp>
-#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
 
@@ -11,6 +10,7 @@
 #include <vector>
 
 #include "gutil/endian.h"
+#include "gutil/map-util.h"
 #include "tablet/compaction.h"
 #include "tablet/rowset.h"
 #include "tablet/rowset_tree.h"
@@ -21,13 +21,28 @@ using std::tr1::shared_ptr;
 
 namespace kudu { namespace tablet {
 
+// Return true if the given RowSet's compact_flush_lock is currently
+// unlocked.
+static bool IsAvailableForCompaction(RowSet *rs) {
+  // Try to obtain the lock. If we don't succeed, it means the rowset
+  // was already locked for compaction by some other compactor thread,
+  // or it is a RowSet type which can't be used as a compaction input.
+  //
+  // We can be sure that our check here will remain true until after
+  // the compaction selection has finished because only one thread
+  // makes compaction selection at a time on a given Tablet due to
+  // Tablet::compact_select_lock_.
+  boost::mutex::scoped_try_lock try_lock(*rs->compact_flush_lock());
+  return try_lock.owns_lock();
+}
+
 static bool CompareBySize(const shared_ptr<RowSet> &a,
                           const shared_ptr<RowSet> &b) {
   return a->EstimateOnDiskSize() < b->EstimateOnDiskSize();
 }
 
 Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
-                                              RowSetsInCompaction *picked) {
+                                              std::tr1::unordered_set<RowSet*> *picked) {
   vector<shared_ptr<RowSet> > tmp_rowsets;
   tmp_rowsets.assign(tree.all_rowsets().begin(),
                      tree.all_rowsets().end());
@@ -36,21 +51,11 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
   std::sort(tmp_rowsets.begin(), tmp_rowsets.end(), CompareBySize);
   uint64_t accumulated_size = 0;
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, tmp_rowsets) {
-    uint64_t this_size = rs->EstimateOnDiskSize();
-    if (picked->num_rowsets() < 2 || this_size < accumulated_size * 2) {
-      // Grab the compact_flush_lock: this prevents any other concurrent
-      // compaction from selecting this same rowset, and also ensures that
-      // we don't select a rowset which is currently in the middle of being
-      // flushed.
-      shared_ptr<boost::mutex::scoped_try_lock> lock(
-        new boost::mutex::scoped_try_lock(*rs->compact_flush_lock()));
-      if (!lock->owns_lock()) {
-        LOG(INFO) << "Unable to select " << rs->ToString() << " for compaction: it is busy";
-        continue;
-      }
+    if (!IsAvailableForCompaction(rs.get())) continue;
 
-      // Push the lock on our scoped list, so we unlock when done.
-      picked->AddRowSet(rs, lock);
+    uint64_t this_size = rs->EstimateOnDiskSize();
+    if (picked->size() < 2 || this_size < accumulated_size * 2) {
+      InsertOrDie(picked, rs.get());
       accumulated_size += this_size;
     } else {
       break;

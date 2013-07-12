@@ -174,6 +174,13 @@ class Tablet {
   // and an RCU-style quiesce phase, but not worth it for now.
   mutable percpu_rwlock component_lock_;
 
+  // Lock protecting the selection of rowsets for compaction.
+  // Only one thread may run the compaction selection algorithm at a time
+  // so that they don't both try to select the same rowset. Before taking
+  // this lock, you should also hold component_lock_ in read mode so that
+  // no other thread could perform a swap underneath.
+  mutable boost::mutex compact_select_lock_;
+
   Atomic32 next_rowset_idx_;
 
   Env *env_;
