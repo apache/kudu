@@ -60,5 +60,46 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
   return Status::OK();
 }
 
+////////////////////////////////////////////////////////////
+// BudgetedCompactionPolicy
+////////////////////////////////////////////////////////////
+
+double BudgetedCompactionPolicy::StringFractionInRange(const Slice &min,
+                                                       const Slice &max,
+                                                       const Slice &point) {
+  DCHECK_GE(point.compare(min), 0) << "point " << point.ToDebugString() << " < " << min.ToDebugString();
+  DCHECK_LE(point.compare(max), 0) << "point " << point.ToDebugString() << " > " << max.ToDebugString();
+  DCHECK_LT(min.compare(max), 0);
+
+  // Determine how much of a common prefix the strings share.
+  int min_len = std::min(min.size(), max.size());
+  int common_prefix = 0;
+  while (common_prefix < min_len &&
+         min[common_prefix] == max[common_prefix]) {
+    common_prefix++;
+  }
+
+  DCHECK_EQ(memcmp(&min[0], &point[0], common_prefix), 0) << "point should share common prefix";
+
+  // Convert the remaining portion of each string to an integer.
+  uint64_t min_int = 0;
+  memcpy(&min_int, &min[common_prefix],
+         std::min(min.size() - common_prefix, sizeof(min_int)));
+  min_int = BigEndian::ToHost64(min_int);
+
+  uint64_t max_int = 0;
+  memcpy(&max_int, &max[common_prefix],
+         std::min(max.size() - common_prefix, sizeof(max_int)));
+  max_int = BigEndian::ToHost64(max_int);
+
+  uint64_t point_int = 0;
+  memcpy(&point_int, &point[common_prefix],
+         std::min(point.size() - common_prefix, sizeof(point_int)));
+  point_int = BigEndian::ToHost64(point_int);
+
+  // Compute how far between min and max the query point falls.
+  return static_cast<double>(point_int - min_int) / (max_int - min_int);
+}
+
 } // namespace tablet
 } // namespace kudu

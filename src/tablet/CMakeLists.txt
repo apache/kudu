@@ -30,6 +30,7 @@ ADD_KUDU_TEST(cfile_set-test)
 ADD_KUDU_TEST(tablet-pushdown-test)
 ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)
+ADD_KUDU_TEST(compaction_policy-test)
 ADD_KUDU_TEST(rowset_tree-test)
 
 # Some tests don't have dependencies on other tablet stuff

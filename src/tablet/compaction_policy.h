@@ -3,6 +3,7 @@
 #define KUDU_TABLET_COMPACTION_POLICY_H
 
 #include <gtest/gtest.h>
+#include "gutil/macros.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -34,6 +35,27 @@ class CompactionPolicy {
 class SizeRatioCompactionPolicy : public CompactionPolicy {
  public:
   virtual Status PickRowSets(const RowSetTree &tree, RowSetsInCompaction *picked);
+};
+
+// Compaction policy which, given a size budget for a compaction, and a workload,
+// tries to pick a set of RowSets which fit into that budget and minimize the
+// future cost of operations on the tablet.
+//
+// See src/tablet/compaction-policy.txt for details.
+class BudgetedCompactionPolicy : public CompactionPolicy {
+ public:
+  // TODO: not yet implemented
+  virtual Status PickRowSets(const RowSetTree &tree, RowSetsInCompaction *picked);
+
+ private:
+  FRIEND_TEST(TestBudgetedCompactionPolicy, TestStringFractionInRange);
+
+  // Return the fraction indicating where "point" falls lexicographically between the
+  // key range of [min, max].
+  // For example, between "0000" and "9999", "5000" is right in the middle of the range,
+  // hence this would return 0.5f. On the other hand, "1000" is 10% of the way through,
+  // so would return 0.1f.
+  static double StringFractionInRange(const Slice &min, const Slice &max, const Slice &point);
 };
 
 } // namespace tablet
