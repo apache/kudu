@@ -172,7 +172,7 @@ void ConvertDoubleToIntAndPopulate(const string &chars, RowBuilder *rb) {
 
 void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
   std::ifstream in(path.c_str());
-  CHECK(in.is_open()) << "not able to open the file";
+  CHECK(in.is_open()) << "not able to open input file: " << path;
 
   string line;
   RowBuilder rb(kSchema);
