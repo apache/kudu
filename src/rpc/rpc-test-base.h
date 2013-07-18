@@ -181,7 +181,7 @@ class RpcTestBase : public KuduTest {
     req.set_sleep_micros(500000); // 0.5sec
 
     RpcController c;
-    c.set_timeout(MonoDelta::FromMilliseconds(1));
+    c.set_timeout(timeout);
     Stopwatch sw;
     sw.start();
     Status s = p.SyncRequest(GenericCalculatorService::kSleepMethodName, req, &resp, &c);
