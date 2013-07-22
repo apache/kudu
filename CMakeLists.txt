@@ -91,7 +91,7 @@ endif ()
 
 if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}")
   # Don't omit frame pointers, so that our failures have better info included.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointers")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
   # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
