@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "gutil/macros.h"
+#include "gutil/stl_util.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
 
@@ -146,6 +147,10 @@ class MergeCompactionInput : public CompactionInput {
       pending_idx(0)
     {}
 
+    ~MergeState() {
+      STLDeleteElements(&dominated);
+    }
+
     bool empty() const {
       return pending_idx >= pending.size();
     }
@@ -163,9 +168,23 @@ class MergeCompactionInput : public CompactionInput {
       pending_idx = 0;
     }
 
+    // Return true if the current block of this input fully dominates
+    // the current block of the other input -- i.e that the last
+    // row of this block is less than the first row of the other block.
+    // In this case, we can remove the other input from the merge until
+    // this input's current block has been exhausted.
+    bool Dominates(const MergeState &other, const Schema &schema) const {
+      DCHECK(!empty());
+      DCHECK(!other.empty());
+
+      return schema.Compare(pending.back().row, other.next().row) < 0;
+    }
+
     shared_ptr<CompactionInput> input;
     vector<CompactionInputRow> pending;
     int pending_idx;
+
+    vector<MergeState *> dominated;
   };
 
  public:
@@ -173,15 +192,19 @@ class MergeCompactionInput : public CompactionInput {
                        const Schema &schema)
     : schema_(schema) {
     BOOST_FOREACH(const shared_ptr<CompactionInput> &input, inputs) {
-      MergeState state;
-      state.input = input;
-      states_.push_back(state);
+      gscoped_ptr<MergeState> state(new MergeState);
+      state->input = input;
+      states_.push_back(state.release());
     }
   }
 
+  virtual ~MergeCompactionInput() {
+    STLDeleteElements(&states_);
+  }
+
   virtual Status Init() {
-    BOOST_FOREACH(MergeState &state, states_) {
-      RETURN_NOT_OK(state.input->Init());
+    BOOST_FOREACH(MergeState *state, states_) {
+      RETURN_NOT_OK(state->input->Init());
     }
 
     // Pull the first block of rows from each input.
@@ -192,9 +215,9 @@ class MergeCompactionInput : public CompactionInput {
   virtual bool HasMoreBlocks() {
     // Return true if any of the input blocks has more rows pending
     // or more blocks which have yet to be pulled.
-    BOOST_FOREACH(MergeState &state, states_) {
-      if (!state.empty() ||
-          state.input->HasMoreBlocks()) {
+    BOOST_FOREACH(MergeState *state, states_) {
+      if (!state->empty() ||
+          state->input->HasMoreBlocks()) {
         return true;
       }
     }
@@ -216,9 +239,9 @@ class MergeCompactionInput : public CompactionInput {
       // but some benchmarks indicated that the simpler code path of the O(n k) merge
       // actually ends up a bit faster.
       for (int i = 0; i < states_.size(); i++) {
-        MergeState &state = states_[i];
+        MergeState *state = states_[i];
 
-        if (state.empty()) {
+        if (state->empty()) {
           // If any of our inputs runs out of pending entries, then we can't keep
           // merging -- this input may have further blocks to process.
           // Rather than pulling another block here, stop the loop. If it's truly
@@ -226,14 +249,14 @@ class MergeCompactionInput : public CompactionInput {
           return Status::OK();
         }
 
-        if (smallest_idx < 0 || schema_.Compare(state.next().row, smallest.row) < 0) {
+        if (smallest_idx < 0 || schema_.Compare(state->next().row, smallest.row) < 0) {
           smallest_idx = i;
-          smallest = state.next();
+          smallest = state->next();
         }
       }
       DCHECK_GE(smallest_idx, 0);
 
-      states_[smallest_idx].pop_front();
+      states_[smallest_idx]->pop_front();
       block->push_back(smallest);
     }
 
@@ -257,26 +280,87 @@ class MergeCompactionInput : public CompactionInput {
   //
   // Postcondition: every input has a non-empty pending list.
   Status ProcessEmptyInputs() {
-    vector<MergeState>::iterator it = states_.begin();
-    while (it != states_.end()) {
-      MergeState &state = *it;
-      if (state.empty()) {
-        RETURN_NOT_OK(state.input->FinishBlock());
-        if (state.input->HasMoreBlocks()) {
-          state.Reset();
-          RETURN_NOT_OK(state.input->PrepareBlock(&state.pending));
-        } else {
-          it = states_.erase(it);
-          continue;
+    int j = 0;
+    for (int i = 0; i < states_.size(); i++) {
+      MergeState *state = states_[i];
+      states_[j++] = state;
+
+      if (!state->empty()) {
+        continue;
+      }
+
+      RETURN_NOT_OK(state->input->FinishBlock());
+
+      // If an input is fully exhausted, no need to consider it
+      // in the merge anymore.
+      if (!state->input->HasMoreBlocks()) {
+
+        // Any inputs that were dominated by the last block of this input
+        // need to be re-added into the merge.
+        states_.insert(states_.end(), state->dominated.begin(), state->dominated.end());
+        state->dominated.clear();
+        delete state;
+        j--;
+        continue;
+      }
+
+      state->Reset();
+      RETURN_NOT_OK(state->input->PrepareBlock(&state->pending));
+
+      // Now that this input has moved to its next block, it's possible that
+      // it no longer dominates the inputs in it 'dominated' list. Re-check
+      // all of those dominance relations and remove any that are no longer
+      // valid.
+      for (vector<MergeState *>::iterator it = state->dominated.begin();
+           it != state->dominated.end();
+           ++it) {
+        MergeState *dominated = *it;
+        if (!state->Dominates(*dominated, schema_)) {
+          states_.push_back(dominated);
+          it = state->dominated.erase(it);
+          --it;
         }
       }
-      ++it;
     }
+    // We may have removed exhausted states as we iterated through the
+    // array, so resize them away.
+    states_.resize(j);
+
+    // Check pairs of states to see if any have dominance relations.
+    // This algorithm is probably not the most efficient, but it's the
+    // most obvious, and this doesn't ever show up in the profiler as
+    // much of a hot spot.
+    check_dominance:
+    for (int i = 0; i < states_.size(); i++) {
+      for (int j = i + 1; j < states_.size(); j++) {
+        if (TryInsertIntoDominanceList(states_[i], states_[j])) {
+          states_.erase(states_.begin() + j);
+          // Since we modified the vector, re-start iteration from the
+          // top.
+          goto check_dominance;
+        } else if (TryInsertIntoDominanceList(states_[j], states_[i])) {
+          states_.erase(states_.begin() + i);
+          // Since we modified the vector, re-start iteration from the
+          // top.
+          goto check_dominance;
+        }
+      }
+    }
+
     return Status::OK();
   }
 
+  bool TryInsertIntoDominanceList(MergeState *dominator, MergeState *candidate) {
+    if (dominator->Dominates(*candidate, schema_)) {
+      dominator->dominated.push_back(candidate);
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   const Schema schema_;
-  vector<MergeState> states_;
+  vector<MergeState *> states_;
 };
 
 } // anonymous namespace
