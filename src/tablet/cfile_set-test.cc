@@ -7,7 +7,6 @@
 #include "tablet/cfile_set.h"
 #include "tablet/diskrowset-test-base.h"
 #include "tablet/tablet-test-base.h"
-#include "gutil/stl_util.h"
 #include "util/test_util.h"
 
 DECLARE_int32(cfile_default_block_size);
@@ -195,8 +194,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Create iterator.
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
-  vector<EncodedKeyRange *> encoded;
-  ElementDeleter d(&encoded);
+  RangePredicateEncoder encoder(schema_.CreateKeyProjection());
 
   // Create a scan with a range predicate on the key column.
   ScanSpec spec;
@@ -204,7 +202,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   uint32_t upper = 2009;
   ColumnRangePredicate pred1(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred1);
-  spec.EncodeKeyRanges(schema_.CreateKeyProjection(), &encoded);
+  encoder.EncodeRangePredicates(&spec);
   ASSERT_STATUS_OK(iter->Init(&spec));
 
   // Check that the bounds got pushed as index bounds.
