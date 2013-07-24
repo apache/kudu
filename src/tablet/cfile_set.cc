@@ -8,6 +8,7 @@
 
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
+#include "cfile/cfile_util.h"
 #include "common/scan_spec.h"
 #include "tablet/diskrowset.h"
 #include "tablet/cfile_set.h"
@@ -18,6 +19,7 @@ DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on ro
 namespace kudu { namespace tablet {
 
 using cfile::ReaderOptions;
+using cfile::CFileKeyProbe;
 using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////
@@ -244,77 +246,66 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
 }
 
 Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
-
   CHECK_GT(row_count_, 0);
 
   lower_bound_idx_ = 0;
   // since upper_bound_idx is _inclusive_, subtract 1 from row_count
   upper_bound_idx_ = row_count_ - 1;
 
-  if (base_data_->schema().num_key_columns() > 1) {
-    VLOG(1) << "Range scan predicate pushdowns are not implemented for composite keys";
-    return Status::OK();
-  }
-
-
   if (spec == NULL) {
     // No predicate.
     return Status::OK();
   }
 
-  const ColumnSchema &key_col = base_data_->schema().column(0);
+  if (!spec->has_encoded_ranges()) {
+    VLOG(1) << "No predicates that can be pushed down!";
+    return Status::OK();
+  }
 
-  ScanSpec::PredicateList *preds = spec->mutable_predicates();
-  for (ScanSpec::PredicateList::iterator iter = preds->begin();
-       iter != preds->end();) {
-    const ColumnRangePredicate &pred = *iter;
-    if (pred.column().Equals(key_col)) {
-      VLOG(1) << "Pushing down predicate " << pred.ToString() << " on key column";
+  // TODO (afeinberg) : support pushing down compound keys
+  Schema key_schema = base_data_->schema().CreateKeyProjection();
+  const ColumnSchema &key_col = key_schema.column(0);
+  BOOST_FOREACH(const EncodedKeyRange *range, spec->encoded_ranges()) {
+    if (range->has_lower_bound()) {
+      bool exact;
+      Status s = key_iter_->SeekAtOrAfter(
+          CFileKeyProbe(key_schema, range->lower_bound()), &exact);
+      if (s.IsNotFound()) {
+        // The lower bound is after the end of the key range.
+        // Thus, no rows will pass the predicate, so we set the lower bound
+        // to the end of the file.
+        lower_bound_idx_ = row_count_;
+        return Status::OK();
+      }
+      RETURN_NOT_OK(s);
 
-      const ValueRange &range = pred.range();
-      if (range.has_lower_bound()) {
-        bool exact;
-        Status s = key_iter_->SeekAtOrAfter(
-            RowSetKeyProbe(base_data_->schema(), range.lower_bound()).ToCFileKeyProbe(),
-            &exact);
-        if (s.IsNotFound()) {
-          // The lower bound is after the end of the key range.
-          // Thus, no rows will pass the predicate, so we set the lower bound
-          // to the end of the file.
-          lower_bound_idx_ = row_count_;
-          return Status::OK();
-        }
+      lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
+      VLOG(1) << "Pushed lower bound value "
+              << key_col.Stringify(range->lower_bound().raw_key())
+              << " as row_idx >= " << lower_bound_idx_;
+    }
+    if (range->has_upper_bound()) {
+      bool exact;
+      Status s = key_iter_->SeekAtOrAfter(
+          CFileKeyProbe(key_schema, range->upper_bound()), &exact);
+      if (s.IsNotFound()) {
+        // The upper bound is after the end of the key range - the existing upper bound
+        // at EOF is correct.
+      } else {
         RETURN_NOT_OK(s);
 
-        lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
-        VLOG(1) << "Pushed lower bound value " << key_col.Stringify(range.lower_bound()) << " as "
-                << "row_idx >= " << lower_bound_idx_;
-      }
-      if (range.has_upper_bound()) {
-        bool exact;
-        Status s = key_iter_->SeekAtOrAfter(
-            RowSetKeyProbe(base_data_->schema(), range.upper_bound()).ToCFileKeyProbe(),
-            &exact);
-        if (s.IsNotFound()) {
-          // The upper bound is after the end of the key range - the existing upper bound
-          // at EOF is correct.
+        if (exact) {
+          upper_bound_idx_ = std::min(upper_bound_idx_,
+                                      key_iter_->GetCurrentOrdinal());
         } else {
-          RETURN_NOT_OK(s);
-
-          if (exact) {
-            upper_bound_idx_ = std::min(upper_bound_idx_, key_iter_->GetCurrentOrdinal());
-          } else {
-            upper_bound_idx_ = std::min(upper_bound_idx_, key_iter_->GetCurrentOrdinal() - 1);
-          }
-
-          VLOG(1) << "Pushed upper bound value " << key_col.Stringify(range.upper_bound()) << " as "
-                  << "row_idx <= " << upper_bound_idx_;
+          upper_bound_idx_ = std::min(upper_bound_idx_,
+                                      key_iter_->GetCurrentOrdinal() - 1);
         }
-      }
 
-      iter = preds->erase(iter);
-    } else {
-      ++iter;
+        VLOG(1) << "Pushed upper bound value "
+                << key_col.Stringify(range->upper_bound().raw_key())
+                << " as row_idx <= " << upper_bound_idx_;
+        }
     }
   }
   return Status::OK();

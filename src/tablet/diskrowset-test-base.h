@@ -56,6 +56,11 @@ class TestRowSet : public KuduTest {
     return Schema(cols, 1);
   }
 
+  void BuildRowKey(RowBuilder *rb, int row_idx) {
+    char buf[256];
+    FormatKey(row_idx, buf, sizeof(buf));
+    rb->AddString(Slice(buf));
+  }
 
   // Write out a test rowset with n_rows_ rows.
   // The data in the rowset looks like:
@@ -132,20 +137,18 @@ class TestRowSet : public KuduTest {
 
   // Mutate the given row.
   Status MutateRow(DiskRowSet *rs, uint32_t row_idx, const RowChangeList &mutation) {
-    char buf[256];
-    FormatKey(row_idx, buf, sizeof(buf));
-    Slice slice(buf);
-    RowSetKeyProbe probe(schema_, &slice);
+    RowBuilder rb(schema_.CreateKeyProjection());
+    BuildRowKey(&rb, row_idx);
+    RowSetKeyProbe probe(rb.row());
 
     ScopedTransaction tx(&mvcc_);
     return rs->MutateRow(tx.txid(), probe, mutation);
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {
-    char buf[256];
-    FormatKey(row_idx, buf, sizeof(buf));
-    Slice key_slice(buf);
-    RowSetKeyProbe probe(schema_, &key_slice);
+    RowBuilder rb(schema_.CreateKeyProjection());
+    BuildRowKey(&rb, row_idx);
+    RowSetKeyProbe probe(rb.row());
 
     return rs.CheckRowPresent(probe, present);
   }

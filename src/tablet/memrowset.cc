@@ -71,13 +71,12 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 }
 
 
-Status MemRowSet::Insert(txid_t txid, const Slice &data) {
-  CHECK_EQ(data.size(), ContiguousRowHelper::row_size(schema_));
-
-  ConstContiguousRow row_slice(schema_, data.data());
+Status MemRowSet::Insert(txid_t txid, const ConstContiguousRow& row) {
+  // TODO: Handle different schema
+  DCHECK(schema_.Equals(row.schema()));
 
   faststring enc_key_buf;
-  schema_.EncodeComparableKey(row_slice, &enc_key_buf);
+  schema_.EncodeComparableKey(row, &enc_key_buf);
   Slice enc_key(enc_key_buf);
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(enc_key);
@@ -91,13 +90,13 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   if (mutation.exists()) {
     // It's OK for it to exist if it's just a "ghost" row -- i.e the
     // row is deleted.
-    MRSRow row(this, mutation.current_mutable_value());
-    if (!row.IsGhost()) {
+    MRSRow ms_row(this, mutation.current_mutable_value());
+    if (!ms_row.IsGhost()) {
       return Status::AlreadyPresent("entry already present in memrowset");
     }
 
     // Insert a "reinsert" mutation.
-    return Reinsert(txid, data, &row);
+    return Reinsert(txid, row, &ms_row);
   }
 
   // Copy the non-encoded key onto the stack since we need
@@ -105,7 +104,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_txid = txid;
   mrsrow.header_->mutation_head = NULL;
-  mrsrow.CopyCellsFrom(row_slice);
+  mrsrow.CopyCellsFrom(row);
 
   // Copy any referred-to memory to arena.
   RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(&mrsrow, &arena_));
@@ -119,7 +118,7 @@ Status MemRowSet::Insert(txid_t txid, const Slice &data) {
   return Status::OK();
 }
 
-Status MemRowSet::Reinsert(txid_t txid, const Slice &row_data, MRSRow *row) {
+Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *ms_row) {
 
   // TODO(perf): This path makes some unnecessary copies that could be reduced,
   // but let's assume that REINSERT is really rare and code for clarity over speed
@@ -127,15 +126,15 @@ Status MemRowSet::Reinsert(txid_t txid, const Slice &row_data, MRSRow *row) {
 
   // Make a copy of the row, and relocate any of its indirected data into
   // our Arena.
-  uint8_t row_copy_buf[row_data.size()];
-  memcpy(row_copy_buf, row_data.data(), row_data.size());
+  uint8_t row_copy_buf[row.row_size()];
+  memcpy(row_copy_buf, row.row_data(), row.row_size());
   ContiguousRow row_copy(schema_, row_copy_buf);
   RETURN_NOT_OK(CopyRowIndirectDataToArena(&row_copy, &arena_));
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;
   RowChangeListEncoder encoder(schema_, &buf);
-  encoder.SetToReinsert(Slice(row_copy_buf, row_data.size()));
+  encoder.SetToReinsert(Slice(row_copy_buf, row.row_size()));
 
   // Move the REINSERT mutation itself into our Arena.
   Mutation *mut = Mutation::CreateInArena(&arena_, txid, encoder.as_changelist());
@@ -147,14 +146,13 @@ Status MemRowSet::Reinsert(txid_t txid, const Slice &row_data, MRSRow *row) {
   base::subtle::MemoryBarrier();
 
   // Append the mutation into the row's mutation list.
-  mut->AppendToList(&row->header_->mutation_head);
+  mut->AppendToList(&ms_row->header_->mutation_head);
   return Status::OK();
 }
 
 Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
                             const RowChangeList &delta) {
-  ConstContiguousRow row_slice(schema_, probe.raw_key());
   {
     btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key());
     mutation.Prepare(&tree_);

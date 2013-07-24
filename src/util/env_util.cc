@@ -24,12 +24,20 @@ Status OpenFileForWrite(Env *env, const string &path,
 
 Status OpenFileForRandom(Env *env, const string &path,
                          shared_ptr<RandomAccessFile> *file) {
-  RandomAccessFile *w;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &w));
-  file->reset(w);
+  RandomAccessFile *r;
+  RETURN_NOT_OK(env->NewRandomAccessFile(path, &r));
+  file->reset(r);
   return Status::OK();
 }
 
+Status OpenFileForSequential(Env *env, const string &path,
+                             shared_ptr<SequentialFile> *file)
+{
+  SequentialFile *r;
+  RETURN_NOT_OK(env->NewSequentialFile(path, &r));
+  file->reset(r);
+  return Status::OK();
+}
 
 } // namespace env_util
 } // namespace kudu

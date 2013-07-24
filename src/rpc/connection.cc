@@ -123,13 +123,16 @@ void Connection::QueueOutbound(gscoped_ptr<OutboundTransfer> transfer) {
     return;
   }
 
-  DVLOG(3) << "Queued transfer: " << transfer->HexDump();
-  if (outbound_transfers_.empty()) {
+  DVLOG(3) << "Queueing transfer: " << transfer->HexDump();
+
+  bool was_empty = outbound_transfers_.empty();
+  outbound_transfers_.push_back(*transfer.release());
+
+  if (was_empty) {
     // If we weren't currently in the middle of sending anything,
     // then our write_io_ interest is stopped. Need to re-start it.
     write_io_.start();
   }
-  outbound_transfers_.push_back(*transfer.release());
 }
 
 Connection::CallAwaitingResponse::~CallAwaitingResponse() {
@@ -141,9 +144,13 @@ void Connection::CallAwaitingResponse::HandleTimeout(ev::timer &watcher, int rev
 }
 
 void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
+  DCHECK(reactor_thread_->IsCurrentThread());
+  // The timeout timer is stopped by the car destructor exiting Connection::HandleCallResponse()
+  DCHECK(!car->call->IsFinished());
+
   // Detach the call object from the CallAwaitingResponse, mark it as failed.
   shared_ptr<OutboundCall> &call = car->call;
-  call->TimedOut();
+  call->SetTimedOut();
 
   // Drop the reference to the call. If the original caller has moved on after
   // seeing the timeout, we no longer need to hold onto the allocated memory
@@ -168,7 +175,14 @@ struct CallTransferCallbacks : public TransferCallbacks {
   }
 
   virtual void NotifyTransferFinished() {
-    call_->CallSent();
+    // TODO: would be better to cancel the transfer while it is still on the queue if we
+    // timed out before the transfer started, but there is still a race in the case of
+    // a partial send that we have to handle here
+    if (call_->IsFinished()) {
+      DCHECK(call_->IsTimedOut());
+    } else {
+      call_->SetSent();
+    }
     delete this;
   }
 
@@ -199,7 +213,7 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   DCHECK(!call->call_id_assigned());
 
   // Assign the call ID.
-  uint32_t call_id = next_call_id_++;
+  uint64_t call_id = next_call_id_++;
   call->set_call_id(call_id);
 
   // Serialize the actual bytes to be put on the wire.
@@ -210,19 +224,20 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
     return;
   }
 
-  call->CallQueued();
+  call->SetQueued();
 
   scoped_car car(car_pool_.make_scoped_ptr(car_pool_.Construct()));
   car->conn = this;
   car->call = call;
 
   // Set up the timeout timer.
-  float timeout_secs = call->controller()->timeout().ToSeconds();
+  double timeout_secs = call->controller()->timeout().ToSeconds();
   if (timeout_secs > 0) {
     reactor_thread_->RegisterTimeout(&car->timeout_timer);
     car->timeout_timer.set<CallAwaitingResponse, // NOLINT(*)
                            &CallAwaitingResponse::HandleTimeout>(car.get());
-    car->timeout_timer.start(timeout_secs, 0);
+    car->timeout_timer.set(timeout_secs, 0);
+    car->timeout_timer.start();
   }
 
   TransferCallbacks *cb = new CallTransferCallbacks(call);
@@ -398,6 +413,8 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
                  << "was not pending! Ignoring.";
     return;
   }
+
+  // The car->timeout_timer ev::timer will be stopped automatically by its destructor.
   scoped_car car(car_pool_.make_scoped_ptr(car_ptr));
 
   if (PREDICT_FALSE(car->call.get() == NULL)) {

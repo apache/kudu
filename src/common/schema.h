@@ -103,6 +103,11 @@ class Schema {
     CHECK_GT(cols_.size(), 0);
     CHECK_LE(key_columns, cols_.size());
 
+    // Verify that the key columns are not nullable
+    for (int i = 0; i < key_columns; ++i) {
+      CHECK(!cols_[i].is_nullable());
+    }
+
     // Calculate the offset of each column in the row format.
     col_offsets_.reserve(cols_.size());
     size_t off = 0;
@@ -304,8 +309,9 @@ class Schema {
   Slice EncodeComparableKey(const RowType& row, faststring *dst) const {
     dst->clear();
     for (size_t i = 0; i < num_key_columns_; i++) {
+      DCHECK(!cols_[i].is_nullable());
       const TypeInfo &ti = cols_[i].type_info();
-      bool is_last = i == num_key_columns_;
+      bool is_last = i == num_key_columns_ - 1;
       GetKeyEncoder(ti.type()).Encode(row.cell_ptr(*this, i), is_last, dst);
     }
     return Slice(*dst);

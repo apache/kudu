@@ -27,6 +27,7 @@ class OutboundCall;
 class RpcController {
  public:
   RpcController();
+  ~RpcController();
 
   // Return true if the call has finished.
   // A call is finished if the server has responded, or if the call
@@ -65,55 +66,17 @@ class RpcController {
   void set_timeout(const MonoDelta &timeout);
 
   // Return the configured timeout.
-  const MonoDelta &timeout() const { return timeout_; }
-
-  //------------------------------------------------------------
-  // Methods called by the RPC framework
-  //------------------------------------------------------------
-
-  // Called by the RPC framework to indicate that the call has failed.
-  void SetFailed(const Status &status);
-
-  // Called by the RPC framework to indicate that the call has timed out.
-  void SetTimedOut();
+  const MonoDelta &timeout() const;
 
  private:
   friend class OutboundCall;
   friend class Proxy;
 
-  // Various states the call propagates through.
-  // NB: if adding another state, be sure to update RpcController::finished()
-  // as well.
-  enum State {
-    READY,
-    ON_OUTBOUND_QUEUE,
-    SENT,
-    TIMED_OUT,
-    FINISHED_ERROR,
-    FINISHED_SUCCESS
-  };
-
-  void set_state(State new_state);
-
-  // Same as set_state, but requires that the caller already holds
-  // lock_
-  void set_state_unlocked(State new_state);
-
-  // Lock for state_ and call_status_ fields, since they
-  // may be mutated by the reactor thread while the client thread
-  // reads them.
-  mutable simple_spinlock lock_;
-  State state_;
-  Status call_status_;
-
   MonoDelta timeout_;
 
+  mutable simple_spinlock lock_;
+
   // Once the call is sent, it is tracked here.
-  // Currently, this is only used so as to tie the deallocation of the
-  // call to the deallocation of the controller object. This makes it
-  // more likely that the call will be deallocated on the user's
-  // caller thread instead of the IO thread, improving tcmalloc
-  // caching behavior.
   std::tr1::shared_ptr<OutboundCall> call_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcController);

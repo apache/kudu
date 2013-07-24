@@ -36,7 +36,7 @@ class TestCompaction : public KuduTest {
       snprintf(keybuf, sizeof(keybuf), "hello %03d", i * 10 + delta);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK(mrs->Insert(tx.txid(), rb.data()));
+      ASSERT_STATUS_OK(mrs->Insert(tx.txid(), rb.row()));
     }
   }
 
@@ -50,12 +50,14 @@ class TestCompaction : public KuduTest {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
       snprintf(keybuf, sizeof(keybuf), "hello %03d", i * 10 + delta);
-      Slice key(keybuf);
 
       update_buf.clear();
       RowChangeListEncoder update(schema_, &update_buf);
       update.AddColumnUpdate(1, &new_val);
-      RowSetKeyProbe probe(schema_,&key);
+
+      RowBuilder rb(schema_.CreateKeyProjection());
+      rb.AddString(Slice(keybuf));
+      RowSetKeyProbe probe(rb.row());
       ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(), probe, RowChangeList(update_buf)));
     }
   }

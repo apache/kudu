@@ -200,6 +200,11 @@ class RandomAccessFileImpl : public RandomAccessFile {
     return file_->Read(offset, n, result, scratch);
   }
 
+  virtual Status Size(uint64_t *size) const {
+    *size = file_->Size();
+    return Status::OK();
+  }
+
  private:
   FileState* file_;
 };

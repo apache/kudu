@@ -260,7 +260,7 @@ void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
         break;
       }
     }
-  } else if (Traits::get_left(query) > split_point_) {
+  } else if (Traits::compare(Traits::get_left(query), split_point_) > 0) {
     // The interval is fully right of the split point. So, it may not overlap
     // with any in 'left_'
     if (right_ != NULL) {

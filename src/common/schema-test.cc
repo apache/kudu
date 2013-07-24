@@ -162,10 +162,11 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
   pairs.push_back(test_pair(list_of(Slice("foo", 3))(Slice("bar", 3)),
                             Slice("foo" "\x00\x00" "bar", 8)));
 
-  // Key with a \x00 in it
-  pairs.push_back(test_pair(list_of(Slice("xxx\x00yyy", 7)),
-                            Slice("xxx" "\x00\x01" "yyy", 8)));
+  // Compound key with a \x00 in it
+  pairs.push_back(test_pair(list_of(Slice("xxx\x00yyy", 7))(Slice("bar", 3)),
+                            Slice("xxx" "\x00\x01" "yyy" "\x00\x00" "bar", 13)));
 
+  int i = 0;
   BOOST_FOREACH(const test_pair &t, pairs) {
     const vector<Slice> &in = boost::get<0>(t);
     Slice expected = boost::get<1>(t);
@@ -176,9 +177,10 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
     }
 
     ASSERT_EQ(0, expected.compare(Slice(fs)))
-      << "Failed encoding.\n"
+      << "Failed encoding example " << i << ".\n"
       << "Expected: " << HexDump(expected)
       << "Got:      " << HexDump(Slice(fs));
+    i++;
   }
 }
 
@@ -188,8 +190,9 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
   Schema schema(boost::assign::list_of
                 (ColumnSchema("col1", STRING)), 1);
 
-  Slice key("hello world");
-  ContiguousRow row(schema, &key);
+  RowBuilder rb(schema);
+  rb.AddString(Slice("hello world"));
+  ConstContiguousRow row(rb.schema(), rb.data());
 
   LOG_TIMING(INFO, "Encoding") {
     for (int i = 0; i < 10000000; i++) {

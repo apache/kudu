@@ -49,7 +49,7 @@ class TabletPushdownTest : public KuduTest {
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("%08ld", i));
 
-      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.data()));
+      ASSERT_STATUS_OK_FAST(tablet_->Insert(rb.row()));
 
       // Flush at 90% so we have some rows on disk and some in memrowset
       if (i == nrows * 9 / 10) {
@@ -64,6 +64,33 @@ class TabletPushdownTest : public KuduTest {
   gscoped_ptr<Tablet> tablet_;
 };
 
+
+TEST_F(TabletPushdownTest, TestPushdownIntKeyRange) {
+  gscoped_ptr<RowwiseIterator> iter;
+  ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &iter));
+
+  ScanSpec spec;
+  uint32_t lower = 200;
+  uint32_t upper = 210;
+  ColumnRangePredicate pred0(schema_.column(0), &lower, &upper);
+  spec.AddPredicate(pred0);
+
+  ASSERT_STATUS_OK(iter->Init(&spec));
+  ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
+
+  vector<string> results;
+  LOG_TIMING(INFO, "Filtering by int value") {
+    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+  }
+  BOOST_FOREACH(const string &str, results) {
+    LOG(INFO) << str;
+  }
+  ASSERT_EQ(11, results.size());
+  ASSERT_EQ("(uint32 key=200, uint32 int_val=2000, string string_val=00000200)",
+            results[0]);
+  ASSERT_EQ("(uint32 key=210, uint32 int_val=2100, string string_val=00000210)",
+            results[10]);
+}
 
 TEST_F(TabletPushdownTest, TestPushdownIntValueRange) {
   // Push down a double-ended range on the integer value column.

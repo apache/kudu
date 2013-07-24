@@ -85,11 +85,9 @@ message ConnectionHeader {
 // Header sent making a request.
 message RequestHeader {
   // Monotonically increasing callId to keep track of RPC requests and their response
-  optional uint32 callId = 1;
+  required uint32 callId = 1;
   // optional RPCTInfo traceInfo = 2;
-  optional string methodName = 3;
-  // If true, then a pb Message param follows.
-  optional bool requestParam = 4;
+  required string methodName = 3;
 }
 
 message ErrorStatusPB {
@@ -97,7 +95,7 @@ message ErrorStatusPB {
 }
 
 message ResponseHeader {
-  optional uint32 callId = 1;
+  required uint32 callId = 1;
 
   // If this is set, then this is an error response and the
   // response message will be of type ErrorStatusPB instead of

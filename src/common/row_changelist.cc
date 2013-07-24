@@ -19,7 +19,7 @@ string RowChangeList::ToString(const Schema &schema) const {
   if (decoder.is_delete()) {
     return string("DELETE");
   } else if (decoder.is_reinsert()) {
-    ConstContiguousRow row(schema, decoder.remaining_.data());
+    ConstContiguousRow row(schema, decoder.remaining_);
     return string("REINSERT ") + schema.DebugRow(row);
   } else {
     CHECK(decoder.is_update()) << "Unknown changelist type!";

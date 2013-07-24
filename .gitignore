@@ -20,3 +20,7 @@ oprofile_data
 *.proxy.cc
 *.proxy.h
 protoc-gen-krpc
+tpch1
+cfile-dump
+rwlock-perf
+rpc-bench

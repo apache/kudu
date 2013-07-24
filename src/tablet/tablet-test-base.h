@@ -42,7 +42,8 @@ struct StringKeyTestSetup {
                  (ColumnSchema("key", STRING))
                  (ColumnSchema("val", UINT32))
                  (ColumnSchema("update_count", UINT32)),
-                 1)
+                 1),
+    test_key_schema_(test_schema_.CreateKeyProjection())
   {}
 
   void BuildRowKey(RowBuilder *rb, uint64_t row_idx) {
@@ -84,14 +85,13 @@ struct StringKeyTestSetup {
   }
 
   Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
-    char keybuf[256];
-    FormatKey(keybuf, sizeof(keybuf), row_idx);
-    Slice row_key(keybuf);
+    RowBuilder rb(test_key_schema_);
+    BuildRowKey(&rb, row_idx);
     *new_val = 10000 + row_idx;
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(&row_key, RowChangeList(ubuf));
+    return tablet->MutateRow(rb.row(), RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -119,6 +119,7 @@ struct StringKeyTestSetup {
   }
 
   Schema test_schema_;
+  Schema test_key_schema_;
 };
 
 // Setup for testing composite keys
@@ -130,7 +131,8 @@ struct CompositeKeyTestSetup {
                  (ColumnSchema("key2", UINT32))
                  (ColumnSchema("val", UINT32))
                  (ColumnSchema("update_count", UINT32)),
-                 2)
+                 2),
+    test_key_schema_(test_schema_.CreateKeyProjection())
   {}
 
   void BuildRowKey(RowBuilder *rb, uint64_t row_idx) {
@@ -174,13 +176,13 @@ struct CompositeKeyTestSetup {
   }
 
   Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
-    RowBuilder rb(test_schema_.CreateKeyProjection());
+    RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     *new_val = 10000 + row_idx;
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(2, new_val);
-    return tablet->MutateRow(rb.data().data(), RowChangeList(ubuf));
+    return tablet->MutateRow(rb.row(), RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -209,6 +211,7 @@ struct CompositeKeyTestSetup {
   }
 
   Schema test_schema_;
+  Schema test_key_schema_;
 };
 
 // Setup for testing integer keys
@@ -221,7 +224,8 @@ struct IntKeyTestSetup {
               (ColumnSchema("key", Type))
               (ColumnSchema("val", UINT32))
               (ColumnSchema("update_count", UINT32)), 1),
-    type_info_(GetTypeInfo(Type)){
+    test_key_schema_(test_schema_.CreateKeyProjection()),
+    type_info_(GetTypeInfo(Type)) {
   }
 
   void BuildRowKey(RowBuilder *rb, int64_t i) {
@@ -251,12 +255,12 @@ struct IntKeyTestSetup {
   }
 
   Status DoUpdate(Tablet *tablet, int64_t row_idx, uint32_t *new_val) {
-    RowBuilder rb(test_schema_.CreateKeyProjection());
+    RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = (10000 + row_idx) * (row_idx % 2 == 0 ? -1 : 1);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(rb.data().data(), RowChangeList(buf));
+    return tablet->MutateRow(rb.row(), RowChangeList(buf));
   }
 
   template<class RowType>
@@ -282,6 +286,7 @@ struct IntKeyTestSetup {
   }
 
   Schema test_schema_;
+  Schema test_key_schema_;
   const TypeInfo &type_info_;
 };
 
@@ -367,7 +372,7 @@ void IntKeyTestSetup<INT64>::BuildRowKeyFromExistingRow(RowBuilder *rb, const Ro
 
 template<>
 string IntKeyTestSetup<UINT8>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(uint8 key=%d, uint32 val=%d, uint32 update_count=%d)",
@@ -378,7 +383,7 @@ string IntKeyTestSetup<UINT8>::FormatDebugRow(int64_t row_idx, uint32_t update_c
 
 template<>
 string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(int8 key=%d, uint32 val=%d, uint32 update_count=%d)",
@@ -389,7 +394,7 @@ string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t row_idx, uint32_t update_co
 
 template<>
 string IntKeyTestSetup<UINT16>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(uint16 key=%d, uint32 val=%d, uint32 update_count=%d)",
@@ -400,7 +405,7 @@ string IntKeyTestSetup<UINT16>::FormatDebugRow(int64_t row_idx, uint32_t update_
 
 template<>
 string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(int16 key=%d, uint32 val=%d, uint32 update_count=%d)",
@@ -411,7 +416,7 @@ string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t row_idx, uint32_t update_c
 
 template<>
 string IntKeyTestSetup<UINT32>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(uint32 key=%d, uint32 val=%d, uint32 update_count=%d)",
@@ -422,7 +427,7 @@ string IntKeyTestSetup<UINT32>::FormatDebugRow(int64_t row_idx, uint32_t update_
 
 template<>
 string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(int32 key=%d, uint32 val=%d, uint32 update_count=%d)",
@@ -433,7 +438,7 @@ string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t row_idx, uint32_t update_c
 
 template<>
 string IntKeyTestSetup<UINT64>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(uint64 key=%ld, uint32 val=%d, uint32 update_count=%d)",
@@ -444,7 +449,7 @@ string IntKeyTestSetup<UINT64>::FormatDebugRow(int64_t row_idx, uint32_t update_
 
 template<>
 string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t row_idx, uint32_t update_count) {
-  RowBuilder rb(test_schema_.CreateKeyProjection());
+  RowBuilder rb(test_key_schema_);
   BuildRowKey(&rb, row_idx);
   return StringPrintf(
       "(int64 key=%ld, uint32 val=%d, uint32 update_count=%d)",
@@ -460,7 +465,8 @@ struct NullableValueTestSetup {
     test_schema_(boost::assign::list_of
                  (ColumnSchema("key", UINT32))
                  (ColumnSchema("val", UINT32, true))
-                 (ColumnSchema("update_count", UINT32)), 1)
+                 (ColumnSchema("update_count", UINT32)), 1),
+    test_key_schema_(test_schema_.CreateKeyProjection())
   {}
 
   void BuildRowKey(RowBuilder *rb, uint64_t i) {
@@ -498,11 +504,12 @@ struct NullableValueTestSetup {
   }
 
   Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
-    uint32_t row_key = row_idx;
+    RowBuilder rb(test_key_schema_);
+    BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = CalcUpdateValue(row_idx);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, IsNullRow(row_idx) ? new_val : NULL);
-    return tablet->MutateRow(&row_key, RowChangeList(buf));
+    return tablet->MutateRow(rb.row(), RowChangeList(buf));
   }
 
   template <class RowType>
@@ -556,6 +563,7 @@ struct NullableValueTestSetup {
   }
 
   Schema test_schema_;
+  Schema test_key_schema_;
 };
 
 
@@ -600,7 +608,7 @@ class TabletTestBase : public KuduTest {
     for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
       setup_.BuildRow(&rb, i, update_count_val);
-      CHECK_OK(tablet_->Insert(rb.data()));
+      CHECK_OK(tablet_->Insert(rb.row()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
@@ -622,7 +630,7 @@ class TabletTestBase : public KuduTest {
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(col_idx, &new_val);
-    return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
+    return tablet_->MutateRow(rb.row(), RowChangeList(buf));
   }
 
   Status DeleteTestRow(uint64_t row_idx) {
@@ -631,7 +639,7 @@ class TabletTestBase : public KuduTest {
 
     faststring buf;
     RowChangeListEncoder(schema_, &buf).SetToDelete();
-    return tablet_->MutateRow(rb.data().data(), RowChangeList(buf));
+    return tablet_->MutateRow(rb.row(), RowChangeList(buf));
   }
 
   template <class RowType>

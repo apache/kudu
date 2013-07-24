@@ -14,7 +14,12 @@ class MessageLite;
 }
 }
 
-namespace kudu { namespace pb_util {
+namespace kudu {
+
+class SequentialFile;
+class WritableFile;
+
+namespace pb_util {
 
 using google::protobuf::MessageLite;
 
@@ -27,6 +32,11 @@ bool AppendPartialToString(const MessageLite &msg, faststring *output);
 // See MessageLite::SerializeToString.
 bool SerializeToString(const MessageLite &msg, faststring *output);
 
+// See MessageLite::ParseFromZeroCopyStream
+bool ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile);
+
+// See MessageLite::SerializeToZeroCopyStream.
+bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile);
 
 }
 }

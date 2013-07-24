@@ -88,6 +88,15 @@ class PosixRandomAccessFile: public RandomAccessFile {
     }
     return s;
   }
+
+  virtual Status Size(uint64_t *size) const {
+    struct stat st;
+    if (fstat(fd_, &st) == -1) {
+      return IOError(filename_, errno);
+    }
+    *size = st.st_size;
+    return Status::OK();
+  }
 };
 
 // mmap() based random-access
@@ -113,6 +122,11 @@ class PosixMmapReadableFile: public RandomAccessFile {
       *result = Slice(reinterpret_cast<uint8_t *>(mmapped_region_) + offset, n);
     }
     return s;
+  }
+
+  virtual Status Size(uint64_t *size) const {
+    *size = length_;
+    return Status::OK();
   }
 };
 

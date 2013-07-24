@@ -13,6 +13,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/atomicops.h"
+#include "gutil/stl_util.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/strip.h"
@@ -33,6 +34,7 @@ DEFINE_bool(tablet_do_dup_key_checks, true,
 namespace kudu { namespace tablet {
 
 using std::string;
+using std::set;
 using std::vector;
 using std::tr1::shared_ptr;
 using base::subtle::Barrier_AtomicIncrement;
@@ -139,19 +141,16 @@ Status Tablet::NewRowIterator(const Schema &projection,
 Status Tablet::NewRowIterator(const Schema &projection,
                               const MvccSnapshot &snap,
                               gscoped_ptr<RowwiseIterator> *iter) const {
-  vector<shared_ptr<RowwiseIterator> > iters;
-  RETURN_NOT_OK(CaptureConsistentIterators(projection, snap, &iters));
-
-  iter->reset(new UnionIterator(iters));
-
+  iter->reset(new Iterator(this, projection, snap));
   return Status::OK();
 }
 
 
-Status Tablet::Insert(const Slice &data) {
+Status Tablet::Insert(const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
 
-  RowSetKeyProbe probe(key_schema_, data.data());
+  DCHECK_SCHEMA_EQ(schema_, row.schema());
+  RowSetKeyProbe probe(row);
 
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
@@ -179,13 +178,14 @@ Status Tablet::Insert(const Slice &data) {
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
   ScopedTransaction tx(&mvcc_);
-  return memrowset_->Insert(tx.txid(), data);
+  return memrowset_->Insert(tx.txid(), row);
 }
 
-Status Tablet::MutateRow(const void *key,
+Status Tablet::MutateRow(const ConstContiguousRow& row_key,
                          const RowChangeList &update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
-  RowSetKeyProbe probe(key_schema_, key);
+  DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
+  RowSetKeyProbe probe(row_key);
 
   // The order of the next three lines is critical!
   //
@@ -554,6 +554,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   const MvccSnapshot &snap,
+  const vector<EncodedKeyRange *> &key_ranges,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
@@ -565,7 +566,29 @@ Status Tablet::CaptureConsistentIterators(
   shared_ptr<RowwiseIterator> ms_iter(memrowset_->NewRowIterator(projection, snap));
   ret.push_back(ms_iter);
 
-  // Grab all rowset iterators.
+  // We can only use this optimization if there is a single encoded predicate
+  // TODO : should we even support multiple predicates on the key, given they're
+  // currently ANDed together? This should be the job for a separate query
+  // optimizer.
+  if (key_ranges.size() == 1) {
+    const EncodedKeyRange &range = *key_ranges[0];
+    // TODO : support open-ended intervals
+    if (range.has_lower_bound() && range.has_upper_bound()) {
+      vector<RowSet *> interval_sets;
+      rowsets_.FindRowSetsIntersectingInterval(range.lower_bound().encoded_key(),
+                                               range.upper_bound().encoded_key(),
+                                               &interval_sets);
+      BOOST_FOREACH(const RowSet *rs, interval_sets) {
+        shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
+        ret.push_back(row_it);
+      }
+      ret.swap(*iters);
+      return Status::OK();
+    }
+  }
+
+  // If there are no encoded predicates or they represent an open-ended range, then
+  // fall back to grabbing all rowset iterators
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
     shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
     ret.push_back(row_it);
@@ -602,6 +625,64 @@ size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return rowsets_.all_rowsets().size();
 }
+
+Tablet::Iterator::Iterator(const Tablet *tablet,
+                           const Schema &projection,
+                           const MvccSnapshot &snap)
+    : tablet_(tablet),
+      projection_(projection),
+      snap_(snap) {
+}
+
+Tablet::Iterator::~Iterator() {
+  STLDeleteElements(&encoded_);
+}
+
+Status Tablet::Iterator::Init(ScanSpec *spec) {
+  DCHECK(iter_.get() == NULL);
+  vector<shared_ptr<RowwiseIterator> > iters;
+  if (spec != NULL) {
+    spec->EncodeKeyRanges(tablet_->schema().CreateKeyProjection(),
+                          &encoded_);
+  }
+  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
+      projection_, snap_, encoded_, &iters));
+  iter_.reset(new UnionIterator(iters));
+  RETURN_NOT_OK(iter_->Init(spec));
+  return Status::OK();
+}
+
+Status Tablet::Iterator::PrepareBatch(size_t *nrows) {
+  DCHECK(iter_.get() != NULL) << "Not initialized!";
+  return iter_->PrepareBatch(nrows);
+}
+
+bool Tablet::Iterator::HasNext() const {
+  DCHECK(iter_.get() != NULL) << "Not initialized!";
+  return iter_->HasNext();
+}
+
+Status Tablet::Iterator::MaterializeBlock(RowBlock *dst) {
+  DCHECK(iter_.get() != NULL) << "Not initialized!";
+  return iter_->MaterializeBlock(dst);
+}
+
+Status Tablet::Iterator::FinishBatch() {
+  DCHECK(iter_.get() != NULL) << "Not initialized!";
+  return iter_->FinishBatch();
+}
+
+string Tablet::Iterator::ToString() const {
+  string s;
+  s.append("tablet iterator: ");
+  if (iter_.get() == NULL) {
+    s.append("NULL");
+  } else {
+    s.append(iter_->ToString());
+  }
+  return s;
+}
+
 
 } // namespace table
 } // namespace kudu

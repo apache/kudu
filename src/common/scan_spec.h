@@ -16,7 +16,23 @@ class ScanSpec {
  public:
   typedef vector<ColumnRangePredicate> PredicateList;
 
+  ScanSpec();
+
   void AddPredicate(const ColumnRangePredicate &pred);
+
+  // Given the address of a vector, encode any predicates on the key
+  // column in this scan spec and store the address in the vector.
+  //
+  // Calling object must manage the specified vector, including
+  // deallocating members of the vector when the caller goes out of
+  // scope, using ElementDeleter or STLDeleteElements from
+  // gutil/stl_util.h
+  //
+  // TODO: have an iterator-level object auto-release pool (re-using
+  // code from Impala) so that a *encoded no longer has to be passed
+  // in; move and instead add an AddEncodedKeyRange() method.
+  void EncodeKeyRanges(const Schema &key_schema,
+                       vector<EncodedKeyRange *> *encoded);
 
   const vector<ColumnRangePredicate> &predicates() const {
     return predicates_;
@@ -31,9 +47,17 @@ class ScanSpec {
     return &predicates_;
   }
 
+  bool has_encoded_ranges() const {
+    return encoded_ranges_ != NULL;
+  }
+
+  const vector<EncodedKeyRange *> &encoded_ranges() const {
+    return *encoded_ranges_;
+  }
+
  private:
   vector<ColumnRangePredicate> predicates_;
-
+  vector<EncodedKeyRange *> *encoded_ranges_;
 };
 
 } // namespace kudu

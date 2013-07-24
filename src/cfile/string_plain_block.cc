@@ -45,8 +45,10 @@ Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
   InlineEncodeFixed32(&buffer_[4], offsets_.size());
   InlineEncodeFixed32(&buffer_[8], offsets_pos);
 
-  // append the offsets
-  coding::AppendGroupVarInt32Sequence(&buffer_, 0, &offsets_[0], offsets_.size());
+  // append the offsets, if non-empty
+  if (!offsets_.empty()) {
+    coding::AppendGroupVarInt32Sequence(&buffer_, 0, &offsets_[0], offsets_.size());
+  }
 
   return Slice(buffer_);
 }

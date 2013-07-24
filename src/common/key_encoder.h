@@ -188,55 +188,28 @@ struct KeyEncoderTraits<STRING> {
   // slice encoding that uses a separator to retain lexicographic
   // comparability
   inline static void EncodeWithSeparators(const Slice& s, bool is_last, faststring* dst) {
-#ifdef KEY_ENCODER_USE_SSE
-    // Work-in-progress code for using SSE to do the string escaping.
-    // This doesn't work correctly yet, and this hasn't been a serious hot spot.
-    char buf[16];
-    const uint8_t *p = s.data();
-    size_t rem = s.size();
-
-    __m128i xmm_zero = _mm_setzero_si128();
-
-    while (rem > 0) {
-      size_t chunk = (rem < 16) ? rem : 16;
-      memset(buf, 0, sizeof(buf));
-      memcpy(buf, p, chunk);
-      rem -= chunk;
-
-      __m128i xmm_chunk = _mm_load_si128(
-        reinterpret_cast<__m128i *>(buf));
-      uint16_t zero_mask = _mm_movemask_epi8(
-        _mm_cmpeq_epi8(xmm_zero, xmm_chunk));
-
-      zero_mask &= ((1 << chunk) - 1);
-
-      if (PREDICT_TRUE(zero_mask == 0)) {
-        dst_->append(buf, chunk);
-      } else {
-        // zero_mask now has bit 'n' set for each n where
-        // buf[n] == '\0'
-        // TODO: use the two halves of the bitmask in a lookup
-        // table with pshufb?
-
-        CHECK(0) << "TODO";
+    if (is_last) {
+      dst->append(s.data(), s.size());
+    } else {
+      // If we're a middle component of a composite key, we need to add a \x00
+      // at the end in order to separate this component from the next one. However,
+      // if we just did that, we'd have issues where a key that actually has
+      // \x00 in it would compare wrong, so we have to instead add \x00\x00, and
+      // encode \x00 as \x00\x01.
+      for (int i = 0; i < s.size(); i++) {
+        if (PREDICT_FALSE(s[i] == '\0')) {
+          dst->append("\x00\x01", 2);
+        } else {
+          dst->push_back(s[i]);
+        }
       }
-    }
-    uint8_t zeros[] = {0, 0};
-    if (!is_last) {
-      dst_->append(zeros, 2);
-    }
-#else
-    for (int i = 0; i < s.size(); i++) {
-      if (PREDICT_FALSE(s[i] == '\0')) {
-        dst->append("\x00\x01", 2);
-      } else {
-        dst->push_back(s[i]);
-      }
-    }
-    if (!is_last) {
       dst->append("\x00\x00", 2);
+
+      // TODO: this implementation isn't as fast as it could be. There was an
+      // aborted attempt at an SSE-based implementation here at one point, but
+      // it didn't work so got canned. Worth looking into this to improve
+      // composite key performance in the future.
     }
-#endif
   }
 };
 

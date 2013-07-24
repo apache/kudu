@@ -27,7 +27,8 @@ class TestMemRowSet : public ::testing::Test {
     schema_(boost::assign::list_of
             (ColumnSchema("key", STRING))
             (ColumnSchema("val", UINT32)),
-            1)
+            1),
+    key_schema_(schema_.CreateKeyProjection())
   {}
 
  protected:
@@ -53,8 +54,9 @@ class TestMemRowSet : public ::testing::Test {
 
   Status CheckRowPresent(const MemRowSet &mrs,
                          const string &key, bool *present) {
-    Slice keystr_slice(key);
-    RowSetKeyProbe probe(schema_, &keystr_slice);
+    RowBuilder rb(key_schema_);
+    rb.AddString(Slice(key));
+    RowSetKeyProbe probe(rb.row());
 
     return mrs.CheckRowPresent(probe, present);
   }
@@ -67,7 +69,7 @@ class TestMemRowSet : public ::testing::Test {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      RETURN_NOT_OK(mrs->Insert(txid_t(0), rb.data()));
+      RETURN_NOT_OK(mrs->Insert(txid_t(0), rb.row()));
     }
 
     return Status::OK();
@@ -78,16 +80,18 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(schema_);
     rb.AddString(key);
     rb.AddUint32(val);
-    return mrs->Insert(tx.txid(), rb.data());
+    return mrs->Insert(tx.txid(), rb.row());
   }
 
   Status UpdateRow(MemRowSet *mrs, const string &key, uint32_t new_val) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(schema_, &mutation_buf_);
-    Slice key_slice = Slice(key);
     update.AddColumnUpdate(1, &new_val);
-    RowSetKeyProbe probe(schema_,&key_slice);
+
+    RowBuilder rb(key_schema_);
+    rb.AddString(Slice(key));
+    RowSetKeyProbe probe(rb.row());
     return mrs->MutateRow(tx.txid(), probe, RowChangeList(mutation_buf_));
   }
 
@@ -95,9 +99,11 @@ class TestMemRowSet : public ::testing::Test {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(schema_, &mutation_buf_);
-    Slice key_slice = Slice(key);
     update.SetToDelete();
-    RowSetKeyProbe probe(schema_,&key_slice);
+
+    RowBuilder rb(key_schema_);
+    rb.AddString(Slice(key));
+    RowSetKeyProbe probe(rb.row());
     return mrs->MutateRow(tx.txid(), probe, RowChangeList(mutation_buf_));
   }
 
@@ -105,7 +111,7 @@ class TestMemRowSet : public ::testing::Test {
 
   faststring mutation_buf_;
   const Schema schema_;
-
+  const Schema key_schema_;
 };
 
 
@@ -150,7 +156,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("hello world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
-    Status row1 = mrs->Insert(tx.txid(), rb.data());
+    Status row1 = mrs->Insert(tx.txid(), rb.row());
     ASSERT_STATUS_OK(row1);
   }
 
@@ -160,7 +166,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("goodbye world"));
     rb.AddInt32(2);
     rb.AddUint32(54321);
-    Status row2 = mrs->Insert(tx2.txid(), rb.data());
+    Status row2 = mrs->Insert(tx2.txid(), rb.row());
     ASSERT_STATUS_OK(row2);
   }
 
@@ -170,7 +176,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("goodbye world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
-    Status row3 = mrs->Insert(tx3.txid(), rb.data());
+    Status row3 = mrs->Insert(tx3.txid(), rb.row());
     ASSERT_STATUS_OK(row3);
   }
 
@@ -341,7 +347,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
       snprintf(keybuf, sizeof(keybuf), "tx%d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), rb.data()));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), rb.row()));
     }
 
     // Transaction is committed. Save the snapshot after this commit.

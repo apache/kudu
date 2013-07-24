@@ -75,8 +75,6 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap)
 Status DuplicatingRowSet::MutateRow(txid_t txid,
                                     const RowSetKeyProbe &probe,
                                     const RowChangeList &update) {
-  ConstContiguousRow row_key(key_schema_, probe.raw_key());
-
   // Duplicate the update to both the relevant input rowset and the output rowset.
   //
   // It's crucial to do the mutation against the input side first, due to the potential
@@ -94,7 +92,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
       break;
     } else if (!s.IsNotFound()) {
       LOG(ERROR) << "Unable to update key "
-                 << schema().CreateKeyProjection().DebugRow(row_key)
+                 << schema().CreateKeyProjection().DebugRow(probe.row_key())
                  << " (failed on rowset " << rowset->ToString() << "): "
                  << s.ToString();
       return s;
@@ -119,14 +117,14 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
       #endif
     } else if (!s.IsNotFound()) {
       LOG(FATAL) << "Unable to mirror update to rowset " << new_rowset->ToString()
-                 << " for key: " << schema().CreateKeyProjection().DebugRow(row_key)
+                 << " for key: " << schema().CreateKeyProjection().DebugRow(probe.row_key())
                  << ": " << s.ToString();
     }
     // IsNotFound is OK - it might be in a different one.
   }
   CHECK_EQ(mirrored_count, 1)
     << "Updated row in compaction input, but didn't mirror in exactly 1 new rowset: "
-    << schema().CreateKeyProjection().DebugRow(row_key);
+    << schema().CreateKeyProjection().DebugRow(probe.row_key());
   return Status::OK();
 }
 

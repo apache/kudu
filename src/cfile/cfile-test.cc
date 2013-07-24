@@ -444,6 +444,12 @@ TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
   TestReadWriteFixedSizeTypes<Int32DataGenerator, INT32>(PLAIN);
 }
 
+void EncodeStringKey(const Schema &schema, const Slice& key, faststring *encoded_key) {
+  RowBuilder rb(schema.CreateKeyProjection());
+  rb.AddString(key);
+  EncodeKey(rb.row(), encoded_key);
+}
+
 TEST_F(TestCFile, TestReadWriteStrings) {
   Schema schema(boost::assign::list_of
                 (ColumnSchema("key", STRING)),
@@ -491,7 +497,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   faststring encoded_key;
   bool exact;
   s = "hello 5000.5";
-  EncodeKey(schema, &s, &encoded_key);
+  EncodeStringKey(schema, s, &encoded_key);
   ASSERT_STATUS_OK(
       iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_FALSE(exact);
@@ -501,7 +507,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   encoded_key.clear();
 
   s = "hello 9000";
-  EncodeKey(schema, &s, &encoded_key);
+  EncodeStringKey(schema, s, &encoded_key);
   ASSERT_STATUS_OK(
       iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_TRUE(exact);
@@ -512,14 +518,14 @@ TEST_F(TestCFile, TestReadWriteStrings) {
 
   // after last entry
   s = "hello 9999x";
-  EncodeKey(schema, &s, &encoded_key);
+  EncodeStringKey(schema, s, &encoded_key);
   EXPECT_TRUE(
       iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact).IsNotFound());
   encoded_key.clear();
 
   // before first entry
   s = "hello";
-  EncodeKey(schema, &s, &encoded_key);
+  EncodeStringKey(schema, s, &encoded_key);
   ASSERT_STATUS_OK(
       iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_FALSE(exact);
@@ -530,7 +536,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
 
   // to last entry
   s = "hello 9999";
-  EncodeKey(schema, &s, &encoded_key);
+  EncodeStringKey(schema, s, &encoded_key);
   ASSERT_STATUS_OK(
       iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
   ASSERT_TRUE(exact);

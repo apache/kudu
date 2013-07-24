@@ -125,6 +125,30 @@ TEST_F(TestRowSetTree, TestTree) {
   ASSERT_EQ(vec[3].get(), out[0]); // MemRowSet
   ASSERT_EQ(vec[0].get(), out[1]);
   ASSERT_EQ(vec[1].get(), out[2]);
+
+  // interval (2,4) overlaps 0-5, 3-5 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval("3", "4", &out);
+  ASSERT_EQ(3, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+
+  // interval (0,2) overlaps 0-5 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval("0", "2", &out);
+  ASSERT_EQ(2, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+
+  // interval (5,7) overlaps 0-5, 3-5, 5-9 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval("5", "7", &out);
+  ASSERT_EQ(4, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+  ASSERT_EQ(vec[2].get(), out[3]);
 }
 
 TEST_F(TestRowSetTree, TestPerformance) {

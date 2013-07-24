@@ -75,10 +75,16 @@ class MessengerBuilder {
   size_t service_queue_length_;
 };
 
+// A Messenger is a container for the reactor threads which run event loops
+// for the RPC service. If the process is a server, a Messenger can also have
+// one or more attached AcceptorPools which accept RPC connections. In this case,
+// calls received over the connection are enqueued into the messenger's service_queue
+// for processing by a ServicePool.
 //
-// The Messenger is the core class which manages sending and receiving
-// traffic.
+// Users do not typically interact with the Messenger directly except to create
+// one as a singleton, and then make calls using Proxy objects.
 //
+// See rpc-test.cc and rpc-bench.cc for example usages.
 class Messenger {
  public:
   friend class MessengerBuilder;

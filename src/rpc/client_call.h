@@ -14,6 +14,7 @@
 #include "rpc/rpc_header.pb.h"
 #include "rpc/response_callback.h"
 #include "rpc/sockaddr.h"
+#include "util/locks.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -48,6 +49,8 @@ class OutboundCall {
                RpcController *controller,
                const ResponseCallback &callback);
 
+  ~OutboundCall();
+
   // Serialize the given request PB into this call's internal storage.
   //
   // Because the data is fully serialized by this call, 'req' may be
@@ -66,11 +69,10 @@ class OutboundCall {
   Status SerializeTo(std::vector<Slice> *slices);
 
   // Callback after the call has been put on the outbound connection queue.
-  void CallQueued();
+  void SetQueued();
 
-  // Callback after the call has been sent.
-  // Used to update the controller state
-  void CallSent();
+  // Update the call state to show that the request has been sent.
+  void SetSent();
 
   // Mark the call as failed. This also triggers the callback to notify
   // the caller.
@@ -78,7 +80,11 @@ class OutboundCall {
 
   // Mark the call as timed out. This also triggers the callback to notify
   // the caller.
-  void TimedOut();
+  void SetTimedOut();
+  bool IsTimedOut() const;
+
+  // Is the call finished?
+  bool IsFinished() const;
 
   // Fill in the call response.
   void SetResponse(gscoped_ptr<CallResponse> resp);
@@ -113,6 +119,38 @@ class OutboundCall {
   }
 
  private:
+  friend class RpcController;
+
+  // Various states the call propagates through.
+  // NB: if adding another state, be sure to update OutboundCall::IsFinished()
+  // and OutboundCall::StateName(State state) as well.
+  enum State {
+    READY = 0,
+    ON_OUTBOUND_QUEUE = 1,
+    SENT = 2,
+    TIMED_OUT = 3,
+    FINISHED_ERROR = 4,
+    FINISHED_SUCCESS = 5
+  };
+
+  static string StateName(State state);
+
+  void set_state(State new_state);
+  State state() const;
+
+  // Same as set_state, but requires that the caller already holds
+  // lock_
+  void set_state_unlocked(State new_state);
+
+  // return current status
+  Status status() const;
+
+  // Lock for state_ and status_ fields, since they
+  // may be mutated by the reactor thread while the client thread
+  // reads them.
+  mutable simple_spinlock lock_;
+  State state_;
+  Status status_;
 
   // Call the user-provided callback.
   void CallCallback();

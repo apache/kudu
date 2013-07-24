@@ -9,7 +9,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 # compiler flags that are common across debug/release builds
 #  - msse4.2: Enable sse4.2 compiler intrinsics.
 #  - Wall: Enable all warnings.
-#  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned 
+#  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned
 #    integers
 #  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
 #  - pthread: enable multithreaded malloc
@@ -73,12 +73,30 @@ SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 # Flag to enable clang address sanitizer
 # This will only build if clang is the chosen compiler
 if (${KUDU_USE_ASAN})
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g -fno-omit-frame-pointer")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
   # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
   set(KUDU_STATIC_LINK ON)
 endif ()
+
+# Flag to enable clang undefined behavior sanitizer
+# We explicitly don't enable all of the sanitizer flags:
+# - disable 'vptr' because it currently crashes somewhere in boost::intrusive::list code
+# - disable 'alignment' because unaligned access is really OK on Nehalem and we do it
+#   all over the place.
+if (${KUDU_USE_UBSAN})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover")
+endif ()
+
+if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}")
+  # Don't omit frame pointers, so that our failures have better info included.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+
+  # Ensure static linking is on -- otherwise can run into llvm bug #56393:
+  # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
+  set(KUDU_STATIC_LINK ON)
+endif()
 
 INCLUDE_DIRECTORIES(src)
 
@@ -204,9 +222,9 @@ SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${KUDU_MIN_TEST_LIBS})
 # "make etags" target
 ############################################################
 IF (UNIX)
-  ADD_CUSTOM_TARGET(tags etags --members --declarations 
-  `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name 
-*.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or 
+  ADD_CUSTOM_TARGET(tags etags --members --declarations
+  `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name
+*.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or
 -name *.f`)
   ADD_CUSTOM_TARGET(etags DEPENDS tags)
 ENDIF (UNIX)
@@ -217,7 +235,7 @@ ENDIF (UNIX)
 IF (UNIX)
   ADD_CUSTOM_TARGET(lint cpplint.py --verbose=4
     --filter=-whitespace/comments,-whitespace/line_length,-readability/todo,-build/header_guard
-    `find ${CMAKE_CURRENT_SOURCE_DIR}/src 
+    `find ${CMAKE_CURRENT_SOURCE_DIR}/src
     -name *.cc -or -name *.h | grep -v .pb. | grep -v gutil`)
 ENDIF (UNIX)
 
@@ -241,7 +259,10 @@ set(LIBS ${LIBS} ${CFILE_LIBS})
 add_subdirectory(src/tablet)
 set(LIBS ${LIBS} ${TABLET_LIBS})
 
-add_subdirectory(src/rpc) 
+add_subdirectory(src/server)
+set(LIBS ${LIBS} ${SERVER_LIBS})
+
+add_subdirectory(src/rpc)
 set(LIBS ${LIBS} ${RPC_LIBS})
 
 add_subdirectory(src/experiments)

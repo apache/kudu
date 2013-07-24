@@ -36,6 +36,10 @@ class RowSetTree {
   void FindRowSetsWithKeyInRange(const Slice &encoded_key,
                                  std::vector<RowSet *> *rowsets) const;
 
+  void FindRowSetsIntersectingInterval(const Slice &lower_bound,
+                                       const Slice &upper_bound,
+                                       std::vector<RowSet *> *rowsets) const;
+
   const RowSetVector &all_rowsets() const { return all_rowsets_; }
 
  private:

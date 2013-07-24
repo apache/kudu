@@ -71,9 +71,20 @@ struct BTreeTraits {
     // races.
     debug_raciness = 0
   };
-
 };
 
+template<class T>
+inline void PrefetchMemory(const T *addr) {
+  int len = 4 * CACHELINE_SIZE;
+  size_t size = sizeof(T);
+  if (size + 1 < len) {
+    len = size + 1;
+  }
+
+  for (int i = 0; i < len; i += CACHELINE_SIZE) {
+    prefetch(reinterpret_cast<const char *>(addr) + i, PREFETCH_HINT_T0);
+  }
+}
 
 template<class Traits> class NodeBase;
 template<class Traits> class InternalNode;
@@ -330,18 +341,6 @@ class NodeBase {
   NodeBase() : version_(0), parent_(NULL)
   {}
 
-  void PrefetchMemoryWithSize(size_t size) const {
-    int len = 4 * CACHELINE_SIZE;
-    if (size + 1 < len) {
-      len = size + 1;
-    }
-
-    for (int i = 0; i < len; i += CACHELINE_SIZE) {
-      prefetch((const char *) this + i, PREFETCH_HINT_T0);
-    }
-  }
-
-
  public:
   volatile AtomicVersion version_;
 
@@ -554,11 +553,6 @@ class PACKED InternalNode : public NodeBase<Traits> {
     #endif
   }
 
-  // Prefetch up to the first 4 cachelines of this node.
-  void PrefetchMemory() const {
-    this->PrefetchMemoryWithSize(sizeof(*this));
-  }
-
   string ToString() const {
     string ret("[");
     for (int i = 0; i < num_children_; i++) {
@@ -722,11 +716,6 @@ class LeafNode : public NodeBase<Traits> {
 
     DCHECK_LT(new_num_entries, num_entries_);
     num_entries_ = new_num_entries;
-  }
-
-  // Prefetch up to the first 4 cachelines of this node.
-  void PrefetchMemory() const {
-    this->PrefetchMemoryWithSize(Traits::leaf_node_size);
   }
 
   string ToString() const {
@@ -1105,7 +1094,7 @@ class CBTree {
 
     while (node.type() != NodePtr<Traits>::LEAF_NODE) {
 #ifdef TRAVERSE_PREFETCH
-      node.internal_node_ptr()->PrefetchMemory();
+      PrefetchMemory(node.internal_node_ptr());
 #endif
       retry_in_node:
       int num_children = node.internal_node_ptr()->num_children_;
@@ -1143,7 +1132,7 @@ class CBTree {
       version = child_version;
     }
 #ifdef TRAVERSE_PREFETCH
-    node.leaf_node_ptr()->PrefetchMemory();
+    PrefetchMemory(node.leaf_node_ptr());
 #endif
     *stable_version = version;
     return node.leaf_node_ptr();
@@ -1692,7 +1681,7 @@ class CBTreeIterator {
       AtomicVersion version;
       LeafNode<Traits> *leaf = tree_->TraverseToLeaf(key, &version);
 #ifdef SCAN_PREFETCH
-      leaf->next_->PrefetchMemory();
+      PrefetchMemory(leaf->next_);
 #endif
 
       // If the tree is frozen, we don't need to follow optimistic concurrency.
@@ -1729,7 +1718,7 @@ class CBTreeIterator {
       return false;
     }
 #ifdef SCAN_PREFETCH
-    next->next_->PrefetchMemory();
+    PrefetchMemory(next->next_);
 #endif
 
     // If the tree is frozen, we don't need to play optimistic concurrency

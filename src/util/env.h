@@ -199,6 +199,9 @@ class RandomAccessFile {
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       uint8_t *scratch) const = 0;
+
+  // Returns the size of the file
+  virtual Status Size(uint64_t *size) const = 0;
 };
 
 // A file abstraction for sequential writing.  The implementation

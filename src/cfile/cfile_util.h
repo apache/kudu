@@ -8,7 +8,7 @@
 
 #include "common/schema.h"
 #include "common/row.h"
-
+#include "common/scan_predicate.h"
 #include "util/bloom_filter.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -64,6 +64,18 @@ struct ReaderOptions {
 class CFileKeyProbe {
  public:
 
+  // Meant to be called directly from CFileSet. Any state held in the
+  // specified EncodedKey object must by managed by the calling class.
+  //
+  // Lifetime any state contained in the specified EncodedKey object
+  // must > lifetime of CFKP
+  // TODO (afeinberg) : get rid of multiple constructors
+  CFileKeyProbe(const Schema &schema, const EncodedKey &e)
+      : raw_key_(e.raw_key()),
+        encoded_key_(e.as_faststring()),
+        num_key_columns_(schema.num_key_columns()) {
+  }
+
   // Usually not used directly but from RowSetKeyProbe. Public
   // constructor for testing purposes only.
   //
@@ -103,11 +115,9 @@ class CFileKeyProbe {
 };
 
 // inline method to encode a key
-inline void EncodeKey(const Schema &schema,
-                      const void *raw_key,
+inline void EncodeKey(const ConstContiguousRow& row_slice,
                       faststring *encoded_key) {
-  ConstContiguousRow row_slice(schema, raw_key);
-  schema.EncodeComparableKey(row_slice, encoded_key);
+  row_slice.schema().EncodeComparableKey(row_slice, encoded_key);
 }
 
 }  // namespace cfile

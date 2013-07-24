@@ -88,10 +88,11 @@ TYPED_TEST(TestTablet, DISABLED_TestMVCCAfterFlush) {
 TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, 12345);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
+  ConstContiguousRow row(rb.schema(), rb.data());
+  ASSERT_STATUS_OK(this->tablet_->Insert(row));
 
   // Insert again, should fail!
-  Status s = this->tablet_->Insert(rb.data());
+  Status s = this->tablet_->Insert(row);
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
 
@@ -102,7 +103,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   ASSERT_EQ(1, this->TabletCount());
 
-  s = this->tablet_->Insert(rb.data());
+  s = this->tablet_->Insert(row);
   ASSERT_TRUE(s.IsAlreadyPresent())
     << "expected AlreadyPresent, but got: " << s.ToString()
     << " Inserting: " << rb.data().ToDebugString();
@@ -234,19 +235,19 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, kInRowSet1);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
+  ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Put a row in disk rowset 2 (insert and flush)
   rb.Reset();
   this->setup_.BuildRow(&rb, kInRowSet2);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
+  ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Put a row in memrowset
   rb.Reset();
   this->setup_.BuildRow(&rb, kInMemRowSet);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
+  ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
 
   // Now iterate the tablet and make sure the rows show up
   gscoped_ptr<RowwiseIterator> iter;
@@ -289,7 +290,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   for (uint32_t i = 0; i < max_rows; i++) {
     rb.Reset();
     this->setup_.BuildRow(&rb, i);
-    ASSERT_STATUS_OK(this->tablet_->Insert(rb.data()));
+    ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
     inserted.insert(i);
 
     if (i % 300 == 0) {
