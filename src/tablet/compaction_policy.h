@@ -22,6 +22,13 @@ class CompactionPolicy {
 
   virtual Status PickRowSets(const RowSetTree &tree, RowSetsInCompaction *picked) = 0;
 
+  // Return the size at which flush/compact should "roll" to new files. Some
+  // compaction policies may prefer to deal with small constant-size files
+  // whereas others may prefer large ones.
+  virtual uint64_t target_rowset_size() const {
+    return 1024 * 1024 * 1024; // no rolling
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CompactionPolicy);
 };

@@ -24,9 +24,6 @@
 #include "util/bloom_filter.h"
 #include "util/env.h"
 
-DEFINE_int32(default_target_diskrowset_size, 32*1024*1024,
-             "The target size for DiskRowSets during flush/compact");
-
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
@@ -415,7 +412,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
 
   RollingDiskRowSetWriter drsw(env_, schema_, new_rowset_base, bloom_sizing(),
-                               FLAGS_default_target_diskrowset_size);
+                               compaction_policy_->target_rowset_size());
   RETURN_NOT_OK(drsw.Open());
   RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
   RETURN_NOT_OK(drsw.Finish());
