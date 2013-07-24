@@ -311,7 +311,7 @@ class Schema {
     for (size_t i = 0; i < num_key_columns_; i++) {
       DCHECK(!cols_[i].is_nullable());
       const TypeInfo &ti = cols_[i].type_info();
-      bool is_last = i == num_key_columns_;
+      bool is_last = i == num_key_columns_ - 1;
       GetKeyEncoder(ti.type()).Encode(row.cell_ptr(*this, i), is_last, dst);
     }
     return Slice(*dst);
