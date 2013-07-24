@@ -109,7 +109,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
     Status s = new_rowset->MutateRow(txid, probe, update);
     if (s.ok()) {
       mirrored_count++;
-      #ifndef NDEBUG
+      #ifdef NDEBUG
       // In non-DEBUG builds, we can break as soon as we find the correct
       // rowset to mirror to. In a DEBUG build, though, we keep looking
       // through all, and make sure that we only update in one of them.
