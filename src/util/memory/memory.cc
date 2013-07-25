@@ -13,6 +13,7 @@
 // limitations under the License.
 //
 
+#include "util/alignment.h"
 #include "util/memory/memory.h"
 
 #include <gflags/gflags.h>
@@ -153,7 +154,7 @@ void HeapBufferAllocator::FreeInternal(Buffer* buffer) {
 void* HeapBufferAllocator::Malloc(size_t size) {
   if (aligned_mode_) {
     void* data;
-    if (posix_memalign(&data, 16, ((size + 15) / 16) * 16)) {
+    if (posix_memalign(&data, 16, KUDU_ALIGN_UP(size, 16))) {
        return NULL;
     }
     return data;
