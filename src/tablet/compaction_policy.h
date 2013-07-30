@@ -2,7 +2,6 @@
 #ifndef KUDU_TABLET_COMPACTION_POLICY_H
 #define KUDU_TABLET_COMPACTION_POLICY_H
 
-#include <gtest/gtest.h>
 #include "gutil/macros.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -14,6 +13,12 @@ namespace tablet {
 
 class RowSet;
 class RowSetTree;
+
+// Forward declarations for internals (defined in compaction_policy-internal.h)
+namespace compaction_policy {
+class CompactionCandidate;
+class DataSizeCDF;
+}
 
 // A Compaction Policy is responsible for picking which files in a tablet
 // should be compacted together.
@@ -62,16 +67,6 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
  public:
   // TODO: not yet implemented
   virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked);
-
- private:
-  FRIEND_TEST(TestBudgetedCompactionPolicy, TestStringFractionInRange);
-
-  // Return the fraction indicating where "point" falls lexicographically between the
-  // key range of [min, max].
-  // For example, between "0000" and "9999", "5000" is right in the middle of the range,
-  // hence this would return 0.5f. On the other hand, "1000" is 10% of the way through,
-  // so would return 0.1f.
-  static double StringFractionInRange(const Slice &min, const Slice &max, const Slice &point);
 };
 
 } // namespace tablet
