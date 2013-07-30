@@ -29,6 +29,14 @@ DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
 
+DEFINE_string(tablet_compaction_policy, "size",
+              "Which compaction policy to use. Valid options are currently "
+              "'size' or 'budget'");
+
+DEFINE_int32(tablet_compaction_budget_mb, 128,
+             "Budget for a single compaction, if the 'budget' compaction "
+             "algorithm is selected");
+
 namespace kudu { namespace tablet {
 
 using std::string;
@@ -38,6 +46,17 @@ using std::tr1::shared_ptr;
 using base::subtle::Barrier_AtomicIncrement;
 
 const char *kRowSetPrefix = "rowset_";
+
+static CompactionPolicy *CreateCompactionPolicy() {
+  if (FLAGS_tablet_compaction_policy == "size") {
+    return new SizeRatioCompactionPolicy();
+  } else if (FLAGS_tablet_compaction_policy == "budget") {
+    return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
+  } else {
+    LOG(FATAL) << "Unknown compaction policy: " << FLAGS_tablet_compaction_policy;
+  }
+  return NULL;
+}
 
 string Tablet::GetRowSetPath(const string &tablet_dir,
                             int rowset_idx) {
@@ -52,10 +71,10 @@ Tablet::Tablet(const Schema &schema,
     key_schema_(schema.CreateKeyProjection()),
     dir_(dir),
     memrowset_(new MemRowSet(schema)),
-    compaction_policy_(new SizeRatioCompactionPolicy()),
     next_rowset_idx_(0),
     env_(Env::Default()),
     open_(false) {
+  compaction_policy_.reset(CreateCompactionPolicy());
 }
 
 Tablet::~Tablet() {

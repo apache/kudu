@@ -6,6 +6,7 @@
 #include "util/slice.h"
 #include "util/status.h"
 
+#include <vector>
 #include <tr1/unordered_set>
 
 namespace kudu {
@@ -65,8 +66,22 @@ class SizeRatioCompactionPolicy : public CompactionPolicy {
 // See src/tablet/compaction-policy.txt for details.
 class BudgetedCompactionPolicy : public CompactionPolicy {
  public:
-  // TODO: not yet implemented
+  explicit BudgetedCompactionPolicy(int size_budget_mb);
+
   virtual Status PickRowSets(const RowSetTree &tree, std::tr1::unordered_set<RowSet*>* picked);
+
+  virtual uint64_t target_rowset_size() const;
+
+ private:
+  void SetupKnapsackInput(const RowSetTree &tree,
+                          std::vector<compaction_policy::CompactionCandidate> *inputs);
+
+  // Collect any RowSetInfo objects which fall entirely within the range [min, max].
+  void CollectRowSetsBetween(const std::vector<compaction_policy::CompactionCandidate> &rowsets,
+                             double min, double max,
+                             std::vector<compaction_policy::CompactionCandidate> *results);
+
+  size_t size_budget_mb_;
 };
 
 } // namespace tablet

@@ -20,10 +20,15 @@
 #include "tablet/compaction.h"
 #include "tablet/rowset.h"
 #include "tablet/rowset_tree.h"
+#include "util/knapsack_solver.h"
 #include "util/slice.h"
 #include "util/status.h"
 
 using std::tr1::shared_ptr;
+
+DEFINE_int32(budgeted_compaction_target_rowset_size, 32*1024*1024,
+             "The target size for DiskRowSets during flush/compact when the "
+             "budgeted compaction policy is used");
 
 namespace kudu {
 namespace tablet {
@@ -331,6 +336,163 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
   }
 
   DumpCompactionSVG(candidates, *picked);
+
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// BudgetedCompactionPolicy
+////////////////////////////////////////////////////////////
+
+BudgetedCompactionPolicy::BudgetedCompactionPolicy(int budget)
+  : size_budget_mb_(budget) {
+  CHECK_GT(budget, 0);
+}
+
+uint64_t BudgetedCompactionPolicy::target_rowset_size() const {
+  CHECK_GT(FLAGS_budgeted_compaction_target_rowset_size, 0);
+  return FLAGS_budgeted_compaction_target_rowset_size;
+}
+
+void BudgetedCompactionPolicy::SetupKnapsackInput(const RowSetTree &tree,
+                                                  vector<CompactionCandidate> *rowsets) {
+  CompactionCandidate::CollectCandidates(tree, rowsets);
+
+  if (rowsets->size() < 2) {
+    // require at least 2 rowsets to compact
+    rowsets->clear();
+    return;
+  }
+
+  // Enforce a minimum size of 1MB, since otherwise the knapsack algorithm
+  // will always pick up small rowsets no matter what.
+  BOOST_FOREACH(CompactionCandidate& candidate, *rowsets) {
+    candidate.set_size_mb(std::max(candidate.size_mb(), 1));
+  }
+}
+
+void BudgetedCompactionPolicy::CollectRowSetsBetween(const vector<CompactionCandidate> &rowsets,
+                                                     double min, double max,
+                                                     std::vector<CompactionCandidate> *results) {
+  BOOST_FOREACH(const CompactionCandidate &candidate, rowsets) {
+    if (candidate.cdf_min_key() >= min && candidate.cdf_max_key() <= max) {
+      results->push_back(candidate);
+    }
+  }
+}
+
+struct KnapsackTraits {
+  typedef CompactionCandidate item_type;
+  typedef double value_type;
+  static int get_weight(const CompactionCandidate &item) {
+    return item.size_mb();
+  }
+  static value_type get_value(const CompactionCandidate &item) {
+    return item.width();
+  }
+};
+
+Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
+                                             unordered_set<RowSet*>* picked) {
+  vector<CompactionCandidate> all_candidates;
+  SetupKnapsackInput(tree, &all_candidates);
+  if (all_candidates.empty()) {
+    // nothing to compact.
+    return Status::OK();
+  }
+
+  KnapsackSolver<KnapsackTraits> solver;
+
+  // The best set of rowsets chosen so far
+  unordered_set<RowSet *> best_chosen;
+  // The value attained by the 'best_chosen' solution.
+  double best_optimal = 0;
+
+  // Iterate over all pairs (a, b) of rowsets
+  for (int i = 0; i < all_candidates.size(); i++) {
+    const CompactionCandidate &cc_a = all_candidates[i];
+    for (int j = i + 1; j < all_candidates.size(); j++) {
+      const CompactionCandidate &cc_b = all_candidates[j];
+
+      // Compute the "union width" -- i.e the width that the output would have
+      // when compacting any set of rowsets that include both 'cc_a' and 'cc_b'.
+      double ab_min = std::min(cc_a.cdf_min_key(), cc_b.cdf_min_key());
+      double ab_max = std::max(cc_a.cdf_max_key(), cc_b.cdf_max_key());
+      double union_width = ab_max - ab_min;
+      DCHECK_GE(union_width, 0);
+      DVLOG(2) << "Evaluating bounds:";
+      DVLOG(2) << "cc_a: " << cc_a.ToString();
+      DVLOG(2) << "cc_b: " << cc_b.ToString();
+      DVLOG(2) << "Union width: " << union_width;
+
+      // Only run knapsack against those candidates that fall entirely within
+      // the union range.
+      vector<CompactionCandidate> inrange_candidates;
+      inrange_candidates.reserve(all_candidates.size());
+      CollectRowSetsBetween(all_candidates, ab_min, ab_max, &inrange_candidates);
+
+      vector<size_t> chosen;
+      chosen.reserve(all_candidates.size());
+      double this_optimal = 0;
+      solver.Solve(inrange_candidates, size_budget_mb_, &chosen, &this_optimal);
+
+      // Adjust the result downward slightly for wider solutions.
+      // Consider this input:
+      //
+      //  |-----A----||----C----|
+      //  |-----B----|
+      //
+      // where A, B, and C are all 1MB, and the budget is 10MB.
+      //
+      // Without this tweak, the solution {A, B, C} has the exact same
+      // solution value as {A, B}, since both compactions would yield a
+      // tablet with average height 1. Since both solutions fit within
+      // the budget, either would be a valid pick, and it would be up
+      // to chance which solution would be selected.
+      // Intuitively, though, there's no benefit to including "C" in the
+      // compaction -- it just uses up some extra IO. If we slightly
+      // penalize wider solutions as a tie-breaker, then we'll pick {A, B}
+      // here.
+      double adj_optimal = this_optimal - union_width * 1.01f;
+
+      if (VLOG_IS_ON(2)) {
+        VLOG(2) << "Solution=" << this_optimal << " adjusted=" << adj_optimal;
+        BOOST_FOREACH(size_t i, chosen) {
+          VLOG(2) << "  " << inrange_candidates[i].ToString();
+        }
+      }
+
+      if (adj_optimal > best_optimal) {
+        best_chosen.clear();
+        BOOST_FOREACH(size_t i, chosen) {
+          best_chosen.insert(inrange_candidates[i].rowset().get());
+        }
+        best_optimal = adj_optimal;
+      }
+    }
+  }
+
+  // Log the input and output of the selection.
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Budgeted compaction selection:";
+    BOOST_FOREACH(CompactionCandidate &cand, all_candidates) {
+      const char *checkbox = "[ ]";
+      if (ContainsKey(best_chosen, cand.rowset().get())) {
+        checkbox = "[x]";
+      }
+      VLOG(1) << "  " << checkbox << " " << cand.ToString();
+    }
+    VLOG(1) << "Solution value: " << best_optimal;
+  }
+
+  if (best_optimal <= 0) {
+    LOG(INFO) << "Best compaction available makes things worse. Not compacting.";
+    return Status::OK();
+  }
+
+  picked->swap(best_chosen);
+  DumpCompactionSVG(all_candidates, *picked);
+
   return Status::OK();
 }
 
