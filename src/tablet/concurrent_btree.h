@@ -236,7 +236,7 @@ struct VersionField {
 // Return the index of the first entry in the array which is
 // >= the given value
 template<size_t N>
-size_t FindInSliceArray(const InlineSlice<N> *array, ssize_t num_entries,
+size_t FindInSliceArray(const InlineSlice<N, true> *array, ssize_t num_entries,
                         const Slice &key, bool *exact) {
   DCHECK_GE(num_entries, 0);
 
@@ -579,19 +579,21 @@ class PACKED InternalNode : public NodeBase<Traits> {
     return num_children_ - 1;
   }
 
-  uint32_t num_children_;
-
   enum {
     constant_overhead = (sizeof(NodeBase<Traits>)
                          + sizeof(uint32) /* num_children_ */
                          + (sizeof(void *) * Traits::fanout)), // child_pointers_
-
-    key_inline_size = (Traits::internal_node_size - constant_overhead) / Traits::fanout
+    // Align the size down so that each InlineSlice is pointer-aligned,
+    // necessary for atomic operation.
+    key_inline_size = KUDU_ALIGN_DOWN((Traits::internal_node_size - constant_overhead) / Traits::fanout,
+                                      sizeof(void *))
   };
 
-  typedef InlineSlice<key_inline_size> KeyInlineSlice;
+  typedef InlineSlice<key_inline_size, true> KeyInlineSlice;
   KeyInlineSlice keys_[Traits::fanout];
   NodePtr<Traits> child_pointers_[Traits::fanout];
+
+  uint32_t num_children_;
 } PACKED;
 
 ////////////////////////////////////////////////////////////
@@ -742,21 +744,25 @@ class LeafNode : public NodeBase<Traits> {
 
   LeafNode<Traits> *next_;
 
-  uint8_t num_entries_;
-
   enum {
     constant_overhead = sizeof(LeafNode<Traits> * /* next_ */) +
                         sizeof(uint8_t /* num_entries_*/),
     kv_space = Traits::leaf_node_size - constant_overhead,
-    key_inline_size = kv_space / 2 / Traits::leaf_max_entries,
-    val_inline_size = kv_space / 2 / Traits::leaf_max_entries
+
+    // Align the size down so that each InlineSlice is pointer-aligned,
+    // necessary for atomic operation.
+    key_inline_size = KUDU_ALIGN_DOWN(kv_space / 2 / Traits::leaf_max_entries,
+                                      sizeof(void *)),
+    val_inline_size = key_inline_size
   };
 
-  typedef InlineSlice<key_inline_size> KeyInlineSlice;
-  typedef InlineSlice<val_inline_size> ValInlineSlice;
+  typedef InlineSlice<key_inline_size, true> KeyInlineSlice;
+  typedef InlineSlice<val_inline_size, true> ValInlineSlice;
 
   KeyInlineSlice keys_[Traits::leaf_max_entries];
   ValInlineSlice vals_[Traits::leaf_max_entries];
+
+  uint8_t num_entries_;
 } PACKED;
 
 

@@ -127,7 +127,7 @@ class Tablet {
   // The returned iterators are not Init()ed
   Status CaptureConsistentIterators(const Schema &projection,
                                     const MvccSnapshot &snap,
-                                    const vector<EncodedKeyRange *> &key_ranges,
+                                    const ScanSpec *spec,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked) const;
@@ -215,7 +215,7 @@ class Tablet::FlushFaultHooks {
 
 class Tablet::Iterator : public RowwiseIterator {
  public:
-  virtual ~Iterator();
+  virtual ~Iterator() {}
 
   virtual Status Init(ScanSpec *spec);
 
@@ -246,7 +246,7 @@ class Tablet::Iterator : public RowwiseIterator {
   const Schema projection_;
   const MvccSnapshot snap_;
   gscoped_ptr<UnionIterator> iter_;
-  vector<EncodedKeyRange *> encoded_;
+  RangePredicateEncoder encoder_;
 };
 
 

@@ -32,6 +32,7 @@
 #include "gutil/macros.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/stringpiece.h"
+#include "util/alignment.h"
 #include "util/memory/memory.h"
 #include "util/slice.h"
 
@@ -291,7 +292,7 @@ inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(const size_t si
   retry:
   Atomic32 offset = Acquire_Load(&offset_);
 
-  Atomic32 aligned = (offset + (alignment - 1)) & ~(alignment - 1);
+  Atomic32 aligned = KUDU_ALIGN_UP(offset, alignment);
   Atomic32 new_offset = aligned + size;
 
   if (PREDICT_TRUE(new_offset <= size_)) {
@@ -313,7 +314,7 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(const size_t s
   DCHECK(alignment == 1 || alignment == 2 || alignment == 4 ||
          alignment == 8 || alignment == 16)
     << "bad alignment: " << alignment;
-  size_t aligned = (offset_ + (alignment - 1)) & ~(alignment - 1);
+  size_t aligned = KUDU_ALIGN_UP(offset_, alignment);
   uint8_t* destination = data_ + aligned;
   size_t save_offset = offset_;
   offset_ = aligned + size;

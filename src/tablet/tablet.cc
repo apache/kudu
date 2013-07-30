@@ -551,7 +551,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
 Status Tablet::CaptureConsistentIterators(
   const Schema &projection,
   const MvccSnapshot &snap,
-  const vector<EncodedKeyRange *> &key_ranges,
+  const ScanSpec *spec,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
@@ -567,8 +567,8 @@ Status Tablet::CaptureConsistentIterators(
   // TODO : should we even support multiple predicates on the key, given they're
   // currently ANDed together? This should be the job for a separate query
   // optimizer.
-  if (key_ranges.size() == 1) {
-    const EncodedKeyRange &range = *key_ranges[0];
+  if (spec != NULL && spec->encoded_ranges().size() == 1) {
+    const EncodedKeyRange &range = *(spec->encoded_ranges()[0]);
     // TODO : support open-ended intervals
     if (range.has_lower_bound() && range.has_upper_bound()) {
       vector<RowSet *> interval_sets;
@@ -628,22 +628,18 @@ Tablet::Iterator::Iterator(const Tablet *tablet,
                            const MvccSnapshot &snap)
     : tablet_(tablet),
       projection_(projection),
-      snap_(snap) {
-}
-
-Tablet::Iterator::~Iterator() {
-  STLDeleteElements(&encoded_);
+      snap_(snap),
+      encoder_(tablet_->schema().CreateKeyProjection()) {
 }
 
 Status Tablet::Iterator::Init(ScanSpec *spec) {
   DCHECK(iter_.get() == NULL);
   vector<shared_ptr<RowwiseIterator> > iters;
   if (spec != NULL) {
-    spec->EncodeKeyRanges(tablet_->schema().CreateKeyProjection(),
-                          &encoded_);
+    encoder_.EncodeRangePredicates(spec);
   }
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
-      projection_, snap_, encoded_, &iters));
+      projection_, snap_, spec, &iters));
   iter_.reset(new UnionIterator(iters));
   RETURN_NOT_OK(iter_->Init(spec));
   return Status::OK();
