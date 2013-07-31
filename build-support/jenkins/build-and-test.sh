@@ -25,7 +25,7 @@ ulimit -c unlimited
 # Set up defaults for environment variables.
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-1}
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
-LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.2/}
+LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
