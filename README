@@ -10,25 +10,16 @@ Earlier versions of each of these may work, but have not recently
 been tested.
 
 
-Downloading thirdparty dependencies
+Download and build thirdparty dependencies
 ------------------------------------------------------------
+$ thirdparty/build-if-necessary.sh
 
-$ cd thirdparty/
-$ ./download-thirdparty.sh
-
-
-Building thirdparty dependencies
-------------------------------------------------------------
-
-$ cd thirdparty/
-$ ./build-thirdparty.sh
-
-This builds the thirdparty dependencies and installs them into
-thirdparty/installed/
+This downloads and builds the thirdparty dependencies and installs them into
+thirdparty/installed/. When new thirdparty dependencies are added by other
+developers, you may need to re-run this script.
 
 If you are looking to manually run the protobuf compiler, the pprof tool,
 etc, you can find these in thirdparty/installed/bin/
-
 
 Building kudu
 ------------------------------------------------------------

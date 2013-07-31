@@ -8,3 +8,4 @@ snappy-*
 install_manifest.txt
 zlib-*
 cmake-*
+.build-hash
