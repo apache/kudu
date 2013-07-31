@@ -49,6 +49,16 @@ class faststring {
     len_ = newsize;
   }
 
+  // Releases the underlying array; after this, the underlying array
+  // will be NULL. The underlying array will be re-initialized after
+  // the next reserve() call (which also happens when appending).
+  uint8_t *release() {
+    uint8_t *ret = data_.release();
+    len_ = 0;
+    capacity_ = 0;
+    return ret;
+  }
+
   // Reserve space for the given total amount of data. If the current capacity is already
   // larger than the newly requested capacity, this is a no-op (i.e. it does not ever free memory)
   void reserve(size_t newcapacity) {
@@ -167,6 +177,31 @@ class faststring {
   std::string ToString() const {
     return std::string(reinterpret_cast<const char *>(data()),
                        len_);
+  }
+
+  // Based on PrefixSuccessor in gutil/strings/util.h: sets this
+  // string to the smallest lexicographically larger string of equal
+  // or smaller length. Returns false if there is no such successor
+  // (if the string is empty or consists entirely of 0xff bytes).
+  //
+  // Examples:
+  //
+  // AdvanceToSuccessor() on "foo" returns true, sets string to "fop";
+  // AdvanceToSuccessor() on "aab\xff\xff" returns true, sets string to
+  // "aac"; AdvanceToSuccessor() on "\xff" returns false.
+  bool AdvanceToSuccessor() {
+    bool done = false;
+    int index = len_ - 1;
+    while (!done && index >= 0) {
+      if (data_[index] == 255) {
+        index--;
+      } else {
+        data_[index]++;
+        done = true;
+        resize(index+1);
+      }
+    }
+    return done;
   }
 
  private:

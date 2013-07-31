@@ -154,7 +154,7 @@ Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
                             const RowChangeList &delta) {
   {
-    btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key());
+    btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
     mutation.Prepare(&tree_);
 
     if (!mutation.exists()) {
@@ -194,7 +194,7 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) co
   // this takes a lock rather than an optimistic copy, it should be a very short
   // critical section, and this call is only made on updates, which are rare.
 
-  btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key());
+  btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
   mutation.Prepare(const_cast<MSBTree *>(&tree_));
 
   if (!mutation.exists()) {

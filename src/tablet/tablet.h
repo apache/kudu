@@ -8,6 +8,7 @@
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
+#include "common/predicate_encoder.h"
 #include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"

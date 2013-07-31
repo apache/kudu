@@ -9,6 +9,7 @@
 #include "common/schema.h"
 #include "common/row.h"
 #include "common/scan_predicate.h"
+#include "common/encoded_key.h"
 #include "util/bloom_filter.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -57,67 +58,15 @@ struct WriterOptions {
 struct ReaderOptions {
 };
 
-
-// An analogous, simpler version of tablet::RowSetKeyProbe for CFiles
-// that does not know how to encode a key and instead receives it
-// already encoded
-class CFileKeyProbe {
- public:
-
-  // Meant to be called directly from CFileSet. Any state held in the
-  // specified EncodedKey object must by managed by the calling class.
-  //
-  // Lifetime any state contained in the specified EncodedKey object
-  // must > lifetime of CFKP
-  // TODO (afeinberg) : get rid of multiple constructors
-  CFileKeyProbe(const Schema &schema, const EncodedKey &e)
-      : raw_key_(e.raw_key()),
-        encoded_key_(e.as_faststring()),
-        num_key_columns_(schema.num_key_columns()) {
-  }
-
-  // Usually not used directly but from RowSetKeyProbe. Public
-  // constructor for testing purposes only.
-  //
-  // raw_key is not copied and must be valid for the lifetime
-  // of this object.
-  //
-  // encoded_key is only kept as a reference as it is usually managed by
-  // RowSetKeyProbe when generating a CFileKeyProbe from it and lifetime
-  // of RSKP > lifetime of CFKP
-  CFileKeyProbe(const void *raw_key,
-                const faststring &encoded_key,
-                int num_key_columns)
-      : raw_key_(raw_key),
-        encoded_key_(encoded_key),
-        num_key_columns_(num_key_columns) {
-  }
-
-  // Pointer to the raw pointer for the key in memory.
-  const void *raw_key() const {
-    return raw_key_;
-  }
-
-  // Pointer to the key which has been encoded to be contiguous
-  // and lexicographically comparable
-  const Slice encoded_key() const {
-    return Slice(encoded_key_);
-  }
-
-  const int num_key_columns() const {
-    return num_key_columns_;
-  }
-
- private:
-  const void *raw_key_;
-  const faststring &encoded_key_;
-  int num_key_columns_;
-};
-
 // inline method to encode a key
 inline void EncodeKey(const ConstContiguousRow& row_slice,
-                      faststring *encoded_key) {
-  row_slice.schema().EncodeComparableKey(row_slice, encoded_key);
+                      gscoped_ptr<EncodedKey> *encoded_key) {
+  const Schema &schema = row_slice.schema();
+  EncodedKeyBuilder kb(schema);
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    kb.AddColumnKey(row_slice.cell_ptr(schema, i));
+  }
+  encoded_key->reset(kb.BuildEncodedKey());
 }
 
 }  // namespace cfile

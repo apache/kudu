@@ -7,6 +7,8 @@ SET(COMMON_SRCS
   row_changelist.cc
   wire_protocol.cc
   scan_predicate.cc
+  predicate_encoder.cc
+  encoded_key.cc
   scan_spec.cc
   schema.cc
   types.cc
@@ -33,3 +35,4 @@ ADD_KUDU_TEST(generic_iterators-test)
 ADD_KUDU_TEST(row_changelist-test)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(wire_protocol-test)
+ADD_KUDU_TEST(predicate_encoder-test)

@@ -19,7 +19,6 @@ DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on ro
 namespace kudu { namespace tablet {
 
 using cfile::ReaderOptions;
-using cfile::CFileKeyProbe;
 using metadata::RowSetMetadata;
 using std::tr1::shared_ptr;
 
@@ -185,7 +184,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
   bool exact;
-  RETURN_NOT_OK(key_iter->SeekAtOrAfter(probe.ToCFileKeyProbe(), &exact));
+  RETURN_NOT_OK(key_iter->SeekAtOrAfter(probe.encoded_key(), &exact));
   if (!exact) {
     return Status::NotFound("not present in storefile (failed seek)");
   }
@@ -271,14 +270,11 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
     return Status::OK();
   }
 
-  // TODO (afeinberg) : support pushing down compound keys
   Schema key_schema = base_data_->schema().CreateKeyProjection();
-  const ColumnSchema &key_col = key_schema.column(0);
   BOOST_FOREACH(const EncodedKeyRange *range, spec->encoded_ranges()) {
     if (range->has_lower_bound()) {
       bool exact;
-      Status s = key_iter_->SeekAtOrAfter(
-          CFileKeyProbe(key_schema, range->lower_bound()), &exact);
+      Status s = key_iter_->SeekAtOrAfter(range->lower_bound(), &exact);
       if (s.IsNotFound()) {
         // The lower bound is after the end of the key range.
         // Thus, no rows will pass the predicate, so we set the lower bound
@@ -290,13 +286,12 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 
       lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
       VLOG(1) << "Pushed lower bound value "
-              << key_col.Stringify(range->lower_bound().raw_key())
+              << range->lower_bound().Stringify(key_schema)
               << " as row_idx >= " << lower_bound_idx_;
     }
     if (range->has_upper_bound()) {
       bool exact;
-      Status s = key_iter_->SeekAtOrAfter(
-          CFileKeyProbe(key_schema, range->upper_bound()), &exact);
+      Status s = key_iter_->SeekAtOrAfter(range->upper_bound(), &exact);
       if (s.IsNotFound()) {
         // The upper bound is after the end of the key range - the existing upper bound
         // at EOF is correct.
@@ -312,7 +307,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
         }
 
         VLOG(1) << "Pushed upper bound value "
-                << key_col.Stringify(range->upper_bound().raw_key())
+                << range->upper_bound().Stringify(key_schema)
                 << " as row_idx <= " << upper_bound_idx_;
         }
     }

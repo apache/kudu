@@ -136,14 +136,14 @@ Status Tablet::Insert(const ConstContiguousRow& row) {
 
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
-  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key(), LockManager::LOCK_EXCLUSIVE);
+  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key_slice(), LockManager::LOCK_EXCLUSIVE);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   // First, ensure that it is a unique key by checking all the open
   // RowSets
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
-    rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key(), &to_check);
+    rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
 
     BOOST_FOREACH(const RowSet *rowset, to_check) {
       bool present = false;
@@ -213,7 +213,7 @@ Status Tablet::MutateRow(const ConstContiguousRow& row_key,
   // to logically lock the rows before doing anything on the "physical" layer.
   // It is critical, however, that we're consistent with this choice between here
   // and Insert() or else there's a possibility of deadlock.
-  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key(), LockManager::LOCK_EXCLUSIVE);
+  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key_slice(), LockManager::LOCK_EXCLUSIVE);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   ScopedTransaction tx(&mvcc_);
 
@@ -228,7 +228,7 @@ Status Tablet::MutateRow(const ConstContiguousRow& row_key,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   vector<RowSet *> to_check;
-  rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key(), &to_check);
+  rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
     s = rs->MutateRow(tx.txid(), probe, update);
     if (s.ok() || !s.IsNotFound()) {

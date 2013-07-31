@@ -6,6 +6,7 @@
 #include <boost/optional.hpp>
 #include <string>
 
+#include "common/key_encoder.h"
 #include "common/rowblock.h"
 #include "util/bitmap.h"
 #include "util/faststring.h"
@@ -49,6 +50,8 @@ class ValueRange {
     return upper_bound_.get();
   }
 
+  bool IsEquality() const;
+
   bool ContainsCell(const void *cell) const;
 
  private:
@@ -56,56 +59,6 @@ class ValueRange {
   boost::optional<const void *> lower_bound_;
   boost::optional<const void *> upper_bound_;
 };
-
-
-class EncodedKey {
- public:
-  EncodedKey(const Schema &schema,
-             const void *raw_key);
-
-  const void *raw_key() const { return raw_key_; }
-
-  const Slice encoded_key() const { return Slice(encoded_key_); }
-
-  const faststring &as_faststring() const { return encoded_key_; }
-
- private:
-  const void *raw_key_;
-  faststring encoded_key_;
-};
-
-
-// Specifies upper and lower bound using encoded keys
-
-class EncodedKeyRange {
- public:
-
-  EncodedKeyRange(EncodedKey *lower_bound,
-                  EncodedKey *upper_bound);
-
-  const EncodedKey &lower_bound() const {
-    return *lower_bound_;
-  }
-
-  const EncodedKey &upper_bound() const {
-    return *upper_bound_;
-  }
-
-  bool has_lower_bound() const {
-    return lower_bound_.get() != NULL;
-  }
-
-  bool has_upper_bound() const {
-    return upper_bound_.get() != NULL;
-  }
-
-  bool ContainsKey(const Slice &key) const;
-
- private:
-  gscoped_ptr<EncodedKey> lower_bound_;
-  gscoped_ptr<EncodedKey> upper_bound_;
-};
-
 
 // Predicate which evaluates to true when the value for a given column
 // is within a specified range.

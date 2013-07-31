@@ -6,8 +6,7 @@
 #include <vector>
 
 #include "common/scan_predicate.h"
-#include "common/schema.h"
-#include "util/auto_release_pool.h"
+#include "common/encoded_key.h"
 
 namespace kudu {
 
@@ -49,20 +48,6 @@ class ScanSpec {
   vector<const EncodedKeyRange *> encoded_ranges_;
 };
 
-// Encodes a list of column predicates into EncodedKeyRange objects.
-// Uses an AutoReleasePool to allocate new EncodedKeyRange instances,
-// which means the lifetime of RangePredicateEncoder must be >= the
-// lifetime of any classes that access the EncodedKeyRange instances.
-class RangePredicateEncoder {
- public:
-  explicit RangePredicateEncoder(const Schema &key_schema);
-
-  void EncodeRangePredicates(ScanSpec *spec);
-
- private:
-  const Schema key_schema_;
-  AutoReleasePool pool_;
-};
 
 } // namespace kudu
 

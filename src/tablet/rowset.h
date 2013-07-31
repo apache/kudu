@@ -131,29 +131,27 @@ class RowSetKeyProbe {
   explicit RowSetKeyProbe(const ConstContiguousRow& row_key)
       : row_key_(row_key) {
     cfile::EncodeKey(row_key, &encoded_key_);
-    bloom_probe_ = BloomKeyProbe(Slice(encoded_key_));
+    bloom_probe_ = BloomKeyProbe(encoded_key_slice());
   }
 
   const ConstContiguousRow& row_key() const { return row_key_; }
 
   // Pointer to the key which has been encoded to be contiguous
   // and lexicographically comparable
-  const Slice encoded_key() const { return Slice(encoded_key_); }
+  const Slice &encoded_key_slice() const { return encoded_key_->encoded_key(); }
 
   // Return the cached structure used to query bloom filters.
   const BloomKeyProbe &bloom_probe() const { return bloom_probe_; }
 
   const Schema &schema() const { return row_key_.schema(); }
 
-  const cfile::CFileKeyProbe ToCFileKeyProbe() const {
-    return cfile::CFileKeyProbe(row_key_.row_data(),
-                                encoded_key_,
-                                schema().num_key_columns());
+  const EncodedKey &encoded_key() const {
+    return *encoded_key_;
   }
 
  private:
   const ConstContiguousRow& row_key_;
-  faststring encoded_key_;
+  gscoped_ptr<EncodedKey> encoded_key_;
   BloomKeyProbe bloom_probe_;
 };
 

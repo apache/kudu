@@ -82,20 +82,16 @@ void DumpFile(const string &path) {
     gscoped_ptr<CFileIterator> it;
     CHECK_OK(reader->NewIterator(&it));
 
-    faststring encoded_key;
+    gscoped_ptr<EncodedKey> encoded_key;
     for (int i = 0; i < FLAGS_num_iterations; i++) {
       // TODO: This is wrong... we want an it->SeekToFirst()
       //       In this case we're building an empty key that works only with strings
       //       If the key is an int this stuff doesn't work...
       RowBuilder rb(schema.CreateKeyProjection());
       rb.AddString(Slice(""));
-
-      encoded_key.clear();
       EncodeKey(rb.row(), &encoded_key);
       bool exact_match = false;
-      CHECK_OK(
-          it->SeekAtOrAfter(CFileKeyProbe(rb.data().data(), encoded_key, 1),
-                            &exact_match));
+      CHECK_OK(it->SeekAtOrAfter(*encoded_key, &exact_match));
       DumpIterator(*reader, it.get());
     }
   }

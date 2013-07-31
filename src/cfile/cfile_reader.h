@@ -218,7 +218,7 @@ class CFileIterator {
   //
   // If this iterator was constructed without no value index,
   // then this will return a NotSupported status.
-  Status SeekAtOrAfter(const CFileKeyProbe &probe,
+  Status SeekAtOrAfter(const EncodedKey &encoded_key,
                        bool *exact_match);
 
   // Get the ordinal index that the iterator is currently pointed to.

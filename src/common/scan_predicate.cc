@@ -22,39 +22,18 @@ ValueRange::ValueRange(const TypeInfo &type,
     << "range predicate has no bounds";
 }
 
+bool ValueRange::IsEquality() const {
+  if (has_lower_bound() && has_upper_bound()) {
+    return type_info_->Compare(upper_bound_.get(), lower_bound_.get()) == 0;
+  }
+  return false;
+}
 
 bool ValueRange::ContainsCell(const void *cell) const {
   if (has_lower_bound() && type_info_->Compare(cell, lower_bound_.get()) < 0) {
     return false;
   }
   if (has_upper_bound() && type_info_->Compare(cell, upper_bound_.get()) > 0) {
-    return false;
-  }
-  return true;
-}
-
-////////////////////////////////////////////////////////////
-
-EncodedKey::EncodedKey(const Schema &schema,
-                       const void *raw_key)
-    : raw_key_(raw_key) {
-  ConstContiguousRow row_slice(schema, raw_key);
-  schema.EncodeComparableKey(row_slice, &encoded_key_);
-}
-
-////////////////////////////////////////////////////////////
-
-EncodedKeyRange::EncodedKeyRange(EncodedKey *lower_bound,
-                                 EncodedKey *upper_bound) :
-    lower_bound_(lower_bound),
-    upper_bound_(upper_bound) {
-}
-
-bool EncodedKeyRange::ContainsKey(const Slice &key) const {
-  if (has_lower_bound() && key.compare(lower_bound_->encoded_key()) < 0) {
-    return false;
-  }
-  if (has_upper_bound() && key.compare(upper_bound_->encoded_key()) > 0) {
     return false;
   }
   return true;

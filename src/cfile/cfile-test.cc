@@ -444,10 +444,11 @@ TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
   TestReadWriteFixedSizeTypes<Int32DataGenerator, INT32>(PLAIN);
 }
 
-void EncodeStringKey(const Schema &schema, const Slice& key, faststring *encoded_key) {
-  RowBuilder rb(schema.CreateKeyProjection());
-  rb.AddString(key);
-  EncodeKey(rb.row(), encoded_key);
+void EncodeStringKey(const Schema &schema, const Slice& key,
+                     gscoped_ptr<EncodedKey> *encoded_key) {
+  EncodedKeyBuilder kb(schema);
+  kb.AddColumnKey(&key);
+  encoded_key->reset(kb.BuildEncodedKey());
 }
 
 TEST_F(TestCFile, TestReadWriteStrings) {
@@ -494,56 +495,46 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   // Now try some seeks by the value instead of position
   /////////
 
-  faststring encoded_key;
+  gscoped_ptr<EncodedKey> encoded_key;
   bool exact;
   s = "hello 5000.5";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(
-      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_FALSE(exact);
   ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 5001"), s.ToString());
-  encoded_key.clear();
 
   s = "hello 9000";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(
-      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_TRUE(exact);
   ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9000"), s.ToString());
-  encoded_key.clear();
 
   // after last entry
   s = "hello 9999x";
   EncodeStringKey(schema, s, &encoded_key);
-  EXPECT_TRUE(
-      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact).IsNotFound());
-  encoded_key.clear();
+  EXPECT_TRUE(iter->SeekAtOrAfter(*encoded_key, &exact).IsNotFound());
 
   // before first entry
   s = "hello";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(
-      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_FALSE(exact);
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 0000"), s.ToString());
-  encoded_key.clear();
 
   // to last entry
   s = "hello 9999";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(
-      iter->SeekAtOrAfter(CFileKeyProbe(&s, encoded_key, 1), &exact));
+  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_TRUE(exact);
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9999"), s.ToString());
-  encoded_key.clear();
 
   // Seek to start of file
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
