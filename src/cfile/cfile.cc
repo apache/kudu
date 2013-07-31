@@ -31,19 +31,7 @@ const char kMagicString[] = "kuducfil";
 static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
 
 static CompressionType GetDefaultCompressionCodec() {
-  if (FLAGS_cfile_default_compression_codec.compare("snappy") == 0)
-    return SNAPPY;
-  if (FLAGS_cfile_default_compression_codec.compare("lz4") == 0)
-    return LZ4;
-  if (FLAGS_cfile_default_compression_codec.compare("zlib") == 0)
-    return ZLIB;
-  if (FLAGS_cfile_default_compression_codec.compare("none") == 0)
-    return NO_COMPRESSION;
-
-  LOG(WARNING) << "Unable to recognize the compression codec '"
-               << FLAGS_cfile_default_compression_codec
-               << "' using no compression as default.";
-  return NO_COMPRESSION;
+  return GetCompressionCodecType(FLAGS_cfile_default_compression_codec);
 }
 
 ////////////////////////////////////////////////////////////

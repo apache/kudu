@@ -51,6 +51,9 @@ class CompressionCodec {
 Status GetCompressionCodec(CompressionType compression,
                            shared_ptr<CompressionCodec> *codec);
 
+// Returns the compression codec type given the name
+CompressionType GetCompressionCodecType(const std::string& name);
+
 } // namespace cfile
 } // namespace kudu
 #endif

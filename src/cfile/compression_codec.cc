@@ -217,5 +217,20 @@ Status GetCompressionCodec(CompressionType compression, shared_ptr<CompressionCo
   return Status::OK();
 }
 
+CompressionType GetCompressionCodecType(const std::string& name) {
+  if (name.compare("snappy") == 0)
+    return SNAPPY;
+  if (name.compare("lz4") == 0)
+    return LZ4;
+  if (name.compare("zlib") == 0)
+    return ZLIB;
+  if (name.compare("none") == 0)
+    return NO_COMPRESSION;
+
+  LOG(WARNING) << "Unable to recognize the compression codec '" << name
+               << "' using no compression as default.";
+  return NO_COMPRESSION;
+}
+
 } // namespace cfile
 } // namespace kudu
