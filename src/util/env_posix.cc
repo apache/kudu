@@ -30,6 +30,9 @@ namespace kudu {
 namespace {
 
 static Status IOError(const std::string& context, int err_number) {
+  if (err_number == ENOENT) {
+    return Status::NotFound(context, ErrnoToString(err_number), err_number);
+  }
   return Status::IOError(context, ErrnoToString(err_number), err_number);
 }
 
