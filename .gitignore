@@ -8,7 +8,8 @@
 Makefile
 CMakeFiles
 CMakeCache.txt
-*.cmake
+cmake_install.cmake
+CTestTestfile.cmake
 TAGS
 Testing
 perf.data

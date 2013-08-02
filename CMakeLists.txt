@@ -130,6 +130,11 @@ find_package(Boost COMPONENTS thread system REQUIRED)
 include_directories( ${Boost_INCLUDE_DIR} )
 set(LIBS ${LIBS} ${Boost_LIBRARIES})
 
+## Cyrus SASL
+find_package(CyrusSASL REQUIRED)
+include_directories(${CYRUS_SASL_INCLUDE_DIR})
+set(LIBS ${LIBS} ${CYRUS_SASL_STATIC_LIB})
+
 ## GLog
 find_package(GLog REQUIRED)
 include_directories(${GLOG_INCLUDE_DIR})

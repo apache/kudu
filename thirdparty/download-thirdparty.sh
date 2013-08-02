@@ -9,6 +9,18 @@ cd $TP_DIR
 
 source vars.sh
 
+TARBALL="cyrus-sasl-${CYRUS_SASL_VERSION}.tar.gz"
+if [ ! -f "$TARBALL" ]; then
+  echo "Fetching cyrus-sasl"
+  wget ftp://ftp.cyrusimap.org/cyrus-sasl/$TARBALL
+fi
+if [ -d cyrus-sasl-${CYRUS_SASL_VERSION} ]; then
+  # jenkins / rhel has problems if we don't build from pristine every time
+  rm -rf cyrus-sasl-${CYRUS_SASL_VERSION}
+fi
+tar xvzf $TARBALL
+unset TARBALL
+
 if [ ! -d gtest-${GTEST_VERSION} ]; then
   echo "Fetching gtest"
   wget -c http://googletest.googlecode.com/files/gtest-${GTEST_VERSION}.zip

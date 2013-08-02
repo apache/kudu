@@ -70,5 +70,18 @@ cd $LIBEV_DIR
 ./configure --with-pic --disable-shared --prefix=$PREFIX
 make -j4 install
 
+## build cyrus-sasl
+cd $CYRUS_SASL_DIR
+[ -r Makefile ] && make distclean # (Jenkins was complaining about CFLAGS changes)
+# Disable everything except those protocols needed -- currently just Kerberos.
+# Sasl does not have a --with-pic configuration.
+CFLAGS="-fPIC -DPIC" CXXFLAGS="-fPIC -DPIC" ./configure \
+  --disable-digest --disable-sql --disable-cram --disable-ldap --disable-otp \
+  --enable-static --enable-staticdlopen --with-dblib=none \
+  --prefix=$PREFIX
+make clean
+make # no -j4 ... concurrent build probs on RHEL?
+make install
+
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"

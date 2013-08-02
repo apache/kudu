@@ -17,6 +17,7 @@ ADD_LIBRARY(krpc
     proxy.cc
     reactor.cc
     rpc_controller.cc
+    sasl_common.cc
     server_call.cc
     service_if.cc
     service_pool.cc
@@ -30,6 +31,11 @@ TARGET_LINK_LIBRARIES(krpc
   kudu_util
   gutil
   ${LIBEV_STATIC_LIB}
+  ${CYRUS_SASL_STATIC_LIB}
+  ${CYRUS_SASL_ANON_DYN_LIB}
+  ${CYRUS_SASL_PLAIN_DYN_LIB}
+  dl # needed by cyrus-sasl on g++ but not clang++ for some reason
+  crypt
   ${KUDU_DEP_LIBS}
 )
 SET(RPC_LIBS krpc)
@@ -59,3 +65,6 @@ TARGET_LINK_LIBRARIES(rpc-bench rtest_krpc krpc)
 
 ADD_KUDU_TEST(rpc_stub-test)
 TARGET_LINK_LIBRARIES(rpc_stub-test rtest_krpc krpc)
+
+ADD_KUDU_TEST(sasl_rpc-test)
+TARGET_LINK_LIBRARIES(sasl_rpc-test rtest_krpc krpc)
