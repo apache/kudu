@@ -258,7 +258,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   void CompactThread(int tid) {
     int wait_time = 100;
     while (running_insert_count_.count() > 0) {
-      CHECK_OK(tablet_->Compact());
+      CHECK_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS));
 
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));

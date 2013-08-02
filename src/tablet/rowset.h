@@ -96,11 +96,28 @@ class RowSet {
   virtual shared_ptr<metadata::RowSetMetadata> metadata() = 0;
 
   virtual ~RowSet() {}
+
+  // Return true if this RowSet is available for compaction, based on
+  // the current state of the compact_flush_lock. This should only be
+  // used under the Tablet's compaction selection lock, or else the
+  // lock status may change at any point.
+  bool IsAvailableForCompaction() {
+    // Try to obtain the lock. If we don't succeed, it means the rowset
+    // was already locked for compaction by some other compactor thread,
+    // or it is a RowSet type which can't be used as a compaction input.
+    //
+    // We can be sure that our check here will remain true until after
+    // the compaction selection has finished because only one thread
+    // makes compaction selection at a time on a given Tablet due to
+    // Tablet::compact_select_lock_.
+    boost::mutex::scoped_try_lock try_lock(*compact_flush_lock());
+    return try_lock.owns_lock();
+  }
+
 };
 
 // Used often enough, may as well typedef it.
 typedef vector<shared_ptr<RowSet> > RowSetVector;
-
 // Structure which caches an encoded and hashed key, suitable
 // for probing against rowsets.
 class RowSetKeyProbe {

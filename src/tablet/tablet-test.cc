@@ -170,7 +170,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 2), rows[0]);
 
   // Compaction should succeed even with the duplicate rows.
-  ASSERT_STATUS_OK(this->tablet_->Compact());
+  ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 2), rows[0]);
@@ -411,7 +411,7 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   ASSERT_STATUS_OK(this->tablet_->Flush());
   ASSERT_EQ(2, this->tablet_->num_rowsets());
 
-  ASSERT_STATUS_OK(this->tablet_->Compact());
+  ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
   ASSERT_EQ(1, this->tablet_->num_rowsets());
 
   // Should still see most recent value.
@@ -458,10 +458,11 @@ TYPED_TEST(TestTablet, TestCompaction) {
 
   // Issue compaction
   LOG_TIMING(INFO, "Compacting rows") {
-    ASSERT_STATUS_OK(this->tablet_->Compact());
+    ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
     ASSERT_EQ(n_rows * 3, this->TabletCount());
 
     const RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(3);
+    ASSERT_TRUE(rowset_meta != NULL);
     ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
     ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
   }
@@ -602,7 +603,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   ASSERT_STATUS_OK(hooks->DoHook());
 
   // Issue compaction
-  ASSERT_STATUS_OK(this->tablet_->Compact());
+  ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
 
   // Grab the resulting data into a vector.
   vector<string> out_rows;

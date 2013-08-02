@@ -29,7 +29,7 @@ DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
 
-DEFINE_string(tablet_compaction_policy, "size",
+DEFINE_string(tablet_compaction_policy, "budget",
               "Which compaction policy to use. Valid options are currently "
               "'size' or 'budget'");
 
@@ -374,13 +374,25 @@ void Tablet::SetFlushCompactCommonHooksForTests(
   common_hooks_ = hooks;
 }
 
-Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked) const {
+Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
+                                    CompactFlags flags) const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
   CHECK_EQ(picked->num_rowsets(), 0);
 
   unordered_set<RowSet*> picked_set;
-  RETURN_NOT_OK(compaction_policy_->PickRowSets(rowsets_, &picked_set));
+
+  if (flags & FORCE_COMPACT_ALL) {
+    // Compact all rowsets, regardless of policy.
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_.all_rowsets()) {
+      if (rs->IsAvailableForCompaction()) {
+        picked_set.insert(rs.get());
+      }
+    }
+  } else {
+    // Let the policy decide which rowsets to compact.
+    RETURN_NOT_OK(compaction_policy_->PickRowSets(rowsets_, &picked_set));
+  }
 
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_.all_rowsets()) {
     if (!ContainsKey(picked_set, rs.get())) {
@@ -535,13 +547,13 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   return Status::OK();
 }
 
-Status Tablet::Compact() {
+Status Tablet::Compact(CompactFlags flags) {
   CHECK(open_);
 
   LOG(INFO) << "Compaction: entering stage 1 (collecting rowsets)";
   RowSetsInCompaction input;
   // Step 1. Capture the rowsets to be merged
-  RETURN_NOT_OK(PickRowSetsToCompact(&input));
+  RETURN_NOT_OK(PickRowSetsToCompact(&input, flags));
   if (input.num_rowsets() < 2) {
     LOG(INFO) << "Not enough rowsets to run compaction! Aborting...";
     return Status::OK();

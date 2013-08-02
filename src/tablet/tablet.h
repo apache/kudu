@@ -82,7 +82,19 @@ class Tablet {
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
   Status Flush();
-  Status Compact();
+
+  // Flags to change the behavior of compaction.
+  enum CompactFlag {
+    COMPACT_NO_FLAGS = 0,
+
+    // Force the compaction to include all rowsets, regardless of the
+    // configured compaction policy. This is currently only used in
+    // tests.
+    FORCE_COMPACT_ALL = 1 << 0
+  };
+  typedef int CompactFlags;
+
+  Status Compact(CompactFlags flags);
 
   size_t MemRowSetSize() const {
     return memrowset_->memory_footprint();
@@ -131,7 +143,8 @@ class Tablet {
                                     const ScanSpec *spec,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;
 
-  Status PickRowSetsToCompact(RowSetsInCompaction *picked) const;
+  Status PickRowSetsToCompact(RowSetsInCompaction *picked,
+                              CompactFlags flags) const;
 
   Status DoCompactionOrFlush(const RowSetsInCompaction &input);
 

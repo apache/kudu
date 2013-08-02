@@ -140,19 +140,6 @@ double DataSizeCDF::StringFractionInRange(const Slice &min,
 
 ////////////////////////////////////////////////////////////
 
-static bool IsAvailableForCompaction(RowSet *rs) {
-  // Try to obtain the lock. If we don't succeed, it means the rowset
-  // was already locked for compaction by some other compactor thread,
-  // or it is a RowSet type which can't be used as a compaction input.
-  //
-  // We can be sure that our check here will remain true until after
-  // the compaction selection has finished because only one thread
-  // makes compaction selection at a time on a given Tablet due to
-  // Tablet::compact_select_lock_.
-  boost::mutex::scoped_try_lock try_lock(*rs->compact_flush_lock());
-  return try_lock.owns_lock();
-}
-
 void CompactionCandidate::CollectCandidates(const RowSetTree& tree,
                                             std::vector<CompactionCandidate>* candidates) {
   DataSizeCDF cdf(&tree);
@@ -160,7 +147,7 @@ void CompactionCandidate::CollectCandidates(const RowSetTree& tree,
   // Create CompactionCandidate objects for each RowSet, and calculate min/max
   // bounds for the whole tablet.
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, tree.all_rowsets()) {
-    if (IsAvailableForCompaction(rs.get())) {
+    if (rs->IsAvailableForCompaction()) {
       candidates->push_back(CompactionCandidate(cdf, rs));
     }
   }
