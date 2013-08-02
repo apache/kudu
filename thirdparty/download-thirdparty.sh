@@ -35,9 +35,6 @@ if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   wget -c http://gperftools.googlecode.com/files/gperftools-${GPERFTOOLS_VERSION}.tar.gz
   tar xzf gperftools-${GPERFTOOLS_VERSION}.tar.gz
   rm gperftools-${GPERFTOOLS_VERSION}.tar.gz
-  pushd gperftools-${GPERFTOOLS_VERSION}
-  patch -p0 < $TP_DIR/patches/gperftools-issue-444.patch
-  popd
 fi
 
 if [ ! -d protobuf-${PROTOBUF_VERSION} ]; then
