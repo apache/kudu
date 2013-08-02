@@ -10,6 +10,7 @@
 #include "cfile/bloomfile.h"
 #include "gutil/stringprintf.h"
 #include "util/env.h"
+#include "util/env_util.h"
 #include "util/coding.h"
 #include "util/hexdump.h"
 #include "util/pb_util.h"
@@ -111,14 +112,24 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 Status BloomFileReader::Open(Env *env, const string &path,
                              gscoped_ptr<BloomFileReader> *reader) {
 
+  shared_ptr<RandomAccessFile> file;
+  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
+  uint64_t size;
+  RETURN_NOT_OK(env->GetFileSize(path, &size));
+  return Open(file, size, reader);
+}
+
+Status BloomFileReader::Open(const shared_ptr<RandomAccessFile>& file,
+                             uint64_t file_size,
+                             gscoped_ptr<BloomFileReader> *reader)
+{
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(env, path, ReaderOptions(), &cf_reader));
+  RETURN_NOT_OK(CFileReader::Open(file, file_size, ReaderOptions(), &cf_reader));
   if (cf_reader->is_compressed()) {
-    return Status::Corruption("Unexpected compression for bloom file", path);
+    return Status::Corruption("Unexpected compression for bloom file");
   }
 
-  gscoped_ptr<BloomFileReader> bf_reader(
-    new BloomFileReader(cf_reader.release()));
+  gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(cf_reader.release()));
   RETURN_NOT_OK(bf_reader->Init());
 
   reader->reset(bf_reader.release());

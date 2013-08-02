@@ -6,6 +6,8 @@
 #include <vector>
 #include "common/generic_iterators.h"
 
+using kudu::metadata::RowSetMetadata;
+
 namespace kudu { namespace tablet {
 
 DuplicatingRowSet::DuplicatingRowSet(const RowSetVector &old_rowsets,
@@ -177,9 +179,8 @@ uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {
   return size;
 }
 
-Status DuplicatingRowSet::Delete() {
-  LOG(FATAL) << "Unsupported op";
-  return Status::NotSupported("");
+shared_ptr<RowSetMetadata> DuplicatingRowSet::metadata() {
+  return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
 }
 
 Status DuplicatingRowSet::DebugDump(vector<string> *lines) {

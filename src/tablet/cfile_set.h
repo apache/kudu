@@ -13,12 +13,17 @@
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "gutil/macros.h"
+#include "server/metadata.h"
 #include "tablet/memrowset.h"
 #include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/slice.h"
 
 namespace kudu {
+
+namespace metadata {
+class RowSetMetadata;
+}
 
 namespace tablet {
 
@@ -36,7 +41,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
  public:
   class Iterator;
 
-  CFileSet(Env *env, const string &dir, const Schema &schema);
+  CFileSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata, const Schema &schema);
 
   Status Open();
 
@@ -55,7 +60,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   const Schema &schema() const { return schema_; }
 
   string ToString() const {
-    return string("CFile base data in ") + dir_;
+    return string("CFile base data in ") + rowset_metadata_->ToString();
   }
 
   // Check if the given row is present. If it is, sets *rowid to the
@@ -79,8 +84,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   Status NewKeyIterator(CFileIterator **iter) const;
 
-  Env *env_;
-  const string dir_;
+  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   const Schema schema_;
 
   std::string min_encoded_key_;

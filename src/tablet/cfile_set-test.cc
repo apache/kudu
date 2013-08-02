@@ -16,19 +16,17 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
-class TestCFileSet : public KuduTest {
+class TestCFileSet : public KuduRowSetTest {
  public:
   TestCFileSet() :
-    KuduTest(),
-    schema_(boost::assign::list_of
+    KuduRowSetTest(Schema(boost::assign::list_of
             (ColumnSchema("c0", UINT32))
             (ColumnSchema("c1", UINT32))
-            (ColumnSchema("c2", UINT32)), 1)
+            (ColumnSchema("c2", UINT32)), 1))
   {}
 
-  void SetUp() {
-    KuduTest::SetUp();
-    rowset_dir_ = GetTestPath("rowset");
+  virtual void SetUp() {
+    KuduRowSetTest::SetUp();
 
     // Use a small cfile block size, so that when we skip materializing a given
     // column for 10,000 rows, it can actually skip over a number of blocks.
@@ -40,7 +38,7 @@ class TestCFileSet : public KuduTest {
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
   void WriteTestRowSet(int nrows) {
-    DiskRowSetWriter rsw(env_.get(), schema_, rowset_dir_,
+    DiskRowSetWriter rsw(rowset_meta_.get(), schema_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_STATUS_OK(rsw.Open());
@@ -93,8 +91,6 @@ class TestCFileSet : public KuduTest {
   }
 
  protected:
-  Schema schema_;
-  string rowset_dir_;
   google::FlagSaver saver;
 };
 
@@ -104,8 +100,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   const int kNumRows = 100000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(
-    new CFileSet(env_.get(), rowset_dir_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_, schema_));
   ASSERT_STATUS_OK(fileset->Open());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_));
@@ -188,7 +183,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   const int kNumRows = 10000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), rowset_dir_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_, schema_));
   ASSERT_STATUS_OK(fileset->Open());
 
   // Create iterator.
@@ -238,7 +233,7 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   const int kNumRows = 10000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(env_.get(), rowset_dir_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_, schema_));
   ASSERT_STATUS_OK(fileset->Open());
 
   // Range scan where rows match on both ends

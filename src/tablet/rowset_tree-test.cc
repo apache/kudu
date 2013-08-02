@@ -10,6 +10,7 @@
 #include "util/test_util.h"
 
 using std::string;
+using kudu::metadata::RowSetMetadata;
 
 namespace kudu { namespace tablet {
 
@@ -61,6 +62,10 @@ class MockRowSet : public RowSet {
   virtual boost::mutex *compact_flush_lock() {
     LOG(FATAL) << "Unimplemented";
     return NULL;
+  }
+  virtual shared_ptr<RowSetMetadata> metadata() {
+    LOG(FATAL) << "Unimplemented";
+    return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
   }
   virtual const Schema &schema() const {
     LOG(FATAL) << "Unimplemented";

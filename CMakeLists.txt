@@ -215,7 +215,7 @@ endif()
 # Linker setup
 ############################################################
 SET(KUDU_DEP_LIBS ${LIBS})
-SET(KUDU_LINK_LIBS tablet cfile kudu_common kudu_util gutil ${LIBS})
+SET(KUDU_LINK_LIBS tablet server cfile kudu_common kudu_util gutil ${LIBS})
 SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
@@ -256,11 +256,11 @@ set(LIBS ${LIBS} ${KUDU_COMMON_LIBS})
 add_subdirectory(src/cfile)
 set(LIBS ${LIBS} ${CFILE_LIBS})
 
-add_subdirectory(src/tablet)
-set(LIBS ${LIBS} ${TABLET_LIBS})
-
 add_subdirectory(src/server)
 set(LIBS ${LIBS} ${SERVER_LIBS})
+
+add_subdirectory(src/tablet)
+set(LIBS ${LIBS} ${TABLET_LIBS})
 
 add_subdirectory(src/rpc)
 set(LIBS ${LIBS} ${RPC_LIBS})

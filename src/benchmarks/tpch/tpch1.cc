@@ -64,7 +64,6 @@
 #include "util/stopwatch.h"
 #include "tablet/tablet.h"
 
-
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
 DEFINE_string(tpch_path_to_tablet, "/tmp/tpch", "The full path to the tablet's directory.");
@@ -144,11 +143,14 @@ const Schema kQuerySchema(boost::assign::list_of
                             , 0);
 
 // returns true if the tablet already contains data
-bool OpenTablet(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
-  string tablet_dir(path);
-  tablet.reset(new tablet::Tablet(kSchema, tablet_dir));
-  tablet->CreateNew();
-  CHECK_OK(tablet->Open());
+bool OpenTablet(gscoped_ptr<kudu::metadata::TabletMetadata> metadata,
+                gscoped_ptr<tablet::Tablet> &tablet)
+{
+  tablet.reset(new tablet::Tablet(metadata.Pass(), kSchema));
+  Status s = tablet->Open();
+  if (s.IsNotFound()) {
+    tablet->CreateNew();
+  }
   return tablet->num_rowsets() == 0;
 }
 
@@ -307,7 +309,15 @@ int main(int argc, char **argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
   gscoped_ptr<kudu::tablet::Tablet> tablet;
-  bool needs_loading = kudu::OpenTablet(FLAGS_tpch_path_to_tablet, tablet);
+
+  kudu::metadata::TabletMasterBlockPB master_block;
+  master_block.set_block_a("9865b0f142ed4d1aaa7dac6eddf281e4");
+  master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
+
+  kudu::FsManager fs_manager(kudu::Env::Default(), FLAGS_tpch_path_to_tablet);
+  gscoped_ptr<kudu::metadata::TabletMetadata> metadata(
+      new kudu::metadata::TabletMetadata(&fs_manager, "tpch1", master_block));
+  bool needs_loading = kudu::OpenTablet(metadata.Pass(), tablet);
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {
       kudu::LoadLineItems(FLAGS_tpch_path_to_data, tablet);

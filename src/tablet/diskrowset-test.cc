@@ -24,7 +24,7 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::unordered_set;
-
+using metadata::RowSetMetadata;
 
 // TODO: add test which calls CopyNextRows on an iterator with no more
 // rows - i think it segfaults!
@@ -236,7 +236,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Write a single row into a new DiskRowSet.
   LOG_TIMING(INFO, "Writing rowset") {
-    DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
+    DiskRowSetWriter drsw(rowset_meta_.get(), schema_,
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_STATUS_OK(drsw.Open());
@@ -341,19 +341,17 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   google::FlagSaver saver;
   FLAGS_cfile_default_block_size = 4096;
 
-  RollingDiskRowSetWriter writer(env_.get(), schema_, rowset_dir_,
+  RollingDiskRowSetWriter writer(tablet_->metadata(), schema_,
                                  BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                  64 * 1024); // roll every 64KB
   DoWriteTestRowSet(30000, &writer);
 
   // Should have rolled 3 times.
-  vector<string> paths;
-  writer.GetWrittenPaths(&paths);
-  EXPECT_EQ(3, paths.size());
-  for (int i = 0; i < paths.size(); i++) {
-    string path = StringPrintf("%s.%d", rowset_dir_.c_str(), i);
-    EXPECT_EQ(paths[i], path);
-    ASSERT_FILE_EXISTS(env_, path);
+  vector<shared_ptr<RowSetMetadata> > metas;
+  writer.GetWrittenMetadata(&metas);
+  EXPECT_EQ(3, metas.size());
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
+    ASSERT_TRUE(meta->HasColumnDataBlockForTests(0));
   }
 }
 

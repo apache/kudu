@@ -29,8 +29,6 @@
 
 namespace kudu {
 
-class Env;
-
 namespace cfile {
 class BloomFileWriter;
 }
@@ -44,13 +42,12 @@ using kudu::cfile::CFileReader;
 
 class DiskRowSetWriter {
  public:
-  DiskRowSetWriter(Env *env,
-              const Schema &schema,
-              const string &rowset_dir,
-              const BloomFilterSizing &bloom_sizing) :
-    env_(env),
+  // TODO: document ownership of rowset_metadata
+  DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
+                   const Schema &schema,
+                   const BloomFilterSizing &bloom_sizing) :
+    rowset_metadata_(rowset_metadata),
     schema_(schema),
-    dir_(rowset_dir),
     bloom_sizing_(bloom_sizing),
     finished_(false),
     written_count_(0)
@@ -92,9 +89,8 @@ class DiskRowSetWriter {
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
   cfile::Writer *key_index_writer();
 
-  Env *env_;
+  metadata::RowSetMetadata *rowset_metadata_;
   const Schema schema_;
-  const string dir_;
   BloomFilterSizing bloom_sizing_;
 
   bool finished_;
@@ -113,9 +109,11 @@ class DiskRowSetWriter {
 // with ".N" where N starts at 0 and increases as new rowsets are generated.
 class RollingDiskRowSetWriter {
  public:
-  RollingDiskRowSetWriter(Env *env,
+  // Create a new rolling writer. The given 'tablet_metadata' must stay valid
+  // for the lifetime of this writer, and is used to construct the new rowsets
+  // that this RollingDiskRowSetWriter creates.
+  RollingDiskRowSetWriter(metadata::TabletMetadata* tablet_metadata,
                           const Schema &schema,
-                          const string &base_path,
                           const BloomFilterSizing &bloom_sizing,
                           size_t target_rowset_size);
   ~RollingDiskRowSetWriter();
@@ -135,7 +133,7 @@ class RollingDiskRowSetWriter {
 
   // Return the set of rowset paths that were written by this writer.
   // This must only be called after Finish() returns an OK result.
-  void GetWrittenPaths(std::vector<std::string> *paths) const;
+  void GetWrittenMetadata(metadata::RowSetMetadataVector* metas) const;
 
  private:
   Status RollWriter();
@@ -148,10 +146,9 @@ class RollingDiskRowSetWriter {
   };
   State state_;
 
-  Env * const env_;
+  metadata::TabletMetadata* tablet_metadata_;
   const Schema schema_;
-  const std::string base_path_;
-  std::string cur_path_;
+  shared_ptr<metadata::RowSetMetadata> cur_metadata_;
   const BloomFilterSizing bloom_sizing_;
   const size_t target_rowset_size_;
 
@@ -160,8 +157,9 @@ class RollingDiskRowSetWriter {
   // The index for the next output.
   int output_index_;
 
-  // DiskRowSet paths which have been successfully written out.
-  std::vector<std::string> written_paths_;
+  // RowSetMetadata objects for rowsets which have been successfully
+  // written out.
+  metadata::RowSetMetadataVector written_metas_;
 
   int64_t written_count_;
 
@@ -174,20 +172,13 @@ class RollingDiskRowSetWriter {
 
 class DiskRowSet : public RowSet {
  public:
-  static const char *kDeltaPrefix;
-  static const char *kColumnPrefix;
-  static const char *kBloomFileName;
-  static const char *kAdHocIdxFileName;
-  static const char *kTmpRowSetSuffix;
-
   static const char *kMinKeyMetaEntryName;
   static const char *kMaxKeyMetaEntryName;
 
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
-  static Status Open(Env *env,
+  static Status Open(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                      const Schema &schema,
-                     const string &rowset_dir,
                      shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
@@ -196,13 +187,6 @@ class DiskRowSet : public RowSet {
 
   // Flush all accumulated delta data to disk.
   Status FlushDeltas();
-
-  // Delete the rowset directory.
-  Status Delete();
-
-  // Rename the directory where this rowset is stored.
-  Status RenameRowSetDir(const string &new_dir);
-
 
   ////////////////////////////////////////////////////////////
   // RowSet implementation
@@ -247,20 +231,19 @@ class DiskRowSet : public RowSet {
     return DCHECK_NOTNULL(delta_tracker_.get());
   }
 
+  shared_ptr<metadata::RowSetMetadata> metadata() {
+    return rowset_metadata_;
+  }
+
   const Schema &schema() const {
     return schema_;
   }
 
   string ToString() const {
-    return dir_;
+    return rowset_metadata_->ToString();
   }
 
   virtual Status DebugDump(vector<string> *out = NULL);
-
-  static string GetColumnPath(const string &dir, int col_idx);
-  static string GetDeltaPath(const string &dir, int delta_idx);
-  static string GetBloomPath(const string &dir);
-  static string GetAdHocIndexPath(const string &dir);
 
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
@@ -271,15 +254,12 @@ class DiskRowSet : public RowSet {
 
   // TODO: should 'schema' be stored with the rowset? quite likely
   // so that we can support cheap alter table.
-  DiskRowSet(Env *env,
-        const Schema &schema,
-        const string &rowset_dir);
+  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata, const Schema &schema);
 
   Status Open();
 
-  Env *env_;
+  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   const Schema schema_;
-  string dir_;
 
   bool open_;
 

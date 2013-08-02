@@ -32,18 +32,12 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-class TestRowSet : public KuduTest {
+class TestRowSet : public KuduRowSetTest {
  public:
   TestRowSet()
-    : KuduTest(),
-      schema_(CreateTestSchema()),
+    : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows) {
     CHECK_GT(n_rows_, 0);
-  }
-
-  virtual void SetUp() {
-    KuduTest::SetUp();
-    rowset_dir_ = GetTestPath("rowset");
   }
 
  protected:
@@ -68,7 +62,7 @@ class TestRowSet : public KuduTest {
   // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
   void WriteTestRowSet(int n_rows = 0) {
-    DiskRowSetWriter drsw(env_.get(), schema_, rowset_dir_,
+    DiskRowSetWriter drsw(rowset_meta_.get(), schema_,
                           BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
     DoWriteTestRowSet(n_rows, &drsw);
   }
@@ -264,7 +258,7 @@ class TestRowSet : public KuduTest {
   }
 
   Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(env_.get(), schema_, rowset_dir_, rowset);
+    return DiskRowSet::Open(rowset_meta_, schema_, rowset);
   }
 
 
@@ -273,9 +267,7 @@ class TestRowSet : public KuduTest {
     snprintf(buf, buf_len, "hello %015d", i);
   }
 
-  Schema schema_;
   size_t n_rows_;
-  string rowset_dir_;
 
   MvccManager mvcc_;
 };

@@ -216,6 +216,7 @@ class WritableFile {
   virtual Status Close() = 0;
   virtual Status Flush() = 0;
   virtual Status Sync() = 0;
+  virtual uint64_t Size() const = 0;
 
  private:
   // No copying allowed

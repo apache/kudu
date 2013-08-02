@@ -17,6 +17,7 @@ SET(TABLET_SRCS
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 ADD_DEPENDENCIES(tablet kudu_common)
 ADD_DEPENDENCIES(tablet cfile_proto)
+ADD_DEPENDENCIES(tablet server)
 
 # tablet-test
 ADD_KUDU_TEST(tablet-test)

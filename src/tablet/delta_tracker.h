@@ -10,12 +10,17 @@
 
 #include "common/iterator.h"
 #include "gutil/macros.h"
+#include "server/metadata.h"
 #include "tablet/delta_store.h"
 #include "util/status.h"
 
 namespace kudu {
 
 class Env;
+
+namespace metadata {
+class RowSetMetadata;
+}
 
 namespace tablet {
 
@@ -32,9 +37,8 @@ class DeltaFileReader;
 // This class is also responsible for flushing the in-memory deltas to disk.
 class DeltaTracker {
  public:
-  DeltaTracker(Env *env,
+  DeltaTracker(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                const Schema &schema,
-               const string &dir,
                rowid_t num_rows);
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
@@ -79,9 +83,8 @@ class DeltaTracker {
                   gscoped_ptr<DeltaFileReader> *dfr);
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
 
-  Env *env_;
+  shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   const Schema schema_;
-  string dir_;
 
   // The number of rows in the DiskRowSet that this tracker is associated with.
   // This is just used for assertions to make sure that we don't update a row

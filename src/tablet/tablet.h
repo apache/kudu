@@ -11,6 +11,7 @@
 #include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "server/metadata.h"
 #include "tablet/diskrowset.h"
 #include "tablet/memrowset.h"
 #include "tablet/lock_manager.h"
@@ -20,7 +21,7 @@
 #include "util/status.h"
 #include "util/slice.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {namespace tablet {
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -35,8 +36,7 @@ class Tablet {
   class FlushFaultHooks;
   class Iterator;
 
-  Tablet(const Schema &schema,
-         const string &dir);
+  Tablet(gscoped_ptr<metadata::TabletMetadata> metadata, const Schema &schema);
   ~Tablet();
 
   // Create a new tablet.
@@ -104,7 +104,8 @@ class Tablet {
 
   const Schema &schema() const { return schema_; }
 
-  static string GetRowSetPath(const string &tablet_dir, int rowset_idx);
+  const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
+  metadata::TabletMetadata *metadata() { return metadata_.get(); }
 
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
@@ -134,6 +135,9 @@ class Tablet {
 
   Status DoCompactionOrFlush(const RowSetsInCompaction &input);
 
+  Status FlushMetadata(const RowSetVector& to_remove,
+                       const metadata::RowSetMetadataVector& to_add);
+
   // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
   void AtomicSwapRowSets(const RowSetVector &old_rowsets,
@@ -153,7 +157,7 @@ class Tablet {
 
   Schema schema_;
   Schema key_schema_;
-  string dir_;
+  gscoped_ptr<metadata::TabletMetadata> metadata_;
   shared_ptr<MemRowSet> memrowset_;
   RowSetTree rowsets_;
 
@@ -180,10 +184,6 @@ class Tablet {
   // this lock, you should also hold component_lock_ in read mode so that
   // no other thread could perform a swap underneath.
   mutable boost::mutex compact_select_lock_;
-
-  Atomic32 next_rowset_idx_;
-
-  Env *env_;
 
   bool open_;
 
