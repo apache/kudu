@@ -36,7 +36,7 @@ if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   tar xzf gperftools-${GPERFTOOLS_VERSION}.tar.gz
   rm gperftools-${GPERFTOOLS_VERSION}.tar.gz
   pushd gperftools-${GPERFTOOLS_VERSION}
-  patch -p0 < $TP_DIR/patches/gperftools-issue-444.patch
+  patch -p1 < $TP_DIR/patches/gperftools-issue-560-Revert-issue-481.patch
   popd
 fi
 
