@@ -1,0 +1,12 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.tserver;
+
+message PingRequestPB {
+}
+
+message PingResponsePB {
+}
+
+service TabletServerService {
+  rpc Ping(PingRequestPB) returns (PingResponsePB);
+}
