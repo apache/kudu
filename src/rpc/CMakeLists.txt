@@ -18,6 +18,7 @@ ADD_LIBRARY(krpc
     reactor.cc
     rpc_controller.cc
     sasl_common.cc
+    serialization.cc
     server_call.cc
     service_if.cc
     service_pool.cc

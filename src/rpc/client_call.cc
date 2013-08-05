@@ -6,8 +6,10 @@
 #include <vector>
 
 #include "gutil/stringprintf.h"
-#include "rpc/call-inl.h"
 #include "rpc/client_call.h"
+#include "rpc/constants.h"
+#include "rpc/serialization.h"
+#include "rpc/transfer.h"
 
 namespace kudu { namespace rpc {
 
@@ -26,8 +28,7 @@ OutboundCall::OutboundCall(const Sockaddr &remote,
     callback_(callback),
     controller_(DCHECK_NOTNULL(controller)),
     response_(DCHECK_NOTNULL(response_storage)),
-    call_id_(INVALID_CALL_ID),
-    request_size_(0) {
+    call_id_(kInvalidCallId) {
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_);
 }
 
@@ -37,64 +38,25 @@ OutboundCall::~OutboundCall() {
 }
 
 Status OutboundCall::SerializeTo(vector<Slice> *slices) {
-  DCHECK(serialized_request().data() != NULL) <<
-    "Must call SetRequestParam() before SerializeTo()";
+  size_t param_len = request_buf_.size();
+  if (PREDICT_FALSE(param_len == 0)) {
+    return Status::InvalidArgument("Must call SetRequestParam() before SerializeTo()");
+  }
 
   RequestHeader header;
   header.set_callid(call_id());
   header.set_methodname(method());
-  DCHECK(header.IsInitialized());
 
-  // Compute all the lengths for the packet.
-  int header_pb_len = header.ByteSize();
-  size_t header_len = InboundTransfer::kLengthPrefixLength // for the int prefix for the totallength
-    + CodedOutputStream::VarintSize32(header_pb_len) // for the varint delimiter for header PB
-    + header_pb_len; // for the header PB itself
-  int param_len = serialized_request().size();
-  int total_size = header_len + param_len;
-
-  // Prepare the header.
-  header_buf_.reset(new uint8_t[header_len]);
-  uint8_t *dst = header_buf_.get();
-
-  // 1. The length for the whole request, not including the 4-byte
-  // length prefix.
-  NetworkByteOrder::Store32(dst, total_size - 4);
-  dst += sizeof(uint32_t);
-
-  // 2. The varint-prefixed RequestHeader PB
-  dst = CodedOutputStream::WriteVarint32ToArray(header_pb_len, dst);
-  dst = header.SerializeWithCachedSizesToArray(dst);
-
-  // We should have used the whole buffer we allocated.
-  CHECK_EQ(dst, header_buf_.get() + header_len);
+  serialization::SerializeHeader(header, param_len, &header_buf_);
 
   // Return the concatenated packet.
-  slices->push_back(Slice(header_buf_.get(), header_len));
-  slices->push_back(serialized_request());
+  slices->push_back(Slice(header_buf_));
+  slices->push_back(Slice(request_buf_));
   return Status::OK();
 }
 
-
 Status OutboundCall::SetRequestParam(const Message &message) {
-  if (PREDICT_FALSE(!message.IsInitialized())) {
-    return Status::InvalidArgument("RPC argument missing required fields",
-                                   message.InitializationErrorString());
-  }
-  int size = message.ByteSize();
-  int size_with_delim = size + CodedOutputStream::VarintSize32(size);
-
-
-  gscoped_ptr<uint8_t[]> buf(new uint8_t[size_with_delim]);
-  uint8_t *dst = buf.get();
-  dst = CodedOutputStream::WriteVarint32ToArray(size, dst);
-  dst = message.SerializeWithCachedSizesToArray(dst);
-  DCHECK_EQ(dst, &buf[size_with_delim]);
-
-  request_buf_.swap(buf);
-  request_size_ = size_with_delim;
-
-  return Status::OK();
+  return serialization::SerializeMessage(message, &request_buf_);
 }
 
 Status OutboundCall::status() const {
@@ -200,7 +162,9 @@ void OutboundCall::SetSent() {
   // behavior is a lot more efficient if memory is freed from the same thread
   // which allocated it -- this lets it keep to thread-local operations instead
   // of taking a mutex to put memory back on the global freelist.
-  header_buf_.reset();
+
+  // TODO: Uncomment this once the faststring::release() impl is committed.
+  //header_buf_.release();
 
   // request_buf_ is also done being used here, but since it was allocated by
   // the caller thread, we would rather let that thread free it whenever it
@@ -260,7 +224,7 @@ CallResponse::CallResponse()
 
 Status CallResponse::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   CHECK(!parsed_);
-  RETURN_NOT_OK(ParseMessage(*transfer, &header_, &serialized_response_));
+  RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_response_));
   transfer_.swap(transfer);
   parsed_ = true;
   return Status::OK();

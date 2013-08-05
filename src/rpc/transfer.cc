@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include "gutil/endian.h"
+#include "rpc/constants.h"
 #include "rpc/messenger.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
@@ -34,15 +35,15 @@ TransferCallbacks::~TransferCallbacks()
 {}
 
 InboundTransfer::InboundTransfer()
-  : total_length_(kLengthPrefixLength),
+  : total_length_(kMsgLengthPrefixLength),
     cur_offset_(0) {
-  buf_.resize(kLengthPrefixLength);
+  buf_.resize(kMsgLengthPrefixLength);
 }
 
 Status InboundTransfer::ReceiveBuffer(Socket &socket) {
-  if (cur_offset_ < kLengthPrefixLength) {
+  if (cur_offset_ < kMsgLengthPrefixLength) {
     // receive int32 length prefix
-    int32_t rem = kLengthPrefixLength - cur_offset_;
+    int32_t rem = kMsgLengthPrefixLength - cur_offset_;
     int32_t nread;
     Status status = socket.Recv(&buf_[cur_offset_], rem, &nread);
     RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
@@ -51,12 +52,12 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
     }
     DCHECK_GE(nread, 0);
     cur_offset_ += nread;
-    if (cur_offset_ == kLengthPrefixLength) {
+    if (cur_offset_ == kMsgLengthPrefixLength) {
       // Finished reading the length prefix
 
       // The length prefix doesn't include its own 4 bytes, so we have to
       // add that back in.
-      total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kLengthPrefixLength;
+      total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
       if (total_length_ > FLAGS_max_message_size) {
         return Status::NetworkError(StringPrintf("the frame had a "
                  "length of %d, but we only support messages up to %d bytes "

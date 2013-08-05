@@ -11,6 +11,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "rpc/constants.h"
 #include "rpc/rpc_header.pb.h"
 #include "rpc/response_callback.h"
 #include "util/locks.h"
@@ -41,7 +42,6 @@ class RpcController;
 // of different threads, making it tricky to enforce single ownership.
 class OutboundCall {
  public:
-  static const uint64_t INVALID_CALL_ID = 0;
 
   OutboundCall(const Sockaddr &remote,
                const string &method,
@@ -60,7 +60,7 @@ class OutboundCall {
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.
   void set_call_id(uint64_t call_id) {
-    DCHECK_EQ(call_id_, INVALID_CALL_ID) << "Already has a call ID";
+    DCHECK_EQ(call_id_, kInvalidCallId) << "Already has a call ID";
     call_id_ = call_id;
   }
 
@@ -104,13 +104,7 @@ class OutboundCall {
 
   // Return true if a call ID has been assigned to this call.
   bool call_id_assigned() const {
-    return call_id_ != INVALID_CALL_ID;
-  }
-
-  // Return the serialized request, including the varint length delimiter
-  Slice serialized_request() const {
-    DCHECK_GT(request_size_, 0);
-    return Slice(request_buf_.get(), request_size_);
+    return call_id_ != kInvalidCallId;
   }
 
   uint64_t call_id() const {
@@ -119,6 +113,8 @@ class OutboundCall {
   }
 
  private:
+  static const int64_t kInvalidCallId = 0;
+
   friend class RpcController;
 
   // Various states the call propagates through.
@@ -168,9 +164,8 @@ class OutboundCall {
   uint64_t call_id_;
 
   // Buffers for storing segments of the wire-format request.
-  gscoped_ptr<uint8_t[]> header_buf_;
-  gscoped_ptr<uint8_t[]> request_buf_;
-  size_t request_size_;
+  faststring header_buf_;
+  faststring request_buf_;
 
   // Once a response has been received for this call, contains that response.
   // Otherwise NULL.

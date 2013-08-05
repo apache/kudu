@@ -37,8 +37,6 @@ struct TransferCallbacks;
 // and the InboundTransfer object itself is handed off.
 class InboundTransfer {
  public:
-  // There is a 4-byte length prefix before any packet.
-  static const int kLengthPrefixLength = 4;
 
   InboundTransfer();
 

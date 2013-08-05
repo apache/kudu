@@ -78,8 +78,8 @@ class InboundCall {
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a
   // failure, 'response' should be an ErrorStatusPB instance.
-  void SerializeResponseBuffer(const google::protobuf::MessageLite &response,
-                               bool is_success);
+  Status SerializeResponseBuffer(const google::protobuf::MessageLite &response,
+                                 bool is_success);
 
   // The connection on which this inbound call arrived.
   std::tr1::shared_ptr<Connection> conn_;
@@ -96,8 +96,9 @@ class InboundCall {
   // by 'serialized_request_' above.
   gscoped_ptr<InboundTransfer> transfer_;
 
-  // The buffer for serialized response. Set by SerializeResponseBuffer().
-  faststring response_buf_;
+  // The buffers for serialized response. Set by SerializeResponseBuffer().
+  faststring response_hdr_buf_;
+  faststring response_msg_buf_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };
