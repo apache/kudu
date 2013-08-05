@@ -30,6 +30,13 @@ LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
 
+# Remove testing artifacts from the previous run before we do anything
+# else. Otherwise, if we fail during the "build" step, Jenkins will
+# archive the test logs from the previous run, thinking they came from
+# this run, and confuse us when we look at the failed build.
+rm -Rf Testing/Temporary
+rm -f build.log
+
 thirdparty/build-if-necessary.sh
 
 export PATH=$(pwd)/thirdparty/installed/bin:$PATH

@@ -182,10 +182,8 @@ class FsManager {
   }
 
   Status CreateDirIfMissing(const string& path) {
-    if (!env_->FileExists(path)) {
-      return env_->CreateDir(path);
-    }
-    return Status::OK();
+    Status s = env_->CreateDir(path);
+    return s.IsAlreadyPresent() ? Status::OK() : s;
   }
 
  private:

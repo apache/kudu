@@ -144,14 +144,14 @@ const Schema kQuerySchema(boost::assign::list_of
 
 // returns true if the tablet already contains data
 bool OpenTablet(gscoped_ptr<kudu::metadata::TabletMetadata> metadata,
-                gscoped_ptr<tablet::Tablet> &tablet)
+                gscoped_ptr<tablet::Tablet> *tablet)
 {
-  tablet.reset(new tablet::Tablet(metadata.Pass(), kSchema));
-  Status s = tablet->Open();
+  tablet->reset(new tablet::Tablet(metadata.Pass(), kSchema));
+  Status s = (*tablet)->Open();
   if (s.IsNotFound()) {
-    tablet->CreateNew();
+    (*tablet)->CreateNew();
   }
-  return tablet->num_rowsets() == 0;
+  return (*tablet)->num_rowsets() == 0;
 }
 
 void ConvertToIntAndPopulate(const string &chars, RowBuilder *rb) {
@@ -315,9 +315,10 @@ int main(int argc, char **argv) {
   master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
 
   kudu::FsManager fs_manager(kudu::Env::Default(), FLAGS_tpch_path_to_tablet);
+  fs_manager.CreateInitialFileSystemLayout();
   gscoped_ptr<kudu::metadata::TabletMetadata> metadata(
       new kudu::metadata::TabletMetadata(&fs_manager, "tpch1", master_block));
-  bool needs_loading = kudu::OpenTablet(metadata.Pass(), tablet);
+  bool needs_loading = kudu::OpenTablet(metadata.Pass(), &tablet);
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {
       kudu::LoadLineItems(FLAGS_tpch_path_to_data, tablet);
