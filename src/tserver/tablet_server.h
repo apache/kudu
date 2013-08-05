@@ -21,6 +21,10 @@ class Messenger;
 class ServicePool;
 }
 
+namespace tablet {
+class Tablet;
+}
+
 namespace tserver {
 
 // Server-specific options. Typically, when the tablet server is launched,
@@ -53,6 +57,14 @@ class TabletServer {
   // bound to. Requires that the server has been Start()ed.
   void GetBoundAddresses(std::vector<Sockaddr>* addresses);
 
+  // Register the given tablet to be managed by this tablet server.
+  void RegisterTablet(const std::tr1::shared_ptr<tablet::Tablet>& tablet);
+
+  // Lookup the given tablet by its ID.
+  // Returns true if the tablet is found successfully.
+  bool LookupTablet(const string& tablet_id,
+                    std::tr1::shared_ptr<tablet::Tablet>* tablet) const;
+
  private:
   friend class TabletServerTest;
 
@@ -67,6 +79,11 @@ class TabletServer {
   // RPC messenger.
   std::tr1::shared_ptr<rpc::Messenger> rpc_messenger_;
   gscoped_ptr<rpc::ServicePool> rpc_service_pool_;
+
+  // The singular hosted tablet.
+  // TODO: This will be replaced with some kind of map of tablet ID to
+  // tablet in the future.
+  std::tr1::shared_ptr<tablet::Tablet> tablet_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServer);
 };

@@ -1,12 +1,74 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.tserver;
 
+import "common/wire_protocol.proto";
+
+// Tablet-server specific errors use this protobuf.
+message TabletServerErrorPB {
+  enum Code {
+    // An error which has no more specific error code.
+    // The code and message in 'status' may reveal more details.
+    //
+    // RPCs should avoid returning this, since callers will not be
+    // able to easily parse the error.
+    UNKNOWN_ERROR = 1;
+
+    // The schema provided for a request was not well-formed.
+    INVALID_SCHEMA = 2;
+
+    // The row data provided for a request was not well-formed.
+    INVALID_ROW_BLOCK = 3;
+
+    // The schema provided for a request didn't match the actual
+    // schema of the tablet.
+    MISMATCHED_SCHEMA = 4;
+
+    // The requested tablet_id is not currently hosted on this server.
+    TABLET_NOT_FOUND = 5;
+  }
+
+  // The error code.
+  optional Code code = 1 [ default = UNKNOWN_ERROR ];
+
+  // The Status object for the error. This will include a textual
+  // message that may be more useful to present in log messages, etc,
+  // though its error code is less specific.
+  optional AppStatusPB status = 2;
+}
+
+
 message PingRequestPB {
 }
 
 message PingResponsePB {
 }
 
+message InsertRequestPB {
+  required bytes tablet_id = 1;
+  required RowwiseRowBlockPB data = 2;
+}
+
+message InsertResponsePB {
+  // If the entire Insert request failed, the error status that
+  // caused the failure. This type of error is triggered for
+  // cases such as the tablet not being on this server, or the
+  // schema not matching. If any error specific to a given row
+  // occurs, this error will be recorded in per_row_errors below,
+  // even if all rows failed.
+  optional TabletServerErrorPB error = 1;
+
+  // If errors occurred inserting particular rows, then the errors
+  // for those rows will be passed back in 'per_row_errors'.
+  message PerRowErrorPB {
+    // The index of the row in the incoming batch.
+    required int32 row_index = 1;
+    // The error that occurred.
+    required AppStatusPB error = 2;
+  }
+  repeated PerRowErrorPB per_row_errors = 2;
+}
+
 service TabletServerService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
+  rpc Insert(InsertRequestPB) returns (InsertResponsePB);
 }

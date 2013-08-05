@@ -29,6 +29,9 @@ class RpcController {
   RpcController();
   ~RpcController();
 
+  // Reset this controller so it may be used with another call.
+  void Reset();
+
   // Return true if the call has finished.
   // A call is finished if the server has responded, or if the call
   // has timed out.

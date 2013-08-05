@@ -17,6 +17,14 @@ RpcController::~RpcController() {
   DVLOG(4) << "RpcController " << this << " destroyed";
 }
 
+void RpcController::Reset() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (call_) {
+    CHECK(finished());
+  }
+  call_.reset();
+}
+
 bool RpcController::finished() const {
   if (call_) {
     return call_->IsFinished();

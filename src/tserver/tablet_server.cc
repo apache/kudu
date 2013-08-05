@@ -16,6 +16,7 @@
 
 using std::vector;
 using kudu::rpc::ServiceIf;
+using kudu::tablet::Tablet;
 
 namespace kudu {
 namespace tserver {
@@ -98,6 +99,23 @@ void TabletServer::GetBoundAddresses(vector<Sockaddr>* addresses) {
   BOOST_FOREACH(const AcceptorPoolInfo& info, acceptors) {
     addresses->push_back(info.bind_address());
   }
+}
+
+void TabletServer::RegisterTablet(const std::tr1::shared_ptr<Tablet>& tablet) {
+  CHECK(!tablet_) << "Already have a tablet. Currently only supports one tablet per server";
+  // TODO: will eventually need a mutex here when tablets get added/removed at
+  // runtime.
+  tablet_ = tablet;
+}
+
+bool TabletServer::LookupTablet(const string& tablet_id,
+                                std::tr1::shared_ptr<Tablet>* tablet) const {
+  // TODO: when the tablet server hosts multiple tablets,
+  // lookup the correct one.
+  // TODO: will eventually need a mutex here when tablets get added/removed at
+  // runtime.
+  *tablet = tablet_;
+  return true;
 }
 
 } // namespace tserver

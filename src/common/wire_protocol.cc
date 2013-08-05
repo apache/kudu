@@ -27,6 +27,8 @@ void StatusToPB(const Status& status, AppStatusPB* pb) {
     pb->set_code(AppStatusPB::NOT_SUPPORTED);
   } else if (status.IsInvalidArgument()) {
     pb->set_code(AppStatusPB::INVALID_ARGUMENT);
+  } else if (status.IsAlreadyPresent()) {
+    pb->set_code(AppStatusPB::ALREADY_PRESENT);
   } else if (status.IsIOError()) {
     pb->set_code(AppStatusPB::IO_ERROR);
   } else if (status.IsRuntimeError()) {

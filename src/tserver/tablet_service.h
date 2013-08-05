@@ -17,7 +17,17 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     PingResponsePB* resp,
                     rpc::RpcContext* context);
 
+  virtual void Insert(const InsertRequestPB* req,
+                      InsertResponsePB* resp,
+                      rpc::RpcContext* context);
+
  private:
+  void SetupErrorAndRespond(TabletServerErrorPB* error,
+                            const Status &s,
+                            TabletServerErrorPB::Code code,
+                            rpc::RpcContext* context) const;
+
+
   TabletServer* server_;
 };
 
