@@ -187,8 +187,8 @@ class RpcTestBase : public KuduTest {
     Status s = p.SyncRequest(GenericCalculatorService::kSleepMethodName, req, &resp, &c);
     ASSERT_FALSE(s.ok());
     sw.stop();
-    ASSERT_LT(sw.elapsed().wall_seconds(), 0.020);
-    LOG(INFO) << "status: " << s.ToString();
+    ASSERT_LT(sw.elapsed().wall_seconds(), 0.100); // this arbitrary max can make tests flaky...
+    LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
 
   void StartTestServer(Sockaddr *server_addr) {
