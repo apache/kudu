@@ -49,7 +49,7 @@ class ThreadPool {
   void Shutdown();
 
   // Submit a function binded using boost::bind(&FuncName, args...)
-  void Submit(const boost::function<void()>& func);
+  void SubmitFunc(const boost::function<void()>& func);
 
   // Submit a Runnable class
   void Submit(const std::tr1::shared_ptr<Runnable>& task);

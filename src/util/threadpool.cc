@@ -71,17 +71,15 @@ void ThreadPool::Shutdown() {
   STLDeleteElements(&threads_);
 }
 
-void ThreadPool::Submit(const boost::function<void()>& func) {
+void ThreadPool::SubmitFunc(const boost::function<void()>& func) {
   Submit(std::tr1::shared_ptr<Runnable>(new FunctionRunnable(func)));
 }
 
 void ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   DCHECK_GT(threads_.size(), 0) << "No threads in the pool";
   boost::lock_guard<boost::mutex> guard(lock_);
-  if (!closing_) {
-    queue_.push_back(task);
-    queue_changed_.notify_one();
-  }
+  queue_.push_back(task);
+  queue_changed_.notify_one();
 }
 
 void ThreadPool::Wait() {

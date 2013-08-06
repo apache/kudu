@@ -18,6 +18,7 @@ ADD_LIBRARY(kudu_util
   status.cc
   string_case.cc
   threadpool.cc
+  task_executor.cc
   test_graph.cc
   errno.cc
   monotime.cc
@@ -46,5 +47,6 @@ ADD_KUDU_TEST(memcmpable_varint-test)
 ADD_KUDU_TEST(monotime-test)
 ADD_KUDU_TEST(pb_util-test)
 ADD_KUDU_TEST(threadpool-test)
+ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(safe_math-test)
 
