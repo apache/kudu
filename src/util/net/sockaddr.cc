@@ -28,6 +28,10 @@ Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
   return *this;
 }
 
+bool Sockaddr::operator==(const Sockaddr& other) const {
+  return memcmp(&other.addr_, &addr_, sizeof(addr_)) == 0;
+}
+
 bool Sockaddr::operator<(const Sockaddr &rhs) const {
   return addr_.sin_addr.s_addr < rhs.addr_.sin_addr.s_addr;
 }

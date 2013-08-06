@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <iosfwd>
 #include <string>
+#include <tr1/functional_hash.h>
 
 namespace kudu {
 
@@ -21,6 +22,8 @@ class Sockaddr {
   explicit Sockaddr(const struct sockaddr_in *addr);
 
   Sockaddr& operator=(const struct sockaddr_in &addr);
+
+  bool operator==(const Sockaddr& other) const;
 
   // Compare the endpoints of two sockaddrs.
   // The port number is ignored in this comparison.
@@ -39,4 +42,15 @@ class Sockaddr {
 };
 
 } // namespace kudu
+
+// Specialize std::tr1::hash for Sockaddr
+namespace std { namespace tr1 {
+template<>
+struct hash<kudu::Sockaddr> {
+  int operator()(const kudu::Sockaddr& addr) const {
+    return addr.HashCode();
+  }
+};
+} // namespace tr1
+} // namespace std
 #endif

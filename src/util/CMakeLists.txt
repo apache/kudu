@@ -11,6 +11,7 @@ ADD_LIBRARY(kudu_util
   hexdump.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
+  net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
   pb_util.cc
@@ -36,6 +37,7 @@ ADD_KUDU_TEST(knapsack_solver-test)
 ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(interval_tree-test)
 ADD_KUDU_TEST(memenv/memenv-test)
+ADD_KUDU_TEST(net/net_util-test)
 ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(rle-test)
 ADD_KUDU_TEST(status-test)
