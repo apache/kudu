@@ -26,6 +26,8 @@
 
 namespace kudu {
 
+const int MAX_WIDTH = 32;
+
 TEST(BitArray, TestBool) {
   const int len = 8;
   faststring buffer(len);
@@ -34,8 +36,9 @@ TEST(BitArray, TestBool) {
 
   // Write alternating 0's and 1's
   for (int i = 0; i < 8; ++i) {
-    writer.PutBool(i % 2);
+    writer.PutValue(i % 2, 1);
   }
+  writer.Flush();
   EXPECT_EQ(buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
 
   // Write 00110011
@@ -45,13 +48,14 @@ TEST(BitArray, TestBool) {
       case 1:
       case 4:
       case 5:
-        writer.PutBool(false);
+        writer.PutValue(0, 1);
         break;
       default:
-        writer.PutBool(true);
+        writer.PutValue(1, 1);
         break;
     }
   }
+  writer.Flush();
 
   // Validate the exact bit value
   EXPECT_EQ(buffer[0], BOOST_BINARY(1 0 1 0 1 0 1 0));
@@ -61,14 +65,14 @@ TEST(BitArray, TestBool) {
   BitReader reader(buffer.data(), len);
   for (int i = 0; i < 8; ++i) {
     bool val = false;
-    bool result = reader.GetBool(&val);
+    bool result = reader.GetValue(1, &val);
     EXPECT_TRUE(result);
     EXPECT_EQ(val, i % 2);
   }
 
   for (int i = 0; i < 8; ++i) {
-    bool val;
-    bool result = reader.GetBool(&val);
+    bool val = false;
+    bool result = reader.GetValue(1, &val);
     EXPECT_TRUE(result);
     switch (i) {
       case 0:
@@ -84,14 +88,84 @@ TEST(BitArray, TestBool) {
   }
 }
 
+// Writes 'num_vals' values with width 'bit_width' and reads them back.
+void TestBitArrayValues(int bit_width, int num_vals) {
+  const int kTestLen = BitUtil::Ceil(bit_width * num_vals, 8);
+  const uint64_t mod = bit_width == 64? 1 : 1LL << bit_width;
+
+  faststring buffer(kTestLen);
+  BitWriter writer(&buffer);
+  for (int i = 0; i < num_vals; ++i) {
+    writer.PutValue(i % mod, bit_width);
+  }
+  writer.Flush();
+  EXPECT_EQ(writer.bytes_written(), kTestLen);
+
+  BitReader reader(buffer.data(), kTestLen);
+  for (int i = 0; i < num_vals; ++i) {
+    int64_t val = 0;
+    bool result = reader.GetValue(bit_width, &val);
+    EXPECT_TRUE(result);
+    EXPECT_EQ(val, i % mod);
+  }
+  EXPECT_EQ(reader.bytes_left(), 0);
+}
+
+TEST(BitArray, TestValues) {
+  for (int width = 1; width <= MAX_WIDTH; ++width) {
+    TestBitArrayValues(width, 1);
+    TestBitArrayValues(width, 2);
+    // Don't write too many values
+    TestBitArrayValues(width, (width < 12) ? (1 << width) : 4096);
+    TestBitArrayValues(width, 1024);
+  }
+}
+
+// Test some mixed values
+TEST(BitArray, TestMixed) {
+  const int kTestLen = 1024;
+  faststring buffer(kTestLen);
+  bool parity = true;
+
+  BitWriter writer(&buffer);
+  for (int i = 0; i < kTestLen; ++i) {
+    if (i % 2 == 0) {
+      writer.PutValue(parity, 1);
+      parity = !parity;
+    } else {
+      writer.PutValue(i, 10);
+    }
+  }
+  writer.Flush();
+
+  parity = true;
+  BitReader reader(buffer.data(), kTestLen);
+  for (int i = 0; i < kTestLen; ++i) {
+    bool result;
+    if (i % 2 == 0) {
+      bool val = false;
+      result = reader.GetValue(1, &val);
+      EXPECT_EQ(val, parity);
+      parity = !parity;
+    } else {
+      int val;
+      result = reader.GetValue(10, &val);
+      EXPECT_EQ(val, i);
+    }
+    EXPECT_TRUE(result);
+  }
+}
+
 // Validates encoding of values by encoding and decoding them.  If
 // expected_encoding != NULL, also validates that the encoded buffer is
 // exactly 'expected_encoding'.
 // if expected_len is not -1, it will validate the encoded size is correct.
-void ValidateRle(const vector<bool>& values,
+template<typename T>
+void ValidateRle(const vector<T>& values, int bit_width,
     uint8_t* expected_encoding, int expected_len) {
   faststring buffer;
-  RleEncoder encoder(&buffer);
+  RleEncoder<T> encoder(&buffer, bit_width);
+
   for (int i = 0; i < values.size(); ++i) {
     encoder.Put(values[i]);
   }
@@ -108,9 +182,9 @@ void ValidateRle(const vector<bool>& values,
   }
 
   // Verify read
-  RleDecoder decoder(buffer.data(), encoded_len);
+  RleDecoder<T> decoder(buffer.data(), encoded_len, bit_width);
   for (int i = 0; i < values.size(); ++i) {
-    bool val;
+    T val = 0;
     bool result = decoder.Get(&val);
     EXPECT_TRUE(result);
     EXPECT_EQ(values[i], val);
@@ -120,44 +194,67 @@ void ValidateRle(const vector<bool>& values,
 TEST(Rle, SpecificSequences) {
   const int kTestLen = 1024;
   uint8_t expected_buffer[kTestLen];
-  vector<bool> values;
+  vector<int> values;
 
   // Test 50 0' followed by 50 1's
   values.resize(100);
   for (int i = 0; i < 50; ++i) {
-    values[i] = false;
+    values[i] = 0;
   }
   for (int i = 50; i < 100; ++i) {
-    values[i] = true;
+    values[i] = 1;
   }
+
+  // expected_buffer valid for bit width <= 1 byte
   expected_buffer[0] = (50 << 1);
   expected_buffer[1] = 0;
   expected_buffer[2] = (50 << 1);
   expected_buffer[3] = 1;
-  ValidateRle(values, expected_buffer, 4);
+  for (int width = 1; width <= 8; ++width) {
+    ValidateRle(values, width, expected_buffer, 4);
+  }
+
+  for (int width = 9; width <= MAX_WIDTH; ++width) {
+    ValidateRle(values, width, NULL, 2 * (1 + BitUtil::Ceil(width, 8)));
+  }
 
   // Test 100 0's and 1's alternating
   for (int i = 0; i < 100; ++i) {
     values[i] = i % 2;
   }
-  int num_groups = BitmapSize(100);
+  int num_groups = BitUtil::Ceil(100, 8);
   expected_buffer[0] = (num_groups << 1) | 1;
   for (int i = 0; i < 100/8; ++i) {
     expected_buffer[i + 1] = BOOST_BINARY(1 0 1 0 1 0 1 0); // 0xaa
   }
   // Values for the last 4 0 and 1's
   expected_buffer[1 + 100/8] = BOOST_BINARY(0 0 0 0 1 0 1 0); // 0x0a
-  ValidateRle(values, expected_buffer, 1 + num_groups);
+
+  // num_groups and expected_buffer only valid for bit width = 1
+  ValidateRle(values, 1, expected_buffer, 1 + num_groups);
+  for (int width = 2; width <= MAX_WIDTH; ++width) {
+    ValidateRle(values, width, NULL, 1 + BitUtil::Ceil(width * 100, 8));
+  }
 }
 
-// Tests alternating true/false values.
-TEST(Rle, AlternateTest) {
-  const int kTestLen = 2048;
-  vector<bool> values;
-  for (int i = 0; i < kTestLen; ++i) {
-    values.push_back(i % 2);
+// ValidateRle on 'num_vals' values with width 'bit_width'. If 'value' != -1, that value
+// is used, otherwise alternating values are used.
+void TestRleValues(int bit_width, int num_vals, int value = -1) {
+  const uint64_t mod = (bit_width == 64) ? 1 : 1LL << bit_width;
+  vector<int> values;
+  for (int v = 0; v < num_vals; ++v) {
+    values.push_back((value != -1) ? value : (v % mod));
   }
-  ValidateRle(values, NULL, -1);
+  ValidateRle(values, bit_width, NULL, -1);
+}
+
+TEST(Rle, TestValues) {
+  for (int width = 1; width <= MAX_WIDTH; ++width) {
+    TestRleValues(width, 1);
+    TestRleValues(width, 1024);
+    TestRleValues(width, 1024, 0);
+    TestRleValues(width, 1024, 1);
+  }
 }
 
 class BitRle : public KuduTest {
@@ -171,10 +268,10 @@ TEST_F(BitRle, AllSame) {
   for (int v = 0; v < 2; ++v) {
     values.clear();
     for (int i = 0; i < kTestLen; ++i) {
-      values.push_back(v);
+      values.push_back(v ? true : false);
     }
 
-    ValidateRle(values, NULL, 3);
+    ValidateRle(values, 1, NULL, 3);
   }
 }
 
@@ -183,14 +280,14 @@ TEST_F(BitRle, AllSame) {
 TEST_F(BitRle, Flush) {
   vector<bool> values;
   for (int i = 0; i < 16; ++i) values.push_back(1);
-  values.push_back(0);
-  ValidateRle(values, NULL, -1);
-  values.push_back(1);
-  ValidateRle(values, NULL, -1);
-  values.push_back(1);
-  ValidateRle(values, NULL, -1);
-  values.push_back(1);
-  ValidateRle(values, NULL, -1);
+  values.push_back(false);
+  ValidateRle(values, 1, NULL, -1);
+  values.push_back(true);
+  ValidateRle(values, 1, NULL, -1);
+  values.push_back(true);
+  ValidateRle(values, 1, NULL, -1);
+  values.push_back(true);
+  ValidateRle(values, 1, NULL, -1);
 }
 
 // Test some random sequences.
@@ -200,7 +297,7 @@ TEST_F(BitRle, Random) {
   while (iters < n_iters) {
     srand(iters++);
     if (iters % 10000 == 0) LOG(ERROR) << "Seed: " << iters;
-    vector<bool> values;
+    vector<int> values;
     bool parity = 0;
     for (int i = 0; i < 1000; ++i) {
       int group_size = rand() % 20 + 1; // NOLINT(*)
@@ -212,7 +309,7 @@ TEST_F(BitRle, Random) {
       }
       parity = !parity;
     }
-    ValidateRle(values, NULL, -1);
+    ValidateRle(values, (iters % MAX_WIDTH) + 1, NULL, -1);
   }
 }
 
@@ -224,7 +321,7 @@ TEST_F(BitRle, RepeatedPattern) {
   const int max_run = 32;
 
   for (int i = min_run; i <= max_run; ++i) {
-    bool v = i % 2;
+    int v = i % 2;
     for (int j = 0; j < i; ++j) {
       values.push_back(v);
     }
@@ -238,22 +335,22 @@ TEST_F(BitRle, RepeatedPattern) {
     }
   }
 
-  ValidateRle(values, NULL, -1);
+  ValidateRle(values, 1, NULL, -1);
 }
 
 TEST(TestRle, TestBulkPut) {
   size_t run_length;
-  bool val;
+  bool val = false;
 
   faststring buffer(1);
-  RleEncoder encoder(&buffer);
+  RleEncoder<bool> encoder(&buffer, 1);
   encoder.Put(true, 10);
   encoder.Put(false, 7);
   encoder.Put(true, 5);
   encoder.Put(true, 15);
   encoder.Flush();
 
-  RleDecoder decoder(buffer.data(), encoder.len());
+  RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
   decoder.GetNextRun(&val, &run_length);
   ASSERT_TRUE(val);
   ASSERT_EQ(10, run_length);
@@ -279,17 +376,17 @@ TEST(TestRle, TestGetNextRun) {
     //    ...
     for (int block = 1; block <= 20; ++block) {
       faststring buffer(1);
-      RleEncoder encoder(&buffer);
+      RleEncoder<bool> encoder(&buffer, 1);
       for (int j = 0; j < num_items; ++j) {
         encoder.Put(!!(j & 1), block);
       }
       encoder.Flush();
 
-      RleDecoder decoder(buffer.data(), encoder.len());
+      RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
       size_t count = num_items * block;
       for (int j = 0; j < num_items; ++j) {
         size_t run_length;
-        bool val;
+        bool val = false;
         DCHECK_GT(count, 0);
         decoder.GetNextRun(&val, &run_length);
         run_length = std::min(run_length, count);
@@ -305,7 +402,7 @@ TEST(TestRle, TestGetNextRun) {
 
 TEST(TestRle, TestSkip) {
   faststring buffer(1);
-  RleEncoder encoder(&buffer);
+  RleEncoder<bool> encoder(&buffer, 1);
 
   // 0101010[1] 01010101 01
   for (int j = 0; j < 18; ++j) {
@@ -325,9 +422,9 @@ TEST(TestRle, TestSkip) {
   }
   encoder.Flush();
 
-  bool val;
+  bool val = false;
   size_t run_length;
-  RleDecoder decoder(buffer.data(), encoder.len());
+  RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
 
   decoder.Skip(7);
   decoder.GetNextRun(&val, &run_length);

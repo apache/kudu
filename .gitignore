@@ -23,6 +23,7 @@ oprofile_data
 *.proxy.h
 protoc-gen-krpc
 tpch1
+rle
 cfile-dump
 rwlock-perf
 rpc-bench

@@ -355,7 +355,7 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx) {
   // to the index within the non-null entries.
   uint32_t index_within_nonnulls;
   if (reader_->is_nullable()) {
-    RleDecoder rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size());
+    RleDecoder<bool> rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
     index_within_nonnulls = rle_decoder.Skip(ord_idx);
   } else {
     index_within_nonnulls = ord_idx;
@@ -607,7 +607,7 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
     if (reader_->is_nullable()) {
       DCHECK(dst->is_nullable());
 
-      RleDecoder rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size());
+      RleDecoder<bool> rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
 
       size_t index = pb->row_index_ - pb->first_row_idx_;
       rle_decoder.Skip(index);

@@ -49,4 +49,4 @@ ADD_KUDU_TEST(pb_util-test)
 ADD_KUDU_TEST(threadpool-test)
 ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(safe_math-test)
-
+ADD_KUDU_TEST(bit-util-test)
