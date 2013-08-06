@@ -17,8 +17,8 @@
 #include "rpc/messenger.h"
 #include "rpc/reactor.h"
 #include "rpc/rpc_controller.h"
-#include "rpc/sockaddr.h"
 #include "rpc/transfer.h"
+#include "util/net/sockaddr.h"
 #include "util/status.h"
 
 using std::tr1::shared_ptr;

@@ -21,8 +21,6 @@ ADD_LIBRARY(krpc
     server_call.cc
     service_if.cc
     service_pool.cc
-    sockaddr.cc
-    socket.cc
     transfer.cc
 )
 

@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "rpc/socket.h"
+#include "util/net/socket.h"
 
 #include <errno.h>
 #include <glog/logging.h>
@@ -12,11 +12,10 @@
 
 #include <string>
 
-#include "rpc/sockaddr.h"
 #include "util/errno.h"
+#include "util/net/sockaddr.h"
 
 namespace kudu {
-namespace rpc {
 
 Socket::Socket()
   : fd_(-1) {
@@ -286,5 +285,4 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
   return Status::OK();
 }
 
-}
-}
+} // namespace kudu

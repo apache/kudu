@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
-#ifndef KUDU_SOCKET_H
-#define KUDU_SOCKET_H
+#ifndef KUDU_UTIL_NET_SOCKET_H
+#define KUDU_UTIL_NET_SOCKET_H
 
 #include <sys/uio.h>
 
@@ -8,7 +8,6 @@
 #include "util/status.h"
 
 namespace kudu {
-namespace rpc {
 
 class Sockaddr;
 
@@ -77,7 +76,5 @@ class Socket {
   DISALLOW_COPY_AND_ASSIGN(Socket);
 };
 
-} // namespace rpc
 } // namespace kudu
-
 #endif

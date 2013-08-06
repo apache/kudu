@@ -8,15 +8,17 @@
 #include <vector>
 
 #include "gutil/atomicops.h"
-#include "rpc/sockaddr.h"
-#include "rpc/socket.h"
+#include "util/net/sockaddr.h"
+#include "util/net/socket.h"
 #include "util/status.h"
 
 namespace kudu {
+
+class Socket;
+
 namespace rpc {
 
 class Messenger;
-class Socket;
 
 // A pool of threads calling accept() to create new connections.
 // Acceptor pool threads terminate when they notice that the messenger has been

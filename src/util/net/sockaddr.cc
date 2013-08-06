@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "rpc/sockaddr.h"
+#include "util/net/sockaddr.h"
 
 #include <arpa/inet.h>
 #include <stdio.h>
@@ -9,7 +9,6 @@
 #include "gutil/stringprintf.h"
 
 namespace kudu {
-namespace rpc {
 
 ///
 /// Sockaddr
@@ -57,5 +56,4 @@ std::string Sockaddr::ToString() const {
   return StringPrintf("%s:%d", str, port());
 }
 
-} // namespace rpc
 } // namespace kudu

@@ -3,7 +3,7 @@
 #define KUDU_RPC_SERVICE_IF_H
 
 #include "gutil/gscoped_ptr.h"
-#include "rpc/sockaddr.h"
+#include "util/net/sockaddr.h"
 
 namespace google { namespace protobuf {
 class Message;

@@ -12,11 +12,13 @@
 #include "util/status.h"
 
 namespace kudu {
+
+class Socket;
+
 namespace rpc {
 
 class Messenger;
 class ServiceIf;
-class Socket;
 
 // A pool of threads that handle new incoming RPC calls.
 class ServicePool {

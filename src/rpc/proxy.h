@@ -10,8 +10,8 @@
 #include "rpc/response_callback.h"
 #include "rpc/rpc_controller.h"
 #include "rpc/rpc_header.pb.h"
-#include "rpc/sockaddr.h"
 #include "util/monotime.h"
+#include "util/net/sockaddr.h"
 #include "util/status.h"
 
 namespace google {

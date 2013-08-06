@@ -14,8 +14,8 @@
 #include <vector>
 
 #include "rpc/messenger.h"
-#include "rpc/sockaddr.h"
-#include "rpc/socket.h"
+#include "util/net/sockaddr.h"
+#include "util/net/socket.h"
 #include "util/status.h"
 
 using google::protobuf::Message;

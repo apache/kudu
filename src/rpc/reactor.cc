@@ -19,7 +19,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "rpc/connection.h"
 #include "rpc/messenger.h"
-#include "rpc/socket.h"
+#include "util/net/socket.h"
 #include "rpc/transfer.h"
 #include "util/countdown_latch.h"
 #include "util/errno.h"

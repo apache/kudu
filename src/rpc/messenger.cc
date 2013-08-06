@@ -19,10 +19,10 @@
 #include "rpc/connection.h"
 #include "rpc/reactor.h"
 #include "rpc/rpc_header.pb.h"
-#include "rpc/socket.h"
 #include "rpc/transfer.h"
 #include "util/errno.h"
 #include "util/monotime.h"
+#include "util/net/socket.h"
 #include "util/status.h"
 
 using std::string;

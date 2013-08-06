@@ -14,10 +14,10 @@
 #include <string>
 
 #include "rpc/connection.h"
-#include "rpc/socket.h"
 #include "rpc/transfer.h"
 #include "util/locks.h"
 #include "util/monotime.h"
+#include "util/net/socket.h"
 #include "util/status.h"
 
 namespace kudu {

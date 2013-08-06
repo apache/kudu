@@ -1,13 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
-#ifndef KUDU_RPC_SOCKADDR_H
-#define KUDU_RPC_SOCKADDR_H
+#ifndef KUDU_UTIL_NET_SOCKADDR_H
+#define KUDU_UTIL_NET_SOCKADDR_H
 
 #include <netinet/in.h>
 #include <iosfwd>
 #include <string>
 
 namespace kudu {
-namespace rpc {
 
 ///
 /// Represents a sockaddr.
@@ -40,5 +39,4 @@ class Sockaddr {
 };
 
 } // namespace kudu
-} // namespace rpc
 #endif

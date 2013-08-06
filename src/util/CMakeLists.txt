@@ -11,6 +11,8 @@ ADD_LIBRARY(kudu_util
   hexdump.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
+  net/sockaddr.cc
+  net/socket.cc
   pb_util.cc
   status.cc
   string_case.cc

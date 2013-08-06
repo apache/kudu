@@ -16,10 +16,10 @@
 
 #include "rpc/client_call.h"
 #include "rpc/server_call.h"
-#include "rpc/sockaddr.h"
-#include "rpc/socket.h"
 #include "rpc/transfer.h"
 #include "util/monotime.h"
+#include "util/net/sockaddr.h"
+#include "util/net/socket.h"
 #include "util/object_pool.h"
 #include "util/status.h"
 

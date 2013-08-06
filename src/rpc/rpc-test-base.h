@@ -15,7 +15,7 @@
 #include "rpc/rtest.service.h"
 #include "rpc/service_if.h"
 #include "rpc/service_pool.h"
-#include "rpc/sockaddr.h"
+#include "util/net/sockaddr.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 

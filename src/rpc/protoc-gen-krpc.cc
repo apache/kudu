@@ -391,7 +391,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include \"rpc/proxy.h\"\n"
       "#include \"util/status.h\"\n"
       "\n"
-      "namespace kudu { namespace rpc { class Sockaddr; } }\n"
+      "namespace kudu { class Sockaddr; }\n"
       "$open_namespace$"
       "\n"
       "\n"
@@ -406,7 +406,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "class $service_name$Proxy {\n"
         " public:\n"
         "  $service_name$Proxy(const std::tr1::shared_ptr< ::kudu::rpc::Messenger>\n"
-        "                &messenger, const ::kudu::rpc::Sockaddr &sockaddr);\n"
+        "                &messenger, const ::kudu::Sockaddr &sockaddr);\n"
         "  ~$service_name$Proxy();\n"
         );
 
@@ -450,7 +450,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include \"$path_no_extension$.proxy.h\"\n"
       "\n"
       "#include \"rpc/messenger.h\"\n"
-      "#include \"rpc/sockaddr.h\"\n"
+      "#include \"util/net/sockaddr.h\"\n"
       "\n"
       "$open_namespace$"
       "\n"
@@ -462,7 +462,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
       Print(printer, *subs,
         "$service_name$Proxy::$service_name$Proxy(const std::tr1::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
-        "                                   const ::kudu::rpc::Sockaddr &remote)\n"
+        "                                   const ::kudu::Sockaddr &remote)\n"
         "  : proxy_(messenger, remote) {\n"
         "}\n"
         "\n"

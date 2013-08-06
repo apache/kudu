@@ -13,8 +13,8 @@
 #include "gutil/macros.h"
 #include "rpc/rpc_header.pb.h"
 #include "rpc/response_callback.h"
-#include "rpc/sockaddr.h"
 #include "util/locks.h"
+#include "util/net/sockaddr.h"
 #include "util/slice.h"
 #include "util/status.h"
 

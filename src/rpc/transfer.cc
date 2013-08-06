@@ -11,8 +11,8 @@
 
 #include "gutil/endian.h"
 #include "rpc/messenger.h"
-#include "rpc/sockaddr.h"
-#include "rpc/socket.h"
+#include "util/net/sockaddr.h"
+#include "util/net/socket.h"
 
 namespace kudu {
 namespace rpc {

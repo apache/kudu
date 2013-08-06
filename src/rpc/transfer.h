@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "rpc/rpc_header.pb.h"
-#include "rpc/sockaddr.h"
+#include "util/net/sockaddr.h"
 #include "util/status.h"
 
 namespace google {
@@ -21,10 +21,12 @@ namespace google {
 }
 
 namespace kudu {
+
+class Socket;
+
 namespace rpc {
 
 class Messenger;
-class Socket;
 struct TransferCallbacks;
 
 // This class is used internally by the RPC layer to represent an inbound

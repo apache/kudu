@@ -17,8 +17,8 @@
 #include "rpc/messenger.h"
 #include "rpc/response_callback.h"
 #include "rpc/rpc_header.pb.h"
-#include "rpc/sockaddr.h"
-#include "rpc/socket.h"
+#include "util/net/sockaddr.h"
+#include "util/net/socket.h"
 #include "util/countdown_latch.h"
 #include "util/status.h"
 
