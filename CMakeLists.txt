@@ -239,7 +239,7 @@ ENDIF (UNIX)
 ############################################################
 IF (UNIX)
   ADD_CUSTOM_TARGET(lint cpplint.py --verbose=4
-    --filter=-whitespace/comments,-whitespace/line_length,-readability/todo,-build/header_guard
+    --filter=-whitespace/comments,-whitespace/line_length,-readability/todo,-build/header_guard,-build/include_order
     `find ${CMAKE_CURRENT_SOURCE_DIR}/src
     -name *.cc -or -name *.h | grep -v .pb. | grep -v gutil`)
 ENDIF (UNIX)
