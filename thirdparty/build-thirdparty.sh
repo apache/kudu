@@ -77,7 +77,7 @@ cd $CYRUS_SASL_DIR
 # Sasl does not have a --with-pic configuration.
 CFLAGS="-fPIC -DPIC" CXXFLAGS="-fPIC -DPIC" ./configure \
   --disable-digest --disable-sql --disable-cram --disable-ldap --disable-otp \
-  --enable-static --enable-staticdlopen --with-dblib=none \
+  --enable-static --enable-staticdlopen --with-dblib=none --without-des\
   --prefix=$PREFIX
 make clean
 make # no -j4 ... concurrent build probs on RHEL?
