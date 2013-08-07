@@ -24,6 +24,7 @@ else
       "libev")      F_LIBEV=1 ;;
       "lz4")        F_LZ4=1 ;;
       "protobuf")   F_PROTOBUF=1 ;;
+      "rapidjson")  F_RAPIDJSON=1 ;;
       "snappy")     F_SNAPPY=1 ;;
       "zlib")       F_ZLIB=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
@@ -126,6 +127,14 @@ if [ -n "$F_ALL" -o -n "$F_CYRUS_SASL" ]; then
   make clean
   make # no -j4 ... concurrent build probs on RHEL?
   make install
+fi
+
+# Build rapidjson
+if [ -n "$F_ALL" -o -n "$F_RAPIDJSON" ]; then
+  # rapidjson is actually a header-only library, so our "build" is really
+  # just installing it into our prefix
+  cd $RAPIDJSON_DIR
+  rsync -av --delete $RAPIDJSON_DIR/include/rapidjson/ $PREFIX/include/rapidjson/
 fi
 
 echo "---------------------"

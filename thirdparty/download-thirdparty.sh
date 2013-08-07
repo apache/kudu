@@ -98,5 +98,13 @@ if [ ! -d libev-${LIBEV_VERSION} ]; then
   rm libev-${LIBEV_VERSION}.tar.gz
 fi
 
+if [ ! -d $RAPIDJSON_DIR ]; then
+  echo "Fetching rapidjson"
+  wget https://rapidjson.googlecode.com/files/rapidjson-${RAPIDJSON_VERSION}.zip
+  unzip rapidjson-${RAPIDJSON_VERSION}.zip
+  mv rapidjson ${RAPIDJSON_DIR}
+  rm rapidjson-${RAPIDJSON_VERSION}.zip
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
