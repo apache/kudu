@@ -1,0 +1,11 @@
+This directory contains a demo which ingests the Twitter firehose
+into Kudu.
+
+Building this requires some dependencies which are not in our thirdparty/
+directory:
+  Ubuntu: apt-get -y install liboauth-dev libcurl-dev
+  RHEL6: yum -y install liboauth-devel curl-devel
+
+By default, the demo uses the KuduProject twitter account's API keys
+to connect to the sample firehose. Use the available command-line
+flags to use a different account.

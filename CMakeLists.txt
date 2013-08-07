@@ -280,3 +280,5 @@ set(LIBS ${LIBS} ${RPC_LIBS})
 add_subdirectory(src/experiments)
 
 add_subdirectory(src/benchmarks)
+
+add_subdirectory(src/twitter-demo)
