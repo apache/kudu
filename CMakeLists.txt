@@ -103,9 +103,16 @@ INCLUDE_DIRECTORIES(src)
 ############################################################
 # Testing
 ############################################################
+
+# Set a 15-minute timeout for tests run via 'make test'.
+# This keeps our jenkins builds from hanging in the case that there's
+# a deadlock or anything.
+SET(KUDU_TEST_TIMEOUT 900)
+
 FUNCTION(ADD_KUDU_TEST TEST_NAME)
   ADD_EXECUTABLE(${TEST_NAME} ${TEST_NAME}.cc)
   ADD_TEST(${TEST_NAME} ${TEST_NAME})
+  SET_TESTS_PROPERTIES(${TEST_NAME} PROPERTIES TIMEOUT ${KUDU_TEST_TIMEOUT})
   TARGET_LINK_LIBRARIES(${TEST_NAME} ${KUDU_TEST_LINK_LIBS})
 ENDFUNCTION()
 
