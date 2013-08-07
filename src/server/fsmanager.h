@@ -26,7 +26,7 @@ using google::protobuf::MessageLite;
 class BlockId {
  public:
   BlockId() {}
-  BlockId(const string& id) { SetId(id); }
+  explicit BlockId(const string& id) { SetId(id); }
 
   void SetId(const string& id) {
     CHECK_GE(id.size(), 8);

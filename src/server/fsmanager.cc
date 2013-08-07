@@ -61,8 +61,7 @@ void FsManager::DumpFileSystemTree(ostream& out) {
 }
 
 void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
-                                   const string& path, const vector<string>& objects)
-{
+                                   const string& path, const vector<string>& objects) {
   BOOST_FOREACH(const string& name, objects) {
     if (name == "." || name == "..") continue;
 
@@ -142,8 +141,7 @@ Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
 // ==========================================================================
 
 Status FsManager::NewWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                             shared_ptr<WritableFile> *writer)
-{
+                             shared_ptr<WritableFile> *writer) {
   string path = GetWalFilePath(server, prefix, timestamp);
   if (env_->FileExists(path)) {
     return Status::AlreadyPresent("Another WAL with the same timestamp already exists. ",
@@ -155,8 +153,7 @@ Status FsManager::NewWalFile(const string& server, const string& prefix, uint64_
 }
 
 Status FsManager::OpenWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                              shared_ptr<RandomAccessFile> *reader)
-{
+                              shared_ptr<RandomAccessFile> *reader) {
   return env_util::OpenFileForRandom(env_, GetWalFilePath(server, prefix, timestamp), reader);
 }
 

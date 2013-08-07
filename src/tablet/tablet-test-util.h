@@ -18,9 +18,9 @@ using std::vector;
 
 class KuduTabletTest : public KuduTest {
  public:
-  KuduTabletTest(const Schema& schema)
-    : schema_(schema)
-  {}
+  explicit KuduTabletTest(const Schema& schema)
+    : schema_(schema) {
+  }
 
   virtual void SetUp() {
     KuduTest::SetUp();
@@ -57,9 +57,9 @@ class KuduTabletTest : public KuduTest {
 
 class KuduRowSetTest : public KuduTabletTest {
  public:
-  KuduRowSetTest(const Schema& schema)
-    : KuduTabletTest(schema)
-  {}
+  explicit KuduRowSetTest(const Schema& schema)
+    : KuduTabletTest(schema) {
+  }
 
   virtual void SetUp() {
     KuduTabletTest::SetUp();

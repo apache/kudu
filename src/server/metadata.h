@@ -5,6 +5,7 @@
 #include <tr1/unordered_set>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gutil/atomicops.h"

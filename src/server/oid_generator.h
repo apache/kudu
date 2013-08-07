@@ -4,6 +4,8 @@
 #define KUDU_OID_GENERATOR_H
 
 #include <boost/uuid/uuid_generators.hpp>
+#include <string>
+
 #include "gutil/macros.h"
 #include "util/locks.h"
 

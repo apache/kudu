@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 
 #include <boost/thread/mutex.hpp>
+#include <string>
 
 #include "server/oid_generator.h"
 #include "gutil/stringprintf.h"

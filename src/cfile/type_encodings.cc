@@ -2,6 +2,7 @@
 #include "cfile/type_encodings.h"
 
 #include <boost/noncopyable.hpp>
+#include <utility>
 #include <tr1/unordered_map>
 #include <glog/logging.h>
 

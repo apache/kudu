@@ -40,8 +40,7 @@ class FsManagerTestBase : public KuduTest {
   }
 
   void TestReadWriteWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                            const Slice& data)
-  {
+                            const Slice& data) {
     uint8_t buffer[64];
     DCHECK_LT(data.size(), sizeof(buffer));
 

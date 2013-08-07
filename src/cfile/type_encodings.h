@@ -48,8 +48,8 @@ template<DataType Type, EncodingType Encoding>
 struct DataTypeEncodingTraits {};
 
 // Instantiate this template to get static access to the type traits.
-template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits :
-    public DataTypeEncodingTraits<Type, Encoding> {
+template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits
+  : public DataTypeEncodingTraits<Type, Encoding> {
 
   static const DataType type = Type;
   static const EncodingType encoding_type = Encoding;

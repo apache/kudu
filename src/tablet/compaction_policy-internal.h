@@ -5,7 +5,9 @@
 #ifndef KUDU_TABLET_COMPACTION_POLICY_INTERNAL_H
 #define KUDU_TABLET_COMPACTION_POLICY_INTERNAL_H
 
+#include <string>
 #include <tr1/unordered_set>
+#include <vector>
 #include <gtest/gtest.h>
 
 #include "tablet/rowset.h"

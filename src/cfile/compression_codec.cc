@@ -6,6 +6,7 @@
 #include <snappy.h>
 #include <zlib.h>
 #include <lz4.h>
+#include <string>
 #include <vector>
 
 #include "cfile/compression_codec.h"

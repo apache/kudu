@@ -27,8 +27,7 @@ OutboundCall::OutboundCall(const Sockaddr &remote,
     controller_(DCHECK_NOTNULL(controller)),
     response_(DCHECK_NOTNULL(response_storage)),
     call_id_(INVALID_CALL_ID),
-    request_size_(0)
-{
+    request_size_(0) {
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_);
 }
 

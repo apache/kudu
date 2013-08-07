@@ -59,7 +59,7 @@ class ValueRange {
 
 
 class EncodedKey {
-public:
+ public:
   EncodedKey(const Schema &schema,
              const void *raw_key);
 

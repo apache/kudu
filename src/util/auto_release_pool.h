@@ -38,7 +38,7 @@ class AutoReleasePool {
 
   template <class T>
   struct SpecificElement : GenericElement {
-    SpecificElement(T *t): t(t) {}
+    explicit SpecificElement(T *t): t(t) {}
     ~SpecificElement() {
       delete t;
     }

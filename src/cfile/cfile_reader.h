@@ -9,11 +9,10 @@
 
 #include "common/columnblock.h"
 #include "common/types.h"
-#include "cfile/cfile_util.h"
 #include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
-#include "cfile/cfile_util.h"
 #include "cfile/block_compression.h"
+#include "cfile/cfile_util.h"
 #include "cfile/index_btree.h"
 #include "cfile/type_encodings.h"
 #include "gutil/gscoped_ptr.h"

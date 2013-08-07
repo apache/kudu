@@ -31,8 +31,7 @@ Status OpenFileForRandom(Env *env, const string &path,
 }
 
 Status OpenFileForSequential(Env *env, const string &path,
-                             shared_ptr<SequentialFile> *file)
-{
+                             shared_ptr<SequentialFile> *file) {
   SequentialFile *r;
   RETURN_NOT_OK(env->NewSequentialFile(path, &r));
   file->reset(r);

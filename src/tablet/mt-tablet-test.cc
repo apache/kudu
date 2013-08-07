@@ -70,7 +70,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     // on the same row.
 
     uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
-        / FLAGS_num_insert_threads ;
+        / FLAGS_num_insert_threads;
 
     if (max_rows < FLAGS_inserts_per_thread) {
       LOG(WARNING) << "Clamping the inserts per thread to " << max_rows << " to prevent overflow";
@@ -155,7 +155,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     RowBlock block(schema_, 1, &arena);
 
     uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
-            / FLAGS_num_insert_threads ;
+            / FLAGS_num_insert_threads;
 
     int max_iters = FLAGS_num_insert_threads * max_rows / 10;
 
@@ -358,7 +358,7 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   }
 
   uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
-          / FLAGS_num_insert_threads ;
+          / FLAGS_num_insert_threads;
 
   this->VerifyTestRows(0, max_rows * FLAGS_num_insert_threads);
 }

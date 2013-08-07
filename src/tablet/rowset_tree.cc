@@ -2,6 +2,7 @@
 
 #include "tablet/rowset_tree.h"
 
+#include <string>
 #include <vector>
 
 #include "gutil/stl_util.h"

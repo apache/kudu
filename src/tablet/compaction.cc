@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <glog/logging.h>
+#include <deque>
 #include <string>
 #include <vector>
 #include "gutil/macros.h"

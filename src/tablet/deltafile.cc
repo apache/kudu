@@ -101,8 +101,7 @@ Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
                              uint64_t file_size,
                              const Schema &schema,
-                             gscoped_ptr<DeltaFileReader> *reader_out)
-{
+                             gscoped_ptr<DeltaFileReader> *reader_out) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
 

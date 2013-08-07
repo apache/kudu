@@ -43,7 +43,7 @@ Status ThreadPool::Init(size_t num_threads) {
       threads_.push_back(
           new boost::thread(boost::bind(&ThreadPool::DispatchThread, this)));
     }
-  } catch (const boost::thread_resource_error& exception) {
+  } catch(const boost::thread_resource_error& exception) {
     Shutdown();
     return Status::RuntimeError("boost thread creation error", exception.what());
   }

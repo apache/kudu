@@ -2,6 +2,7 @@
 #ifndef KUDU_CFILE_COMPRESSION_CODEC_H
 #define KUDU_CFILE_COMPRESSION_CODEC_H
 
+#include <string>
 #include <tr1/memory>
 #include <vector>
 

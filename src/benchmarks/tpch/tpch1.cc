@@ -144,8 +144,7 @@ const Schema kQuerySchema(boost::assign::list_of
 
 // returns true if the tablet already contains data
 bool OpenTablet(gscoped_ptr<kudu::metadata::TabletMetadata> metadata,
-                gscoped_ptr<tablet::Tablet> *tablet)
-{
+                gscoped_ptr<tablet::Tablet> *tablet) {
   tablet->reset(new tablet::Tablet(metadata.Pass(), kSchema));
   Status s = (*tablet)->Open();
   if (s.IsNotFound()) {

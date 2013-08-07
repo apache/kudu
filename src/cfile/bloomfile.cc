@@ -121,8 +121,7 @@ Status BloomFileReader::Open(Env *env, const string &path,
 
 Status BloomFileReader::Open(const shared_ptr<RandomAccessFile>& file,
                              uint64_t file_size,
-                             gscoped_ptr<BloomFileReader> *reader)
-{
+                             gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, ReaderOptions(), &cf_reader));
   if (cf_reader->is_compressed()) {

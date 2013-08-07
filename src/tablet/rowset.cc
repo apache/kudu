@@ -2,6 +2,8 @@
 // All rights reserved.
 
 #include "tablet/rowset.h"
+
+#include <limits>
 #include <string>
 #include <vector>
 #include "common/generic_iterators.h"

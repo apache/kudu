@@ -56,19 +56,18 @@ Writer::Writer(const WriterOptions &options,
                DataType type,
                bool is_nullable,
                EncodingType encoding,
-               shared_ptr<WritableFile> file) :
-  file_(file),
-  off_(0),
-  value_count_(0),
-  options_(options),
-  is_nullable_(is_nullable),
-  datatype_(type),
-  encoding_type_(encoding),
-  typeinfo_(GetTypeInfo(type)),
-  type_encoding_info_(TypeEncodingInfo::Get(type, encoding)),
-  key_encoder_(GetKeyEncoder(type)),
-  state_(kWriterInitialized)
-{
+               shared_ptr<WritableFile> file)
+  : file_(file),
+    off_(0),
+    value_count_(0),
+    options_(options),
+    is_nullable_(is_nullable),
+    datatype_(type),
+    encoding_type_(encoding),
+    typeinfo_(GetTypeInfo(type)),
+    type_encoding_info_(TypeEncodingInfo::Get(type, encoding)),
+    key_encoder_(GetKeyEncoder(type)),
+    state_(kWriterInitialized) {
   if (options.write_posidx) {
     posidx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));

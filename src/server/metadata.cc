@@ -5,6 +5,7 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/thread/mutex.hpp>
 #include <algorithm>
+#include <utility>
 #include <tr1/unordered_map>
 
 #include "gutil/map-util.h"
@@ -29,10 +30,10 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
   Status sa, sb;
 
   // Try to read the block_a if exists
-  sa = fs_manager_->ReadMetadataBlock(master_block_.block_a(), pb);
+  sa = fs_manager_->ReadMetadataBlock(BlockId(master_block_.block_a()), pb);
 
   // Try to read the block_b if exists
-  sb = fs_manager_->ReadMetadataBlock(master_block_.block_b(), &pb2);
+  sb = fs_manager_->ReadMetadataBlock(BlockId(master_block_.block_b()), &pb2);
 
   // Both super-blocks are valid, pick the latest
   if (sa.ok() && sb.ok()) {
@@ -95,8 +96,7 @@ Status TabletMetadata::Load() {
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
-                                      const RowSetMetadataVector& to_add)
-{
+                                      const RowSetMetadataVector& to_add) {
   boost::lock_guard<LockType> l(lock_);
 
   // Convert to protobuf
@@ -123,12 +123,14 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
   }
 
   // Flush
+  BlockId a_blk(master_block_.block_a());
+  BlockId b_blk(master_block_.block_b());
   if (sblk_id_ & 1) {
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(master_block_.block_a(), pb));
-    fs_manager_->DeleteBlock(master_block_.block_b());
+    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, pb));
+    fs_manager_->DeleteBlock(b_blk);
   } else {
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(master_block_.block_b(), pb));
-    fs_manager_->DeleteBlock(master_block_.block_a());
+    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, pb));
+    fs_manager_->DeleteBlock(a_blk);
   }
 
   sblk_id_++;

@@ -235,10 +235,10 @@ class KeyEncoder {
  private:
   friend class EncoderResolver;
   template<typename EncoderTraitsClass>
-  KeyEncoder(EncoderTraitsClass t)
-      : encode_func_(EncoderTraitsClass::Encode),
-        encode_with_separators_func_(EncoderTraitsClass::EncodeWithSeparators),
-        key_type_(EncoderTraitsClass::key_type){
+  explicit KeyEncoder(EncoderTraitsClass t)
+    : encode_func_(EncoderTraitsClass::Encode),
+      encode_with_separators_func_(EncoderTraitsClass::EncodeWithSeparators),
+      key_type_(EncoderTraitsClass::key_type) {
   }
 
   typedef void (*EncodeFunc)(const void* key, faststring* dst);

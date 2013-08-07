@@ -173,7 +173,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     RowBlockRow row = block.row(i);
     // Insert the encoded key into the bloom.
     Slice enc_key = schema_.EncodeComparableKey(row, &last_encoded_key_);
-    RETURN_NOT_OK( bloom_writer_->AppendKeys(&enc_key, 1) );
+    RETURN_NOT_OK(bloom_writer_->AppendKeys(&enc_key, 1));
   }
 
   written_count_ += block.nrows();
@@ -325,8 +325,7 @@ RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
 
 Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                         const Schema &schema,
-                        shared_ptr<DiskRowSet> *rowset)
-{
+                        shared_ptr<DiskRowSet> *rowset) {
   shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, schema));
 
   RETURN_NOT_OK(rs->Open());

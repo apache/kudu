@@ -128,7 +128,7 @@ class RowSetKeyProbe {
   //
   // NOTE: raw_key is not copied and must be valid for the liftime
   // of this object.
-  RowSetKeyProbe(const ConstContiguousRow& row_key)
+  explicit RowSetKeyProbe(const ConstContiguousRow& row_key)
       : row_key_(row_key) {
     cfile::EncodeKey(row_key, &encoded_key_);
     bloom_probe_ = BloomKeyProbe(Slice(encoded_key_));

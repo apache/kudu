@@ -7,6 +7,7 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread.hpp>
 #include <tr1/memory>
+#include <list>
 #include <vector>
 
 #include "gutil/macros.h"
@@ -17,6 +18,7 @@ namespace kudu {
 class Runnable {
  public:
   virtual void Run() = 0;
+  virtual ~Runnable() {}
 };
 
 // Simple Thread-Pool with a fixed number of threads.

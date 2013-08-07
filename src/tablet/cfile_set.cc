@@ -42,10 +42,10 @@ static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata, size
 // CFile Base
 ////////////////////////////////////////////////////////////
 
-CFileSet::CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata, const Schema &schema) :
-  rowset_metadata_(rowset_metadata),
-  schema_(schema)
-{}
+CFileSet::CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata, const Schema &schema)
+  : rowset_metadata_(rowset_metadata),
+    schema_(schema) {
+}
 
 CFileSet::~CFileSet() {
 }
