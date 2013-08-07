@@ -42,6 +42,16 @@ if [ ! -d gflags-${GFLAGS_VERSION} ]; then
   rm gflags-${GFLAGS_VERSION}.zip
 fi
 
+# Check that the gperftools patch has been applied.
+# If you add or remove patches, bump the patchlevel below to ensure
+# that any new Jenkins builds pick up your patches.
+GPERFTOOLS_PATCHLEVEL=1
+if [ ! -f gperftools-${GPERFTOOLS_VERSION}/patchlevel-$GPERFTOOLS_PATCHLEVEL ]; then
+  echo It appears that the gperftools version we have is missing
+  echo the latest local patches. Removing it so we re-download it.
+  rm -Rf gperftools-${GPERFTOOLS_VERSION}
+fi
+
 if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   echo "Fetching gperftools"
   wget -c http://gperftools.googlecode.com/files/gperftools-${GPERFTOOLS_VERSION}.tar.gz
@@ -49,6 +59,7 @@ if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   rm gperftools-${GPERFTOOLS_VERSION}.tar.gz
   pushd gperftools-${GPERFTOOLS_VERSION}
   patch -p1 < $TP_DIR/patches/gperftools-issue-560-Revert-issue-481.patch
+  touch patchlevel-$GPERFTOOLS_PATCHLEVEL
   popd
 fi
 
