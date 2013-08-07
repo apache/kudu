@@ -7,6 +7,7 @@ SET(COMMON_SRCS
   row_changelist.cc
   scan_predicate.cc
   scan_spec.cc
+  schema.cc
   types.cc
 )
 PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS

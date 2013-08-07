@@ -12,11 +12,6 @@
 #include "common/types.h"
 #include "common/common.pb.h"
 #include "common/key_encoder.h"
-#include "gutil/stringprintf.h"
-#include "gutil/strings/join.h"
-#include "gutil/strings/strcat.h"
-#include "util/bitmap.h"
-#include "util/memory/arena.h"
 #include "util/status.h"
 
 // Check that two schemas are equal, yielding a useful error message in the case that
@@ -58,11 +53,7 @@ class ColumnSchema {
     return name_;
   }
 
-  string ToString() const {
-    return StringPrintf("%s[type='%s']",
-                        name_.c_str(),
-                        type_info_->name().c_str());
-  }
+  string ToString() const;
 
   bool EqualsType(const ColumnSchema &other) const {
     return type_info().type() == other.type_info().type();
@@ -94,37 +85,43 @@ class ColumnSchema {
 //
 // A Schema is simply a set of columns, along with information about
 // which prefix of columns makes up the primary key.
+//
+// Note that, while Schema is copyable and assignable, it is a complex
+// object that is not inexpensive to copy. You should generally prefer
+// passing by pointer or reference, and functions that create new
+// Schemas should generally prefer taking a Schema pointer and using
+// Schema::swap() or Schema::Reset() rather than returning by value.
 class Schema {
  public:
-  Schema(const vector<ColumnSchema> &cols,
-         int key_columns)
-    : cols_(cols),
-      num_key_columns_(key_columns) {
-    CHECK_GT(cols_.size(), 0);
-    CHECK_LE(key_columns, cols_.size());
-
-    // Verify that the key columns are not nullable
-    for (int i = 0; i < key_columns; ++i) {
-      CHECK(!cols_[i].is_nullable());
-    }
-
-    // Calculate the offset of each column in the row format.
-    col_offsets_.reserve(cols_.size());
-    size_t off = 0;
-    size_t i = 0;
-    BOOST_FOREACH(const ColumnSchema &col, cols) {
-      name_to_index_[col.name()] = i++;
-      col_offsets_.push_back(off);
-      off += col.type_info().size();
-    }
-
-    CHECK_EQ(cols.size(), name_to_index_.size())
-      << "Duplicate name present in schema!";
-
-    // Add an extra element on the end for the total
-    // byte size
-    col_offsets_.push_back(off);
+  Schema()
+    : num_key_columns_(0) {
   }
+
+  void swap(Schema& other) { // NOLINT(build/include_what_you_use)
+    int tmp = other.num_key_columns_;
+    other.num_key_columns_ = num_key_columns_;
+    num_key_columns_ = tmp;
+    cols_.swap(other.cols_);
+    col_offsets_.swap(other.col_offsets_);
+    name_to_index_.swap(other.name_to_index_);
+  }
+
+  // Construct a schema with the given information.
+  //
+  // NOTE: if the schema is user-provided, it's better to construct an
+  // empty schema and then use Reset(...)  so that errors can be
+  // caught. If an invalid schema is passed to this constructor, an
+  // assertion will be fired!
+  Schema(const vector<ColumnSchema> &cols,
+         int key_columns) {
+    CHECK_OK(Reset(cols, key_columns));
+  }
+
+  // Reset this Schema object to the given schema.
+  // If this fails, the Schema object is left in an inconsistent
+  // state and may not be used.
+  Status Reset(const vector<ColumnSchema> &cols,
+               int key_columns);
 
   // Return the number of bytes needed to represent a single row of this schema.
   //
@@ -162,6 +159,10 @@ class Schema {
     return cols_[idx];
   }
 
+  const std::vector<ColumnSchema>& columns() const {
+    return cols_;
+  }
+
   // Return the column index corresponding to the given column,
   // or -1 if the column is not in this schema.
   int find_column(const string &col_name) const {
@@ -181,6 +182,11 @@ class Schema {
       }
     }
     return false;
+  }
+
+  // Return true if this Schema is initialized and valid.
+  bool initialized() const {
+    return !col_offsets_.empty();
   }
 
   // Extract a given column from a row where the type is
@@ -263,35 +269,12 @@ class Schema {
   // from_schema: [bar, baz, foo]
   // resulting indexes: [2, 0]
   Status GetProjectionFrom(const Schema &from_schema,
-                           vector<size_t> *indexes) const {
-    indexes->clear();
-    indexes->reserve(num_columns());
-    BOOST_FOREACH(const ColumnSchema &col, cols_) {
-      NameToIndexMap::const_iterator iter =
-        from_schema.name_to_index_.find(col.name());
-      if (iter == from_schema.name_to_index_.end()) {
-        return Status::InvalidArgument(
-          string("Cannot map from schema ") +
-          from_schema.ToString() + " to " + ToString() +
-          ": column '" + col.name() + "' not present in source");
-      }
-
-      size_t idx = (*iter).second;
-      const ColumnSchema &from_col = from_schema.column(idx);
-      if (!from_col.EqualsType(col)) {
-        return Status::InvalidArgument(
-          string("Cannot map from schema ") +
-          from_schema.ToString() + " to " + ToString() +
-          ": type mismatch for column '" + col.name() + "'");
-      }
-
-      indexes->push_back((*iter).second);
-    }
-    return Status::OK();
-  }
+                           vector<size_t> *indexes) const;
 
   // Return the projection of this schema which contains only
   // the key columns.
+  // TODO: this should take a Schema* out-parameter to avoid an
+  // extra copy of the ColumnSchemas.
   Schema CreateKeyProjection() const {
     vector<ColumnSchema> key_cols(cols_.begin(),
                                   cols_.begin() + num_key_columns_);
@@ -319,16 +302,7 @@ class Schema {
 
   // Stringify this Schema. This is not particularly efficient,
   // so should only be used when necessary for output.
-  string ToString() const {
-    vector<string> col_strs;
-    BOOST_FOREACH(const ColumnSchema &col, cols_) {
-      col_strs.push_back(col.ToString());
-    }
-
-    return StrCat("Schema [",
-                  JoinStrings(col_strs, ", "),
-                  "]");
-  }
+  string ToString() const;
 
   // Return true if the schemas have exactly the same set of columns
   // and respective types.
@@ -345,12 +319,15 @@ class Schema {
   }
 
  private:
-  const vector<ColumnSchema> cols_;
-  const size_t num_key_columns_;
+  vector<ColumnSchema> cols_;
+  size_t num_key_columns_;
   vector<size_t> col_offsets_;
 
   typedef unordered_map<string, size_t> NameToIndexMap;
   NameToIndexMap name_to_index_;
+
+  // NOTE: if you add more members, make sure to add the appropriate
+  // code to swap() as well to prevent subtle bugs.
 };
 
 } // namespace kudu

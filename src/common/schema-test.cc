@@ -77,6 +77,40 @@ TEST(TestSchema, TestProjection) {
   ASSERT_EQ("col1", key_cols.column(0).name());
 }
 
+TEST(TestSchema, TestSwap) {
+  Schema schema1(boost::assign::list_of
+                 (ColumnSchema("col1", STRING))
+                 (ColumnSchema("col2", STRING))
+                 (ColumnSchema("col3", UINT32)),
+                 2);
+  Schema schema2(boost::assign::list_of
+                 (ColumnSchema("col3", UINT32))
+                 (ColumnSchema("col2", STRING)),
+                 1);
+  schema1.swap(schema2);
+  ASSERT_EQ(2, schema1.num_columns());
+  ASSERT_EQ(1, schema1.num_key_columns());
+  ASSERT_EQ(3, schema2.num_columns());
+  ASSERT_EQ(2, schema2.num_key_columns());
+}
+
+TEST(TestSchema, TestReset) {
+  Schema schema;
+  ASSERT_FALSE(schema.initialized());
+
+  ASSERT_STATUS_OK(schema.Reset(boost::assign::list_of
+                                (ColumnSchema("col3", UINT32))
+                                (ColumnSchema("col2", STRING)),
+                                1));
+  ASSERT_TRUE(schema.initialized());
+
+  // Swap the initialized schema with an uninitialized one.
+  Schema schema2;
+  schema2.swap(schema);
+  ASSERT_FALSE(schema.initialized());
+  ASSERT_TRUE(schema2.initialized());
+}
+
 // Test projection when the type of the projected column
 // doesn't match the original type.
 TEST(TestSchema, TestProjectTypeMismatch) {
