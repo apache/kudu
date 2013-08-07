@@ -41,7 +41,6 @@ class InboundCall {
 
   // Return the serialized request parameter protobuf.
   const Slice &serialized_request() const {
-    DCHECK_GT(serialized_request_.size(), 0);
     return serialized_request_;
   }
 
