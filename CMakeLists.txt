@@ -242,6 +242,15 @@ IF (UNIX)
 ENDIF (UNIX)
 
 ############################################################
+# "make cscope" target
+############################################################
+IF (UNIX)
+  ADD_CUSTOM_TARGET(cscope find ${CMAKE_CURRENT_SOURCE_DIR}/src
+-name *.cc -or -name *.hh -or -name *.cpp -or -name *.h -or
+-name *.c -or -name *.f > cscope.files && cscope -q -b)
+ENDIF (UNIX)
+
+############################################################
 # "make lint" target
 ############################################################
 IF (UNIX)

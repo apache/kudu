@@ -11,6 +11,7 @@ CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
 TAGS
+cscope.*
 Testing
 perf.data
 perf.data.old
