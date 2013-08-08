@@ -161,24 +161,13 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, block_id);
   }
 
-  Status CommitDeltaDataBlock(uint32_t id, const BlockId& block_id) {
-    boost::lock_guard<LockType> l(deltas_lock_);
-    delta_blocks_.push_back(std::pair<uint32_t, BlockId>(id, block_id));
-    return Status::OK();
-  }
+  Status CommitDeltaDataBlock(uint32_t id, const BlockId& block_id);
 
-  Status OpenDeltaDataBlock(size_t index, shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
-    boost::lock_guard<LockType> l(deltas_lock_);
-    return OpenDataBlock(delta_blocks_[index].second, reader, size);
-  }
+  Status OpenDeltaDataBlock(size_t index, shared_ptr<RandomAccessFile> *reader, uint64_t *size);
 
-  size_t delta_blocks_count() const {
-    boost::lock_guard<LockType> l(deltas_lock_);
-    return delta_blocks_.size();
-  }
+  size_t delta_blocks_count() const;
 
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
-
 
   bool HasColumnDataBlockForTests(size_t idx) const {
     return column_blocks_.size() > idx && fs_manager()->BlockExists(column_blocks_[idx]);

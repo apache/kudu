@@ -1,5 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "server/metadata.h"
+
 #include <glog/logging.h>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
@@ -10,7 +12,6 @@
 
 #include "gutil/map-util.h"
 #include "server/metadata.pb.h"
-#include "server/metadata.h"
 #include "server/metadata_util.h"
 
 namespace kudu {
@@ -227,6 +228,24 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
 
 const string RowSetMetadata::ToString() {
   return "RowSet(" + boost::lexical_cast<string>(id_) + ")";
+}
+
+Status RowSetMetadata::CommitDeltaDataBlock(uint32_t id, const BlockId& block_id) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  delta_blocks_.push_back(std::pair<uint32_t, BlockId>(id, block_id));
+  return Status::OK();
+}
+
+Status RowSetMetadata::OpenDeltaDataBlock(size_t index,
+                                          shared_ptr<RandomAccessFile> *reader,
+                                          uint64_t *size) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  return OpenDataBlock(delta_blocks_[index].second, reader, size);
+}
+
+size_t RowSetMetadata::delta_blocks_count() const {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  return delta_blocks_.size();
 }
 
 } // namespace metadata
