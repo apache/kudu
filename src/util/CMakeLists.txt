@@ -44,4 +44,5 @@ ADD_KUDU_TEST(memcmpable_varint-test)
 ADD_KUDU_TEST(monotime-test)
 ADD_KUDU_TEST(pb_util-test)
 ADD_KUDU_TEST(threadpool-test)
+ADD_KUDU_TEST(safe_math-test)
 
