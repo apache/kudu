@@ -37,58 +37,76 @@ Status::Status(Code code, const Slice& msg, const Slice& msg2,
   state_ = result;
 }
 
-std::string Status::ToString() const {
+std::string Status::CodeAsString() const {
   if (state_ == NULL) {
     return "OK";
-  } else {
-    char tmp[30];
-    const char* type;
-    switch (code()) {
-      case kOk:
-        type = "OK";
-        break;
-      case kNotFound:
-        type = "NotFound: ";
-        break;
-      case kCorruption:
-        type = "Corruption: ";
-        break;
-      case kNotSupported:
-        type = "Not implemented: ";
-        break;
-      case kInvalidArgument:
-        type = "Invalid argument: ";
-        break;
-      case kIOError:
-        type = "IO error: ";
-        break;
-      case kAlreadyPresent:
-        type = "Already present: ";
-        break;
-      case kRuntimeError:
-        type = "Runtime error: ";
-        break;
-      case kNetworkError:
-        type = "Network error: ";
-        break;
-      default:
-        snprintf(tmp, sizeof(tmp), "Unknown code(%d): ",
-                 static_cast<int>(code()));
-        type = tmp;
-        break;
-    }
-    std::string result(type);
-    uint32_t length;
-    memcpy(&length, state_, sizeof(length));
-    int16_t posix = posix_code();
-    result.append(state_ + 7, length);
-    if (posix != -1) {
-      char buf[64];
-      snprintf(buf, sizeof(buf), " (error %d)", posix);
-      result.append(buf);
-    }
+  }
+
+  char tmp[30];
+  const char* type;
+  switch (code()) {
+    case kOk:
+      type = "OK";
+      break;
+    case kNotFound:
+      type = "Not found";
+      break;
+    case kCorruption:
+      type = "Corruption";
+      break;
+    case kNotSupported:
+      type = "Not implemented";
+      break;
+    case kInvalidArgument:
+      type = "Invalid argument";
+      break;
+    case kIOError:
+      type = "IO error";
+      break;
+    case kAlreadyPresent:
+      type = "Already present";
+      break;
+    case kRuntimeError:
+      type = "Runtime error";
+      break;
+    case kNetworkError:
+      type = "Network error";
+      break;
+    default:
+      snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
+               static_cast<int>(code()));
+      type = tmp;
+      break;
+  }
+  return std::string(type);
+}
+
+std::string Status::ToString() const {
+  std::string result(CodeAsString());
+  if (state_ == NULL) {
     return result;
   }
+
+  result.append(": ");
+  Slice msg = message();
+  result.append(reinterpret_cast<const char*>(msg.data()), msg.size());
+  int16_t posix = posix_code();
+  if (posix != -1) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), " (error %d)", posix);
+    result.append(buf);
+  }
+  return result;
+}
+
+Slice Status::message() const {
+  if (state_ == NULL) {
+    return Slice();
+  }
+
+  uint32_t length;
+  memcpy(&length, state_, sizeof(length));
+  return Slice(state_ + 7, length);
 }
 
 int16_t Status::posix_code() const {

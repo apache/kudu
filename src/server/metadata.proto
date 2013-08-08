@@ -9,14 +9,6 @@ import "cfile/cfile.proto";
 //  Table Metadata
 // ============================================================================
 
-message ColumnSchemaPB {
-  required uint64 id = 1;
-  required string name = 2;
-  required DataType type = 3;
-  optional bool is_key = 4 [default = false];
-  optional bool is_nullable = 5 [default = false];
-}
-
 message ColumnAttributesPB {
   required uint64 id = 1;
   optional uint32 block_size = 2;

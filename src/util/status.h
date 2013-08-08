@@ -116,6 +116,19 @@ class Status {
   // Returns the string "OK" for success.
   std::string ToString() const;
 
+  // Return a string representation of the status code, without the message
+  // text or posix code information.
+  std::string CodeAsString() const;
+
+  // Return the message portion of the Status. This is similar to ToString,
+  // except that it does not include the stringified error code or posix code.
+  //
+  // For OK statuses, this returns an empty string.
+  //
+  // The returned Slice is only valid as long as this Status object remains
+  // live and unchanged.
+  Slice message() const;
+
   // Get the POSIX code associated with this Status, or -1 if there is none.
   int16_t posix_code() const;
 

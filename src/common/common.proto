@@ -1,5 +1,13 @@
 // Copyright (c) 2012, Cloudera, inc.
-
+//
+// Protobufs which are common throughout Kudu.
+//
+// This file may contain protobufs which are persisted on disk
+// as well as sent on the wire. If a particular protobuf is only
+// used as part of the client-server wire protocol, it should go
+// in common/wire_protocol.proto instead. If it is only used within
+// the server(s), it should go in cfile/cfile.proto, server/metadata.proto,
+// etc, as appropriate.
 package kudu;
 
 enum DataType {
@@ -12,4 +20,11 @@ enum DataType {
   UINT64 = 6;
   INT64 = 7;
   STRING = 8;
+}
+
+message ColumnSchemaPB {
+  required string name = 1;
+  required DataType type = 2;
+  optional bool is_key = 3 [default = false];
+  optional bool is_nullable = 4 [default = false];
 }

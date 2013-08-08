@@ -159,6 +159,10 @@ class ContiguousRow {
     return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
   }
 
+  uint8_t *mutable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    return const_cast<uint8_t*>(cell_ptr(schema, col_idx));
+  }
+
   const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
     // TODO: Handle different schema
     DCHECK(schema.Equals(schema_));

@@ -1,0 +1,93 @@
+// Copyright (c) 2013, Cloudera, inc.
+//
+// Protobufs used by both client-server and server-server traffic
+// for user data transfer. This file should only contain protobufs
+// which are exclusively used on the wire. If a protobuf is persisted on
+// disk and not used as part of the wire protocol, it belongs in another
+// place such as common/common.proto or within cfile/, server/, etc.
+package kudu;
+
+import "common/common.proto";
+
+// Error status returned by any RPC method.
+// Every RPC method which could generate an application-level error
+// should have this (or a more complex error result) as an optional field
+// in its response.
+//
+// This maps to kudu::Status in C++.
+message AppStatusPB {
+  enum ErrorCode {
+    OK = 0;
+    NOT_FOUND = 1;
+    CORRUPTION = 2;
+    NOT_SUPPORTED = 3;
+    INVALID_ARGUMENT = 4;
+    IO_ERROR = 5;
+    ALREADY_PRESENT = 6;
+    RUNTIME_ERROR = 7;
+    NETWORK_ERROR = 8;
+    UNKNOWN_ERROR = 9;
+  }
+
+  required ErrorCode code = 1;
+  optional string message = 2;
+  optional int32 posix_code = 4;
+}
+
+message ColumnBlockPB {
+  required ColumnSchemaPB schema = 1;
+
+  // Bitmap of where the null cells fall, only set on nullable
+  // columns.
+  optional bytes null_bitmap = 2;
+
+  // The column data.
+  //
+  // This is the raw in-memory (little-endian) form of the data for
+  // the column. Any pointers within this data should be relative to
+  // the beginning of 'indirect_data'.
+  //
+  // TODO: later this should get moved to a "sidecar" like HBase to
+  // avoid copies in/out of std::strings in the protobuf library.
+  required bytes data = 3;
+
+  // Storage for any "indirect" data types in the block. For example,
+  // STRING values in the block will be stored using the normal Slice
+  // in-memory format, except that instead of being pointers in RAM,
+  // the pointer portion will be an offset into this protobuf field.
+  optional bytes indirect_data = 4;
+}
+
+// A row block in which each column is stored contiguously and
+// separately.
+//
+// This is typically used for the result of scans, where the data
+// comes off disk in this form.
+//
+// TODO: this is currently unused. It will become used when we implement
+// scan RPCs.
+message ColumnarRowBlockPB {
+  required int32 num_rows = 1;
+  repeated ColumnBlockPB column_blocks = 2;
+}
+
+// A row block in which each row is stored contiguously.
+message RowwiseRowBlockPB {
+  repeated ColumnSchemaPB schema = 1;
+  required int32 num_key_columns = 2;
+
+  // The rows of data. Each row is stored in the same in-memory format
+  // as kudu::ContigiousRow (i.e a null bitmap followed by the raw unencoded
+  // data).
+  //
+  // The data for NULL cells will be present with undefined contents --
+  // typically it will be filled with \x00s but this is not guaranteed,
+  // and clients may choose to initialize NULL cells with whatever they
+  // like. Setting to some constant improves RPC compression, though.
+  //
+  // Any pointers are made relative to the beginning of 'indirect_data'.
+  required bytes rows = 3;
+
+  // See ColumnBlockPB.indirect_data.
+  optional bytes indirect_data = 4;
+}

@@ -23,17 +23,13 @@ void BlockIdToPB(const BlockId& block_id, BlockIdPB *pb);
 // returns the BlockId created from the specified protobuf
 BlockId BlockIdFromPB(const BlockIdPB& pb);
 
-// converts the specified column schema to protobuf
-void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb);
-
-// returns the ColumnSchema created from the specified protobuf
-ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb);
-
 // converts the specified schema to protobuf
 void SchemaToPB(const Schema& schema, TableSchemaPB *pb);
 
-// returns the Schema created from the specified protobuf
-Schema SchemaFromPB(const TableSchemaPB& pb);
+// Returns the Schema created from the specified protobuf.
+//
+// If the schema is invalid, may return a non-OK status.
+Status SchemaFromPB(const TableSchemaPB& pb, Schema* schema);
 
 } // namespace metadata
 } // namespace kudu

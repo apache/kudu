@@ -5,16 +5,25 @@ SET(COMMON_SRCS
   key_encoder.cc
   rowblock.cc
   row_changelist.cc
+  wire_protocol.cc
   scan_predicate.cc
   scan_spec.cc
   schema.cc
   types.cc
 )
+
 PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES common.proto)
 SET(COMMON_SRCS ${COMMON_SRCS} ${COMMON_PROTO_SRCS})
+
+PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES wire_protocol.proto)
+SET(COMMON_SRCS ${COMMON_SRCS} ${WIRE_PROTOCOL_PROTO_SRCS})
+
 ADD_LIBRARY(kudu_common ${COMMON_SRCS})
 SET(KUDU_COMMON_LIBS kudu_common)
 
@@ -23,3 +32,4 @@ ADD_KUDU_TEST(schema-test)
 ADD_KUDU_TEST(generic_iterators-test)
 ADD_KUDU_TEST(row_changelist-test)
 ADD_KUDU_TEST(predicate-test)
+ADD_KUDU_TEST(wire_protocol-test)
