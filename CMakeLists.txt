@@ -134,17 +134,17 @@ if ("${KUDU_STATIC_LINK}")
 endif()
 
 find_package(Boost COMPONENTS thread system REQUIRED)
-include_directories( ${Boost_INCLUDE_DIR} )
+include_directories(SYSTEM ${Boost_INCLUDE_DIR} )
 set(LIBS ${LIBS} ${Boost_LIBRARIES})
 
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
-include_directories(${CYRUS_SASL_INCLUDE_DIR})
+include_directories(SYSTEM ${CYRUS_SASL_INCLUDE_DIR})
 set(LIBS ${LIBS} ${CYRUS_SASL_STATIC_LIB})
 
 ## GLog
 find_package(GLog REQUIRED)
-include_directories(${GLOG_INCLUDE_DIR})
+include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
 if ("${KUDU_STATIC_LINK}")
   add_library(glog STATIC IMPORTED)
   set_target_properties(glog PROPERTIES IMPORTED_LOCATION "${GLOG_STATIC_LIB}")
@@ -156,7 +156,7 @@ SET(LIBS ${LIBS} glog)
 
 ## GFlags
 find_package(GFlags REQUIRED)
-INCLUDE_DIRECTORIES(${GFLAGS_INCLUDE_DIR})
+INCLUDE_DIRECTORIES(SYSTEM ${GFLAGS_INCLUDE_DIR})
 if ("${KUDU_STATIC_LINK}")
   add_library(gflags STATIC IMPORTED)
   set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
@@ -168,7 +168,7 @@ SET(LIBS ${LIBS} gflags)
 
 ## GTest
 find_package(GTest REQUIRED)
-include_directories(${GTEST_INCLUDE_DIR})
+include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
 add_library(gtest STATIC IMPORTED)
 set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
 set(LIBS ${LIBS} ${GTEST_LIBRARY})
@@ -178,7 +178,7 @@ SET(KUDU_MIN_TEST_LIBS ${GTEST_LIBRARY} kudu_test_main glog gflags  )
 SET(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
 SET(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
 find_package( Protobuf REQUIRED )
-include_directories(${PROTOBUF_INCLUDE_DIR})
+include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
 if ("${KUDU_STATIC_LINK}")
   add_library(protobuf STATIC IMPORTED)
   set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_STATIC_LIBRARY}")
@@ -191,7 +191,7 @@ find_package(KRPC REQUIRED)
 
 ## Snappy
 find_package(Snappy REQUIRED)
-include_directories(${SNAPPY_INCLUDE_DIR})
+include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
 if (${KUDU_STATIC_LINK})
   set(LIBS ${LIBS} ${SNAPPY_STATIC_LIB})
 else()
@@ -201,16 +201,16 @@ endif()
 ## Libev
 find_package(LibEv REQUIRED)
 set(LIBS ${LIBS} ${LIBEV_STATIC_LIB})
-include_directories(${LIBEV_INCLUDE_DIR})
+include_directories(SYSTEM ${LIBEV_INCLUDE_DIR})
 
 ## LZ4
 find_package(Lz4 REQUIRED)
-include_directories(${LZ4_INCLUDE_DIR})
+include_directories(SYSTEM ${LZ4_INCLUDE_DIR})
 set(LIBS ${LIBS} ${LZ4_STATIC_LIB})
 
 ## ZLib
 find_package(Zlib REQUIRED)
-include_directories(${ZLIB_INCLUDE_DIR})
+include_directories(SYSTEM ${ZLIB_INCLUDE_DIR})
 if (${KUDU_STATIC_LINK})
   set(LIBS ${LIBS} ${ZLIB_STATIC_LIB})
 else()
