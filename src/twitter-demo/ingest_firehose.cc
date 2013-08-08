@@ -19,10 +19,11 @@ using std::string;
 namespace kudu {
 namespace twitter_demo {
 
+// Consumer which simply logs messages to the console.
 class LoggingConsumer : public TwitterConsumer {
  public:
   virtual void ConsumeJSON(const Slice& json) {
-    LOG(INFO) << json.ToString();
+    std::cout << json.ToString();
   }
 };
 

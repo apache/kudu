@@ -9,6 +9,7 @@ ELSE()
   ADD_LIBRARY(twitter_demo
     oauth.cc
     twitter_streamer.cc
+    parser.cc
     )
   TARGET_LINK_LIBRARIES(twitter_demo ${KUDU_LINK_LIBS} ${LIBOAUTH_LIBRARY} ${CURL_LIBRARIES})
 
@@ -19,5 +20,8 @@ ELSE()
   # Tests
   ADD_KUDU_TEST(oauth-test)
   TARGET_LINK_LIBRARIES(oauth-test twitter_demo)
+
+  ADD_KUDU_TEST(parser-test)
+  TARGET_LINK_LIBRARIES(parser-test twitter_demo)
 
 ENDIF() # library checks
