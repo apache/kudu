@@ -13,6 +13,7 @@ add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
 ADD_DEPENDENCIES(tserver_proto kudu_common)
 
 SET(TSERVER_SRCS
+  scanners.cc
   tablet_server.cc
   tablet_service.cc
 )
@@ -26,6 +27,7 @@ ADD_DEPENDENCIES(tserver krpc)
 
 # Tests
 ADD_KUDU_TEST(tablet_server-test)
+ADD_KUDU_TEST(scanners-test)
 
 ADD_EXECUTABLE(tablet_server tablet_server_main.cc)
 TARGET_LINK_LIBRARIES(tablet_server ${KUDU_LINK_LIBS})
