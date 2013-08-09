@@ -8,11 +8,14 @@ ELSE()
 
   ADD_LIBRARY(twitter_demo
     oauth.cc
-    twitter_streamer.cc
     parser.cc
+    insert_consumer.cc
+    twitter_streamer.cc
     )
   TARGET_LINK_LIBRARIES(twitter_demo ${KUDU_LINK_LIBS} ${LIBOAUTH_LIBRARY} ${CURL_LIBRARIES})
 
+  # Require that the tserver protobuf code is generated first
+  ADD_DEPENDENCIES(twitter_demo tserver_proto)
 
   ADD_EXECUTABLE(ingest_firehose ingest_firehose.cc)
   TARGET_LINK_LIBRARIES(ingest_firehose twitter_demo)

@@ -34,6 +34,8 @@ class ScannerManager;
 
 class TabletServer {
  public:
+  // TODO: move this out of this header, since clients want to use this
+  // constant as well.
   static const uint16_t kDefaultPort = 7150;
 
   explicit TabletServer(const RpcServerOptions& opts);
