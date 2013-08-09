@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "common/row.h"
+#include "common/rowblock.h"
 #include "util/safe_math.h"
 
 using google::protobuf::RepeatedPtrField;
@@ -198,16 +199,34 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   return Status::OK();
 }
 
-void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb) {
+template<class RowType>
+void AppendRowToString(const RowType& row, string* buf);
+
+template<>
+void AppendRowToString<ConstContiguousRow>(const ConstContiguousRow& row, string* buf) {
+  buf->append(reinterpret_cast<const char*>(row.row_data()), row.row_size());
+}
+
+template<>
+void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
+  size_t row_size = ContiguousRowHelper::row_size(row.schema());
+  size_t appended_offset = buf->size();
+  buf->resize(buf->size() + row_size);
+  uint8_t* copied_rowdata = reinterpret_cast<uint8_t*>(&buf->at(appended_offset));
+  ContiguousRow copied_row(row.schema(), copied_rowdata);
+  CHECK_OK(CopyRow(row, &copied_row, reinterpret_cast<Arena*>(NULL)));
+}
+
+
+template<class RowType>
+void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
   const Schema& schema = row.schema();
   // Append the row directly to the data.
   // This will append a host-local pointer for any slice data, so we need
   // to then relocate those pointers into the 'indirect_data' part of the protobuf.
   string* data_buf = pb->mutable_rows();
   size_t appended_offset = data_buf->size();
-
-  data_buf->append(reinterpret_cast<const char*>(row.row_data()),
-                   row.row_size());
+  AppendRowToString(row, data_buf);
 
   uint8_t* copied_rowdata = reinterpret_cast<uint8_t*>(&data_buf->at(appended_offset));
   ContiguousRow copied_row(schema, copied_rowdata);
@@ -233,5 +252,14 @@ void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb) {
     }
   }
 }
+
+
+void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb) {
+  DoAddRowToRowBlockPB(row, pb);
+}
+void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb) {
+  DoAddRowToRowBlockPB(row, pb);
+}
+
 
 } // namespace kudu

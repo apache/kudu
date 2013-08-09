@@ -3,14 +3,30 @@
 #include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include "common/row.h"
+#include "common/rowblock.h"
 #include "common/schema.h"
 #include "common/wire_protocol.h"
 #include "util/status.h"
 #include "util/test_macros.h"
+#include "util/test_util.h"
 
 namespace kudu {
 
-TEST(WireProtocolTest, TestOKStatus) {
+class WireProtocolTest : public KuduTest {
+ public:
+  WireProtocolTest()
+    : schema_(boost::assign::list_of
+              (ColumnSchema("col1", STRING))
+              (ColumnSchema("col2", STRING))
+              (ColumnSchema("col3", UINT32, true /* nullable */)),
+              1) {
+  }
+
+ protected:
+  Schema schema_;
+};
+
+TEST_F(WireProtocolTest, TestOKStatus) {
   Status s = Status::OK();
   AppStatusPB pb;
   StatusToPB(s, &pb);
@@ -22,7 +38,7 @@ TEST(WireProtocolTest, TestOKStatus) {
   ASSERT_STATUS_OK(s2);
 }
 
-TEST(WireProtocolTest, TestBadStatus) {
+TEST_F(WireProtocolTest, TestBadStatus) {
   Status s = Status::NotFound("foo", "bar");
   AppStatusPB pb;
   StatusToPB(s, &pb);
@@ -36,7 +52,7 @@ TEST(WireProtocolTest, TestBadStatus) {
   EXPECT_EQ(s.ToString(), s2.ToString());
 }
 
-TEST(WireProtocolTest, TestBadStatusWithPosixCode) {
+TEST_F(WireProtocolTest, TestBadStatusWithPosixCode) {
   Status s = Status::NotFound("foo", "bar", 1234);
   AppStatusPB pb;
   StatusToPB(s, &pb);
@@ -52,15 +68,10 @@ TEST(WireProtocolTest, TestBadStatusWithPosixCode) {
   EXPECT_EQ(s.ToString(), s2.ToString());
 }
 
-TEST(WireProtocolTest, TestSchemaRoundTrip) {
-  Schema schema1(boost::assign::list_of
-                 (ColumnSchema("col1", STRING))
-                 (ColumnSchema("col2", STRING))
-                 (ColumnSchema("col3", UINT32, true /* nullable */)),
-                 1);
+TEST_F(WireProtocolTest, TestSchemaRoundTrip) {
   google::protobuf::RepeatedPtrField<ColumnSchemaPB> pbs;
 
-  ASSERT_STATUS_OK(SchemaToColumnPBs(schema1, &pbs));
+  ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, &pbs));
   ASSERT_EQ(3, pbs.size());
 
   // Column 0.
@@ -84,13 +95,13 @@ TEST(WireProtocolTest, TestSchemaRoundTrip) {
   // Convert back to a Schema object and verify they're identical.
   Schema schema2;
   ASSERT_STATUS_OK(ColumnPBsToSchema(pbs, &schema2));
-  EXPECT_EQ(schema1.ToString(), schema2.ToString());
-  EXPECT_EQ(schema1.num_key_columns(), schema2.num_key_columns());
+  EXPECT_EQ(schema_.ToString(), schema2.ToString());
+  EXPECT_EQ(schema_.num_key_columns(), schema2.num_key_columns());
 }
 
 // Test that, when non-contiguous key columns are passed, an error Status
 // is returned.
-TEST(WireProtocolTest, TestBadSchema_NonContiguousKey) {
+TEST_F(WireProtocolTest, TestBadSchema_NonContiguousKey) {
   google::protobuf::RepeatedPtrField<ColumnSchemaPB> pbs;
 
   // Column 0: key
@@ -118,7 +129,7 @@ TEST(WireProtocolTest, TestBadSchema_NonContiguousKey) {
 
 // Test that, when multiple columns with the same name are passed, an
 // error Status is returned.
-TEST(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
+TEST_F(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
   google::protobuf::RepeatedPtrField<ColumnSchemaPB> pbs;
 
   // Column 0:
@@ -146,18 +157,13 @@ TEST(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
 
 // Create a block of rows in protobuf form, then ensure that they
 // can be read back out.
-TEST(WireProtocolTest, TestRowBlockRoundTrip) {
+TEST_F(WireProtocolTest, TestRowBlockRoundTrip) {
   const int kNumRows = 10;
 
-  Schema schema(boost::assign::list_of
-                (ColumnSchema("col1", STRING))
-                (ColumnSchema("col2", STRING))
-                (ColumnSchema("col3", UINT32, true /* nullable */)),
-                1);
   RowwiseRowBlockPB pb;
 
   // Build a set of rows into the protobuf.
-  RowBuilder rb(schema);
+  RowBuilder rb(schema_);
   for (int i = 0; i < kNumRows; i++) {
     rb.Reset();
     rb.AddString(StringPrintf("col1 %d", i));
@@ -173,25 +179,51 @@ TEST(WireProtocolTest, TestRowBlockRoundTrip) {
   // Extract the rows back out, verify that the results are the same
   // as the input.
   vector<const uint8_t*> row_ptrs;
-  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema, &pb, &row_ptrs));
+  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
   ASSERT_EQ(kNumRows, row_ptrs.size());
   for (int i = 0; i < kNumRows; i++) {
-    ConstContiguousRow row(schema, row_ptrs[i]);
+    ConstContiguousRow row(schema_, row_ptrs[i]);
     ASSERT_EQ(StringPrintf("col1 %d", i),
-              schema.ExtractColumnFromRow<STRING>(row, 0)->ToString());
+              schema_.ExtractColumnFromRow<STRING>(row, 0)->ToString());
     ASSERT_EQ(StringPrintf("col2 %d", i),
-              schema.ExtractColumnFromRow<STRING>(row, 1)->ToString());
+              schema_.ExtractColumnFromRow<STRING>(row, 1)->ToString());
     if (i % 2 == 1) {
-      ASSERT_TRUE(row.is_null(schema, 2));
+      ASSERT_TRUE(row.is_null(schema_, 2));
     } else {
-      ASSERT_EQ(i, *schema.ExtractColumnFromRow<UINT32>(row, 2));
+      ASSERT_EQ(i, *schema_.ExtractColumnFromRow<UINT32>(row, 2));
     }
   }
 }
 
+// Create a block of rows in columnar layout and ensure that it can be
+// converted to and from protobuf.
+TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
+  // Set up a row block with a single row in it.
+  Arena arena(1024, 1024 * 1024);
+  RowBlock block(schema_, 1, &arena);
+  RowBlockRow row = block.row(0);
+  *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 0)) = Slice("hello world col1");
+  *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 1)) = Slice("hello world col2");
+  *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(schema_, 2)) = 12345;
+  row.cell(2).set_null(false);
+
+  // Convert to PB.
+  RowwiseRowBlockPB pb;
+  AddRowToRowBlockPB(row, &pb);
+  SCOPED_TRACE(pb.DebugString());
+
+  // Convert back to a row, ensure that the resulting row is the same
+  // as the one we put in.
+  vector<const uint8_t*> row_ptrs;
+  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
+  ASSERT_EQ(1, row_ptrs.size());
+  ConstContiguousRow row_roundtripped(schema_, row_ptrs[0]);
+  ASSERT_EQ(schema_.DebugRow(row), schema_.DebugRow(row_roundtripped));
+}
+
 // Test that trying to extract rows from an invalid block correctly returns
 // Corruption statuses.
-TEST(WireProtocolTest, TestInvalidRowBlock) {
+TEST_F(WireProtocolTest, TestInvalidRowBlock) {
   Schema schema(boost::assign::list_of(ColumnSchema("col1", STRING)),
                 1);
   RowwiseRowBlockPB pb;

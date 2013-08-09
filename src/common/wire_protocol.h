@@ -11,6 +11,7 @@ namespace kudu {
 
 class ConstContiguousRow;
 class ColumnSchema;
+class RowBlockRow;
 class Schema;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
@@ -45,6 +46,7 @@ Status SchemaToColumnPBs(
 // All data (both direct and indirect) is copied into the protobuf by this method,
 // so the original row may be destroyed safely after this returns.
 void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb);
+void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb);
 
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.

@@ -74,7 +74,7 @@ message ColumnarRowBlockPB {
 // A row block in which each row is stored contiguously.
 message RowwiseRowBlockPB {
   repeated ColumnSchemaPB schema = 1;
-  required int32 num_key_columns = 2;
+  optional int32 num_key_columns = 2;
 
   // The rows of data. Each row is stored in the same in-memory format
   // as kudu::ContigiousRow (i.e a null bitmap followed by the raw unencoded
