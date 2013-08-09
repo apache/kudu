@@ -14,33 +14,93 @@
 
 namespace kudu {
 
-// Copy any indirect (eg STRING) data referenced by the given row into the
-// provided arena.
+// A simple cell of data which directly corresponds to a pointer value.
+// stack.
+struct SimpleConstCell {
+ public:
+  SimpleConstCell(const ColumnSchema& col_schema,
+                  const void* value)
+    : col_schema_(col_schema),
+      value_(value) {
+  }
+
+  DataType type() const { return col_schema_.type_info().type(); }
+  size_t size() const { return col_schema_.type_info().size(); }
+  bool is_nullable() const { return col_schema_.is_nullable(); }
+  const void* ptr() const { return value_; }
+  bool is_null() const { return value_ == NULL; }
+
+ private:
+  const ColumnSchema& col_schema_;
+  const void* value_;
+};
+
+// Copy the cell data from 'src' to 'dst'. This only copies the data, and not
+// the null state. Use CopyCell() if you need to copy the null-ness.
 //
-// The row itself is mutated so that the indirect data points to the relocated
-// storage.
-template <class RowType, class ArenaType>
-inline Status CopyRowIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
-  const Schema &schema = row->schema();
-  // For any Slice columns, copy the sliced data into the arena
-  // and update the pointers
-  for (int i = 0; i < schema.num_columns(); i++) {
-    const ColumnSchema& col_schema = schema.column(i);
+// If dst_arena is non-NULL, relocates the data into the given arena.
+template <class SrcCellType, class DstCellType, class ArenaType>
+Status CopyCellData(const SrcCellType &src, DstCellType* dst, ArenaType *dst_arena) {
+  DCHECK_EQ(src.type(), dst->type());
 
-    if (col_schema.type_info().type() == STRING) {
-      if (col_schema.is_nullable() && row->is_null(schema, i)) {
-        continue;
+  if (src.type() == STRING) {
+    // If it's a Slice column, need to relocate the referred-to data
+    // as well as the slice itself.
+    // TODO: potential optimization here: if the new value is smaller than
+    // the old value, we could potentially just overwrite in some cases.
+    const Slice *src_slice = reinterpret_cast<const Slice *>(src.ptr());
+    Slice *dst_slice = reinterpret_cast<Slice *>(dst->mutable_ptr());
+    if (dst_arena != NULL) {
+      if (PREDICT_FALSE(!dst_arena->RelocateSlice(*src_slice, dst_slice))) {
+        return Status::IOError("out of memory copying slice", src_slice->ToString());
       }
+    } else {
+      // Just copy the slice without relocating.
+      // This is used by callers who know that the source row's data is going
+      // to stick around for the scope of the destination.
+      *dst_slice = *src_slice;
+    }
+  } else {
+    memcpy(dst->mutable_ptr(), src.ptr(), src.size()); // TODO: inline?
+  }
+  return Status::OK();
+}
 
-      const Slice *slice = reinterpret_cast<const Slice *>(row->cell_ptr(schema, i));
-      Slice copied_slice;
-      if (!dst_arena->RelocateSlice(*slice, &copied_slice)) {
-        return Status::IOError("Unable to relocate slice");
-      }
-
-      row->SetCellValue(schema, i, &copied_slice);
+// Copy the cell from 'src' to 'dst'.
+//
+// This copies the data, and relocates indirect data into the given arena,
+// if it is not NULL.
+template <class SrcCellType, class DstCellType, class ArenaType>
+Status CopyCell(const SrcCellType &src, DstCellType* dst, ArenaType *dst_arena) {
+  if (src.is_nullable()) {
+    // Copy the null state.
+    dst->set_null(src.is_null());
+    if (src.is_null()) {
+      // no need to copy any data contents once we marked the destination
+      // cell as null.
+      return Status::OK();
     }
   }
+
+  return CopyCellData(src, dst, dst_arena);
+}
+
+// Copy all of the cells from one row to another. The two rows must share
+// the same Schema. If they do not, use ProjectRow() below.
+// This can be used to translate between columnar and row-wise layout, for example.
+//
+// If 'dst_arena' is set, then will relocate any indirect data to that arena
+// during the copy.
+template<class RowType1, class RowType2, class ArenaType>
+inline Status CopyRow(const RowType1 &src_row, RowType2 *dst_row, ArenaType *dst_arena) {
+  DCHECK_SCHEMA_EQ(src_row.schema(), dst_row->schema());
+
+  for (int i = 0; i < src_row.schema().num_columns(); i++) {
+    typename RowType1::Cell src = src_row.cell(i);
+    typename RowType2::Cell dst = dst_row->cell(i);
+    RETURN_NOT_OK(CopyCell(src, &dst, dst_arena));
+  }
+
   return Status::OK();
 }
 
@@ -60,23 +120,40 @@ inline Status ProjectRow(const RowType1 &src_row, const vector<size_t> &projecti
 
   for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping.size(); proj_col_idx++) {
     size_t src_col_idx = projection_mapping[proj_col_idx];
-
-    const void *src_cell;
-    if (src_row.schema().column(src_col_idx).is_nullable()) {
-      src_cell = src_row.nullable_cell_ptr(src_row.schema(), src_col_idx);
-    } else {
-      src_cell = src_row.cell_ptr(src_row.schema(), src_col_idx);
-    }
-
-    if (dst_row->schema().column(proj_col_idx).is_nullable()) {
-      RETURN_NOT_OK(dst_row->CopyNullableCell(dst_row->schema(), proj_col_idx,src_cell, dst_arena));
-    } else {
-      RETURN_NOT_OK(dst_row->CopyCell(dst_row->schema(), proj_col_idx, src_cell, dst_arena));
-    }
+    typename RowType1::Cell src_cell = src_row.cell(src_col_idx);
+    typename RowType2::Cell dst_cell = dst_row->cell(proj_col_idx);
+    RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
   }
 
   return Status::OK();
 }
+
+// Copy any indirect (eg STRING) data referenced by the given row into the
+// provided arena.
+//
+// The row itself is mutated so that the indirect data points to the relocated
+// storage.
+template <class RowType, class ArenaType>
+inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
+  const Schema &schema = row->schema();
+  // For any Slice columns, copy the sliced data into the arena
+  // and update the pointers
+  for (int i = 0; i < schema.num_columns(); i++) {
+    typename RowType::Cell cell = row->cell(i);
+    if (cell.type() == STRING) {
+      if (cell.is_nullable() && cell.is_null()) {
+        continue;
+      }
+
+      Slice *slice = reinterpret_cast<Slice *>(cell.mutable_ptr());
+      if (!dst_arena->RelocateSlice(*slice, slice)) {
+        return Status::IOError("Unable to relocate slice");
+      }
+    }
+  }
+  return Status::OK();
+}
+
 
 class ContiguousRowHelper {
  public:
@@ -99,20 +176,14 @@ class ContiguousRowHelper {
     }
   }
 
-  static void SetCellValue(const Schema& schema, uint8_t *row_data, size_t col_idx, const void *value) {
-    const ColumnSchema& col_schema = schema.column(col_idx);
-    if (col_schema.is_nullable()) {
-      uint8_t *null_bitmap = row_data + schema.byte_size();
-      BitmapChange(null_bitmap, col_idx, value != NULL);
-      if (value == NULL) return;
-    }
-    uint8_t *dst_ptr = row_data + schema.column_offset(col_idx);
-    strings::memcpy_inlined(dst_ptr, value, col_schema.type_info().size());
-  }
-
   static bool is_null(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
     DCHECK(schema.column(col_idx).is_nullable());
     return !BitmapTest(row_data + schema.byte_size(), col_idx);
+  }
+
+  static void SetCellIsNull(const Schema& schema, uint8_t *row_data, size_t col_idx, bool is_null) {
+    uint8_t *null_bitmap = row_data + schema.byte_size();
+    BitmapChange(null_bitmap, col_idx, !is_null);
   }
 
   static const uint8_t *cell_ptr(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
@@ -124,11 +195,35 @@ class ContiguousRowHelper {
   }
 };
 
-// TODO: Currently used only for testing and as memstore row wrapper
+template<class ContiguousRowType>
+class ContiguousRowCell {
+ public:
+  ContiguousRowCell(const ContiguousRowType* row, int idx)
+    : row_(row), col_idx_(idx) {
+  }
+
+  DataType type() const { return type_info().type(); }
+  size_t size() const { return type_info().size(); }
+  const void* ptr() const { return row_->cell_ptr(row_->schema(), col_idx_); }
+  void* mutable_ptr() const { return row_->mutable_cell_ptr(row_->schema(), col_idx_); }
+  bool is_nullable() const { return row_->schema().column(col_idx_).is_nullable(); }
+  bool is_null() const { return row_->is_null(row_->schema(), col_idx_); }
+  void set_null(bool is_null) const { row_->set_null(col_idx_, is_null); }
+
+ private:
+  const TypeInfo& type_info() const {
+    return row_->schema().column(col_idx_).type_info();
+  }
+
+  const ContiguousRowType* row_;
+  int col_idx_;
+};
 
 // The row has all columns layed out in memory based on the schema.column_offset()
 class ContiguousRow {
  public:
+  typedef ContiguousRowCell<ContiguousRow> Cell;
+
   ContiguousRow(const Schema& schema, uint8_t *row_data = NULL)
     : schema_(schema), row_data_(row_data) {
   }
@@ -141,16 +236,14 @@ class ContiguousRow {
     row_data_ = row_data;
   }
 
-  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    ContiguousRowHelper::SetCellValue(schema, row_data_, col_idx, value);
-  }
-
   bool is_null(const Schema& schema, size_t col_idx) const {
     // TODO: Handle different schema
     DCHECK(schema.Equals(schema_));
     return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
+  }
+
+  void set_null(size_t col_idx, bool is_null) const {
+    ContiguousRowHelper::SetCellIsNull(schema_, row_data_, col_idx, is_null);
   }
 
   const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
@@ -169,6 +262,10 @@ class ContiguousRow {
     return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
   }
 
+  Cell cell(size_t col_idx) const {
+    return Cell(this, col_idx);
+  }
+
  private:
   friend class ConstContiguousRow;
 
@@ -180,6 +277,8 @@ class ContiguousRow {
 // should not be mutated.
 class ConstContiguousRow {
  public:
+  typedef ContiguousRowCell<ConstContiguousRow> Cell;
+
   explicit ConstContiguousRow(const ContiguousRow &row)
     : schema_(row.schema_),
       row_data_(row.row_data_) {
@@ -223,10 +322,22 @@ class ConstContiguousRow {
     return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
   }
 
+  Cell cell(size_t col_idx) const {
+    return Cell(this, col_idx);
+  }
+
  private:
   const Schema& schema_;
   const uint8_t *row_data_;
 };
+
+// Delete functions from ContiguousRowCell that can mutate the cell by
+// specializing for ConstContiguousRow.
+template<>
+void* ContiguousRowCell<ConstContiguousRow>::mutable_ptr() const;
+template<>
+void ContiguousRowCell<ConstContiguousRow>::set_null(bool null) const;
+
 
 // Utility class for building rows corresponding to a given schema.
 // This is used when inserting data into the MemStore or a new Layer.

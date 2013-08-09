@@ -41,6 +41,8 @@ class MemRowSet;
 // The value stored in the CBTree for a single row.
 class MRSRow {
  public:
+  typedef ContiguousRowCell<MRSRow> Cell;
+
   MRSRow(const MemRowSet *memrowset, const Slice &s) {
     DCHECK_GE(s.size(), sizeof(Header));
     row_slice_ = s;
@@ -58,12 +60,6 @@ class MRSRow {
 
   const Slice &row_slice() const { return row_slice_; }
 
-  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
-    // TODO: Handle different schema
-    DCHECK(this->schema().Equals(schema));
-    ContiguousRowHelper::SetCellValue(schema, row_slice_.mutable_data(), col_idx, value);
-  }
-
   bool is_null(const Schema& schema, size_t col_idx) const {
     // TODO: Handle different schema
     DCHECK(this->schema().Equals(schema));
@@ -76,6 +72,10 @@ class MRSRow {
     return ContiguousRowHelper::cell_ptr(schema, row_slice_.data(), col_idx);
   }
 
+  uint8_t *mutable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    return const_cast<uint8_t*>(cell_ptr(schema, col_idx));
+  }
+
   const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
     // TODO: Handle different schema
     DCHECK(this->schema().Equals(schema));
@@ -86,6 +86,10 @@ class MRSRow {
     // TODO: Handle different schema
     DCHECK(this->schema().Equals(row.schema()));
     memcpy(row_slice_.mutable_data(), row.row_data(), row_slice_.size());
+  }
+
+  Cell cell(size_t col_idx) const {
+    return Cell(this, col_idx);
   }
 
   // Return true if this row is a "ghost" -- i.e its most recent mutation is

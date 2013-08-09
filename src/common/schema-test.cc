@@ -30,7 +30,7 @@ static Status CopyRowToArena(const Slice &row,
   }
 
   copied->Reset(row_data.mutable_data());
-  RETURN_NOT_OK(CopyRowIndirectDataToArena(copied, dst_arena));
+  RETURN_NOT_OK(RelocateIndirectDataToArena(copied, dst_arena));
   return Status::OK();
 }
 

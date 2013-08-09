@@ -3,6 +3,7 @@
 #define KUDU_COMMON_COLUMNBLOCK_H
 
 #include "common/types.h"
+#include "common/row.h"
 #include "gutil/gscoped_ptr.h"
 #include "util/bitmap.h"
 #include "util/memory/arena.h"
@@ -11,32 +12,7 @@
 namespace kudu {
 
 class Arena;
-
-template <class ArenaType>
-Status CopyCellData(const TypeInfo& type_info, void *dst, const void *src, ArenaType *dst_arena) {
-  if (type_info.type() == STRING) {
-    // If it's a Slice column, need to relocate the referred-to data
-    // as well as the slice itself.
-    // TODO: potential optimization here: if the new value is smaller than
-    // the old value, we could potentially just overwrite in some cases.
-    const Slice *src_slice = reinterpret_cast<const Slice *>(src);
-    Slice *dst_slice = reinterpret_cast<Slice *>(dst);
-    if (dst_arena != NULL) {
-      if (PREDICT_FALSE(!dst_arena->RelocateSlice(*src_slice, dst_slice))) {
-        return Status::IOError("out of memory copying slice", src_slice->ToString());
-      }
-    } else {
-      // Just copy the slice without relocating.
-      // This is used by callers who know that the source row's data is going
-      // to stick around for the scope of the destination.
-      *dst_slice = *src_slice;
-    }
-  } else {
-    size_t size = type_info.size();
-    memcpy(dst, src, size); // TODO: inline?
-  }
-  return Status::OK();
-}
+class ColumnBlockCell;
 
 // A block of data all belonging to a single column.  The column data
 // This is simply a view into a buffer - it does not have any associated
@@ -44,6 +20,8 @@ Status CopyCellData(const TypeInfo& type_info, void *dst, const void *src, Arena
 // information, which can be used for extra type safety in debug mode.
 class ColumnBlock {
  public:
+  typedef ColumnBlockCell Cell;
+
   ColumnBlock(const TypeInfo &type,
               uint8_t *null_bitmap,
               void *data,
@@ -57,25 +35,13 @@ class ColumnBlock {
     DCHECK(data_) << "null data";
   }
 
-  void SetNullableCellValue(size_t idx, const void *new_val) {
+  void SetCellIsNull(size_t idx, bool is_null) {
     DCHECK(is_nullable());
-    BitmapChange(null_bitmap_, idx, new_val != NULL);
-    if (new_val != NULL) SetCellValue(idx, new_val);
+    BitmapChange(null_bitmap_, idx, !is_null);
   }
 
   void SetCellValue(size_t idx, const void *new_val) {
     strings::memcpy_inlined(mutable_cell_ptr(idx), new_val, type_.size());
-  }
-
-  template <class ArenaType>
-  Status CopyNullableCell(size_t idx, const void *new_val, ArenaType *arena) {
-    BitmapChange(null_bitmap_, idx, new_val != NULL);
-    return (new_val != NULL) ? CopyCell(idx, new_val, arena) : Status::OK();
-  }
-
-  template <class ArenaType>
-  Status CopyCell(size_t idx, const void *new_val, ArenaType *arena) {
-    return CopyCellData(type_, mutable_cell_ptr(idx), new_val, arena);
   }
 
 #ifndef NDEBUG
@@ -95,6 +61,8 @@ class ColumnBlock {
   const uint8_t *nullable_cell_ptr(size_t idx) const {
     return is_null(idx) ? NULL : cell_ptr(idx);
   }
+
+  Cell cell(size_t idx) const;
 
   uint8_t *null_bitmap() const {
     return null_bitmap_;
@@ -122,6 +90,9 @@ class ColumnBlock {
   }
 
  private:
+  friend class ColumnBlockCell;
+  friend class ColumnDataView;
+
   // Return a pointer to the given cell.
   uint8_t *mutable_cell_ptr(size_t idx) {
     DCHECK_LT(idx, nrows_);
@@ -135,9 +106,30 @@ class ColumnBlock {
   size_t nrows_;
 
   Arena *arena_;
-
-  friend class ColumnDataView;
 };
+
+// One of the cells in a ColumnBlock.
+class ColumnBlockCell {
+ public:
+  ColumnBlockCell(ColumnBlock block, size_t row_idx)
+    : block_(block), row_idx_(row_idx) {
+  }
+
+  DataType type() const { return block_.type_info().type(); }
+  size_t size() const { return block_.type_info().size(); }
+  const void* ptr() const { return block_.cell_ptr(row_idx_); }
+  void* mutable_ptr() { return block_.mutable_cell_ptr(row_idx_); }
+  bool is_nullable() const { return block_.is_nullable(); }
+  bool is_null() const { return block_.is_null(row_idx_); }
+  void set_null(bool is_null) { block_.SetCellIsNull(row_idx_, is_null); }
+ protected:
+  ColumnBlock block_;
+  size_t row_idx_;
+};
+
+inline ColumnBlockCell ColumnBlock::cell(size_t idx) const {
+  return ColumnBlockCell(*this, idx);
+}
 
 // Wrap the ColumnBlock to expose a directly raw block at the specified offset.
 // Used by the reader and block encoders to read/write raw data.

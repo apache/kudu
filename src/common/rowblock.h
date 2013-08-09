@@ -216,6 +216,8 @@ class RowBlock {
 //    ...
 class RowBlockRow {
  public:
+  typedef ColumnBlock::Cell Cell;
+
   RowBlockRow(const RowBlock *row_block = NULL, size_t row_index = 0)
     : row_block_(row_block), row_index_(row_index) {
   }
@@ -238,6 +240,10 @@ class RowBlockRow {
     return column_block(schema, col_idx).is_null(row_index_);
   }
 
+  uint8_t *mutable_cell_ptr(const Schema& schema, size_t col_idx) const {
+    return const_cast<uint8_t*>(cell_ptr(schema, col_idx));
+  }
+
   const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
     return column_block(schema, col_idx).cell_ptr(row_index_);
   }
@@ -246,57 +252,14 @@ class RowBlockRow {
     return column_block(schema, col_idx).nullable_cell_ptr(row_index_);
   }
 
+  Cell cell(size_t col_idx) const{
+    return row_block_->column_block(col_idx).cell(row_index_);
+  }
+
   ColumnBlock column_block(const Schema& schema, size_t col_idx) const {
     // TODO: Handle different schema
     DCHECK(schema.Equals(row_block_->schema()));
     return row_block_->column_block(col_idx);
-  }
-
-  // Used only for testing
-  void SetCellValue(const Schema& schema, size_t col_idx, const void *value) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(row_block_->schema()));
-
-    if (schema.column(col_idx).is_nullable()) {
-      column_block(schema, col_idx).SetNullableCellValue(row_index_, value);
-    } else {
-      column_block(schema, col_idx).SetCellValue(row_index_, value);
-    }
-  }
-
-  template <class ArenaType>
-  Status CopyCell(const Schema& schema, size_t col_idx, const void *value, ArenaType *arena) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(row_block_->schema()));
-    return column_block(schema, col_idx).CopyCell(row_index_, value, arena);
-  }
-
-  template <class ArenaType>
-  Status CopyNullableCell(const Schema& schema, size_t col_idx, const void *value, ArenaType *arena) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(row_block_->schema()));
-    return column_block(schema, col_idx).CopyNullableCell(row_index_, value, arena);
-  }
-
-  template <class RowType>
-  void CopyCellsFrom(const Schema& schema, const RowType& row) {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(row_block_->schema()));
-
-    for (size_t col = 0; col < schema.num_columns(); col++) {
-      const ColumnSchema& col_schema = schema.column(col);
-      ColumnBlock column_block = row_block_->column_block(col);
-      if (col_schema.is_nullable()) {
-        column_block.SetNullableCellValue(row_index_, row.nullable_cell_ptr(schema, col));
-      } else {
-        column_block.SetCellValue(row_index_, row.cell_ptr(schema, col));
-      }
-    }
-  }
-
-  template <class ArenaType>
-  Status CopyIndirectDataToArena(ArenaType *arena) {
-    return kudu::CopyRowIndirectDataToArena(this, arena);
   }
 
   // Mark this row as unselected in the selection vector.

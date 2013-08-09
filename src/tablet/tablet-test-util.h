@@ -122,14 +122,14 @@ static inline string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
 // Write a single row to the given RowSetWriter (which may be of the rolling
 // or non-rolling variety).
 template<class RowSetWriterClass>
-static Status WriteRow(const Slice &row, RowSetWriterClass *writer) {
+static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   const Schema &schema = writer->schema();
-  DCHECK_EQ(row.size(), schema.byte_size());
+  DCHECK_EQ(row_slice.size(), schema.byte_size());
 
   RowBlock block(schema, 1, NULL);
-  ConstContiguousRow row_slice(schema, row.data());
+  ConstContiguousRow row(schema, row_slice.data());
   RowBlockRow dst_row = block.row(0);
-  dst_row.CopyCellsFrom(schema, row_slice);
+  RETURN_NOT_OK(CopyRow(row, &dst_row, reinterpret_cast<Arena*>(NULL)));
 
   return writer->AppendBlock(block);
 }

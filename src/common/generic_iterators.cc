@@ -195,11 +195,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     if (PREDICT_FALSE(smallest == NULL)) break;
 
     // Otherwise, copy the row from the smallest one, and advance it
-    dst_row.CopyCellsFrom(schema_, smallest->next_row());
-    if (dst->arena() != NULL) {
-      RETURN_NOT_OK(dst_row.CopyIndirectDataToArena(dst->arena()));
-    }
-
+    RETURN_NOT_OK(CopyRow(smallest->next_row(), &dst_row, dst->arena()));
     RETURN_NOT_OK(smallest->Advance());
 
     if (smallest->IsFullyExhausted()) {

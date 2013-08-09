@@ -107,7 +107,7 @@ Status MemRowSet::Insert(txid_t txid, const ConstContiguousRow& row) {
   mrsrow.CopyCellsFrom(row);
 
   // Copy any referred-to memory to arena.
-  RETURN_NOT_OK(kudu::CopyRowIndirectDataToArena(&mrsrow, &arena_));
+  RETURN_NOT_OK(kudu::RelocateIndirectDataToArena(&mrsrow, &arena_));
 
   CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
@@ -129,7 +129,7 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
   uint8_t row_copy_buf[row.row_size()];
   memcpy(row_copy_buf, row.row_data(), row.row_size());
   ContiguousRow row_copy(schema_, row_copy_buf);
-  RETURN_NOT_OK(CopyRowIndirectDataToArena(&row_copy, &arena_));
+  RETURN_NOT_OK(RelocateIndirectDataToArena(&row_copy, &arena_));
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;

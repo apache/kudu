@@ -49,7 +49,8 @@ class MemRowSetCompactionInput : public CompactionInput {
       // TODO: A copy is performed to have all CompactionInputRow of the same type
       CompactionInputRow &input_row = block->at(i);
       MRSRow ms_row = iter_->GetCurrentRow();
-      input_row.row.Reset(row_block_.get(), i)->CopyCellsFrom(iter_->schema(), ms_row);
+      input_row.row.Reset(row_block_.get(), i);
+      CopyRow(ms_row, &input_row.row, reinterpret_cast<Arena*>(NULL));
       input_row.mutation_head = ms_row.mutation_head();
     }
 
@@ -450,7 +451,8 @@ static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
       if (decoder.is_reinsert()) {
         // On reinsert, we have to copy the reinserted row over.
         ConstContiguousRow reinserted(schema, decoder.reinserted_row_slice().data());
-        row->CopyCellsFrom(schema, reinserted);
+        Arena* arena = NULL; // No need to copy into an arena -- can refer to the mutation's arena.
+        RETURN_NOT_OK(CopyRow(reinserted, row, arena));
       }
     } else {
       LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
@@ -478,7 +480,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
     int n = 0;
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
       RowBlockRow dst_row = block.row(n);
-      dst_row.CopyCellsFrom(schema, input_row.row);
+      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
       DVLOG(2) << "Row: " << schema.DebugRow(dst_row) <<
         " mutations: " << Mutation::StringifyMutationList(schema, input_row.mutation_head);
 

@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <string>
 
+#include "common/row.h"
 #include "common/schema.h"
 #include "gutil/casts.h"
 #include "util/coding.h"
@@ -213,11 +214,10 @@ class RowChangeListDecoder {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-      if (schema_.column(updated_col).is_nullable()) {
-        RETURN_NOT_OK(dst_row->CopyNullableCell(schema_, updated_col, new_val, arena));
-      } else {
-        RETURN_NOT_OK(dst_row->CopyCell(schema_, updated_col, new_val, arena));
-      }
+
+      SimpleConstCell src(schema_.column(updated_col), new_val);
+      typename RowType::Cell dst_cell = dst_row->cell(updated_col);
+      RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
     }
     return Status::OK();
   }
@@ -230,11 +230,9 @@ class RowChangeListDecoder {
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
       if (updated_col == col_idx) {
-        if (schema_.column(updated_col).is_nullable()) {
-          RETURN_NOT_OK(dst_col->CopyNullableCell(row_idx, new_val, arena));
-        } else {
-          RETURN_NOT_OK(dst_col->CopyCell(row_idx, new_val, arena));
-        }
+        SimpleConstCell src(schema_.column(updated_col), new_val);
+        typename ColumnType::Cell dst_cell = dst_col->cell(row_idx);
+        RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
         // TODO: could potentially break; here if we're guaranteed to only have one update
         // per column in a RowChangeList (which would make sense!)
       }
