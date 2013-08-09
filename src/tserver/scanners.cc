@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "tserver/scanners.h"
 
+#include "common/iterator.h"
 #include "gutil/map-util.h"
 #include <gflags/gflags.h>
 #include <tr1/memory>
@@ -47,8 +48,20 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
 }
 
 Scanner::Scanner(const string& id)
-  : id_(id),
-    last_access_time_(MonoTime::Now(MonoTime::COARSE)) {
+  : id_(id) {
+  UpdateAccessTime();
+}
+
+Scanner::~Scanner() {
+}
+
+void Scanner::UpdateAccessTime() {
+  last_access_time_ = MonoTime::Now(MonoTime::COARSE);
+}
+
+void Scanner::Init(gscoped_ptr<RowwiseIterator> iter) {
+  CHECK(!iter_) << "Already initialized";
+  iter_.reset(iter.release());
 }
 
 } // namespace tserver

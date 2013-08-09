@@ -15,6 +15,7 @@
 #include "server/rpc_server.h"
 #include "tablet/tablet.h"
 #include "tserver/mini_tablet_server.h"
+#include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
 #include "tserver/tserver.proxy.h"
 #include "util/net/sockaddr.h"
@@ -39,7 +40,8 @@ class TabletServerTest : public KuduTest {
               (ColumnSchema("key", UINT32))
               (ColumnSchema("int_val", UINT32))
               (ColumnSchema("string_val", STRING)),
-              1) {
+              1),
+      rb_(schema_) {
   }
 
   virtual void SetUp() {
@@ -85,7 +87,48 @@ class TabletServerTest : public KuduTest {
     AddRowToRowBlockPB(rb.row(), block);
   }
 
+  // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
+  void InsertTestRows(int num_rows) {
+    for (int i = 0; i < num_rows; i++) {
+      CHECK_OK(tablet_->Insert(BuildTestRow(i)));
+    }
+  }
+
+  ConstContiguousRow BuildTestRow(int index) {
+    rb_.Reset();
+    rb_.AddUint32(index);
+    rb_.AddUint32(index * 2);
+    rb_.AddString(StringPrintf("hello %d", index));
+    return rb_.row();
+  }
+
+  void DrainScannerToStrings(const string& scanner_id, const Schema& projection,
+                             vector<string>* results) {
+    RpcController rpc;
+    ScanRequestPB req;
+    ScanResponsePB resp;
+    req.set_scanner_id(scanner_id);
+
+    do {
+      rpc.Reset();
+      req.set_batch_size_bytes(10000);
+      SCOPED_TRACE(req.DebugString());
+      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+      SCOPED_TRACE(resp.DebugString());
+      ASSERT_FALSE(resp.has_error());
+
+      vector<const uint8_t*> rows;
+      ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection,resp.mutable_data(), &rows));
+      LOG(INFO) << "Round trip got " << rows.size() << " rows";
+      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+        ConstContiguousRow row(projection, row_ptr);
+        results->push_back(projection.DebugRow(row));
+      }
+    } while (resp.has_more_results());
+  }
+
   Schema schema_;
+  RowBuilder rb_;
 
   shared_ptr<Messenger> client_messenger_;
 
@@ -186,7 +229,218 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.per_row_errors().Get(0).error());
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
   }
+}
 
+TEST_F(TabletServerTest, TestScan) {
+  int num_rows = AllowSlowTests() ? 10000 : 1000;
+  InsertTestRows(num_rows);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id("");
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_TRUE(resp.has_more_results());
+  }
+
+  // Ensure that the scanner ID came back and got inserted into the
+  // ScannerManager map.
+  string scanner_id = resp.scanner_id();
+  ASSERT_TRUE(!scanner_id.empty());
+  {
+    SharedScanner junk;
+    ASSERT_TRUE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
+  }
+
+  // Drain all the rows from the scanner.
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(
+    DrainScannerToStrings(resp.scanner_id(), projection, &results));
+  ASSERT_EQ(num_rows, results.size());
+
+  for (int i = 0; i < num_rows; i++) {
+    string expected = schema_.DebugRow(BuildTestRow(i));
+    ASSERT_EQ(expected, results[i]);
+  }
+
+  // Since the rows are drained, the scanner should be automatically removed
+  // from the scanner manager.
+  {
+    SharedScanner junk;
+    ASSERT_FALSE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
+  }
+}
+
+TEST_F(TabletServerTest, TestScanWithStringPredicates) {
+  InsertTestRows(100);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id("");
+  ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  // Set up a range predicate: "hello 50" < string_val <= "hello 59"
+  ColumnRangePredicatePB* pred = scan->add_range_predicates();
+  pred->mutable_column()->CopyFrom(scan->projected_columns(2));
+
+  pred->set_lower_bound("hello 50");
+  pred->set_upper_bound("hello 59");
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Drain all the rows from the scanner.
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(
+    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(10, results.size());
+  ASSERT_EQ("(uint32 key=50, uint32 int_val=100, string string_val=hello 50)", results[0]);
+  ASSERT_EQ("(uint32 key=59, uint32 int_val=118, string string_val=hello 59)", results[9]);
+}
+
+TEST_F(TabletServerTest, TestScanWithPredicates) {
+  // TODO: need to test adding a predicate on a column which isn't part of the
+  // projection! I don't think we implemented this at the tablet layer yet,
+  // but should do so.
+
+  int num_rows = AllowSlowTests() ? 10000 : 1000;
+  InsertTestRows(num_rows);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id("");
+  ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  // Set up a range predicate: 51 <= key <= 100
+  ColumnRangePredicatePB* pred = scan->add_range_predicates();
+  pred->mutable_column()->CopyFrom(scan->projected_columns(0));
+
+  uint32_t lower_bound_int = 51;
+  uint32_t upper_bound_int = 100;
+  pred->mutable_lower_bound()->append(reinterpret_cast<char*>(&lower_bound_int),
+                                      sizeof(lower_bound_int));
+  pred->mutable_upper_bound()->append(reinterpret_cast<char*>(&upper_bound_int),
+                                      sizeof(upper_bound_int));
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Drain all the rows from the scanner.
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(
+    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(50, results.size());
+}
+
+
+// Test requesting more rows from a scanner which doesn't exist
+TEST_F(TabletServerTest, TestBadScannerID) {
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  req.set_scanner_id("does-not-exist");
+
+  SCOPED_TRACE(req.DebugString());
+  ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, resp.error().code());
+}
+
+// Test passing a scanner ID, but also filling in some of the NewScanRequest
+// field.
+TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id("x");
+  req.set_scanner_id("x");
+  SCOPED_TRACE(req.DebugString());
+  Status s = proxy_->Scan(req, &resp, &rpc);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Must not pass both a scanner_id and new_scan_request");
+}
+
+TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjection) {
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id("x");
+  const Schema projection(boost::assign::list_of
+                          (ColumnSchema("col_doesnt_exist", UINT32)),
+                          1);
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(), "Cannot map from schema");
+  }
+}
+
+// Test scanning a tablet that has no entries.
+TEST_F(TabletServerTest, TestScan_NoResults) {
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id("");
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+
+    // Because there are no entries, we should immediately return "no results"
+    // and not bother handing back a scanner ID.
+    ASSERT_FALSE(resp.has_more_results());
+    ASSERT_FALSE(resp.has_scanner_id());
+  }
 }
 
 } // namespace tserver

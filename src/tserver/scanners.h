@@ -1,7 +1,7 @@
 // Copyright(c) 2013, Cloudera, inc.
 // All rights reserved.
-#ifndef KUDU_TSERVER_TABLET_SCANNER_H
-#define KUDU_TSERVER_TABLET_SCANNER_H
+#ifndef KUDU_TSERVER_SCANNERS_H
+#define KUDU_TSERVER_SCANNERS_H
 
 #include <string>
 #include <tr1/memory>
@@ -9,11 +9,16 @@
 
 #include <boost/thread/shared_mutex.hpp>
 
+#include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "util/auto_release_pool.h"
 #include "util/monotime.h"
 #include "server/oid_generator.h"
 
 namespace kudu {
+
+class RowwiseIterator;
+
 namespace tserver {
 
 class Scanner;
@@ -68,6 +73,26 @@ class ScannerManager {
 class Scanner {
  public:
   Scanner(const std::string& id);
+  ~Scanner();
+
+  // Attach an actual iterator to this Scanner.
+  void Init(gscoped_ptr<RowwiseIterator> iter);
+
+  RowwiseIterator* iter() {
+    return DCHECK_NOTNULL(iter_.get());
+  }
+
+  // Update the last-access time to the current time,
+  // delaying the expiration of the Scanner for another TTL
+  // period.
+  void UpdateAccessTime();
+
+  // Return the auto-release pool which will be freed when this scanner
+  // closes. This can be used as a storage area for the ScanSpec and any
+  // associated data (eg storage for its predicates).
+  AutoReleasePool* autorelease_pool() {
+    return &autorelease_pool_;
+  }
 
   const std::string& id() const { return id_; }
 
@@ -82,6 +107,10 @@ class Scanner {
 
   // The last time that the scanner was accessed.
   MonoTime last_access_time_;
+
+  gscoped_ptr<RowwiseIterator> iter_;
+
+  AutoReleasePool autorelease_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(Scanner);
 };

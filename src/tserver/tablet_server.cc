@@ -6,10 +6,9 @@
 #include <list>
 #include <vector>
 
-#include "rpc/messenger.h"
 #include "rpc/service_if.h"
-#include "rpc/service_pool.h"
 #include "server/rpc_server.h"
+#include "tserver/scanners.h"
 #include "tserver/tablet_service.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
@@ -39,6 +38,9 @@ string TabletServer::ToString() const {
 Status TabletServer::Init() {
   CHECK(!initted_);
   RETURN_NOT_OK(rpc_server_->Init(kDefaultPort));
+
+  scanner_manager_.reset(new ScannerManager);
+
   initted_ = true;
   return Status::OK();
 }

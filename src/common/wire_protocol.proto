@@ -74,6 +74,11 @@ message ColumnarRowBlockPB {
 // A row block in which each row is stored contiguously.
 message RowwiseRowBlockPB {
   repeated ColumnSchemaPB schema = 1;
+
+  // TODO: the number of key columns doesn't actually make sense
+  // in the context of row-blocks, since we may ask to scan a projection
+  // which doesn't include the key, or the columns in the projection may
+  // be in a different order. Will remove this field in a later commit.
   optional int32 num_key_columns = 2;
 
   // The rows of data. Each row is stored in the same in-memory format

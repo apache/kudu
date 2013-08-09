@@ -30,6 +30,8 @@ class Tablet;
 
 namespace tserver {
 
+class ScannerManager;
+
 class TabletServer {
  public:
   static const uint16_t kDefaultPort = 7150;
@@ -51,6 +53,7 @@ class TabletServer {
                     std::tr1::shared_ptr<tablet::Tablet>* tablet) const;
 
   const RpcServer *rpc_server() const { return rpc_server_.get(); }
+  ScannerManager* scanner_manager() { return scanner_manager_.get(); }
 
  private:
   friend class TabletServerTest;
@@ -63,6 +66,11 @@ class TabletServer {
   // TODO: This will be replaced with some kind of map of tablet ID to
   // tablet in the future.
   std::tr1::shared_ptr<tablet::Tablet> tablet_;
+
+  // Manager for open scanners from clients.
+  // This is always non-NULL. It is scoped only to minimize header
+  // dependencies.
+  gscoped_ptr<ScannerManager> scanner_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServer);
 };

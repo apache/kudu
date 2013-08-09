@@ -42,7 +42,7 @@ void Proxy::AsyncRequest(const string &method,
                          google::protobuf::Message *response,
                          RpcController *controller,
                          const ResponseCallback &callback) const {
-  DCHECK(controller->call_.get() == NULL);
+  CHECK(controller->call_.get() == NULL) << "Controller should be reset";
   OutboundCall *call = new OutboundCall(remote_, method, response, controller, callback);
   controller->call_.reset(call);
   Status s = call->SetRequestParam(req);

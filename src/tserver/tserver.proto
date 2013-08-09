@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.tserver;
 
+import "common/common.proto";
 import "common/wire_protocol.proto";
 
 // Tablet-server specific errors use this protobuf.
@@ -25,6 +26,14 @@ message TabletServerErrorPB {
 
     // The requested tablet_id is not currently hosted on this server.
     TABLET_NOT_FOUND = 5;
+
+    // A request was made against a scanner ID that was either never
+    // created or has expired.
+    SCANNER_EXPIRED = 6;
+
+    // An invalid scan was specified -- e.g the values passed for
+    // predicates were incorrect sizes.
+    INVALID_SCAN_SPEC = 7;
   }
 
   // The error code.
@@ -68,7 +77,107 @@ message InsertResponsePB {
   repeated PerRowErrorPB per_row_errors = 2;
 }
 
+// A range predicate on one of the columns in the underlying
+// data.
+message ColumnRangePredicatePB {
+  required ColumnSchemaPB column = 1;
+
+  // These bounds should be encoded as follows:
+  // - STRING values: simply the exact string value for the bound.
+  // - other type: the canonical x86 in-memory representation -- eg for
+  //   uint32s, a little-endian value.
+  //
+  // Note that this predicate type should not be used for NULL data --
+  // NULL is defined to neither be greater than or less than other values
+  // for the comparison operator. We will eventually add a special
+  // predicate type for null-ness.
+  optional bytes lower_bound = 2;
+  optional bytes upper_bound = 3;
+}
+
+message NewScanRequestPB {
+  // The tablet to scan.
+  required bytes tablet_id = 1;
+
+  // The maximum number of rows to scan.
+  // The scanner will automatically stop yielding results and close
+  // itself after reaching this number of result rows.
+  optional uint64 limit = 2;
+
+  // Any column range predicates to enforce.
+  repeated ColumnRangePredicatePB range_predicates = 3;
+
+  // Which columns to select.
+  repeated ColumnSchemaPB projected_columns = 4;
+
+  // TODO: add some field which requests ordered results (which has
+  // the side effect of being able to be fault-tolerant)
+}
+
+// A scan request. Initially, it should specify a scan. Later on, you
+// can use the scanner id returned to fetch result batches with a different
+// scan request.
+//
+// The scanner will remain open if there are more results, and it's not
+// asked to be closed explicitly.
+//
+// You can fetch the results and ask the scanner to be closed to save
+// a trip if you are not interested in remaining results.
+//
+// This is modeled somewhat after HBase's scanner API.
+message ScanRequestPB {
+  // If continuing an existing scan, then you must set scanner_id.
+  // Otherwise, you must set 'new_scan_request'.
+  optional bytes scanner_id = 1;
+  optional NewScanRequestPB new_scan_request = 2;
+
+  // The sequence ID of this call. The sequence ID should start at 0
+  // with the request for a new scanner, and after each successful request,
+  // the client should increment it by 1. When retrying a request, the client
+  // should _not_ increment this value. If the server detects that the client
+  // missed a chunk of rows from the middle of a scan, it will respond with an
+  // error.
+  optional uint32 call_seq_id = 3;
+
+  // The maximum number of bytes to send in the response.
+  // This is a hint, not a requirement: the server may send
+  // arbitrarily fewer or more bytes than requested.
+  optional uint32 batch_size_bytes = 4;
+
+  // If set, the server will close the scanner after responding to
+  // this request, regardless of whether all rows have been delivered.
+  // In order to simply close a scanner without selecting any rows, you
+  // may set batch_size_bytes to 0 in conjunction with setting this flag.
+  optional bool close_scanner = 5;
+}
+
+message ScanResponsePB {
+  // The error, if an error occurred with this request.
+  optional TabletServerErrorPB error = 1;
+
+  // When a scanner is created, returns the scanner ID which may be used
+  // to pull new rows from the scanner.
+  optional bytes scanner_id = 2;
+
+  // Set to true to indicate that there may be further results to be fetched
+  // from this scanner. If the scanner has no more results, then the scanner
+  // ID will become invalid and cannot continue to be used.
+  //
+  // Note that if a scan returns no results, then the initial response from
+  // the first RPC may return false in this flag, in which case there will
+  // be no scanner ID assigned.
+  optional bool has_more_results = 3;
+
+  // The block of returned rows.
+  //
+  // NOTE: the schema-related fields will not be present in this row block.
+  // The schema will match the schema requested by the client when it created
+  // the scanner.
+  optional RowwiseRowBlockPB data = 4;
+}
+
 service TabletServerService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
   rpc Insert(InsertRequestPB) returns (InsertResponsePB);
+  rpc Scan(ScanRequestPB) returns (ScanResponsePB);
 }

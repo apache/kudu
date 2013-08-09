@@ -38,6 +38,7 @@ class MiniTabletServer {
   const Sockaddr& bound_addr() const;
 
   const TabletServer* server() const { return server_.get(); }
+  TabletServer* server() { return server_.get(); }
 
  private:
   bool started_;
