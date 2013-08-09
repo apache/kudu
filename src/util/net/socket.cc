@@ -143,6 +143,13 @@ Status Socket::BindAndListen(const Sockaddr &sockaddr,
   int err;
   struct sockaddr_in addr = sockaddr.addr();
 
+  int yes = 1;
+  if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+    err = errno;
+    return Status::NetworkError(std::string("failed to set SO_REUSEADDR: ") +
+                                ErrnoToString(err), Slice(), err);
+  }
+
   DCHECK_GE(fd_, 0);
   if (bind(fd_, (struct sockaddr*) &addr, sizeof(addr))) {
     err = errno;
