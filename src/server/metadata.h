@@ -36,15 +36,15 @@ typedef std::tr1::unordered_set<uint32_t> RowSetMetadataIds;
 // Load() and Flush() when necessary.
 class TabletMetadata {
  public:
-  TabletMetadata(FsManager *fs_manager, const string& oid, const TabletMasterBlockPB& master_block,
+  TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block,
                  const string& start_key = "", const string& end_key = "")
-    : oid_(oid), start_key_(start_key), end_key_(end_key),
+    : start_key_(start_key), end_key_(end_key),
       fs_manager_(fs_manager),
       master_block_(master_block), sblk_id_(0),
       next_rowset_idx_(0) {
   }
 
-  const string& oid() const { return oid_; }
+  const string& oid() const { return master_block_.tablet_id(); }
   const string& start_key() const { return start_key_; }
   const string& end_key() const { return end_key_; }
 
@@ -75,7 +75,6 @@ class TabletMetadata {
   typedef simple_spinlock LockType;
   LockType lock_;
 
-  string oid_;
   string start_key_;
   string end_key_;
   FsManager *fs_manager_;

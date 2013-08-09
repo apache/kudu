@@ -31,12 +31,13 @@ class KuduTabletTest : public KuduTest {
 
   void SetUpTestTablet(const string& root_dir = "") {
     metadata::TabletMasterBlockPB master_block;
+    master_block.set_tablet_id("KuduTabletTestId");
     master_block.set_block_a("00000000000000000000000000000000");
     master_block.set_block_b("11111111111111111111111111111111");
 
     fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
     gscoped_ptr<metadata::TabletMetadata> metadata(
-      new metadata::TabletMetadata(fs_manager_.get(), "KuduTabletTestId", master_block));
+      new metadata::TabletMetadata(fs_manager_.get(), master_block));
     tablet_.reset(new Tablet(metadata.Pass(), schema_));
   }
 

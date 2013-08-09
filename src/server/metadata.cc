@@ -57,13 +57,13 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
 
   // No super-block found
   if (sa.IsNotFound() && sb.IsNotFound()) {
-    return Status::NotFound("Tablet '" + oid_ + "' SuperBlock not found",
+    return Status::NotFound("Tablet '" + oid() + "' SuperBlock not found",
                             master_block_.DebugString());
   }
 
   // Both super-blocks are corrupted
   if (sa.IsCorruption() && sb.IsCorruption()) {
-    return Status::NotFound("Tablet '" + oid_ + "' SuperBlocks are corrupted",
+    return Status::NotFound("Tablet '" + oid() + "' SuperBlocks are corrupted",
                             master_block_.DebugString());
   }
 
@@ -77,8 +77,8 @@ Status TabletMetadata::Load() {
   RETURN_NOT_OK(ReadSuperBlock(&pb));
 
   // Verify that the tablet id matches with the one in the protobuf
-  if (oid_ != pb.oid()) {
-    return Status::Corruption("Expected id=" + oid_ + " found " + pb.oid(),
+  if (oid() != pb.oid()) {
+    return Status::Corruption("Expected id=" + oid() + " found " + pb.oid(),
                               master_block_.DebugString());
   }
 
@@ -103,7 +103,7 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
   // Convert to protobuf
   TabletSuperBlockPB pb;
   pb.set_id(sblk_id_);
-  pb.set_oid(oid_);
+  pb.set_oid(oid());
   pb.set_start_key(start_key_);
   pb.set_end_key(end_key_);
 

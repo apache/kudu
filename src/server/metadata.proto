@@ -98,6 +98,7 @@ message TabletSuperBlockPB {
 // "bootstrap table", on tablet creation, and it is used by the master
 // to load all the tablets in the system at startup.
 message TabletMasterBlockPB {
-  required bytes block_a = 1;
-  required bytes block_b = 2;
+  required bytes tablet_id = 1;
+  required bytes block_a = 2;
+  required bytes block_b = 3;
 }

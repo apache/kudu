@@ -310,13 +310,14 @@ int main(int argc, char **argv) {
   gscoped_ptr<kudu::tablet::Tablet> tablet;
 
   kudu::metadata::TabletMasterBlockPB master_block;
+  master_block.set_tablet_id("tpch1");
   master_block.set_block_a("9865b0f142ed4d1aaa7dac6eddf281e4");
   master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
 
   kudu::FsManager fs_manager(kudu::Env::Default(), FLAGS_tpch_path_to_tablet);
   fs_manager.CreateInitialFileSystemLayout();
   gscoped_ptr<kudu::metadata::TabletMetadata> metadata(
-      new kudu::metadata::TabletMetadata(&fs_manager, "tpch1", master_block));
+      new kudu::metadata::TabletMetadata(&fs_manager, master_block));
   bool needs_loading = kudu::OpenTablet(metadata.Pass(), &tablet);
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {

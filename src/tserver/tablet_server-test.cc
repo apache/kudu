@@ -96,10 +96,11 @@ class TabletServerTest : public KuduTest {
     fs_manager_.reset(new FsManager(env_.get(), GetTestPath("test-tablet")));
 
     metadata::TabletMasterBlockPB master_block;
+    master_block.set_tablet_id("TestTablet");
     master_block.set_block_a("00000000000000000000000000000000");
     master_block.set_block_b("11111111111111111111111111111111");
     gscoped_ptr<TabletMetadata> meta(
-      new TabletMetadata(fs_manager_.get(), "TestTablet", master_block));
+      new TabletMetadata(fs_manager_.get(), master_block));
     tablet->reset(new Tablet(meta.Pass(), schema_));
     ASSERT_STATUS_OK((*tablet)->CreateNew());
   }

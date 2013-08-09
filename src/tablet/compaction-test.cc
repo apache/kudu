@@ -157,14 +157,15 @@ class TestCompaction : public KuduRowSetTest {
         rowsets.push_back(rs);
       }
     } else {
-      // This test will load a tablet with id "KuduTabletTestId" that have
+      // This test will load a tablet with id "KuduCompactionBenchTablet" that have
       // a 0000000 or 1111111 super-block id, in the specified root-dir.
       metadata::TabletMasterBlockPB master_block;
+      master_block.set_tablet_id("KuduCompactionBenchTablet");
       master_block.set_block_a("00000000000000000000000000000000");
       master_block.set_block_b("11111111111111111111111111111111");
 
       FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
-      metadata::TabletMetadata input_meta(&fs_manager, "KuduCompactionBenchTablet", master_block);
+      metadata::TabletMetadata input_meta(&fs_manager, master_block);
       ASSERT_STATUS_OK(input_meta.Load());
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta.rowsets()) {
