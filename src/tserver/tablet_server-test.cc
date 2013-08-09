@@ -41,8 +41,28 @@ class TabletServerTest : public KuduTest {
               1) {
   }
 
- protected:
+  virtual void SetUp() {
+    KuduTest::SetUp();
 
+    // Start server.
+    Sockaddr addr;
+    ASSERT_NO_FATAL_FAILURE(StartTestServer(&addr, &server_));
+
+    // Set up a tablet inside the server.
+    ASSERT_NO_FATAL_FAILURE(CreateTestTablet(&tablet_));
+    server_->RegisterTablet(tablet_);
+
+    // Connect to it.
+    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(addr, &proxy_));
+  }
+
+  virtual void TearDown() {
+    // TODO: once the server has a Stop() method we should probably call it!
+    // Otherwise we almost certainly leak threads and sockets between test cases.
+    KuduTest::TearDown();
+  }
+
+ private:
   // Start a tablet server running on the loopback interface and
   // an ephemeral port. Sets *addr to the address of the started
   // server.
@@ -84,6 +104,7 @@ class TabletServerTest : public KuduTest {
     ASSERT_STATUS_OK((*tablet)->CreateNew());
   }
 
+ protected:
   void AddTestRowToBlockPB(uint32_t key, uint32_t int_val, const string& string_val,
                            RowwiseRowBlockPB* block) {
     RowBuilder rb(schema_);
@@ -97,37 +118,22 @@ class TabletServerTest : public KuduTest {
 
   shared_ptr<Messenger> client_messenger_;
   gscoped_ptr<FsManager> fs_manager_;
+
+  gscoped_ptr<TabletServer> server_;
+  shared_ptr<Tablet> tablet_;
+  gscoped_ptr<TabletServerServiceProxy> proxy_;
 };
 
-TEST_F(TabletServerTest, TestPingServer) {
-  Sockaddr addr;
-  gscoped_ptr<TabletServer> server;
-  ASSERT_NO_FATAL_FAILURE(StartTestServer(&addr, &server));
-  gscoped_ptr<TabletServerServiceProxy> proxy;
-  ASSERT_NO_FATAL_FAILURE(CreateClientProxy(addr, &proxy));
 
+TEST_F(TabletServerTest, TestPingServer) {
   // Ping the server.
   PingRequestPB req;
   PingResponsePB resp;
   RpcController controller;
-  ASSERT_STATUS_OK(proxy->Ping(req, &resp, &controller));
+  ASSERT_STATUS_OK(proxy_->Ping(req, &resp, &controller));
 }
 
 TEST_F(TabletServerTest, TestInsert) {
-  // Start the server.
-  Sockaddr addr;
-  gscoped_ptr<TabletServer> server;
-  ASSERT_NO_FATAL_FAILURE(StartTestServer(&addr, &server));
-
-  // Set up a tablet inside the server.
-  shared_ptr<Tablet> tablet;
-  ASSERT_NO_FATAL_FAILURE(CreateTestTablet(&tablet));
-  server->RegisterTablet(tablet);
-
-  // Connect a client.
-  gscoped_ptr<TabletServerServiceProxy> proxy;
-  ASSERT_NO_FATAL_FAILURE(CreateClientProxy(addr, &proxy));
-
   InsertRequestPB req;
 
   // Set an empty tablet ID in the request. This currently has no data,
@@ -147,7 +153,7 @@ TEST_F(TabletServerTest, TestInsert) {
     data->set_num_key_columns(0);
 
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
@@ -170,7 +176,7 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
   }
@@ -185,7 +191,7 @@ TEST_F(TabletServerTest, TestInsert) {
 
     AddTestRowToBlockPB(1234, 5678, "hello world via RPC", data);
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
   }
@@ -203,7 +209,7 @@ TEST_F(TabletServerTest, TestInsert) {
     AddTestRowToBlockPB(2, 1, "also not a dupe key", data);
     AddTestRowToBlockPB(1234, 1, "I am a duplicate key", data);
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
     ASSERT_EQ(1, resp.per_row_errors().size());
