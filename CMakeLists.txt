@@ -289,6 +289,9 @@ set(LIBS ${LIBS} ${RPC_LIBS})
 add_subdirectory(src/tserver)
 set(LIBS ${LIBS} ${TSERVER_LIBS})
 
+add_subdirectory(src/master)
+set(LIBS ${LIBS} ${MASTER_LIBS})
+
 add_subdirectory(src/experiments)
 
 add_subdirectory(src/benchmarks)

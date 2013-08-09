@@ -1,0 +1,12 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.master;
+
+message PingRequestPB {
+}
+
+message PingResponsePB {
+}
+
+service MasterServerService {
+  rpc Ping(PingRequestPB) returns (PingResponsePB);
+}
