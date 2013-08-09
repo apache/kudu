@@ -22,6 +22,7 @@ ADD_DEPENDENCIES(tserver kudu_common)
 ADD_DEPENDENCIES(tserver tablet)
 ADD_DEPENDENCIES(tserver server)
 ADD_DEPENDENCIES(tserver tserver_proto)
+ADD_DEPENDENCIES(tserver krpc)
 
 # Tests
 ADD_KUDU_TEST(tablet_server-test)
