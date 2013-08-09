@@ -4,7 +4,13 @@
 #include <glog/logging.h>
 #include <iostream>
 
+#include "common/schema.h"
+#include "server/fsmanager.h"
+#include "server/metadata.h"
+#include "tablet/tablet.h"
 #include "tserver/tablet_server.h"
+#include "twitter-demo/twitter-schema.h"
+#include "util/env.h"
 
 DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7150",
              "Comma-separated list of addresses for the Tablet Server"
@@ -16,10 +22,44 @@ DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
 DEFINE_int32(tablet_server_num_service_threads, 10,
              "Number of RPC worker threads to run");
 
+using kudu::metadata::TabletMetadata;
+using kudu::tablet::Tablet;
 using kudu::tserver::TabletServer;
 
 namespace kudu {
 namespace tserver {
+
+// For the sake of demos, hard-code the twitter demo schema
+// here in the tablet server. This will go away as soon as
+// we have support for dynamically creating and dropping
+// tables.
+class TemporaryTabletsForDemos {
+ public:
+  TemporaryTabletsForDemos()
+    : env_(Env::Default()),
+      fs_manager_(env_, "/tmp/demo-tablets"),
+      twitter_schema_(twitter_demo::CreateTwitterSchema()) {
+
+    metadata::TabletMasterBlockPB master_block;
+    master_block.set_block_a("00000000000000000000000000000000");
+    master_block.set_block_b("11111111111111111111111111111111");
+    gscoped_ptr<TabletMetadata> meta(
+      new TabletMetadata(&fs_manager_, "Twitter", master_block));
+    twitter_tablet_.reset(new Tablet(meta.Pass(), twitter_schema_));
+    CHECK_OK(twitter_tablet_->CreateNew());
+  }
+
+  const shared_ptr<Tablet>& twitter_tablet() {
+    return twitter_tablet_;
+  }
+
+ private:
+  Env* env_;
+  FsManager fs_manager_;
+  Schema twitter_schema_;
+
+  shared_ptr<Tablet> twitter_tablet_;
+};
 
 static int TabletServerMain(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
@@ -38,6 +78,10 @@ static int TabletServerMain(int argc, char** argv) {
   TabletServer server(opts);
   LOG(INFO) << "Initializing tablet server...";
   CHECK_OK(server.Init());
+
+  LOG(INFO) << "Setting up demo tablets...";
+  TemporaryTabletsForDemos demo_setup;
+  server.RegisterTablet(demo_setup.twitter_tablet());
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());
