@@ -39,7 +39,6 @@ Status ThreadPool::Init(size_t num_threads) {
   closing_ = false;
   try {
     for (size_t i = 0; i < num_threads; i++) {
-      active_threads_++;
       threads_.push_back(
           new boost::thread(boost::bind(&ThreadPool::DispatchThread, this)));
     }
@@ -55,6 +54,7 @@ void ThreadPool::Shutdown() {
     boost::unique_lock<boost::mutex> unique_lock(lock_);
     closing_ = true;
     queue_.clear();
+    queue_changed_.notify_all();
 
     // The Runnable doesn't have Abort() so we must wait
     // and hopefully the abort is done outside before calling Shutdown().
@@ -63,7 +63,6 @@ void ThreadPool::Shutdown() {
     }
   }
 
-  queue_changed_.notify_all();
   BOOST_FOREACH(boost::thread *thread, threads_) {
     thread->join();
   }
@@ -78,8 +77,10 @@ void ThreadPool::SubmitFunc(const boost::function<void()>& func) {
 void ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   DCHECK_GT(threads_.size(), 0) << "No threads in the pool";
   boost::lock_guard<boost::mutex> guard(lock_);
-  queue_.push_back(task);
-  queue_changed_.notify_one();
+  if (!closing_) {
+    queue_.push_back(task);
+    queue_changed_.notify_one();
+  }
 }
 
 void ThreadPool::Wait() {
@@ -100,32 +101,35 @@ bool ThreadPool::TimedWait(const boost::system_time& time_until) {
 }
 
 void ThreadPool::DispatchThread() {
+  bool has_processed_task = false;
   while (true) {
     std::tr1::shared_ptr<Runnable> task;
     {
       boost::unique_lock<boost::mutex> unique_lock(lock_);
 
-      // Shutdown this thread
-      if (closing_) {
+      if (has_processed_task) {
         if (--active_threads_ == 0) {
           no_active_thread_.notify_all();
         }
+      }
+
+      // Shutdown this thread
+      if (closing_) {
         break;
       }
 
       // No pending task, wait...
       if (queue_.empty()) {
-        if (--active_threads_ == 0) {
-          no_active_thread_.notify_all();
-        }
         queue_changed_.wait(unique_lock);
-        active_threads_++;
+        has_processed_task = false;
         continue;
       }
 
       // Fetch a pending task
       task = queue_.front();
       queue_.pop_front();
+      active_threads_++;
+      has_processed_task = true;
     }
 
     // Execute the task

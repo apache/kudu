@@ -49,8 +49,7 @@ TEST(TestThreadPool, TestSimpleTasks) {
   thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter));
   thread_pool.Submit(task);
   thread_pool.Wait();
-  ASSERT_EQ(base::subtle::NoBarrier_Load(&counter), 10 + 15 + 20 + 15);
-
+  ASSERT_EQ(10 + 15 + 20 + 15, base::subtle::NoBarrier_Load(&counter));
   thread_pool.Shutdown();
 }
 
