@@ -49,6 +49,7 @@ class TestPredicate : public KuduTest {
 
 TEST_F(TestPredicate, TestSelectionVector) {
   SelectionVector selvec(10);
+  selvec.SetAllTrue();
   ASSERT_TRUE(selvec.IsRowSelected(0));
   ASSERT_TRUE(selvec.IsRowSelected(9));
   ASSERT_EQ(10, selvec.CountSelected());
@@ -63,6 +64,7 @@ TEST_F(TestPredicate, TestSelectionVector) {
 
 TEST_F(TestPredicate, TestColumnRange) {
   SelectionVector selvec(n_rows_);
+  selvec.SetAllTrue();
   ASSERT_EQ(100, selvec.CountSelected());
 
   // Apply predicate 20 <= col0 <= 29

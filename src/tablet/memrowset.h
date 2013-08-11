@@ -355,6 +355,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
     // also above TODO applies to a lot of other CopyNextRows cases
     DCHECK(!projection_mapping_.empty()) << "not initted";
 
+    dst->selection_vector()->SetAllTrue();
+
     DCHECK_EQ(dst->nrows(), prepared_count_);
     Slice k, v;
     size_t fetched = 0;

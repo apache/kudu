@@ -707,7 +707,6 @@ class TabletTestBase : public KuduTabletTest {
   // Iterate through the full table, stringifying the resulting rows
   // into the given vector. This is only useful in tests which insert
   // a very small number of rows.
-  // The output is sorted by key.
   Status IterateToStringList(vector<string> *out) {
     gscoped_ptr<RowwiseIterator> iter;
     RETURN_NOT_OK(this->tablet_->NewRowIterator(this->schema_, &iter));

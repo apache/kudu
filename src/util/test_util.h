@@ -39,7 +39,7 @@ class KuduTest : public ::testing::Test {
     test_dir_ += StringPrintf(
       "/%s.%s.%ld",
       StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
-      test_info->name(),
+      StringReplace(test_info->name(), "/", "_", true).c_str(),
       time(NULL));
 
     ASSERT_STATUS_OK(env_->CreateDir(test_dir_));

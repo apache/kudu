@@ -67,11 +67,19 @@ class RowwiseIterator : public virtual BatchedIterator {
   //
   // Any indirect data (eg strings) are copied into the destination block's
   // arena, if non-null.
+  //
+  // The destination row block's selection vector is set to indicate whether
+  // each row in the result has passed scan predicates and is still live in
+  // the current MVCC snapshot. The iterator implementation should not assume
+  // that the selection vector has been initialized prior to this call.
   virtual Status MaterializeBlock(RowBlock *dst) = 0;
 
   // One-shot function to prepare, materialize, and copy a block of data
   // from 'iter' into the provided row block. The 'dst' block is resized
   // to the number of rows successfully copied.
+  //
+  // It is not necessary to initialize the selection vector of the RowBlock
+  // prior to using this call.
   static Status CopyBlock(RowwiseIterator *iter, RowBlock *dst);
 
 };

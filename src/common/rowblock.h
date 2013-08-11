@@ -17,11 +17,13 @@ namespace kudu {
 class RowBlockRow;
 
 // Bit-vector representing the selection status of each row in a row block.
-// Initially, this vector will be set to 1 for every row, and as predicates
-// are applied, the bits may be changed to 0 for any row which does not match
-// a predicate.
+//
+// When scanning through data, a 1 bit in the selection vector indicates that
+// the given row is live and has passed all predicates.
 class SelectionVector {
  public:
+  // Construct a new vector. The bits are initially in an indeterminate state.
+  // Call SetAllTrue() if you require all rows to be initially selected.
   explicit SelectionVector(size_t row_capacity);
 
   // Construct a vector which shares the underlying memory of another vector,
