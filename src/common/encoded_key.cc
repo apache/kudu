@@ -115,4 +115,26 @@ bool EncodedKeyRange::ContainsKey(const Slice &key) const {
   return true;
 }
 
+string EncodedKeyRange::ToString() const {
+  string ret;
+  if (has_lower_bound() && has_upper_bound()) {
+    ret.append("encoded key BETWEEN ");
+    ret.append(lower_bound_->encoded_key().ToDebugString());
+    ret.append(" AND ");
+    ret.append(upper_bound_->encoded_key().ToDebugString());
+    return ret;
+  } else if (has_lower_bound()) {
+    ret.append("encoded key >= ");
+    ret.append(lower_bound_->encoded_key().ToDebugString());
+    return ret;
+  } else if (has_upper_bound()) {
+    ret.append("encoded key <= ");
+    ret.append(upper_bound_->encoded_key().ToDebugString());
+  } else {
+    LOG(DFATAL) << "Invalid key!";
+    ret = "invalid key range";
+  }
+  return ret;
+}
+
 } // namespace kudu

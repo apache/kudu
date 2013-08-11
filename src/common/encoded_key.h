@@ -103,6 +103,11 @@ class EncodedKeyRange {
 
   bool ContainsKey(const Slice &key) const;
 
+  // Return a string for debugging. This outputs the encoded key format,
+  // rather than a user-interpretable string, so shouldn't be used in
+  // user-facing contexts.
+  std::string ToString() const;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(EncodedKeyRange);
 
