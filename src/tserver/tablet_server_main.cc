@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <iostream>
 
+#include "server/rpc_server.h"
 #include "tserver/tablet_server.h"
 
 DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7150",
@@ -29,7 +30,7 @@ static int TabletServerMain(int argc, char** argv) {
     return 1;
   }
 
-  TabletServerOptions opts;
+  RpcServerOptions opts;
   opts.rpc_bind_addresses = FLAGS_tablet_server_rpc_bind_addresses;
   opts.num_rpc_reactors = FLAGS_tablet_server_num_rpc_reactors;
   opts.num_acceptors_per_address = FLAGS_tablet_server_num_acceptors_per_address;

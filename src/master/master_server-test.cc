@@ -10,6 +10,7 @@
 #include "gutil/strings/join.h"
 #include "master/master_server.h"
 #include "master/master.proxy.h"
+#include "server/rpc_server.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 #include "util/test_util.h"
@@ -32,7 +33,7 @@ class MasterServerTest : public KuduTest {
   // server.
   void StartTestServer(Sockaddr *addr, gscoped_ptr<MasterServer>* ret) {
     // Start server on loopback.
-    MasterServerOptions opts;
+    RpcServerOptions opts;
     opts.rpc_bind_addresses = "127.0.0.1:0";
 
     gscoped_ptr<MasterServer> server(new MasterServer(opts));
@@ -41,7 +42,7 @@ class MasterServerTest : public KuduTest {
 
     // Find the ephemeral address of the server.
     vector<Sockaddr> addrs;
-    server->GetBoundAddresses(&addrs);
+    server->rpc_server()->GetBoundAddresses(&addrs);
     ASSERT_TRUE(!addrs.empty());
 
     *addr = addrs[0];

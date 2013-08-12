@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "master/master_server.h"
+#include "server/rpc_server.h"
 
 DEFINE_string(master_server_rpc_bind_addresses, "0.0.0.0:7150",
              "Comma-separated list of addresses for the Master Server"
@@ -29,7 +30,7 @@ static int MasterServerMain(int argc, char** argv) {
     return 1;
   }
 
-  MasterServerOptions opts;
+  RpcServerOptions opts;
   opts.rpc_bind_addresses = FLAGS_master_server_rpc_bind_addresses;
   opts.num_rpc_reactors = FLAGS_master_server_num_rpc_reactors;
   opts.num_acceptors_per_address = FLAGS_master_server_num_acceptors_per_address;

@@ -16,6 +16,9 @@
 
 namespace kudu {
 
+class RpcServer;
+struct RpcServerOptions;
+
 namespace rpc {
 class Messenger;
 class ServicePool;
@@ -27,25 +30,11 @@ class Tablet;
 
 namespace tserver {
 
-// Server-specific options. Typically, when the tablet server is launched,
-// these options are parsed from gflags by TabletServerMain.
-//
-// See the flags at the top of tablet_server_main for descriptions
-// of each option.
-struct TabletServerOptions {
-  TabletServerOptions();
-
-  string rpc_bind_addresses;
-  uint32_t num_rpc_reactors;
-  uint32_t num_acceptors_per_address;
-  uint32_t num_service_threads;
-};
-
 class TabletServer {
  public:
   static const uint16_t kDefaultPort = 7150;
 
-  explicit TabletServer(const TabletServerOptions& opts);
+  explicit TabletServer(const RpcServerOptions& opts);
   ~TabletServer();
 
   Status Init();
@@ -68,17 +57,11 @@ class TabletServer {
  private:
   friend class TabletServerTest;
 
-  Status StartRpcServer();
+  RpcServer *rpc_server() const { return rpc_server_.get(); }
 
-  const TabletServerOptions options_;
   bool initted_;
 
-  // Parsed addresses to bind RPC to. Set by Init()
-  std::vector<Sockaddr> rpc_bind_addresses_;
-
-  // RPC messenger.
-  std::tr1::shared_ptr<rpc::Messenger> rpc_messenger_;
-  gscoped_ptr<rpc::ServicePool> rpc_service_pool_;
+  gscoped_ptr<RpcServer> rpc_server_;
 
   // The singular hosted tablet.
   // TODO: This will be replaced with some kind of map of tablet ID to

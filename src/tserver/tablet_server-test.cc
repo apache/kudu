@@ -12,6 +12,7 @@
 #include "gutil/strings/join.h"
 #include "server/metadata.h"
 #include "server/metadata_util.h"
+#include "server/rpc_server.h"
 #include "tablet/tablet.h"
 #include "tserver/tablet_server.h"
 #include "tserver/tserver.proxy.h"
@@ -68,7 +69,7 @@ class TabletServerTest : public KuduTest {
   // server.
   void StartTestServer(Sockaddr *addr, gscoped_ptr<TabletServer>* ret) {
     // Start server on loopback.
-    TabletServerOptions opts;
+    RpcServerOptions opts;
     opts.rpc_bind_addresses = "127.0.0.1:0";
 
     gscoped_ptr<TabletServer> server(new TabletServer(opts));
@@ -77,7 +78,7 @@ class TabletServerTest : public KuduTest {
 
     // Find the ephemeral address of the server.
     vector<Sockaddr> addrs;
-    server->GetBoundAddresses(&addrs);
+    server->rpc_server()->GetBoundAddresses(&addrs);
     ASSERT_TRUE(!addrs.empty());
 
     *addr = addrs[0];

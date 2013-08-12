@@ -20,8 +20,8 @@ SET(TSERVER_SRCS
 
 add_library(tserver ${TSERVER_SRCS} ${TSERVER_PROTO_SRCS} ${TSERVER_KRPC_SRCS})
 ADD_DEPENDENCIES(tserver kudu_common)
-ADD_DEPENDENCIES(tserver tablet)
 ADD_DEPENDENCIES(tserver server)
+ADD_DEPENDENCIES(tserver tablet)
 ADD_DEPENDENCIES(tserver tserver_proto)
 ADD_DEPENDENCIES(tserver krpc)
 
