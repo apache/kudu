@@ -227,7 +227,7 @@ endif()
 # Linker setup
 ############################################################
 SET(KUDU_DEP_LIBS ${LIBS})
-SET(KUDU_LINK_LIBS tserver tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
+SET(KUDU_LINK_LIBS tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
 SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
@@ -291,6 +291,9 @@ set(LIBS ${LIBS} ${TSERVER_LIBS})
 
 add_subdirectory(src/master)
 set(LIBS ${LIBS} ${MASTER_LIBS})
+
+add_subdirectory(src/client)
+set(LIBS ${LIBS} ${CLIENT_LIBS})
 
 add_subdirectory(src/experiments)
 

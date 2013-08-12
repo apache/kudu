@@ -9,7 +9,7 @@ KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES tserver.proto)
 
-add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
+add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS} ${TSERVER_KRPC_SRCS})
 ADD_DEPENDENCIES(tserver_proto kudu_common)
 
 SET(TSERVER_SRCS
@@ -19,7 +19,9 @@ SET(TSERVER_SRCS
   tablet_service.cc
 )
 
-add_library(tserver ${TSERVER_SRCS} ${TSERVER_PROTO_SRCS} ${TSERVER_KRPC_SRCS})
+add_library(tserver ${TSERVER_SRCS})
+target_link_libraries(tserver tserver_proto)
+
 ADD_DEPENDENCIES(tserver kudu_common)
 ADD_DEPENDENCIES(tserver server)
 ADD_DEPENDENCIES(tserver tablet)

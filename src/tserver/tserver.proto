@@ -37,12 +37,12 @@ message TabletServerErrorPB {
   }
 
   // The error code.
-  optional Code code = 1 [ default = UNKNOWN_ERROR ];
+  required Code code = 1 [ default = UNKNOWN_ERROR ];
 
   // The Status object for the error. This will include a textual
   // message that may be more useful to present in log messages, etc,
   // though its error code is less specific.
-  optional AppStatusPB status = 2;
+  required AppStatusPB status = 2;
 }
 
 
