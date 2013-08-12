@@ -14,6 +14,7 @@
 #include "server/metadata_util.h"
 #include "server/rpc_server.h"
 #include "tablet/tablet.h"
+#include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
 #include "tserver/tserver.proxy.h"
 #include "util/net/sockaddr.h"
@@ -23,7 +24,6 @@
 
 using std::string;
 using std::tr1::shared_ptr;
-using kudu::metadata::TabletMetadata;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -46,15 +46,15 @@ class TabletServerTest : public KuduTest {
     KuduTest::SetUp();
 
     // Start server.
-    Sockaddr addr;
-    ASSERT_NO_FATAL_FAILURE(StartTestServer(&addr, &server_));
+    mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
+    ASSERT_STATUS_OK(mini_server_->Start());
 
     // Set up a tablet inside the server.
-    ASSERT_NO_FATAL_FAILURE(CreateTestTablet(&tablet_));
-    server_->RegisterTablet(tablet_);
+    ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
+    ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_));
 
     // Connect to it.
-    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(addr, &proxy_));
+    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_addr(), &proxy_));
   }
 
   virtual void TearDown() {
@@ -64,28 +64,8 @@ class TabletServerTest : public KuduTest {
   }
 
  private:
-  // Start a tablet server running on the loopback interface and
-  // an ephemeral port. Sets *addr to the address of the started
-  // server.
-  void StartTestServer(Sockaddr *addr, gscoped_ptr<TabletServer>* ret) {
-    // Start server on loopback.
-    RpcServerOptions opts;
-    opts.rpc_bind_addresses = "127.0.0.1:0";
 
-    gscoped_ptr<TabletServer> server(new TabletServer(opts));
-    ASSERT_STATUS_OK(server->Init());
-    ASSERT_STATUS_OK(server->Start());
-
-    // Find the ephemeral address of the server.
-    vector<Sockaddr> addrs;
-    server->rpc_server()->GetBoundAddresses(&addrs);
-    ASSERT_TRUE(!addrs.empty());
-
-    *addr = addrs[0];
-    ret->swap(server);
-  }
-
-  void CreateClientProxy(Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy) {
+  void CreateClientProxy(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy) {
     if (!client_messenger_) {
       MessengerBuilder bld("Client");
       ASSERT_STATUS_OK(bld.Build(&client_messenger_));
@@ -93,20 +73,9 @@ class TabletServerTest : public KuduTest {
     proxy->reset(new TabletServerServiceProxy(client_messenger_, addr));
   }
 
-  void CreateTestTablet(shared_ptr<Tablet>* tablet) {
-    fs_manager_.reset(new FsManager(env_.get(), GetTestPath("test-tablet")));
-
-    metadata::TabletMasterBlockPB master_block;
-    master_block.set_tablet_id("TestTablet");
-    master_block.set_block_a("00000000000000000000000000000000");
-    master_block.set_block_b("11111111111111111111111111111111");
-    gscoped_ptr<TabletMetadata> meta(
-      new TabletMetadata(fs_manager_.get(), master_block));
-    tablet->reset(new Tablet(meta.Pass(), schema_));
-    ASSERT_STATUS_OK((*tablet)->CreateNew());
-  }
-
  protected:
+  static const char* kTabletId;
+
   void AddTestRowToBlockPB(uint32_t key, uint32_t int_val, const string& string_val,
                            RowwiseRowBlockPB* block) {
     RowBuilder rb(schema_);
@@ -119,12 +88,13 @@ class TabletServerTest : public KuduTest {
   Schema schema_;
 
   shared_ptr<Messenger> client_messenger_;
-  gscoped_ptr<FsManager> fs_manager_;
 
-  gscoped_ptr<TabletServer> server_;
+  gscoped_ptr<MiniTabletServer> mini_server_;
   shared_ptr<Tablet> tablet_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
 };
+
+const char* TabletServerTest::kTabletId = "TestTablet";
 
 
 TEST_F(TabletServerTest, TestPingServer) {
@@ -138,10 +108,7 @@ TEST_F(TabletServerTest, TestPingServer) {
 TEST_F(TabletServerTest, TestInsert) {
   InsertRequestPB req;
 
-  // Set an empty tablet ID in the request. This currently has no data,
-  // but we have to create an empty one to avoid an error, since it's
-  // a required field.
-  req.mutable_tablet_id();
+  req.set_tablet_id(kTabletId);
 
   InsertResponsePB resp;
   RpcController controller;

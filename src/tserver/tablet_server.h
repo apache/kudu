@@ -42,10 +42,6 @@ class TabletServer {
 
   string ToString() const;
 
-  // Return the addresses that this server has successfully
-  // bound to. Requires that the server has been Start()ed.
-  void GetBoundAddresses(std::vector<Sockaddr>* addresses);
-
   // Register the given tablet to be managed by this tablet server.
   void RegisterTablet(const std::tr1::shared_ptr<tablet::Tablet>& tablet);
 
@@ -54,10 +50,10 @@ class TabletServer {
   bool LookupTablet(const string& tablet_id,
                     std::tr1::shared_ptr<tablet::Tablet>* tablet) const;
 
+  const RpcServer *rpc_server() const { return rpc_server_.get(); }
+
  private:
   friend class TabletServerTest;
-
-  RpcServer *rpc_server() const { return rpc_server_.get(); }
 
   bool initted_;
 

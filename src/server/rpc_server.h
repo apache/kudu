@@ -35,7 +35,7 @@ class RpcServer {
 
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
-  void GetBoundAddresses(std::vector<Sockaddr>* addresses);
+  void GetBoundAddresses(std::vector<Sockaddr>* addresses) const;
 
  private:
   const RpcServerOptions options_;

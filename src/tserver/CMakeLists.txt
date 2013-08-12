@@ -13,6 +13,7 @@ add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
 ADD_DEPENDENCIES(tserver_proto kudu_common)
 
 SET(TSERVER_SRCS
+  mini_tablet_server.cc
   scanners.cc
   tablet_server.cc
   tablet_service.cc

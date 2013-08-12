@@ -84,7 +84,7 @@ void RpcServer::Shutdown() {
   }
 }
 
-void RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) {
+void RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
   using rpc::AcceptorPoolInfo;
 
   CHECK(initted_);
