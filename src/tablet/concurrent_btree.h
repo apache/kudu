@@ -1650,6 +1650,12 @@ class CBTreeIterator {
     idx_in_leaf_ = new_index_in_leaf;
   }
 
+  // Get the key at a specific leaf node
+  Slice GetKeyInLeaf(size_t idx) const {
+    CHECK(seeked_);
+    return leaf_to_scan_->GetKey(idx);
+  }
+
   // Get the given indexed entry in the current leaf node.
   void GetEntryInLeaf(size_t idx, Slice *key, Slice *val) {
     CHECK(seeked_);

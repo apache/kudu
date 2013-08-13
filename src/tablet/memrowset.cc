@@ -255,5 +255,162 @@ Status MemRowSet::GetBounds(Slice *min_encoded_key,
   return Status::NotSupported("");
 }
 
+Status MemRowSet::Iterator::Init(ScanSpec *spec) {
+  RETURN_NOT_OK(
+      projection_.GetProjectionFrom(memrowset_->schema(), &projection_mapping_));
+  if (spec != NULL && spec->has_encoded_ranges()) {
+    boost::optional<const Slice &> max_lower_bound;
+    BOOST_FOREACH(const EncodedKeyRange *range, spec->encoded_ranges()) {
+      if (range->has_lower_bound()) {
+        bool exact;
+        const Slice &lower_bound = range->lower_bound().encoded_key();
+        if (!max_lower_bound.is_initialized() ||
+              lower_bound.compare(*max_lower_bound) > 0) {
+          if (!iter_->SeekAtOrAfter(lower_bound, &exact)) {
+            // Lower bound is after the end of the key range, no rows will
+            // pass the predicate so we can stop the scan right away.
+            state_ = kFinished;
+            return Status::OK();
+          }
+          max_lower_bound.reset(lower_bound);
+        }
+      }
+      if (range->has_upper_bound()) {
+        const Slice &upper_bound = range->upper_bound().encoded_key();
+        if (!has_upper_bound() || upper_bound.compare(*upper_bound_) < 0) {
+          upper_bound_.reset(upper_bound);
+        }
+      }
+      if (VLOG_IS_ON(1)) {
+        Schema key_schema = memrowset_->schema().CreateKeyProjection();
+        VLOG_IF(1, max_lower_bound.is_initialized())
+            << "Pushed MemRowSet lower bound value "
+            << range->lower_bound().Stringify(key_schema);
+        VLOG_IF(1, has_upper_bound())
+            << "Pushed MemRowSet upper bound value "
+            << range->upper_bound().Stringify(key_schema);
+      }
+    }
+    if (max_lower_bound.is_initialized()) {
+      bool exact;
+      iter_->SeekAtOrAfter(*max_lower_bound, &exact);
+    }
+  }
+  return Status::OK();
+}
+
+Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
+  CHECK(!projection_mapping_.empty()) << "not initted";
+
+  if (key.size() > 0) {
+    ConstContiguousRow row_slice(memrowset_->schema(), key);
+    memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
+  } else {
+    // Seeking to empty key shouldn't try to run any encoding.
+    tmp_buf.resize(0);
+  }
+
+  if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact) ||
+      key.size() == 0) {
+    return Status::OK();
+  } else {
+    return Status::NotFound("no match in memrowset");
+  }
+}
+
+Status MemRowSet::Iterator::PrepareBatch(size_t *nrows) {
+  DCHECK(!projection_mapping_.empty()) << "not initted";
+  if (PREDICT_FALSE(!iter_->IsValid())) {
+    *nrows = 0;
+    return Status::NotFound("end of iter");
+  }
+
+  if (PREDICT_FALSE(state_ != kScanning)) {
+    // The scan is finished as we've gone past the upper bound
+    *nrows = 0;
+    return Status::OK();
+  }
+
+  size_t rem_in_leaf = iter_->remaining_in_leaf();
+  if (PREDICT_TRUE(rem_in_leaf < *nrows)) {
+    *nrows = rem_in_leaf;
+  }
+  prepared_count_ = *nrows;
+  prepared_idx_in_leaf_ = iter_->index_in_leaf();
+  if (has_upper_bound() && prepared_count_ > 0) {
+    size_t end_idx = prepared_idx_in_leaf_ + prepared_count_ - 1;
+    if (out_of_bounds(iter_->GetKeyInLeaf(end_idx))) {
+      // At the end of this batch we will have exceeded the upper bound
+      // so we will not be able to Prepare any more batches.
+      state_ = kLastBatch;
+    }
+  }
+  return Status::OK();
+}
+
+Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
+  // TODO: add dcheck that dst->schema() matches our schema
+  // also above TODO applies to a lot of other CopyNextRows cases
+  DCHECK(!projection_mapping_.empty()) << "not initted";
+
+  dst->selection_vector()->SetAllTrue();
+
+  DCHECK_EQ(dst->nrows(), prepared_count_);
+  Slice k, v;
+  size_t fetched = 0;
+  for (size_t i = prepared_idx_in_leaf_; fetched < prepared_count_; i++) {
+    RowBlockRow dst_row = dst->row(fetched);
+
+    // Copy the row into the destination, including projection
+    // and relocating slices.
+    // TODO: can we share some code here with CopyRowToArena() from row.h
+    // or otherwise put this elsewhere?
+    iter_->GetEntryInLeaf(i, &k, &v);
+
+    MRSRow row(memrowset_.get(), v);
+    if (mvcc_snap_.IsCommitted(row.insertion_txid()) && state_ != kFinished) {
+      if (state_ == kLastBatch && has_upper_bound() && out_of_bounds(k)) {
+        state_ = kFinished;
+        BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
+      } else {
+        RETURN_NOT_OK(ProjectRow(row, projection_mapping_, &dst_row, dst->arena()));
+
+        // Roll-forward MVCC for committed updates.
+        RETURN_NOT_OK(ApplyMutationsToProjectedRow(
+            row.header_->mutation_head, &dst_row, dst->arena()));
+      }
+    } else {
+      // This row was not yet committed in the current MVCC snapshot or we have
+      // reached upper bounds of the scan, so zero the selection bit -- this
+      // causes it to not show up in any result set.
+      BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
+
+      // In debug mode, fill the row data for easy debugging
+      #ifndef NDEBUG
+      if (state_ != kFinished) {
+        dst_row.OverwriteWithPattern("MVCCMVCCMVCCMVCCMVCCMVCC"
+                                     "MVCCMVCCMVCCMVCCMVCCMVCC"
+                                     "MVCCMVCCMVCCMVCCMVCCMVCC");
+      }
+      #endif
+    }
+
+    // advance to next row
+    fetched++;
+  }
+  return Status::OK();
+}
+
+Status MemRowSet::Iterator::FinishBatch() {
+  for (int i = 0; i < prepared_count_; i++) {
+    iter_->Next();
+  }
+  prepared_count_ = 0;
+  if (state_ == kLastBatch) {
+    state_ = kFinished;
+  }
+  return Status::OK();
+}
+
 } // namespace tablet
 } // namespace kudu

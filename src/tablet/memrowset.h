@@ -306,127 +306,32 @@ class MemRowSet::Iterator : public RowwiseIterator {
  public:
   virtual ~Iterator() {}
 
-  virtual Status Init(ScanSpec *spec) {
-    // TODO: if a lower bound predicate exists, position the iterator
-    // at the lower bound.
-    RETURN_NOT_OK(projection_.GetProjectionFrom(
-                    memrowset_->schema(), &projection_mapping_));
-    spec_ = spec;
-    return Status::OK();
+  virtual Status Init(ScanSpec *spec);
+
+  Status SeekAtOrAfter(const Slice &key, bool *exact);
+
+  virtual Status PrepareBatch(size_t *nrows);
+
+  bool has_upper_bound() const {
+    return upper_bound_.is_initialized();
   }
 
-  Status SeekAtOrAfter(const Slice &key, bool *exact) {
-    CHECK(!projection_mapping_.empty()) << "not initted";
+  bool out_of_bounds(const Slice &key) const {
+    DCHECK(has_upper_bound()) << "No upper bound set!";
 
-    if (key.size() > 0) {
-      ConstContiguousRow row_slice(memrowset_->schema(), key);
-      memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
-    } else {
-      // Seeking to empty key shouldn't try to run any encoding.
-      tmp_buf.resize(0);
-    }
-
-    if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact) ||
-        key.size() == 0) {
-      return Status::OK();
-    } else {
-      return Status::NotFound("no match in memrowset");
-    }
-  }
-
-  virtual Status PrepareBatch(size_t *nrows) {
-    DCHECK(!projection_mapping_.empty()) << "not initted";
-    if (PREDICT_FALSE(!iter_->IsValid())) {
-      *nrows = 0;
-      return Status::NotFound("end of iter");
-    }
-
-    size_t rem_in_leaf = iter_->remaining_in_leaf();
-    if (PREDICT_TRUE(rem_in_leaf < *nrows)) {
-      *nrows = rem_in_leaf;
-    }
-    prepared_count_ = *nrows;
-    prepared_idx_in_leaf_ = iter_->index_in_leaf();
-    return Status::OK();
+    return key.compare(*upper_bound_) > 0;
   }
 
   size_t remaining_in_leaf() const {
     return iter_->remaining_in_leaf();
   }
 
-  virtual Status MaterializeBlock(RowBlock *dst) {
-    // TODO: add dcheck that dst->schema() matches our schema
-    // also above TODO applies to a lot of other CopyNextRows cases
-    DCHECK(!projection_mapping_.empty()) << "not initted";
+  virtual Status MaterializeBlock(RowBlock *dst);
 
-    dst->selection_vector()->SetAllTrue();
-
-    DCHECK_EQ(dst->nrows(), prepared_count_);
-    Slice k, v;
-    size_t fetched = 0;
-    for (size_t i = prepared_idx_in_leaf_; fetched < prepared_count_; i++) {
-      RowBlockRow dst_row = dst->row(fetched);
-
-      // Copy the row into the destination, including projection
-      // and relocating slices.
-      // TODO: can we share some code here with CopyRowToArena() from row.h
-      // or otherwise put this elsewhere?
-      iter_->GetEntryInLeaf(i, &k, &v);
-
-      MRSRow row(memrowset_.get(), v);
-      if (mvcc_snap_.IsCommitted(row.insertion_txid())) {
-        bool include_row = true;
-        if (spec_ != NULL && spec_->has_encoded_ranges()) {
-          // Filter any keys excluded by the tablet layer
-          //
-          // TODO: if an upper bound exists, stop scanning after the
-          // upper bound.
-          BOOST_FOREACH(const EncodedKeyRange *range, spec_->encoded_ranges()) {
-            if (!range->ContainsKey(k)) {
-              include_row = false;
-              break;
-            }
-          }
-        }
-        if (!include_row) {
-          BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
-        } else {
-          RETURN_NOT_OK(ProjectRow(row, projection_mapping_, &dst_row, dst->arena()));
-
-          // Roll-forward MVCC for committed updates.
-          RETURN_NOT_OK(ApplyMutationsToProjectedRow(
-              row.header_->mutation_head, &dst_row, dst->arena()));
-        }
-      } else {
-        // This row was not yet committed in the current MVCC snapshot, so zero the selection
-        // bit -- this causes it to not show up in any result set.
-        BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
-
-        // In debug mode, fill the row data for easy debugging
-        #ifndef NDEBUG
-        dst_row.OverwriteWithPattern("MVCCMVCCMVCCMVCCMVCCMVCC"
-                                     "MVCCMVCCMVCCMVCCMVCCMVCC"
-                                     "MVCCMVCCMVCCMVCCMVCCMVCC");
-        #endif
-      }
-
-      // advance to next row
-      fetched++;
-    }
-
-    return Status::OK();
-  }
-
-  virtual Status FinishBatch() {
-    for (int i = 0; i < prepared_count_; i++) {
-      iter_->Next();
-    }
-    prepared_count_ = 0;
-    return Status::OK();
-  }
+  virtual Status FinishBatch();
 
   virtual bool HasNext() const {
-    return iter_->IsValid();
+    return state_ != kFinished && iter_->IsValid();
   }
 
   const MRSRow GetCurrentRow() const {
@@ -450,6 +355,16 @@ class MemRowSet::Iterator : public RowwiseIterator {
  private:
   friend class MemRowSet;
 
+  enum ScanState {
+    // Enumerated constants to indicate the iterator state:
+    kScanning = 0,  // We may continue fetching and returning values.
+    kLastBatch = 1, // Current batch contains the upper bound, we
+                    // may return all rows up to and including the upper bound,
+                    // but we may not prepare any further batches.
+    kFinished = 2   // We either know we can never reach the lower bound, or
+                    // we've exceeded the upper bound.
+  };
+
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
   Iterator(const shared_ptr<const MemRowSet> &mrs,
@@ -461,7 +376,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
       projection_(projection),
       mvcc_snap_(mvcc_snap),
       prepared_count_(0),
-      prepared_idx_in_leaf_(0) {
+      prepared_idx_in_leaf_(0),
+      state_(kScanning) {
     // TODO: various code assumes that a newly constructed iterator
     // is pointed at the beginning of the dataset. This causes a redundant
     // seek. Could make this lazy instead, or change the semantics so that
@@ -548,9 +464,13 @@ class MemRowSet::Iterator : public RowwiseIterator {
   // seek target.
   faststring tmp_buf;
 
-  // If there predicates have already been encoded at tablet level,
-  // we need to store the spec in order to access the encoded predicates.
-  ScanSpec *spec_;
+  // State of the scanner: indicates whether we should keep scanning/fetching,
+  // whether we've scanned the last batch, or whether we've reached the upper bounds
+  // or will never reach the lower bounds (no more rows can be returned)
+  ScanState state_;
+
+  // Pushed down encoded upper bound key, if any
+  boost::optional<const Slice &> upper_bound_;
 };
 
 inline const Schema& MRSRow::schema() const {
