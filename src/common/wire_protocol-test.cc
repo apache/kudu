@@ -7,6 +7,7 @@
 #include "common/schema.h"
 #include "common/wire_protocol.h"
 #include "util/status.h"
+#include "util/stopwatch.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 
@@ -22,6 +23,17 @@ class WireProtocolTest : public KuduTest {
               1) {
   }
 
+  void FillRowBlockWithTestRows(RowBlock* block) {
+    block->selection_vector()->SetAllTrue();
+
+    for (int i = 0; i < block->nrows(); i++) {
+      RowBlockRow row = block->row(i);
+      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 0)) = Slice("hello world col1");
+      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 1)) = Slice("hello world col2");
+      *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(schema_, 2)) = 12345;
+      row.cell(2).set_null(false);
+    }
+  }
  protected:
   Schema schema_;
 };
@@ -201,15 +213,11 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   // Set up a row block with a single row in it.
   Arena arena(1024, 1024 * 1024);
   RowBlock block(schema_, 1, &arena);
-  RowBlockRow row = block.row(0);
-  *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 0)) = Slice("hello world col1");
-  *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 1)) = Slice("hello world col2");
-  *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(schema_, 2)) = 12345;
-  row.cell(2).set_null(false);
+  FillRowBlockWithTestRows(&block);
 
   // Convert to PB.
   RowwiseRowBlockPB pb;
-  AddRowToRowBlockPB(row, &pb);
+  ConvertRowBlockToPB(block, &pb);
   SCOPED_TRACE(pb.DebugString());
 
   // Convert back to a row, ensure that the resulting row is the same
@@ -218,8 +226,26 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
   ASSERT_EQ(1, row_ptrs.size());
   ConstContiguousRow row_roundtripped(schema_, row_ptrs[0]);
-  ASSERT_EQ(schema_.DebugRow(row), schema_.DebugRow(row_roundtripped));
+  ASSERT_EQ(schema_.DebugRow(block.row(0)), schema_.DebugRow(row_roundtripped));
 }
+
+#ifdef NDEBUG
+TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
+  Arena arena(1024, 1024 * 1024);
+  RowBlock block(schema_, 100000, &arena);
+  FillRowBlockWithTestRows(&block);
+
+  RowwiseRowBlockPB pb;
+
+  const int kNumTrials = AllowSlowTests() ? 100 : 10;
+  LOG_TIMING(INFO, "Converting to PB") {
+    for (int i = 0; i < kNumTrials; i++) {
+      pb.Clear();
+      ConvertRowBlockToPB(block, &pb);
+    }
+  }
+}
+#endif
 
 // Test that trying to extract rows from an invalid block correctly returns
 // Corruption statuses.

@@ -172,18 +172,18 @@ class ContiguousRowHelper {
   static void InitNullsBitmap(const Schema& schema, uint8_t *row_data, size_t bitmap_size) {
     uint8_t *null_bitmap = row_data + schema.byte_size();
     for (size_t i = 0; i < bitmap_size; ++i) {
-      null_bitmap[i] = 0xff;
+      null_bitmap[i] = 0x00;
     }
   }
 
   static bool is_null(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
     DCHECK(schema.column(col_idx).is_nullable());
-    return !BitmapTest(row_data + schema.byte_size(), col_idx);
+    return BitmapTest(row_data + schema.byte_size(), col_idx);
   }
 
   static void SetCellIsNull(const Schema& schema, uint8_t *row_data, size_t col_idx, bool is_null) {
     uint8_t *null_bitmap = row_data + schema.byte_size();
-    BitmapChange(null_bitmap, col_idx, !is_null);
+    BitmapChange(null_bitmap, col_idx, is_null);
   }
 
   static const uint8_t *cell_ptr(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
@@ -438,7 +438,7 @@ class RowBuilder {
 
   void AddNull() {
     CHECK(schema_.column(col_idx_).is_nullable());
-    BitmapClear(buf_ + schema_.byte_size(), col_idx_);
+    BitmapSet(buf_ + schema_.byte_size(), col_idx_);
     Advance();
   }
 

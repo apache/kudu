@@ -63,6 +63,10 @@ class SelectionVector {
     return &bitmap_[0];
   }
 
+  const uint8_t *bitmap() const {
+    return &bitmap_[0];
+  }
+
   // Set all bits in the bitmap to 1
   void SetAllTrue() {
     // Initially all rows should be selected.
@@ -143,6 +147,8 @@ class RowBlock {
     return ColumnBlock(col_schema.type_info(), nulls_bitmap, col_data, nrows, arena_);
   }
 
+  // Return the number of rows in the row block. Note that this includes
+  // rows which were filtered out by the selection vector.
   size_t nrows() const { return nrows_; }
 
   // Zero the memory pointed to by this row block.

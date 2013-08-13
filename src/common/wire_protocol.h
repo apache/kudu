@@ -11,6 +11,7 @@ namespace kudu {
 
 class ConstContiguousRow;
 class ColumnSchema;
+class RowBlock;
 class RowBlockRow;
 class Schema;
 
@@ -46,7 +47,15 @@ Status SchemaToColumnPBs(
 // All data (both direct and indirect) is copied into the protobuf by this method,
 // so the original row may be destroyed safely after this returns.
 void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb);
+
+// Same as above, but for RowBlockRow. Typically, one should use ConvertRowBlockToPB
+// below, rather than looping through this function.
+// TODO: remove it entirely?
 void AddRowToRowBlockPB(const RowBlockRow& row, RowwiseRowBlockPB* pb);
+
+// Similar to the above, but converts a whole RowBlock at a time.
+// This only converts those rows whose selection vector entry is true.
+void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb);
 
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.
