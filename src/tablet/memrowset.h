@@ -194,6 +194,11 @@ class MemRowSet : public RowSet,
     return &compact_flush_lock_;
   }
 
+  // MemRowSets are never available for compaction, currently.
+  virtual bool IsAvailableForCompaction() {
+    return false;
+  }
+
   // Return true if there are no entries in the memrowset.
   bool empty() const {
     return tree_.empty();

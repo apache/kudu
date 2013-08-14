@@ -101,7 +101,7 @@ class RowSet {
   // the current state of the compact_flush_lock. This should only be
   // used under the Tablet's compaction selection lock, or else the
   // lock status may change at any point.
-  bool IsAvailableForCompaction() {
+  virtual bool IsAvailableForCompaction() {
     // Try to obtain the lock. If we don't succeed, it means the rowset
     // was already locked for compaction by some other compactor thread,
     // or it is a RowSet type which can't be used as a compaction input.

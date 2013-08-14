@@ -65,6 +65,7 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
     key_schema_(schema.CreateKeyProjection()),
     metadata_(metadata.Pass()),
     memrowset_(new MemRowSet(schema)),
+    rowsets_(new RowSetTree()),
     open_(false) {
   compaction_policy_.reset(CreateCompactionPolicy());
 }
@@ -75,7 +76,7 @@ Tablet::~Tablet() {
 Status Tablet::CreateNew() {
   CHECK(!open_) << "already open";
   RETURN_NOT_OK(metadata_->Create());
-  rowsets_.Reset(RowSetVector());
+  rowsets_->Reset(RowSetVector());
   open_ = true;
   return Status::OK();
 }
@@ -101,7 +102,7 @@ Status Tablet::Open() {
     rowsets_opened.push_back(rowset);
   }
 
-  rowsets_.Reset(rowsets_opened);
+  rowsets_->Reset(rowsets_opened);
 
   open_ = true;
   return Status::OK();
@@ -143,7 +144,7 @@ Status Tablet::Insert(const ConstContiguousRow& row) {
   // RowSets
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
-    rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
+    rowsets_->FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
 
     BOOST_FOREACH(const RowSet *rowset, to_check) {
       bool present = false;
@@ -228,7 +229,7 @@ Status Tablet::MutateRow(const ConstContiguousRow& row_key,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   vector<RowSet *> to_check;
-  rowsets_.FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
+  rowsets_->FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
     s = rs->MutateRow(tx.txid(), probe, update);
     if (s.ok() || !s.IsNotFound()) {
@@ -257,7 +258,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
   // the rowsets that were included in the compaction
   int num_replaced = 0;
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_->all_rowsets()) {
     // Determine if it should be removed
     bool should_remove = false;
     BOOST_FOREACH(const shared_ptr<RowSet> &l_input, old_rowsets) {
@@ -276,7 +277,9 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
 
   // Then push the new rowsets on the end.
   std::copy(new_rowsets.begin(), new_rowsets.end(), std::back_inserter(post_swap));
-  rowsets_.Reset(post_swap);
+  shared_ptr<RowSetTree> new_tree(new RowSetTree());
+  new_tree->Reset(post_swap);
+  rowsets_.swap(new_tree);
 
   if (snap_under_lock != NULL) {
     *snap_under_lock = MvccSnapshot(mvcc_);
@@ -376,7 +379,15 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  // Grab a local reference to the current RowSetTree. This is to avoid
+  // holding the component_lock_ for too long. See the comment on component_lock_
+  // in tablet.h for details on why that would be bad.
+  shared_ptr<RowSetTree> rowsets_copy;
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    rowsets_copy = rowsets_;
+  }
+
   boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
   CHECK_EQ(picked->num_rowsets(), 0);
 
@@ -384,18 +395,21 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 
   if (flags & FORCE_COMPACT_ALL) {
     // Compact all rowsets, regardless of policy.
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_.all_rowsets()) {
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
       if (rs->IsAvailableForCompaction()) {
         picked_set.insert(rs.get());
       }
     }
   } else {
     // Let the policy decide which rowsets to compact.
-    RETURN_NOT_OK(compaction_policy_->PickRowSets(rowsets_, &picked_set));
+    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set));
   }
+  int num_picked = picked_set.size();
 
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_.all_rowsets()) {
-    if (!ContainsKey(picked_set, rs.get())) {
+  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
+    if (picked_set.erase(rs.get()) == 0) {
+      // Not picked.
       continue;
     }
 
@@ -411,6 +425,18 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 
     // Push the lock on our scoped list, so we unlock when done.
     picked->AddRowSet(rs, lock);
+  }
+
+  // When we iterated through the current rowsets, we should have found all of the
+  // rowsets that we picked. If we didn't, that implies that some other thread swapped
+  // them out while we were making our selection decision -- that's not possible
+  // since we only picked rowsets that were marked as available for compaction.
+  if (!picked_set.empty()) {
+    BOOST_FOREACH(const RowSet* not_found, picked_set) {
+      LOG(ERROR) << "Rowset selected for compaction but not available anymore: "
+                 << not_found->ToString();
+    }
+    LOG(FATAL) << "Was unable to find all rowsets selected for compaction";
   }
   return Status::OK();
 }
@@ -574,7 +600,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
   LOG_STRING(INFO, lines) << "MRS " << memrowset_->ToString() << ":";
   RETURN_NOT_OK(memrowset_->DebugDump(lines));
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_->all_rowsets()) {
     LOG_STRING(INFO, lines) << "RowSet " << rs->ToString() << ":";
     RETURN_NOT_OK(rs->DebugDump(lines));
   }
@@ -606,9 +632,9 @@ Status Tablet::CaptureConsistentIterators(
     // TODO : support open-ended intervals
     if (range.has_lower_bound() && range.has_upper_bound()) {
       vector<RowSet *> interval_sets;
-      rowsets_.FindRowSetsIntersectingInterval(range.lower_bound().encoded_key(),
-                                               range.upper_bound().encoded_key(),
-                                               &interval_sets);
+      rowsets_->FindRowSetsIntersectingInterval(range.lower_bound().encoded_key(),
+                                                range.upper_bound().encoded_key(),
+                                                &interval_sets);
       BOOST_FOREACH(const RowSet *rs, interval_sets) {
         shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
         ret.push_back(row_it);
@@ -620,7 +646,7 @@ Status Tablet::CaptureConsistentIterators(
 
   // If there are no encoded predicates or they represent an open-ended range, then
   // fall back to grabbing all rowset iterators
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_.all_rowsets()) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_->all_rowsets()) {
     shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
     ret.push_back(row_it);
   }
@@ -633,16 +659,17 @@ Status Tablet::CaptureConsistentIterators(
 Status Tablet::CountRows(uint64_t *count) const {
   // First grab a consistent view of the components of the tablet.
   shared_ptr<MemRowSet> memrowset;
-  vector<shared_ptr<RowSet> > rowsets;
+  shared_ptr<RowSetTree> rowsets_copy;
+
   {
     boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
     memrowset = memrowset_;
-    rowsets = rowsets_.all_rowsets();
+    rowsets_copy = rowsets_;
   }
 
   // Now sum up the counts.
   *count = memrowset->entry_count();
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets) {
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
     rowid_t l_count;
     RETURN_NOT_OK(rowset->CountRows(&l_count));
     *count += l_count;
@@ -653,7 +680,7 @@ Status Tablet::CountRows(uint64_t *count) const {
 
 size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  return rowsets_.all_rowsets().size();
+  return rowsets_->all_rowsets().size();
 }
 
 Tablet::Iterator::Iterator(const Tablet *tablet,

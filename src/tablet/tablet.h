@@ -173,7 +173,7 @@ class Tablet {
   Schema key_schema_;
   gscoped_ptr<metadata::TabletMetadata> metadata_;
   shared_ptr<MemRowSet> memrowset_;
-  RowSetTree rowsets_;
+  shared_ptr<RowSetTree> rowsets_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;
@@ -187,6 +187,10 @@ class Tablet {
   // Exclusive mode:
   // - Flushers take this lock in order to lock out concurrent updates when swapping in
   //   a new memrowset.
+  //
+  // NOTE: callers should avoid taking this lock for a long time, even in shared mode.
+  // This is because the lock has some concept of fairness -- if, while a long reader
+  // is active, a writer comes along, then all future short readers will be blocked.
   //
   // TODO: this could probably done more efficiently with a single atomic swap of a list
   // and an RCU-style quiesce phase, but not worth it for now.
