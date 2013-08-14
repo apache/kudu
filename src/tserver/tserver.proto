@@ -108,6 +108,10 @@ message NewScanRequestPB {
   repeated ColumnRangePredicatePB range_predicates = 3;
 
   // Which columns to select.
+  // if this is an empty list, no data will be returned, but the num_rows
+  // field of the returned RowBlock will indicate how many rows passed
+  // the predicates. Note that in some cases, the scan may still require
+  // multiple round-trips, and the caller must aggregate the counts.
   repeated ColumnSchemaPB projected_columns = 4;
 
   // TODO: add some field which requests ordered results (which has

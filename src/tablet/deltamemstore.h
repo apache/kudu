@@ -141,6 +141,7 @@ class DMSIterator : public DeltaIterator {
 
   gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
 
+  bool initted_;
 
   // The index at which the last Prepare call was made
   rowid_t prepared_idx_;

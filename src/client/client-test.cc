@@ -151,5 +151,27 @@ TEST_F(ClientTest, TestScan) {
   DoTestScanWithStringPredicate();
 }
 
+// Test scanning with an empty projection. This should yield an empty
+// row block with the proper number of rows filled in. Impala issues
+// scans like this in order to implement COUNT(*).
+TEST_F(ClientTest, TestScanEmptyProjection) {
+  InsertTestRows(FLAGS_test_scan_num_rows);
+  Schema empty_projection(vector<ColumnSchema>(), 0);
+  KuduScanner scanner(client_table_.get());
+  ASSERT_STATUS_OK(scanner.SetProjection(empty_projection));
+  LOG_TIMING(INFO, "Scanning with no projected columns") {
+    ASSERT_STATUS_OK(scanner.Open());
+
+    ASSERT_TRUE(scanner.HasMoreRows());
+    vector<const uint8_t*> rows;
+    uint64_t count = 0;
+    while (scanner.HasMoreRows()) {
+      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+      count += rows.size();
+    }
+    ASSERT_EQ(FLAGS_test_scan_num_rows, count);
+  }
+}
+
 } // namespace client
 } // namespace kudu

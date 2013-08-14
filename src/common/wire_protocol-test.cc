@@ -257,16 +257,36 @@ TEST_F(WireProtocolTest, TestInvalidRowBlock) {
 
   // Too short to be valid data.
   pb.mutable_rows()->assign("x");
+  pb.set_num_rows(1);
   Status s = ExtractRowsFromRowBlockPB(schema, &pb, &row_ptrs);
   ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Row block has 1 bytes of data");
 
   // Bad pointer into indirect data.
   pb.mutable_rows()->assign("xxxxxxxxxxxxxxxx");
+  pb.set_num_rows(1);
   s = ExtractRowsFromRowBlockPB(schema, &pb, &row_ptrs);
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Corruption: Row #0 contained bad indirect slice");
 }
 
+// Test serializing a block which has a selection vector but no columns.
+// This is the sort of result that is returned from a scan with an empty
+// projection (a COUNT(*) query).
+TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
+  Schema empty(std::vector<ColumnSchema>(), 0);
+  Arena arena(1024, 1024 * 1024);
+  RowBlock block(empty, 1000, &arena);
+  block.selection_vector()->SetAllTrue();
+  // Unselect 100 rows
+  for (int i = 0; i < 100; i++) {
+    block.selection_vector()->SetRowUnselected(i * 2);
+  }
+  ASSERT_EQ(900, block.selection_vector()->CountSelected());
 
+  // Convert it to protobuf, ensure that the results look right.
+  RowwiseRowBlockPB pb;
+  ConvertRowBlockToPB(block, &pb);
+  ASSERT_EQ(900, pb.num_rows());
+}
 
 } // namespace kudu

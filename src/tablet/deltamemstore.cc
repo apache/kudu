@@ -119,6 +119,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
     projection_(projection),
     mvcc_snapshot_(snapshot),
     iter_(dms->tree_.NewIterator()),
+    initted_(false),
     prepared_idx_(0),
     prepared_count_(0),
     prepared_(false),
@@ -129,6 +130,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
 Status DMSIterator::Init() {
   projection_indexes_.clear();
   RETURN_NOT_OK(projection_.GetProjectionFrom(dms_->schema_, &projection_indexes_));
+  initted_ = true;
   return Status::OK();
 }
 
@@ -160,7 +162,7 @@ Status DMSIterator::PrepareBatch(size_t nrows) {
   // so with N columns, we'd end up making N copies of the data. Making a local
   // copy here is instead a single copy of the data, so is likely faster.
   CHECK(seeked_);
-  DCHECK(!projection_indexes_.empty()) << "must init";
+  DCHECK(initted_) << "must init";
   rowid_t start_row = prepared_idx_ + prepared_count_;
   rowid_t stop_row = start_row + nrows - 1;
 

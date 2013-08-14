@@ -362,11 +362,12 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   enum ScanState {
     // Enumerated constants to indicate the iterator state:
-    kScanning = 0,  // We may continue fetching and returning values.
-    kLastBatch = 1, // Current batch contains the upper bound, we
+    kUninitialized = 0,
+    kScanning = 1,  // We may continue fetching and returning values.
+    kLastBatch = 2, // Current batch contains the upper bound, we
                     // may return all rows up to and including the upper bound,
                     // but we may not prepare any further batches.
-    kFinished = 2   // We either know we can never reach the lower bound, or
+    kFinished = 3   // We either know we can never reach the lower bound, or
                     // we've exceeded the upper bound.
   };
 
@@ -382,7 +383,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
       mvcc_snap_(mvcc_snap),
       prepared_count_(0),
       prepared_idx_in_leaf_(0),
-      state_(kScanning) {
+      state_(kUninitialized) {
     // TODO: various code assumes that a newly constructed iterator
     // is pointed at the beginning of the dataset. This causes a redundant
     // seek. Could make this lazy instead, or change the semantics so that

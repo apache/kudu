@@ -89,6 +89,24 @@ class TabletPushdownTest : public KuduTabletTest,
     ASSERT_EQ("(uint32 key=210, uint32 int_val=2100, string string_val=00000210)",
               results[10]);
   }
+
+  // Test that a scan with an empty projection and the given spec
+  // returns the expected number of rows. The rows themselves
+  // should be empty.
+  void TestCountOnlyScanYieldsExpectedResults(ScanSpec spec) {
+    Schema empty_schema(std::vector<ColumnSchema>(), 0);
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_STATUS_OK(tablet_->NewRowIterator(empty_schema, &iter));
+    ASSERT_STATUS_OK(iter->Init(&spec));
+    ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
+
+    vector<string> results;
+    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+    ASSERT_EQ(11, results.size());
+    BOOST_FOREACH(const string& result, results) {
+      ASSERT_EQ("()", result);
+    }
+  }
 };
 
 TEST_P(TabletPushdownTest, TestPushdownIntKeyRange) {
@@ -99,6 +117,7 @@ TEST_P(TabletPushdownTest, TestPushdownIntKeyRange) {
   spec.AddPredicate(pred0);
 
   TestScanYieldsExpectedResults(spec);
+  TestCountOnlyScanYieldsExpectedResults(spec);
 }
 
 TEST_P(TabletPushdownTest, TestPushdownIntValueRange) {
@@ -111,6 +130,11 @@ TEST_P(TabletPushdownTest, TestPushdownIntValueRange) {
   spec.AddPredicate(pred1);
 
   TestScanYieldsExpectedResults(spec);
+
+  // TODO: support non-key predicate pushdown on columns which aren't
+  // part of the projection. The following line currently would crash.
+  // TestCountOnlyScanYieldsExpectedResults(spec);
+
   // TODO: collect IO statistics per column, verify that most of the string blocks
   // were not read.
 }

@@ -163,6 +163,7 @@ TEST_F(TabletServerTest, TestInsert) {
     // Fill in an empty "rows" structure.
     data->mutable_rows();
     data->set_num_key_columns(0);
+    data->set_num_rows(0);
 
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
@@ -184,6 +185,7 @@ TEST_F(TabletServerTest, TestInsert) {
     RowwiseRowBlockPB* data = req.mutable_data();
     data->Clear();
     data->mutable_rows(); // Set empty rows data.
+    data->set_num_rows(0);
 
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());

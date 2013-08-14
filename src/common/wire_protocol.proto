@@ -81,6 +81,12 @@ message RowwiseRowBlockPB {
   // be in a different order. Will remove this field in a later commit.
   optional int32 num_key_columns = 2;
 
+  // The number of rows in the block. This can typically be calculated
+  // by dividing rows.size() by the width of the row, but in the case that
+  // the client is scanning an empty projection (i.e a COUNT(*)), this
+  // field is the only way to determine how many rows were returned.
+  required int32 num_rows = 3;
+
   // The rows of data. Each row is stored in the same in-memory format
   // as kudu::ContigiousRow (i.e a null bitmap followed by the raw unencoded
   // data).
@@ -91,8 +97,8 @@ message RowwiseRowBlockPB {
   // like. Setting to some constant improves RPC compression, though.
   //
   // Any pointers are made relative to the beginning of 'indirect_data'.
-  required bytes rows = 3;
+  required bytes rows = 4;
 
   // See ColumnBlockPB.indirect_data.
-  optional bytes indirect_data = 4;
+  optional bytes indirect_data = 5;
 }

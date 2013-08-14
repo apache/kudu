@@ -150,11 +150,12 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   string* row_data = rowblock_pb->mutable_rows();
   const string& indir_data = rowblock_pb->indirect_data();
   size_t row_size = ContiguousRowHelper::row_size(schema);
+  size_t expected_data_size = rowblock_pb->num_rows() * row_size;
 
-  if (PREDICT_FALSE(row_data->size() % row_size != 0)) {
+  if (PREDICT_FALSE(row_data->size() != expected_data_size)) {
     return Status::Corruption(
-      StringPrintf("Row block has %zd bytes of data which is not a multiple of "
-                   "row size %zd", row_data->size(), row_size));
+      StringPrintf("Row block has %zd bytes of data but expected %zd for %"PRIu32" rows",
+                   row_data->size(), expected_data_size, rowblock_pb->num_rows()));
   }
 
   for (int i = 0; i < schema.num_columns(); i++) {
@@ -197,7 +198,7 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   // than using reserve and push_back.
   const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
   int dst_index = rows->size();
-  int n_rows = row_data->size() / row_size;
+  int n_rows = rowblock_pb->num_rows();
   rows->resize(rows->size() + n_rows);
   const uint8_t** dst = &(*rows)[dst_index];
   while (n_rows > 0) {
@@ -261,6 +262,7 @@ void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
                      slice->size());
     }
   }
+  pb->set_num_rows(pb->num_rows() + 1);
 }
 
 void AddRowToRowBlockPB(const ConstContiguousRow& row, RowwiseRowBlockPB* pb) {
@@ -329,7 +331,8 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb) {
   string* data_buf = pb->mutable_rows();
   size_t old_size = data_buf->size();
   size_t row_stride = ContiguousRowHelper::row_size(schema);
-  data_buf->resize(old_size + row_stride * block.selection_vector()->CountSelected());
+  int num_rows = block.selection_vector()->CountSelected();
+  data_buf->resize(old_size + row_stride * num_rows);
   uint8_t* base = reinterpret_cast<uint8_t*>(&(*data_buf)[old_size]);
 
   for (int i = 0; i < schema.num_columns(); i++) {
@@ -353,6 +356,7 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb) {
       LOG(FATAL) << "cannot reach here";
     }
   }
+  pb->set_num_rows(pb->num_rows() + num_rows);
 }
 
 

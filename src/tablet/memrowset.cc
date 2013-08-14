@@ -256,6 +256,7 @@ Status MemRowSet::GetBounds(Slice *min_encoded_key,
 }
 
 Status MemRowSet::Iterator::Init(ScanSpec *spec) {
+  DCHECK_EQ(state_, kUninitialized);
   RETURN_NOT_OK(
       projection_.GetProjectionFrom(memrowset_->schema(), &projection_mapping_));
   if (spec != NULL && spec->has_encoded_ranges()) {
@@ -296,6 +297,7 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
       iter_->SeekAtOrAfter(*max_lower_bound, &exact);
     }
   }
+  state_ = kScanning;
   return Status::OK();
 }
 
@@ -319,7 +321,7 @@ Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
 }
 
 Status MemRowSet::Iterator::PrepareBatch(size_t *nrows) {
-  DCHECK(!projection_mapping_.empty()) << "not initted";
+  DCHECK_NE(state_, kUninitialized) << "not initted";
   if (PREDICT_FALSE(!iter_->IsValid())) {
     *nrows = 0;
     return Status::NotFound("end of iter");
@@ -351,7 +353,7 @@ Status MemRowSet::Iterator::PrepareBatch(size_t *nrows) {
 Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
   // TODO: add dcheck that dst->schema() matches our schema
   // also above TODO applies to a lot of other CopyNextRows cases
-  DCHECK(!projection_mapping_.empty()) << "not initted";
+  DCHECK_NE(state_, kUninitialized) << "not initted";
 
   dst->selection_vector()->SetAllTrue();
 
