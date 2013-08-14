@@ -23,6 +23,8 @@ DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
 DEFINE_int32(tablet_server_num_service_threads, 10,
              "Number of RPC worker threads to run");
 
+DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
+
 using kudu::metadata::TabletMetadata;
 using kudu::tablet::Tablet;
 using kudu::tserver::TabletServer;
@@ -65,6 +67,25 @@ class TemporaryTabletsForDemos {
   DISALLOW_COPY_AND_ASSIGN(TemporaryTabletsForDemos);
 };
 
+static void FlushThread(Tablet* tablet) {
+  while (true) {
+    if (tablet->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      CHECK_OK(tablet->Flush());
+    } else {
+      VLOG(1) << "Not flushing, memrowset not very full";
+    }
+    usleep(250 * 1000);
+  }
+}
+
+static void CompactThread(Tablet* tablet) {
+  while (true) {
+    CHECK_OK(tablet->Compact(Tablet::COMPACT_NO_FLAGS));
+
+    usleep(3000 * 1000);
+  }
+}
+
 static int TabletServerMain(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
@@ -86,6 +107,14 @@ static int TabletServerMain(int argc, char** argv) {
   LOG(INFO) << "Setting up demo tablets...";
   TemporaryTabletsForDemos demo_setup;
   server.RegisterTablet(demo_setup.twitter_tablet());
+
+  // Temporary hack for demos: start threads which compact/flush the tablet.
+  // Eventually this will be part of TabletServer itself, and take care of deciding
+  // which tablet to perform operations on. But as a stop-gap, just start these
+  // simple threads here from main.
+  LOG(INFO) << "Starting flush/compact threads";
+  boost::thread compact_thread(CompactThread, demo_setup.twitter_tablet().get());
+  boost::thread flush_thread(FlushThread, demo_setup.twitter_tablet().get());
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());
