@@ -4,6 +4,7 @@
 
 #include <boost/assign/list_of.hpp>
 #include <string>
+#include <time.h>
 #include <tr1/memory>
 
 #include "common/wire_protocol.h"
@@ -20,6 +21,7 @@ namespace twitter_demo {
 
 using tserver::TabletServerServiceProxy;
 using tserver::InsertRequestPB;
+using tserver::InsertResponsePB;
 using tserver::InsertResponsePB;
 using rpc::RpcController;
 
@@ -57,7 +59,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   rb.AddUint64(event_.tweet_event.tweet_id);
   rb.AddString(event_.tweet_event.text);
   rb.AddString(event_.tweet_event.source);
-  rb.AddString(event_.tweet_event.created_at);
+  rb.AddString(TwitterEventParser::ReformatTime(event_.tweet_event.created_at));
   rb.AddUint64(event_.tweet_event.user_id);
   rb.AddString(event_.tweet_event.user_name);
   rb.AddString(event_.tweet_event.user_description);
@@ -81,11 +83,17 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   }
 
   if (resp.per_row_errors().size() > 0) {
-    LOG(WARNING) << "Per-row errors for '" << schema_.DebugRow(rb.row()) << "': "
-                 << resp.per_row_errors().Get(0).DebugString();
+    // We should only have one error, since we aren't batching inserts.
+    CHECK_EQ(1, resp.per_row_errors().size());
+    if (resp.per_row_errors().Get(0).error().code() != AppStatusPB::ALREADY_PRESENT) {
+      LOG(WARNING) << "Per-row errors for '" << schema_.DebugRow(rb.row()) << "': "
+                   << resp.per_row_errors().Get(0).DebugString();
+    }
     return;
   }
-  LOG(INFO) << "Inserted " << schema_.DebugRow(rb.row());
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Inserted " << schema_.DebugRow(rb.row());
+  }
 }
 
 } // namespace twitter_demo

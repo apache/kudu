@@ -6,6 +6,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
 #include "util/slice.h"
+#include <time.h>
 
 namespace kudu {
 namespace twitter_demo {
@@ -129,6 +130,21 @@ Status TwitterEventParser::Parse(const string& json, TwitterEvent* event) {
     return ParseDelete(d, event);
   }
   return ParseTweet(d, event);
+}
+
+string TwitterEventParser::ReformatTime(const string& twitter_time) {
+  struct tm t;
+  memset(&t, 0, sizeof(t));
+  // Example: Wed Aug 14 06:31:07 +0000 2013
+  char* x = strptime(twitter_time.c_str(), "%a %b %d %H:%M:%S +0000 %Y", &t);
+  if (*x != '\0') {
+    return StringPrintf("unparseable date, date=%s, leftover=%s", twitter_time.c_str(), x);
+  }
+
+  char buf[100];
+  size_t n = strftime(buf, arraysize(buf), "%Y%m%d%H%M%S", &t);
+  CHECK_GT(n, 0);
+  return string(buf);
 }
 
 

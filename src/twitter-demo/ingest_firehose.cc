@@ -5,6 +5,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <curl/curl.h>
+#include <fstream>
 
 #include "twitter-demo/oauth.h"
 #include "twitter-demo/insert_consumer.h"
@@ -23,6 +24,13 @@ DEFINE_string(twitter_firehose_sink, "console",
               "Valid values: console,rpc");
 DEFINE_string(twitter_rpc_sink_address, "localhost",
               "Address of tablet server to write to");
+
+DEFINE_string(twitter_firehose_source, "api",
+              "Where to obtain firehose input.\n"
+              "Valid values: api,file");
+DEFINE_string(twitter_firehose_file, "/dev/fd/0",
+              "File to read firehose data from, if 'file' is configured.");
+
 
 using base::FreeDeleter;
 using std::string;
@@ -60,6 +68,16 @@ gscoped_ptr<TwitterConsumer> CreateInsertConsumer() {
   return gscoped_ptr<TwitterConsumer>(new InsertConsumer(proxy));
 }
 
+static void IngestFromFile(const string& file, gscoped_ptr<TwitterConsumer> consumer) {
+  std::ifstream in(file.c_str());
+  CHECK(in.is_open()) << "Couldn't open " << file;
+
+  string line;
+  while (std::getline(in, line)) {
+    consumer->ConsumeJSON(line);
+  }
+}
+
 } // namespace twitter_demo
 } // namespace kudu
 
@@ -82,10 +100,15 @@ int main(int argc, char** argv) {
     LOG(FATAL) << "Unknown sink: " << FLAGS_twitter_firehose_sink;
   }
 
-  TwitterStreamer streamer(consumer.get());
-  CHECK_OK(streamer.Init());
-  CHECK_OK(streamer.Start());
-  CHECK_OK(streamer.Join());
-
+  if (FLAGS_twitter_firehose_sink == "api") {
+    TwitterStreamer streamer(consumer.get());
+    CHECK_OK(streamer.Init());
+    CHECK_OK(streamer.Start());
+    CHECK_OK(streamer.Join());
+  } else if (FLAGS_twitter_firehose_source == "file") {
+    IngestFromFile(FLAGS_twitter_firehose_file, consumer.Pass());
+  } else {
+    LOG(FATAL) << "Unknown source: " << FLAGS_twitter_firehose_source;
+  }
   return 0;
 }

@@ -88,5 +88,9 @@ TEST(ParserTest, TestParseDeletes) {
   EnsureFileParses("example-deletes.txt", DELETE_TWEET);
 }
 
+TEST(ParserTest, TestReformatTime) {
+  ASSERT_EQ("20130814063107", TwitterEventParser::ReformatTime("Wed Aug 14 06:31:07 +0000 2013"));
+}
+
 } // namespace twitter_demo
 } // namespace kudu

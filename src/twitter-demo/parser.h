@@ -60,6 +60,8 @@ class TwitterEventParser {
 
   Status Parse(const std::string& json, TwitterEvent* event);
 
+  static std::string ReformatTime(const std::string& time);
+
  private:
   DISALLOW_COPY_AND_ASSIGN(TwitterEventParser);
 };

@@ -30,3 +30,38 @@ inline Schema CreateTwitterSchema() {
 } // namespace twitter_demo
 } // namespace kudu
 #endif
+
+/*
+
+Schema for Impala:
+
+CREATE TABLE twitter (
+  tweet_id bigint,
+  text string,
+  source string,
+  created_at string,
+  user_id bigint,
+  user_name string,
+  user_description string,
+  user_location string,
+  user_followers_count int,
+  user_friends_count int,
+  user_image_url string);
+
+
+Schema for MySQL:
+
+CREATE TABLE twitter (
+  tweet_id bigint not null primary key,
+  tweet_text varchar(1000) not null,
+  source varchar(1000) not null,
+  created_at varchar(1000) not null,
+  user_id bigint not null,
+  user_name varchar(1000) not null,
+  user_description varchar(1000) not null,
+  user_location varchar(1000) not null,
+  user_followers_count int not null,
+  user_friends_count int not null,
+  user_image_url varchar(1000) not null);
+
+*/
