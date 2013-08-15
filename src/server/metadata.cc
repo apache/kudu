@@ -86,6 +86,7 @@ Status TabletMetadata::Load() {
   sblk_id_ = pb.id() + 1;
   start_key_ = pb.start_key();
   end_key_ = pb.end_key();
+  last_durable_mrs_id_ = pb.last_durable_mrs_id();
 
   BOOST_FOREACH(const RowSetDataPB& rowset_pb, pb.rowsets()) {
     shared_ptr<RowSetMetadata> rowset_meta(new RowSetMetadata(this, rowsets_.size()));
@@ -100,6 +101,21 @@ Status TabletMetadata::Load() {
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add) {
   boost::lock_guard<LockType> l(lock_);
+  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id_);
+}
+
+Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
+                                      const RowSetMetadataVector& to_add,
+                                      int64_t last_durable_mrs_id) {
+  boost::lock_guard<LockType> l(lock_);
+  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id);
+}
+
+Status TabletMetadata::UpdateAndFlushUnlocked(
+    const RowSetMetadataIds& to_remove,
+    const RowSetMetadataVector& to_add,
+    int64_t last_durable_mrs_id) {
+  DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
 
   // Convert to protobuf
   TabletSuperBlockPB pb;
@@ -107,6 +123,7 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
   pb.set_oid(oid());
   pb.set_start_key(start_key_);
   pb.set_end_key(end_key_);
+  pb.set_last_durable_mrs_id(last_durable_mrs_id_);
 
   RowSetMetadataVector new_rowsets = rowsets_;
   RowSetMetadataVector::iterator it = new_rowsets.begin();
@@ -147,7 +164,7 @@ Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Sc
   return Status::OK();
 }
 
-const RowSetMetadata *TabletMetadata::GetRowSetForTests(int32_t id) const {
+const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, rowsets_) {
     if (rowset_meta->id() == id) {
       return rowset_meta.get();
@@ -237,7 +254,7 @@ const string RowSetMetadata::ToString() {
   return "RowSet(" + boost::lexical_cast<string>(id_) + ")";
 }
 
-Status RowSetMetadata::CommitDeltaDataBlock(uint32_t id, const BlockId& block_id) {
+Status RowSetMetadata::CommitDeltaDataBlock(int64_t id, const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
   delta_blocks_.push_back(std::pair<uint32_t, BlockId>(id, block_id));
   return Status::OK();

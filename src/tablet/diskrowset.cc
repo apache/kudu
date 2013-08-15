@@ -378,7 +378,8 @@ CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const 
 
 Status DiskRowSet::MutateRow(txid_t txid,
                              const RowSetKeyProbe &probe,
-                             const RowChangeList &update) {
+                             const RowChangeList &update,
+                             MutationResult *result) {
   CHECK(open_);
 
   rowid_t row_idx;
@@ -392,7 +393,7 @@ Status DiskRowSet::MutateRow(txid_t txid,
     return Status::NotFound("row not found");
   }
 
-  delta_tracker_->Update(txid, row_idx, update);
+  RETURN_NOT_OK(delta_tracker_->Update(txid, row_idx, update, result));
 
   return Status::OK();
 }

@@ -48,7 +48,8 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Make sure the files were created as expected.
-  const RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(0);
+  const metadata::RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(0);
+  CHECK(rowset_meta) << "No row set found";
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(1));
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(2));
@@ -97,12 +98,17 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, 12345);
   ConstContiguousRow row(rb.schema(), rb.data());
-  ASSERT_STATUS_OK(this->tablet_->Insert(row));
+
+  TransactionContext tx_ctx;
+  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, row));
+  ASSERT_EQ(1, tx_ctx.operations().size());
 
   // Insert again, should fail!
-  Status s = this->tablet_->Insert(row);
+  Status s = this->tablet_->Insert(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
+  ASSERT_EQ(2, tx_ctx.operations().size());
+  ASSERT_FALSE(tx_ctx.is_all_success());
 
   ASSERT_EQ(1, this->TabletCount());
 
@@ -111,10 +117,11 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   ASSERT_EQ(1, this->TabletCount());
 
-  s = this->tablet_->Insert(row);
+  s = this->tablet_->Insert(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent())
     << "expected AlreadyPresent, but got: " << s.ToString()
     << " Inserting: " << rb.data().ToDebugString();
+  ASSERT_EQ(3, tx_ctx.operations().size());
 
   ASSERT_EQ(1, this->TabletCount());
 }
@@ -123,8 +130,11 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 // Test flushes and compactions dealing with deleted rows.
 TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
 
-  this->InsertTestRows(0, 1, 0);
-  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+  TransactionContext tx_ctx;
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 0);
+  ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
+  ASSERT_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
 
   // The row is deleted, so we shouldn't see it in the iterator.
   vector<string> rows;
@@ -139,7 +149,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   // Re-inserting should succeed. This will reinsert into the MemRowSet.
   // Set the int column to '1' this time, so we can differentiate the two
   // versions of the row.
-  this->InsertTestRows(0, 1, 1);
+  this->InsertTestRowsInTransaction(&tx_ctx, false,  0, 1, 1);
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 1), rows[0]);
@@ -151,14 +161,17 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 1), rows[0]);
 
   // Delete it again, now that it's in DRS.
-  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+  ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
+  ASSERT_EQ(DELTA_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(1L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->rs_id);
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->delta_index);
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(0, rows.size());
 
   // We now have an INSERT in the MemRowSet and the
   // deleted row in the DiskRowSet. The new version
   // of the row has '2' in the int column.
-  this->InsertTestRows(0, 1, 2);
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 2);
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 2), rows[0]);
@@ -180,9 +193,12 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
 TYPED_TEST(TestTablet, TestFlushWithReinsert) {
 
   // Insert, delete, and re-insert a row in the MRS.
-  this->InsertTestRows(0, 1, 0);
-  ASSERT_STATUS_OK(this->DeleteTestRow(0));
-  this->InsertTestRows(0, 1, 1);
+  TransactionContext tx_ctx;
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 0);
+  ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
+  ASSERT_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 1);
 
   // Flush the tablet and make sure the data persists.
   ASSERT_STATUS_OK(this->tablet_->Flush());
@@ -196,10 +212,15 @@ TYPED_TEST(TestTablet, TestFlushWithReinsert) {
 // of a flush.
 TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
   // Insert/delete/insert/delete in MemRowStore.
-  this->InsertTestRows(0, 1, 0);
-  ASSERT_STATUS_OK(this->DeleteTestRow(0));
-  this->InsertTestRows(0, 1, 1);
-  ASSERT_STATUS_OK(this->DeleteTestRow(0));
+  TransactionContext tx_ctx;
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 0);
+  ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
+  ASSERT_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 1);
+  ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
+  ASSERT_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
 
   // During the snapshot flush, insert/delete/insert some more during the flush.
   class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
@@ -207,11 +228,16 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
     explicit MyCommonHooks(TestFixture *test) : test_(test) {}
 
     Status PostWriteSnapshot() {
-      test_->InsertTestRows(0, 1, 1);
-      CHECK_OK(test_->DeleteTestRow(0));
-      test_->InsertTestRows(0, 1, 2);
-      CHECK_OK(test_->DeleteTestRow(0));
-      test_->InsertTestRows(0, 1, 3);
+      TransactionContext tx_ctx;
+      test_->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 1);
+      CHECK_OK(test_->DeleteTestRow(&tx_ctx, 0));
+      CHECK_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+      CHECK_EQ(1L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
+      test_->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 2);
+      CHECK_OK(test_->DeleteTestRow(&tx_ctx, 0));
+      CHECK_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+      CHECK_EQ(1L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
+      test_->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 3);
       return Status::OK();
     }
 
@@ -243,19 +269,20 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, kInRowSet1);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
+  TransactionContext tx_ctx;
+  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Put a row in disk rowset 2 (insert and flush)
   rb.Reset();
   this->setup_.BuildRow(&rb, kInRowSet2);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
+  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Put a row in memrowset
   rb.Reset();
   this->setup_.BuildRow(&rb, kInMemRowSet);
-  ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
+  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
 
   // Now iterate the tablet and make sure the rows show up
   gscoped_ptr<RowwiseIterator> iter;
@@ -295,10 +322,11 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
   unordered_set<uint32_t> inserted;
+  TransactionContext tx_ctx;
   for (uint32_t i = 0; i < max_rows; i++) {
     rb.Reset();
     this->setup_.BuildRow(&rb, i);
-    ASSERT_STATUS_OK(this->tablet_->Insert(rb.row()));
+    ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
     inserted.insert(i);
 
     if (i % 300 == 0) {
@@ -312,6 +340,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // as some data in memrowset.
 
   // Update a subset of the rows
+  tx_ctx.Reset();
   for (uint32_t i = 0; i < max_rows; i++) {
     if (!this->setup_.ShouldUpdateRow(i)) {
       continue;
@@ -319,7 +348,10 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
 
     SCOPED_TRACE(StringPrintf("update %d", i));
     uint32_t new_val = 0;
-    ASSERT_STATUS_OK_FAST(this->setup_.DoUpdate(this->tablet_.get(), i, &new_val));
+    ASSERT_STATUS_OK_FAST(this->setup_.DoUpdate(&tx_ctx,
+                                                this->tablet_.get(),
+                                                i,
+                                                &new_val));
     inserted.erase(i);
     inserted.insert(new_val);
   }
@@ -376,10 +408,13 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
 // the most recent value.
 TYPED_TEST(TestTablet, TestMultipleUpdates) {
   // Insert and update several times in MemRowSet
-  this->InsertTestRows(0, 1, 0);
-  ASSERT_STATUS_OK(this->UpdateTestRow(0, 1));
-  ASSERT_STATUS_OK(this->UpdateTestRow(0, 2));
-  ASSERT_STATUS_OK(this->UpdateTestRow(0, 3));
+  TransactionContext tx_ctx;
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 1, 0);
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 1));
+  ASSERT_EQ(MRS_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->mrs_id);
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 2));
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 3));
 
   // Should see most recent value.
   vector<string> out_rows;
@@ -396,9 +431,13 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   ASSERT_EQ(this->setup_.FormatDebugRow(0, 3), out_rows[0]);
 
   // Update the row a few times in DeltaMemStore
-  ASSERT_STATUS_OK(this->UpdateTestRow(0, 4));
-  ASSERT_STATUS_OK(this->UpdateTestRow(0, 5));
-  ASSERT_STATUS_OK(this->UpdateTestRow(0, 6));
+  tx_ctx.Reset();
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 4));
+  ASSERT_EQ(DELTA_MUTATION, last_op_as_mutation(tx_ctx)->result()->type());
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->rs_id);
+  ASSERT_EQ(0L, last_op_as_mutation(tx_ctx)->result()->mutations()[0]->delta_index);
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 5));
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 6));
 
   // Should still see most recent value.
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
@@ -407,7 +446,8 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
 
 
   // Force a compaction after adding a new rowset with one row.
-  this->InsertTestRows(1, 1, 0);
+  tx_ctx.Reset();
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 1, 1, 0);
   ASSERT_STATUS_OK(this->tablet_->Flush());
   ASSERT_EQ(2, this->tablet_->num_rowsets());
 
@@ -435,30 +475,41 @@ TYPED_TEST(TestTablet, TestCompaction) {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
 
+    // first MemRowSet had id 0, current one should be 1
+    ASSERT_EQ(1, this->tablet_->CurrentMrsIdForTests());
     ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(0)->HasColumnDataBlockForTests(0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
     this->InsertTestRows(n_rows, n_rows, 0);
+
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
 
+    // previous MemRowSet had id 1, current one should be 2
+    ASSERT_EQ(2, this->tablet_->CurrentMrsIdForTests());
     ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(1)->HasColumnDataBlockForTests(0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
     this->InsertTestRows(n_rows * 2, n_rows, 0);
+
     LOG_TIMING(INFO, "Flushing rows") {
       ASSERT_STATUS_OK(this->tablet_->Flush());
     }
 
+    // previous MemRowSet had id 2, current one should be 3
+    ASSERT_EQ(3, this->tablet_->CurrentMrsIdForTests());
     ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(2)->HasColumnDataBlockForTests(0));
   }
 
   // Issue compaction
   LOG_TIMING(INFO, "Compacting rows") {
+
     ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+    // Compaction does not swap the memrowsets so we should still get 3
+    ASSERT_EQ(3, this->tablet_->CurrentMrsIdForTests());
     ASSERT_EQ(n_rows * 3, this->TabletCount());
 
     const RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(3);
@@ -482,55 +533,83 @@ TYPED_TEST(TestTablet, TestCompaction) {
 template<class TestFixture>
 class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
  public:
-  explicit MyCommonHooks(TestFixture *test) : test_(test), i_(0) {}
-  Status DoHook() {
-    RETURN_NOT_OK(test_->DeleteTestRow(i_));
-    RETURN_NOT_OK(test_->UpdateTestRow(10 + i_, 1000 + i_));
-    test_->InsertTestRows(20 + i_, 1, 0);
+  explicit MyCommonHooks(TestFixture *test, bool flushed)
+      : test_(test),
+        flushed_(flushed),
+        i_(0) {
+  }
+  Status DoHook(MutationType expected_mutation_type) {
+    TransactionContext tx_ctx;
+    RETURN_NOT_OK(test_->DeleteTestRow(&tx_ctx, i_));
+    CHECK_EQ(expected_mutation_type, last_op_as_mutation(tx_ctx)->result()->type());
+    RETURN_NOT_OK(test_->UpdateTestRow(&tx_ctx, 10 + i_, 1000 + i_));
+    test_->InsertTestRowsInTransaction(&tx_ctx, false, 20 + i_, 1, 0);
     test_->CheckCanIterate();
     i_++;
     return Status::OK();
   }
 
-  virtual Status PostTakeMvccSnapshot() { return DoHook(); }
-  virtual Status PostWriteSnapshot() { return DoHook(); }
-  virtual Status PostSwapInDuplicatingRowSet() { return DoHook(); }
-  virtual Status PostReupdateMissedDeltas() { return DoHook(); }
-  virtual Status PostSwapNewRowSet() { return DoHook(); }
+  virtual Status PostTakeMvccSnapshot() {
+    // before we flush we update the MemRowSet afterwards we update the
+    // DeltaMemStore
+    if (!flushed_) {
+      return DoHook(MRS_MUTATION);
+    } else {
+      return DoHook(DELTA_MUTATION);
+    }
+  }
+  virtual Status PostWriteSnapshot() {
+    if (!flushed_) {
+      return DoHook(MRS_MUTATION);
+    } else {
+      return DoHook(DELTA_MUTATION);
+    }
+  }
+  virtual Status PostSwapInDuplicatingRowSet() {
+    return DoHook(DUPLICATED_MUTATION);
+  }
+  virtual Status PostReupdateMissedDeltas() {
+    return DoHook(DUPLICATED_MUTATION);
+  }
+  virtual Status PostSwapNewRowSet() {
+    return DoHook(DELTA_MUTATION);
+  }
  protected:
   TestFixture *test_;
+  bool flushed_;
   int i_;
 };
 
 template<class TestFixture>
 class MyFlushHooks : public Tablet::FlushFaultHooks, public MyCommonHooks<TestFixture> {
  public:
-  explicit MyFlushHooks(TestFixture *test) : MyCommonHooks<TestFixture>(test) {}
-  virtual Status PostSwapNewMemRowSet() { return this->DoHook(); }
+  explicit MyFlushHooks(TestFixture *test, bool flushed) : MyCommonHooks<TestFixture>(test, flushed) {}
+  virtual Status PostSwapNewMemRowSet() { return this->DoHook(MRS_MUTATION); }
 };
 
 template<class TestFixture>
 class MyCompactHooks : public Tablet::CompactionFaultHooks, public MyCommonHooks<TestFixture> {
  public:
-  explicit MyCompactHooks(TestFixture *test) : MyCommonHooks<TestFixture>(test) {}
-  Status PostSelectIterators() { return this->DoHook(); }
+  explicit MyCompactHooks(TestFixture *test, bool flushed) : MyCommonHooks<TestFixture>(test, flushed) {}
+  Status PostSelectIterators() { return this->DoHook(DELTA_MUTATION); }
 };
 
 // Test for Flush with concurrent update, delete and insert during the
 // various phases.
 TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
-  this->InsertTestRows(0, 7, 0); // 0-6 inclusive: these rows will be deleted
-  this->InsertTestRows(10, 7, 0); // 10-16 inclusive: these rows will be updated
+  TransactionContext tx_ctx;
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 7, 0); // 0-6 inclusive: these rows will be deleted
+  this->InsertTestRowsInTransaction(&tx_ctx, false,10, 7, 0); // 10-16 inclusive: these rows will be updated
   // Rows 20-26 inclusive will be inserted during the flush
 
   // Inject hooks which mutate those rows and add more rows at
   // each key stage of flushing.
-  shared_ptr<MyFlushHooks<TestFixture> > hooks(new MyFlushHooks<TestFixture>(this));
+  shared_ptr<MyFlushHooks<TestFixture> > hooks(new MyFlushHooks<TestFixture>(this, false));
   this->tablet_->SetFlushHooksForTests(hooks);
   this->tablet_->SetFlushCompactCommonHooksForTests(hooks);
 
   // First hook before we do the Flush
-  ASSERT_STATUS_OK(hooks->DoHook());
+  ASSERT_STATUS_OK(hooks->DoHook(MRS_MUTATION));
 
   // Then do the flush with the hooks enabled.
   ASSERT_STATUS_OK(this->tablet_->Flush());
@@ -581,26 +660,27 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   // - rows 0-6 inclusive will be deleted
   // - rows 10-16 inclusive will be updated
 
-  this->InsertTestRows(0, 2, 0);  // rows 0-1
-  this->InsertTestRows(10, 2, 0); // rows 10-11
+  TransactionContext tx_ctx;
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 0, 2, 0);  // rows 0-1
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 10, 2, 0); // rows 10-11
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  this->InsertTestRows(2, 2, 0);  // rows 2-3
-  this->InsertTestRows(12, 2, 0); // rows 12-13
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 2, 2, 0);  // rows 2-3
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 12, 2, 0); // rows 12-13
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  this->InsertTestRows(4, 3, 0);  // rows 4-6
-  this->InsertTestRows(14, 3, 0); // rows 14-16
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 4, 3, 0);  // rows 4-6
+  this->InsertTestRowsInTransaction(&tx_ctx, false, 14, 3, 0); // rows 14-16
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Rows 20-26 inclusive will be inserted during the flush.
 
-  shared_ptr<MyCompactHooks<TestFixture> > hooks(new MyCompactHooks<TestFixture>(this));
+  shared_ptr<MyCompactHooks<TestFixture> > hooks(new MyCompactHooks<TestFixture>(this, true));
   this->tablet_->SetCompactionHooksForTests(hooks);
   this->tablet_->SetFlushCompactCommonHooksForTests(hooks);
 
   // First hook pre-compaction.
-  ASSERT_STATUS_OK(hooks->DoHook());
+  ASSERT_STATUS_OK(hooks->DoHook(DELTA_MUTATION));
 
   // Issue compaction
   ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));

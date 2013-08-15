@@ -47,8 +47,10 @@ bool MRSRow::IsGhost() const {
 }
 
 
-MemRowSet::MemRowSet(const Schema &schema)
-  : schema_(schema),
+MemRowSet::MemRowSet(int64_t id,
+                     const Schema &schema)
+  : id_(id),
+    schema_(schema),
     arena_(kInitialArenaSize, kMaxArenaBufferSize),
     debug_insert_count_(0),
     debug_update_count_(0),
@@ -71,7 +73,8 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 }
 
 
-Status MemRowSet::Insert(txid_t txid, const ConstContiguousRow& row) {
+Status MemRowSet::Insert(txid_t txid,
+                         const ConstContiguousRow& row) {
   // TODO: Handle different schema
   DCHECK(schema_.Equals(row.schema()));
 
@@ -152,7 +155,8 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
 
 Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
-                            const RowChangeList &delta) {
+                            const RowChangeList &delta,
+                            MutationResult *result) {
   {
     btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
     mutation.Prepare(&tree_);
@@ -180,6 +184,8 @@ Status MemRowSet::MutateRow(txid_t txid,
     // locked the relevant leaf node from concurrent writes.
     base::subtle::MemoryBarrier();
     mut->AppendToList(&row.header_->mutation_head);
+
+    result->AddMemRowSetMutation(&probe.row_key(), id_);
   }
 
   // Throttle the writer if we're low on memory, but do this outside of the lock

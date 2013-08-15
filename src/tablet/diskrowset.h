@@ -197,7 +197,8 @@ class DiskRowSet : public RowSet {
   // encoding of the key columns.
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
-                   const RowChangeList &update);
+                   const RowChangeList &update,
+                   MutationResult *result);
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 

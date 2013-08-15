@@ -35,8 +35,8 @@ class DeltaMemStore : public DeltaStore,
   explicit DeltaMemStore(const Schema &schema);
 
   // Update the given row in the database.
-  // Copies the data, as well as any referenced
-  // values into this DMS's local arena.
+  // Copies the data, as well as any referenced values into this DMS's local
+  // arena.
   Status Update(txid_t txid, rowid_t row_idx,
                 const RowChangeList &update);
 

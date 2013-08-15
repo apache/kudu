@@ -83,7 +83,10 @@ class TestMemRowSet : public ::testing::Test {
     return mrs->Insert(tx.txid(), rb.row());
   }
 
-  Status UpdateRow(MemRowSet *mrs, const string &key, uint32_t new_val) {
+  Status UpdateRow(MemRowSet *mrs,
+                   const string &key,
+                   uint32_t new_val,
+                   MutationResult *result) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(schema_, &mutation_buf_);
@@ -92,10 +95,13 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
-    return mrs->MutateRow(tx.txid(), probe, RowChangeList(mutation_buf_));
+    return mrs->MutateRow(tx.txid(),
+                          probe,
+                          RowChangeList(mutation_buf_),
+                          result);
   }
 
-  Status DeleteRow(MemRowSet *mrs, const string &key) {
+  Status DeleteRow(MemRowSet *mrs, const string &key, MutationResult *result) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(schema_, &mutation_buf_);
@@ -104,7 +110,10 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
-    return mrs->MutateRow(tx.txid(), probe, RowChangeList(mutation_buf_));
+    return mrs->MutateRow(tx.txid(),
+                          probe,
+                          RowChangeList(mutation_buf_),
+                          result);
   }
 
   MvccManager mvcc_;
@@ -116,7 +125,7 @@ class TestMemRowSet : public ::testing::Test {
 
 
 TEST_F(TestMemRowSet, TestInsertAndIterate) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 12345));
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "goodbye world", 54321));
@@ -148,7 +157,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
                               (ColumnSchema("key2", INT32))
                               (ColumnSchema("val", UINT32)), 2);
 
-  shared_ptr<MemRowSet> mrs(new MemRowSet(compound_key_schema));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, compound_key_schema));
 
   RowBuilder rb(compound_key_schema);
   {
@@ -211,7 +220,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 
 // Test that inserting duplicate key data fails with Status::AlreadyPresent
 TEST_F(TestMemRowSet, TestInsertDuplicate) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 12345));
   Status s = InsertRow(mrs.get(), "hello world", 12345);
@@ -220,7 +229,7 @@ TEST_F(TestMemRowSet, TestInsertDuplicate) {
 
 // Test for updating rows in memrowset
 TEST_F(TestMemRowSet, TestUpdate) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 1));
 
@@ -228,20 +237,25 @@ TEST_F(TestMemRowSet, TestUpdate) {
   CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=1)");
 
   // Update a key which exists.
-  UpdateRow(mrs.get(), "hello world", 2);
+  MutationResult result;
+  UpdateRow(mrs.get(), "hello world", 2, &result);
+  ASSERT_EQ(MRS_MUTATION, result.type());
+  ASSERT_EQ(0L, result.mutations()[0]->mrs_id);
 
   // Validate the updated value
   CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=2)");
 
   // Try to update a key which doesn't exist - should return NotFound
-  Status s = UpdateRow(mrs.get(), "does not exist", 3);
+  result.Reset();
+  Status s = UpdateRow(mrs.get(), "does not exist", 3, &result);
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
+  ASSERT_EQ(NO_MUTATION, result.type());
 }
 
 // Test which inserts many rows into memrowset and checks for their
 // existence
 TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   InsertRows(mrs.get(), 100);
   // Validate insertion
@@ -257,7 +271,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   const char kRowKey[] = "hello world";
   bool present;
 
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   // Insert row.
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 1));
@@ -268,7 +282,11 @@ TEST_F(TestMemRowSet, TestDelete) {
   EXPECT_TRUE(present);
 
   // Delete it.
-  ASSERT_STATUS_OK(DeleteRow(mrs.get(), kRowKey));
+  MutationResult result;
+  ASSERT_STATUS_OK(DeleteRow(mrs.get(), kRowKey, &result));
+  ASSERT_EQ(MRS_MUTATION, result.type());
+  ASSERT_EQ(0L, result.mutations()[0]->mrs_id);
+
   MvccSnapshot snapshot_after_delete(mvcc_);
 
   // CheckRowPresent should return false
@@ -276,11 +294,15 @@ TEST_F(TestMemRowSet, TestDelete) {
   EXPECT_FALSE(present);
 
   // Trying to Delete again or Update should get an error.
-  Status s = DeleteRow(mrs.get(), kRowKey);
+  result.Reset();
+  Status s = DeleteRow(mrs.get(), kRowKey, &result);
   ASSERT_TRUE(s.IsNotFound()) << "Unexpected status: " << s.ToString();
+  ASSERT_EQ(NO_MUTATION, result.type());
 
-  s = UpdateRow(mrs.get(), kRowKey, 12345);
+  result.Reset();
+  s = UpdateRow(mrs.get(), kRowKey, 12345, &result);
   ASSERT_TRUE(s.IsNotFound()) << "Unexpected status: " << s.ToString();
+  ASSERT_EQ(NO_MUTATION, result.type());
 
   // Re-insert a new row with the same key.
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 2));
@@ -319,7 +341,7 @@ TEST_F(TestMemRowSet, TestDelete) {
 }
 
 TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   LOG_TIMING(INFO, "Inserting rows") {
     InsertRows(mrs.get(), FLAGS_roundtrip_num_rows);
@@ -334,7 +356,7 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
 // Test that scanning at past MVCC snapshots will hide rows which are
 // not committed in that snapshot.
 TEST_F(TestMemRowSet, TestInsertionMVCC) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
   vector<MvccSnapshot> snapshots;
 
   // Insert 5 rows in tx 0 through 4
@@ -371,7 +393,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
 // Test that updates respect MVCC -- i.e. that scanning with a past MVCC snapshot
 // will yield old versions of a row which has been updated.
 TEST_F(TestMemRowSet, TestUpdateMVCC) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   // Insert a row ("myrow", 0)
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "my row", 0));
@@ -382,7 +404,10 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
 
   // Update the row 5 times (setting its int column to increasing ints 1-5)
   for (uint32_t i = 1; i <= 5; i++) {
-    ASSERT_STATUS_OK(UpdateRow(mrs.get(), "my row", i));
+    MutationResult result;
+    ASSERT_STATUS_OK(UpdateRow(mrs.get(), "my row", i, &result));
+    ASSERT_EQ(MRS_MUTATION, result.type());
+    ASSERT_EQ(0L, result.mutations()[0]->mrs_id);
 
     // Transaction is committed. Save the snapshot after this commit.
     snapshots.push_back(MvccSnapshot(mvcc_));

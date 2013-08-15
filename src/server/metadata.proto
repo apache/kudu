@@ -87,11 +87,12 @@ message RowSetDataPB {
 // and optionally a block containing the bloom filter
 // and a block containing the compound-keys.
 message TabletSuperBlockPB {
-  required uint64 id = 1;               // SuperBlock Id
-  required string oid = 2;              // Tablet Id
-  required bytes start_key = 3;         // Tablet start-key
-  required bytes end_key = 4;           // Tablet end-key
-  repeated RowSetDataPB rowsets = 5;    // Tablet RowSets
+  required uint64 id = 1;                  // SuperBlock Id
+  required string oid = 2;                 // Tablet Id
+  required uint64 last_durable_mrs_id = 3; // The latest durable MemRowSet id
+  required bytes start_key = 4;            // Tablet start-key
+  required bytes end_key = 5;              // Tablet end-key
+  repeated RowSetDataPB rowsets = 6;       // Tablet RowSets
 }
 
 // The master-block contains the two block-ids required to load the

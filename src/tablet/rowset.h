@@ -31,6 +31,7 @@ namespace tablet {
 class CompactionInput;
 class MvccSnapshot;
 class RowSetKeyProbe;
+class MutationResult;
 
 class RowSet {
  public:
@@ -49,7 +50,8 @@ class RowSet {
   // Status::NotFound().
   virtual Status MutateRow(txid_t txid,
                            const RowSetKeyProbe &probe,
-                           const RowChangeList &update) = 0;
+                           const RowChangeList &update,
+                           MutationResult *result) = 0;
 
   // Return a new RowIterator for this rowset, with the given projection.
   // The iterator will return rows/updates which were committed as of the time of
@@ -134,6 +136,14 @@ class RowSetKeyProbe {
     bloom_probe_ = BloomKeyProbe(encoded_key_slice());
   }
 
+  // RowSetKeyProbes are usually allocated on the stack, which means that we
+  // must copy it if we require it later (e.g. Table::Mutate()), the ConstContiguou
+  explicit RowSetKeyProbe(const RowSetKeyProbe& probe)
+  : row_key_(probe.row_key_) {
+    cfile::EncodeKey(row_key_, &encoded_key_);
+    bloom_probe_ = BloomKeyProbe(encoded_key_slice());
+  }
+
   const ConstContiguousRow& row_key() const { return row_key_; }
 
   // Pointer to the key which has been encoded to be contiguous
@@ -168,7 +178,10 @@ class DuplicatingRowSet : public RowSet {
   DuplicatingRowSet(const RowSetVector &old_rowsets,
                     const RowSetVector &new_rowsets);
 
-  Status MutateRow(txid_t txid, const RowSetKeyProbe &probe, const RowChangeList &update);
+  Status MutateRow(txid_t txid,
+                   const RowSetKeyProbe &probe,
+                   const RowChangeList &update,
+                   MutationResult * result);
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 
@@ -213,6 +226,84 @@ class DuplicatingRowSet : public RowSet {
   const Schema key_schema_;
 
   boost::mutex always_locked_;
+};
+
+extern const int64_t kStoreNotMutated;
+
+// Where the mutation was applied. Either mrs_id is set (i.e. != -1) meaning
+// the mutation was applied to a MemRowSet or the mutation was applied to
+// a DeltaMemStore in which case rs_id and delta_index are set.
+struct MutationTarget {
+  int64_t mrs_id;
+  int64_t rs_id;
+  int64_t delta_index;
+
+  // if this was a MemRowSet mutation we keep a pointer to the row_key (as
+  // there is no rowid_t).
+  const ConstContiguousRow *row_key;
+
+  // if this was a DeltaMemStore mutation we store the the rowid_t
+  rowid_t row_idx;
+
+  MutationTarget();
+};
+
+// Helper type to ease assertions in tests and later on when storing to WAL.
+enum MutationType {
+  NO_MUTATION = 0,
+  MRS_MUTATION = 1,
+  DELTA_MUTATION = 2,
+  DUPLICATED_MUTATION = 3,
+  FAILED_MUTATION = 4
+};
+
+// Keeps track of whether a mutation was successful and, if so stores the ids
+// of the mutated data structures.
+class MutationResult {
+ public:
+  MutationResult() {}
+
+  // Adds a MemRowSet mutation to this mutation result, including the
+  // RowSetKeyProbe that was used to perform the mutation.
+  // This does not copy the row_key and it therefore requires it to be kept
+  // alive (which usually the case in Tablet::Insert() and Tablet::Mutate()).
+  void AddMemRowSetMutation(const ConstContiguousRow *row_key, int64_t mrs_id);
+
+  // Adds a DeltaRowStore mutation to this mutation result.
+  void AddDeltaRowStoreMutation(rowid_t row_idx,
+                                int64_t rs_id,
+                                int64_t delta_index);
+
+  // Allows to reuse the same MutationResult
+  void Reset();
+
+  void SetFailed(const Status &status) {
+    status_ = status;
+  }
+
+  // Returns the mutations that were applied in the context of this
+  // MutationResult. Should have either one entry (for single MemRowSet or
+  // DeltaMemStore mutations) or two entries if the mutation was applied in
+  // multiple places by a DuplicatingRowSet.
+  const vector<MutationTarget *> &mutations() const {
+    return targets_;
+  }
+
+  MutationType type() const;
+
+  const Status &status() const {
+    return status_;
+  }
+
+  string ToString() const;
+
+  ~MutationResult();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MutationResult);
+
+  Status status_;
+  vector<MutationTarget *> targets_;
 };
 
 } // namespace tablet

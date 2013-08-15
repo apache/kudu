@@ -102,8 +102,13 @@ class TestRowSet : public KuduRowSetTest {
       uint32_t new_val = idx_to_update * 5;
       update.Reset();
       update.AddColumnUpdate(1, &new_val);
-
-      CHECK_OK(MutateRow(rs, idx_to_update, RowChangeList(update_buf)));
+      MutationResult result;
+      CHECK_OK(MutateRow(rs,
+                         idx_to_update,
+                         RowChangeList(update_buf),
+                         &result));
+      CHECK_EQ(DELTA_MUTATION, result.type());
+      CHECK_EQ(rs->metadata()->id(), result.mutations()[0]->rs_id);
       if (updated != NULL) {
         updated->insert(idx_to_update);
       }
@@ -111,32 +116,38 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   // Delete the row with the given identifier.
-  Status DeleteRow(DiskRowSet *rs, uint32_t row_idx) {
+  Status DeleteRow(DiskRowSet *rs, uint32_t row_idx, MutationResult *result) {
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     update.Reset();
     update.SetToDelete();
 
-    return MutateRow(rs, row_idx, RowChangeList(update_buf));
+    return MutateRow(rs, row_idx, RowChangeList(update_buf), result);
   }
 
-  Status UpdateRow(DiskRowSet *rs, uint32_t row_idx, uint32_t new_val)  {
+  Status UpdateRow(DiskRowSet *rs,
+                   uint32_t row_idx,
+                   uint32_t new_val,
+                   MutationResult *result)  {
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     update.Reset();
     update.AddColumnUpdate(1, &new_val);
 
-    return MutateRow(rs, row_idx, RowChangeList(update_buf));
+    return MutateRow(rs, row_idx, RowChangeList(update_buf), result);
   }
 
   // Mutate the given row.
-  Status MutateRow(DiskRowSet *rs, uint32_t row_idx, const RowChangeList &mutation) {
+  Status MutateRow(DiskRowSet *rs,
+                   uint32_t row_idx,
+                   const RowChangeList &mutation,
+                   MutationResult *result) {
     RowBuilder rb(schema_.CreateKeyProjection());
     BuildRowKey(&rb, row_idx);
     RowSetKeyProbe probe(rb.row());
 
     ScopedTransaction tx(&mvcc_);
-    return rs->MutateRow(tx.txid(), probe, mutation);
+    return rs->MutateRow(tx.txid(), probe, mutation, result);
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {

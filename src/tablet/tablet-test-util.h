@@ -7,6 +7,7 @@
 
 #include "common/iterator.h"
 #include "gutil/strings/join.h"
+#include "gutil/casts.h"
 #include "tablet/tablet.h"
 #include "util/test_util.h"
 
@@ -74,6 +75,13 @@ class KuduRowSetTest : public KuduTabletTest {
  protected:
   shared_ptr<metadata::RowSetMetadata> rowset_meta_;
 };
+
+// Helper to get the last op on the transaction context as a mutation.
+static inline const MutationOp *last_op_as_mutation(const TransactionContext &tx_ctx){
+  CHECK_GE(tx_ctx.operations().size(), 1);
+  const MutationOp *mutation = down_cast<const MutationOp *>(tx_ctx.operations().back());
+  return mutation;
+}
 
 static inline Status IterateToStringList(RowwiseIterator *iter,
                                          vector<string> *out,

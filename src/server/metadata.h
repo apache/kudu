@@ -24,7 +24,7 @@ namespace metadata {
 class RowSetMetadata;
 
 typedef std::vector<shared_ptr<RowSetMetadata> > RowSetMetadataVector;
-typedef std::tr1::unordered_set<uint32_t> RowSetMetadataIds;
+typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
 
 // Manages the "blocks tracking" for the specified tablet.
 //
@@ -41,8 +41,10 @@ class TabletMetadata {
                  const string& start_key = "", const string& end_key = "")
     : start_key_(start_key), end_key_(end_key),
       fs_manager_(fs_manager),
-      master_block_(master_block), sblk_id_(0),
-      next_rowset_idx_(0) {
+      master_block_(master_block),
+      sblk_id_(0),
+      next_rowset_idx_(0),
+      last_durable_mrs_id_(-1) {
   }
 
   const string& oid() const { return master_block_.tablet_id(); }
@@ -55,6 +57,10 @@ class TabletMetadata {
   Status Flush() { return UpdateAndFlush(RowSetMetadataIds(), RowSetMetadataVector()); }
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove, const RowSetMetadataVector& to_add);
 
+  Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
+                        const RowSetMetadataVector& to_add,
+                        int64_t last_durable_mrs_id);
+
   // Create a new RowSetMetadata for this tablet.
   Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
 
@@ -62,16 +68,22 @@ class TabletMetadata {
 
   FsManager *fs_manager() const { return fs_manager_; }
 
+  int64_t lastest_durable_mrs_id() { return last_durable_mrs_id_; }
+
   // ==========================================================================
   // Stuff used by the tests
   // ==========================================================================
-  const RowSetMetadata *GetRowSetForTests(int32_t id) const;
+  const RowSetMetadata *GetRowSetForTests(int64_t id) const;
 
  private:
   Status ReadSuperBlock(TabletSuperBlockPB *pb);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
+
+  Status UpdateAndFlushUnlocked(const RowSetMetadataIds& to_remove,
+                                const RowSetMetadataVector& to_add,
+                                int64_t last_durable_mrs_id);
 
   typedef simple_spinlock LockType;
   LockType lock_;
@@ -84,7 +96,9 @@ class TabletMetadata {
   TabletMasterBlockPB master_block_;
   uint64_t sblk_id_;
 
-  Atomic32 next_rowset_idx_;
+  base::subtle::Atomic64 next_rowset_idx_;
+
+  int64_t last_durable_mrs_id_;
 };
 
 
@@ -108,7 +122,8 @@ class TabletMetadata {
 // There's a lock around the delta-blocks operations.
 class RowSetMetadata {
  public:
-  RowSetMetadata(TabletMetadata *tablet_metadata, int32_t id, const Schema& schema)
+
+  RowSetMetadata(TabletMetadata *tablet_metadata, int64_t id, const Schema& schema)
     : id_(id), schema_(schema), tablet_metadata_(tablet_metadata) {
   }
 
@@ -118,7 +133,8 @@ class RowSetMetadata {
 
   const string ToString();
 
-  int32_t id() const { return id_; }
+  int64_t id() const { return id_; }
+
   const Schema& schema() const { return schema_; }
 
   Status OpenDataBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
@@ -161,7 +177,7 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, block_id);
   }
 
-  Status CommitDeltaDataBlock(uint32_t id, const BlockId& block_id);
+  Status CommitDeltaDataBlock(int64_t id, const BlockId& block_id);
 
   Status OpenDeltaDataBlock(size_t index, shared_ptr<RandomAccessFile> *reader, uint64_t *size);
 
@@ -192,12 +208,12 @@ class RowSetMetadata {
   typedef simple_spinlock LockType;
   mutable LockType deltas_lock_;
 
-  int32_t id_;
+  int64_t id_;
   Schema schema_;
   BlockId bloom_block_;
   BlockId adhoc_index_block_;
   std::vector<BlockId> column_blocks_;
-  std::vector<std::pair<uint32_t, BlockId> > delta_blocks_;
+  std::vector<std::pair<int64_t, BlockId> > delta_blocks_;
   TabletMetadata *tablet_metadata_;
 
   friend class TabletMetadata;

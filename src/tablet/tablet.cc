@@ -47,6 +47,9 @@ using std::string;
 using std::set;
 using std::vector;
 using std::tr1::shared_ptr;
+using base::subtle::Barrier_AtomicIncrement;
+
+static const int64_t kNoMrsFlushed = -1;
 
 static CompactionPolicy *CreateCompactionPolicy() {
   if (FLAGS_tablet_compaction_policy == "size") {
@@ -64,8 +67,8 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
   : schema_(schema),
     key_schema_(schema.CreateKeyProjection()),
     metadata_(metadata.Pass()),
-    memrowset_(new MemRowSet(schema)),
     rowsets_(new RowSetTree()),
+    next_mrs_id_(0),
     open_(false) {
   compaction_policy_.reset(CreateCompactionPolicy());
 }
@@ -76,6 +79,8 @@ Tablet::~Tablet() {
 Status Tablet::CreateNew() {
   CHECK(!open_) << "already open";
   RETURN_NOT_OK(metadata_->Create());
+  memrowset_.reset(new MemRowSet(next_mrs_id_, schema_));
+  next_mrs_id_++;
   rowsets_->Reset(RowSetVector());
   open_ = true;
   return Status::OK();
@@ -86,6 +91,8 @@ Status Tablet::Open() {
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
   RETURN_NOT_OK(metadata_->Load());
+
+  next_mrs_id_ = metadata_->lastest_durable_mrs_id() + 1;
 
   RowSetVector rowsets_opened;
 
@@ -103,6 +110,10 @@ Status Tablet::Open() {
   }
 
   rowsets_->Reset(rowsets_opened);
+
+  // now that the current state is loaded create the new MemRowSet with the next id
+  memrowset_.reset(new MemRowSet(next_mrs_id_, schema_));
+  next_mrs_id_++;
 
   open_ = true;
   return Status::OK();
@@ -129,7 +140,8 @@ Status Tablet::NewRowIterator(const Schema &projection,
 }
 
 
-Status Tablet::Insert(const ConstContiguousRow& row) {
+Status Tablet::Insert(TransactionContext *tx_ctx,
+                      const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
 
   DCHECK_SCHEMA_EQ(schema_, row.schema());
@@ -150,7 +162,9 @@ Status Tablet::Insert(const ConstContiguousRow& row) {
       bool present = false;
       RETURN_NOT_OK(rowset->CheckRowPresent(probe, &present));
       if (PREDICT_FALSE(present)) {
-        return Status::AlreadyPresent("key already present");
+        Status s = Status::AlreadyPresent("key already present");
+        tx_ctx->AddFailedInsert(metadata_->oid(), row, s);
+        return s;
       }
     }
   }
@@ -161,10 +175,17 @@ Status Tablet::Insert(const ConstContiguousRow& row) {
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
   ScopedTransaction tx(&mvcc_);
-  return memrowset_->Insert(tx.txid(), row);
+  Status s = memrowset_->Insert(tx.txid(), row);
+  if (PREDICT_TRUE(s.ok())) {
+    tx_ctx->AddInsert(metadata_->oid(), tx.txid(), row, memrowset_->mrs_id());
+  } else {
+    tx_ctx->AddFailedInsert(metadata_->oid(), row, s);
+  }
+  return s;
 }
 
-Status Tablet::MutateRow(const ConstContiguousRow& row_key,
+Status Tablet::MutateRow(TransactionContext *tx_ctx,
+                         const ConstContiguousRow& row_key,
                          const RowChangeList &update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
@@ -217,11 +238,16 @@ Status Tablet::MutateRow(const ConstContiguousRow& row_key,
   ScopedRowLock rowlock(&lock_manager_, probe.encoded_key_slice(), LockManager::LOCK_EXCLUSIVE);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   ScopedTransaction tx(&mvcc_);
+  gscoped_ptr<MutationResult> result(new MutationResult);
 
   // First try to update in memrowset.
-  Status s = memrowset_->MutateRow(tx.txid(), probe, update);
-  if (s.ok() || !s.IsNotFound()) {
-    // if it succeeded, or if an error occurred, return.
+  Status s = memrowset_->MutateRow(tx.txid(), probe, update, result.get());
+  if (s.ok()) {
+    tx_ctx->AddMutation(metadata_->oid(), tx.txid(), update, result.Pass());
+    return s;
+  }
+  if (!s.IsNotFound()) {
+    tx_ctx->AddFailedMutation(metadata_->oid(), update, result.Pass(), s);
     return s;
   }
 
@@ -231,14 +257,20 @@ Status Tablet::MutateRow(const ConstContiguousRow& row_key,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx.txid(), probe, update);
-    if (s.ok() || !s.IsNotFound()) {
-      // if it succeeded, or if an error occurred, return.
+    s = rs->MutateRow(tx.txid(), probe, update, result.get());
+    if (s.ok()) {
+      tx_ctx->AddMutation(metadata_->oid(), tx.txid(), update, result.Pass());
+      return s;
+    }
+    if (!s.IsNotFound()) {
+      tx_ctx->AddFailedMutation(metadata_->oid(), update, result.Pass(), s);
       return s;
     }
   }
 
-  return Status::NotFound("key not found");
+  s = Status::NotFound("key not found");
+  tx_ctx->AddFailedMutation(metadata_->oid(),update, result.Pass(), s);
+  return s;
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
@@ -319,8 +351,10 @@ Status Tablet::Flush() {
   // use to improve iteration performance during the flush. The old design
   // used this, but not certain whether it's still doable with the new design.
 
+  int64_t mrs_being_flushed = kNoMrsFlushed;
+
   LOG(INFO) << "Flush: entering stage 1 (freezing old memrowset from inserts)";
-  shared_ptr<MemRowSet> old_ms(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> old_ms(new MemRowSet(next_mrs_id_, schema_));
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
@@ -329,8 +363,12 @@ Status Tablet::Flush() {
 
     start_insert_count = memrowset_->debug_insert_count();
 
+    mrs_being_flushed = memrowset_->mrs_id();
     // swap in a new memrowset
     old_ms.swap(memrowset_);
+    // increment the next mrs_id
+    next_mrs_id_++;
+
 
     if (old_ms->empty()) {
       // flushing empty memrowset is a no-op
@@ -352,7 +390,7 @@ Status Tablet::Flush() {
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
-  RETURN_NOT_OK(DoCompactionOrFlush(input));
+  RETURN_NOT_OK(DoCompactionOrFlush(input, mrs_being_flushed));
 
   // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
@@ -441,18 +479,23 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   return Status::OK();
 }
 
-Status Tablet::FlushMetadata(const RowSetVector& to_remove, const RowSetMetadataVector& to_add) {
+Status Tablet::FlushMetadata(const RowSetVector& to_remove,
+                             const RowSetMetadataVector& to_add,
+                             int64_t mrs_being_flushed) {
   RowSetMetadataIds to_remove_meta;
   BOOST_FOREACH(const shared_ptr<RowSet>& rowset, to_remove) {
     // Skip MemRowSet & DuplicatingRowSets which don't have metadata
     if (rowset->metadata().get() == NULL) continue;
     to_remove_meta.insert(rowset->metadata()->id());
   }
-
+  // If we're flushing an mrs update the latest durable one in the metadata
+  if (mrs_being_flushed != kNoMrsFlushed) {
+    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed);
+  }
   return metadata_->UpdateAndFlush(to_remove_meta, to_add);
 }
 
-Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
+Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
 
   MvccSnapshot flush_snap(mvcc_);
@@ -483,7 +526,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
     DeleteCompactionInputs(input);
 
     // Write out the new Tablet Metadata
-    return FlushMetadata(input.rowsets(), RowSetMetadataVector());
+    return FlushMetadata(input.rowsets(), RowSetMetadataVector(), mrs_being_flushed);
   }
 
   // The RollingDiskRowSet writer wrote out one or more RowSets as the compaction
@@ -543,7 +586,21 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
   RETURN_NOT_OK(merge->Init()); // TODO: why is init required here but not above?
-  RETURN_NOT_OK(ReupdateMissedDeltas(merge.get(), flush_snap, snap2, new_rowsets));
+
+  // Updating rows in the compaction outputs needs to be tracked or else we
+  // loose data on recovery. However because compactions run independently
+  // of the replicated state machine this transaction is committed locally
+  // only _and_ the commit must include the actual row data (vs. normally
+  // only including the ids of the destination MemRowSets/DeltaRowStores).
+  TransactionContext compaction_tx;
+  RETURN_NOT_OK(ReupdateMissedDeltas(metadata_->oid(),
+                                     &compaction_tx,
+                                     merge.get(),
+                                     flush_snap,
+                                     snap2,
+                                     new_rowsets));
+
+  // TODO commit the compaction transaction as soon as the WAL is in place.
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
 
@@ -564,7 +621,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   DeleteCompactionInputs(input);
 
   // Write out the new Tablet Metadata
-  RETURN_NOT_OK(FlushMetadata(input.rowsets(), out_metas));
+  RETURN_NOT_OK(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed));
 
   LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
 
@@ -588,7 +645,7 @@ Status Tablet::Compact(CompactFlags flags) {
 
   input.DumpToLog();
 
-  return DoCompactionOrFlush(input);
+  return DoCompactionOrFlush(input, kNoMrsFlushed);
 }
 
 Status Tablet::DebugDump(vector<string> *lines) {

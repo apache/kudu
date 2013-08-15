@@ -204,13 +204,22 @@ ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterat
 }
 
 
-void DeltaTracker::Update(txid_t txid, rowid_t row_idx, const RowChangeList &update) {
+Status DeltaTracker::Update(txid_t txid,
+                            rowid_t row_idx,
+                            const RowChangeList &update,
+                            MutationResult * result) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
-
   DCHECK_LT(row_idx, num_rows_);
 
-  dms_->Update(txid, row_idx, update);
+  Status s = dms_->Update(txid, row_idx, update);
+  if (s.ok()) {
+    // TODO once deltas have ids (probably after delta compaction) we need to
+    // change this to use the id from the DeltaMemStore and not the delta stores
+    // size.
+    result->AddDeltaRowStoreMutation(row_idx, rowset_metadata_->id(), delta_stores_.size());
+  }
+  return s;
 }
 
 Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {

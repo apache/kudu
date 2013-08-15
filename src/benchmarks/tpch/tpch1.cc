@@ -63,6 +63,7 @@
 #include "util/slice.h"
 #include "util/stopwatch.h"
 #include "tablet/tablet.h"
+#include "tablet/transaction_context.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -179,6 +180,7 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
   RowBuilder rb(kSchema);
   vector<string> columns;
 
+  tablet::TransactionContext tx_ctx;
   while (getline(in,line)) {
     columns.clear();
     rb.Reset();
@@ -201,7 +203,8 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
       rb.AddString(Slice(columns[i]));
     }
 
-    CHECK_OK(tablet->Insert(rb.row()));
+    CHECK_OK(tablet->Insert(&tx_ctx, rb.row()));
+    tx_ctx.Reset();
   }
   CHECK_OK(tablet->Flush());
 }

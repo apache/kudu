@@ -75,7 +75,11 @@ class TestCompaction : public KuduRowSetTest {
       RowBuilder rb(schema_.CreateKeyProjection());
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
-      ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(), probe, RowChangeList(update_buf)));
+      MutationResult result;
+      ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(),
+                                         probe,
+                                         RowChangeList(update_buf),
+                                         &result));
     }
   }
 
@@ -133,7 +137,7 @@ class TestCompaction : public KuduRowSetTest {
       // Create inputs.
       for (int i = 0; i < FLAGS_merge_benchmark_num_rowsets; i++) {
         // Create a memrowset with a bunch of rows and updates.
-        shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+        shared_ptr<MemRowSet> mrs(new MemRowSet(i, schema_));
 
         for (int n = 0; n < FLAGS_merge_benchmark_num_rows_per_rowset; n++) {
 
@@ -191,7 +195,7 @@ class TestCompaction : public KuduRowSetTest {
 
 TEST_F(TestCompaction, TestMemRowSetInput) {
   // Create a memrowset with 10 rows and several updates.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
   InsertRows(mrs.get(), 10, 0);
   UpdateRows(mrs.get(), 10, 0, 1);
   UpdateRows(mrs.get(), 10, 0, 2);
@@ -213,7 +217,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   // Create a memrowset with a bunch of rows, flush and reopen.
   shared_ptr<DiskRowSet> rs;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
     InsertRows(mrs.get(), 10, 0);
     FlushAndReopen(*mrs, &rs);
     ASSERT_NO_FATAL_FAILURE();
@@ -245,7 +249,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
 // output rowset (on disk).
 TEST_F(TestCompaction, TestOneToOne) {
   // Create a memrowset with a bunch of rows and updates.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
   InsertRows(mrs.get(), 1000, 0);
   UpdateRows(mrs.get(), 1000, 0, 1);
   MvccSnapshot snap(mvcc_);
@@ -265,7 +269,14 @@ TEST_F(TestCompaction, TestOneToOne) {
   // Add some more updates which come into the new rowset while the "reupdate" is happening.
   UpdateRows(rs.get(), 1000, 0, 3);
 
-  ASSERT_STATUS_OK(ReupdateMissedDeltas(input.get(), snap, snap2,
+  string dummy_name = "";
+  TransactionContext tx_ctx;
+
+  ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
+                                        &tx_ctx,
+                                        input.get(),
+                                        snap,
+                                        snap2,
                                         boost::assign::list_of(rs)));
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
@@ -289,7 +300,7 @@ TEST_F(TestCompaction, TestMerge) {
   // Create three input rowsets
   for (int delta = 0; delta < 3; delta++) {
     // Create a memrowset with a bunch of rows and updates.
-    shared_ptr<MemRowSet> mrs(new MemRowSet(schema_));
+    shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema_));
     InsertRows(mrs.get(), 1000, delta);
     UpdateRows(mrs.get(), 1000, delta, 1);
 

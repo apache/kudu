@@ -124,7 +124,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           uint32_t new_val = old_val + 1;
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
-          CHECK_OK(tablet_->MutateRow(rb.row(), RowChangeList(update_buf)));
+          TransactionContext dummy;
+          CHECK_OK(tablet_->MutateRow(&dummy, rb.row(), RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
             updates->AddValue(updates_since_last_report);
@@ -272,7 +273,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     while (running_insert_count_.count() > 0) {
       for (int i = 0; i < 100; i++) {
         this->InsertTestRows(tid, 1, iteration++);
-        CHECK_OK(this->DeleteTestRow(tid));
+        TransactionContext tx_ctx;
+        CHECK_OK(this->DeleteTestRow(&tx_ctx, tid));
       }
     }
   }
@@ -284,8 +286,9 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   void StubbornlyUpdateSameRowThread(int tid) {
     uint32_t iteration = 0;
     while (running_insert_count_.count() > 0) {
+      TransactionContext tx_ctx;
       for (int i = 0; i < 100; i++) {
-        Status s = this->UpdateTestRow(tid, iteration++);
+        Status s = this->UpdateTestRow(&tx_ctx, tid, iteration++);
         if (!s.ok() && !s.IsNotFound()) {
           // We expect "not found", but not any other errors.
           CHECK_OK(s);

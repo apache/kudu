@@ -9,6 +9,7 @@
 #include "common/iterator.h"
 #include "tablet/diskrowset.h"
 #include "tablet/memrowset.h"
+#include "tablet/transaction_context.h"
 
 namespace kudu {
 namespace tablet {
@@ -107,7 +108,11 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap, RollingDiskRowSet
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // yield no further rows.
-Status ReupdateMissedDeltas(CompactionInput *input,
+//
+// All effectively applied mutations are collected in compaction_tc.
+Status ReupdateMissedDeltas(const string &tablet_name,
+                            TransactionContext *compaction_tc,
+                            CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets);

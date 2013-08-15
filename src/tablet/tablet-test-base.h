@@ -89,14 +89,17 @@ struct StringKeyTestSetup {
       buf, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
+  Status DoUpdate(TransactionContext *tx_ctx,
+                  Tablet *tablet,
+                  uint64_t row_idx,
+                  uint32_t *new_val) {
     RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     *new_val = 10000 + row_idx;
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(rb.row(), RowChangeList(ubuf));
+    return tablet->MutateRow(tx_ctx, rb.row(), RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -184,14 +187,17 @@ struct CompositeKeyTestSetup {
       buf, row_idx, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
+  Status DoUpdate(TransactionContext *tx_ctx,
+                  Tablet *tablet,
+                  uint64_t row_idx,
+                  uint32_t *new_val) {
     RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     *new_val = 10000 + row_idx;
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(2, new_val);
-    return tablet->MutateRow(rb.row(), RowChangeList(ubuf));
+    return tablet->MutateRow(tx_ctx, rb.row(), RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -267,13 +273,16 @@ struct IntKeyTestSetup {
     return "";
   }
 
-  Status DoUpdate(Tablet *tablet, int64_t row_idx, uint32_t *new_val) {
+  Status DoUpdate(TransactionContext *tx_ctx,
+                  Tablet *tablet,
+                  int64_t row_idx,
+                  uint32_t *new_val) {
     RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = (10000 + row_idx) * (row_idx % 2 == 0 ? -1 : 1);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(rb.row(), RowChangeList(buf));
+    return tablet->MutateRow(tx_ctx, rb.row(), RowChangeList(buf));
   }
 
   template<class RowType>
@@ -520,13 +529,16 @@ struct NullableValueTestSetup {
       (uint32_t)row_idx, row_idx, update_count);
   }
 
-  Status DoUpdate(Tablet *tablet, uint64_t row_idx, uint32_t *new_val) {
+  Status DoUpdate(TransactionContext *tx_ctx,
+                  Tablet *tablet,
+                  uint64_t row_idx,
+                  uint32_t *new_val) {
     RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = CalcUpdateValue(row_idx);
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, IsNullRow(row_idx) ? new_val : NULL);
-    return tablet->MutateRow(rb.row(), RowChangeList(buf));
+    return tablet->MutateRow(tx_ctx, rb.row(), RowChangeList(buf));
   }
 
   template <class RowType>
@@ -608,19 +620,41 @@ class TabletTestBase : public KuduTabletTest {
     arena_(1024, 4*1024*1024)
   {}
 
-  void InsertTestRows(uint64_t first_row, uint64_t count, uint32_t update_count_val,
+  // Inserts "count" rows without keeping track of inserts. This should be
+  // called instead of InsertTestRowsInTransaction when inserting a large
+  // number of rows, or when keeping track of inserts is not relevant.
+  void InsertTestRows(uint64_t first_row,
+                      uint64_t count,
+                      uint32_t update_count_val,
                       TimeSeries *ts = NULL) {
+    TransactionContext tx_ctx;
+    InsertTestRowsInTransaction(&tx_ctx, true, first_row, count,
+                                update_count_val, ts);
+  }
+
+  // Inserts test rows within a transaction, but optionally resets it after
+  // each insert. This allows to inserts a big number of rows without going
+  // out of memory but at the same time keep track of inserts when relevant.
+  void InsertTestRowsInTransaction(TransactionContext *tx_ctx,
+                                   bool reset_tx,
+                                   uint64_t first_row,
+                                   uint64_t count,
+                                   uint32_t update_count_val,
+                                   TimeSeries *ts = NULL) {
     RowBuilder rb(schema_);
 
     uint64_t inserted_since_last_report = 0;
     for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
       setup_.BuildRow(&rb, i, update_count_val);
-      CHECK_OK(tablet_->Insert(rb.row()));
+      CHECK_OK(tablet_->Insert(tx_ctx, rb.row()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
         inserted_since_last_report = 0;
+      }
+      if (reset_tx) {
+        tx_ctx->Reset();
       }
     }
 
@@ -629,7 +663,9 @@ class TabletTestBase : public KuduTabletTest {
     }
   }
 
-  Status UpdateTestRow(uint64_t row_idx, uint32_t new_val) {
+  Status UpdateTestRow(TransactionContext *tx_ctx,
+                       uint64_t row_idx,
+                       uint32_t new_val) {
     RowBuilder rb(schema_.CreateKeyProjection());
     setup_.BuildRowKey(&rb, row_idx);
 
@@ -638,16 +674,16 @@ class TabletTestBase : public KuduTabletTest {
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(col_idx, &new_val);
-    return tablet_->MutateRow(rb.row(), RowChangeList(buf));
+    return tablet_->MutateRow(tx_ctx, rb.row(), RowChangeList(buf));
   }
 
-  Status DeleteTestRow(uint64_t row_idx) {
+  Status DeleteTestRow(TransactionContext *tx_ctx, uint64_t row_idx) {
     RowBuilder rb(schema_.CreateKeyProjection());
     setup_.BuildRowKey(&rb, row_idx);
 
     faststring buf;
     RowChangeListEncoder(schema_, &buf).SetToDelete();
-    return tablet_->MutateRow(rb.row(), RowChangeList(buf));
+    return tablet_->MutateRow(tx_ctx, rb.row(), RowChangeList(buf));
   }
 
   template <class RowType>

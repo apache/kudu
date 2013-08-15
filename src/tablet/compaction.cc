@@ -512,7 +512,9 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
   return Status::OK();
 }
 
-Status ReupdateMissedDeltas(CompactionInput *input,
+Status ReupdateMissedDeltas(const string &tablet_name,
+                            TransactionContext *tx_ctx,
+                            CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets) {
@@ -532,6 +534,7 @@ Status ReupdateMissedDeltas(CompactionInput *input,
   // updates. So, this can be made much faster.
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
+  const Schema key_schema(input->schema().CreateKeyProjection());
 
   rowid_t row_idx = 0;
   while (input->HasMoreBlocks()) {
@@ -615,7 +618,24 @@ Status ReupdateMissedDeltas(CompactionInput *input,
           cur_tracker = delta_trackers.front();
         }
 
-        cur_tracker->Update(mut->txid(), row_idx, mut->changelist());
+        gscoped_ptr<MutationResult> result(new MutationResult);
+        Status s = cur_tracker->Update(mut->txid(),
+                                       row_idx,
+                                       mut->changelist(),
+                                       result.get());
+        DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
+            << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+        if (s.ok()) {
+          tx_ctx->AddMutation(tablet_name,
+                              mut->txid(),
+                              mut->changelist(),
+                              result.Pass());
+        } else {
+          tx_ctx->AddFailedMutation(tablet_name,
+                                    mut->changelist(),
+                                    result.Pass(),
+                                    s);
+        }
       }
 
       // If the first pass of the flush counted this row as deleted, then it isn't

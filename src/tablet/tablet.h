@@ -17,6 +17,7 @@
 #include "tablet/memrowset.h"
 #include "tablet/lock_manager.h"
 #include "tablet/rowset_tree.h"
+#include "tablet/transaction_context.h"
 #include "util/env.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -62,13 +63,14 @@ class Tablet {
   // Returns Status::AlreadyPresent() if an entry with the same key is already
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
-  Status Insert(const ConstContiguousRow& row);
+  Status Insert(TransactionContext *tx_ctx, const ConstContiguousRow& row);
 
   // Update a row in this tablet.
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status MutateRow(const ConstContiguousRow& row_key,
+  Status MutateRow(TransactionContext *tx_ctx,
+                   const ConstContiguousRow& row_key,
                    const RowChangeList &update);
 
   // Create a new row iterator which yields the rows as of the current MVCC
@@ -127,6 +129,8 @@ class Tablet {
   // Return the MVCC manager for this tablet.
   const MvccManager &mvcc_manager() const { return mvcc_; }
 
+  int32_t CurrentMrsIdForTests() const { return memrowset_->mrs_id(); }
+
  private:
   friend class Iterator;
 
@@ -147,10 +151,11 @@ class Tablet {
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
 
-  Status DoCompactionOrFlush(const RowSetsInCompaction &input);
+  Status DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed);
 
   Status FlushMetadata(const RowSetVector& to_remove,
-                       const metadata::RowSetMetadataVector& to_add);
+                       const metadata::RowSetMetadataVector& to_add,
+                       int64_t mrs_being_flushed);
 
   // Swap out a set of rowsets, atomically replacing them with the new rowset
   // under the lock.
@@ -174,6 +179,8 @@ class Tablet {
   gscoped_ptr<metadata::TabletMetadata> metadata_;
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
+
+  Atomic32 next_mrs_id_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;

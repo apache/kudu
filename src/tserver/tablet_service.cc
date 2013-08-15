@@ -120,11 +120,12 @@ void TabletServiceImpl::Insert(const InsertRequestPB* req,
 
 
   int i = 0;
+  tablet::TransactionContext tx_ctx;
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     ConstContiguousRow row(client_schema, row_ptr);
     DVLOG(2) << "Going to insert row: " << client_schema.DebugRow(row);
 
-    Status s = tablet->Insert(row);
+    Status s = tablet->Insert(&tx_ctx, row);
     if (PREDICT_FALSE(!s.ok())) {
       DVLOG(2) << "Error for row " << client_schema.DebugRow(row)
                << ": " << s.ToString();

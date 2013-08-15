@@ -2,6 +2,7 @@
 
 SET(TABLET_SRCS
   tablet.cc
+  transaction_context.cc
   cfile_set.cc
   compaction.cc
   compaction_policy.cc

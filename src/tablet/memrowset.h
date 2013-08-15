@@ -147,8 +147,8 @@ class MemRowSet : public RowSet,
  public:
   class Iterator;
 
-  explicit MemRowSet(const Schema &schema);
-
+  MemRowSet(int64_t id,
+            const Schema &schema);
 
   // Insert a new row into the memrowset.
   //
@@ -160,7 +160,8 @@ class MemRowSet : public RowSet,
   // the provided memory buffer may safely be re-used or freed.
   //
   // Returns Status::OK unless allocation fails.
-  Status Insert(txid_t txid, const ConstContiguousRow& row);
+  Status Insert(txid_t txid,
+                const ConstContiguousRow& row);
 
 
   // Update or delete an existing row in the memrowset.
@@ -168,7 +169,8 @@ class MemRowSet : public RowSet,
   // Returns Status::NotFound if the row doesn't exist.
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
-                   const RowChangeList &update);
+                   const RowChangeList &update,
+                   MutationResult *result);
 
   // Return the number of entries in the memrowset.
   // NOTE: this requires iterating all data, and is thus
@@ -239,6 +241,10 @@ class MemRowSet : public RowSet,
     return schema_;
   }
 
+  int64_t mrs_id() const {
+    return id_;
+  }
+
   shared_ptr<metadata::RowSetMetadata> metadata() {
     return shared_ptr<metadata::RowSetMetadata>(reinterpret_cast<metadata::RowSetMetadata *>(NULL));
   }
@@ -275,9 +281,13 @@ class MemRowSet : public RowSet,
 
   // Perform a "Reinsert" -- handle an insertion into a row which was previously
   // inserted and deleted, but still has an entry in the MemRowSet.
-  Status Reinsert(txid_t txid, const ConstContiguousRow& row_data, MRSRow *row);
+  Status Reinsert(txid_t txid,
+                  const ConstContiguousRow& row_data,
+                  MRSRow *row);
 
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
+
+  int64_t id_;
 
   const Schema schema_;
   ThreadSafeArena arena_;
