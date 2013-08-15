@@ -13,6 +13,9 @@
 #include "twitter-demo/twitter-schema.h"
 #include "util/env.h"
 
+DEFINE_string(tablet_server_base_dir, "/tmp/demo-tablets",
+              "Base directory for single-tablet demo server");
+
 DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7150",
              "Comma-separated list of addresses for the Tablet Server"
               " to bind to for RPC connections");
@@ -40,8 +43,9 @@ class TemporaryTabletsForDemos {
  public:
   TemporaryTabletsForDemos()
     : env_(Env::Default()),
-      fs_manager_(env_, "/tmp/demo-tablets"),
+      fs_manager_(env_, FLAGS_tablet_server_base_dir),
       twitter_schema_(twitter_demo::CreateTwitterSchema()) {
+    CHECK_OK(fs_manager_.CreateInitialFileSystemLayout());
 
     metadata::TabletMasterBlockPB master_block;
     master_block.set_tablet_id("twitter");
@@ -50,7 +54,13 @@ class TemporaryTabletsForDemos {
     gscoped_ptr<TabletMetadata> meta(
       new TabletMetadata(&fs_manager_, master_block));
     twitter_tablet_.reset(new Tablet(meta.Pass(), twitter_schema_));
-    CHECK_OK(twitter_tablet_->CreateNew());
+
+    Status s = twitter_tablet_->Open();
+    if (!s.ok() && s.IsNotFound()) {
+      LOG(INFO) << "Creating new Twitter tablet";
+      s = twitter_tablet_->CreateNew();
+    }
+    CHECK_OK(s);
   }
 
   const shared_ptr<Tablet>& twitter_tablet() {

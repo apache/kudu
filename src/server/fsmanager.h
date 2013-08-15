@@ -95,6 +95,8 @@ class FsManager {
     : env_(env), root_path_(root_path)
   {}
 
+  // Create the initial filesystem layout.
+  // This has no effect if the layout is already initialized.
   Status CreateInitialFileSystemLayout();
   void DumpFileSystemTree(ostream& out);
 
