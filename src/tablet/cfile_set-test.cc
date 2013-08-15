@@ -168,9 +168,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_GT(stats[0].data_blocks_read, 100);
 
   // Since we didn't ever materialize column 2, we shouldn't have read any data blocks.
-  // TODO: currently, the Seek() when we open the iterator is not lazy, so we always
-  // read at least the very first data block here. Address this later.
-  ASSERT_EQ(1, stats[2].data_blocks_read);
+  ASSERT_EQ(0, stats[2].data_blocks_read);
 
   // Column 0 and 1 skipped a lot of blocks, so should not have read all rows.
   ASSERT_LT(stats[0].rows_read, kNumRows * 3 / 4);

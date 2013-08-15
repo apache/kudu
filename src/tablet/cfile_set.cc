@@ -250,7 +250,11 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
 
   initted_ = true;
 
-  return SeekToOrdinal(lower_bound_idx_);
+  // Don't actually seek -- we'll seek when we first actually read the
+  // data.
+  cur_idx_ = lower_bound_idx_;
+  Unprepare(); // Reset state.
+  return Status::OK();
 }
 
 Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
@@ -363,9 +367,12 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
   CFileIterator &col_iter = col_iters_[idx];
   size_t n = prepared_count_;
 
-  if (col_iter.GetCurrentOrdinal() != cur_idx_) {
-    // This column must have not been materialized in a prior block.
-    // We need to seek it to the correct offset.
+  if (!col_iter.seeked() || col_iter.GetCurrentOrdinal() != cur_idx_) {
+    // Either this column has not yet been accessed, or it was accessed
+    // but then skipped in a prior block (e.g because predicates on other
+    // columns completely eliminated the block).
+    //
+    // Either way, we need to seek it to the correct offset.
     RETURN_NOT_OK(col_iter.SeekToOrdinal(cur_idx_));
   }
 

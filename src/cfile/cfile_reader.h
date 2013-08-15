@@ -221,6 +221,11 @@ class CFileIterator {
   Status SeekAtOrAfter(const EncodedKey &encoded_key,
                        bool *exact_match);
 
+  // Return true if this reader is currently seeked.
+  // If the iterator is not seeked, it is an error to call any functions except
+  // for seek (including GetCurrentOrdinal).
+  bool seeked() const { return seeked_; }
+
   // Get the ordinal index that the iterator is currently pointed to.
   //
   // Prior to calling PrepareBatch(), this returns the position after the last
