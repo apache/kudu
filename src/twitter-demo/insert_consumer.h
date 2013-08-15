@@ -8,9 +8,11 @@
 #include <tr1/memory>
 
 #include "common/schema.h"
-#include "util/slice.h"
-#include "twitter-demo/parser.h"
+#include "rpc/rpc_controller.h"
 #include "tserver/tserver.proxy.h"
+#include "twitter-demo/parser.h"
+#include "util/locks.h"
+#include "util/slice.h"
 
 namespace kudu {
 namespace twitter_demo {
@@ -25,6 +27,8 @@ class InsertConsumer : public TwitterConsumer {
   virtual void ConsumeJSON(const Slice& json);
 
  private:
+  void BatchFinished();
+
   Schema schema_;
 
   TwitterEventParser parser_;
@@ -33,6 +37,12 @@ class InsertConsumer : public TwitterConsumer {
   TwitterEvent event_;
 
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+
+  simple_spinlock lock_;
+  bool request_pending_;
+  tserver::InsertRequestPB request_;
+  tserver::InsertResponsePB response_;
+  rpc::RpcController rpc_;
 };
 
 } // namespace twitter_demo
