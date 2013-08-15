@@ -88,6 +88,7 @@ class KuduScanner {
   // Initialize the scanner. The given 'table' object must remain valid
   // for the lifetime of this scanner object.
   KuduScanner(KuduTable* table);
+  ~KuduScanner();
 
   // TODO: add an explicit close? use the dtor? would be good to
   // free the server-side resources.
@@ -104,6 +105,17 @@ class KuduScanner {
 
   // Begin scanning.
   Status Open();
+
+  // Close the scanner.
+  // This releases resources on the server.
+  //
+  // This call does not block, and will not ever fail, even if the server
+  // cannot be contacted.
+  //
+  // NOTE: the scanner is reset to its initial state by this function.
+  // You'll have to re-add any projection, predicates, etc if you want
+  // to reuse this Scanner object.
+  void Close();
 
   // Return true if there are more rows to be fetched from this scanner.
   bool HasMoreRows() const;

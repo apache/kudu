@@ -56,6 +56,7 @@ class TabletServer {
 
   const RpcServer *rpc_server() const { return rpc_server_.get(); }
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
+  const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
 
  private:
   friend class TabletServerTest;

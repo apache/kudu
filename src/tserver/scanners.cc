@@ -47,6 +47,11 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
   return scanners_by_id_.erase(scanner_id) > 0;
 }
 
+size_t ScannerManager::CountActiveScanners() const {
+  boost::lock_guard<boost::shared_mutex> l(lock_);
+  return scanners_by_id_.size();
+}
+
 Scanner::Scanner(const string& id)
   : id_(id) {
   UpdateAccessTime();

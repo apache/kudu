@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera,inc.
 
+#include <boost/bind.hpp>
 #include "common/wire_protocol.h"
 #include "client/client.h"
 #include "rpc/messenger.h"
@@ -18,6 +19,7 @@ using kudu::tserver::ScanResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
 using kudu::tserver::TabletServer;
 using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
 
 namespace kudu {
 namespace client {
@@ -93,6 +95,10 @@ KuduScanner::KuduScanner(KuduTable* table)
   CHECK(table->is_open()) << "Table not open";
 }
 
+KuduScanner::~KuduScanner() {
+  Close();
+}
+
 Status KuduScanner::SetProjection(const Schema& projection) {
   CHECK(!open_) << "Scanner already open";
   projection_ = projection;
@@ -128,6 +134,39 @@ Status KuduScanner::Open() {
 
   open_ = true;
   return Status::OK();
+}
+
+namespace {
+// Callback for the RPC sent by Close().
+// We can't use the KuduScanner response and RPC controller members for this
+// call, because the scanner object may be destructed while the call is still
+// being processed.
+struct CloseCallback {
+  RpcController controller;
+  ScanResponsePB response;
+  string scanner_id;
+  void Callback() {
+    if (!controller.status().ok()) {
+      LOG(WARNING) << "Couldn't close scanner " << scanner_id << ": "
+                   << controller.status().ToString();
+    }
+    delete this;
+  }
+};
+} // anonymous namespace
+
+void KuduScanner::Close() {
+  if (!open_) return;
+  DCHECK(!next_req_.scanner_id().empty());
+  CloseCallback* closer = new CloseCallback;
+  closer->scanner_id = next_req_.scanner_id();
+  next_req_.set_batch_size_bytes(0);
+  next_req_.set_close_scanner(true);
+  closer->controller.set_timeout(MonoDelta::FromMilliseconds(5000));
+  table_->proxy_->ScanAsync(next_req_, &closer->response, &closer->controller,
+                            boost::bind(&CloseCallback::Callback, closer));
+  next_req_.Clear();
+  open_ = false;
 }
 
 Status KuduScanner::CheckForErrors() {

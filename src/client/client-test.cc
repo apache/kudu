@@ -13,6 +13,7 @@
 #include "common/wire_protocol.h"
 #include "tablet/tablet.h"
 #include "tserver/mini_tablet_server.h"
+#include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -170,6 +171,50 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
       count += rows.size();
     }
     ASSERT_EQ(FLAGS_test_scan_num_rows, count);
+  }
+}
+
+static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
+  // The Close call is async, so we may have to loop a bit until we see it disappear.
+  // This loops for ~10sec. Typically it succeeds in only a few milliseconds.
+  int i = 0;
+  for (i = 0; i < 500; i++) {
+    if (manager->CountActiveScanners() == 0) {
+      LOG(INFO) << "Successfully saw scanner close on iteration " << i;
+      return;
+    }
+    if (i < 10) usleep(2000); // 2ms
+    else usleep(20000); // 20ms
+  }
+  FAIL() << "Waited too long for the scanner to close";
+}
+
+// Test cleanup of scanners on the server side when closed.
+TEST_F(ClientTest, TestCloseScanner) {
+  InsertTestRows(10);
+
+  const tserver::ScannerManager* manager = mini_server_->server()->scanner_manager();
+  // Open the scanner, make sure we see 1 registered scanner.
+  {
+    SCOPED_TRACE("Explicit close");
+    KuduScanner scanner(client_table_.get());
+    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    scanner.Open();
+    ASSERT_EQ(1, manager->CountActiveScanners());
+    scanner.Close();
+    AssertScannersDisappear(manager);
+  }
+
+  {
+    SCOPED_TRACE("Close when out of scope");
+    {
+      KuduScanner scanner(client_table_.get());
+      ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+      scanner.Open();
+      ASSERT_EQ(1, manager->CountActiveScanners());
+    }
+    // Above scanner went out of scope, so the destructor should close asynchronously.
+    AssertScannersDisappear(manager);
   }
 }
 

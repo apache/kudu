@@ -48,6 +48,9 @@ class ScannerManager {
   // Returns true if unregistered successfully.
   bool UnregisterScanner(const std::string& scanner_id);
 
+  // Return the number of scanners currently active.
+  size_t CountActiveScanners() const;
+
   // TODO: add method to iterate through scanners and remove any which
   // are past their TTL
 
@@ -57,7 +60,7 @@ class ScannerManager {
   MonoDelta scanner_ttl_;
 
   // Lock protecting the scanner map
-  boost::shared_mutex lock_;
+  mutable boost::shared_mutex lock_;
 
   // Map of the currently active scanners.
   typedef std::tr1::unordered_map<std::string, SharedScanner> ScannerMap;
