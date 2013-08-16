@@ -34,6 +34,7 @@ using std::tr1::shared_ptr;
 
 class DeltaFileIterator;
 class DeltaKey;
+class DeltaCompactionInput;
 
 class DeltaFileWriter {
  public:
@@ -102,6 +103,7 @@ class DeltaFileReader : public DeltaStore {
 
  private:
   friend class DeltaFileIterator;
+  friend class DeltaCompactionInput;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
 

@@ -62,7 +62,7 @@ class DeltaKey {
 
   // Compare this key to another key. Delta keys are sorted by ascending rowid,
   // then ascending txid.
-  int CompareTo(const DeltaKey &other) {
+  int CompareTo(const DeltaKey &other) const {
     if (row_idx_ < other.row_idx_) {
       return -1;
     } else if (row_idx_ > other.row_idx_) {

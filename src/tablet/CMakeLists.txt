@@ -14,6 +14,7 @@ SET(TABLET_SRCS
   rowset.cc
   rowset_tree.cc
   deltamemstore.cc deltafile.cc delta_tracker.cc
+  delta_compaction.cc
 )
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 ADD_DEPENDENCIES(tablet kudu_common)
@@ -35,6 +36,7 @@ ADD_KUDU_TEST(compaction-test)
 ADD_KUDU_TEST(compaction_policy-test)
 ADD_KUDU_TEST(rowset_tree-test)
 ADD_KUDU_TEST(composite-pushdown-test)
+ADD_KUDU_TEST(delta_compaction-test)
 
 # Some tests don't have dependencies on other tablet stuff
 SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
