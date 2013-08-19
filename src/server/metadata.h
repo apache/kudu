@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/schema.h"
 #include "gutil/atomicops.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
@@ -55,7 +56,7 @@ class TabletMetadata {
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove, const RowSetMetadataVector& to_add);
 
   // Create a new RowSetMetadata for this tablet.
-  Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset);
+  Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
 
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 
@@ -107,8 +108,8 @@ class TabletMetadata {
 // There's a lock around the delta-blocks operations.
 class RowSetMetadata {
  public:
-  RowSetMetadata(TabletMetadata *tablet_metadata, int32_t id)
-    : tablet_metadata_(tablet_metadata), id_(id) {
+  RowSetMetadata(TabletMetadata *tablet_metadata, int32_t id, const Schema& schema)
+    : id_(id), schema_(schema), tablet_metadata_(tablet_metadata) {
   }
 
   Status Create();
@@ -118,7 +119,7 @@ class RowSetMetadata {
   const string ToString();
 
   int32_t id() const { return id_; }
-
+  const Schema& schema() const { return schema_; }
 
   Status OpenDataBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
     RETURN_NOT_OK(fs_manager()->OpenBlock(block_id, reader));
@@ -177,6 +178,10 @@ class RowSetMetadata {
   }
 
  private:
+  RowSetMetadata(TabletMetadata *tablet_metadata, int32_t id)
+    : id_(id), tablet_metadata_(tablet_metadata) {
+  }
+
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
 
   Status ToProtobuf(RowSetDataPB *pb);
@@ -187,14 +192,14 @@ class RowSetMetadata {
   typedef simple_spinlock LockType;
   mutable LockType deltas_lock_;
 
+  int32_t id_;
+  Schema schema_;
   BlockId bloom_block_;
   BlockId adhoc_index_block_;
   std::vector<BlockId> column_blocks_;
   std::vector<std::pair<uint32_t, BlockId> > delta_blocks_;
   TabletMetadata *tablet_metadata_;
 
-  // Stuff not needed by the ng-layout
-  int32_t id_;
   friend class TabletMetadata;
 };
 

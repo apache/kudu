@@ -41,7 +41,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
  public:
   class Iterator;
 
-  CFileSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata, const Schema &schema);
+  CFileSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
 
   Status Open();
 
@@ -57,7 +57,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   // Determine the index of the given row key.
   Status FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const;
 
-  const Schema &schema() const { return schema_; }
+  const Schema &schema() const { return rowset_metadata_->schema(); }
 
   string ToString() const {
     return string("CFile base data in ") + rowset_metadata_->ToString();
@@ -84,8 +84,11 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   Status NewKeyIterator(CFileIterator **iter) const;
 
+  // Return the CFileReader responsible for reading the key index.
+  // (the ad-hoc reader for composite keys, otherwise the key column reader)
+  CFileReader *key_index_reader();
+
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
-  const Schema schema_;
 
   std::string min_encoded_key_;
   std::string max_encoded_key_;

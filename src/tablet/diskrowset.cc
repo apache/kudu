@@ -40,8 +40,8 @@ Status DiskRowSetWriter::Open() {
   RETURN_NOT_OK(rowset_metadata_->Create());
 
   // Open columns.
-  for (int i = 0; i < schema_.num_columns(); i++) {
-    const ColumnSchema &col = schema_.column(i);
+  for (int i = 0; i < schema().num_columns(); i++) {
+    const ColumnSchema &col = schema().column(i);
 
     // TODO: allow options to be configured, perhaps on a per-column
     // basis as part of the schema. For now use defaults.
@@ -55,7 +55,7 @@ Status DiskRowSetWriter::Open() {
     opts.write_posidx = true;
 
     // If the schema has a single PK and this is the PK col
-    if (i == 0 && schema_.num_key_columns() == 1) {
+    if (i == 0 && schema().num_key_columns() == 1) {
       opts.write_validx = true;
     }
 
@@ -90,7 +90,7 @@ Status DiskRowSetWriter::Open() {
   // Open bloom filter.
   RETURN_NOT_OK(InitBloomFileWriter());
 
-  if (schema_.num_key_columns() > 1) {
+  if (schema().num_key_columns() > 1) {
     // Open ad-hoc index writer
     RETURN_NOT_OK(InitAdHocIndexWriter());
   }
@@ -133,18 +133,18 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 }
 
 Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
-  DCHECK_EQ(block.schema().num_columns(), schema_.num_columns());
+  DCHECK_EQ(block.schema().num_columns(), schema().num_columns());
   CHECK(!finished_);
 
   // If this is the very first block, encode the first key and save it as metadata
   // in the index column.
   if (written_count_ == 0) {
-    Slice enc_key = schema_.EncodeComparableKey(block.row(0), &last_encoded_key_);
+    Slice enc_key = schema().EncodeComparableKey(block.row(0), &last_encoded_key_);
     key_index_writer()->AddMetadataPair(DiskRowSet::kMinKeyMetaEntryName, enc_key);
   }
 
   // Write the batch to each of the columns
-  for (int i = 0; i < schema_.num_columns(); i++) {
+  for (int i = 0; i < schema().num_columns(); i++) {
     // TODO: need to look at the selection vector here and only append the
     // selected rows?
     ColumnBlock column = block.column_block(i);
@@ -161,7 +161,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     for (int i = 0; i < block.nrows(); i++) {
       // TODO merge this loop with the bloom loop below to
       // avoid re-encoding the keys
-      Slice enc_key = schema_.EncodeComparableKey(block.row(i), &last_encoded_key_);
+      Slice enc_key = schema().EncodeComparableKey(block.row(i), &last_encoded_key_);
       RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&enc_key, 1));
     }
   }
@@ -172,7 +172,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     // encode a bunch of key slices, then pass them all in one go.
     RowBlockRow row = block.row(i);
     // Insert the encoded key into the bloom.
-    Slice enc_key = schema_.EncodeComparableKey(row, &last_encoded_key_);
+    Slice enc_key = schema().EncodeComparableKey(row, &last_encoded_key_);
     RETURN_NOT_OK(bloom_writer_->AppendKeys(&enc_key, 1));
   }
 
@@ -191,12 +191,12 @@ Status DiskRowSetWriter::Finish() {
                                         Slice(last_encoded_key_));
   }
 
-  for (int i = 0; i < schema_.num_columns(); i++) {
+  for (int i = 0; i < schema().num_columns(); i++) {
     cfile::Writer *writer = cfile_writers_[i];
     Status s = writer->Finish();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish writer for column " <<
-        schema_.column(i).ToString() << ": " << s.ToString();
+        schema().column(i).ToString() << ": " << s.ToString();
       return s;
     }
   }
@@ -272,8 +272,8 @@ Status RollingDiskRowSetWriter::RollWriter() {
   // Close current writer if it is open
   RETURN_NOT_OK(FinishCurrentWriter());
 
-  RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_metadata_));
-  cur_writer_.reset(new DiskRowSetWriter(cur_metadata_.get(), schema_, bloom_sizing_));
+  RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_metadata_, schema_));
+  cur_writer_.reset(new DiskRowSetWriter(cur_metadata_.get(), bloom_sizing_));
   return cur_writer_->Open();
 }
 
@@ -324,9 +324,8 @@ RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
 ////////////////////////////////////////////////////////////
 
 Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                        const Schema &schema,
                         shared_ptr<DiskRowSet> *rowset) {
-  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, schema));
+  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata));
 
   RETURN_NOT_OK(rs->Open());
 
@@ -335,23 +334,21 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
 }
 
 
-DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                       const Schema &schema) :
+DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata) :
     rowset_metadata_(rowset_metadata),
-    schema_(schema),
     open_(false)
 {}
 
 
 Status DiskRowSet::Open() {
-  gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_, schema_));
+  gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
   RETURN_NOT_OK(new_base->Open());
 
   base_data_.reset(new_base.release());
 
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema_, num_rows));
+  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema(), num_rows));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;

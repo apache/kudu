@@ -10,6 +10,7 @@
 #include <utility>
 #include <tr1/unordered_map>
 
+#include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "server/metadata.pb.h"
 #include "server/metadata_util.h"
@@ -139,9 +140,9 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
   return Status::OK();
 }
 
-Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset) {
+Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema) {
   AtomicWord rowset_idx = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
-  RowSetMetadata *meta = new RowSetMetadata(this, rowset_idx);
+  RowSetMetadata *meta = new RowSetMetadata(this, rowset_idx, schema);
   rowset->reset(meta);
   return Status::OK();
 }
@@ -176,9 +177,14 @@ Status RowSetMetadata::Load(const RowSetDataPB& pb) {
   }
 
   // Load Column Files
+  int key_columns = 0;
+  std::vector<ColumnSchema> cols;
   BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
     column_blocks_.push_back(BlockIdFromPB(col_pb.block()));
+    cols.push_back(ColumnSchemaFromPB(col_pb.schema()));
+    key_columns += !!col_pb.schema().is_key();
   }
+  RETURN_NOT_OK(schema_.Reset(cols, key_columns));
 
   // Load Delta Files
   BOOST_FOREACH(const DeltaDataPB& delta_pb, pb.deltas()) {
@@ -198,6 +204,7 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
     ColumnDataPB *col_data = pb->add_columns();
     col_data->set_id(idx);
     BlockIdToPB(block_id, col_data->mutable_block());
+    ColumnSchemaToPB(schema_.column(idx), col_data->mutable_schema());
     idx++;
   }
 

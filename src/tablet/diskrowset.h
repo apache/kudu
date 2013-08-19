@@ -44,10 +44,8 @@ class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
   DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
-                   const Schema &schema,
                    const BloomFilterSizing &bloom_sizing) :
     rowset_metadata_(rowset_metadata),
-    schema_(schema),
     bloom_sizing_(bloom_sizing),
     finished_(false),
     written_count_(0)
@@ -74,7 +72,7 @@ class DiskRowSetWriter {
   // a reasonable estimate for the total data size.
   size_t written_size() const;
 
-  const Schema &schema() const { return schema_; }
+  const Schema& schema() const { return rowset_metadata_->schema(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DiskRowSetWriter);
@@ -90,7 +88,6 @@ class DiskRowSetWriter {
   cfile::Writer *key_index_writer();
 
   metadata::RowSetMetadata *rowset_metadata_;
-  const Schema schema_;
   BloomFilterSizing bloom_sizing_;
 
   bool finished_;
@@ -178,7 +175,6 @@ class DiskRowSet : public RowSet {
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
   static Status Open(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
-                     const Schema &schema,
                      shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
@@ -235,8 +231,8 @@ class DiskRowSet : public RowSet {
     return rowset_metadata_;
   }
 
-  const Schema &schema() const {
-    return schema_;
+  const Schema& schema() const {
+    return rowset_metadata_->schema();
   }
 
   string ToString() const {
@@ -252,14 +248,11 @@ class DiskRowSet : public RowSet {
   DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
   friend class CompactionInput;
 
-  // TODO: should 'schema' be stored with the rowset? quite likely
-  // so that we can support cheap alter table.
-  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata, const Schema &schema);
+  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
 
   Status Open();
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
-  const Schema schema_;
 
   bool open_;
 

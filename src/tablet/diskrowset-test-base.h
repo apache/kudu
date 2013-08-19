@@ -62,7 +62,7 @@ class TestRowSet : public KuduRowSetTest {
   // ... where n is the index of the row in the rowset
   // The string values are padded out to 15 digits
   void WriteTestRowSet(int n_rows = 0) {
-    DiskRowSetWriter drsw(rowset_meta_.get(), schema_,
+    DiskRowSetWriter drsw(rowset_meta_.get(),
                           BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
     DoWriteTestRowSet(n_rows, &drsw);
   }
@@ -258,7 +258,7 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(rowset_meta_, schema_, rowset);
+    return DiskRowSet::Open(rowset_meta_, rowset);
   }
 
 

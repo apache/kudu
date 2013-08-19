@@ -65,6 +65,7 @@ message BlockIdPB {
 message ColumnDataPB {
   required uint64 id = 1;
   required BlockIdPB block = 2;
+  required ColumnSchemaPB schema = 3;
 }
 
 message DeltaDataPB {

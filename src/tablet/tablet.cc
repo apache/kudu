@@ -92,7 +92,7 @@ Status Tablet::Open() {
   // open the tablet row-sets
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, metadata_->rowsets()) {
     shared_ptr<DiskRowSet> rowset;
-    Status s = DiskRowSet::Open(rowset_meta, schema_, &rowset);
+    Status s = DiskRowSet::Open(rowset_meta, &rowset);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
                  << s.ToString();
@@ -494,7 +494,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input) {
   CHECK(!out_metas.empty());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, out_metas) {
     shared_ptr<DiskRowSet> new_rowset;
-    Status s = DiskRowSet::Open(meta, schema_, &new_rowset);
+    Status s = DiskRowSet::Open(meta, &new_rowset);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to open snapshot compaction results " << meta->ToString() << ": "
                    << s.ToString();

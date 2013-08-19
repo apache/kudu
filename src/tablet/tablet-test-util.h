@@ -64,7 +64,7 @@ class KuduRowSetTest : public KuduTabletTest {
 
   virtual void SetUp() {
     KuduTabletTest::SetUp();
-    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_));
+    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_, schema_));
   }
 
   Status FlushMetadata() {

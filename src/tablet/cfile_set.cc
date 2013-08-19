@@ -41,9 +41,8 @@ static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata, size
 // CFile Base
 ////////////////////////////////////////////////////////////
 
-CFileSet::CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata, const Schema &schema)
-  : rowset_metadata_(rowset_metadata),
-    schema_(schema) {
+CFileSet::CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata)
+  : rowset_metadata_(rowset_metadata) {
 }
 
 CFileSet::~CFileSet() {
@@ -53,12 +52,12 @@ CFileSet::~CFileSet() {
 Status CFileSet::Open() {
   RETURN_NOT_OK(OpenBloomReader());
 
-  if (schema_.num_key_columns() > 1) {
+  if (schema().num_key_columns() > 1) {
     RETURN_NOT_OK(OpenAdHocIndexReader());
   }
 
-  readers_.resize(schema_.num_columns());
-  for (int i = 0; i < schema_.num_columns(); i++) {
+  readers_.resize(schema().num_columns());
+  for (int i = 0; i < schema().num_columns(); i++) {
     if (readers_[i] != NULL) {
       // Already open.
       continue;
@@ -68,7 +67,7 @@ Status CFileSet::Open() {
     RETURN_NOT_OK(OpenReader(rowset_metadata_, i, &reader));
     readers_[i].reset(reader.release());
     LOG(INFO) << "Successfully opened cfile for column "
-              << schema_.column(i).ToString()
+              << schema().column(i).ToString()
               << " in " << rowset_metadata_->ToString();
   }
 
@@ -112,7 +111,7 @@ Status CFileSet::OpenBloomReader() {
 }
 
 Status CFileSet::LoadMinMaxKeys() {
-  CFileReader *key_reader = ad_hoc_idx_reader_ ? ad_hoc_idx_reader_.get() : readers_[0].get();
+  CFileReader *key_reader = key_index_reader();
   if (!key_reader->GetMetadataEntry(DiskRowSet::kMinKeyMetaEntryName, &min_encoded_key_)) {
     return Status::Corruption("No min key found", ToString());
   }
@@ -127,6 +126,10 @@ Status CFileSet::LoadMinMaxKeys() {
   }
 
   return Status::OK();
+}
+
+CFileReader *CFileSet::key_index_reader() {
+  return ad_hoc_idx_reader_ ? ad_hoc_idx_reader_.get() : readers_[0].get();
 }
 
 Status CFileSet::NewColumnIterator(size_t col_idx, CFileIterator **iter) const {
@@ -209,7 +212,7 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
 }
 
 Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
-  if (schema_.num_key_columns() > 1) {
+  if (schema().num_key_columns() > 1) {
     RETURN_NOT_OK(NewAdHocIndexIterator(*&key_iter));
   } else {
     RETURN_NOT_OK(NewColumnIterator(0, *&key_iter));

@@ -122,7 +122,7 @@ class TestCompaction : public KuduRowSetTest {
     gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, snap));
     DoFlush(input.get(), snap, &rowset_meta);
     // Re-open it
-    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, schema_, rs));
+    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, rs));
   }
 
   template<bool OVERLAP_INPUTS>
@@ -170,7 +170,7 @@ class TestCompaction : public KuduRowSetTest {
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta.rowsets()) {
         shared_ptr<DiskRowSet> rs;
-        CHECK_OK(DiskRowSet::Open(meta, schema_, &rs));
+        CHECK_OK(DiskRowSet::Open(meta, &rs));
         rowsets.push_back(rs);
       }
 

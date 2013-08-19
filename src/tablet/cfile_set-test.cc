@@ -38,7 +38,7 @@ class TestCFileSet : public KuduRowSetTest {
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
   void WriteTestRowSet(int nrows) {
-    DiskRowSetWriter rsw(rowset_meta_.get(), schema_,
+    DiskRowSetWriter rsw(rowset_meta_.get(),
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_STATUS_OK(rsw.Open());
@@ -100,7 +100,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   const int kNumRows = 100000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
   ASSERT_STATUS_OK(fileset->Open());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_));
@@ -181,7 +181,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   const int kNumRows = 10000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
   ASSERT_STATUS_OK(fileset->Open());
 
   // Create iterator.
@@ -231,7 +231,7 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   const int kNumRows = 10000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_, schema_));
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
   ASSERT_STATUS_OK(fileset->Open());
 
   // Range scan where rows match on both ends
