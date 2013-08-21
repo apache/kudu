@@ -302,22 +302,25 @@ to string keys in a straightforward manner by treating the string data as unsign
 Algorithm
 ----------
 
-Given budget N:
+Given budget N rowsets:
 
 For each pair of rowsets (A, B):
-  Let union width = max(A.max_key, b.max_key) - min(A.min_key, B.min_key)
-  Subproblem: select N rowsets fully contained within the range A, B which maximizes
-    sum(rowset width)
+  Evaluate BestForPair(A, B):
+
+BestForPair(A, B):
+  Let union width = max(A.max_key, B.max_key) - min(A.min_key, B.min_key)
+  Determine the subset R of rowsets that are fully contained within the range A, B
+  Evaluate PickRowsetsWithBudget(R, N):
   Set objective = sum(rowset width) - union width
   If objective > best objective:
     best solution = this set
 
+PickRowsetsWithBudget(R, N):
+  Choose the N rowsets in R which which maximize sum(rowset width)
 
-The subproblem here can be solved by simply sorting the rowsets by their width and
+
+PickRowsetsWithBudget can be solved by simply sorting the rowsets by their width and
 choosing the top N.
-
-This algorithm is O(n^3) but experiments show that it is fast enough to execute in practice
-for the scales that matter.
 
 
 Extending algorithm to non-constant sizes
@@ -325,16 +328,50 @@ Extending algorithm to non-constant sizes
 
 Even though we limit the maximum rowset size to a constant, some rowsets may be smaller
 due to more frequent flushes, etc. Thus, we would like to change the budget to be a number
-of MB of IO, rather than a simple count of input files. The subproblem then becomes:
+of MB of IO, rather than a simple count N of input files. The subproblem PickNRowSets then becomes:
 
   Choose a set of RowSets such that their total file size falls within a budget, and
   maximizes their total widths.
 
-This is an instance of the knapsack problem, which is NP-hard. So, the total problem becomes
-O(n^2 * knapsack).
+This is an instance of the 0-1 knapsack problem, so we replace PickRowsetsWithBudget(R, N)
+with a knapsack problem solver.
 
-There are some reasonably efficient approximation algorithms for the knapsack problem. This
-merits further investigation.
+Computational complexity
+----------------------------
+
+The algorithm contains O(n^2) calls to BestForPair, each of which contains one instance of the
+0-1 knapsack problem, which has complexity O(n * max_budget). Thus, the total complexity is cubic
+in the number of rowsets, which can become quite expensive when a given tablet may include on the
+order of a thousand rowsets.
+
+We can optimize the approach by changing the order in which we consider pairs (A, B) in the
+above-described algorithm:
+
+For each rowset A:
+  candidates = all rowsets B such that B.min_key >= A.min_key
+  sort candidates B by increasing B.max
+  For each pair (A, B):
+    Evaluate BestForPair(A, B)
+
+Considering the pairs in this order simplifies BestForPair as follows:
+
+BestForPair(A, B):
+  Let union width = max(A.max_key, b.max_key) - min(A.min_key, B.min_key)
+  Determine the subset R of rowsets that are fully contained within the range A, B
+   ** Because B.max_key is non_decreasing, this subset R is identical to R in the
+      previous call, except that B is now added to the end. No extra loop
+      is required.
+  Evaluate PickRowsetsWithBudget(R, N):
+   ** This instantiation of the knapsack problem now is identical to the previous
+      instantiation, except with one additional item. Thus, it can be computed
+      incrementally from the previous solution.
+  Set objective = sum(rowset width) - union width
+  If objective > best objective:
+    best solution = this set
+
+
+Additionally, upper bounds can be calculated by solving the simpler fractional knapsack
+problem and used to short-circuit the more complex calculations.
 
 
 Extending algorithm to non-uniform workloads

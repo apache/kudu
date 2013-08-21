@@ -75,7 +75,11 @@ class CompactionCandidate {
     return cdf_max_key_ - cdf_min_key_;
   }
 
-  const shared_ptr<RowSet>& rowset() const { return rowset_; }
+  double density() const {
+    return width() / size_mb_;
+  }
+
+  RowSet* rowset() const { return rowset_; }
 
   string ToString() const;
 
@@ -86,7 +90,7 @@ class CompactionCandidate {
   explicit CompactionCandidate(const DataSizeCDF& cdf,
                                const std::tr1::shared_ptr<RowSet>& rs);
 
-  shared_ptr<RowSet> rowset_;
+  RowSet* rowset_;
   int size_mb_;
   double cdf_min_key_, cdf_max_key_;
 };

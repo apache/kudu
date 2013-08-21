@@ -76,11 +76,6 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
   void SetupKnapsackInput(const RowSetTree &tree,
                           std::vector<compaction_policy::CompactionCandidate> *inputs);
 
-  // Collect any RowSetInfo objects which fall entirely within the range [min, max].
-  void CollectRowSetsBetween(const std::vector<compaction_policy::CompactionCandidate> &rowsets,
-                             double min, double max,
-                             std::vector<compaction_policy::CompactionCandidate> *results);
-
   size_t size_budget_mb_;
 };
 

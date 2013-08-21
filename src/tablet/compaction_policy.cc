@@ -16,6 +16,7 @@
 
 #include "gutil/endian.h"
 #include "gutil/map-util.h"
+#include "gutil/mathlimits.h"
 #include "gutil/strings/util.h"
 #include "tablet/compaction.h"
 #include "tablet/rowset.h"
@@ -25,6 +26,7 @@
 #include "util/status.h"
 
 using std::tr1::shared_ptr;
+using std::vector;
 
 DEFINE_int32(budgeted_compaction_target_rowset_size, 32*1024*1024,
              "The target size for DiskRowSets during flush/compact when the "
@@ -32,6 +34,27 @@ DEFINE_int32(budgeted_compaction_target_rowset_size, 32*1024*1024,
 
 namespace kudu {
 namespace tablet {
+
+static const double kEpsilon = 0.0001;
+
+// Adjust the result downward slightly for wider solutions.
+// Consider this input:
+//
+//  |-----A----||----C----|
+//  |-----B----|
+//
+// where A, B, and C are all 1MB, and the budget is 10MB.
+//
+// Without this tweak, the solution {A, B, C} has the exact same
+// solution value as {A, B}, since both compactions would yield a
+// tablet with average height 1. Since both solutions fit within
+// the budget, either would be a valid pick, and it would be up
+// to chance which solution would be selected.
+// Intuitively, though, there's no benefit to including "C" in the
+// compaction -- it just uses up some extra IO. If we slightly
+// penalize wider solutions as a tie-breaker, then we'll pick {A, B}
+// here.
+static const double kSupportAdjust = 1.01;
 
 using compaction_policy::CompactionCandidate;
 
@@ -155,7 +178,7 @@ void CompactionCandidate::CollectCandidates(const RowSetTree& tree,
 
 CompactionCandidate::CompactionCandidate(const DataSizeCDF& cdf,
                                          const shared_ptr<RowSet>& rs)
-  : rowset_(rs) {
+  : rowset_(rs.get()) {
   size_mb_ = rs->EstimateOnDiskSize() / 1024 / 1024;
 
   Slice min, max;
@@ -186,7 +209,6 @@ string CompactionCandidate::ToString() const {
 }
 
 bool CompactionCandidate::Intersects(const CompactionCandidate &other) const {
-  const double kEpsilon = 0.0001;
   if (other.cdf_min_key() + kEpsilon > cdf_max_key()) return false;
   if (other.cdf_max_key() - kEpsilon < cdf_min_key()) return false;
   return true;
@@ -279,7 +301,7 @@ static void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
 
     int y = kRowHeight * row_index + kHeaderHeight;
     BOOST_FOREACH(const CompactionCandidate *cand, row) {
-      bool was_picked = ContainsKey(picked, cand->rowset().get());
+      bool was_picked = ContainsKey(picked, cand->rowset());
       const char *color = was_picked ? kPickedColor : kDefaultColor;
 
       double x = cand->cdf_min_key() * kTotalWidth;
@@ -312,10 +334,10 @@ Status SizeRatioCompactionPolicy::PickRowSets(const RowSetTree &tree,
   std::sort(candidates.begin(), candidates.end(), CompareBySize);
   uint64_t accumulated_size = 0;
   BOOST_FOREACH(const CompactionCandidate &cand, candidates) {
-    const shared_ptr<RowSet>& rs = cand.rowset();
+    RowSet* rs = cand.rowset();
     uint64_t this_size = rs->EstimateOnDiskSize();
     if (picked->size() < 2 || this_size < accumulated_size * 2) {
-      InsertOrDie(picked, rs.get());
+      InsertOrDie(picked, rs);
       accumulated_size += this_size;
     } else {
       break;
@@ -341,6 +363,21 @@ uint64_t BudgetedCompactionPolicy::target_rowset_size() const {
   return FLAGS_budgeted_compaction_target_rowset_size;
 }
 
+struct CompareByDescendingDensity {
+  bool operator()(const CompactionCandidate& a, const CompactionCandidate& b) const {
+    return a.density() > b.density();
+  }
+};
+
+static bool CompareByMinKey(const CompactionCandidate& a, const CompactionCandidate& b) {
+  return a.cdf_min_key() < b.cdf_min_key();
+}
+
+static bool CompareByMaxKey(const CompactionCandidate& a, const CompactionCandidate& b) {
+  return a.cdf_max_key() < b.cdf_max_key();
+}
+
+
 void BudgetedCompactionPolicy::SetupKnapsackInput(const RowSetTree &tree,
                                                   vector<CompactionCandidate> *rowsets) {
   CompactionCandidate::CollectCandidates(tree, rowsets);
@@ -358,16 +395,6 @@ void BudgetedCompactionPolicy::SetupKnapsackInput(const RowSetTree &tree,
   }
 }
 
-void BudgetedCompactionPolicy::CollectRowSetsBetween(const vector<CompactionCandidate> &rowsets,
-                                                     double min, double max,
-                                                     std::vector<CompactionCandidate> *results) {
-  BOOST_FOREACH(const CompactionCandidate &candidate, rowsets) {
-    if (candidate.cdf_min_key() >= min && candidate.cdf_max_key() <= max) {
-      results->push_back(candidate);
-    }
-  }
-}
-
 struct KnapsackTraits {
   typedef CompactionCandidate item_type;
   typedef double value_type;
@@ -379,6 +406,73 @@ struct KnapsackTraits {
   }
 };
 
+// Incremental calculator for the upper bound on a knapsack solution,
+// given a set of items. The upper bound is computed by solving the
+// simpler "fractional knapsack problem" -- i.e the related problem
+// in which each input may be fractionally put in the knapsack, instead
+// of all-or-nothing. The fractional knapsack problem has a very efficient
+// solution: sort by descending density and greedily choose elements
+// until the budget is reached. The last element to be chosen may be
+// partially included in the knapsack.
+//
+// Because this greedy solution only depends on sorting, it can be computed
+// incrementally as items are considered by maintaining a min-heap, ordered
+// by the density of the input elements. We need only maintain enough elements
+// to satisfy the budget, making this logarithmic in the budget and linear
+// in the number of elements added.
+class UpperBoundCalculator {
+ public:
+  explicit UpperBoundCalculator(int max_weight)
+    : total_weight_(0),
+      total_value_(0),
+      max_weight_(max_weight) {
+  }
+
+  void Add(const CompactionCandidate& candidate) {
+    fractional_solution_.push_back(candidate);
+    std::push_heap(fractional_solution_.begin(), fractional_solution_.end(),
+                   CompareByDescendingDensity());
+
+    total_weight_ += candidate.size_mb();
+    total_value_ += candidate.width();
+    const CompactionCandidate& top = fractional_solution_.front();
+    if (total_weight_ - top.size_mb() >= max_weight_) {
+      total_weight_ -= top.size_mb();
+      total_value_ -= top.width();
+      std::pop_heap(fractional_solution_.begin(), fractional_solution_.end(),
+                    CompareByDescendingDensity());
+      fractional_solution_.pop_back();
+    }
+  }
+
+  // Compute the upper-bound to the 0-1 knapsack problem with the elements
+  // added so far.
+  double ComputeUpperBound() const {
+    int excess_weight = total_weight_ - max_weight_;
+    if (excess_weight <= 0) {
+      return total_value_;
+    }
+
+    const CompactionCandidate& top = fractional_solution_.front();
+    double fraction_of_top_to_remove = static_cast<double>(excess_weight) / top.size_mb();
+    DCHECK_GT(fraction_of_top_to_remove, 0);
+    return total_value_ - fraction_of_top_to_remove * top.width();
+  }
+
+  void clear() {
+    fractional_solution_.clear();
+    total_weight_ = 0;
+    total_value_ = 0;
+  }
+
+ private:
+
+  vector<CompactionCandidate> fractional_solution_;
+  int total_weight_;
+  double total_value_;
+  int max_weight_;
+};
+
 Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
                                              unordered_set<RowSet*>* picked) {
   vector<CompactionCandidate> all_candidates;
@@ -388,6 +482,13 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     return Status::OK();
   }
 
+  // Collect the rowsets ascending by min key and by max key.
+  vector<CompactionCandidate> asc_min_key(all_candidates);
+  std::sort(asc_min_key.begin(), asc_min_key.end(), CompareByMinKey);
+  vector<CompactionCandidate> asc_max_key(all_candidates);
+  std::sort(asc_max_key.begin(), asc_max_key.end(), CompareByMaxKey);
+
+  UpperBoundCalculator ub_calc(size_budget_mb_);
   KnapsackSolver<KnapsackTraits> solver;
 
   // The best set of rowsets chosen so far
@@ -395,66 +496,96 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   // The value attained by the 'best_chosen' solution.
   double best_optimal = 0;
 
-  // Iterate over all pairs (a, b) of rowsets
-  for (int i = 0; i < all_candidates.size(); i++) {
-    const CompactionCandidate &cc_a = all_candidates[i];
-    for (int j = i + 1; j < all_candidates.size(); j++) {
-      const CompactionCandidate &cc_b = all_candidates[j];
+  vector<size_t> chosen_indexes;
+  vector<CompactionCandidate> inrange_candidates;
+  inrange_candidates.reserve(all_candidates.size());
+  vector<double> upper_bounds;
 
-      // Compute the "union width" -- i.e the width that the output would have
-      // when compacting any set of rowsets that include both 'cc_a' and 'cc_b'.
-      double ab_min = std::min(cc_a.cdf_min_key(), cc_b.cdf_min_key());
-      double ab_max = std::max(cc_a.cdf_max_key(), cc_b.cdf_max_key());
-      double union_width = ab_max - ab_min;
-      DCHECK_GE(union_width, 0);
-      DVLOG(2) << "Evaluating bounds:";
-      DVLOG(2) << "cc_a: " << cc_a.ToString();
-      DVLOG(2) << "cc_b: " << cc_b.ToString();
-      DVLOG(2) << "Union width: " << union_width;
+  BOOST_FOREACH(const CompactionCandidate& cc_a, asc_min_key) {
+    chosen_indexes.clear();
+    inrange_candidates.clear();
+    ub_calc.clear();
+    upper_bounds.clear();
 
-      // Only run knapsack against those candidates that fall entirely within
-      // the union range.
-      vector<CompactionCandidate> inrange_candidates;
-      inrange_candidates.reserve(all_candidates.size());
-      CollectRowSetsBetween(all_candidates, ab_min, ab_max, &inrange_candidates);
+    double ab_min = cc_a.cdf_min_key();
+    double ab_max = cc_a.cdf_max_key();
 
-      vector<size_t> chosen;
-      chosen.reserve(all_candidates.size());
-      double this_optimal = 0;
-      solver.Solve(inrange_candidates, size_budget_mb_, &chosen, &this_optimal);
-
-      // Adjust the result downward slightly for wider solutions.
-      // Consider this input:
-      //
-      //  |-----A----||----C----|
-      //  |-----B----|
-      //
-      // where A, B, and C are all 1MB, and the budget is 10MB.
-      //
-      // Without this tweak, the solution {A, B, C} has the exact same
-      // solution value as {A, B}, since both compactions would yield a
-      // tablet with average height 1. Since both solutions fit within
-      // the budget, either would be a valid pick, and it would be up
-      // to chance which solution would be selected.
-      // Intuitively, though, there's no benefit to including "C" in the
-      // compaction -- it just uses up some extra IO. If we slightly
-      // penalize wider solutions as a tie-breaker, then we'll pick {A, B}
-      // here.
-      double adj_optimal = this_optimal - union_width * 1.01f;
-
-      if (VLOG_IS_ON(2)) {
-        VLOG(2) << "Solution=" << this_optimal << " adjusted=" << adj_optimal;
-        BOOST_FOREACH(size_t i, chosen) {
-          VLOG(2) << "  " << inrange_candidates[i].ToString();
-        }
+    // Collect all other candidates which would not expand the support to the
+    // left of this one. Because these are sorted by ascending max key, we can
+    // easily ensure that whenever we add a 'cc_b' to our candidate list for the
+    // knapsack problem, we've already included all rowsets which fall in the
+    // range from cc_a.min to cc_b.max.
+    //
+    // For example:
+    //
+    //  |-----A----|
+    //      |-----B----|
+    //         |----C----|
+    //       |--------D-------|
+    //
+    // We process in the order: A, B, C, D.
+    //
+    // This saves us from having to iterate through the list again to find all
+    // such rowsets.
+    //
+    // Additionally, each knapsack problem builds on the previous knapsack
+    // problem by adding just a single rowset, meaning that we can reuse the
+    // existing dynamic programming state to incrementally update the solution,
+    // rather than having to rebuild from scratch.
+    BOOST_FOREACH(const CompactionCandidate& cc_b, asc_max_key) {
+      if (cc_b.cdf_min_key() < ab_min) {
+        // Would expand support to the left.
+        // TODO: possible optimization here: binary search to skip to the first
+        // cc_b with cdf_max_key() > cc_a.cdf_min_key()
+        continue;
       }
+      inrange_candidates.push_back(cc_b);
 
-      if (adj_optimal > best_optimal) {
-        best_chosen.clear();
-        BOOST_FOREACH(size_t i, chosen) {
-          best_chosen.insert(inrange_candidates[i].rowset().get());
-        }
-        best_optimal = adj_optimal;
+      // While we're iterating, also calculate the upper bound for the solution
+      // on the set within the [ab_min, ab_max] output range.
+      ab_max = std::max(cc_b.cdf_max_key(), ab_max);
+      double union_width = ab_max - ab_min;
+
+      ub_calc.Add(cc_b);
+      upper_bounds.push_back(ub_calc.ComputeUpperBound() - union_width * kSupportAdjust);
+    }
+    if (inrange_candidates.empty()) continue;
+    // If the best upper bound across this whole range is worse than our current
+    // optimal, we can short circuit all the knapsack-solving.
+    if (*std::max_element(upper_bounds.begin(), upper_bounds.end()) < best_optimal) continue;
+
+    solver.Reset(size_budget_mb_, &inrange_candidates);
+
+    ab_max = cc_a.cdf_max_key();
+
+    int i = 0;
+    while (solver.ProcessNext()) {
+      // If this candidate's upper bound is worse than the optimal, we don't
+      // need to look at it.
+      const CompactionCandidate& item = inrange_candidates[i];
+      double upper_bound = upper_bounds[i];
+      i++;
+      if (upper_bound < best_optimal) continue;
+
+      std::pair<int, double> best_with_this_item = solver.GetSolution();
+      double best_value = best_with_this_item.second;
+
+      ab_max = std::max(item.cdf_max_key(), ab_max);
+      DCHECK_GE(ab_max, ab_min);
+      double solution = best_value - (ab_max - ab_min) * kSupportAdjust;
+      DCHECK_LT(solution, upper_bound + kEpsilon);
+
+      if (solution > best_optimal) {
+        solver.TracePath(best_with_this_item, &chosen_indexes);
+        best_optimal = solution;
+      }
+    }
+
+    // If we came up with a new solution, replace.
+    if (!chosen_indexes.empty()) {
+      best_chosen.clear();
+      BOOST_FOREACH(int i, chosen_indexes) {
+        best_chosen.insert(inrange_candidates[i].rowset());
       }
     }
   }
@@ -464,7 +595,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     VLOG(1) << "Budgeted compaction selection:";
     BOOST_FOREACH(CompactionCandidate &cand, all_candidates) {
       const char *checkbox = "[ ]";
-      if (ContainsKey(best_chosen, cand.rowset().get())) {
+      if (ContainsKey(best_chosen, cand.rowset())) {
         checkbox = "[x]";
       }
       VLOG(1) << "  " << checkbox << " " << cand.ToString();
