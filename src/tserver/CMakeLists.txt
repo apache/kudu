@@ -11,6 +11,7 @@ KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
 
 add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS} ${TSERVER_KRPC_SRCS})
 ADD_DEPENDENCIES(tserver_proto kudu_common)
+ADD_DEPENDENCIES(tserver_proto rpc_header_proto)
 
 SET(TSERVER_SRCS
   mini_tablet_server.cc
