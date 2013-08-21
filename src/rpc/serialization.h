@@ -4,6 +4,7 @@
 #ifndef KUDU_RPC_SERIALIZATION_H
 #define KUDU_RPC_SERIALIZATION_H
 
+#include <inttypes.h>
 #include <string.h>
 
 namespace google {
@@ -45,6 +46,14 @@ Status SerializeHeader(const google::protobuf::MessageLite& header,
 Status ParseMessage(const Slice& buf,
                     google::protobuf::MessageLite* parsed_header,
                     Slice* parsed_main_message);
+
+// Serialize the RPC connection header (magic number + flags).
+// buf must have 7 bytes available (kMagicNumberLength + kHeaderFlagsLength).
+void SerializeConnHeader(uint8_t* buf);
+
+// Validate the entire rpc header (magic number + flags).
+Status ValidateConnHeader(const Slice& slice);
+
 
 } // namespace serialization
 } // namespace rpc

@@ -13,6 +13,7 @@ ADD_LIBRARY(krpc
     acceptor_pool.cc
     client_call.cc
     connection.cc
+    constants.cc
     messenger.cc
     proxy.cc
     reactor.cc

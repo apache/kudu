@@ -11,6 +11,7 @@
 #include <tr1/memory>
 #include <tr1/unordered_map>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -131,6 +132,19 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   typedef std::tr1::unordered_map<uint64_t, CallAwaitingResponse *> car_map_t;
   typedef std::tr1::unordered_map<uint64_t, InboundCall *> inbound_call_map_t;
 
+  // Returns the next valid (positive) sequential call ID by incrementing a counter
+  // and ensuring we roll over from INT32_MAX to 0.
+  // Negative numbers are reserved for special purposes.
+  int32_t GetNextCallId() {
+    int32_t call_id = next_call_id_;
+    if (PREDICT_FALSE(next_call_id_ == std::numeric_limits<int32_t>::max())) {
+      next_call_id_ = 0;
+    } else {
+      next_call_id_++;
+    }
+    return call_id;
+  }
+
   // An incoming packet has completed transferring on the server side.
   // This parses the call and delivers it into the call queue.
   void HandleIncomingCall(gscoped_ptr<InboundTransfer> transfer);
@@ -189,7 +203,7 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   inbound_call_map_t calls_being_handled_;
 
   // the next call ID to use
-  uint64_t next_call_id_;
+  int32_t next_call_id_;
 
   // Starts as Status::OK, gets set to a shutdown status upon Shutdown().
   Status shutdown_status_;
@@ -204,7 +218,7 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   typedef ObjectPool<CallAwaitingResponse>::scoped_ptr scoped_car;
 };
 
-}
-}
+} // namespace rpc
+} // namespace kudu
 
 #endif

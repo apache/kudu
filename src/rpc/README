@@ -159,6 +159,27 @@ Currently, when the client connects to the server, there is no setup/negotation.
 This is a TODO that we will be addressing in coming weeks. After successfully
 connecting, the client may immediately begin sending calls.
 
+Handshake / framing:
+
+Write the connection header - this is sent when connection is established.
+See HADOOP-8990 for details on the Hadoop RPC Protocol V9, which is what we are
+approximating here, unless otherwise noted.
+
+The connection header consists of a magic number "hrpc" and three byte flags,
+for a total of 7 bytes:
+
++----------------------------------+
+|  "hrpc" 4 bytes                  |
++----------------------------------+
+|  Version (1 byte)                |
++----------------------------------+
+|  ServiceClass (1 byte)           |
++----------------------------------+
+|  AuthProtocol (1 byte)           |
++----------------------------------+
+
+Serialized RPCs come after the initial connection header.
+
 Each call that the clients make is serialized as following:
 
   total_size: (32-bit big-endian integer)
@@ -182,7 +203,7 @@ An example call (captured with strace on rpc-test.cc) follows:
 
    "\x0c"  Request parameter varint: 12 bytes
     "\x08\xd4\x90\x80\x91\x01\x10\xf8\xcf\xc4\xed\x04" Request parameter
-      Decoded with protoc --decode=kudu.rpc_test.AddRequestPB rpc/rtest.proto 
+      Decoded with protoc --decode=kudu.rpc_test.AddRequestPB rpc/rtest.proto
       x: 304089172
       y: 1303455736
 

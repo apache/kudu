@@ -48,7 +48,7 @@ class InboundCall {
     return header_.methodname();
   }
 
-  const uint64_t call_id() const {
+  const int32_t call_id() const {
     return header_.callid();
   }
 

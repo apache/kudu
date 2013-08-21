@@ -8,6 +8,7 @@
 #include <google/protobuf/io/coded_stream.h>
 
 #include "gutil/endian.h"
+#include "gutil/stringprintf.h"
 #include "rpc/constants.h"
 #include "util/faststring.h"
 #include "util/slice.h"
@@ -20,6 +21,12 @@ using google::protobuf::io::CodedOutputStream;
 namespace kudu {
 namespace rpc {
 namespace serialization {
+
+enum {
+  kHeaderPosVersion = 0,
+  kHeaderPosServiceClass = 1,
+  kHeaderPosAuthProto = 2
+};
 
 Status SerializeMessage(const MessageLite& message,
                         faststring* param_buf) {
@@ -126,6 +133,41 @@ Status ParseMessage(const Slice& buf,
 
   *parsed_main_message = Slice(buf.data() + buf.size() - main_msg_len,
                               main_msg_len);
+  return Status::OK();
+}
+
+void SerializeConnHeader(uint8_t* buf) {
+  memcpy(reinterpret_cast<char *>(buf), kMagicNumber, kMagicNumberLength);
+  buf += kMagicNumberLength;
+  buf[kHeaderPosVersion] = kCurrentRpcVersion;
+  buf[kHeaderPosServiceClass] = 0; // TODO: implement
+  buf[kHeaderPosAuthProto] = 0; // TODO: implement
+}
+
+// validate the entire rpc header (magic number + flags)
+Status ValidateConnHeader(const Slice& slice) {
+  DCHECK_EQ(kMagicNumberLength + kHeaderFlagsLength, slice.size())
+    << "Invalid RPC header length";
+
+  // validate actual magic
+  if (!slice.starts_with(kMagicNumber)) {
+    return Status::InvalidArgument("Connection must begin with magic number", kMagicNumber);
+  }
+
+  const uint8_t *data = slice.data();
+  data += kMagicNumberLength;
+
+  // validate version
+  if (data[kHeaderPosVersion] != kCurrentRpcVersion) {
+    return Status::InvalidArgument("Unsupported RPC version",
+        StringPrintf("Received: %d, Supported: %d",
+            data[kHeaderPosVersion], kCurrentRpcVersion));
+  }
+
+  // TODO: validate additional header flags:
+  // RPC_SERVICE_CLASS
+  // RPC_AUTH_PROTOCOL
+
   return Status::OK();
 }
 

@@ -213,7 +213,7 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   DCHECK(!call->call_id_assigned());
 
   // Assign the call ID.
-  uint64_t call_id = next_call_id_++;
+  int32_t call_id = GetNextCallId();
   call->set_call_id(call_id);
 
   // Serialize the actual bytes to be put on the wire.

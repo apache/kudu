@@ -1,11 +1,14 @@
 // Copyright (c) 2013, Cloudera, inc
 
+#include "rpc/rpc-test-base.h"
+
+#include <string>
+
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <gtest/gtest.h>
-#include <string>
 
-#include "rpc/rpc-test-base.h"
+#include "rpc/serialization.h"
 #include "util/countdown_latch.h"
 #include "util/test_util.h"
 
@@ -50,6 +53,14 @@ TEST_F(TestRpc, TestAcceptorPoolStartStop) {
     ASSERT_STATUS_OK(messenger->AddAcceptorPool(Sockaddr(), 2));
     messenger->Shutdown();
   }
+}
+
+TEST_F(TestRpc, TestConnHeaderValidation) {
+  MessengerBuilder mb("TestRpc.TestConnHeaderValidation");
+  const int conn_hdr_len = kMagicNumberLength + kHeaderFlagsLength;
+  uint8_t buf[conn_hdr_len];
+  serialization::SerializeConnHeader(buf);
+  ASSERT_STATUS_OK(serialization::ValidateConnHeader(Slice(buf, conn_hdr_len)));
 }
 
 // Test making successful RPC calls.

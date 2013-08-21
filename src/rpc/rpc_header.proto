@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 //
-// This RPC protocol is heavily based on HBase 0.96.
+// This RPC protocol is heavily based on HBase 0.96 and Hadoop 3.0.0.
 
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -22,11 +22,16 @@
 
 option optimize_for = SPEED;
 
+package kudu.rpc;
+
 // See https://issues.apache.org/jira/browse/HBASE-7898 for high-level
 // description of RPC specification.
 //
-// On connection setup, the client sends six bytes of preamble -- a four
-// byte magic, a byte of version, and a byte of authentication type.
+// Also see HADOOP-8990.
+//
+// On connection setup, the client sends seven bytes of preamble -- a four
+// byte magic, a byte of version, a byte of service class, and a byte of
+// authentication type.
 //
 // We then send a "ConnectionHeader" protobuf of user information and the
 // 'protocol' or 'service' that is to be run over this connection as well as
@@ -69,36 +74,115 @@ option optimize_for = SPEED;
 // and the pb connection header is then written with Message#writeTo.
 //
 
-// User Information proto.  Included in ConnectionHeader on connection setup
-message UserInformation {
+// ----------------------------------
+
+// User Information proto.  Included in ConnectionHeader on connection setup.
+message UserInformationPB {
   required string effectiveUser = 1;
   optional string realUser = 2;
 }
 
-// This is sent on connection setup after the connection preamble is sent.
-message ConnectionHeader {
-  optional UserInformation userInfo = 1;
-  optional string serviceName = 2;
+/**
+ * The connection context is sent as part of the connection establishment.
+ * It establishes the context for ALL RPC calls within the connection.
+ * This is sent on connection setup after the connection preamble is sent.
+ * Generally, no response is sent from the server to the client.
+ */
+message RpcConnectionContextPB {
+  // UserInfo beyond what is determined as part of security handshake
+  // at connection time (kerberos, tokens etc).
+  optional UserInformationPB userInfo = 2;
+
+  // Service name for next RPC layer.
+  // The client created a proxy with this service name.
+  required string serviceName = 3;
 }
 
-
-// Header sent making a request.
+// The header for the RPC request frame.
 message RequestHeader {
-  // Monotonically increasing callId to keep track of RPC requests and their response
-  required uint32 callId = 1;
-  // optional RPCTInfo traceInfo = 2;
-  required string methodName = 3;
-}
+  //optional RpcKindPB rpcKind = 1;  // From Hadoop. Not applicable to Kudu.
+  //optional OperationPB rpcOp = 2;  // From Hadoop. Not applicable to Kudu.
 
-message ErrorStatusPB {
-  required string message = 1;
+  // A sequence number that is sent back in the Response. Hadoop specifies a uint32 and
+  // casts it to a signed int. That is counterintuitive, so we use an int32 instead.
+  // Allowed values (inherited from Hadoop):
+  //   0 through INT32_MAX: Regular RPC call IDs.
+  //   -2: Invalid call ID.
+  //   -3: Connection context call ID.
+  //   -33: SASL negotiation call ID.
+  required int32 callId = 3;
+
+  // Globally unique client ID (UUID). Note: clientId + callId uniquely identifies a request.
+  // TODO: Make clientId a required field?
+  //optional bytes clientId = 4;
+
+  // Retry count, 1 means this is the first retry. From Hadoop. Not supported in Kudu.
+  //optional sint32 retryCount = 5 [default = -1];
+
+  // Name of the RPC method. Not used for "connection setup" calls.
+  optional string methodName = 6;
+
+  /**
+   * From Hadoop. Hadoop's explanation below:
+   * RPCs for a particular interface (ie service) are done using a
+   * IPC connection that is setup using RpcConnectionContextPB.
+   *
+   * Each RPC call also sends a protocol name
+   * (called declaringClassprotocolName). This name is usually the same
+   * as the connection protocol name except in some cases.
+   * For example metaProtocols such ProtocolInfoProto which get metainfo
+   * about the protocol reuse the connection but need to indicate that
+   * the actual protocol is different (i.e. the protocol is
+   * ProtocolInfoProto) since they reuse the connection; in this case
+   * the declaringClassProtocolName field is set to the ProtocolInfoProto
+   */
+  //optional string declaringClassServiceName = 7;
+
+  // Service version of the client stub class declaring the called method.
+  //optional uint64 clientServiceVersion = 8;
+
+  // TODO: Trace info.
+  // optional RPCTInfo traceInfo = 9;
 }
 
 message ResponseHeader {
-  required uint32 callId = 1;
+  required int32 callId = 1;
 
   // If this is set, then this is an error response and the
   // response message will be of type ErrorStatusPB instead of
   // the expected response type.
   optional bool is_error = 2 [ default = false ];
+
+  //optional uint32 serverIpcVersionNum = 3; // Sent if success or fail
+  //optional bytes clientId = 7; // Globally unique client ID
+  //optional sint32 retryCount = 8 [default = -1];
+}
+
+// Sent as response when is_error == true.
+message ErrorStatusPB {
+
+  // These codes have all been inherited from Hadoop's RPC mechanism.
+  enum RpcErrorCodePB {
+   // Non-fatal RPC errors. Connection should be left open for future RPC calls.
+   //ERROR_APPLICATION = 1;         // RPC Failed - RPC app threw exception.
+   ERROR_NO_SUCH_METHOD = 2;        // RPC error - no such method.
+   ERROR_NO_SUCH_SERVICE = 3;       // RPC error - no such service.
+   ERROR_RPC_SERVER  = 4;           // RPC error on server side.
+   ERROR_SERIALIZING_RESPONSE = 5;  // Error serializing response.
+   ERROR_RPC_VERSION_MISMATCH = 6;  // RPC protocol version mismatch.
+
+
+   // Fatal Server side RPC error. Connection should be closed.
+   FATAL_UNKNOWN = 10;                      // Unknown Fatal error.
+   //FATAL_UNSUPPORTED_SERIALIZATION = 11;  // IPC layer serilization type invalid.
+   FATAL_INVALID_RPC_HEADER = 12;           // Fields of RpcHeader are invalid.
+   FATAL_DESERIALIZING_REQUEST = 13;        // Could not deserialize RPC request.
+   FATAL_VERSION_MISMATCH = 14;             // IPC Layer version mismatch.
+   FATAL_UNAUTHORIZED = 15;                 // Auth failed.
+  }
+
+  required string message = 1;
+
+  // TODO: Make code required?
+  optional RpcErrorCodePB code = 2;  // Specific error identifier.
 }

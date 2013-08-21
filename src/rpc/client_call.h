@@ -59,7 +59,7 @@ class OutboundCall {
 
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.
-  void set_call_id(uint64_t call_id) {
+  void set_call_id(int32_t call_id) {
     DCHECK_EQ(call_id_, kInvalidCallId) << "Already has a call ID";
     call_id_ = call_id;
   }
@@ -107,14 +107,12 @@ class OutboundCall {
     return call_id_ != kInvalidCallId;
   }
 
-  uint64_t call_id() const {
+  int32_t call_id() const {
     DCHECK(call_id_assigned());
     return call_id_;
   }
 
  private:
-  static const int64_t kInvalidCallId = 0;
-
   friend class RpcController;
 
   // Various states the call propagates through.
@@ -161,7 +159,7 @@ class OutboundCall {
 
   // Call ID -- only assigned once this call has been passed to the reactor
   // thread and assigned a connection.
-  uint64_t call_id_;
+  int32_t call_id_;
 
   // Buffers for storing segments of the wire-format request.
   faststring header_buf_;
@@ -194,7 +192,7 @@ class CallResponse {
   }
 
   // Return the call ID that this response is related to.
-  uint64_t call_id() const {
+  int32_t call_id() const {
     DCHECK(parsed_);
     return header_.callid();
   }
