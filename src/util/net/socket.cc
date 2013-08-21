@@ -3,14 +3,17 @@
 #include "util/net/socket.h"
 
 #include <errno.h>
-#include <glog/logging.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <limits>
 #include <string>
+
+#include <glog/logging.h>
 
 #include "util/errno.h"
 #include "util/net/sockaddr.h"
@@ -138,6 +141,42 @@ Status Socket::SetNoDelay(bool enabled) {
   return Status::OK();
 }
 
+Status Socket::SetNonBlocking(bool enabled) {
+  int curflags = ::fcntl(fd_, F_GETFL, 0);
+  if (curflags == -1) {
+    int err = errno;
+    return Status::NetworkError(
+        StringPrintf("Failed to get file status flags on fd %d", fd_),
+        ErrnoToString(err), err);
+  }
+  int newflags = (enabled) ? (curflags | O_NONBLOCK) : (curflags & ~O_NONBLOCK);
+  if (::fcntl(fd_, F_SETFL, newflags) == -1) {
+    int err = errno;
+    if (enabled) {
+      return Status::NetworkError(
+          StringPrintf("Failed to set O_NONBLOCK on fd %d", fd_),
+          ErrnoToString(err), err);
+    } else {
+      return Status::NetworkError(
+          StringPrintf("Failed to clear O_NONBLOCK on fd %d", fd_),
+          ErrnoToString(err), err);
+    }
+  }
+  return Status::OK();
+}
+
+Status Socket::IsNonBlocking(bool* is_nonblock) const {
+  int curflags = ::fcntl(fd_, F_GETFL, 0);
+  if (curflags == -1) {
+    int err = errno;
+    return Status::NetworkError(
+        StringPrintf("Failed to get file status flags on fd %d", fd_),
+        ErrnoToString(err), err);
+  }
+  *is_nonblock = ((curflags & O_NONBLOCK) != 0);
+  return Status::OK();
+}
+
 Status Socket::BindAndListen(const Sockaddr &sockaddr,
                              int listenQueueSize) {
   int err;
@@ -172,9 +211,22 @@ Status Socket::GetSocketAddress(Sockaddr *cur_addr) {
   struct sockaddr_in sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
-  if (getsockname(fd_, (struct sockaddr *)&sin, &len) == -1) {
+  if (::getsockname(fd_, (struct sockaddr *)&sin, &len) == -1) {
     int err = errno;
     return Status::NetworkError(string("getsockname error: ") +
+                                ErrnoToString(err), Slice(), err);
+  }
+  *cur_addr = sin;
+  return Status::OK();
+}
+
+Status Socket::GetPeerAddress(Sockaddr *cur_addr) {
+  struct sockaddr_in sin;
+  socklen_t len = sizeof(sin);
+  DCHECK_GE(fd_, 0);
+  if (::getpeername(fd_, (struct sockaddr *)&sin, &len) == -1) {
+    int err = errno;
+    return Status::NetworkError(string("getpeername error: ") +
                                 ErrnoToString(err), Slice(), err);
   }
   *cur_addr = sin;
@@ -230,14 +282,14 @@ Status Socket::GetSockError() {
   return Status::OK();
 }
 
-Status Socket::Write(uint8_t *buf, int32_t amt, int32_t *nwritten) {
+Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   if (amt <= 0) {
     return Status::NetworkError(
               StringPrintf("invalid send of %"PRId32" bytes",
                            amt), Slice(), EINVAL);
   }
   DCHECK_GE(fd_, 0);
-  int res = ::write(fd_, buf, amt);
+  int res = ::send(fd_, buf, amt, MSG_NOSIGNAL);
   if (res < 0) {
     int err = errno;
     return Status::NetworkError(std::string("write error: ") +
@@ -261,7 +313,7 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
   memset(&msg, 0, sizeof(struct msghdr));
   msg.msg_iov = const_cast<iovec *>(iov);
   msg.msg_iovlen = iov_len;
-  int res = sendmsg(fd_, &msg, MSG_NOSIGNAL);
+  int res = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
   if (PREDICT_FALSE(res < 0)) {
     int err = errno;
     return Status::NetworkError(std::string("sendmsg error: ") +
@@ -269,6 +321,40 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
   }
 
   *nwritten = res;
+  return Status::OK();
+}
+
+// Mostly follows writen() from Stevens (2004) or Kerrisk (2010).
+Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten) {
+  DCHECK_LE(buflen, std::numeric_limits<int32_t>::max()) << "Writes > INT32_MAX not supported";
+  DCHECK_NOTNULL(nwritten);
+
+  size_t tot_written = 0;
+  while (tot_written < buflen) {
+    int32_t inc_num_written = 0;
+    int32_t num_to_write = buflen - tot_written;
+    Status s = Write(buf, num_to_write, &inc_num_written);
+    tot_written += inc_num_written;
+    buf += inc_num_written;
+    *nwritten = tot_written;
+
+    if (PREDICT_FALSE(!s.ok())) {
+      // Continue silently when the syscall is interrupted.
+      if (s.posix_code() == EINTR) {
+        continue;
+      }
+      return s;
+    }
+    if (PREDICT_FALSE(inc_num_written == 0)) {
+      // Shouldn't happen on Linux with a blocking socket. Maybe other Unices.
+      break;
+    }
+  }
+
+  if (tot_written < buflen) {
+    return Status::IOError("Wrote zero bytes on a blocking Write() call",
+        StringPrintf("Transferred %zu of %zu bytes", tot_written, buflen));
+  }
   return Status::OK();
 }
 
@@ -289,6 +375,41 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
                                 ErrnoToString(err), Slice(), err);
   }
   *nread = res;
+  return Status::OK();
+}
+
+// Mostly follows readn() from Stevens (2004) or Kerrisk (2010).
+// One place where we deviate: we consider EOF a failure if < amt bytes are read.
+Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread) {
+  DCHECK_LE(amt, std::numeric_limits<int32_t>::max()) << "Reads > INT32_MAX not supported";
+  DCHECK_NOTNULL(nread);
+
+  size_t tot_read = 0;
+  while (tot_read < amt) {
+    int32_t inc_num_read = 0;
+    int32_t num_to_read = amt - tot_read;
+    Status s = Recv(buf, num_to_read, &inc_num_read);
+    tot_read += inc_num_read;
+    buf += inc_num_read;
+    *nread = tot_read;
+
+    if (PREDICT_FALSE(!s.ok())) {
+      // Continue silently when the syscall is interrupted.
+      if (s.posix_code() == EINTR) {
+        continue;
+      }
+      return s;
+    }
+    if (PREDICT_FALSE(inc_num_read == 0)) {
+      // EOF.
+      break;
+    }
+  }
+
+  if (PREDICT_FALSE(tot_read < amt)) {
+    return Status::IOError("Read zero bytes on a blocking Recv() call",
+        StringPrintf("Transferred %zu of %zu bytes", tot_read, amt));
+  }
   return Status::OK();
 }
 
