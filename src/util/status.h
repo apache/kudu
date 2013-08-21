@@ -84,6 +84,14 @@ class Status {
                          int16_t posix_code = -1) {
     return Status(kNetworkError, msg, msg2, posix_code);
   }
+  static Status IllegalState(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kIllegalState, msg, msg2, posix_code);
+  }
+  static Status NotAuthorized(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kNotAuthorized, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -111,6 +119,12 @@ class Status {
 
   // Returns true iff the status indicates a NetworkError.
   bool IsNetworkError() const { return code() == kNetworkError; }
+
+  // Returns true iff the status indicates a IllegalState.
+  bool IsIllegalState() const { return code() == kIllegalState; }
+
+  // Returns true iff the status indicates a NotAuthorized.
+  bool IsNotAuthorized() const { return code() == kNotAuthorized; }
 
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
@@ -150,7 +164,9 @@ class Status {
     kIOError = 5,
     kAlreadyPresent = 6,
     kRuntimeError = 7,
-    kNetworkError = 8
+    kNetworkError = 8,
+    kIllegalState = 9,
+    kNotAuthorized = 10,
   };
 
   Code code() const {

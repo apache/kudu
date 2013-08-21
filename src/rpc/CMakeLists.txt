@@ -11,6 +11,7 @@ target_link_libraries(rpc_header_proto protobuf)
 ### RPC library
 ADD_LIBRARY(krpc
     acceptor_pool.cc
+    auth_store.cc
     client_call.cc
     connection.cc
     constants.cc
@@ -19,6 +20,9 @@ ADD_LIBRARY(krpc
     reactor.cc
     rpc_controller.cc
     sasl_common.cc
+    sasl_client.cc
+    sasl_helper.cc
+    sasl_server.cc
     serialization.cc
     server_call.cc
     service_if.cc

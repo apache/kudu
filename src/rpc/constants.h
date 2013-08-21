@@ -12,12 +12,16 @@ namespace rpc {
 // Magic number bytes sent at connection setup time.
 extern const char* const kMagicNumber;
 
+// App name for SASL library init
+extern const char* const kSaslAppName;
+
 // Current version of the RPC protocol.
 static const uint32_t kCurrentRpcVersion = 9;
 
 // From Hadoop.
 static const int32_t kInvalidCallId = -2;
 static const int32_t kConnectionContextCallId = -3;
+static const int32_t kSaslCallId = -33;
 
 static const uint8_t kMagicNumberLength = 4;
 static const uint8_t kHeaderFlagsLength = 3;

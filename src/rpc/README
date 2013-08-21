@@ -213,3 +213,97 @@ The response is serialized similarly, with only some small differences:
   - If ResponseHeader.is_error is true, then the response protobuf will
     be an ErrorStatusPB message, instead of the response protobuf type
     defined by the service.
+
+SASL negotiation:
+
+After the initial connection header is sent, if SASL is specified to be used,
+SASL negotiation begins. This SASL negotiation protocol matches the Hadoop protocol.
+The negotiation proceeds as described in this diagram:
+
+                                CLIENT |        | SERVER
+                                       |        |
+(1) SaslMessagePB }                    |        |
+state=NEGOTIATE   } --------------------------> |
+                                       |        |
+                                       |        | { (2) SaslMessagePB
+                                       |        | { state=NEGOTIATE
+                                       | <------- { auths=<list of supported mechanisms>
+                                       |        |
+(3) SaslMessagePB                  }   |        |
+state=INITIATE                     }   |        |
+auths[0]=<chosen mechanism>        }   |        |
+token=<challenge response, if any> } ---------> |
+                                       |        |
+                                       |        | { (4) SaslMessagePB
+                                       |        | { state=CHALLENGE (or SUCCESS)
+                                       | <------- { token=<challenge token, if applicable>
+                                       |        |
+(5) SaslMessagePB          }           |        |
+state=RESPONSE             }           |        |
+token=<challenge response> } -----------------> |
+                                       |        |
+                                       |        | { GOTO (4) above
+                                       |        |
+
+Appendix. Hadoop RPC wire format.
+
+While Kudu is aiming for near-compatibility with the Hadoop RPC V9 mechanism, we have
+intentionally modified or removed message protobufs and/or protobuf fields which were
+implementation-specific to Hadoop or which were difficult to adopt in a C++ implementation.
+A decoded Hadoop RPC request is shown below for informational purposes.
+
+ConnectionContext:
+
+$ protoc --decode=hadoop.common.RpcRequestHeaderProto RpcHeader.proto < cc_hdr.proto.bin
+rpcKind: RPC_PROTOCOL_BUFFER
+rpcOp: RPC_FINAL_PACKET
+callId: 4294967293 == -3 (signed): This denotes a ConnectionContext request
+clientId: "$\220\n\324\2723JA\250\031~z\236=\365\215"   // This is a uuid
+retryCount: -1
+
+$ protoc --decode=hadoop.common.IpcConnectionContextProto IpcConnectionContext.proto < cc.proto.bin
+userInfo {
+  effectiveUser: "mpercy"
+}
+protocol: "org.apache.hadoop.ipc.TestSaslRPC$TestSaslProtocol"
+
+-------
+
+Hadoop uses a double-header on its protobuf-based RPC calls, in order to support other
+RPC encodings such as Writable. Fully protobuf-based RPC requests look like this:
+
+Initial fixed 4 byte length of the RPC request:
+00 00 00 3C (len=60 bytes)
+
+--
+
+RpcRequestHeaderProto:
+1A (varint, len=26 bytes)
+08 02 10 00 18 00 22 10 28 6A FE 51 FE F4 45 11 B2 60 65 90 5B DA E4 E0 28 00 (serialized protobuf)
+
+$ protoc --decode=hadoop.common.RpcRequestHeaderProto RpcHeader.proto < ipc_hdr.proto.bin
+rpcKind: RPC_PROTOCOL_BUFFER
+rpcOp: RPC_FINAL_PACKET
+callId: 0
+clientId: "(j\376Q\376\364E\021\262`e\220[\332\344\340"
+retryCount: 0
+
+--
+
+RequestHeaderProto protobuf-RPC-specific header:
+13 (varint, len=19 bytes)
+0A 04 65 63 68 6F 1A 09 74 65 73 74 50 72 6F 74 6F 20 01 (serialized protobuf)
+
+$ protoc --decode=hadoop.common.RequestHeaderProto ProtobufRpcEngine.proto < pb_rpc_hdr.proto.bin
+methodName: "echo"
+declaringClassProtocolName: "testProto"
+clientProtocolVersion: 1
+
+--
+
+Service-specific request parameter:
+0C (varint, len=12 bytes)
+0A 0A 79 61 61 72 64 76 61 72 6B 21 (serialized protobuf)
+
+$ protoc --decode=hadoop.common.EchoRequestProto EchoTest.proto < pb_rpc_req.proto.bin
+message: "yaardvark!"

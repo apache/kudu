@@ -33,7 +33,9 @@ package kudu.rpc;
 // byte magic, a byte of version, a byte of service class, and a byte of
 // authentication type.
 //
-// We then send a "ConnectionHeader" protobuf of user information and the
+// Next, if SASL is specified to be used, SASL negotiation takes place.
+//
+// We then send a "ConnectionContext" protobuf (TODO) of user information and the
 // 'protocol' or 'service' that is to be run over this connection as well as
 // info such as codecs and compression to use when we send cell blocks(see below).
 // This connection header protobuf is prefaced by an int that holds the length
@@ -96,6 +98,34 @@ message RpcConnectionContextPB {
   // Service name for next RPC layer.
   // The client created a proxy with this service name.
   required string serviceName = 3;
+}
+
+// Message type passed back & forth for the SASL negotiation.
+message SaslMessagePB {
+  enum SaslState {
+    SUCCESS   = 0;
+    NEGOTIATE = 1;
+    INITIATE  = 2;
+    CHALLENGE = 3;
+    RESPONSE  = 4;
+  }
+
+  message SaslAuth {
+    required string method    = 1;  // The application's idea of a method, i.e. SIMPLE, DIGEST, KERBEROS.
+    required string mechanism = 2;  // Standard SASL mechanism, i.e. ANONYMOUS, PLAIN, GSSAPI.
+    optional string protocol  = 3;  // From Hadoop. Usage TBD.
+    optional string serverId  = 4;  // From Hadoop. Usage TBD.
+
+    // SASL challenge token from server, if the client chooses to use this method.
+    // Only used when the server is piggy-backing a challenge on a NEGOTIATE response.
+    // Otherwise, SaslMessagePB::token is used as the challenge token.
+    optional bytes challenge = 5;
+  }
+
+  optional uint32 version  = 1;
+  required SaslState state = 2;  // RPC system SASL state.
+  optional bytes token     = 3;
+  repeated SaslAuth auths  = 4;
 }
 
 // The header for the RPC request frame.

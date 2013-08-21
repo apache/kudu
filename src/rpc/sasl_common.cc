@@ -1,15 +1,18 @@
 // Copyright (c) 2013, Cloudera, inc.
+// All rights reserved.
+
+#include "rpc/sasl_common.h"
 
 #include <string>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <gutil/macros.h>
-#include <gutil/once.h>
-#include <gutil/stringprintf.h>
 #include <sasl/sasl.h>
 
-#include "rpc/sasl_common.h"
+#include "gutil/macros.h"
+#include "gutil/once.h"
+#include "gutil/stringprintf.h"
+#include "util/net/sockaddr.h"
 
 // Use this to search for plugins. Should work at least on RHEL & Ubuntu.
 DEFINE_string(sasl_path, "/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-gnu/sasl2",
@@ -17,6 +20,9 @@ DEFINE_string(sasl_path, "/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-
 
 namespace kudu {
 namespace rpc {
+
+const char* const kSaslMechAnonymous = "ANONYMOUS";
+const char* const kSaslMechPlain = "PLAIN";
 
 // Output Sasl messages.
 // context: not used.
@@ -81,21 +87,12 @@ static int SaslGetOption(void* context, const char* plugin_name, const char* opt
       if (len != NULL) *len = strlen(buf);
       return SASL_OK;
     }
-
-    if (strcmp("client_mech_list", option) == 0) {
-      const char* mechs = RpcSaslMechanisms();
-      *result = mechs;
-      if (len != NULL) *len = strlen(mechs);
-      return SASL_OK;
-    }
     // Options can default so don't complain.
-    VLOG(3) << "SaslGetOption: Unknown option: " << option;
+    VLOG(4) << "SaslGetOption: Unknown library option: " << option;
     return SASL_FAIL;
   }
-
-  VLOG(3) << "SaslGetOption: Unknown plugin: " << plugin_name;
+  VLOG(4) << "SaslGetOption: Unknown plugin: " << plugin_name;
   return SASL_FAIL;
-
 }
 
 // Sasl Get Path callback.
@@ -109,11 +106,6 @@ static int SaslGetPath(void* context, const char** path) {
   return SASL_OK;
 }
 
-// space-delimited, since we feed it to the client_mech_list callback
-const char* RpcSaslMechanisms() {
-  return "ANONYMOUS PLAIN";
-}
-
 // Array of callbacks for the sasl library.
 static sasl_callback_t callbacks[] = {
   { SASL_CB_LOG, reinterpret_cast<int (*)()>(&SaslLogCallback), NULL },
@@ -123,41 +115,84 @@ static sasl_callback_t callbacks[] = {
 };
 
 // Determine whether initialization was ever called
-static Status sasl_init_status_;
-static const char* app_name_;
+struct InitializationData {
+  Status status;
+  string app_name;
+};
+static struct InitializationData* sasl_init_data;
 
-static void DoInitSASL(const char* const app_name) {
+static void DoSaslInit(const char* app_name) {
   VLOG(3) << "Initializing SASL library";
-  app_name_ = app_name;
+
+  sasl_init_data = new InitializationData();
+  sasl_init_data->app_name = app_name;
 
   int result = sasl_client_init(&callbacks[0]);
   if (result != SASL_OK) {
-    sasl_init_status_ = Status::RuntimeError("Could not initialize SASL client",
+    sasl_init_data->status = Status::RuntimeError("Could not initialize SASL client",
         sasl_errstring(result, NULL, NULL));
     return;
   }
 
-  result = sasl_server_init(&callbacks[0], app_name);
+  result = sasl_server_init(&callbacks[0], sasl_init_data->app_name.c_str());
   if (result != SASL_OK) {
-    sasl_init_status_ = Status::RuntimeError("Could not initialize SASL server",
+    sasl_init_data->status = Status::RuntimeError("Could not initialize SASL server",
         sasl_errstring(result, NULL, NULL));
     return;
   }
 
-  sasl_init_status_ = Status::OK();
+  sasl_init_data->status = Status::OK();
 }
 
 // Only execute SASL initialization once
 static GoogleOnceType once = GOOGLE_ONCE_INIT;
 
-Status InitSASL(const char* const app_name) {
-  GoogleOnceInitArg(&once, &DoInitSASL, app_name);
-  if (strcmp(app_name, app_name_) != 0) {
-    return Status::InvalidArgument("InitSASL called successively with different arguments",
-        StringPrintf("Previous: %s, current: %s", app_name_, app_name));
+Status SaslInit(const char* const app_name) {
+  GoogleOnceInitArg(&once, &DoSaslInit, app_name);
+  if (sasl_init_data->app_name != app_name) {
+    return Status::InvalidArgument("SaslInit called successively with different arguments",
+        StringPrintf("Previous: %s, current: %s", sasl_init_data->app_name.c_str(), app_name));
   }
-  return sasl_init_status_;
+  return sasl_init_data->status;
 }
 
+string SaslErrDesc(int status, sasl_conn_t* conn) {
+  if (conn != NULL) {
+    return StringPrintf("SASL result code: %s, error: %s",
+        sasl_errstring(status, NULL, NULL),
+        sasl_errdetail(conn));
+  }
+  return StringPrintf("SASL result code: %s", sasl_errstring(status, NULL, NULL));
 }
+
+string SaslIpPortString(const Sockaddr& addr) {
+  string addr_str = addr.ToString();
+  size_t colon_pos = addr_str.find(':');
+  if (colon_pos != string::npos) {
+    addr_str[colon_pos] = ';';
+  }
+  return addr_str;
 }
+
+set<string> SaslListAvailableMechs() {
+  set<string> mechs;
+
+  // Array of NULL-terminated strings. Array terminated with NULL.
+  const char** mech_strings = sasl_global_listmech();
+  while (mech_strings != NULL && *mech_strings != NULL) {
+    mechs.insert(*mech_strings);
+    mech_strings++;
+  }
+  return mechs;
+}
+
+sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
+  sasl_callback_t callback;
+  callback.id = id;
+  callback.proc = proc;
+  callback.context = context;
+  return callback;
+}
+
+} // namespace rpc
+} // namespace kudu

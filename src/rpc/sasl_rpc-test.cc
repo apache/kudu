@@ -4,11 +4,18 @@
 
 #include <string>
 
+#include <boost/thread.hpp>
 #include <gtest/gtest.h>
-#include <gutil/gscoped_ptr.h>
 #include <sasl/sasl.h>
 
+#include "gutil/gscoped_ptr.h"
+#include "rpc/constants.h"
+#include "rpc/auth_store.h"
+#include "rpc/sasl_client.h"
 #include "rpc/sasl_common.h"
+#include "rpc/sasl_server.h"
+#include "util/net/sockaddr.h"
+#include "util/net/socket.h"
 
 using std::string;
 
@@ -19,86 +26,121 @@ class TestSaslRpc : public RpcTestBase {
  public:
   virtual void SetUp() {
     RpcTestBase::SetUp();
-    ASSERT_STATUS_OK(InitSASL("sasl_rpc-test"));
+    ASSERT_STATUS_OK(SaslInit(kSaslAppName));
   }
 };
 
-// Basic sanity test for the Cyrus SASL library
-TEST_F(TestSaslRpc, TestSaslAnonNoConn) {
-  const char* kAuthMethod = "ANONYMOUS";
-
-  const char **mechs = sasl_global_listmech();
-  while (*mechs != NULL) {
-    LOG(INFO) << "SASL library found mechanism: " << *mechs;
-    ++mechs;
-  }
-
-  // Callbacks we support.
-  // They must be defined here, but if they are NULL then the client library
-  // will prompt us by returning SASL_INTERACT during start/step below.
-  sasl_callback_t callbacks[] = {
-    { SASL_CB_CANON_USER, NULL, NULL }, // Handle with interactions, i.e. the library will
-    { SASL_CB_USER, NULL, NULL },       // return SASL_INTERACT during sasl_client_start()
-    { SASL_CB_LIST_END, NULL, NULL }
-  };
-
-  LOG(INFO) << "Creating new client...";
-
-  /* The SASL context kept for the life of the connection */
-  sasl_conn_t* newconn = NULL;
-
-  /* client new connection */
-  int result = sasl_client_new(
-      "kudurpc",    // The service we are using
-      "localhost",  // The fully qualified domain name of the server we're connecting to
-      NULL, NULL,   // Local and remote IP address strings
-                    // (NULL disables mechanisms which require this info)
-      callbacks,    // Connection-specific callbacks
-      0,            // Security flags
-      &newconn);
-
-  gscoped_ptr<sasl_conn_t, SaslDeleter> conn(newconn);
-
-  ASSERT_EQ(SASL_OK, result) << sasl_errstring(result, NULL, NULL) << ": " <<
-    sasl_errdetail(conn.get());
-
-  string user = "yojimbo";
-  sasl_interact_t *client_interact = NULL;
-  const char *out, *mechusing;
-  unsigned outlen;
-
-  do {
-    result = sasl_client_start(conn.get(),        // The same context from above
-                               kAuthMethod,       // The list of mechanisms from the server
-                               &client_interact,  // Filled in if an interaction is needed
-                               &out,              // Filled in on success
-                               &outlen,           // Filled in on success
-                               &mechusing);       // Filled in on success
-
-    if (result == SASL_INTERACT) {
-      LOG(INFO) << "Interactions...";
-      if (client_interact != NULL) {
-        LOG(INFO) << client_interact->challenge;
-        LOG(INFO) << client_interact->prompt << " (default: ) " << client_interact->defresult;
-        LOG(INFO) << client_interact->id;
-        switch (client_interact->id) {
-          case SASL_CB_USER:
-            client_interact->result = user.c_str();
-            client_interact->len = user.length();
-            break;
-          default:
-            break;
-        }
-      }
-    }
-  } while (result == SASL_INTERACT); // The mechanism may ask us to fill
-                                     // in things many times. Result is
-                                     // SASL_OK on success.
-
-  ASSERT_EQ(SASL_OK, result) << sasl_errstring(result, NULL, NULL) << ": " <<
-    sasl_errdetail(conn.get());
+// Test basic initialization of the objects.
+TEST_F(TestSaslRpc, TestBasicInit) {
+  SaslServer server(kSaslAppName, -1);
+  ASSERT_STATUS_OK(server.Init(kSaslAppName));
+  SaslClient client(kSaslAppName, -1);
+  ASSERT_STATUS_OK(client.Init(kSaslAppName));
 }
+
+// A "Callable" that takes a Socket* param, for use with starting a thread.
+// Can be used for SaslServer or SaslClient threads.
+typedef void (*socket_callable_t)(Socket*);
+
+// Call Accept() on the socket, then pass the connection to the server runner
+static void RunAcceptingDelegator(Socket* acceptor, socket_callable_t server_runner) {
+  Socket conn;
+  Sockaddr remote;
+  CHECK_OK(acceptor->Accept(&conn, &remote, 0));
+  server_runner(&conn);
+}
+
+// Set up a socket and run a SASL negotiation.
+static void RunNegotiationTest(socket_callable_t server_runner, socket_callable_t client_runner) {
+  Socket server_sock;
+  server_sock.Init(0);
+  ASSERT_STATUS_OK(server_sock.BindAndListen(Sockaddr(), 1));
+  Sockaddr server_bind_addr;
+  ASSERT_STATUS_OK(server_sock.GetSocketAddress(&server_bind_addr));
+  boost::thread server(RunAcceptingDelegator, &server_sock, server_runner);
+
+  Socket client_sock;
+  client_sock.Init(0);
+  ASSERT_STATUS_OK(client_sock.Connect(server_bind_addr));
+  boost::thread client(client_runner, &client_sock);
+
+  LOG(INFO) << "Waiting for test threads to terminate...";
+  client.join();
+  LOG(INFO) << "Client thread terminated.";
+  server.join();
+  LOG(INFO) << "Server thread terminated.";
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void RunAnonNegotiationServer(Socket* conn) {
+  SaslServer sasl_server(kSaslAppName, conn->GetFd());
+  sasl_server.EnableAnonymous();
+  CHECK_OK(sasl_server.Init(kSaslAppName));
+  CHECK_OK(sasl_server.Negotiate());
+}
+
+static void RunAnonNegotiationClient(Socket* conn) {
+  SaslClient sasl_client(kSaslAppName, conn->GetFd());
+  sasl_client.EnableAnonymous();
+  CHECK_OK(sasl_client.Init(kSaslAppName));
+  CHECK_OK(sasl_client.Negotiate());
+}
+
+// Test SASL negotiation using the ANONYMOUS mechanism over a socket.
+TEST_F(TestSaslRpc, TestAnonNegotiation) {
+  RunNegotiationTest(RunAnonNegotiationServer, RunAnonNegotiationClient);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void RunPlainNegotiationServer(Socket* conn) {
+  SaslServer sasl_server(kSaslAppName, conn->GetFd());
+  gscoped_ptr<AuthStore> authstore(new AuthStore());
+  authstore->Add("danger", "burrito");
+  sasl_server.EnablePlain(authstore.Pass());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
+  CHECK_OK(sasl_server.Negotiate());
+}
+
+static void RunPlainNegotiationClient(Socket* conn) {
+  SaslClient sasl_client(kSaslAppName, conn->GetFd());
+  sasl_client.EnablePlain("danger", "burrito");
+  CHECK_OK(sasl_client.Init(kSaslAppName));
+  CHECK_OK(sasl_client.Negotiate());
+}
+
+// Test SASL negotiation using the PLAIN mechanism over a socket.
+TEST_F(TestSaslRpc, TestPlainNegotiation) {
+  RunNegotiationTest(RunPlainNegotiationServer, RunPlainNegotiationClient);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void RunPlainFailingNegotiationServer(Socket* conn) {
+  SaslServer sasl_server(kSaslAppName, conn->GetFd());
+  gscoped_ptr<AuthStore> authstore(new AuthStore());
+  authstore->Add("danger", "burrito");
+  sasl_server.EnablePlain(authstore.Pass());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
+  Status s = sasl_server.Negotiate();
+  ASSERT_TRUE(s.IsNotAuthorized()) << "Expected auth failure! Got: " << s.ToString();
+}
+
+static void RunPlainFailingNegotiationClient(Socket* conn) {
+  SaslClient sasl_client(kSaslAppName, conn->GetFd());
+  sasl_client.EnablePlain("unknown", "burrito");
+  CHECK_OK(sasl_client.Init(kSaslAppName));
+  Status s = sasl_client.Negotiate();
+  ASSERT_TRUE(s.IsNotAuthorized()) << "Expected auth failure! Got: " << s.ToString();
+}
+
+// Test SASL negotiation using the PLAIN mechanism over a socket.
+TEST_F(TestSaslRpc, TestPlainFailingNegotiation) {
+  RunNegotiationTest(RunPlainFailingNegotiationServer, RunPlainFailingNegotiationClient);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 } // namespace rpc
 } // namespace kudu
-

@@ -72,6 +72,12 @@ std::string Status::CodeAsString() const {
     case kNetworkError:
       type = "Network error";
       break;
+    case kIllegalState:
+      type = "Illegal state";
+      break;
+    case kNotAuthorized:
+      type = "Not authorized";
+      break;
     default:
       snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
                static_cast<int>(code()));

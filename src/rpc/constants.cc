@@ -7,6 +7,7 @@ namespace kudu {
 namespace rpc {
 
 const char* const kMagicNumber = "hrpc";
+const char* const kSaslAppName = "Kudu";
 
 } // namespace rpc
 } // namespace kudu
