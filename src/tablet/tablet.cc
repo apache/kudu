@@ -612,8 +612,6 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // multiple outputs, and we can't do the atomic multi-file rename. This will
   // be made atomic by Matteo's metadata branch.
 
-  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
-
   // Replace the compacted rowsets with the new on-disk rowsets.
   AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowsets);
 
