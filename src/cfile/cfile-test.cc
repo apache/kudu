@@ -537,13 +537,13 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   ASSERT_EQ(string("hello 9999"), s.ToString());
 
   // Seek to start of file
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+  ASSERT_STATUS_OK(iter->SeekToFirst());
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 0000"), s.ToString());
 
   // Reseek to start and fetch all data.
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+  ASSERT_STATUS_OK(iter->SeekToFirst());
 
   ScopedColumnBlock<STRING> cb(10000);
   size_t n = 10000;

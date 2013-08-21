@@ -202,6 +202,10 @@ class CFileIterator {
                 const BlockPointer *posidx_root,
                 const BlockPointer *validx_root);
 
+  // Seek to the first entry in the file. This works for both
+  // ordinal-indexed and value-indexed files.
+  Status SeekToFirst();
+
   // Seek to the given ordinal entry in the file.
   // Entry 0 is the first entry written to the file.
   // If provided seek point is past the end of the file,

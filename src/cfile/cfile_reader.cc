@@ -365,6 +365,35 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx) {
   DCHECK_EQ(index_within_nonnulls + pb->first_row_idx_, pb->dblk_->ordinal_pos()) << "failed seek";
 }
 
+Status CFileIterator::SeekToFirst() {
+  Unseek();
+  IndexTreeIterator *idx_iter;
+  if (PREDICT_TRUE(posidx_iter_ != NULL)) {
+    RETURN_NOT_OK(posidx_iter_->SeekToFirst());
+    idx_iter = posidx_iter_.get();
+  } else if (PREDICT_TRUE(validx_iter_ != NULL)) {
+    RETURN_NOT_OK(validx_iter_->SeekToFirst());
+    idx_iter = validx_iter_.get();
+  } else {
+    return Status::NotSupported("no value or positional index present");
+  }
+
+  pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
+    prepared_block_pool_.Construct());
+  RETURN_NOT_OK(ReadCurrentDataBlock(*idx_iter, b.get()));
+  b->dblk_->SeekToPositionInBlock(0);
+
+  last_prepare_idx_ = b->dblk_->ordinal_pos();
+  last_prepare_count_ = 0;
+
+  prepared_blocks_.push_back(b.release());
+
+  seeked_ = idx_iter;
+  return Status::OK();
+}
+
+
+
 Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
                                     bool *exact_match) {
   Unseek();
