@@ -27,6 +27,7 @@ else
       "rapidjson")  F_RAPIDJSON=1 ;;
       "snappy")     F_SNAPPY=1 ;;
       "zlib")       F_ZLIB=1 ;;
+      "mongoose")   F_MONGOOSE=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -34,10 +35,12 @@ fi
 
 ################################################################################
 
+mkdir -p "$PREFIX/include"
+mkdir -p "$PREFIX/lib"
+
 # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
 # this by setting up lib64 as a symlink to lib.  We have to do this step first
 # to handle cases where one third-party library depends on another.
-mkdir -p "$PREFIX/lib"
 ln -sf lib "$PREFIX/lib64"
 
 # use the compiled tools
@@ -135,6 +138,17 @@ if [ -n "$F_ALL" -o -n "$F_RAPIDJSON" ]; then
   # just installing it into our prefix
   cd $RAPIDJSON_DIR
   rsync -av --delete $RAPIDJSON_DIR/include/rapidjson/ $PREFIX/include/rapidjson/
+fi
+
+# Build mongoose
+if [ -n "$F_ALL" -o -n "$F_MONGOOSE" ]; then
+  # Mongoose's Makefile builds a standalone web server, whereas we just want
+  # a static lib
+  cd $MONGOOSE_DIR
+  ${CC:-gcc} -O3 -DNDEBUG -DNO_SSL_DL -c mongoose.c
+  ar rs libmongoose.a mongoose.o
+  cp libmongoose.a $PREFIX/lib/
+  cp mongoose.h $PREFIX/include/
 fi
 
 echo "---------------------"

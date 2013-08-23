@@ -217,6 +217,11 @@ else()
   set(LIBS ${LIBS} ${ZLIB_LIBS}/libz.so)
 endif()
 
+## Mongoose
+find_package(Mongoose REQUIRED)
+include_directories(SYSTEM ${MONGOOSE_INCLUDE_DIR})
+set(LIBS ${LIBS} ${MONGOOSE_STATIC_LIB})
+
 ## Google PerfTools
 find_package( GPerf REQUIRED )
 if (NOT "${KUDU_USE_ASAN}")

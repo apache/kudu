@@ -106,5 +106,12 @@ if [ ! -d $RAPIDJSON_DIR ]; then
   rm rapidjson-${RAPIDJSON_VERSION}.zip
 fi
 
+if [ ! -d $MONGOOSE_DIR ]; then
+  echo "Fetching mongoose"
+  wget -O mongoose-${MONGOOSE_VERSION}.tar.gz https://github.com/valenok/mongoose/archive/${MONGOOSE_VERSION}.tar.gz
+  tar xzf mongoose-$MONGOOSE_VERSION.tar.gz
+  rm mongoose-$MONGOOSE_VERSION.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
