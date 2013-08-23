@@ -33,13 +33,20 @@ else ()
 endif ()
 
 if (MONGOOSE_FOUND)
-  if (NOT MONGOOSE_FIND_QUIETLY)
-    message(STATUS "mongoose Found in ${MONGOOSE_SEARCH_LIB_PATH}")
+  if (NOT Mongoose_FIND_QUIETLY)
+    message(STATUS "Found the Mongoose library: ${MONGOOSE_LIB_PATH}")
   endif ()
 else ()
-  message(STATUS "mongoose includes and libraries NOT found. "
-    "Looked for headers in ${MONGOOSE_SEARCH_HEADER_PATHS}, "
-    "and for libs in ${MONGOOSE_SEARCH_LIB_PATH}")
+  if (NOT Mongoose_FIND_QUIETLY)
+    set(MONGOOSE_ERR_MSG "Could not find the Mongoose library. Looked for headers")
+    set(MONGOOSE_ERR_MSG "${MONGOOSE_ERR_MSG} in ${MONGOOSE_SEARCH_HEADER_PATHS}, and for libs")
+    set(MONGOOSE_ERR_MSG "${MONGOOSE_ERR_MSG} in ${MONGOOSE_SEARCH_LIB_PATH}")
+    if (Mongoose_FIND_REQUIRED)
+      message(FATAL_ERROR "${MONGOOSE_ERR_MSG}")
+    else (Mongoose_FIND_REQUIRED)
+      message(STATUS "${MONGOOSE_ERR_MSG}")
+    endif (Mongoose_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(

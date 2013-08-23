@@ -19,9 +19,9 @@ find_path(LZ4_INCLUDE_DIR lz4.h PATHS
   NO_DEFAULT_PATH
 )
 
-find_library(LZ4_LIB_PATH NAMES lz4 PATHS ${LZ4_SEARCH_LIB_PATH})
+find_library(LZ4_LIB_PATH NAMES liblz4.a PATHS ${LZ4_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
 
-if (LZ4_LIB_PATH)
+if (LZ4_INCLUDE_DIR AND LZ4_LIB_PATH)
   set(LZ4_FOUND TRUE)
   set(LZ4_LIBS ${LZ4_SEARCH_LIB_PATH})
   set(LZ4_STATIC_LIB ${LZ4_SEARCH_LIB_PATH}/liblz4.a)
@@ -30,13 +30,20 @@ else ()
 endif ()
 
 if (LZ4_FOUND)
-  if (NOT LZ4_FIND_QUIETLY)
-    message(STATUS "lz4 Found in ${LZ4_SEARCH_LIB_PATH}")
+  if (NOT Lz4_FIND_QUIETLY)
+    message(STATUS "Found the Lz4 library: ${LZ4_LIB_PATH}")
   endif ()
 else ()
-  message(STATUS "lz4 includes and libraries NOT found. "
-    "Looked for headers in ${LZ4_SEARCH_HEADER_PATH}, "
-    "and for libs in ${LZ4_SEARCH_LIB_PATH}")
+  if (NOT Lz4_FIND_QUIETLY)
+    set(LZ4_ERR_MSG "Could not find the Lz4 library. Looked for headers")
+    set(LZ4_ERR_MSG "${LZ4_ERR_MSG} in ${LZ4_SEARCH_HEADER_PATHS}, and for libs")
+    set(LZ4_ERR_MSG "${LZ4_ERR_MSG} in ${LZ4_SEARCH_LIB_PATH}")
+    if (Lz4_FIND_REQUIRED)
+      message(FATAL_ERROR "${LZ4_ERR_MSG}")
+    else (Lz4_FIND_REQUIRED)
+      message(STATUS "${LZ4_ERR_MSG}")
+    endif (Lz4_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(

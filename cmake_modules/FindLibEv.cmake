@@ -19,9 +19,9 @@ find_path(LIBEV_INCLUDE_DIR ev++.h PATHS
   NO_DEFAULT_PATH
 )
 
-find_library(LIBEV_LIB_PATH NAMES ev PATHS ${LIBEV_SEARCH_LIB_PATH})
+find_library(LIBEV_LIB_PATH NAMES ev PATHS ${LIBEV_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
 
-if (LIBEV_LIB_PATH)
+if (LIBEV_INCLUDE_DIR AND LIBEV_LIB_PATH)
   set(LIBEV_FOUND TRUE)
   set(LIBEV_LIBS ${LIBEV_SEARCH_LIB_PATH})
   set(LIBEV_STATIC_LIB ${LIBEV_SEARCH_LIB_PATH}/libev.a)
@@ -30,13 +30,20 @@ else ()
 endif ()
 
 if (LIBEV_FOUND)
-  if (NOT LIBEV_FIND_QUIETLY)
-    message(STATUS "Libev Found in ${LIBEV_SEARCH_LIB_PATH}")
+  if (NOT LibEv_FIND_QUIETLY)
+    message(STATUS "Found the LibEv library: ${LIBEV_LIB_PATH}")
   endif ()
 else ()
-  message(STATUS "Libev includes and libraries NOT found. "
-    "Looked for headers in ${LIBEV_SEARCH_HEADER_PATH}, "
-    "and for libs in ${LIBEV_SEARCH_LIB_PATH}")
+  if (NOT LibEv_FIND_QUIETLY)
+    set(LIBEV_ERR_MSG "Could not find the LibEv library. Looked for headers")
+    set(LIBEV_ERR_MSG "${LIBEV_ERR_MSG} in ${LIBEV_SEARCH_HEADER_PATHS}, and for libs")
+    set(LIBEV_ERR_MSG "${LIBEV_ERR_MSG} in ${LIBEV_SEARCH_LIB_PATH}")
+    if (LibEv_FIND_REQUIRED)
+      message(FATAL_ERROR "${LIBEV_ERR_MSG}")
+    else (LibEv_FIND_REQUIRED)
+      message(STATUS "${LIBEV_ERR_MSG}")
+    endif (LibEv_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(

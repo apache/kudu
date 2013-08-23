@@ -19,9 +19,9 @@ find_path(ZLIB_INCLUDE_DIR zlib.h PATHS
   NO_DEFAULT_PATH
 )
 
-find_library(ZLIB_LIB_PATH NAMES z PATHS ${ZLIB_SEARCH_LIB_PATH})
+find_library(ZLIB_LIB_PATH NAMES z PATHS ${ZLIB_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
 
-if (ZLIB_LIB_PATH)
+if (ZLIB_INCLUDE_DIR AND ZLIB_LIB_PATH)
   set(ZLIB_FOUND TRUE)
   set(ZLIB_LIBS ${ZLIB_SEARCH_LIB_PATH})
   set(ZLIB_STATIC_LIB ${ZLIB_SEARCH_LIB_PATH}/libz.a)
@@ -30,13 +30,20 @@ else ()
 endif ()
 
 if (ZLIB_FOUND)
-  if (NOT ZLIB_FIND_QUIETLY)
-    message(STATUS "zlib Found in ${ZLIB_SEARCH_LIB_PATH}")
+  if (NOT Zlib_FIND_QUIETLY)
+    message(STATUS "Found the Zlib library: ${ZLIB_LIB_PATH}")
   endif ()
 else ()
-  message(STATUS "zlib includes and libraries NOT found. "
-    "Looked for headers in ${ZLIB_SEARCH_HEADER_PATH}, "
-    "and for libs in ${ZLIB_SEARCH_LIB_PATH}")
+  if (NOT Zlib_FIND_QUIETLY)
+    set(ZLIB_ERR_MSG "Could not find the Zlib library. Looked for headers")
+    set(ZLIB_ERR_MSG "${ZLIB_ERR_MSG} in ${ZLIB_SEARCH_HEADER_PATHS}, and for libs")
+    set(ZLIB_ERR_MSG "${ZLIB_ERR_MSG} in ${ZLIB_SEARCH_LIB_PATH}")
+    if (Zlib_FIND_REQUIRED)
+      message(FATAL_ERROR "${ZLIB_ERR_MSG}")
+    else (Zlib_FIND_REQUIRED)
+      message(STATUS "${ZLIB_ERR_MSG}")
+    endif (Zlib_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(

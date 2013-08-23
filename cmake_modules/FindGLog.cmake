@@ -19,9 +19,9 @@ find_path(GLOG_INCLUDE_DIR glog/logging.h PATHS
   NO_DEFAULT_PATH
 )
 
-find_library(GLOG_LIB_PATH NAMES glog PATHS ${GLOG_SEARCH_LIB_PATH})
+find_library(GLOG_LIB_PATH NAMES glog PATHS ${GLOG_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
 
-if (GLOG_LIB_PATH)
+if (GLOG_INCLUDE_DIR AND GLOG_LIB_PATH)
   set(GLOG_FOUND TRUE)
   set(GLOG_LIBS ${GLOG_SEARCH_LIB_PATH})
   set(GLOG_STATIC_LIB ${GLOG_SEARCH_LIB_PATH}/libglog.a)
@@ -30,13 +30,20 @@ else ()
 endif ()
 
 if (GLOG_FOUND)
-  if (NOT GLOG_FIND_QUIETLY)
-    message(STATUS "GLog Found in ${GLOG_SEARCH_LIB_PATH}")
+  if (NOT GLog_FIND_QUIETLY)
+    message(STATUS "Found the GLog library: ${GLOG_LIB_PATH}")
   endif ()
 else ()
-  message(STATUS "GLog includes and libraries NOT found. "
-    "Looked for headers in ${GLOG_SEARCH_HEADER_PATH}, "
-    "and for libs in ${GLOG_SEARCH_LIB_PATH}")
+  if (NOT GLog_FIND_QUIETLY)
+    set(GLOG_ERR_MSG "Could not find the GLog library. Looked for headers")
+    set(GLOG_ERR_MSG "${GLOG_ERR_MSG} in ${GLOG_SEARCH_HEADER_PATHS}, and for libs")
+    set(GLOG_ERR_MSG "${GLOG_ERR_MSG} in ${GLOG_SEARCH_LIB_PATH}")
+    if (GLog_FIND_REQUIRED)
+      message(FATAL_ERROR "${GLOG_ERR_MSG}")
+    else (GLog_FIND_REQUIRED)
+      message(STATUS "${GLOG_ERR_MSG}")
+    endif (GLog_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(

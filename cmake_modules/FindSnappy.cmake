@@ -19,9 +19,9 @@ find_path(SNAPPY_INCLUDE_DIR snappy.h PATHS
   NO_DEFAULT_PATH
 )
 
-find_library(SNAPPY_LIB_PATH NAMES snappy PATHS ${SNAPPY_SEARCH_LIB_PATH})
+find_library(SNAPPY_LIB_PATH NAMES snappy PATHS ${SNAPPY_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
 
-if (SNAPPY_LIB_PATH)
+if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIB_PATH)
   set(SNAPPY_FOUND TRUE)
   set(SNAPPY_LIBS ${SNAPPY_SEARCH_LIB_PATH})
   set(SNAPPY_STATIC_LIB ${SNAPPY_SEARCH_LIB_PATH}/libsnappy.a)
@@ -30,13 +30,20 @@ else ()
 endif ()
 
 if (SNAPPY_FOUND)
-  if (NOT SNAPPY_FIND_QUIETLY)
-    message(STATUS "snappy Found in ${SNAPPY_SEARCH_LIB_PATH}")
+  if (NOT Snappy_FIND_QUIETLY)
+    message(STATUS "Found the Snappy library: ${SNAPPY_LIB_PATH}")
   endif ()
 else ()
-  message(STATUS "snappy includes and libraries NOT found. "
-    "Looked for headers in ${SNAPPY_SEARCH_HEADER_PATH}, "
-    "and for libs in ${SNAPPY_SEARCH_LIB_PATH}")
+  if (NOT Snappy_FIND_QUIETLY)
+    set(SNAPPY_ERR_MSG "Could not find the Snappy library. Looked for headers")
+    set(SNAPPY_ERR_MSG "${SNAPPY_ERR_MSG} in ${SNAPPY_SEARCH_HEADER_PATHS}, and for libs")
+    set(SNAPPY_ERR_MSG "${SNAPPY_ERR_MSG} in ${SNAPPY_SEARCH_LIB_PATH}")
+    if (Snappy_FIND_REQUIRED)
+      message(FATAL_ERROR "${SNAPPY_ERR_MSG}")
+    else (Snappy_FIND_REQUIRED)
+      message(STATUS "${SNAPPY_ERR_MSG}")
+    endif (Snappy_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(

@@ -32,21 +32,28 @@ find_library(CYRUS_SASL_STATIC_LIB NAMES libsasl2.a PATHS ${CYRUS_SASL_SEARCH_LI
 find_library(CYRUS_SASL_PLAIN_DYN_LIB NAMES sasl2/libplain.so)    # look on system path
 find_library(CYRUS_SASL_ANON_DYN_LIB NAMES sasl2/libanonymous.so) # look on system path
 
-if (CYRUS_SASL_STATIC_LIB AND CYRUS_SASL_PLAIN_DYN_LIB AND CYRUS_SASL_ANON_DYN_LIB)
+if (CYRUS_SASL_INCLUDE_DIR AND CYRUS_SASL_STATIC_LIB AND CYRUS_SASL_PLAIN_DYN_LIB AND CYRUS_SASL_ANON_DYN_LIB)
   set(CYRUS_SASL_FOUND TRUE)
 else ()
   set(CYRUS_SASL_FOUND FALSE)
 endif ()
 
 if (CYRUS_SASL_FOUND)
-  if (NOT CYRUS_SASL_FIND_QUIETLY)
-    message(STATUS "Cyrus SASL Found: ${CYRUS_SASL_STATIC_LIB}")
-    message(STATUS "Cyrus SASL Plugins Found: ${CYRUS_SASL_PLAIN_DYN_LIB};${CYRUS_SASL_ANON_DYN_LIB}")
+  if (NOT CyrusSASL_FIND_QUIETLY)
+    message(STATUS "Found the CyrusSASL library: ${CYRUS_SASL_STATIC_LIB}")
+    message(STATUS "Found the CyrusSASL plugins: ${CYRUS_SASL_PLAIN_DYN_LIB};${CYRUS_SASL_ANON_DYN_LIB}")
   endif ()
 else ()
-  message(STATUS "Cyrus SASL includes and libraries NOT found. "
-    "Looked for headers in ${CYRUS_SASL_SEARCH_HEADER_PATH}, "
-    "and for libs in ${CYRUS_SASL_SEARCH_LIB_PATH} as well as system paths")
+  if (NOT CyrusSASL_FIND_QUIETLY)
+    set(CYRUS_SASL_ERR_MSG "Could not find the CyrusSASL Library. Looked for headers")
+    set(CYRUS_SASL_ERR_MSG "${CYRUS_SASL_ERR_MSG} in ${CYRUS_SASL_SEARCH_HEADER_PATHS}, and for libs")
+    set(CYRUS_SASL_ERR_MSG "${CYRUS_SASL_ERR_MSG} in ${CYRUS_SASL_SEARCH_LIB_PATH} as well as system paths")
+    if (CyrusSASL_FIND_REQUIRED)
+      message(FATAL_ERROR "${CYRUS_SASL_ERR_MSG}")
+    else (CyrusSASL_FIND_REQUIRED)
+      message(STATUS "${CYRUS_SASL_ERR_MSG}")
+    endif (CyrusSASL_FIND_REQUIRED)
+  endif ()
 endif ()
 
 mark_as_advanced(
