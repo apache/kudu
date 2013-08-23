@@ -65,7 +65,7 @@ function(KRPC_GENERATE SRCS HDRS)
         file(MAKE_DIRECTORY ${PROTO_DST_ROOT}/${FIL_PT})
     endif()
 
-    SET(KRPC_BIN "${CMAKE_BINARY_DIR}/src/rpc/protoc-gen-krpc")
+    GET_TARGET_PROPERTY(KRPC_BIN protoc-gen-krpc LOCATION)
     add_custom_command(
       OUTPUT "${PROTO_CC_OUT}" "${PROTO_H_OUT}"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}

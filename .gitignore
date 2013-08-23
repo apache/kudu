@@ -1,7 +1,6 @@
 *.pb.cc
 *.pb.h
 *~
-*-test
 *.a
 *.o
 
@@ -21,9 +20,4 @@ oprofile_data
 *.service.h
 *.proxy.cc
 *.proxy.h
-protoc-gen-krpc
-tpch1
-rle
-cfile-dump
-rwlock-perf
-rpc-bench
+build/

@@ -30,6 +30,10 @@ $ cmake .
 $ make -j4
 $ make test
 
+The build artifacts, including the test binaries, will be stored in
+'build/latest/', which itself is a symlink to either build/debug or
+build/release.
+
 
 Running tests with the clang AddressSanitizer enabled
 ------------------------------------------------------------
@@ -48,7 +52,7 @@ The tests will run significantly slower than without ASAN enabled, and if any
 memory error occurs, the test that triggered it will fail. You can then use a
 command like:
 
-$ src/tablet/failing-test 2>&1 | asan_symbolize.py | c++filt | less
+$ build/latest/failing-test 2>&1 | asan_symbolize.py | c++filt | less
 
 to get a proper symbolized stack trace. The asan_symbolize program can be found
 in the llvm source distribution:

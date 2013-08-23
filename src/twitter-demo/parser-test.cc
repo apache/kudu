@@ -49,7 +49,9 @@ static string GetExecutableDir() {
 }
 
 static Status LoadFile(const string& name, vector<string>* lines) {
-  string path = GetExecutableDir() + "/" + name;
+  // The test runs from build/debug|release/, so go up two directories
+  // to get back to the source dir.
+  string path = GetExecutableDir() + "/" + "../../src/twitter-demo/" + name;
   faststring data;
   RETURN_NOT_OK(ReadFileToString(Env::Default(), path, &data));
 
