@@ -10,10 +10,13 @@ ADD_DEPENDENCIES(metadata_proto kudu_common)
 ADD_DEPENDENCIES(metadata_proto cfile_proto)
 
 SET(SERVER_SRCS
+  default-path-handlers.cc
   fsmanager.cc
+  global-flags.cc
   metadata.cc
   metadata_util.cc
   oid_generator.cc
+  pprof-path-handlers.cc
   rpc_server.cc
   webserver.cc
 )

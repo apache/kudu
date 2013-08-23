@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "rpc/service_if.h"
+#include "server/default-path-handlers.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
 #include "tserver/scanners.h"
@@ -55,6 +56,7 @@ Status TabletServer::Start() {
   gscoped_ptr<ServiceIf> impl(new TabletServiceImpl(this));
   RETURN_NOT_OK(rpc_server_->Start(impl.Pass()));
 
+  AddDefaultPathHandlers(web_server_.get());
   RETURN_NOT_OK(web_server_->Start());
   return Status::OK();
 }

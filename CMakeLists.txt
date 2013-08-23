@@ -73,7 +73,7 @@ SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 # Flag to enable clang address sanitizer
 # This will only build if clang is the chosen compiler
 if (${KUDU_USE_ASAN})
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
 
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
   # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
@@ -251,7 +251,7 @@ set(LIBS ${LIBS} ${MONGOOSE_STATIC_LIB})
 ## Google PerfTools
 find_package( GPerf REQUIRED )
 if (NOT "${KUDU_USE_ASAN}")
-  set(LIBS ${LIBS} ${TCMALLOC_LIBRARY})
+  set(LIBS ${LIBS} ${TCMALLOC_LIBRARY} ${PROFILER_LIBRARY})
 endif()
 
 ############################################################
