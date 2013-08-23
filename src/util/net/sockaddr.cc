@@ -60,4 +60,8 @@ std::string Sockaddr::ToString() const {
   return StringPrintf("%s:%d", str, port());
 }
 
+bool Sockaddr::IsWildcard() const {
+  return addr_.sin_addr.s_addr == 0;
+}
+
 } // namespace kudu

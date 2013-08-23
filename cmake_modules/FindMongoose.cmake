@@ -49,6 +49,16 @@ else ()
   endif ()
 endif ()
 
+# Add OpenSSL libs to the linker path
+find_package(OpenSSL REQUIRED)
+if (OPENSSL_FOUND)
+  set(MONGOOSE_STATIC_LIB ${MONGOOSE_STATIC_LIB} ${OPENSSL_LIBRARIES})
+else ()
+  if (NOT Mongoose_FIND_QUIETLY)
+    message(FATAL_ERROR "Cannot find OpenSSL library")
+  endif ()
+endif ()
+
 mark_as_advanced(
   MONGOOSE_INCLUDE_DIR
   MONGOOSE_LIBS

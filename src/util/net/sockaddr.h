@@ -36,6 +36,8 @@ class Sockaddr {
   const struct sockaddr_in& addr() const;
   std::string ToString() const;
 
+  bool IsWildcard() const;
+
   // the default auto-generated copy constructor is fine here
  private:
   struct sockaddr_in addr_;

@@ -23,6 +23,7 @@ ADD_LIBRARY(kudu_util
   test_graph.cc
   errno.cc
   monotime.cc
+  url-coding.cc
 )
 SET(KUDU_UTIL_LIBS kudu_util)
 
@@ -51,3 +52,4 @@ ADD_KUDU_TEST(threadpool-test)
 ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(safe_math-test)
 ADD_KUDU_TEST(bit-util-test)
+ADD_KUDU_TEST(url-coding-test)

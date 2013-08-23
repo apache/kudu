@@ -15,6 +15,7 @@ SET(SERVER_SRCS
   metadata_util.cc
   oid_generator.cc
   rpc_server.cc
+  webserver.cc
 )
 
 add_library(server ${SERVER_SRCS} ${METADATA_PROTO_SRCS})

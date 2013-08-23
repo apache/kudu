@@ -19,6 +19,8 @@ namespace kudu {
 class RpcServer;
 struct RpcServerOptions;
 
+class Webserver;
+
 namespace rpc {
 class Messenger;
 class ServicePool;
@@ -37,6 +39,8 @@ class TabletServer {
   // TODO: move this out of this header, since clients want to use this
   // constant as well.
   static const uint16_t kDefaultPort = 7150;
+
+  static const uint16_t kDefaultWebPort = 8015;
 
   explicit TabletServer(const RpcServerOptions& opts);
   ~TabletServer();
@@ -64,6 +68,7 @@ class TabletServer {
   bool initted_;
 
   gscoped_ptr<RpcServer> rpc_server_;
+  gscoped_ptr<Webserver> web_server_;
 
   // The singular hosted tablet.
   // TODO: This will be replaced with some kind of map of tablet ID to

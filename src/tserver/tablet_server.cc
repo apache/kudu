@@ -8,6 +8,7 @@
 
 #include "rpc/service_if.h"
 #include "server/rpc_server.h"
+#include "server/webserver.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_service.h"
 #include "util/net/net_util.h"
@@ -23,10 +24,13 @@ namespace tserver {
 
 TabletServer::TabletServer(const RpcServerOptions& opts)
   : initted_(false),
-    rpc_server_(new RpcServer(opts)) {
+    rpc_server_(new RpcServer(opts)),
+    web_server_(new Webserver(kDefaultWebPort)) {
+  // TODO: make web port configurable.
 }
 
 TabletServer::~TabletServer() {
+  web_server_->Stop();
   rpc_server_->Shutdown();
 }
 
@@ -50,6 +54,8 @@ Status TabletServer::Start() {
 
   gscoped_ptr<ServiceIf> impl(new TabletServiceImpl(this));
   RETURN_NOT_OK(rpc_server_->Start(impl.Pass()));
+
+  RETURN_NOT_OK(web_server_->Start());
   return Status::OK();
 }
 
