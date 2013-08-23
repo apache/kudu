@@ -7,6 +7,7 @@
 #include "cfile/cfile_reader.h"
 #include "cfile/index_btree.h"
 #include "common/key_encoder.h"
+#include "util/debug-util.h"
 
 namespace kudu {
 namespace cfile {

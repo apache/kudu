@@ -16,7 +16,7 @@
 #include <boost/thread/mutex.hpp>
 #include <algorithm>
 
-#include "util/logging.h"
+#include "util/debug-util.h"
 #include "util/memory/arena.h"
 
 using std::copy;

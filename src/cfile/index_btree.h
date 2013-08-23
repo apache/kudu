@@ -10,7 +10,6 @@
 #include "cfile/cfile.pb.h"
 #include "cfile/index_block.h"
 #include "gutil/macros.h"
-#include "util/logging.h"
 
 namespace kudu {
 namespace cfile {

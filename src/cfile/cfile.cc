@@ -14,7 +14,6 @@
 #include "cfile/type_encodings.h"
 #include "util/env.h"
 #include "util/coding.h"
-#include "util/logging.h"
 #include "util/pb_util.h"
 #include "util/hexdump.h"
 

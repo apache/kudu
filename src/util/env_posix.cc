@@ -22,7 +22,6 @@
 
 #include "util/env.h"
 #include "util/errno.h"
-#include "util/logging.h"
 #include "util/slice.h"
 
 namespace kudu {

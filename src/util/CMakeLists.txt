@@ -7,7 +7,7 @@ ADD_LIBRARY(kudu_util
   coding.cc
   group_varint.cc
   memcmpable_varint.cc
-  logging.cc
+  debug-util.cc
   hexdump.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
