@@ -6,6 +6,7 @@
 
 #include "master/master_server.h"
 #include "server/rpc_server.h"
+#include "util/logging.h"
 
 DEFINE_string(master_server_rpc_bind_addresses, "0.0.0.0:7150",
              "Comma-separated list of addresses for the Master Server"
@@ -23,7 +24,7 @@ namespace kudu {
 namespace master {
 
 static int MasterServerMain(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
+  InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;

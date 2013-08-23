@@ -12,6 +12,7 @@
 #include "tserver/tablet_server.h"
 #include "twitter-demo/twitter-schema.h"
 #include "util/env.h"
+#include "util/logging.h"
 
 DEFINE_string(tablet_server_base_dir, "/tmp/demo-tablets",
               "Base directory for single-tablet demo server");
@@ -97,7 +98,7 @@ static void CompactThread(Tablet* tablet) {
 }
 
 static int TabletServerMain(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
+  InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;

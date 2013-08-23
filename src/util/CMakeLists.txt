@@ -9,6 +9,7 @@ ADD_LIBRARY(kudu_util
   memcmpable_varint.cc
   debug-util.cc
   hexdump.cc
+  logging.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
   net/net_util.cc
