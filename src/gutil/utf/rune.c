@@ -13,8 +13,8 @@
  */
 #include <stdarg.h>
 #include <string.h>
-#include "supersonic/utils/utf/utf.h"
-#include "supersonic/utils/utf/utfdef.h"
+#include "gutil/utf/utf.h"
+#include "gutil/utf/utfdef.h"
 
 enum
 {

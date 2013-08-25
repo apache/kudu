@@ -39,6 +39,7 @@ ADD_LIBRARY(gutil
 ./hash/hash.cc
 ./hash/jenkins.cc
 ./hash/city.cc
+./utf/rune.c
 )
 # Disable warnings which trigger a lot in the Google code:
 SET_TARGET_PROPERTIES(gutil PROPERTIES
