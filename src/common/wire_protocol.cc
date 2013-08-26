@@ -7,6 +7,7 @@
 
 #include "common/row.h"
 #include "common/rowblock.h"
+#include "common/row_changelist.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/fastmem.h"
 #include "util/safe_math.h"
@@ -210,6 +211,26 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   return Status::OK();
 }
 
+Status ExtractMutationsFromBuffer(uint32_t n_mutations,
+                                const uint8_t* buffer,
+                                uint32_t buffer_size,
+                                vector<const RowChangeList *> *mutations) {
+  const uint8_t* current_mutation = buffer;
+  int offset = 0;
+  for (int i = 0; i < n_mutations; i++) {
+    uint32_t mutation_size = DecodeFixed32(current_mutation);
+    if (mutation_size > buffer_size - offset) {
+      return Status::Corruption("Mutation size overflows the mutations buffer");
+    }
+    Slice mutation_slice(current_mutation + sizeof(uint32_t), mutation_size);
+    mutations->push_back(new RowChangeList(mutation_slice));
+    uint32_t advance = mutation_size + sizeof(uint32_t);
+    current_mutation += advance;
+    offset += advance;
+  }
+  return Status::OK();
+}
+
 template<class RowType>
 void AppendRowToString(const RowType& row, string* buf);
 
@@ -358,6 +379,5 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb) {
   }
   pb->set_num_rows(pb->num_rows() + num_rows);
 }
-
 
 } // namespace kudu

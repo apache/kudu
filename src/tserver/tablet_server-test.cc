@@ -20,6 +20,7 @@
 #include "tserver/tserver.proxy.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
+#include "util/coding.h"
 #include "util/test_util.h"
 #include "rpc/messenger.h"
 
@@ -41,6 +42,7 @@ class TabletServerTest : public KuduTest {
               (ColumnSchema("int_val", UINT32))
               (ColumnSchema("string_val", STRING)),
               1),
+      key_schema_(schema_.CreateKeyProjection()),
       rb_(schema_) {
   }
 
@@ -87,6 +89,41 @@ class TabletServerTest : public KuduTest {
     AddRowToRowBlockPB(rb.row(), block);
   }
 
+  void AddTestDeletionToRowBlockAndBuffer(uint32_t key,
+                                          RowwiseRowBlockPB* block,
+                                          faststring* buf) {
+    // encode and add the deletion to the buffer, prefixed
+    // with the lenght
+    uint32_t initial_size = buf->size();
+    buf->append(&initial_size, sizeof(uint32_t));
+    RowChangeListEncoder encoder(schema_, buf);
+    encoder.SetToDelete();
+    uint32_t written_size = buf->size() - initial_size - sizeof(uint32_t);
+    InlineEncodeFixed32(&(*buf)[initial_size], written_size);
+    RowBuilder rb(key_schema_);
+    rb.AddUint32(key);
+    AddRowToRowBlockPB(rb.row(), block);
+  }
+
+  void AddTestMutationToRowBlockAndBuffer(uint32_t key,
+                                          uint32_t new_int_val,
+                                          const Slice& new_string_val,
+                                          RowwiseRowBlockPB* block,
+                                          faststring* buf) {
+    // encode and add the mutations to the buffer, prefixed
+    // with the lenght
+    uint32_t initial_size = buf->size();
+    buf->append(&initial_size, sizeof(uint32_t));
+    RowChangeListEncoder encoder(schema_, buf);
+    encoder.AddColumnUpdate(1, &new_int_val);
+    encoder.AddColumnUpdate(2, &new_string_val);
+    uint32_t written_size = buf->size() - initial_size - sizeof(uint32_t);
+    InlineEncodeFixed32(&(*buf)[initial_size], written_size);
+    RowBuilder rb(key_schema_);
+    rb.AddUint32(key);
+    AddRowToRowBlockPB(rb.row(), block);
+  }
+
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRows(int num_rows) {
     tablet::TransactionContext tx_ctx;
@@ -129,7 +166,8 @@ class TabletServerTest : public KuduTest {
     } while (resp.has_more_results());
   }
 
-  Schema schema_;
+  const Schema schema_;
+  Schema key_schema_;
   RowBuilder rb_;
 
   shared_ptr<Messenger> client_messenger_;
@@ -151,24 +189,24 @@ TEST_F(TabletServerTest, TestPingServer) {
 }
 
 TEST_F(TabletServerTest, TestInsert) {
-  InsertRequestPB req;
+  WriteRequestPB req;
 
   req.set_tablet_id(kTabletId);
 
-  InsertResponsePB resp;
+  WriteResponsePB resp;
   RpcController controller;
 
   // Send a bad insert which has an empty schema. This should result
   // in an error.
   {
-    RowwiseRowBlockPB* data = req.mutable_data();
+    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
     // Fill in an empty "rows" structure.
     data->mutable_rows();
     data->set_num_key_columns(0);
     data->set_num_rows(0);
 
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
@@ -178,13 +216,14 @@ TEST_F(TabletServerTest, TestInsert) {
                         "Mismatched schema, expected: Schema "
                         "[key[type='uint32'], int_val[type='uint32'],"
                         " string_val[type='string']]");
+    req.clear_to_insert_rows();
   }
 
   // Send an empty insert with the correct schema.
   // This should succeed and do nothing.
   {
     controller.Reset();
-    RowwiseRowBlockPB* data = req.mutable_data();
+    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
     data->Clear();
     data->mutable_rows(); // Set empty rows data.
     data->set_num_rows(0);
@@ -192,31 +231,33 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
+    req.clear_to_insert_rows();
   }
 
   // Send an actual row insert.
   {
     controller.Reset();
-    RowwiseRowBlockPB* data = req.mutable_data();
+    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
     data->Clear();
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
 
     AddTestRowToBlockPB(1234, 5678, "hello world via RPC", data);
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
+    req.clear_to_insert_rows();
   }
 
   // Send a batch with multiple rows, one of which is a duplicate of
   // the above insert. This should generate one error into per_row_errors.
   {
     controller.Reset();
-    RowwiseRowBlockPB* data = req.mutable_data();
+    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
     data->Clear();
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
@@ -225,13 +266,120 @@ TEST_F(TabletServerTest, TestInsert) {
     AddTestRowToBlockPB(2, 1, "also not a dupe key", data);
     AddTestRowToBlockPB(1234, 1, "I am a duplicate key", data);
     SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Insert(req, &resp, &controller));
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
     ASSERT_EQ(1, resp.per_row_errors().size());
     ASSERT_EQ(2, resp.per_row_errors().Get(0).row_index());
     Status s = StatusFromPB(resp.per_row_errors().Get(0).error());
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
+  }
+}
+
+TEST_F(TabletServerTest, TestInsertAndMutate) {
+
+  RpcController controller;
+
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+    data->set_num_key_columns(schema_.num_key_columns());
+
+    AddTestRowToBlockPB(1, 1, "original1", data);
+    AddTestRowToBlockPB(2, 2, "original2", data);
+    AddTestRowToBlockPB(3, 3, "original3", data);
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    ASSERT_EQ(0, resp.per_row_errors().size());
+    controller.Reset();
+  }
+  // Try and mutate the rows inserted above
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+    data->set_num_key_columns(schema_.num_key_columns());
+
+    Slice mutation1("mutated1");
+    Slice mutation2("mutated22");
+    Slice mutation3("mutated333");
+
+    faststring mutations;
+    AddTestMutationToRowBlockAndBuffer(1, 2, mutation1, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(2, 3, mutation2, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(3, 4, mutation3, data, &mutations);
+    req.set_encoded_mutations(mutations.data(), mutations.size());
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    ASSERT_EQ(0, resp.per_row_errors().size());
+    controller.Reset();
+  }
+  // Try and mutate a non existent row key (should get an error)
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+    data->set_num_key_columns(schema_.num_key_columns());
+    Slice mutation("mutated");
+    faststring mutations;
+    AddTestMutationToRowBlockAndBuffer(1234, 2, mutation, data, &mutations);
+    req.set_encoded_mutations(mutations.data(), mutations.size());
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    ASSERT_EQ(1, resp.per_row_errors().size());
+    controller.Reset();
+  }
+  // Try and delete the rows
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+    data->set_num_key_columns(schema_.num_key_columns());
+    faststring mutations;
+    AddTestDeletionToRowBlockAndBuffer(1, data, &mutations);
+    AddTestDeletionToRowBlockAndBuffer(2, data, &mutations);
+    AddTestDeletionToRowBlockAndBuffer(3, data, &mutations);
+    req.set_encoded_mutations(mutations.data(), mutations.size());
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
+    ASSERT_EQ(0, resp.per_row_errors().size());
+    controller.Reset();
+  }
+  // Now try and mutate a row we just deleted, we should get an error
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+    data->set_num_key_columns(schema_.num_key_columns());
+    Slice mutation1("mutated1");
+    faststring mutations;
+    AddTestMutationToRowBlockAndBuffer(1, 2, mutation1, data, &mutations);
+    req.set_encoded_mutations(mutations.data(), mutations.size());
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
+    ASSERT_EQ(1, resp.per_row_errors().size());
+    controller.Reset();
   }
 }
 

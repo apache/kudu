@@ -275,6 +275,8 @@ class Schema {
   // the key columns.
   // TODO: this should take a Schema* out-parameter to avoid an
   // extra copy of the ColumnSchemas.
+  // TODO this should probably be cached since the key projection
+  // is not supposed to change, for a single schema.
   Schema CreateKeyProjection() const {
     vector<ColumnSchema> key_cols(cols_.begin(),
                                   cols_.begin() + num_key_columns_);

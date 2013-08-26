@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "tablet/tablet.h"
 #include "tserver/tserver.service.h"
 
 namespace kudu {
@@ -19,9 +20,8 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     PingResponsePB* resp,
                     rpc::RpcContext* context);
 
-  virtual void Insert(const InsertRequestPB* req,
-                      InsertResponsePB* resp,
-                      rpc::RpcContext* context);
+  virtual void Write(const WriteRequestPB* req, WriteResponsePB* resp,
+                   rpc::RpcContext* context);
 
   virtual void Scan(const ScanRequestPB* req,
                     ScanResponsePB* resp,
@@ -50,6 +50,32 @@ class TabletServiceImpl : public TabletServerServiceIf {
   void HandleContinueScanRequest(const ScanRequestPB* req,
                                  ScanResponsePB* resp,
                                  rpc::RpcContext* context);
+
+  // Decodes the row block, makes sure the block's schema matches
+  // tablet_schema, but the actual rows are decoded with block_schema
+  // (in case they are the key projection). The decoded rows are added to
+  // row_block.
+  bool DecodeRowBlock(RowwiseRowBlockPB* block_pb,
+                      WriteResponsePB* resp,
+                      rpc::RpcContext* context,
+                      const Schema &block_row_schema,
+                      const Schema &tablet_schema,
+                      vector<const uint8_t*>* row_block);
+
+  void InsertRows(const Schema& client_schema,
+                  vector<const uint8_t*> *to_insert,
+                  tablet::TransactionContext* tx_ctx,
+                  WriteResponsePB *resp,
+                  rpc::RpcContext* context,
+                  tablet::Tablet *tablet);
+
+  void MutateRows(const Schema& client_schema,
+                  vector<const uint8_t*> *to_mutate,
+                  vector<const RowChangeList *> *mutations,
+                  tablet::TransactionContext* tx_ctx,
+                  WriteResponsePB *resp,
+                  rpc::RpcContext* context,
+                  tablet::Tablet *tablet);
 
   TabletServer* server_;
 };

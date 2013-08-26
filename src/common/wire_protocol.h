@@ -15,6 +15,7 @@ class ConstContiguousRow;
 class ColumnSchema;
 class RowBlock;
 class RowBlockRow;
+class RowChangeList;
 class Schema;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
@@ -79,6 +80,13 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  RowwiseRowBlockPB* rowblock_pb,
                                  std::vector<const uint8_t*>* rows);
 
+// Extracts n_rows mutations from the provided buffer into the provided
+// mutations vector. The resulting mutations continue to refer to data in
+// 'buffer'.
+Status ExtractMutationsFromBuffer(uint32_t n_mutations,
+                                  const uint8_t* buffer,
+                                  uint32_t buffer_size,
+                                  vector<const RowChangeList *> *mutations);
 
 } // namespace kudu
 #endif

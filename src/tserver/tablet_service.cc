@@ -10,6 +10,7 @@
 #include "common/iterator.h"
 #include "common/wire_protocol.h"
 #include "gutil/casts.h"
+#include "gutil/stl_util.h"
 #include "tablet/tablet.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
@@ -64,10 +65,10 @@ void TabletServiceImpl::RespondGenericError(const string& doing_what,
   SetupErrorAndRespond(error, s, TabletServerErrorPB::UNKNOWN_ERROR, context);
 }
 
-void TabletServiceImpl::Insert(const InsertRequestPB* req,
-                               InsertResponsePB* resp,
-                               rpc::RpcContext* context) {
-  DVLOG(3) << "Received Insert RPC: " << req->DebugString();
+void TabletServiceImpl::Write(const WriteRequestPB* req,
+                              WriteResponsePB* resp,
+                              rpc::RpcContext* context) {
+  DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   shared_ptr<Tablet> tablet;
   if (!server_->LookupTablet(req->tablet_id(), &tablet)) {
@@ -78,40 +79,43 @@ void TabletServiceImpl::Insert(const InsertRequestPB* req,
   }
   DCHECK(tablet) << "Null tablet";
 
-  const RowwiseRowBlockPB& block_pb = req->data();
+  // In order to avoid a copy, we mutate the row blocks for insert and
+  // mutate in-place. Because the RPC framework gives us our request as a
+  // const argument, we have to const_cast it away here. It's a little hacky,
+  // but the alternative of making all RPCs get non-const requests doesn't
+  // seem that great either, since this is a rare circumstance.
+  WriteRequestPB* mutable_request = const_cast<WriteRequestPB* >(req);
 
-  // Check that the schema sent by the user matches the schema of the
-  // tablet.
-  Schema client_schema;
-  Status s = ColumnPBsToSchema(block_pb.schema(), &client_schema);
-  if (!s.ok()) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::INVALID_SCHEMA,
-                         context);
+  // Decode everything first so that we give up if something major is wrong.
+  vector<const uint8_t *> to_insert;
+  if (req->has_to_insert_rows() &&
+      !DecodeRowBlock(mutable_request->mutable_to_insert_rows(),
+                      resp,
+                      context,
+                      tablet->schema(),
+                      tablet->schema(),
+                      &to_insert)) {
     return;
   }
 
-  if (!client_schema.Equals(tablet->schema())) {
-    // TODO: support schema evolution.
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::InvalidArgument("Mismatched schema, expected",
-                                                 tablet->schema().ToString()),
-                         TabletServerErrorPB::MISMATCHED_SCHEMA,
-                         context);
+  vector<const uint8_t *> to_mutate;
+  Schema key_projection = tablet->schema().CreateKeyProjection();
+  if (req->has_to_mutate_row_keys() &&
+      !DecodeRowBlock(mutable_request->mutable_to_mutate_row_keys(),
+                      resp,
+                      context,
+                      key_projection,
+                      tablet->schema(),
+                      &to_mutate)) {
     return;
   }
 
-  // In order to avoid a copy, ExtractRowsFromRowBlockPB mutates the
-  // request RowBlock in-place. Because the RPC framework gives us our
-  // request as a const argument, we have to const_cast it away here.
-  // It's a little hacky, but the alternative of making all RPCs get
-  // non-const requests doesn't seem that great either, since this
-  // is a rare circumstance.
-  RowwiseRowBlockPB* mutable_block_pb =
-    const_cast<InsertRequestPB*>(req)->mutable_data();
+  vector<const RowChangeList *> mutations;
+  Status s = ExtractMutationsFromBuffer(to_mutate.size(),
+                                        reinterpret_cast<const uint8_t* >(req->encoded_mutations().data()),
+                                        req->encoded_mutations().size(),
+                                        &mutations);
 
-  vector<const uint8_t*> to_insert;
-  s = ExtractRowsFromRowBlockPB(client_schema, mutable_block_pb, &to_insert);
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::INVALID_ROW_BLOCK,
@@ -119,28 +123,118 @@ void TabletServiceImpl::Insert(const InsertRequestPB* req,
     return;
   }
 
-
-  int i = 0;
+  // Start a transaction and apply all inserts and mutates
   tablet::TransactionContext tx_ctx;
-  BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
+
+  InsertRows(tablet->schema(),
+             &to_insert,
+             &tx_ctx,
+             resp,
+             context,
+             tablet.get());
+
+  MutateRows(key_projection,
+             &to_mutate,
+             &mutations,
+             &tx_ctx,
+             resp,
+             context,
+             tablet.get());
+
+  STLDeleteElements(&mutations);
+  context->RespondSuccess();
+  return;
+}
+
+bool TabletServiceImpl::DecodeRowBlock(RowwiseRowBlockPB* block_pb,
+                                       WriteResponsePB* resp,
+                                       rpc::RpcContext* context,
+                                       const Schema &block_row_schema,
+                                       const Schema &tablet_schema,
+                                       vector<const uint8_t*>* row_block) {
+
+    // Check that the schema sent by the user matches the schema of the
+    // tablet.
+    Schema client_schema;
+    Status s = ColumnPBsToSchema(block_pb->schema(), &client_schema);
+    if (!s.ok()) {
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::INVALID_SCHEMA,
+                           context);
+      return false;
+    }
+
+    if (!client_schema.Equals(tablet_schema)) {
+
+      // TODO: support schema evolution.
+      SetupErrorAndRespond(resp->mutable_error(),
+                           Status::InvalidArgument("Mismatched schema, expected",
+                                                   tablet_schema.ToString()),
+                           TabletServerErrorPB::MISMATCHED_SCHEMA,
+                           context);
+      return false;
+    }
+
+    s = ExtractRowsFromRowBlockPB(block_row_schema, block_pb, row_block);
+    if (!s.ok()) {
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::INVALID_ROW_BLOCK,
+                           context);
+      return false;
+    }
+    return true;
+}
+
+void TabletServiceImpl::InsertRows(const Schema& client_schema,
+                                   vector<const uint8_t*> *to_insert,
+                                   tablet::TransactionContext* tx_ctx,
+                                   WriteResponsePB *resp,
+                                   rpc::RpcContext* context,
+                                   Tablet *tablet) {
+  int i = 0;
+  BOOST_FOREACH(const uint8_t* row_ptr, *to_insert) {
     ConstContiguousRow row(client_schema, row_ptr);
     DVLOG(2) << "Going to insert row: " << client_schema.DebugRow(row);
 
-    Status s = tablet->Insert(&tx_ctx, row);
+    Status s = tablet->Insert(tx_ctx, row);
     if (PREDICT_FALSE(!s.ok())) {
       DVLOG(2) << "Error for row " << client_schema.DebugRow(row)
                << ": " << s.ToString();
 
-      InsertResponsePB::PerRowErrorPB* error = resp->add_per_row_errors();
+      WriteResponsePB::PerRowErrorPB* error = resp->add_per_row_errors();
+      error->set_is_insert(true);
       error->set_row_index(i);
       StatusToPB(s, error->mutable_error());
     }
     i++;
   }
-
-  context->RespondSuccess();
-  return;
 }
+
+void TabletServiceImpl::MutateRows(const Schema& client_schema,
+                                   vector<const uint8_t*> *to_mutate,
+                                   vector<const RowChangeList *> *mutations,
+                                   tablet::TransactionContext* tx_ctx,
+                                   WriteResponsePB *resp,
+                                   rpc::RpcContext* context,
+                                   Tablet *tablet) {
+  int i = 0;
+  BOOST_FOREACH(const uint8_t* row_key_ptr, *to_mutate) {
+    ConstContiguousRow row_key(client_schema, row_key_ptr);
+    DVLOG(2) << "Going to mutate row: " << client_schema.DebugRow(row_key);
+    Status s = tablet->MutateRow(tx_ctx, row_key, *(*mutations)[i]);
+    if (PREDICT_FALSE(!s.ok())) {
+      DVLOG(2) << "Error for row " << client_schema.DebugRow(row_key)
+               << ": " << s.ToString();
+
+      WriteResponsePB::PerRowErrorPB* error = resp->add_per_row_errors();
+      error->set_is_insert(false);
+      error->set_row_index(i);
+      StatusToPB(s, error->mutable_error());
+    }
+    i++;
+  }
+}
+
 
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,

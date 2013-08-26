@@ -20,20 +20,23 @@ message TabletServerErrorPB {
     // The row data provided for a request was not well-formed.
     INVALID_ROW_BLOCK = 3;
 
+    // The mutation provided for a request was not well formed.
+    INVALID_MUTATION = 4;
+
     // The schema provided for a request didn't match the actual
     // schema of the tablet.
-    MISMATCHED_SCHEMA = 4;
+    MISMATCHED_SCHEMA = 5;
 
     // The requested tablet_id is not currently hosted on this server.
-    TABLET_NOT_FOUND = 5;
+    TABLET_NOT_FOUND = 6;
 
     // A request was made against a scanner ID that was either never
     // created or has expired.
-    SCANNER_EXPIRED = 6;
+    SCANNER_EXPIRED = 7;
 
     // An invalid scan was specified -- e.g the values passed for
     // predicates were incorrect sizes.
-    INVALID_SCAN_SPEC = 7;
+    INVALID_SCAN_SPEC = 8;
   }
 
   // The error code.
@@ -52,13 +55,23 @@ message PingRequestPB {
 message PingResponsePB {
 }
 
-message InsertRequestPB {
+// A batched set of insert/mutate requests.
+// TODO currently we're sending the client schema multiple times in each
+// row block.
+message WriteRequestPB {
   required bytes tablet_id = 1;
-  required RowwiseRowBlockPB data = 2;
+  // Set of rows to insert.
+  optional RowwiseRowBlockPB to_insert_rows = 2;
+  // Set of row keys to mutate.  This rowblock's schema should contain
+  // only the key columns
+  optional RowwiseRowBlockPB to_mutate_row_keys = 3;
+  // Mutations to apply to the row keys in mutate_data.
+  // Uses the encoded format from the RowChangeList class.
+  optional bytes encoded_mutations = 4;
 }
 
-message InsertResponsePB {
-  // If the entire Insert request failed, the error status that
+message WriteResponsePB {
+  // If the entire WriteResponsePB request failed, the error status that
   // caused the failure. This type of error is triggered for
   // cases such as the tablet not being on this server, or the
   // schema not matching. If any error specific to a given row
@@ -69,10 +82,12 @@ message InsertResponsePB {
   // If errors occurred inserting particular rows, then the errors
   // for those rows will be passed back in 'per_row_errors'.
   message PerRowErrorPB {
+    // whether the error refers to an insertion or mutation.
+    required bool is_insert = 1;
     // The index of the row in the incoming batch.
-    required int32 row_index = 1;
+    required int32 row_index = 2;
     // The error that occurred.
-    required AppStatusPB error = 2;
+    required AppStatusPB error = 3;
   }
   repeated PerRowErrorPB per_row_errors = 2;
 }
@@ -182,6 +197,6 @@ message ScanResponsePB {
 
 service TabletServerService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
-  rpc Insert(InsertRequestPB) returns (InsertResponsePB);
+  rpc Write(WriteRequestPB) returns (WriteResponsePB);
   rpc Scan(ScanRequestPB) returns (ScanResponsePB);
 }
