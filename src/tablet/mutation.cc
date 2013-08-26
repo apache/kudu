@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "gutil/atomicops.h"
 #include "tablet/mutation.h"
 #include <string>
 
@@ -29,17 +30,43 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
   return ret;
 }
 
+
+void Mutation::AppendToListAtomic(Mutation **list) {
+  DoAppendToList<true>(list);
+}
+
 void Mutation::AppendToList(Mutation **list) {
+  DoAppendToList<false>(list);
+}
+
+namespace {
+template<bool ATOMIC>
+inline void Store(Mutation** pointer, Mutation* val);
+
+template<>
+inline void Store<true>(Mutation** pointer, Mutation* val) {
+  Release_Store(reinterpret_cast<AtomicWord*>(pointer),
+                reinterpret_cast<AtomicWord>(val));
+}
+
+template<>
+inline void Store<false>(Mutation** pointer, Mutation* val) {
+  *pointer = val;
+}
+} // anonymous namespace
+
+template<bool ATOMIC>
+inline void Mutation::DoAppendToList(Mutation **list) {
   next_ = NULL;
   if (*list == NULL) {
-    *list = this;
+    Store<ATOMIC>(list, this);
   } else {
     // Find tail and append.
     Mutation *tail = *list;
     while (tail->next_ != NULL) {
       tail = tail->next_;
     }
-    tail->next_ = this;
+    Store<ATOMIC>(&tail->next_, this);
   }
 }
 

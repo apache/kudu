@@ -46,11 +46,19 @@ class Mutation {
   static string StringifyMutationList(const Schema &schema, const Mutation *head);
 
   // Append this mutation to the list at the given pointer.
+  void AppendToListAtomic(Mutation **list);
+
+  // Same as above, except that this version implies "Release" memory semantics
+  // (see atomicops.h). The pointer as well as all of the mutations in the list
+  // must be word-aligned.
   void AppendToList(Mutation **list);
 
  private:
   friend class MSRow;
   friend class MemRowSet;
+
+  template<bool ATOMIC>
+  void DoAppendToList(Mutation **list);
 
   DISALLOW_COPY_AND_ASSIGN(Mutation);
 

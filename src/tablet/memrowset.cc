@@ -142,14 +142,11 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
   // Move the REINSERT mutation itself into our Arena.
   Mutation *mut = Mutation::CreateInArena(&arena_, txid, encoder.as_changelist());
 
-  // Ensure that all of the creation of the mutation is published before
-  // publishing the pointer itself.
-  // We don't need to do a CAS or anything since the CBTree code has already
-  // locked the relevant leaf node from concurrent writes.
-  base::subtle::MemoryBarrier();
-
   // Append the mutation into the row's mutation list.
-  mut->AppendToList(&ms_row->header_->mutation_head);
+  // This function has "release" semantics which ensures that the memory writes
+  // for the mutation are fully published before any concurrent reader sees
+  // the appended mutation.
+  mut->AppendToListAtomic(&ms_row->header_->mutation_head);
   return Status::OK();
 }
 
@@ -178,12 +175,10 @@ Status MemRowSet::MutateRow(txid_t txid,
     // Append to the linked list of mutations for this row.
     Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
 
-    // Ensure that all of the creation of the mutation is published before
-    // publishing the pointer itself.
-    // We don't need to do a CAS or anything since the CBTree code has already
-    // locked the relevant leaf node from concurrent writes.
-    base::subtle::MemoryBarrier();
-    mut->AppendToList(&row.header_->mutation_head);
+    // This function has "release" semantics which ensures that the memory writes
+    // for the mutation are fully published before any concurrent reader sees
+    // the appended mutation.
+    mut->AppendToListAtomic(&row.header_->mutation_head);
 
     result->AddMemRowSetMutation(&probe.row_key(), id_);
   }

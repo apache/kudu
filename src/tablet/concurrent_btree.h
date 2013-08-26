@@ -54,7 +54,6 @@ struct BTreeTraits {
     // The max number of children in an internal node.
     fanout = 14,
 
-
     // TODO: the leaf node parameters are basically hard coded now,
     // these shouldn't be traits.
 
@@ -64,7 +63,7 @@ struct BTreeTraits {
     // The max number of entries in a leaf node.
     // TODO: this should probably be dynamic, since we'd
     // know the size of the value for fixed size tables
-    leaf_max_entries = 14,
+    leaf_max_entries = 11,
 
     // Tests can set this trait to a non-zero value, which inserts
     // some pause-loops in key parts of the code to try to simulate
@@ -232,6 +231,37 @@ struct VersionField {
     return v;
   }
 };
+
+// Slice-like class for representing pointers to values in leaf nodes.
+// This is used in preference to a normal Slice only so that it can have
+// the same API as InlineSlice, and because it's shorter (only uses
+// 4 bytes for size instead of 8)
+class ValueSlice {
+ public:
+  Slice as_slice() const {
+    return Slice(ptr_, len_);
+  }
+
+  // Set this slice to a copy of 'src', allocated from alloc_arena.
+  // The copy will be word-aligned. No memory ordering is implied.
+  template<class ArenaType>
+  void set(const Slice& src, ArenaType* alloc_arena) {
+    void* in_arena = alloc_arena->AllocateBytesAligned(src.size(), sizeof(void*));
+    // No special CAS/etc are necessary here, since anyone calling this holds the
+    // lock on the row. Concurrent readers never try to follow this pointer until
+    // they've gotten a consistent snapshot.
+    //
+    // (This is different than the keys, where concurrent tree traversers may
+    // actually try to follow the key indirection pointers from InlineSlice
+    // without copying a snapshot first).
+    memcpy(in_arena, src.data(), src.size());
+    ptr_ = reinterpret_cast<const uint8_t*>(in_arena);
+    len_ = src.size();
+  }
+ private:
+  const uint8_t* ptr_;
+  uint32_t len_;
+} PACKED;
 
 // Return the index of the first entry in the array which is
 // >= the given value
@@ -704,6 +734,12 @@ class LeafNode : public NodeBase<Traits> {
   // If the caller does not hold the lock, then this Slice
   // may point to arbitrary data, and the result should be only
   // trusted when verified by checking for conflicts.
+  //
+  // NOTE: the value slice may include an *invalid pointer*, not
+  // just invalid data, so any readers should check for conflicts
+  // before accessing any referred-to data in the value slice.
+  // The key, on the other hand, will always be a valid pointer, but
+  // may be invalid data.
   void Get(size_t idx, Slice *k, Slice *v) const {
     *k = keys_[idx].as_slice();
     *v = vals_[idx].as_slice();
@@ -749,18 +785,19 @@ class LeafNode : public NodeBase<Traits> {
                         sizeof(uint8_t /* num_entries_*/),
     kv_space = Traits::leaf_node_size - constant_overhead,
 
+    key_space = kv_space - sizeof(ValueSlice) * Traits::leaf_max_entries,
+    val_space = kv_space - key_space,
+
     // Align the size down so that each InlineSlice is pointer-aligned,
     // necessary for atomic operation.
-    key_inline_size = KUDU_ALIGN_DOWN(kv_space / 2 / Traits::leaf_max_entries,
-                                      sizeof(void *)),
-    val_inline_size = key_inline_size
+    key_inline_size = KUDU_ALIGN_DOWN(key_space / Traits::leaf_max_entries,
+                                      sizeof(void *))
   };
 
   typedef InlineSlice<key_inline_size, true> KeyInlineSlice;
-  typedef InlineSlice<val_inline_size, true> ValInlineSlice;
 
   KeyInlineSlice keys_[Traits::leaf_max_entries];
-  ValInlineSlice vals_[Traits::leaf_max_entries];
+  ValueSlice vals_[Traits::leaf_max_entries];
 
   uint8_t num_entries_;
 } PACKED;
