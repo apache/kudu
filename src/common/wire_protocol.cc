@@ -175,7 +175,6 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
         // with the actual pointer into indir_data
         Slice *slice = reinterpret_cast<Slice *>(dst_cell);
         size_t offset_in_indirect = reinterpret_cast<uintptr_t>(slice->data());
-        // TODO: there's an overflow bug here:
         bool overflowed = false;
         size_t max_offset = AddWithOverflowCheck(offset_in_indirect, slice->size(), &overflowed);
         if (PREDICT_FALSE(overflowed || max_offset > indir_data.size())) {
