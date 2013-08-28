@@ -108,5 +108,5 @@ class ColumnRangePredicate {
   ValueRange range_;
 };
 
-}
+} // namespace kudu
 #endif

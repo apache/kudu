@@ -150,5 +150,5 @@ TEST(TestBloomFile, Benchmark) {
 }
 #endif
 
-} // namespace kudu
+} // namespace cfile
 } // namespace kudu

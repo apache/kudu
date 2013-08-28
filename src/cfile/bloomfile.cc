@@ -226,5 +226,5 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   return Status::OK();
 }
 
-} // namespace tablet
+} // namespace cfile
 } // namespace kudu

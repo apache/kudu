@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <string>
 #include <map>
+#include <vector>
 #include <boost/lexical_cast.hpp>
 #include <boost/foreach.hpp>
 #include <boost/bind.hpp>
@@ -280,13 +281,13 @@ int Webserver::BeginRequestCallback(struct mg_connection* connection,
   if (arguments.find("raw") != arguments.end()) {
     mg_printf(connection, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/plain\r\n"
-              "Content-Length: %d\r\n"
-              "\r\n", (int)str.length());
+              "Content-Length: %zd\r\n"
+              "\r\n", str.length());
   } else {
     mg_printf(connection, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\n"
-              "Content-Length: %d\r\n"
-              "\r\n", (int)str.length());
+              "Content-Length: %zd\r\n"
+              "\r\n", str.length());
   }
 
   // Make sure to use mg_write for printing the body; mg_printf truncates at 8kb
@@ -305,7 +306,7 @@ void Webserver::RegisterPathHandler(const string& path,
   it->second.AddCallback(callback);
 }
 
-const string PAGE_HEADER = "<!DOCTYPE html>"
+const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " <html>"
 "   <head><title>Cloudera Kudu</title>"
 " <link href='www/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen'>"
@@ -317,9 +318,9 @@ const string PAGE_HEADER = "<!DOCTYPE html>"
 " </head>"
 " <body>";
 
-static const string PAGE_FOOTER = "</div></body></html>";
+static const char* const PAGE_FOOTER = "</div></body></html>";
 
-static const string NAVIGATION_BAR_PREFIX =
+static const char* const NAVIGATION_BAR_PREFIX =
 "<div class='navbar navbar-inverse navbar-fixed-top'>"
 "      <div class='navbar-inner'>"
 "        <div class='container'>"
@@ -329,7 +330,7 @@ static const string NAVIGATION_BAR_PREFIX =
 "          <div class='nav-collapse collapse'>"
 "            <ul class='nav'>";
 
-static const string NAVIGATION_BAR_SUFFIX =
+static const char* const NAVIGATION_BAR_SUFFIX =
 "            </ul>"
 "          </div>"
 "        </div>"
@@ -353,4 +354,4 @@ void Webserver::BootstrapPageFooter(stringstream* output) {
   (*output) << PAGE_FOOTER;
 }
 
-}
+} // namespace kudu

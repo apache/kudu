@@ -11,3 +11,4 @@ zlib-*
 installed/
 install_manifest.txt
 .build-hash
+google-styleguide*

@@ -185,8 +185,8 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
       LOG(INFO) << "Successfully saw scanner close on iteration " << i;
       return;
     }
-    if (i < 10) usleep(2000); // 2ms
-    else usleep(20000); // 20ms
+    // Sleep 2ms on first few times through, then longer on later iterations.
+    usleep(i < 10 ? 2000 : 20000);
   }
   FAIL() << "Waited too long for the scanner to close";
 }

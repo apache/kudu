@@ -166,6 +166,6 @@ class IndexBlockIterator {
   DISALLOW_COPY_AND_ASSIGN(IndexBlockIterator);
 };
 
-} // namespace kudu
 } // namespace cfile
+} // namespace kudu
 #endif

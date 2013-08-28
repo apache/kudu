@@ -236,5 +236,5 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
 }
 #endif
 
-}
-}
+} // namespace tablet
+} // namespace kudu

@@ -2,6 +2,7 @@
 
 #include "common/wire_protocol.h"
 
+#include <string>
 #include <vector>
 
 #include "common/row.h"

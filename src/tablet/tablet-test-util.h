@@ -77,7 +77,7 @@ class KuduRowSetTest : public KuduTabletTest {
 };
 
 // Helper to get the last op on the transaction context as a mutation.
-static inline const MutationOp *last_op_as_mutation(const TransactionContext &tx_ctx){
+static inline const MutationOp *last_op_as_mutation(const TransactionContext &tx_ctx) {
   CHECK_GE(tx_ctx.operations().size(), 1);
   const MutationOp *mutation = down_cast<const MutationOp *>(tx_ctx.operations().back());
   return mutation;

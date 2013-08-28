@@ -57,6 +57,6 @@ bool Base64Decode(const std::string& in, std::string* out);
 // judiciously.
 void EscapeForHtml(const std::string& in, std::stringstream* out);
 
-}
+} // namespace kudu
 
 #endif

@@ -296,4 +296,4 @@ void MemoryStatisticsCollectingBufferAllocator::FreeInternal(Buffer* buffer) {
   memory_stats_collector_->FreedMemoryBytes(buffer->size());
 }
 
-}  // namespace supersonic
+}  // namespace kudu

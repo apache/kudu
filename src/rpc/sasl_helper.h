@@ -16,8 +16,8 @@
 namespace google {
 namespace protobuf {
 class MessageLite;
-} // namespace
-} // namespace
+} // namespace protobuf
+} // namespace google
 
 namespace kudu {
 

@@ -3,6 +3,7 @@
 #include "tserver/tablet_service.h"
 
 #include <algorithm>
+#include <string>
 #include <tr1/memory>
 #include <vector>
 

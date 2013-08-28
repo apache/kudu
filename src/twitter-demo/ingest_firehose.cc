@@ -78,12 +78,7 @@ static void IngestFromFile(const string& file, gscoped_ptr<TwitterConsumer> cons
   }
 }
 
-} // namespace twitter_demo
-} // namespace kudu
-
-int main(int argc, char** argv) {
-  using namespace kudu;
-  using namespace kudu::twitter_demo;
+static int main(int argc, char** argv) {
   // Since this is meant to be run by a user, not a daemon,
   // log to stderr by default.
   FLAGS_logtostderr = 1;
@@ -111,4 +106,11 @@ int main(int argc, char** argv) {
     LOG(FATAL) << "Unknown source: " << FLAGS_twitter_firehose_source;
   }
   return 0;
+}
+
+} // namespace twitter_demo
+} // namespace kudu
+
+int main(int argc, char** argv) {
+  return kudu::twitter_demo::main(argc, argv);
 }

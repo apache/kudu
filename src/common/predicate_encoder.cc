@@ -114,7 +114,7 @@ void RangePredicateEncoder::ExtractPredicatesOnKeys(
   for (int i = 0; i < num_key_cols; ++i) {
     key_preds[i] = NULL;
   }
-  BOOST_FOREACH (const ColumnRangePredicate &pred, spec.predicates()) {
+  BOOST_FOREACH(const ColumnRangePredicate &pred, spec.predicates()) {
     int idx = key_schema_.find_column(pred.column().name());
     if (idx != -1 && idx < num_key_cols) {
       if (key_preds[idx] != NULL) {
@@ -147,7 +147,7 @@ int RangePredicateEncoder::CountKeyPrefixEqualities(
   // follows the equality. For example, with keys (a, b, c), the predicate
   // a=1, b>3, c>3 can only be pushed down against a (the equality prefix)
   // and b (the first key column following the equality prefix)
-  for(int i = prefix_end + 2; i < num_key_cols; ++i) {
+  for (int i = prefix_end + 2; i < num_key_cols; ++i) {
     key_preds[i] = NULL;
   }
 

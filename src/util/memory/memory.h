@@ -925,6 +925,6 @@ void StaticQuota<thread_safe>::SetQuota(const size_t quota) {
   quota_ = quota;
 }
 
-}  // namespace supersonic
+}  // namespace kudu
 
 #endif  // SUPERSONIC_BASE_MEMORY_MEMORY_H_

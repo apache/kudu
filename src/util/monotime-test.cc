@@ -7,7 +7,6 @@
 #include <unistd.h>
 
 namespace kudu {
-namespace util {
 
 TEST(TestMonotime, TestMonotonicity) {
   alarm(360);
@@ -64,5 +63,4 @@ TEST(TestMonotimePerf, TestMonotimePerfFine) {
   alarm(0);
 }
 
-}
-}
+} // namespace kudu

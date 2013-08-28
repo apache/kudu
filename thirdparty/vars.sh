@@ -44,3 +44,8 @@ RAPIDJSON_DIR=$TP_DIR/rapidjson-${RAPIDJSON_VERSION}
 # last revision that carries an MIT license.
 MONGOOSE_VERSION=04fc209644b414d915c446bb1815b55e9fe63acc
 MONGOOSE_DIR=$TP_DIR/mongoose-${MONGOOSE_VERSION}
+
+# SVN revision of google style guide:
+# https://code.google.com/p/google-styleguide/source/list
+GSG_REVISION=110
+GSG_DIR=$TP_DIR/google-styleguide-r${GSG_REVISION}

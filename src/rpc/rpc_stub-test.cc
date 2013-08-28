@@ -125,5 +125,5 @@ TEST_F(RpcStubTest, TestCallMissingMethod) {
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid method: DoesNotExist");
 }
 
-}
-}
+} // namespace rpc
+} // namespace kudu

@@ -76,7 +76,7 @@ class TransactionContext {
   }
 
   // Returns all operations that were performed in this transaction.
-  const vector<const Operation *> &operations() const{
+  const vector<const Operation *> &operations() const {
     return operations_;
   }
 

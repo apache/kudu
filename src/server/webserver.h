@@ -14,8 +14,9 @@
 #ifndef KUDU_UTIL_WEBSERVER_H
 #define KUDU_UTIL_WEBSERVER_H
 
-#include <string>
 #include <map>
+#include <string>
+#include <vector>
 #include <boost/function.hpp>
 #include <boost/thread/mutex.hpp>
 
@@ -136,6 +137,6 @@ class Webserver {
   struct mg_context* context_;
 };
 
-}
+} // namespace kudu
 
 #endif // KUDU_UTIL_WEBSERVER_H

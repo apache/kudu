@@ -439,5 +439,5 @@ inline void RleEncoder<T>::Clear() {
   bit_writer_.Clear();
 }
 
-}
+} // namespace kudu
 #endif

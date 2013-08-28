@@ -27,7 +27,7 @@ void FutureTask::Run() {
   latch_.CountDown();
   boost::lock_guard<LockType> l(lock_);
   if (status_.ok()) {
-    BOOST_FOREACH(ListenerCallback callback, listeners_){
+    BOOST_FOREACH(ListenerCallback callback, listeners_) {
       callback->OnSuccess();
     }
   } else {

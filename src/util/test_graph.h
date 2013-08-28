@@ -75,7 +75,5 @@ class TimeSeriesCollector {
   bool started_;
 };
 
-
-
-}
+} // namespace kudu
 #endif

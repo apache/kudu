@@ -33,7 +33,7 @@ class SimpleTask : public Task {
 
   bool Abort() {return false;}
 
-private:
+ private:
   int *id_;
 };
 
@@ -57,7 +57,7 @@ class SimpleCallback : public FutureCallback {
   void OnFailure(const Status& status) {
     LOG(INFO) << "OnFailure Callback status=" << status.ToString();
   }
-private:
+ private:
   int *id_;
 };
 
@@ -124,4 +124,4 @@ TEST(TestTaskExecutor, TestFutureListeners) {
   executor->Shutdown();
 }
 
-}
+} // namespace kudu

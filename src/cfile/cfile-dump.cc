@@ -90,8 +90,8 @@ void DumpFile(const string &path) {
   }
 }
 
-}
-}
+} // namespace cfile
+} // namespace kudu
 
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);

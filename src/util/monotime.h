@@ -55,6 +55,6 @@ class MonoTime {
   double ToSeconds() const;
   uint64_t nanos_;
 };
-}
+} // namespace kudu
 
 #endif

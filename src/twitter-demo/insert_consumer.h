@@ -21,7 +21,8 @@ namespace twitter_demo {
 // into a remote tablet via RPC.
 class InsertConsumer : public TwitterConsumer {
  public:
-  InsertConsumer(const std::tr1::shared_ptr<tserver::TabletServerServiceProxy> &proxy);
+  explicit InsertConsumer(
+    const std::tr1::shared_ptr<tserver::TabletServerServiceProxy> &proxy);
   ~InsertConsumer();
 
   virtual void ConsumeJSON(const Slice& json);

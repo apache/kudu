@@ -41,7 +41,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
  public:
   class Iterator;
 
-  CFileSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
+  explicit CFileSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
 
   Status Open();
 

@@ -219,5 +219,5 @@ class ScopedColumnBlock : public ColumnBlock {
 
 };
 
-}
+} // namespace kudu
 #endif

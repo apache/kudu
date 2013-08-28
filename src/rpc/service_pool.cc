@@ -59,5 +59,5 @@ void ServicePool::RunThread() {
   }
 }
 
-}
-}
+} // namespace rpc
+} // namespace kudu

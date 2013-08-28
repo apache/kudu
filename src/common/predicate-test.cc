@@ -83,4 +83,4 @@ TEST_F(TestPredicate, TestColumnRange) {
   ASSERT_EQ(5, selvec.CountSelected()) << "Only 5 rows should be left (25-29)";
 }
 
-}
+} // namespace kudu

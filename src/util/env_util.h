@@ -24,7 +24,7 @@ Status OpenFileForSequential(Env *env, const string &path,
                              shared_ptr<SequentialFile> *file);
 
 
-}
-}
+} // namespace env_util
+} // namespace kudu
 
 #endif

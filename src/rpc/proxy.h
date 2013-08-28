@@ -88,7 +88,7 @@ class Proxy {
   DISALLOW_COPY_AND_ASSIGN(Proxy);
 };
 
-}
-}
+} // namespace rpc
+} // namespace kudu
 
 #endif

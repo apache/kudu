@@ -25,5 +25,5 @@ void SnakeToCamelCase(const std::string &snake_case,
 void ToUpperCase(const std::string &string,
                  std::string *out);
 
-}
+} // namespace kudu
 #endif

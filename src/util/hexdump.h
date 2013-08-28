@@ -14,5 +14,5 @@ class Slice;
 // speed.
 std::string HexDump(const Slice &slice);
 
-}
+} // namespace kudu
 #endif

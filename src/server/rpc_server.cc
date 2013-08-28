@@ -2,6 +2,7 @@
 
 #include <boost/foreach.hpp>
 #include <list>
+#include <string>
 #include <vector>
 
 #include "rpc/messenger.h"
@@ -13,6 +14,7 @@
 #include "util/status.h"
 
 using std::vector;
+using std::string;
 using kudu::rpc::ServiceIf;
 
 namespace kudu {

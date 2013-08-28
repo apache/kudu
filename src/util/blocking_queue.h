@@ -98,6 +98,6 @@ class BlockingQueue {
   std::list<T> list_;
 };
 
-}
+} // namespace kudu
 
 #endif

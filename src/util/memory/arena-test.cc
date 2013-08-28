@@ -82,4 +82,4 @@ TEST(TestArena, TestAlignment) {
   }
 }
 
-}
+} // namespace kudu

@@ -85,8 +85,8 @@ inline void BitWriter::PutVlqInt(int32_t v) {
 }
 
 
-inline BitReader::BitReader(const uint8_t* buffer, int buffer_len) :
-    buffer_(buffer),
+inline BitReader::BitReader(const uint8_t* buffer, int buffer_len)
+  : buffer_(buffer),
     max_bytes_(buffer_len),
     buffered_values_(0),
     byte_offset_(0),
@@ -175,6 +175,6 @@ inline bool BitReader::GetVlqInt(int32_t* v) {
   return true;
 }
 
-}
+} // namespace kudu
 
 #endif

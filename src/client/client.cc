@@ -8,6 +8,7 @@
 #include "util/status.h"
 #include "tserver/tablet_server.h" // TODO: remove this include - just needed for default port
 #include <tr1/memory>
+#include <vector>
 
 using std::string;
 using std::tr1::shared_ptr;

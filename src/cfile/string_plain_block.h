@@ -109,8 +109,7 @@ class StringPlainBlockDecoder : public BlockDecoder {
   uint32_t cur_idx_;
 };
 
-
-}
-}
+} // namespace cfile
+} // namespace kudu
 
 #endif

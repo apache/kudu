@@ -6,6 +6,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace kudu {
 namespace twitter_demo {
@@ -47,6 +48,6 @@ class OAuthRequest {
   std::vector<StringPair > kv_pairs_;
 };
 
-} // namespace twitter_emo
+} // namespace twitter_demo
 } // namespace kudu
 #endif

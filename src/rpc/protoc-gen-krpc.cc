@@ -130,7 +130,7 @@ class FileSubstitutions : public Substituter {
   static string GenerateCloseNamespace(const string &str) {
     vector<string> components = strings::Split(str, ".");
     string out;
-    BOOST_FOREACH(const string &c, components) {
+    BOOST_REVERSE_FOREACH(const string &c, components) {
       out.append("} // namespace ").append(c).append("\n");
     }
     return out;

@@ -76,5 +76,5 @@ const Sockaddr &Proxy::remote() const {
   return remote_;
 }
 
-}
-}
+} // namespace rpc
+} // namespace kudu

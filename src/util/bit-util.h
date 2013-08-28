@@ -39,6 +39,6 @@ class BitUtil {
   }
 };
 
-}
+} // namespace kudu
 
 #endif

@@ -249,7 +249,7 @@ class DiskRowSet : public RowSet {
   DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
   friend class CompactionInput;
 
-  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
+  explicit DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
 
   Status Open();
 

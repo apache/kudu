@@ -44,6 +44,6 @@ TransactionContext::~TransactionContext() {
   STLDeleteElements(&operations_);
 }
 
-}  // namespace table
+}  // namespace tablet
 }  // namespace kudu
 

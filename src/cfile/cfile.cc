@@ -386,6 +386,5 @@ Status Writer::WriteRawData(const Slice& data) {
 Writer::~Writer() {
 }
 
-
-}
-}
+} // namespace cfile
+} // namespace kudu

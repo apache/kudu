@@ -94,5 +94,5 @@ void AcceptorPool::RunThread() {
   VLOG(1) << "AcceptorPool shutting down.";
 }
 
-}
-}
+} // namespace rpc
+} // namespace kudu

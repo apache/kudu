@@ -108,5 +108,5 @@ TEST(TestGroupVarInt, EncodingBenchmark) {
   }
 }
 #endif
-}
+} // namespace coding
 } // namespace kudu

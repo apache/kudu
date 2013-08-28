@@ -776,6 +776,6 @@ TEST_F(TestCBTree, TestScanPerformance) {
   }
 }
 
-}
-}
-}
+} // namespace btree
+} // namespace tablet
+} // namespace kudu

@@ -119,8 +119,6 @@ class GVIntBlockDecoder : public BlockDecoder {
   std::vector<uint32_t> pending_;
 };
 
-
-}
-}
-
+} // namespace cfile
+} // namespace kudu
 #endif

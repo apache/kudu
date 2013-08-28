@@ -18,7 +18,7 @@
 #include <gtest/gtest.h>
 #include "util/url-coding.h"
 
-using namespace std;
+using namespace std; // NOLINT(*)
 
 namespace kudu {
 
@@ -100,4 +100,4 @@ TEST(HtmlEscapingTest, Basic) {
   EXPECT_EQ(after.str(), "&lt;html&gt;&lt;body&gt;&amp;amp");
 }
 
-}
+} // namespace kudu

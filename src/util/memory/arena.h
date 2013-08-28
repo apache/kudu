@@ -393,6 +393,6 @@ inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1, A2 arg2, A3 arg3) {
 }
 
 
-}  // namespace supersonic
+}  // namespace kudu
 
 #endif  // SUPERSONIC_BASE_MEMORY_ARENA_H_

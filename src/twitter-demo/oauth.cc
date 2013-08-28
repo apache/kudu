@@ -2,6 +2,8 @@
 
 #include "twitter-demo/oauth.h"
 
+#include <algorithm>
+#include <vector>
 #include <boost/lexical_cast.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
@@ -108,5 +110,5 @@ string OAuthRequest::AuthHeader(const string& consumer_secret,
   return ret;
 }
 
-} // namespace twitter_emo
+} // namespace twitter_demo
 } // namespace kudu

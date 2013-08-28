@@ -3,9 +3,10 @@
 #include "twitter-demo/twitter_streamer.h"
 
 #include <boost/thread/thread.hpp>
+#include <curl/curl.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <curl/curl.h>
+#include <string>
 
 #include "twitter-demo/oauth.h"
 #include "gutil/macros.h"
@@ -138,7 +139,7 @@ Status TwitterStreamer::DoStreaming() {
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, DataReceivedCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
 
-  struct curl_slist* headers=NULL;
+  struct curl_slist* headers = NULL;
   CurlDeleter<curl_slist> delete_headers(headers);
   headers = curl_slist_append(headers, auth_header.c_str());
 

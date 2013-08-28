@@ -20,6 +20,7 @@
 #include <google/heap-profiler.h>
 #include <google/malloc_extension.h>
 #include <glog/logging.h>
+#include <string>
 
 #include "server/webserver.h"
 #include "util/logging.h"

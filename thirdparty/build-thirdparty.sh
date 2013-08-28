@@ -28,6 +28,7 @@ else
       "snappy")     F_SNAPPY=1 ;;
       "zlib")       F_ZLIB=1 ;;
       "mongoose")   F_MONGOOSE=1 ;;
+      "gsg")        F_GSG=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -155,6 +156,11 @@ if [ -n "$F_ALL" -o -n "$F_MONGOOSE" ]; then
   ar rs libmongoose.a mongoose.o
   cp libmongoose.a $PREFIX/lib/
   cp mongoose.h $PREFIX/include/
+fi
+
+# Copy cpplint tool into bin directory
+if [ -n "$F_ALL" -o -n "$F_GSG" ]; then
+  cp $GSG_DIR/cpplint/cpplint.py $PREFIX/bin/cpplint.py
 fi
 
 echo "---------------------"

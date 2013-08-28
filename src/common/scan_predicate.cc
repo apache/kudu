@@ -99,4 +99,4 @@ string ColumnRangePredicate::ToString() const {
   }
 }
 
-}
+} // namespace kudu

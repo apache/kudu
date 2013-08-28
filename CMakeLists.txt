@@ -285,10 +285,7 @@ ENDIF (UNIX)
 # "make lint" target
 ############################################################
 IF (UNIX)
-  ADD_CUSTOM_TARGET(lint cpplint.py --verbose=4
-    --filter=-whitespace/comments,-whitespace/line_length,-readability/todo,-build/header_guard,-build/include_order
-    `find ${CMAKE_CURRENT_SOURCE_DIR}/src
-    -name *.cc -or -name *.h | grep -v .pb. | grep -v gutil`)
+  ADD_CUSTOM_TARGET(lint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh)
 ENDIF (UNIX)
 
 ############################################################

@@ -150,4 +150,4 @@ template class ArenaBase<true>;
 template class ArenaBase<false>;
 
 
-}  // namespace supersonic
+}  // namespace kudu

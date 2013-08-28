@@ -131,6 +131,6 @@ class BitReader {
   int bit_offset_;        // Offset in buffered_values_
 };
 
-}
+} // namespace kudu
 
 #endif

@@ -15,6 +15,7 @@
 #include "server/default-path-handlers.h"
 
 #include <sstream>
+#include <string>
 #include <fstream>
 #include <sys/stat.h>
 #include <boost/algorithm/string.hpp>
@@ -70,8 +71,8 @@ static void LogsHandler(const Webserver::ArgumentMap& args, stringstream* output
 
   struct stat file_stat;
   if (stat(logfile.c_str(), &file_stat) == 0) {
-    long size = file_stat.st_size;
-    long seekpos = size < FLAGS_web_log_bytes ? 0L : size - FLAGS_web_log_bytes;
+    size_t size = file_stat.st_size;
+    size_t seekpos = size < FLAGS_web_log_bytes ? 0L : size - FLAGS_web_log_bytes;
     ifstream log(logfile.c_str(), std::ios::in);
     // Note if the file rolls between stat and seek, this could fail
     // (and we could wind up reading the whole file). But because the

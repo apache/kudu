@@ -341,5 +341,5 @@ TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
 }
 #endif
 
-}
-}
+} // namespace tablet
+} // namespace kudu

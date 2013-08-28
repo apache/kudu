@@ -4,6 +4,8 @@
 #ifndef KUDU_COMMON_WIRE_PROTOCOL_H
 #define KUDU_COMMON_WIRE_PROTOCOL_H
 
+#include <vector>
+
 #include "common/wire_protocol.pb.h"
 #include "util/status.h"
 
@@ -75,7 +77,7 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb);
 // Returns a bad Status if the provided data is invalid or corrupt.
 Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  RowwiseRowBlockPB* rowblock_pb,
-                                 vector<const uint8_t*>* rows);
+                                 std::vector<const uint8_t*>* rows);
 
 
 } // namespace kudu

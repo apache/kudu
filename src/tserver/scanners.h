@@ -75,7 +75,7 @@ class ScannerManager {
 // An open scanner on the server side.
 class Scanner {
  public:
-  Scanner(const std::string& id);
+  explicit Scanner(const std::string& id);
   ~Scanner();
 
   // Attach an actual iterator to this Scanner.

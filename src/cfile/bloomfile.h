@@ -96,8 +96,7 @@ class BloomFileReader {
   std::vector<PThreadSpinLock> iter_locks_;
 };
 
-
-} // namespace tablet
+} // namespace cfile
 } // namespace kudu
 
 #endif

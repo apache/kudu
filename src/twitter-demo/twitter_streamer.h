@@ -19,7 +19,7 @@ class TwitterConsumer {
 
 class TwitterStreamer {
  public:
-  TwitterStreamer(TwitterConsumer* consumer)
+  explicit TwitterStreamer(TwitterConsumer* consumer)
     : consumer_(consumer) {
   }
 

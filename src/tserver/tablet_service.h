@@ -2,6 +2,8 @@
 #ifndef KUDU_TSERVER_TABLET_SERVICE_H
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
+#include <string>
+
 #include "tserver/tserver.service.h"
 
 namespace kudu {

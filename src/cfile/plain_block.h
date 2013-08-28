@@ -208,7 +208,7 @@ class PlainBlockDecoder : public BlockDecoder {
 
 };
 
-}
-}
+} // namespace cfile
+} // namespace kudu
 
 #endif

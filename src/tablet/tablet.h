@@ -282,7 +282,7 @@ class Tablet::Iterator : public RowwiseIterator {
 };
 
 
-} // namespace table
+} // namespace tablet
 } // namespace kudu
 
 #endif

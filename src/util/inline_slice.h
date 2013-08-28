@@ -163,6 +163,6 @@ class InlineSlice {
 
 } PACKED;
 
-}
+} // namespace kudu
 
 #endif

@@ -258,7 +258,7 @@ class RowBlockRow {
     return column_block(schema, col_idx).nullable_cell_ptr(row_index_);
   }
 
-  Cell cell(size_t col_idx) const{
+  Cell cell(size_t col_idx) const {
     return row_block_->column_block(col_idx).cell(row_index_);
   }
 

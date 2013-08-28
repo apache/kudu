@@ -19,5 +19,6 @@ bool AppendPBToString(const google::protobuf::MessageLite &msg, faststring *outp
   return true;
 }
 
-}
+} // namespace kudu
+
 #endif

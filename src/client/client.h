@@ -9,6 +9,7 @@
 #include "tserver/tserver.proxy.h" // TODO: move this to a protocol/ module
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
 namespace kudu {
 
@@ -42,7 +43,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
  private:
   friend class KuduTable;
 
-  KuduClient(const KuduClientOptions& options);
+  explicit KuduClient(const KuduClientOptions& options);
   Status Init();
 
   Status GetTabletProxy(const std::string& tablet_id,
@@ -87,7 +88,7 @@ class KuduScanner {
  public:
   // Initialize the scanner. The given 'table' object must remain valid
   // for the lifetime of this scanner object.
-  KuduScanner(KuduTable* table);
+  explicit KuduScanner(KuduTable* table);
   ~KuduScanner();
 
   // TODO: add an explicit close? use the dtor? would be good to

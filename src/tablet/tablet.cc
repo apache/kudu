@@ -792,5 +792,5 @@ string Tablet::Iterator::ToString() const {
 }
 
 
-} // namespace table
+} // namespace tablet
 } // namespace kudu

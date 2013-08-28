@@ -14,6 +14,7 @@
 
 #include "util/url-coding.h"
 
+#include <algorithm>
 #include <exception>
 #include <sstream>
 #include <boost/algorithm/string.hpp>
@@ -24,9 +25,9 @@
 
 #include <glog/logging.h>
 
-using namespace std;
-using namespace boost;
-using namespace boost::archive::iterators;
+using namespace std; // NOLINT(*)
+using namespace boost; // NOLINT(*)
+using namespace boost::archive::iterators; // NOLINT(*)
 
 namespace kudu {
 
@@ -34,11 +35,11 @@ namespace kudu {
 // characters it will encode.
 // See common/src/java/org/apache/hadoop/hive/common/FileUtils.java
 // in the Hive source code for the source of this list.
-static function<bool (char)> HiveShouldEscape = is_any_of("\"#%\\*/:=?\u00FF");
+static function<bool (char)> HiveShouldEscape = is_any_of("\"#%\\*/:=?\u00FF"); // NOLINT(*)
 
 // It is more convenient to maintain the complement of the set of
 // characters to escape when not in Hive-compat mode.
-static function<bool (char)> ShouldNotEscape = is_any_of("-_.~");
+static function<bool (char)> ShouldNotEscape = is_any_of("-_.~"); // NOLINT(*)
 
 static inline void UrlEncode(const char* in, int in_len, string* out, bool hive_compat) {
   (*out).reserve(in_len);
@@ -185,4 +186,4 @@ void EscapeForHtml(const string& in, stringstream* out) {
   }
 }
 
-}
+} // namespace kudu

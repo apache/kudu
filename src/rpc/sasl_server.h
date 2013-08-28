@@ -7,6 +7,7 @@
 #include <boost/thread.hpp>
 #include <string>
 #include <tr1/memory>
+#include <set>
 #include <vector>
 
 #include <sasl/sasl.h>

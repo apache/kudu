@@ -4,6 +4,7 @@
 #define KUDU_COMMON_ENCODED_KEY_H
 
 #include <string>
+#include <vector>
 
 #include "common/schema.h"
 #include "util/faststring.h"

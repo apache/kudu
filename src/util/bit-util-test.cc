@@ -32,4 +32,4 @@ TEST(BitUtil, TrailingBits) {
   EXPECT_EQ(BitUtil::TrailingBits(1LL << 63, 64), 1LL << 63);
 }
 
-}
+} // namespace kudu

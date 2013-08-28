@@ -230,5 +230,6 @@ inline bool BloomFilter::MayContainKey(const BloomKeyProbe &probe) const {
   return true;
 }
 
-};
+} // namespace kudu
+
 #endif

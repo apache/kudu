@@ -164,7 +164,7 @@ class FutureTask : public Runnable, public Future {
   };
 
  public:
-  FutureTask(const std::tr1::shared_ptr<Task>& task);
+  explicit FutureTask(const std::tr1::shared_ptr<Task>& task);
 
   void Run();
 
@@ -207,7 +207,7 @@ class FutureTask : public Runnable, public Future {
 class TaskExecutor {
  public:
   // Initialize a TaskExecutor using an external ThreadPool
-  TaskExecutor(const std::tr1::shared_ptr<ThreadPool>& thread_pool);
+  explicit TaskExecutor(const std::tr1::shared_ptr<ThreadPool>& thread_pool);
   ~TaskExecutor();
 
   // Create a new Executor with its own ThreadPool.

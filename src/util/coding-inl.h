@@ -91,6 +91,6 @@ inline void InlinePutVarint32(StrType* dst, uint32_t v) {
   dst->append(buf, ptr - buf);
 }
 
-}
+} // namespace kudu
 
 #endif

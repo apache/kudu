@@ -53,4 +53,4 @@ TEST(TestThreadPool, TestSimpleTasks) {
   thread_pool.Shutdown();
 }
 
-}
+} // namespace kudu

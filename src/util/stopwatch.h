@@ -196,9 +196,8 @@ class LogTiming {
   const std::string description_;
   bool has_printed_;
 };
-}
 
-
-}
+} // namespace sw_internal
+} // namespace kudu
 
 #endif

@@ -1,7 +1,9 @@
+// Copyright (c) 2013, Cloudera, inc.
 #ifndef KUDU_RPC_SERVER_H
 #define KUDU_RPC_SERVER_H
 
 #include <boost/foreach.hpp>
+#include <string>
 #include <vector>
 
 #include "rpc/messenger.h"

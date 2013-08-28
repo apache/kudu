@@ -3,6 +3,7 @@
 #include "tserver/mini_tablet_server.h"
 
 #include <glog/logging.h>
+#include <vector>
 
 #include "common/schema.h"
 #include "gutil/macros.h"

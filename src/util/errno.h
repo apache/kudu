@@ -15,6 +15,6 @@ inline static std::string ErrnoToString(int err) {
   return std::string(buf);
 }
 
-}
+} // namespace kudu
 
 #endif

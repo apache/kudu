@@ -333,12 +333,10 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
   return Status::OK();
 }
 
-
-DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata) :
-    rowset_metadata_(rowset_metadata),
-    open_(false)
-{}
-
+DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata)
+  : rowset_metadata_(rowset_metadata),
+    open_(false) {
+}
 
 Status DiskRowSet::Open() {
   gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));

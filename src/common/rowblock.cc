@@ -88,4 +88,4 @@ void RowBlock::Resize(size_t new_size) {
   sel_vec_.Resize(new_size);
 }
 
-}
+} // namespace kudu

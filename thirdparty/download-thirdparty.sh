@@ -113,5 +113,11 @@ if [ ! -d $MONGOOSE_DIR ]; then
   rm mongoose-$MONGOOSE_VERSION.tar.gz
 fi
 
+if [ ! -d $GSG_DIR ]; then
+  echo "Fetching google style guide"
+  svn export --force -r ${GSG_REVISION} http://google-styleguide.googlecode.com/svn/trunk/ ${GSG_DIR}.tmp
+  mv ${GSG_DIR}.tmp ${GSG_DIR}
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

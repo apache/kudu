@@ -341,5 +341,5 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   }
 }
 
-} // namespace tabletype
+} // namespace tablet
 } // namespace kudu

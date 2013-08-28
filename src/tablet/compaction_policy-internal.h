@@ -95,8 +95,8 @@ class CompactionCandidate {
   double cdf_min_key_, cdf_max_key_;
 };
 
-} // namespace kudu
-} // namespace tablet
 } // namespace compaction_policy
+} // namespace tablet
+} // namespace kudu
 #endif
 
