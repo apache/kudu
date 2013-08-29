@@ -22,9 +22,9 @@ ADD_DEPENDENCIES(tablet server)
 
 # tablet-test
 ADD_KUDU_TEST(tablet-test)
-ADD_KUDU_TEST(mt-tablet-test)
+ADD_KUDU_TEST(mt-tablet-test RUN_SERIAL true)
 ADD_KUDU_TEST(diskrowset-test)
-ADD_KUDU_TEST(mt-diskrowset-test)
+ADD_KUDU_TEST(mt-diskrowset-test RUN_SERIAL true)
 ADD_KUDU_TEST(memrowset-test)
 ADD_KUDU_TEST(deltamemstore-test)
 ADD_KUDU_TEST(deltafile-test)
@@ -38,4 +38,4 @@ ADD_KUDU_TEST(composite-pushdown-test)
 
 # Some tests don't have dependencies on other tablet stuff
 SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
-ADD_KUDU_TEST(cbtree-test)
+ADD_KUDU_TEST(cbtree-test RUN_SERIAL true)

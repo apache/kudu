@@ -60,6 +60,7 @@ make clean
 
 # our tests leave lots of data lying around, clean up before we run
 rm -Rf /tmp/kudutest-$UID
-make -j16 2>&1 | tee build.log
+NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
-make test
+make -j$NUM_PROCS 2>&1 | tee build.log
+ctest -j$NUM_PROCS

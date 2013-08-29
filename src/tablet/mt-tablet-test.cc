@@ -378,8 +378,8 @@ TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
   this->StartThreads(10, &TestFixture::DeleteAndReinsertCycleThread);
   this->StartThreads(10, &TestFixture::StubbornlyUpdateSameRowThread);
 
-  // Run very quickly in dev builds, 20 seconds in slow builds.
-  float runtime_seconds = this->AllowSlowTests() ? 20 : 0.2;
+  // Run very quickly in dev builds, longer in slow builds.
+  float runtime_seconds = this->AllowSlowTests() ? 2 : 0.1;
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall < runtime_seconds * NANOS_PER_SECOND &&
