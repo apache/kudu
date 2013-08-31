@@ -12,6 +12,7 @@ target_link_libraries(rpc_header_proto protobuf)
 ADD_LIBRARY(krpc
     acceptor_pool.cc
     auth_store.cc
+    blocking_ops.cc
     client_call.cc
     connection.cc
     constants.cc

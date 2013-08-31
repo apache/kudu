@@ -16,6 +16,7 @@
 #include "gutil/map-util.h"
 #include "gutil/port.h"
 #include "gutil/strings/join.h"
+#include "rpc/blocking_ops.h"
 #include "rpc/constants.h"
 #include "rpc/rpc_header.pb.h"
 #include "rpc/sasl_common.h"
@@ -159,17 +160,9 @@ Status SaslHelper::ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg) 
 }
 
 Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, const MessageLite& msg) {
-  DCHECK_NOTNULL(sock);
+  DCHECK(sock != NULL);
   DCHECK(header.IsInitialized()) << tag_ << ": Header must be initialized";
   DCHECK(msg.IsInitialized()) << tag_ << ": Message must be initialized";
-
-  // Serialize message
-  faststring param_buf;
-  RETURN_NOT_OK(serialization::SerializeMessage(msg, &param_buf));
-
-  // Serialize header and initial length
-  faststring header_buf;
-  RETURN_NOT_OK(serialization::SerializeHeader(header, param_buf.size(), &header_buf));
 
   // Write connection header, if needed
   if (PREDICT_FALSE(peer_type_ == CLIENT && !conn_header_exchanged_)) {
@@ -181,26 +174,7 @@ Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, cons
     conn_header_exchanged_ = true;
   }
 
-  // Write header & param to stream
-  size_t nsent;
-  RETURN_NOT_OK(sock->BlockingWrite(header_buf.data(), header_buf.size(), &nsent));
-  RETURN_NOT_OK(sock->BlockingWrite(param_buf.data(), param_buf.size(), &nsent));
-
-  return Status::OK();
-}
-
-Status SaslHelper::ReceiveFramedMessage(Socket* sock, faststring* recv_buf,
-    MessageLite* header, Slice* param_buf) {
-  recv_buf->clear();
-  recv_buf->resize(kMsgLengthPrefixLength);
-  size_t recvd = 0;
-  RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data(), kMsgLengthPrefixLength, &recvd));
-  uint32_t total_len = NetworkByteOrder::Load32(recv_buf->data());
-
-  recvd = 0;
-  recv_buf->resize(total_len + kMsgLengthPrefixLength);
-  RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data() + kMsgLengthPrefixLength, total_len, &recvd));
-  RETURN_NOT_OK(serialization::ParseMessage(Slice(*recv_buf), header, param_buf));
+  RETURN_NOT_OK(SendFramedMessageBlocking(sock, header, msg));
   return Status::OK();
 }
 

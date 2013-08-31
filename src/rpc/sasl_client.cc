@@ -15,6 +15,7 @@
 
 #include "gutil/endian.h"
 #include "gutil/map-util.h"
+#include "rpc/blocking_ops.h"
 #include "rpc/constants.h"
 #include "rpc/rpc_header.pb.h"
 #include "rpc/sasl_helper.h"
@@ -153,8 +154,8 @@ Status SaslClient::Negotiate() {
     return Status::IllegalState("SaslClient: Negotiate() may only be called once per object.");
   }
 
-  // Set socket to use blocking calls during negotiation
-  RETURN_NOT_OK(sock_.SetNonBlocking(false));
+  // Ensure we can use blocking calls on the socket during negotiation.
+  RETURN_NOT_OK(EnsureBlockingMode(&sock_));
 
   // Start by asking the server for a list of available auth mechanisms.
   RETURN_NOT_OK(SendNegotiateMessage());
@@ -168,7 +169,7 @@ Status SaslClient::Negotiate() {
   while (!nego_ok_ || nego_response_expected_) {
     ResponseHeader header;
     Slice param_buf;
-    RETURN_NOT_OK(helper_.ReceiveFramedMessage(&sock_, &recv_buf, &header, &param_buf));
+    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf));
     nego_response_expected_ = false;
 
     SaslMessagePB response;

@@ -89,16 +89,9 @@ class SaslHelper {
   // Parse msg from the given Slice.
   Status ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg);
 
-  // Encode and send a message over a socket.
+  // Encode and send a message over a socket, sending the connection header if necessary.
   Status SendSaslMessage(Socket* sock, const google::protobuf::MessageLite& header,
       const google::protobuf::MessageLite& msg);
-
-  // Receive a full message frame from the server.
-  // recv_buf: buffer to use for reading the data from the socket.
-  // header: Response header protobuf.
-  // param_buf: Slice into recv_buf containing unparsed RPC param protobuf data.
-  Status ReceiveFramedMessage(Socket* sock, faststring* recv_buf,
-      google::protobuf::MessageLite* header, Slice* param_buf);
 
  private:
   string local_addr_;

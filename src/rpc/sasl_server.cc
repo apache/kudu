@@ -18,6 +18,7 @@
 #include "gutil/map-util.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/split.h"
+#include "rpc/blocking_ops.h"
 #include "rpc/auth_store.h"
 #include "rpc/constants.h"
 #include "rpc/serialization.h"
@@ -126,8 +127,8 @@ Status SaslServer::Negotiate() {
     return Status::IllegalState("SaslServer: Negotiate() may only be called once per object.");
   }
 
-  // Set socket to use blocking calls during negotiation
-  RETURN_NOT_OK(sock_.SetNonBlocking(false));
+  // Ensure we can use blocking calls on the socket during negotiation.
+  RETURN_NOT_OK(EnsureBlockingMode(&sock_));
 
   faststring recv_buf;
 
@@ -138,7 +139,7 @@ Status SaslServer::Negotiate() {
   while (!nego_ok_) {
     RequestHeader header;
     Slice param_buf;
-    RETURN_NOT_OK(helper_.ReceiveFramedMessage(&sock_, &recv_buf, &header, &param_buf));
+    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf));
 
     SaslMessagePB request;
     RETURN_NOT_OK(ParseSaslMsgRequest(header, param_buf, &request));
