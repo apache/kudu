@@ -21,6 +21,7 @@ ADD_LIBRARY(kudu_util
   threadpool.cc
   task_executor.cc
   test_graph.cc
+  user.cc
   errno.cc
   monotime.cc
   url-coding.cc
@@ -50,6 +51,7 @@ ADD_KUDU_TEST(monotime-test)
 ADD_KUDU_TEST(pb_util-test)
 ADD_KUDU_TEST(threadpool-test)
 ADD_KUDU_TEST(task_executor-test)
+ADD_KUDU_TEST(user-test)
 ADD_KUDU_TEST(safe_math-test)
 ADD_KUDU_TEST(bit-util-test)
 ADD_KUDU_TEST(url-coding-test)
