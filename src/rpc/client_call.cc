@@ -1,9 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
-#include <boost/thread/mutex.hpp>
 #include <string>
 #include <vector>
+#include <boost/functional/hash.hpp>
+#include <boost/thread/mutex.hpp>
 
 #include "gutil/stringprintf.h"
 #include "rpc/client_call.h"
@@ -17,13 +18,17 @@ namespace rpc {
 using google::protobuf::Message;
 using google::protobuf::io::CodedOutputStream;
 
-OutboundCall::OutboundCall(const Sockaddr& remote,
+///
+/// OutboundCall
+///
+
+OutboundCall::OutboundCall(const ConnectionId& conn_id,
                            const string& method,
                            google::protobuf::Message* response_storage,
                            RpcController* controller,
                            const ResponseCallback& callback)
   : state_(READY),
-    remote_(remote),
+    conn_id_(conn_id),
     method_(method),
     callback_(callback),
     controller_(DCHECK_NOTNULL(controller)),
@@ -162,9 +167,7 @@ void OutboundCall::SetSent() {
   // behavior is a lot more efficient if memory is freed from the same thread
   // which allocated it -- this lets it keep to thread-local operations instead
   // of taking a mutex to put memory back on the global freelist.
-
-  // TODO: Uncomment this once the faststring::release() impl is committed.
-  //header_buf_.release();
+  header_buf_.release();
 
   // request_buf_ is also done being used here, but since it was allocated by
   // the caller thread, we would rather let that thread free it whenever it
@@ -215,8 +218,128 @@ bool OutboundCall::IsFinished() const {
 
 string OutboundCall::ToString() const {
   return StringPrintf("RPC call %s -> %s",
-                      method_.c_str(), remote_.ToString().c_str());
+                      method_.c_str(), conn_id_.remote().ToString().c_str());
 }
+
+///
+/// UserCredentials
+///
+
+UserCredentials::UserCredentials() {}
+
+bool UserCredentials::has_effective_user() const {
+  return !eff_user_.empty();
+}
+
+void UserCredentials::set_effective_user(const string& eff_user) {
+  eff_user_ = eff_user;
+}
+
+bool UserCredentials::has_real_user() const {
+  return !real_user_.empty();
+}
+
+void UserCredentials::set_real_user(const string& real_user) {
+  real_user_ = real_user;
+}
+
+bool UserCredentials::has_password() const {
+  return !password_.empty();
+}
+
+void UserCredentials::set_password(const string& password) {
+  password_ = password;
+}
+
+void UserCredentials::CopyFrom(const UserCredentials& other) {
+  eff_user_ = other.eff_user_;
+  real_user_ = other.real_user_;
+  password_ = other.password_;
+}
+
+size_t UserCredentials::HashCode() const {
+  size_t seed = 0;
+  if (has_effective_user()) {
+    boost::hash_combine(seed, effective_user());
+  }
+  if (has_real_user()) {
+    boost::hash_combine(seed, real_user());
+  }
+  if (has_password()) {
+    boost::hash_combine(seed, password());
+  }
+  return seed;
+}
+
+bool UserCredentials::Equals(const UserCredentials& other) const {
+  return (effective_user() == other.effective_user()
+       && real_user() == other.real_user()
+       && password() == other.password());
+}
+
+///
+/// ConnectionId
+///
+
+ConnectionId::ConnectionId() {}
+
+ConnectionId::ConnectionId(const ConnectionId& other) {
+  DoCopyFrom(other);
+}
+
+ConnectionId::ConnectionId(const Sockaddr& remote, const string& service_name, const UserCredentials& user_cred) {
+  remote_ = remote;
+  service_name_ = service_name;
+  user_cred_.CopyFrom(user_cred);
+}
+
+void ConnectionId::set_remote(const Sockaddr& remote) {
+  remote_ = remote;
+}
+
+void ConnectionId::set_service_name(const string& service_name) {
+  service_name_ = service_name;
+}
+
+void ConnectionId::set_user_cred(const UserCredentials& user_cred) {
+  user_cred_.CopyFrom(user_cred);
+}
+
+void ConnectionId::CopyFrom(const ConnectionId& other) {
+  DoCopyFrom(other);
+}
+
+void ConnectionId::DoCopyFrom(const ConnectionId& other) {
+  remote_ = other.remote_;
+  service_name_ = other.service_name_;
+  user_cred_.CopyFrom(other.user_cred_);
+}
+
+size_t ConnectionId::HashCode() const {
+  size_t seed = 0;
+  boost::hash_combine(seed, remote_.HashCode());
+  boost::hash_combine(seed, service_name_);
+  boost::hash_combine(seed, user_cred_.HashCode());
+  return seed;
+}
+
+bool ConnectionId::Equals(const ConnectionId& other) const {
+  return (remote() == other.remote()
+       && service_name() == other.service_name()
+       && user_cred().Equals(other.user_cred()));
+}
+
+size_t ConnectionIdHash::operator() (const ConnectionId& conn_id) const {
+  return conn_id.HashCode();
+}
+
+bool ConnectionIdEqual::operator() (const ConnectionId& cid1, const ConnectionId& cid2) const {
+  return cid1.Equals(cid2);
+}
+
+///
+/// CallResponse
+///
 
 CallResponse::CallResponse()
  : parsed_(false) {

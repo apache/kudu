@@ -99,7 +99,7 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   StartTestServerWithGeneratedCode(&server_addr);
 
   shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
 
   AddRequestPartialPB req;
   req.set_x(rand());
@@ -118,7 +118,7 @@ TEST_F(RpcStubTest, TestCallMissingMethod) {
   StartTestServerWithGeneratedCode(&server_addr);
 
   shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
 
   Status s = DoTestSyncCall(p, "DoesNotExist");
   ASSERT_TRUE(s.IsRuntimeError()) << "Bad status: " << s.ToString();

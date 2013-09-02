@@ -66,7 +66,9 @@ class ReactorThread {
  public:
   friend class Connection;
 
-  typedef std::map<Sockaddr, std::tr1::shared_ptr<Connection> > conn_map_t;
+  // Client-side connection map.
+  typedef std::tr1::unordered_map<ConnectionId, std::tr1::shared_ptr<Connection>,
+                                  ConnectionIdHash, ConnectionIdEqual> conn_map_t;
 
   ReactorThread(Reactor *reactor, const MessengerBuilder &bld);
 
@@ -119,7 +121,7 @@ class ReactorThread {
   // If such a connection already exists, returns that, otherwise creates a new one.
   // May return a bad Status if the connect() call fails.
   // The resulting connection object is managed internally by the reactor thread.
-  Status FindOrStartConnection(const Sockaddr &remote,
+  Status FindOrStartConnection(const ConnectionId &remote,
                                std::tr1::shared_ptr<Connection> *conn);
 
   // Shut down the given connection, removing it from the connection tracking

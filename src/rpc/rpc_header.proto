@@ -80,8 +80,8 @@ package kudu.rpc;
 
 // User Information proto.  Included in ConnectionHeader on connection setup.
 message UserInformationPB {
-  required string effectiveUser = 1;
-  optional string realUser = 2;
+  optional string effectiveUser = 1;
+  required string realUser = 2;
 }
 
 /**

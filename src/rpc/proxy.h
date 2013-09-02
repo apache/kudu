@@ -6,7 +6,8 @@
 #include <tr1/memory>
 #include <string>
 
-#include "gutil/macros.h"
+#include "gutil/atomicops.h"
+#include "rpc/client_call.h"
 #include "rpc/response_callback.h"
 #include "rpc/rpc_controller.h"
 #include "rpc/rpc_header.pb.h"
@@ -32,12 +33,16 @@ class Messenger;
 // re-established as necessary by the messenger. Additionally, the messenger is
 // likely to multiplex many Proxy objects on the same connection.
 //
-// Proxy objects are fully thread-safe - multiple threads may make calls using
-// the same proxy object.
+// Proxy objects are thread-safe after initialization only.
+// Setters on the Proxy are not thread-safe, and calling a setter after any RPC
+// request has started will cause a fatal error.
+//
+// After initialization, multiple threads may make calls using the same proxy object.
 class Proxy {
  public:
-  Proxy(const std::tr1::shared_ptr<Messenger> &messenger,
-        const Sockaddr &remote);
+  Proxy(const std::tr1::shared_ptr<Messenger>& messenger,
+        const Sockaddr& remote,
+        const std::string& service_name);
   ~Proxy();
 
   // Call a remote method asynchronously.
@@ -66,24 +71,29 @@ class Proxy {
   //           thereafter. It may be invoked either on the caller's thread
   //           or by an RPC IO thread, and thus should take care to not
   //           block or perform any heavy CPU work.
-  void AsyncRequest(const string &method,
-                    const google::protobuf::Message &req,
-                    google::protobuf::Message *resp,
-                    RpcController *controller,
-                    const ResponseCallback &callback) const;
+  void AsyncRequest(const std::string& method,
+                    const google::protobuf::Message& req,
+                    google::protobuf::Message* resp,
+                    RpcController* controller,
+                    const ResponseCallback& callback) const;
 
   // The same as AsyncRequest(), except that the call blocks until the call
   // finishes. If the call fails, returns a non-OK result.
-  Status SyncRequest(const std::string &method,
-                     const google::protobuf::Message &req,
-                     google::protobuf::Message *resp,
-                     RpcController *controller) const;
+  Status SyncRequest(const std::string& method,
+                     const google::protobuf::Message& req,
+                     google::protobuf::Message* resp,
+                     RpcController* controller) const;
 
-  const Sockaddr &remote() const;
+  // Set the user credentials which should be used to log in.
+  void set_user_cred(const UserCredentials& user_cred);
+
+  // Get the user credentials which should be used to log in.
+  const UserCredentials& user_cred() const { return conn_id_.user_cred(); }
 
  private:
   std::tr1::shared_ptr<Messenger> messenger_;
-  Sockaddr remote_;
+  ConnectionId conn_id_;
+  mutable Atomic32 is_started_;
 
   DISALLOW_COPY_AND_ASSIGN(Proxy);
 };

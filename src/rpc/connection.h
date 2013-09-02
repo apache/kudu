@@ -99,7 +99,23 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   // This may be called from a non-reactor thread.
   void QueueResponseForCall(gscoped_ptr<InboundCall> call);
 
-  const Sockaddr& remote() const;
+  // The address of the remote end of the connection.
+  const Sockaddr &remote() const { return remote_; }
+
+  // Set the name of the service which should process this request.
+  void set_service_name(const std::string &service_name);
+
+  // Get the name of the service which should process this request.
+  const std::string service_name() const { return service_name_; }
+
+  // Set the user credentials which should be used to log in.
+  void set_user_cred(const UserCredentials &user_cred);
+
+  // Modify the user credentials which will be used to log in.
+  UserCredentials* mutable_user_cred() { return &user_cred_; }
+
+  // Get the user credentials which will be used to log in.
+  const UserCredentials &user_cred() const { return user_cred_; }
 
   // libev callback when data is available to read.
   void ReadHandler(ev::io &watcher, int revents);
@@ -170,12 +186,18 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   Socket socket_;
 
   // The remote address we're talking to.
-  Sockaddr remote_;
+  const Sockaddr remote_;
+
+  // The name of the service operating on this connection.
+  std::string service_name_;
 
   // with non-blocking I/O, connect may not return immediately.
   // This boolean tracks whether we are in the middle of a connect()
   // operation, connecting to a remote host.
   bool connect_in_progress_;
+
+  // The credentials of the user operating on this connection (if a client user).
+  UserCredentials user_cred_;
 
   // whether we are client or server
   Direction direction_;

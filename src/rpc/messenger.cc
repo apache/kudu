@@ -128,7 +128,7 @@ void Messenger::GetAcceptorInfo(std::list<AcceptorPoolInfo> *info) const {
 }
 
 void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
-  Reactor *reactor = RemoteToReactor(call->remote());
+  Reactor *reactor = RemoteToReactor(call->conn_id().remote());
   reactor->QueueOutboundCall(call);
 }
 

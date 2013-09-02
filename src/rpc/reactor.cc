@@ -147,7 +147,7 @@ void ReactorThread::RegisterConnection(const shared_ptr<Connection> &conn) {
 void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   DCHECK(IsCurrentThread());
   shared_ptr<Connection> conn;
-  Status s = FindOrStartConnection(call->remote(), &conn);
+  Status s = FindOrStartConnection(call->conn_id(), &conn);
   if (PREDICT_FALSE(!s.ok())) {
     call->SetFailed(s);
     return;
@@ -236,9 +236,9 @@ void ReactorThread::RunThread() {
   VLOG(1) << name() << " thread exiting.";
 }
 
-Status ReactorThread::FindOrStartConnection(const Sockaddr &remote, shared_ptr<Connection> *conn) {
+Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_ptr<Connection> *conn) {
   DCHECK(IsCurrentThread());
-  conn_map_t::const_iterator c = client_conns_.find(remote);
+  conn_map_t::const_iterator c = client_conns_.find(conn_id);
   if (c != client_conns_.end()) {
     *conn = (*c).second;
     return Status::OK();
@@ -246,19 +246,23 @@ Status ReactorThread::FindOrStartConnection(const Sockaddr &remote, shared_ptr<C
 
   // No connection to this remote. Need to create one.
   VLOG(2) << name() << " FindOrStartConnection: creating "
-          << "new connection for " << remote.ToString();
+          << "new connection for " << conn_id.remote().ToString();
 
   // Create a new socket and start connecting to the remote.
   Socket sock;
   RETURN_NOT_OK(CreateClientSocket(&sock));
   bool connect_in_progress;
-  RETURN_NOT_OK(StartConnect(&sock, remote, &connect_in_progress));
+  RETURN_NOT_OK(StartConnect(&sock, conn_id.remote(), &connect_in_progress));
 
   // Register the new connection in our map.
-  (*conn).reset(new Connection(this, remote, sock.Release(), connect_in_progress,
+  (*conn).reset(new Connection(this, conn_id.remote(), sock.Release(), connect_in_progress,
                              Connection::CLIENT));
+  (*conn)->set_service_name(conn_id.service_name());
+  (*conn)->set_user_cred(conn_id.user_cred());
   (*conn)->EpollRegister(loop_);
-  client_conns_.insert(conn_map_t::value_type(remote, *conn));
+
+  // Insert into the client connection map to avoid duplicate connection requests.
+  client_conns_.insert(conn_map_t::value_type(conn_id, *conn));
   return Status::OK();
 }
 
@@ -302,7 +306,8 @@ void ReactorThread::DestroyConnection(Connection *conn,
 
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
-    conn_map_t::iterator it = client_conns_.find(conn->remote());
+    ConnectionId conn_id(conn->remote(), conn->service_name(), conn->user_cred());
+    conn_map_t::iterator it = client_conns_.find(conn_id);
     CHECK(it != client_conns_.end()) << "Couldn't find connection " << conn->ToString();
     client_conns_.erase(it);
   } else if (conn->direction() == Connection::SERVER) {
@@ -441,7 +446,7 @@ class AssignOutboundCallTask : public ReactorTask {
 
 void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   DVLOG(3) << name_ << ": queueing outbound call "
-           << call->ToString() << " to remote " << call->remote().ToString();
+           << call->ToString() << " to remote " << call->conn_id().remote().ToString();
   AssignOutboundCallTask *task = new AssignOutboundCallTask(call);
   ScheduleReactorTask(task);
 }

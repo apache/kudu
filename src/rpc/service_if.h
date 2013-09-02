@@ -2,6 +2,8 @@
 #ifndef KUDU_RPC_SERVICE_IF_H
 #define KUDU_RPC_SERVICE_IF_H
 
+#include <string>
+
 #include "gutil/gscoped_ptr.h"
 #include "util/net/sockaddr.h"
 
@@ -71,6 +73,7 @@ class ServiceIf {
  public:
   virtual ~ServiceIf();
   virtual void Handle(InboundCall *incoming) = 0;
+  virtual std::string service_name() const = 0;
 
  protected:
   bool ParseParam(InboundCall *call, google::protobuf::Message *message);

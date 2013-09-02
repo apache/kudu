@@ -33,6 +33,98 @@ class Connection;
 class InboundTransfer;
 class RpcController;
 
+// Client-side user credentials, such as a user's username & password.
+// In the future, we will add Kerberos credentials.
+class UserCredentials {
+ public:
+   UserCredentials();
+
+  // Effective user, in cases where impersonation is supported.
+  // If impersonation is not supported, this should be left empty.
+  bool has_effective_user() const;
+  void set_effective_user(const std::string& eff_user);
+  const std::string& effective_user() const { return eff_user_; }
+
+  // Real user.
+  bool has_real_user() const;
+  void set_real_user(const std::string& real_user);
+  const std::string& real_user() const { return real_user_; }
+
+  // The real user's password.
+  bool has_password() const;
+  void set_password(const std::string& password);
+  const std::string& password() const { return password_; }
+
+  // Copy state from another object to this one.
+  void CopyFrom(const UserCredentials& other);
+
+  std::size_t HashCode() const;
+  bool Equals(const UserCredentials& other) const;
+
+ private:
+  // Remember to update HashCode() and Equals() when new fields are added.
+  std::string eff_user_;
+  std::string real_user_;
+  std::string password_;
+
+  DISALLOW_COPY_AND_ASSIGN(UserCredentials);
+};
+
+// Used to key on Connection information.
+// For use as a key in an unordered STL collection, use ConnectionIdHash and ConnectionIdEqual.
+// This class is copyable for STL compatibility, but not assignable (use CopyFrom() for that).
+class ConnectionId {
+ public:
+  ConnectionId();
+
+  // Copy constructor required for use with STL unordered_map.
+  ConnectionId(const ConnectionId& other);
+
+  // Convenience constructor.
+  ConnectionId(const Sockaddr& remote, const std::string& service_name, const UserCredentials& user_cred);
+
+  // The remote address.
+  void set_remote(const Sockaddr& remote);
+  const Sockaddr& remote() const { return remote_; }
+
+  // The identifying name of the RPC service.
+  void set_service_name(const std::string& service_name);
+  const std::string& service_name() const { return service_name_; }
+
+  // The credentials of the user associated with this connection, if any.
+  void set_user_cred(const UserCredentials& user_cred);
+  const UserCredentials& user_cred() const { return user_cred_; }
+  UserCredentials* mutable_user_cred() { return &user_cred_; }
+
+  // Copy state from another object to this one.
+  void CopyFrom(const ConnectionId& other);
+
+  size_t HashCode() const;
+  bool Equals(const ConnectionId& other) const;
+
+ private:
+  // Remember to update HashCode() and Equals() when new fields are added.
+  Sockaddr remote_;
+  std::string service_name_;
+  UserCredentials user_cred_;
+
+  // Implementation of CopyFrom that can be shared with copy constructor.
+  void DoCopyFrom(const ConnectionId& other);
+
+  // Disable assignment operator.
+  void operator=(const ConnectionId&);
+};
+
+class ConnectionIdHash {
+ public:
+  std::size_t operator() (const ConnectionId& conn_id) const;
+};
+
+class ConnectionIdEqual {
+ public:
+  bool operator() (const ConnectionId& cid1, const ConnectionId& cid2) const;
+};
+
 // Tracks the status of a call on the client side.
 //
 // This is an internal-facing class -- clients interact with the
@@ -45,7 +137,7 @@ class RpcController;
 class OutboundCall {
  public:
 
-  OutboundCall(const Sockaddr& remote,
+  OutboundCall(const ConnectionId& conn_id,
                const string& method,
                google::protobuf::Message* response_storage,
                RpcController* controller,
@@ -98,7 +190,7 @@ class OutboundCall {
   // Getters
   ////////////////////////////////////////////////////////////
 
-  const Sockaddr& remote() const { return remote_; }
+  const ConnectionId& conn_id() const { return conn_id_; }
   const std::string& method() const { return method_; }
   const ResponseCallback &callback() const { return callback_; }
   RpcController* controller() { return controller_; }
@@ -151,7 +243,7 @@ class OutboundCall {
   // Call the user-provided callback.
   void CallCallback();
 
-  Sockaddr remote_;
+  ConnectionId conn_id_;
   std::string method_;
   ResponseCallback callback_;
   RpcController* controller_;

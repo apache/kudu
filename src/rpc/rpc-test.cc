@@ -72,7 +72,7 @@ TEST_F(TestRpc, TestCall) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   for (int i = 0; i < 10; i++) {
     ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
@@ -84,7 +84,7 @@ TEST_F(TestRpc, TestCallToBadServer) {
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
   Sockaddr addr;
   addr.set_port(0);
-  Proxy p(client_messenger, addr);
+  Proxy p(client_messenger, addr, GenericCalculatorService::static_service_name());
 
   // Loop a few calls to make sure that we properly set up and tear down
   // the connections.
@@ -104,7 +104,7 @@ TEST_F(TestRpc, TestInvalidMethodCall) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   // Call the method which fails.
   Status s = DoTestSyncCall(p, "ThisMethodDoesNotExist");
@@ -126,7 +126,7 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 
@@ -168,7 +168,7 @@ TEST_F(TestRpc, TestCallLongerThanKeepalive) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   // Make a call which sleeps longer than the keepalive.
   RpcController controller;
@@ -185,7 +185,7 @@ TEST_F(TestRpc, TestCallTimeout) {
   Sockaddr server_addr;
   StartTestServer(&server_addr);
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   // Test a very short timeout - we expect this will time out while the
   // call is still in the send queue. This was triggering ASAN failures
@@ -207,7 +207,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr);
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   // Send a call.
   AddRequestPB req;
@@ -225,7 +225,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   for (int i = 0; i < n_calls; i++) {
     RpcController *controller = new RpcController();
     controllers.push_back(controller);
-    p.AsyncRequest("Add", req, &resp, controller,
+    p.AsyncRequest(GenericCalculatorService::kAddMethodName, req, &resp, controller,
                    boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
   }
 

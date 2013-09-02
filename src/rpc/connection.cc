@@ -323,8 +323,12 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 
-const Sockaddr& Connection::remote() const {
-  return remote_;
+void Connection::set_service_name(const string &service_name) {
+  service_name_ = service_name;
+}
+
+void Connection::set_user_cred(const UserCredentials &user_cred) {
+  user_cred_.CopyFrom(user_cred);
 }
 
 void Connection::ReadHandler(ev::io &watcher, int revents) {

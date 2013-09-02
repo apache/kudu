@@ -37,6 +37,7 @@ using std::tr1::shared_ptr;
 // RPC handler (no generated code).
 class GenericCalculatorService : public ServiceIf {
  public:
+  static const char *kFullServiceName;
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
 
@@ -49,6 +50,9 @@ class GenericCalculatorService : public ServiceIf {
       incoming->RespondFailure(Status::InvalidArgument("bad method"));
     }
   }
+
+  std::string service_name() const { return kFullServiceName; }
+  static std::string static_service_name() { return kFullServiceName; }
 
  private:
   void DoAdd(InboundCall *incoming) {
@@ -117,6 +121,7 @@ class CalculatorService : public CalculatorServiceIf {
 
 };
 
+const char *GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
 const char *GenericCalculatorService::kAddMethodName = "Add";
 const char *GenericCalculatorService::kSleepMethodName = "Sleep";
 
