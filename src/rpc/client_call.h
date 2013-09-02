@@ -3,11 +3,11 @@
 #ifndef KUDU_RPC_CLIENT_CALL_H
 #define KUDU_RPC_CLIENT_CALL_H
 
-#include <glog/logging.h>
-#include <tr1/memory>
-
 #include <string>
 #include <vector>
+#include <tr1/memory>
+
+#include <glog/logging.h>
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
@@ -19,12 +19,14 @@
 #include "util/slice.h"
 #include "util/status.h"
 
-namespace google { namespace protobuf {
+namespace google {
+namespace protobuf {
 class Message;
-}
-}
+} // namespace protobuf
+} // namespace google
 
-namespace kudu { namespace rpc {
+namespace kudu {
+namespace rpc {
 
 class CallResponse;
 class Connection;
@@ -43,11 +45,11 @@ class RpcController;
 class OutboundCall {
  public:
 
-  OutboundCall(const Sockaddr &remote,
-               const string &method,
-               google::protobuf::Message *response_storage,
-               RpcController *controller,
-               const ResponseCallback &callback);
+  OutboundCall(const Sockaddr& remote,
+               const string& method,
+               google::protobuf::Message* response_storage,
+               RpcController* controller,
+               const ResponseCallback& callback);
 
   ~OutboundCall();
 
@@ -55,7 +57,7 @@ class OutboundCall {
   //
   // Because the data is fully serialized by this call, 'req' may be
   // subsequently mutated with no ill effects.
-  Status SetRequestParam(const google::protobuf::Message &req);
+  Status SetRequestParam(const google::protobuf::Message& req);
 
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.
@@ -66,7 +68,7 @@ class OutboundCall {
 
   // Serialize the call for the wire. Requires that SetRequestParam()
   // is called first. This is called from the Reactor thread.
-  Status SerializeTo(std::vector<Slice> *slices);
+  Status SerializeTo(std::vector<Slice>* slices);
 
   // Callback after the call has been put on the outbound connection queue.
   void SetQueued();
@@ -76,7 +78,7 @@ class OutboundCall {
 
   // Mark the call as failed. This also triggers the callback to notify
   // the caller.
-  void SetFailed(const Status &status);
+  void SetFailed(const Status& status);
 
   // Mark the call as timed out. This also triggers the callback to notify
   // the caller.
@@ -96,11 +98,11 @@ class OutboundCall {
   // Getters
   ////////////////////////////////////////////////////////////
 
-  const Sockaddr &remote() const { return remote_; }
-  const std::string &method() const { return method_; }
+  const Sockaddr& remote() const { return remote_; }
+  const std::string& method() const { return method_; }
   const ResponseCallback &callback() const { return callback_; }
-  RpcController *controller() { return controller_; }
-  const RpcController *controller() const { return controller_; }
+  RpcController* controller() { return controller_; }
+  const RpcController* controller() const { return controller_; }
 
   // Return true if a call ID has been assigned to this call.
   bool call_id_assigned() const {
@@ -152,10 +154,10 @@ class OutboundCall {
   Sockaddr remote_;
   std::string method_;
   ResponseCallback callback_;
-  RpcController *controller_;
+  RpcController* controller_;
 
   // Pointer for the protobuf where the response should be written.
-  google::protobuf::Message *response_;
+  google::protobuf::Message* response_;
 
   // Call ID -- only assigned once this call has been passed to the reactor
   // thread and assigned a connection.
@@ -221,7 +223,6 @@ class CallResponse {
 
   DISALLOW_COPY_AND_ASSIGN(CallResponse);
 };
-
 
 } // namespace rpc
 } // namespace kudu

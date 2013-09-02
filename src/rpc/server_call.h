@@ -17,19 +17,21 @@
 #include "util/slice.h"
 #include "util/status.h"
 
-namespace google { namespace protobuf {
+namespace google {
+namespace protobuf {
 class Message;
-}
-}
+} // namespace protobuf
+} // namespace google
 
-namespace kudu { namespace rpc {
+namespace kudu {
+namespace rpc {
 
 class Connection;
 
 // Inbound call on server
 class InboundCall {
  public:
-  explicit InboundCall(const std::tr1::shared_ptr<Connection> &conn);
+  explicit InboundCall(const std::tr1::shared_ptr<Connection>& conn);
 
   // Parse an inbound call message.
   //
@@ -58,7 +60,7 @@ class InboundCall {
   //
   // This method deletes the InboundCall object, so no further calls may be
   // made after this one.
-  void RespondSuccess(const google::protobuf::MessageLite &response);
+  void RespondSuccess(const google::protobuf::MessageLite& response);
 
   // Serializes a failure response into the internal buffer, marking the
   // call as a failure. Enqueues the response back to the connection that
@@ -70,7 +72,7 @@ class InboundCall {
 
   // Serialize the response packet for the finished call.
   // The resulting slices refer to memory in this object.
-  Status SerializeResponseTo(std::vector<Slice> *slices) const;
+  Status SerializeResponseTo(std::vector<Slice>* slices) const;
 
   std::string ToString() const;
 
@@ -78,7 +80,7 @@ class InboundCall {
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a
   // failure, 'response' should be an ErrorStatusPB instance.
-  Status SerializeResponseBuffer(const google::protobuf::MessageLite &response,
+  Status SerializeResponseBuffer(const google::protobuf::MessageLite& response,
                                  bool is_success);
 
   // The connection on which this inbound call arrived.

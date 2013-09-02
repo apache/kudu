@@ -11,17 +11,17 @@
 #include "rpc/serialization.h"
 #include "rpc/transfer.h"
 
-namespace kudu { namespace rpc {
+namespace kudu {
+namespace rpc {
 
 using google::protobuf::Message;
-using google::protobuf::MessageLite;
 using google::protobuf::io::CodedOutputStream;
 
-OutboundCall::OutboundCall(const Sockaddr &remote,
-                           const string &method,
-                           google::protobuf::Message *response_storage,
-                           RpcController *controller,
-                           const ResponseCallback &callback)
+OutboundCall::OutboundCall(const Sockaddr& remote,
+                           const string& method,
+                           google::protobuf::Message* response_storage,
+                           RpcController* controller,
+                           const ResponseCallback& callback)
   : state_(READY),
     remote_(remote),
     method_(method),
@@ -37,7 +37,7 @@ OutboundCall::~OutboundCall() {
   DVLOG(4) << "OutboundCall " << this << " destroyed with state_: " << StateName(state_);
 }
 
-Status OutboundCall::SerializeTo(vector<Slice> *slices) {
+Status OutboundCall::SerializeTo(vector<Slice>* slices) {
   size_t param_len = request_buf_.size();
   if (PREDICT_FALSE(param_len == 0)) {
     return Status::InvalidArgument("Must call SetRequestParam() before SerializeTo()");
@@ -55,7 +55,7 @@ Status OutboundCall::SerializeTo(vector<Slice> *slices) {
   return Status::OK();
 }
 
-Status OutboundCall::SetRequestParam(const Message &message) {
+Status OutboundCall::SetRequestParam(const Message& message) {
   return serialization::SerializeMessage(message, &request_buf_);
 }
 

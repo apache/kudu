@@ -27,7 +27,7 @@ Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   return Status::OK();
 }
 
-void InboundCall::RespondSuccess(const MessageLite &response) {
+void InboundCall::RespondSuccess(const MessageLite& response) {
   Status s = SerializeResponseBuffer(response, true);
   if (PREDICT_FALSE(!s.ok())) {
     // TODO: test error case, serialize error response instead
@@ -37,7 +37,7 @@ void InboundCall::RespondSuccess(const MessageLite &response) {
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
 }
 
-void InboundCall::RespondFailure(const Status &status) {
+void InboundCall::RespondFailure(const Status& status) {
   ErrorStatusPB err;
   err.set_message(status.ToString());
 
@@ -50,7 +50,7 @@ void InboundCall::RespondFailure(const Status &status) {
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
 }
 
-Status InboundCall::SerializeResponseBuffer(const MessageLite &response,
+Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
                                             bool is_success) {
 
   RETURN_NOT_OK(serialization::SerializeMessage(response, &response_msg_buf_));
@@ -65,7 +65,7 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite &response,
   return Status::OK();
 }
 
-Status InboundCall::SerializeResponseTo(vector<Slice> *slices) const {
+Status InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
   CHECK_GT(response_hdr_buf_.size(), 0);
   CHECK_GT(response_msg_buf_.size(), 0);
   slices->push_back(Slice(response_hdr_buf_));
