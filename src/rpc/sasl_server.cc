@@ -44,7 +44,8 @@ SaslServer::SaslServer(const string& app_name, int fd)
   : app_name_(app_name),
     sock_(fd),
     helper_(SaslHelper::SERVER),
-    server_state_(SaslNegotiationState::NEW) {
+    server_state_(SaslNegotiationState::NEW),
+    negotiated_mech_(SaslMechanism::INVALID) {
 
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&SaslServerGetoptCb), this));
@@ -67,6 +68,17 @@ Status SaslServer::EnablePlain(gscoped_ptr<AuthStore> authstore) {
   RETURN_NOT_OK(helper_.EnablePlain());
   authstore_.swap(authstore);
   return Status::OK();
+}
+
+SaslMechanism::Type SaslServer::negotiated_mechanism() const {
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEGOTIATED);
+  return negotiated_mech_;
+}
+
+const std::string& SaslServer::plain_auth_user() const {
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEGOTIATED);
+  DCHECK_EQ(negotiated_mech_, SaslMechanism::PLAIN);
+  return plain_auth_user_;
 }
 
 void SaslServer::set_local_addr(const Sockaddr& addr) {
@@ -295,6 +307,7 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
   uint32_t server_out_len = 0;
   if (helper_.IsAnonymousEnabled() && auth.mechanism() == kSaslMechAnonymous) {
     DVLOG(3) << "SASL Server: Anonymous enabled. Short-circuiting anonymous negotiation";
+    negotiated_mech_ = SaslMechanism::ANONYMOUS;
   } else {
     DVLOG(5) << "SASL Server: Calling sasl_server_start()";
     result = sasl_server_start(
@@ -311,6 +324,7 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
       RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
       return s;
     }
+    negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
   }
 
   // We have a valid mechanism match
@@ -408,6 +422,7 @@ int SaslServer::PlainAuthCb(sasl_conn_t *conn, const char *user, const char *pas
     LOG(INFO) << "Failed login for user: " << user;
     return SASL_FAIL;
   }
+  plain_auth_user_ = user; // Store username of authenticated user.
   return SASL_OK;
 }
 

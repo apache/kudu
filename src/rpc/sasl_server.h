@@ -44,6 +44,14 @@ class SaslServer {
   // Call after Init().
   Status EnablePlain(gscoped_ptr<AuthStore> authstore);
 
+  // Returns mechanism negotiated by this connection.
+  // Call after Negotiate().
+  SaslMechanism::Type negotiated_mechanism() const;
+
+  // Name of the user that authenticated using plain auth.
+  // Call after Negotiate() and only if the negotiated mechanism was PLAIN.
+  const std::string& plain_auth_user() const;
+
   // Specify IP:port of local side of connection.
   // Call before Init(). Required for some mechanisms.
   void set_local_addr(const Sockaddr& addr);
@@ -114,8 +122,16 @@ class SaslServer {
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
 
+  // Authentication store used for PLAIN authentication.
   gscoped_ptr<AuthStore> authstore_;
+
+  // The successfully-authenticated user, if applicable.
+  string plain_auth_user_;
+
   SaslNegotiationState::Type server_state_;
+
+  // The mechanism we negotiated with the client.
+  SaslMechanism::Type negotiated_mech_;
 
   // Intra-negotiation state
   bool nego_ok_;  // During negotiation: did we get a SASL_OK response from the SASL library?

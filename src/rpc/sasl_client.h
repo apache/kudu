@@ -42,6 +42,10 @@ class SaslClient {
   // Call after Init().
   Status EnablePlain(const string& user, const string& pass);
 
+  // Returns mechanism negotiated by this connection.
+  // Call after Negotiate().
+  SaslMechanism::Type negotiated_mechanism() const;
+
   // Specify IP:port of local side of connection.
   // Call before Init(). Required for some mechanisms.
   void set_local_addr(const Sockaddr& addr);
@@ -117,14 +121,14 @@ class SaslClient {
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
 
-  // The mechanism we negotiated with the server.
-  string negotiated_mech_;
-
-  string plain_authuser_;
+  string plain_auth_user_;
   string plain_pass_;
   gscoped_ptr<sasl_secret_t, base::FreeDeleter> psecret_;
 
   SaslNegotiationState::Type client_state_;
+
+  // The mechanism we negotiated with the server.
+  SaslMechanism::Type negotiated_mech_;
 
   // Intra-negotiation state
   bool nego_ok_;  // During negotiation: did we get a SASL_OK response from the SASL library?

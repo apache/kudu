@@ -304,6 +304,14 @@ void ReactorThread::CompleteConnectionNegotiation(const shared_ptr<Connection> &
     return;
   }
 
+  // Ensure we set the service name from the ConnectionContextPB
+  if (PREDICT_FALSE(conn->service_name().empty())) {
+    Status s = Status::IllegalState("Failed to set connection service name!");
+    LOG(DFATAL) << "Unexpected connection negotiation error: " << s.ToString();
+    DestroyConnection(conn.get(), s);
+    return;
+  }
+
   // Switch the socket back to non-blocking mode after negotiation.
   Status s = conn->SetNonBlocking(true);
   if (PREDICT_FALSE(!s.ok())) {

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "gutil/map-util.h"
+#include "rpc/auth_store.h"
 #include "rpc/constants.h"
 #include "rpc/messenger.h"
 #include "rpc/reactor.h"
@@ -501,13 +502,16 @@ std::string Connection::ToString() const {
 Status Connection::InitSaslClient() {
   RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
   RETURN_NOT_OK(sasl_client().EnableAnonymous());
+  RETURN_NOT_OK(sasl_client().EnablePlain(user_cred().real_user(), user_cred().password()));
   return Status::OK();
 }
 
 Status Connection::InitSaslServer() {
+  // TODO: Do necessary configuration plumbing to enable user authentication.
+  // Right now we just enable PLAIN with a "dummy" auth store, which allows everyone in.
   RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
-  // TODO: Patch for "fake plain" to follow.
-  RETURN_NOT_OK(sasl_server().EnableAnonymous());
+  gscoped_ptr<AuthStore> auth_store(new DummyAuthStore());
+  RETURN_NOT_OK(sasl_server().EnablePlain(auth_store.Pass()));
   return Status::OK();
 }
 

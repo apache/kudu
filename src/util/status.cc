@@ -124,4 +124,8 @@ int16_t Status::posix_code() const {
   return posix_code;
 }
 
+Status Status::CloneAndPrepend(const Slice& msg) const {
+  return Status(code(), msg, message(), posix_code());
+}
+
 }  // namespace kudu

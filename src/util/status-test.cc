@@ -25,4 +25,10 @@ TEST(StatusTest, TestToString) {
   ASSERT_EQ(string("IO error: file error (error 20)"), file_error.ToString());
 }
 
+TEST(StatusTest, TestClonePrepend) {
+  Status file_error = Status::IOError("file error", "msg2", ENOTDIR);
+  Status appended = file_error.CloneAndPrepend("Heading");
+  ASSERT_EQ(string("IO error: Heading: file error: msg2 (error 20)"), appended.ToString());
+}
+
 }  // namespace kudu

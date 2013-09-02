@@ -58,6 +58,9 @@ class UserCredentials {
   // Copy state from another object to this one.
   void CopyFrom(const UserCredentials& other);
 
+  // Returns a string representation of the object, not including the password field.
+  std::string ToString() const;
+
   std::size_t HashCode() const;
   bool Equals(const UserCredentials& other) const;
 

@@ -69,7 +69,8 @@ SaslClient::SaslClient(const string& app_name, int fd)
   : app_name_(app_name),
     sock_(fd),
     helper_(SaslHelper::CLIENT),
-    client_state_(SaslNegotiationState::NEW) {
+    client_state_(SaslNegotiationState::NEW),
+    negotiated_mech_(SaslMechanism::INVALID) {
 
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&SaslClientGetoptCb), this));
@@ -92,9 +93,14 @@ Status SaslClient::EnableAnonymous() {
 Status SaslClient::EnablePlain(const string& user, const string& pass) {
   DCHECK_EQ(client_state_, SaslNegotiationState::INITIALIZED);
   RETURN_NOT_OK(helper_.EnablePlain());
-  plain_authuser_ = user;
+  plain_auth_user_ = user;
   plain_pass_ = pass;
   return Status::OK();
+}
+
+SaslMechanism::Type SaslClient::negotiated_mechanism() const {
+  DCHECK_EQ(client_state_, SaslNegotiationState::NEGOTIATED);
+  return negotiated_mech_;
 }
 
 void SaslClient::set_local_addr(const Sockaddr& addr) {
@@ -325,7 +331,7 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   if (PREDICT_FALSE(auth == NULL)) {
     return Status::IllegalState("Unable to find auth in map, unexpected error", negotiated_mech);
   }
-  negotiated_mech_ = negotiated_mech;
+  negotiated_mech_ = SaslMechanism::value_of(negotiated_mech);
 
   // Handle the case where the server sent a challenge with the NEGOTIATE response.
   if (auth->has_challenge()) {
@@ -409,8 +415,8 @@ int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
     case SASL_CB_USER:
       DVLOG(3) << "SASL Client: callback for SASL_CB_USER";
       if (helper_.IsPlainEnabled()) {
-        *result = plain_authuser_.c_str();
-        if (len != NULL) *len = plain_authuser_.length();
+        *result = plain_auth_user_.c_str();
+        if (len != NULL) *len = plain_auth_user_.length();
       } else if (helper_.IsAnonymousEnabled()) {
         *result = NULL;
       }
@@ -418,8 +424,8 @@ int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
     case SASL_CB_AUTHNAME:
       DVLOG(3) << "SASL Client: callback for SASL_CB_AUTHNAME";
       if (helper_.IsPlainEnabled()) {
-        *result = plain_authuser_.c_str();
-        if (len != NULL) *len = plain_authuser_.length();
+        *result = plain_auth_user_.c_str();
+        if (len != NULL) *len = plain_auth_user_.length();
       }
       break;
     case SASL_CB_LANGUAGE:

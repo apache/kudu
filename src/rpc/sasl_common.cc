@@ -4,6 +4,7 @@
 #include "rpc/sasl_common.h"
 
 #include <string>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -192,6 +193,15 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
   callback.proc = proc;
   callback.context = context;
   return callback;
+}
+
+SaslMechanism::Type SaslMechanism::value_of(const string& mech) {
+  if (boost::iequals(mech, "ANONYMOUS")) {
+    return ANONYMOUS;
+  } else if (boost::iequals(mech, "PLAIN")) {
+    return PLAIN;
+  }
+  return INVALID;
 }
 
 } // namespace rpc

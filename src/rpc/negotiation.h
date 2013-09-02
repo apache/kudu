@@ -18,7 +18,8 @@ class Connection;
 class SaslClient;
 class SaslServer;
 
-// Handle client-side SASL negotiation.
+// Handle client-side blocking connection negotiation, including SASL negotiation and
+// sending the ConnectionContextPB.
 class ClientNegotiationTask : public kudu::Task {
  public:
   explicit ClientNegotiationTask(const std::tr1::shared_ptr<Connection>& conn);
@@ -28,7 +29,8 @@ class ClientNegotiationTask : public kudu::Task {
   std::tr1::shared_ptr<Connection> conn_;
 };
 
-// Handle server-side SASL negotiation.
+// Handle server-side blocking connection negotiation, including SASL negotiation and
+// receiving / validating the ConnectionContextPB.
 class ServerNegotiationTask : public kudu::Task {
  public:
   explicit ServerNegotiationTask(const std::tr1::shared_ptr<Connection>& conn);

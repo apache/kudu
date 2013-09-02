@@ -257,6 +257,11 @@ void UserCredentials::CopyFrom(const UserCredentials& other) {
   password_ = other.password_;
 }
 
+string UserCredentials::ToString() const {
+  // Does not print the password.
+  return StringPrintf("real_user=%s, eff_user=%s", real_user_.c_str(), eff_user_.c_str());
+}
+
 size_t UserCredentials::HashCode() const {
   size_t seed = 0;
   if (has_effective_user()) {

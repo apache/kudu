@@ -35,7 +35,7 @@ package kudu.rpc;
 //
 // Next, if SASL is specified to be used, SASL negotiation takes place.
 //
-// We then send a "ConnectionContext" protobuf (TODO) of user information and the
+// We then send a ConnectionContextPB protobuf of user information and the
 // 'protocol' or 'service' that is to be run over this connection as well as
 // info such as codecs and compression to use when we send cell blocks(see below).
 // This connection header protobuf is prefaced by an int that holds the length
@@ -90,13 +90,14 @@ message UserInformationPB {
  * This is sent on connection setup after the connection preamble is sent.
  * Generally, no response is sent from the server to the client.
  */
-message RpcConnectionContextPB {
+message ConnectionContextPB {
   // UserInfo beyond what is determined as part of security handshake
   // at connection time (kerberos, tokens etc).
   optional UserInformationPB userInfo = 2;
 
-  // Service name for next RPC layer.
+  // Service name for the RPC layer.
   // The client created a proxy with this service name.
+  // Example: kudu.rpc_test.CalculatorService
   required string serviceName = 3;
 }
 
@@ -155,7 +156,7 @@ message RequestHeader {
   /**
    * From Hadoop. Hadoop's explanation below:
    * RPCs for a particular interface (ie service) are done using a
-   * IPC connection that is setup using RpcConnectionContextPB.
+   * IPC connection that is setup using ConnectionContextPB.
    *
    * Each RPC call also sends a protocol name
    * (called declaringClassprotocolName). This name is usually the same

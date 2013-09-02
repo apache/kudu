@@ -14,6 +14,9 @@ namespace rpc {
 AuthStore::AuthStore() {
 }
 
+AuthStore::~AuthStore() {
+}
+
 Status AuthStore::Add(const string& user, const string& pass) {
   user_cred_map_[user] = pass;
   return Status::OK();
@@ -27,6 +30,16 @@ Status AuthStore::Authenticate(const string& user, const string& pass) const {
   if (it->second != pass) {
     return Status::NotAuthorized("Invalid credentials for user", user);
   }
+  return Status::OK();
+}
+
+DummyAuthStore::DummyAuthStore() {
+}
+
+DummyAuthStore::~DummyAuthStore() {
+}
+
+Status DummyAuthStore::Authenticate(const string& user, const string& password) const {
   return Status::OK();
 }
 

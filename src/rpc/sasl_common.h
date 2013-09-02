@@ -65,6 +65,15 @@ struct SaslNegotiationState {
   };
 };
 
+struct SaslMechanism {
+  enum Type {
+    INVALID,
+    ANONYMOUS,
+    PLAIN
+  };
+  static Type value_of(const std::string& mech);
+};
+
 } // namespace rpc
 } // namespace kudu
 

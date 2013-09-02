@@ -146,6 +146,9 @@ class Status {
   // Get the POSIX code associated with this Status, or -1 if there is none.
   int16_t posix_code() const;
 
+  // Return a new Status object with the same state plus an additional leading message.
+  Status CloneAndPrepend(const Slice& msg) const;
+
  private:
   // OK status has a NULL state_.  Otherwise, state_ is a new[] array
   // of the following form:
