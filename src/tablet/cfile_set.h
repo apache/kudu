@@ -73,6 +73,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
  private:
   friend class Iterator;
+  friend class CFileSetIteratorProjector;
 
   DISALLOW_COPY_AND_ASSIGN(CFileSet);
 
@@ -167,7 +168,6 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   const shared_ptr<CFileSet const> base_data_;
   const Schema projection_;
-  vector<size_t> projection_mapping_;
 
   // Iterator for the key column in the underlying data.
   gscoped_ptr<CFileIterator> key_iter_;

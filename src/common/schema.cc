@@ -54,34 +54,6 @@ Status Schema::Reset(const vector<ColumnSchema> &cols,
   return Status::OK();
 }
 
-Status Schema::GetProjectionFrom(const Schema &from_schema,
-                                 vector<size_t> *indexes) const {
-  indexes->clear();
-  indexes->reserve(num_columns());
-  BOOST_FOREACH(const ColumnSchema &col, cols_) {
-    NameToIndexMap::const_iterator iter =
-      from_schema.name_to_index_.find(col.name());
-    if (iter == from_schema.name_to_index_.end()) {
-      return Status::InvalidArgument(
-        string("Cannot map from schema ") +
-        from_schema.ToString() + " to " + ToString() +
-        ": column '" + col.name() + "' not present in source");
-    }
-
-    size_t idx = (*iter).second;
-    const ColumnSchema &from_col = from_schema.column(idx);
-    if (!from_col.EqualsType(col)) {
-      return Status::InvalidArgument(
-        string("Cannot map from schema ") +
-        from_schema.ToString() + " to " + ToString() +
-        ": type mismatch for column '" + col.name() + "'");
-    }
-
-    indexes->push_back((*iter).second);
-  }
-  return Status::OK();
-}
-
 string Schema::ToString() const {
   vector<string> col_strs;
   BOOST_FOREACH(const ColumnSchema &col, cols_) {

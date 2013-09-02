@@ -83,6 +83,47 @@ class DeltaMemStore : public DeltaStore,
   ThreadSafeArena arena_;
 };
 
+class DeltaProjector {
+ public:
+  DeltaProjector(const Schema& base_schema, const Schema& projection)
+    : base_schema_(base_schema), projection_(projection) {
+  }
+
+  Status Init() {
+    return projection_.GetProjectionMapping(base_schema_, this);
+  }
+
+  const std::tr1::unordered_map<size_t, size_t>& base_cols_mapping() const { return base_cols_mapping_; }
+  const std::tr1::unordered_map<size_t, size_t>& adapter_cols_mapping() const { return adapter_cols_mapping_; }
+
+ private:
+  friend class ::kudu::Schema;
+
+  Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
+    base_cols_mapping_[proj_col_idx] = base_col_idx;
+    return Status::OK();
+  }
+
+  Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
+    adapter_cols_mapping_[proj_col_idx] = base_col_idx;
+    return Status::OK();
+  }
+
+  Status ProjectDefaultColumn(size_t proj_col_idx) {
+    // Not used, since deltas are update...
+    // we don't have this column, so we don't have updates
+    return Status::OK();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DeltaProjector);
+
+  std::tr1::unordered_map<size_t, size_t> base_cols_mapping_;
+  std::tr1::unordered_map<size_t, size_t> adapter_cols_mapping_;
+
+  const Schema base_schema_;
+  const Schema projection_;
+};
 
 // Iterator over the deltas currently in the delta memstore.
 // This iterator is a wrapper around the underlying tree iterator
@@ -134,7 +175,6 @@ class DMSIterator : public DeltaIterator {
   };
 
   const shared_ptr<const DeltaMemStore> dms_;
-  const Schema projection_;
 
   // MVCC state which allows us to ignore uncommitted transactions.
   const MvccSnapshot mvcc_snapshot_;
@@ -159,8 +199,7 @@ class DMSIterator : public DeltaIterator {
 
   // Projection from the schema of the deltamemstore to the projection
   // of the row blocks which will be passed to PrepareToApply, etc.
-  vector<size_t> projection_indexes_;
-
+  DeltaProjector projector_;
 };
 
 

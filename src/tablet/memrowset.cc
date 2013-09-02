@@ -258,8 +258,9 @@ Status MemRowSet::GetBounds(Slice *min_encoded_key,
 
 Status MemRowSet::Iterator::Init(ScanSpec *spec) {
   DCHECK_EQ(state_, kUninitialized);
-  RETURN_NOT_OK(
-      projection_.GetProjectionFrom(memrowset_->schema(), &projection_mapping_));
+
+  RETURN_NOT_OK(projector_.Init(memrowset_->schema(), projection_));
+
   if (spec != NULL && spec->has_encoded_ranges()) {
     boost::optional<const Slice &> max_lower_bound;
     BOOST_FOREACH(const EncodedKeyRange *range, spec->encoded_ranges()) {
@@ -303,7 +304,7 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
 }
 
 Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
-  CHECK(!projection_mapping_.empty()) << "not initted";
+  DCHECK_NE(state_, kUninitialized) << "not initted";
 
   if (key.size() > 0) {
     ConstContiguousRow row_slice(memrowset_->schema(), key);
@@ -376,7 +377,7 @@ Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
         state_ = kFinished;
         BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
       } else {
-        RETURN_NOT_OK(ProjectRow(row, projection_mapping_, &dst_row, dst->arena()));
+        RETURN_NOT_OK(projector_.ProjectRow(row, &dst_row, dst->arena()));
 
         // Roll-forward MVCC for committed updates.
         RETURN_NOT_OK(ApplyMutationsToProjectedRow(

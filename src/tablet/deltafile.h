@@ -124,7 +124,6 @@ class DeltaFileReader : public DeltaStore {
   const string path_;
 };
 
-
 // Iterator over the deltas contained in a delta file.
 //
 // See DeltaIterator for details.
@@ -211,8 +210,9 @@ class DeltaFileIterator : public DeltaIterator {
 
   const DeltaFileReader *dfr_;
   shared_ptr<cfile::CFileReader> cfile_reader_;
-  const Schema projection_;
-  vector<size_t> projection_indexes_;
+
+  // Mapping from projected column index back to memrowset column index.
+  DeltaProjector projector_;
 
   // The MVCC state which determines which deltas should be applied.
   const MvccSnapshot mvcc_snap_;

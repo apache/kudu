@@ -53,8 +53,7 @@ TEST(TestSchema, TestSchema) {
   ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
 }
 
-// Test projection from many columns down to a subset.
-TEST(TestSchema, TestProjection) {
+TEST(TestSchema, TestProjectionMapping) {
   Schema schema1(boost::assign::list_of
                  (ColumnSchema("col1", STRING))
                  (ColumnSchema("col2", STRING))
@@ -63,18 +62,27 @@ TEST(TestSchema, TestProjection) {
   Schema schema2(boost::assign::list_of
                  (ColumnSchema("col3", UINT32))
                  (ColumnSchema("col2", STRING)),
-                 1);
+                 0);
+  Schema schema3(boost::assign::list_of
+                 (ColumnSchema("col3", UINT32))
+                 (ColumnSchema("col2", STRING))
+                 (ColumnSchema("col4", STRING)),
+                 0);
+  Schema schema4(boost::assign::list_of
+                 (ColumnSchema("col3", UINT32))
+                 (ColumnSchema("col2", UINT32)),
+                 0);
 
-  vector<size_t> proj;
-  ASSERT_STATUS_OK(schema2.GetProjectionFrom(schema1, &proj));
-  ASSERT_EQ(2, proj.size());
-  ASSERT_EQ(2, proj[0]);
-  ASSERT_EQ(1, proj[1]);
+  RowProjector row_projector;
+  ASSERT_STATUS_OK(row_projector.Init(schema1, schema2));
 
+  Status s = row_projector.Init(schema1, schema3);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.message().ToString(), "Not Implemented Default Value Iterator");
 
-  Schema key_cols = schema1.CreateKeyProjection();
-  ASSERT_EQ(1, key_cols.num_columns());
-  ASSERT_EQ("col1", key_cols.column(0).name());
+  s = row_projector.Init(schema1, schema4);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.message().ToString(), "must have type");
 }
 
 TEST(TestSchema, TestSwap) {
@@ -120,11 +128,12 @@ TEST(TestSchema, TestProjectTypeMismatch) {
                  1);
   Schema schema2(boost::assign::list_of
                  (ColumnSchema("val", STRING)),
-                 1);
+                 0);
 
-  vector<size_t> proj;
-  Status s = schema2.GetProjectionFrom(schema1, &proj);
-  ASSERT_STR_CONTAINS(s.ToString(), "type mismatch");
+  RowProjector row_projector;
+  Status s = row_projector.Init(schema1, schema2);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.message().ToString(), "must have type");
 }
 
 // Test projection when the type of the projected column
@@ -139,9 +148,10 @@ TEST(TestSchema, TestProjectMissingColumn) {
                  (ColumnSchema("non_present", STRING)),
                  1);
 
-  vector<size_t> proj;
-  Status s = schema2.GetProjectionFrom(schema1, &proj);
-  ASSERT_STR_CONTAINS(s.ToString(), "column 'non_present' not present");
+  RowProjector row_projector;
+  Status s = row_projector.Init(schema1, schema2);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.message().ToString(), "Not Implemented Default Value Iterator");
 }
 
 

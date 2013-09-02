@@ -104,29 +104,100 @@ inline Status CopyRow(const RowType1 &src_row, RowType2 *dst_row, ArenaType *dst
   return Status::OK();
 }
 
-// Project a row from one schema into another, using the given
-// projection mapping:
-//   projection_mapping[dst_row_column] = src_row_column
-// i.e. projection_mapping should have the same number of entries
-// as dst_row->schema().num_columns()
+// Projection mapping for the specified schemas.
+// A projection may contains:
+//  - columns that are present in the "base schema"
+//  - columns that are present in the "base schema" but with different types.
+//    In this case an adapter should be used (e.g. INT8 to INT64, INT8 to STRING, ...)
+//  - columns that are not present in the "base schema".
+//    In this case the default value of the projection column will be used.
 //
-// The projection_mapping can be built using Schema::GetProjectionFrom(...).
-//
-// Indirected data is copied into the provided dst arena.
-template<class RowType1, class RowType2, class ArenaType>
-inline Status ProjectRow(const RowType1 &src_row, const vector<size_t> &projection_mapping,
-                         RowType2 *dst_row, ArenaType *dst_arena) {
-  DCHECK_EQ(projection_mapping.size(), dst_row->schema().num_columns());
+// Example:
+//  RowProjector projector.
+//  projector.Init(base_schema, projection);
+//  projector.ProjectRow(row_a, &row_b, &row_b_arena);
+class RowProjector {
+ public:
+  typedef std::pair<size_t, size_t> ProjectionIdxMapping;
 
-  for (size_t proj_col_idx = 0; proj_col_idx < projection_mapping.size(); proj_col_idx++) {
-    size_t src_col_idx = projection_mapping[proj_col_idx];
-    typename RowType1::Cell src_cell = src_row.cell(src_col_idx);
-    typename RowType2::Cell dst_cell = dst_row->cell(proj_col_idx);
-    RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
+  RowProjector() {
   }
 
-  return Status::OK();
-}
+  // Initialize the projection mapping with the specified base_schema and projection
+  Status Init(const Schema& base_schema, const Schema& projection) {
+    base_schema_ = base_schema;
+    projection_ = projection;
+    base_cols_mapping_.clear();
+    adapter_cols_mapping_.clear();
+    projection_defaults_.clear();
+    return projection_.GetProjectionMapping(base_schema_, this);
+  }
+
+  // Project a row from one schema into another, using the projection mapping.
+  // Indirected data is copied into the provided dst arena.
+  template<class RowType1, class RowType2, class ArenaType>
+  Status ProjectRow(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) {
+
+    // Copy directly from base Data
+    BOOST_FOREACH(const ProjectionIdxMapping& base_mapping, base_cols_mapping_) {
+      typename RowType1::Cell src_cell = src_row.cell(base_mapping.second);
+      typename RowType2::Cell dst_cell = dst_row->cell(base_mapping.first);
+      RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
+    }
+
+    // TODO: Copy Adapted base Data
+    CHECK(adapter_cols_mapping_.size() == 0) << "Value Adapter not supported yet";
+
+    // TODO: Fill with Defaults
+    CHECK(projection_defaults_.size() == 0) << "Defaults not supported yet";
+
+    return Status::OK();
+  }
+
+  const Schema& projection() const { return projection_; }
+  const Schema& base_schema() const { return base_schema_; }
+
+  // Returns the mapping between base schema and projection schema columns
+  // first: is the projection column index, second: is the base_schema  index
+  const vector<ProjectionIdxMapping>& base_cols_mapping() const { return base_cols_mapping_; }
+
+  // Returns the mapping between base schema and projection schema columns
+  // that requires a type adapter.
+  // first: is the projection column index, second: is the base_schema  index
+  const vector<ProjectionIdxMapping>& adapter_cols_mapping() const { return adapter_cols_mapping_; }
+
+  // Returns the projection indexes of the columns to add with a default value
+  // (columns not present in the base_schema)
+  const vector<size_t> projection_defaults() const { return projection_defaults_; }
+
+ private:
+  friend class Schema;
+
+  Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
+    base_cols_mapping_.push_back(ProjectionIdxMapping(proj_col_idx, base_col_idx));
+    return Status::OK();
+  }
+
+  Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
+    adapter_cols_mapping_.push_back(ProjectionIdxMapping(proj_col_idx, base_col_idx));
+    return Status::OK();
+  }
+
+  Status ProjectDefaultColumn(size_t proj_col_idx) {
+    projection_defaults_.push_back(proj_col_idx);
+    return Status::OK();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RowProjector);
+
+  vector<ProjectionIdxMapping> base_cols_mapping_;
+  vector<ProjectionIdxMapping> adapter_cols_mapping_;
+  vector<size_t> projection_defaults_;
+
+  Schema base_schema_;
+  Schema projection_;
+};
 
 // Copy any indirect (eg STRING) data referenced by the given row into the
 // provided arena.

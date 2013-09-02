@@ -27,6 +27,53 @@ of a special header, followed by the packed format of the row data (more detail 
 Since the MemRowSet is fully in-memory, it will eventually fill up and "Flush" to disk --
 this process is described in detail later in this document.
 
+============================================================
+Schema Changes
+============================================================
+ + Tablet
+ |---- MemRowSet
+ |---- DiskRowSet N
+ |-------- CFileSet
+ |-------- Delta Tracker
+ |------------ Delta Memstore
+ |------------ Delta File N
+
+Each component of the Tablet (RowSets, Deltas) has a schema and
+on read the user will specify a "read schema" new schema.
+
+Having the user specifing a different schema on read means that the read path
+must handle a subset of fields of the base data + new fields not present in the base data.
+In case the fields are not present in the base data a default value must be provided
+and the column will be filled with that default.
+
+  if (projection-field is in the base-data) {
+    if (projection-field-type is equal to the base-data) {
+      use the raw base data as source
+    } else {
+      use an adapter to convert the base data to the specified type
+      (NOTE that some types cannot be converted. e.g. STRING "Hello" to INT32)
+    }
+  } else {
+    use the default provided in the projection-field as value
+  }
+
+MemRowSet, CFileSet, DeltaMemStore and DeltaFiles will do a projection,
+as explained above, to materialize the row with the user specified schema.
+In case of Deltas missing columns can be skipped since "no column, no updates".
+
+Schema IDs vs Schema Names
+ - Columns can be added
+ - Columns can be "removed" (marked as removed)
+
+So, to uniquely identify a column you have to use its name.
+Everything is fine, until you want to re-add a new column which has the same name as one previously removed.
+At this point you have to ensure that all the old data is gone.
+If we don't remove the data of the dropped column we must have a Column ID.
+The user requests (only names) are mapped to the latest schema IDs.
+
+  e.g.    cfile-set  [a, b, c, d]   -> [0, 1, 2, 3]
+          projection [b, f, a]      -> [0:2, 1:DEFAULT, 2:0]
+
 
 ============================================================
 MVCC Overview

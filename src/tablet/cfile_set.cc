@@ -10,6 +10,7 @@
 #include "cfile/cfile.h"
 #include "cfile/cfile_util.h"
 #include "common/scan_spec.h"
+#include "gutil/algorithm.h"
 #include "tablet/diskrowset.h"
 #include "tablet/cfile_set.h"
 
@@ -226,11 +227,56 @@ Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
 // Iterator
 ////////////////////////////////////////////////////////////
 
+class CFileSetIteratorProjector {
+ public:
+  // Used by CFileSet::Iterator::Init() to create the ColumnIterators
+  static Status Project(const CFileSet *base_data, const Schema& projection,
+                        ptr_vector<ColumnIterator> *col_iters) {
+    CFileSetIteratorProjector projector(base_data, projection, col_iters);
+    return projector.Run();
+  }
+
+ private:
+  CFileSetIteratorProjector(const CFileSet *base_data, const Schema& projection,
+                            ptr_vector<ColumnIterator> *col_iters)
+    : projection_(projection), base_data_(base_data), col_iters_(col_iters) {
+  }
+
+  Status Run() {
+    return projection_.GetProjectionMapping(base_data_->schema(), this);
+  }
+
+ private:
+  friend class ::kudu::Schema;
+
+  Status ProjectAdaptedColumn(size_t proj_idx, size_t base_idx) {
+    // TODO: Create an iterator to adapt the type of the base data to the one in the projection
+    return Status::NotSupported("Column Value Adaptor not implemented");
+  }
+
+  Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
+    CFileIterator *base_iter;
+    RETURN_NOT_OK(base_data_->NewColumnIterator(base_col_idx, &base_iter));
+    col_iters_->push_back(base_iter);
+    return Status::OK();
+  }
+
+  Status ProjectDefaultColumn(size_t proj_col_idx) {
+    // TODO: Create an iterator with the default column of the projection
+    return Status::NotSupported("Default Column Value not implemented");
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CFileSetIteratorProjector);
+
+  const Schema& projection_;
+  const CFileSet *base_data_;
+  ptr_vector<ColumnIterator> *col_iters_;
+};
+
+
 Status CFileSet::Iterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
-
-  RETURN_NOT_OK(projection_.GetProjectionFrom(
-                  base_data_->schema(), &projection_mapping_));
 
   // Setup Key Iterator
   CFileIterator *tmp;
@@ -238,14 +284,7 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   key_iter_.reset(tmp);
 
   // Setup column iterators.
-
-  for (size_t i = 0; i < projection_.num_columns(); i++) {
-    size_t col_in_rowset = projection_mapping_[i];
-
-    CFileIterator *iter;
-    RETURN_NOT_OK(base_data_->NewColumnIterator(col_in_rowset, &iter));
-    col_iters_.push_back(iter);
-  }
+  RETURN_NOT_OK(CFileSetIteratorProjector::Project(base_data_.get(), projection_, &col_iters_));
 
   // If there is a range predicate on the key column, push that down into an
   // ordinal range.

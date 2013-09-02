@@ -162,7 +162,7 @@ DeltaFileIterator::DeltaFileIterator(const DeltaFileReader *dfr,
                                      const MvccSnapshot &snap) :
   dfr_(dfr),
   cfile_reader_(dfr->cfile_reader()),
-  projection_(projection),
+  projector_(dfr->schema(), projection),
   mvcc_snap_(snap),
   prepared_idx_(0xdeadbeef),
   prepared_count_(0),
@@ -173,7 +173,7 @@ DeltaFileIterator::DeltaFileIterator(const DeltaFileReader *dfr,
 Status DeltaFileIterator::Init() {
   CHECK(index_iter_.get() == NULL) << "Already initted";
 
-  RETURN_NOT_OK(projection_.GetProjectionFrom(dfr_->schema(), &projection_indexes_));
+  RETURN_NOT_OK(projector_.Init());
 
   BlockPointer validx_root = cfile_reader_->validx_root();
   index_iter_.reset(
@@ -264,7 +264,7 @@ string DeltaFileIterator::PreparedDeltaBlock::ToString() const {
 }
 
 Status DeltaFileIterator::PrepareBatch(size_t nrows) {
-  CHECK(!projection_indexes_.empty()) << "Must Init()";
+  CHECK(index_iter_.get() != NULL) << "Must call Init()";
   CHECK_GT(nrows, 0);
 
   rowid_t start_row = prepared_idx_ + prepared_count_;
@@ -403,10 +403,17 @@ struct ApplyingVisitor {
 
 Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
-  size_t projected_col = projection_indexes_[col_to_apply];
-  ApplyingVisitor visitor = {this, projected_col, dst};
 
-  return VisitMutations(&visitor);
+  const unordered_map<size_t, size_t>& base_cols_map = projector_.base_cols_mapping();
+  unordered_map<size_t, size_t>::const_iterator it;
+  // TODO: Handle the "different type" case (adapter_cols_mapping)
+  if ((it = base_cols_map.find(col_to_apply)) != base_cols_map.end()) {
+    ApplyingVisitor visitor = {this, it->second, dst};
+    return VisitMutations(&visitor);
+  } else {
+    // Column not present in the deltas... skip!
+    return Status::OK();
+  }
 }
 
 // Visitor which applies deletes to the selection vector.

@@ -257,20 +257,6 @@ class Schema {
     return 0;
   }
 
-  // Determine the mapping to project from from_schema into
-  // this schema. This schema's fields must be a subset of from_schema's
-  // fields.
-  // 'indexes' is mutated such that its length is equal to this schema's
-  // length, and each index stores the source schema's column index which
-  // corresponds to the same projected column.
-  //
-  // For example:
-  // this:  [foo, bar]
-  // from_schema: [bar, baz, foo]
-  // resulting indexes: [2, 0]
-  Status GetProjectionFrom(const Schema &from_schema,
-                           vector<size_t> *indexes) const;
-
   // Return the projection of this schema which contains only
   // the key columns.
   // TODO: this should take a Schema* out-parameter to avoid an
@@ -318,6 +304,35 @@ class Schema {
     }
 
     return true;
+  }
+
+  // Loops through the projection schema and calls the projector methods:
+  // - Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx)
+  //   called if the column already exists in the base schema.
+  //
+  // TODO(MAYBE): Pass the ColumnSchema and not only the column index?
+  template <class Projector>
+  Status GetProjectionMapping(const Schema& base_schema, Projector *projector) const {
+    int proj_idx = 0;
+    BOOST_FOREACH(const ColumnSchema& col_schema, cols_) {
+      int base_idx = base_schema.find_column(col_schema.name());
+      if (base_idx >= 0) {
+        const ColumnSchema& base_col_schema = base_schema.column(base_idx);
+        // Column present in the CFileSet...
+        if (!col_schema.EqualsType(base_col_schema)) {
+          // ...but with a different type, (TODO try with an adaptor)
+          return Status::InvalidArgument("The column '" + col_schema.name() + "' must have type " +
+                                         DataType_Name(base_col_schema.type_info().type()));
+        } else {
+          RETURN_NOT_OK(projector->ProjectBaseColumn(proj_idx, base_idx));
+        }
+      } else {
+        // Column missing from the CFileSet, (TODO use the DefaultFiller iterator)
+        return Status::InvalidArgument("Not Implemented Default Value Iterator");
+      }
+      proj_idx++;
+    }
+    return Status::OK();
   }
 
  private:

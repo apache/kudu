@@ -432,20 +432,21 @@ class MemRowSet::Iterator : public RowwiseIterator {
         decoder.TwiddleDeleteStatus(&is_deleted);
 
         ConstContiguousRow reinserted(memrowset_->schema(), decoder.reinserted_row_slice());
-        RETURN_NOT_OK(ProjectRow(reinserted, projection_mapping_, dst_row, dst_arena));
+        RETURN_NOT_OK(projector_.ProjectRow(reinserted, dst_row, dst_arena));
       } else {
         DCHECK(decoder.is_update());
 
         // TODO: this is slow, since it makes multiple passes through the rowchangelist.
         // Instead, we should keep the backwards mapping of columns.
-        for (int proj_col_idx = 0; proj_col_idx < projection_mapping_.size(); proj_col_idx++) {
+        BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping, projector_.base_cols_mapping()) {
           RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
           RETURN_NOT_OK(decoder.Init());
-          int memrowset_col_idx = projection_mapping_[proj_col_idx];
-          ColumnBlock dst_col = dst_row->column_block(projection_, proj_col_idx);
+          ColumnBlock dst_col = dst_row->column_block(projection_, mapping.first);
           RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
-                                                 memrowset_col_idx, dst_arena));
+                                                 mapping.second, dst_arena));
         }
+
+        // TODO: Handle Delta Apply on projector_.adapter_cols_mapping()
       }
     }
 
@@ -471,7 +472,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   const MvccSnapshot mvcc_snap_;
 
   // Mapping from projected column index back to memrowset column index.
-  vector<size_t> projection_mapping_;
+  RowProjector projector_;
 
   size_t prepared_count_;
   size_t prepared_idx_in_leaf_;

@@ -222,6 +222,9 @@ class RowChangeListDecoder {
     return Status::OK();
   }
 
+  // TODO: It will be nice have the same function taking the destination type
+  //       to been able to call the "alter type" adapter.
+  // This method is used by MemRowSet, DeltaMemStore and DeltaFile.
   template<class ColumnType, class ArenaType>
   Status ApplyToOneColumn(size_t row_idx, ColumnType *dst_col, size_t col_idx, ArenaType *arena) {
     DCHECK_EQ(RowChangeList::kUpdate, type_);

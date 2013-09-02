@@ -116,7 +116,6 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
                          const Schema &projection,
                          const MvccSnapshot &snapshot)
   : dms_(dms),
-    projection_(projection),
     mvcc_snapshot_(snapshot),
     iter_(dms->tree_.NewIterator()),
     initted_(false),
@@ -124,12 +123,12 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
     prepared_count_(0),
     prepared_(false),
     seeked_(false),
-    prepared_buf_(kPreparedBufInitialCapacity) {
+    prepared_buf_(kPreparedBufInitialCapacity),
+    projector_(dms_->schema(), projection) {
 }
 
 Status DMSIterator::Init() {
-  projection_indexes_.clear();
-  RETURN_NOT_OK(projection_.GetProjectionFrom(dms_->schema_, &projection_indexes_));
+  RETURN_NOT_OK(projector_.Init());
   initted_ = true;
   return Status::OK();
 }
@@ -218,7 +217,16 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_EQ(prepared_count_, dst->nrows());
   Slice src(prepared_buf_);
 
-  size_t projected_col = projection_indexes_[col_to_apply];
+  const unordered_map<size_t, size_t>& base_cols_map = projector_.base_cols_mapping();
+  unordered_map<size_t, size_t>::const_iterator it;
+  size_t projected_col;
+  // TODO: Handle the "different type" case (adapter_cols_mapping)
+  if ((it = base_cols_map.find(col_to_apply)) != base_cols_map.end()) {
+    projected_col = it->second;
+  } else {
+    // Column not present in the deltas... skip!
+    return Status::OK();
+  }
 
   while (!src.empty()) {
     DeltaKey key;
@@ -242,8 +250,6 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
     } else {
       LOG(FATAL) << "TODO: unhandled mutation type. " << changelist.ToString(dms_->schema());
     }
-
-#undef CORRUPTION_MSG
   }
 
 
