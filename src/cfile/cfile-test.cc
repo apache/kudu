@@ -584,6 +584,36 @@ TEST_F(TestCFile, TestMetadata) {
   }
 }
 
+TEST_F(TestCFile, TestDefaultColumnIter) {
+  const int kNumItems = 64;
+  uint8_t null_bitmap[BitmapSize(kNumItems)];
+  uint32_t data[kNumItems];
+
+  uint32_t value = 15;
+  DefaultColumnValueIterator iter(&value);
+  ColumnBlock col(GetTypeInfo(UINT32), NULL, data, kNumItems, NULL);
+  iter.Scan(&col);
+  for (size_t i = 0; i < col.nrows(); ++i) {
+    ASSERT_EQ(value, *reinterpret_cast<const uint32_t *>(col.cell_ptr(i)));
+  }
+
+  value = 321;
+  DefaultColumnValueIterator nullable_iter(&value);
+  ColumnBlock nullable_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
+  nullable_iter.Scan(&nullable_col);
+  for (size_t i = 0; i < nullable_col.nrows(); ++i) {
+    ASSERT_FALSE(nullable_col.is_null(i));
+    ASSERT_EQ(value, *reinterpret_cast<const uint32_t *>(nullable_col.cell_ptr(i)));
+  }
+
+  DefaultColumnValueIterator null_iter(NULL);
+  ColumnBlock null_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
+  null_iter.Scan(&null_col);
+  for (size_t i = 0; i < null_col.nrows(); ++i) {
+    ASSERT_TRUE(null_col.is_null(i));
+  }
+}
+
 TEST_F(TestCFile, TestAppendRaw) {
   const string path = GetTestPath("testRaw");
   TestReadWriteRawBlocks(path, NO_COMPRESSION, 1000);

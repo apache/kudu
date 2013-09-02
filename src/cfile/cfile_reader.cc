@@ -278,6 +278,38 @@ Status CFileReader::NewIterator(CFileIterator **iter) const {
 }
 
 ////////////////////////////////////////////////////////////
+// Default Column Value Iterator
+////////////////////////////////////////////////////////////
+Status DefaultColumnValueIterator::SeekToOrdinal(rowid_t ord_idx) {
+  ordinal_ = ord_idx;
+  return Status::OK();
+}
+
+Status DefaultColumnValueIterator::PrepareBatch(size_t *n) {
+  batch_ = *n;
+  return Status::OK();
+}
+
+Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
+  if (dst->is_nullable()) {
+    ColumnDataView dst_view(dst);
+    dst_view.SetNullBits(dst->nrows(), value_ != NULL);
+  }
+  if (value_ != NULL) {
+    for (size_t i = 0; i < dst->nrows(); ++i) {
+      dst->SetCellValue(i, value_);
+    }
+  }
+  io_stats_.rows_read += dst->nrows();
+  return Status::OK();
+}
+
+Status DefaultColumnValueIterator::FinishBatch() {
+  ordinal_ += batch_;
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
 // Iterator
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(const CFileReader *reader,

@@ -178,8 +178,11 @@ class CFileReader {
 
 };
 
-
-class CFileIterator {
+// Column Iterator interface used by the CFileSet.
+// Implemented by the CFileIterator, DefaultColumnValueIterator
+// and the ColumnValueTypeAdaptorIterator.
+// It is used to fill the data requested by the projection.
+class ColumnIterator {
  public:
   // Statistics on the amount of IO done by the iterator.
   struct IOStatistics {
@@ -197,7 +200,90 @@ class CFileIterator {
     // rows
   };
 
+  virtual ~ColumnIterator() {}
 
+  // Seek to the given ordinal entry in the file.
+  // Entry 0 is the first entry written to the file.
+  // If provided seek point is past the end of the file,
+  // then returns a NotFound Status.
+  // TODO: do we ever want to be able to seek to the end of the file?
+  virtual Status SeekToOrdinal(rowid_t ord_idx) = 0;
+
+  // Return true if this reader is currently seeked.
+  // If the iterator is not seeked, it is an error to call any functions except
+  // for seek (including GetCurrentOrdinal).
+  virtual bool seeked() const = 0;
+
+  // Get the ordinal index that the iterator is currently pointed to.
+  //
+  // Prior to calling PrepareBatch(), this returns the position after the last
+  // seek. PrepareBatch() and Scan() do not change the position returned by this
+  // function. FinishBatch() advances the ordinal to the position of the next
+  // block to be prepared.
+  virtual rowid_t GetCurrentOrdinal() const = 0;
+
+  // Prepare to read up to *n into the given column block.
+  // On return sets *n to the number of prepared rows, which is always
+  // <= the requested value.
+  //
+  // This assumes that dst->size() >= *n on input.
+  //
+  // If there are at least dst->size() values remaining in the underlying file,
+  // this will always return *n == dst->size(). In other words, this does not
+  // ever result in a "short read".
+  virtual Status PrepareBatch(size_t *n) = 0;
+
+  // Copy values into the prepared column block.
+  // Any indirected values (eg strings) are copied into the dst block's
+  // arena.
+  // This does _not_ advance the position in the underlying file. Multiple
+  // calls to Scan() will re-read the same values.
+  virtual Status Scan(ColumnBlock *dst) = 0;
+
+  // Finish processing the current batch, advancing the iterators
+  // such that the next call to PrepareBatch() will start where the previous
+  // batch left off.
+  virtual Status FinishBatch() = 0;
+
+  virtual const IOStatistics &io_statistics() const = 0;
+};
+
+// ColumnIterator that fills the ColumnBlock with the specified value.
+// It is used by the CFileSet to handle the case of a column present
+// in the projection schema but not in the base data.
+//
+// Example:
+//    DefaultColumnValueIterator iter;
+//    iter.Scan(&column_block);
+class DefaultColumnValueIterator : public ColumnIterator {
+ public:
+  DefaultColumnValueIterator(const void *value)
+    : value_(value) {
+  }
+
+  Status SeekToOrdinal(rowid_t ord_idx);
+
+  bool seeked() const { return true; }
+
+  rowid_t GetCurrentOrdinal() const { return ordinal_; }
+
+  Status PrepareBatch(size_t *n);
+  Status Scan(ColumnBlock *dst);
+  Status FinishBatch();
+
+  const IOStatistics &io_statistics() const { return io_stats_; }
+
+ private:
+  const void *value_;
+
+  size_t batch_;
+  rowid_t ordinal_;
+  IOStatistics io_stats_;
+};
+
+
+class CFileIterator : public ColumnIterator {
+ public:
   CFileIterator(const CFileReader *reader,
                 const BlockPointer *posidx_root,
                 const BlockPointer *validx_root);

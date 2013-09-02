@@ -325,7 +325,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 Status CFileSet::Iterator::SeekToOrdinal(rowid_t ord_idx) {
   DCHECK(initted_);
   if (ord_idx < row_count_) {
-    BOOST_FOREACH(CFileIterator &col_iter, col_iters_) {
+    BOOST_FOREACH(ColumnIterator& col_iter, col_iters_) {
       RETURN_NOT_OK(col_iter.SeekToOrdinal(ord_idx));
     }
   } else {
@@ -367,7 +367,7 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
     return Status::OK();
   }
 
-  CFileIterator &col_iter = col_iters_[idx];
+  ColumnIterator& col_iter = col_iters_[idx];
   size_t n = prepared_count_;
 
   if (!col_iter.seeked() || col_iter.GetCurrentOrdinal() != cur_idx_) {
@@ -407,7 +407,7 @@ Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
   DCHECK_LT(col_idx, col_iters_.size());
 
   RETURN_NOT_OK(PrepareColumn(col_idx));
-  CFileIterator &iter = col_iters_[col_idx];
+  ColumnIterator& iter = col_iters_[col_idx];
   return iter.Scan(dst);
 }
 
@@ -431,10 +431,10 @@ Status CFileSet::Iterator::FinishBatch() {
 }
 
 
-void CFileSet::Iterator::GetIOStatistics(vector<CFileIterator::IOStatistics> *stats) {
+void CFileSet::Iterator::GetIOStatistics(vector<ColumnIterator::IOStatistics> *stats) {
   stats->clear();
   stats->reserve(col_iters_.size());
-  BOOST_FOREACH(const CFileIterator &iter, col_iters_) {
+  BOOST_FOREACH(const ColumnIterator& iter, col_iters_) {
     stats->push_back(iter.io_statistics());
   }
 }

@@ -31,6 +31,7 @@ using boost::ptr_vector;
 using kudu::cfile::BloomFileReader;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
+using kudu::cfile::ColumnIterator;
 using std::tr1::shared_ptr;
 
 // Set of CFiles which make up the base data for a single rowset
@@ -136,7 +137,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   }
 
   // Collect the IO statistics for each of the underlying columns.
-  void GetIOStatistics(vector<CFileIterator::IOStatistics> *stats);
+  void GetIOStatistics(vector<ColumnIterator::IOStatistics> *stats);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Iterator);
@@ -170,7 +171,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   // Iterator for the key column in the underlying data.
   gscoped_ptr<CFileIterator> key_iter_;
-  ptr_vector<CFileIterator> col_iters_;
+  ptr_vector<ColumnIterator> col_iters_;
 
   bool initted_;
 
