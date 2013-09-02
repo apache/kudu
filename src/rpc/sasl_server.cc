@@ -57,24 +57,29 @@ SaslServer::~SaslServer() {
 }
 
 Status SaslServer::EnableAnonymous() {
+  DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
   return helper_.EnableAnonymous();
 }
 
 Status SaslServer::EnablePlain(gscoped_ptr<AuthStore> authstore) {
+  DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
   RETURN_NOT_OK(helper_.EnablePlain());
   authstore_.swap(authstore);
   return Status::OK();
 }
 
 void SaslServer::set_local_addr(const Sockaddr& addr) {
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   helper_.set_local_addr(addr);
 }
 
 void SaslServer::set_remote_addr(const Sockaddr& addr) {
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   helper_.set_remote_addr(addr);
 }
 
 void SaslServer::set_server_fqdn(const string& domain_name) {
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   helper_.set_server_fqdn(domain_name);
 }
 
@@ -114,9 +119,11 @@ Status SaslServer::Init(const string& service_type) {
 Status SaslServer::Negotiate() {
   DVLOG(4) << "Called SaslServer::Negotiate()";
 
-  // Ensure we are not called more than once.
-  if (server_state_ != SaslNegotiationState::INITIALIZED) {
-    return Status::IllegalState("Negotiate() may only be called once per SaslServer object.");
+  // Ensure we are called exactly once, and in the right order.
+  if (server_state_ == SaslNegotiationState::NEW) {
+    return Status::IllegalState("SaslServer: Init() must be called before calling Negotiate()");
+  } else if (server_state_ == SaslNegotiationState::NEGOTIATED) {
+    return Status::IllegalState("SaslServer: Negotiate() may only be called once per object.");
   }
 
   // Set socket to use blocking calls during negotiation

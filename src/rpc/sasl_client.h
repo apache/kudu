@@ -35,11 +35,11 @@ class SaslClient {
   ~SaslClient();
 
   // Enable ANONYMOUS authentication.
-  // Call before Init().
+  // Call after Init().
   Status EnableAnonymous();
 
   // Enable PLAIN authentication.
-  // Call before Init().
+  // Call after Init().
   Status EnablePlain(const string& user, const string& pass);
 
   // Specify IP:port of local side of connection.

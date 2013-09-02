@@ -37,11 +37,11 @@ class SaslServer {
   ~SaslServer();
 
   // Enable ANONYMOUS authentication.
-  // Call before Init().
+  // Call after Init().
   Status EnableAnonymous();
 
   // Enable PLAIN authentication. TODO: Support impersonation.
-  // Call before Init().
+  // Call after Init().
   Status EnablePlain(gscoped_ptr<AuthStore> authstore);
 
   // Specify IP:port of local side of connection.
@@ -74,7 +74,6 @@ class SaslServer {
   // SASL callback for PLAIN authentication via SASL_CB_SERVER_USERDB_CHECKPASS.
   int PlainAuthCb(sasl_conn_t* conn, const char* user, const char* pass,
                   unsigned passlen, struct propctx* propctx);
-
 
  private:
   // Parse and validate connection header.

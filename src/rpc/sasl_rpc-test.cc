@@ -75,15 +75,15 @@ static void RunNegotiationTest(socket_callable_t server_runner, socket_callable_
 
 static void RunAnonNegotiationServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
-  sasl_server.EnableAnonymous();
   CHECK_OK(sasl_server.Init(kSaslAppName));
+  sasl_server.EnableAnonymous();
   CHECK_OK(sasl_server.Negotiate());
 }
 
 static void RunAnonNegotiationClient(Socket* conn) {
   SaslClient sasl_client(kSaslAppName, conn->GetFd());
-  sasl_client.EnableAnonymous();
   CHECK_OK(sasl_client.Init(kSaslAppName));
+  sasl_client.EnableAnonymous();
   CHECK_OK(sasl_client.Negotiate());
 }
 
@@ -98,15 +98,15 @@ static void RunPlainNegotiationServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
   gscoped_ptr<AuthStore> authstore(new AuthStore());
   authstore->Add("danger", "burrito");
-  sasl_server.EnablePlain(authstore.Pass());
   CHECK_OK(sasl_server.Init(kSaslAppName));
+  sasl_server.EnablePlain(authstore.Pass());
   CHECK_OK(sasl_server.Negotiate());
 }
 
 static void RunPlainNegotiationClient(Socket* conn) {
   SaslClient sasl_client(kSaslAppName, conn->GetFd());
-  sasl_client.EnablePlain("danger", "burrito");
   CHECK_OK(sasl_client.Init(kSaslAppName));
+  sasl_client.EnablePlain("danger", "burrito");
   CHECK_OK(sasl_client.Negotiate());
 }
 
@@ -121,16 +121,16 @@ static void RunPlainFailingNegotiationServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
   gscoped_ptr<AuthStore> authstore(new AuthStore());
   authstore->Add("danger", "burrito");
-  sasl_server.EnablePlain(authstore.Pass());
   CHECK_OK(sasl_server.Init(kSaslAppName));
+  sasl_server.EnablePlain(authstore.Pass());
   Status s = sasl_server.Negotiate();
   ASSERT_TRUE(s.IsNotAuthorized()) << "Expected auth failure! Got: " << s.ToString();
 }
 
 static void RunPlainFailingNegotiationClient(Socket* conn) {
   SaslClient sasl_client(kSaslAppName, conn->GetFd());
-  sasl_client.EnablePlain("unknown", "burrito");
   CHECK_OK(sasl_client.Init(kSaslAppName));
+  sasl_client.EnablePlain("unknown", "burrito");
   Status s = sasl_client.Negotiate();
   ASSERT_TRUE(s.IsNotAuthorized()) << "Expected auth failure! Got: " << s.ToString();
 }
