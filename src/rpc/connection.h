@@ -16,6 +16,8 @@
 #include <vector>
 
 #include "rpc/client_call.h"
+#include "rpc/sasl_client.h"
+#include "rpc/sasl_server.h"
 #include "rpc/server_call.h"
 #include "rpc/transfer.h"
 #include "util/monotime.h"
@@ -59,21 +61,18 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   // reactor_thread: the reactor that owns us.
   // remote: the address of the remote end
   // socket: the socket to take ownership of.
-  // connect_in_progress: true only if we are in the middle of a connect()
-  //                      operation.
   // direction: whether we are the client or server side
   Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
-             int socket, bool connect_in_progress, Direction direction);
+             int socket, Direction direction);
+
+  // Set underlying socket to non-blocking (or blocking) mode.
+  Status SetNonBlocking(bool enabled);
 
   // Register our socket with an epoll loop.  We will only ever be registered in
   // one epoll loop at a time.
   void EpollRegister(ev::loop_ref& loop);
 
   ~Connection();
-
-  bool connect_in_progress() const {
-    return connect_in_progress_;
-  }
 
   MonoTime last_activity_time() const {
     return last_activity_time_;
@@ -126,6 +125,28 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   std::string ToString() const;
 
   Direction direction() const { return direction_; }
+
+  Socket *socket() { return &socket_; }
+
+  // Return SASL client instance for this connection.
+  SaslClient &sasl_client() { return sasl_client_; }
+
+  // Return SASL server instance for this connection.
+  SaslServer &sasl_server() { return sasl_server_; }
+
+  // Initialize SASL client before negotiation begins.
+  Status InitSaslClient();
+
+  // Initialize SASL server before negotiation begins.
+  Status InitSaslServer();
+
+  // Go through the process of transferring control of the underlying socket back to the Reactor.
+  void CompleteNegotiation(const Status &negotiation_status);
+
+  // Indicate that negotiation is complete and that the Reactor is now in control of the socket.
+  void MarkNegotiationComplete();
+
+  ReactorThread *reactor_thread() const { return reactor_thread_; }
 
  private:
   friend struct CallAwaitingResponse;
@@ -191,11 +212,6 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   // The name of the service operating on this connection.
   std::string service_name_;
 
-  // with non-blocking I/O, connect may not return immediately.
-  // This boolean tracks whether we are in the middle of a connect()
-  // operation, connecting to a remote host.
-  bool connect_in_progress_;
-
   // The credentials of the user operating on this connection (if a client user).
   UserCredentials user_cred_;
 
@@ -238,6 +254,15 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   // Also a funny name.
   ObjectPool<CallAwaitingResponse> car_pool_;
   typedef ObjectPool<CallAwaitingResponse>::scoped_ptr scoped_car;
+
+  // SASL client instance used for connection negotiation when Direction == CLIENT.
+  SaslClient sasl_client_;
+
+  // SASL server instance used for connection negotiation when Direction == SERVER.
+  SaslServer sasl_server_;
+
+  // Whether we completed connection negotiation.
+  bool negotiation_complete_;
 };
 
 } // namespace rpc

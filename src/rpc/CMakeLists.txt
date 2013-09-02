@@ -17,6 +17,7 @@ ADD_LIBRARY(krpc
     connection.cc
     constants.cc
     messenger.cc
+    negotiation.cc
     proxy.cc
     reactor.cc
     rpc_controller.cc

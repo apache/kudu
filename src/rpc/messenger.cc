@@ -24,6 +24,7 @@
 #include "util/monotime.h"
 #include "util/net/socket.h"
 #include "util/status.h"
+#include "util/task_executor.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -40,6 +41,7 @@ MessengerBuilder::MessengerBuilder(const std::string &name)
   : name_(name),
     connection_keepalive_time_(MonoDelta::FromSeconds(10)),
     num_reactors_(4),
+    num_negotiation_threads_(4),
     coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
     service_queue_length_(50) {
 }
@@ -51,6 +53,11 @@ MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelt
 
 MessengerBuilder& MessengerBuilder::set_num_reactors(int num_reactors) {
   num_reactors_ = num_reactors;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_negotiation_threads(int num_negotiation_threads) {
+  num_negotiation_threads_ = num_negotiation_threads;
   return *this;
 }
 
@@ -103,6 +110,7 @@ void Messenger::Shutdown() {
   BOOST_FOREACH(Reactor* reactor, reactors_) {
     reactor->Shutdown();
   }
+  negotiation_executor_->Shutdown();
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
@@ -160,6 +168,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(this, i, bld));
   }
+  negotiation_executor_.reset(TaskExecutor::CreateNew(bld.num_negotiation_threads_));
 }
 
 Messenger::~Messenger() {

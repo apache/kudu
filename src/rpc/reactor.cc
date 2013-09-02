@@ -19,12 +19,15 @@
 #include "gutil/gscoped_ptr.h"
 #include "rpc/connection.h"
 #include "rpc/messenger.h"
-#include "util/net/socket.h"
+#include "rpc/negotiation.h"
+#include "rpc/sasl_client.h"
+#include "rpc/sasl_server.h"
 #include "rpc/transfer.h"
 #include "util/countdown_latch.h"
 #include "util/errno.h"
 #include "util/monotime.h"
 #include "util/status.h"
+#include "util/net/socket.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -140,7 +143,11 @@ void ReactorThread::AsyncHandler(ev::async &watcher, int revents) {
 
 void ReactorThread::RegisterConnection(const shared_ptr<Connection> &conn) {
   DCHECK(IsCurrentThread());
-  conn->EpollRegister(loop_);
+  Status s = StartConnectionNegotiation(conn);
+  if (!s.ok()) {
+    LOG(ERROR) << "Server connection negotiation failed: " << s.ToString();
+    DestroyConnection(conn.get(), s);
+  }
   server_conns_.push_back(conn);
 }
 
@@ -255,15 +262,57 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_
   RETURN_NOT_OK(StartConnect(&sock, conn_id.remote(), &connect_in_progress));
 
   // Register the new connection in our map.
-  (*conn).reset(new Connection(this, conn_id.remote(), sock.Release(), connect_in_progress,
-                             Connection::CLIENT));
+  (*conn).reset(new Connection(this, conn_id.remote(), sock.Release(), Connection::CLIENT));
   (*conn)->set_service_name(conn_id.service_name());
   (*conn)->set_user_cred(conn_id.user_cred());
-  (*conn)->EpollRegister(loop_);
+
+  // Kick off blocking client connection negotiation.
+  RETURN_NOT_OK(StartConnectionNegotiation(*conn));
 
   // Insert into the client connection map to avoid duplicate connection requests.
   client_conns_.insert(conn_map_t::value_type(conn_id, *conn));
   return Status::OK();
+}
+
+Status ReactorThread::StartConnectionNegotiation(const shared_ptr<Connection> &conn) {
+  DCHECK(IsCurrentThread());
+
+  RETURN_NOT_OK(conn->SetNonBlocking(false));
+  if (conn->direction() == Connection::SERVER) {
+    RETURN_NOT_OK(conn->InitSaslServer());
+    shared_ptr<Task> task(new ServerNegotiationTask(conn));
+    shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
+    shared_ptr<Future> future;
+    reactor()->messenger()->negotiation_executor()->Submit(task, &future);
+    future->AddListener(callback);
+  } else {
+    RETURN_NOT_OK(conn->InitSaslClient());
+    shared_ptr<Task> task(new ClientNegotiationTask(conn));
+    shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
+    shared_ptr<Future> future;
+    reactor()->messenger()->negotiation_executor()->Submit(task, &future);
+    future->AddListener(callback);
+  }
+  return Status::OK();
+}
+
+void ReactorThread::CompleteConnectionNegotiation(const shared_ptr<Connection> &conn,
+      const Status &status) {
+  DCHECK(IsCurrentThread());
+  if (PREDICT_FALSE(!status.ok())) {
+    DestroyConnection(conn.get(), status);
+    return;
+  }
+
+  // Switch the socket back to non-blocking mode after negotiation.
+  Status s = conn->SetNonBlocking(true);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(DFATAL) << "Unable to set connection to non-blocking mode: " << s.ToString();
+    DestroyConnection(conn.get(), s);
+    return;
+  }
+  conn->MarkNegotiationComplete();
+  conn->EpollRegister(loop_);
 }
 
 Status ReactorThread::CreateClientSocket(Socket *sock) {
@@ -417,7 +466,7 @@ class RegisterConnectionTask : public ReactorTask {
 void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
   shared_ptr<Connection> conn(
-    new Connection(&thread_, remote, socket->Release(), false, Connection::SERVER));
+    new Connection(&thread_, remote, socket->Release(), Connection::SERVER));
   RegisterConnectionTask *task = new RegisterConnectionTask(conn);
   ScheduleReactorTask(task);
 }

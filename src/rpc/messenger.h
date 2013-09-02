@@ -21,6 +21,10 @@
 #include "util/status.h"
 
 namespace kudu {
+
+class FutureTask;
+class TaskExecutor;
+
 namespace rpc {
 
 class AcceptorPool;
@@ -58,6 +62,10 @@ class MessengerBuilder {
   // receiving.
   MessengerBuilder &set_num_reactors(int num_reactors);
 
+  // Set the number of connection-negotiation threads that will be used to handle the
+  // blocking connection-negotiation step.
+  MessengerBuilder &set_negotiation_threads(int num_negotiation_threads);
+
   // Set the granularity with which connections are checked for keepalive.
   MessengerBuilder &set_coarse_timer_granularity(const MonoDelta &granularity);
 
@@ -71,6 +79,7 @@ class MessengerBuilder {
   const std::string name_;
   MonoDelta connection_keepalive_time_;
   int num_reactors_;
+  int num_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
   size_t service_queue_length_;
 };
@@ -115,6 +124,8 @@ class Messenger {
   // Take ownership of the socket via Socket::Release
   void RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote);
 
+  TaskExecutor* negotiation_executor() const { return negotiation_executor_.get(); }
+
   BlockingQueue<InboundCall*>& service_queue() {
     return service_queue_;
   }
@@ -150,6 +161,8 @@ class Messenger {
   acceptor_vec_t acceptor_pools_;
 
   std::vector<Reactor*> reactors_;
+
+  gscoped_ptr<TaskExecutor> negotiation_executor_;
 
   DISALLOW_COPY_AND_ASSIGN(Messenger);
 };

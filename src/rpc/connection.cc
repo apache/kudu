@@ -14,9 +14,13 @@
 #include <vector>
 
 #include "gutil/map-util.h"
+#include "rpc/constants.h"
 #include "rpc/messenger.h"
 #include "rpc/reactor.h"
 #include "rpc/rpc_controller.h"
+#include "rpc/rpc_header.pb.h"
+#include "rpc/sasl_client.h"
+#include "rpc/sasl_server.h"
 #include "rpc/transfer.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -31,21 +35,28 @@ namespace rpc {
 /// Connection
 ///
 Connection::Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
-                       int socket, bool connect_in_progress, Direction direction)
+                       int socket, Direction direction)
   : reactor_thread_(reactor_thread),
     socket_(socket),
     remote_(remote),
-    connect_in_progress_(connect_in_progress),
     direction_(direction),
     last_activity_time_(reactor_thread_->cur_time()),
-    next_call_id_(1) {
+    next_call_id_(1),
+    sasl_client_(kSaslAppName, socket),
+    sasl_server_(kSaslAppName, socket),
+    negotiation_complete_(false) {
+}
+
+Status Connection::SetNonBlocking(bool enabled) {
+  DCHECK(reactor_thread_->IsCurrentThread());
+  return socket_.SetNonBlocking(enabled);
 }
 
 void Connection::EpollRegister(ev::loop_ref& loop) {
   write_io_.set(loop);
   write_io_.set(socket_.GetFd(), ev::WRITE);
   write_io_.set<Connection, &Connection::WriteHandler>(this);
-  if (connect_in_progress_) {
+  if (direction_ == CLIENT && negotiation_complete_) {
     write_io_.start();
   }
   read_io_.set(loop);
@@ -125,12 +136,12 @@ void Connection::QueueOutbound(gscoped_ptr<OutboundTransfer> transfer) {
 
   DVLOG(3) << "Queueing transfer: " << transfer->HexDump();
 
-  bool was_empty = outbound_transfers_.empty();
   outbound_transfers_.push_back(*transfer.release());
 
-  if (was_empty) {
+  if (negotiation_complete_ && !write_io_.is_active()) {
     // If we weren't currently in the middle of sending anything,
     // then our write_io_ interest is stopped. Need to re-start it.
+    // Only do this after connection negotiation is done doing its work.
     write_io_.start();
   }
 }
@@ -439,17 +450,6 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
     return;
   }
   DVLOG(3) << ToString() << ": writeHandler: revents = " << revents;
-  if (connect_in_progress_) {
-    // If the connect operation was in progress last time we checked on this
-    // socket, we need to determine whether it finished.
-    Status status = socket_.GetSockError();
-    if (!status.ok()) {
-      reactor_thread_->DestroyConnection(this, status);
-      return;
-    }
-    VLOG(3) << ToString() << ": writeHandler: finished connect.";
-    connect_in_progress_ = false;
-  }
 
   OutboundTransfer *transfer;
   if (outbound_transfers_.empty()) {
@@ -489,13 +489,62 @@ std::string Connection::ToString() const {
   return StringPrintf("Connection{socket_=%d, remote_=%s, "
         "reactor_=%s, direction_=%s, "
         "outbound_transfers_.empty()=%s, "
-        "connect_in_progress_=%s, last_activity_time=%s}",
+        "negotiation_complete=%s, last_activity_time=%s}",
         socket_.GetFd(), remote_.ToString().c_str(),
         reactor_thread_->reactor()->name().c_str(),
         direction_ == SERVER ? "server" : "client",
         (outbound_transfers_.empty() ? "true" : "false"),
-        (connect_in_progress_ ? "true" : "false"),
+        (negotiation_complete_ ? "true" : "false"),
         last_activity_time_.ToString().c_str());
+}
+
+Status Connection::InitSaslClient() {
+  RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
+  RETURN_NOT_OK(sasl_client().EnableAnonymous());
+  return Status::OK();
+}
+
+Status Connection::InitSaslServer() {
+  RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
+  // TODO: Patch for "fake plain" to follow.
+  RETURN_NOT_OK(sasl_server().EnableAnonymous());
+  return Status::OK();
+}
+
+// Reactor task that transitions this Connection from connection negotiation to
+// regular RPC handling. Destroys Connection on negotiation error.
+class NegotiationCompletedTask : public ReactorTask {
+ public:
+  NegotiationCompletedTask(const shared_ptr<Connection>& conn,
+      const Status& negotiation_status)
+    : conn_(conn),
+      negotiation_status_(negotiation_status) {
+  }
+
+  virtual void Run(ReactorThread *rthread) {
+    rthread->CompleteConnectionNegotiation(conn_, negotiation_status_);
+    delete this;
+  }
+
+  virtual void Abort(const Status &status) {
+    conn_->Shutdown(status);
+    delete this;
+  }
+
+ private:
+  shared_ptr<Connection> conn_;
+  Status negotiation_status_;
+};
+
+void Connection::CompleteNegotiation(const Status& negotiation_status) {
+  NegotiationCompletedTask *task =
+      new NegotiationCompletedTask(shared_from_this(), negotiation_status);
+  reactor_thread_->reactor()->ScheduleReactorTask(task);
+}
+
+void Connection::MarkNegotiationComplete() {
+  DCHECK(reactor_thread_->IsCurrentThread());
+  negotiation_complete_ = true;
 }
 
 } // namespace rpc

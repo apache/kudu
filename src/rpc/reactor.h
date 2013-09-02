@@ -109,6 +109,15 @@ class ReactorThread {
   // running. Should be used in DCHECK assertions.
   bool IsCurrentThread() const;
 
+  // Begin the process of connection negotiation.
+  // Must be called from the reactor thread.
+  Status StartConnectionNegotiation(const std::tr1::shared_ptr<Connection> &conn);
+
+  // Transition back from negotiating to processing requests.
+  // Must be called from the reactor thread.
+  void CompleteConnectionNegotiation(const std::tr1::shared_ptr<Connection> &conn,
+      const Status &status);
+
  private:
   friend class AssignOutboundCallTask;
   friend class GetMetricsTask;
