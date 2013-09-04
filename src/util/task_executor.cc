@@ -46,7 +46,7 @@ bool FutureTask::Abort() {
 }
 
 void FutureTask::AddListener(
-    const std::tr1::shared_ptr<FutureCallback>& callback) {
+    std::tr1::shared_ptr<FutureCallback> callback) {
   boost::lock_guard<LockType> l(lock_);
   if (state_ != kTaskFinishedState || kTaskAbortedState) {
     listeners_.push_back(callback);

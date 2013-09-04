@@ -69,7 +69,7 @@ class Future {
   // queue and it will be executed in the same execution thread of the task.
   // otherwise it will be execution in the caller thread.
   virtual void AddListener(
-      const std::tr1::shared_ptr<FutureCallback>& callback) = 0;
+      std::tr1::shared_ptr<FutureCallback> callback) = 0;
 
   // Add a binded function to the listener list.
   // This function will be called on task success or failure.
@@ -170,7 +170,7 @@ class FutureTask : public Runnable, public Future {
 
   bool Abort();
 
-  void AddListener(const std::tr1::shared_ptr<FutureCallback>& callback);
+  void AddListener(std::tr1::shared_ptr<FutureCallback> callback);
 
   bool is_aborted() const;
 
