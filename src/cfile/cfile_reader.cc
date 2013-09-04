@@ -296,8 +296,19 @@ Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
     dst_view.SetNullBits(dst->nrows(), value_ != NULL);
   }
   if (value_ != NULL) {
-    for (size_t i = 0; i < dst->nrows(); ++i) {
-      dst->SetCellValue(i, value_);
+    if (type_ == STRING) {
+      const Slice *src_slice = reinterpret_cast<const Slice *>(value_);
+      Slice dst_slice;
+      if (PREDICT_FALSE(!dst->arena()->RelocateSlice(*src_slice, &dst_slice))) {
+        return Status::IOError("out of memory copying slice", src_slice->ToString());
+      }
+      for (size_t i = 0; i < dst->nrows(); ++i) {
+        dst->SetCellValue(i, &dst_slice);
+      }
+    } else {
+      for (size_t i = 0; i < dst->nrows(); ++i) {
+        dst->SetCellValue(i, value_);
+      }
     }
   }
   io_stats_.rows_read += dst->nrows();

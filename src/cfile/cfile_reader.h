@@ -257,8 +257,8 @@ class ColumnIterator {
 //    iter.Scan(&column_block);
 class DefaultColumnValueIterator : public ColumnIterator {
  public:
-  DefaultColumnValueIterator(const void *value)
-    : value_(value) {
+  DefaultColumnValueIterator(DataType type, const void *value)
+    : type_(type), value_(value) {
   }
 
   Status SeekToOrdinal(rowid_t ord_idx);
@@ -274,6 +274,7 @@ class DefaultColumnValueIterator : public ColumnIterator {
   const IOStatistics &io_statistics() const { return io_stats_; }
 
  private:
+  const DataType type_;
   const void *value_;
 
   size_t batch_;
