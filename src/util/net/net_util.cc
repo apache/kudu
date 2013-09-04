@@ -81,7 +81,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
     CHECK_EQ(res->ai_family, AF_INET);
     struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr);
     addr->sin_port = htons(port_);
-    Sockaddr sockaddr(addr);
+    Sockaddr sockaddr(*addr);
     addresses->push_back(sockaddr);
     VLOG(1) << "Resolved address " << sockaddr.ToString()
             << " for host/port " << ToString();

@@ -53,6 +53,10 @@ class Webserver {
   // Stops the webserver synchronously.
   void Stop();
 
+  // Return the addresses that this server has successfully
+  // bound to. Requires that the server has been Start()ed.
+  Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const;
+
   // Register a callback for a URL path. Path should not include the
   // http://hostname/ prefix. If is_styled is true, the page is meant to be for
   // people to look at and is styled.  If false, it is meant to be for machines to

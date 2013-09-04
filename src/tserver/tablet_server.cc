@@ -23,11 +23,14 @@ using kudu::tablet::Tablet;
 namespace kudu {
 namespace tserver {
 
-TabletServer::TabletServer(const RpcServerOptions& opts)
+TabletServerOptions::TabletServerOptions()
+  : webserver_port(TabletServer::kDefaultWebPort) {
+}
+
+TabletServer::TabletServer(const TabletServerOptions& opts)
   : initted_(false),
-    rpc_server_(new RpcServer(opts)),
-    web_server_(new Webserver(kDefaultWebPort)) {
-  // TODO: make web port configurable.
+    rpc_server_(new RpcServer(opts.rpc_opts)),
+    web_server_(new Webserver(opts.webserver_port)) {
 }
 
 TabletServer::~TabletServer() {

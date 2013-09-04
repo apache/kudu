@@ -19,8 +19,8 @@ Sockaddr::Sockaddr() {
   addr_.sin_addr.s_addr = INADDR_ANY;
 }
 
-Sockaddr::Sockaddr(const struct sockaddr_in *addr) {
-  memcpy(&addr_, addr, sizeof(struct sockaddr_in));
+Sockaddr::Sockaddr(const struct sockaddr_in& addr) {
+  memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
 }
 
 Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {

@@ -10,6 +10,7 @@
 #include "server/metadata.h"
 #include "server/metadata_util.h"
 #include "server/rpc_server.h"
+#include "server/webserver.h"
 #include "tablet/tablet.h"
 #include "tserver/tablet_server.h"
 #include "util/net/sockaddr.h"
@@ -38,24 +39,30 @@ Status MiniTabletServer::Start() {
   fs_manager_.reset(new FsManager(env_, fs_root_));
   RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
 
-  // Start server on loopback.
-  RpcServerOptions opts;
-  opts.rpc_bind_addresses = "127.0.0.1:0";
+  TabletServerOptions opts;
 
-  // TODO: set web server port to 0 also. When this is done,
-  // remove the RESOURCE_LOCK from tests which use tablet servers
-  // so they can run in parallel.
+  // Start RPC server on loopback.
+  opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
+  opts.webserver_port = 0;
 
   gscoped_ptr<TabletServer> server(new TabletServer(opts));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());
 
-  // Find the ephemeral address of the server.
+  // Find the ephemeral address of the RPC server.
   vector<Sockaddr> addrs;
   server->rpc_server()->GetBoundAddresses(&addrs);
   CHECK(!addrs.empty());
+  bound_rpc_addr_ = addrs[0];
+  VLOG(1) << "Bound RPC to " << bound_rpc_addr_.ToString();
 
-  bound_addr_ = addrs[0];
+  // And the web server
+  addrs.clear();
+  server->web_server()->GetBoundAddresses(&addrs);
+  CHECK(!addrs.empty());
+  bound_http_addr_ = addrs[0];
+  VLOG(1) << "Bound web server to " << bound_http_addr_.ToString();
+
   server_.swap(server);
   started_ = true;
   return Status::OK();
@@ -80,9 +87,9 @@ Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
   return Status::OK();
 }
 
-const Sockaddr& MiniTabletServer::bound_addr() const {
+const Sockaddr& MiniTabletServer::bound_rpc_addr() const {
   CHECK(started_);
-  return bound_addr_;
+  return bound_rpc_addr_;
 }
 
 } // namespace tserver

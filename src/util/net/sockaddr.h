@@ -19,7 +19,7 @@ namespace kudu {
 class Sockaddr {
  public:
   Sockaddr();
-  explicit Sockaddr(const struct sockaddr_in *addr);
+  explicit Sockaddr(const struct sockaddr_in &addr);
 
   Sockaddr& operator=(const struct sockaddr_in &addr);
 

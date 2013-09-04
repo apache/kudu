@@ -55,7 +55,7 @@ class ClientTest : public KuduTest {
 
     // Connect to it.
     KuduClientOptions opts;
-    opts.tablet_server_addr = mini_server_->bound_addr().ToString();
+    opts.tablet_server_addr = mini_server_->bound_rpc_addr().ToString();
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
     ASSERT_STATUS_OK(client_->OpenTable(kTabletId, &client_table_));
   }

@@ -2,18 +2,19 @@
 #ifndef KUDU_RPC_SERVER_H
 #define KUDU_RPC_SERVER_H
 
-#include <boost/foreach.hpp>
 #include <string>
 #include <vector>
 
-#include "rpc/messenger.h"
-#include "rpc/service_if.h"
-#include "rpc/service_pool.h"
-#include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
 namespace kudu {
+
+namespace rpc {
+class Messenger;
+class ServiceIf;
+class ServicePool;
+} // namespace rpc
 
 struct RpcServerOptions {
   RpcServerOptions();

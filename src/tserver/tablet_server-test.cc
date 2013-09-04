@@ -58,7 +58,7 @@ class TabletServerTest : public KuduTest {
     ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_));
 
     // Connect to it.
-    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_addr(), &proxy_));
+    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_rpc_addr(), &proxy_));
   }
 
   virtual void TearDown() {

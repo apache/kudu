@@ -10,4 +10,4 @@ ADD_DEPENDENCIES(client ${CLIENT_DEPS})
 
 # Tests
 SET(KUDU_TEST_LINK_LIBS client ${KUDU_TEST_LINK_LIBS})
-ADD_KUDU_TEST(client-test RESOURCE_LOCK "tserver-web-port")
+ADD_KUDU_TEST(client-test)

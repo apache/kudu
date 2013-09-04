@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
@@ -105,11 +106,11 @@ static int TabletServerMain(int argc, char** argv) {
     return 1;
   }
 
-  RpcServerOptions opts;
-  opts.rpc_bind_addresses = FLAGS_tablet_server_rpc_bind_addresses;
-  opts.num_rpc_reactors = FLAGS_tablet_server_num_rpc_reactors;
-  opts.num_acceptors_per_address = FLAGS_tablet_server_num_acceptors_per_address;
-  opts.num_service_threads = FLAGS_tablet_server_num_service_threads;
+  TabletServerOptions opts;
+  opts.rpc_opts.rpc_bind_addresses = FLAGS_tablet_server_rpc_bind_addresses;
+  opts.rpc_opts.num_rpc_reactors = FLAGS_tablet_server_num_rpc_reactors;
+  opts.rpc_opts.num_acceptors_per_address = FLAGS_tablet_server_num_acceptors_per_address;
+  opts.rpc_opts.num_service_threads = FLAGS_tablet_server_num_service_threads;
 
   TabletServer server(opts);
   LOG(INFO) << "Initializing tablet server...";

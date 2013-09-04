@@ -225,6 +225,29 @@ void Webserver::Stop() {
   }
 }
 
+Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
+  if (!context_) {
+    return Status::IllegalState("Not started");
+  }
+
+  struct sockaddr_in** sockaddrs;
+  int num_addrs;
+
+  if (sq_get_bound_addresses(context_, &sockaddrs, &num_addrs)) {
+    return Status::NetworkError("Unable to get bound addresses from Mongoose");
+  }
+
+  addrs->reserve(num_addrs);
+
+  for (int i = 0; i < num_addrs; i++) {
+    addrs->push_back(Sockaddr(*sockaddrs[i]));
+    free(sockaddrs[i]);
+  }
+  free(sockaddrs);
+
+  return Status::OK();
+}
+
 int Webserver::LogMessageCallbackStatic(const struct sq_connection* connection, const char* message) {
   if (message != NULL) {
     LOG(INFO) << "Webserver: " << message;
