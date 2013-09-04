@@ -20,6 +20,7 @@ DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on ro
 namespace kudu { namespace tablet {
 
 using cfile::ReaderOptions;
+using cfile::DefaultColumnValueIterator;
 using metadata::RowSetMetadata;
 using std::tr1::shared_ptr;
 
@@ -262,8 +263,11 @@ class CFileSetIteratorProjector {
   }
 
   Status ProjectDefaultColumn(size_t proj_col_idx) {
-    // TODO: Create an iterator with the default column of the projection
-    return Status::NotSupported("Default Column Value not implemented");
+    // Create an iterator with the default column of the projection
+    const ColumnSchema& col_schema = projection_.column(proj_col_idx);
+    col_iters_->push_back(new DefaultColumnValueIterator(
+        col_schema.type_info().type(), col_schema.default_value()));
+    return Status::OK();
   }
 
  private:

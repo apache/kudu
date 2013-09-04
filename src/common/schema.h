@@ -347,6 +347,10 @@ class Schema {
   // Loops through the projection schema and calls the projector methods:
   // - Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx)
   //   called if the column already exists in the base schema.
+  // - Status ProjectDefaultColumn(size_t proj_idx)
+  //   called if the column does not exists in the base schema. In this case
+  //   the (projection) column must have a default or be nullable, otherwise
+  //   Status::InvalidArgument will be returned.
   //
   // TODO(MAYBE): Pass the ColumnSchema and not only the column index?
   template <class Projector>
@@ -356,17 +360,22 @@ class Schema {
       int base_idx = base_schema.find_column(col_schema.name());
       if (base_idx >= 0) {
         const ColumnSchema& base_col_schema = base_schema.column(base_idx);
-        // Column present in the CFileSet...
+        // Column present in the Base Schema...
         if (!col_schema.EqualsType(base_col_schema)) {
-          // ...but with a different type, (TODO try with an adaptor)
+          // ...but with a different type, (TODO: try with an adaptor)
           return Status::InvalidArgument("The column '" + col_schema.name() + "' must have type " +
                                          DataType_Name(base_col_schema.type_info().type()));
         } else {
           RETURN_NOT_OK(projector->ProjectBaseColumn(proj_idx, base_idx));
         }
       } else {
-        // Column missing from the CFileSet, (TODO use the DefaultFiller iterator)
-        return Status::InvalidArgument("Not Implemented Default Value Iterator");
+        if (!col_schema.has_default() && !col_schema.is_nullable()) {
+          return Status::InvalidArgument("The column '" + col_schema.name() +
+                                         "' must have a default value or be nullable");
+        }
+
+        // Column missing from the Base Schema, use the default value of the projection
+        RETURN_NOT_OK(projector->ProjectDefaultColumn(proj_idx));
       }
       proj_idx++;
     }

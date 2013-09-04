@@ -148,8 +148,13 @@ class RowProjector {
     // TODO: Copy Adapted base Data
     CHECK(adapter_cols_mapping_.size() == 0) << "Value Adapter not supported yet";
 
-    // TODO: Fill with Defaults
-    CHECK(projection_defaults_.size() == 0) << "Defaults not supported yet";
+    // Fill with Defaults
+    BOOST_FOREACH(size_t proj_idx, projection_defaults_) {
+      const ColumnSchema& col_proj = projection_.column(proj_idx);
+      SimpleConstCell src_cell(col_proj, col_proj.default_value());
+      typename RowType2::Cell dst_cell = dst_row->cell(proj_idx);
+      RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
+    }
 
     return Status::OK();
   }

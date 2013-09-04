@@ -564,7 +564,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjection) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
-    ASSERT_STR_CONTAINS(resp.error().status().message(), "Not Implemented Default Value Iterator");
+    ASSERT_STR_CONTAINS(resp.error().status().message(), "must have a default value or be nullable");
   }
 }
 
