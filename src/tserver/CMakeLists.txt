@@ -30,7 +30,7 @@ ADD_DEPENDENCIES(tserver tserver_proto)
 ADD_DEPENDENCIES(tserver krpc)
 
 # Tests
-ADD_KUDU_TEST(tablet_server-test)
+ADD_KUDU_TEST(tablet_server-test RESOURCE_LOCK "tserver-web-port")
 ADD_KUDU_TEST(scanners-test)
 
 ADD_EXECUTABLE(tablet_server tablet_server_main.cc)

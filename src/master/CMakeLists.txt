@@ -25,7 +25,7 @@ ADD_DEPENDENCIES(master master_proto)
 ADD_DEPENDENCIES(master krpc)
 
 # Tests
-ADD_KUDU_TEST(master_server-test)
+ADD_KUDU_TEST(master_server-test RESOURCE_LOCK "master-web-port")
 TARGET_LINK_LIBRARIES(master_server-test master master_proto ${KUDU_LINK_LIBS})
 
 ADD_EXECUTABLE(master_server master_server_main.cc)

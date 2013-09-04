@@ -42,6 +42,10 @@ Status MiniTabletServer::Start() {
   RpcServerOptions opts;
   opts.rpc_bind_addresses = "127.0.0.1:0";
 
+  // TODO: set web server port to 0 also. When this is done,
+  // remove the RESOURCE_LOCK from tests which use tablet servers
+  // so they can run in parallel.
+
   gscoped_ptr<TabletServer> server(new TabletServer(opts));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());
