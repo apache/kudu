@@ -94,9 +94,24 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
   pb->set_name(col_schema.name());
   pb->set_type(col_schema.type_info().type());
   pb->set_is_nullable(col_schema.is_nullable());
+  if (col_schema.has_default()) {
+    if (col_schema.type_info().type() == STRING) {
+      const Slice *slice = static_cast<const Slice *>(col_schema.default_value());
+      pb->set_default_value(slice->data(), slice->size());
+    } else {
+      pb->set_default_value(col_schema.default_value(), col_schema.type_info().size());
+    }
+  }
 }
 
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
+  if (pb.has_default_value()) {
+    if (pb.type() == STRING) {
+      Slice default_value(pb.default_value());
+      return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(), &default_value);
+    }
+    return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(), pb.default_value().data());
+  }
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable());
 }
 

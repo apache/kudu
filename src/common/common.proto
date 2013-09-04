@@ -10,6 +10,9 @@
 // etc, as appropriate.
 package kudu;
 
+// If you add a new type keep in mind to add it to the end
+// or update AddMapping() functions like the one in key_encoder.cc
+// that have a vector that maps the protobuf tag with the index.
 enum DataType {
   UINT8 = 0;
   INT8 = 1;
@@ -27,4 +30,5 @@ message ColumnSchemaPB {
   required DataType type = 2;
   optional bool is_key = 3 [default = false];
   optional bool is_nullable = 4 [default = false];
+  optional bytes default_value = 5;
 }

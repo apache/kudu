@@ -4,6 +4,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <tr1/memory>
 #include <tr1/unordered_map>
 #include <string>
 #include <utility>
@@ -33,12 +34,28 @@ using std::tr1::unordered_map;
 // annotations, etc.
 class ColumnSchema {
  public:
+  // name: column name
+  // type: column type (e.g. UINT8, INT32, STRING, ...)
+  // is_nullable: true if a row value can be null
+  // default_value: default for the column if no value was specified
+  //    on insert or the column was not present before (alter).
+  //    The value will be copied and released on ColumnSchema destruction.
+  //
+  // Example:
+  //   ColumnSchema col_a("a", UINT32)
+  //   ColumnSchema col_b("b", STRING, true);
+  //   uint32_t default_i32 = -15;
+  //   ColumnSchema col_c("c", INT32, false, &default_i32);
+  //   Slice default_str("Hello");
+  //   ColumnSchema col_d("d", STRING, false, &default_str);
   ColumnSchema(const string &name,
                DataType type,
-               bool is_nullable = false) :
+               bool is_nullable = false,
+               const void *default_value = NULL) :
     name_(name),
     type_info_(&GetTypeInfo(type)),
-    is_nullable_(is_nullable)
+    is_nullable_(is_nullable),
+    default_(default_value ? new Variant(type, default_value) : NULL)
   {}
 
   const TypeInfo &type_info() const {
@@ -54,6 +71,25 @@ class ColumnSchema {
   }
 
   string ToString() const;
+
+  // Returns true if the column has a default value
+  bool has_default() const {
+    return default_ != NULL;
+  }
+
+  // Returns a pointer the default value associated with the column
+  // or NULL if there is no default value. You may check has_default() first.
+  // The returned value will be valid until the ColumnSchema will be destroyed.
+  //
+  // Example:
+  //    const uint32_t *vu32 = static_cast<const uint32_t *>(col_schema.default_value());
+  //    const Slice *vstr = static_cast<const Slice *>(col_schema.default_value());
+  const void *default_value() const {
+    if (has_default()) {
+      return default_->value();
+    }
+    return NULL;
+  }
 
   bool EqualsType(const ColumnSchema &other) const {
     return type_info().type() == other.type_info().type();
@@ -78,6 +114,8 @@ class ColumnSchema {
   string name_;
   const TypeInfo *type_info_;
   bool is_nullable_;
+  // use shared_ptr since the ColumnSchema is always copied around.
+  std::tr1::shared_ptr<Variant> default_;
 };
 
 

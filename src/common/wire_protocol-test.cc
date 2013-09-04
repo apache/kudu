@@ -289,4 +289,28 @@ TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
   ASSERT_EQ(900, pb.num_rows());
 }
 
+TEST_F(WireProtocolTest, TestColumnDefaultValue) {
+  Slice default_str("Hello World");
+  uint32_t default_u32 = 512;
+  ColumnSchemaPB pb;
+
+  ColumnSchema col1("col1", STRING);
+  ColumnSchemaToPB(col1, &pb);
+  ColumnSchema col1fpb = ColumnSchemaFromPB(pb);
+  ASSERT_FALSE(col1fpb.has_default());
+  ASSERT_TRUE(col1fpb.default_value() == NULL);
+
+  ColumnSchema col2("col2", STRING, false, &default_str);
+  ColumnSchemaToPB(col2, &pb);
+  ColumnSchema col2fpb = ColumnSchemaFromPB(pb);
+  ASSERT_TRUE(col2fpb.has_default());
+  ASSERT_EQ(default_str, *static_cast<const Slice *>(col2fpb.default_value()));
+
+  ColumnSchema col3("col3", UINT32, false, &default_u32);
+  ColumnSchemaToPB(col3, &pb);
+  ColumnSchema col3fpb = ColumnSchemaFromPB(pb);
+  ASSERT_TRUE(col3fpb.has_default());
+  ASSERT_EQ(default_u32, *static_cast<const uint32_t *>(col3fpb.default_value()));
+}
+
 } // namespace kudu
