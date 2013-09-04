@@ -12,5 +12,6 @@ mkdir -p $TEST_OUT
 TEST_NAME=$(basename $1)
 
 set -e
+set -o pipefail
 
 "$@" 2>&1 | tee $TEST_OUT/$TEST_NAME.txt
