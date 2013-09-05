@@ -6,6 +6,7 @@
 
 #include <tr1/memory>
 
+#include "util/monotime.h"
 #include "util/task_executor.h"
 
 namespace kudu {
@@ -22,22 +23,24 @@ class SaslServer;
 // sending the ConnectionContextPB.
 class ClientNegotiationTask : public kudu::Task {
  public:
-  explicit ClientNegotiationTask(const std::tr1::shared_ptr<Connection>& conn);
+  ClientNegotiationTask(const std::tr1::shared_ptr<Connection>& conn, const MonoTime &deadline);
   virtual kudu::Status Run();
   virtual bool Abort();
  private:
   std::tr1::shared_ptr<Connection> conn_;
+  MonoTime deadline_;
 };
 
 // Handle server-side blocking connection negotiation, including SASL negotiation and
 // receiving / validating the ConnectionContextPB.
 class ServerNegotiationTask : public kudu::Task {
  public:
-  explicit ServerNegotiationTask(const std::tr1::shared_ptr<Connection>& conn);
+  explicit ServerNegotiationTask(const std::tr1::shared_ptr<Connection>& conn, const MonoTime &deadline);
   virtual kudu::Status Run();
   virtual bool Abort();
  private:
   std::tr1::shared_ptr<Connection> conn_;
+  MonoTime deadline_;
 };
 
 // Return control of the connection back to the Reactor.

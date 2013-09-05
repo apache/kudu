@@ -9,6 +9,8 @@
 
 namespace kudu {
 
+class MonoDelta;
+class MonoTime;
 class Sockaddr;
 
 class Socket {
@@ -53,6 +55,12 @@ class Socket {
   Status SetNonBlocking(bool enabled);
   Status IsNonBlocking(bool* is_nonblock) const;
 
+  // Set SO_SENDTIMEO to the specified value. Should only be used for blocking sockets.
+  Status SetSendTimeout(const MonoDelta& timeout);
+
+  // Set SO_RCVTIMEO to the specified value. Should only be used for blocking sockets.
+  Status SetRecvTimeout(const MonoDelta& timeout);
+
   // Calls bind(2) followed by listen(2).
   Status BindAndListen(const Sockaddr &sockaddr, int listen_queue_size);
 
@@ -80,7 +88,8 @@ class Socket {
   // Returns OK if buflen bytes were sent, otherwise IOError.
   // Upon return, num_written will contain the number of bytes actually written.
   // See also writen() from Stevens (2004) or Kerrisk (2010)
-  Status BlockingWrite(const uint8_t *buf, size_t buflen, size_t *num_written);
+  Status BlockingWrite(const uint8_t *buf, size_t buflen, size_t *num_written,
+      const MonoTime& deadline);
 
   Status Recv(uint8_t *buf, int32_t amt, int32_t *nread);
 
@@ -89,9 +98,12 @@ class Socket {
   // Returns OK if amt bytes were read, otherwise IOError.
   // Upon return, nread will contain the number of bytes actually read.
   // See also readn() from Stevens (2004) or Kerrisk (2010)
-  Status BlockingRecv(uint8_t *buf, size_t amt, size_t *nread);
+  Status BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoTime& deadline);
 
  private:
+  // Called internally from SetSend/RecvTimeout().
+  Status SetTimeout(int opt, std::string optname, const MonoDelta& timeout);
+
   int fd_;
 
   DISALLOW_COPY_AND_ASSIGN(Socket);

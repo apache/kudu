@@ -45,7 +45,8 @@ SaslServer::SaslServer(const string& app_name, int fd)
     sock_(fd),
     helper_(SaslHelper::SERVER),
     server_state_(SaslNegotiationState::NEW),
-    negotiated_mech_(SaslMechanism::INVALID) {
+    negotiated_mech_(SaslMechanism::INVALID),
+    deadline_(MonoTime::Max()) {
 
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&SaslServerGetoptCb), this));
@@ -94,6 +95,11 @@ void SaslServer::set_remote_addr(const Sockaddr& addr) {
 void SaslServer::set_server_fqdn(const string& domain_name) {
   DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   helper_.set_server_fqdn(domain_name);
+}
+
+void SaslServer::set_deadline(const MonoTime& deadline) {
+  DCHECK_NE(server_state_, SaslNegotiationState::NEGOTIATED);
+  deadline_ = deadline;
 }
 
 // calls sasl_server_init() and sasl_server_new()
@@ -151,7 +157,7 @@ Status SaslServer::Negotiate() {
   while (!nego_ok_) {
     RequestHeader header;
     Slice param_buf;
-    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf));
+    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf, deadline_));
 
     SaslMessagePB request;
     RETURN_NOT_OK(ParseSaslMsgRequest(header, param_buf, &request));
@@ -193,7 +199,7 @@ Status SaslServer::ValidateConnectionHeader(faststring* recv_buf) {
   size_t num_read;
   const size_t conn_header_len = kMagicNumberLength + kHeaderFlagsLength;
   recv_buf->resize(conn_header_len);
-  RETURN_NOT_OK(sock_.BlockingRecv(recv_buf->data(), conn_header_len, &num_read));
+  RETURN_NOT_OK(sock_.BlockingRecv(recv_buf->data(), conn_header_len, &num_read, deadline_));
   DCHECK_EQ(conn_header_len, num_read);
 
   RETURN_NOT_OK(serialization::ValidateConnHeader(*recv_buf));
@@ -225,7 +231,7 @@ Status SaslServer::SendSaslMessage(const SaslMessagePB& msg) {
   // Create header with SASL-specific callId
   ResponseHeader header;
   header.set_callid(kSaslCallId);
-  return helper_.SendSaslMessage(&sock_, header, msg);
+  return helper_.SendSaslMessage(&sock_, header, msg, deadline_);
 }
 
 Status SaslServer::SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Status& err) {
@@ -247,7 +253,7 @@ Status SaslServer::SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Statu
   msg.set_code(code);
   msg.set_message(err.ToString());
 
-  return helper_.SendSaslMessage(&sock_, header, msg);
+  return helper_.SendSaslMessage(&sock_, header, msg, deadline_);
 }
 
 Status SaslServer::HandleNegotiateRequest(const SaslMessagePB& request) {

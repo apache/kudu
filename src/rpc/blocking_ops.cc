@@ -12,6 +12,7 @@
 #include "rpc/constants.h"
 #include "rpc/serialization.h"
 #include "util/faststring.h"
+#include "util/monotime.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
 #include "util/status.h"
@@ -30,7 +31,8 @@ Status EnsureBlockingMode(const Socket* const sock) {
   return Status::OK();
 }
 
-Status SendFramedMessageBlocking(Socket* sock, const MessageLite& header, const MessageLite& msg) {
+Status SendFramedMessageBlocking(Socket* sock, const MessageLite& header, const MessageLite& msg,
+    const MonoTime& deadline) {
   DCHECK(sock != NULL);
   DCHECK(header.IsInitialized()) << "header protobuf must be initialized";
   DCHECK(msg.IsInitialized()) << "msg protobuf must be initialized";
@@ -53,14 +55,14 @@ Status SendFramedMessageBlocking(Socket* sock, const MessageLite& header, const 
 
   // Write header & param to stream
   size_t nsent;
-  RETURN_NOT_OK(sock->BlockingWrite(header_buf.data(), header_buf.size(), &nsent));
-  RETURN_NOT_OK(sock->BlockingWrite(param_buf.data(), param_buf.size(), &nsent));
+  RETURN_NOT_OK(sock->BlockingWrite(header_buf.data(), header_buf.size(), &nsent, deadline));
+  RETURN_NOT_OK(sock->BlockingWrite(param_buf.data(), param_buf.size(), &nsent, deadline));
 
   return Status::OK();
 }
 
 Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
-    MessageLite* header, Slice* param_buf) {
+    MessageLite* header, Slice* param_buf, const MonoTime& deadline) {
   DCHECK(sock != NULL);
   DCHECK(recv_buf != NULL);
   DCHECK(header != NULL);
@@ -71,12 +73,12 @@ Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
   recv_buf->clear();
   recv_buf->resize(kMsgLengthPrefixLength);
   size_t recvd = 0;
-  RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data(), kMsgLengthPrefixLength, &recvd));
+  RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data(), kMsgLengthPrefixLength, &recvd, deadline));
   uint32_t total_len = NetworkByteOrder::Load32(recv_buf->data());
 
   recvd = 0;
   recv_buf->resize(total_len + kMsgLengthPrefixLength);
-  RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data() + kMsgLengthPrefixLength, total_len, &recvd));
+  RETURN_NOT_OK(sock->BlockingRecv(recv_buf->data() + kMsgLengthPrefixLength, total_len, &recvd, deadline));
   RETURN_NOT_OK(serialization::ParseMessage(Slice(*recv_buf), header, param_buf));
   return Status::OK();
 }

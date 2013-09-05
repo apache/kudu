@@ -22,6 +22,7 @@
 #include "rpc/sasl_common.h"
 #include "rpc/serialization.h"
 #include "util/faststring.h"
+#include "util/monotime.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -159,7 +160,8 @@ Status SaslHelper::ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg) 
   return Status::OK();
 }
 
-Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, const MessageLite& msg) {
+Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, const MessageLite& msg,
+      const MonoTime& deadline) {
   DCHECK(sock != NULL);
   DCHECK(header.IsInitialized()) << tag_ << ": Header must be initialized";
   DCHECK(msg.IsInitialized()) << tag_ << ": Message must be initialized";
@@ -170,11 +172,11 @@ Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, cons
     uint8_t buf[buflen];
     serialization::SerializeConnHeader(buf);
     size_t nsent;
-    RETURN_NOT_OK(sock->BlockingWrite(buf, buflen, &nsent));
+    RETURN_NOT_OK(sock->BlockingWrite(buf, buflen, &nsent, deadline));
     conn_header_exchanged_ = true;
   }
 
-  RETURN_NOT_OK(SendFramedMessageBlocking(sock, header, msg));
+  RETURN_NOT_OK(SendFramedMessageBlocking(sock, header, msg, deadline));
   return Status::OK();
 }
 

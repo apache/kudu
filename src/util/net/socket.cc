@@ -16,6 +16,7 @@
 #include <glog/logging.h>
 
 #include "util/errno.h"
+#include "util/monotime.h"
 #include "util/net/sockaddr.h"
 
 namespace kudu {
@@ -177,6 +178,14 @@ Status Socket::IsNonBlocking(bool* is_nonblock) const {
   return Status::OK();
 }
 
+Status Socket::SetSendTimeout(const MonoDelta& timeout) {
+  return SetTimeout(SO_SNDTIMEO, "SO_SNDTIMEO", timeout);
+}
+
+Status Socket::SetRecvTimeout(const MonoDelta& timeout) {
+  return SetTimeout(SO_RCVTIMEO, "SO_RCVTIMEO", timeout);
+}
+
 Status Socket::BindAndListen(const Sockaddr &sockaddr,
                              int listenQueueSize) {
   int err;
@@ -325,7 +334,8 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
 }
 
 // Mostly follows writen() from Stevens (2004) or Kerrisk (2010).
-Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten) {
+Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten,
+    const MonoTime& deadline) {
   DCHECK_LE(buflen, std::numeric_limits<int32_t>::max()) << "Writes > INT32_MAX not supported";
   DCHECK_NOTNULL(nwritten);
 
@@ -333,6 +343,11 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
   while (tot_written < buflen) {
     int32_t inc_num_written = 0;
     int32_t num_to_write = buflen - tot_written;
+    MonoDelta timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    if (PREDICT_FALSE(timeout.ToNanoseconds() <= 0)) {
+      return Status::NetworkError("BlockingWrite timed out");
+    }
+    RETURN_NOT_OK(SetSendTimeout(timeout));
     Status s = Write(buf, num_to_write, &inc_num_written);
     tot_written += inc_num_written;
     buf += inc_num_written;
@@ -343,7 +358,7 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
       if (s.posix_code() == EINTR) {
         continue;
       }
-      return s;
+      return s.CloneAndPrepend("BlockingWrite error");
     }
     if (PREDICT_FALSE(inc_num_written == 0)) {
       // Shouldn't happen on Linux with a blocking socket. Maybe other Unices.
@@ -352,7 +367,7 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
   }
 
   if (tot_written < buflen) {
-    return Status::IOError("Wrote zero bytes on a blocking Write() call",
+    return Status::IOError("Wrote zero bytes on a BlockingWrite() call",
         StringPrintf("Transferred %zu of %zu bytes", tot_written, buflen));
   }
   return Status::OK();
@@ -367,8 +382,7 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
   int res = ::recv(fd_, buf, amt, 0);
   if (res <= 0) {
     if (res == 0) {
-      return Status::NetworkError("shut down by remote end", Slice(),
-                                  ESHUTDOWN);
+      return Status::NetworkError("Recv() got EOF from remote", Slice(), ESHUTDOWN);
     }
     int err = errno;
     return Status::NetworkError(std::string("recv error: ") +
@@ -380,7 +394,7 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
 
 // Mostly follows readn() from Stevens (2004) or Kerrisk (2010).
 // One place where we deviate: we consider EOF a failure if < amt bytes are read.
-Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread) {
+Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoTime& deadline) {
   DCHECK_LE(amt, std::numeric_limits<int32_t>::max()) << "Reads > INT32_MAX not supported";
   DCHECK_NOTNULL(nread);
 
@@ -388,6 +402,11 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread) {
   while (tot_read < amt) {
     int32_t inc_num_read = 0;
     int32_t num_to_read = amt - tot_read;
+    MonoDelta timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    if (PREDICT_FALSE(timeout.ToNanoseconds() <= 0)) {
+      return Status::NetworkError("BlockingRecv timed out");
+    }
+    RETURN_NOT_OK(SetRecvTimeout(timeout));
     Status s = Recv(buf, num_to_read, &inc_num_read);
     tot_read += inc_num_read;
     buf += inc_num_read;
@@ -398,7 +417,7 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread) {
       if (s.posix_code() == EINTR) {
         continue;
       }
-      return s;
+      return s.CloneAndPrepend("BlockingRecv error");
     }
     if (PREDICT_FALSE(inc_num_read == 0)) {
       // EOF.
@@ -409,6 +428,22 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread) {
   if (PREDICT_FALSE(tot_read < amt)) {
     return Status::IOError("Read zero bytes on a blocking Recv() call",
         StringPrintf("Transferred %zu of %zu bytes", tot_read, amt));
+  }
+  return Status::OK();
+}
+
+Status Socket::SetTimeout(int opt, std::string optname, const MonoDelta& timeout) {
+  if (PREDICT_FALSE(timeout.ToNanoseconds() < 0)) {
+    return Status::InvalidArgument("Timeout specified as negative to SetTimeout", timeout.ToString());
+  }
+  struct timeval tv;
+  timeout.ToTimeVal(&tv);
+  socklen_t optlen = sizeof(tv);
+  if (::setsockopt(fd_, SOL_SOCKET, opt, &tv, optlen) == -1) {
+    int err = errno;
+    return Status::NetworkError(
+        StringPrintf("Failed to set %s to %s", optname.c_str(), timeout.ToString().c_str()),
+        ErrnoToString(err), err);
   }
   return Status::OK();
 }

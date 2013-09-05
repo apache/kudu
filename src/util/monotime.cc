@@ -5,6 +5,8 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include <limits>
+
 #include <glog/logging.h>
 
 #include "gutil/stringprintf.h"
@@ -12,24 +14,27 @@
 
 namespace kudu {
 
-static const uint64_t kNanosecondsPerSecond = 1000000000L;
-static const uint64_t kNanosecondsPerMillisecond = 1000000L;
-
 #define MAX_MONOTONIC_SECONDS \
-  (((1ULL<<63) - 1ULL) /(int64_t)kNanosecondsPerSecond)
+  (((1ULL<<63) - 1ULL) /(int64_t)MonoTime::kNanosecondsPerSecond)
+
+///
+/// MonoTime
+///
 
 MonoDelta MonoDelta::FromSeconds(double seconds) {
-  int64_t delta = seconds * kNanosecondsPerSecond;
+  int64_t delta = seconds * MonoTime::kNanosecondsPerSecond;
   return MonoDelta(delta);
 }
 
-MonoDelta MonoDelta::FromMilliseconds(int ms) {
-  int64_t delta(ms);
-  delta *= kNanosecondsPerMillisecond;
-  return MonoDelta(delta);
+MonoDelta MonoDelta::FromMilliseconds(int64_t ms) {
+  return MonoDelta(ms * MonoTime::kNanosecondsPerMillisecond);
 }
 
-MonoDelta MonoDelta::FromNanoseconds(int ns) {
+MonoDelta MonoDelta::FromMicroseconds(int64_t us) {
+  return MonoDelta(us * MonoTime::kNanosecondsPerMicrosecond);
+}
+
+MonoDelta MonoDelta::FromNanoseconds(int64_t ns) {
   return MonoDelta(ns);
 }
 
@@ -45,6 +50,10 @@ bool MonoDelta::MoreThan(const MonoDelta &rhs) const {
   return nano_delta_ > rhs.nano_delta_;
 }
 
+bool MonoDelta::Equals(const MonoDelta &rhs) const {
+  return nano_delta_ == rhs.nano_delta_;
+}
+
 std::string MonoDelta::ToString() const {
   return StringPrintf("%.3fs", ToSeconds());
 }
@@ -55,15 +64,65 @@ MonoDelta::MonoDelta(int64_t delta)
 
 double MonoDelta::ToSeconds() const {
   double d(nano_delta_);
-  d /= kNanosecondsPerSecond;
+  d /= MonoTime::kNanosecondsPerSecond;
   return d;
 }
+
+int64_t MonoDelta::ToNanoseconds() const {
+  return nano_delta_;
+}
+
+void MonoDelta::ToTimeVal(struct timeval *tv) const {
+  tv->tv_sec = nano_delta_ / MonoTime::kNanosecondsPerSecond;
+  tv->tv_usec = (nano_delta_ - (tv->tv_sec * MonoTime::kNanosecondsPerSecond))
+      / MonoTime::kNanosecondsPerMicrosecond;
+
+  // tv_usec must be between 0 and 999999.
+  // There is little use for negative timevals so wrap it in PREDICT_FALSE.
+  if (PREDICT_FALSE(tv->tv_usec < 0)) {
+    --(tv->tv_sec);
+    tv->tv_usec += 1000000;
+  }
+
+  // Catch positive corner case where we "round down" and could potentially set a timeout of 0.
+  // Make it 1 usec.
+  if (PREDICT_FALSE(tv->tv_usec == 0 && tv->tv_sec == 0 && nano_delta_ > 0)) {
+    tv->tv_usec = 1;
+  }
+
+  // Catch negative corner case where we "round down" and could potentially set a timeout of 0.
+  // Make it -1 usec (but normalized, so tv_usec is not negative).
+  if (PREDICT_FALSE(tv->tv_usec == 0 && tv->tv_sec == 0 && nano_delta_ < 0)) {
+    tv->tv_sec = -1;
+    tv->tv_usec = 999999;
+  }
+}
+
+void MonoDelta::ToTimeSpec(struct timespec *ts) const {
+  ts->tv_sec = nano_delta_ / MonoTime::kNanosecondsPerSecond;
+  ts->tv_nsec = nano_delta_ - (ts->tv_sec * MonoTime::kNanosecondsPerSecond);
+
+  // tv_nsec must be between 0 and 999999999.
+  // There is little use for negative timespecs so wrap it in PREDICT_FALSE.
+  if (PREDICT_FALSE(ts->tv_nsec < 0)) {
+    --(ts->tv_sec);
+    ts->tv_nsec += MonoTime::kNanosecondsPerSecond;
+  }
+}
+
+///
+/// MonoTime
+///
 
 MonoTime MonoTime::Now(enum Granularity granularity) {
   struct timespec ts;
   CHECK_EQ(0, clock_gettime((granularity == COARSE) ?
                     CLOCK_MONOTONIC_COARSE : CLOCK_MONOTONIC, &ts));
   return MonoTime(ts);
+}
+
+MonoTime MonoTime::Max() {
+  return MonoTime(std::numeric_limits<int64_t>::max());
 }
 
 MonoTime::MonoTime()
@@ -103,13 +162,17 @@ MonoTime::MonoTime(const struct timespec &ts) {
   // adequate.
   CHECK_LT(ts.tv_sec, MAX_MONOTONIC_SECONDS);
   nanos_ = ts.tv_sec;
-  nanos_ *= kNanosecondsPerSecond;
+  nanos_ *= MonoTime::kNanosecondsPerSecond;
   nanos_ += ts.tv_nsec;
+}
+
+MonoTime::MonoTime(int64_t nanos)
+  : nanos_(nanos) {
 }
 
 double MonoTime::ToSeconds() const {
   double d(nanos_);
-  d /= kNanosecondsPerSecond;
+  d /= MonoTime::kNanosecondsPerSecond;
   return d;
 }
 

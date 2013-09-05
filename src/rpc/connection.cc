@@ -49,11 +49,11 @@ Connection::Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
 }
 
 Status Connection::SetNonBlocking(bool enabled) {
-  DCHECK(reactor_thread_->IsCurrentThread());
   return socket_.SetNonBlocking(enabled);
 }
 
 void Connection::EpollRegister(ev::loop_ref& loop) {
+  DVLOG(4) << "Registering connection for epoll: " << ToString();
   write_io_.set(loop);
   write_io_.set(socket_.GetFd(), ev::WRITE);
   write_io_.set<Connection, &Connection::WriteHandler>(this);
@@ -93,6 +93,11 @@ bool Connection::Idle() const {
   }
 
   if (!calls_being_handled_.empty()) {
+    return false;
+  }
+
+  // We are not idle if we are in the middle of connection negotiation.
+  if (!negotiation_complete_) {
     return false;
   }
 

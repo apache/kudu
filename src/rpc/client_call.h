@@ -102,6 +102,9 @@ class ConnectionId {
   // Copy state from another object to this one.
   void CopyFrom(const ConnectionId& other);
 
+  // Returns a string representation of the object, not including the password field.
+  std::string ToString() const;
+
   size_t HashCode() const;
   bool Equals(const ConnectionId& other) const;
 

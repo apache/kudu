@@ -16,6 +16,7 @@
 #include "rpc/sasl_common.h"
 #include "rpc/sasl_helper.h"
 #include "util/net/socket.h"
+#include "util/monotime.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -63,6 +64,12 @@ class SaslServer {
   // Specify the fully-qualified domain name of the remote server.
   // Call before Init(). Required for some mechanisms.
   void set_server_fqdn(const string& domain_name);
+
+  // Set deadline for connection negotiation.
+  void set_deadline(const MonoTime& deadline);
+
+  // Get deadline for connection negotiation.
+  const MonoTime& deadline() const { return deadline_; }
 
   // Initialize a new SASL server. Must be called before Negotiate().
   // Returns OK on success, otherwise RuntimeError.
@@ -133,8 +140,11 @@ class SaslServer {
   // The mechanism we negotiated with the client.
   SaslMechanism::Type negotiated_mech_;
 
-  // Intra-negotiation state
+  // Intra-negotiation state.
   bool nego_ok_;  // During negotiation: did we get a SASL_OK response from the SASL library?
+
+  // Negotiation timeout deadline.
+  MonoTime deadline_;
 
   DISALLOW_COPY_AND_ASSIGN(SaslServer);
 };

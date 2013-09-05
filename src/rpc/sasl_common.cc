@@ -150,7 +150,7 @@ static GoogleOnceType once = GOOGLE_ONCE_INIT;
 
 Status SaslInit(const char* const app_name) {
   GoogleOnceInitArg(&once, &DoSaslInit, app_name);
-  if (sasl_init_data->app_name != app_name) {
+  if (PREDICT_FALSE(sasl_init_data->app_name != app_name)) {
     return Status::InvalidArgument("SaslInit called successively with different arguments",
         StringPrintf("Previous: %s, current: %s", sasl_init_data->app_name.c_str(), app_name));
   }

@@ -14,6 +14,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "rpc/sasl_common.h"
 #include "rpc/sasl_helper.h"
+#include "util/monotime.h"
 #include "util/status.h"
 #include "util/net/socket.h"
 
@@ -57,6 +58,12 @@ class SaslClient {
   // Specify the fully-qualified domain name of the remote server.
   // Call before Init(). Required for some mechanisms.
   void set_server_fqdn(const string& domain_name);
+
+  // Set deadline for connection negotiation.
+  void set_deadline(const MonoTime& deadline);
+
+  // Get deadline for connection negotiation.
+  const MonoTime& deadline() const { return deadline_; }
 
   // Initialize a new SASL client. Must be called before Negotiate().
   // Returns OK on success, otherwise RuntimeError.
@@ -130,9 +137,12 @@ class SaslClient {
   // The mechanism we negotiated with the server.
   SaslMechanism::Type negotiated_mech_;
 
-  // Intra-negotiation state
+  // Intra-negotiation state.
   bool nego_ok_;  // During negotiation: did we get a SASL_OK response from the SASL library?
   bool nego_response_expected_;  // During negotiation: Are we waiting for a server response?
+
+  // Negotiation timeout deadline.
+  MonoTime deadline_;
 
   DISALLOW_COPY_AND_ASSIGN(SaslClient);
 };

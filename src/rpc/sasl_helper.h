@@ -21,6 +21,7 @@ class MessageLite;
 
 namespace kudu {
 
+class MonoTime;
 class Sockaddr;
 class Status;
 
@@ -91,7 +92,7 @@ class SaslHelper {
 
   // Encode and send a message over a socket, sending the connection header if necessary.
   Status SendSaslMessage(Socket* sock, const google::protobuf::MessageLite& header,
-      const google::protobuf::MessageLite& msg);
+      const google::protobuf::MessageLite& msg, const MonoTime& deadline);
 
  private:
   string local_addr_;

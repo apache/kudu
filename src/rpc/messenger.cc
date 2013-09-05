@@ -17,8 +17,10 @@
 #include "gutil/gscoped_ptr.h"
 #include "rpc/acceptor_pool.h"
 #include "rpc/connection.h"
+#include "rpc/constants.h"
 #include "rpc/reactor.h"
 #include "rpc/rpc_header.pb.h"
+#include "rpc/sasl_common.h"
 #include "rpc/transfer.h"
 #include "util/errno.h"
 #include "util/monotime.h"
@@ -73,6 +75,7 @@ MessengerBuilder &MessengerBuilder::set_service_queue_length(
 }
 
 Status MessengerBuilder::Build(Messenger **msgr) {
+  RETURN_NOT_OK(SaslInit(kSaslAppName)); // Initialize SASL library before we start making requests
   gscoped_ptr<Messenger> new_msgr(new Messenger(*this));
   RETURN_NOT_OK(new_msgr.get()->Init());
   *msgr = new_msgr.release();

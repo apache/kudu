@@ -134,12 +134,12 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
 
   ReactorMetrics metrics;
   ASSERT_STATUS_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
-  ASSERT_EQ(1, metrics.num_server_connections_);
-  ASSERT_EQ(0, metrics.num_client_connections_);
+  ASSERT_EQ(1, metrics.num_server_connections_) << "Server should have 1 server connection";
+  ASSERT_EQ(0, metrics.num_client_connections_) << "Server should have 0 client connections";
 
   ASSERT_STATUS_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
-  ASSERT_EQ(0, metrics.num_server_connections_);
-  ASSERT_EQ(1, metrics.num_client_connections_);
+  ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
+  ASSERT_EQ(1, metrics.num_client_connections_) << "Client should have 1 client connections";
 
   // TODO: mock out time in the test!
   sleep(2);
@@ -147,12 +147,12 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
   // After sleeping, the keepalive timer should have closed both sides of
   // the connection.
   ASSERT_STATUS_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
-  ASSERT_EQ(0, metrics.num_server_connections_);
-  ASSERT_EQ(0, metrics.num_client_connections_);
+  ASSERT_EQ(0, metrics.num_server_connections_) << "Server should have 0 server connections";
+  ASSERT_EQ(0, metrics.num_client_connections_) << "Server should have 0 client connections";
 
   ASSERT_STATUS_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
-  ASSERT_EQ(0, metrics.num_server_connections_);
-  ASSERT_EQ(0, metrics.num_client_connections_);
+  ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
+  ASSERT_EQ(0, metrics.num_client_connections_) << "Client should have 0 client connections";
 }
 
 // Test that a call which takes longer than the keepalive time

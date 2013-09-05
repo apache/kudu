@@ -9,6 +9,7 @@
 #include "gutil/stringprintf.h"
 #include "rpc/client_call.h"
 #include "rpc/constants.h"
+#include "rpc/rpc_controller.h"
 #include "rpc/serialization.h"
 #include "rpc/transfer.h"
 
@@ -34,7 +35,8 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
     controller_(DCHECK_NOTNULL(controller)),
     response_(DCHECK_NOTNULL(response_storage)),
     call_id_(kInvalidCallId) {
-  DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_);
+  DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
+           << " and RPC timeout: " << controller->timeout().ToString();
 }
 
 OutboundCall::~OutboundCall() {
@@ -218,7 +220,7 @@ bool OutboundCall::IsFinished() const {
 
 string OutboundCall::ToString() const {
   return StringPrintf("RPC call %s -> %s",
-                      method_.c_str(), conn_id_.remote().ToString().c_str());
+                      method_.c_str(), conn_id_.ToString().c_str());
 }
 
 ///
@@ -259,7 +261,7 @@ void UserCredentials::CopyFrom(const UserCredentials& other) {
 
 string UserCredentials::ToString() const {
   // Does not print the password.
-  return StringPrintf("real_user=%s, eff_user=%s", real_user_.c_str(), eff_user_.c_str());
+  return StringPrintf("{real_user=%s, eff_user=%s}", real_user_.c_str(), eff_user_.c_str());
 }
 
 size_t UserCredentials::HashCode() const {
@@ -312,6 +314,13 @@ void ConnectionId::set_user_cred(const UserCredentials& user_cred) {
 
 void ConnectionId::CopyFrom(const ConnectionId& other) {
   DoCopyFrom(other);
+}
+
+string ConnectionId::ToString() const {
+  // Does not print the password.
+  return StringPrintf("{remote=%s, service_name=%s, user_cred=%s}",
+      remote_.ToString().c_str(), service_name_.c_str(),
+      user_cred_.ToString().c_str());
 }
 
 void ConnectionId::DoCopyFrom(const ConnectionId& other) {

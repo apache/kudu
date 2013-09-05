@@ -20,6 +20,7 @@
 #include "rpc/connection.h"
 #include "rpc/messenger.h"
 #include "rpc/negotiation.h"
+#include "rpc/rpc_controller.h"
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_server.h"
 #include "rpc/transfer.h"
@@ -31,6 +32,8 @@
 
 using std::string;
 using std::tr1::shared_ptr;
+
+DEFINE_int64(server_negotiation_timeout, 3000, "server negotiation timeout, in milliseconds");
 
 namespace kudu {
 namespace rpc {
@@ -48,6 +51,7 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
 }
 
 Status ReactorThread::Init() {
+  DVLOG(6) << "Called ReactorThread::Init()";
   // Register to get async notifications in our epoll loop.
   async_.set(loop_);
   async_.set<ReactorThread, &ReactorThread::AsyncHandler>(this);
@@ -143,7 +147,12 @@ void ReactorThread::AsyncHandler(ev::async &watcher, int revents) {
 
 void ReactorThread::RegisterConnection(const shared_ptr<Connection> &conn) {
   DCHECK(IsCurrentThread());
-  Status s = StartConnectionNegotiation(conn);
+
+  // Set a limit on how long the server will negotiate with a new client.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_server_negotiation_timeout));
+
+  Status s = StartConnectionNegotiation(conn, deadline);
   if (!s.ok()) {
     LOG(ERROR) << "Server connection negotiation failed: " << s.ToString();
     DestroyConnection(conn.get(), s);
@@ -154,7 +163,20 @@ void ReactorThread::RegisterConnection(const shared_ptr<Connection> &conn) {
 void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   DCHECK(IsCurrentThread());
   shared_ptr<Connection> conn;
-  Status s = FindOrStartConnection(call->conn_id(), &conn);
+
+  // TODO: Move call deadline timeout computation into OutboundCall constructor.
+  const MonoDelta &timeout = call->controller()->timeout();
+  MonoTime deadline;
+  if (timeout.ToNanoseconds() == 0) {
+    LOG(WARNING) << "Client call has no timeout set for connection id: "
+        << call->conn_id().ToString();
+    deadline = MonoTime::Max();
+  } else {
+    deadline = MonoTime::Now(MonoTime::FINE);
+    deadline.AddDelta(timeout);
+  }
+
+  Status s = FindOrStartConnection(call->conn_id(), &conn, deadline);
   if (PREDICT_FALSE(!s.ok())) {
     call->SetFailed(s);
     return;
@@ -239,11 +261,13 @@ bool ReactorThread::IsCurrentThread() const {
 }
 
 void ReactorThread::RunThread() {
+  DVLOG(6) << "Calling ReactorThread::RunThread()...";
   loop_.run(0);
   VLOG(1) << name() << " thread exiting.";
 }
 
-Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_ptr<Connection> *conn) {
+Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_ptr<Connection> *conn,
+    const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
   conn_map_t::const_iterator c = client_conns_.find(conn_id);
   if (c != client_conns_.end()) {
@@ -267,27 +291,25 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_
   (*conn)->set_user_cred(conn_id.user_cred());
 
   // Kick off blocking client connection negotiation.
-  RETURN_NOT_OK(StartConnectionNegotiation(*conn));
+  RETURN_NOT_OK(StartConnectionNegotiation(*conn, deadline));
 
   // Insert into the client connection map to avoid duplicate connection requests.
   client_conns_.insert(conn_map_t::value_type(conn_id, *conn));
   return Status::OK();
 }
 
-Status ReactorThread::StartConnectionNegotiation(const shared_ptr<Connection> &conn) {
+Status ReactorThread::StartConnectionNegotiation(const shared_ptr<Connection> &conn,
+    const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
 
-  RETURN_NOT_OK(conn->SetNonBlocking(false));
   if (conn->direction() == Connection::SERVER) {
-    RETURN_NOT_OK(conn->InitSaslServer());
-    shared_ptr<Task> task(new ServerNegotiationTask(conn));
+    shared_ptr<Task> task(new ServerNegotiationTask(conn, deadline));
     shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
     shared_ptr<FutureTask> future_task(new FutureTask(task));
     future_task->AddListener(callback);
     RETURN_NOT_OK(reactor()->messenger()->negotiation_executor()->SubmitFutureTask(&future_task));
   } else {
-    RETURN_NOT_OK(conn->InitSaslClient());
-    shared_ptr<Task> task(new ClientNegotiationTask(conn));
+    shared_ptr<Task> task(new ClientNegotiationTask(conn, deadline));
     shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
     shared_ptr<FutureTask> future_task(new FutureTask(task));
     future_task->AddListener(callback);
@@ -388,6 +410,7 @@ Reactor::Reactor(Messenger *messenger,
 }
 
 Status Reactor::Init() {
+  DVLOG(6) << "Called Reactor::Init()";
   return thread_.Init();
 }
 

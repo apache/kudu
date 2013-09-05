@@ -14,6 +14,7 @@
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_common.h"
 #include "rpc/sasl_server.h"
+#include "util/monotime.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
 
@@ -138,6 +139,62 @@ static void RunPlainFailingNegotiationClient(Socket* conn) {
 // Test SASL negotiation using the PLAIN mechanism over a socket.
 TEST_F(TestSaslRpc, TestPlainFailingNegotiation) {
   RunNegotiationTest(RunPlainFailingNegotiationServer, RunPlainFailingNegotiationClient);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void RunTimeoutExpectingServer(Socket* conn) {
+  SaslServer sasl_server(kSaslAppName, conn->GetFd());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
+  sasl_server.EnableAnonymous();
+  Status s = sasl_server.Negotiate();
+  ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
+      << s.ToString();
+}
+
+static void RunTimeoutNegotiationClient(Socket* sock) {
+  SaslClient sasl_client(kSaslAppName, sock->GetFd());
+  CHECK_OK(sasl_client.Init(kSaslAppName));
+  sasl_client.EnableAnonymous();
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(-100L));
+  sasl_client.set_deadline(deadline);
+  Status s = sasl_client.Negotiate();
+  ASSERT_TRUE(s.IsNetworkError()) << "Expected timeout! Got: " << s.ToString();
+  CHECK_OK(sock->Shutdown(true, true));
+}
+
+// Ensure that the client times out.
+TEST_F(TestSaslRpc, TestClientTimeout) {
+  RunNegotiationTest(RunTimeoutExpectingServer, RunTimeoutNegotiationClient);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+static void RunTimeoutNegotiationServer(Socket* sock) {
+  SaslServer sasl_server(kSaslAppName, sock->GetFd());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
+  sasl_server.EnableAnonymous();
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(-100L));
+  sasl_server.set_deadline(deadline);
+  Status s = sasl_server.Negotiate();
+  ASSERT_TRUE(s.IsNetworkError()) << "Expected timeout! Got: " << s.ToString();
+  CHECK_OK(sock->Close());
+}
+
+static void RunTimeoutExpectingClient(Socket* conn) {
+  SaslClient sasl_client(kSaslAppName, conn->GetFd());
+  CHECK_OK(sasl_client.Init(kSaslAppName));
+  sasl_client.EnableAnonymous();
+  Status s = sasl_client.Negotiate();
+  ASSERT_TRUE(s.IsNetworkError()) << "Expected server to time out and close the connection. Got: "
+      << s.ToString();
+}
+
+// Ensure that the server times out.
+TEST_F(TestSaslRpc, TestServerTimeout) {
+  RunNegotiationTest(RunTimeoutNegotiationServer, RunTimeoutExpectingClient);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

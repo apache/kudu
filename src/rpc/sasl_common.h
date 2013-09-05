@@ -31,6 +31,13 @@ extern const char* const kSaslMechPlain;
 //          Note that this string must remain allocated for the lifetime of the program.
 // This function must be called before using SASL.
 // If the library initializes without error, calling more than once has no effect.
+//
+// Some SASL plugins take time to initialize random number generators and other things,
+// so the first time this function is invoked it may execute for several seconds.
+// After that, it should be very fast. This function should be invoked as early as possible
+// in the application lifetime to avoid SASL initialization taking place in a
+// performance-critical section.
+//
 // This function is thread safe and uses a static lock.
 // This function should NOT be called during static initialization.
 Status SaslInit(const char* const app_name);

@@ -3,6 +3,9 @@
 
 #include "rpc/negotiation.h"
 
+#include <sys/time.h>
+#include <sys/select.h>
+
 #include <string>
 #include <boost/lexical_cast.hpp>
 
@@ -24,7 +27,7 @@ namespace rpc {
 using std::tr1::shared_ptr;
 
 // Client: Send ConnectionContextPB message based on information stored in the Connection object.
-static Status SendConnectionContext(Connection* conn) {
+static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) {
   RequestHeader header;
   header.set_callid(kConnectionContextCallId);
 
@@ -33,17 +36,17 @@ static Status SendConnectionContext(Connection* conn) {
   conn_context.mutable_userinfo()->set_effectiveuser(conn->user_cred().effective_user());
   conn_context.mutable_userinfo()->set_realuser(conn->user_cred().real_user());
 
-  return SendFramedMessageBlocking(conn->socket(), header, conn_context);
+  return SendFramedMessageBlocking(conn->socket(), header, conn_context, deadline);
 }
 
 // Server: Receive ConnectionContextPB message and update the corresponding fields in the
 // associated Connection object. Perform validation against SASL-negotiated information
 // as needed.
-static Status RecvConnectionContext(Connection* conn) {
+static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) {
   faststring recv_buf(1024); // Should be plenty for a ConnectionContextPB message.
   RequestHeader header;
   Slice param_buf;
-  RETURN_NOT_OK(ReceiveFramedMessageBlocking(conn->socket(), &recv_buf, &header, &param_buf));
+  RETURN_NOT_OK(ReceiveFramedMessageBlocking(conn->socket(), &recv_buf, &header, &param_buf, deadline));
   DCHECK(header.IsInitialized());
 
   if (header.callid() != kConnectionContextCallId) {
@@ -80,25 +83,92 @@ static Status RecvConnectionContext(Connection* conn) {
   return Status::OK();
 }
 
+// Wait for the client connection to be established and become ready for writing.
+static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
+  int fd = conn->socket()->GetFd();
+  fd_set writefds;
+  FD_ZERO(&writefds);
+  FD_SET(fd, &writefds);
+  int nfds = fd + 1;
+
+  MonoTime now;
+  MonoDelta remaining;
+  struct timespec ts;
+  while (true) {
+    now = MonoTime::Now(MonoTime::FINE);
+    remaining = deadline.GetDeltaSince(now);
+    DVLOG(4) << "Client waiting to connect for negotiation, time remaining until timeout deadline: "
+             << remaining.ToString();
+    if (PREDICT_FALSE(remaining.ToNanoseconds() <= 0)) {
+      return Status::NetworkError("Timeout exceeded waiting to connect");
+    }
+    remaining.ToTimeSpec(&ts);
+    int ready = pselect(nfds, NULL, &writefds, NULL, &ts, NULL);
+    if (ready == -1) {
+      int err = errno;
+      if (err == EINTR) {
+        // We were interrupted by a signal, let's go again.
+        continue;
+      } else {
+        return Status::IOError("Error from select() while waiting to connect",
+            ErrnoToString(err), err);
+      }
+    } else if (ready == 0) {
+      // Timeout exceeded. Loop back to the top to our impending doom.
+      continue;
+    } else {
+      // Success.
+      break;
+    }
+  }
+  return Status::OK();
+}
+
+// Disable / reset socket timeouts.
+static Status DisableSocketTimeouts(Connection* conn) {
+  RETURN_NOT_OK(conn->socket()->SetSendTimeout(MonoDelta::FromNanoseconds(0L)));
+  RETURN_NOT_OK(conn->socket()->SetRecvTimeout(MonoDelta::FromNanoseconds(0L)));
+  return Status::OK();
+}
+
+// Perform client negotiation. We don't LOG() anything, we leave that to our caller.
+static Status DoClientNegotiation(Connection* conn, const MonoTime& deadline) {
+  RETURN_NOT_OK(WaitForClientConnect(conn, deadline));
+  RETURN_NOT_OK(conn->SetNonBlocking(false));
+  RETURN_NOT_OK(conn->InitSaslClient());
+  conn->sasl_client().set_deadline(deadline);
+  RETURN_NOT_OK(conn->sasl_client().Negotiate());
+  RETURN_NOT_OK(SendConnectionContext(conn, deadline));
+  RETURN_NOT_OK(DisableSocketTimeouts(conn));
+
+  return Status::OK();
+}
+
+// Perform server negotiation. We don't LOG() anything, we leave that to our caller.
+static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
+  RETURN_NOT_OK(conn->SetNonBlocking(false));
+  RETURN_NOT_OK(conn->InitSaslServer());
+  conn->sasl_server().set_deadline(deadline);
+  RETURN_NOT_OK(conn->sasl_server().Negotiate());
+  RETURN_NOT_OK(RecvConnectionContext(conn, deadline));
+  RETURN_NOT_OK(DisableSocketTimeouts(conn));
+
+  return Status::OK();
+}
+
 ///
 /// ClientNegotiationTask
 ///
 
-ClientNegotiationTask::ClientNegotiationTask(const shared_ptr<Connection>& conn)
-  : conn_(conn) {
+ClientNegotiationTask::ClientNegotiationTask(const shared_ptr<Connection>& conn, const MonoTime &deadline)
+  : conn_(conn),
+    deadline_(deadline) {
 }
 
 Status ClientNegotiationTask::Run() {
-  VLOG(3) << "Client user credentials in negotiation: " << conn_->user_cred().ToString();
-  Status s = conn_->sasl_client().Negotiate();
+  Status s = DoClientNegotiation(conn_.get(), deadline_);
   if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("Client SASL negotiation failed. " + conn_->ToString());
-    LOG(WARNING) << s.ToString();
-    return s;
-  }
-  s = SendConnectionContext(conn_.get());
-  if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("Client connection context negotiation failed. " + conn_->ToString());
+    s = s.CloneAndPrepend("Client connection negotiation failed. " + conn_->ToString());
     LOG(WARNING) << s.ToString();
     return s;
   }
@@ -113,20 +183,15 @@ bool ClientNegotiationTask::Abort() {
 /// ServerNegotiationTask
 ///
 
-ServerNegotiationTask::ServerNegotiationTask(const shared_ptr<Connection>& conn)
-  : conn_(conn) {
+ServerNegotiationTask::ServerNegotiationTask(const shared_ptr<Connection>& conn, const MonoTime &deadline)
+  : conn_(conn),
+    deadline_(deadline) {
 }
 
 Status ServerNegotiationTask::Run() {
-  Status s = conn_->sasl_server().Negotiate();
+  Status s = DoServerNegotiation(conn_.get(), deadline_);
   if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("Server SASL negotiation failed. " + conn_->ToString());
-    LOG(WARNING) << s.ToString();
-    return s;
-  }
-  s = RecvConnectionContext(conn_.get());
-  if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("Server connection context negotiation failed. " + conn_->ToString());
+    s = s.CloneAndPrepend("Server connection negotiation failed. " + conn_->ToString());
     LOG(WARNING) << s.ToString();
     return s;
   }

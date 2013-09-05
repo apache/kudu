@@ -111,7 +111,9 @@ class ReactorThread {
 
   // Begin the process of connection negotiation.
   // Must be called from the reactor thread.
-  Status StartConnectionNegotiation(const std::tr1::shared_ptr<Connection> &conn);
+  // Deadline specifies latest time negotiation may complete before timeout.
+  Status StartConnectionNegotiation(const std::tr1::shared_ptr<Connection> &conn,
+                                    const MonoTime &deadline);
 
   // Transition back from negotiating to processing requests.
   // Must be called from the reactor thread.
@@ -130,8 +132,10 @@ class ReactorThread {
   // If such a connection already exists, returns that, otherwise creates a new one.
   // May return a bad Status if the connect() call fails.
   // The resulting connection object is managed internally by the reactor thread.
-  Status FindOrStartConnection(const ConnectionId &remote,
-                               std::tr1::shared_ptr<Connection> *conn);
+  // Deadline specifies latest time allowed for initializing the connection.
+  Status FindOrStartConnection(const ConnectionId &conn_id,
+                               std::tr1::shared_ptr<Connection> *conn,
+                               const MonoTime &deadline);
 
   // Shut down the given connection, removing it from the connection tracking
   // structures of this reactor.

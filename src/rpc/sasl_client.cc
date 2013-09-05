@@ -70,7 +70,8 @@ SaslClient::SaslClient(const string& app_name, int fd)
     sock_(fd),
     helper_(SaslHelper::CLIENT),
     client_state_(SaslNegotiationState::NEW),
-    negotiated_mech_(SaslMechanism::INVALID) {
+    negotiated_mech_(SaslMechanism::INVALID),
+    deadline_(MonoTime::Max()) {
 
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&SaslClientGetoptCb), this));
@@ -116,6 +117,11 @@ void SaslClient::set_remote_addr(const Sockaddr& addr) {
 void SaslClient::set_server_fqdn(const string& domain_name) {
   DCHECK_EQ(client_state_, SaslNegotiationState::NEW);
   helper_.set_server_fqdn(domain_name);
+}
+
+void SaslClient::set_deadline(const MonoTime& deadline) {
+  DCHECK_NE(client_state_, SaslNegotiationState::NEGOTIATED);
+  deadline_ = deadline;
 }
 
 // calls sasl_client_init() and sasl_client_new()
@@ -175,7 +181,7 @@ Status SaslClient::Negotiate() {
   while (!nego_ok_ || nego_response_expected_) {
     ResponseHeader header;
     Slice param_buf;
-    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf));
+    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf, deadline_));
     nego_response_expected_ = false;
 
     SaslMessagePB response;
@@ -219,7 +225,7 @@ Status SaslClient::SendSaslMessage(const SaslMessagePB& msg) {
   // Create header with SASL-specific callId
   RequestHeader header;
   header.set_callid(kSaslCallId);
-  return helper_.SendSaslMessage(&sock_, header, msg);
+  return helper_.SendSaslMessage(&sock_, header, msg, deadline_);
 }
 
 Status SaslClient::ParseSaslMsgResponse(const ResponseHeader& header, const Slice& param_buf,
