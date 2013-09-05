@@ -1,0 +1,43 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.log;
+
+import "common/common.proto";
+import "consensus/consensus.proto";
+import "rpc/rpc_header.proto";
+
+// ===========================================================================
+//  Log Entries - Log specific messages + single node messages
+// ===========================================================================
+
+// The current active memory store state.
+message ActiveMemStores {
+  repeated kudu.consensus.MemStoreId active_stores = 1;
+}
+
+// Types of log entries.
+enum LogEntryType {
+  LOG = 1;
+  COMMIT = 2;
+  MEM_STORE_METADATA = 3;
+};
+
+// log entries, can be of any of the above types to find out exactly which
+// inspect the header.
+message LogEntry {
+  required LogEntryType type = 1;
+  optional kudu.consensus.ReplicateMsg msg = 2;
+  optional kudu.consensus.CommitMsg commit = 3;
+  optional ActiveMemStores active_stores = 4;
+}
+
+// A header for a log segment
+message LogSegmentHeader {
+  // log major version
+  required uint32 major_version = 1;
+  // log minor version
+  required uint32 minor_version = 2;
+  // the the term/index when the segment was started
+  required kudu.consensus.OpId  initial_id = 3;
+  // the active mem stores at the time the segment was created
+  required ActiveMemStores active_stores = 4;
+}

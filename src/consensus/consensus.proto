@@ -1,0 +1,102 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.consensus;
+
+import "common/common.proto";
+import "cfile/cfile.proto";
+import "rpc/rpc_header.proto";
+import "server/metadata.proto";
+import "tserver/tserver.proto";
+
+// ===========================================================================
+//  Generic/Meta- Messages
+// ===========================================================================
+
+// An id for a generic state machine operation. Composed of the leaders' term
+// plus the index of the operation in that term, e.g., the <index>th operation
+// of the <term>th leader.
+message OpId {
+  required uint64 term = 1;
+  required uint64 index = 2;
+}
+
+// The possible statuses for quorum peers.
+enum QuorumPeerStatus {
+  FOLLOWER = 0;
+  CANDIDATE = 1;
+  LEADER = 2;
+  LISTENER = 4;
+};
+
+// A peer in a quorum.
+message QuorumPeerPB {
+  required kudu.metadata.TabletServerPB server = 1;
+  required QuorumPeerStatus status = 2;
+}
+
+// A set of quorum peers, serving a single tablet.
+message QuorumPB {
+  required string tablet_id = 1;
+  repeated QuorumPeerPB peers = 2;
+}
+
+// ===========================================================================
+//  Tablet Messages
+// ===========================================================================
+
+// The type of in-memory store (MemRowSet or DeltaMemStore)
+enum MemStoreType {
+  MEM_ROW_SET = 0;
+  DELTA_ROW_SET = 1;
+}
+
+// A target for a single MutatingOpElement, used for replay and debugging.
+// Includes the type of the mem store, the rowset id and optionally the mem
+// store index (if this corresponds to a DeltaMemStore).
+message MemStoreId {
+  required MemStoreType type = 1;
+  required uint64 mrs_id = 2;
+  required uint64 rs_id = 3;
+  optional uint64 delta_index = 4;
+}
+
+// ===========================================================================
+//  Quorum Messages
+// ===========================================================================
+
+// A no-op message to witness a term change.
+message NoOp {}
+
+// The types of operations that need a commit message, i.e. those that require
+// at least one round of the consensus algorithm.
+enum OperationType {
+  WRITE_OP = 0;
+  CONFIGURATION_CHANGE_OP = 1;
+  NO_OP = 2;
+}
+
+// A Replicate message, sent to replicas by leader to indicate this operation must
+// be stored in the WAL/SM log, as part of the first phase of the two phase
+// commit.
+message ReplicateMsg {
+  optional OpId id = 1;
+  required OperationType op_type = 2;
+  optional tserver.WriteRequestPB write = 3;
+  optional NoOp no_op = 5;
+}
+
+// A commit message for a previous operation.
+// This is a commit in the consensus sense and may abort/commit any operation
+// that required a consensus round, such as MutatingOp or a Configuration
+// change.
+message CommitMsg {
+  // the id of the commit message itself
+  required OpId id = 1;
+  required OperationType op_type = 2;
+  // the id of the message this commit pertains to
+  required OpId commited_op_id = 3;
+  // The response to the write request, will contain the global status
+  // (OK or otherwise) and the row errors, if any.
+  optional tserver.WriteResponsePB response = 4;
+  // The stores that were mutated when the MutatingOp was applied.
+  repeated MemStoreId mutated_stores = 5;
+}

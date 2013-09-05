@@ -305,6 +305,8 @@ set(LIBS ${LIBS} ${KUDU_UTIL_LIBS})
 add_subdirectory(src/common)
 set(LIBS ${LIBS} ${KUDU_COMMON_LIBS})
 
+add_subdirectory(src/consensus)
+
 add_subdirectory(src/cfile)
 set(LIBS ${LIBS} ${CFILE_LIBS})
 
