@@ -29,7 +29,7 @@ Building kudu
 # $PATH that may contain cmake, such as /usr/bin
 $ cmake .
 $ make -j4
-$ make test
+$ make test  # or, to run tests in parallel, ctest -j8 (for 8-way parallelism)
 
 The build artifacts, including the test binaries, will be stored in
 'build/latest/', which itself is a symlink to either build/debug or
@@ -59,6 +59,24 @@ to get a proper symbolized stack trace. The asan_symbolize program can be found
 in the llvm source distribution:
 https://llvm.org/svn/llvm-project/compiler-rt/trunk/lib/asan/scripts/asan_symbolize.py
 
-
 For more information on AddressSanitizer, please see:
   http://clang.llvm.org/docs/AddressSanitizer.html
+
+
+Running tests with the tcmalloc memory leak checker enabled
+------------------------------------------------------------
+
+You can also run the tests with a tcmalloc feature that prints an error message
+and aborts if it detects memory leaks in your program.
+
+$ rm -Rf CMakeCache.txt CMakeFiles/
+$ cmake .
+$ make -j
+$ # Note: LP_BIND_NOW=1 required below, see: https://code.google.com/p/gperftools/issues/detail?id=497
+$ PPROF_PATH=thirdparty/installed/bin/pprof HEAPCHECK=normal LD_BIND_NOW=1 ctest -j8
+
+For more information on the heap checker, please see:
+  http://google-perftools.googlecode.com/svn/trunk/doc/heap_checker.html
+
+NOTE: The AddressSanitizer doesn't play nice with tcmalloc, so sadly the
+HEAPCHECK environment has no effect if you have enabled ASAN.
