@@ -22,9 +22,8 @@ namespace kudu {
 namespace twitter_demo {
 
 using tserver::TabletServerServiceProxy;
-using tserver::InsertRequestPB;
-using tserver::InsertResponsePB;
-using tserver::InsertResponsePB;
+using tserver::WriteRequestPB;
+using tserver::WriteResponsePB;
 using rpc::RpcController;
 
 InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<TabletServerServiceProxy> &proxy)
@@ -32,8 +31,8 @@ InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<TabletServerServicePro
     proxy_(proxy),
     request_pending_(false) {
   request_.set_tablet_id("twitter");
-  CHECK_OK(SchemaToColumnPBs(schema_, request_.mutable_data()->mutable_schema()));
-  request_.mutable_data()->set_num_key_columns(schema_.num_key_columns());
+  CHECK_OK(SchemaToColumnPBs(schema_, request_.mutable_to_insert_rows()->mutable_schema()));
+  request_.mutable_to_insert_rows()->set_num_key_columns(schema_.num_key_columns());
 }
 
 InsertConsumer::~InsertConsumer() {
@@ -59,7 +58,7 @@ void InsertConsumer::BatchFinished() {
   }
 
   if (response_.per_row_errors().size() > 0) {
-    BOOST_FOREACH(const InsertResponsePB::PerRowErrorPB& err, response_.per_row_errors()) {
+    BOOST_FOREACH(const WriteResponsePB::PerRowErrorPB& err, response_.per_row_errors()) {
       if (err.error().code() != AppStatusPB::ALREADY_PRESENT) {
         LOG(WARNING) << "Per-row errors for row " << err.row_index() << ": " << err.DebugString();
       }
@@ -96,7 +95,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   rb.AddString(event_.tweet_event.user_image_url);
 
   // Append the row to the next insert to be sent
-  RowwiseRowBlockPB* data = request_.mutable_data();
+  RowwiseRowBlockPB* data = request_.mutable_to_insert_rows();
   AddRowToRowBlockPB(rb.row(), data);
 
   boost::lock_guard<simple_spinlock> l(lock_);
@@ -106,7 +105,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
     rpc_.Reset();
     rpc_.set_timeout(MonoDelta::FromMilliseconds(1000));
     VLOG(1) << "Sending batch of " << data->num_rows();
-    proxy_->InsertAsync(request_, &response_, &rpc_, boost::bind(&InsertConsumer::BatchFinished, this));
+    proxy_->WriteAsync(request_, &response_, &rpc_, boost::bind(&InsertConsumer::BatchFinished, this));
 
     // TODO: add method to clear the data portions of a RowwiseRowBlockPB
     data->set_num_rows(0);

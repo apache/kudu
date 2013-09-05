@@ -41,8 +41,8 @@ class InsertConsumer : public TwitterConsumer {
 
   simple_spinlock lock_;
   bool request_pending_;
-  tserver::InsertRequestPB request_;
-  tserver::InsertResponsePB response_;
+  tserver::WriteRequestPB request_;
+  tserver::WriteResponsePB response_;
   rpc::RpcController rpc_;
 };
 
