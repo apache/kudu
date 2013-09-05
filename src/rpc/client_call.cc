@@ -167,7 +167,7 @@ void OutboundCall::SetSent() {
   // behavior is a lot more efficient if memory is freed from the same thread
   // which allocated it -- this lets it keep to thread-local operations instead
   // of taking a mutex to put memory back on the global freelist.
-  header_buf_.release();
+  delete [] header_buf_.release();
 
   // request_buf_ is also done being used here, but since it was allocated by
   // the caller thread, we would rather let that thread free it whenever it
