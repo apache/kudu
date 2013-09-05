@@ -171,7 +171,6 @@ set(LIBS ${LIBS} ${Boost_LIBRARIES})
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
 include_directories(SYSTEM ${CYRUS_SASL_INCLUDE_DIR})
-set(LIBS ${LIBS} ${CYRUS_SASL_STATIC_LIB})
 
 ## GLog
 find_package(GLog REQUIRED)
@@ -231,7 +230,6 @@ endif()
 
 ## Libev
 find_package(LibEv REQUIRED)
-set(LIBS ${LIBS} ${LIBEV_STATIC_LIB})
 include_directories(SYSTEM ${LIBEV_INCLUDE_DIR})
 
 ## LZ4

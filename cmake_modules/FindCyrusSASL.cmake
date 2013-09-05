@@ -9,6 +9,7 @@
 #   the plugin libraries so that administrators can more easily patch security issues.
 # This module defines
 #  CYRUS_SASL_INCLUDE_DIR, directory containing headers
+#  CYRUS_SASL_LIBS, path to required libs for the linker
 #  CYRUS_SASL_STATIC_LIB, path to libsasl2.a
 #  CYRUS_SASL_ANON_DYN_LIB, path to sasl2/libanonymous.so
 #  CYRUS_SASL_PLAIN_DYN_LIB, path to sasl2/libplain.so
@@ -34,6 +35,12 @@ find_library(CYRUS_SASL_ANON_DYN_LIB NAMES sasl2/libanonymous.so) # look on syst
 
 if (CYRUS_SASL_INCLUDE_DIR AND CYRUS_SASL_STATIC_LIB AND CYRUS_SASL_PLAIN_DYN_LIB AND CYRUS_SASL_ANON_DYN_LIB)
   set(CYRUS_SASL_FOUND TRUE)
+
+  set(CYRUS_SASL_LIBS ${CYRUS_SASL_STATIC_LIB})
+  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} ${CYRUS_SASL_PLAIN_DYN_LIB})
+  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} ${CYRUS_SASL_ANON_DYN_LIB})
+  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} dl)
+  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} crypt)
 else ()
   set(CYRUS_SASL_FOUND FALSE)
 endif ()
@@ -61,4 +68,5 @@ mark_as_advanced(
   CYRUS_SASL_STATIC_LIB
   CYRUS_SASL_PLAIN_DYN_LIB
   CYRUS_SASL_ANON_DYN_LIB
+  CYRUS_SASL_LIBS
 )

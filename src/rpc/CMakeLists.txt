@@ -36,12 +36,7 @@ TARGET_LINK_LIBRARIES(krpc
   kudu_util
   gutil
   ${LIBEV_STATIC_LIB}
-  ${CYRUS_SASL_STATIC_LIB}
-  ${CYRUS_SASL_ANON_DYN_LIB}
-  ${CYRUS_SASL_PLAIN_DYN_LIB}
-  dl # needed by cyrus-sasl on g++ but not clang++ for some reason
-  crypt
-  ${KUDU_DEP_LIBS}
+  ${CYRUS_SASL_LIBS}
 )
 SET(RPC_LIBS krpc)
 
