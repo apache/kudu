@@ -6,7 +6,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE
+#     Maybe be one of ASAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -59,6 +59,10 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   cmake -DKUDU_GENERATE_COVERAGE=1 .
   # Reset coverage info from previous runs
   find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
+elif [ "$BUILD_TYPE" = "LINT" ]; then
+  cmake .
+  make lint | tee build.log
+  exit $?
 fi
 
 cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}

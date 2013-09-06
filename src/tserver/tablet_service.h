@@ -3,6 +3,7 @@
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
 #include <string>
+#include <vector>
 
 #include "tablet/tablet.h"
 #include "tserver/tserver.service.h"

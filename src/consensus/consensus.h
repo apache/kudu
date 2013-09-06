@@ -145,7 +145,7 @@ class ConsensusContext {
   std::tr1::shared_ptr<FutureCallback> commit_callback_;
 };
 
-}  // end namespace kudu
-}  // end namespace consensus
+} // namespace consensus
+} // namespace kudu
 
 #endif /* CONSENSUS_H_ */

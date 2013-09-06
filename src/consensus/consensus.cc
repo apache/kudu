@@ -24,5 +24,5 @@ void ConsensusContext::Commit(gscoped_ptr<CommitMsg> commit) {
   consensus_->Commit(this, commit.get());
 }
 
-}  // end namespace kudu
-}  // end namespace consensus
+} // namespace consensus
+} // namespace kudu

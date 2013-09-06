@@ -2,10 +2,12 @@
 #ifndef KUDU_TABLET_DELTA_COMPACTION_H
 #define KUDU_TABLET_DELTA_COMPACTION_H
 
+#include <string>
+#include <vector>
+
 #include "tablet/deltafile.h"
 
 namespace kudu {
-
 namespace tablet {
 
 class DeltaKey;

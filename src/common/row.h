@@ -4,6 +4,7 @@
 
 #include <glog/logging.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/types.h"

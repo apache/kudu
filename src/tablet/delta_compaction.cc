@@ -2,6 +2,9 @@
 
 #include "tablet/delta_compaction.h"
 
+#include <string>
+#include <vector>
+
 #include "gutil/stl_util.h"
 #include "common/columnblock.h"
 #include "cfile/cfile_reader.h"
