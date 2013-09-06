@@ -329,8 +329,6 @@ set(LIBS ${LIBS} ${KUDU_UTIL_LIBS})
 add_subdirectory(src/common)
 set(LIBS ${LIBS} ${KUDU_COMMON_LIBS})
 
-add_subdirectory(src/consensus)
-
 add_subdirectory(src/cfile)
 set(LIBS ${LIBS} ${CFILE_LIBS})
 
@@ -345,6 +343,9 @@ set(LIBS ${LIBS} ${RPC_LIBS})
 
 add_subdirectory(src/tserver)
 set(LIBS ${LIBS} ${TSERVER_LIBS})
+
+add_subdirectory(src/consensus)
+set(LIBS ${LIBS} ${CONSENSUS_LIBS})
 
 add_subdirectory(src/master)
 set(LIBS ${LIBS} ${MASTER_LIBS})

@@ -184,6 +184,16 @@ class DiskRowSet : public RowSet {
   ////////////////////////////////////////////////////////////
 
   // Flush all accumulated delta data to disk.
+  //
+  // TODO right now delta flushing is not automated, but when we get to it we
+  // need to take into account that if we never flush deltas that receive no
+  // updates then log segments will never be garbage collected. This because
+  // log GC works by comparing the last delta ids of the row sets in two
+  // different superblocks, and if the last deltas of any row set have the same
+  // id, then log GC will assume that there is in-mem state in common.
+  // A possible solution is to add a last_durable_dms_id to RowSetDataPB and
+  // increase it (and increase the id of the current DeltaMemStore) when
+  // flushing even if we didn't actually create a delta file.
   Status FlushDeltas();
 
   ////////////////////////////////////////////////////////////
