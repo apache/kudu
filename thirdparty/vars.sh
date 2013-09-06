@@ -49,3 +49,6 @@ MONGOOSE_DIR=$TP_DIR/mongoose-${MONGOOSE_VERSION}
 # https://code.google.com/p/google-styleguide/source/list
 GSG_REVISION=110
 GSG_DIR=$TP_DIR/google-styleguide-r${GSG_REVISION}
+
+GCOVR_VERSION=3.0
+GCOVR_DIR=$TP_DIR/gcovr-3.0

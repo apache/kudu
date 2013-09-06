@@ -29,6 +29,7 @@ else
       "zlib")       F_ZLIB=1 ;;
       "mongoose")   F_MONGOOSE=1 ;;
       "gsg")        F_GSG=1 ;;
+      "gcovr")      F_GCOVR=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -161,6 +162,11 @@ fi
 # Copy cpplint tool into bin directory
 if [ -n "$F_ALL" -o -n "$F_GSG" ]; then
   cp $GSG_DIR/cpplint/cpplint.py $PREFIX/bin/cpplint.py
+fi
+
+# Copy gcovr tool into bin directory
+if [ -n "$F_ALL" -o -n "$F_GCOVR" ]; then
+  cp -a $GCOVR_DIR/scripts/gcovr $PREFIX/bin/gcovr
 fi
 
 echo "---------------------"

@@ -102,3 +102,26 @@ For more information on the heap checker, please see:
 
 NOTE: The AddressSanitizer doesn't play nice with tcmalloc, so sadly the
 HEAPCHECK environment has no effect if you have enabled ASAN.
+
+
+Generating code coverage reports
+------------------------------------------------------------
+
+In order to generate a code coverage report, you must build with gcc (not clang)
+and use the following flags:
+
+$ cmake -DKUDU_GENERATE_COVERAGE=1 .
+$ make clean
+$ make -j4
+$ ctest -j4
+
+This will generate the code coverage files with extensions .gcno and .gcda. You can then
+use a tool like lcov or gcovr to visualize the results. For example, using gcovr:
+
+$ mkdir cov_html
+$ ./thirdparty/gcovr-3.0/scripts/gcovr -r src/
+
+Or using lcov (which seems to produce better HTML output):
+
+$ lcov  --capture --directory src --output-file coverage.info
+$ genhtml coverage.info --output-directory out

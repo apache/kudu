@@ -119,5 +119,12 @@ if [ ! -d $GSG_DIR ]; then
   mv ${GSG_DIR}.tmp ${GSG_DIR}
 fi
 
+if [ ! -d $GCOVR_DIR ]; then
+  echo "Fetching gcovr"
+  wget -O gcovr-${GCOVR_VERSION}.tar.gz https://github.com/gcovr/gcovr/archive/3.0.tar.gz
+  tar xzf gcovr-${GCOVR_VERSION}.tar.gz
+  rm gcovr-${GCOVR_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

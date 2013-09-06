@@ -15,7 +15,6 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 #  - pthread: enable multithreaded malloc
 #  - -D__STDC_FORMAT_MACROS: for PRI* print format macros
 SET(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
-SET(CXX_COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage")
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
@@ -59,16 +58,18 @@ elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "PROFILE_GEN")
   SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_PROFILE_GEN})
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "PROFILE_BUILD")
   SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_PROFILE_BUILD})
-elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "CODE_COVERAGE_DEBUG")
-  SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_DEBUG} ${CXX_COVERAGE_FLAGS}")
-elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "CODE_COVERAGE_RELEASE")
-  SET(CMAKE_CXX_FLAGS "${CXX_FLAGS_RELEASE} ${CXX_COVERAGE_FLAGS}")
 else()
   message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif ()
 
 # Add common flags
 SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
+
+if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
+  set(IS_CLANG 1)
+else()
+  set(IS_CLANG 0)
+endif()
 
 # Flag to enable clang address sanitizer
 # This will only build if clang is the chosen compiler
@@ -90,12 +91,26 @@ if (${KUDU_USE_UBSAN})
 endif ()
 
 if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}")
+  if (NOT "${IS_CLANG}")
+    message(SEND_ERROR "Cannot use ASAN/UBSAN without clang")
+  endif()
   # Don't omit frame pointers, so that our failures have better info included.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
 
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
   # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
   set(KUDU_STATIC_LINK ON)
+endif()
+
+# Code coverage
+if ("${KUDU_GENERATE_COVERAGE}")
+  if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
+    # There appears to be some bugs in clang 3.3 which cause code coverage
+    # to have link errors, not locating the llvm_gcda_* symbols.
+    # This should be fixed in llvm 3.4 with http://llvm.org/viewvc/llvm-project?view=revision&revision=184666
+    message(SEND_ERROR "Cannot currently generate coverage with clang")
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
 endif()
 
 # set compile output directory

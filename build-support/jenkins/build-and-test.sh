@@ -6,7 +6,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|LEAKCHECK|DEBUG|RELEASE
+#     Maybe be one of ASAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -53,6 +53,12 @@ elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
   export HEAPCHECK=normal
   # Workaround for gperftools issue #497
   export LD_BIND_NOW=1
+elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
+  DO_COVERAGE=1
+  BUILD_TYPE=debug
+  cmake -DKUDU_GENERATE_COVERAGE=1 .
+  # Reset coverage info from previous runs
+  find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
 fi
 
 cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
@@ -64,3 +70,8 @@ NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
 make -j$NUM_PROCS 2>&1 | tee build.log
 ctest -j$NUM_PROCS
+
+if [ "$DO_COVERAGE" == "1" ]; then
+  echo Generating coverage report...
+  ./thirdparty/gcovr-3.0/scripts/gcovr -r src/  -e '.*\.pb\..*' --xml > build/coverage.xml
+fi
