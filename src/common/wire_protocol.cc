@@ -210,11 +210,16 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
     }
   }
 
+  int n_rows = rowblock_pb->num_rows();
+  if (PREDICT_FALSE(n_rows == 0)) {
+    // Early-out here to avoid a UBSAN failure.
+    return Status::OK();
+  }
+
   // Doing this resize and array indexing turns out to be noticeably faster
   // than using reserve and push_back.
   const uint8_t* src = reinterpret_cast<const uint8_t*>(&(*row_data)[0]);
   int dst_index = rows->size();
-  int n_rows = rowblock_pb->num_rows();
   rows->resize(rows->size() + n_rows);
   const uint8_t** dst = &(*rows)[dst_index];
   while (n_rows > 0) {

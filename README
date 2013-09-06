@@ -63,6 +63,28 @@ For more information on AddressSanitizer, please see:
   http://clang.llvm.org/docs/AddressSanitizer.html
 
 
+Running tests with the clang Undefined Behavior Sanitizer (UBSAN) enabled
+------------------------------------------------------------
+
+Similar to the above, you can use a special set of clang flags to enable the Undefined
+Behavior Sanitizer. This will generate errors on certain pieces of code which may
+not themselves crash but rely on behavior which isn't defined by the C++ standard
+(and thus are likely bugs).
+
+You'll need at least clang 3.3 to use this feature.
+
+$ rm -Rf CMakeCache.txt CMakeFiles/
+$ CXX=/opt/bin/clang++ cmake -DKUDU_USE_UBSAN=1 .   # or whatever your path to clang++
+$ make -j
+$ make test
+
+In order to get a stack trace from UBSan, you can use gdb on the failing test, and
+set a breakpoint as follows:
+
+(gdb) b __ubsan::Diag::~Diag
+
+Then, when the breakpoint fires, gather a backtrace as usual using 'bt'.
+
 Running tests with the tcmalloc memory leak checker enabled
 ------------------------------------------------------------
 

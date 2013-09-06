@@ -29,7 +29,7 @@ void TestUrl(const string& input, const string& expected_encoded, bool hive_comp
   UrlEncode(input, &intermediate, hive_compat);
   string output;
   if (!expected_encoded.empty()) {
-    EXPECT_EQ(intermediate, expected_encoded);
+    EXPECT_EQ(expected_encoded, intermediate);
   }
   EXPECT_TRUE(UrlDecode(intermediate, &output, hive_compat));
   EXPECT_EQ(input, output);
@@ -37,7 +37,9 @@ void TestUrl(const string& input, const string& expected_encoded, bool hive_comp
   // Convert string to vector and try that also
   vector<uint8_t> input_vector;
   input_vector.resize(input.size());
-  memcpy(&input_vector[0], input.c_str(), input.size());
+  if (!input.empty()) {
+    memcpy(&input_vector[0], input.c_str(), input.size());
+  }
   string intermediate2;
   UrlEncode(input_vector, &intermediate2, hive_compat);
   EXPECT_EQ(intermediate, intermediate2);

@@ -1,0 +1,12 @@
+# Copyright (c) 2013, Cloudera, inc.
+# Blacklist of things not to run the sanitizer on.
+
+# The safe math routines are expected to overflow, but anyone using them
+# will check the resulting overflow flags.
+fun:*kudu18safe_math_internal*
+
+# Workaround for a bug in clang's libstdc++ which causes a false positive
+# trying to use ostream << std::hex
+fun:_Ios_Fmtflags
+
+
