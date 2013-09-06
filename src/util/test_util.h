@@ -8,6 +8,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <string>
+#include <strings.h>
 #include "util/env.h"
 #include "util/test_macros.h"
 #include "gutil/gscoped_ptr.h"
@@ -17,6 +18,7 @@
 DECLARE_bool(test_leave_files);
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
+static const char* const kSlowTestsEnvVariable = "KUDU_ALLOW_SLOW_TESTS";
 namespace kudu {
 
 class KuduTest : public ::testing::Test {
@@ -64,7 +66,21 @@ class KuduTest : public ::testing::Test {
   }
 
   bool AllowSlowTests() {
-    return getenv("KUDU_ALLOW_SLOW_TESTS");
+    char *e = getenv(kSlowTestsEnvVariable);
+    if ((e == NULL) ||
+        (strlen(e) == 0) ||
+        (strcasecmp(e, "false") == 0) ||
+        (strcasecmp(e, "0") == 0) ||
+        (strcasecmp(e, "no") == 0)) {
+      return false;
+    }
+    if ((strcasecmp(e, "true") == 0) ||
+        (strcasecmp(e, "1") == 0) ||
+        (strcasecmp(e, "yes") == 0)) {
+      return true;
+    }
+    LOG(FATAL) << "Unrecognized value for " << kSlowTestsEnvVariable << ": " << e;
+    return false;
   }
 
   // Call srand() with a random seed based on the current time, reporting
