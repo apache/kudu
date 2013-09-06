@@ -106,7 +106,7 @@ TEST_F(TestCBTree, TestLeafNode) {
   // Add entries until it is full
   int i;
   bool full = false;
-  for (i = 0; i < 1000 && full; i++) {
+  for (i = 0; i < 1000 && !full; i++) {
     char buf[64];
     snprintf(buf, sizeof(buf), "filler_key_%d", i);
     switch (InsertInLeaf(&lnode, &arena, Slice(buf), Slice("data"))) {
