@@ -282,16 +282,16 @@ Status ReactorThread::StartConnectionNegotiation(const shared_ptr<Connection> &c
     RETURN_NOT_OK(conn->InitSaslServer());
     shared_ptr<Task> task(new ServerNegotiationTask(conn));
     shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
-    shared_ptr<Future> future;
-    reactor()->messenger()->negotiation_executor()->Submit(task, &future);
-    future->AddListener(callback);
+    shared_ptr<FutureTask> future_task(new FutureTask(task));
+    future_task->AddListener(callback);
+    RETURN_NOT_OK(reactor()->messenger()->negotiation_executor()->SubmitFutureTask(&future_task));
   } else {
     RETURN_NOT_OK(conn->InitSaslClient());
     shared_ptr<Task> task(new ClientNegotiationTask(conn));
     shared_ptr<FutureCallback> callback(new NegotiationCallback(conn));
-    shared_ptr<Future> future;
-    reactor()->messenger()->negotiation_executor()->Submit(task, &future);
-    future->AddListener(callback);
+    shared_ptr<FutureTask> future_task(new FutureTask(task));
+    future_task->AddListener(callback);
+    RETURN_NOT_OK(reactor()->messenger()->negotiation_executor()->SubmitFutureTask(&future_task));
   }
   return Status::OK();
 }

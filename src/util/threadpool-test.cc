@@ -44,10 +44,10 @@ TEST(TestThreadPool, TestSimpleTasks) {
   Atomic32 counter(0);
   std::tr1::shared_ptr<Runnable> task(new SimpleTask(15, &counter));
 
-  thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter));
-  thread_pool.Submit(task);
-  thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter));
-  thread_pool.Submit(task);
+  ASSERT_STATUS_OK(thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter)));
+  ASSERT_STATUS_OK(thread_pool.Submit(task));
+  ASSERT_STATUS_OK(thread_pool.SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter)));
+  ASSERT_STATUS_OK(thread_pool.Submit(task));
   thread_pool.Wait();
   ASSERT_EQ(10 + 15 + 20 + 15, base::subtle::NoBarrier_Load(&counter));
   thread_pool.Shutdown();

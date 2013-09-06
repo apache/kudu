@@ -78,6 +78,9 @@ std::string Status::CodeAsString() const {
     case kNotAuthorized:
       type = "Not authorized";
       break;
+    case kAborted:
+      type = "Aborted";
+      break;
     default:
       snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
                static_cast<int>(code()));

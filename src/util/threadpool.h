@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gutil/macros.h"
+#include "gutil/port.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -49,10 +50,12 @@ class ThreadPool {
   void Shutdown();
 
   // Submit a function binded using boost::bind(&FuncName, args...)
-  void SubmitFunc(const boost::function<void()>& func);
+  Status SubmitFunc(const boost::function<void()>& func)
+      WARN_UNUSED_RESULT;
 
   // Submit a Runnable class
-  void Submit(const std::tr1::shared_ptr<Runnable>& task);
+  Status Submit(const std::tr1::shared_ptr<Runnable>& task)
+      WARN_UNUSED_RESULT;
 
   // Wait until all the tasks are completed.
   void Wait();

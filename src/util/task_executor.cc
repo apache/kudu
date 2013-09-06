@@ -18,37 +18,47 @@ FutureTask::FutureTask(const std::tr1::shared_ptr<Task>& task)
 
 void FutureTask::Run() {
   if (!set_state(kTaskRunningState)) {
+    Status s = Status::Aborted("Task was aborted before it ran");
+    BOOST_FOREACH(ListenerCallback callback, listeners_) {
+      callback->OnFailure(s);
+    }
+    latch_.CountDown();
     return;
   }
 
   status_ = task_->Run();
   set_state(kTaskFinishedState);
 
-  latch_.CountDown();
-  boost::lock_guard<LockType> l(lock_);
-  if (status_.ok()) {
-    BOOST_FOREACH(ListenerCallback callback, listeners_) {
-      callback->OnSuccess();
-    }
-  } else {
-    BOOST_FOREACH(ListenerCallback callback, listeners_) {
-      callback->OnFailure(status_);
+  {
+    boost::lock_guard<LockType> l(lock_);
+    if (status_.ok()) {
+      BOOST_FOREACH(ListenerCallback callback, listeners_) {
+        callback->OnSuccess();
+      }
+    } else {
+      BOOST_FOREACH(ListenerCallback callback, listeners_) {
+        callback->OnFailure(status_);
+      }
     }
   }
+
+  latch_.CountDown();
 }
 
 bool FutureTask::Abort() {
   boost::lock_guard<LockType> l(lock_);
   if (state_ != kTaskFinishedState && task_->Abort()) {
     state_ = kTaskAbortedState;
+    return true;
   }
   return false;
 }
 
+// TODO: Consider making it so that all callbacks are invoked on the executor thread.
 void FutureTask::AddListener(
     std::tr1::shared_ptr<FutureCallback> callback) {
   boost::lock_guard<LockType> l(lock_);
-  if (state_ != kTaskFinishedState || kTaskAbortedState) {
+  if (state_ != kTaskFinishedState && state_ != kTaskAbortedState) {
     listeners_.push_back(callback);
   } else if (status_.ok()) {
     callback->OnSuccess();
@@ -64,7 +74,7 @@ bool FutureTask::is_aborted() const {
 
 bool FutureTask::is_done() const {
   boost::lock_guard<LockType> l(lock_);
-  return state_ == kTaskFinishedState || kTaskAbortedState;
+  return state_ == kTaskFinishedState || state_ == kTaskAbortedState;
 }
 
 bool FutureTask::is_running() const {
@@ -75,6 +85,7 @@ bool FutureTask::is_running() const {
 void FutureTask::Wait() {
   latch_.Wait();
 }
+
 bool FutureTask::TimedWait(const boost::system_time& time_until) {
   return latch_.TimedWait(time_until);
 }
@@ -89,17 +100,22 @@ bool FutureTask::set_state(TaskState state) {
 }
 
 TaskExecutor::TaskExecutor(const std::tr1::shared_ptr<ThreadPool>& thread_pool)
-: thread_pool_(thread_pool) {
+  : thread_pool_(thread_pool) {
 }
 
-void TaskExecutor::Submit(const std::tr1::shared_ptr<Task>& task,
+Status TaskExecutor::Submit(const std::tr1::shared_ptr<Task>& task,
                           std::tr1::shared_ptr<Future> *future) {
-  std::tr1::shared_ptr<FutureTask> future_task(
-      new FutureTask(task));
+  std::tr1::shared_ptr<FutureTask> future_task(new FutureTask(task));
   if (future != NULL) {
+    DCHECK(future->get() == NULL);
     *future = future_task;
   }
-  thread_pool_->Submit(future_task);
+  return thread_pool_->Submit(future_task);
+}
+
+Status TaskExecutor::SubmitFutureTask(const std::tr1::shared_ptr<FutureTask>* future_task) {
+  CHECK(future_task != NULL);
+  return thread_pool_->Submit(*future_task);
 }
 
 void TaskExecutor::Wait() {

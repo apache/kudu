@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "gutil/macros.h"
+#include "gutil/port.h"
 #include "util/countdown_latch.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -24,11 +25,11 @@ namespace kudu {
 // deferring execution to another Threadpool for long-running Callbacks.
 class FutureCallback {
  public:
-  // Called when the future completed successfully.
+  // Called when the FutureTask completes successfully.
   virtual void OnSuccess() = 0;
 
-  // Called when, for some reason, the task failed. The status describes
-  // the reason for failure.
+  // Called when the FutureTask fails or is aborted.
+  // The status describes the reason for failure.
   virtual void OnFailure(const Status& status) = 0;
 
   virtual ~FutureCallback() {
@@ -233,8 +234,18 @@ class TaskExecutor {
   //    std::tr1::shared_ptr<Future> future;
   //    executor->Submit(task, &future);
   //    future->Wait();
-  void Submit(const std::tr1::shared_ptr<Task>& task,
-              std::tr1::shared_ptr<Future> *future);
+  Status Submit(const std::tr1::shared_ptr<Task>& task,
+                std::tr1::shared_ptr<Future> *future)
+                WARN_UNUSED_RESULT;
+
+  // Submit a FutureTask to the executor.
+  //
+  // By adding Listeners to the FutureTask before calling this method,
+  // you are guaranteed that the callbacks will be called from the executor thread if:
+  // 1. SubmitFutureTask() returns Status::OK.
+  // 2. The TaskExecutor is not Shutdown() while your FutureTask is in the threadpool queue.
+  Status SubmitFutureTask(const std::tr1::shared_ptr<FutureTask>* future_task)
+      WARN_UNUSED_RESULT;
 
   // Wait until all the tasks are completed.
   void Wait();

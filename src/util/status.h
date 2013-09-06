@@ -92,6 +92,10 @@ class Status {
                          int16_t posix_code = -1) {
     return Status(kNotAuthorized, msg, msg2, posix_code);
   }
+  static Status Aborted(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kAborted, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -125,6 +129,9 @@ class Status {
 
   // Returns true iff the status indicates a NotAuthorized.
   bool IsNotAuthorized() const { return code() == kNotAuthorized; }
+
+  // Returns true iff the status indicates Aborted.
+  bool IsAborted() const { return code() == kAborted; }
 
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
@@ -170,6 +177,7 @@ class Status {
     kNetworkError = 8,
     kIllegalState = 9,
     kNotAuthorized = 10,
+    kAborted = 11,
   };
 
   Code code() const {
