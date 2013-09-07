@@ -345,6 +345,21 @@ Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string>
   return Status::OK();
 }
 
+Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *out) {
+  RETURN_NOT_OK(input->Init());
+  vector<DeltaCompactionInputCell> cells;
+
+  while (input->HasMoreBlocks()) {
+    RETURN_NOT_OK(input->PrepareBlock(&cells));
+
+    BOOST_FOREACH(const DeltaCompactionInputCell &cell, cells) {
+      out->AppendDelta(cell.key, RowChangeList(cell.cell));
+    }
+    RETURN_NOT_OK(input->FinishBlock());
+  }
+
+  return Status::OK();
+}
 
 } // namespace tablet
 } // namespace kudu

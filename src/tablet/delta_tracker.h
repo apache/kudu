@@ -29,6 +29,7 @@ using std::tr1::shared_ptr;
 class DeltaMemStore;
 class DeltaFileReader;
 class MutationResult;
+class DeltaCompactionInput;
 
 // The DeltaTracker is the part of a DiskRowSet which is responsible for
 // tracking modifications against the base data. It consists of a set of
@@ -69,6 +70,12 @@ class DeltaTracker {
   // Sets *deleted to true if so; otherwise sets it to false.
   Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
+  // Performs minor compaction on all delta files between index
+  // "start_idx" and "end_idx" (inclusive), writes and flushes the
+  // compacted files to file at "data_writer".
+  Status CompactStores(size_t start_idx, size_t end_idx,
+                       const shared_ptr<WritableFile> &data_writer);
+
   // Return the number of rows encompassed by this DeltaTracker. Note that
   // this is _not_ the number of updated rows, but rather the number of rows
   // in the associated CFileSet base data. All updates must have a rowid
@@ -82,11 +89,14 @@ class DeltaTracker {
 
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
+  FRIEND_TEST(TestRowSet, TestMakeDeltaCompactionInput);
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
                   gscoped_ptr<DeltaFileReader> *dfr);
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
+  Status MakeCompactionInput(size_t start_idx, size_t end_idx,
+                             gscoped_ptr<DeltaCompactionInput> *out);
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   const Schema schema_;

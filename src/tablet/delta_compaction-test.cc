@@ -82,6 +82,19 @@ class TestDeltaCompaction : public KuduTest {
     return Status::OK();
   }
 
+  Status CreateMergedDeltaCompactionInput(gscoped_ptr<DeltaCompactionInput> *merged) {
+    vector<shared_ptr<DeltaCompactionInput> > inputs;
+    int min_txid = 0;
+    for (int i = 0; i < FLAGS_num_delta_files; i++) {
+      gscoped_ptr<DeltaCompactionInput> input;
+      RETURN_NOT_OK(FillDeltaFile(0, FLAGS_num_rows, min_txid, &input));
+      inputs.push_back(shared_ptr<DeltaCompactionInput>(input.release()));
+      min_txid += 2;
+    }
+    merged->reset(DeltaCompactionInput::Merge(inputs));
+    return Status::OK();
+  }
+
   virtual void SetUp() {
     KuduTest::SetUp();
     SeedRandom();
@@ -105,17 +118,30 @@ TEST_F(TestDeltaCompaction, TestDeltaFileCompactionInput) {
 }
 
 TEST_F(TestDeltaCompaction, TestMerge) {
-  vector<shared_ptr<DeltaCompactionInput> > inputs;
-  int min_txid = 0;
-  for (int i = 0; i < FLAGS_num_delta_files; i++) {
-    gscoped_ptr<DeltaCompactionInput> input;
-    ASSERT_STATUS_OK(FillDeltaFile(0, FLAGS_num_rows, min_txid, &input));
-    inputs.push_back(shared_ptr<DeltaCompactionInput>(input.release()));
-    min_txid += 2;
-  }
-  gscoped_ptr<DeltaCompactionInput> merged(DeltaCompactionInput::Merge(inputs));
+  gscoped_ptr<DeltaCompactionInput> merged;
+  ASSERT_STATUS_OK(CreateMergedDeltaCompactionInput(&merged));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(merged.get(), &results, schema_));
+  BOOST_FOREACH(const string &str, results) {
+    VLOG(1) << str;
+  }
+  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
+}
+
+TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
+  gscoped_ptr<DeltaCompactionInput> merged;
+  ASSERT_STATUS_OK(CreateMergedDeltaCompactionInput(&merged));
+  string path = GetNextDeltaFilePath();
+  gscoped_ptr<DeltaFileWriter> dfw;
+  ASSERT_STATUS_OK(GetDeltaFileWriter(path, &dfw));
+  ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
+  ASSERT_STATUS_OK(dfw->Finish());
+  gscoped_ptr<DeltaFileReader> reader;
+  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), path, schema_, &reader));
+  gscoped_ptr<DeltaCompactionInput> dci;
+  ASSERT_STATUS_OK(DeltaCompactionInput::Open(*reader, &dci));
+  vector<string> results;
+  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {
     VLOG(1) << str;
   }

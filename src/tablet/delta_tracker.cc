@@ -10,6 +10,7 @@
 #include "util/env_util.h"
 #include "util/status.h"
 #include "tablet/deltafile.h"
+#include "tablet/delta_compaction.h"
 #include "tablet/delta_store.h"
 #include "tablet/diskrowset.h"
 
@@ -184,6 +185,35 @@ Status DeltaTracker::Open() {
   return Status::OK();
 }
 
+Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
+                                         gscoped_ptr<DeltaCompactionInput> *out) {
+  CHECK(open_);
+  CHECK_LE(start_idx, end_idx);
+  CHECK_LT(end_idx, delta_stores_.size());
+  vector<shared_ptr<DeltaCompactionInput> > inputs;
+  for (size_t idx = start_idx; idx <= end_idx; ++idx) {
+    DeltaFileReader *dfr = down_cast<DeltaFileReader *>(delta_stores_[idx].get());
+    LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
+    gscoped_ptr<DeltaCompactionInput> dci;
+    RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, &dci));
+    inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
+  }
+  out->reset(DeltaCompactionInput::Merge(inputs));
+  return Status::OK();
+}
+
+Status DeltaTracker::CompactStores(size_t start_idx, size_t end_idx,
+                                   const shared_ptr<WritableFile> &data_writer) {
+  gscoped_ptr<DeltaCompactionInput> inputs_merge;
+  RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, &inputs_merge));
+  LOG(INFO) << "Compacting " << (start_idx - end_idx + 1) << " delta files.";
+  DeltaFileWriter dfw(schema_, data_writer);
+  RETURN_NOT_OK(dfw.Start());
+  RETURN_NOT_OK(FlushDeltaCompactionInput(inputs_merge.get(), &dfw));
+  RETURN_NOT_OK(dfw.Finish());
+  LOG(INFO) << "Succesfully compacted the specified delta files.";
+  return Status::OK();
+}
 
 void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);

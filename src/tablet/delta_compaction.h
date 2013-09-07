@@ -53,6 +53,11 @@ struct DeltaCompactionInputCell {
 Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string> *lines,
                                      const Schema &schema);
 
+
+// Iterates through the specified compaction input and flushes them to the "out"
+// delta writer
+Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *out);
+
 } // namespace tablet
 } // namespace kudu
 

@@ -8,7 +8,9 @@
 
 #include "common/row.h"
 #include "common/schema.h"
+#include "gutil/algorithm.h"
 #include "gutil/stringprintf.h"
+#include "tablet/delta_compaction.h"
 #include "tablet/diskrowset.h"
 #include "tablet/diskrowset-test-base.h"
 #include "tablet/tablet-test-util.h"
@@ -24,6 +26,7 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::unordered_set;
+using util::gtl::is_sorted;
 using metadata::RowSetMetadata;
 
 // TODO: add test which calls CopyNextRows on an iterator with no more
@@ -368,6 +371,26 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
     ASSERT_TRUE(meta->HasColumnDataBlockForTests(0));
   }
+}
+
+TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
+  WriteTestRowSet();
+
+  // Now open the DiskRowSet for read
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  ASSERT_STATUS_OK(rs->FlushDeltas());
+  DeltaTracker *dt = rs->delta_tracker();
+  int num_stores = dt->delta_stores_.size();
+  gscoped_ptr<DeltaCompactionInput> dci;
+  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &dci));
+  vector<string> results;
+  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
+  BOOST_FOREACH(const string &str, results) {
+    VLOG(1) << str;
+  }
+  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
 }
 
 } // namespace tablet
