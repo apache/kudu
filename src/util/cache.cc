@@ -163,7 +163,6 @@ class LRUCache {
   // mutex_ protects the following state.
   MutexType mutex_;
   size_t usage_;
-  uint64_t last_id_;
 
   // Dummy head of LRU list.
   // lru.prev is newest entry, lru.next is oldest entry.
@@ -173,8 +172,7 @@ class LRUCache {
 };
 
 LRUCache::LRUCache()
-    : usage_(0),
-      last_id_(0) {
+  : usage_(0) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;

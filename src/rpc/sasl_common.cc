@@ -15,6 +15,8 @@
 #include "gutil/stringprintf.h"
 #include "util/net/sockaddr.h"
 
+using std::set;
+
 // Use this to search for plugins. Should work at least on RHEL & Ubuntu.
 DEFINE_string(sasl_path, "/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-gnu/sasl2",
     "Colon separated list of paths to look for SASL security library plugins.");

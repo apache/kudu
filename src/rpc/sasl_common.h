@@ -20,7 +20,6 @@ class Sockaddr;
 namespace rpc {
 
 using std::string;
-using std::set;
 
 // Constants
 extern const char* const kSaslMechAnonymous;
@@ -49,7 +48,7 @@ string SaslErrDesc(int status, sasl_conn_t* conn);
 string SaslIpPortString(const Sockaddr& addr);
 
 // Return available plugin mechanisms for the given connection.
-set<string> SaslListAvailableMechs();
+std::set<string> SaslListAvailableMechs();
 
 // Initialize and return a libsasl2 callback data structure based on the passed args.
 // id: A SASL callback identifier (e.g., SASL_CB_GETOPT).

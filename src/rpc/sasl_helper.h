@@ -27,7 +27,6 @@ class Status;
 
 namespace rpc {
 
-using std::set;
 using std::string;
 
 class SaslMessagePB;
@@ -57,11 +56,11 @@ class SaslHelper {
   const char* server_fqdn() const;
 
   // Globally-registered available SASL plugins.
-  const set<string>& GlobalMechs() const;
+  const std::set<string>& GlobalMechs() const;
 
   // Helper functions for managing the list of active SASL mechanisms.
   void AddToLocalMechList(const string& mech);
-  const set<string>& LocalMechs() const;
+  const std::set<string>& LocalMechs() const;
 
   // Returns space-delimited local mechanism list string suitable for passing
   // to libsasl2, such as via "mech_list" callbacks.
@@ -103,8 +102,8 @@ class SaslHelper {
   const PeerType peer_type_;
   bool conn_header_exchanged_;
   string tag_;
-  mutable gscoped_ptr< set<string> > global_mechs_;  // Cache of global mechanisms.
-  set<string> mechs_;    // Active mechanisms.
+  mutable gscoped_ptr< std::set<string> > global_mechs_;  // Cache of global mechanisms.
+  std::set<string> mechs_;    // Active mechanisms.
   mutable string mech_list_;  // Mechanism list string returned by callbacks.
 
   bool anonymous_enabled_;

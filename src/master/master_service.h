@@ -2,6 +2,7 @@
 #ifndef KUDU_MASTER_TABLET_SERVICE_H
 #define KUDU_MASTER_TABLET_SERVICE_H
 
+#include "gutil/port.h"
 #include "master/master.service.h"
 
 namespace kudu {
@@ -18,7 +19,7 @@ class MasterServiceImpl : public MasterServerServiceIf {
                     rpc::RpcContext* context);
 
  private:
-  MasterServer* server_;
+  MasterServer* ATTRIBUTE_UNUSED server_;
 };
 
 } // namespace master

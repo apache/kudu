@@ -442,7 +442,6 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     // Let the policy decide which rowsets to compact.
     RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set));
   }
-  int num_picked = picked_set.size();
 
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {

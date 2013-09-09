@@ -109,7 +109,7 @@ class SaslServer {
   Status HandleNegotiateRequest(const SaslMessagePB& request);
 
   // Send a NEGOTIATE response to the client with the list of available mechanisms.
-  Status SendNegotiateResponse(const set<string>& server_mechs);
+  Status SendNegotiateResponse(const std::set<string>& server_mechs);
 
   // Handle case when client sends INITIATE request.
   Status HandleInitiateRequest(const SaslMessagePB& request);
