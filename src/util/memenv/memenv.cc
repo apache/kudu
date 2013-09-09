@@ -96,10 +96,21 @@ class FileState {
     return Status::OK();
   }
 
-  Status Append(const Slice& data) {
-    const uint8_t* src = data.data();
-    size_t src_len = data.size();
+  Status PreAllocate(uint64_t size) {
+    uint8_t *padding = new uint8_t[size];
+    // TODO optimize me
+    memset(&padding, 0, sizeof(uint8_t));
+    Status s = AppendRaw(padding, size);
+    delete [] padding;
+    size_ -= size;
+    return s;
+  }
 
+  Status Append(const Slice& data) {
+    return AppendRaw(data.data(), data.size());
+  }
+
+  Status AppendRaw(const uint8_t *src, size_t src_len) {
     while (src_len > 0) {
       size_t avail;
       size_t offset = size_ % kBlockSize;
@@ -217,6 +228,10 @@ class WritableFileImpl : public WritableFile {
 
   ~WritableFileImpl() {
     file_->Unref();
+  }
+
+  virtual Status PreAllocate(uint64_t size) {
+    return file_->PreAllocate(size);
   }
 
   virtual Status Append(const Slice& data) {

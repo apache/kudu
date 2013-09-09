@@ -212,6 +212,11 @@ class WritableFile {
   WritableFile() { }
   virtual ~WritableFile();
 
+  // Pre-allocates 'size' bytes for the file in the underlying filesystem.
+  // size bytes are added to the current pre-allocated size or to the current
+  // offset, whichever is bigger. In no case is the file truncated by this
+  // operation.
+  virtual Status PreAllocate(uint64_t size) = 0;
   virtual Status Append(const Slice& data) = 0;
   virtual Status Close() = 0;
   virtual Status Flush() = 0;

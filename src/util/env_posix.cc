@@ -150,6 +150,7 @@ class PosixMmapFile : public WritableFile {
   uint8_t *dst_;             // Where to write next  (in range [base_,limit_])
   uint8_t *last_sync_;       // Where have we synced up to
   uint64_t file_offset_;  // Offset of base_ in file
+  uint64_t pre_allocated_size_;
 
   // Have we done an munmap of unsynced data?
   bool pending_sync_;
@@ -181,7 +182,7 @@ class PosixMmapFile : public WritableFile {
       last_sync_ = NULL;
       dst_ = NULL;
 
-      // Increase the amount we map the next time, but capped at 1MB
+      // Increase the amount we map the next time, but capped at 2MB
       if (map_size_ < (1<<20)) {
         map_size_ *= 2;
       }
@@ -191,8 +192,11 @@ class PosixMmapFile : public WritableFile {
 
   bool MapNewRegion() {
     assert(base_ == NULL);
-    if (ftruncate(fd_, file_offset_ + map_size_) < 0) {
-      return false;
+    uint64_t required_space = file_offset_ + map_size_;
+    if (required_space >= pre_allocated_size_) {
+      if (ftruncate(fd_, required_space) < 0) {
+        return false;
+      }
     }
     void* ptr = mmap(NULL, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED,
                      fd_, file_offset_);
@@ -217,6 +221,7 @@ class PosixMmapFile : public WritableFile {
         dst_(NULL),
         last_sync_(NULL),
         file_offset_(0),
+        pre_allocated_size_(0),
         pending_sync_(false) {
     assert((page_size & (page_size - 1)) == 0);
   }
@@ -226,6 +231,17 @@ class PosixMmapFile : public WritableFile {
     if (fd_ >= 0) {
       PosixMmapFile::Close();
     }
+  }
+
+  virtual Status PreAllocate(uint64_t size) {
+    uint64_t offset = std::max(file_offset_, pre_allocated_size_);
+    if (fallocate(fd_, 0, offset, size) < 0) {
+      return IOError(filename_, errno);
+    }
+    // Make sure that we set pre_allocated_size so that the file
+    // doesn't get truncated on MapNewRegion().
+    pre_allocated_size_ = offset + size;
+    return Status::OK();
   }
 
   virtual Status Append(const Slice& data) {
