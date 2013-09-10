@@ -206,7 +206,7 @@ Status RowSetMetadata::Load(const RowSetDataPB& pb) {
   // Load Delta Files
   BOOST_FOREACH(const DeltaDataPB& delta_pb, pb.deltas()) {
     delta_blocks_.push_back(
-      std::pair<uint32_t, BlockId>(delta_pb.id(), BlockIdFromPB(delta_pb.block())));
+      std::pair<int64_t, BlockId>(delta_pb.id(), BlockIdFromPB(delta_pb.block())));
   }
 
   return Status::OK();
@@ -256,14 +256,16 @@ const string RowSetMetadata::ToString() {
 
 Status RowSetMetadata::CommitDeltaDataBlock(int64_t id, const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
-  delta_blocks_.push_back(std::pair<uint32_t, BlockId>(id, block_id));
+  delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
   return Status::OK();
 }
 
 Status RowSetMetadata::OpenDeltaDataBlock(size_t index,
                                           shared_ptr<RandomAccessFile> *reader,
-                                          uint64_t *size) {
+                                          uint64_t *size,
+                                          int64_t *id) {
   boost::lock_guard<LockType> l(deltas_lock_);
+  *id = delta_blocks_[index].first;
   return OpenDataBlock(delta_blocks_[index].second, reader, size);
 }
 

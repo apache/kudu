@@ -55,6 +55,7 @@ class DeltaFileWriter {
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
  private:
+  int64_t id_;
   const Schema schema_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);
@@ -78,15 +79,18 @@ class DeltaFileWriter {
 class DeltaFileReader : public DeltaStore {
  public:
   // Open the Delta File at the given path.
-  static Status Open(Env *env, const string &path,
+  static Status Open(Env *env,
+                     const string &path,
+                     int64_t delta_id,
                      const Schema &schema,
-                     gscoped_ptr<DeltaFileReader> *reader);
+                     gscoped_ptr<DeltaFileReader> *reader_out);
 
   static Status Open(const string& path,
-                     const shared_ptr<RandomAccessFile>& file,
+                     const shared_ptr<RandomAccessFile> &file,
                      uint64_t file_size,
-                     const Schema& schema,
-                     gscoped_ptr<DeltaFileReader> *reader);
+                     int64_t delta_id,
+                     const Schema &schema,
+                     gscoped_ptr<DeltaFileReader> *reader_out);
 
   // See DeltaStore::NewDeltaIterator(...)
   virtual DeltaIterator *NewDeltaIterator(const Schema &projection,
@@ -101,6 +105,8 @@ class DeltaFileReader : public DeltaStore {
 
   const string& path() const { return path_; }
 
+  const int64_t id() const { return id_; }
+
  private:
   friend class DeltaFileIterator;
   friend class DeltaCompactionInput;
@@ -111,12 +117,14 @@ class DeltaFileReader : public DeltaStore {
     return reader_;
   }
 
-  DeltaFileReader(cfile::CFileReader *cf_reader,
+  DeltaFileReader(const int64_t id,
+                  cfile::CFileReader *cf_reader,
                   const string &path,
                   const Schema &schema);
 
   Status Init();
 
+  const int64_t id_;
   shared_ptr<cfile::CFileReader> reader_;
   const Schema schema_;
 

@@ -16,8 +16,9 @@ namespace kudu { namespace tablet {
 // DeltaMemStore implementation
 ////////////////////////////////////////////////////////////
 
-DeltaMemStore::DeltaMemStore(const Schema &schema)
-  : schema_(schema),
+DeltaMemStore::DeltaMemStore(int64_t id, const Schema &schema)
+  : id_(id),
+    schema_(schema),
     arena_(8*1024, 1*1024*1024) {
 }
 

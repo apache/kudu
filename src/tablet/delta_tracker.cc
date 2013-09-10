@@ -149,8 +149,7 @@ DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
   rowset_metadata_(rowset_metadata),
   schema_(schema),
   num_rows_(num_rows),
-  open_(false),
-  dms_(new DeltaMemStore(schema))
+  open_(false)
 {}
 
 
@@ -159,10 +158,15 @@ Status DeltaTracker::Open() {
   CHECK(delta_stores_.empty()) << "should call before opening any readers";
   CHECK(!open_);
 
+  int64_t max_id = -1;
   for (size_t idx = 0; idx < rowset_metadata_->delta_blocks_count(); ++idx) {
     size_t dsize = 0;
     shared_ptr<RandomAccessFile> dfile;
-    Status s = rowset_metadata_->OpenDeltaDataBlock(idx, &dfile, &dsize);
+    int64_t delta_id;
+    Status s = rowset_metadata_->OpenDeltaDataBlock(idx,
+                                                    &dfile,
+                                                    &dsize,
+                                                    &delta_id);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open delta file " << idx << ": "
                  << s.ToString();
@@ -170,17 +174,20 @@ Status DeltaTracker::Open() {
     }
 
     gscoped_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open("---", dfile, dsize, schema_, &dfr);
+    s = DeltaFileReader::Open("---", dfile, dsize, delta_id, schema_, &dfr);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open delta file " << idx << ": "
                  << s.ToString();
       return s;
     }
 
+    max_id = std::max(max_id, dfr->id());
     LOG(INFO) << "Successfully opened delta file " << idx;
     delta_stores_.push_back(shared_ptr<DeltaStore>(dfr.release()));
   }
 
+  // the id of the first DeltaMemStore is the max id of the current ones +1
+  dms_.reset(new DeltaMemStore(max_id + 1, schema_));
   open_ = true;
   return Status::OK();
 }
@@ -244,10 +251,7 @@ Status DeltaTracker::Update(txid_t txid,
 
   Status s = dms_->Update(txid, row_idx, update);
   if (s.ok()) {
-    // TODO once deltas have ids (probably after delta compaction) we need to
-    // change this to use the id from the DeltaMemStore and not the delta stores
-    // size.
-    result->AddDeltaRowStoreMutation(row_idx, rowset_metadata_->id(), delta_stores_.size());
+    result->AddDeltaRowStoreMutation(row_idx, rowset_metadata_->id(), dms_->id());
   }
   return s;
 }
@@ -277,7 +281,6 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
 Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {
-  uint32_t deltafile_idx = next_deltafile_idx_++;
 
   // Open file for write.
   BlockId block_id;
@@ -304,10 +307,10 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
   size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
-  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, schema_, dfr));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms.id(), schema_, dfr));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
-  RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(deltafile_idx, block_id));
+  RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(dms.id(), block_id));
   s = rowset_metadata_->Flush();
   if (!s.ok()) {
     LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();
@@ -335,7 +338,7 @@ Status DeltaTracker::Flush() {
     }
 
     old_dms = dms_;
-    dms_.reset(new DeltaMemStore(schema_));
+    dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_));
 
     delta_stores_.push_back(old_dms);
   }

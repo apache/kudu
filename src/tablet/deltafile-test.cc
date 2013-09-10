@@ -74,7 +74,7 @@ class TestDeltaFile : public ::testing::Test {
 
   void VerifyTestFile() {
     gscoped_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
+    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, schema_, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));
@@ -141,7 +141,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 
   {
     gscoped_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, schema_, &reader));
+    ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, schema_, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));

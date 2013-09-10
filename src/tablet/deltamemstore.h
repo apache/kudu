@@ -32,7 +32,7 @@ class Mutation;
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  explicit DeltaMemStore(const Schema &schema);
+  explicit DeltaMemStore(int64_t id, const Schema &schema);
 
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into this DMS's local
@@ -67,11 +67,14 @@ class DeltaMemStore : public DeltaStore,
     return schema_;
   }
 
+  const int64_t id() const { return id_; }
+
  private:
   friend class DMSIterator;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 
+  const int64_t id_;
   const Schema schema_;
 
   typedef btree::CBTree<btree::BTreeTraits> DMSTree;

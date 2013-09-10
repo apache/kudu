@@ -32,6 +32,9 @@ class DeltaStore {
   // Set *deleted to true if the latest update for the given row is a deletion.
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const = 0;
 
+  // Returns the id of this delta store within the row set.
+  virtual const int64_t id() const = 0;
+
   virtual ~DeltaStore() {}
 };
 

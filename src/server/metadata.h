@@ -179,7 +179,10 @@ class RowSetMetadata {
 
   Status CommitDeltaDataBlock(int64_t id, const BlockId& block_id);
 
-  Status OpenDeltaDataBlock(size_t index, shared_ptr<RandomAccessFile> *reader, uint64_t *size);
+  Status OpenDeltaDataBlock(size_t index,
+                            shared_ptr<RandomAccessFile> *reader,
+                            uint64_t *size,
+                            int64_t *id);
 
   size_t delta_blocks_count() const;
 

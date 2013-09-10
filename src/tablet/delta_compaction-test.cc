@@ -40,8 +40,8 @@ class TestDeltaCompaction : public KuduTest {
                 1) {
   }
 
-  string GetNextDeltaFilePath() {
-    return GetTestPath(StringPrintf("%d", deltafile_idx_++));
+  string GetDeltaFilePath(int64_t deltafile_idx) {
+    return GetTestPath(StringPrintf("%ld", deltafile_idx));
   }
 
   Status GetDeltaFileWriter(string path,
@@ -56,7 +56,7 @@ class TestDeltaCompaction : public KuduTest {
   Status FillDeltaFile(rowid_t first_row, int nrows, uint64_t txid_min,
                        gscoped_ptr<DeltaCompactionInput> *dci) {
     int limit = first_row + nrows;
-    string path = GetNextDeltaFilePath();
+    string path = GetDeltaFilePath(deltafile_idx_);
     gscoped_ptr<DeltaFileWriter> dfw;
     RETURN_NOT_OK(GetDeltaFileWriter(path, &dfw));
 
@@ -76,9 +76,11 @@ class TestDeltaCompaction : public KuduTest {
     }
     gscoped_ptr<DeltaFileReader> reader;
     RETURN_NOT_OK(dfw->Finish());
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, schema_, &reader));
+    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, schema_, &reader));
+    CHECK_EQ(deltafile_idx_, reader->id());
     RETURN_NOT_OK(DeltaCompactionInput::Open(*reader, dci));
     pool_.Add(reader.release());
+    deltafile_idx_++;
     return Status::OK();
   }
 
@@ -101,7 +103,7 @@ class TestDeltaCompaction : public KuduTest {
   }
 
  protected:
-  int deltafile_idx_;
+  int64_t deltafile_idx_;
   Schema schema_;
   AutoReleasePool pool_;
 };
@@ -131,13 +133,13 @@ TEST_F(TestDeltaCompaction, TestMerge) {
 TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
   gscoped_ptr<DeltaCompactionInput> merged;
   ASSERT_STATUS_OK(CreateMergedDeltaCompactionInput(&merged));
-  string path = GetNextDeltaFilePath();
+  string path = GetDeltaFilePath(FLAGS_num_delta_files + 1);
   gscoped_ptr<DeltaFileWriter> dfw;
   ASSERT_STATUS_OK(GetDeltaFileWriter(path, &dfw));
   ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
   gscoped_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), path, schema_, &reader));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), path, FLAGS_num_delta_files + 1, schema_, &reader));
   gscoped_ptr<DeltaCompactionInput> dci;
   ASSERT_STATUS_OK(DeltaCompactionInput::Open(*reader, &dci));
   vector<string> results;

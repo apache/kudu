@@ -108,10 +108,6 @@ class DeltaTracker {
 
   bool open_;
 
-  // The suffix to use on the next flushed deltafile. Delta files are named
-  // delta_<N> to designate the order in which they were flushed.
-  uint32_t next_deltafile_idx_;
-
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;
   vector<shared_ptr<DeltaStore> > delta_stores_;

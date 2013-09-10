@@ -27,7 +27,7 @@ class TestDeltaMemStore : public KuduTest {
                  (ColumnSchema("col2", STRING))
                  (ColumnSchema("col3", UINT32)),
             1),
-    dms_(new DeltaMemStore(schema_))
+    dms_(new DeltaMemStore(0, schema_))
   {}
 
   template<class Iterable>

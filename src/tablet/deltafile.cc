@@ -33,7 +33,7 @@ namespace tablet {
 
 DeltaFileWriter::DeltaFileWriter(const Schema &schema,
                                  const shared_ptr<WritableFile> &file) :
-  schema_(schema)
+   schema_(schema)
 #ifndef NDEBUG
   ,has_appended_(false)
 #endif
@@ -87,25 +87,31 @@ Status DeltaFileWriter::AppendDelta(
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status DeltaFileReader::Open(Env *env, const string &path,
+Status DeltaFileReader::Open(Env *env,
+                             const string &path,
+                             int64_t delta_id,
                              const Schema &schema,
                              gscoped_ptr<DeltaFileReader> *reader_out) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(path, file, size, schema, reader_out);
+  return Open(path, file, size, delta_id, schema, reader_out);
 }
 
 Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
                              uint64_t file_size,
+                             int64_t delta_id,
                              const Schema &schema,
                              gscoped_ptr<DeltaFileReader> *reader_out) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
 
-  gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(cf_reader.release(), path, schema));
+  gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(delta_id,
+                                                             cf_reader.release(),
+                                                             path,
+                                                             schema));
 
   RETURN_NOT_OK(df_reader->Init());
   reader_out->reset(df_reader.release());
@@ -113,9 +119,12 @@ Status DeltaFileReader::Open(const string& path,
   return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(CFileReader *cf_reader, const string &path,
+DeltaFileReader::DeltaFileReader(const int64_t id,
+                                 CFileReader *cf_reader,
+                                 const string &path,
                                  const Schema &schema)
-  : reader_(cf_reader),
+  : id_(id),
+    reader_(cf_reader),
     schema_(schema),
     path_(path) {
 }
