@@ -47,7 +47,7 @@ rm -rf CMakeCache.txt CMakeFiles
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
   CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
-  BUILD_TYPE=debug
+  BUILD_TYPE=fastdebug
 elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
   BUILD_TYPE=release
   export HEAPCHECK=normal
