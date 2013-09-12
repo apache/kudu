@@ -33,7 +33,7 @@ Status Schema::Reset(const vector<ColumnSchema> &cols,
   }
 
   // Calculate the offset of each column in the row format.
-  col_offsets_.reserve(cols_.size());
+  col_offsets_.reserve(cols_.size() + 1);  // Include space for total byte size at the end.
   size_t off = 0;
   size_t i = 0;
   BOOST_FOREACH(const ColumnSchema &col, cols) {
