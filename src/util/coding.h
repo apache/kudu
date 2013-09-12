@@ -22,7 +22,14 @@ extern void PutFixed32(faststring* dst, uint32_t value);
 extern void PutFixed64(faststring* dst, uint64_t value);
 extern void PutVarint32(faststring* dst, uint32_t value);
 extern void PutVarint64(faststring* dst, uint64_t value);
+
+// Put a length-prefixed Slice into the buffer. The length prefix
+// is varint-encoded.
 extern void PutLengthPrefixedSlice(faststring* dst, const Slice& value);
+
+// Put a length-prefixed Slice into the buffer. The length prefix
+// is 32-bit fixed encoded in little endian.
+extern void PutFixed32LengthPrefixedSlice(faststring* dst, const Slice& value);
 
 // Standard Get... routines parse a value from the beginning of a Slice
 // and advance the slice past the parsed value.

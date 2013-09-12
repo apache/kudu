@@ -34,12 +34,10 @@ class RowChangeList {
 
   explicit RowChangeList(const faststring &fs)
     : encoded_data_(fs) {
-    DebugChecks();
   }
 
   explicit RowChangeList(const Slice &s)
     : encoded_data_(s) {
-    DebugChecks();
   }
 
   const Slice &slice() const { return encoded_data_; }
@@ -59,18 +57,6 @@ class RowChangeList {
     kReinsert = 3,
     ChangeType_max = 3
   };
-
- private:
-  // Sanity-checks run in debug mode that this is a valid RowChangeList.
-  void DebugChecks() {
-    DCHECK_GT(encoded_data_.size(), 0);
-    DCHECK(encoded_data_[0] == kUpdate ||
-           encoded_data_[0] == kDelete ||
-           encoded_data_[0] == kReinsert);
-    if (encoded_data_[0] == kDelete) {
-      DCHECK_EQ(1, encoded_data_.size());
-    }
-  }
 
   Slice encoded_data_;
 };
@@ -159,7 +145,7 @@ class RowChangeListEncoder {
 class RowChangeListDecoder {
  public:
 
-  // Construct a new encoder.
+  // Construct a new decoder.
   // NOTE: The 'schema' parameter is stored by reference, rather than copied.
   // It is assumed that this class is only used in tightly scoped contexts where
   // this is appropriate.
@@ -170,18 +156,9 @@ class RowChangeListDecoder {
       type_(RowChangeList::kUninitialized) {
   }
 
-  Status Init() {
-    if (PREDICT_FALSE(remaining_.empty())) {
-      return Status::Corruption("empty changelist - expected type");
-    }
-    bool was_valid = tight_enum_test_cast<RowChangeList::ChangeType>(remaining_[0], &type_);
-    if (PREDICT_FALSE(!was_valid || type_ == RowChangeList::kUninitialized)) {
-      return Status::Corruption(StringPrintf("bad type enum value: %d",
-                                             static_cast<int>(remaining_[0])));
-    }
-    remaining_.remove_prefix(1);
-    return Status::OK();
-  }
+  // Initialize the decoder. This will return an invalid Status if the RowChangeList
+  // appears to be corrupt/malformed.
+  Status Init();
 
   bool HasNext() const {
     DCHECK(!is_delete());

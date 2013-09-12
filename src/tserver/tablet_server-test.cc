@@ -89,20 +89,23 @@ class TabletServerTest : public KuduTest {
     AddRowToRowBlockPB(rb.row(), block);
   }
 
-  void AddTestDeletionToRowBlockAndBuffer(uint32_t key,
-                                          RowwiseRowBlockPB* block,
-                                          faststring* buf) {
-    // encode and add the deletion to the buffer, prefixed
-    // with the lenght
-    uint32_t initial_size = buf->size();
-    buf->append(&initial_size, sizeof(uint32_t));
-    RowChangeListEncoder encoder(schema_, buf);
-    encoder.SetToDelete();
-    uint32_t written_size = buf->size() - initial_size - sizeof(uint32_t);
-    InlineEncodeFixed32(&(*buf)[initial_size], written_size);
+  void AddTestKeyToBlock(uint32_t key, RowwiseRowBlockPB* block) {
     RowBuilder rb(key_schema_);
     rb.AddUint32(key);
     AddRowToRowBlockPB(rb.row(), block);
+  }
+
+  void AddTestDeletionToRowBlockAndBuffer(uint32_t key,
+                                          RowwiseRowBlockPB* block,
+                                          faststring* buf) {
+    // Write the key.
+    AddTestKeyToBlock(key, block);
+
+    // Write the mutation.
+    faststring tmp;
+    RowChangeListEncoder encoder(schema_, &tmp);
+    encoder.SetToDelete();
+    PutFixed32LengthPrefixedSlice(buf, Slice(tmp));
   }
 
   void AddTestMutationToRowBlockAndBuffer(uint32_t key,
@@ -110,18 +113,15 @@ class TabletServerTest : public KuduTest {
                                           const Slice& new_string_val,
                                           RowwiseRowBlockPB* block,
                                           faststring* buf) {
-    // encode and add the mutations to the buffer, prefixed
-    // with the lenght
-    uint32_t initial_size = buf->size();
-    buf->append(&initial_size, sizeof(uint32_t));
-    RowChangeListEncoder encoder(schema_, buf);
+    // Write the key.
+    AddTestKeyToBlock(key, block);
+
+    // Write the mutation.
+    faststring tmp;
+    RowChangeListEncoder encoder(schema_, &tmp);
     encoder.AddColumnUpdate(1, &new_int_val);
     encoder.AddColumnUpdate(2, &new_string_val);
-    uint32_t written_size = buf->size() - initial_size - sizeof(uint32_t);
-    InlineEncodeFixed32(&(*buf)[initial_size], written_size);
-    RowBuilder rb(key_schema_);
-    rb.AddUint32(key);
-    AddRowToRowBlockPB(rb.row(), block);
+    PutFixed32LengthPrefixedSlice(buf, Slice(tmp));
   }
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
@@ -381,6 +381,86 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_EQ(1, resp.per_row_errors().size());
     controller.Reset();
   }
+}
+
+// Test various invalid calls for mutations
+TEST_F(TabletServerTest, TestInvalidMutations) {
+  RpcController controller;
+
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  req.set_tablet_id(kTabletId);
+
+  // Set up the key block. All of the cases in this test will use
+  // this same key.
+  RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+  ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+  data->set_num_key_columns(schema_.num_key_columns());
+
+  AddTestKeyToBlock(0, data);
+
+  // Send a mutations buffer where the length prefix is too short
+  {
+    req.set_encoded_mutations("\x01");
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_TRUE(resp.has_error());
+    EXPECT_EQ(TabletServerErrorPB::INVALID_MUTATION, resp.error().code());
+    controller.Reset();
+  }
+
+  // Send a mutations buffer where the length prefix points past the
+  // end of the buffer
+  {
+    req.set_encoded_mutations("\xff\x00\x00\x00", 4);
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_TRUE(resp.has_error());
+    EXPECT_EQ(TabletServerErrorPB::INVALID_MUTATION, resp.error().code());
+    controller.Reset();
+  }
+
+  // Try to send an invalid mutation type to the server.
+  {
+    req.set_encoded_mutations("\x01\x00\x00\x00""x", 5);
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(1, resp.per_row_errors().size());
+    ASSERT_STR_CONTAINS(resp.per_row_errors(0).error().message(),
+                        "bad type enum value");
+    controller.Reset();
+  }
+
+  // Try to send a REINSERT mutation to the server -- this should fail
+  // since REINSERTs only happen within the server, not from a client.
+  {
+    // Set up a REINSERT mutation
+    char scratch[schema_.byte_size()];
+    memset(scratch, 0, schema_.byte_size());
+    faststring tmp;
+    RowChangeListEncoder encoder(schema_, &tmp);
+    encoder.SetToReinsert(Slice(scratch, schema_.byte_size()));
+
+    faststring buf;
+    PutFixed32LengthPrefixedSlice(&buf, Slice(tmp));
+    req.set_encoded_mutations(buf.data(), buf.size());
+
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_FALSE(resp.has_error());
+    ASSERT_EQ(1, resp.per_row_errors().size());
+    ASSERT_STR_CONTAINS(resp.per_row_errors(0).error().message(),
+                        "User may not specify REINSERT");
+    controller.Reset();
+  }
+
+  // TODO: add test for UPDATE with a column which doesn't exist,
+  // or otherwise malformed.
 }
 
 TEST_F(TabletServerTest, TestScan) {

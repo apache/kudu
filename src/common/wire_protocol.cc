@@ -235,18 +235,19 @@ Status ExtractMutationsFromBuffer(uint32_t n_mutations,
                                 const uint8_t* buffer,
                                 uint32_t buffer_size,
                                 vector<const RowChangeList *> *mutations) {
-  const uint8_t* current_mutation = buffer;
-  int offset = 0;
+  Slice remaining(buffer, buffer_size);
   for (int i = 0; i < n_mutations; i++) {
-    uint32_t mutation_size = DecodeFixed32(current_mutation);
-    if (mutation_size > buffer_size - offset) {
+    if (PREDICT_FALSE(remaining.size() < sizeof(uint32_t))) {
+      return Status::Corruption("Missing expected length prefix in mutation buffer");
+    }
+    uint32_t mutation_size = DecodeFixed32(remaining.data());
+    remaining.remove_prefix(sizeof(uint32_t));
+    if (PREDICT_FALSE(mutation_size > remaining.size())) {
       return Status::Corruption("Mutation size overflows the mutations buffer");
     }
-    Slice mutation_slice(current_mutation + sizeof(uint32_t), mutation_size);
+    Slice mutation_slice(remaining.data(), mutation_size);
     mutations->push_back(new RowChangeList(mutation_slice));
-    uint32_t advance = mutation_size + sizeof(uint32_t);
-    current_mutation += advance;
-    offset += advance;
+    remaining.remove_prefix(mutation_size);
   }
   return Status::OK();
 }

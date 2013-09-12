@@ -118,7 +118,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
 
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::INVALID_ROW_BLOCK,
+                         TabletServerErrorPB::INVALID_MUTATION,
                          context);
     return;
   }

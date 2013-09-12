@@ -191,6 +191,19 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
   RowSetKeyProbe probe(row_key);
 
+  // Validate the update.
+  RowChangeListDecoder rcl_decoder(schema_, update);
+  Status s = rcl_decoder.Init();
+  if (rcl_decoder.is_reinsert()) {
+    // REINSERT mutations are the byproduct of an INSERT on top of a ghost
+    // row, not something the user is allowed to specify on their own.
+    s = Status::InvalidArgument("User may not specify REINSERT mutations");
+  }
+  if (!s.ok()) {
+    tx_ctx->AddFailedMutation(metadata_->oid(), update, gscoped_ptr<MutationResult>(), s);
+    return s;
+  }
+
   // The order of the next three lines is critical!
   //
   // Row-lock before ScopedTransaction:
@@ -241,7 +254,7 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   gscoped_ptr<MutationResult> result(new MutationResult);
 
   // First try to update in memrowset.
-  Status s = memrowset_->MutateRow(tx.txid(), probe, update, result.get());
+  s = memrowset_->MutateRow(tx.txid(), probe, update, result.get());
   if (s.ok()) {
     tx_ctx->AddMutation(metadata_->oid(), tx.txid(), update, result.Pass());
     return s;
@@ -269,7 +282,7 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   }
 
   s = Status::NotFound("key not found");
-  tx_ctx->AddFailedMutation(metadata_->oid(),update, result.Pass(), s);
+  tx_ctx->AddFailedMutation(metadata_->oid(), update, result.Pass(), s);
   return s;
 }
 

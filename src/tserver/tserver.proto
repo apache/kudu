@@ -20,7 +20,8 @@ message TabletServerErrorPB {
     // The row data provided for a request was not well-formed.
     INVALID_ROW_BLOCK = 3;
 
-    // The mutation provided for a request was not well formed.
+    // The mutations or mutation keys provided for a request were
+    // not well formed.
     INVALID_MUTATION = 4;
 
     // The schema provided for a request didn't match the actual

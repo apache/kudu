@@ -5,6 +5,9 @@
 #include "common/row.h"
 #include "common/row_changelist.h"
 #include "common/schema.h"
+#include "gutil/strings/substitute.h"
+
+using strings::Substitute;
 
 namespace kudu {
 
@@ -52,6 +55,35 @@ string RowChangeList::ToString(const Schema &schema) const {
   }
 
   return ret;
+}
+
+Status RowChangeListDecoder::Init() {
+  if (PREDICT_FALSE(remaining_.empty())) {
+    return Status::Corruption("empty changelist - expected type");
+  }
+
+  bool was_valid = tight_enum_test_cast<RowChangeList::ChangeType>(remaining_[0], &type_);
+  if (PREDICT_FALSE(!was_valid || type_ == RowChangeList::kUninitialized)) {
+    return Status::Corruption(Substitute("bad type enum value: $0 in $1",
+                                         static_cast<int>(remaining_[0]),
+                                         remaining_.ToDebugString()));
+  }
+  if (PREDICT_FALSE(is_delete() && remaining_.size() != 1)) {
+    return Status::Corruption("DELETE changelist too long",
+                              remaining_.ToDebugString());
+  }
+
+  if (PREDICT_FALSE(is_reinsert())) {
+    int expected_size = ContiguousRowHelper::row_size(schema_) + 1;
+    if (remaining_.size() != expected_size) {
+      return Status::Corruption(Substitute("REINSERT changelist wrong length (expected $0)",
+                                           expected_size,
+                                           remaining_.ToDebugString()));
+    }
+  }
+
+  remaining_.remove_prefix(1);
+  return Status::OK();
 }
 
 } // namespace kudu

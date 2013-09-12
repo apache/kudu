@@ -109,4 +109,29 @@ TEST_F(TestRowChangeList, TestReinserts) {
   ASSERT_EQ(decoder.reinserted_row_slice(), rb.data());
 }
 
+TEST_F(TestRowChangeList, TestInvalid_EmptySlice) {
+  RowChangeListDecoder decoder(schema_, RowChangeList(Slice()));
+  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
+                      "empty changelist");
+}
+
+TEST_F(TestRowChangeList, TestInvalid_BadTypeEnum) {
+  RowChangeListDecoder decoder(schema_, RowChangeList(Slice("\xff", 1)));
+  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
+                      "Corruption: bad type enum value: 255 in \\xff");
+}
+
+TEST_F(TestRowChangeList, TestInvalid_TooLongDelete) {
+  RowChangeListDecoder decoder(schema_, RowChangeList(Slice("\x02""blahblah")));
+  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
+                      "Corruption: DELETE changelist too long");
+}
+
+
+TEST_F(TestRowChangeList, TestInvalid_TooShortReinsert) {
+  RowChangeListDecoder decoder(schema_, RowChangeList(Slice("\x03")));
+  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
+                      "Corruption: REINSERT changelist wrong length");
+}
+
 } // namespace kudu

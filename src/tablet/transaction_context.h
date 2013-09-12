@@ -66,6 +66,13 @@ class TransactionContext {
 
   // Adds a failed mutation to this TransactionContext, including the status
   // explaining why it failed.
+  //
+  // The 'result' pointer may be NULL if the mutation failed before any attempt
+  // to apply it was made (e.g in case the update itself was malformed).
+  //
+  // NOTE: 'update' may be a malformed RowChangeList object
+  // TODO(dralves): patch pending to clean this stuff up a bit and remove
+  // the redundancy of passing 'update' here, etc.
   void AddFailedMutation(const string &tablet_id,
                          const RowChangeList &update,
                          gscoped_ptr<MutationResult> result,

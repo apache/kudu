@@ -42,6 +42,11 @@ void PutLengthPrefixedSlice(faststring* dst, const Slice& value) {
   dst->append(value.data(), value.size());
 }
 
+void PutFixed32LengthPrefixedSlice(faststring* dst, const Slice& value) {
+  PutFixed32(dst, value.size());
+  dst->append(value.data(), value.size());
+}
+
 int VarintLength(uint64_t v) {
   int len = 1;
   while (v >= 128) {
