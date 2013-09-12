@@ -27,7 +27,7 @@ else
       "rapidjson")  F_RAPIDJSON=1 ;;
       "snappy")     F_SNAPPY=1 ;;
       "zlib")       F_ZLIB=1 ;;
-      "mongoose")   F_MONGOOSE=1 ;;
+      "squeasel")   F_SQUEASEL=1 ;;
       "gsg")        F_GSG=1 ;;
       "gcovr")      F_GCOVR=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
@@ -148,15 +148,15 @@ if [ -n "$F_ALL" -o -n "$F_RAPIDJSON" ]; then
   rsync -av --delete $RAPIDJSON_DIR/include/rapidjson/ $PREFIX/include/rapidjson/
 fi
 
-# Build mongoose
-if [ -n "$F_ALL" -o -n "$F_MONGOOSE" ]; then
+# Build squeasel
+if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
-  cd $MONGOOSE_DIR
-  ${CC:-gcc} -O3 -DNDEBUG -DNO_SSL_DL -c mongoose.c
-  ar rs libmongoose.a mongoose.o
-  cp libmongoose.a $PREFIX/lib/
-  cp mongoose.h $PREFIX/include/
+  cd $SQUEASEL_DIR
+  ${CC:-gcc} -O3 -DNDEBUG -DNO_SSL_DL -c squeasel.c
+  ar rs libsqueasel.a squeasel.o
+  cp libsqueasel.a $PREFIX/lib/
+  cp squeasel.h $PREFIX/include/
 fi
 
 # Copy cpplint tool into bin directory

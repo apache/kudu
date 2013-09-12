@@ -27,7 +27,7 @@
 #include <boost/filesystem.hpp>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
-#include <mongoose.h>
+#include <squeasel.h>
 
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
@@ -189,7 +189,7 @@ Status Webserver::Start() {
   // Save the signal handler so we can restore it after mongoose sets it to be ignored.
   sighandler_t sig_chld = signal(SIGCHLD, SIG_DFL);
 
-  mg_callbacks callbacks;
+  sq_callbacks callbacks;
   memset(&callbacks, 0, sizeof(callbacks));
   callbacks.begin_request = &Webserver::BeginRequestCallbackStatic;
   callbacks.log_message = &Webserver::LogMessageCallbackStatic;
@@ -198,7 +198,7 @@ Status Webserver::Start() {
   // pointer to this server in the per-server state, and register a static method as the
   // default callback. That method unpacks the pointer to this and calls the real
   // callback.
-  context_ = mg_start(&callbacks, reinterpret_cast<void*>(this), &options[0]);
+  context_ = sq_start(&callbacks, reinterpret_cast<void*>(this), &options[0]);
 
   // Restore the child signal handler so wait() works properly.
   signal(SIGCHLD, sig_chld);
@@ -220,12 +220,12 @@ Status Webserver::Start() {
 
 void Webserver::Stop() {
   if (context_ != NULL) {
-    mg_stop(context_);
+    sq_stop(context_);
     context_ = NULL;
   }
 }
 
-int Webserver::LogMessageCallbackStatic(const struct mg_connection* connection, const char* message) {
+int Webserver::LogMessageCallbackStatic(const struct sq_connection* connection, const char* message) {
   if (message != NULL) {
     LOG(INFO) << "Webserver: " << message;
     return 1;
@@ -233,14 +233,14 @@ int Webserver::LogMessageCallbackStatic(const struct mg_connection* connection, 
   return 0;
 }
 
-int Webserver::BeginRequestCallbackStatic(struct mg_connection* connection) {
-  struct mg_request_info* request_info = mg_get_request_info(connection);
+int Webserver::BeginRequestCallbackStatic(struct sq_connection* connection) {
+  struct sq_request_info* request_info = sq_get_request_info(connection);
   Webserver* instance = reinterpret_cast<Webserver*>(request_info->user_data);
   return instance->BeginRequestCallback(connection, request_info);
 }
 
-int Webserver::BeginRequestCallback(struct mg_connection* connection,
-                                    struct mg_request_info* request_info) {
+int Webserver::BeginRequestCallback(struct sq_connection* connection,
+                                    struct sq_request_info* request_info) {
   if (!FLAGS_webserver_doc_root.empty() && FLAGS_enable_webserver_doc_root) {
     if (strncmp(DOC_FOLDER, request_info->uri, DOC_FOLDER_LEN) == 0) {
       VLOG(2) << "HTTP File access: " << request_info->uri;
@@ -252,9 +252,9 @@ int Webserver::BeginRequestCallback(struct mg_connection* connection,
   boost::mutex::scoped_lock lock(path_handlers_lock_);
   PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
   if (it == path_handlers_.end()) {
-    mg_printf(connection, "HTTP/1.1 404 Not Found\r\n"
+    sq_printf(connection, "HTTP/1.1 404 Not Found\r\n"
               "Content-Type: text/plain\r\n\r\n");
-    mg_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
+    sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
     return 1;
   }
 
@@ -279,19 +279,19 @@ int Webserver::BeginRequestCallback(struct mg_connection* connection,
   string str = output.str();
   // Without styling, render the page as plain text
   if (arguments.find("raw") != arguments.end()) {
-    mg_printf(connection, "HTTP/1.1 200 OK\r\n"
+    sq_printf(connection, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/plain\r\n"
               "Content-Length: %zd\r\n"
               "\r\n", str.length());
   } else {
-    mg_printf(connection, "HTTP/1.1 200 OK\r\n"
+    sq_printf(connection, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\n"
               "Content-Length: %zd\r\n"
               "\r\n", str.length());
   }
 
-  // Make sure to use mg_write for printing the body; mg_printf truncates at 8kb
-  mg_write(connection, str.c_str(), str.length());
+  // Make sure to use sq_write for printing the body; sq_printf truncates at 8kb
+  sq_write(connection, str.c_str(), str.length());
   return 1;
 }
 

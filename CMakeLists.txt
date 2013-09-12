@@ -266,10 +266,10 @@ else()
   set(LIBS ${LIBS} ${ZLIB_LIBS}/libz.so)
 endif()
 
-## Mongoose
-find_package(Mongoose REQUIRED)
-include_directories(SYSTEM ${MONGOOSE_INCLUDE_DIR})
-set(LIBS ${LIBS} ${MONGOOSE_STATIC_LIB})
+## Squeasel
+find_package(Squeasel REQUIRED)
+include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
+set(LIBS ${LIBS} ${SQUEASEL_STATIC_LIB})
 
 ## Google PerfTools
 find_package( GPerf REQUIRED )

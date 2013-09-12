@@ -106,11 +106,13 @@ if [ ! -d $RAPIDJSON_DIR ]; then
   rm rapidjson-${RAPIDJSON_VERSION}.zip
 fi
 
-if [ ! -d $MONGOOSE_DIR ]; then
-  echo "Fetching mongoose"
-  wget -O mongoose-${MONGOOSE_VERSION}.tar.gz https://github.com/valenok/mongoose/archive/${MONGOOSE_VERSION}.tar.gz
-  tar xzf mongoose-$MONGOOSE_VERSION.tar.gz
-  rm mongoose-$MONGOOSE_VERSION.tar.gz
+if [ ! -d $SQUEASEL_DIR ]; then
+  echo "Fetching squeasel"
+  # Ideally we'd fetch from our github repo directly, but our version of
+  # GitHub Enterprise doesn't support this feature yet (see HD-7469).
+  wget -O squeasel-${SQUEASEL_VERSION}.tar.gz http://cloudera-todd.s3.amazonaws.com/squeasel-${SQUEASEL_VERSION}.tar.gz
+  tar xzf squeasel-$SQUEASEL_VERSION.tar.gz
+  rm squeasel-$SQUEASEL_VERSION.tar.gz
 fi
 
 if [ ! -d $GSG_DIR ]; then

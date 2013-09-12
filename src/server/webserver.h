@@ -23,9 +23,9 @@
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
-struct mg_connection;
-struct mg_request_info;
-struct mg_context;
+struct sq_connection;
+struct sq_request_info;
+struct sq_context;
 
 namespace kudu {
 
@@ -105,12 +105,12 @@ class Webserver {
 
   // Dispatch point for all incoming requests.
   // Static so that it can act as a function pointer, and then call the next method
-  static int BeginRequestCallbackStatic(struct mg_connection* connection);
-  int BeginRequestCallback(struct mg_connection* connection,
-                           struct mg_request_info* request_info);
+  static int BeginRequestCallbackStatic(struct sq_connection* connection);
+  int BeginRequestCallback(struct sq_connection* connection,
+                           struct sq_request_info* request_info);
 
   // Callback to funnel mongoose logs through glog.
-  static int LogMessageCallbackStatic(const struct mg_connection* connection,
+  static int LogMessageCallbackStatic(const struct sq_connection* connection,
                                       const char* message);
 
   // Registered to handle "/", and prints a list of available URIs
@@ -134,7 +134,7 @@ class Webserver {
   std::string http_address_;
 
   // Handle to Mongoose context; owned and freed by Mongoose internally
-  struct mg_context* context_;
+  struct sq_context* context_;
 };
 
 } // namespace kudu

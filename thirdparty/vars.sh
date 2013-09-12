@@ -38,12 +38,10 @@ CYRUS_SASL_DIR=$TP_DIR/cyrus-sasl-$CYRUS_SASL_VERSION
 RAPIDJSON_VERSION=0.11
 RAPIDJSON_DIR=$TP_DIR/rapidjson-${RAPIDJSON_VERSION}
 
-# Hash of the mongoose git revision to use.
-# NOTE: we cannot use anything later than this from the mongoose
-# repository, since it has been relicensed as GPL. This is the
-# last revision that carries an MIT license.
-MONGOOSE_VERSION=04fc209644b414d915c446bb1815b55e9fe63acc
-MONGOOSE_DIR=$TP_DIR/mongoose-${MONGOOSE_VERSION}
+# Hash of the squeasel git revision to use.
+# (from http://github.sf.cloudera.com/CDH/squeasel)
+SQUEASEL_VERSION=08954bcf805c046fa9adf163d06185e2c56037db
+SQUEASEL_DIR=$TP_DIR/squeasel-${SQUEASEL_VERSION}
 
 # SVN revision of google style guide:
 # https://code.google.com/p/google-styleguide/source/list
