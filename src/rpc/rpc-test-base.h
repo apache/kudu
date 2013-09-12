@@ -13,6 +13,7 @@
 #include "rpc/rtest.pb.h"
 #include "rpc/rtest.proxy.h"
 #include "rpc/rtest.service.h"
+#include "rpc/rpc_context.h"
 #include "rpc/service_if.h"
 #include "rpc/service_pool.h"
 #include "util/net/sockaddr.h"

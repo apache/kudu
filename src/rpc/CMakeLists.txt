@@ -16,17 +16,18 @@ ADD_LIBRARY(krpc
     client_call.cc
     connection.cc
     constants.cc
+    inbound_call.cc
     messenger.cc
     negotiation.cc
     proxy.cc
     reactor.cc
+    rpc_context.cc
     rpc_controller.cc
     sasl_common.cc
     sasl_client.cc
     sasl_helper.cc
     sasl_server.cc
     serialization.cc
-    server_call.cc
     service_if.cc
     service_pool.cc
     transfer.cc

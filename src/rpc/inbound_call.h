@@ -1,7 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
-#ifndef KUDU_RPC_SERVER_CALL_H
-#define KUDU_RPC_SERVER_CALL_H
+#ifndef KUDU_RPC_INBOUND_CALL_H
+#define KUDU_RPC_INBOUND_CALL_H
 
 #include <glog/logging.h>
 #include <tr1/memory>

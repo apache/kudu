@@ -2,6 +2,7 @@
 
 #include "master/master_service.h"
 #include "master/master_server.h"
+#include "rpc/rpc_context.h"
 
 namespace kudu {
 namespace master {

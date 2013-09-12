@@ -18,7 +18,7 @@
 #include "rpc/client_call.h"
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_server.h"
-#include "rpc/server_call.h"
+#include "rpc/inbound_call.h"
 #include "rpc/transfer.h"
 #include "util/monotime.h"
 #include "util/net/sockaddr.h"

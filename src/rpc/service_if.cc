@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "rpc/server_call.h"
+#include "rpc/inbound_call.h"
 
 using std::string;
 
@@ -33,23 +33,6 @@ void ServiceIf::RespondBadMethod(InboundCall *call) {
   LOG(WARNING) << err;
   call->RespondFailure(Status::InvalidArgument(err));
 }
-
-
-RpcContext::~RpcContext() {
-}
-
-void RpcContext::RespondSuccess() {
-  call_->RespondSuccess(*response_pb_);
-  delete this;
-}
-
-void RpcContext::RespondFailure(const Status &status) {
-  call_->RespondFailure(status);
-  delete this;
-}
-
-  template<class RequestPB, class ResponsePB>
-  void DoCall(InboundCall *call);
 
 } // namespace rpc
 } // namespace kudu

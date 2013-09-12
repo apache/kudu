@@ -281,7 +281,12 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include \"rpc/rpc_header.pb.h\"\n"
       "#include \"rpc/service_if.h\"\n"
       "\n"
-      "namespace kudu { namespace rpc { class Messenger; } }\n"
+      "namespace kudu {\n"
+      "namespace rpc {\n"
+      "class Messenger;\n"
+      "class RpcContext;\n"
+      "} // namespace rpc\n"
+      "} // namespace kudu\n"
       "$open_namespace$"
       "\n"
       );
@@ -338,7 +343,8 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "\n"
       "#include <glog/logging.h>\n"
       "\n"
-      "#include \"rpc/server_call.h\"\n"
+      "#include \"rpc/inbound_call.h\"\n"
+      "#include \"rpc/rpc_context.h\"\n"
       "\n"
       "$open_namespace$"
       "\n");

@@ -13,7 +13,7 @@
 
 #include "rpc/client_call.h"
 #include "rpc/response_callback.h"
-#include "rpc/server_call.h"
+#include "rpc/inbound_call.h"
 #include "rpc/transfer.h"
 #include "util/blocking_queue.h"
 #include "util/monotime.h"

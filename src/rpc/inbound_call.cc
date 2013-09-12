@@ -1,12 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
+#include "rpc/inbound_call.h"
+
 #include <tr1/memory>
 #include <vector>
 
 #include "rpc/connection.h"
 #include "rpc/serialization.h"
-#include "rpc/server_call.h"
 
 using google::protobuf::Message;
 using google::protobuf::MessageLite;

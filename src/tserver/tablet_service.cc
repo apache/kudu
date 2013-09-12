@@ -11,6 +11,7 @@
 #include "common/wire_protocol.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
+#include "rpc/rpc_context.h"
 #include "tablet/tablet.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
