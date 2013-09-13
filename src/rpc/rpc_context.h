@@ -12,6 +12,9 @@ class Message;
 } // namespace google
 
 namespace kudu {
+
+class Sockaddr;
+
 namespace rpc {
 
 class UserCredentials;
@@ -54,6 +57,9 @@ class RpcContext {
 
   // Return the credentials of the remote user who made this call.
   const UserCredentials& user_credentials() const;
+
+  // Return the remote IP address and port which sent the current RPC call.
+  const Sockaddr& remote_address() const;
 
   const google::protobuf::Message *request_pb() const { return request_pb_.get(); }
   google::protobuf::Message *response_pb() const { return response_pb_.get(); }

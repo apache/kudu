@@ -32,5 +32,9 @@ const UserCredentials& RpcContext::user_credentials() const {
   return call_->user_credentials();
 }
 
+const Sockaddr& RpcContext::remote_address() const {
+  return call_->remote_address();
+}
+
 } // namespace rpc
 } // namespace kudu

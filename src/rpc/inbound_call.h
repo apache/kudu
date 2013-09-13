@@ -79,6 +79,8 @@ class InboundCall {
 
   const UserCredentials& user_credentials() const;
 
+  const Sockaddr& remote_address() const;
+
  private:
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a

@@ -120,6 +120,17 @@ TEST_F(RpcStubTest, TestCustomCredentialsPropagated) {
   ASSERT_FALSE(resp.credentials().has_effective_user());
 }
 
+// Test that the user's remote address is accessible to the server.
+TEST_F(RpcStubTest, TestRemoteAddress) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  RpcController controller;
+  WhoAmIRequestPB req;
+  WhoAmIResponsePB resp;
+  ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
+  ASSERT_STR_CONTAINS(resp.address(), "127.0.0.1:");
+}
+
 ////////////////////////////////////////////////////////////
 // Tests for error cases
 ////////////////////////////////////////////////////////////

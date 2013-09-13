@@ -84,5 +84,9 @@ const UserCredentials& InboundCall::user_credentials() const {
   return conn_->user_credentials();
 }
 
+const Sockaddr& InboundCall::remote_address() const {
+  return conn_->remote();
+}
+
 } // namespace rpc
 } // namespace kudu

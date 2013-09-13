@@ -42,6 +42,7 @@ message WhoAmIRequestPB {
 }
 message WhoAmIResponsePB {
   required kudu.rpc.UserInformationPB credentials = 1;
+  required string address = 2;
 }
 
 service CalculatorService {
