@@ -40,6 +40,8 @@ using kudu::cfile::BloomFileWriter;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 
+class MutationResultPB;
+
 class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
@@ -198,7 +200,7 @@ class DiskRowSet : public RowSet {
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
                    const RowChangeList &update,
-                   MutationResult *result);
+                   MutationResultPB* result);
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
 

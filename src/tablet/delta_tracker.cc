@@ -13,6 +13,7 @@
 #include "tablet/delta_compaction.h"
 #include "tablet/delta_store.h"
 #include "tablet/diskrowset.h"
+#include "tablet/tablet.pb.h"
 
 namespace kudu { namespace tablet {
 
@@ -244,14 +245,16 @@ ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterat
 Status DeltaTracker::Update(txid_t txid,
                             rowid_t row_idx,
                             const RowChangeList &update,
-                            MutationResult * result) {
+                            MutationResultPB* result) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   DCHECK_LT(row_idx, num_rows_);
 
   Status s = dms_->Update(txid, row_idx, update);
   if (s.ok()) {
-    result->AddDeltaRowStoreMutation(row_idx, rowset_metadata_->id(), dms_->id());
+    MutationTargetPB* target = result->add_mutations();
+    target->set_rs_id(rowset_metadata_->id());
+    target->set_delta_id(dms_->id());
   }
   return s;
 }

@@ -2,9 +2,9 @@
 package kudu.consensus;
 
 import "common/common.proto";
-import "cfile/cfile.proto";
-import "rpc/rpc_header.proto";
+import "common/wire_protocol.proto";
 import "server/metadata.proto";
+import "tablet/tablet.proto";
 import "tserver/tserver.proto";
 
 // ===========================================================================
@@ -40,26 +40,6 @@ message QuorumPB {
 }
 
 // ===========================================================================
-//  Tablet Messages
-// ===========================================================================
-
-// The type of in-memory store (MemRowSet or DeltaMemStore)
-enum MemStoreType {
-  MEM_ROW_SET = 0;
-  DELTA_ROW_SET = 1;
-}
-
-// A target for a single MutatingOpElement, used for replay and debugging.
-// Includes the type of the mem store, the rowset id and optionally the mem
-// store index (if this corresponds to a DeltaMemStore).
-message MemStoreId {
-  required MemStoreType type = 1;
-  required uint64 mrs_id = 2;
-  required uint64 rs_id = 3;
-  optional uint64 delta_index = 4;
-}
-
-// ===========================================================================
 //  Quorum Messages
 // ===========================================================================
 
@@ -70,8 +50,7 @@ message NoOp {}
 // at least one round of the consensus algorithm.
 enum OperationType {
   WRITE_OP = 0;
-  CONFIGURATION_CHANGE_OP = 1;
-  NO_OP = 2;
+  NO_OP = 1;
 }
 
 // A Replicate message, sent to replicas by leader to indicate this operation must
@@ -97,6 +76,6 @@ message CommitMsg {
   // The response to the write request, will contain the global status
   // (OK or otherwise) and the row errors, if any.
   optional tserver.WriteResponsePB response = 4;
-  // The stores that were mutated when the MutatingOp was applied.
-  repeated MemStoreId mutated_stores = 5;
+  // The operations that were applied and/or failed in this transaction.
+  required tablet.TxResultPB result = 5;
 }

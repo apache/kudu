@@ -10,6 +10,7 @@ ADD_DEPENDENCIES(consensus_proto kudu_common)
 ADD_DEPENDENCIES(consensus_proto cfile_proto)
 ADD_DEPENDENCIES(consensus_proto metadata_proto)
 ADD_DEPENDENCIES(consensus_proto tserver_proto)
+ADD_DEPENDENCIES(consensus_proto tablet)
 
 PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..

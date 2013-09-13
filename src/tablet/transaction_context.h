@@ -7,15 +7,13 @@
 
 #include "common/row.h"
 #include "common/row_changelist.h"
+#include "common/wire_protocol.h"
 #include "tablet/mvcc.h"
 #include "tablet/rowset.h"
+#include "tablet/tablet.pb.h"
 
 namespace kudu {
 namespace tablet {
-
-class Operation;
-class InsertOp;
-class MutationOp;
 
 // A transaction context for a batch of inserts/mutates.
 //
@@ -39,183 +37,49 @@ class TransactionContext {
       : unsuccessful_ops_(0) {
   }
 
-  // Adds an applied insert to this TransactionContext, including the tablet,
-  // the mvcc transaction id, the row that was applied and the MemRowSet id
-  // where it was applied to.
-  void AddInsert(const string &tablet_id,
-                 const txid_t &tx_id,
-                 const ConstContiguousRow& row,
-                 int64_t mrs_id);
+  // Adds an applied insert to this TransactionContext, including the
+  // id of the MemRowSet to which it was applied.
+  Status AddInsert(const txid_t &tx_id,
+                   int64_t mrs_id);
 
   // Adds a failed insert to this TransactionContext, including the status
   // explaining why the insert failed.
-  //
-  // TransactionContext does not copy the passed row, caller is expected not to
-  // free the row for the duration of the validity of this TransactionContext.
-  void AddFailedInsert(const string &tablet_id,
-                       const ConstContiguousRow& row,
-                       const Status &status);
+  void AddFailedInsert(const Status &status);
 
   // Adds an applied mutation to this TransactionContext, including the
   // tablet id, the mvcc transaction id, the mutation that was applied
   // and the delta stores that were mutated.
-  void AddMutation(const string &tablet_id,
-                   const txid_t &tx_id,
-                   const RowChangeList &update,
-                   gscoped_ptr<MutationResult> result);
+  Status AddMutation(const txid_t &tx_id,
+                     gscoped_ptr<MutationResultPB> result);
 
   // Adds a failed mutation to this TransactionContext, including the status
   // explaining why it failed.
-  //
-  // The 'result' pointer may be NULL if the mutation failed before any attempt
-  // to apply it was made (e.g in case the update itself was malformed).
-  //
-  // NOTE: 'update' may be a malformed RowChangeList object
-  // TODO(dralves): patch pending to clean this stuff up a bit and remove
-  // the redundancy of passing 'update' here, etc.
-  void AddFailedMutation(const string &tablet_id,
-                         const RowChangeList &update,
-                         gscoped_ptr<MutationResult> result,
-                         const Status &status);
+  void AddFailedMutation(const Status &status);
 
   bool is_all_success() const {
     return unsuccessful_ops_ == 0;
   }
 
-  // Returns all operations that were performed in this transaction.
-  const vector<const Operation *> &operations() const {
-    return operations_;
+  // Returns the result of this transaction in its protocol buffers
+  // form.
+  const TxResultPB& Result() const {
+    return result_pb_;
   }
 
   void Reset();
 
-  ~TransactionContext();
-
  private:
   DISALLOW_COPY_AND_ASSIGN(TransactionContext);
 
-  vector<const Operation *> operations_;
+  Status SetOrCheckTxId(const txid_t& tx_id);
+
+  txid_t tx_id_;
+  TxResultPB result_pb_;
   int32_t unsuccessful_ops_;
 };
 
-class Operation {
- public:
-
-  const string &tablet_id() const {
-    return tablet_id_;
-  }
-
-  const txid_t &tx_id() const {
-    return tx_id_;
-  }
-
-  const Status &status() const {
-    return status_;
-  }
-
-  bool is_success() const {
-    return status_.ok();
-  }
-
-  virtual ~Operation() {}
-
- protected:
-  Operation(const string &tablet_id,
-            const txid_t &tx_id,
-            Status status)
-      : tablet_id_(tablet_id),
-        tx_id_(tx_id),
-        status_(status) {
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(Operation);
-
-  friend class TransactionContext;
-
-  string tablet_id_;
-  txid_t tx_id_;
-  Status status_;
-};
-
-class InsertOp : public Operation {
- public:
-
-  const ConstContiguousRow &row() const {
-    return row_;
-  }
-
-  int64_t mrs_id() const {
-    return mrs_id_;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(InsertOp);
-
-  friend class TransactionContext;
-
-  InsertOp(const string &tablet_id,
-           const txid_t &tx_id,
-           const ConstContiguousRow& row,
-           int64_t mrs_id)
-      : Operation(tablet_id, tx_id, Status::OK()),
-        row_(row),
-        mrs_id_(mrs_id) {
-  }
-
-  // ctor for failed inserts
-  InsertOp(const string &tablet_id,
-           const ConstContiguousRow& row,
-           Status status)
-      : Operation(tablet_id, txid_t::kInvalidTxId, status),
-        row_(row),
-        mrs_id_(-1) {
-    DCHECK(!status.ok());
-  }
-
-  ConstContiguousRow row_;
-  int64_t mrs_id_;
-};
-
-class MutationOp : public Operation {
- public:
-
-  const RowChangeList &update() const {
-    return update_;
-  }
-
-  const MutationResult *result() const {
-    return result_.get();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MutationOp);
-
-  friend class TransactionContext;
-
-  MutationOp(const string &tablet_id,
-             const txid_t &tx_id,
-             const RowChangeList &update,
-             gscoped_ptr<MutationResult> result)
-      : Operation(tablet_id, tx_id, Status::OK()),
-        update_(update),
-        result_(result.Pass()) {
-  }
-
-  // ctor for failed mutations
-  MutationOp(const string &tablet_id,
-             const RowChangeList &update,
-             gscoped_ptr<MutationResult> result,
-             Status status)
-      : Operation(tablet_id, txid_t::kInvalidTxId, status),
-        update_(update),
-        result_(result.Pass()) {
-    DCHECK(!status.ok());
-  }
-
-  RowChangeList update_;
-  gscoped_ptr<MutationResult> result_;
-};
+// Calculates type of the mutation based on the set fields and number of targets.
+MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
 
 }  // namespace tablet
 }  // namespace kudu

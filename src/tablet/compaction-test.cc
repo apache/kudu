@@ -75,7 +75,7 @@ class TestCompaction : public KuduRowSetTest {
       RowBuilder rb(schema_.CreateKeyProjection());
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
-      MutationResult result;
+      MutationResultPB result;
       ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(),
                                          probe,
                                          RowChangeList(update_buf),

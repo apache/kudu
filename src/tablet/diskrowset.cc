@@ -377,7 +377,7 @@ CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const 
 Status DiskRowSet::MutateRow(txid_t txid,
                              const RowSetKeyProbe &probe,
                              const RowChangeList &update,
-                             MutationResult *result) {
+                             MutationResultPB* result) {
   CHECK(open_);
 
   rowid_t row_idx;

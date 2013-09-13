@@ -14,8 +14,6 @@ using kudu::metadata::RowSetMetadata;
 
 namespace kudu { namespace tablet {
 
-const int64_t kStoreNotMutated = -1;
-
 DuplicatingRowSet::DuplicatingRowSet(const RowSetVector &old_rowsets,
                                      const RowSetVector &new_rowsets)
   : old_rowsets_(old_rowsets),
@@ -83,7 +81,7 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap)
 Status DuplicatingRowSet::MutateRow(txid_t txid,
                                     const RowSetKeyProbe &probe,
                                     const RowChangeList &update,
-                                    MutationResult *result) {
+                                    MutationResultPB* result) {
   // Duplicate the update to both the relevant input rowset and the output rowset.
   //
   // It's crucial to do the mutation against the input side first, due to the potential
@@ -207,74 +205,6 @@ Status DuplicatingRowSet::DebugDump(vector<string> *lines) {
   }
 
   return Status::OK();
-}
-
-MutationTarget::MutationTarget()
-    : mrs_id(kStoreNotMutated),
-      rs_id(kStoreNotMutated),
-      delta_index(kStoreNotMutated),
-      row_key(NULL),
-      row_idx(kStoreNotMutated) {
-}
-
-void MutationResult::AddMemRowSetMutation(const ConstContiguousRow *row_key,
-                                          int64_t mrs_id) {
-  DCHECK_GE(mrs_id, 0L);
-  MutationTarget *target = new MutationTarget();
-  target->mrs_id = mrs_id;
-  target->row_key = row_key;
-  targets_.push_back(target);
-}
-
-void MutationResult::AddDeltaRowStoreMutation(rowid_t row_idx,
-                                              int64_t rs_id,
-                                              int64_t delta_index) {
-  DCHECK_GE(rs_id, 0L);
-  DCHECK_GE(delta_index, 0L);
-  MutationTarget *target = new MutationTarget();
-  target->rs_id = rs_id;
-  target->delta_index = delta_index;
-  target->row_idx = row_idx;
-  targets_.push_back(target);
-}
-
-MutationType MutationResult::type() const {
-  if (!status_.ok()) {
-    return FAILED_MUTATION;
-  }
-  if (targets_.empty()) {
-    return NO_MUTATION;
-  }
-  if (targets_.size() == 1) {
-    return targets_[0]->mrs_id != kStoreNotMutated ? MRS_MUTATION :
-                                                     DELTA_MUTATION;
-  }
-  DCHECK_EQ(targets_.size(), 2);
-  return DUPLICATED_MUTATION;
-}
-
-
-MutationResult::~MutationResult() {
-  STLDeleteElements(&targets_);
-}
-
-void MutationResult::Reset() {
-  STLDeleteElements(&targets_);
-  status_ = Status::OK();
-}
-
-string MutationResult::ToString() const {
-  string ret;
-  ret.append("MutationResult( ");
-  BOOST_FOREACH(const MutationTarget *target, targets_) {
-    ret.append("MutationTarget(");
-    StringAppendF(&ret, "mrs_id=%ld", target->mrs_id);
-    StringAppendF(&ret, ", rs_id=%ld", target->rs_id);
-    StringAppendF(&ret, ", delta_index=%ld", target->delta_index);
-    ret.append(") ");
-  }
-  ret.append(")");
-  return ret;
 }
 
 } // namespace tablet

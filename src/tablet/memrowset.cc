@@ -153,7 +153,7 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
 Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
                             const RowChangeList &delta,
-                            MutationResult *result) {
+                            MutationResultPB *result) {
   {
     btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
     mutation.Prepare(&tree_);
@@ -180,7 +180,8 @@ Status MemRowSet::MutateRow(txid_t txid,
     // the appended mutation.
     mut->AppendToListAtomic(&row.header_->mutation_head);
 
-    result->AddMemRowSetMutation(&probe.row_key(), id_);
+    MutationTargetPB* target = result->add_mutations();
+    target->set_mrs_id(id_);
   }
 
   // Throttle the writer if we're low on memory, but do this outside of the lock

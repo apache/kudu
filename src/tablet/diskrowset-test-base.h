@@ -102,13 +102,13 @@ class TestRowSet : public KuduRowSetTest {
       uint32_t new_val = idx_to_update * 5;
       update.Reset();
       update.AddColumnUpdate(1, &new_val);
-      MutationResult result;
+      MutationResultPB result;
       CHECK_OK(MutateRow(rs,
                          idx_to_update,
                          RowChangeList(update_buf),
                          &result));
-      CHECK_EQ(DELTA_MUTATION, result.type());
-      CHECK_EQ(rs->metadata()->id(), result.mutations()[0]->rs_id);
+      CHECK_EQ(MutationResultPB::DELTA_MUTATION, MutationType(&result));
+      CHECK_EQ(rs->metadata()->id(), result.mutations(0).rs_id());
       if (updated != NULL) {
         updated->insert(idx_to_update);
       }
@@ -116,7 +116,7 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   // Delete the row with the given identifier.
-  Status DeleteRow(DiskRowSet *rs, uint32_t row_idx, MutationResult *result) {
+  Status DeleteRow(DiskRowSet *rs, uint32_t row_idx, MutationResultPB* result) {
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     update.Reset();
@@ -128,7 +128,7 @@ class TestRowSet : public KuduRowSetTest {
   Status UpdateRow(DiskRowSet *rs,
                    uint32_t row_idx,
                    uint32_t new_val,
-                   MutationResult *result)  {
+                   MutationResultPB* result)  {
     faststring update_buf;
     RowChangeListEncoder update(schema_, &update_buf);
     update.Reset();
@@ -141,7 +141,7 @@ class TestRowSet : public KuduRowSetTest {
   Status MutateRow(DiskRowSet *rs,
                    uint32_t row_idx,
                    const RowChangeList &mutation,
-                   MutationResult *result) {
+                   MutationResultPB* result) {
     RowBuilder rb(schema_.CreateKeyProjection());
     BuildRowKey(&rb, row_idx);
     RowSetKeyProbe probe(rb.row());

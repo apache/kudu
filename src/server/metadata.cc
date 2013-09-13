@@ -101,31 +101,26 @@ Status TabletMetadata::Load() {
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
-                                      const RowSetMetadataVector& to_add) {
+                                      const RowSetMetadataVector& to_add,
+                                      shared_ptr<TabletSuperBlockPB> *super_block) {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id_);
+  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id_, super_block);
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
-                                      int64_t last_durable_mrs_id) {
+                                      int64_t last_durable_mrs_id,
+                                      shared_ptr<TabletSuperBlockPB> *super_block) {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id);
+  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id, super_block);
 }
 
 Status TabletMetadata::UpdateAndFlushUnlocked(
     const RowSetMetadataIds& to_remove,
     const RowSetMetadataVector& to_add,
-    int64_t last_durable_mrs_id) {
+    int64_t last_durable_mrs_id,
+    shared_ptr<TabletSuperBlockPB> *super_block) {
   DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
-
-  // Convert to protobuf
-  TabletSuperBlockPB pb;
-  pb.set_id(sblk_id_);
-  pb.set_oid(oid());
-  pb.set_start_key(start_key_);
-  pb.set_end_key(end_key_);
-  pb.set_last_durable_mrs_id(last_durable_mrs_id_);
 
   RowSetMetadataVector new_rowsets = rowsets_;
   RowSetMetadataVector::iterator it = new_rowsets.begin();
@@ -133,29 +128,58 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
     if (ContainsKey(to_remove, (*it)->id())) {
       it = new_rowsets.erase(it);
     } else {
-      (*it)->ToProtobuf(pb.add_rowsets());
       it++;
     }
   }
 
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, to_add) {
-    meta->ToProtobuf(pb.add_rowsets());
     new_rowsets.push_back(meta);
   }
+
+  shared_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
+  RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, new_rowsets));
 
   // Flush
   BlockId a_blk(master_block_.block_a());
   BlockId b_blk(master_block_.block_b());
   if (sblk_id_ & 1) {
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, pb));
+    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, *(pb.get())));
     fs_manager_->DeleteBlock(b_blk);
   } else {
-    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, pb));
+    RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, *(pb.get())));
     fs_manager_->DeleteBlock(a_blk);
   }
 
   sblk_id_++;
   rowsets_ = new_rowsets;
+  if (super_block != NULL) {
+    super_block->swap(pb);
+  }
+  return Status::OK();
+}
+
+Status TabletMetadata::ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block) {
+  // acquire the lock so that rowsets_ doesn't get changed until we're finished.
+  boost::lock_guard<LockType> l(lock_);
+  return ToSuperBlockUnlocked(super_block, rowsets_);
+}
+
+Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *super_block,
+                                            const RowSetMetadataVector& rowsets) {
+
+  // Convert to protobuf
+  gscoped_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
+  pb->set_id(sblk_id_);
+  pb->set_oid(oid());
+  pb->set_start_key(start_key_);
+  pb->set_end_key(end_key_);
+  pb->set_last_durable_mrs_id(last_durable_mrs_id_);
+
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, rowsets) {
+    meta->ToProtobuf(pb->add_rowsets());
+  }
+
+  super_block->reset(pb.release());
   return Status::OK();
 }
 

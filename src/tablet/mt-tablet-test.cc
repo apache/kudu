@@ -288,6 +288,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     while (running_insert_count_.count() > 0) {
       TransactionContext tx_ctx;
       for (int i = 0; i < 100; i++) {
+        tx_ctx.Reset();
         Status s = this->UpdateTestRow(&tx_ctx, tid, iteration++);
         if (!s.ok() && !s.IsNotFound()) {
           // We expect "not found", but not any other errors.

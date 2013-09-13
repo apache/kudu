@@ -45,6 +45,7 @@ class CompositePushdownTest : public KuduTabletTest {
           rb.AddUint8(month);
           rb.AddUint8(day);
           rb.AddString(StringPrintf("%d/%02d/%02d", year, month, day));
+          tx_ctx.Reset();
           ASSERT_STATUS_OK_FAST(tablet_->Insert(&tx_ctx, rb.row()));
 
           if (i == nrows * 9 / 10) {

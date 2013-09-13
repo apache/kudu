@@ -197,6 +197,11 @@ void TabletServiceImpl::InsertRows(const Schema& client_schema,
     ConstContiguousRow row(client_schema, row_ptr);
     DVLOG(2) << "Going to insert row: " << client_schema.DebugRow(row);
 
+    // For now the transaction has to be reset as it only
+    // allows to add inserts/updates in the same mvcc transaction.
+    // Later, when this is performed by the apply task all changes
+    // are made in the same mvcc tx so this is not a problem.
+    tx_ctx->Reset();
     Status s = tablet->Insert(tx_ctx, row);
     if (PREDICT_FALSE(!s.ok())) {
       DVLOG(2) << "Error for row " << client_schema.DebugRow(row)
@@ -222,6 +227,10 @@ void TabletServiceImpl::MutateRows(const Schema& client_schema,
   BOOST_FOREACH(const uint8_t* row_key_ptr, *to_mutate) {
     ConstContiguousRow row_key(client_schema, row_key_ptr);
     DVLOG(2) << "Going to mutate row: " << client_schema.DebugRow(row_key);
+
+    // See comment in TabletServiceImpl::InsertRows() as to why this
+    // this is Reset().
+    tx_ctx->Reset();
     Status s = tablet->MutateRow(tx_ctx, row_key, *(*mutations)[i]);
     if (PREDICT_FALSE(!s.ok())) {
       DVLOG(2) << "Error for row " << client_schema.DebugRow(row_key)

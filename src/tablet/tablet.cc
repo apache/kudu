@@ -163,7 +163,7 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
       RETURN_NOT_OK(rowset->CheckRowPresent(probe, &present));
       if (PREDICT_FALSE(present)) {
         Status s = Status::AlreadyPresent("key already present");
-        tx_ctx->AddFailedInsert(metadata_->oid(), row, s);
+        tx_ctx->AddFailedInsert(s);
         return s;
       }
     }
@@ -177,9 +177,9 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
   ScopedTransaction tx(&mvcc_);
   Status s = memrowset_->Insert(tx.txid(), row);
   if (PREDICT_TRUE(s.ok())) {
-    tx_ctx->AddInsert(metadata_->oid(), tx.txid(), row, memrowset_->mrs_id());
+    RETURN_NOT_OK(tx_ctx->AddInsert(tx.txid(), memrowset_->mrs_id()));
   } else {
-    tx_ctx->AddFailedInsert(metadata_->oid(), row, s);
+    tx_ctx->AddFailedInsert(s);
   }
   return s;
 }
@@ -200,7 +200,7 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
     s = Status::InvalidArgument("User may not specify REINSERT mutations");
   }
   if (!s.ok()) {
-    tx_ctx->AddFailedMutation(metadata_->oid(), update, gscoped_ptr<MutationResult>(), s);
+    tx_ctx->AddFailedMutation(s);
     return s;
   }
 
@@ -251,16 +251,16 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   ScopedRowLock rowlock(&lock_manager_, probe.encoded_key_slice(), LockManager::LOCK_EXCLUSIVE);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   ScopedTransaction tx(&mvcc_);
-  gscoped_ptr<MutationResult> result(new MutationResult);
+  gscoped_ptr<MutationResultPB> result(new MutationResultPB);
 
   // First try to update in memrowset.
   s = memrowset_->MutateRow(tx.txid(), probe, update, result.get());
   if (s.ok()) {
-    tx_ctx->AddMutation(metadata_->oid(), tx.txid(), update, result.Pass());
+    RETURN_NOT_OK(tx_ctx->AddMutation(tx.txid(), result.Pass()));
     return s;
   }
   if (!s.IsNotFound()) {
-    tx_ctx->AddFailedMutation(metadata_->oid(), update, result.Pass(), s);
+    tx_ctx->AddFailedMutation(s);
     return s;
   }
 
@@ -272,17 +272,17 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   BOOST_FOREACH(RowSet *rs, to_check) {
     s = rs->MutateRow(tx.txid(), probe, update, result.get());
     if (s.ok()) {
-      tx_ctx->AddMutation(metadata_->oid(), tx.txid(), update, result.Pass());
+      RETURN_NOT_OK(tx_ctx->AddMutation(tx.txid(), result.Pass()));
       return s;
     }
     if (!s.IsNotFound()) {
-      tx_ctx->AddFailedMutation(metadata_->oid(), update, result.Pass(), s);
+      tx_ctx->AddFailedMutation(s);
       return s;
     }
   }
 
   s = Status::NotFound("key not found");
-  tx_ctx->AddFailedMutation(metadata_->oid(), update, result.Pass(), s);
+  tx_ctx->AddFailedMutation(s);
   return s;
 }
 
@@ -502,9 +502,9 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
   }
   // If we're flushing an mrs update the latest durable one in the metadata
   if (mrs_being_flushed != kNoMrsFlushed) {
-    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed);
+    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed, NULL);
   }
-  return metadata_->UpdateAndFlush(to_remove_meta, to_add);
+  return metadata_->UpdateAndFlush(to_remove_meta, to_add, NULL);
 }
 
 Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed) {

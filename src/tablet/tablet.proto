@@ -1,0 +1,57 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.tablet;
+
+import "common/wire_protocol.proto";
+
+// Analogous to tablet::MutationTarget
+message MutationTargetPB {
+  required int64 mrs_id = 1;
+  required int64 rs_id = 2;
+  required int64 delta_id = 3;
+}
+
+// Analogous to tablet::MutationResult
+message MutationResultPB {
+  // Analogous to tablet::MutationType
+  enum MutationTypePB {
+    NO_MUTATION = 0;
+    MRS_MUTATION = 1;
+    DELTA_MUTATION = 2;
+    DUPLICATED_MUTATION = 3;
+    FAILED_MUTATION = 4;
+  }
+
+  required MutationTypePB type = 1;
+  repeated MutationTargetPB mutations = 2;
+}
+
+// Analogous to tablet::Operation, tablet::InsertOp and tablet::MutationOP in
+// transaction_context.h but with only the data required for recovery.
+message TxOperationPB {
+
+  enum TxOperationTypePB {
+    INSERT = 0;
+    MUTATE = 1;
+  }
+  // The type of the operation, inserts will have 'mrs_id' set and mutations
+  // will have 'mutation_result' set. In either case if 'failed_status' is set
+  // then the operation failed.
+  required TxOperationTypePB type = 1;
+  // set if this particular operation failed
+  optional kudu.AppStatusPB failed_status = 2;
+  // set if this is an InsertOp
+  optional int64 mrs_id = 3;
+  // set if this is a MutationOp
+  optional MutationResultPB mutation_result = 4;
+}
+
+// The final result of a transaction, including the result of each individual
+// operation.
+message TxResultPB {
+  // the transaction id for the operation
+  required uint64 txid = 1;
+  // all the inserts in this transaction
+  repeated TxOperationPB inserts = 2;
+  // all the mutations in this transaction
+  repeated TxOperationPB mutations = 3;
+}

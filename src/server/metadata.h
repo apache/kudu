@@ -56,12 +56,20 @@ class TabletMetadata {
   Status Create();
   Status Load();
 
-  Status Flush() { return UpdateAndFlush(RowSetMetadataIds(), RowSetMetadataVector()); }
-  Status UpdateAndFlush(const RowSetMetadataIds& to_remove, const RowSetMetadataVector& to_add);
+  Status Flush() { return UpdateAndFlush(RowSetMetadataIds(), RowSetMetadataVector(), NULL); }
+
 
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
-                        int64_t last_durable_mrs_id);
+                        shared_ptr<TabletSuperBlockPB> *super_block);
+
+  // Updates the metadata adding 'to_add' rowsets, removing 'to_remove' rowsets
+  // and updating the last durable MemRowSet. If 'super_block' is not NULL it
+  // will be set to the newly created TabletSuperBlockPB.
+  Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
+                        const RowSetMetadataVector& to_add,
+                        int64_t last_durable_mrs_id,
+                        shared_ptr<TabletSuperBlockPB> *super_block);
 
   // Create a new RowSetMetadata for this tablet.
   Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
@@ -71,6 +79,10 @@ class TabletMetadata {
   FsManager *fs_manager() const { return fs_manager_; }
 
   int64_t lastest_durable_mrs_id() { return last_durable_mrs_id_; }
+
+  // Creates a TabletSuperBlockPB that reflects the current tablet metadata
+  // and sets 'super_block' to it.
+  Status ToSuperBlock(shared_ptr<TabletSuperBlockPB> *super_block);
 
   // ==========================================================================
   // Stuff used by the tests
@@ -85,7 +97,11 @@ class TabletMetadata {
 
   Status UpdateAndFlushUnlocked(const RowSetMetadataIds& to_remove,
                                 const RowSetMetadataVector& to_add,
-                                int64_t last_durable_mrs_id);
+                                int64_t last_durable_mrs_id,
+                                shared_ptr<TabletSuperBlockPB> *super_block);
+
+  Status ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *super_block,
+                              const RowSetMetadataVector& rowsets);
 
   typedef simple_spinlock LockType;
   LockType lock_;

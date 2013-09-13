@@ -620,47 +620,40 @@ class TabletTestBase : public KuduTabletTest {
     arena_(1024, 4*1024*1024)
   {}
 
-  // Inserts "count" rows without keeping track of inserts. This should be
-  // called instead of InsertTestRowsInTransaction when inserting a large
-  // number of rows, or when keeping track of inserts is not relevant.
+  // Inserts "count" rows.
   void InsertTestRows(uint64_t first_row,
                       uint64_t count,
                       uint32_t update_count_val,
                       TimeSeries *ts = NULL) {
     TransactionContext tx_ctx;
-    InsertTestRowsInTransaction(&tx_ctx, true, first_row, count,
-                                update_count_val, ts);
-  }
-
-  // Inserts test rows within a transaction, but optionally resets it after
-  // each insert. This allows to inserts a big number of rows without going
-  // out of memory but at the same time keep track of inserts when relevant.
-  void InsertTestRowsInTransaction(TransactionContext *tx_ctx,
-                                   bool reset_tx,
-                                   uint64_t first_row,
-                                   uint64_t count,
-                                   uint32_t update_count_val,
-                                   TimeSeries *ts = NULL) {
     RowBuilder rb(schema_);
 
     uint64_t inserted_since_last_report = 0;
     for (uint64_t i = first_row; i < first_row + count; i++) {
       rb.Reset();
+      tx_ctx.Reset();
       setup_.BuildRow(&rb, i, update_count_val);
-      CHECK_OK(tablet_->Insert(tx_ctx, rb.row()));
+      CHECK_OK(tablet_->Insert(&tx_ctx, rb.row()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
         inserted_since_last_report = 0;
-      }
-      if (reset_tx) {
-        tx_ctx->Reset();
       }
     }
 
     if (ts) {
       ts->AddValue(static_cast<double>(inserted_since_last_report));
     }
+  }
+
+  // Inserts a single test row within a transaction.
+  void InsertTestRow(TransactionContext *tx_ctx,
+                     uint64_t row,
+                     uint32_t update_count_val) {
+    RowBuilder rb(schema_);
+    rb.Reset();
+    setup_.BuildRow(&rb, row, update_count_val);
+    CHECK_OK(tablet_->Insert(tx_ctx, rb.row()));
   }
 
   Status UpdateTestRow(TransactionContext *tx_ctx,
@@ -680,7 +673,6 @@ class TabletTestBase : public KuduTabletTest {
   Status DeleteTestRow(TransactionContext *tx_ctx, uint64_t row_idx) {
     RowBuilder rb(schema_.CreateKeyProjection());
     setup_.BuildRowKey(&rb, row_idx);
-
     faststring buf;
     RowChangeListEncoder(schema_, &buf).SetToDelete();
     return tablet_->MutateRow(tx_ctx, rb.row(), RowChangeList(buf));

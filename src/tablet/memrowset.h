@@ -161,8 +161,8 @@ class MemRowSet : public RowSet,
   // Returns Status::NotFound if the row doesn't exist.
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
-                   const RowChangeList &update,
-                   MutationResult *result);
+                   const RowChangeList &delta,
+                   MutationResultPB *result);
 
   // Return the number of entries in the memrowset.
   // NOTE: this requires iterating all data, and is thus

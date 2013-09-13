@@ -16,6 +16,14 @@ SET(TABLET_SRCS
   deltamemstore.cc deltafile.cc delta_tracker.cc
   delta_compaction.cc
 )
+
+PROTOBUF_GENERATE_CPP(TABLET_PROTO_SRCS TABLET_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES tablet.proto)
+
+SET(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
+
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 ADD_DEPENDENCIES(tablet kudu_common)
 ADD_DEPENDENCIES(tablet cfile_proto)

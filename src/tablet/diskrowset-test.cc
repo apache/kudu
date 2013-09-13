@@ -137,10 +137,10 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   rb.AddString(Slice("hello 00000000000049x"));
   RowSetKeyProbe probe(rb.row());
 
-  MutationResult result;
+  MutationResultPB result;
   Status s = rs->MutateRow(txid, probe, enc.as_changelist(), &result);
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_EQ(NO_MUTATION, result.type());
+  ASSERT_EQ(MutationResultPB::NO_MUTATION, result.type());
 
   // Now read back the value column, and verify that the updates
   // are visible.
@@ -156,11 +156,11 @@ TEST_F(TestRowSet, TestDelete) {
   MvccSnapshot snap_before_delete(mvcc_);
 
   // Delete one of the two rows
-  MutationResult result;
+  MutationResultPB result;
   ASSERT_STATUS_OK(DeleteRow(rs.get(), 0, &result));
-  ASSERT_EQ(DELTA_MUTATION, result.type());
-  ASSERT_EQ(0L, result.mutations()[0]->rs_id);
-  ASSERT_EQ(0L, result.mutations()[0]->delta_index);
+  ASSERT_EQ(MutationResultPB::DELTA_MUTATION, MutationType(&result));
+  ASSERT_EQ(0L, result.mutations(0).rs_id());
+  ASSERT_EQ(0L, result.mutations(0).delta_id());
   MvccSnapshot snap_after_delete(mvcc_);
 
   vector<string> rows;
@@ -179,14 +179,14 @@ TEST_F(TestRowSet, TestDelete) {
     EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
 
     // Trying to delete or update the same row again should fail.
-    MutationResult result;
+    MutationResultPB result;
     s = DeleteRow(rs.get(), 0, &result);
     ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
-    ASSERT_EQ(NO_MUTATION, result.type());
-    result.Reset();
+    ASSERT_EQ(MutationResultPB::NO_MUTATION, MutationType(&result));
+    result.Clear();
     s = UpdateRow(rs.get(), 0, 12345, &result);
     ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
-    ASSERT_EQ(NO_MUTATION, result.type());
+    ASSERT_EQ(MutationResultPB::NO_MUTATION, MutationType(&result));
 
     // CheckRowPresent should return false.
     bool present;
@@ -283,14 +283,14 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       RowBuilder rb(schema_.CreateKeyProjection());
       rb.AddString(key_slice);
       RowSetKeyProbe probe(rb.row());
-      MutationResult result;
+      MutationResultPB result;
       ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
                                           probe,
                                           RowChangeList(update_buf),
                                           &result));
-      ASSERT_EQ(DELTA_MUTATION, result.type());
-      ASSERT_EQ(0L, result.mutations()[0]->rs_id);
-      ASSERT_EQ(0L, result.mutations()[0]->delta_index);
+      ASSERT_EQ(MutationResultPB::DELTA_MUTATION, MutationType(&result));
+      ASSERT_EQ(0L, result.mutations(0).rs_id());
+      ASSERT_EQ(0L, result.mutations(0).delta_id());
     }
     snaps.push_back(MvccSnapshot(mvcc_));
   }

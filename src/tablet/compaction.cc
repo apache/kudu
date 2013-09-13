@@ -618,7 +618,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           cur_tracker = delta_trackers.front();
         }
 
-        gscoped_ptr<MutationResult> result(new MutationResult);
+        gscoped_ptr<MutationResultPB> result(new MutationResultPB);
         Status s = cur_tracker->Update(mut->txid(),
                                        row_idx,
                                        mut->changelist(),
@@ -626,15 +626,10 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
             << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
         if (s.ok()) {
-          tx_ctx->AddMutation(tablet_name,
-                              mut->txid(),
-                              mut->changelist(),
+          tx_ctx->AddMutation(mut->txid(),
                               result.Pass());
         } else {
-          tx_ctx->AddFailedMutation(tablet_name,
-                                    mut->changelist(),
-                                    result.Pass(),
-                                    s);
+          tx_ctx->AddFailedMutation(s);
         }
       }
 

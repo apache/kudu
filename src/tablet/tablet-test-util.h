@@ -76,11 +76,10 @@ class KuduRowSetTest : public KuduTabletTest {
   shared_ptr<metadata::RowSetMetadata> rowset_meta_;
 };
 
-// Helper to get the last op on the transaction context as a mutation.
-static inline const MutationOp *last_op_as_mutation(const TransactionContext &tx_ctx) {
-  CHECK_GE(tx_ctx.operations().size(), 1);
-  const MutationOp *mutation = down_cast<const MutationOp *>(tx_ctx.operations().back());
-  return mutation;
+// Helper to get the last mutation result on the transaction context.
+static inline const MutationResultPB& last_mutation(const TransactionContext &tx_ctx) {
+  CHECK_GE(tx_ctx.Result().mutations_size(), 1);
+  return tx_ctx.Result().mutations(tx_ctx.Result().mutations_size() - 1).mutation_result();
 }
 
 static inline Status IterateToStringList(RowwiseIterator *iter,
