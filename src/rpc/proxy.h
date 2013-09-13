@@ -85,10 +85,10 @@ class Proxy {
                      RpcController* controller) const;
 
   // Set the user credentials which should be used to log in.
-  void set_user_cred(const UserCredentials& user_cred);
+  void set_user_credentials(const UserCredentials& user_credentials);
 
   // Get the user credentials which should be used to log in.
-  const UserCredentials& user_cred() const { return conn_id_.user_cred(); }
+  const UserCredentials& user_credentials() const { return conn_id_.user_credentials(); }
 
  private:
   std::tr1::shared_ptr<Messenger> messenger_;

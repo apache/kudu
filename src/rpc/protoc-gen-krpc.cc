@@ -435,10 +435,10 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "  ~$service_name$Proxy();\n"
         "\n"
         "  // Set the user information for the connection.\n"
-        "  void set_user_cred(const ::kudu::rpc::UserCredentials& user_cred);\n"
+        "  void set_user_credentials(const ::kudu::rpc::UserCredentials& user_credentials);\n"
         "\n"
         "  // Get the current user information for the connection.\n"
-        "  const ::kudu::rpc::UserCredentials& user_cred() const;\n"
+        "  const ::kudu::rpc::UserCredentials& user_credentials() const;\n"
         "\n"
         );
 
@@ -502,12 +502,12 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "$service_name$Proxy::~$service_name$Proxy() {\n"
         "}\n"
         "\n"
-        "void $service_name$Proxy::set_user_cred(const ::kudu::rpc::UserCredentials& user_cred) {\n"
-        "  proxy_.set_user_cred(user_cred);\n"
+        "void $service_name$Proxy::set_user_credentials(const ::kudu::rpc::UserCredentials& user_credentials) {\n"
+        "  proxy_.set_user_credentials(user_credentials);\n"
         "}\n"
         "\n"
-        "const ::kudu::rpc::UserCredentials& $service_name$Proxy::user_cred() const {\n"
-        "  return proxy_.user_cred();\n"
+        "const ::kudu::rpc::UserCredentials& $service_name$Proxy::user_credentials() const {\n"
+        "  return proxy_.user_credentials();\n"
         "}\n"
         "\n");
       for (int method_idx = 0; method_idx < service->method_count();

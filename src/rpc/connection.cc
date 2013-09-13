@@ -344,8 +344,8 @@ void Connection::set_service_name(const string &service_name) {
   service_name_ = service_name;
 }
 
-void Connection::set_user_cred(const UserCredentials &user_cred) {
-  user_cred_.CopyFrom(user_cred);
+void Connection::set_user_credentials(const UserCredentials &user_credentials) {
+  user_credentials_.CopyFrom(user_credentials);
 }
 
 void Connection::ReadHandler(ev::io &watcher, int revents) {
@@ -507,7 +507,7 @@ std::string Connection::ToString() const {
 Status Connection::InitSaslClient() {
   RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
   RETURN_NOT_OK(sasl_client().EnableAnonymous());
-  RETURN_NOT_OK(sasl_client().EnablePlain(user_cred().real_user(), user_cred().password()));
+  RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(), user_credentials().password()));
   return Status::OK();
 }
 

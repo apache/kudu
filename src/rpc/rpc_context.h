@@ -14,6 +14,7 @@ class Message;
 namespace kudu {
 namespace rpc {
 
+class UserCredentials;
 class InboundCall;
 
 // The context provided to a generated ServiceIf. This provides
@@ -50,6 +51,9 @@ class RpcContext {
   // After this method returns, this RpcContext object is destroyed. The request
   // and response protobufs are also destroyed.
   void RespondFailure(const Status &status);
+
+  // Return the credentials of the remote user who made this call.
+  const UserCredentials& user_credentials() const;
 
   const google::protobuf::Message *request_pb() const { return request_pb_.get(); }
   google::protobuf::Message *response_pb() const { return response_pb_.get(); }

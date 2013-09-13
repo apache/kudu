@@ -9,6 +9,7 @@
 #include "rpc/rpc-test-base.h"
 #include "util/countdown_latch.h"
 #include "util/test_util.h"
+#include "util/user.h"
 
 using boost::ptr_vector;
 
@@ -16,15 +17,19 @@ namespace kudu {
 namespace rpc {
 
 class RpcStubTest : public RpcTestBase {
+ public:
+  virtual void SetUp() {
+    RpcTestBase::SetUp();
+    StartTestServerWithGeneratedCode(&server_addr_);
+    client_messenger_ = CreateMessenger("Client");
+  }
  protected:
+  Sockaddr server_addr_;
+  shared_ptr<Messenger> client_messenger_;
 };
 
 TEST_F(RpcStubTest, TestSimpleCall) {
-  Sockaddr server_addr;
-  StartTestServerWithGeneratedCode(&server_addr);
-
-  shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  CalculatorServiceProxy p(client_messenger, server_addr);
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
 
   RpcController controller;
   AddRequestPB req;
@@ -46,11 +51,7 @@ TEST_F(RpcStubTest, TestBigCallData) {
   string data;
   data.resize(kMessageSize);
 
-  Sockaddr server_addr;
-  StartTestServerWithGeneratedCode(&server_addr);
-
-  shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  CalculatorServiceProxy p(client_messenger, server_addr);
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
 
   EchoRequestPB req;
   req.set_data(data);
@@ -76,13 +77,8 @@ TEST_F(RpcStubTest, TestBigCallData) {
   }
 }
 
-
 TEST_F(RpcStubTest, TestRespondDeferred) {
-  Sockaddr server_addr;
-  StartTestServerWithGeneratedCode(&server_addr);
-
-  shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  CalculatorServiceProxy p(client_messenger, server_addr);
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
 
   RpcController controller;
   SleepRequestPB req;
@@ -92,14 +88,45 @@ TEST_F(RpcStubTest, TestRespondDeferred) {
   ASSERT_STATUS_OK(p.Sleep(req, &resp, &controller));
 }
 
+// Test that the default user credentials are propagated to the server.
+TEST_F(RpcStubTest, TestDefaultCredentialsPropagated) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  string expected;
+  ASSERT_STATUS_OK(GetLoggedInUser(&expected));
+
+  RpcController controller;
+  WhoAmIRequestPB req;
+  WhoAmIResponsePB resp;
+  ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
+  ASSERT_EQ(expected, resp.credentials().realuser());
+  ASSERT_FALSE(resp.credentials().has_effectiveuser());
+}
+
+// Test that the user can specify other credentials.
+TEST_F(RpcStubTest, TestCustomCredentialsPropagated) {
+  const char* const kFakeUserName = "some fake user";
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  UserCredentials creds;
+  creds.set_real_user(kFakeUserName);
+  p.set_user_credentials(creds);
+
+  RpcController controller;
+  WhoAmIRequestPB req;
+  WhoAmIResponsePB resp;
+  ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
+  ASSERT_EQ(kFakeUserName, resp.credentials().realuser());
+  ASSERT_FALSE(resp.credentials().has_effectiveuser());
+}
+
+////////////////////////////////////////////////////////////
+// Tests for error cases
+////////////////////////////////////////////////////////////
 
 // Test sending a PB parameter with a missing field
 TEST_F(RpcStubTest, TestCallWithInvalidParam) {
-  Sockaddr server_addr;
-  StartTestServerWithGeneratedCode(&server_addr);
-
-  shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+  Proxy p(client_messenger_, server_addr_, CalculatorService::static_service_name());
 
   AddRequestPartialPB req;
   req.set_x(rand());
@@ -114,11 +141,7 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
 
 // Test sending a call which isn't implemented by the server.
 TEST_F(RpcStubTest, TestCallMissingMethod) {
-  Sockaddr server_addr;
-  StartTestServerWithGeneratedCode(&server_addr);
-
-  shared_ptr<Messenger> client_messenger = CreateMessenger("Client");
-  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+  Proxy p(client_messenger_, server_addr_, CalculatorService::static_service_name());
 
   Status s = DoTestSyncCall(p, "DoesNotExist");
   ASSERT_TRUE(s.IsRuntimeError()) << "Bad status: " << s.ToString();

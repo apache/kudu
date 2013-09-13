@@ -38,8 +38,15 @@ message EchoResponsePB {
   required string data = 1;
 }
 
+message WhoAmIRequestPB {
+}
+message WhoAmIResponsePB {
+  required kudu.rpc.UserInformationPB credentials = 1;
+}
+
 service CalculatorService {
   rpc Add(AddRequestPB) returns(AddResponsePB);
   rpc Sleep(SleepRequestPB) returns(SleepResponsePB);
   rpc Echo(EchoRequestPB) returns(EchoResponsePB);
+  rpc WhoAmI(WhoAmIRequestPB) returns (WhoAmIResponsePB);
 }

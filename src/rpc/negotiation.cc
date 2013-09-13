@@ -33,8 +33,8 @@ static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) 
 
   ConnectionContextPB conn_context;
   conn_context.set_servicename(conn->service_name());
-  conn_context.mutable_userinfo()->set_effectiveuser(conn->user_cred().effective_user());
-  conn_context.mutable_userinfo()->set_realuser(conn->user_cred().real_user());
+  conn_context.mutable_userinfo()->set_effectiveuser(conn->user_credentials().effective_user());
+  conn_context.mutable_userinfo()->set_realuser(conn->user_credentials().real_user());
 
   return SendFramedMessageBlocking(conn->socket(), header, conn_context, deadline);
 }
@@ -73,11 +73,11 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
                 conn->sasl_server().plain_auth_user().c_str()));
       }
     }
-    conn->mutable_user_cred()->set_real_user(conn_context.userinfo().realuser());
+    conn->mutable_user_credentials()->set_real_user(conn_context.userinfo().realuser());
 
     // TODO: Validate effective user when we implement impersonation.
     if (conn_context.userinfo().has_effectiveuser()) {
-      conn->mutable_user_cred()->set_effective_user(conn_context.userinfo().effectiveuser());
+      conn->mutable_user_credentials()->set_effective_user(conn_context.userinfo().effectiveuser());
     }
   }
   return Status::OK();

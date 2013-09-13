@@ -108,13 +108,13 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   const std::string service_name() const { return service_name_; }
 
   // Set the user credentials which should be used to log in.
-  void set_user_cred(const UserCredentials &user_cred);
+  void set_user_credentials(const UserCredentials &user_credentials);
 
   // Modify the user credentials which will be used to log in.
-  UserCredentials* mutable_user_cred() { return &user_cred_; }
+  UserCredentials* mutable_user_credentials() { return &user_credentials_; }
 
   // Get the user credentials which will be used to log in.
-  const UserCredentials &user_cred() const { return user_cred_; }
+  const UserCredentials &user_credentials() const { return user_credentials_; }
 
   // libev callback when data is available to read.
   void ReadHandler(ev::io &watcher, int revents);
@@ -213,7 +213,7 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   std::string service_name_;
 
   // The credentials of the user operating on this connection (if a client user).
-  UserCredentials user_cred_;
+  UserCredentials user_credentials_;
 
   // whether we are client or server
   Direction direction_;

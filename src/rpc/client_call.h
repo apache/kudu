@@ -35,6 +35,9 @@ class RpcController;
 
 // Client-side user credentials, such as a user's username & password.
 // In the future, we will add Kerberos credentials.
+//
+// TODO(mpercy): this is actually used server side too -- should
+// we instead introduce a RemoteUser class or something?
 class UserCredentials {
  public:
    UserCredentials();
@@ -84,7 +87,7 @@ class ConnectionId {
   ConnectionId(const ConnectionId& other);
 
   // Convenience constructor.
-  ConnectionId(const Sockaddr& remote, const std::string& service_name, const UserCredentials& user_cred);
+  ConnectionId(const Sockaddr& remote, const std::string& service_name, const UserCredentials& user_credentials);
 
   // The remote address.
   void set_remote(const Sockaddr& remote);
@@ -95,9 +98,9 @@ class ConnectionId {
   const std::string& service_name() const { return service_name_; }
 
   // The credentials of the user associated with this connection, if any.
-  void set_user_cred(const UserCredentials& user_cred);
-  const UserCredentials& user_cred() const { return user_cred_; }
-  UserCredentials* mutable_user_cred() { return &user_cred_; }
+  void set_user_credentials(const UserCredentials& user_credentials);
+  const UserCredentials& user_credentials() const { return user_credentials_; }
+  UserCredentials* mutable_user_credentials() { return &user_credentials_; }
 
   // Copy state from another object to this one.
   void CopyFrom(const ConnectionId& other);
@@ -112,7 +115,7 @@ class ConnectionId {
   // Remember to update HashCode() and Equals() when new fields are added.
   Sockaddr remote_;
   std::string service_name_;
-  UserCredentials user_cred_;
+  UserCredentials user_credentials_;
 
   // Implementation of CopyFrom that can be shared with copy constructor.
   void DoCopyFrom(const ConnectionId& other);

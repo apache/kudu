@@ -294,10 +294,11 @@ ConnectionId::ConnectionId(const ConnectionId& other) {
   DoCopyFrom(other);
 }
 
-ConnectionId::ConnectionId(const Sockaddr& remote, const string& service_name, const UserCredentials& user_cred) {
+ConnectionId::ConnectionId(const Sockaddr& remote, const string& service_name,
+                           const UserCredentials& user_credentials) {
   remote_ = remote;
   service_name_ = service_name;
-  user_cred_.CopyFrom(user_cred);
+  user_credentials_.CopyFrom(user_credentials);
 }
 
 void ConnectionId::set_remote(const Sockaddr& remote) {
@@ -308,8 +309,8 @@ void ConnectionId::set_service_name(const string& service_name) {
   service_name_ = service_name;
 }
 
-void ConnectionId::set_user_cred(const UserCredentials& user_cred) {
-  user_cred_.CopyFrom(user_cred);
+void ConnectionId::set_user_credentials(const UserCredentials& user_credentials) {
+  user_credentials_.CopyFrom(user_credentials);
 }
 
 void ConnectionId::CopyFrom(const ConnectionId& other) {
@@ -318,29 +319,29 @@ void ConnectionId::CopyFrom(const ConnectionId& other) {
 
 string ConnectionId::ToString() const {
   // Does not print the password.
-  return StringPrintf("{remote=%s, service_name=%s, user_cred=%s}",
+  return StringPrintf("{remote=%s, service_name=%s, user_credentials=%s}",
       remote_.ToString().c_str(), service_name_.c_str(),
-      user_cred_.ToString().c_str());
+      user_credentials_.ToString().c_str());
 }
 
 void ConnectionId::DoCopyFrom(const ConnectionId& other) {
   remote_ = other.remote_;
   service_name_ = other.service_name_;
-  user_cred_.CopyFrom(other.user_cred_);
+  user_credentials_.CopyFrom(other.user_credentials_);
 }
 
 size_t ConnectionId::HashCode() const {
   size_t seed = 0;
   boost::hash_combine(seed, remote_.HashCode());
   boost::hash_combine(seed, service_name_);
-  boost::hash_combine(seed, user_cred_.HashCode());
+  boost::hash_combine(seed, user_credentials_.HashCode());
   return seed;
 }
 
 bool ConnectionId::Equals(const ConnectionId& other) const {
   return (remote() == other.remote()
        && service_name() == other.service_name()
-       && user_cred().Equals(other.user_cred()));
+       && user_credentials().Equals(other.user_credentials()));
 }
 
 size_t ConnectionIdHash::operator() (const ConnectionId& conn_id) const {

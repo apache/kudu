@@ -28,5 +28,9 @@ void RpcContext::RespondFailure(const Status &status) {
   delete this;
 }
 
+const UserCredentials& RpcContext::user_credentials() const {
+  return call_->user_credentials();
+}
+
 } // namespace rpc
 } // namespace kudu

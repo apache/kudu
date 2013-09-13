@@ -27,6 +27,7 @@ namespace kudu {
 namespace rpc {
 
 class Connection;
+class UserCredentials;
 
 // Inbound call on server
 class InboundCall {
@@ -75,6 +76,8 @@ class InboundCall {
   Status SerializeResponseTo(std::vector<Slice>* slices) const;
 
   std::string ToString() const;
+
+  const UserCredentials& user_credentials() const;
 
  private:
   // Serialize a response message for either success or failure. If it is a success,

@@ -288,7 +288,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_
   // Register the new connection in our map.
   (*conn).reset(new Connection(this, conn_id.remote(), sock.Release(), Connection::CLIENT));
   (*conn)->set_service_name(conn_id.service_name());
-  (*conn)->set_user_cred(conn_id.user_cred());
+  (*conn)->set_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
   RETURN_NOT_OK(StartConnectionNegotiation(*conn, deadline));
@@ -385,7 +385,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
 
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
-    ConnectionId conn_id(conn->remote(), conn->service_name(), conn->user_cred());
+    ConnectionId conn_id(conn->remote(), conn->service_name(), conn->user_credentials());
     conn_map_t::iterator it = client_conns_.find(conn_id);
     CHECK(it != client_conns_.end()) << "Couldn't find connection " << conn->ToString();
     client_conns_.erase(it);

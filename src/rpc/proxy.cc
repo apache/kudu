@@ -47,7 +47,7 @@ Proxy::Proxy(const std::tr1::shared_ptr<Messenger>& messenger,
 
   conn_id_.set_remote(remote);
   conn_id_.set_service_name(service_name);
-  conn_id_.mutable_user_cred()->set_real_user(real_user);
+  conn_id_.mutable_user_credentials()->set_real_user(real_user);
 }
 
 Proxy::~Proxy() {
@@ -89,9 +89,10 @@ Status Proxy::SyncRequest(const string& method,
   return controller->status();
 }
 
-void Proxy::set_user_cred(const UserCredentials& user_cred) {
-  CHECK(base::subtle::Release_Load(&is_started_) == false) << "It is illegal to call set_user_cred() after request processing has started";
-  conn_id_.set_user_cred(user_cred);
+void Proxy::set_user_credentials(const UserCredentials& user_credentials) {
+  CHECK(base::subtle::Release_Load(&is_started_) == false)
+    << "It is illegal to call set_user_credentials() after request processing has started";
+  conn_id_.set_user_credentials(user_credentials);
 }
 
 } // namespace rpc

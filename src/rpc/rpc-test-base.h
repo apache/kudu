@@ -31,6 +31,8 @@ using kudu::rpc_test::CalculatorServiceIf;
 using kudu::rpc_test::CalculatorServiceProxy;
 using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
+using kudu::rpc_test::WhoAmIRequestPB;
+using kudu::rpc_test::WhoAmIResponsePB;
 
 using std::tr1::shared_ptr;
 
@@ -110,6 +112,17 @@ class CalculatorService : public CalculatorServiceIf {
                     EchoResponsePB *resp,
                     RpcContext *context) {
     resp->set_data(req->data());
+    context->RespondSuccess();
+  }
+
+  virtual void WhoAmI(const WhoAmIRequestPB* req,
+                      WhoAmIResponsePB* resp,
+                      RpcContext* context) {
+    const UserCredentials& creds = context->user_credentials();
+    if (creds.has_effective_user()) {
+      resp->mutable_credentials()->set_effectiveuser(creds.effective_user());
+    }
+    resp->mutable_credentials()->set_realuser(creds.real_user());
     context->RespondSuccess();
   }
 

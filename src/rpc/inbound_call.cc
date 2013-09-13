@@ -80,5 +80,9 @@ string InboundCall::ToString() const {
                       header_.callid());
 }
 
+const UserCredentials& InboundCall::user_credentials() const {
+  return conn_->user_credentials();
+}
+
 } // namespace rpc
 } // namespace kudu
