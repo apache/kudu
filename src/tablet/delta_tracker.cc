@@ -194,27 +194,112 @@ Status DeltaTracker::Open() {
 }
 
 Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
+                                         vector<shared_ptr<DeltaStore> > *target_stores,
+                                         vector<int64_t> *target_ids,
                                          gscoped_ptr<DeltaCompactionInput> *out) {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
   CHECK(open_);
   CHECK_LE(start_idx, end_idx);
   CHECK_LT(end_idx, delta_stores_.size());
   vector<shared_ptr<DeltaCompactionInput> > inputs;
   for (size_t idx = start_idx; idx <= end_idx; ++idx) {
-    DeltaFileReader *dfr = down_cast<DeltaFileReader *>(delta_stores_[idx].get());
+    shared_ptr<DeltaStore> &delta_store = delta_stores_[idx];
+    DeltaFileReader *dfr = down_cast<DeltaFileReader *>(delta_store.get());
     LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
     gscoped_ptr<DeltaCompactionInput> dci;
     RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
+    target_stores->push_back(delta_store);
+    target_ids->push_back(delta_store->id());
   }
   out->reset(DeltaCompactionInput::Merge(inputs));
   return Status::OK();
 }
 
-Status DeltaTracker::CompactStores(size_t start_idx, size_t end_idx,
-                                   const shared_ptr<WritableFile> &data_writer) {
+Status DeltaTracker::AtomicUpdateStores(size_t start_idx, size_t end_idx,
+                                        const vector<shared_ptr<DeltaStore> > &expected_stores,
+                                        gscoped_ptr<DeltaFileReader> new_store) {
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+
+  // First check that delta stores match the old stores
+  vector<shared_ptr<DeltaStore > >::const_iterator it = expected_stores.begin();
+  for (size_t idx = start_idx; idx <= end_idx; ++idx) {
+    CHECK_EQ(it->get(), delta_stores_[idx].get());
+    ++it;
+  }
+
+  // Remove the old stores
+  vector<shared_ptr<DeltaStore> >::iterator erase_start = delta_stores_.begin() + start_idx;
+  vector<shared_ptr<DeltaStore> >::iterator erase_end = delta_stores_.begin() + end_idx + 1;
+  delta_stores_.erase(erase_start, erase_end);
+
+  // Insert the new store
+  delta_stores_.push_back(shared_ptr<DeltaStore>(new_store.release()));
+  return Status::OK();
+}
+
+Status DeltaTracker::Compact() {
+  if (delta_stores_.size() == 0) {
+    return Status::OK();
+  }
+  return CompactStores(0, -1);
+}
+
+Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
+  // Prevent concurrent compactions or a compaction concurrent with a flush
+  //
+  // TODO(perf): this could be more fine grained
+  boost::lock_guard<boost::mutex> l(flush_or_compact_lock_);
+
+  if (end_idx == -1) {
+    end_idx = delta_stores_.size() - 1;
+  }
+
+  CHECK_LE(start_idx, end_idx);
+  CHECK_LT(end_idx, delta_stores_.size());
+  CHECK(open_);
+  BlockId block_id;
+  shared_ptr<WritableFile> data_writer;
+
+  // Open a writer for the new destination delta block
+  RETURN_NOT_OK(rowset_metadata_->NewDeltaDataBlock(&data_writer, &block_id));
+
+  // Merge and compact the stores and write and output to "data_writer"
+  vector<shared_ptr<DeltaStore> > compacted_stores;
+  vector<int64_t> compacted_ids;
+  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, data_writer, &compacted_stores, &compacted_ids));
+  int64_t compacted_id = compacted_ids.back();
+
+  // Open the new deltafile
+  gscoped_ptr<DeltaFileReader> dfr;
+  size_t data_size = 0;
+  shared_ptr<RandomAccessFile> data_reader;
+  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, compacted_id, &dfr));
+
+  // Update delta_stores_, removing the compacted delta files and inserted the new
+  RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr.Pass()));
+  LOG(INFO) << "Opened delta block for read: " << block_id.ToString();
+
+  RETURN_NOT_OK(rowset_metadata_->AtomicRemoveDeltaDataBlocks(start_idx, end_idx, compacted_ids));
+  RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(compacted_id, block_id));
+  Status s = rowset_metadata_->Flush();
+  if (!s.ok()) {
+    LOG(ERROR) << "Unable to commit delta data block metadata for "
+               << block_id.ToString() << ": " << s.ToString();
+    return s;
+  }
+  return Status::OK();
+}
+
+Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
+                                     const shared_ptr<WritableFile> &data_writer,
+                                     vector<shared_ptr<DeltaStore> > *compacted_stores,
+                                     vector<int64_t> *compacted_ids) {
   gscoped_ptr<DeltaCompactionInput> inputs_merge;
-  RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, &inputs_merge));
-  LOG(INFO) << "Compacting " << (start_idx - end_idx + 1) << " delta files.";
+  RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, compacted_stores, compacted_ids, &inputs_merge));
+  LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
   DeltaFileWriter dfw(schema_, data_writer);
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(FlushDeltaCompactionInput(inputs_merge.get(), &dfw));
@@ -324,7 +409,9 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
 }
 
 Status DeltaTracker::Flush() {
-  // First, swap out the old DeltaMemStore with a new one,
+  boost::lock_guard<boost::mutex> l(flush_or_compact_lock_);
+
+  // First, swap out the old DeltaMemStore a new one,
   // and add it to the list of delta stores to be reflected
   // in reads.
   shared_ptr<DeltaMemStore> old_dms;

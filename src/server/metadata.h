@@ -195,6 +195,12 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, block_id);
   }
 
+  // If ids of delta data blocks between "start_idx" and "end_idx" match ids specified
+  // in "ids", remove these delta delta blocks from the mapping; otherwise, crash with
+  // a FATAL log messages.
+  Status AtomicRemoveDeltaDataBlocks(size_t start_idx, size_t end_idx,
+                                     const std::vector<int64_t>& ids);
+
   Status CommitDeltaDataBlock(int64_t id, const BlockId& block_id);
 
   Status OpenDeltaDataBlock(size_t index,

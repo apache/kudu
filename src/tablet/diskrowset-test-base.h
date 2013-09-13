@@ -60,15 +60,17 @@ class TestRowSet : public KuduRowSetTest {
   // The data in the rowset looks like:
   //   ("hello <00n>", <n>)
   // ... where n is the index of the row in the rowset
+  // or 0 if 'zero_vals' is true.
   // The string values are padded out to 15 digits
-  void WriteTestRowSet(int n_rows = 0) {
+  void WriteTestRowSet(int n_rows = 0, bool zero_vals = false) {
     DiskRowSetWriter drsw(rowset_meta_.get(),
                           BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
-    DoWriteTestRowSet(n_rows, &drsw);
+    DoWriteTestRowSet(n_rows, &drsw, zero_vals);
   }
 
   template<class WriterClass>
-  void DoWriteTestRowSet(int n_rows, WriterClass *writer) {
+  void DoWriteTestRowSet(int n_rows, WriterClass *writer,
+                         bool zero_vals = false) {
     if (n_rows == 0) {
       n_rows = n_rows_;
     }
@@ -83,7 +85,7 @@ class TestRowSet : public KuduRowSetTest {
         rb.Reset();
         FormatKey(i, buf, sizeof(buf));
         rb.AddString(Slice(buf));
-        rb.AddUint32(i);
+        rb.AddUint32(zero_vals ? 0 : i);
         CHECK_OK(WriteRow(rb.data(), writer));
       }
       CHECK_OK(writer->Finish());

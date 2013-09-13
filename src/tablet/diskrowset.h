@@ -196,6 +196,13 @@ class DiskRowSet : public RowSet {
   // flushing even if we didn't actually create a delta file.
   Status FlushDeltas();
 
+  // Perform delta store compaction.
+  //
+  // TODO currently this performs a minor compaction on all delta store. Next
+  // step would be to look at various heuristics and determine if a major, minor,
+  // or no compaction is warranted.
+  Status CompactDeltaStores();
+
   ////////////////////////////////////////////////////////////
   // RowSet implementation
   ////////////////////////////////////////////////////////////

@@ -3,6 +3,7 @@
 #ifndef KUDU_TABLET_DELTATRACKER_H
 #define KUDU_TABLET_DELTATRACKER_H
 
+#include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
 #include <string>
@@ -71,11 +72,18 @@ class DeltaTracker {
   // Sets *deleted to true if so; otherwise sets it to false.
   Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
+  // Compacts all deltafiles
+  //
+  // TODO keep metadata in the delta stores to indicate whether or not
+  // a minor (or -- when implemented -- major) compaction is warranted
+  // and if so, compact the stores.
+  Status Compact();
+
   // Performs minor compaction on all delta files between index
-  // "start_idx" and "end_idx" (inclusive), writes and flushes the
-  // compacted files to file at "data_writer".
-  Status CompactStores(size_t start_idx, size_t end_idx,
-                       const shared_ptr<WritableFile> &data_writer);
+  // "start_idx" and "end_idx" (inclusive) and writes this to a
+  // new delta block. If "end_idx" is set to -1, then delta files at
+  // all indexes starting with "start_idx" will be compacted.
+  Status CompactStores(int start_idx, int end_idx);
 
   // Return the number of rows encompassed by this DeltaTracker. Note that
   // this is _not_ the number of updated rows, but rather the number of rows
@@ -91,12 +99,34 @@ class DeltaTracker {
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestRowSet, TestMakeDeltaCompactionInput);
+  FRIEND_TEST(TestRowSet, TestCompactStores);
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
                   gscoped_ptr<DeltaFileReader> *dfr);
+
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
+
+  // If delta stores in delta_store_ at indexes "start_idx" to "end_idx" (inclusive) match
+  // delta stores in in "expected_stores", remove the specified delta stores and replace them
+  // with the "new_store"; otherwise, crashes with a FATAL error message.
+  Status AtomicUpdateStores(size_t start_idx, size_t end_idx,
+                            const vector<shared_ptr<DeltaStore> > &expected_stores,
+                            gscoped_ptr<DeltaFileReader> new_store);
+
+  // Performs the actual compaction. Results of compaction are written to "data_writer",
+  // while delta stores that underwent compaction are appended to "compacted_stores", while
+  // their corresponding ids are appended to "compacted_ids".
+  Status DoCompactStores(size_t start_idx, size_t end_idx,
+                         const shared_ptr<WritableFile> &data_writer,
+                         vector<shared_ptr<DeltaStore> > *compacted_stores,
+                         vector<int64_t> *compacted_ids);
+
+  // Creates a merged compaction input and captures the delta stores and delta file ids
+  // under compaction.
   Status MakeCompactionInput(size_t start_idx, size_t end_idx,
+                             vector<shared_ptr<DeltaStore > > *target_stores,
+                             vector<int64_t> *target_ids,
                              gscoped_ptr<DeltaCompactionInput> *out);
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
@@ -122,6 +152,13 @@ class DeltaTracker {
   // contention between threads.
   mutable boost::shared_mutex component_lock_;
 
+  // Exclusive lock that ensures that only one flush or compaction can run
+  // at a time. Protects delta_stores_. NOTE: this lock cannot be acquired
+  // while component_lock is held: otherwise, Flush and Compaction threads
+  // (that both first acquire this lock and then component_lock) will deadlock.
+  //
+  // TODO(perf): this needs to be more fine grained
+  mutable boost::mutex flush_or_compact_lock_;
 };
 
 

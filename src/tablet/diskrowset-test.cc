@@ -383,8 +383,48 @@ TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
   ASSERT_STATUS_OK(rs->FlushDeltas());
   DeltaTracker *dt = rs->delta_tracker();
   int num_stores = dt->delta_stores_.size();
+  vector<shared_ptr<DeltaStore> > compacted_stores;
+  vector<int64_t> compacted_ids;
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &dci));
+  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores, &compacted_ids, &dci));
+  vector<string> results;
+  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
+  BOOST_FOREACH(const string &str, results) {
+    VLOG(1) << str;
+  }
+  ASSERT_EQ(compacted_stores.size(), num_stores);
+  ASSERT_EQ(compacted_ids.size(), num_stores);
+  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
+}
+
+TEST_F(TestRowSet, TestCompactStores) {
+  WriteTestRowSet();
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+
+  // Generate 3 deltafiles
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  ASSERT_STATUS_OK(rs->FlushDeltas());
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  ASSERT_STATUS_OK(rs->FlushDeltas());
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  ASSERT_STATUS_OK(rs->FlushDeltas());
+
+  // Compact the deltafiles
+  DeltaTracker *dt = rs->delta_tracker();
+  int num_stores = dt->delta_stores_.size();
+  VLOG(1) << "Number of stores before compaction: " << num_stores;
+  ASSERT_EQ(num_stores, 3);
+  ASSERT_STATUS_OK(dt->CompactStores(0, num_stores - 1));
+  num_stores = dt->delta_stores_.size();
+  VLOG(1) << "Number of stores after compaction: " << num_stores;
+  ASSERT_EQ(1,  num_stores);
+
+  // Verify that the resulting deltafile is valid
+  vector<shared_ptr<DeltaStore> > compacted_stores;
+  vector<int64_t> compacted_ids;
+  gscoped_ptr<DeltaCompactionInput> dci;
+  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores, &compacted_ids, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {

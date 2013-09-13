@@ -50,6 +50,7 @@ ADD_KUDU_TEST(compaction_policy-test)
 ADD_KUDU_TEST(rowset_tree-test)
 ADD_KUDU_TEST(composite-pushdown-test)
 ADD_KUDU_TEST(delta_compaction-test)
+ADD_KUDU_TEST(mt-rowset_delta_compaction-test)
 
 # Some tests don't have dependencies on other tablet stuff
 SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )

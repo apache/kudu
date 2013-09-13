@@ -358,6 +358,10 @@ Status DiskRowSet::FlushDeltas() {
   return delta_tracker_->Flush();
 }
 
+Status DiskRowSet::CompactDeltaStores() {
+  return delta_tracker_->Compact();
+}
+
 RowwiseIterator *DiskRowSet::NewRowIterator(const Schema &projection,
                                        const MvccSnapshot &mvcc_snap) const {
   CHECK(open_);

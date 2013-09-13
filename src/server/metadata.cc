@@ -280,6 +280,27 @@ const string RowSetMetadata::ToString() {
   return "RowSet(" + boost::lexical_cast<string>(id_) + ")";
 }
 
+Status RowSetMetadata::AtomicRemoveDeltaDataBlocks(size_t start_idx, size_t end_idx,
+                                                   const vector<int64_t>& ids) {
+  CHECK_EQ(end_idx - start_idx + 1, ids.size());
+  CHECK_GE(end_idx, start_idx);
+  boost::lock_guard<LockType> l(deltas_lock_);
+
+  // First check that we're indeed removing the delta blocks for the delta stores we've
+  // compacted and no other thread has modified this in the mean time. This should always
+  // be true, hence the use of CHECK_EQ().
+  vector<std::pair<int64_t, BlockId> >::iterator deltas_start = delta_blocks_.begin() + start_idx;
+  vector<std::pair<int64_t, BlockId> >::iterator deltas_end = delta_blocks_.begin() + end_idx;
+  vector<std::pair<int64_t, BlockId> >::const_iterator deltas_it = deltas_start;
+  for (int id_idx = 0; deltas_it != deltas_end; ++id_idx, ++deltas_it) {
+    CHECK_EQ(deltas_it->first, ids[id_idx]);
+  }
+
+  // Now we can safely remove the old deltas
+  delta_blocks_.erase(deltas_start, deltas_end + 1);
+  return Status::OK();
+}
+
 Status RowSetMetadata::CommitDeltaDataBlock(int64_t id, const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
   delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
