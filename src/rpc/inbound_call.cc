@@ -57,7 +57,7 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
   RETURN_NOT_OK(serialization::SerializeMessage(response, &response_msg_buf_));
 
   ResponseHeader resp_hdr;
-  resp_hdr.set_callid(header_.callid());
+  resp_hdr.set_call_id(header_.call_id());
   resp_hdr.set_is_error(!is_success);
 
   RETURN_NOT_OK(serialization::SerializeHeader(resp_hdr, response_msg_buf_.size(),
@@ -77,7 +77,7 @@ Status InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
 string InboundCall::ToString() const {
   return StringPrintf("Call %s from %s (#%d)", method_name().c_str(),
                       conn_->remote().ToString().c_str(),
-                      header_.callid());
+                      header_.call_id());
 }
 
 const UserCredentials& InboundCall::user_credentials() const {

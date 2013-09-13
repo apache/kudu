@@ -224,13 +224,13 @@ Status SaslClient::SendSaslMessage(const SaslMessagePB& msg) {
 
   // Create header with SASL-specific callId
   RequestHeader header;
-  header.set_callid(kSaslCallId);
+  header.set_call_id(kSaslCallId);
   return helper_.SendSaslMessage(&sock_, header, msg, deadline_);
 }
 
 Status SaslClient::ParseSaslMsgResponse(const ResponseHeader& header, const Slice& param_buf,
     SaslMessagePB* response) {
-  RETURN_NOT_OK(helper_.SanityCheckSaslCallId(header.callid()));
+  RETURN_NOT_OK(helper_.SanityCheckSaslCallId(header.call_id()));
 
   if (header.is_error()) {
     return ParseError(param_buf);

@@ -48,11 +48,11 @@ class InboundCall {
   }
 
   const std::string &method_name() const {
-    return header_.methodname();
+    return header_.method_name();
   }
 
   const int32_t call_id() const {
-    return header_.callid();
+    return header_.call_id();
   }
 
   // Serializes 'response' into the InboundCall's internal buffer, and marks

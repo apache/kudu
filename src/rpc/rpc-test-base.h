@@ -120,9 +120,9 @@ class CalculatorService : public CalculatorServiceIf {
                       RpcContext* context) {
     const UserCredentials& creds = context->user_credentials();
     if (creds.has_effective_user()) {
-      resp->mutable_credentials()->set_effectiveuser(creds.effective_user());
+      resp->mutable_credentials()->set_effective_user(creds.effective_user());
     }
-    resp->mutable_credentials()->set_realuser(creds.real_user());
+    resp->mutable_credentials()->set_real_user(creds.real_user());
     context->RespondSuccess();
   }
 

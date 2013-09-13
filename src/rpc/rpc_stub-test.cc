@@ -99,8 +99,8 @@ TEST_F(RpcStubTest, TestDefaultCredentialsPropagated) {
   WhoAmIRequestPB req;
   WhoAmIResponsePB resp;
   ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
-  ASSERT_EQ(expected, resp.credentials().realuser());
-  ASSERT_FALSE(resp.credentials().has_effectiveuser());
+  ASSERT_EQ(expected, resp.credentials().real_user());
+  ASSERT_FALSE(resp.credentials().has_effective_user());
 }
 
 // Test that the user can specify other credentials.
@@ -116,8 +116,8 @@ TEST_F(RpcStubTest, TestCustomCredentialsPropagated) {
   WhoAmIRequestPB req;
   WhoAmIResponsePB resp;
   ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
-  ASSERT_EQ(kFakeUserName, resp.credentials().realuser());
-  ASSERT_FALSE(resp.credentials().has_effectiveuser());
+  ASSERT_EQ(kFakeUserName, resp.credentials().real_user());
+  ASSERT_FALSE(resp.credentials().has_effective_user());
 }
 
 ////////////////////////////////////////////////////////////

@@ -29,12 +29,12 @@ using std::tr1::shared_ptr;
 // Client: Send ConnectionContextPB message based on information stored in the Connection object.
 static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) {
   RequestHeader header;
-  header.set_callid(kConnectionContextCallId);
+  header.set_call_id(kConnectionContextCallId);
 
   ConnectionContextPB conn_context;
-  conn_context.set_servicename(conn->service_name());
-  conn_context.mutable_userinfo()->set_effectiveuser(conn->user_credentials().effective_user());
-  conn_context.mutable_userinfo()->set_realuser(conn->user_credentials().real_user());
+  conn_context.set_service_name(conn->service_name());
+  conn_context.mutable_user_info()->set_effective_user(conn->user_credentials().effective_user());
+  conn_context.mutable_user_info()->set_real_user(conn->user_credentials().real_user());
 
   return SendFramedMessageBlocking(conn->socket(), header, conn_context, deadline);
 }
@@ -49,9 +49,9 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
   RETURN_NOT_OK(ReceiveFramedMessageBlocking(conn->socket(), &recv_buf, &header, &param_buf, deadline));
   DCHECK(header.IsInitialized());
 
-  if (header.callid() != kConnectionContextCallId) {
+  if (header.call_id() != kConnectionContextCallId) {
     return Status::IllegalState("Expected ConnectionContext callid, received",
-        boost::lexical_cast<string>(header.callid()));
+        boost::lexical_cast<string>(header.call_id()));
   }
 
   ConnectionContextPB conn_context;
@@ -61,23 +61,23 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
   }
 
   // Update the fields of our Connection object from the ConnectionContextPB.
-  conn->set_service_name(conn_context.servicename());
-  if (conn_context.has_userinfo()) {
+  conn->set_service_name(conn_context.service_name());
+  if (conn_context.has_user_info()) {
     // Validate real user against SASL impl.
     if (conn->sasl_server().negotiated_mechanism() == SaslMechanism::PLAIN) {
-      if (conn->sasl_server().plain_auth_user() != conn_context.userinfo().realuser()) {
+      if (conn->sasl_server().plain_auth_user() != conn_context.user_info().real_user()) {
         return Status::NotAuthorized(
             "ConnectionContextPB specified different real user than sent in SASL negotiation",
             StringPrintf("\"%s\" vs. \"%s\"",
-                conn_context.userinfo().realuser().c_str(),
+                conn_context.user_info().real_user().c_str(),
                 conn->sasl_server().plain_auth_user().c_str()));
       }
     }
-    conn->mutable_user_credentials()->set_real_user(conn_context.userinfo().realuser());
+    conn->mutable_user_credentials()->set_real_user(conn_context.user_info().real_user());
 
     // TODO: Validate effective user when we implement impersonation.
-    if (conn_context.userinfo().has_effectiveuser()) {
-      conn->mutable_user_credentials()->set_effective_user(conn_context.userinfo().effectiveuser());
+    if (conn_context.user_info().has_effective_user()) {
+      conn->mutable_user_credentials()->set_effective_user(conn_context.user_info().effective_user());
     }
   }
   return Status::OK();

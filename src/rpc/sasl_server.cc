@@ -208,7 +208,7 @@ Status SaslServer::ValidateConnectionHeader(faststring* recv_buf) {
 
 Status SaslServer::ParseSaslMsgRequest(const RequestHeader& header, const Slice& param_buf,
     SaslMessagePB* request) {
-  Status s = helper_.SanityCheckSaslCallId(header.callid());
+  Status s = helper_.SanityCheckSaslCallId(header.call_id());
   if (!s.ok()) {
     RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_INVALID_RPC_HEADER, s));
   }
@@ -230,7 +230,7 @@ Status SaslServer::SendSaslMessage(const SaslMessagePB& msg) {
 
   // Create header with SASL-specific callId
   ResponseHeader header;
-  header.set_callid(kSaslCallId);
+  header.set_call_id(kSaslCallId);
   return helper_.SendSaslMessage(&sock_, header, msg, deadline_);
 }
 
@@ -245,7 +245,7 @@ Status SaslServer::SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Statu
 
   // Create header with SASL-specific callId
   ResponseHeader header;
-  header.set_callid(kSaslCallId);
+  header.set_call_id(kSaslCallId);
   header.set_is_error(true);
 
   // Get RPC error code from Status object

@@ -297,7 +297,7 @@ class CallResponse {
   // Return the call ID that this response is related to.
   int32_t call_id() const {
     DCHECK(parsed_);
-    return header_.callid();
+    return header_.call_id();
   }
 
   // Return the serialized response data. This is just the response "body" --
