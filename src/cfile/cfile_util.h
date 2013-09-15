@@ -64,7 +64,7 @@ inline void EncodeKey(const ConstContiguousRow& row_slice,
   const Schema &schema = row_slice.schema();
   EncodedKeyBuilder kb(schema);
   for (int i = 0; i < schema.num_key_columns(); i++) {
-    kb.AddColumnKey(row_slice.cell_ptr(schema, i));
+    kb.AddColumnKey(row_slice.cell_ptr(i));
   }
   encoded_key->reset(kb.BuildEncodedKey());
 }

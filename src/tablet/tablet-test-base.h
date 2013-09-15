@@ -63,7 +63,7 @@ struct StringKeyTestSetup {
   // builds a row key from an existing row for updates
   template <class RowType>
   void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-    rb->AddString(*reinterpret_cast<const Slice*>(row.cell_ptr(test_schema_, 0)));
+    rb->AddString(*reinterpret_cast<const Slice*>(row.cell_ptr(0)));
   }
 
   void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {
@@ -160,8 +160,8 @@ struct CompositeKeyTestSetup {
   // builds a row key from an existing row for updates
   template<class RowType>
   void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-    rb->AddString(*reinterpret_cast<const Slice*>(row.cell_ptr(test_schema_, 0)));
-    rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(test_schema_, 1)));
+    rb->AddString(*reinterpret_cast<const Slice*>(row.cell_ptr(0)));
+    rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(1)));
   }
 
   void BuildRow(RowBuilder *rb, uint64_t row_idx,
@@ -354,42 +354,42 @@ void IntKeyTestSetup<INT64>::BuildRowKey(RowBuilder *rb, int64_t i) {
 
 template<> template<class RowType>
 void IntKeyTestSetup<UINT8>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddUint8(*reinterpret_cast<const uint8_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddUint8(*reinterpret_cast<const uint8_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<INT8>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddInt8(*reinterpret_cast<const int8_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddInt8(*reinterpret_cast<const int8_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<UINT16>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddUint16(*reinterpret_cast<const uint16_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddUint16(*reinterpret_cast<const uint16_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<INT16>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddInt16(*reinterpret_cast<const int16_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddInt16(*reinterpret_cast<const int16_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<UINT32>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<INT32>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddInt32(*reinterpret_cast<const int32_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddInt32(*reinterpret_cast<const int32_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<UINT64>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddUint64(*reinterpret_cast<const uint64_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddUint64(*reinterpret_cast<const uint64_t*>(row.cell_ptr(0)));
 }
 
 template<> template<class RowType>
 void IntKeyTestSetup<INT64>::BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-  rb->AddInt64(*reinterpret_cast<const int64_t*>(row.cell_ptr(test_schema_, 0)));
+  rb->AddInt64(*reinterpret_cast<const int64_t*>(row.cell_ptr(0)));
 }
 
 template<>
@@ -502,7 +502,7 @@ struct NullableValueTestSetup {
   // builds a row key from an existing row for updates
   template<class RowType>
   void BuildRowKeyFromExistingRow(RowBuilder *rb, const RowType& row) {
-    rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(test_schema_, 0)));
+    rb->AddUint32(*reinterpret_cast<const uint32_t*>(row.cell_ptr(0)));
   }
 
   void BuildRow(RowBuilder *rb, uint64_t row_idx, uint32_t update_count_val = 0) {

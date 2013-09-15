@@ -185,9 +185,9 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
     size_t offset = 0;
     while (offset < row_data->size()) {
       ContiguousRow row(schema, reinterpret_cast<uint8_t*>(&(*row_data)[offset]));
-      uint8_t* dst_cell = row.mutable_cell_ptr(schema, i);
+      uint8_t* dst_cell = row.mutable_cell_ptr(i);
 
-      if (!col.is_nullable() || !row.is_null(schema, i)) {
+      if (!col.is_nullable() || !row.is_null(i)) {
         // The pointer is currently an offset into indir_data. Need to replace it
         // with the actual pointer into indir_data
         Slice *slice = reinterpret_cast<Slice *>(dst_cell);
@@ -285,8 +285,8 @@ void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
   ContiguousRow copied_row(schema, copied_rowdata);
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
-    uint8_t* dst_cell = copied_row.mutable_cell_ptr(schema, i);
-    if (col.is_nullable() && row.is_null(schema, i)) {
+    uint8_t* dst_cell = copied_row.mutable_cell_ptr(i);
+    if (col.is_nullable() && row.is_null(i)) {
       // Zero the data so we don't leak any uninitialized memory to another
       // host/security domain.
       memset(dst_cell, 0, col.type_info().size());

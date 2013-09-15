@@ -242,29 +242,27 @@ class RowBlockRow {
     return row_block_->schema();
   }
 
-  bool is_null(const Schema& schema, size_t col_idx) const {
-    return column_block(schema, col_idx).is_null(row_index_);
+  bool is_null(size_t col_idx) const {
+    return column_block(col_idx).is_null(row_index_);
   }
 
-  uint8_t *mutable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    return const_cast<uint8_t*>(cell_ptr(schema, col_idx));
+  uint8_t *mutable_cell_ptr(size_t col_idx) const {
+    return const_cast<uint8_t*>(cell_ptr(col_idx));
   }
 
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    return column_block(schema, col_idx).cell_ptr(row_index_);
+  const uint8_t *cell_ptr(size_t col_idx) const {
+    return column_block(col_idx).cell_ptr(row_index_);
   }
 
-  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    return column_block(schema, col_idx).nullable_cell_ptr(row_index_);
+  const uint8_t *nullable_cell_ptr(size_t col_idx) const {
+    return column_block(col_idx).nullable_cell_ptr(row_index_);
   }
 
   Cell cell(size_t col_idx) const {
     return row_block_->column_block(col_idx).cell(row_index_);
   }
 
-  ColumnBlock column_block(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(row_block_->schema()));
+  ColumnBlock column_block(size_t col_idx) const {
     return row_block_->column_block(col_idx);
   }
 

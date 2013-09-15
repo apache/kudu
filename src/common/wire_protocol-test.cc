@@ -28,9 +28,9 @@ class WireProtocolTest : public KuduTest {
 
     for (int i = 0; i < block->nrows(); i++) {
       RowBlockRow row = block->row(i);
-      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 0)) = Slice("hello world col1");
-      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(schema_, 1)) = Slice("hello world col2");
-      *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(schema_, 2)) = 12345;
+      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(0)) = Slice("hello world col1");
+      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(1)) = Slice("hello world col2");
+      *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(2)) = 12345;
       row.cell(2).set_null(false);
     }
   }
@@ -200,7 +200,7 @@ TEST_F(WireProtocolTest, TestRowBlockRoundTrip) {
     ASSERT_EQ(StringPrintf("col2 %d", i),
               schema_.ExtractColumnFromRow<STRING>(row, 1)->ToString());
     if (i % 2 == 1) {
-      ASSERT_TRUE(row.is_null(schema_, 2));
+      ASSERT_TRUE(row.is_null(2));
     } else {
       ASSERT_EQ(i, *schema_.ExtractColumnFromRow<UINT32>(row, 2));
     }

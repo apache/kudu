@@ -281,10 +281,10 @@ class ContiguousRowCell {
 
   DataType type() const { return type_info().type(); }
   size_t size() const { return type_info().size(); }
-  const void* ptr() const { return row_->cell_ptr(row_->schema(), col_idx_); }
-  void* mutable_ptr() const { return row_->mutable_cell_ptr(row_->schema(), col_idx_); }
+  const void* ptr() const { return row_->cell_ptr(col_idx_); }
+  void* mutable_ptr() const { return row_->mutable_cell_ptr(col_idx_); }
   bool is_nullable() const { return row_->schema().column(col_idx_).is_nullable(); }
-  bool is_null() const { return row_->is_null(row_->schema(), col_idx_); }
+  bool is_null() const { return row_->is_null(col_idx_); }
   void set_null(bool is_null) const { row_->set_null(col_idx_, is_null); }
 
  private:
@@ -313,30 +313,24 @@ class ContiguousRow {
     row_data_ = row_data;
   }
 
-  bool is_null(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
+  bool is_null(size_t col_idx) const {
+    return ContiguousRowHelper::is_null(schema_, row_data_, col_idx);
   }
 
   void set_null(size_t col_idx, bool is_null) const {
     ContiguousRowHelper::SetCellIsNull(schema_, row_data_, col_idx, is_null);
   }
 
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
+  const uint8_t *cell_ptr(size_t col_idx) const {
+    return ContiguousRowHelper::cell_ptr(schema_, row_data_, col_idx);
   }
 
-  uint8_t *mutable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    return const_cast<uint8_t*>(cell_ptr(schema, col_idx));
+  uint8_t *mutable_cell_ptr(size_t col_idx) const {
+    return const_cast<uint8_t*>(cell_ptr(col_idx));
   }
 
-  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
+  const uint8_t *nullable_cell_ptr(size_t col_idx) const {
+    return ContiguousRowHelper::nullable_cell_ptr(schema_, row_data_, col_idx);
   }
 
   Cell cell(size_t col_idx) const {
@@ -381,22 +375,16 @@ class ConstContiguousRow {
     return ContiguousRowHelper::row_size(schema_);
   }
 
-  bool is_null(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::is_null(schema, row_data_, col_idx);
+  bool is_null(size_t col_idx) const {
+    return ContiguousRowHelper::is_null(schema_, row_data_, col_idx);
   }
 
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::cell_ptr(schema, row_data_, col_idx);
+  const uint8_t *cell_ptr(size_t col_idx) const {
+    return ContiguousRowHelper::cell_ptr(schema_, row_data_, col_idx);
   }
 
-  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(schema.Equals(schema_));
-    return ContiguousRowHelper::nullable_cell_ptr(schema, row_data_, col_idx);
+  const uint8_t *nullable_cell_ptr(size_t col_idx) const {
+    return ContiguousRowHelper::nullable_cell_ptr(schema_, row_data_, col_idx);
   }
 
   Cell cell(size_t col_idx) const {

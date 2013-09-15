@@ -60,31 +60,23 @@ class MRSRow {
 
   const Slice &row_slice() const { return row_slice_; }
 
-  bool is_null(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(this->schema().Equals(schema));
-    return ContiguousRowHelper::is_null(schema, row_slice_.data(), col_idx);
+  bool is_null(size_t col_idx) const {
+    return ContiguousRowHelper::is_null(schema(), row_slice_.data(), col_idx);
   }
 
-  const uint8_t *cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(this->schema().Equals(schema));
-    return ContiguousRowHelper::cell_ptr(schema, row_slice_.data(), col_idx);
+  const uint8_t *cell_ptr(size_t col_idx) const {
+    return ContiguousRowHelper::cell_ptr(schema(), row_slice_.data(), col_idx);
   }
 
-  uint8_t *mutable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    return const_cast<uint8_t*>(cell_ptr(schema, col_idx));
+  uint8_t *mutable_cell_ptr(size_t col_idx) const {
+    return const_cast<uint8_t*>(cell_ptr(col_idx));
   }
 
-  const uint8_t *nullable_cell_ptr(const Schema& schema, size_t col_idx) const {
-    // TODO: Handle different schema
-    DCHECK(this->schema().Equals(schema));
-    return ContiguousRowHelper::nullable_cell_ptr(schema, row_slice_.data(), col_idx);
+  const uint8_t *nullable_cell_ptr(size_t col_idx) const {
+    return ContiguousRowHelper::nullable_cell_ptr(schema(), row_slice_.data(), col_idx);
   }
 
   void CopyCellsFrom(const ConstContiguousRow& row) {
-    // TODO: Handle different schema
-    DCHECK(this->schema().Equals(row.schema()));
     memcpy(row_slice_.mutable_data(), row.row_data(), row_slice_.size());
   }
 
@@ -441,7 +433,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
         BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping, projector_.base_cols_mapping()) {
           RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
           RETURN_NOT_OK(decoder.Init());
-          ColumnBlock dst_col = dst_row->column_block(projection_, mapping.first);
+          ColumnBlock dst_col = dst_row->column_block(mapping.first);
           RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
                                                  mapping.second, dst_arena));
         }

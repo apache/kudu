@@ -19,7 +19,7 @@
 // they are not.
 #define DCHECK_SCHEMA_EQ(s1, s2) \
   do { \
-    DCHECK((s1).Equals((s2))) << "Schema " << s1.ToString() << " does not match " << s2.ToString(); \
+    DCHECK((s1).Equals((s2))) << "Schema " << (s1).ToString() << " does not match " << (s2).ToString(); \
   } while (0);
 
 namespace kudu {
@@ -237,15 +237,16 @@ class Schema {
   template<DataType Type, class RowType>
   const typename DataTypeTraits<Type>::cpp_type *
   ExtractColumnFromRow(const RowType& row, size_t idx) const {
+    DCHECK_SCHEMA_EQ(*this, row.schema());
     const ColumnSchema& col_schema = cols_[idx];
     DCHECK_LT(idx, cols_.size());
     DCHECK_EQ(col_schema.type_info().type(), Type);
 
     const void *val;
     if (col_schema.is_nullable()) {
-      val = row.nullable_cell_ptr(*this, idx);
+      val = row.nullable_cell_ptr(idx);
     } else {
-      val = row.cell_ptr(*this, idx);
+      val = row.cell_ptr(idx);
     }
 
     return reinterpret_cast<const typename DataTypeTraits<Type>::cpp_type *>(val);
@@ -256,6 +257,8 @@ class Schema {
   // so should be avoided in hot paths.
   template<class RowType>
   string DebugRow(const RowType& row) const {
+    DCHECK_SCHEMA_EQ(*this, row.schema());
+
     string ret;
     ret.append("(");
 
@@ -270,10 +273,10 @@ class Schema {
       ret.append(" ");
       ret.append(cols_[col].name());
       ret.append("=");
-      if (col_schema.is_nullable() && row.is_null(*this, col)) {
+      if (col_schema.is_nullable() && row.is_null(col)) {
         ret.append("NULL");
       } else {
-        ti.AppendDebugStringForValue(row.cell_ptr(*this, col), &ret);
+        ti.AppendDebugStringForValue(row.cell_ptr(col), &ret);
       }
     }
     ret.append(")");
@@ -287,7 +290,7 @@ class Schema {
     DCHECK(Equals(lhs.schema()) && Equals(rhs.schema()));
 
     for (size_t col = 0; col < num_key_columns_; col++) {
-      int col_compare = column(col).Compare(lhs.cell_ptr(*this, col), rhs.cell_ptr(*this, col));
+      int col_compare = column(col).Compare(lhs.cell_ptr(col), rhs.cell_ptr(col));
       if (col_compare != 0) {
         return col_compare;
       }
@@ -316,12 +319,13 @@ class Schema {
   // Returns the encoded key.
   template <class RowType>
   Slice EncodeComparableKey(const RowType& row, faststring *dst) const {
+    DCHECK_SCHEMA_EQ(*this, row.schema());
     dst->clear();
     for (size_t i = 0; i < num_key_columns_; i++) {
       DCHECK(!cols_[i].is_nullable());
       const TypeInfo &ti = cols_[i].type_info();
       bool is_last = i == num_key_columns_ - 1;
-      GetKeyEncoder(ti.type()).Encode(row.cell_ptr(*this, i), is_last, dst);
+      GetKeyEncoder(ti.type()).Encode(row.cell_ptr(i), is_last, dst);
     }
     return Slice(*dst);
   }
