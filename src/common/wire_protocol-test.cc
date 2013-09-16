@@ -290,27 +290,50 @@ TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
 }
 
 TEST_F(WireProtocolTest, TestColumnDefaultValue) {
-  Slice default_str("Hello World");
-  uint32_t default_u32 = 512;
+  Slice write_default_str("Hello Write");
+  Slice read_default_str("Hello Read");
+  uint32_t write_default_u32 = 512;
+  uint32_t read_default_u32 = 256;
   ColumnSchemaPB pb;
 
   ColumnSchema col1("col1", STRING);
   ColumnSchemaToPB(col1, &pb);
   ColumnSchema col1fpb = ColumnSchemaFromPB(pb);
-  ASSERT_FALSE(col1fpb.has_default());
-  ASSERT_TRUE(col1fpb.default_value() == NULL);
+  ASSERT_FALSE(col1fpb.has_read_default());
+  ASSERT_FALSE(col1fpb.has_write_default());
+  ASSERT_TRUE(col1fpb.read_default_value() == NULL);
 
-  ColumnSchema col2("col2", STRING, false, &default_str);
+  ColumnSchema col2("col2", STRING, false, &read_default_str);
   ColumnSchemaToPB(col2, &pb);
   ColumnSchema col2fpb = ColumnSchemaFromPB(pb);
-  ASSERT_TRUE(col2fpb.has_default());
-  ASSERT_EQ(default_str, *static_cast<const Slice *>(col2fpb.default_value()));
+  ASSERT_TRUE(col2fpb.has_read_default());
+  ASSERT_FALSE(col2fpb.has_write_default());
+  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col2fpb.read_default_value()));
+  ASSERT_EQ(NULL, static_cast<const Slice *>(col2fpb.write_default_value()));
 
-  ColumnSchema col3("col3", UINT32, false, &default_u32);
+  ColumnSchema col3("col3", STRING, false, &read_default_str, &write_default_str);
   ColumnSchemaToPB(col3, &pb);
   ColumnSchema col3fpb = ColumnSchemaFromPB(pb);
-  ASSERT_TRUE(col3fpb.has_default());
-  ASSERT_EQ(default_u32, *static_cast<const uint32_t *>(col3fpb.default_value()));
+  ASSERT_TRUE(col3fpb.has_read_default());
+  ASSERT_TRUE(col3fpb.has_write_default());
+  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col3fpb.read_default_value()));
+  ASSERT_EQ(write_default_str, *static_cast<const Slice *>(col3fpb.write_default_value()));
+
+  ColumnSchema col4("col4", UINT32, false, &read_default_u32);
+  ColumnSchemaToPB(col4, &pb);
+  ColumnSchema col4fpb = ColumnSchemaFromPB(pb);
+  ASSERT_TRUE(col4fpb.has_read_default());
+  ASSERT_FALSE(col4fpb.has_write_default());
+  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col4fpb.read_default_value()));
+  ASSERT_EQ(NULL, static_cast<const uint32_t *>(col4fpb.write_default_value()));
+
+  ColumnSchema col5("col5", UINT32, false, &read_default_u32, &write_default_u32);
+  ColumnSchemaToPB(col5, &pb);
+  ColumnSchema col5fpb = ColumnSchemaFromPB(pb);
+  ASSERT_TRUE(col5fpb.has_read_default());
+  ASSERT_TRUE(col5fpb.has_write_default());
+  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col5fpb.read_default_value()));
+  ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb.write_default_value()));
 }
 
 } // namespace kudu

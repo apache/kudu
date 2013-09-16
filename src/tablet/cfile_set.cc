@@ -266,7 +266,7 @@ class CFileSetIteratorProjector {
     // Create an iterator with the default column of the projection
     const ColumnSchema& col_schema = projection_.column(proj_col_idx);
     col_iters_->push_back(new DefaultColumnValueIterator(
-        col_schema.type_info().type(), col_schema.default_value()));
+        col_schema.type_info().type(), col_schema.read_default_value()));
     return Status::OK();
   }
 

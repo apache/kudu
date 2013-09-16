@@ -64,6 +64,10 @@ class MRSRow {
     return ContiguousRowHelper::is_null(schema(), row_slice_.data(), col_idx);
   }
 
+  void set_null(size_t col_idx, bool is_null) const {
+    ContiguousRowHelper::SetCellIsNull(schema(), const_cast<uint8_t*>(row_slice_.data()), col_idx, is_null);
+  }
+
   const uint8_t *cell_ptr(size_t col_idx) const {
     return ContiguousRowHelper::cell_ptr(schema(), row_slice_.data(), col_idx);
   }
@@ -424,7 +428,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
         decoder.TwiddleDeleteStatus(&is_deleted);
 
         ConstContiguousRow reinserted(memrowset_->schema(), decoder.reinserted_row_slice());
-        RETURN_NOT_OK(projector_.ProjectRow(reinserted, dst_row, dst_arena));
+        RETURN_NOT_OK(projector_.ProjectRowForRead(reinserted, dst_row, dst_arena));
       } else {
         DCHECK(decoder.is_update());
 

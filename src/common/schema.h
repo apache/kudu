@@ -37,8 +37,10 @@ class ColumnSchema {
   // name: column name
   // type: column type (e.g. UINT8, INT32, STRING, ...)
   // is_nullable: true if a row value can be null
-  // default_value: default for the column if no value was specified
-  //    on insert or the column was not present before (alter).
+  // read_default: default value used on read if the column was not present before alter.
+  //    The value will be copied and released on ColumnSchema destruction.
+  // write_default: default value added to the row if the column value was
+  //    not specified on insert.
   //    The value will be copied and released on ColumnSchema destruction.
   //
   // Example:
@@ -51,12 +53,19 @@ class ColumnSchema {
   ColumnSchema(const string &name,
                DataType type,
                bool is_nullable = false,
-               const void *default_value = NULL) :
-    name_(name),
-    type_info_(&GetTypeInfo(type)),
-    is_nullable_(is_nullable),
-    default_(default_value ? new Variant(type, default_value) : NULL)
-  {}
+               const void *read_default = NULL,
+               const void *write_default = NULL) :
+      name_(name),
+      type_info_(&GetTypeInfo(type)),
+      is_nullable_(is_nullable),
+      read_default_(read_default ? new Variant(type, read_default) : NULL) {
+    if (write_default == read_default) {
+      write_default_ = read_default_;
+    } else if (write_default != NULL) {
+      DCHECK(read_default != NULL) << "Must have a read default";
+      write_default_.reset(new Variant(type, write_default));
+    }
+  }
 
   const TypeInfo &type_info() const {
     return *type_info_;
@@ -72,21 +81,40 @@ class ColumnSchema {
 
   string ToString() const;
 
-  // Returns true if the column has a default value
-  bool has_default() const {
-    return default_ != NULL;
+  // Returns true if the column has a read default value
+  bool has_read_default() const {
+    return read_default_ != NULL;
   }
 
   // Returns a pointer the default value associated with the column
-  // or NULL if there is no default value. You may check has_default() first.
+  // or NULL if there is no default value. You may check has_read_default() first.
   // The returned value will be valid until the ColumnSchema will be destroyed.
   //
   // Example:
-  //    const uint32_t *vu32 = static_cast<const uint32_t *>(col_schema.default_value());
-  //    const Slice *vstr = static_cast<const Slice *>(col_schema.default_value());
-  const void *default_value() const {
-    if (has_default()) {
-      return default_->value();
+  //    const uint32_t *vu32 = static_cast<const uint32_t *>(col_schema.read_default_value());
+  //    const Slice *vstr = static_cast<const Slice *>(col_schema.read_default_value());
+  const void *read_default_value() const {
+    if (read_default_ != NULL) {
+      return read_default_->value();
+    }
+    return NULL;
+  }
+
+  // Returns true if the column has a write default value
+  bool has_write_default() const {
+    return write_default_ != NULL;
+  }
+
+  // Returns a pointer the default value associated with the column
+  // or NULL if there is no default value. You may check has_write_default() first.
+  // The returned value will be valid until the ColumnSchema will be destroyed.
+  //
+  // Example:
+  //    const uint32_t *vu32 = static_cast<const uint32_t *>(col_schema.write_default_value());
+  //    const Slice *vstr = static_cast<const Slice *>(col_schema.write_default_value());
+  const void *write_default_value() const {
+    if (write_default_ != NULL) {
+      return write_default_->value();
     }
     return NULL;
   }
@@ -115,7 +143,8 @@ class ColumnSchema {
   const TypeInfo *type_info_;
   bool is_nullable_;
   // use shared_ptr since the ColumnSchema is always copied around.
-  std::tr1::shared_ptr<Variant> default_;
+  std::tr1::shared_ptr<Variant> read_default_;
+  std::tr1::shared_ptr<Variant> write_default_;
 };
 
 
@@ -373,7 +402,8 @@ class Schema {
           RETURN_NOT_OK(projector->ProjectBaseColumn(proj_idx, base_idx));
         }
       } else {
-        if (!col_schema.has_default() && !col_schema.is_nullable()) {
+        bool has_default = col_schema.has_read_default() || col_schema.has_write_default();
+        if (!has_default && !col_schema.is_nullable()) {
           return Status::InvalidArgument("The column '" + col_schema.name() +
                                          "' must have a default value or be nullable");
         }

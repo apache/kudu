@@ -378,7 +378,7 @@ Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
         state_ = kFinished;
         BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);
       } else {
-        RETURN_NOT_OK(projector_.ProjectRow(row, &dst_row, dst->arena()));
+        RETURN_NOT_OK(projector_.ProjectRowForRead(row, &dst_row, dst->arena()));
 
         // Roll-forward MVCC for committed updates.
         RETURN_NOT_OK(ApplyMutationsToProjectedRow(

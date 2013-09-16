@@ -30,5 +30,6 @@ message ColumnSchemaPB {
   required DataType type = 2;
   optional bool is_key = 3 [default = false];
   optional bool is_nullable = 4 [default = false];
-  optional bytes default_value = 5;
+  optional bytes read_default_value = 5;
+  optional bytes write_default_value = 6;
 }

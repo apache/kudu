@@ -91,28 +91,55 @@ Status StatusFromPB(const AppStatusPB& pb) {
 }
 
 void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
+  pb->Clear();
   pb->set_name(col_schema.name());
   pb->set_type(col_schema.type_info().type());
   pb->set_is_nullable(col_schema.is_nullable());
-  if (col_schema.has_default()) {
+  if (col_schema.has_read_default()) {
     if (col_schema.type_info().type() == STRING) {
-      const Slice *slice = static_cast<const Slice *>(col_schema.default_value());
-      pb->set_default_value(slice->data(), slice->size());
+      const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
+      pb->set_read_default_value(read_slice->data(), read_slice->size());
     } else {
-      pb->set_default_value(col_schema.default_value(), col_schema.type_info().size());
+      const void *read_value = col_schema.read_default_value();
+      pb->set_read_default_value(read_value, col_schema.type_info().size());
+    }
+  }
+  if (col_schema.has_write_default()) {
+    if (col_schema.type_info().type() == STRING) {
+      const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
+      const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
+      if (write_slice != read_slice) pb->set_write_default_value(write_slice->data(), write_slice->size());
+    } else {
+      const void *read_value = col_schema.read_default_value();
+      const void *write_value = col_schema.write_default_value();
+      if (write_value != read_value) pb->set_write_default_value(write_value, col_schema.type_info().size());
     }
   }
 }
 
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
-  if (pb.has_default_value()) {
+  const void *write_default_ptr = NULL;
+  const void *read_default_ptr = NULL;
+  Slice write_default;
+  Slice read_default;
+  if (pb.has_read_default_value()) {
+    read_default = Slice(pb.read_default_value());
     if (pb.type() == STRING) {
-      Slice default_value(pb.default_value());
-      return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(), &default_value);
+      read_default_ptr = &read_default;
+    } else {
+      read_default_ptr = read_default.data();
     }
-    return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(), pb.default_value().data());
   }
-  return ColumnSchema(pb.name(), pb.type(), pb.is_nullable());
+  if (pb.has_write_default_value()) {
+    write_default = Slice(pb.write_default_value());
+    if (pb.type() == STRING) {
+      write_default_ptr = &write_default;
+    } else {
+      write_default_ptr = write_default.data();
+    }
+  }
+  return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
+                      read_default_ptr, write_default_ptr);
 }
 
 Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
