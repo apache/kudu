@@ -20,6 +20,8 @@ namespace metadata {
 
 using base::subtle::Barrier_AtomicIncrement;
 
+const int64 kNoDurableMrs = -1;
+
 // ============================================================================
 //  Tablet Metadata
 // ============================================================================

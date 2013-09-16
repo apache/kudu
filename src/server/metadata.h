@@ -26,6 +26,8 @@ class RowSetMetadata;
 typedef std::vector<shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
 
+extern const int64 kNoDurableMrs;
+
 // Manages the "blocks tracking" for the specified tablet.
 //
 // The Master will send the bootstrap information required to
@@ -44,7 +46,7 @@ class TabletMetadata {
       master_block_(master_block),
       sblk_id_(0),
       next_rowset_idx_(0),
-      last_durable_mrs_id_(-1) {
+      last_durable_mrs_id_(kNoDurableMrs) {
   }
 
   const string& oid() const { return master_block_.tablet_id(); }
