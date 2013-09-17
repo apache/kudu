@@ -3,6 +3,7 @@
 #define KUDU_UTIL_NET_SOCKET_H
 
 #include <sys/uio.h>
+#include <string>
 
 #include "gutil/macros.h"
 #include "util/status.h"

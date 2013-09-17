@@ -62,7 +62,14 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
 elif [ "$BUILD_TYPE" = "LINT" ]; then
   cmake .
   make lint | tee build.log
-  exit $?
+  RET=$?
+
+  # Create empty test logs or else Jenkins fails to archive artifacts, which
+  # results in the build failing.
+  mkdir -p Testing/Temporary
+  mkdir -p build/test-logs
+  touch build/test-logs/nothing-here
+  exit $RET
 fi
 
 cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
