@@ -9,6 +9,7 @@
 #include "common/columnblock.h"
 #include "cfile/cfile_reader.h"
 #include "tablet/delta_key.h"
+#include "tablet/deltamemstore.h"
 
 namespace kudu {
 
@@ -20,8 +21,49 @@ namespace tablet {
 
 namespace {
 
-// TODO : we will probably want a DeltaMemStoreCompactionInput in
-//        order to support FlushAndCompact.
+typedef DeltaMemStore::DMSTree DMSTree;
+typedef DeltaMemStore::DMSTreeIter DMSTreeIter;
+
+class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
+ public:
+
+  explicit DeltaMemStoreCompactionInput(gscoped_ptr<DMSTreeIter> iter)
+      : iter_(iter.Pass()) {
+  }
+
+  virtual Status Init() {
+    iter_->SeekToStart();
+    return Status::OK();
+  }
+
+  virtual bool HasMoreBlocks() {
+    return iter_->IsValid();
+  }
+
+  virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+    block->resize(kRowsPerBlock);
+    for (int i = 0; i < kRowsPerBlock && iter_->IsValid(); i++) {
+      Slice key_slice;
+      DeltaCompactionInputCell &input_cell = (*block)[i];
+      iter_->GetCurrentEntry(&key_slice, &input_cell.cell);
+      RETURN_NOT_OK(input_cell.key.DecodeFrom(&key_slice));
+      iter_->Next();
+    }
+    return Status::OK();
+  }
+
+  virtual Status FinishBlock() {
+    return Status::OK();
+  }
+
+ private:
+  gscoped_ptr<DMSTreeIter> iter_;
+
+  enum {
+    kRowsPerBlock = 100 // Number of rows per block of columns
+  };
+};
+
 class DeltaFileCompactionInput : public DeltaCompactionInput {
  public:
 
@@ -84,7 +126,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
   bool initted_;
 
   enum {
-    kRowsPerBlock = 100 // Number of rows per block of clumns
+    kRowsPerBlock = 100 // Number of rows per block of columns
   };
 
   bool block_prepared_;
@@ -314,6 +356,13 @@ Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
   gscoped_ptr<CFileIterator> iter;
   RETURN_NOT_OK(reader.cfile_reader()->NewIterator(&iter));
   input->reset(new DeltaFileCompactionInput(iter.Pass()));
+  return Status::OK();
+}
+
+Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
+                                  gscoped_ptr<DeltaCompactionInput> *input) {
+  gscoped_ptr<DMSTreeIter> iter(dms.tree().NewIterator());
+  input->reset(new DeltaMemStoreCompactionInput(iter.Pass()));
   return Status::OK();
 }
 

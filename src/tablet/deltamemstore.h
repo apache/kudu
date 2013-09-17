@@ -69,16 +69,21 @@ class DeltaMemStore : public DeltaStore,
 
   const int64_t id() const { return id_; }
 
+  typedef btree::CBTree<btree::BTreeTraits> DMSTree;
+  typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
+
  private:
   friend class DMSIterator;
+  friend class DeltaCompactionInput;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 
+  const DMSTree &tree() const {
+    return tree_;
+  }
+
   const int64_t id_;
   const Schema schema_;
-
-  typedef btree::CBTree<btree::BTreeTraits> DMSTree;
-  typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
 
   // Concurrent B-Tree storing <key index> -> RowChangeList
   DMSTree tree_;

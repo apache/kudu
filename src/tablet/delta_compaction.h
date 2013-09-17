@@ -10,6 +10,7 @@
 namespace kudu {
 namespace tablet {
 
+class DeltaMemStore;
 class DeltaKey;
 struct DeltaCompactionInputCell;
 
@@ -20,6 +21,9 @@ class DeltaCompactionInput {
   // DeltaFileReader reference must be valid for the lifetime the
   // DeltaCompactionInput.
   static Status Open(const DeltaFileReader &reader,
+                     gscoped_ptr<DeltaCompactionInput> *input);
+
+  static Status Open(const DeltaMemStore &dms,
                      gscoped_ptr<DeltaCompactionInput> *input);
 
   // Create a merging iterator from multiple DeltaCompactionInputs
