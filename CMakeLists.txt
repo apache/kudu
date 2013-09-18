@@ -308,7 +308,11 @@ ENDIF (UNIX)
 # "make lint" target
 ############################################################
 IF (UNIX)
+  # Full lint
   ADD_CUSTOM_TARGET(lint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh)
+  # Incremental lint - only checks files changed since the last
+  # merged upstream commit
+  ADD_CUSTOM_TARGET(ilint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh -c)
 ENDIF (UNIX)
 
 ############################################################
