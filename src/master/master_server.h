@@ -25,6 +25,8 @@ class ServicePool;
 
 namespace master {
 
+class TSManager;
+
 class MasterServer : public server::ServerBase {
  public:
   static const uint16_t kDefaultPort = 7051;
@@ -38,12 +40,16 @@ class MasterServer : public server::ServerBase {
 
   string ToString() const;
 
+  TSManager* ts_manager() { return ts_manager_.get(); }
+
  private:
   friend class MasterServerTest;
 
   RpcServer *rpc_server() const { return rpc_server_.get(); }
 
   bool initted_;
+
+  gscoped_ptr<TSManager> ts_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterServer);
 };

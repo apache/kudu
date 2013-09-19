@@ -1,12 +1,104 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.master;
 
+import "common/wire_protocol.proto";
+
+////////////////////////////////////////////////////////////
+// Common data structures
+////////////////////////////////////////////////////////////
+
+// Common information sent with every request from the tablet server
+// to the master.
+message TSToMasterCommonPB {
+  // The instance of the tablet server sending the heartbeat.
+  required NodeInstancePB ts_instance = 1;
+}
+
+////////////////////////////////////////////////////////////
+// RPCs
+////////////////////////////////////////////////////////////
+
 message PingRequestPB {
 }
 
 message PingResponsePB {
 }
 
+// TODO: move to somewhere common
+message HostPortPB {
+  required string host = 1;
+  required uint32 port = 2;
+}
+
+// Sent by the TS when it first heartbeats with a master. This sends the
+// master all of the necessary information about the current instance
+// of the TS.
+message TSRegistrationPB {
+  repeated HostPortPB rpc_addresses = 1;
+  repeated HostPortPB http_addresses = 2;
+
+  // TODO: add stuff like software version, etc.
+}
+
+// Sent by the tablet server to report the set of tablets hosted by that TS.
+message TabletReportPB {
+  message ReportedTabletPB {
+    required bytes tablet_id = 1;
+    // TODO: add state information, configuration info, schema version, etc?
+  }
+
+  // If false, then this is a full report, and any prior information about
+  // tablets hosted by this server should be dropped.
+  required bool is_incremental = 1;
+
+  // Tablets for which to update information. If 'is_incremental' is false,
+  // then this is the full set of tablets on the server, and any tablets
+  // which the master is aware of but not listed in this protobuf should
+  // be assumed to have been removed from this server.
+  repeated ReportedTabletPB updated_tablets = 2;
+
+  // Tablet IDs which the tablet server has removed and should no longer be
+  // considered hosted here. This will always be empty in an incremental
+  // report.
+  repeated bytes removed_tablet_ids = 3;
+}
+
+// Heartbeat sent from the tablet-server to the master
+// to establish liveness and report back any status changes.
+message TSHeartbeatRequestPB {
+  required TSToMasterCommonPB common = 1;
+
+  // Sent upon start-up of the TS, or in response to 'needs_reregister' on a heartbeat
+  // response.
+  optional TSRegistrationPB registration = 2;
+
+  // Sent when the tablet information has changed, or in response to
+  // 'needs_full_tablet_report'.
+  optional TabletReportPB tablet_report = 3;
+
+  // TODO; add a heartbeat sequence number?
+
+  // TODO: perhaps add some very basic metrics reporting here, like
+  // free space, reqs/sec, etc?
+}
+
+message TSHeartbeatResponsePB {
+  required NodeInstancePB master_instance = 1;
+
+  // Indicates that the server which heartbeated needs to re-register
+  // with the master -- i.e send a heartbeat with the 'registration'
+  // filled in.
+  optional bool needs_reregister = 2 [ default = false ];
+
+  optional bool needs_full_tablet_report = 3 [ default = false ];
+}
+
+message TSTabletReportResponsePB {
+}
+
 service MasterServerService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
+
+  // TS->Master RPCs
+  rpc TSHeartbeat(TSHeartbeatRequestPB) returns (TSHeartbeatResponsePB);
 }

@@ -16,6 +16,8 @@ SET(MASTER_SRCS
   master_server.cc
   master_server_options.cc
   master_service.cc
+  ts_descriptor.cc
+  ts_manager.cc
 )
 
 add_library(master ${MASTER_SRCS} ${MASTER_PROTO_SRCS} ${MASTER_KRPC_SRCS})

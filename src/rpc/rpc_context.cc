@@ -2,6 +2,7 @@
 
 #include "rpc/rpc_context.h"
 
+#include "rpc/client_call.h"
 #include "rpc/inbound_call.h"
 
 namespace kudu {
@@ -34,6 +35,11 @@ const UserCredentials& RpcContext::user_credentials() const {
 
 const Sockaddr& RpcContext::remote_address() const {
   return call_->remote_address();
+}
+
+std::string RpcContext::requestor_string() const {
+  return call_->user_credentials().ToString() + " at " +
+    call_->remote_address().ToString();
 }
 
 } // namespace rpc

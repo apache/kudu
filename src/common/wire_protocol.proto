@@ -34,6 +34,23 @@ message AppStatusPB {
   optional int32 posix_code = 4;
 }
 
+// Uniquely identify a particular instance of a particular server in the
+// cluster.
+message NodeInstancePB {
+  // Unique ID which is created when the server is first started
+  // up. This is stored persistently on disk.
+  required bytes permanent_uuid = 1;
+
+  // Sequence number incremented on every start-up of the server.
+  // This makes it easy to detect when an instance has restarted (and
+  // thus can be assumed to have forgotten any soft state it had in
+  // memory).
+  //
+  // On a freshly initialized server, the first sequence number
+  // should be 0.
+  required int32 instance_seqno = 2;
+}
+
 message ColumnBlockPB {
   required ColumnSchemaPB schema = 1;
 

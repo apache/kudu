@@ -11,6 +11,7 @@
 #include "rpc/service_pool.h"
 #include "server/rpc_server.h"
 #include "master/master_service.h"
+#include "master/ts_manager.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -23,7 +24,8 @@ namespace master {
 
 MasterServer::MasterServer(const MasterServerOptions& opts)
   : ServerBase(opts.rpc_opts, opts.webserver_opts),
-    initted_(false) {
+    initted_(false),
+    ts_manager_(new TSManager()) {
 }
 
 MasterServer::~MasterServer() {

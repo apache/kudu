@@ -2,6 +2,8 @@
 #ifndef KUDU_RPC_RPC_CONTEXT_H
 #define KUDU_RPC_RPC_CONTEXT_H
 
+#include <string>
+
 #include "gutil/gscoped_ptr.h"
 #include "util/status.h"
 
@@ -60,6 +62,10 @@ class RpcContext {
 
   // Return the remote IP address and port which sent the current RPC call.
   const Sockaddr& remote_address() const;
+
+  // A string identifying the requestor -- both the user info and the IP address.
+  // Suitable for use in log messages.
+  std::string requestor_string() const;
 
   const google::protobuf::Message *request_pb() const { return request_pb_.get(); }
   google::protobuf::Message *response_pb() const { return response_pb_.get(); }
