@@ -3,16 +3,19 @@ package kudu.tablet;
 
 import "common/wire_protocol.proto";
 
-// Analogous to tablet::MutationTarget
+// Stores the id of the MemRowSet (for MemRowSet mutations) or of the row set
+// *and* delta for DeltaRowStore mutations.
 message MutationTargetPB {
-  required int64 mrs_id = 1;
-  required int64 rs_id = 2;
-  required int64 delta_id = 3;
+  optional int64 mrs_id = 1;
+  optional int64 rs_id = 2;
+  optional int64 delta_id = 3;
 }
 
-// Analogous to tablet::MutationResult
+// Keeps a set of mutations applied to a single key on mutate. Usually only
+// contains one entry in 'mutations' but may contain two if the mutation went
+// through a DuplicatingRowSet.
 message MutationResultPB {
-  // Analogous to tablet::MutationType
+
   enum MutationTypePB {
     NO_MUTATION = 0;
     MRS_MUTATION = 1;
@@ -25,8 +28,7 @@ message MutationResultPB {
   repeated MutationTargetPB mutations = 2;
 }
 
-// Analogous to tablet::Operation, tablet::InsertOp and tablet::MutationOP in
-// transaction_context.h but with only the data required for recovery.
+// Stores the result of an Insert or Mutate.
 message TxOperationPB {
 
   enum TxOperationTypePB {

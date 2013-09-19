@@ -50,7 +50,6 @@ TEST(TestLogUtil, TestHasCommonStoresMemStoresDmsFlush) {
   newer.set_last_durable_mrs_id(0);
   AddDeltasToRowSet(newer.add_rowsets(), 0, boost::assign::list_of(1));
   ASSERT_FALSE(HasNoCommonMemStores(older, newer));
-
 }
 
 // case where we compacted some row sets but the mrs is the same
@@ -78,6 +77,18 @@ TEST(TestLogUtil, TestHasCommonStoresMemStoresDeltaCompaction) {
   AddDeltasToRowSet(newer.add_rowsets(), 0, boost::assign::list_of(2));
   AddDeltasToRowSet(newer.add_rowsets(), 1, boost::assign::list_of(0));
   ASSERT_FALSE(HasNoCommonMemStores(older, newer));
+}
+
+// Case where we flushed the mrs but there are no deltas
+TEST(TestLogUtil, TestHasNoCommonMemStoresAndNoDeltas) {
+  TabletSuperBlockPB older;
+  older.set_last_durable_mrs_id(0);
+  AddDeltasToRowSet(older.add_rowsets(), 0, boost::assign::list_of(0));
+  TabletSuperBlockPB newer;
+  newer.set_last_durable_mrs_id(1);
+  RowSetDataPB* row_set  = newer.add_rowsets();
+  row_set->set_id(0);
+  ASSERT_TRUE(HasNoCommonMemStores(older, newer));
 }
 
 // case where we flushed the mrs and flushed each delta (no common stores)

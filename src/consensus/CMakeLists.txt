@@ -22,6 +22,8 @@ ADD_DEPENDENCIES(log_proto consensus_proto)
 
 SET(LOG_SRCS
   log_util.cc
+  log.cc
+  log_reader.cc
 )
 
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
@@ -50,4 +52,6 @@ SET(KUDU_TEST_LINK_LIBS
   tablet
   ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS}
 )
+
 ADD_KUDU_TEST(log_util-test)
+ADD_KUDU_TEST(log-test)

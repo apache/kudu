@@ -37,41 +37,26 @@ LogOptions::LogOptions()
 : segment_size_mb(FLAGS_log_segment_size_mb) {
 }
 
-LogSegment::LogSegment(const LogSegmentHeader &header,
+LogSegment::LogSegment(const LogSegmentHeader& header,
                        const string &path)
 : header_(header),
   path_(path) {
 }
 
-LogSegment::LogSegment(const LogSegmentHeader &header,
-                       const string &path,
-                       const vector<LogEntry*> &entries)
-: header_(header),
-  path_(path) {
-}
-
 ReadableLogSegment::ReadableLogSegment(
-    const LogSegmentHeader &header,
-    const string &path,
+    const LogSegmentHeader& header,
+    const std::string &path,
     uint64_t first_entry_offset,
     uint64_t file_size,
-    const shared_ptr<RandomAccessFile>& readable_file)
+    const std::tr1::shared_ptr<RandomAccessFile>& readable_file)
 : LogSegment(header, path),
   first_entry_offset_(first_entry_offset),
   file_size_(file_size),
   readable_file_(readable_file) {
 }
 
-ReadableLogSegment::ReadableLogSegment(const LogSegmentHeader &header,
-                                       const string &path,
-                                       const vector<LogEntry*> &entries)
-: LogSegment(header, path, entries),
-  first_entry_offset_(0),
-  file_size_(0) {
-}
-
 WritableLogSegment::WritableLogSegment(
-    const LogSegmentHeader &header,
+    const LogSegmentHeader& header,
     const string &path,
     const shared_ptr<WritableFile>& writable_file)
 : LogSegment(header, path),
@@ -98,6 +83,8 @@ bool HasNoCommonMemStores(const TabletSuperBlockPB &older,
   // if 'last_durable_mrs_id' in 'newer' is the same as 'older' then the current
   // mrs is the same.
   if (older.last_durable_mrs_id() == newer.last_durable_mrs_id()) {
+    VLOG(2) << "Different mrs_ids. 'older' "
+            << older.ShortDebugString() << " 'newer': " << newer.ShortDebugString();
     return false;
   }
 
@@ -108,17 +95,21 @@ bool HasNoCommonMemStores(const TabletSuperBlockPB &older,
   // start by creating a set with pair<row set id, last delta id> for 'newer'
   unordered_set<pair<int64, int64 >, DeltaIdHashFunction, DeltaIdEqualsTo> newer_deltas;
   BOOST_FOREACH(const RowSetDataPB &row_set, newer.rowsets()) {
-    newer_deltas.insert(pair<int64, int64>(row_set.id(),
-                                           row_set.deltas(row_set.deltas_size() - 1).id()));
+    if (row_set.deltas_size() > 0) {
+      newer_deltas.insert(pair<int64, int64>(row_set.id(),
+                                             row_set.deltas(row_set.deltas_size() - 1).id()));
+    }
   }
 
   // now go through the row sets in 'older' if anyone of them is also present
   // in 'newer' *and* its last delta id is the same then the two superblocks have
   // at least one DeltaMemStore in common.
   BOOST_FOREACH(const RowSetDataPB &row_set, older.rowsets()) {
-    if (ContainsKey(newer_deltas,
-                    pair<int64, int64>(row_set.id(),
-                                       row_set.deltas(row_set.deltas_size() - 1).id()))) {
+    if (row_set.deltas_size() > 0 &&
+        ContainsKey(newer_deltas, pair<int64, int64>(row_set.id(),
+                                                     row_set.deltas(row_set.deltas_size() - 1).id()))) {
+      VLOG(2) << "Common MemStore. 'older' "
+          << older.DebugString() << "\n 'newer': " << newer.DebugString();
       return false;
     }
   }

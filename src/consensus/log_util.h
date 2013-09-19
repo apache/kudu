@@ -46,12 +46,8 @@ struct LogOptions {
 // segments are rolled over and the Log continues in a new segment.
 class LogSegment {
  protected:
-  LogSegment(const LogSegmentHeader &header,
+  LogSegment(const LogSegmentHeader& header,
              const std::string &path);
-
-  LogSegment(const LogSegmentHeader &header,
-             const std::string &path,
-             const std::vector<LogEntry*> &entries);
 
  public:
   // Returns the header for this log segment, including initial index, term,
@@ -80,17 +76,11 @@ class ReadableLogSegment : public LogSegment {
 
   // build a readable segment to read entries from the provided path.
   ReadableLogSegment(
-      const LogSegmentHeader &header,
+      const LogSegmentHeader& header,
       const std::string &path,
-      uint64_t entries_offset,
+      uint64_t first_entry_offset,
       uint64_t file_size,
       const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
-
-  // Used by WritableLogSegment to transform into a ReadableLogSegment
-  // without re-reading all the entries.
-  ReadableLogSegment(const LogSegmentHeader &header,
-                     const std::string &path,
-                     const std::vector<LogEntry*> &entries);
 
   const std::tr1::shared_ptr<RandomAccessFile> readable_file() const {
     return readable_file_;
@@ -121,7 +111,7 @@ class ReadableLogSegment : public LogSegment {
 class WritableLogSegment : public LogSegment {
  public:
 
-  WritableLogSegment(const LogSegmentHeader &header,
+  WritableLogSegment(const LogSegmentHeader& header,
                      const std::string &path,
                      const std::tr1::shared_ptr<WritableFile>& writable_file);
 
