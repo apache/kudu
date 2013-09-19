@@ -76,7 +76,7 @@ class TestDeltaCompaction : public KuduTest {
     }
     gscoped_ptr<DeltaFileReader> reader;
     RETURN_NOT_OK(dfw->Finish());
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, schema_, &reader));
+    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader));
     CHECK_EQ(deltafile_idx_, reader->id());
     RETURN_NOT_OK(DeltaCompactionInput::Open(*reader, dci));
     pool_.Add(reader.release());
@@ -139,7 +139,7 @@ TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
   ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
   gscoped_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), path, FLAGS_num_delta_files + 1, schema_, &reader));
+  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), path, FLAGS_num_delta_files + 1, &reader));
   gscoped_ptr<DeltaCompactionInput> dci;
   ASSERT_STATUS_OK(DeltaCompactionInput::Open(*reader, &dci));
   vector<string> results;

@@ -24,6 +24,13 @@ void StatusToPB(const Status& status, AppStatusPB* pb);
 // Convert the given protobuf into the equivalent C++ Status object.
 Status StatusFromPB(const AppStatusPB& pb);
 
+// Convert the specified schema to protobuf.
+void SchemaToPB(const Schema& schema, SchemaPB *pb);
+
+// Returns the Schema created from the specified protobuf.
+// If the schema is invalid, return a non-OK status.
+Status SchemaFromPB(const SchemaPB& pb, Schema *schema);
+
 // Convert the specified column schema to protobuf.
 void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb);
 

@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <string>
 
+#include "common/wire_protocol.h"
 #include "cfile/block_cache.h"
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"
@@ -15,11 +16,11 @@
 #include "util/env.h"
 #include "util/env_util.h"
 #include "util/hexdump.h"
+#include "util/pb_util.h"
 
 DEFINE_int32(deltafile_block_size, 32*1024,
             "Block size for delta files. TODO: this should be configurable "
              "on a per-table basis");
-
 
 namespace kudu {
 
@@ -30,6 +31,8 @@ using cfile::StringPlainBlockDecoder;
 using cfile::CFileReader;
 
 namespace tablet {
+
+const char * const DeltaFileReader::kSchemaMetaEntryName = "schema";
 
 DeltaFileWriter::DeltaFileWriter(const Schema &schema,
                                  const shared_ptr<WritableFile> &file) :
@@ -50,6 +53,7 @@ Status DeltaFileWriter::Start() {
 }
 
 Status DeltaFileWriter::Finish() {
+  RETURN_NOT_OK(WriteSchema());
   return writer_->Finish();
 }
 
@@ -83,6 +87,19 @@ Status DeltaFileWriter::AppendDelta(
   return writer_->AppendEntries(&tmp_buf_, 1);
 }
 
+Status DeltaFileWriter::WriteSchema() {
+  SchemaPB schema_pb;
+  SchemaToPB(schema_, &schema_pb);
+
+  faststring buf;
+  if (!pb_util::SerializeToString(schema_pb, &buf)) {
+    return Status::IOError("Unable to serialize SchemaPB", schema_pb.DebugString());
+  }
+
+  writer_->AddMetadataPair(DeltaFileReader::kSchemaMetaEntryName, buf.ToString());
+  return Status::OK();
+}
+
 ////////////////////////////////////////////////////////////
 // Reader
 ////////////////////////////////////////////////////////////
@@ -90,28 +107,25 @@ Status DeltaFileWriter::AppendDelta(
 Status DeltaFileReader::Open(Env *env,
                              const string &path,
                              int64_t delta_id,
-                             const Schema &schema,
                              gscoped_ptr<DeltaFileReader> *reader_out) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(path, file, size, delta_id, schema, reader_out);
+  return Open(path, file, size, delta_id, reader_out);
 }
 
 Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
                              uint64_t file_size,
                              int64_t delta_id,
-                             const Schema &schema,
                              gscoped_ptr<DeltaFileReader> *reader_out) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
 
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(delta_id,
                                                              cf_reader.release(),
-                                                             path,
-                                                             schema));
+                                                             path));
 
   RETURN_NOT_OK(df_reader->Init());
   reader_out->reset(df_reader.release());
@@ -121,11 +135,9 @@ Status DeltaFileReader::Open(const string& path,
 
 DeltaFileReader::DeltaFileReader(const int64_t id,
                                  CFileReader *cf_reader,
-                                 const string &path,
-                                 const Schema &schema)
+                                 const string &path)
   : id_(id),
     reader_(cf_reader),
-    schema_(schema),
     path_(path) {
 }
 
@@ -134,7 +146,24 @@ Status DeltaFileReader::Init() {
   if (!reader_->has_validx()) {
     return Status::Corruption("file does not have a value index!");
   }
+
+  // Initialize delta file schema
+  RETURN_NOT_OK(ReadSchema());
+
   return Status::OK();
+}
+
+Status DeltaFileReader::ReadSchema() {
+  string schema_pb_buf;
+  if (!reader_->GetMetadataEntry(kSchemaMetaEntryName, &schema_pb_buf)) {
+    return Status::Corruption("missing schema from the delta file metadata");
+  }
+
+  SchemaPB schema_pb;
+  if (!schema_pb.ParseFromString(schema_pb_buf)) {
+    return Status::Corruption("unable to parse schema protobuf");
+  }
+  return SchemaFromPB(schema_pb, &schema_);
 }
 
 DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema &projection,

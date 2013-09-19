@@ -175,7 +175,7 @@ Status DeltaTracker::Open() {
     }
 
     gscoped_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open("---", dfile, dsize, delta_id, schema_, &dfr);
+    s = DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open delta file " << idx << ": "
                  << s.ToString();
@@ -310,7 +310,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
   size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
-  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms.id(), schema_, dfr));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms.id(), dfr));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(dms.id(), block_id));

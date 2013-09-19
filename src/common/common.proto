@@ -33,3 +33,7 @@ message ColumnSchemaPB {
   optional bytes read_default_value = 5;
   optional bytes write_default_value = 6;
 }
+
+message SchemaPB {
+  repeated ColumnSchemaPB columns = 1;
+}

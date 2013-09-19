@@ -60,6 +60,8 @@ class DeltaFileWriter {
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);
 
+  Status WriteSchema();
+
   gscoped_ptr<cfile::Writer> writer_;
 
   // Buffer used as a temporary for storing the serialized form
@@ -78,18 +80,18 @@ class DeltaFileWriter {
 
 class DeltaFileReader : public DeltaStore {
  public:
+  static const char * const kSchemaMetaEntryName;
+
   // Open the Delta File at the given path.
   static Status Open(Env *env,
                      const string &path,
                      int64_t delta_id,
-                     const Schema &schema,
                      gscoped_ptr<DeltaFileReader> *reader_out);
 
   static Status Open(const string& path,
                      const shared_ptr<RandomAccessFile> &file,
                      uint64_t file_size,
                      int64_t delta_id,
-                     const Schema &schema,
                      gscoped_ptr<DeltaFileReader> *reader_out);
 
   // See DeltaStore::NewDeltaIterator(...)
@@ -119,14 +121,15 @@ class DeltaFileReader : public DeltaStore {
 
   DeltaFileReader(const int64_t id,
                   cfile::CFileReader *cf_reader,
-                  const string &path,
-                  const Schema &schema);
+                  const string &path);
 
   Status Init();
 
+  Status ReadSchema();
+
   const int64_t id_;
   shared_ptr<cfile::CFileReader> reader_;
-  const Schema schema_;
+  Schema schema_;
 
   // The path of the file being read (should be used only for debugging)
   const string path_;
