@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/wire_protocol.h"
+#include "common/wire_protocol-test-util.h"
 #include "common/schema.h"
 #include "gutil/strings/join.h"
 #include "server/metadata.h"
@@ -36,14 +37,10 @@ namespace tserver {
 
 class TabletServerTest : public KuduTest {
  public:
-  TabletServerTest()
-    : schema_(boost::assign::list_of
-              (ColumnSchema("key", UINT32))
-              (ColumnSchema("int_val", UINT32))
-              (ColumnSchema("string_val", STRING)),
-              1),
-      key_schema_(schema_.CreateKeyProjection()),
-      rb_(schema_) {
+  TabletServerTest() {
+    CreateTestSchema(&schema_);
+    key_schema_ = schema_.CreateKeyProjection();
+    rb_.reset(new RowBuilder(schema_));
   }
 
   virtual void SetUp() {
@@ -80,50 +77,6 @@ class TabletServerTest : public KuduTest {
  protected:
   static const char* kTabletId;
 
-  void AddTestRowToBlockPB(uint32_t key, uint32_t int_val, const string& string_val,
-                           RowwiseRowBlockPB* block) {
-    RowBuilder rb(schema_);
-    rb.AddUint32(key);
-    rb.AddUint32(int_val);
-    rb.AddString(string_val);
-    AddRowToRowBlockPB(rb.row(), block);
-  }
-
-  void AddTestKeyToBlock(uint32_t key, RowwiseRowBlockPB* block) {
-    RowBuilder rb(key_schema_);
-    rb.AddUint32(key);
-    AddRowToRowBlockPB(rb.row(), block);
-  }
-
-  void AddTestDeletionToRowBlockAndBuffer(uint32_t key,
-                                          RowwiseRowBlockPB* block,
-                                          faststring* buf) {
-    // Write the key.
-    AddTestKeyToBlock(key, block);
-
-    // Write the mutation.
-    faststring tmp;
-    RowChangeListEncoder encoder(schema_, &tmp);
-    encoder.SetToDelete();
-    PutFixed32LengthPrefixedSlice(buf, Slice(tmp));
-  }
-
-  void AddTestMutationToRowBlockAndBuffer(uint32_t key,
-                                          uint32_t new_int_val,
-                                          const Slice& new_string_val,
-                                          RowwiseRowBlockPB* block,
-                                          faststring* buf) {
-    // Write the key.
-    AddTestKeyToBlock(key, block);
-
-    // Write the mutation.
-    faststring tmp;
-    RowChangeListEncoder encoder(schema_, &tmp);
-    encoder.AddColumnUpdate(1, &new_int_val);
-    encoder.AddColumnUpdate(2, &new_string_val);
-    PutFixed32LengthPrefixedSlice(buf, Slice(tmp));
-  }
-
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRows(int num_rows) {
     tablet::TransactionContext tx_ctx;
@@ -134,11 +87,11 @@ class TabletServerTest : public KuduTest {
   }
 
   ConstContiguousRow BuildTestRow(int index) {
-    rb_.Reset();
-    rb_.AddUint32(index);
-    rb_.AddUint32(index * 2);
-    rb_.AddString(StringPrintf("hello %d", index));
-    return rb_.row();
+    rb_->Reset();
+    rb_->AddUint32(index);
+    rb_->AddUint32(index * 2);
+    rb_->AddString(StringPrintf("hello %d", index));
+    return rb_->row();
   }
 
   void DrainScannerToStrings(const string& scanner_id, const Schema& projection,
@@ -166,9 +119,9 @@ class TabletServerTest : public KuduTest {
     } while (resp.has_more_results());
   }
 
-  const Schema schema_;
+  Schema schema_;
   Schema key_schema_;
-  RowBuilder rb_;
+  gscoped_ptr<RowBuilder> rb_;
 
   shared_ptr<Messenger> client_messenger_;
 
@@ -245,7 +198,7 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
 
-    AddTestRowToBlockPB(1234, 5678, "hello world via RPC", data);
+    AddTestRowToBlockPB(schema_, 1234, 5678, "hello world via RPC", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -262,9 +215,9 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
 
-    AddTestRowToBlockPB(1, 1, "ceci n'est pas une dupe", data);
-    AddTestRowToBlockPB(2, 1, "also not a dupe key", data);
-    AddTestRowToBlockPB(1234, 1, "I am a duplicate key", data);
+    AddTestRowToBlockPB(schema_, 1, 1, "ceci n'est pas une dupe", data);
+    AddTestRowToBlockPB(schema_, 2, 1, "also not a dupe key", data);
+    AddTestRowToBlockPB(schema_, 1234, 1, "I am a duplicate key", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -288,9 +241,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
 
-    AddTestRowToBlockPB(1, 1, "original1", data);
-    AddTestRowToBlockPB(2, 2, "original2", data);
-    AddTestRowToBlockPB(3, 3, "original3", data);
+    AddTestRowToBlockPB(schema_, 1, 1, "original1", data);
+    AddTestRowToBlockPB(schema_, 2, 2, "original2", data);
+    AddTestRowToBlockPB(schema_, 3, 3, "original3", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -312,9 +265,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     Slice mutation3("mutated333");
 
     faststring mutations;
-    AddTestMutationToRowBlockAndBuffer(1, 2, mutation1, data, &mutations);
-    AddTestMutationToRowBlockAndBuffer(2, 3, mutation2, data, &mutations);
-    AddTestMutationToRowBlockAndBuffer(3, 4, mutation3, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(schema_, 1, 2, mutation1, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(schema_, 2, 3, mutation2, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(schema_, 3, 4, mutation3, data, &mutations);
     req.set_encoded_mutations(mutations.data(), mutations.size());
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
@@ -333,7 +286,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     data->set_num_key_columns(schema_.num_key_columns());
     Slice mutation("mutated");
     faststring mutations;
-    AddTestMutationToRowBlockAndBuffer(1234, 2, mutation, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(schema_, 1234, 2, mutation, data, &mutations);
     req.set_encoded_mutations(mutations.data(), mutations.size());
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
@@ -351,9 +304,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
     data->set_num_key_columns(schema_.num_key_columns());
     faststring mutations;
-    AddTestDeletionToRowBlockAndBuffer(1, data, &mutations);
-    AddTestDeletionToRowBlockAndBuffer(2, data, &mutations);
-    AddTestDeletionToRowBlockAndBuffer(3, data, &mutations);
+    AddTestDeletionToRowBlockAndBuffer(schema_, 1, data, &mutations);
+    AddTestDeletionToRowBlockAndBuffer(schema_, 2, data, &mutations);
+    AddTestDeletionToRowBlockAndBuffer(schema_, 3, data, &mutations);
     req.set_encoded_mutations(mutations.data(), mutations.size());
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
@@ -372,7 +325,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     data->set_num_key_columns(schema_.num_key_columns());
     Slice mutation1("mutated1");
     faststring mutations;
-    AddTestMutationToRowBlockAndBuffer(1, 2, mutation1, data, &mutations);
+    AddTestMutationToRowBlockAndBuffer(schema_, 1, 2, mutation1, data, &mutations);
     req.set_encoded_mutations(mutations.data(), mutations.size());
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
@@ -397,7 +350,7 @@ TEST_F(TabletServerTest, TestInvalidMutations) {
   ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
   data->set_num_key_columns(schema_.num_key_columns());
 
-  AddTestKeyToBlock(0, data);
+  AddTestKeyToBlock(key_schema_, 0, data);
 
   // Send a mutations buffer where the length prefix is too short
   {
