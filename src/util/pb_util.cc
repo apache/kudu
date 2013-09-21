@@ -89,10 +89,16 @@ bool SerializeToString(const MessageLite &msg, faststring *output) {
   return AppendToString(msg, output);
 }
 
-
 bool ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile) {
   SequentialFileFileInputStream istream(rfile);
   return msg->ParseFromZeroCopyStream(&istream);
+}
+
+Status ParseFromArray(MessageLite* msg, const uint8_t* data, uint32_t length) {
+  if (!msg->ParseFromArray(data, length)) {
+    return Status::Corruption("Error parsing msg", InitializationErrorMessage("parse", *msg));
+  }
+  return Status::OK();
 }
 
 bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile) {

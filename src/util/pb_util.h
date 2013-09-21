@@ -18,6 +18,7 @@ namespace kudu {
 
 class SequentialFile;
 class WritableFile;
+class Status;
 
 namespace pb_util {
 
@@ -34,6 +35,10 @@ bool SerializeToString(const MessageLite &msg, faststring *output);
 
 // See MessageLite::ParseFromZeroCopyStream
 bool ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile);
+
+// Similar to MessageLite::ParseFromArray, with the difference that it returns
+// Status::Corruption() if the message could not be parsed.
+Status ParseFromArray(MessageLite* msg, const uint8_t* data, uint32_t length);
 
 // See MessageLite::SerializeToZeroCopyStream.
 bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile);
