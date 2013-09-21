@@ -25,6 +25,8 @@
 
 namespace kudu {
 
+class Status;
+
 class Slice {
  public:
   // Create an empty slice.
@@ -85,45 +87,14 @@ class Slice {
     size_ -= n;
   }
 
+  // Checks that this slice has size() = 'expected_size' and returns
+  // Status::Corruption() otherwise.
+  Status check_size(size_t expected_size) const;
+
   // Return a string that contains the copy of the referenced data.
-  std::string ToString() const {
-    return std::string(reinterpret_cast<const char *>(data_), size_);
-  }
+  std::string ToString() const;
 
-  std::string ToDebugString(size_t max_len = 0) const {
-    size_t bytes_to_print = size_;
-    bool abbreviated = false;
-    if (max_len != 0 && bytes_to_print > max_len) {
-      bytes_to_print = max_len;
-      abbreviated = true;
-    }
-
-    int size = 0;
-    for (int i = 0; i < bytes_to_print; i++) {
-      if (!isgraph(data_[i])) {
-        size += 4;
-      } else {
-        size++;
-      }
-    }
-    if (abbreviated) {
-      size += 20; // extra padding
-    }
-
-    std::string ret;
-    ret.reserve(size);
-    for (int i = 0; i < bytes_to_print; i++) {
-      if (!isgraph(data_[i])) {
-        StringAppendF(&ret, "\\x%02x", data_[i] & 0xff);
-      } else {
-        ret.push_back(data_[i]);
-      }
-    }
-    if (abbreviated) {
-      StringAppendF(&ret, "...<%zd bytes total>", size_);
-    }
-    return ret;
-  }
+  std::string ToDebugString(size_t max_len = 0) const;
 
   // Three-way comparison.  Returns value:
   //   <  0 iff "*this" <  "b",
@@ -164,6 +135,5 @@ inline int Slice::compare(const Slice& b) const {
 }
 
 }  // namespace kudu
-
 
 #endif  // KUDU_UTIL_SLICE_H_

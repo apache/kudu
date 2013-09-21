@@ -16,6 +16,7 @@ ADD_LIBRARY(kudu_util
   net/sockaddr.cc
   net/socket.cc
   pb_util.cc
+  slice.cc
   status.cc
   string_case.cc
   threadpool.cc
