@@ -51,6 +51,9 @@ class Tablet {
   // Open an existing tablet.
   Status Open();
 
+  // TODO update tests so that we can remove Insert() and Mutate()
+  // and use only InsertUnlocked() and MutateUnlocked().
+
   // Insert a new row into the tablet.
   //
   // The provided 'data' slice should have length equivalent to this
@@ -65,13 +68,24 @@ class Tablet {
   // Returns Status::OK unless allocation fails.
   Status Insert(TransactionContext *tx_ctx, const ConstContiguousRow& row);
 
+  // A version of Insert that does not acquire locks and instead assumes that
+  // they were already acquired. Requires that handles for the relevant locks
+  // and Mvcc transaction are present in the transaction context.
+  Status InsertUnlocked(TransactionContext *tx_ctx,
+                        const PreparedRowWrite* insert);
   // Update a row in this tablet.
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
   Status MutateRow(TransactionContext *tx_ctx,
                    const ConstContiguousRow& row_key,
-                   const RowChangeList &update);
+                   const RowChangeList& update);
+
+  // A version of MutateRow that does not acquire locks and instead assumes
+  // they were already acquired. Requires that handles for the relevant locks
+  // and Mvcc transaction are present in the transaction context.
+  Status MutateRowUnlocked(TransactionContext *tx_ctx,
+                           const PreparedRowWrite* mutate);
 
   // Create a new row iterator which yields the rows as of the current MVCC
   // state of this tablet.
@@ -119,15 +133,21 @@ class Tablet {
 
   const Schema &schema() const { return schema_; }
 
+  // Return the MVCC manager for this tablet.
+  MvccManager &mvcc_manager() { return mvcc_; }
+
+  // Return the Lock Manager for this tablet
+  LockManager &lock_manager() { return lock_manager_; }
+
+  // Returns the component lock for this tablet
+  percpu_rwlock &component_lock() { return component_lock_; }
+
   const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
   metadata::TabletMetadata *metadata() { return metadata_.get(); }
 
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
   void SetFlushCompactCommonHooksForTests(const shared_ptr<FlushCompactCommonHooks> &hooks);
-
-  // Return the MVCC manager for this tablet.
-  const MvccManager &mvcc_manager() const { return mvcc_; }
 
   int32_t CurrentMrsIdForTests() const { return memrowset_->mrs_id(); }
 
@@ -280,7 +300,6 @@ class Tablet::Iterator : public RowwiseIterator {
   gscoped_ptr<UnionIterator> iter_;
   RangePredicateEncoder encoder_;
 };
-
 
 } // namespace tablet
 } // namespace kudu

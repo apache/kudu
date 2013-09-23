@@ -145,22 +145,45 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
   CHECK(open_) << "must Open() first!";
 
   DCHECK_SCHEMA_EQ(schema_, row.schema());
-  RowSetKeyProbe probe(row);
-
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
-  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key_slice(), LockManager::LOCK_EXCLUSIVE);
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+
+  gscoped_ptr<PreparedRowWrite> row_write(
+      PreparedRowWrite::CreatePreparedInsert(&lock_manager_,
+                                       &row));
+  tx_ctx->add_prepared_row(row_write.Pass());
+
+  gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
+      new boost::shared_lock<rw_spinlock>(component_lock_.get_lock()));
+  tx_ctx->set_component_lock(lock.Pass());
+
+  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
+  tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
+
+  Status s = InsertUnlocked(tx_ctx, tx_ctx->rows()[0]);
+  tx_ctx->commit_mvcc_tx();
+  return s;
+}
+
+Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
+                              const PreparedRowWrite* insert) {
+  CHECK(open_) << "must Open() first!";
+  // make sure that the TransactionContext has the component lock and that
+  // there the PreparedRowWrite has the row lock.
+  DCHECK(tx_ctx->component_lock()) << "TransactionContext must hold the component lock.";
+  DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
+
+  DCHECK_SCHEMA_EQ(schema_, insert->row()->schema());
 
   // First, ensure that it is a unique key by checking all the open
   // RowSets
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
-    rowsets_->FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
+    rowsets_->FindRowSetsWithKeyInRange(insert->probe()->encoded_key_slice(), &to_check);
 
     BOOST_FOREACH(const RowSet *rowset, to_check) {
       bool present = false;
-      RETURN_NOT_OK(rowset->CheckRowPresent(probe, &present));
+      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->probe(), &present));
       if (PREDICT_FALSE(present)) {
         Status s = Status::AlreadyPresent("key already present");
         tx_ctx->AddFailedInsert(s);
@@ -174,10 +197,9 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  ScopedTransaction tx(&mvcc_);
-  Status s = memrowset_->Insert(tx.txid(), row);
+  Status s = memrowset_->Insert(tx_ctx->mvcc_txid(), *insert->row());
   if (PREDICT_TRUE(s.ok())) {
-    RETURN_NOT_OK(tx_ctx->AddInsert(tx.txid(), memrowset_->mrs_id()));
+    RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_txid(), memrowset_->mrs_id()));
   } else {
     tx_ctx->AddFailedInsert(s);
   }
@@ -186,25 +208,12 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
 
 Status Tablet::MutateRow(TransactionContext *tx_ctx,
                          const ConstContiguousRow& row_key,
-                         const RowChangeList &update) {
+                         const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
-  RowSetKeyProbe probe(row_key);
+  CHECK(tx_ctx->rows().empty()) << "TransactionContext must have no PreparedRowWrites.";
 
-  // Validate the update.
-  RowChangeListDecoder rcl_decoder(schema_, update);
-  Status s = rcl_decoder.Init();
-  if (rcl_decoder.is_reinsert()) {
-    // REINSERT mutations are the byproduct of an INSERT on top of a ghost
-    // row, not something the user is allowed to specify on their own.
-    s = Status::InvalidArgument("User may not specify REINSERT mutations");
-  }
-  if (!s.ok()) {
-    tx_ctx->AddFailedMutation(s);
-    return s;
-  }
-
-  // The order of the next three lines is critical!
+  // The order of the next three steps is critical!
   //
   // Row-lock before ScopedTransaction:
   // -------------------------------------
@@ -248,15 +257,49 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   // to logically lock the rows before doing anything on the "physical" layer.
   // It is critical, however, that we're consistent with this choice between here
   // and Insert() or else there's a possibility of deadlock.
-  ScopedRowLock rowlock(&lock_manager_, probe.encoded_key_slice(), LockManager::LOCK_EXCLUSIVE);
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  ScopedTransaction tx(&mvcc_);
-  gscoped_ptr<MutationResultPB> result(new MutationResultPB);
+
+  gscoped_ptr<PreparedRowWrite> row_write(
+      PreparedRowWrite::CreatePreparedMutate(&lock_manager_,
+                                       &row_key,
+                                       &update));
+  tx_ctx->add_prepared_row(row_write.Pass());
+
+  gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
+      new boost::shared_lock<rw_spinlock>(component_lock_.get_lock()));
+  tx_ctx->set_component_lock(lock.Pass());
+
+  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
+  tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
+
+  Status s = MutateRowUnlocked(tx_ctx, tx_ctx->rows()[0]);
+  tx_ctx->commit_mvcc_tx();
+  return s;
+}
+
+Status Tablet::MutateRowUnlocked(TransactionContext *tx_ctx,
+                                 const PreparedRowWrite* mutate) {
+  gscoped_ptr<MutationResultPB> result(new MutationResultPB());
+
+  // Validate the update.
+  RowChangeListDecoder rcl_decoder(schema_, *mutate->changelist());
+  Status s = rcl_decoder.Init();
+  if (rcl_decoder.is_reinsert()) {
+    // REINSERT mutations are the byproduct of an INSERT on top of a ghost
+    // row, not something the user is allowed to specify on their own.
+    s = Status::InvalidArgument("User may not specify REINSERT mutations");
+  }
+  if (!s.ok()) {
+    tx_ctx->AddFailedMutation(s);
+    return s;
+  }
 
   // First try to update in memrowset.
-  s = memrowset_->MutateRow(tx.txid(), probe, update, result.get());
+  s = memrowset_->MutateRow(tx_ctx->mvcc_txid(),
+                            *mutate->probe(),
+                            *mutate->changelist(),
+                            result.get());
   if (s.ok()) {
-    RETURN_NOT_OK(tx_ctx->AddMutation(tx.txid(), result.Pass()));
+    RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
     return s;
   }
   if (!s.IsNotFound()) {
@@ -268,11 +311,11 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
   vector<RowSet *> to_check;
-  rowsets_->FindRowSetsWithKeyInRange(probe.encoded_key_slice(), &to_check);
+  rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx.txid(), probe, update, result.get());
+    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->changelist(), result.get());
     if (s.ok()) {
-      RETURN_NOT_OK(tx_ctx->AddMutation(tx.txid(), result.Pass()));
+      RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
       return s;
     }
     if (!s.IsNotFound()) {

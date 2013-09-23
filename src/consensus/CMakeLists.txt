@@ -27,6 +27,8 @@ SET(LOG_SRCS
 )
 
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
+target_link_libraries(log gutil)
+target_link_libraries(log kudu_common)
 ADD_DEPENDENCIES(log kudu_common)
 ADD_DEPENDENCIES(log log_proto)
 ADD_DEPENDENCIES(log server)
@@ -38,16 +40,16 @@ SET(CONSENSUS_SRCS
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})
 ADD_DEPENDENCIES(consensus kudu_common)
 ADD_DEPENDENCIES(consensus consensus_proto)
-ADD_DEPENDENCIES(consensus log_proto)
+ADD_DEPENDENCIES(consensus log)
 
 SET(KUDU_TEST_LINK_LIBS
   log
   server
-  consensus_proto
+  consensus
   tserver
   kudu_common
-  gutil
   kudu_util
+  gutil
   cfile
   tablet
   ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS}

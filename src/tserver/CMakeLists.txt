@@ -22,12 +22,17 @@ SET(TSERVER_SRCS
 
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver tserver_proto)
+target_link_libraries(tserver consensus_proto)
+target_link_libraries(tserver log_proto)
+target_link_libraries(tserver log)
+target_link_libraries(tserver consensus)
 
 ADD_DEPENDENCIES(tserver kudu_common)
 ADD_DEPENDENCIES(tserver server)
 ADD_DEPENDENCIES(tserver tablet)
 ADD_DEPENDENCIES(tserver tserver_proto)
 ADD_DEPENDENCIES(tserver krpc)
+ADD_DEPENDENCIES(tserver cfile)
 
 # Tests
 ADD_KUDU_TEST(tablet_server-test)
