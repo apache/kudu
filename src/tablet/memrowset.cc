@@ -59,6 +59,7 @@ MemRowSet::MemRowSet(int64_t id,
 
 Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
+  RETURN_NOT_OK(iter->Init(NULL));
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
     LOG_STRING(INFO, lines)
@@ -75,9 +76,6 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 
 Status MemRowSet::Insert(txid_t txid,
                          const ConstContiguousRow& row) {
-  // TODO: Handle different schema
-  DCHECK(schema_.Equals(row.schema()));
-
   faststring enc_key_buf;
   schema_.EncodeComparableKey(row, &enc_key_buf);
   Slice enc_key(enc_key_buf);
@@ -107,10 +105,7 @@ Status MemRowSet::Insert(txid_t txid,
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_txid = txid;
   mrsrow.header_->mutation_head = NULL;
-  mrsrow.CopyCellsFrom(row);
-
-  // Copy any referred-to memory to arena.
-  RETURN_NOT_OK(kudu::RelocateIndirectDataToArena(&mrsrow, &arena_));
+  RETURN_NOT_OK(ProjectCells(row, &mrsrow));
 
   CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
@@ -129,15 +124,13 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
 
   // Make a copy of the row, and relocate any of its indirected data into
   // our Arena.
-  uint8_t row_copy_buf[row.row_size()];
-  memcpy(row_copy_buf, row.row_data(), row.row_size());
-  ContiguousRow row_copy(schema_, row_copy_buf);
-  RETURN_NOT_OK(RelocateIndirectDataToArena(&row_copy, &arena_));
+  DEFINE_MRSROW_ON_STACK(this, row_copy, row_copy_slice);
+  RETURN_NOT_OK(ProjectCells(row, &row_copy));
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;
   RowChangeListEncoder encoder(schema_, &buf);
-  encoder.SetToReinsert(Slice(row_copy_buf, row.row_size()));
+  encoder.SetToReinsert(row_copy.row_slice());
 
   // Move the REINSERT mutation itself into our Arena.
   Mutation *mut = Mutation::CreateInArena(&arena_, txid, encoder.as_changelist());
@@ -232,6 +225,20 @@ void MemRowSet::SlowMutators() {
   }
 }
 
+Status MemRowSet::ProjectCells(const ConstContiguousRow& src_row, MRSRow *dst_row) {
+  if (schema_.Equals(src_row.schema())) {
+    // the representation of the MRSRow and ConstContiguousRow is the same.
+    // so, instead of using CopyRow we can just do a memcpy.
+    memcpy(dst_row->row_slice_.mutable_data(), src_row.row_data(), dst_row->row_slice_.size());
+    // Copy any referred-to memory to arena.
+    return kudu::RelocateIndirectDataToArena(dst_row, &arena_);
+  } else {
+    RowProjector projector;
+    RETURN_NOT_OK(projector.Init(src_row.schema(), schema_));
+    return projector.ProjectRowForWrite(src_row, dst_row, &arena_);
+  }
+}
+
 MemRowSet::Iterator *MemRowSet::NewIterator(const Schema &projection,
                                           const MvccSnapshot &snap) const {
   return new MemRowSet::Iterator(shared_from_this(), tree_.NewIterator(),
@@ -248,8 +255,9 @@ RowwiseIterator *MemRowSet::NewRowIterator(const Schema &projection,
   return NewIterator(projection, snap);
 }
 
-CompactionInput *MemRowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
-  return CompactionInput::Create(*this, snap);
+CompactionInput *MemRowSet::NewCompactionInput(const Schema& projection,
+                                               const MvccSnapshot &snap) const  {
+  return CompactionInput::Create(*this, projection, snap);
 }
 
 Status MemRowSet::GetBounds(Slice *min_encoded_key,

@@ -80,10 +80,6 @@ class MRSRow {
     return ContiguousRowHelper::nullable_cell_ptr(schema(), row_slice_.data(), col_idx);
   }
 
-  void CopyCellsFrom(const ConstContiguousRow& row) {
-    memcpy(row_slice_.mutable_data(), row.row_data(), row_slice_.size());
-  }
-
   Cell cell(size_t col_idx) const {
     return Cell(this, col_idx);
   }
@@ -230,7 +226,8 @@ class MemRowSet : public RowSet,
                                   const MvccSnapshot &snap) const;
 
   // Create compaction input.
-  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
+  CompactionInput *NewCompactionInput(const Schema& projection,
+                                      const MvccSnapshot &snap) const;
 
   // Return the Schema for the rows in this memrowset.
   const Schema &schema() const {
@@ -280,6 +277,9 @@ class MemRowSet : public RowSet,
   Status Reinsert(txid_t txid,
                   const ConstContiguousRow& row_data,
                   MRSRow *row);
+
+  Status ProjectCells(const ConstContiguousRow& src_row,
+                      MRSRow *dst_row);
 
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 
@@ -334,6 +334,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   }
 
   size_t remaining_in_leaf() const {
+    DCHECK_NE(state_, kUninitialized) << "not initted";
     return iter_->remaining_in_leaf();
   }
 
@@ -342,16 +343,30 @@ class MemRowSet::Iterator : public RowwiseIterator {
   virtual Status FinishBatch();
 
   virtual bool HasNext() const {
+    DCHECK_NE(state_, kUninitialized) << "not initted";
     return state_ != kFinished && iter_->IsValid();
   }
 
+  // NOTE: This method will return a MRSRow with the MemRowSet schema.
+  //       The row is NOT projected using the schema specified to the iterator.
   const MRSRow GetCurrentRow() const {
+    DCHECK_NE(state_, kUninitialized) << "not initted";
     Slice dummy, mrsrow_data;
     iter_->GetCurrentEntry(&dummy, &mrsrow_data);
     return MRSRow(memrowset_.get(), mrsrow_data);
   }
 
+  // Copy the current MRSRow to the 'dst_row' provided using the iterator projection schema.
+  template <class RowType, class ArenaType>
+  Status GetCurrentRow(RowType *dst_row, const Mutation **mutation_head, ArenaType *arena) const {
+    DCHECK(mutation_head != NULL);
+    const MRSRow src_row = GetCurrentRow();
+    *mutation_head = src_row.mutation_head();
+    return projector_.ProjectRowForRead(src_row, dst_row, arena);
+  }
+
   bool Next() {
+    DCHECK_NE(state_, kUninitialized) << "not initted";
     return iter_->Next();
   }
 

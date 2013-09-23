@@ -72,7 +72,8 @@ RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema &projection,
   }
 }
 
-CompactionInput *DuplicatingRowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
+CompactionInput *DuplicatingRowSet::NewCompactionInput(const Schema& projection,
+                                                       const MvccSnapshot &snap) const  {
   LOG(FATAL) << "duplicating rowsets do not act as compaction input";
   return NULL;
 }

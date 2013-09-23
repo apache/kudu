@@ -36,7 +36,8 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const {
+  virtual CompactionInput *NewCompactionInput(const Schema& projection,
+                                              const MvccSnapshot &snap) const {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }

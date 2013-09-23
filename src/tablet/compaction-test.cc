@@ -63,16 +63,18 @@ class TestCompaction : public KuduRowSetTest {
   void UpdateRows(RowSet *rowset, int n_rows, int delta, uint32_t new_val) {
     char keybuf[256];
     faststring update_buf;
+    const Schema& schema = rowset->schema();
+    size_t col_idx = schema.find_column("val");
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
-      RowChangeListEncoder update(schema_, &update_buf);
-      update.AddColumnUpdate(1, &new_val);
+      RowChangeListEncoder update(schema, &update_buf);
+      update.AddColumnUpdate(col_idx, &new_val);
 
-      RowBuilder rb(schema_.CreateKeyProjection());
+      RowBuilder rb(schema.CreateKeyProjection());
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
       MutationResultPB result;
@@ -89,12 +91,12 @@ class TestCompaction : public KuduRowSetTest {
     ASSERT_STATUS_OK(DebugDumpCompactionInput(input, out));
   }
 
-  void DoFlush(CompactionInput *input, const MvccSnapshot &snap,
+  void DoFlush(CompactionInput *input, const Schema& projection, const MvccSnapshot &snap,
                shared_ptr<RowSetMetadata>* rowset_meta) {
     // Flush with a large roll threshold so we only write a single file.
     // This simplifies the test so we always need to reopen only a single rowset.
     const size_t kRollThreshold = 1024 * 1024 * 1024; // 1GB
-    RollingDiskRowSetWriter rsw(tablet_->metadata(), schema_,
+    RollingDiskRowSetWriter rsw(tablet_->metadata(), projection,
                                 BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                 kRollThreshold);
     ASSERT_STATUS_OK(rsw.Open());
@@ -109,24 +111,54 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
-  void DoCompact(const vector<shared_ptr<DiskRowSet> > &rowsets) {
+  void DoCompact(const vector<shared_ptr<DiskRowSet> >& rowsets, const Schema& projection) {
     MvccSnapshot merge_snap(mvcc_);
     vector<shared_ptr<CompactionInput> > merge_inputs;
     BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
-      merge_inputs.push_back(shared_ptr<CompactionInput>(CompactionInput::Create(*rs, merge_snap)));
+      merge_inputs.push_back(shared_ptr<CompactionInput>(CompactionInput::Create(*rs, projection, merge_snap)));
     }
 
-    gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, schema_));
-    DoFlush(compact_input.get(), merge_snap, NULL);
+    gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, projection));
+    DoFlush(compact_input.get(), projection, merge_snap, NULL);
   }
 
-  void FlushAndReopen(const MemRowSet &mrs, shared_ptr<DiskRowSet> *rs) {
+  void FlushAndReopen(const MemRowSet& mrs, shared_ptr<DiskRowSet> *rs, const Schema& projection) {
     MvccSnapshot snap(mvcc_);
     shared_ptr<RowSetMetadata> rowset_meta;
-    gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, snap));
-    DoFlush(input.get(), snap, &rowset_meta);
+    gscoped_ptr<CompactionInput> input(CompactionInput::Create(mrs, projection, snap));
+    DoFlush(input.get(), projection, snap, &rowset_meta);
     // Re-open it
     ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, rs));
+  }
+
+  // Test compaction where each of the input rowsets has
+  // each of the input schemas. The output rowset will
+  // have the 'projection' schema.
+  void DoMerge(const Schema& projection, const vector<Schema>& schemas) {
+    vector<shared_ptr<DiskRowSet> > rowsets;
+
+    // Create one input rowset for each of the input schemas
+    int delta = 0;
+    BOOST_FOREACH(const Schema& schema, schemas) {
+      // Create a memrowset with a bunch of rows and updates.
+      shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema));
+      InsertRows(mrs.get(), 1000, delta);
+      UpdateRows(mrs.get(), 1000, delta, 1);
+
+      // Flush it to disk and re-open it.
+      shared_ptr<DiskRowSet> rs;
+      FlushAndReopen(*mrs, &rs, schema);
+      ASSERT_NO_FATAL_FAILURE();
+      rowsets.push_back(rs);
+
+      // Perform some updates into DMS
+      UpdateRows(rs.get(), 1000, delta, 2);
+      delta++;
+    }
+
+    // Merge them.
+    DoCompact(rowsets, projection);
+    // TODO: Verify compaction results
   }
 
   template<bool OVERLAP_INPUTS>
@@ -156,7 +188,7 @@ class TestCompaction : public KuduRowSetTest {
           InsertRow(mrs.get(), row_key, n);
         }
         shared_ptr<DiskRowSet> rs;
-        FlushAndReopen(*mrs, &rs);
+        FlushAndReopen(*mrs, &rs, schema_);
         ASSERT_NO_FATAL_FAILURE();
         rowsets.push_back(rs);
       }
@@ -182,7 +214,7 @@ class TestCompaction : public KuduRowSetTest {
     }
 
     LOG_TIMING(INFO, "Compacting") {
-      DoCompact(rowsets);
+      DoCompact(rowsets, schema_);
     }
   }
 
@@ -204,7 +236,7 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   // and mutations.
   vector<string> out;
   MvccSnapshot snap(mvcc_);
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, snap));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, schema_, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=0) mutations: [@10(SET val=1), @20(SET val=2)]",
@@ -219,7 +251,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   {
     shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
     InsertRows(mrs.get(), 10, 0);
-    FlushAndReopen(*mrs, &rs);
+    FlushAndReopen(*mrs, &rs, schema_);
     ASSERT_NO_FATAL_FAILURE();
   }
 
@@ -233,7 +265,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
 
   // Check compaction input
   vector<string> out;
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*rs, MvccSnapshot(mvcc_)));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*rs, schema_, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=0) "
@@ -256,7 +288,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // Flush it to disk and re-open.
   shared_ptr<DiskRowSet> rs;
-  FlushAndReopen(*mrs, &rs);
+  FlushAndReopen(*mrs, &rs, schema_);
   ASSERT_NO_FATAL_FAILURE();
 
   // Update the rows with some updates that weren't in the snapshot.
@@ -264,7 +296,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // Catch the updates that came in after the snapshot flush was made.
   MvccSnapshot snap2(mvcc_);
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, snap2));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, schema_, snap2));
 
   // Add some more updates which come into the new rowset while the "reupdate" is happening.
   UpdateRows(rs.get(), 1000, 0, 3);
@@ -281,7 +313,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
-  input.reset(CompactionInput::Create(*rs, MvccSnapshot(mvcc_)));
+  input.reset(CompactionInput::Create(*rs, schema_, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=1) mutations: [@2000(SET val=2), @3000(SET val=3)]",
@@ -289,33 +321,38 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
-  gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, snap3));
+  gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, schema_, snap3));
   shared_ptr<RowSetMetadata> rowset_compact_meta;
-  DoFlush(compact_input.get(), snap3, &rowset_compact_meta);
+  DoFlush(compact_input.get(), schema_, snap3, &rowset_compact_meta);
 }
 
+// Test compacting when all of the inputs and the output have the same schema
 TEST_F(TestCompaction, TestMerge) {
-  vector<shared_ptr<DiskRowSet> > rowsets;
+  vector<Schema> schemas;
+  schemas.push_back(schema_);
+  schemas.push_back(schema_);
+  schemas.push_back(schema_);
+  DoMerge(schemas.back(), schemas);
+}
 
-  // Create three input rowsets
-  for (int delta = 0; delta < 3; delta++) {
-    // Create a memrowset with a bunch of rows and updates.
-    shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema_));
-    InsertRows(mrs.get(), 1000, delta);
-    UpdateRows(mrs.get(), 1000, delta, 1);
+// test compacting when the inputs have different base schemas
+TEST_F(TestCompaction, TestMergeMultipleSchemas) {
+  std::vector<ColumnSchema> columns(schema_.columns());
 
-    // Flush it to disk and re-open it.
-    shared_ptr<DiskRowSet> rs;
-    FlushAndReopen(*mrs, &rs);
-    ASSERT_NO_FATAL_FAILURE();
-    rowsets.push_back(rs);
+  vector<Schema> schemas;
+  schemas.push_back(schema_);
 
-    // Perform some updates into DMS
-    UpdateRows(rs.get(), 1000, delta, 2);
-  }
+  // Add an int column with default
+  uint32_t default_c2 = 10;
+  columns.push_back(ColumnSchema("c2", UINT32, false, &default_c2, &default_c2));
+  schemas.push_back(Schema(columns, schema_.num_key_columns()));
 
-  // Merge them.
-  DoCompact(rowsets);
+  // add a string column with default
+  Slice default_c3("Hello World");
+  columns.push_back(ColumnSchema("c3", STRING, false, &default_c3, &default_c3));
+  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+
+  DoMerge(schemas.back(), schemas);
 }
 
 #ifdef NDEBUG

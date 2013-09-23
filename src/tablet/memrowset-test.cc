@@ -133,6 +133,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
   ASSERT_EQ(2, mrs->entry_count());
 
   gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
+  ASSERT_STATUS_OK(iter->Init(NULL));
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
@@ -192,6 +193,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   ASSERT_EQ(3, mrs->entry_count());
 
   gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
+  ASSERT_STATUS_OK(iter->Init(NULL));
 
   // The first row returned from the iterator should
   // be "goodbye" (row3) sorted on the second key

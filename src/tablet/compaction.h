@@ -28,11 +28,15 @@ class CompactionInput {
   // need to call snap.IsCommitted() on each mutation.
   //
   // TODO: can we make the above less messy?
-  static CompactionInput *Create(const DiskRowSet &rowset, const MvccSnapshot &snap);
+  static CompactionInput *Create(const DiskRowSet &rowset,
+                                 const Schema& projection,
+                                 const MvccSnapshot &snap);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionInput *Create(const MemRowSet &memrowset, const MvccSnapshot &snap);
+  static CompactionInput *Create(const MemRowSet &memrowset,
+                                 const Schema& projection,
+                                 const MvccSnapshot &snap);
 
   // Create an input which merges several other compaction inputs. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.
@@ -85,7 +89,7 @@ class RowSetsInCompaction {
 // One row yielded by CompactionInput::PrepareBlock.
 struct CompactionInputRow {
   RowBlockRow row;
-  Mutation *mutation_head;
+  const Mutation *mutation_head;
 };
 
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.

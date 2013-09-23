@@ -220,7 +220,8 @@ class DiskRowSet : public RowSet {
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 
-  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
+  CompactionInput *NewCompactionInput(const Schema& projection,
+                                      const MvccSnapshot &snap) const;
 
   // Count the number of rows in this rowset.
   Status CountRows(rowid_t *count) const;

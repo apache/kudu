@@ -61,7 +61,10 @@ class RowSet {
                                           const MvccSnapshot &snap) const = 0;
 
   // Create the input to be used for a compaction.
-  virtual CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const = 0;
+  // The provided 'projection' is for the compaction output. Each row
+  // will be projected into this Schema.
+  virtual CompactionInput *NewCompactionInput(const Schema& projection,
+                                              const MvccSnapshot &snap) const = 0;
 
   // Count the number of rows in this rowset.
   virtual Status CountRows(rowid_t *count) const = 0;
@@ -188,7 +191,8 @@ class DuplicatingRowSet : public RowSet {
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;
 
-  CompactionInput *NewCompactionInput(const MvccSnapshot &snap) const;
+  CompactionInput *NewCompactionInput(const Schema& projection,
+                                      const MvccSnapshot &snap) const;
 
   Status CountRows(rowid_t *count) const;
 

@@ -597,7 +597,6 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
-  RETURN_NOT_OK(merge->Init()); // TODO: why is init required here but not above?
 
   // Updating rows in the compaction outputs needs to be tracked or else we
   // loose data on recovery. However because compactions run independently

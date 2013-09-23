@@ -140,7 +140,7 @@ class RowProjector {
   // Use this method only on the read-path.
   // The col_schema.read_default_value() will be used.
   template<class RowType1, class RowType2, class ArenaType>
-  Status ProjectRowForRead(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) {
+  Status ProjectRowForRead(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) const {
     return ProjectRow<RowType1, RowType2, ArenaType, true>(src_row, dst_row, dst_arena);
   }
 
@@ -150,7 +150,7 @@ class RowProjector {
   // Use this method only on the write-path.
   // The col_schema.write_default_value() will be used.
   template<class RowType1, class RowType2, class ArenaType>
-  Status ProjectRowForWrite(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) {
+  Status ProjectRowForWrite(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) const {
     return ProjectRow<RowType1, RowType2, ArenaType, false>(src_row, dst_row, dst_arena);
   }
 
@@ -192,7 +192,10 @@ class RowProjector {
   // Project a row from one schema into another, using the projection mapping.
   // Indirected data is copied into the provided dst arena.
   template<class RowType1, class RowType2, class ArenaType, bool FOR_READ>
-  Status ProjectRow(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) {
+  Status ProjectRow(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) const {
+    DCHECK_SCHEMA_EQ(base_schema_, src_row.schema());
+    DCHECK_SCHEMA_EQ(projection_, dst_row->schema());
+
     // Copy directly from base Data
     BOOST_FOREACH(const ProjectionIdxMapping& base_mapping, base_cols_mapping_) {
       typename RowType1::Cell src_cell = src_row.cell(base_mapping.second);

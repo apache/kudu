@@ -18,8 +18,9 @@ namespace {
 class MemRowSetCompactionInput : public CompactionInput {
  public:
   MemRowSetCompactionInput(const MemRowSet &memrowset,
-                          const MvccSnapshot &snap)
-    : iter_(memrowset.NewIterator(memrowset.schema(), snap)) {
+                          const MvccSnapshot &snap,
+                          const Schema& projection)
+    : iter_(memrowset.NewIterator(projection, snap)) {
   }
 
   virtual Status Init() {
@@ -31,7 +32,6 @@ class MemRowSetCompactionInput : public CompactionInput {
   }
 
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
-
     int num_in_block = iter_->remaining_in_leaf();
     block->resize(num_in_block);
 
@@ -48,10 +48,9 @@ class MemRowSetCompactionInput : public CompactionInput {
 
       // TODO: A copy is performed to have all CompactionInputRow of the same type
       CompactionInputRow &input_row = block->at(i);
-      MRSRow ms_row = iter_->GetCurrentRow();
       input_row.row.Reset(row_block_.get(), i);
-      CopyRow(ms_row, &input_row.row, reinterpret_cast<Arena*>(NULL));
-      input_row.mutation_head = ms_row.mutation_head();
+      RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row, &input_row.mutation_head,
+                                         reinterpret_cast<Arena*>(NULL)));
     }
 
     return Status::OK();
@@ -370,18 +369,20 @@ class MergeCompactionInput : public CompactionInput {
 ////////////////////////////////////////////////////////////
 
 CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
+                                         const Schema& projection,
                                          const MvccSnapshot &snap) {
 
-  shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(rowset.schema()));
+  shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
-  shared_ptr<DeltaIterator> deltas(rowset.delta_tracker_->NewDeltaIterator(rowset.schema(), snap));
+  shared_ptr<DeltaIterator> deltas(rowset.delta_tracker_->NewDeltaIterator(projection, snap));
 
   return new RowSetCompactionInput(base_iter.Pass(), deltas);
 }
 
 CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
+                                         const Schema& projection,
                                          const MvccSnapshot &snap) {
-  return new MemRowSetCompactionInput(memrowset, snap);
+  return new MemRowSetCompactionInput(memrowset, snap, projection);
 }
 
 CompactionInput *CompactionInput::Merge(const vector<shared_ptr<CompactionInput> > &inputs,
@@ -394,7 +395,7 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap, cons
                                                  shared_ptr<CompactionInput> *out) const {
   vector<shared_ptr<CompactionInput> > inputs;
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
-    shared_ptr<CompactionInput> input(rs->NewCompactionInput(snap));
+    shared_ptr<CompactionInput> input(rs->NewCompactionInput(schema, snap));
     inputs.push_back(input);
   }
 
@@ -417,7 +418,7 @@ void RowSetsInCompaction::DumpToLog() const {
 
 static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
                                              const MvccSnapshot &snap,
-                                             Mutation *mutation_head,
+                                             const Mutation *mutation_head,
                                              RowBlockRow *row,
                                              bool *is_deleted) {
   *is_deleted = false;
@@ -472,7 +473,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
   vector<CompactionInputRow> rows;
   const Schema &schema(input->schema());
 
-  RowBlock block(schema, 100, NULL);
+  RowBlock block(out->schema(), 100, NULL);
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
@@ -481,7 +482,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
       RowBlockRow dst_row = block.row(n);
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
-      DVLOG(2) << "Row: " << schema.DebugRow(dst_row) <<
+      DVLOG(2) << "Row: " << dst_row.schema().DebugRow(dst_row) <<
         " mutations: " << Mutation::StringifyMutationList(schema, input_row.mutation_head);
 
       bool is_deleted;
@@ -518,6 +519,8 @@ Status ReupdateMissedDeltas(const string &tablet_name,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets) {
+  RETURN_NOT_OK(input->Init());
+
   VLOG(1) << "Re-updating missed deltas between snapshot " <<
     snap_to_exclude.ToString() << " and " << snap_to_include.ToString();
 
@@ -651,12 +654,12 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
-  const Schema &schema = input->schema();
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+      const Schema& schema = input_row.row.schema();
       LOG_STRING(INFO, lines) << schema.DebugRow(input_row.row) <<
         " mutations: " + Mutation::StringifyMutationList(schema, input_row.mutation_head);
     }

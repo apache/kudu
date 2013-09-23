@@ -370,8 +370,9 @@ RowwiseIterator *DiskRowSet::NewRowIterator(const Schema &projection,
                                                                 mvcc_snap)));
 }
 
-CompactionInput *DiskRowSet::NewCompactionInput(const MvccSnapshot &snap) const  {
-  return CompactionInput::Create(*this, snap);
+CompactionInput *DiskRowSet::NewCompactionInput(const Schema& projection,
+                                                const MvccSnapshot &snap) const  {
+  return CompactionInput::Create(*this, projection, snap);
 }
 
 Status DiskRowSet::MutateRow(txid_t txid,
@@ -436,7 +437,7 @@ Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
   gscoped_ptr<CompactionInput> input(
-    NewCompactionInput(MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+    NewCompactionInput(schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
   return DebugDumpCompactionInput(input.get(), lines);
 }
 

@@ -22,6 +22,11 @@
     DCHECK((s1).Equals((s2))) << "Schema " << (s1).ToString() << " does not match " << (s2).ToString(); \
   } while (0);
 
+#define DCHECK_KEY_PROJECTION_SCHEMA_EQ(s1, s2) \
+  do { \
+    DCHECK((s1).KeyEquals((s2))) << "Key-Projection Schema " << (s1).ToString() << " does not match " << (s2).ToString(); \
+  } while (0);
+
 namespace kudu {
 
 using std::vector;
@@ -315,8 +320,7 @@ class Schema {
   // Compare two rows of this schema.
   template<class RowTypeA, class RowTypeB>
   int Compare(const RowTypeA& lhs, const RowTypeB& rhs) const {
-    // TODO: Handle rows with different schema?
-    DCHECK(Equals(lhs.schema()) && Equals(rhs.schema()));
+    DCHECK(KeyEquals(lhs.schema()) && KeyEquals(rhs.schema()));
 
     for (size_t col = 0; col < num_key_columns_; col++) {
       int col_compare = column(col).Compare(lhs.cell_ptr(col), rhs.cell_ptr(col));
@@ -348,7 +352,8 @@ class Schema {
   // Returns the encoded key.
   template <class RowType>
   Slice EncodeComparableKey(const RowType& row, faststring *dst) const {
-    DCHECK_SCHEMA_EQ(*this, row.schema());
+    DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, row.schema());
+
     dst->clear();
     for (size_t i = 0; i < num_key_columns_; i++) {
       DCHECK(!cols_[i].is_nullable());
@@ -374,6 +379,16 @@ class Schema {
       if (!this->cols_[i].Equals(other.cols_[i])) return false;
     }
 
+    return true;
+  }
+
+  // Return true if the key projection schemas have exactly the same set of
+  // columns and respective types.
+  bool KeyEquals(const Schema& other) const {
+    if (this->num_key_columns_ != other.num_key_columns_) return false;
+    for (size_t i = 0; i < this->num_key_columns_; i++) {
+      if (!this->cols_[i].Equals(other.cols_[i])) return false;
+    }
     return true;
   }
 
