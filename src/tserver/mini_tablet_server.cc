@@ -5,17 +5,35 @@
 #include <glog/logging.h>
 
 #include "common/schema.h"
+#include "gutil/macros.h"
 #include "server/metadata.h"
 #include "server/metadata_util.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
+#include "consensus/log.h"
+#include "consensus/log.pb.h"
+#include "consensus/consensus.h"
+#include "consensus/consensus.pb.h"
+#include "consensus/local_consensus.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
+using kudu::consensus::Consensus;
+using kudu::consensus::ConsensusOptions;
+using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::QuorumPB;
+using kudu::consensus::OpId;
+using kudu::consensus::LEADER;
+using kudu::consensus::LocalConsensus;
+using kudu::log::Log;
+using kudu::log::LogOptions;
 using kudu::metadata::TabletMetadata;
+using kudu::metadata::TabletServerPB;
 using kudu::tablet::Tablet;
+using kudu::tablet::TabletPeer;
 
 namespace kudu {
 namespace tserver {
@@ -70,9 +88,17 @@ Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
   gscoped_ptr<TabletMetadata> meta(
     new TabletMetadata(fs_manager_.get(), master_block));
 
+  shared_ptr<metadata::TabletSuperBlockPB> super_block;
+  meta->ToSuperBlock(&super_block);
+
   shared_ptr<Tablet> t(new Tablet(meta.Pass(), schema));
   RETURN_NOT_OK(t->CreateNew());
-  server_->RegisterTablet(t);
+
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(t));
+  RETURN_NOT_OK(tablet_peer->Init());
+  RETURN_NOT_OK(tablet_peer->Start());
+
+  server_->RegisterTablet(tablet_peer);
   return Status::OK();
 }
 
@@ -84,6 +110,11 @@ const Sockaddr MiniTabletServer::bound_rpc_addr() const {
 const Sockaddr MiniTabletServer::bound_http_addr() const {
   CHECK(started_);
   return server_->first_http_address();
+}
+
+FsManager* MiniTabletServer::fs_manager() {
+  CHECK(started_);
+  return fs_manager_.get();
 }
 
 } // namespace tserver

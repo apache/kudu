@@ -126,6 +126,12 @@ class FsManager {
   //  Wal read/write interfaces
   // ==========================================================================
 
+  // TODO the Log (the actual implementation of WAL) does not comply with how files
+  // are created/retrieved here. For instance we moved away from using timestamps.
+  // This needs to be changed to comply to the actual log file/segment format.
+  // For now the Log simply uses FsManager's exposed env_ to perform all of this.
+
+
   Status NewWalFile(const string& server, const string& prefix, uint64_t timestamp,
                     shared_ptr<WritableFile> *writer);
   Status OpenWalFile(const string& server, const string& prefix, uint64_t timestamp,

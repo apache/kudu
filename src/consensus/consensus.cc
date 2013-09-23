@@ -21,7 +21,7 @@ ConsensusContext::ConsensusContext(Consensus* consensus,
 void ConsensusContext::Commit(gscoped_ptr<CommitMsg> commit) {
   commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->id());
   commit_msg_.reset(commit.release());
-  consensus_->Commit(this, commit.get());
+  consensus_->Commit(this, commit_msg_.get());
 }
 
 } // namespace consensus

@@ -33,9 +33,13 @@ ADD_DEPENDENCIES(tserver server)
 ADD_DEPENDENCIES(tserver tablet)
 ADD_DEPENDENCIES(tserver tserver_proto)
 ADD_DEPENDENCIES(tserver krpc)
-ADD_DEPENDENCIES(tserver cfile)
+ADD_DEPENDENCIES(tserver log)
+ADD_DEPENDENCIES(tserver log_proto)
+ADD_DEPENDENCIES(tserver consensus)
+ADD_DEPENDENCIES(tserver consensus_proto)
 
 # Tests
+#SET(KUDU_TEST_LINK_LIBS tserver ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(tablet_server-test)
 ADD_KUDU_TEST(scanners-test)
 

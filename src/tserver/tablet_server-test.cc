@@ -10,11 +10,14 @@
 #include "common/wire_protocol.h"
 #include "common/wire_protocol-test-util.h"
 #include "common/schema.h"
+#include "consensus/log_reader.h"
 #include "gutil/strings/join.h"
+#include "gutil/stl_util.h"
 #include "server/metadata.h"
 #include "server/metadata_util.h"
 #include "server/rpc_server.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet_peer.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
@@ -27,10 +30,13 @@
 
 using std::string;
 using std::tr1::shared_ptr;
+using kudu::log::LogEntry;
+using kudu::log::LogReader;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tablet::Tablet;
+using kudu::tablet::TabletPeer;
 
 namespace kudu {
 namespace tserver {
@@ -52,14 +58,13 @@ class TabletServerTest : public KuduTest {
 
     // Set up a tablet inside the server.
     ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_));
+    ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_peer_));
 
     // Connect to it.
     ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_rpc_addr(), &proxy_));
   }
 
   virtual void TearDown() {
-    ASSERT_STATUS_OK(mini_server_->Shutdown());
     KuduTest::TearDown();
   }
 
@@ -80,7 +85,7 @@ class TabletServerTest : public KuduTest {
   void InsertTestRows(int num_rows) {
     tablet::TransactionContext tx_ctx;
     for (int i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_->Insert(&tx_ctx, BuildTestRow(i)));
+      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(i)));
       tx_ctx.Reset();
     }
   }
@@ -118,6 +123,19 @@ class TabletServerTest : public KuduTest {
     } while (resp.has_more_results());
   }
 
+  void CheckLogEntries(int expected) {
+    mini_server_->Shutdown();
+
+    gscoped_ptr<LogReader> reader;
+    ASSERT_STATUS_OK(LogReader::Open(mini_server_->fs_manager(), kTabletId, &reader));
+    ASSERT_EQ(1, reader->size());
+
+    vector<LogEntry* > entries;
+    ElementDeleter deleter(&entries);
+    ASSERT_STATUS_OK(reader->ReadEntries(reader->segments()[0], &entries));
+    ASSERT_EQ(expected, entries.size());
+  }
+
   Schema schema_;
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
@@ -125,7 +143,7 @@ class TabletServerTest : public KuduTest {
   shared_ptr<Messenger> client_messenger_;
 
   gscoped_ptr<MiniTabletServer> mini_server_;
-  shared_ptr<Tablet> tablet_;
+  shared_ptr<TabletPeer> tablet_peer_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
 };
 
@@ -188,7 +206,6 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_FALSE(resp.has_error());
     req.clear_to_insert_rows();
   }
-
   // Send an actual row insert.
   {
     controller.Reset();
@@ -226,6 +243,9 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.per_row_errors().Get(0).error());
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
   }
+
+  // one entry for each request and one for each commit
+  CheckLogEntries(8);
 }
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
@@ -334,6 +354,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     controller.Reset();
   }
 
+  // one entry for each request and one for each commit
+  CheckLogEntries(10);
+
 }
 
 // Test various invalid calls for mutations
@@ -411,6 +434,9 @@ TEST_F(TabletServerTest, TestInvalidMutations) {
                         "User may not specify REINSERT");
     controller.Reset();
   }
+
+  // one entry for each request and one for each commit
+  CheckLogEntries(8);
 
   // TODO: add test for UPDATE with a column which doesn't exist,
   // or otherwise malformed.

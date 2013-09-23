@@ -50,7 +50,8 @@ message NoOp {}
 // at least one round of the consensus algorithm.
 enum OperationType {
   WRITE_OP = 0;
-  NO_OP = 1;
+  WRITE_ABORT = 1;
+  NO_OP = 2;
 }
 
 // A Replicate message, sent to replicas by leader to indicate this operation must
@@ -65,8 +66,7 @@ message ReplicateMsg {
 
 // A commit message for a previous operation.
 // This is a commit in the consensus sense and may abort/commit any operation
-// that required a consensus round, such as MutatingOp or a Configuration
-// change.
+// that required a consensus round.
 message CommitMsg {
   // the id of the commit message itself
   required OpId id = 1;

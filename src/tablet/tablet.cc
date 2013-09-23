@@ -139,6 +139,18 @@ Status Tablet::NewRowIterator(const Schema &projection,
   return Status::OK();
 }
 
+Status Tablet::CreatePreparedInsert(const ConstContiguousRow* row,
+                                    gscoped_ptr<PreparedRowWrite>* row_write) {
+  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
+  gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
+                                                        probe->encoded_key_slice(),
+                                                        LockManager::LOCK_EXCLUSIVE));
+  row_write->reset(new PreparedRowWrite(row, probe.Pass(), row_lock.Pass()));
+
+  // when we have a more advanced lock manager, acquiring the row lock might fail
+  // but for now always return OK.
+  return Status::OK();
+}
 
 Status Tablet::Insert(TransactionContext *tx_ctx,
                       const ConstContiguousRow& row) {
@@ -151,9 +163,8 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
 
-  gscoped_ptr<PreparedRowWrite> row_write(
-      PreparedRowWrite::CreatePreparedInsert(&lock_manager_,
-                                       &row));
+  gscoped_ptr<PreparedRowWrite> row_write;
+  RETURN_NOT_OK(CreatePreparedInsert(&row, &row_write));
   tx_ctx->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
@@ -209,7 +220,22 @@ Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
   return s;
 }
 
+Status Tablet::CreatePreparedMutate(const ConstContiguousRow* row_key,
+                                    const RowChangeList* changelist,
+                                    gscoped_ptr<PreparedRowWrite>* row_write) {
+  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
+  gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
+                                                        probe->encoded_key_slice(),
+                                                        LockManager::LOCK_EXCLUSIVE));
+  row_write->reset(new PreparedRowWrite(row_key, changelist, probe.Pass(), row_lock.Pass()));
+
+  // when we have a more advanced lock manager, acquiring the row lock might fail
+  // but for now always return OK.
+  return Status::OK();
+}
+
 Status Tablet::MutateRow(TransactionContext *tx_ctx,
+                         const Schema& schema,
                          const ConstContiguousRow& row_key,
                          const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
@@ -261,10 +287,8 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   // It is critical, however, that we're consistent with this choice between here
   // and Insert() or else there's a possibility of deadlock.
 
-  gscoped_ptr<PreparedRowWrite> row_write(
-      PreparedRowWrite::CreatePreparedMutate(&lock_manager_,
-                                       &row_key,
-                                       &update));
+  gscoped_ptr<PreparedRowWrite> row_write;
+  RETURN_NOT_OK(CreatePreparedMutate(&row_key, &update, &row_write));
   tx_ctx->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(

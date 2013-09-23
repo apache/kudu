@@ -10,6 +10,8 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "server/metadata.pb.h"
+#include "server/webserver_options.h"
 #include "server/server_base.h"
 #include "tserver/tablet_server_options.h"
 #include "tserver/tserver.pb.h"
@@ -28,11 +30,13 @@ class ServicePool;
 
 namespace tablet {
 class Tablet;
+class TabletPeer;
 }
 
 namespace tserver {
 
 class ScannerManager;
+class MutatorManager;
 
 class TabletServer : public server::ServerBase {
  public:
@@ -50,13 +54,13 @@ class TabletServer : public server::ServerBase {
 
   string ToString() const;
 
-  // Register the given tablet to be managed by this tablet server.
-  void RegisterTablet(const std::tr1::shared_ptr<tablet::Tablet>& tablet);
+  // Register the given tablet peer to be managed by this tablet server.
+  void RegisterTablet(const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
 
-  // Lookup the given tablet by its ID.
+  // Lookup the given tablet peer by its ID.
   // Returns true if the tablet is found successfully.
   bool LookupTablet(const string& tablet_id,
-                    std::tr1::shared_ptr<tablet::Tablet>* tablet) const;
+                    std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
 
 
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
@@ -72,10 +76,13 @@ class TabletServer : public server::ServerBase {
 
   gscoped_ptr<FsManager> fs_manager_;
 
+  metadata::TabletServerPB tablet_server_pb_;
+
+
   // The singular hosted tablet.
   // TODO: This will be replaced with some kind of map of tablet ID to
   // tablet in the future.
-  std::tr1::shared_ptr<tablet::Tablet> tablet_;
+  std::tr1::shared_ptr<tablet::TabletPeer> tablet_peer_;
 
   // Manager for open scanners from clients.
   // This is always non-NULL. It is scoped only to minimize header

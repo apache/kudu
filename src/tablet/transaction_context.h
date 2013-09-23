@@ -16,10 +16,13 @@
 #include "tablet/rowset.h"
 #include "tablet/tablet.pb.h"
 #include "tserver/tserver.pb.h"
+#include "util/auto_release_pool.h"
 
 namespace kudu {
+
 namespace tablet {
 
+class TabletPeer;
 class PreparedRowWrite;
 
 // A transaction context for a batch of inserts/mutates. This class holds and
@@ -43,27 +46,29 @@ class TransactionContext {
  public:
   TransactionContext()
       : unsuccessful_ops_(0),
-        mvcc_(NULL),
+        tablet_peer_(NULL),
         rpc_ctx_(NULL),
         request_(NULL),
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL),
         consensus_ctx_(NULL) {
+    result_pb_.set_txid(txid_t::kInvalidTxId.v);
   }
 
-  TransactionContext(MvccManager *mvcc,
+  TransactionContext(TabletPeer* tablet_peer,
                      rpc::RpcContext *rpc_ctx,
                      const tserver::WriteRequestPB *request,
                      tserver::WriteResponsePB *response)
       : unsuccessful_ops_(0),
-        mvcc_(mvcc),
+        tablet_peer_(tablet_peer),
         rpc_ctx_(rpc_ctx),
         request_(request),
         response_(response),
         component_lock_(NULL),
         mvcc_tx_(NULL),
         consensus_ctx_(NULL) {
+    result_pb_.set_txid(txid_t::kInvalidTxId.v);
   }
 
   // Adds an applied insert to this TransactionContext, including the
@@ -95,6 +100,10 @@ class TransactionContext {
   // perform recovery.
   const TxResultPB& Result() const {
     return result_pb_;
+  }
+
+  TabletPeer* tablet_peer() {
+    return tablet_peer_;
   }
 
   // Returns the original client request for this transaction, if there was
@@ -171,8 +180,14 @@ class TransactionContext {
     return consensus_ctx_.get();
   }
 
+  // Sets a heap object to be managed by this transaction's AutoReleasePool.
+  template <class T>
+  T* AddToAutoReleasePool(T* t) {
+    return pool_.Add(t);
+  }
+
   // Resets this TransactionContext, releasing all locks, destroying all prepared
-  // writes, clearing the transaction result _and_ commiting the current Mvcc
+  // writes, clearing the transaction result _and_ committing the current Mvcc
   // transaction.
   void Reset();
 
@@ -186,23 +201,24 @@ class TransactionContext {
   TxResultPB result_pb_;
   int32_t unsuccessful_ops_;
 
-  // The Mvcc transaction manager, managed by Tablet and set if this is a
-  // transaction started by the prepare task.
-  MvccManager *mvcc_;
+  // The tablet peer that is coordinating this transaction.
+  TabletPeer* tablet_peer_;
 
   // pointers to the rpc context, request and response, lifecyle
   // is managed by the rpc subsystem. These pointers maybe NULL if the
   // transaction was not initiated by an RPC call.
-  rpc::RpcContext *rpc_ctx_;
-  const tserver::WriteRequestPB *request_;
-  tserver::WriteResponsePB *response_;
+  rpc::RpcContext* rpc_ctx_;
+  const tserver::WriteRequestPB* request_;
+  tserver::WriteResponsePB* response_;
 
   // the rows and locks as transformed/acquired by the prepare task
-  vector<PreparedRowWrite *> rows_;
+  vector<PreparedRowWrite*> rows_;
   // the component lock, acquired by all inserters/updaters
   gscoped_ptr<boost::shared_lock<rw_spinlock> > component_lock_;
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
   gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
+
+  AutoReleasePool pool_;
 };
 
 // Calculates type of the mutation based on the set fields and number of targets.
@@ -217,17 +233,6 @@ MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
 // of this class.
 class PreparedRowWrite {
  public:
-
-  // Creates a PreparedRowWrite with write_type() INSERT, acquires the row lock
-  // for the row and creates a probe for later use.
-  static PreparedRowWrite* CreatePreparedInsert(LockManager* lock_manager,
-                                          const ConstContiguousRow* row);
-
-  // Creates a PreparedRowWrite with write_type() MUTATE, acquires the row lock
-  // for the row and creates a probe for later use.
-  static PreparedRowWrite* CreatePreparedMutate(LockManager* lock_manager,
-                                          const ConstContiguousRow* row_key,
-                                          const RowChangeList* changelist);
 
   const ConstContiguousRow* row() const {
     return row_;
@@ -255,12 +260,14 @@ class PreparedRowWrite {
 
  private:
 
-  // ctors for inserts
+  friend class Tablet;
+
+  // ctor for inserts
   PreparedRowWrite(const ConstContiguousRow* row,
                    const gscoped_ptr<RowSetKeyProbe> probe,
                    const gscoped_ptr<ScopedRowLock> lock);
 
-  // ctors for mutations
+  // ctor for mutations
   PreparedRowWrite(const ConstContiguousRow* row_key,
                    const RowChangeList* mutations,
                    const gscoped_ptr<RowSetKeyProbe> probe,

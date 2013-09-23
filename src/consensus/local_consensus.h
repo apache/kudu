@@ -31,13 +31,11 @@ class LocalConsensus : public Consensus {
   Status Append(gscoped_ptr<ReplicateMsg> entry,
                 const std::tr1::shared_ptr<FutureCallback>& repl_callback,
                 const std::tr1::shared_ptr<FutureCallback>& commit_callback,
-                ConsensusContext** context);
+                gscoped_ptr<ConsensusContext>* context);
 
   Status Commit(ConsensusContext* context, CommitMsg *commit);
 
-  Status Quit() {
-    return Status::OK();
-  }
+  Status Shutdown();
 
   uint8_t n_majority() const {
     return 1;

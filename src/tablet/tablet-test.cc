@@ -67,11 +67,11 @@ TYPED_TEST(TestTablet, DISABLED_TestMVCCAfterFlush) {
   // Insert 5 rows into the memrowset.
   // These rows will be inserted with txid 0 through 4.
   vector<MvccSnapshot> snaps;
-  snaps.push_back(MvccSnapshot(this->tablet_->mvcc_manager()));
+  snaps.push_back(MvccSnapshot(*this->tablet_->mvcc_manager()));
 
   for (int i = 0; i < 5; i++) {
     this->InsertTestRows(i, 1, 0);
-    snaps.push_back(MvccSnapshot(this->tablet_->mvcc_manager()));
+    snaps.push_back(MvccSnapshot(*this->tablet_->mvcc_manager()));
   }
 
   // TODO: also update a row in a bunch of transactions and make sure

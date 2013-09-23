@@ -1,0 +1,234 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+#include "tablet/tasks/tasks.h"
+
+#include <vector>
+
+#include "common/wire_protocol.h"
+#include "tablet/tablet_peer.h"
+#include "tablet/transaction_context.h"
+#include "tserver/tserver.pb.h"
+
+namespace kudu {
+namespace tablet {
+
+using consensus::CommitMsg;
+using consensus::WRITE_OP;
+using boost::shared_lock;
+using tserver::TabletServerErrorPB;
+using tserver::WriteRequestPB;
+using tserver::WriteResponsePB;
+
+static void SetupError(TabletServerErrorPB* error,
+                       const Status& s,
+                       TabletServerErrorPB::Code code,
+                       rpc::RpcContext* context) {
+  StatusToPB(s, error->mutable_status());
+  error->set_code(code);
+}
+
+static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
+                             WriteResponsePB* resp,
+                             rpc::RpcContext* context,
+                             const Schema &tablet_schema,
+                             bool is_inserts_block,
+                             Schema* client_schema,
+                             vector<const uint8_t*>* row_block) {
+
+  // Check that the schema sent by the user matches the schema of the tablet.
+  Status s = ColumnPBsToSchema(block_pb->schema(), client_schema);
+  if (!s.ok()) {
+    SetupError(resp->mutable_error(), s,
+               TabletServerErrorPB::INVALID_SCHEMA,
+               context);
+    return s;
+  }
+
+  if (!client_schema->Equals(tablet_schema)) {
+
+    s = Status::InvalidArgument("Mismatched schema, expected",
+                                tablet_schema.ToString());
+    // TODO: support schema evolution.
+    SetupError(resp->mutable_error(),
+               s,
+               TabletServerErrorPB::MISMATCHED_SCHEMA,
+               context);
+    return s;
+  }
+
+  if (is_inserts_block) {
+    s = ExtractRowsFromRowBlockPB(*client_schema, block_pb, row_block);
+  } else {
+    s = ExtractRowsFromRowBlockPB(client_schema->CreateKeyProjection(),
+                                  block_pb,
+                                  row_block);
+  }
+
+  if (!s.ok()) {
+    SetupError(resp->mutable_error(), s,
+               TabletServerErrorPB::INVALID_ROW_BLOCK,
+               context);
+    return s;
+  }
+  return Status::OK();
+}
+
+PrepareTask::PrepareTask(TransactionContext *tx_ctx)
+: tx_ctx_(tx_ctx) {
+}
+
+Status PrepareTask::Run() {
+
+  // In order to avoid a copy, we mutate the row blocks for insert and
+  // mutate in-place. Because the RPC framework gives us our request as a
+  // const argument, we have to const_cast it away here. It's a little hacky,
+  // but the alternative of making all RPCs get non-const requests doesn't
+  // seem that great either, since this is a rare circumstance.
+  WriteRequestPB* mutable_request =
+      const_cast<WriteRequestPB*>(tx_ctx_->request());
+
+  Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
+
+  // Decode everything first so that we give up if something major is wrong.
+  vector<const uint8_t *> to_insert;
+  Status s = Status::OK();
+
+  // TODO
+  gscoped_ptr<Schema> inserts_client_schema(new Schema);
+  if (mutable_request->has_to_insert_rows()) {
+    s = DecodeRowBlock(mutable_request->mutable_to_insert_rows(),
+                       tx_ctx_->response(),
+                       tx_ctx_->rpc_context(),
+                       tablet->schema(),
+                       true,
+                       inserts_client_schema.get(),
+                       &to_insert);
+    if (PREDICT_FALSE(!s.ok())) {
+      return s;
+    }
+  }
+
+  gscoped_ptr<Schema> mutates_client_schema(new Schema);
+  vector<const uint8_t *> to_mutate;
+  if (mutable_request->has_to_mutate_row_keys()) {
+    s = DecodeRowBlock(mutable_request->mutable_to_mutate_row_keys(),
+                       tx_ctx_->response(),
+                       tx_ctx_->rpc_context(),
+                       tablet->schema(),
+                       false,
+                       mutates_client_schema.get(),
+                       &to_mutate);
+    if (PREDICT_FALSE(!s.ok())) {
+      return s;
+    }
+  }
+
+  vector<const RowChangeList *> mutations;
+  s = ExtractMutationsFromBuffer(to_mutate.size(),
+                                 reinterpret_cast<const uint8_t*>(
+                                     mutable_request->encoded_mutations().data()),
+                                     mutable_request->encoded_mutations().size(),
+                                     &mutations);
+
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupError(tx_ctx_->response()->mutable_error(),
+               s,
+               TabletServerErrorPB::INVALID_MUTATION,
+               tx_ctx_->rpc_context());
+    return s;
+  }
+
+  // Now acquire row locks and prepare everything for apply
+  BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
+    // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
+    // old API that has a Mutate method that receives the row as a reference.
+    ConstContiguousRow* row = new ConstContiguousRow(*inserts_client_schema,
+                                                     row_ptr);
+    row = tx_ctx_->AddToAutoReleasePool(row);
+
+    gscoped_ptr<PreparedRowWrite> row_write;
+    RETURN_NOT_OK(tablet->CreatePreparedInsert(row, &row_write));
+    tx_ctx_->add_prepared_row(row_write.Pass());
+  }
+
+  Schema mutates_key_projection = mutates_client_schema->CreateKeyProjection();
+  gscoped_ptr<Schema> mutates_key_projection_ptr(new Schema);
+  mutates_key_projection_ptr->swap(mutates_key_projection);
+
+  int i = 0;
+  BOOST_FOREACH(const uint8_t* row_key_ptr, to_mutate) {
+    // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
+    // old API that has a Mutate method that receives the row as a reference.
+    ConstContiguousRow* row_key = new ConstContiguousRow(*mutates_key_projection_ptr,
+                                                         row_key_ptr);
+    row_key = tx_ctx_->AddToAutoReleasePool(row_key);
+    const RowChangeList* mutation = tx_ctx_->AddToAutoReleasePool(mutations[i]);
+
+    gscoped_ptr<PreparedRowWrite> row_write;
+    RETURN_NOT_OK(tablet->CreatePreparedMutate(row_key, mutation, &row_write));
+    tx_ctx_->add_prepared_row(row_write.Pass());
+    ++i;
+  }
+
+  // acquire the component lock just before finishing prepare
+  gscoped_ptr<shared_lock<rw_spinlock> > component_lock_(
+      new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
+  tx_ctx_->set_component_lock(component_lock_.Pass());
+
+  tx_ctx_->AddToAutoReleasePool(inserts_client_schema.release());
+  tx_ctx_->AddToAutoReleasePool(mutates_key_projection_ptr.release());
+  return s;
+}
+
+// No support for abort, currently
+bool PrepareTask::Abort() {
+  return false;
+}
+
+ApplyTask::ApplyTask(tablet::TransactionContext *tx_ctx)
+: tx_ctx_(tx_ctx) {
+}
+
+Status ApplyTask::Run() {
+
+  tx_ctx_->start_mvcc_tx();
+  Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
+
+  int i = 0;
+  Status s;
+  BOOST_FOREACH(const PreparedRowWrite *row, tx_ctx_->rows()) {
+    switch (row->write_type()) {
+      case TxOperationPB::INSERT: {
+        s = tablet->InsertUnlocked(tx_ctx_, row);
+        break;
+      }
+      case TxOperationPB::MUTATE: {
+        s = tablet->MutateRowUnlocked(tx_ctx_, row);
+        break;
+      }
+    }
+    if (PREDICT_FALSE(!s.ok())) {
+      WriteResponsePB::PerRowErrorPB* error = tx_ctx_->response()->add_per_row_errors();
+      error->set_row_index(i);
+      error->set_is_insert(row->write_type() == TxOperationPB::INSERT);
+      StatusToPB(s, error->mutable_error());
+    }
+    i++;
+  }
+
+  // Perform early lock release after we've applied all changes
+  tx_ctx_->release_locks();
+
+  gscoped_ptr<CommitMsg> commit(new CommitMsg());
+  commit->mutable_result()->CopyFrom(tx_ctx_->Result());
+  commit->set_op_type(WRITE_OP);
+  tx_ctx_->consensus_ctx()->Commit(commit.Pass());
+  return Status::OK();
+}
+
+bool ApplyTask::Abort() {
+  return false;
+}
+
+} // namespace tablet
+} // namespace kudu

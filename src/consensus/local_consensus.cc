@@ -14,10 +14,19 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
                                log::Log* log)
     : log_(log),
       log_executor_(TaskExecutor::CreateNew(1)),
-      commit_executor_(TaskExecutor::CreateNew(1)) {
+      commit_executor_(TaskExecutor::CreateNew(1)),
+      next_op_id_(1) {
 }
 
 Status LocalConsensus::Start() {
+  return Status::OK();
+}
+
+Status LocalConsensus::Shutdown() {
+  log_executor_->Shutdown();
+  commit_executor_->Shutdown();
+  RETURN_NOT_OK(log_->Close());
+  VLOG(1) << "LocalConsensus Shutdown!";
   return Status::OK();
 }
 
@@ -25,7 +34,7 @@ Status LocalConsensus::Append(
     gscoped_ptr<ReplicateMsg> entry,
     const std::tr1::shared_ptr<FutureCallback>& repl_callback,
     const std::tr1::shared_ptr<FutureCallback>& commit_callback,
-    ConsensusContext** context) {
+    gscoped_ptr<ConsensusContext>* context) {
 
   // create the new op id for the entry.
   OpId* op_id = entry->mutable_id();
@@ -44,7 +53,7 @@ Status LocalConsensus::Append(
   RETURN_NOT_OK(log_executor_->Submit(log_task, &future));
   future->AddListener(repl_callback);
 
-  *context = new_context.release();
+  context->reset(new_context.release());
   return Status::OK();
 }
 

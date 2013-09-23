@@ -39,6 +39,8 @@ class MiniTabletServer {
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;
 
+  FsManager* fs_manager();
+
   const TabletServer* server() const { return server_.get(); }
   TabletServer* server() { return server_.get(); }
 

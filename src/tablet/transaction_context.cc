@@ -1,7 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include "tablet/transaction_context.h"
+
 #include "gutil/stl_util.h"
+#include "tablet/tablet_peer.h"
 
 namespace kudu {
 namespace tablet {
@@ -60,13 +62,15 @@ void TransactionContext::AddFailedMutation(const Status &status) {
 
 txid_t TransactionContext::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
-  mvcc_tx_.reset(new ScopedTransaction(mvcc_));
+  mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
+  result_pb_.set_txid(mvcc_tx_->txid().v);
   return mvcc_tx_->txid();
 }
 
 void TransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(mvcc_tx.release());
+  result_pb_.set_txid(mvcc_tx_->txid().v);
 }
 
 void TransactionContext::commit_mvcc_tx() {
@@ -96,25 +100,6 @@ void TransactionContext::Reset() {
   commit_mvcc_tx();
   result_pb_.Clear();
   unsuccessful_ops_ = 0;
-}
-
-PreparedRowWrite* PreparedRowWrite::CreatePreparedInsert(LockManager* lock_manager,
-                                                         const ConstContiguousRow* row) {
-  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
-  gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(lock_manager,
-                                                        probe->encoded_key_slice(),
-                                                        LockManager::LOCK_EXCLUSIVE));
-  return new PreparedRowWrite(row, probe.Pass(), row_lock.Pass());
-}
-
-PreparedRowWrite* PreparedRowWrite::CreatePreparedMutate(LockManager* lock_manager,
-                                                         const ConstContiguousRow* row_key,
-                                                         const RowChangeList* mutation) {
-  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
-  gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(lock_manager,
-                                                        probe->encoded_key_slice(),
-                                                        LockManager::LOCK_EXCLUSIVE));
-  return new PreparedRowWrite(row_key, mutation, probe.Pass(), row_lock.Pass());
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,

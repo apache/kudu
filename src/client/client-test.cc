@@ -11,7 +11,7 @@
 #include "client/client.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
-#include "tablet/tablet.h"
+#include "tablet/tablet_peer.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
@@ -27,9 +27,9 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace client {
 
+using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 using tserver::ColumnRangePredicatePB;
-using tablet::Tablet;
 
 class ClientTest : public KuduTest {
  public:
@@ -51,7 +51,7 @@ class ClientTest : public KuduTest {
 
     // Set up a tablet inside the server.
     ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_));
+    ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_peer_));
 
     // Connect to it.
     KuduClientOptions opts;
@@ -68,10 +68,10 @@ class ClientTest : public KuduTest {
   void InsertTestRows(int num_rows) {
     tablet::TransactionContext tx_ctx;
     for (int i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_->Insert(&tx_ctx, BuildTestRow(i)));
+      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(i)));
       tx_ctx.Reset();
     }
-    CHECK_OK(tablet_->Flush());
+    CHECK_OK(tablet_peer_->tablet()->Flush());
   }
 
   ConstContiguousRow BuildTestRow(int index) {
@@ -142,7 +142,7 @@ class ClientTest : public KuduTest {
   gscoped_ptr<MiniTabletServer> mini_server_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> client_table_;
-  shared_ptr<Tablet> tablet_;
+  shared_ptr<TabletPeer> tablet_peer_;
 };
 
 const char* const ClientTest::kTabletId = "TestTablet";

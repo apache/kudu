@@ -54,6 +54,17 @@ class Tablet {
   // TODO update tests so that we can remove Insert() and Mutate()
   // and use only InsertUnlocked() and MutateUnlocked().
 
+  // Creates a PreparedRowWrite with write_type() INSERT, acquires the row lock
+  // for the row and creates a probe for later use. 'row_write' is set to the
+  // PreparedRowWrite if this method returns OK.
+  //
+  // TODO when we get to remove the locked versions of Insert/Mutate we
+  // can make the PreparedRowWrite own the row and can revert to passing just
+  // the raw row data, but right now we need to pass the built ConstContinuousRow
+  // as there are cases where row is passed as a reference (old API).
+  Status CreatePreparedInsert(const ConstContiguousRow* row,
+                              gscoped_ptr<PreparedRowWrite>* row_write);
+
   // Insert a new row into the tablet.
   //
   // The provided 'data' slice should have length equivalent to this
@@ -73,11 +84,25 @@ class Tablet {
   // and Mvcc transaction are present in the transaction context.
   Status InsertUnlocked(TransactionContext *tx_ctx,
                         const PreparedRowWrite* insert);
+
+  // Creates a PreparedRowWrite with write_type() MUTATE, acquires the row lock
+  // for the row and creates a probe for later use. 'row_write' is set to the
+  // PreparedRowWrite if this method returns OK.
+  //
+  // TODO when we get to remove the locked versions of Insert/Mutate we
+  // can make the PreparedRowWrite own the row and can revert to passing just
+  // the raw row data, but right now we need to pass the built ConstContinuousRow
+  // as there are cases where row is passed as a reference (old API).
+  Status CreatePreparedMutate(const ConstContiguousRow* row_key,
+                              const RowChangeList* changelist,
+                              gscoped_ptr<PreparedRowWrite>* row_write);
+
   // Update a row in this tablet.
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
   Status MutateRow(TransactionContext *tx_ctx,
+                   const Schema& schema,
                    const ConstContiguousRow& row_key,
                    const RowChangeList& update);
 
@@ -134,13 +159,13 @@ class Tablet {
   const Schema &schema() const { return schema_; }
 
   // Return the MVCC manager for this tablet.
-  MvccManager &mvcc_manager() { return mvcc_; }
+  MvccManager* mvcc_manager() { return &mvcc_; }
 
   // Return the Lock Manager for this tablet
-  LockManager &lock_manager() { return lock_manager_; }
+  LockManager* lock_manager() { return &lock_manager_; }
 
   // Returns the component lock for this tablet
-  percpu_rwlock &component_lock() { return component_lock_; }
+  percpu_rwlock* component_lock() { return &component_lock_; }
 
   const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
   metadata::TabletMetadata *metadata() { return metadata_.get(); }

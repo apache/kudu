@@ -26,11 +26,12 @@ class Consensus {
   virtual Status Start() = 0;
 
   // Stops running the consensus algorithm.
-  virtual Status Quit() = 0;
+  virtual Status Shutdown() = 0;
 
   // Called by a quorum client to append an entry to the state machine.
   // Callbacks are provided so that ad-hoc actions can be taken on the
   // different phases of the two-phase commit process.
+  //
   // From the leader instance perspective execution proceeds as follows:
   //
   //           Leader                               Quorum
@@ -80,7 +81,7 @@ class Consensus {
       gscoped_ptr<ReplicateMsg> entry,
       const std::tr1::shared_ptr<FutureCallback>& repl_callback,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback,
-      ConsensusContext** context) = 0;
+      gscoped_ptr<ConsensusContext>* context) = 0;
 
   // Returns the number of participants that constitutes a majority for this
   // quorum, e.g. 1 for a quorum of 1 participant, 2 for a quorum of 2,3

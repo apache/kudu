@@ -59,7 +59,7 @@ Log::Log(const LogOptions &options,
 }
 
 Status Log::Init() {
-  CHECK_EQ(state_, kLogInitialized) << "bad state for Init().";
+  CHECK_EQ(state_, kLogInitialized);
 
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
                                 next_segment_header_->tablet_meta().oid(),
@@ -86,7 +86,7 @@ Status Log::RollOver() {
 }
 
 Status Log::Append(const LogEntry& entry) {
-  DCHECK_EQ(state_, kLogWriting) << "Log was not Init()ed";
+  CHECK_EQ(state_, kLogWriting);
 
   // update the current header
   switch (entry.type()) {
@@ -149,9 +149,17 @@ Status Log::GC() {
 }
 
 Status Log::Close() {
-  CHECK_EQ(state_ , kLogWriting) << "Bad state for Close(): " << state_;
-  RETURN_NOT_OK(current_->writable_file()->Close());
-  return Status::OK();
+  if (state_ == kLogWriting) {
+    RETURN_NOT_OK(current_->writable_file()->Close());
+    state_ = kLogClosed;
+    VLOG(1) << "Log Closed()";
+    return Status::OK();
+  }
+  if (state_ == kLogClosed) {
+    VLOG(1) << "Log already Closed()";
+    return Status::OK();
+  }
+  return Status::IllegalState(strings::Substitute("Bad state for Close() $0", state_));
 }
 
 Status Log::CreateNewSegment(const LogSegmentHeader& header) {

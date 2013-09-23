@@ -10,6 +10,10 @@
 #include "server/metadata.h"
 #include "server/rpc_server.h"
 #include "tablet/tablet.h"
+#include "consensus/log.h"
+#include "consensus/consensus.h"
+#include "consensus/local_consensus.h"
+#include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
 #include "twitter-demo/twitter-schema.h"
 #include "util/env.h"
@@ -18,7 +22,9 @@
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
 
 using kudu::metadata::TabletMetadata;
+using kudu::metadata::TabletServerPB;
 using kudu::tablet::Tablet;
+using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;
 
 namespace kudu {
@@ -96,7 +102,12 @@ static int TabletServerMain(int argc, char** argv) {
 
   LOG(INFO) << "Setting up demo tablets...";
   TemporaryTabletsForDemos demo_setup(&server);
-  server.RegisterTablet(demo_setup.twitter_tablet());
+
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(demo_setup.twitter_tablet()));
+  CHECK_OK(tablet_peer->Init());
+  CHECK_OK(tablet_peer->Start());
+
+  server.RegisterTablet(tablet_peer);
 
   // Temporary hack for demos: start threads which compact/flush the tablet.
   // Eventually this will be part of TabletServer itself, and take care of deciding

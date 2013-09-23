@@ -1,7 +1,9 @@
 # Copyright (c) 2012, Cloudera, inc.
 
 SET(TABLET_SRCS
+  tasks/tasks.cc
   tablet.cc
+  tablet_peer.cc
   transaction_context.cc
   cfile_set.cc
   compaction.cc
