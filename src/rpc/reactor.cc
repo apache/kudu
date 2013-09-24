@@ -27,8 +27,9 @@
 #include "util/countdown_latch.h"
 #include "util/errno.h"
 #include "util/monotime.h"
-#include "util/status.h"
 #include "util/net/socket.h"
+#include "util/status.h"
+#include "util/thread_util.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -51,6 +52,7 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
 }
 
 Status ReactorThread::Init() {
+  DCHECK(thread_.get() == NULL) << "Already started";
   DVLOG(6) << "Called ReactorThread::Init()";
   // Register to get async notifications in our epoll loop.
   async_.set(loop_);
@@ -66,14 +68,7 @@ Status ReactorThread::Init() {
                coarse_timer_granularity_.ToSeconds());
 
   // Create Reactor thread.
-  try {
-    thread_.reset(new boost::thread(
-          boost::bind(&ReactorThread::RunThread, this)));
-  } catch(boost::thread_resource_error &e) {
-    // boost::thread uses exceptions to signal failure to create a thread
-    return Status::RuntimeError(e.what());
-  }
-  return Status::OK();
+  return StartThread(boost::bind(&ReactorThread::RunThread, this), &thread_);
 }
 
 void ReactorThread::Shutdown() {
