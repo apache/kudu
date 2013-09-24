@@ -27,7 +27,8 @@ namespace kudu {
 //  - REINSERT (re-insert a "ghost" row, used only in the MemRowSet)
 //
 // RowChangeLists should be constructed using RowChangeListEncoder, and read
-// using RowChangeListDecoder.
+// using RowChangeListDecoder. NOTE that the schema passed to the Decoder must
+// be the same one used by the Encoder.
 class RowChangeList {
  public:
   RowChangeList() {}
@@ -146,6 +147,7 @@ class RowChangeListDecoder {
  public:
 
   // Construct a new decoder.
+  // NOTE: The 'schema' must be the same one used to encode the RowChangeList.
   // NOTE: The 'schema' parameter is stored by reference, rather than copied.
   // It is assumed that this class is only used in tightly scoped contexts where
   // this is appropriate.
@@ -234,6 +236,13 @@ class RowChangeListDecoder {
       *deleted = false;
     }
   }
+
+  // Project the 'src' RowChangeList using the delta 'projector'
+  // The projected RowChangeList will be encoded to specified 'buf'.
+  // The buffer will be cleared before adding the result.
+  static Status ProjectUpdate(const DeltaProjector& projector,
+                              const RowChangeList& src,
+                              faststring *buf);
 
  private:
   FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);

@@ -125,7 +125,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
     prepared_(false),
     seeked_(false),
     prepared_buf_(kPreparedBufInitialCapacity),
-    projector_(dms_->schema(), projection) {
+    projector_(dms->schema(), projection) {
 }
 
 Status DMSIterator::Init() {
@@ -218,12 +218,14 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_EQ(prepared_count_, dst->nrows());
   Slice src(prepared_buf_);
 
-  const unordered_map<size_t, size_t>& base_cols_map = projector_.base_cols_mapping();
-  unordered_map<size_t, size_t>::const_iterator it;
-  size_t projected_col;
   // TODO: Handle the "different type" case (adapter_cols_mapping)
-  if ((it = base_cols_map.find(col_to_apply)) != base_cols_map.end()) {
-    projected_col = it->second;
+  size_t projected_col;
+  if (projector_.get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
+    // continue applying updates
+  } else if (projector_.get_adapter_col_from_proj_idx(col_to_apply, &projected_col)) {
+    // TODO: Handle the "different type" case (adapter_cols_mapping)
+    LOG(DFATAL) << "Alter type is not implemented yet";
+    return Status::NotSupported("Alter type is not implemented yet");
   } else {
     // Column not present in the deltas... skip!
     return Status::OK();
@@ -259,7 +261,7 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
 
 Status DMSIterator::ApplyDeletes(SelectionVector *sel_vec) {
-  // TODO: tihs shares lots of code with ApplyUpdates
+  // TODO: this shares lots of code with ApplyUpdates
   // probably Prepare() should just separate out the updates into deletes, and then
   // a set of updates for each column.
   DCHECK(prepared_);
@@ -297,6 +299,11 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
 
     RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
     uint32_t rel_idx = key.row_idx() - prepared_idx_;
+
+    if (!projector_.is_identity()) {
+      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector_, changelist, &delta_buf_));
+      changelist = RowChangeList(delta_buf_);
+    }
 
     Mutation *mutation = Mutation::CreateInArena(arena, key.txid(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));

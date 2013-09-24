@@ -442,12 +442,14 @@ struct ApplyingVisitor {
 Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
 
-  const unordered_map<size_t, size_t>& base_cols_map = projector_.base_cols_mapping();
-  unordered_map<size_t, size_t>::const_iterator it;
-  // TODO: Handle the "different type" case (adapter_cols_mapping)
-  if ((it = base_cols_map.find(col_to_apply)) != base_cols_map.end()) {
-    ApplyingVisitor visitor = {this, it->second, dst};
+  size_t projected_col;
+  if (projector_.get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
+    ApplyingVisitor visitor = {this, projected_col, dst};
     return VisitMutations(&visitor);
+  } else if (projector_.get_adapter_col_from_proj_idx(col_to_apply, &projected_col)) {
+    // TODO: Handle the "different type" case (adapter_cols_mapping)
+    LOG(DFATAL) << "Alter type is not implemented yet";
+    return Status::NotSupported("Alter type is not implemented yet");
   } else {
     // Column not present in the deltas... skip!
     return Status::OK();
@@ -490,13 +492,19 @@ Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
 
 // Visitor which, for each mutation, appends it into a ColumnBlock of
 // Mutation *s. See CollectMutations()
+// Each mutation is projected into the iterator schema, if required.
 struct CollectingVisitor {
   Status Visit(const DeltaKey &key, const Slice &deltas) {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
-    Mutation *mutation = Mutation::CreateInArena(
-      dst_arena, key.txid(), RowChangeList(deltas));
+    RowChangeList changelist(deltas);
+    if (!dfi->projector_.is_identity()) {
+      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(dfi->projector_, changelist, &dfi->delta_buf_));
+      changelist = RowChangeList(dfi->delta_buf_);
+    }
+
+    Mutation *mutation = Mutation::CreateInArena(dst_arena, key.txid(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
 
     return Status::OK();

@@ -10,6 +10,7 @@
 #include "common/types.h"
 #include "common/schema.h"
 #include "gutil/macros.h"
+#include "gutil/map-util.h"
 #include "util/memory/arena.h"
 #include "util/bitmap.h"
 
@@ -106,7 +107,7 @@ inline Status CopyRow(const RowType1 &src_row, RowType2 *dst_row, ArenaType *dst
 }
 
 // Projection mapping for the specified schemas.
-// A projection may contains:
+// A projection may contain:
 //  - columns that are present in the "base schema"
 //  - columns that are present in the "base schema" but with different types.
 //    In this case an adapter should be used (e.g. INT8 to INT64, INT8 to STRING, ...)
@@ -227,6 +228,83 @@ class RowProjector {
 
   Schema base_schema_;
   Schema projection_;
+};
+
+// Projection mapping from the schema used to encode a RowChangeList
+// to the new specified schema. Used on the read/compaction path to
+// project the deltas to the user/latest specified projection.
+//
+// A projection may contain:
+//  - columns that are present in the "base schema"
+//  - columns that are present in the "base schema" but with different types.
+//    In this case an adapter should be used (e.g. INT8 to INT64, INT8 to STRING, ...)
+//  - columns that are not present in the "base schema".
+//    These columns are not considered since they cannot be in the delta.
+class DeltaProjector {
+ public:
+  DeltaProjector(const Schema& delta_schema, const Schema& projection)
+    : delta_schema_(delta_schema), projection_(projection),
+      is_identity_(delta_schema.Equals(projection)) {
+  }
+
+  Status Init() {
+    return projection_.GetProjectionMapping(delta_schema_, this);
+  }
+
+  bool is_identity() const { return is_identity_; }
+
+  const Schema& projection() const { return projection_; }
+  const Schema& delta_schema() const { return delta_schema_; }
+
+  bool get_base_col_from_proj_idx(size_t proj_col_idx, size_t *base_col_idx) const {
+    return FindCopy(base_cols_mapping_, proj_col_idx, base_col_idx);
+  }
+
+  bool get_adapter_col_from_proj_idx(size_t proj_col_idx, size_t *base_col_idx) const {
+    return FindCopy(adapter_cols_mapping_, proj_col_idx, base_col_idx);
+  }
+
+  // TODO: Discourage the use of this. At the moment is only in RowChangeList::Project
+  bool get_proj_col_from_base_idx(size_t base_col_idx, size_t *proj_col_idx) const {
+    return FindCopy(rbase_cols_mapping_, base_col_idx, proj_col_idx);
+  }
+
+  bool get_proj_col_from_adapter_idx(size_t base_col_idx, size_t *proj_col_idx) const {
+    return FindCopy(radapter_cols_mapping_, base_col_idx, proj_col_idx);
+  }
+
+ private:
+  friend class ::kudu::Schema;
+
+  Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
+    base_cols_mapping_[proj_col_idx] = base_col_idx;
+    rbase_cols_mapping_[base_col_idx] = proj_col_idx;
+    return Status::OK();
+  }
+
+  Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
+    adapter_cols_mapping_[proj_col_idx] = base_col_idx;
+    radapter_cols_mapping_[base_col_idx] = proj_col_idx;
+    return Status::OK();
+  }
+
+  Status ProjectDefaultColumn(size_t proj_col_idx) {
+    // Not used, since deltas are update...
+    // we don't have this column, so we don't have updates
+    return Status::OK();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DeltaProjector);
+
+  std::tr1::unordered_map<size_t, size_t> base_cols_mapping_;     // [proj_idx] = base_idx
+  std::tr1::unordered_map<size_t, size_t> rbase_cols_mapping_;    // [base_idx] = proj_idx
+  std::tr1::unordered_map<size_t, size_t> adapter_cols_mapping_;  // [proj_idx] = base_idx
+  std::tr1::unordered_map<size_t, size_t> radapter_cols_mapping_; // [base_idx] = proj_idx
+
+  Schema delta_schema_;
+  Schema projection_;
+  bool is_identity_;
 };
 
 // Copy any indirect (eg STRING) data referenced by the given row into the

@@ -143,8 +143,11 @@ Status Tablet::NewRowIterator(const Schema &projection,
 Status Tablet::Insert(TransactionContext *tx_ctx,
                       const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
+  DCHECK(tx_ctx) << "you must have a transaction context";
 
-  DCHECK_SCHEMA_EQ(schema_, row.schema());
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, row.schema());
+  RowSetKeyProbe probe(row);
+
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
 
@@ -173,7 +176,7 @@ Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
   DCHECK(tx_ctx->component_lock()) << "TransactionContext must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
 
-  DCHECK_SCHEMA_EQ(schema_, insert->row()->schema());
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
 
   // First, ensure that it is a unique key by checking all the open
   // RowSets

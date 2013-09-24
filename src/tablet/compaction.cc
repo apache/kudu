@@ -17,10 +17,11 @@ namespace {
 // CompactionInput yielding rows and mutations from a MemRowSet.
 class MemRowSetCompactionInput : public CompactionInput {
  public:
-  MemRowSetCompactionInput(const MemRowSet &memrowset,
-                          const MvccSnapshot &snap,
-                          const Schema& projection)
-    : iter_(memrowset.NewIterator(projection, snap)) {
+  MemRowSetCompactionInput(const MemRowSet& memrowset,
+                           const MvccSnapshot& snap,
+                           const Schema& projection)
+    : iter_(memrowset.NewIterator(projection, snap)),
+      arena_(32*1024, 128*1024) {
   }
 
   virtual Status Init() {
@@ -41,6 +42,7 @@ class MemRowSetCompactionInput : public CompactionInput {
       row_block_.reset(new RowBlock(iter_->schema(), num_in_block, NULL));
     }
 
+    arena_.Reset();
     for (int i = 0; i < num_in_block; i++) {
       if (i > 0) {
         iter_->Next();
@@ -49,8 +51,8 @@ class MemRowSetCompactionInput : public CompactionInput {
       // TODO: A copy is performed to have all CompactionInputRow of the same type
       CompactionInputRow &input_row = block->at(i);
       input_row.row.Reset(row_block_.get(), i);
-      RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row, &input_row.mutation_head,
-                                         reinterpret_cast<Arena*>(NULL)));
+      RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row, reinterpret_cast<Arena*>(NULL),
+                                         &input_row.mutation_head, &arena_));
     }
 
     return Status::OK();
@@ -68,7 +70,11 @@ class MemRowSetCompactionInput : public CompactionInput {
  private:
   DISALLOW_COPY_AND_ASSIGN(MemRowSetCompactionInput);
   gscoped_ptr<RowBlock> row_block_;
+
   gscoped_ptr<MemRowSet::Iterator> iter_;
+
+  // Arena used to store the projected mutations of the current block.
+  Arena arena_;
 };
 
 ////////////////////////////////////////////////////////////
@@ -416,12 +422,13 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-static Status ApplyMutationsAndGenerateUndos(const Schema &schema,
-                                             const MvccSnapshot &snap,
+static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot &snap,
                                              const Mutation *mutation_head,
                                              RowBlockRow *row,
                                              bool *is_deleted) {
   *is_deleted = false;
+
+  const Schema& schema = row->schema();
 
   #define ERROR_LOG_CONTEXT \
     "Row: " << schema.DebugRow(*row) << \
@@ -471,7 +478,6 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
              RollingDiskRowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
-  const Schema &schema(input->schema());
 
   RowBlock block(out->schema(), 100, NULL);
 
@@ -480,6 +486,9 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
 
     int n = 0;
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+      const Schema& schema(input_row.row.schema());
+      DCHECK_SCHEMA_EQ(schema, out->schema());
+
       RowBlockRow dst_row = block.row(n);
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
       DVLOG(2) << "Row: " << dst_row.schema().DebugRow(dst_row) <<
@@ -487,7 +496,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
 
       bool is_deleted;
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
-                      schema, snap, input_row.mutation_head, &dst_row, &is_deleted));
+                      snap, input_row.mutation_head, &dst_row, &is_deleted));
 
       if (is_deleted) {
         DVLOG(2) << "Deleted!";

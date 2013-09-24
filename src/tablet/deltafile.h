@@ -242,6 +242,9 @@ class DeltaFileIterator : public DeltaIterator {
 
   // Temporary buffer used in seeking.
   faststring tmp_buf_;
+
+  // Temporary buffer used for RowChangeList projection.
+  faststring delta_buf_;
 };
 
 } // namespace tablet

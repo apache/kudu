@@ -27,11 +27,16 @@ typedef DeltaMemStore::DMSTreeIter DMSTreeIter;
 class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
  public:
 
-  explicit DeltaMemStoreCompactionInput(gscoped_ptr<DMSTreeIter> iter)
-      : iter_(iter.Pass()) {
+  explicit DeltaMemStoreCompactionInput(const Schema& schema,
+                                        const Schema& projection,
+                                        gscoped_ptr<DMSTreeIter> iter)
+      : iter_(iter.Pass()),
+        arena_(32*1024, 128*1024),
+        delta_projector_(schema, projection) {
   }
 
   virtual Status Init() {
+    RETURN_NOT_OK(delta_projector_.Init());
     iter_->SeekToStart();
     return Status::OK();
   }
@@ -41,12 +46,21 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
   }
 
   virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+    arena_.Reset();
     block->resize(kRowsPerBlock);
+
     for (int i = 0; i < kRowsPerBlock && iter_->IsValid(); i++) {
       Slice key_slice;
       DeltaCompactionInputCell &input_cell = (*block)[i];
       iter_->GetCurrentEntry(&key_slice, &input_cell.cell);
       RETURN_NOT_OK(input_cell.key.DecodeFrom(&key_slice));
+
+      if (!delta_projector_.is_identity()) {
+        RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
+                                              RowChangeList(input_cell.cell), &delta_buf_));
+        CHECK(arena_.RelocateSlice(Slice(delta_buf_.data(), delta_buf_.size()), &input_cell.cell));
+      }
+
       iter_->Next();
     }
     return Status::OK();
@@ -57,7 +71,17 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
   }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(DeltaMemStoreCompactionInput);
+
   gscoped_ptr<DMSTreeIter> iter_;
+
+  // Arena used to store the projected mutations of the current block.
+  Arena arena_;
+
+  // Temporary buffer used for RowChangeList projection.
+  faststring delta_buf_;
+
+  DeltaProjector delta_projector_;
 
   enum {
     kRowsPerBlock = 100 // Number of rows per block of columns
@@ -67,7 +91,9 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 class DeltaFileCompactionInput : public DeltaCompactionInput {
  public:
 
-  explicit DeltaFileCompactionInput(gscoped_ptr<CFileIterator> iter)
+  explicit DeltaFileCompactionInput(const Schema& schema,
+                                    const Schema& projection,
+                                    gscoped_ptr<CFileIterator> iter)
       : iter_(iter.Pass()),
         data_(new Slice[kRowsPerBlock]),
         arena_(32*1024, 128*1024),
@@ -76,12 +102,14 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
                data_.get(),
                kRowsPerBlock,
                &arena_),
+        delta_projector_(schema, projection),
         initted_(false),
         block_prepared_(false) {
   }
 
   virtual Status Init() {
     DCHECK(!initted_);
+    RETURN_NOT_OK(delta_projector_.Init());
     RETURN_NOT_OK(iter_->SeekToFirst());
     initted_ = true;
     return Status::OK();
@@ -96,12 +124,19 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     RETURN_NOT_OK(iter_->PrepareBatch(&nrows));
     RETURN_NOT_OK(iter_->Scan(&block_));
 
+    faststring buf;
     block->resize(nrows);
     for (int i = 0; i < nrows; i++) {
       DeltaCompactionInputCell &input_cell = (*block)[i];
       Slice s(data_[i]);
       RETURN_NOT_OK(input_cell.key.DecodeFrom(&s));
       input_cell.cell = s;
+
+      if (!delta_projector_.is_identity()) {
+        RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
+                                              RowChangeList(input_cell.cell), &buf));
+        CHECK(arena_.RelocateSlice(Slice(buf.data(), buf.size()), &input_cell.cell));
+      }
     }
     block_prepared_ = true;
     return Status::OK();
@@ -122,6 +157,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
   gscoped_ptr<Slice[]> data_;
   Arena arena_;
   ColumnBlock block_;
+  DeltaProjector delta_projector_;
 
   bool initted_;
 
@@ -352,17 +388,19 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 } // anonymous namespace
 
 Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
+                                  const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
   gscoped_ptr<CFileIterator> iter;
   RETURN_NOT_OK(reader.cfile_reader()->NewIterator(&iter));
-  input->reset(new DeltaFileCompactionInput(iter.Pass()));
+  input->reset(new DeltaFileCompactionInput(reader.schema(), projection, iter.Pass()));
   return Status::OK();
 }
 
 Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
+                                  const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
   gscoped_ptr<DMSTreeIter> iter(dms.tree().NewIterator());
-  input->reset(new DeltaMemStoreCompactionInput(iter.Pass()));
+  input->reset(new DeltaMemStoreCompactionInput(dms.schema(), projection, iter.Pass()));
   return Status::OK();
 }
 

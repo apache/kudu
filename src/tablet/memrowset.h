@@ -357,12 +357,34 @@ class MemRowSet::Iterator : public RowwiseIterator {
   }
 
   // Copy the current MRSRow to the 'dst_row' provided using the iterator projection schema.
-  template <class RowType, class ArenaType>
-  Status GetCurrentRow(RowType *dst_row, const Mutation **mutation_head, ArenaType *arena) const {
+  template <class RowType, class RowArenaType, class MutationArenaType>
+  Status GetCurrentRow(RowType *dst_row, RowArenaType *row_arena,
+                       const Mutation **mutation_head, MutationArenaType *mutation_arena) {
     DCHECK(mutation_head != NULL);
+
+    // Get the row from the MemRowSet. It may have a different schema from the iterator projection.
     const MRSRow src_row = GetCurrentRow();
+
+    // Project the RowChangeList if required
     *mutation_head = src_row.mutation_head();
-    return projector_.ProjectRowForRead(src_row, dst_row, arena);
+    if (!delta_projector_.is_identity()) {
+      DCHECK(mutation_arena != NULL);
+
+      Mutation *prev = NULL;
+      for (const Mutation *mut = src_row.mutation_head(); mut != NULL; mut = mut->next()) {
+        RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_, mut->changelist(), &delta_buf_));
+        Mutation *mutation = Mutation::CreateInArena(mutation_arena, mut->txid(), RowChangeList(delta_buf_));
+        if (prev != NULL) {
+          prev->set_next(mutation);
+        } else {
+          *mutation_head = mutation;
+        }
+        prev = mutation;
+      }
+    }
+
+    // Project the Row
+    return projector_.ProjectRowForRead(src_row, dst_row, row_arena);
   }
 
   bool Next() {
@@ -402,6 +424,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
       iter_(iter),
       projection_(projection),
       mvcc_snap_(mvcc_snap),
+      delta_projector_(mrs->schema(), projection),
       prepared_count_(0),
       prepared_idx_in_leaf_(0),
       state_(kUninitialized) {
@@ -458,6 +481,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
         }
 
         // TODO: Handle Delta Apply on projector_.adapter_cols_mapping()
+        DCHECK_EQ(projector_.adapter_cols_mapping().size(), 0) << "alter type is not supported";
       }
     }
 
@@ -484,6 +508,10 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   // Mapping from projected column index back to memrowset column index.
   RowProjector projector_;
+  DeltaProjector delta_projector_;
+
+  // Temporary buffer used for RowChangeList projection.
+  faststring delta_buf_;
 
   size_t prepared_count_;
   size_t prepared_idx_in_leaf_;

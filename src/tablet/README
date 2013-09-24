@@ -61,6 +61,18 @@ MemRowSet, CFileSet, DeltaMemStore and DeltaFiles will do a projection,
 as explained above, to materialize the row with the user specified schema.
 In case of Deltas missing columns can be skipped since "no column, no updates".
 
+Compaction
+Each CFileSet and DeltaFile have a schema associated, to describe the data in it.
+On compaction CFileSet/DeltaFile with different schemas may be aggregated into a new file.
+This new file will have the latest schema and all the rows must be projected.
+
+In the case of CFiles the projection affects only the new columns, where the read default
+value will be written as data, or in case of "alter type" where the "encoding" is changed.
+
+In the case of DeltaFiles the projection is essential since the RowChangeList is serialized
+with no hint of the schema used. This means that you can read a RowChangeList only if you
+know the exact serialization schema.
+
 Schema IDs vs Schema Names
  - Columns can be added
  - Columns can be "removed" (marked as removed)

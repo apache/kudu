@@ -37,19 +37,31 @@ class TestDeltaCompaction : public KuduTest {
       : deltafile_idx_(0),
         schema_(boost::assign::list_of
                 (ColumnSchema("val", UINT32)),
-                1) {
+                0) {
   }
 
   string GetDeltaFilePath(int64_t deltafile_idx) {
     return GetTestPath(StringPrintf("%ld", deltafile_idx));
   }
 
-  Status GetDeltaFileWriter(string path,
+  Status GetDeltaFileWriter(string path, const Schema& schema,
                             gscoped_ptr<DeltaFileWriter> *dfw) const {
     shared_ptr<WritableFile> file;
     RETURN_NOT_OK(env_util::OpenFileForWrite(env_.get(), path, &file));
-    dfw->reset(new DeltaFileWriter(schema_, file));
+    dfw->reset(new DeltaFileWriter(schema, file));
     RETURN_NOT_OK((*dfw)->Start());
+    return Status::OK();
+  }
+
+  Status OpenAsCompactionInput(const string& path, uint64_t deltafile_idx,
+                               const Schema& projection,
+                               gscoped_ptr<DeltaCompactionInput> *dci) {
+    gscoped_ptr<DeltaFileReader> reader;
+    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader));
+    CHECK_EQ(deltafile_idx_, reader->id());
+    RETURN_NOT_OK(DeltaCompactionInput::Open(*reader, projection, dci));
+    pool_.Add(reader.release());
+    deltafile_idx_++;
     return Status::OK();
   }
 
@@ -58,7 +70,7 @@ class TestDeltaCompaction : public KuduTest {
     int limit = first_row + nrows;
     string path = GetDeltaFilePath(deltafile_idx_);
     gscoped_ptr<DeltaFileWriter> dfw;
-    RETURN_NOT_OK(GetDeltaFileWriter(path, &dfw));
+    RETURN_NOT_OK(GetDeltaFileWriter(path, schema_, &dfw));
 
     faststring buf;
 
@@ -74,13 +86,8 @@ class TestDeltaCompaction : public KuduTest {
         curr_txid++;
       }
     }
-    gscoped_ptr<DeltaFileReader> reader;
     RETURN_NOT_OK(dfw->Finish());
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader));
-    CHECK_EQ(deltafile_idx_, reader->id());
-    RETURN_NOT_OK(DeltaCompactionInput::Open(*reader, dci));
-    pool_.Add(reader.release());
-    deltafile_idx_++;
+    RETURN_NOT_OK(OpenAsCompactionInput(path, deltafile_idx_, schema_, dci));
     return Status::OK();
   }
 
@@ -135,13 +142,11 @@ TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
   ASSERT_STATUS_OK(CreateMergedDeltaCompactionInput(&merged));
   string path = GetDeltaFilePath(FLAGS_num_delta_files + 1);
   gscoped_ptr<DeltaFileWriter> dfw;
-  ASSERT_STATUS_OK(GetDeltaFileWriter(path, &dfw));
+  ASSERT_STATUS_OK(GetDeltaFileWriter(path, schema_, &dfw));
   ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
-  gscoped_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), path, FLAGS_num_delta_files + 1, &reader));
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(DeltaCompactionInput::Open(*reader, &dci));
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, FLAGS_num_delta_files + 1, schema_, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {
@@ -150,6 +155,101 @@ TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
   ASSERT_TRUE(is_sorted(results.begin(), results.end()));
 }
 
+TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
+  std::vector<ColumnSchema> columns(schema_.columns());
+
+  vector<Schema> schemas;
+  schemas.push_back(schema_);
+
+  // Add an int column with default
+  uint32_t default_c2 = 10;
+  columns.push_back(ColumnSchema("c2", UINT32, false, &default_c2, &default_c2));
+  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+
+  // add a string column with default
+  Slice default_c3("Hello World");
+  columns.push_back(ColumnSchema("c3", STRING, false, &default_c3, &default_c3));
+  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+
+  vector<shared_ptr<DeltaCompactionInput> > inputs;
+
+  faststring buf;
+  int row_id = 0;
+  int curr_txid = 0;
+  int deltafile_idx = 0;
+  BOOST_FOREACH(const Schema& schema, schemas) {
+    // Write the Deltas
+    string path = GetDeltaFilePath(deltafile_idx);
+    gscoped_ptr<DeltaFileWriter> dfw;
+    ASSERT_STATUS_OK(GetDeltaFileWriter(path, schema, &dfw));
+
+    // Generate N updates with the new schema, some of them are on existing
+    // rows others are on new rows (see kNumUpdates and kNumMultipleUpdates).
+    // Each column will be updated with value composed by delta file id
+    // and update number (see update_value assignment).
+    size_t kNumUpdates = 10;
+    size_t kNumMultipleUpdates = kNumUpdates / 2;
+    for (size_t i = 0; i < kNumUpdates; ++i) {
+      buf.clear();
+      RowChangeListEncoder update(schema, &buf);
+      for (size_t col_idx = schema.num_key_columns(); col_idx < schema.num_columns(); ++col_idx) {
+        const ColumnSchema& col_schema = schema.column(col_idx);
+        int update_value = deltafile_idx * 100 + i;
+        switch (col_schema.type_info().type()) {
+          case UINT32:
+            {
+              uint32_t u32_val = update_value;
+              update.AddColumnUpdate(col_idx, &u32_val);
+            }
+            break;
+          case STRING:
+            {
+              string s = boost::lexical_cast<string>(update_value);
+              Slice str_val(s);
+              update.AddColumnUpdate(col_idx, &str_val);
+            }
+            break;
+          default:
+            FAIL() << "Type " << DataType_Name(col_schema.type_info().type()) << " Not Supported";
+            break;
+        }
+      }
+
+      // To simulate multiple updates on the same row, the first N updates
+      // of this new schema will always be on rows [0, 1, 2, ...] while the
+      // others will be on new rows. (N is tunable by changing kNumMultipleUpdates)
+      DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, txid_t(curr_txid));
+      ASSERT_STATUS_OK(dfw->AppendDelta(key, update.as_changelist()));
+      curr_txid++;
+      row_id++;
+    }
+
+    ASSERT_STATUS_OK(dfw->Finish());
+    gscoped_ptr<DeltaCompactionInput> dci;
+    ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, schemas.back(), &dci));
+    inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
+    deltafile_idx++;
+  }
+
+  // Merge
+  gscoped_ptr<DeltaCompactionInput> merged(DeltaCompactionInput::Merge(inputs));
+  string path = GetDeltaFilePath(deltafile_idx);
+
+  gscoped_ptr<DeltaFileWriter> dfw;
+  ASSERT_STATUS_OK(GetDeltaFileWriter(path, schemas.back(), &dfw));
+  ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
+  ASSERT_STATUS_OK(dfw->Finish());
+
+  gscoped_ptr<DeltaCompactionInput> dci;
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, schemas.back(), &dci));
+
+  vector<string> results;
+  ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schemas.back()));
+  BOOST_FOREACH(const string &str, results) {
+    VLOG(1) << str; // TODO: Verify output
+  }
+  ASSERT_TRUE(is_sorted(results.begin(), results.end()));
+}
 
 } // namespace tablet
 } // namespace kudu

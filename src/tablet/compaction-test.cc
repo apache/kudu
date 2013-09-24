@@ -344,12 +344,14 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
 
   // Add an int column with default
   uint32_t default_c2 = 10;
-  columns.push_back(ColumnSchema("c2", UINT32, false, &default_c2, &default_c2));
+  columns.insert(columns.begin() + schema_.num_key_columns(),
+                 ColumnSchema("c2", UINT32, false, &default_c2, &default_c2));
   schemas.push_back(Schema(columns, schema_.num_key_columns()));
 
   // add a string column with default
   Slice default_c3("Hello World");
-  columns.push_back(ColumnSchema("c3", STRING, false, &default_c3, &default_c3));
+  columns.insert(columns.begin() + schema_.num_key_columns(),
+                 ColumnSchema("c3", STRING, false, &default_c3, &default_c3));
   schemas.push_back(Schema(columns, schema_.num_key_columns()));
 
   DoMerge(schemas.back(), schemas);

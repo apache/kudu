@@ -208,7 +208,7 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
     DeltaFileReader *dfr = down_cast<DeltaFileReader *>(delta_store.get());
     LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
     gscoped_ptr<DeltaCompactionInput> dci;
-    RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, &dci));
+    RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, schema_, &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
     target_stores->push_back(delta_store);
     target_ids->push_back(delta_store->id());
@@ -315,7 +315,7 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const 
 }
 
 shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema &schema,
-                                                                  const MvccSnapshot &snap) const {
+                                                         const MvccSnapshot &snap) const {
   std::vector<shared_ptr<DeltaStore> > stores;
   CollectStores(&stores);
   return DeltaIteratorMerger::Create(stores, schema, snap);

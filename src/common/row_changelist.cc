@@ -86,4 +86,35 @@ Status RowChangeListDecoder::Init() {
   return Status::OK();
 }
 
+Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
+                                           const RowChangeList& src,
+                                           faststring *buf) {
+  RowChangeListDecoder decoder(projector.delta_schema(), src);
+  RETURN_NOT_OK(decoder.Init());
+
+  buf->clear();
+  RowChangeListEncoder encoder(projector.projection(), buf);
+  if (decoder.is_delete()) {
+    encoder.SetToDelete();
+  } else if (decoder.is_reinsert()) {
+    encoder.SetToReinsert(decoder.reinserted_row_slice());
+  } else if (decoder.is_update()) {
+    while (decoder.HasNext()) {
+      size_t col_idx = 0xdeadbeef; // avoid un-initialized usage warning
+      const void *col_val = NULL;
+      RETURN_NOT_OK(decoder.DecodeNext(&col_idx, &col_val));
+
+      size_t proj_idx = 0xdeadbeef; // avoid un-initialized usage warning
+      if (projector.get_proj_col_from_base_idx(col_idx, &proj_idx)) {
+        encoder.AddColumnUpdate(proj_idx, col_val);
+      } else if (projector.get_proj_col_from_adapter_idx(col_idx, &proj_idx)) {
+        // TODO: Handle the "different type" case (adapter_cols_mapping)
+        LOG(DFATAL) << "Alter type is not implemented yet";
+        return Status::NotSupported("Alter type is not implemented yet");
+      }
+    }
+  }
+  return Status::OK();
+}
+
 } // namespace kudu
