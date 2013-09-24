@@ -427,7 +427,9 @@ void Reactor::Shutdown() {
 
   // Abort all pending tasks. No new tasks can get scheduled after this
   // because ScheduleReactorTask() tests the closing_ flag set above.
-  BOOST_FOREACH(ReactorTask &task, pending_tasks_) {
+  while (!pending_tasks_.empty()) {
+    ReactorTask& task = pending_tasks_.front();
+    pending_tasks_.pop_front();
     task.Abort(SHUTDOWN_ERROR);
   }
 }
