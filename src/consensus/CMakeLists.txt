@@ -35,6 +35,8 @@ ADD_DEPENDENCIES(log server)
 
 SET(CONSENSUS_SRCS
   consensus.cc
+  local_consensus.cc
+  tasks/tasks.cc
 )
 
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})

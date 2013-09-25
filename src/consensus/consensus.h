@@ -123,7 +123,7 @@ class ConsensusContext {
                    const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
                    const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
-  const ReplicateMsg* replicate_msg() const {
+  ReplicateMsg* replicate_msg() {
     return replicate_msg_.get();
   }
 
