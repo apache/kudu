@@ -29,3 +29,4 @@ ADD_DEPENDENCIES(server krpc)
 
 # Tests
 ADD_KUDU_TEST(fsmanager-test)
+ADD_KUDU_TEST(webserver-test)

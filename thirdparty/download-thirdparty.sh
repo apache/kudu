@@ -128,5 +128,12 @@ if [ ! -d $GCOVR_DIR ]; then
   rm gcovr-${GCOVR_VERSION}.tar.gz
 fi
 
+if [ ! -d $CURL_DIR ]; then
+  echo "Fetching curl"
+  wget http://curl.download.nextag.com/download/curl-${CURL_VERSION}.tar.gz
+  tar xzf curl-${CURL_VERSION}.tar.gz
+  rm curl-${CURL_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

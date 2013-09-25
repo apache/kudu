@@ -174,7 +174,11 @@ ENABLE_TESTING()
 ############################################################
 set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
 
+# Look in thirdparty/installed before anywhere else for system dependencies.
+set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX})
+
 set(LIBS ${LIBS} -lrt)
+set(TEST_ONLY_LIBS)
 
 ## Boost
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
@@ -277,12 +281,17 @@ if (NOT "${KUDU_USE_ASAN}")
   set(LIBS ${LIBS} ${TCMALLOC_LIBRARY} ${PROFILER_LIBRARY})
 endif()
 
+## curl
+FIND_PACKAGE(CURL REQUIRED)
+set(TEST_ONLY_LIBS ${TEST_ONLY_LIBS} ${CURL_LIBRARIES})
+
+
 ############################################################
 # Linker setup
 ############################################################
 SET(KUDU_DEP_LIBS ${LIBS})
 SET(KUDU_LINK_LIBS tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
-SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${KUDU_MIN_TEST_LIBS})
+SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
 # "make etags" target

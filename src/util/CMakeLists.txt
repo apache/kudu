@@ -5,6 +5,7 @@ ADD_LIBRARY(kudu_util
   bitmap.cc
   cache.cc
   coding.cc
+  curl_util.cc
   group_varint.cc
   memcmpable_varint.cc
   debug-util.cc
@@ -28,6 +29,9 @@ ADD_LIBRARY(kudu_util
   url-coding.cc
 )
 SET(KUDU_UTIL_LIBS kudu_util)
+
+# NOTE: we don't explicitly link against libcurl, since curl_util is only
+# used in tests, and we don't want to pull it in everywhere.
 
 ADD_LIBRARY(kudu_test_main test_main.cc)
 

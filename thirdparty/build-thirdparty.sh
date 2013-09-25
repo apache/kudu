@@ -30,6 +30,7 @@ else
       "squeasel")   F_SQUEASEL=1 ;;
       "gsg")        F_GSG=1 ;;
       "gcovr")      F_GCOVR=1 ;;
+      "curl")       F_CURL=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -157,6 +158,33 @@ if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/
   cp squeasel.h $PREFIX/include/
+fi
+
+# Build curl
+if [ -n "$F_ALL" -o -n "$F_CURL" ]; then
+  # Configure for a very minimal install - basically only HTTP,
+  # since we only use this for testing our own HTTP endpoints
+  # at this point in time.
+  cd $CURL_DIR
+  ./configure --prefix=$PREFIX \
+    --disable-ftp \
+    --disable-file \
+    --disable-ldap \
+    --disable-ldaps \
+    --disable-rtsp \
+    --disable-proxy \
+    --disable-dict \
+    --disable-telnet \
+    --disable-tftp \
+    --disable-pop3 \
+    --disable-imap \
+    --disable-smtp \
+    --disable-gopher \
+    --disable-manual \
+    --without-rtmp \
+    --disable-ipv6
+  make -j4
+  make install
 fi
 
 # Copy cpplint tool into bin directory

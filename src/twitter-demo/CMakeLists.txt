@@ -1,8 +1,7 @@
 # Copyright (c) 2013, Cloudera, inc.
 
 FIND_LIBRARY(LIBOAUTH_LIBRARY NAMES oauth)
-FIND_PACKAGE(CURL)
-IF(NOT CURL_FOUND OR NOT LIBOAUTH_LIBRARY)
+IF(NOT LIBOAUTH_LIBRARY)
   MESSAGE(WARNING "libcurl or liboauth not found on system. Skipping twitter demo")
 ELSE()
 
