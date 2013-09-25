@@ -16,6 +16,9 @@
 DEFINE_int32(log_segment_size_mb, 64,
              "The default segment size for log roll-overs, in MB");
 
+DEFINE_bool(log_force_fsync_all, false,
+            "Whether the Log/WAL should explicitly call fsync() after each write.");
+
 namespace kudu {
 namespace log {
 
@@ -34,7 +37,8 @@ const int kLogMajorVersion = 1;
 const int kLogMinorVersion = 0;
 
 LogOptions::LogOptions()
-: segment_size_mb(FLAGS_log_segment_size_mb) {
+: segment_size_mb(FLAGS_log_segment_size_mb),
+  force_fsync_all(FLAGS_log_force_fsync_all) {
 }
 
 LogSegment::LogSegment(const LogSegmentHeader& header,

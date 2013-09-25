@@ -36,6 +36,9 @@ struct LogOptions {
   // Logs will rollover upon reaching this size (default 64 MB)
   size_t segment_size_mb;
 
+  // Whether to call fsync on every call to Append().
+  bool force_fsync_all;
+
   LogOptions();
 };
 

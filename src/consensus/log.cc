@@ -121,9 +121,7 @@ Status Log::Append(const LogEntry& entry) {
     return Status::Corruption("Unable  to serialize entry to file");
   }
 
-  // make sure entries get sync'd on everything but replicate (as they will be
-  // sync'd on commit).
-  if (entry.type() != REPLICATE) {
+  if (options_.force_fsync_all) {
     RETURN_NOT_OK(current_->writable_file()->Sync());
   }
   return Status::OK();
