@@ -50,13 +50,19 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   // Look up the TS -- if it just registered above, it will be found here.
   // This allows the TS to register and tablet-report in the same RPC.
   s = server_->ts_manager()->LookupTS(req->common().ts_instance(), &ts_desc);
-  if (!s.ok()) {
-    LOG(INFO) << "Unable to find tablet server descriptor for " <<
-      rpc->requestor_string() << ": " << s.ToString();
-
+  if (s.IsNotFound()) {
+    LOG(INFO) << "Got heartbeat from " << rpc->requestor_string() << " for unknown "
+              << "tablet server " << req->common().ts_instance().DebugString()
+              << ": asking to re-register.";
     resp->set_needs_reregister(true);
     resp->set_needs_full_tablet_report(true);
     rpc->RespondSuccess();
+    return;
+  } else if (!s.ok()) {
+    LOG(WARNING) << "Unable to look up tablet server for heartbeat request "
+                 << req->DebugString() << " from " << rpc->requestor_string()
+                 << "\nStatus: " << s.ToString();
+    rpc->RespondFailure(s.CloneAndPrepend("Unable to lookup TS"));
     return;
   }
 

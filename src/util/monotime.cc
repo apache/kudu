@@ -72,6 +72,10 @@ int64_t MonoDelta::ToNanoseconds() const {
   return nano_delta_;
 }
 
+int64_t MonoDelta::ToMicroseconds() const {
+  return nano_delta_ / MonoTime::kNanosecondsPerMicrosecond;
+}
+
 void MonoDelta::ToTimeVal(struct timeval *tv) const {
   tv->tv_sec = nano_delta_ / MonoTime::kNanosecondsPerSecond;
   tv->tv_usec = (nano_delta_ - (tv->tv_sec * MonoTime::kNanosecondsPerSecond))

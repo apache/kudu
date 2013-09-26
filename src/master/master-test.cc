@@ -36,7 +36,7 @@ class MasterTest : public KuduTest {
     // Start master
     mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master")));
     ASSERT_STATUS_OK(mini_master_->Start());
-    master_ = mini_master_->server();
+    master_ = mini_master_->master();
 
     // Create a client proxy to it.
     MessengerBuilder bld("Client");

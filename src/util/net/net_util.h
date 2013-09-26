@@ -16,6 +16,7 @@ class HostPort {
  public:
   HostPort();
   HostPort(const std::string& host, uint16_t port);
+  explicit HostPort(const Sockaddr& addr);
 
   // Parse a "host:port" pair into this object.
   // If there is no port specified in the string, then 'default_port' is used.
@@ -23,6 +24,9 @@ class HostPort {
 
   // Resolve any addresses corresponding to this host:port pair.
   // Note that a host may resolve to more than one IP address.
+  //
+  // 'addresses' may be NULL, in which case this function simply checks that
+  // the host/port pair can be resolved, without returning anything.
   Status ResolveAddresses(std::vector<Sockaddr>* addresses) const;
 
   std::string ToString() const;

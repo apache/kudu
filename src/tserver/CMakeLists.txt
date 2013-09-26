@@ -14,6 +14,7 @@ ADD_DEPENDENCIES(tserver_proto kudu_common)
 ADD_DEPENDENCIES(tserver_proto rpc_header_proto)
 
 SET(TSERVER_SRCS
+  heartbeater.cc
   mini_tablet_server.cc
   scanners.cc
   tablet_server.cc
@@ -24,6 +25,7 @@ SET(TSERVER_SRCS
 
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver tserver_proto)
+target_link_libraries(tserver master_proto)
 target_link_libraries(tserver consensus_proto)
 target_link_libraries(tserver log_proto)
 target_link_libraries(tserver log)

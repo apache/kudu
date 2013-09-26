@@ -4,6 +4,7 @@
 
 #include "common/schema.h"
 #include "gutil/macros.h"
+#include "tserver/tablet_server_options.h"
 #include "util/env.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -23,6 +24,11 @@ class MiniTabletServer {
  public:
   MiniTabletServer(Env* env, const std::string& fs_root);
   ~MiniTabletServer();
+
+  // Return the options which will be used to start the tablet server.
+  // If you wish to make changes to these options, they need to be made
+  // before calling Start(), or else they will have no effect.
+  TabletServerOptions* options() { return &opts_; }
 
   // Start a tablet server running on the loopback interface and
   // an ephemeral port. To determine the address that the server
@@ -48,6 +54,8 @@ class MiniTabletServer {
   bool started_;
   Env* const env_;
   const std::string fs_root_;
+
+  TabletServerOptions opts_;
 
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<TabletServer> server_;

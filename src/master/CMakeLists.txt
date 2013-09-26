@@ -9,8 +9,9 @@ KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES master.proto)
 
-add_library(master_proto ${MASTER_PROTO_SRCS} ${MASTER_PROTO_HDRS})
+add_library(master_proto ${MASTER_PROTO_SRCS} ${MASTER_PROTO_HDRS} ${MASTER_KRPC_SRCS})
 ADD_DEPENDENCIES(master_proto kudu_common)
+TARGET_LINK_LIBRARIES(master_proto krpc)
 
 SET(MASTER_SRCS
   master.cc

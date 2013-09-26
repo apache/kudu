@@ -50,6 +50,12 @@ int Sockaddr::port() const {
   return ntohs(addr_.sin_port);
 }
 
+std::string Sockaddr::host() const {
+  char str[INET_ADDRSTRLEN];
+  ::inet_ntop(AF_INET, &addr_.sin_addr, str, INET_ADDRSTRLEN);
+  return str;
+}
+
 const struct sockaddr_in& Sockaddr::addr() const {
   return addr_;
 }

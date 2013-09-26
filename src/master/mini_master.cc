@@ -5,11 +5,14 @@
 #include <glog/logging.h>
 #include <string>
 
+#include "gutil/strings/substitute.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
 #include "master/master.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
+
+using strings::Substitute;
 
 namespace kudu {
 namespace master {
@@ -26,29 +29,52 @@ MiniMaster::~MiniMaster() {
 Status MiniMaster::Start() {
   CHECK(!started_);
 
+  return StartOnPorts(0, 0);
+}
+
+Status MiniMaster::Shutdown() {
+  RETURN_NOT_OK(master_->Shutdown());
+  started_ = false;
+  master_.reset();
+  return Status::OK();
+}
+
+Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
+  CHECK(!started_);
+
   MasterOptions opts;
 
   // Start RPC server on loopback.
-  opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
-  opts.webserver_opts.port = 0;
+  opts.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
+  opts.webserver_opts.port = web_port;
 
   gscoped_ptr<Master> server(new Master(opts));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());
 
-  server_.swap(server);
+  master_.swap(server);
   started_ = true;
   return Status::OK();
 }
 
+Status MiniMaster::Restart() {
+  CHECK(started_);
+
+  Sockaddr prev_rpc = bound_rpc_addr();
+  Sockaddr prev_http = bound_http_addr();
+  RETURN_NOT_OK_PREPEND(Shutdown(), "Could not shut down prior master");
+
+  return StartOnPorts(prev_rpc.port(), prev_http.port());
+}
+
 const Sockaddr MiniMaster::bound_rpc_addr() const {
   CHECK(started_);
-  return server_->first_rpc_address();
+  return master_->first_rpc_address();
 }
 
 const Sockaddr MiniMaster::bound_http_addr() const {
   CHECK(started_);
-  return server_->first_http_address();
+  return master_->first_http_address();
 }
 
 } // namespace master

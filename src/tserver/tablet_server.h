@@ -14,6 +14,7 @@
 #include "server/server_base.h"
 #include "tserver/tablet_server_options.h"
 #include "tserver/tserver.pb.h"
+#include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
@@ -29,9 +30,10 @@ class ServicePool;
 
 namespace tserver {
 
-class TSTabletManager;
+class Heartbeater;
 class MutatorManager;
 class ScannerManager;
+class TSTabletManager;
 
 class TabletServer : public server::ServerBase {
  public:
@@ -59,8 +61,12 @@ class TabletServer : public server::ServerBase {
  private:
   friend class TabletServerTest;
 
+  Status ValidateMasterAddressResolution() const;
+
   bool initted_;
-  TabletServerOptions opts_;
+
+  // The options passed at construction time.
+  const TabletServerOptions opts_;
 
   gscoped_ptr<FsManager> fs_manager_;
 
@@ -73,6 +79,9 @@ class TabletServer : public server::ServerBase {
   // This is always non-NULL. It is scoped only to minimize header
   // dependencies.
   gscoped_ptr<ScannerManager> scanner_manager_;
+
+  // Thread responsible for heartbeating to the master.
+  gscoped_ptr<Heartbeater> heartbeater_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServer);
 };

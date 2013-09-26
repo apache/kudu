@@ -31,6 +31,8 @@ class Sockaddr {
 
   uint32_t HashCode() const;
 
+  std::string host() const;
+
   void set_port(int port);
   int port() const;
   const struct sockaddr_in& addr() const;

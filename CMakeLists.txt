@@ -290,7 +290,7 @@ set(TEST_ONLY_LIBS ${TEST_ONLY_LIBS} ${CURL_LIBRARIES})
 # Linker setup
 ############################################################
 SET(KUDU_DEP_LIBS ${LIBS})
-SET(KUDU_LINK_LIBS tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
+SET(KUDU_LINK_LIBS master master_proto tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
 SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
@@ -361,6 +361,8 @@ set(LIBS ${LIBS} ${MASTER_LIBS})
 
 add_subdirectory(src/client)
 set(LIBS ${LIBS} ${CLIENT_LIBS})
+
+add_subdirectory(src/integration-tests)
 
 add_subdirectory(src/experiments)
 

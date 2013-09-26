@@ -2,8 +2,10 @@
 
 #include "tserver/tablet_server_options.h"
 
+#include <glog/logging.h>
 #include <gflags/gflags.h>
 
+#include "master/master.h"
 #include "tserver/tablet_server.h"
 #include "util/env.h"
 
@@ -22,6 +24,10 @@ DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
 DEFINE_int32(tablet_server_num_service_threads, 10,
              "Number of RPC worker threads to run");
+DEFINE_string(tablet_server_master_addr, "127.0.0.1:7151",
+              "Address of the master which the tablet server should connect to. "
+              "The master does not read this flag -- configure the master "
+              "separately using 'master_server_rpc_bind_addresses'.");
 
 
 TabletServerOptions::TabletServerOptions() {
@@ -35,6 +41,12 @@ TabletServerOptions::TabletServerOptions() {
   // basis.
 
   base_dir = FLAGS_tablet_server_base_dir;
+
+  Status s = master_hostport.ParseString(FLAGS_tablet_server_master_addr,
+                                         master::Master::kDefaultPort);
+  if (!s.ok()) {
+    LOG(FATAL) << "Couldn't parse tablet_server_master_addr flag: " << s.ToString();
+  }
 
   env = Env::Default();
 }

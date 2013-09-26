@@ -6,10 +6,12 @@
 #include <list>
 #include <vector>
 
+#include "gutil/strings/substitute.h"
 #include "rpc/service_if.h"
+#include "server/fsmanager.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
-#include "tablet/tablet_peer.h"
+#include "tserver/heartbeater.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_service.h"
 #include "tserver/ts_tablet_manager.h"
@@ -44,8 +46,26 @@ string TabletServer::ToString() const {
   return "TabletServer";
 }
 
+Status TabletServer::ValidateMasterAddressResolution() const {
+  Status s = opts_.master_hostport.ResolveAddresses(NULL);
+  if (!s.ok()) {
+    return s.CloneAndPrepend(strings::Substitute(
+                               "Couldn't resolve master service address '$0'",
+                               opts_.master_hostport.ToString()));
+  }
+  return s;
+}
+
 Status TabletServer::Init() {
   CHECK(!initted_);
+
+  // Validate that the passed master address actually resolves.
+  // We don't validate that we can connect at this point -- it should
+  // be allowed to start the TS and the master in whichever order --
+  // our heartbeat thread will loop until successfully connecting.
+  RETURN_NOT_OK(ValidateMasterAddressResolution());
+
+  heartbeater_.reset(new Heartbeater(opts_, this));
 
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
                         "Could not init FS layout");
@@ -66,15 +86,22 @@ Status TabletServer::Start() {
   CHECK(initted_);
 
   RETURN_NOT_OK(ServerBase::Start(gscoped_ptr<ServiceIf>(new TabletServiceImpl(this))));
+  RETURN_NOT_OK(heartbeater_->Start());
   return Status::OK();
 }
 
 Status TabletServer::Shutdown() {
   CHECK(initted_);
   LOG(INFO) << "TabletServer shutting down...";
-  RETURN_NOT_OK(ServerBase::Shutdown());
+
+  WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
+
+  WARN_NOT_OK(ServerBase::Shutdown(), "Failed to shutdown server base components");
+
   tablet_manager_->Shutdown();
+
   LOG(INFO) << "TabletServer shut down complete. Bye!";
+
   return Status::OK();
 }
 

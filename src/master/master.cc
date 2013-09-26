@@ -6,6 +6,7 @@
 #include <list>
 #include <vector>
 
+#include "gutil/strings/substitute.h"
 #include "rpc/messenger.h"
 #include "rpc/service_if.h"
 #include "rpc/service_pool.h"
@@ -32,8 +33,10 @@ Master::~Master() {
 }
 
 string Master::ToString() const {
-  // TODO: include port numbers, etc.
-  return "Master";
+  if (!initted_) {
+    return "Uninitialized master";
+  }
+  return strings::Substitute("Master@$0", first_rpc_address().ToString());
 }
 
 Status Master::Init() {
@@ -49,6 +52,15 @@ Status Master::Start() {
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
   RETURN_NOT_OK(ServerBase::Start(impl.Pass()));
 
+  return Status::OK();
+}
+
+Status Master::Shutdown() {
+  string name = ToString();
+  LOG(INFO) << name << " shutting down...";
+  WARN_NOT_OK(ServerBase::Shutdown(),
+              "Unable to shutdown base server components");
+  LOG(INFO) << name << " shutdown complete.";
   return Status::OK();
 }
 

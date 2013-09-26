@@ -7,6 +7,7 @@
 #include <boost/thread/mutex.hpp>
 
 #include "gutil/macros.h"
+#include "util/monotime.h"
 
 namespace kudu {
 
@@ -43,6 +44,14 @@ class CountDownLatch {
       cond_.wait(lock);
     }
   }
+
+  bool WaitUntil(const MonoTime& when) {
+    MonoDelta relative = when.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    return TimedWait(boost::posix_time::microseconds(relative.ToMicroseconds()));
+  }
+
+  // TODO: use MonoTime APIs instead of the boost time APIs in the
+  // following two functions. Inconsistent time types is annoying!
 
   // Wait on the latch for the given duration of time.
   // Return true if the latch reaches 0 within the given

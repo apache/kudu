@@ -44,6 +44,10 @@ MiniTabletServer::MiniTabletServer(Env* env,
   : started_(false),
     env_(env),
     fs_root_(fs_root) {
+
+  // Start RPC server on loopback.
+  opts_.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
+  opts_.webserver_opts.port = 0;
 }
 
 MiniTabletServer::~MiniTabletServer() {
@@ -56,13 +60,7 @@ Status MiniTabletServer::Start() {
   fs_manager_.reset(new FsManager(env_, fs_root_));
   RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
 
-  TabletServerOptions opts;
-
-  // Start RPC server on loopback.
-  opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
-  opts.webserver_opts.port = 0;
-
-  gscoped_ptr<TabletServer> server(new TabletServer(opts));
+  gscoped_ptr<TabletServer> server(new TabletServer(opts_));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());
 

@@ -43,6 +43,11 @@ HostPort::HostPort(const std::string& host, uint16_t port)
     port_(port) {
 }
 
+HostPort::HostPort(const Sockaddr& addr)
+  : host_(addr.host()),
+    port_(addr.port()) {
+}
+
 Status HostPort::ParseString(const string& str, uint16_t default_port) {
   std::pair<string, string> p = strings::Split(str, strings::delimiter::Limit(":", 1));
 
@@ -82,7 +87,9 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
     struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr);
     addr->sin_port = htons(port_);
     Sockaddr sockaddr(*addr);
-    addresses->push_back(sockaddr);
+    if (addresses) {
+      addresses->push_back(sockaddr);
+    }
     VLOG(1) << "Resolved address " << sockaddr.ToString()
             << " for host/port " << ToString();
   }

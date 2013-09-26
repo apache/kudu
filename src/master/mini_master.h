@@ -5,6 +5,7 @@
 #include <string>
 
 #include "gutil/macros.h"
+#include "gutil/port.h"
 #include "util/env.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -24,19 +25,27 @@ class MiniMaster {
   // an ephemeral port. To determine the address that the server
   // bound to, call MiniMaster::bound_addr()
   Status Start();
+  Status Shutdown();
+
+  // Restart the master on the same ports as it was previously bound.
+  // Requires that the master is currently started.
+  Status Restart();
 
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;
 
-  const Master* server() const { return server_.get(); }
-  Master* server() { return server_.get(); }
+  const Master* master() const { return master_.get(); }
+  Master* master() { return master_.get(); }
 
  private:
+  Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
+
   bool started_;
-  Env* const env_;
+
+  ATTRIBUTE_MEMBER_UNUSED Env* const env_;
   const std::string fs_root_;
 
-  gscoped_ptr<Master> server_;
+  gscoped_ptr<Master> master_;
 };
 
 } // namespace master
