@@ -77,7 +77,7 @@ void ReactorThread::Shutdown() {
 
   VLOG(1) << name() << ": joining Reactor thread.";
   WakeThread();
-  thread_->join();
+  CHECK_OK(ThreadJoiner(thread_.get(), "reactor thread").Join());
 
   // TODO: what about pending calls? need to abort them?
 }

@@ -17,6 +17,7 @@
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
 #include "util/status.h"
+#include "util/thread_util.h"
 
 using google::protobuf::Message;
 using std::tr1::shared_ptr;
@@ -59,7 +60,7 @@ void AcceptorPool::Shutdown() {
   socket_.Shutdown(true, true);
 
   BOOST_FOREACH(const shared_ptr<boost::thread>& thread, threads_) {
-    thread->join();
+    CHECK_OK(ThreadJoiner(thread.get(), "acceptor thread").Join());
   }
   threads_.clear();
 }

@@ -8,7 +8,9 @@
 
 #include "gutil/stringprintf.h"
 #include "gutil/walltime.h"
+#include "util/status.h"
 #include "util/test_graph.h"
+#include "util/thread_util.h"
 
 namespace kudu {
 
@@ -56,7 +58,7 @@ void TimeSeriesCollector::StartDumperThread() {
 void TimeSeriesCollector::StopDumperThread() {
   CHECK(started_);
   exit_latch_.CountDown();
-  dumper_thread_->join();
+  CHECK_OK(ThreadJoiner(dumper_thread_.get(), "time series dumper thread").Join());
   started_ = false;
 }
 

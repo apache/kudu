@@ -13,6 +13,7 @@
 #include "rpc/messenger.h"
 #include "rpc/service_if.h"
 #include "util/status.h"
+#include "util/thread_util.h"
 
 using std::tr1::shared_ptr;
 
@@ -29,7 +30,7 @@ ServicePool::~ServicePool() {
   // We can't join all of our threads unless the Messenger is closing.
   CHECK(messenger_->closing());
   BOOST_FOREACH(shared_ptr<boost::thread> &thread, threads_) {
-    thread->join();
+    CHECK_OK(ThreadJoiner(thread.get(), "service thread").Join());
   }
 }
 

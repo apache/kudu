@@ -6,6 +6,7 @@
 
 #include "gutil/stl_util.h"
 #include "util/threadpool.h"
+#include "util/thread_util.h"
 
 namespace kudu {
 
@@ -64,7 +65,7 @@ void ThreadPool::Shutdown() {
   }
 
   BOOST_FOREACH(boost::thread *thread, threads_) {
-    thread->join();
+    CHECK_OK(ThreadJoiner(thread, "threadpool worker").Join());
   }
 
   STLDeleteElements(&threads_);
