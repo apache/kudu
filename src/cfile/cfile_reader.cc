@@ -87,8 +87,8 @@ Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   uint8_t scratch[kMagicAndLengthSize];
   Slice slice;
 
-  RETURN_NOT_OK(file_->Read(offset, kMagicAndLengthSize,
-                            &slice, scratch));
+  RETURN_NOT_OK(env_util::ReadFully(file_.get(), offset, kMagicAndLengthSize,
+                                    &slice, scratch));
 
   return ParseMagicAndLength(slice, len);
 }
@@ -129,8 +129,8 @@ Status CFileReader::ReadAndParseHeader() {
   Slice header_slice;
   header_.reset(new CFileHeaderPB());
 
-  RETURN_NOT_OK(file_->Read(kMagicAndLengthSize, header_size,
-                            &header_slice, header_space));
+  RETURN_NOT_OK(env_util::ReadFully(file_.get(), kMagicAndLengthSize, header_size,
+                                    &header_slice, header_space));
   if (!header_->ParseFromArray(header_slice.data(), header_size)) {
     return Status::Corruption("Invalid cfile pb header");
   }
@@ -157,7 +157,7 @@ Status CFileReader::ReadAndParseFooter() {
   uint8_t footer_space[footer_size];
   Slice footer_slice;
   uint64_t off = file_size_ - kMagicAndLengthSize - footer_size;
-  RETURN_NOT_OK(file_->Read(off, footer_size, &footer_slice, footer_space));
+  RETURN_NOT_OK(env_util::ReadFully(file_.get(), off, footer_size, &footer_slice, footer_space));
   if (!footer_->ParseFromArray(footer_slice.data(), footer_size)) {
     return Status::Corruption("Invalid cfile pb footer");
   }
@@ -206,8 +206,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr,
   // Cache miss: need to read ourselves.
   gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice block;
-  RETURN_NOT_OK(file_->Read(ptr.offset(), ptr.size(),
-                            &block, scratch.get()));
+  RETURN_NOT_OK(env_util::ReadFully(file_.get(), ptr.offset(), ptr.size(),
+                                    &block, scratch.get()));
   if (block.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }

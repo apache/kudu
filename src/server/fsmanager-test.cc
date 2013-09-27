@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "server/fsmanager.h"
+#include "util/env_util.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
 
@@ -34,7 +35,7 @@ class FsManagerTestBase : public KuduTest {
     Slice result;
     shared_ptr<RandomAccessFile> reader;
     ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &reader));
-    ASSERT_STATUS_OK(reader->Read(0, data.size(), &result, buffer));
+    ASSERT_STATUS_OK(env_util::ReadFully(reader.get(), 0, data.size(), &result, buffer));
     ASSERT_EQ(data.size(), result.size());
     ASSERT_EQ(0, result.compare(data));
   }
@@ -55,7 +56,7 @@ class FsManagerTestBase : public KuduTest {
     Slice result;
     shared_ptr<RandomAccessFile> reader;
     ASSERT_STATUS_OK(fs_manager()->OpenWalFile(server, prefix, timestamp, &reader));
-    ASSERT_STATUS_OK(reader->Read(0, data.size(), &result, buffer));
+    ASSERT_STATUS_OK(env_util::ReadFully(reader.get(), 0, data.size(), &result, buffer));
     ASSERT_EQ(data.size(), result.size());
     ASSERT_EQ(0, result.compare(data));
   }

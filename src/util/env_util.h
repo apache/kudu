@@ -23,6 +23,20 @@ Status OpenFileForRandom(Env *env, const string &path,
 Status OpenFileForSequential(Env *env, const string &path,
                              shared_ptr<SequentialFile> *file);
 
+// Read exactly 'n' bytes from the given file. If fewer than 'n' bytes
+// are read, returns an IOError. This differs from the underlying
+// RandomAccessFile::Read(), which may return a "short read".
+//
+// Similar to RandomAccessFile::Read(), '*result' is modified to point
+// to the bytes which were read. These bytes may be a copy placed in
+// the 'scratch' buffer, or result may point into the underlying file
+// (e.g. via mmap or other zero-copy mechanism).
+//
+// NOTE: even if this returns an error, some data _may_ be read into
+// the provided scratch buffer, but no guarantee that that will be the
+// case.
+Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
+                 Slice* result, uint8_t* scratch);
 
 } // namespace env_util
 } // namespace kudu

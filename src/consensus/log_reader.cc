@@ -17,6 +17,7 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
+using env_util::ReadFully;
 
 // the maximum header size (8 MB)
 const uint32_t kMaxHeaderSize = 8 * 1024 * 1024;
@@ -130,10 +131,7 @@ Status LogReader::ReadMagicAndHeaderLength(const shared_ptr<RandomAccessFile> &f
                                            uint32_t *len) {
   uint8_t scratch[kMagicAndHeaderLength];
   Slice slice;
-  RETURN_NOT_OK(file->Read(0,
-                           kMagicAndHeaderLength,
-                           &slice,
-                           scratch));
+  RETURN_NOT_OK(ReadFully(file.get(), 0, kMagicAndHeaderLength, &slice, scratch));
   RETURN_NOT_OK(ParseMagicAndLength(slice, len));
   return Status::OK();
 }
@@ -156,10 +154,8 @@ Status LogReader::ParseHeaderAndBuildSegment(
   Slice header_slice;
   LogSegmentHeader header;
 
-  RETURN_NOT_OK(file->Read(kMagicAndHeaderLength,
-                           header_size,
-                           &header_slice,
-                           header_space));
+  RETURN_NOT_OK(ReadFully(file.get(), kMagicAndHeaderLength, header_size,
+                          &header_slice, header_space));
 
   RETURN_NOT_OK(pb_util::ParseFromArray(&header,
                                         header_slice.data(),
@@ -188,10 +184,8 @@ Status LogReader::ReadEntryLength(
     uint32_t *len) {
   uint8_t scratch[kEntryLengthSize];
   Slice slice;
-  RETURN_NOT_OK(segment->readable_file()->Read(*offset,
-                                               kEntryLengthSize,
-                                               &slice,
-                                               scratch));
+  RETURN_NOT_OK(ReadFully(segment->readable_file().get(), *offset, kEntryLengthSize,
+                          &slice, scratch));
   *offset += kEntryLengthSize;
   return ParseEntryLength(slice, len);
 }
