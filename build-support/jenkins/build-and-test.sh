@@ -26,6 +26,7 @@ ulimit -c unlimited
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-1}
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
 LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
+export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
