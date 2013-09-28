@@ -8,16 +8,6 @@
 #include "server/rpc_server.h"
 #include "util/logging.h"
 
-DEFINE_string(master_server_rpc_bind_addresses, "0.0.0.0:7150",
-             "Comma-separated list of addresses for the Master Server"
-              " to bind to for RPC connections");
-DEFINE_int32(master_server_num_rpc_reactors, 1,
-             "Number of RPC reactor threads to run");
-DEFINE_int32(master_server_num_acceptors_per_address, 1,
-             "Number of RPC acceptor threads for each bound address");
-DEFINE_int32(master_server_num_service_threads, 10,
-             "Number of RPC worker threads to run");
-
 using kudu::master::MasterServer;
 
 namespace kudu {
@@ -31,12 +21,7 @@ static int MasterServerMain(int argc, char** argv) {
     return 1;
   }
 
-  RpcServerOptions opts;
-  opts.rpc_bind_addresses = FLAGS_master_server_rpc_bind_addresses;
-  opts.num_rpc_reactors = FLAGS_master_server_num_rpc_reactors;
-  opts.num_acceptors_per_address = FLAGS_master_server_num_acceptors_per_address;
-  opts.num_service_threads = FLAGS_master_server_num_service_threads;
-
+  MasterServerOptions opts;
   MasterServer server(opts);
   LOG(INFO) << "Initializing master server...";
   CHECK_OK(server.Init());

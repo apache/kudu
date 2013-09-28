@@ -9,7 +9,8 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
-#include "master/master.pb.h"
+#include "master/master_server_options.h"
+#include "server/server_base.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -24,11 +25,12 @@ class ServicePool;
 
 namespace master {
 
-class MasterServer {
+class MasterServer : public server::ServerBase {
  public:
-  static const uint16_t kDefaultPort = 7150;
+  static const uint16_t kDefaultPort = 7051;
+  static const uint16_t kDefaultWebPort = 8051;
 
-  explicit MasterServer(const RpcServerOptions& opts);
+  explicit MasterServer(const MasterServerOptions& opts);
   ~MasterServer();
 
   Status Init();
@@ -42,8 +44,6 @@ class MasterServer {
   RpcServer *rpc_server() const { return rpc_server_.get(); }
 
   bool initted_;
-
-  gscoped_ptr<RpcServer> rpc_server_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterServer);
 };

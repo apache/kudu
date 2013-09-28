@@ -31,6 +31,7 @@ TabletServerOptions::TabletServerOptions() {
   rpc_opts.num_rpc_reactors = FLAGS_tablet_server_num_rpc_reactors;
   rpc_opts.num_acceptors_per_address = FLAGS_tablet_server_num_acceptors_per_address;
   rpc_opts.num_service_threads = FLAGS_tablet_server_num_service_threads;
+  rpc_opts.default_port = TabletServer::kDefaultPort;
 
   webserver_opts.port = FLAGS_tablet_server_web_port;
   // The rest of the web server options are not overridable on a per-tablet-server

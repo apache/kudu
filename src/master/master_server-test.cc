@@ -33,8 +33,10 @@ class MasterServerTest : public KuduTest {
   // server.
   void StartTestServer(Sockaddr *addr, gscoped_ptr<MasterServer>* ret) {
     // Start server on loopback.
-    RpcServerOptions opts;
-    opts.rpc_bind_addresses = "127.0.0.1:0";
+    MasterServerOptions opts;
+    opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
+    opts.webserver_opts.port = 0;
+    // TODO: refactor this stuff into a MiniMaster class, like MiniTabletServer.
 
     gscoped_ptr<MasterServer> server(new MasterServer(opts));
     ASSERT_STATUS_OK(server->Init());

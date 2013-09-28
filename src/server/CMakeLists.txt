@@ -18,6 +18,7 @@ SET(SERVER_SRCS
   oid_generator.cc
   pprof-path-handlers.cc
   rpc_server.cc
+  server_base.cc
   webserver.cc
   webserver_options.cc
 )

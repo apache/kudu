@@ -23,7 +23,8 @@ RpcServerOptions::RpcServerOptions()
   : rpc_bind_addresses("0.0.0.0:0"),
     num_rpc_reactors(1),
     num_acceptors_per_address(1),
-    num_service_threads(10) {
+    num_service_threads(10),
+    default_port(0) {
 }
 
 RpcServer::RpcServer(const RpcServerOptions& opts)
@@ -40,9 +41,10 @@ string RpcServer::ToString() const {
   return "RpcServer";
 }
 
-Status RpcServer::Init(uint16_t default_port) {
+Status RpcServer::Init() {
   CHECK(!initted_);
-  RETURN_NOT_OK(ParseAddressList(options_.rpc_bind_addresses, default_port,
+  RETURN_NOT_OK(ParseAddressList(options_.rpc_bind_addresses,
+                                 options_.default_port,
                                  &rpc_bind_addresses_));
   BOOST_FOREACH(const Sockaddr& addr, rpc_bind_addresses_) {
     if (IsPrivilegedPort(addr.port())) {

@@ -24,6 +24,7 @@ struct RpcServerOptions {
   uint32_t num_rpc_reactors;
   uint32_t num_acceptors_per_address;
   uint32_t num_service_threads;
+  uint16_t default_port;
 };
 
 class RpcServer {
@@ -31,7 +32,7 @@ class RpcServer {
   explicit RpcServer(const RpcServerOptions& opts);
   ~RpcServer();
 
-  Status Init(uint16_t default_port);
+  Status Init();
   Status Start(gscoped_ptr<rpc::ServiceIf> service);
   void Shutdown();
 

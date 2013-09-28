@@ -10,7 +10,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
-#include "server/webserver_options.h"
+#include "server/server_base.h"
 #include "tserver/tablet_server_options.h"
 #include "tserver/tserver.pb.h"
 #include "util/net/sockaddr.h"
@@ -34,13 +34,12 @@ namespace tserver {
 
 class ScannerManager;
 
-class TabletServer {
+class TabletServer : public server::ServerBase {
  public:
   // TODO: move this out of this header, since clients want to use this
   // constant as well.
-  static const uint16_t kDefaultPort = 7150;
-
-  static const uint16_t kDefaultWebPort = 8015;
+  static const uint16_t kDefaultPort = 7050;
+  static const uint16_t kDefaultWebPort = 8050;
 
   explicit TabletServer(const TabletServerOptions& opts);
   ~TabletServer();
@@ -58,8 +57,6 @@ class TabletServer {
   bool LookupTablet(const string& tablet_id,
                     std::tr1::shared_ptr<tablet::Tablet>* tablet) const;
 
-  const RpcServer *rpc_server() const { return rpc_server_.get(); }
-  const Webserver *web_server() const { return web_server_.get(); }
 
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
@@ -72,8 +69,6 @@ class TabletServer {
   bool initted_;
   TabletServerOptions opts_;
 
-  gscoped_ptr<RpcServer> rpc_server_;
-  gscoped_ptr<Webserver> web_server_;
   gscoped_ptr<FsManager> fs_manager_;
 
   // The singular hosted tablet.

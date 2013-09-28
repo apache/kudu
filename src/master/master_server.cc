@@ -21,13 +21,12 @@ using kudu::rpc::ServiceIf;
 namespace kudu {
 namespace master {
 
-MasterServer::MasterServer(const RpcServerOptions& opts)
-  : initted_(false),
-    rpc_server_(new RpcServer(opts)) {
+MasterServer::MasterServer(const MasterServerOptions& opts)
+  : ServerBase(opts.rpc_opts, opts.webserver_opts),
+    initted_(false) {
 }
 
 MasterServer::~MasterServer() {
-  rpc_server_->Shutdown();
 }
 
 string MasterServer::ToString() const {
@@ -37,7 +36,7 @@ string MasterServer::ToString() const {
 
 Status MasterServer::Init() {
   CHECK(!initted_);
-  RETURN_NOT_OK(rpc_server_->Init(kDefaultPort));
+  RETURN_NOT_OK(ServerBase::Init());
   initted_ = true;
   return Status::OK();
 }
@@ -46,7 +45,7 @@ Status MasterServer::Start() {
   CHECK(initted_);
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
-  RETURN_NOT_OK(rpc_server_->Start(impl.Pass()));
+  RETURN_NOT_OK(ServerBase::Start(impl.Pass()));
 
   return Status::OK();
 }

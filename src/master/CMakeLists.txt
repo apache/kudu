@@ -14,6 +14,7 @@ ADD_DEPENDENCIES(master_proto kudu_common)
 
 SET(MASTER_SRCS
   master_server.cc
+  master_server_options.cc
   master_service.cc
 )
 
