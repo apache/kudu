@@ -18,8 +18,6 @@ DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7150",
               " to bind to for RPC connections");
 DEFINE_int32(tablet_server_web_port, TabletServer::kDefaultWebPort,
              "Port to bind to for the tablet server web server");
-DEFINE_int32(tablet_server_num_rpc_reactors, 1,
-             "Number of RPC reactor threads to run");
 DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
 DEFINE_int32(tablet_server_num_service_threads, 10,
@@ -28,7 +26,6 @@ DEFINE_int32(tablet_server_num_service_threads, 10,
 
 TabletServerOptions::TabletServerOptions() {
   rpc_opts.rpc_bind_addresses = FLAGS_tablet_server_rpc_bind_addresses;
-  rpc_opts.num_rpc_reactors = FLAGS_tablet_server_num_rpc_reactors;
   rpc_opts.num_acceptors_per_address = FLAGS_tablet_server_num_acceptors_per_address;
   rpc_opts.num_service_threads = FLAGS_tablet_server_num_service_threads;
   rpc_opts.default_port = TabletServer::kDefaultPort;

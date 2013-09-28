@@ -2,6 +2,8 @@
 #ifndef KUDU_SERVER_SERVER_BASE_H
 #define KUDU_SERVER_SERVER_BASE_H
 
+#include <tr1/memory>
+
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "rpc/service_if.h"
@@ -14,6 +16,7 @@ namespace kudu {
 class Webserver;
 
 namespace rpc {
+class Messenger;
 class ServiceIf;
 } // namespace rpc
 
@@ -29,6 +32,7 @@ class ServerBase {
  public:
   const RpcServer *rpc_server() const { return rpc_server_.get(); }
   const Webserver *web_server() const { return web_server_.get(); }
+  const std::tr1::shared_ptr<rpc::Messenger>& messenger() const { return messenger_; }
 
  protected:
   ServerBase(const RpcServerOptions& rpc_opts,
@@ -40,6 +44,7 @@ class ServerBase {
 
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ServerBase);

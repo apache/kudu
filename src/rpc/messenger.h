@@ -109,10 +109,12 @@ class Messenger {
 
   // Add a new acceptor pool listening to the given accept address.
   // You can create any number of acceptor pools you want, including none.
-  Status AddAcceptorPool(const Sockaddr &accept_addr, int num_threads);
-
-  // get information about current acceptor pools
-  void GetAcceptorInfo(std::list<AcceptorPoolInfo> *info) const;
+  //
+  // The created pool is returned in *pool. The Messenger also retains
+  // a reference to the pool, so the caller may safely drop this reference
+  // and the pool will remain running.
+  Status AddAcceptorPool(const Sockaddr &accept_addr, int num_threads,
+                         std::tr1::shared_ptr<AcceptorPool>* pool);
 
   // Queue a call for transmission. This will pick the appropriate reactor,
   // and enqueue a task on that reactor to assign and send the call.
@@ -158,6 +160,10 @@ class Messenger {
 
   const std::string name_;
 
+  // Pools which are listening on behalf of this messenger.
+  // Note that the user may have called Shutdown() on one of these
+  // pools, so even though we retain the reference, it may no longer
+  // be listening.
   acceptor_vec_t acceptor_pools_;
 
   std::vector<Reactor*> reactors_;

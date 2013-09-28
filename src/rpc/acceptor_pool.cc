@@ -53,7 +53,11 @@ Status AcceptorPool::Init(int num_threads) {
 }
 
 void AcceptorPool::Shutdown() {
-  Release_Store(&closing_, true);
+  if (Acquire_CompareAndSwap(&closing_, false, true) != false) {
+    VLOG(2) << "Acceptor Pool on " << bind_address_.ToString()
+            << " already shut down";
+    return;
+  }
 
   // Closing the socket will break us out of accept() if we're in it, and
   // prevent future accepts.

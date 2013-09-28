@@ -117,7 +117,8 @@ void Messenger::Shutdown() {
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
-                                  int num_threads) {
+                                  int num_threads,
+                                  shared_ptr<AcceptorPool>* pool) {
   Socket sock;
   RETURN_NOT_OK(sock.Init(0));
   RETURN_NOT_OK(sock.BindAndListen(accept_addr, FLAGS_accept_backlog));
@@ -127,15 +128,8 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   RETURN_NOT_OK(acceptor_pool->Init(num_threads));
   boost::lock_guard<boost::mutex> guard(lock_);
   acceptor_pools_.push_back(acceptor_pool);
+  *pool = acceptor_pool;
   return Status::OK();
-}
-
-void Messenger::GetAcceptorInfo(std::list<AcceptorPoolInfo> *info) const {
-  boost::lock_guard<boost::mutex> guard(lock_);
-  info->clear();
-  BOOST_FOREACH(const shared_ptr<AcceptorPool> &pool, acceptor_pools_) {
-    info->push_back(AcceptorPoolInfo(pool->bind_address()));
-  }
 }
 
 void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {

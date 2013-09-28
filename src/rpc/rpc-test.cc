@@ -50,7 +50,8 @@ TEST_F(TestRpc, TestAcceptorPoolStartStop) {
   int n_iters = AllowSlowTests() ? 100 : 5;
   for (int i = 0; i < n_iters; i++) {
     shared_ptr<Messenger> messenger(CreateMessenger("TestAcceptorPoolStartStop"));
-    ASSERT_STATUS_OK(messenger->AddAcceptorPool(Sockaddr(), 2));
+    shared_ptr<AcceptorPool> pool;
+    ASSERT_STATUS_OK(messenger->AddAcceptorPool(Sockaddr(), 2, &pool));
     messenger->Shutdown();
   }
 }

@@ -12,6 +12,7 @@
 namespace kudu {
 
 namespace rpc {
+class AcceptorPool;
 class Messenger;
 class ServiceIf;
 class ServicePool;
@@ -21,7 +22,6 @@ struct RpcServerOptions {
   RpcServerOptions();
 
   string rpc_bind_addresses;
-  uint32_t num_rpc_reactors;
   uint32_t num_acceptors_per_address;
   uint32_t num_service_threads;
   uint16_t default_port;
@@ -33,7 +33,8 @@ class RpcServer {
   ~RpcServer();
 
   Status Init();
-  Status Start(gscoped_ptr<rpc::ServiceIf> service);
+  Status Start(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+               gscoped_ptr<rpc::ServiceIf> service);
   void Shutdown();
 
   string ToString() const;
@@ -49,10 +50,8 @@ class RpcServer {
   // Parsed addresses to bind RPC to. Set by Init()
   std::vector<Sockaddr> rpc_bind_addresses_;
 
-  // RPC messenger.
-  std::tr1::shared_ptr<rpc::Messenger> rpc_messenger_;
-  gscoped_ptr<rpc::ServicePool> rpc_service_pool_;
-
+  std::vector<std::tr1::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
+  gscoped_ptr<rpc::ServicePool> service_pool_;
   DISALLOW_COPY_AND_ASSIGN(RpcServer);
 };
 

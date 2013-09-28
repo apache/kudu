@@ -7,6 +7,7 @@
 #include <list>
 #include <string>
 
+#include "rpc/acceptor_pool.h"
 #include "rpc/messenger.h"
 #include "rpc/proxy.h"
 #include "rpc/reactor.h"
@@ -175,13 +176,6 @@ class RpcTestBase : public KuduTest {
     return messenger;
   }
 
-  Sockaddr GetListenAddress(const Messenger &messenger) {
-    std::list<AcceptorPoolInfo> info;
-    messenger.GetAcceptorInfo(&info);
-    CHECK_EQ(1, info.size());
-    return info.front().bind_address();
-  }
-
   Status DoTestSyncCall(const Proxy &p, const char *method) {
     AddRequestPB req;
     req.set_x(rand());
@@ -236,12 +230,13 @@ class RpcTestBase : public KuduTest {
   template<class ServiceClass>
   void DoStartTestServer(Sockaddr *server_addr) {
     server_messenger_ = CreateMessenger("Server", n_server_reactor_threads_);
-    ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2));
+    shared_ptr<AcceptorPool> pool;
+    ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
+    *server_addr = pool->bind_address();
+
     gscoped_ptr<ServiceIf> impl(new ServiceClass());
     worker_pool_.reset(new ServicePool(server_messenger_, impl.Pass()));
     ASSERT_STATUS_OK(worker_pool_->Init(n_worker_threads_));
-
-    *server_addr = GetListenAddress(*server_messenger_);
   }
 
  protected:

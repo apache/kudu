@@ -22,7 +22,7 @@ class Messenger;
 
 // A pool of threads calling accept() to create new connections.
 // Acceptor pool threads terminate when they notice that the messenger has been
-// shut down.
+// shut down, if Shutdown() is called, or if the pool object is destructed.
 class AcceptorPool {
  public:
   // Create a new acceptor pool.  Calls socket::Release to take ownership of the
@@ -32,6 +32,8 @@ class AcceptorPool {
   ~AcceptorPool();
   Status Init(int num_threads);
   void Shutdown();
+
+  // Return the address that the pool is bound to.
   Sockaddr bind_address() const;
 
  private:
