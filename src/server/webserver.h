@@ -20,6 +20,7 @@
 #include <boost/function.hpp>
 #include <boost/thread/mutex.hpp>
 
+#include "server/webserver_options.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
@@ -39,10 +40,7 @@ class Webserver {
 
   // Using this constructor, the webserver will bind to all available
   // interfaces.
-  explicit Webserver(const int port);
-
-  // Uses FLAGS_webserver_{port, interface}
-  Webserver();
+  explicit Webserver(const WebserverOptions& opts);
 
   ~Webserver();
 
@@ -124,6 +122,8 @@ class Webserver {
   // string (that is, "key1=value1&key2=value2.."). If no value is given for a
   // key, it is entered into the map as (key, "").
   void BuildArgumentMap(const std::string& args, ArgumentMap* output);
+
+  const WebserverOptions opts_;
 
   // Lock guarding the path_handlers_ map
   boost::mutex path_handlers_lock_;

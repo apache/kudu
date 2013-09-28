@@ -17,6 +17,7 @@ SET(TSERVER_SRCS
   mini_tablet_server.cc
   scanners.cc
   tablet_server.cc
+  tablet_server_options.cc
   tablet_service.cc
 )
 

@@ -10,13 +10,15 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
-#include "server/rpc_server.h"
+#include "server/webserver_options.h"
+#include "tserver/tablet_server_options.h"
 #include "tserver/tserver.pb.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
 namespace kudu {
 
+class FsManager;
 class Webserver;
 
 namespace rpc {
@@ -31,13 +33,6 @@ class Tablet;
 namespace tserver {
 
 class ScannerManager;
-
-struct TabletServerOptions {
-  TabletServerOptions();
-
-  RpcServerOptions rpc_opts;
-  uint16_t webserver_port;
-};
 
 class TabletServer {
  public:
@@ -69,13 +64,17 @@ class TabletServer {
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
 
+  FsManager* fs_manager() { return fs_manager_.get(); }
+
  private:
   friend class TabletServerTest;
 
   bool initted_;
+  TabletServerOptions opts_;
 
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
+  gscoped_ptr<FsManager> fs_manager_;
 
   // The singular hosted tablet.
   // TODO: This will be replaced with some kind of map of tablet ID to

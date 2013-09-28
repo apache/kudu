@@ -23,14 +23,12 @@ using kudu::tablet::Tablet;
 namespace kudu {
 namespace tserver {
 
-TabletServerOptions::TabletServerOptions()
-  : webserver_port(TabletServer::kDefaultWebPort) {
-}
-
 TabletServer::TabletServer(const TabletServerOptions& opts)
   : initted_(false),
+    opts_(opts),
     rpc_server_(new RpcServer(opts.rpc_opts)),
-    web_server_(new Webserver(opts.webserver_port)) {
+    web_server_(new Webserver(opts.webserver_opts)),
+    fs_manager_(new FsManager(opts.env, opts.base_dir)) {
 }
 
 TabletServer::~TabletServer() {
@@ -45,6 +43,9 @@ string TabletServer::ToString() const {
 
 Status TabletServer::Init() {
   CHECK(!initted_);
+
+  RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
+
   RETURN_NOT_OK(rpc_server_->Init(kDefaultPort));
 
   scanner_manager_.reset(new ScannerManager);

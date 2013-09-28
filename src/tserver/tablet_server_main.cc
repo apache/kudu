@@ -15,19 +15,6 @@
 #include "util/env.h"
 #include "util/logging.h"
 
-DEFINE_string(tablet_server_base_dir, "/tmp/demo-tablets",
-              "Base directory for single-tablet demo server");
-
-DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7150",
-             "Comma-separated list of addresses for the Tablet Server"
-              " to bind to for RPC connections");
-DEFINE_int32(tablet_server_num_rpc_reactors, 1,
-             "Number of RPC reactor threads to run");
-DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
-             "Number of RPC acceptor threads for each bound address");
-DEFINE_int32(tablet_server_num_service_threads, 10,
-             "Number of RPC worker threads to run");
-
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
 
 using kudu::metadata::TabletMetadata;
@@ -43,18 +30,15 @@ namespace tserver {
 // tables.
 class TemporaryTabletsForDemos {
  public:
-  TemporaryTabletsForDemos()
-    : env_(Env::Default()),
-      fs_manager_(env_, FLAGS_tablet_server_base_dir),
-      twitter_schema_(twitter_demo::CreateTwitterSchema()) {
-    CHECK_OK(fs_manager_.CreateInitialFileSystemLayout());
+  explicit TemporaryTabletsForDemos(TabletServer* server)
+    : twitter_schema_(twitter_demo::CreateTwitterSchema()) {
 
     metadata::TabletMasterBlockPB master_block;
     master_block.set_tablet_id("twitter");
     master_block.set_block_a("00000000000000000000000000000000");
     master_block.set_block_b("11111111111111111111111111111111");
     gscoped_ptr<TabletMetadata> meta(
-      new TabletMetadata(&fs_manager_, master_block));
+      new TabletMetadata(server->fs_manager(), master_block));
     twitter_tablet_.reset(new Tablet(meta.Pass(), twitter_schema_));
 
     Status s = twitter_tablet_->Open();
@@ -70,8 +54,6 @@ class TemporaryTabletsForDemos {
   }
 
  private:
-  Env* env_;
-  FsManager fs_manager_;
   Schema twitter_schema_;
 
   shared_ptr<Tablet> twitter_tablet_;
@@ -107,17 +89,13 @@ static int TabletServerMain(int argc, char** argv) {
   }
 
   TabletServerOptions opts;
-  opts.rpc_opts.rpc_bind_addresses = FLAGS_tablet_server_rpc_bind_addresses;
-  opts.rpc_opts.num_rpc_reactors = FLAGS_tablet_server_num_rpc_reactors;
-  opts.rpc_opts.num_acceptors_per_address = FLAGS_tablet_server_num_acceptors_per_address;
-  opts.rpc_opts.num_service_threads = FLAGS_tablet_server_num_service_threads;
 
   TabletServer server(opts);
   LOG(INFO) << "Initializing tablet server...";
   CHECK_OK(server.Init());
 
   LOG(INFO) << "Setting up demo tablets...";
-  TemporaryTabletsForDemos demo_setup;
+  TemporaryTabletsForDemos demo_setup(&server);
   server.RegisterTablet(demo_setup.twitter_tablet());
 
   // Temporary hack for demos: start threads which compact/flush the tablet.

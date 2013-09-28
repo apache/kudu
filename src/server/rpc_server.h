@@ -3,6 +3,7 @@
 #define KUDU_RPC_SERVER_H
 
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "util/net/sockaddr.h"

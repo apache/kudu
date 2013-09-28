@@ -13,22 +13,24 @@ namespace kudu {
 
 class WebserverTest : public KuduTest {
  public:
-  WebserverTest()
-    : server_(0) {
+  WebserverTest() {
+    WebserverOptions opts;
+    opts.port = 0;
+    server_.reset(new Webserver(opts));
   }
 
   virtual void SetUp() {
-    AddDefaultPathHandlers(&server_);
-    ASSERT_STATUS_OK(server_.Start());
+    AddDefaultPathHandlers(server_.get());
+    ASSERT_STATUS_OK(server_->Start());
 
     vector<Sockaddr> addrs;
-    ASSERT_STATUS_OK(server_.GetBoundAddresses(&addrs));
+    ASSERT_STATUS_OK(server_->GetBoundAddresses(&addrs));
     ASSERT_EQ(addrs.size(), 1);
     addr_ = addrs[0];
   }
 
  protected:
-  Webserver server_;
+  gscoped_ptr<Webserver> server_;
   Sockaddr addr_;
 };
 

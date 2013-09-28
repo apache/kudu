@@ -43,7 +43,7 @@ Status MiniTabletServer::Start() {
 
   // Start RPC server on loopback.
   opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
-  opts.webserver_port = 0;
+  opts.webserver_opts.port = 0;
 
   gscoped_ptr<TabletServer> server(new TabletServer(opts));
   RETURN_NOT_OK(server->Init());

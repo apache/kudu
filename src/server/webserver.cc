@@ -26,7 +26,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <glog/logging.h>
-#include <gflags/gflags.h>
 #include <squeasel.h>
 
 #include "gutil/stringprintf.h"
@@ -40,54 +39,16 @@ using std::stringstream;
 using std::vector;
 using std::make_pair;
 
-const char* GetDefaultDocumentRoot();
-
-DEFINE_int32(webserver_port, 25000, "Port to start debug webserver on");
-DEFINE_string(webserver_interface, "",
-    "Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0");
-DEFINE_string(webserver_doc_root, GetDefaultDocumentRoot(),
-    "Files under <webserver_doc_root>/www are accessible via the debug webserver. "
-    "Defaults to KUDU_HOME, or if KUDU_HOME is not set, disables the document "
-    "root");
-DEFINE_bool(enable_webserver_doc_root, true,
-    "If true, webserver may serve static files from the webserver_doc_root");
-
-DEFINE_string(webserver_certificate_file, "",
-    "The location of the debug webserver's SSL certificate file, in .pem format. If "
-    "empty, webserver SSL support is not enabled");
-DEFINE_string(webserver_authentication_domain, "",
-    "Domain used for debug webserver authentication");
-DEFINE_string(webserver_password_file, "",
-    "(Optional) Location of .htpasswd file containing user names and hashed passwords for"
-    " debug webserver authentication");
+namespace kudu {
 
 static const char* DOC_FOLDER = "/www/";
 static const int DOC_FOLDER_LEN = strlen(DOC_FOLDER);
 
-// Returns KUDU_HOME if set, otherwise we won't serve any static files.
-const char* GetDefaultDocumentRoot() {
-  stringstream ss;
-  char* kudu_home = getenv("KUDU_HOME");
-  if (kudu_home == NULL) {
-    return ""; // Empty document root means don't serve static files
-  } else {
-    ss << kudu_home;
-  }
-
-  // Deliberate memory leak, but this should be called exactly once.
-  string* str = new string(ss.str());
-  return str->c_str();
-}
-
-namespace kudu {
-
-Webserver::Webserver() : context_(NULL) {
-  string host = FLAGS_webserver_interface.empty() ? "0.0.0.0" : FLAGS_webserver_interface;
-  http_address_ = host + ":" + boost::lexical_cast<string>(FLAGS_webserver_port);
-}
-
-Webserver::Webserver(const int port) : context_(NULL) {
-  http_address_ = StringPrintf("0.0.0.0:%d", port);
+Webserver::Webserver(const WebserverOptions& opts)
+  : opts_(opts),
+    context_(NULL) {
+  string host = opts.bind_interface.empty() ? "0.0.0.0" : opts.bind_interface;
+  http_address_ = host + ":" + boost::lexical_cast<string>(opts.port);
 }
 
 Webserver::~Webserver() {
@@ -122,7 +83,7 @@ void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
 }
 
 bool Webserver::IsSecure() const {
-  return !FLAGS_webserver_certificate_file.empty();
+  return !opts_.certificate_file.empty();
 }
 
 Status Webserver::BuildListenSpec(string* spec) const {
@@ -144,10 +105,10 @@ Status Webserver::Start() {
 
   vector<const char*> options;
 
-  if (!FLAGS_webserver_doc_root.empty() && FLAGS_enable_webserver_doc_root) {
-    LOG(INFO) << "Document root: " << FLAGS_webserver_doc_root;
+  if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
+    LOG(INFO) << "Document root: " << opts_.doc_root;
     options.push_back("document_root");
-    options.push_back(FLAGS_webserver_doc_root.c_str());
+    options.push_back(opts_.doc_root.c_str());
   } else {
     LOG(INFO)<< "Document root disabled";
   }
@@ -155,25 +116,25 @@ Status Webserver::Start() {
   if (IsSecure()) {
     LOG(INFO) << "Webserver: Enabling HTTPS support";
     options.push_back("ssl_certificate");
-    options.push_back(FLAGS_webserver_certificate_file.c_str());
+    options.push_back(opts_.certificate_file.c_str());
   }
 
-  if (!FLAGS_webserver_authentication_domain.empty()) {
+  if (!opts_.authentication_domain.empty()) {
     options.push_back("authentication_domain");
-    options.push_back(FLAGS_webserver_authentication_domain.c_str());
+    options.push_back(opts_.authentication_domain.c_str());
   }
 
-  if (!FLAGS_webserver_password_file.empty()) {
+  if (!opts_.password_file.empty()) {
     // Mongoose doesn't log anything if it can't stat the password file (but will if it
     // can't open it, which it tries to do during a request)
-    if (!Env::Default()->FileExists(FLAGS_webserver_password_file)) {
+    if (!Env::Default()->FileExists(opts_.password_file)) {
       stringstream ss;
-      ss << "Webserver: Password file does not exist: " << FLAGS_webserver_password_file;
+      ss << "Webserver: Password file does not exist: " << opts_.password_file;
       return Status::InvalidArgument(ss.str());
     }
-    LOG(INFO) << "Webserver: Password file is " << FLAGS_webserver_password_file;
+    LOG(INFO) << "Webserver: Password file is " << opts_.password_file;
     options.push_back("global_passwords_file");
-    options.push_back(FLAGS_webserver_password_file.c_str());
+    options.push_back(opts_.password_file.c_str());
   }
 
   options.push_back("listening_ports");
@@ -264,7 +225,7 @@ int Webserver::BeginRequestCallbackStatic(struct sq_connection* connection) {
 
 int Webserver::BeginRequestCallback(struct sq_connection* connection,
                                     struct sq_request_info* request_info) {
-  if (!FLAGS_webserver_doc_root.empty() && FLAGS_enable_webserver_doc_root) {
+  if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
     if (strncmp(DOC_FOLDER, request_info->uri, DOC_FOLDER_LEN) == 0) {
       VLOG(2) << "HTTP File access: " << request_info->uri;
       // Let Mongoose deal with this request; returning NULL will fall through
