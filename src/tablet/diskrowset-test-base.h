@@ -149,7 +149,7 @@ class TestRowSet : public KuduRowSetTest {
     RowSetKeyProbe probe(rb.row());
 
     ScopedTransaction tx(&mvcc_);
-    return rs->MutateRow(tx.txid(), probe, mutation, result);
+    return rs->MutateRow(tx.txid(), probe, schema_, mutation, result);
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {

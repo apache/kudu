@@ -138,7 +138,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   RowSetKeyProbe probe(rb.row());
 
   MutationResultPB result;
-  Status s = rs->MutateRow(txid, probe, enc.as_changelist(), &result);
+  Status s = rs->MutateRow(txid, probe, schema_, enc.as_changelist(), &result);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_EQ(MutationResultPB::NO_MUTATION, result.type());
 
@@ -286,6 +286,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       MutationResultPB result;
       ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
                                           probe,
+                                          schema_,
                                           RowChangeList(update_buf),
                                           &result));
       ASSERT_EQ(MutationResultPB::DELTA_MUTATION, MutationType(&result));

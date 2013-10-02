@@ -161,6 +161,7 @@ class MemRowSet : public RowSet,
   // Returns Status::NotFound if the row doesn't exist.
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
+                   const Schema& delta_schema,
                    const RowChangeList &delta,
                    MutationResultPB *result);
 
@@ -280,6 +281,11 @@ class MemRowSet : public RowSet,
 
   Status ProjectCells(const ConstContiguousRow& src_row,
                       MRSRow *dst_row);
+
+  Status ProjectDelta(txid_t txid,
+                      const Schema& delta_schema,
+                      const RowChangeList &delta,
+                      Mutation **mutation);
 
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 

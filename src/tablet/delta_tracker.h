@@ -63,6 +63,7 @@ class DeltaTracker {
   // structure(s) it ended up at.
   Status Update(txid_t txid,
                 rowid_t row_idx,
+                const Schema& update_schema,
                 const RowChangeList &update,
                 MutationResultPB* result);
 

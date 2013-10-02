@@ -80,6 +80,7 @@ class TestCompaction : public KuduRowSetTest {
       MutationResultPB result;
       ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(),
                                          probe,
+                                         schema,
                                          RowChangeList(update_buf),
                                          &result));
     }

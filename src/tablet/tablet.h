@@ -94,16 +94,19 @@ class Tablet {
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
   Status CreatePreparedMutate(const ConstContiguousRow* row_key,
+                              const Schema* changelist_schema,
                               const RowChangeList* changelist,
                               gscoped_ptr<PreparedRowWrite>* row_write);
 
   // Update a row in this tablet.
+  // The specified schema is the full user schema necessary to decode
+  // the update RowChangeList.
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
   Status MutateRow(TransactionContext *tx_ctx,
-                   const Schema& schema,
                    const ConstContiguousRow& row_key,
+                   const Schema& update_schema,
                    const RowChangeList& update);
 
   // A version of MutateRow that does not acquire locks and instead assumes

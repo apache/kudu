@@ -145,6 +145,7 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
 
 Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
+                            const Schema& delta_schema,
                             const RowChangeList &delta,
                             MutationResultPB *result) {
   {
@@ -164,9 +165,13 @@ Status MemRowSet::MutateRow(txid_t txid,
       return Status::NotFound("not in memrowset (ghost)");
     }
 
-
     // Append to the linked list of mutations for this row.
-    Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
+    Mutation *mut = NULL;
+    RETURN_NOT_OK(ProjectDelta(txid, delta_schema, delta, &mut));
+    if (mut == NULL) {
+      VLOG(1) << "The projected update results empty, skipping it: " << delta.ToString(delta_schema);
+      return Status::OK();
+    }
 
     // This function has "release" semantics which ensures that the memory writes
     // for the mutation are fully published before any concurrent reader sees
@@ -237,6 +242,24 @@ Status MemRowSet::ProjectCells(const ConstContiguousRow& src_row, MRSRow *dst_ro
     RETURN_NOT_OK(projector.Init(src_row.schema(), schema_));
     return projector.ProjectRowForWrite(src_row, dst_row, &arena_);
   }
+}
+
+Status MemRowSet::ProjectDelta(txid_t txid,
+                               const Schema& delta_schema,
+                               const RowChangeList &delta,
+                               Mutation **mutation) {
+  if (schema_.Equals(delta_schema)) {
+    *mutation = Mutation::CreateInArena(&arena_, txid, delta);
+  } else {
+    DeltaProjector projector(delta_schema, schema_);
+    RETURN_NOT_OK(projector.Init());
+    faststring delta_buf;
+    RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector, delta, &delta_buf));
+    if (delta_buf.size() > 0) {
+      *mutation = Mutation::CreateInArena(&arena_, txid, RowChangeList(delta_buf));
+    }
+  }
+  return Status::OK();
 }
 
 MemRowSet::Iterator *MemRowSet::NewIterator(const Schema &projection,

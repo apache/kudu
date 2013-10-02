@@ -26,6 +26,7 @@ class MockRowSet : public RowSet {
   }
   virtual Status MutateRow(txid_t txid,
                            const RowSetKeyProbe &probe,
+                           const Schema& update_schema,
                            const RowChangeList &update,
                            MutationResultPB *result) {
     LOG(FATAL) << "Unimplemented";

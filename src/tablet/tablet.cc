@@ -221,13 +221,15 @@ Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
 }
 
 Status Tablet::CreatePreparedMutate(const ConstContiguousRow* row_key,
+                                    const Schema* changelist_schema,
                                     const RowChangeList* changelist,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
                                                         probe->encoded_key_slice(),
                                                         LockManager::LOCK_EXCLUSIVE));
-  row_write->reset(new PreparedRowWrite(row_key, changelist, probe.Pass(), row_lock.Pass()));
+  row_write->reset(new PreparedRowWrite(row_key, changelist_schema, changelist,
+                                        probe.Pass(), row_lock.Pass()));
 
   // when we have a more advanced lock manager, acquiring the row lock might fail
   // but for now always return OK.
@@ -235,11 +237,12 @@ Status Tablet::CreatePreparedMutate(const ConstContiguousRow* row_key,
 }
 
 Status Tablet::MutateRow(TransactionContext *tx_ctx,
-                         const Schema& schema,
                          const ConstContiguousRow& row_key,
+                         const Schema& update_schema,
                          const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
   CHECK(tx_ctx->rows().empty()) << "TransactionContext must have no PreparedRowWrites.";
 
   // The order of the next three steps is critical!
@@ -288,7 +291,7 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   // and Insert() or else there's a possibility of deadlock.
 
   gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedMutate(&row_key, &update, &row_write));
+  RETURN_NOT_OK(CreatePreparedMutate(&row_key, &update_schema, &update, &row_write));
   tx_ctx->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
@@ -305,10 +308,12 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
 
 Status Tablet::MutateRowUnlocked(TransactionContext *tx_ctx,
                                  const PreparedRowWrite* mutate) {
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *mutate->schema());
+
   gscoped_ptr<MutationResultPB> result(new MutationResultPB());
 
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(schema_, *mutate->changelist());
+  RowChangeListDecoder rcl_decoder(*mutate->schema(), *mutate->changelist());
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
@@ -323,6 +328,7 @@ Status Tablet::MutateRowUnlocked(TransactionContext *tx_ctx,
   // First try to update in memrowset.
   s = memrowset_->MutateRow(tx_ctx->mvcc_txid(),
                             *mutate->probe(),
+                            *mutate->schema(),
                             *mutate->changelist(),
                             result.get());
   if (s.ok()) {
@@ -340,7 +346,7 @@ Status Tablet::MutateRowUnlocked(TransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->changelist(), result.get());
+    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->schema(), *mutate->changelist(), result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
       return s;

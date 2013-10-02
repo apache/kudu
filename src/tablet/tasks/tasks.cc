@@ -151,9 +151,8 @@ Status PrepareTask::Run() {
     tx_ctx_->add_prepared_row(row_write.Pass());
   }
 
-  Schema mutates_key_projection = mutates_client_schema->CreateKeyProjection();
-  gscoped_ptr<Schema> mutates_key_projection_ptr(new Schema);
-  mutates_key_projection_ptr->swap(mutates_key_projection);
+  gscoped_ptr<Schema> mutates_key_projection_ptr(
+      new Schema(mutates_client_schema->CreateKeyProjection()));
 
   int i = 0;
   BOOST_FOREACH(const uint8_t* row_key_ptr, to_mutate) {
@@ -165,7 +164,8 @@ Status PrepareTask::Run() {
     const RowChangeList* mutation = tx_ctx_->AddToAutoReleasePool(mutations[i]);
 
     gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedMutate(row_key, mutation, &row_write));
+    RETURN_NOT_OK(tablet->CreatePreparedMutate(row_key,
+        mutates_client_schema.get(), mutation, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());
     ++i;
   }
@@ -176,6 +176,7 @@ Status PrepareTask::Run() {
   tx_ctx_->set_component_lock(component_lock_.Pass());
 
   tx_ctx_->AddToAutoReleasePool(inserts_client_schema.release());
+  tx_ctx_->AddToAutoReleasePool(mutates_client_schema.release());
   tx_ctx_->AddToAutoReleasePool(mutates_key_projection_ptr.release());
   return s;
 }

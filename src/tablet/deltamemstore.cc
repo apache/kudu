@@ -25,22 +25,40 @@ DeltaMemStore::DeltaMemStore(int64_t id, const Schema &schema)
 
 Status DeltaMemStore::Update(txid_t txid,
                              rowid_t row_idx,
+                             const Schema& update_schema,
                              const RowChangeList &update) {
   DeltaKey key(row_idx, txid);
 
   // TODO: this allocation isn't great. Make faststring
   // allocate its initial buffer on the stack?
+  faststring delta_buf;
   faststring buf;
 
   key.EncodeTo(&buf);
   Slice key_slice(buf);
+
+  // If the update_schema is different from the current one a projection is required.
+  Slice update_slice;
+  if (schema_.Equals(update_schema)) {
+    update_slice = update.slice();
+  } else {
+    DeltaProjector projector(update_schema, schema_);
+    RETURN_NOT_OK(projector.Init());
+    RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector, update, &delta_buf));
+    update_slice = Slice(delta_buf.data(), delta_buf.size());
+  }
+
+  if (update_slice.empty()) {
+    VLOG(1) << "The projected update results empty, skipping it: " << update.ToString(update_schema);
+    return Status::OK();
+  }
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(key_slice);
   mutation.Prepare(&tree_);
   CHECK(!mutation.exists())
     << "Already have an entry for rowid " << row_idx << " at txid "
     << txid;
-  if (!mutation.Insert(update.slice())) {
+  if (!mutation.Insert(update_slice)) {
     return Status::IOError("Unable to insert into tree");
   }
   return Status::OK();

@@ -105,7 +105,8 @@ void TransactionContext::Reset() {
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
                                    gscoped_ptr<RowSetKeyProbe> probe,
                                    gscoped_ptr<ScopedRowLock> lock)
-    : row_(row),
+    : schema_(&row->schema()),
+      row_(row),
       row_key_(NULL),
       changelist_(NULL),
       probe_(probe.Pass()),
@@ -114,10 +115,12 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
+                                   const Schema* changelist_schema,
                                    const RowChangeList* changelist,
                                    gscoped_ptr<RowSetKeyProbe> probe,
                                    gscoped_ptr<tablet::ScopedRowLock> lock)
-    : row_(NULL),
+    : schema_(changelist_schema),
+      row_(NULL),
       row_key_(row_key),
       changelist_(changelist),
       probe_(probe.Pass()),

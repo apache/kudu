@@ -97,6 +97,7 @@ class TestMemRowSet : public ::testing::Test {
     RowSetKeyProbe probe(rb.row());
     return mrs->MutateRow(tx.txid(),
                           probe,
+                          schema_,
                           RowChangeList(mutation_buf_),
                           result);
   }
@@ -112,6 +113,7 @@ class TestMemRowSet : public ::testing::Test {
     RowSetKeyProbe probe(rb.row());
     return mrs->MutateRow(tx.txid(),
                           probe,
+                          schema_,
                           RowChangeList(mutation_buf_),
                           result);
   }
@@ -431,6 +433,65 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
               << rows[0];
     EXPECT_EQ(expected, rows[0]);
   }
+}
+
+// Test that passing a RowChangeList with a schema that is different from
+// the current one in the MemRowSet triggers the RowChangeList projection.
+TEST_F(TestMemRowSet, TestMutationWithDifferentSchema) {
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+
+  // Add an int column to the base schema
+  std::vector<ColumnSchema> columns(schema_.columns());
+  columns.insert(columns.begin() + 1, ColumnSchema("new_column", UINT32));
+  Schema schema2(columns, schema_.num_key_columns());
+
+  const size_t kNewU32ColumnIdx = 1;    // 'new_column' index in 'schema2'
+  const size_t kValColumnIdx = 2;       // 'val' index in 'schema2'
+
+  // Insert a row ("row0", 0)
+  ASSERT_STATUS_OK(InsertRow(mrs.get(), "row0", 0));
+
+  // Update "row0" using schema 2 (The projection will be applied)
+  {
+    ScopedTransaction tx(&mvcc_);
+    mutation_buf_.clear();
+    RowChangeListEncoder update(schema2, &mutation_buf_);
+    uint32_t new_val = 1;
+    update.AddColumnUpdate(kNewU32ColumnIdx, &new_val);
+    new_val = 5;
+    update.AddColumnUpdate(kValColumnIdx, &new_val);
+
+    RowBuilder rb(key_schema_);
+    rb.AddString(Slice("row0"));
+    RowSetKeyProbe probe(rb.row());
+
+    MutationResultPB result;
+    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2, RowChangeList(mutation_buf_), &result));
+    ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
+    ASSERT_EQ(0L, result.mutations(0).mrs_id());
+  }
+
+  // Update "row0" using schema 2 (The projection will be applied and result in an empty update)
+  {
+    ScopedTransaction tx(&mvcc_);
+    mutation_buf_.clear();
+    RowChangeListEncoder update(schema2, &mutation_buf_);
+    uint32_t new_val = 2;
+    update.AddColumnUpdate(kNewU32ColumnIdx, &new_val);
+
+    RowBuilder rb(key_schema_);
+    rb.AddString(Slice("row0"));
+    RowSetKeyProbe probe(rb.row());
+
+    MutationResultPB result;
+    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2, RowChangeList(mutation_buf_), &result));
+    ASSERT_EQ(0L, result.mutations_size());
+  }
+
+  vector<string> rows;
+  ASSERT_STATUS_OK(kudu::tablet::DumpRowSet(*mrs, schema_, MvccSnapshot(mvcc_), &rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ(rows[0], "(string key=row0, uint32 val=5)");
 }
 
 } // namespace tablet

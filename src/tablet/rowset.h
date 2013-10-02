@@ -45,11 +45,13 @@ class RowSet {
   virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const = 0;
 
   // Update/delete a row in this rowset.
+  // The 'update_schema' is the client schema used to encode the 'update' RowChangeList.
   //
   // If the row does not exist in this rowset, returns
   // Status::NotFound().
   virtual Status MutateRow(txid_t txid,
                            const RowSetKeyProbe &probe,
+                           const Schema& update_schema,
                            const RowChangeList &update,
                            MutationResultPB* result) = 0;
 
@@ -183,6 +185,7 @@ class DuplicatingRowSet : public RowSet {
 
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
+                   const Schema& update_schema,
                    const RowChangeList &update,
                    MutationResultPB* result);
 

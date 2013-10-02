@@ -47,6 +47,7 @@ class RowChangeList {
   string ToString(const Schema &schema) const;
 
   bool is_reinsert() const {
+    DCHECK_GT(encoded_data_.size(), 0);
     return encoded_data_[0] == kReinsert;
   }
 
@@ -127,6 +128,7 @@ class RowChangeListEncoder {
   }
 
   RowChangeList as_changelist() {
+    DCHECK_GT(dst_->size(), 0);
     return RowChangeList(*dst_);
   }
 

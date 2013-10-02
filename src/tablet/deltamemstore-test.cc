@@ -26,7 +26,7 @@ class TestDeltaMemStore : public KuduTest {
                  (ColumnSchema("col1", STRING))
                  (ColumnSchema("col2", STRING))
                  (ColumnSchema("col3", UINT32)),
-            1),
+            0),
     dms_(new DeltaMemStore(0, schema_))
   {}
 
@@ -41,7 +41,7 @@ class TestDeltaMemStore : public KuduTest {
       uint32_t new_val = idx_to_update * 10;
       update.AddColumnUpdate(kIntColumn, &new_val);
 
-      dms_->Update(tx.txid(), idx_to_update, RowChangeList(buf));
+      dms_->Update(tx.txid(), idx_to_update, schema_, RowChangeList(buf));
     }
   }
 
@@ -133,7 +133,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     char buf[256] = "update 1";
     Slice s(buf);
     update.AddColumnUpdate(0, &s);
-    dms_->Update(tx.txid(), 123, RowChangeList(update_buf));
+    dms_->Update(tx.txid(), 123, schema_, RowChangeList(update_buf));
     memset(buf, 0xff, sizeof(buf));
   }
   MvccSnapshot snapshot_after_first_update(mvcc_);
@@ -145,7 +145,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     Slice s(buf);
     update.Reset();
     update.AddColumnUpdate(0, &s);
-    dms_->Update(tx.txid(), 123, RowChangeList(update_buf));
+    dms_->Update(tx.txid(), 123, schema_, RowChangeList(update_buf));
     memset(buf, 0xff, sizeof(buf));
   }
   MvccSnapshot snapshot_after_second_update(mvcc_);
@@ -164,6 +164,52 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   ASSERT_EQ("update 2", read_back[0].ToString());
 }
 
+// Test that passing a RowChangeList with a schema that is different from
+// the current one in the DeltaMemStore triggers the RowChangeList projection.
+TEST_F(TestDeltaMemStore, TestUpdateWithDifferentSchema) {
+  std::vector<ColumnSchema> columns(schema_.columns());
+
+  // Add an u32 column to the base schema
+  columns.insert(columns.begin(), ColumnSchema("new_column", UINT32));
+  Schema schema2(columns, schema_.num_key_columns());
+
+  const size_t kNewU32ColumnIdx = 0;    // 'new_column' index in 'schema2'
+  const size_t kOldStrColumnIdx = 0;    // 'col1' index in 'schema_'
+  const size_t kNewStrColumnIdx = 1;    // 'col1' index in 'schema2'
+  const size_t kTestRowIdx = 123;
+
+  faststring update_buf;
+  RowChangeListEncoder update(schema2, &update_buf);
+
+  // Insert an update with two columns: one in the new schema and one in the old
+  {
+    ScopedTransaction tx(&mvcc_);
+    uint32_t new_val = 1;
+    update.AddColumnUpdate(kNewU32ColumnIdx, &new_val);
+    Slice s("update 1");
+    update.AddColumnUpdate(kNewStrColumnIdx, &s);
+    ASSERT_STATUS_OK(dms_->Update(tx.txid(), kTestRowIdx, schema2, RowChangeList(update_buf)));
+  }
+
+  // Insert an update with only the new column.
+  // this will result in an empty delta after the projection.
+  {
+    update.Reset();
+    ScopedTransaction tx(&mvcc_);
+    uint32_t new_val = 2;
+    update.AddColumnUpdate(kNewU32ColumnIdx, &new_val);
+    ASSERT_STATUS_OK(dms_->Update(tx.txid(), kTestRowIdx, schema2, RowChangeList(update_buf)));
+  }
+
+  MvccSnapshot snapshot(mvcc_);
+  ASSERT_EQ(1, dms_->Count());
+
+  ScopedColumnBlock<STRING> read_back(1);
+  // ApplyUpdates uses 'schema_', so we're updating the old 'col1' index
+  ApplyUpdates(snapshot, kTestRowIdx, kOldStrColumnIdx, &read_back);
+  ASSERT_EQ("update 1", read_back[0].ToString());
+}
+
 // Test that if two updates come in with out-of-order transaction IDs,
 // the one with the higher transaction ID ends up winning.
 //
@@ -179,12 +225,12 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
     Slice s("update 2");
     update.AddColumnUpdate(kStringColumn, &s);
-    dms_->Update(tx2.txid(), 123, RowChangeList(update_buf));
+    dms_->Update(tx2.txid(), 123, schema_, RowChangeList(update_buf));
 
     update.Reset();
     s = Slice("update 1");
     update.AddColumnUpdate(kStringColumn, &s);
-    dms_->Update(tx1.txid(), 123, RowChangeList(update_buf));
+    dms_->Update(tx1.txid(), 123, schema_, RowChangeList(update_buf));
   }
 
   // Ensure we end up two entries for the cell.
@@ -212,7 +258,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     Slice s(buf);
     update.AddColumnUpdate(kStringColumn, &s);
 
-    dms_->Update(tx.txid(), i, RowChangeList(update_buf));
+    dms_->Update(tx.txid(), i, schema_, RowChangeList(update_buf));
   }
 
   ASSERT_EQ(1000, dms_->Count());
@@ -247,7 +293,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
 
     uint32_t val = i * 20;
     update.AddColumnUpdate(kIntColumn, &val);
-    dms_->Update(tx.txid(), i, RowChangeList(update_buf));
+    dms_->Update(tx.txid(), i, schema_, RowChangeList(update_buf));
   }
 
   ASSERT_EQ(2000, dms_->Count());
