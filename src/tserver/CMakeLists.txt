@@ -39,5 +39,5 @@ ADD_DEPENDENCIES(tserver cfile)
 ADD_KUDU_TEST(tablet_server-test)
 ADD_KUDU_TEST(scanners-test)
 
-ADD_EXECUTABLE(tablet_server tablet_server_main.cc)
-TARGET_LINK_LIBRARIES(tablet_server ${KUDU_LINK_LIBS})
+ADD_EXECUTABLE(kudu-tablet_server tablet_server_main.cc)
+TARGET_LINK_LIBRARIES(kudu-tablet_server ${KUDU_LINK_LIBS})

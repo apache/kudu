@@ -5,7 +5,7 @@
 #include <string>
 #include <tr1/memory>
 
-#include "master/master_server.h"
+#include "master/master.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
 #include "rpc/rpc_context.h"
@@ -15,7 +15,7 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace master {
 
-MasterServiceImpl::MasterServiceImpl(MasterServer* server)
+MasterServiceImpl::MasterServiceImpl(Master* server)
   : server_(server) {
 }
 

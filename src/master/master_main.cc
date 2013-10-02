@@ -4,16 +4,16 @@
 #include <glog/logging.h>
 #include <iostream>
 
-#include "master/master_server.h"
+#include "master/master.h"
 #include "server/rpc_server.h"
 #include "util/logging.h"
 
-using kudu::master::MasterServer;
+using kudu::master::Master;
 
 namespace kudu {
 namespace master {
 
-static int MasterServerMain(int argc, char** argv) {
+static int MasterMain(int argc, char** argv) {
   InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -21,8 +21,8 @@ static int MasterServerMain(int argc, char** argv) {
     return 1;
   }
 
-  MasterServerOptions opts;
-  MasterServer server(opts);
+  MasterOptions opts;
+  Master server(opts);
   LOG(INFO) << "Initializing master server...";
   CHECK_OK(server.Init());
 
@@ -41,5 +41,5 @@ static int MasterServerMain(int argc, char** argv) {
 } // namespace kudu
 
 int main(int argc, char** argv) {
-  return kudu::master::MasterServerMain(argc, argv);
+  return kudu::master::MasterMain(argc, argv);
 }

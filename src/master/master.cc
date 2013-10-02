@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "master/master_server.h"
+#include "master/master.h"
 
 #include <boost/foreach.hpp>
 #include <list>
@@ -22,28 +22,28 @@ using kudu::rpc::ServiceIf;
 namespace kudu {
 namespace master {
 
-MasterServer::MasterServer(const MasterServerOptions& opts)
+Master::Master(const MasterOptions& opts)
   : ServerBase(opts.rpc_opts, opts.webserver_opts),
     initted_(false),
     ts_manager_(new TSManager()) {
 }
 
-MasterServer::~MasterServer() {
+Master::~Master() {
 }
 
-string MasterServer::ToString() const {
+string Master::ToString() const {
   // TODO: include port numbers, etc.
-  return "MasterServer";
+  return "Master";
 }
 
-Status MasterServer::Init() {
+Status Master::Init() {
   CHECK(!initted_);
   RETURN_NOT_OK(ServerBase::Init());
   initted_ = true;
   return Status::OK();
 }
 
-Status MasterServer::Start() {
+Status Master::Start() {
   CHECK(initted_);
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));

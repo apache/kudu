@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
-#ifndef KUDU_MASTER_TABLET_SERVICE_H
-#define KUDU_MASTER_TABLET_SERVICE_H
+#ifndef KUDU_MASTER_MASTER_SERVICE_H
+#define KUDU_MASTER_MASTER_SERVICE_H
 
 #include <tr1/memory>
 
@@ -14,14 +14,14 @@ class NodeInstancePB;
 
 namespace master {
 
-class MasterServer;
+class Master;
 class TSDescriptor;
 
 // Implementation of the master service. See master.proto for docs
 // on each RPC.
-class MasterServiceImpl : public MasterServerServiceIf {
+class MasterServiceImpl : public MasterServiceIf {
  public:
-  explicit MasterServiceImpl(MasterServer* server);
+  explicit MasterServiceImpl(Master* server);
 
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
@@ -37,7 +37,7 @@ class MasterServiceImpl : public MasterServerServiceIf {
                              const TabletReportPB& report,
                              rpc::RpcContext* rpc);
 
-  MasterServer* server_;
+  Master* server_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterServiceImpl);
 };

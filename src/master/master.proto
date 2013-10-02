@@ -96,7 +96,7 @@ message TSHeartbeatResponsePB {
 message TSTabletReportResponsePB {
 }
 
-service MasterServerService {
+service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
   // TS->Master RPCs

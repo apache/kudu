@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "gutil/strings/join.h"
-#include "master/master_server.h"
+#include "master/master.h"
 #include "master/master.proxy.h"
 #include "server/rpc_server.h"
 #include "master/ts_descriptor.h"
@@ -27,7 +27,7 @@ using kudu::rpc::RpcController;
 namespace kudu {
 namespace master {
 
-class MasterServerTest : public KuduTest {
+class MasterTest : public KuduTest {
  protected:
 
   // Start a master server running on the loopback interface and
@@ -35,12 +35,12 @@ class MasterServerTest : public KuduTest {
   // server.
   void StartTestServer(Sockaddr *addr) {
     // Start server on loopback.
-    MasterServerOptions opts;
+    MasterOptions opts;
     opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
     opts.webserver_opts.port = 0;
     // TODO: refactor this stuff into a MiniMaster class, like MiniTabletServer.
 
-    gscoped_ptr<MasterServer> server(new MasterServer(opts));
+    gscoped_ptr<Master> server(new Master(opts));
     ASSERT_STATUS_OK(server->Init());
     ASSERT_STATUS_OK(server->Start());
 
@@ -53,12 +53,12 @@ class MasterServerTest : public KuduTest {
     server_.swap(server);
   }
 
-  void CreateClientProxy(Sockaddr &addr, gscoped_ptr<MasterServerServiceProxy>* proxy) {
+  void CreateClientProxy(Sockaddr &addr, gscoped_ptr<MasterServiceProxy>* proxy) {
     if (!client_messenger_) {
       MessengerBuilder bld("Client");
       ASSERT_STATUS_OK(bld.Build(&client_messenger_));
     }
-    proxy->reset(new MasterServerServiceProxy(client_messenger_, addr));
+    proxy->reset(new MasterServiceProxy(client_messenger_, addr));
   }
 
   void SetUp() {
@@ -68,11 +68,11 @@ class MasterServerTest : public KuduTest {
   }
 
   shared_ptr<Messenger> client_messenger_;
-  gscoped_ptr<MasterServer> server_;
-  gscoped_ptr<MasterServerServiceProxy> proxy_;
+  gscoped_ptr<Master> server_;
+  gscoped_ptr<MasterServiceProxy> proxy_;
 };
 
-TEST_F(MasterServerTest, TestPingServer) {
+TEST_F(MasterTest, TestPingServer) {
   // Ping the server.
   PingRequestPB req;
   PingResponsePB resp;
@@ -85,7 +85,7 @@ static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
   pb->set_port(port);
 }
 
-TEST_F(MasterServerTest, TestRegisterAndHeartbeat) {
+TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   TSToMasterCommonPB common;
   common.mutable_ts_instance()->set_permanent_uuid("my-ts-uuid");
   common.mutable_ts_instance()->set_instance_seqno(1);

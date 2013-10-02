@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
-#ifndef KUDU_MASTER_TABLET_SERVER_H
-#define KUDU_MASTER_TABLET_SERVER_H
+#ifndef KUDU_MASTER_MASTER_H
+#define KUDU_MASTER_MASTER_H
 
 #include <string>
 #include <tr1/memory>
@@ -9,7 +9,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
-#include "master/master_server_options.h"
+#include "master/master_options.h"
 #include "server/server_base.h"
 #include "util/status.h"
 
@@ -27,13 +27,13 @@ namespace master {
 
 class TSManager;
 
-class MasterServer : public server::ServerBase {
+class Master : public server::ServerBase {
  public:
   static const uint16_t kDefaultPort = 7051;
   static const uint16_t kDefaultWebPort = 8051;
 
-  explicit MasterServer(const MasterServerOptions& opts);
-  ~MasterServer();
+  explicit Master(const MasterOptions& opts);
+  ~Master();
 
   Status Init();
   Status Start();
@@ -43,7 +43,7 @@ class MasterServer : public server::ServerBase {
   TSManager* ts_manager() { return ts_manager_.get(); }
 
  private:
-  friend class MasterServerTest;
+  friend class MasterTest;
 
   RpcServer *rpc_server() const { return rpc_server_.get(); }
 
@@ -51,7 +51,7 @@ class MasterServer : public server::ServerBase {
 
   gscoped_ptr<TSManager> ts_manager_;
 
-  DISALLOW_COPY_AND_ASSIGN(MasterServer);
+  DISALLOW_COPY_AND_ASSIGN(Master);
 };
 
 } // namespace master
