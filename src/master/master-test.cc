@@ -10,9 +10,10 @@
 #include "gutil/strings/join.h"
 #include "master/master.h"
 #include "master/master.proxy.h"
-#include "server/rpc_server.h"
+#include "master/mini_master.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
+#include "server/rpc_server.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 #include "util/test_util.h"
@@ -29,46 +30,24 @@ namespace master {
 
 class MasterTest : public KuduTest {
  protected:
-
-  // Start a master server running on the loopback interface and
-  // an ephemeral port. Sets *addr to the address of the started
-  // server.
-  void StartTestServer(Sockaddr *addr) {
-    // Start server on loopback.
-    MasterOptions opts;
-    opts.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
-    opts.webserver_opts.port = 0;
-    // TODO: refactor this stuff into a MiniMaster class, like MiniTabletServer.
-
-    gscoped_ptr<Master> server(new Master(opts));
-    ASSERT_STATUS_OK(server->Init());
-    ASSERT_STATUS_OK(server->Start());
-
-    // Find the ephemeral address of the server.
-    vector<Sockaddr> addrs;
-    server->rpc_server()->GetBoundAddresses(&addrs);
-    ASSERT_TRUE(!addrs.empty());
-
-    *addr = addrs[0];
-    server_.swap(server);
-  }
-
-  void CreateClientProxy(Sockaddr &addr, gscoped_ptr<MasterServiceProxy>* proxy) {
-    if (!client_messenger_) {
-      MessengerBuilder bld("Client");
-      ASSERT_STATUS_OK(bld.Build(&client_messenger_));
-    }
-    proxy->reset(new MasterServiceProxy(client_messenger_, addr));
-  }
-
   void SetUp() {
-    Sockaddr addr;
-    ASSERT_NO_FATAL_FAILURE(StartTestServer(&addr));
-    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(addr, &proxy_));
+    KuduTest::SetUp();
+
+    // Start master
+    mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master")));
+    ASSERT_STATUS_OK(mini_master_->Start());
+    master_ = mini_master_->server();
+
+    // Create a client proxy to it.
+    MessengerBuilder bld("Client");
+    ASSERT_STATUS_OK(bld.Build(&client_messenger_));
+    proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
   }
+
 
   shared_ptr<Messenger> client_messenger_;
-  gscoped_ptr<Master> server_;
+  gscoped_ptr<MiniMaster> mini_master_;
+  Master* master_;
   gscoped_ptr<MasterServiceProxy> proxy_;
 };
 
@@ -104,7 +83,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   }
 
   vector<shared_ptr<TSDescriptor> > descs;
-  server_->ts_manager()->GetAllDescriptors(&descs);
+  master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(0, descs.size()) << "Should not have registered anything";
 
   // Register the fake TS, without sending any tablet report.
@@ -125,7 +104,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   }
 
   descs.clear();
-  server_->ts_manager()->GetAllDescriptors(&descs);
+  master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
   TSRegistrationPB reg;
   descs[0]->GetRegistration(&reg);
@@ -146,7 +125,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   }
 
   descs.clear();
-  server_->ts_manager()->GetAllDescriptors(&descs);
+  master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should still only have one TS registered";
 }
 

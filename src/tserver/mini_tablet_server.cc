@@ -3,10 +3,8 @@
 #include "tserver/mini_tablet_server.h"
 
 #include <glog/logging.h>
-#include <vector>
 
 #include "common/schema.h"
-#include "gutil/macros.h"
 #include "server/metadata.h"
 #include "server/metadata_util.h"
 #include "server/rpc_server.h"
@@ -49,20 +47,6 @@ Status MiniTabletServer::Start() {
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());
 
-  // Find the ephemeral address of the RPC server.
-  vector<Sockaddr> addrs;
-  server->rpc_server()->GetBoundAddresses(&addrs);
-  CHECK(!addrs.empty());
-  bound_rpc_addr_ = addrs[0];
-  VLOG(1) << "Bound RPC to " << bound_rpc_addr_.ToString();
-
-  // And the web server
-  addrs.clear();
-  server->web_server()->GetBoundAddresses(&addrs);
-  CHECK(!addrs.empty());
-  bound_http_addr_ = addrs[0];
-  VLOG(1) << "Bound web server to " << bound_http_addr_.ToString();
-
   server_.swap(server);
   started_ = true;
   return Status::OK();
@@ -87,9 +71,14 @@ Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
   return Status::OK();
 }
 
-const Sockaddr& MiniTabletServer::bound_rpc_addr() const {
+const Sockaddr MiniTabletServer::bound_rpc_addr() const {
   CHECK(started_);
-  return bound_rpc_addr_;
+  return server_->first_rpc_address();
+}
+
+const Sockaddr MiniTabletServer::bound_http_addr() const {
+  CHECK(started_);
+  return server_->first_http_address();
 }
 
 } // namespace tserver

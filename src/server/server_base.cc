@@ -3,14 +3,18 @@
 #include "server/server_base.h"
 
 #include <gflags/gflags.h>
+#include <vector>
 
 #include "rpc/messenger.h"
 #include "server/default-path-handlers.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
+#include "util/net/sockaddr.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
              " (Advanced option).");
+
+using std::vector;
 
 namespace kudu {
 namespace server {
@@ -28,6 +32,20 @@ ServerBase::~ServerBase() {
   }
   web_server_->Stop();
   rpc_server_->Shutdown();
+}
+
+Sockaddr ServerBase::first_rpc_address() const {
+  vector<Sockaddr> addrs;
+  rpc_server_->GetBoundAddresses(&addrs);
+  CHECK(!addrs.empty()) << "Not bound";
+  return addrs[0];
+}
+
+Sockaddr ServerBase::first_http_address() const {
+  vector<Sockaddr> addrs;
+  web_server_->GetBoundAddresses(&addrs);
+  CHECK(!addrs.empty()) << "Not bound";
+  return addrs[0];
 }
 
 Status ServerBase::Init() {

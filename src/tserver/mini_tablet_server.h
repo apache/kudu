@@ -35,8 +35,8 @@ class MiniTabletServer {
   Status AddTestTablet(const std::string& tablet_id,
                        const Schema& schema);
 
-  const Sockaddr& bound_rpc_addr() const;
-  const Sockaddr& bound_http_addr() const;
+  const Sockaddr bound_rpc_addr() const;
+  const Sockaddr bound_http_addr() const;
 
   const TabletServer* server() const { return server_.get(); }
   TabletServer* server() { return server_.get(); }
@@ -48,9 +48,6 @@ class MiniTabletServer {
 
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<TabletServer> server_;
-
-  Sockaddr bound_rpc_addr_;
-  Sockaddr bound_http_addr_;
 };
 
 } // namespace tserver

@@ -13,6 +13,7 @@
 
 namespace kudu {
 
+class Sockaddr;
 class Webserver;
 
 namespace rpc {
@@ -33,6 +34,14 @@ class ServerBase {
   const RpcServer *rpc_server() const { return rpc_server_.get(); }
   const Webserver *web_server() const { return web_server_.get(); }
   const std::tr1::shared_ptr<rpc::Messenger>& messenger() const { return messenger_; }
+
+  // Return the first RPC address that this server has bound to.
+  // FATALs if the server is not started.
+  Sockaddr first_rpc_address() const;
+
+  // Return the first HTTP address that this server has bound to.
+  // FATALs if the server is not started.
+  Sockaddr first_http_address() const;
 
  protected:
   ServerBase(const RpcServerOptions& rpc_opts,
