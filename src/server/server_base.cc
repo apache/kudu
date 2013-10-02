@@ -26,12 +26,7 @@ ServerBase::ServerBase(const RpcServerOptions& rpc_opts,
 }
 
 ServerBase::~ServerBase() {
-  if (messenger_) {
-    messenger_->Shutdown();
-    messenger_.reset();
-  }
-  web_server_->Stop();
-  rpc_server_->Shutdown();
+  Shutdown();
 }
 
 Sockaddr ServerBase::first_rpc_address() const {
@@ -64,6 +59,16 @@ Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
 
   AddDefaultPathHandlers(web_server_.get());
   RETURN_NOT_OK(web_server_->Start());
+  return Status::OK();
+}
+
+Status ServerBase::Shutdown() {
+  if (messenger_) {
+    messenger_->Shutdown();
+    messenger_.reset();
+  }
+  web_server_->Stop();
+  rpc_server_->Shutdown();
   return Status::OK();
 }
 

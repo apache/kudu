@@ -46,6 +46,7 @@ class TabletServer : public server::ServerBase {
 
   Status Init();
   Status Start();
+  Status Shutdown();
 
   string ToString() const;
 

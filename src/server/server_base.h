@@ -50,6 +50,7 @@ class ServerBase {
 
   Status Init();
   Status Start(gscoped_ptr<rpc::ServiceIf> rpc_impl);
+  Status Shutdown();
 
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;

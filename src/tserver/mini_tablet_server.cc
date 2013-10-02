@@ -52,6 +52,11 @@ Status MiniTabletServer::Start() {
   return Status::OK();
 }
 
+Status MiniTabletServer::Shutdown() {
+  RETURN_NOT_OK(server_->Shutdown());
+  return Status::OK();
+}
+
 Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
                                        const Schema& schema) {
   CHECK(started_) << "Must Start()";

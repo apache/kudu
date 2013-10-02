@@ -30,6 +30,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
 }
 
 TabletServer::~TabletServer() {
+  Shutdown();
 }
 
 string TabletServer::ToString() const {
@@ -53,7 +54,16 @@ Status TabletServer::Init() {
 Status TabletServer::Start() {
   CHECK(initted_);
 
-  ServerBase::Start(gscoped_ptr<ServiceIf>(new TabletServiceImpl(this)));
+  RETURN_NOT_OK(ServerBase::Start(gscoped_ptr<ServiceIf>(new TabletServiceImpl(this))));
+  return Status::OK();
+}
+
+Status TabletServer::Shutdown() {
+  CHECK(initted_);
+  LOG(INFO) << "TabletServer shutting down...";
+  RETURN_NOT_OK(ServerBase::Shutdown());
+  RETURN_NOT_OK(tablet_->Flush());
+  LOG(INFO) << "TabletServer shut down complete. Bye!";
   return Status::OK();
 }
 

@@ -59,8 +59,7 @@ class TabletServerTest : public KuduTest {
   }
 
   virtual void TearDown() {
-    // TODO: once the server has a Stop() method we should probably call it!
-    // Otherwise we almost certainly leak threads and sockets between test cases.
+    ASSERT_STATUS_OK(mini_server_->Shutdown());
     KuduTest::TearDown();
   }
 
@@ -334,6 +333,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_EQ(1, resp.per_row_errors().size());
     controller.Reset();
   }
+
 }
 
 // Test various invalid calls for mutations

@@ -28,6 +28,7 @@ class MiniTabletServer {
   // an ephemeral port. To determine the address that the server
   // bound to, call MiniTabletServer::bound_addr()
   Status Start();
+  Status Shutdown();
 
   // Add a new tablet to the test server.
   //
