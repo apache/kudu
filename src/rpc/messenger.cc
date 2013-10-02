@@ -103,7 +103,7 @@ void Messenger::Shutdown() {
   // Drain any remaining calls that haven't been responded to.
   InboundCall *call;
   while (service_queue_.BlockingGet(&call)) {
-    call->RespondFailure(Status::RuntimeError("Server shutting down"));
+    call->RespondFailure(Status::ServiceUnavailable("Server shutting down"));
   }
 
 
@@ -141,16 +141,21 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   InboundCall *c = call.release();
 
   // Queue message on service queue
-  if (PREDICT_TRUE(service_queue_.Put(c))) {
+  QueueStatus s = service_queue_.Put(c);
+  if (PREDICT_TRUE(s == QUEUE_SUCCESS)) {
     return;
   }
   // TODO: write a test for backpressure!
 
-  c->RespondFailure(
-    Status::NetworkError(StringPrintf(
-                           "The service queue is full; it "
-                           "has %zd items. Transfer dropped because of backpressure.",
-                           service_queue_.max_elements())));
+  if (s == QUEUE_FULL) {
+    c->RespondFailure(
+      Status::ServiceUnavailable(StringPrintf(
+                             "The service queue is full; it "
+                             "has %zd items. Transfer dropped because of backpressure.",
+                             service_queue_.max_elements())));
+  } else if (s == QUEUE_SHUTDOWN) {
+    c->RespondFailure(Status::ServiceUnavailable("Service is shutting down"));
+  }
 }
 
 void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote) {

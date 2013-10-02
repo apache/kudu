@@ -145,7 +145,7 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   AddResponsePB resp;
   RpcController controller;
   Status s = p.SyncRequest("Add", req, &resp, &controller);
-  ASSERT_TRUE(s.IsRuntimeError()) << "Bad status: " << s.ToString();
+  ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Invalid argument: Invalid parameter for call Add: y");
 }
@@ -155,7 +155,7 @@ TEST_F(RpcStubTest, TestCallMissingMethod) {
   Proxy p(client_messenger_, server_addr_, CalculatorService::static_service_name());
 
   Status s = DoTestSyncCall(p, "DoesNotExist");
-  ASSERT_TRUE(s.IsRuntimeError()) << "Bad status: " << s.ToString();
+  ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid method: DoesNotExist");
 }
 

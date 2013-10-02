@@ -81,6 +81,15 @@ std::string Status::CodeAsString() const {
     case kAborted:
       type = "Aborted";
       break;
+    case kRemoteError:
+      type = "Remote error";
+      break;
+    case kServiceUnavailable:
+      type = "Service unavailable";
+      break;
+    case kTimedOut:
+      type = "Timed out";
+      break;
     default:
       snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
                static_cast<int>(code()));

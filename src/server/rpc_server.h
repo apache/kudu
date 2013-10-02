@@ -25,6 +25,10 @@ struct RpcServerOptions {
   uint32_t num_acceptors_per_address;
   uint32_t num_service_threads;
   uint16_t default_port;
+
+  // TODO: add service queue length -- awkward to do right now since the
+  // service queue is part of the messenger instead of the RpcServer.
+  // This is do for some refactoring.
 };
 
 class RpcServer {

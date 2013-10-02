@@ -13,6 +13,13 @@
 
 namespace kudu {
 
+// Return values for BlockingQueue::Put()
+enum QueueStatus {
+  QUEUE_SUCCESS = 0,
+  QUEUE_SHUTDOWN = 1,
+  QUEUE_FULL = 2
+};
+
 template <typename T>
 class BlockingQueue {
  public:
@@ -55,29 +62,37 @@ class BlockingQueue {
     return true;
   }
 
-  // returns true if the element was inserted; false if the queue was full.
-  bool Put(const T &val) {
+  // Attempts to put the given value in the queue.
+  // Returns:
+  //   QUEUE_SUCCESS: if successfully inserted
+  //   QUEUE_FULL: if the queue has reached max_elements
+  //   QUEUE_SHUTDOWN: if someone has already called Shutdown()
+  QueueStatus Put(const T &val) {
     boost::lock_guard<boost::mutex> guard(lock_);
-    if ((list_.size() >= max_elements_) || (shutdown_)) {
-      return false;
+    if (list_.size() >= max_elements_) {
+      return QUEUE_FULL;
+    }
+    if (shutdown_) {
+      return QUEUE_SHUTDOWN;
     }
     list_.push_back(val);
     cond_.notify_one();
-    return true;
+    return QUEUE_SUCCESS;
   }
 
-  // returns true if the element was inserted; false if the queue was full.
+  // Returns the same as the other Put() overload above.
   // If the element was inserted, the gscoped_ptr releases its contents.
-  bool Put(gscoped_ptr<T_VAL> *val) {
-    if (Put(val->get())) {
+  QueueStatus Put(gscoped_ptr<T_VAL> *val) {
+    QueueStatus s = Put(val->get());
+    if (s == QUEUE_SUCCESS) {
       ignore_result<>(val->release());
-      return true;
     }
-    return false;
+    return s;
   }
 
   // Shut down the queue.
-  // When a blocking queue is shut down, no more elements can be added to it.
+  // When a blocking queue is shut down, no more elements can be added to it,
+  // and Put() will return QUEUE_SHUTDOWN.
   // Existing elements will drain out of it, and then BlockingGet will start
   // returning false.
   void Shutdown() {

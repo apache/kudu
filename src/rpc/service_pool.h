@@ -25,8 +25,8 @@ class ServicePool {
  public:
   ServicePool(const std::tr1::shared_ptr<Messenger> &messenger,
               gscoped_ptr<ServiceIf> service);
-  ~ServicePool();
-  Status Init(int num_threads);
+  virtual ~ServicePool();
+  virtual Status Init(int num_threads);
 
  private:
   void RunThread();

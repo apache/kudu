@@ -70,3 +70,6 @@ TARGET_LINK_LIBRARIES(rpc_stub-test rtest_krpc krpc)
 
 ADD_KUDU_TEST(sasl_rpc-test)
 TARGET_LINK_LIBRARIES(sasl_rpc-test rtest_krpc krpc)
+
+ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
+TARGET_LINK_LIBRARIES(mt-rpc-test rtest_krpc krpc)

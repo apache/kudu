@@ -182,6 +182,7 @@ class RpcTestBase : public KuduTest {
     req.set_y(rand());
     AddResponsePB resp;
     RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(10000));
     RETURN_NOT_OK(p.SyncRequest(method, req, &resp, &controller));
 
     LOG(INFO) << "Result: " << resp.ShortDebugString();

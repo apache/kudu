@@ -153,7 +153,7 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
       return;
     }
 
-    SetFailed(Status::RuntimeError("RPC error", err.message()));
+    SetFailed(Status::RemoteError(err.message()));
   }
 }
 
@@ -190,7 +190,7 @@ void OutboundCall::SetTimedOut() {
     boost::lock_guard<simple_spinlock> l(lock_);
     // TODO: have a better error message which includes the call timeout,
     // remote host, how long it spent in the queue, other useful stuff.
-    status_ = Status::RuntimeError("Call timed out");
+    status_ = Status::TimedOut("Call timed out");
     set_state_unlocked(TIMED_OUT);
   }
   CallCallback();

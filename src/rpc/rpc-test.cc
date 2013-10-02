@@ -109,7 +109,7 @@ TEST_F(TestRpc, TestInvalidMethodCall) {
 
   // Call the method which fails.
   Status s = DoTestSyncCall(p, "ThisMethodDoesNotExist");
-  ASSERT_TRUE(s.IsRuntimeError()) << "unexpected status: " << s.ToString();
+  ASSERT_TRUE(s.IsRemoteError()) << "unexpected status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "bad method");
 }
 

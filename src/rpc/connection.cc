@@ -321,8 +321,10 @@ class QueueTransferTask : public ReactorTask {
 };
 
 void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
-  // This is called by the IPC worker thread when the response is set.
-  DCHECK(!reactor_thread_->IsCurrentThread());
+  // This is usually called by the IPC worker thread when the response
+  // is set, but in some circumstances may also be called by the
+  // reactor thread (e.g. if the service has shut down)
+
   DCHECK_EQ(direction_, SERVER);
 
   // If the connection is torn down, then the QueueOutbound() call that

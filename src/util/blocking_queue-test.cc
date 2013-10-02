@@ -16,9 +16,9 @@ namespace kudu {
 BlockingQueue<int32_t> test1_queue(5);
 
 void InsertSomeThings(void) {
-  ASSERT_TRUE(test1_queue.Put(1));
-  ASSERT_TRUE(test1_queue.Put(2));
-  ASSERT_TRUE(test1_queue.Put(3));
+  ASSERT_EQ(test1_queue.Put(1), QUEUE_SUCCESS);
+  ASSERT_EQ(test1_queue.Put(2), QUEUE_SUCCESS);
+  ASSERT_EQ(test1_queue.Put(3), QUEUE_SUCCESS);
 }
 
 TEST(BlockingQueueTest, Test1) {
@@ -34,16 +34,16 @@ TEST(BlockingQueueTest, Test1) {
 
 TEST(BlockingQueueTest, TestTooManyInsertions) {
   BlockingQueue<int32_t> test_queue(2);
-  ASSERT_TRUE(test_queue.Put(123));
-  ASSERT_TRUE(test_queue.Put(123));
-  ASSERT_FALSE(test_queue.Put(123));
+  ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
+  ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
+  ASSERT_EQ(test_queue.Put(123), QUEUE_FULL);
 }
 
 TEST(BlockingQueueTest, TestGetFromShutdownQueue) {
   BlockingQueue<int64_t> test_queue(2);
-  ASSERT_TRUE(test_queue.Put(123));
+  ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
   test_queue.Shutdown();
-  ASSERT_FALSE(test_queue.Put(456));
+  ASSERT_EQ(test_queue.Put(456), QUEUE_SHUTDOWN);
   int64_t i;
   ASSERT_TRUE(test_queue.BlockingGet(&i));
   ASSERT_EQ(123, i);
@@ -53,7 +53,7 @@ TEST(BlockingQueueTest, TestGetFromShutdownQueue) {
 TEST(BlockingQueueTest, TestGscopedPtrMethods) {
   BlockingQueue<int*> test_queue(2);
   gscoped_ptr<int> input_int(new int(123));
-  ASSERT_TRUE(test_queue.Put(&input_int));
+  ASSERT_EQ(test_queue.Put(&input_int), QUEUE_SUCCESS);
   gscoped_ptr<int> output_int;
   ASSERT_TRUE(test_queue.BlockingGet(&output_int));
   ASSERT_EQ(123, *output_int.get());
@@ -73,7 +73,7 @@ class MultiThreadTest {
 
   void InserterThread(int arg) {
     for (int i = 0; i < iterations_; i++) {
-      ASSERT_TRUE(queue_.Put(arg));
+      ASSERT_EQ(queue_.Put(arg), QUEUE_SUCCESS);
     }
     boost::lock_guard<boost::mutex> guard(lock_);
     if (--num_inserters_ == 0) {

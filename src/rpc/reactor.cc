@@ -113,7 +113,6 @@ void ReactorThread::GetMetricsInternal(ReactorMetrics *metrics) {
 }
 
 void ReactorThread::WakeThread() {
-  DCHECK(!IsCurrentThread());
   async_.send();
 }
 

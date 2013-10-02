@@ -110,6 +110,18 @@ class Status {
                          int16_t posix_code = -1) {
     return Status(kAborted, msg, msg2, posix_code);
   }
+  static Status RemoteError(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kRemoteError, msg, msg2, posix_code);
+  }
+  static Status ServiceUnavailable(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kServiceUnavailable, msg, msg2, posix_code);
+  }
+  static Status TimedOut(const Slice& msg, const Slice& msg2 = Slice(),
+                         int16_t posix_code = -1) {
+    return Status(kTimedOut, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -146,6 +158,15 @@ class Status {
 
   // Returns true iff the status indicates Aborted.
   bool IsAborted() const { return code() == kAborted; }
+
+  // Returns true iff the status indicates RemoteError.
+  bool IsRemoteError() const { return code() == kRemoteError; }
+
+  // Returns true iff the status indicates ServiceUnavailable.
+  bool IsServiceUnavailable() const { return code() == kServiceUnavailable; }
+
+  // Returns true iff the status indicates TimedOut.
+  bool IsTimedOut() const { return code() == kTimedOut; }
 
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
@@ -192,6 +213,9 @@ class Status {
     kIllegalState = 9,
     kNotAuthorized = 10,
     kAborted = 11,
+    kRemoteError = 12,
+    kServiceUnavailable = 13,
+    kTimedOut = 14,
   };
 
   Code code() const {
