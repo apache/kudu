@@ -294,6 +294,13 @@ SET(KUDU_LINK_LIBS master master_proto tserver tserver_proto tablet server krpc 
 SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
+# "make ctags" target
+############################################################
+IF (UNIX)
+  ADD_CUSTOM_TARGET(ctags ctags -R --languages=c++,c --exclude=thirdparty/installed)
+ENDIF (UNIX)
+
+############################################################
 # "make etags" target
 ############################################################
 IF (UNIX)
