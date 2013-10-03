@@ -56,6 +56,7 @@ class ClientThread {
       req.set_x(request_count_);
       req.set_y(request_count_);
       RpcController controller;
+      controller.set_timeout(MonoDelta::FromSeconds(10));
       CHECK_OK(p.Add(req, &resp, &controller));
       CHECK_EQ(req.x() + req.y(), resp.result());
       request_count_++;
