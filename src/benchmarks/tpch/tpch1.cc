@@ -116,7 +116,8 @@ struct hash {
 static const boost::char_separator<char> kPipeSeparator("|");
 
 static const Schema kSchema(boost::assign::list_of
-                            (ColumnSchema("l_orderkey_l_linenumber", STRING)) // no composite key
+                            (ColumnSchema("l_orderkey", UINT32))
+                            (ColumnSchema("l_linenumber", UINT32))
                             (ColumnSchema("l_partkey", UINT32))
                             (ColumnSchema("l_suppkey", UINT32))
                             (ColumnSchema("l_quantity", UINT32)) // decimal??
@@ -131,7 +132,7 @@ static const Schema kSchema(boost::assign::list_of
                             (ColumnSchema("l_shipinstruct", STRING))
                             (ColumnSchema("l_shipmode", STRING))
                             (ColumnSchema("l_comment", STRING))
-                            , 1);
+                            , 2);
 
 const Schema kQuerySchema(boost::assign::list_of
                             (ColumnSchema("l_shipdate", STRING, true))
@@ -189,10 +190,8 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
     // grab all the columns individually
     columns.assign(tokens.begin(), tokens.end());
 
-    char buf[256];
-    snprintf(buf, sizeof(buf), "%s_%s", columns[0].c_str(), columns[3].c_str());
-    rb.AddString(Slice(buf));
-
+    ConvertToIntAndPopulate(columns[0], &rb);
+    ConvertToIntAndPopulate(columns[3], &rb);
     ConvertToIntAndPopulate(columns[1], &rb);
     ConvertToIntAndPopulate(columns[2], &rb);
     ConvertToIntAndPopulate(columns[4], &rb);
