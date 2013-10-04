@@ -3,7 +3,6 @@
 #define KUDU_TSERVER_TABLET_SERVER_H
 
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -28,15 +27,11 @@ class Messenger;
 class ServicePool;
 }
 
-namespace tablet {
-class Tablet;
-class TabletPeer;
-}
-
 namespace tserver {
 
-class ScannerManager;
+class TSTabletManager;
 class MutatorManager;
+class ScannerManager;
 
 class TabletServer : public server::ServerBase {
  public:
@@ -54,14 +49,7 @@ class TabletServer : public server::ServerBase {
 
   string ToString() const;
 
-  // Register the given tablet peer to be managed by this tablet server.
-  void RegisterTablet(const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
-
-  // Lookup the given tablet peer by its ID.
-  // Returns true if the tablet is found successfully.
-  bool LookupTablet(const string& tablet_id,
-                    std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
-
+  TSTabletManager* tablet_manager() { return tablet_manager_.get(); }
 
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
@@ -78,11 +66,8 @@ class TabletServer : public server::ServerBase {
 
   metadata::TabletServerPB tablet_server_pb_;
 
-
-  // The singular hosted tablet.
-  // TODO: This will be replaced with some kind of map of tablet ID to
-  // tablet in the future.
-  std::tr1::shared_ptr<tablet::TabletPeer> tablet_peer_;
+  // Manager for tablets which are available on this server.
+  gscoped_ptr<TSTabletManager> tablet_manager_;
 
   // Manager for open scanners from clients.
   // This is always non-NULL. It is scoped only to minimize header

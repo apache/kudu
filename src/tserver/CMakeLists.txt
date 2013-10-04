@@ -19,6 +19,7 @@ SET(TSERVER_SRCS
   tablet_server.cc
   tablet_server_options.cc
   tablet_service.cc
+  ts_tablet_manager.cc
 )
 
 add_library(tserver ${TSERVER_SRCS})

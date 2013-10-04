@@ -22,6 +22,13 @@
     if (PREDICT_FALSE(!_s.ok())) return _s;     \
   } while (0);
 
+// Return the given status if it is not OK, but first clone it and
+// prepend the given message.
+#define RETURN_NOT_OK_PREPEND(s, msg) do { \
+    Status _s = (s); \
+    if (PREDICT_FALSE(!_s.ok())) return _s.CloneAndPrepend(msg); \
+  } while (0);
+
 // Return 'to_return' if 'to_call' returns a bad status.
 // The substitution for 'to_return' may reference the variable
 // 's' for the bad status.
@@ -30,6 +37,13 @@
     if (PREDICT_FALSE(!s.ok())) return (to_return);  \
   } while (0);
 
+// Emit a warning if 'to_call' returns a bad status.
+#define WARN_NOT_OK(to_call, warning_prefix) do { \
+    Status _s = (to_call); \
+    if (PREDICT_FALSE(!_s.ok())) { \
+      LOG(WARNING) << (warning_prefix) << ": " << _s.ToString();  \
+    } \
+  } while (0);
 
 #define CHECK_OK(s) do { \
   Status _s = (s); \

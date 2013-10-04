@@ -15,6 +15,7 @@
 #include "consensus/local_consensus.h"
 #include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
+#include "tserver/ts_tablet_manager.h"
 #include "twitter-demo/twitter-schema.h"
 #include "util/env.h"
 #include "util/logging.h"
@@ -107,7 +108,7 @@ static int TabletServerMain(int argc, char** argv) {
   CHECK_OK(tablet_peer->Init());
   CHECK_OK(tablet_peer->Start());
 
-  server.RegisterTablet(tablet_peer);
+  server.tablet_manager()->RegisterTablet(tablet_peer);
 
   // Temporary hack for demos: start threads which compact/flush the tablet.
   // Eventually this will be part of TabletServer itself, and take care of deciding

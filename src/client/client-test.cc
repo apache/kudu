@@ -15,6 +15,7 @@
 #include "tserver/mini_tablet_server.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
+#include "tserver/ts_tablet_manager.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 #include "util/stopwatch.h"
@@ -51,7 +52,8 @@ class ClientTest : public KuduTest {
 
     // Set up a tablet inside the server.
     ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->LookupTablet(kTabletId, &tablet_peer_));
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(
+                  kTabletId, &tablet_peer_));
 
     // Connect to it.
     KuduClientOptions opts;

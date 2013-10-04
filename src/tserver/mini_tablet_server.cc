@@ -13,6 +13,7 @@
 #include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
+#include "tserver/ts_tablet_manager.h"
 #include "consensus/log.h"
 #include "consensus/log.pb.h"
 #include "consensus/consensus.h"
@@ -98,7 +99,7 @@ Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
   RETURN_NOT_OK(tablet_peer->Init());
   RETURN_NOT_OK(tablet_peer->Start());
 
-  server_->RegisterTablet(tablet_peer);
+  server_->tablet_manager()->RegisterTablet(tablet_peer);
   return Status::OK();
 }
 

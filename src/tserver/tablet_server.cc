@@ -12,6 +12,7 @@
 #include "tablet/tablet_peer.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_service.h"
+#include "tserver/ts_tablet_manager.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -29,7 +30,9 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
   : ServerBase(opts.rpc_opts, opts.webserver_opts),
     initted_(false),
     opts_(opts),
-    fs_manager_(new FsManager(opts.env, opts.base_dir)) {
+    fs_manager_(new FsManager(opts.env, opts.base_dir)),
+    tablet_manager_(new TSTabletManager(fs_manager_.get())),
+    scanner_manager_(new ScannerManager()) {
 }
 
 TabletServer::~TabletServer() {
@@ -44,11 +47,12 @@ string TabletServer::ToString() const {
 Status TabletServer::Init() {
   CHECK(!initted_);
 
-  RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
+                        "Could not init FS layout");
+  RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
+                        "Could not init Tablet Manager");
 
   RETURN_NOT_OK(ServerBase::Init());
-
-  scanner_manager_.reset(new ScannerManager);
 
   // TODO replace this with a 'real' address for dist execution.
   tablet_server_pb_.set_hostname("TODO");
@@ -69,26 +73,9 @@ Status TabletServer::Shutdown() {
   CHECK(initted_);
   LOG(INFO) << "TabletServer shutting down...";
   RETURN_NOT_OK(ServerBase::Shutdown());
-  RETURN_NOT_OK(tablet_peer_->Shutdown());
+  tablet_manager_->Shutdown();
   LOG(INFO) << "TabletServer shut down complete. Bye!";
   return Status::OK();
-}
-
-void TabletServer::RegisterTablet(const std::tr1::shared_ptr<TabletPeer>& tablet_peer) {
-  CHECK(!tablet_peer_) << "Already have a tablet. Currently only supports one tablet per server";
-  // TODO: will eventually need a mutex here when tablets get added/removed at
-  // runtime.
-  tablet_peer_ = tablet_peer;
-}
-
-bool TabletServer::LookupTablet(const string& tablet_id,
-                                std::tr1::shared_ptr<TabletPeer> *tablet_peer) const {
-  // TODO: when the tablet server hosts multiple tablets,
-  // lookup the correct one.
-  // TODO: will eventually need a mutex here when tablets get added/removed at
-  // runtime.
-  *tablet_peer = tablet_peer_;
-  return true;
 }
 
 } // namespace tserver

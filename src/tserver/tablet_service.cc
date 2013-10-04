@@ -16,6 +16,7 @@
 #include "tablet/transaction_context.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
+#include "tserver/ts_tablet_manager.h"
 #include "tserver/tserver.pb.h"
 #include "util/status.h"
 
@@ -74,7 +75,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
-  if (!server_->LookupTablet(req->tablet_id(), &tablet_peer)) {
+  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::NotFound("Tablet not found"),
                          TabletServerErrorPB::TABLET_NOT_FOUND, context);
@@ -196,7 +197,8 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
 
   const NewScanRequestPB& scan_pb = req->new_scan_request();
   shared_ptr<TabletPeer> tablet_peer;
-  if (PREDICT_FALSE(!server_->LookupTablet(scan_pb.tablet_id(), &tablet_peer))) {
+  if (PREDICT_FALSE(!server_->tablet_manager()->LookupTablet(
+                      scan_pb.tablet_id(), &tablet_peer))) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::NotFound("Tablet not found"),
                          TabletServerErrorPB::TABLET_NOT_FOUND, context);
