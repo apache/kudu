@@ -249,6 +249,7 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
     col_data->set_id(idx);
     BlockIdToPB(block_id, col_data->mutable_block());
     ColumnSchemaToPB(schema_.column(idx), col_data->mutable_schema());
+    col_data->mutable_schema()->set_is_key(idx < schema_.num_key_columns());
     idx++;
   }
 
