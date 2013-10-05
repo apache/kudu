@@ -398,8 +398,17 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx) {
   // to the index within the non-null entries.
   uint32_t index_within_nonnulls;
   if (reader_->is_nullable()) {
-    RleDecoder<bool> rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
-    index_within_nonnulls = rle_decoder.Skip(ord_idx);
+    if (PREDICT_TRUE(pb->rle_index_ <= ord_idx)) {
+      uint32_t nskip = ord_idx - pb->rle_index_;
+      size_t cur_blk_idx = pb->dblk_->ordinal_pos() - pb->first_row_idx_;
+      index_within_nonnulls = cur_blk_idx + pb->rle_decoder_.Skip(nskip);
+      pb->rle_index_ += nskip;
+      DCHECK_EQ(pb->rle_index_, ord_idx);
+    } else {
+      pb->rle_decoder_ = RleDecoder<bool>(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
+      index_within_nonnulls = pb->rle_decoder_.Skip(ord_idx);
+      pb->rle_index_ = ord_idx;
+    }
   } else {
     index_within_nonnulls = ord_idx;
   }
@@ -425,9 +434,13 @@ Status CFileIterator::SeekToFirst() {
     prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(*idx_iter, b.get()));
   b->dblk_->SeekToPositionInBlock(0);
-
   last_prepare_idx_ = b->dblk_->ordinal_pos();
   last_prepare_count_ = 0;
+
+  if (reader_->is_nullable()) {
+    b->rle_decoder_ = RleDecoder<bool>(b->rle_bitmap.data(), b->rle_bitmap.size(), 1);
+    b->rle_index_ = 0;
+  }
 
   prepared_blocks_.push_back(b.release());
 
@@ -439,6 +452,8 @@ Status CFileIterator::SeekToFirst() {
 
 Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
                                     bool *exact_match) {
+  DCHECK_EQ(reader_->is_nullable(), false);
+
   Unseek();
   if (PREDICT_FALSE(validx_iter_ == NULL)) {
     return Status::NotSupported("no value index present");
@@ -526,6 +541,8 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   Slice data_block = prep_block->dblk_data_.data();
   if (reader_->is_nullable()) {
     RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
+    prep_block->rle_decoder_ = RleDecoder<bool>(prep_block->rle_bitmap.data(), prep_block->rle_bitmap.size(), 1);
+    prep_block->rle_index_ = 0;
   }
 
   BlockDecoder *bd;
@@ -679,10 +696,8 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
     if (reader_->is_nullable()) {
       DCHECK(dst->is_nullable());
 
-      RleDecoder<bool> rle_decoder(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
-
       size_t index = pb->row_index_ - pb->first_row_idx_;
-      rle_decoder.Skip(index);
+      DCHECK_EQ(index, pb->rle_index_);
 
       size_t nrows = std::min(rem, pb->num_rows_in_block_ - index);
 
@@ -691,7 +706,7 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
       while (count > 0) {
         size_t nblock = 0;
         bool not_null = false;
-        bool result = rle_decoder.GetNextRun(&not_null, &nblock);
+        bool result = pb->rle_decoder_.GetNextRun(&not_null, &nblock);
         if (PREDICT_FALSE(!result)) {
           return Status::Corruption("Unexpected EOF on NULL bitmap read");
         }
@@ -722,6 +737,7 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
         count -= this_batch;
         pb->row_index_ += this_batch;
         remaining_dst.Advance(this_batch);
+        pb->rle_index_ += this_batch;
       }
     } else {
       // Fetch as many as we can from the current datablock.

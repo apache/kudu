@@ -21,6 +21,7 @@
 #include "util/env.h"
 #include "util/memory/arena.h"
 #include "util/object_pool.h"
+#include "util/rle-encoding.h"
 #include "util/status.h"
 #include "common/key_encoder.h"
 
@@ -387,7 +388,11 @@ class CFileIterator : public ColumnIterator {
 
     // Total number of rows in the block (nulls + not nulls)
     uint32_t num_rows_in_block_;
+
+    // Null bitmap and bitmap (RLE) decoder
     Slice rle_bitmap;
+    uint32_t rle_index_;
+    RleDecoder<bool> rle_decoder_;
 
     rowid_t last_row_idx() const {
       return first_row_idx_ + num_rows_in_block_ - 1;
