@@ -4,14 +4,16 @@
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/strcat.h"
+#include "gutil/strings/substitute.h"
 #include "util/status.h"
 
 namespace kudu {
 
 string ColumnSchema::ToString() const {
-  return StringPrintf("%s[type='%s']",
-                      name_.c_str(),
-                      type_info_->name().c_str());
+  return strings::Substitute("$0[type='$1' $2]",
+                             name_,
+                             type_info_->name(),
+                             is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
 
 Status Schema::Reset(const vector<ColumnSchema> &cols,
