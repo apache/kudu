@@ -179,6 +179,8 @@ class Tablet {
 
   int32_t CurrentMrsIdForTests() const { return memrowset_->mrs_id(); }
 
+  const std::string& tablet_id() const { return metadata_->oid(); }
+
  private:
   friend class Iterator;
 

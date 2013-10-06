@@ -2,15 +2,19 @@
 
 #include "tserver/ts_tablet_manager.h"
 
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <tr1/memory>
 
 #include "server/fsmanager.h"
+#include "server/metadata.pb.h"
 #include "tablet/tablet_peer.h"
 
 using std::tr1::shared_ptr;
 using kudu::tablet::TabletPeer;
+using kudu::metadata::TabletMasterBlockPB;
 
 namespace kudu {
 namespace tserver {
@@ -27,25 +31,33 @@ Status TSTabletManager::Init() {
 }
 
 void TSTabletManager::Shutdown() {
-  if (tablet_peer_) {
-    WARN_NOT_OK(tablet_peer_->Shutdown(), "Unable to close tablet");
+  LOG(INFO) << "Shutting down tablet manager...";
+  boost::lock_guard<rw_spinlock> l(lock_);
+  BOOST_FOREACH(const TabletMap::value_type &pair, tablet_map_) {
+    const std::tr1::shared_ptr<TabletPeer>& peer = pair.second;
+    WARN_NOT_OK(peer->Shutdown(), "Unable to close tablet " + peer->tablet()->tablet_id());
   }
+  tablet_map_.clear();
+  // TODO: add a state variable?
 }
 
 void TSTabletManager::RegisterTablet(const std::tr1::shared_ptr<TabletPeer>& tablet_peer) {
-  CHECK(!tablet_peer_) << "Already have a tablet. Currently only supports one tablet per server";
-  // TODO: will eventually need a mutex here when tablets get added/removed at
-  // runtime.
-  tablet_peer_ = tablet_peer;
+  const string& id = tablet_peer->tablet()->tablet_id();
+  boost::lock_guard<rw_spinlock> lock(lock_);
+  if (!InsertIfNotPresent(&tablet_map_, id, tablet_peer)) {
+    LOG(FATAL) << "Unable to register tablet peer " << id << ": already registered!";
+  }
+  LOG(INFO) << "Registered tablet " << id;
 }
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
-                                   std::tr1::shared_ptr<TabletPeer> *tablet_peer) const {
-  // TODO: when the tablet server hosts multiple tablets,
-  // lookup the correct one.
-  // TODO: will eventually need a mutex here when tablets get added/removed at
-  // runtime.
-  *tablet_peer = tablet_peer_;
+                                   std::tr1::shared_ptr<TabletPeer>* tablet_peer) const {
+  boost::shared_lock<rw_spinlock> lock(lock_);
+  const std::tr1::shared_ptr<TabletPeer>* found = FindOrNull(tablet_map_, tablet_id);
+  if (!found) {
+    return false;
+  }
+  *tablet_peer = *found;
   return true;
 }
 

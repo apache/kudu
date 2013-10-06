@@ -4,8 +4,10 @@
 
 #include <string>
 #include <tr1/memory>
+#include <tr1/unordered_map>
 
 #include "gutil/macros.h"
+#include "util/locks.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -48,8 +50,13 @@ class TSTabletManager {
  private:
   FsManager* fs_manager_;
 
-  // TODO: replace with a map
-  std::tr1::shared_ptr<tablet::TabletPeer> tablet_peer_;
+  typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<tablet::TabletPeer> > TabletMap;
+
+  // Lock protecting tablet_map_
+  mutable rw_spinlock lock_;
+
+  // Map from tablet ID to tablet
+  TabletMap tablet_map_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };
