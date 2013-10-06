@@ -411,6 +411,16 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 #undef ATTRIBUTE_UNUSED
 #define ATTRIBUTE_UNUSED __attribute__ ((unused))
 
+// Same as above, but for class members.
+// As of 10/2013 this appears to only be supported in Clang/LLVM.
+// See http://patchwork.ozlabs.org/patch/232594/ which is not yet committed
+// in gcc trunk.
+#if defined(__llvm__)
+#define ATTRIBUTE_MEMBER_UNUSED ATTRIBUTE_UNUSED
+#else
+#define ATTRIBUTE_MEMBER_UNUSED
+#endif
+
 //
 // For functions we want to force inline or not inline.
 // Introduced in gcc 3.1.
