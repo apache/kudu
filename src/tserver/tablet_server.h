@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "server/metadata.pb.h"

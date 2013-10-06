@@ -84,5 +84,17 @@ Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
   return Status::OK();
 }
 
+ScopedFileDeleter::ScopedFileDeleter(Env* env, const std::string& path)
+  : env_(DCHECK_NOTNULL(env)),
+    path_(path),
+    should_delete_(true) {
+}
+
+ScopedFileDeleter::~ScopedFileDeleter() {
+  if (should_delete_) {
+    WARN_NOT_OK(env_->DeleteFile(path_), "Failed to remove temporary file");
+  }
+}
+
 } // namespace env_util
 } // namespace kudu

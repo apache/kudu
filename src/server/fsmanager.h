@@ -168,6 +168,12 @@ class FsManager {
     return env_->JoinPathSegments(path, prefix + "." + boost::lexical_cast<string>(timestamp));
   }
 
+  // Return the directory where tablet master blocks should be stored.
+  string GetMasterBlockDir() const;
+
+  // Return the path for a specific tablet's master block.
+  string GetMasterBlockPath(const std::string& tablet_id) const;
+
   // ==========================================================================
   //  Name generator
   // ==========================================================================
@@ -235,6 +241,7 @@ class FsManager {
                           const string& path, const vector<string>& objects);
 
   static const char *kDataDirName;
+  static const char *kMasterBlockDirName;
   static const char *kWalsDirName;
   static const char *kCorruptedSuffix;
   static const uint64_t kWalPartitionMillis = 3600000;   // 1hour

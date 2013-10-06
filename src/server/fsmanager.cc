@@ -16,6 +16,7 @@ namespace kudu {
 //  FS Paths
 // ==========================================================================
 const char *FsManager::kWalsDirName = "wals";
+const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
 
@@ -40,7 +41,18 @@ Status FsManager::CreateInitialFileSystemLayout() {
   // Initialize data dir
   RETURN_NOT_OK(CreateDirIfMissing(GetDataRootDir()));
 
+  // Initialize master block dir
+  RETURN_NOT_OK(CreateDirIfMissing(GetMasterBlockDir()));
+
   return Status::OK();
+}
+
+string FsManager::GetMasterBlockDir() const {
+  return env_->JoinPathSegments(GetRootDir(), kMasterBlockDirName);
+}
+
+string FsManager::GetMasterBlockPath(const std::string& tablet_id) const {
+  return env_->JoinPathSegments(GetMasterBlockDir(), tablet_id);
 }
 
 // ==========================================================================

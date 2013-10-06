@@ -31,6 +31,8 @@ using kudu::tserver::TabletServer;
 namespace kudu {
 namespace tserver {
 
+static const char* const kTwitterTabletId = "twitter";
+
 // For the sake of demos, hard-code the twitter demo schema
 // here in the tablet server. This will go away as soon as
 // we have support for dynamically creating and dropping
@@ -40,16 +42,17 @@ class TemporaryTabletsForDemos {
   explicit TemporaryTabletsForDemos(TabletServer* server)
     : twitter_schema_(twitter_demo::CreateTwitterSchema()) {
 
-    metadata::TabletMasterBlockPB master_block;
-    master_block.set_tablet_id("twitter");
-    master_block.set_block_a("00000000000000000000000000000000");
-    master_block.set_block_b("11111111111111111111111111111111");
-    gscoped_ptr<TabletMetadata> meta;
-    CHECK_OK(TabletMetadata::LoadOrCreate(server->fs_manager(), master_block,
-                                          twitter_schema_, "", "", &meta));
-
-    twitter_tablet_.reset(new Tablet(meta.Pass()));
-    CHECK_OK(twitter_tablet_->Open());
+    shared_ptr<TabletPeer> peer;
+    if (server->tablet_manager()->LookupTablet(kTwitterTabletId, &peer)) {
+      CHECK(twitter_schema_.Equals(peer->tablet()->schema()))
+        << "Bad schema for twitter tablet loaded on disk: " <<
+        peer->tablet()->schema().ToString();
+      LOG(INFO) << "Using previously-created twitter tablet";
+    } else {
+      CHECK_OK(server->tablet_manager()->CreateNewTablet(
+                 kTwitterTabletId, "", "", twitter_schema_, &peer));
+    }
+    twitter_tablet_ = peer->shared_tablet();
   }
 
   const shared_ptr<Tablet>& twitter_tablet() {
@@ -92,19 +95,12 @@ static int TabletServerMain(int argc, char** argv) {
   }
 
   TabletServerOptions opts;
-
   TabletServer server(opts);
   LOG(INFO) << "Initializing tablet server...";
   CHECK_OK(server.Init());
 
   LOG(INFO) << "Setting up demo tablets...";
   TemporaryTabletsForDemos demo_setup(&server);
-
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(demo_setup.twitter_tablet()));
-  CHECK_OK(tablet_peer->Init());
-  CHECK_OK(tablet_peer->Start());
-
-  server.tablet_manager()->RegisterTablet(tablet_peer);
 
   // Temporary hack for demos: start threads which compact/flush the tablet.
   // Eventually this will be part of TabletServer itself, and take care of deciding

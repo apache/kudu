@@ -48,6 +48,7 @@ MiniTabletServer::MiniTabletServer(Env* env,
   // Start RPC server on loopback.
   opts_.rpc_opts.rpc_bind_addresses = "127.0.0.1:0";
   opts_.webserver_opts.port = 0;
+  opts_.base_dir = fs_root;
 }
 
 MiniTabletServer::~MiniTabletServer() {
@@ -57,6 +58,8 @@ Status MiniTabletServer::Start() {
   CHECK(!started_);
 
   // Init the filesystem manager.
+  // TODO: this is kind of redundant -- the TS class itself makes its own
+  // FsManager as well - do we need this? Confuses things.
   fs_manager_.reset(new FsManager(env_, fs_root_));
   RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
 
@@ -77,26 +80,8 @@ Status MiniTabletServer::Shutdown() {
 Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
                                        const Schema& schema) {
   CHECK(started_) << "Must Start()";
-
-  metadata::TabletMasterBlockPB master_block;
-  master_block.set_tablet_id(tablet_id);
-  // TODO: generate master block IDs based on tablet ID for tests?
-  // This won't allow multiple tablets
-  master_block.set_block_a("00000000000000000000000000000000");
-  master_block.set_block_b("11111111111111111111111111111111");
-  gscoped_ptr<TabletMetadata> meta;
-  RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_.get(), master_block, schema,
-                                          "", "", &meta));
-
-  shared_ptr<Tablet> t(new Tablet(meta.Pass()));
-  RETURN_NOT_OK(t->Open());
-
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(t));
-  RETURN_NOT_OK(tablet_peer->Init());
-  RETURN_NOT_OK(tablet_peer->Start());
-
-  server_->tablet_manager()->RegisterTablet(tablet_peer);
-  return Status::OK();
+  return server_->tablet_manager()->CreateNewTablet(
+    tablet_id, "", "", schema, NULL);
 }
 
 const Sockaddr MiniTabletServer::bound_rpc_addr() const {

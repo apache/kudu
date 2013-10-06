@@ -7,14 +7,27 @@
 #include <glog/logging.h>
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
+#include "gutil/strings/substitute.h"
+#include "gutil/strings/util.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
+#include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
+#include "util/env.h"
+#include "util/env_util.h"
+#include "util/pb_util.h"
 
+using std::string;
 using std::tr1::shared_ptr;
+using std::vector;
 using kudu::tablet::TabletPeer;
 using kudu::metadata::TabletMasterBlockPB;
+using kudu::metadata::TabletMetadata;
+using kudu::tablet::Tablet;
+
+static const char* const kTmpSuffix = ".tmp";
 
 namespace kudu {
 namespace tserver {
@@ -27,6 +40,89 @@ TSTabletManager::~TSTabletManager() {
 }
 
 Status TSTabletManager::Init() {
+  vector<string> children;
+  RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(fs_manager_->GetMasterBlockDir(), &children),
+                        "Couldn't list master blocks");
+  BOOST_FOREACH(const string& child, children) {
+    if (HasSuffixString(child, kTmpSuffix)) {
+      LOG(WARNING) << "Ignoring tmp file in master block dir: " << child;
+      continue;
+    }
+
+    if (HasPrefixString(child, ".")) {
+      // Hidden file or ./..
+      VLOG(1) << "Ignoring hidden file in master block dir: " << child;
+      continue;
+    }
+
+    RETURN_NOT_OK_PREPEND(OpenTablet(child), "Failed to open tablet " + child);
+    // TODO: should we still start up even if some fraction of the tablets are unavailable?
+    // perhaps create a TabletPeer in a corrupt state? Probably -- so we have a kind of
+    // quarantine and a single bad tablet doesn't block the whole server from starting.
+  }
+  return Status::OK();
+}
+
+Status TSTabletManager::CreateNewTablet(const string& tablet_id,
+                                        const string& start_key, const string& end_key,
+                                        const Schema& schema,
+                                        shared_ptr<TabletPeer>* tablet_peer) {
+  {
+    // Sanity check that the tablet isn't already registered.
+    // This fires a FATAL in debug mode, so callers should not depend on the
+    // AlreadyPresent result here to check if a tablet needs to be created.
+    shared_ptr<TabletPeer> junk;
+    if (LookupTablet(tablet_id, &junk)) {
+      LOG(DFATAL) << "Trying to create an already-existing tablet " << tablet_id;
+      return Status::AlreadyPresent("Tablet already registered", tablet_id);
+    }
+  }
+
+  // Create a new master block
+  TabletMasterBlockPB master_block;
+  master_block.set_tablet_id(tablet_id);
+  master_block.set_block_a(fs_manager_->GenerateName());
+  master_block.set_block_b(fs_manager_->GenerateName());
+
+  gscoped_ptr<TabletMetadata> meta;
+  RETURN_NOT_OK_PREPEND(
+    TabletMetadata::CreateNew(fs_manager_, master_block, schema, start_key, end_key, &meta),
+    "Couldn't create tablet metadata");
+
+  RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
+                        "Couldn't persist master block for new tablet");
+
+  return OpenTablet(meta.Pass(), tablet_peer);
+}
+
+Status TSTabletManager::OpenTablet(const string& tablet_id) {
+  LOG(INFO) << "Loading master block " << tablet_id;
+
+  TabletMasterBlockPB master_block;
+  RETURN_NOT_OK(LoadMasterBlock(tablet_id, &master_block));
+  VLOG(1) << "Loaded master block: " << master_block.ShortDebugString();
+
+  gscoped_ptr<TabletMetadata> meta;
+  RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, master_block, &meta),
+                        strings::Substitute("Failed to load tablet metadata. Master block: $0",
+                                            master_block.ShortDebugString()));
+  return OpenTablet(meta.Pass(), NULL);
+}
+
+Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
+                                   shared_ptr<TabletPeer>* peer) {
+  shared_ptr<Tablet> tablet(new Tablet(meta.Pass()));
+
+  RETURN_NOT_OK(tablet->Open());
+  // TODO: handle crash mid-creation of tablet? do we ever end up with a partially created tablet here?
+
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet));
+  RETURN_NOT_OK_PREPEND(tablet_peer->Init(), "Failed to Init() TabletPeer");
+  RETURN_NOT_OK_PREPEND(tablet_peer->Start(), "Failed to Start() TabletPeer");
+
+  RegisterTablet(tablet_peer);
+
+  if (peer) *peer = tablet_peer;
   return Status::OK();
 }
 
@@ -39,6 +135,48 @@ void TSTabletManager::Shutdown() {
   }
   tablet_map_.clear();
   // TODO: add a state variable?
+}
+
+Status TSTabletManager::PersistMasterBlock(const TabletMasterBlockPB& pb) {
+  // TODO: refactor this "atomic write" stuff into a utility function.
+  Env* env = fs_manager_->env();
+  string path = fs_manager_->GetMasterBlockPath(pb.tablet_id());
+  string path_tmp = path + kTmpSuffix;
+
+  shared_ptr<WritableFile> file;
+  RETURN_NOT_OK_PREPEND(env_util::OpenFileForWrite(env, path_tmp, &file),
+                        "Couldn't open master block file in " + path_tmp);
+  env_util::ScopedFileDeleter tmp_deleter(env, path_tmp);
+
+  if (!pb_util::SerializeToWritableFile(pb, file.get())) {
+    return Status::IOError("Failed to serialize to file");
+  }
+  RETURN_NOT_OK_PREPEND(file->Flush(), "Failed to Flush() " + path_tmp);
+  RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
+  RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + path_tmp);
+  RETURN_NOT_OK_PREPEND(env->RenameFile(path_tmp, path), "Failed to rename tmp file to " + path);
+  tmp_deleter.Cancel();
+  return Status::OK();
+}
+
+Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlockPB* block) {
+  // TODO: refactor this into some common utility function shared with the metadata block
+  // stuff in FsManager
+  string path = fs_manager_->GetMasterBlockPath(tablet_id);
+  shared_ptr<SequentialFile> rfile;
+  RETURN_NOT_OK(env_util::OpenFileForSequential(fs_manager_->env(), path, &rfile));
+  if (!pb_util::ParseFromSequentialFile(block, rfile.get())) {
+    return Status::IOError("Unable to parse tablet master block from " + path);
+  }
+
+  if (tablet_id != block->tablet_id()) {
+    LOG_AND_RETURN(ERROR, Status::Corruption(
+                     strings::Substitute("Corrupt master block $0: PB has wrong tablet ID",
+                                         path),
+                     block->ShortDebugString()));
+  }
+
+  return Status::OK();
 }
 
 void TSTabletManager::RegisterTablet(const std::tr1::shared_ptr<TabletPeer>& tablet_peer) {

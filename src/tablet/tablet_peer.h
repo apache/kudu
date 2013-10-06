@@ -112,6 +112,10 @@ class TabletPeer {
     return tablet_.get();
   }
 
+  const std::tr1::shared_ptr<Tablet>& shared_tablet() {
+    return tablet_;
+  }
+
  private:
   std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<log::Log> log_;

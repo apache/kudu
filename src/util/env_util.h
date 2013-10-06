@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <string>
 
+#include "gutil/macros.h"
 #include "util/env.h"
 
 namespace kudu {
@@ -37,6 +38,29 @@ Status OpenFileForSequential(Env *env, const string &path,
 // case.
 Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
                  Slice* result, uint8_t* scratch);
+
+// Deletes a file when this object goes out of scope.
+//
+// The deletion may be cancelled by calling .Cancel().
+// This is typically useful for cleaning up temporary files if the
+// creation of the tmp file may fail.
+class ScopedFileDeleter {
+ public:
+  ScopedFileDeleter(Env* env, const std::string& path);
+  ~ScopedFileDeleter();
+
+  // Do not delete the file when this object goes out of scope.
+  void Cancel() {
+    should_delete_ = false;
+  }
+
+ private:
+  Env* const env_;
+  const std::string path_;
+  bool should_delete_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedFileDeleter);
+};
 
 } // namespace env_util
 } // namespace kudu
