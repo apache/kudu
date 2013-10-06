@@ -190,8 +190,12 @@ class PlainBlockDecoder : public BlockDecoder {
     return num_elems_;
   }
 
-  virtual rowid_t ordinal_pos() const {
-    return ordinal_pos_base_ + cur_idx_;
+  virtual size_t GetCurrentIndex() const {
+    return cur_idx_;
+  }
+
+  virtual rowid_t GetFirstRowId() const {
+    return ordinal_pos_base_;
   }
 
  private:

@@ -16,6 +16,7 @@
 #include "cfile/index_btree.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/mathlimits.h"
+#include "gutil/strings/substitute.h"
 #include "util/coding.h"
 #include "util/env.h"
 #include "util/env_util.h"
@@ -23,6 +24,8 @@
 #include "util/rle-encoding.h"
 #include "util/slice.h"
 #include "util/status.h"
+
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
@@ -378,44 +381,45 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   }
 
   // Seek data block to correct index
-  DCHECK(ord_idx >= b->first_row_idx_ &&
+  DCHECK(ord_idx >= b->first_row_idx() &&
          ord_idx <= b->last_row_idx())
     << "got wrong data block. looking for ord_idx=" << ord_idx
     << " but got dblk " << b->ToString();
-  SeekToPositionInBlock(b.get(), ord_idx - b->first_row_idx_);
+         SeekToPositionInBlock(b.get(), ord_idx - b->first_row_idx());
 
   prepared_blocks_.push_back(b.release());
   last_prepare_idx_ = ord_idx;
   last_prepare_count_ = 0;
   seeked_ = posidx_iter_.get();
+
+  CHECK_EQ(ord_idx, GetCurrentOrdinal());
   return Status::OK();
 }
 
-void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx) {
-  pb->row_index_ = ord_idx + pb->first_row_idx_;
-
+void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, uint32_t idx_in_block) {
   // Since the data block only holds the non-null values,
   // we need to translate from 'ord_idx' (the absolute row id)
   // to the index within the non-null entries.
   uint32_t index_within_nonnulls;
   if (reader_->is_nullable()) {
-    if (PREDICT_TRUE(pb->rle_index_ <= ord_idx)) {
-      uint32_t nskip = ord_idx - pb->rle_index_;
-      size_t cur_blk_idx = pb->dblk_->ordinal_pos() - pb->first_row_idx_;
+    if (PREDICT_TRUE(pb->idx_in_block_ <= idx_in_block)) {
+      // We are seeking forward. Skip from the current position in the RLE decoder
+      // instead of going back to the beginning of the block.
+      uint32_t nskip = idx_in_block - pb->idx_in_block_;
+      size_t cur_blk_idx = pb->dblk_->GetCurrentIndex();
       index_within_nonnulls = cur_blk_idx + pb->rle_decoder_.Skip(nskip);
-      pb->rle_index_ += nskip;
-      DCHECK_EQ(pb->rle_index_, ord_idx);
     } else {
+      // Seek backward - have to start from the start of the block.
       pb->rle_decoder_ = RleDecoder<bool>(pb->rle_bitmap.data(), pb->rle_bitmap.size(), 1);
-      index_within_nonnulls = pb->rle_decoder_.Skip(ord_idx);
-      pb->rle_index_ = ord_idx;
+      index_within_nonnulls = pb->rle_decoder_.Skip(idx_in_block);
     }
   } else {
-    index_within_nonnulls = ord_idx;
+    index_within_nonnulls = idx_in_block;
   }
 
   pb->dblk_->SeekToPositionInBlock(index_within_nonnulls);
-  DCHECK_EQ(index_within_nonnulls + pb->first_row_idx_, pb->dblk_->ordinal_pos()) << "failed seek";
+  DCHECK_EQ(index_within_nonnulls, pb->dblk_->GetCurrentIndex()) << "failed seek";
+  pb->idx_in_block_ = idx_in_block;
 }
 
 Status CFileIterator::SeekToFirst() {
@@ -435,13 +439,8 @@ Status CFileIterator::SeekToFirst() {
     prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(*idx_iter, b.get()));
   b->dblk_->SeekToPositionInBlock(0);
-  last_prepare_idx_ = b->dblk_->ordinal_pos();
+  last_prepare_idx_ = 0;
   last_prepare_count_ = 0;
-
-  if (reader_->is_nullable()) {
-    b->rle_decoder_ = RleDecoder<bool>(b->rle_bitmap.data(), b->rle_bitmap.size(), 1);
-    b->rle_index_ = 0;
-  }
 
   prepared_blocks_.push_back(b.release());
 
@@ -483,8 +482,7 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
                                                exact_match));
   }
 
-
-  last_prepare_idx_ = b->dblk_->ordinal_pos();
+  last_prepare_idx_ = b->first_row_idx() + b->dblk_->GetCurrentIndex();
   last_prepare_count_ = 0;
 
   prepared_blocks_.push_back(b.release());
@@ -503,15 +501,13 @@ void CFileIterator::Unseek() {
 
 rowid_t CFileIterator::GetCurrentOrdinal() const {
   CHECK(seeked_) << "not seeked";
-  DCHECK(!prepared_blocks_.empty());
-
-  return prepared_blocks_.front()->dblk_->ordinal_pos();
+  return last_prepare_idx_;
 }
 
 string CFileIterator::PreparedBlock::ToString() const {
   return StringPrintf("dblk(%s, rows=%d-%d)",
                       dblk_ptr_.ToString().c_str(),
-                      first_row_idx_,
+                      first_row_idx(),
                       last_row_idx());
 }
 
@@ -543,7 +539,6 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   if (reader_->is_nullable()) {
     RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
     prep_block->rle_decoder_ = RleDecoder<bool>(prep_block->rle_bitmap.data(), prep_block->rle_bitmap.size(), 1);
-    prep_block->rle_index_ = 0;
   }
 
   BlockDecoder *bd;
@@ -560,8 +555,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
 
   io_stats_.rows_read += num_rows_in_block;
 
-  prep_block->first_row_idx_ = prep_block->dblk_->ordinal_pos();
-  prep_block->row_index_ = prep_block->first_row_idx_;
+  prep_block->idx_in_block_ = 0;
   prep_block->num_rows_in_block_ = num_rows_in_block;
   prep_block->needs_rewind_ = false;
   prep_block->rewind_idx_ = 0;
@@ -591,7 +585,7 @@ Status CFileIterator::PrepareBatch(size_t *n) {
 
   CHECK(!prepared_blocks_.empty());
 
-  rowid_t start_idx = last_prepare_idx_ + last_prepare_count_;
+  rowid_t start_idx = last_prepare_idx_;
   rowid_t end_idx = start_idx + *n;
 
   // Read blocks until all blocks covering the requested range are in the
@@ -611,7 +605,7 @@ Status CFileIterator::PrepareBatch(size_t *n) {
   // corresponds to start_idx
   {
     PreparedBlock *front = prepared_blocks_.front();
-    front->rewind_idx_ = start_idx - front->first_row_idx_;
+    front->rewind_idx_ = start_idx - front->first_row_idx();
     front->needs_rewind_ = true;
   }
 
@@ -672,6 +666,8 @@ Status CFileIterator::FinishBatch() {
   }
   #endif
 
+  last_prepare_idx_ += last_prepare_count_;
+  last_prepare_count_ = 0;
   return Status::OK();
 }
 
@@ -682,7 +678,7 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
   // Use a column data view to been able to advance it as we read into it.
   ColumnDataView remaining_dst(dst);
 
-  size_t rem = last_prepare_count_;
+  uint32_t rem = last_prepare_count_;
   DCHECK_LE(rem, dst->nrows());
 
   BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
@@ -697,23 +693,18 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
     if (reader_->is_nullable()) {
       DCHECK(dst->is_nullable());
 
-      size_t index = pb->row_index_ - pb->first_row_idx_;
-      DCHECK_EQ(index, pb->rle_index_);
-
-      size_t nrows = std::min(rem, pb->num_rows_in_block_ - index);
+      size_t nrows = std::min(rem, pb->num_rows_in_block_ - pb->idx_in_block_);
 
       // Fill column bitmap
       size_t count = nrows;
       while (count > 0) {
         bool not_null = false;
-        size_t nblock = pb->rle_decoder_.GetNextRun(&not_null, MathLimits<size_t>::kMax);
+        size_t nblock = pb->rle_decoder_.GetNextRun(&not_null, count);
+        DCHECK_LE(nblock, count);
         if (PREDICT_FALSE(nblock == 0)) {
-          return Status::Corruption("Unexpected EOF on NULL bitmap read");
-        }
-
-        DCHECK_GT(nblock, 0);
-        if (PREDICT_FALSE(nblock > count)) {
-          nblock = count;
+          return Status::Corruption(
+            Substitute("Unexpected EOF on NULL bitmap read. Expected at least $0 more rows",
+                       count));
         }
 
         size_t this_batch = nblock;
@@ -735,9 +726,8 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
 
         rem -= this_batch;
         count -= this_batch;
-        pb->row_index_ += this_batch;
+        pb->idx_in_block_ += this_batch;
         remaining_dst.Advance(this_batch);
-        pb->rle_index_ += this_batch;
       }
     } else {
       // Fetch as many as we can from the current datablock.
@@ -752,14 +742,14 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
       }
 
       rem -= this_batch;
+      pb->idx_in_block_ += this_batch;
       remaining_dst.Advance(this_batch);
     }
 
     // If we didn't fetch as many as requested, then it should
     // be because the current data block ran out.
     if (rem > 0) {
-      rowid_t last_row_idx = pb->first_row_idx_ + pb->dblk_->Count();
-      DCHECK_EQ(pb->dblk_->ordinal_pos(), last_row_idx) <<
+      DCHECK_EQ(pb->dblk_->Count(), pb->dblk_->GetCurrentIndex()) <<
         "dblk stopped yielding values before it was empty.";
     } else {
       break;

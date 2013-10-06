@@ -83,9 +83,13 @@ class GVIntBlockDecoder : public BlockDecoder {
 
   Status CopyNextValues(size_t *n, ColumnDataView *dst);
 
-  rowid_t ordinal_pos() const {
+  size_t GetCurrentIndex() const {
     DCHECK(parsed_) << "must parse header first";
-    return ordinal_pos_base_ + cur_idx_;
+    return cur_idx_;
+  }
+
+  virtual rowid_t GetFirstRowId() const {
+    return ordinal_pos_base_;
   }
 
   size_t Count() const {

@@ -86,9 +86,13 @@ class StringPlainBlockDecoder : public BlockDecoder {
     return num_elems_;
   }
 
-  virtual rowid_t ordinal_pos() const {
+  virtual size_t GetCurrentIndex() const {
     DCHECK(parsed_);
-    return ordinal_pos_base_ + cur_idx_;
+    return cur_idx_;
+  }
+
+  virtual rowid_t GetFirstRowId() const {
+    return ordinal_pos_base_;
   }
 
   Slice string_at_index(size_t indx) const;

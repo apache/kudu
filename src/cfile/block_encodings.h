@@ -121,9 +121,14 @@ class BlockDecoder {
   // Return the number of elements in this block.
   virtual size_t Count() const = 0;
 
-  // Return the ordinal position in the file of the currently seeked
+  // Return the position within the block of the currently seeked
   // entry (ie the entry that will next be returned by CopyNextValues())
-  virtual rowid_t ordinal_pos() const = 0;
+  virtual size_t GetCurrentIndex() const = 0;
+
+  // Return the first rowid stored in this block.
+  // TODO: get rid of this from the block decoder, and put it in a generic
+  // header which is shared by all data blocks.
+  virtual rowid_t GetFirstRowId() const = 0;
 
   virtual ~BlockDecoder() {}
  private:

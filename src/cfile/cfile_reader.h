@@ -367,14 +367,16 @@ class CFileIterator : public ColumnIterator {
     BlockCacheHandle dblk_data_;
     gscoped_ptr<BlockDecoder> dblk_;
 
-    // The index of the first row in this block.
-    rowid_t first_row_idx_;
+    // The rowid of the first row in this block.
+    rowid_t first_row_idx() const {
+      return dblk_->GetFirstRowId();
+    }
 
-    // The index of the seeked position.
-    // in case of null bitmap present, dblk_->ordinal_pos() is not aligned
-    // with the row number, since null values are not written to the block.
+    // The index of the seeked position, relative to the start of the block.
+    // In case of null bitmap present, dblk_->GetCurrentIndex() is not aligned
+    // with the row number, since null values are not written to the data block.
     // check CFileIterator::SeekToPositionInBlock()
-    size_t row_index_;
+    uint32_t idx_in_block_;
 
     // When the block is first read, it is seeked to the proper position
     // and rewind_idx_ is set to that offset in the block. needs_rewind_
@@ -391,17 +393,17 @@ class CFileIterator : public ColumnIterator {
 
     // Null bitmap and bitmap (RLE) decoder
     Slice rle_bitmap;
-    uint32_t rle_index_;
     RleDecoder<bool> rle_decoder_;
 
     rowid_t last_row_idx() const {
-      return first_row_idx_ + num_rows_in_block_ - 1;
+      return first_row_idx() + num_rows_in_block_ - 1;
     }
 
     string ToString() const;
   };
 
-  void SeekToPositionInBlock(PreparedBlock *pb, rowid_t ord_idx);
+  // Seek the given PreparedBlock to the given index within it.
+  void SeekToPositionInBlock(PreparedBlock *pb, uint32_t idx_in_block);
 
   // Read the data block currently pointed to by idx_iter_
   // into the given PreparedBlock structure.
@@ -434,9 +436,15 @@ class CFileIterator : public ColumnIterator {
   ObjectPool<PreparedBlock> prepared_block_pool_;
   typedef ObjectPool<PreparedBlock>::scoped_ptr pblock_pool_scoped_ptr;
 
-  // State set up by PrepareBatch(...):
+  // True if PrepareBatch() has been called more recently than FinishBatch().
   bool prepared_;
+
+  // RowID of the current prepared batch, if prepared_ is true.
+  // Otherwise, the RowID of the next batch that will be prepared.
   rowid_t last_prepare_idx_;
+
+  // Number of rows in the current batch, if prepared_ is true.
+  // Otherwise, 0.
   uint32_t last_prepare_count_;
 
   IOStatistics io_stats_;

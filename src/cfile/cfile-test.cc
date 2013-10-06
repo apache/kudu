@@ -302,24 +302,34 @@ class TestCFile : public CFileTestBase {
     ScopedColumnBlock<data_type> cb(10);
 
     DataGeneratorType data_generator;
-    for (size_t i = 0; i < num_entries; ++i) {
-      ASSERT_STATUS_OK(iter->SeekToOrdinal(i));
+    for (int loop = 0; loop < 10; loop++) {
+      // Seek to a random point in the file.
+      int target = random() % (num_entries - 1);
+      SCOPED_TRACE(target);
+      ASSERT_STATUS_OK(iter->SeekToOrdinal(target));
       ASSERT_TRUE(iter->HasNext());
 
-      size_t n = cb.nrows();
-      ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
-      ASSERT_EQ(n, (i < (num_entries - cb.nrows())) ? cb.nrows() : num_entries - i);
+      // Read and verify several ColumnBlocks from this point in the file.
+      int read_offset = target;
+      for (int block = 0; block < 3; block++) {
+        SCOPED_TRACE(block);
+        size_t n = cb.nrows();
+        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
+        ASSERT_EQ(n, std::min(num_entries - read_offset, cb.nrows()));
 
-      data_generator.Build(i, n);
-      for (size_t j = 0; j < n; ++j) {
-        bool expected_null = data_generator.TestValueShouldBeNull(i + j);
-        ASSERT_EQ(expected_null, cb.is_null(j));
-        if (!expected_null) {
-          ASSERT_EQ(data_generator[j], cb[j]);
+        // Verify that the block data is correct.
+        data_generator.Build(read_offset, n);
+        for (size_t j = 0; j < n; ++j) {
+          SCOPED_TRACE(j);
+          bool expected_null = data_generator.TestValueShouldBeNull(read_offset + j);
+          ASSERT_EQ(expected_null, cb.is_null(j));
+          if (!expected_null) {
+            ASSERT_EQ(data_generator[j], cb[j]);
+          }
         }
+        cb.arena()->Reset();
+        read_offset += n;
       }
-
-      cb.arena()->Reset();
     }
   }
 

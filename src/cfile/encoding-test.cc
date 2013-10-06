@@ -95,7 +95,7 @@ class TestEncoding : public ::testing::Test {
     ASSERT_FALSE(exact);
 
     Slice ret;
-    ASSERT_EQ(12345 + 5u, sbd.ordinal_pos());
+    ASSERT_EQ(5u, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 5"), ret.ToString());
 
@@ -104,7 +104,7 @@ class TestEncoding : public ::testing::Test {
     // Seeking to an exact key should return that key
     q = "hello 4";
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-    ASSERT_EQ(12345 + 4u, sbd.ordinal_pos());
+    ASSERT_EQ(4u, sbd.GetCurrentIndex());
     ASSERT_TRUE(exact);
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 4"), ret.ToString());
@@ -112,7 +112,7 @@ class TestEncoding : public ::testing::Test {
     // Seeking to before the first key should return first key
     q = "hello";
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-    ASSERT_EQ(12345, sbd.ordinal_pos());
+    ASSERT_EQ(0, sbd.GetCurrentIndex());
     ASSERT_FALSE(exact);
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 0"), ret.ToString());
@@ -124,7 +124,7 @@ class TestEncoding : public ::testing::Test {
     // Seeking to the last key should succeed
     q = "hello 9";
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
-    ASSERT_EQ(12345 + 9u, sbd.ordinal_pos());
+    ASSERT_EQ(9u, sbd.GetCurrentIndex());
     ASSERT_TRUE(exact);
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 9"), ret.ToString());
@@ -149,7 +149,7 @@ class TestEncoding : public ::testing::Test {
     ASSERT_FALSE(exact);
 
     Slice ret;
-    ASSERT_EQ(12345 + 445u, sbd.ordinal_pos());
+    ASSERT_EQ(445u, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 445"), ret.ToString());
 
@@ -159,7 +159,7 @@ class TestEncoding : public ::testing::Test {
     q = "hello 004";
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     EXPECT_TRUE(exact);
-    EXPECT_EQ(12345 + 4u, sbd.ordinal_pos());
+    EXPECT_EQ(4u, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 004"), ret.ToString());
 
@@ -167,7 +167,7 @@ class TestEncoding : public ::testing::Test {
     q = "hello";
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     EXPECT_FALSE(exact);
-    EXPECT_EQ(12345, sbd.ordinal_pos());
+    EXPECT_EQ(0, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 000"), ret.ToString());
 
@@ -179,7 +179,7 @@ class TestEncoding : public ::testing::Test {
     q = "hello 999";
     ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     EXPECT_TRUE(exact);
-    EXPECT_EQ(12345 + 999u, sbd.ordinal_pos());
+    EXPECT_EQ(999u, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
     ASSERT_EQ(string("hello 999"), ret.ToString());
 
@@ -193,7 +193,7 @@ class TestEncoding : public ::testing::Test {
 
       ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
       EXPECT_TRUE(exact);
-      EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
+      EXPECT_EQ(ord, sbd.GetCurrentIndex());
       CopyOne<STRING>(&sbd, &ret);
       ASSERT_EQ(string(target), ret.ToString());
 
@@ -202,7 +202,7 @@ class TestEncoding : public ::testing::Test {
       q = Slice(before_target, len);
       ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
       EXPECT_FALSE(exact);
-      EXPECT_EQ(12345u + ord, sbd.ordinal_pos());
+      EXPECT_EQ(ord, sbd.GetCurrentIndex());
       CopyOne<STRING>(&sbd, &ret);
       ASSERT_EQ(string(target), ret.ToString());
     }
@@ -223,13 +223,13 @@ class TestEncoding : public ::testing::Test {
     DecoderType sbd(s);
     ASSERT_STATUS_OK(sbd.ParseHeader());
     ASSERT_EQ(kCount, sbd.Count());
-    ASSERT_EQ(12345u, sbd.ordinal_pos());
+    ASSERT_EQ(12345u, sbd.GetFirstRowId());
     ASSERT_TRUE(sbd.HasNext());
 
     // Iterate one by one through data, verifying that it matches
     // what we put in.
     for (uint i = 0; i < kCount; i++) {
-      ASSERT_EQ(12345u + i, sbd.ordinal_pos());
+      ASSERT_EQ(i, sbd.GetCurrentIndex());
       ASSERT_TRUE(sbd.HasNext()) << "Failed on iter " << i;
       Slice s;
       CopyOne<STRING>(&sbd, &s);
@@ -241,7 +241,7 @@ class TestEncoding : public ::testing::Test {
     // Now iterate backwards using positional seeking
     for (int i = kCount - 1; i >= 0; i--) {
       sbd.SeekToPositionInBlock(i);
-      ASSERT_EQ(12345u + i, sbd.ordinal_pos());
+      ASSERT_EQ(i, sbd.GetCurrentIndex());
     }
 
     // Try to request a bunch of data in one go
@@ -342,7 +342,8 @@ class TestEncoding : public ::testing::Test {
 
     PlainBlockDecoder<Type> pbd(s);
     ASSERT_STATUS_OK(pbd.ParseHeader());
-    ASSERT_EQ(kOrdinalPosBase, pbd.ordinal_pos());
+    ASSERT_EQ(kOrdinalPosBase, pbd.GetFirstRowId());
+    ASSERT_EQ(0, pbd.GetCurrentIndex());
 
     std::vector<CppType> decoded;
     decoded.resize(size);
@@ -351,7 +352,7 @@ class TestEncoding : public ::testing::Test {
     ColumnDataView view(&dst_block);
     int dec_count = 0;
     while (pbd.HasNext()) {
-      ASSERT_EQ((int32_t )(kOrdinalPosBase + dec_count), pbd.ordinal_pos());
+      ASSERT_EQ((int32_t )(dec_count), pbd.GetCurrentIndex());
 
       size_t to_decode = (random() % 30) + 1;
       size_t n = to_decode > view.nrows() ? view.nrows() : to_decode;
@@ -376,7 +377,7 @@ class TestEncoding : public ::testing::Test {
       int seek_off = random() % decoded.size();
       pbd.SeekToPositionInBlock(seek_off);
 
-      EXPECT_EQ((int32_t )(kOrdinalPosBase + seek_off), pbd.ordinal_pos());
+      EXPECT_EQ((int32_t )(seek_off), pbd.GetCurrentIndex());
       CppType ret;
       CopyOne<Type>(&pbd, &ret);
       EXPECT_EQ(decoded[seek_off], ret);
@@ -437,7 +438,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   GVIntBlockDecoder ibd(s);
   ibd.ParseHeader();
 
-  ASSERT_EQ(kOrdinalPosBase, ibd.ordinal_pos());
+  ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
 
   std::vector<uint32_t> decoded;
   decoded.resize(to_insert.size());
@@ -448,8 +449,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
                         &arena_);
   int dec_count = 0;
   while (ibd.HasNext()) {
-    ASSERT_EQ((uint32_t)(kOrdinalPosBase + dec_count),
-              ibd.ordinal_pos());
+    ASSERT_EQ((uint32_t)(dec_count), ibd.GetCurrentIndex());
 
     size_t to_decode = (random() % 30) + 1;
     size_t n = to_decode;
@@ -475,8 +475,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
     int seek_off = random() % decoded.size();
     ibd.SeekToPositionInBlock(seek_off);
 
-    EXPECT_EQ((uint32_t)(kOrdinalPosBase + seek_off),
-              ibd.ordinal_pos());
+    EXPECT_EQ((uint32_t)(seek_off), ibd.GetCurrentIndex());
     uint32_t ret;
     CopyOne<UINT32>(&ibd, &ret);
     EXPECT_EQ(decoded[seek_off], ret);
