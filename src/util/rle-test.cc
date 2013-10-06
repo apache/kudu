@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include <math.h>
 
+#include "gutil/mathlimits.h"
 #include "util/rle-encoding.h"
 #include "util/bit-stream-utils.h"
 #include "util/hexdump.h"
@@ -27,6 +28,8 @@
 namespace kudu {
 
 const int MAX_WIDTH = 32;
+
+class TestRle : public KuduTest {};
 
 TEST(BitArray, TestBool) {
   const int len = 8;
@@ -338,7 +341,7 @@ TEST_F(BitRle, RepeatedPattern) {
   ValidateRle(values, 1, NULL, -1);
 }
 
-TEST(TestRle, TestBulkPut) {
+TEST_F(TestRle, TestBulkPut) {
   size_t run_length;
   bool val = false;
 
@@ -351,22 +354,22 @@ TEST(TestRle, TestBulkPut) {
   encoder.Flush();
 
   RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_TRUE(val);
   ASSERT_EQ(10, run_length);
 
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_FALSE(val);
   ASSERT_EQ(7, run_length);
 
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_TRUE(val);
   ASSERT_EQ(20, run_length);
 
-  ASSERT_FALSE(decoder.GetNextRun(&val, &run_length));
+  ASSERT_EQ(0, decoder.GetNextRun(&val, MathLimits<size_t>::kMax));
 }
 
-TEST(TestRle, TestGetNextRun) {
+TEST_F(TestRle, TestGetNextRun) {
   // Repeat the test with different number of items
   for (int num_items = 7; num_items < 200; num_items += 13) {
     // Test different block patterns
@@ -388,7 +391,7 @@ TEST(TestRle, TestGetNextRun) {
         size_t run_length;
         bool val = false;
         DCHECK_GT(count, 0);
-        decoder.GetNextRun(&val, &run_length);
+        run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
         run_length = std::min(run_length, count);
 
         ASSERT_EQ(!!(j & 1), val);
@@ -400,7 +403,51 @@ TEST(TestRle, TestGetNextRun) {
   }
 }
 
-TEST(TestRle, TestSkip) {
+// Generate a random bit string which consists of 'num_runs' runs,
+// each with a random length between 1 and 100. Returns the number
+// of values encoded (i.e the sum run length).
+static size_t GenerateRandomBitString(int num_runs, faststring* enc_buf, string* string_rep) {
+  RleEncoder<bool> enc(enc_buf, 1);
+  int num_bits = 0;
+  for (int i = 0; i < num_runs; i++) {
+    int run_length = random() % 100;
+    bool value = static_cast<bool>(i & 1);
+    enc.Put(value, run_length);
+    string_rep->append(run_length, value ? '1' : '0');
+    num_bits += run_length;
+  }
+  enc.Flush();
+  return num_bits;
+}
+
+TEST_F(TestRle, TestRoundTripRandomSequencesWithRuns) {
+  SeedRandom();
+
+  // Test the limiting function of GetNextRun.
+  const int kMaxToReadAtOnce = (random() % 20) + 1;
+
+  // Generate a bunch of random bit sequences, and "round-trip" them
+  // through the encode/decode sequence.
+  for (int rep = 0; rep < 100; rep++) {
+    faststring buf;
+    string string_rep;
+    int num_bits = GenerateRandomBitString(10, &buf, &string_rep);
+    RleDecoder<bool> decoder(buf.data(), buf.size(), 1);
+    string roundtrip_str;
+    int rem_to_read = num_bits;
+    size_t run_len;
+    bool val;
+    while (rem_to_read > 0 &&
+           (run_len = decoder.GetNextRun(&val, std::min(kMaxToReadAtOnce, rem_to_read))) != 0) {
+      ASSERT_LE(run_len, kMaxToReadAtOnce);
+      roundtrip_str.append(run_len, val ? '1' : '0');
+      rem_to_read -= run_len;
+    }
+
+    ASSERT_EQ(string_rep, roundtrip_str);
+  }
+}
+TEST_F(TestRle, TestSkip) {
   faststring buffer(1);
   RleEncoder<bool> encoder(&buffer, 1);
 
@@ -427,22 +474,22 @@ TEST(TestRle, TestSkip) {
   RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
 
   decoder.Skip(7);
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_TRUE(val);
   ASSERT_EQ(1, run_length);
 
   decoder.Skip(14);
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_FALSE(val);
   ASSERT_EQ(2, run_length);
 
   decoder.Skip(46);
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_TRUE(val);
   ASSERT_EQ(10, run_length);
 
   decoder.Skip(49);
-  decoder.GetNextRun(&val, &run_length);
+  run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   ASSERT_FALSE(val);
   ASSERT_EQ(11, run_length);
 

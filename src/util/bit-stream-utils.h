@@ -119,6 +119,8 @@ class BitReader {
   // Maximum byte length of a vlq encoded int
   static const int MAX_VLQ_BYTE_LEN = 5;
 
+  bool is_initialized() const { return buffer_ != NULL; }
+
  private:
   const uint8_t* buffer_;
   int max_bytes_;

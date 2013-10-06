@@ -8,6 +8,7 @@
 
 #include <glog/logging.h>
 
+#include "gutil/mathlimits.h"
 #include "util/bit-stream-utils.h"
 #include "util/rle-encoding.h"
 #include "util/stopwatch.h"
@@ -73,13 +74,13 @@ void BooleanRLE() {
   bool val = false;
   size_t run_length;
   for (int i = 0; i < num_iters; i++) {
-    decoder.GetNextRun(&val, &run_length);
-    decoder.GetNextRun(&val, &run_length);
-    decoder.GetNextRun(&val, &run_length);
-    decoder.GetNextRun(&val, &run_length);
-    decoder.GetNextRun(&val, &run_length);
-    decoder.GetNextRun(&val, &run_length);
-    decoder.GetNextRun(&val, &run_length);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
+    run_length = decoder.GetNextRun(&val, MathLimits<size_t>::kMax);
   }
 }
 

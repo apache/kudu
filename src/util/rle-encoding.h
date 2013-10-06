@@ -71,6 +71,11 @@ namespace kudu {
 //
 
 // Decoder class for RLE encoded data.
+//
+// NOTE: the encoded format does not have any length prefix or any other way of
+// indicating that the encoded sequence ends at a certain point, so the Decoder
+// methods may return some extra bits at the end before the read methods start
+// to return 0/false.
 template<typename T>
 class RleDecoder {
  public:
@@ -94,8 +99,11 @@ class RleDecoder {
   // Gets the next value.  Returns false if there are no more.
   bool Get(T* val);
 
-  // Gets the next range of the same 'val'. Returns false if there are no more
-  bool GetNextRun(T* val, size_t *run_length);
+  // Gets the next run of the same 'val'. Returns 0 if there is no
+  // more data to be decoded. Will return a run of at most 'max_run'
+  // values. If there are more values than this, the next call to
+  // GetNextRun will return more from the same run.
+  size_t GetNextRun(T* val, size_t max_run);
 
  private:
   bool ReadHeader();
@@ -195,6 +203,7 @@ class RleEncoder {
 
 template<typename T>
 inline bool RleDecoder<T>::ReadHeader() {
+  DCHECK(bit_reader_.is_initialized());
   if (PREDICT_FALSE(literal_count_ == 0 && repeat_count_ == 0)) {
     // Read the next run's indicator int, it could be a literal or repeated run
     // The int is encoded as a vlq-encoded value.
@@ -222,6 +231,7 @@ inline bool RleDecoder<T>::ReadHeader() {
 
 template<typename T>
 inline bool RleDecoder<T>::Get(T* val) {
+  DCHECK(bit_reader_.is_initialized());
   if (PREDICT_FALSE(!ReadHeader())) {
     return false;
   }
@@ -240,42 +250,57 @@ inline bool RleDecoder<T>::Get(T* val) {
 }
 
 template<typename T>
-inline bool RleDecoder<T>::GetNextRun(T* val, size_t* run_length) {
-  *run_length = 0;
+inline size_t RleDecoder<T>::GetNextRun(T* val, size_t max_run) {
+  DCHECK(bit_reader_.is_initialized());
+  DCHECK_GT(max_run, 0);
+  size_t ret = 0;
+  size_t rem = max_run;
   while (ReadHeader()) {
     if (PREDICT_TRUE(repeat_count_ > 0)) {
-      if (PREDICT_FALSE(*run_length > 0 && *val != current_value_)) {
-        return true;
+      if (PREDICT_FALSE(ret > 0 && *val != current_value_)) {
+        return ret;
       }
       *val = current_value_;
-      *run_length += repeat_count_;
+      if (repeat_count_ >= rem) {
+        // The next run is longer than the amount of remaining data
+        // that the caller wants to read. Only consume it partially.
+        repeat_count_ -= rem;
+        ret += rem;
+        return ret;
+      }
+      ret += repeat_count_;
+      rem -= repeat_count_;
       repeat_count_ = 0;
     } else {
       DCHECK(literal_count_ > 0);
-      if (*run_length == 0) {
-        bool result = bit_reader_.GetValue(bit_width_, val);
-        DCHECK(result);
+      if (ret == 0) {
+        bool has_more = bit_reader_.GetValue(bit_width_, val);
+        DCHECK(has_more);
         literal_count_--;
-        (*run_length)++;
+        ret++;
+        rem--;
       }
 
       while (literal_count_ > 0) {
         bool result = bit_reader_.GetValue(bit_width_, &current_value_);
         DCHECK(result);
-        if (current_value_ != *val) {
+        if (current_value_ != *val || rem == 0) {
           bit_reader_.Rewind(bit_width_);
-          return true;
+          return ret;
         }
-        (*run_length)++;
+        ret++;
+        rem--;
         literal_count_--;
       }
     }
   }
-  return (*run_length) > 0;
+  return ret;
  }
 
 template<typename T>
 inline size_t RleDecoder<T>::Skip(size_t to_skip) {
+  DCHECK(bit_reader_.is_initialized());
+
   size_t set_count = 0;
   while (to_skip > 0) {
     bool result = ReadHeader();

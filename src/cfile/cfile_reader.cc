@@ -15,6 +15,7 @@
 #include "cfile/index_block.h"
 #include "cfile/index_btree.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/mathlimits.h"
 #include "util/coding.h"
 #include "util/env.h"
 #include "util/env_util.h"
@@ -704,10 +705,9 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
       // Fill column bitmap
       size_t count = nrows;
       while (count > 0) {
-        size_t nblock = 0;
         bool not_null = false;
-        bool result = pb->rle_decoder_.GetNextRun(&not_null, &nblock);
-        if (PREDICT_FALSE(!result)) {
+        size_t nblock = pb->rle_decoder_.GetNextRun(&not_null, MathLimits<size_t>::kMax);
+        if (PREDICT_FALSE(nblock == 0)) {
           return Status::Corruption("Unexpected EOF on NULL bitmap read");
         }
 
