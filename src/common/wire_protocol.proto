@@ -26,7 +26,13 @@ message AppStatusPB {
     ALREADY_PRESENT = 6;
     RUNTIME_ERROR = 7;
     NETWORK_ERROR = 8;
-    UNKNOWN_ERROR = 9;
+    ILLEGAL_STATE = 9;
+    NOT_AUTHORIZED = 10;
+    ABORTED = 11;
+    REMOTE_ERROR = 12;
+    SERVICE_UNAVAILABLE = 13;
+    TIMED_OUT = 14;
+    UNKNOWN_ERROR = 999;
   }
 
   required ErrorCode code = 1;

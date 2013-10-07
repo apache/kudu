@@ -216,6 +216,9 @@ class Status {
     kRemoteError = 12,
     kServiceUnavailable = 13,
     kTimedOut = 14,
+    // NOTE: Remember to duplicate these constants into wire_protocol.proto!
+    //
+    // TODO: Move error codes into an error_code.proto or something similar.
   };
 
   Code code() const {
