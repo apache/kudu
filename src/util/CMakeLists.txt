@@ -7,7 +7,9 @@ ADD_LIBRARY(kudu_util
   coding.cc
   curl_util.cc
   group_varint.cc
+  jsonwriter.cc
   memcmpable_varint.cc
+  metrics.cc
   debug-util.cc
   hexdump.cc
   logging.cc
@@ -48,6 +50,8 @@ ADD_KUDU_TEST(knapsack_solver-test)
 ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(interval_tree-test)
 ADD_KUDU_TEST(memenv/memenv-test)
+ADD_KUDU_TEST(metrics-test)
+ADD_KUDU_TEST(mt-metrics-test RUN_SERIAL true)
 ADD_KUDU_TEST(net/net_util-test)
 ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(rle-test)

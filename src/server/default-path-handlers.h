@@ -15,15 +15,20 @@
 #ifndef KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
 #define KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
 
-#include <stdio.h>
+#include <string>
 
 namespace kudu {
 
+class MetricRegistry;
 class Webserver;
 
 // Adds a set of default path handlers to the webserver to display
-// logs and configuration flags
+// logs and configuration flags.
 void AddDefaultPathHandlers(Webserver* webserver);
-}
+
+// Adds an endpoint to get metrics in JSON format.
+void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics);
+
+} // namespace kudu
 
 #endif // KUDU_SERVER_DEFAULT_PATH_HANDLERS_H

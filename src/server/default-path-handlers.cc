@@ -24,6 +24,8 @@
 
 #include "server/pprof-path-handlers.cc"
 #include "server/webserver.h"
+#include "util/metrics.h"
+#include "util/jsonwriter.h"
 
 using boost::replace_all;
 using google::CommandlineFlagsIntoString;
@@ -125,6 +127,19 @@ void AddDefaultPathHandlers(Webserver* webserver) {
     AddPprofPathHandlers(webserver);
   }
 #endif
+}
+
+static void WriteMetricsAsJson(const MetricRegistry* const metrics,
+    const Webserver::ArgumentMap& args, std::stringstream* output) {
+  JsonWriter writer(output);
+  metrics->WriteAsJson(&writer);
+}
+
+void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {
+  Webserver::PathHandlerCallback callback = boost::bind(WriteMetricsAsJson, metrics, _1, _2);
+  bool is_styled = false;
+  bool is_on_nav_bar = true;
+  webserver->RegisterPathHandler("/jsonmetricz", callback, is_styled, is_on_nav_bar);
 }
 
 } // namespace kudu
