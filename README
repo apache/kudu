@@ -3,7 +3,7 @@ System Requirements
 The following dependencies are necessary to build kudu:
 
 - gcc 4.4 or higher
-- boost 1.41 or higher including boost::thread
+- boost 1.41 or higher including boost::thread and the boost PIC module
 - cmake 2.8.7
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
 
@@ -22,11 +22,14 @@ developers, you may need to re-run this script.
 If you are looking to manually run the protobuf compiler, the pprof tool,
 etc, you can find these in thirdparty/installed/bin/
 
+
 Building kudu
 ------------------------------------------------------------
 
-# Add ./thirdparty/installed/bin to your $PATH before other parts of 
-# $PATH that may contain cmake, such as /usr/bin
+# Add <root of kudu tree>/thirdparty/installed/bin to your $PATH 
+# before other parts of $PATH that may contain cmake, such as /usr/bin
+# e.g. "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH" 
+# if using bash
 $ cmake .
 $ make -j4
 $ make test  # or, to run tests in parallel, ctest -j8 (for 8-way parallelism)
@@ -84,6 +87,7 @@ set a breakpoint as follows:
 (gdb) b __ubsan::Diag::~Diag
 
 Then, when the breakpoint fires, gather a backtrace as usual using 'bt'.
+
 
 Running tests with the tcmalloc memory leak checker enabled
 ------------------------------------------------------------
