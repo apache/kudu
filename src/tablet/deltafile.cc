@@ -89,7 +89,7 @@ Status DeltaFileWriter::AppendDelta(
 
 Status DeltaFileWriter::WriteSchema() {
   SchemaPB schema_pb;
-  SchemaToPB(schema_, &schema_pb);
+  CHECK_OK(SchemaToPB(schema_, &schema_pb));
 
   faststring buf;
   if (!pb_util::SerializeToString(schema_pb, &buf)) {

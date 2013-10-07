@@ -44,16 +44,12 @@ class TemporaryTabletsForDemos {
     master_block.set_tablet_id("twitter");
     master_block.set_block_a("00000000000000000000000000000000");
     master_block.set_block_b("11111111111111111111111111111111");
-    gscoped_ptr<TabletMetadata> meta(
-      new TabletMetadata(server->fs_manager(), master_block));
-    twitter_tablet_.reset(new Tablet(meta.Pass(), twitter_schema_));
+    gscoped_ptr<TabletMetadata> meta;
+    CHECK_OK(TabletMetadata::LoadOrCreate(server->fs_manager(), master_block,
+                                          twitter_schema_, "", "", &meta));
 
-    Status s = twitter_tablet_->Open();
-    if (!s.ok() && s.IsNotFound()) {
-      LOG(INFO) << "Creating new Twitter tablet";
-      s = twitter_tablet_->CreateNew();
-    }
-    CHECK_OK(s);
+    twitter_tablet_.reset(new Tablet(meta.Pass()));
+    CHECK_OK(twitter_tablet_->Open());
   }
 
   const shared_ptr<Tablet>& twitter_tablet() {

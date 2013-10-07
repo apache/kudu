@@ -62,10 +62,9 @@ static CompactionPolicy *CreateCompactionPolicy() {
   return NULL;
 }
 
-Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
-               const Schema& schema)
-  : schema_(schema),
-    key_schema_(schema.CreateKeyProjection()),
+Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata)
+  : schema_(metadata->schema()),
+    key_schema_(schema_.CreateKeyProjection()),
     metadata_(metadata.Pass()),
     rowsets_(new RowSetTree()),
     next_mrs_id_(0),
@@ -76,21 +75,9 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
 Tablet::~Tablet() {
 }
 
-Status Tablet::CreateNew() {
-  CHECK(!open_) << "already open";
-  RETURN_NOT_OK(metadata_->Create());
-  memrowset_.reset(new MemRowSet(next_mrs_id_, schema_));
-  next_mrs_id_++;
-  rowsets_->Reset(RowSetVector());
-  open_ = true;
-  return Status::OK();
-}
-
 Status Tablet::Open() {
   CHECK(!open_) << "already open";
   // TODO: track a state_ variable, ensure tablet is open, etc.
-
-  RETURN_NOT_OK(metadata_->Load());
 
   next_mrs_id_ = metadata_->lastest_durable_mrs_id() + 1;
 
@@ -576,11 +563,15 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
     if (rowset->metadata().get() == NULL) continue;
     to_remove_meta.insert(rowset->metadata()->id());
   }
+
+  // TODO: Do we need the lock to prevent this from conflicting with AlterSchema?
+  // Matteo, can you take a look?
+
   // If we're flushing an mrs update the latest durable one in the metadata
   if (mrs_being_flushed != kNoMrsFlushed) {
-    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed, NULL);
+    return metadata_->UpdateAndFlush(to_remove_meta, to_add, schema_, mrs_being_flushed, NULL);
   }
-  return metadata_->UpdateAndFlush(to_remove_meta, to_add, NULL);
+  return metadata_->UpdateAndFlush(to_remove_meta, to_add, schema_, NULL);
 }
 
 Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed) {

@@ -38,17 +38,10 @@ class Tablet {
   class FlushFaultHooks;
   class Iterator;
 
-  Tablet(gscoped_ptr<metadata::TabletMetadata> metadata, const Schema &schema);
+  explicit Tablet(gscoped_ptr<metadata::TabletMetadata> metadata);
   ~Tablet();
 
-  // Create a new tablet.
-  // This will create the directory for this tablet.
-  // After the call, the tablet may be opened with Open().
-  // If the directory already exists, returns an IOError
-  // Status.
-  Status CreateNew();
-
-  // Open an existing tablet.
+  // Open the tablet.
   Status Open();
 
   // TODO update tests so that we can remove Insert() and Mutate()

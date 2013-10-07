@@ -12,6 +12,7 @@
 
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
+#include "gutil/strings/substitute.h"
 #include "server/metadata.pb.h"
 #include "server/metadata_util.h"
 
@@ -19,17 +20,107 @@ namespace kudu {
 namespace metadata {
 
 using base::subtle::Barrier_AtomicIncrement;
+using strings::Substitute;
 
 const int64 kNoDurableMrs = -1;
 
 // ============================================================================
 //  Tablet Metadata
 // ============================================================================
-Status TabletMetadata::Create() {
+
+Status TabletMetadata::CreateNew(FsManager* fs_manager,
+                                 const TabletMasterBlockPB& master_block,
+                                 const Schema& schema,
+                                 const string& start_key, const string& end_key,
+                                 gscoped_ptr<TabletMetadata>* metadata) {
+  gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block,
+                                                     schema, start_key, end_key));
+  RETURN_NOT_OK(ret->Flush());
+  metadata->reset(ret.release());
+  // TODO: should we verify that neither of the blocks referenced in the master block
+  // exist?
+  return Status::OK();
+}
+
+Status TabletMetadata::Load(FsManager* fs_manager, const TabletMasterBlockPB& master_block,
+                            gscoped_ptr<TabletMetadata>* metadata) {
+  gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block));
+  RETURN_NOT_OK(ret->LoadFromDisk());
+  metadata->reset(ret.release());
+  return Status::OK();
+}
+
+Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
+                                    const TabletMasterBlockPB& master_block,
+                                    const Schema& schema,
+                                    const string& start_key, const string& end_key,
+                                    gscoped_ptr<TabletMetadata>* metadata) {
+  Status s = Load(fs_manager, master_block, metadata);
+  if (s.ok()) {
+    if (!(*metadata)->schema().Equals(schema)) {
+      return Status::Corruption(Substitute("Schema on disk ($0) does not match expected schema ($1)",
+                                           (*metadata)->schema().ToString(), schema.ToString()));
+    }
+    return Status::OK();
+  } else if (s.IsNotFound()) {
+    return CreateNew(fs_manager, master_block, schema, start_key, end_key, metadata);
+  } else {
+    return s;
+  }
+}
+
+TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block,
+                               const Schema& schema, const string& start_key, const string& end_key)
+  : state_(kNotWrittenYet),
+    start_key_(start_key), end_key_(end_key),
+    fs_manager_(fs_manager),
+    master_block_(master_block),
+    sblk_sequence_(0),
+    next_rowset_idx_(0),
+    last_durable_mrs_id_(kNoDurableMrs),
+    schema_(schema) {
+}
+
+TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block)
+  : state_(kNotLoadedYet),
+    fs_manager_(fs_manager),
+    master_block_(master_block),
+    next_rowset_idx_(0) {
+}
+
+Status TabletMetadata::LoadFromDisk() {
+  CHECK_EQ(state_, kNotLoadedYet);
+  TabletSuperBlockPB superblock;
+  RETURN_NOT_OK(ReadSuperBlock(&superblock));
+
+  // Verify that the tablet id matches with the one in the protobuf
+  if (superblock.oid() != master_block_.tablet_id()) {
+    return Status::Corruption("Expected id=" + master_block_.tablet_id() + " found " + superblock.oid(),
+                              superblock.DebugString());
+  }
+
+  sblk_sequence_ = superblock.sequence() + 1;
+  start_key_ = superblock.start_key();
+  end_key_ = superblock.end_key();
+  last_durable_mrs_id_ = superblock.last_durable_mrs_id();
+
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), &schema_),
+                        "Failed to parse Schema from superblock " +
+                        superblock.ShortDebugString());
+
+  BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
+    gscoped_ptr<RowSetMetadata> rowset_meta;
+    RETURN_NOT_OK(RowSetMetadata::Load(this, rowset_pb, &rowset_meta));
+    next_rowset_idx_ = std::max(next_rowset_idx_, rowset_meta->id() + 1);
+    rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
+  }
+
+  state_ = kInitialized;
   return Status::OK();
 }
 
 Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
+  CHECK_EQ(state_, kNotLoadedYet);
   TabletSuperBlockPB pb2;
   Status sa, sb;
 
@@ -41,7 +132,7 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
 
   // Both super-blocks are valid, pick the latest
   if (sa.ok() && sb.ok()) {
-    if (pb->id() < pb2.id()) {
+    if (pb->sequence() < pb2.sequence()) {
       *pb = pb2;
     }
     return Status::OK();
@@ -60,66 +151,49 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
 
   // No super-block found
   if (sa.IsNotFound() && sb.IsNotFound()) {
-    return Status::NotFound("Tablet '" + oid() + "' SuperBlock not found",
+    return Status::NotFound("Tablet '" + master_block_.tablet_id() + "' SuperBlock not found",
                             master_block_.DebugString());
   }
 
   // Both super-blocks are corrupted
   if (sa.IsCorruption() && sb.IsCorruption()) {
-    return Status::NotFound("Tablet '" + oid() + "' SuperBlocks are corrupted",
+    return Status::NotFound("Tablet '" + master_block_.tablet_id() + "' SuperBlocks are corrupted",
                             master_block_.DebugString());
   }
 
   return sa;
 }
 
-Status TabletMetadata::Load() {
-  DCHECK_EQ(rowsets_.size(), 0);
-
-  TabletSuperBlockPB pb;
-  RETURN_NOT_OK(ReadSuperBlock(&pb));
-
-  // Verify that the tablet id matches with the one in the protobuf
-  if (oid() != pb.oid()) {
-    return Status::Corruption("Expected id=" + oid() + " found " + pb.oid(),
-                              master_block_.DebugString());
-  }
-
-  sblk_id_ = pb.id() + 1;
-  start_key_ = pb.start_key();
-  end_key_ = pb.end_key();
-  last_durable_mrs_id_ = pb.last_durable_mrs_id();
-
-  BOOST_FOREACH(const RowSetDataPB& rowset_pb, pb.rowsets()) {
-    shared_ptr<RowSetMetadata> rowset_meta(new RowSetMetadata(this, rowsets_.size()));
-    RETURN_NOT_OK(rowset_meta->Load(rowset_pb));
-    next_rowset_idx_ = std::max(next_rowset_idx_, rowset_meta->id() + 1);
-    rowsets_.push_back(rowset_meta);
-  }
-
-  return Status::OK();
-}
-
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
+                                      const Schema& new_schema,
                                       shared_ptr<TabletSuperBlockPB> *super_block) {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id_, super_block);
+  return UpdateAndFlushUnlocked(to_remove, to_add, new_schema, last_durable_mrs_id_, super_block);
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
+                                      const Schema& new_schema,
                                       int64_t last_durable_mrs_id,
                                       shared_ptr<TabletSuperBlockPB> *super_block) {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id, super_block);
+  return UpdateAndFlushUnlocked(to_remove, to_add, new_schema, last_durable_mrs_id, super_block);
+}
+
+Status TabletMetadata::Flush() {
+  boost::lock_guard<LockType> l(lock_);
+  return UpdateAndFlushUnlocked(RowSetMetadataIds(), RowSetMetadataVector(), schema_,
+                                last_durable_mrs_id_, NULL);
 }
 
 Status TabletMetadata::UpdateAndFlushUnlocked(
     const RowSetMetadataIds& to_remove,
     const RowSetMetadataVector& to_add,
+    const Schema& new_schema,
     int64_t last_durable_mrs_id,
     shared_ptr<TabletSuperBlockPB> *super_block) {
+  CHECK_NE(state_, kNotLoadedYet);
   DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
 
   RowSetMetadataVector new_rowsets = rowsets_;
@@ -136,13 +210,15 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
     new_rowsets.push_back(meta);
   }
 
+  schema_ = new_schema;
+
   shared_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
   RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, new_rowsets));
 
   // Flush
   BlockId a_blk(master_block_.block_a());
   BlockId b_blk(master_block_.block_b());
-  if (sblk_id_ & 1) {
+  if (sblk_sequence_ & 1) {
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, *(pb.get())));
     fs_manager_->DeleteBlock(b_blk);
   } else {
@@ -150,7 +226,7 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
     fs_manager_->DeleteBlock(a_blk);
   }
 
-  sblk_id_++;
+  sblk_sequence_++;
   rowsets_ = new_rowsets;
   if (super_block != NULL) {
     super_block->swap(pb);
@@ -169,7 +245,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
 
   // Convert to protobuf
   gscoped_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
-  pb->set_id(sblk_id_);
+  pb->set_sequence(sblk_sequence_);
   pb->set_oid(oid());
   pb->set_start_key(start_key_);
   pb->set_end_key(end_key_);
@@ -179,6 +255,9 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
     meta->ToProtobuf(pb->add_rowsets());
   }
 
+  RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb->mutable_schema()),
+                        "Couldn't serialize schema into superblock");
+
   super_block->reset(pb.release());
   return Status::OK();
 }
@@ -186,8 +265,9 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
 Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset,
                                     const Schema& schema) {
   AtomicWord rowset_idx = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
-  RowSetMetadata *meta = new RowSetMetadata(this, rowset_idx, schema);
-  rowset->reset(meta);
+  gscoped_ptr<RowSetMetadata> scoped_rsm;
+  RETURN_NOT_OK(RowSetMetadata::CreateNew(this, rowset_idx, schema, &scoped_rsm));
+  rowset->reset(DCHECK_NOTNULL(scoped_rsm.release()));
   return Status::OK();
 }
 
@@ -200,14 +280,34 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
   return NULL;
 }
 
+Schema TabletMetadata::schema() const {
+  boost::lock_guard<LockType> l(lock_);
+  return schema_;
+}
+
 // ============================================================================
 //  RowSet Metadata
 // ============================================================================
-Status RowSetMetadata::Create() {
+Status RowSetMetadata::Load(TabletMetadata* tablet_metadata,
+                            const RowSetDataPB& pb,
+                            gscoped_ptr<RowSetMetadata>* metadata) {
+  gscoped_ptr<RowSetMetadata> ret(new RowSetMetadata(tablet_metadata));
+  RETURN_NOT_OK(ret->InitFromPB(pb));
+  metadata->reset(ret.release());
   return Status::OK();
 }
 
-Status RowSetMetadata::Load(const RowSetDataPB& pb) {
+Status RowSetMetadata::CreateNew(TabletMetadata* tablet_metadata,
+                                 int64_t id,
+                                 const Schema& schema,
+                                 gscoped_ptr<RowSetMetadata>* metadata) {
+  metadata->reset(new RowSetMetadata(tablet_metadata, id, schema));
+  return Status::OK();
+}
+
+Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
+  CHECK(!initted_);
+
   id_ = pb.id();
 
   // Load Bloom File
@@ -236,6 +336,7 @@ Status RowSetMetadata::Load(const RowSetDataPB& pb) {
       std::pair<int64_t, BlockId>(delta_pb.id(), BlockIdFromPB(delta_pb.block())));
   }
 
+  initted_ = true;
   return Status::OK();
 }
 

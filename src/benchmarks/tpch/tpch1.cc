@@ -73,6 +73,9 @@ DEFINE_int32(tpch_expected_matching_rows, 5916591, "Number of rows that should m
 
 namespace kudu {
 
+using metadata::TabletMasterBlockPB;
+using metadata::TabletMetadata;
+
 typedef boost::tokenizer<boost::char_separator<char> > Tokenizer;
 
 struct Result {
@@ -144,14 +147,21 @@ const Schema kQuerySchema(boost::assign::list_of
                             (ColumnSchema("l_tax", UINT32))
                             , 0);
 
-// returns true if the tablet already contains data
-bool OpenTablet(gscoped_ptr<kudu::metadata::TabletMetadata> metadata,
-                gscoped_ptr<tablet::Tablet> *tablet) {
-  tablet->reset(new tablet::Tablet(metadata.Pass(), kSchema));
-  Status s = (*tablet)->Open();
-  if (s.IsNotFound()) {
-    (*tablet)->CreateNew();
-  }
+// returns true if the tablet is empty and needs to be loaded.
+bool OpenTablet(FsManager* fs_manager, gscoped_ptr<tablet::Tablet> *tablet) {
+  // Hard-coded master block
+  TabletMasterBlockPB master_block;
+  master_block.set_tablet_id("tpch1");
+  master_block.set_block_a("9865b0f142ed4d1aaa7dac6eddf281e4");
+  master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
+
+  // Try to load it. If it was not found, create a new one.
+  gscoped_ptr<kudu::metadata::TabletMetadata> metadata;
+  CHECK_OK(TabletMetadata::LoadOrCreate(fs_manager, master_block,
+                                        kSchema, "", "", &metadata));
+
+  tablet->reset(new tablet::Tablet(metadata.Pass()));
+  CHECK_OK((*tablet)->Open());
   return (*tablet)->num_rowsets() == 0;
 }
 
@@ -311,16 +321,10 @@ int main(int argc, char **argv) {
 
   gscoped_ptr<kudu::tablet::Tablet> tablet;
 
-  kudu::metadata::TabletMasterBlockPB master_block;
-  master_block.set_tablet_id("tpch1");
-  master_block.set_block_a("9865b0f142ed4d1aaa7dac6eddf281e4");
-  master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
-
   kudu::FsManager fs_manager(kudu::Env::Default(), FLAGS_tpch_path_to_tablet);
   fs_manager.CreateInitialFileSystemLayout();
-  gscoped_ptr<kudu::metadata::TabletMetadata> metadata(
-      new kudu::metadata::TabletMetadata(&fs_manager, master_block));
-  bool needs_loading = kudu::OpenTablet(metadata.Pass(), &tablet);
+
+  bool needs_loading = kudu::OpenTablet(&fs_manager, &tablet);
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {
       kudu::LoadLineItems(FLAGS_tpch_path_to_data, tablet);

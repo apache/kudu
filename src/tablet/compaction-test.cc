@@ -202,10 +202,10 @@ class TestCompaction : public KuduRowSetTest {
       master_block.set_block_b("11111111111111111111111111111111");
 
       FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
-      metadata::TabletMetadata input_meta(&fs_manager, master_block);
-      ASSERT_STATUS_OK(input_meta.Load());
+      gscoped_ptr<metadata::TabletMetadata> input_meta;
+      ASSERT_STATUS_OK(metadata::TabletMetadata::Load(&fs_manager, master_block, &input_meta));
 
-      BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta.rowsets()) {
+      BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
         CHECK_OK(DiskRowSet::Open(meta, &rs));
         rowsets.push_back(rs);

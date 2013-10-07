@@ -84,14 +84,12 @@ Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
   // This won't allow multiple tablets
   master_block.set_block_a("00000000000000000000000000000000");
   master_block.set_block_b("11111111111111111111111111111111");
-  gscoped_ptr<TabletMetadata> meta(
-    new TabletMetadata(fs_manager_.get(), master_block));
+  gscoped_ptr<TabletMetadata> meta;
+  RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_.get(), master_block, schema,
+                                          "", "", &meta));
 
-  shared_ptr<metadata::TabletSuperBlockPB> super_block;
-  meta->ToSuperBlock(&super_block);
-
-  shared_ptr<Tablet> t(new Tablet(meta.Pass(), schema));
-  RETURN_NOT_OK(t->CreateNew());
+  shared_ptr<Tablet> t(new Tablet(meta.Pass()));
+  RETURN_NOT_OK(t->Open());
 
   shared_ptr<TabletPeer> tablet_peer(new TabletPeer(t));
   RETURN_NOT_OK(tablet_peer->Init());

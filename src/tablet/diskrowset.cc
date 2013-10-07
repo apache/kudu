@@ -36,9 +36,6 @@ const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
 Status DiskRowSetWriter::Open() {
   CHECK(cfile_writers_.empty());
 
-  // Create the metadata for the new rowset
-  RETURN_NOT_OK(rowset_metadata_->Create());
-
   // Open columns.
   for (int i = 0; i < schema().num_columns(); i++) {
     const ColumnSchema &col = schema().column(i);

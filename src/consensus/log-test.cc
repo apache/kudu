@@ -57,6 +57,7 @@ class LogTest : public KuduTest {
     KuduTest::SetUp();
     current_id_ = 0;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    CreateTestSchema(&schema_);
   }
 
   void BuildLog(int term = 0,
@@ -95,7 +96,8 @@ class LogTest : public KuduTest {
     meta->set_oid(kTestTablet);
     meta->set_start_key("");
     meta->set_end_key("");
-    meta->set_id(0);
+    meta->set_sequence(0);
+    ASSERT_STATUS_OK(SchemaToPB(schema_, meta->mutable_schema()));
 
     meta->set_last_durable_mrs_id(last_durable_mrs);
 
@@ -130,9 +132,6 @@ class LogTest : public KuduTest {
   // Note that this test does not insert into tablet so the data contained in
   // the ReplicateMsgs doesn't necessarily need to make sense.
   void AppendBatch(int index) {
-    Schema schema;
-    CreateTestSchema(&schema);
-
     LogEntry log_entry;
     log_entry.set_type(REPLICATE);
 
@@ -144,7 +143,7 @@ class LogTest : public KuduTest {
     op_id->set_index(index);
 
     WriteRequestPB* batch_request = replicate->mutable_write();
-    AddTestRowToBlockPB(schema,
+    AddTestRowToBlockPB(schema_,
                         index,
                         0,
                         "this is a test insert",
@@ -152,7 +151,7 @@ class LogTest : public KuduTest {
 
     faststring mutations;
     AddTestMutationToRowBlockAndBuffer(
-        schema,
+        schema_,
         index + 1,
         0,
         "this is a test mutate",
@@ -275,6 +274,7 @@ class LogTest : public KuduTest {
   }
 
  protected:
+  Schema schema_;
   gscoped_ptr<Log> log_;
   gscoped_ptr<LogReader> log_reader_;
   gscoped_ptr<FsManager> fs_manager_;

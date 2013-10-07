@@ -27,7 +27,6 @@ class KuduTabletTest : public KuduTest {
     KuduTest::SetUp();
 
     SetUpTestTablet();
-    ASSERT_STATUS_OK(tablet_->CreateNew());
   }
 
   void SetUpTestTablet(const string& root_dir = "") {
@@ -37,14 +36,16 @@ class KuduTabletTest : public KuduTest {
     master_block.set_block_b("11111111111111111111111111111111");
 
     fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
-    gscoped_ptr<metadata::TabletMetadata> metadata(
-      new metadata::TabletMetadata(fs_manager_.get(), master_block));
-    tablet_.reset(new Tablet(metadata.Pass(), schema_));
+    gscoped_ptr<metadata::TabletMetadata> metadata;
+    ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(
+                      fs_manager_.get(), master_block, schema_, "", "",
+                      &metadata));
+    tablet_.reset(new Tablet(metadata.Pass()));
+    ASSERT_STATUS_OK(tablet_->Open());
   }
 
   void TabletReOpen(const string& root_dir = "") {
     SetUpTestTablet(root_dir);
-    ASSERT_STATUS_OK(tablet_->Open());
   }
 
   const Schema &schema() const {

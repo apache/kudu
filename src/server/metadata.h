@@ -30,37 +30,63 @@ extern const int64 kNoDurableMrs;
 
 // Manages the "blocks tracking" for the specified tablet.
 //
-// The Master will send the bootstrap information required to
-// initialize the tablet (tablet id, master-block, start-key, end-key).
-// The Tablet-Server will receive the open request and it will create
-// the Tablet with its own metadata.
+// TabletMetadata is owned by the Tablet. As new blocks are written to store
+// the tablet's data, the Tablet calls Flush() to persist the block list
+// on disk.
 //
-// TabletMetadata is owned by the Tablet, and the tablet should call
-// Load() and Flush() when necessary.
+// At startup, the TSTabletManager will load a TabletMetadata for each
+// master block found in the master block directory, and then instantiate
+// tablets from this data.
 class TabletMetadata {
  public:
-  TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block,
-                 const string& start_key = "", const string& end_key = "")
-    : start_key_(start_key), end_key_(end_key),
-      fs_manager_(fs_manager),
-      master_block_(master_block),
-      sblk_id_(0),
-      next_rowset_idx_(0),
-      last_durable_mrs_id_(kNoDurableMrs) {
+  // Create metadata for a new tablet. This assumes that the given master block
+  // has not been written before, and writes out the initial superblock with
+  // the provided parameters.
+  //
+  // TODO: should this actually just generate a new unique master block, rather
+  // than take as a parameter?
+  static Status CreateNew(FsManager* fs_manager,
+                          const TabletMasterBlockPB& master_block,
+                          const Schema& schema,
+                          const string& start_key, const string& end_key,
+                          gscoped_ptr<TabletMetadata>* metadata);
+
+  // Load existing metadata from disk given a master block.
+  static Status Load(FsManager* fs_manager, const TabletMasterBlockPB& master_block,
+                     gscoped_ptr<TabletMetadata>* metadata);
+
+  // Try to load an existing tablet. If it does not exist, create it.
+  // If it already existed, verifies that the schema of the tablet matches the
+  // provided 'schema'.
+  //
+  // This is mostly useful for tests which instantiate tablets directly.
+  static Status LoadOrCreate(FsManager* fs_manager, const TabletMasterBlockPB& master_block,
+                             const Schema& schema,
+                             const string& start_key, const string& end_key,
+                             gscoped_ptr<TabletMetadata>* metadata);
+
+  const string& oid() const {
+    DCHECK_NE(state_, kNotLoadedYet);
+    return master_block_.tablet_id();
+  }
+  const string& start_key() const {
+    DCHECK_NE(state_, kNotLoadedYet);
+    return start_key_;
+  }
+  const string& end_key() const {
+    DCHECK_NE(state_, kNotLoadedYet);
+    return end_key_;
   }
 
-  const string& oid() const { return master_block_.tablet_id(); }
-  const string& start_key() const { return start_key_; }
-  const string& end_key() const { return end_key_; }
+  // Return the current schema of the metadata. Note that this returns
+  // a copy so should not be used in a tight loop.
+  Schema schema() const;
 
-  Status Create();
-  Status Load();
-
-  Status Flush() { return UpdateAndFlush(RowSetMetadataIds(), RowSetMetadataVector(), NULL); }
-
+  Status Flush();
 
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
+                        const Schema& new_schema,
                         shared_ptr<TabletSuperBlockPB> *super_block);
 
   // Updates the metadata adding 'to_add' rowsets, removing 'to_remove' rowsets
@@ -68,10 +94,13 @@ class TabletMetadata {
   // will be set to the newly created TabletSuperBlockPB.
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
+                        const Schema& new_schema,
                         int64_t last_durable_mrs_id,
                         shared_ptr<TabletSuperBlockPB> *super_block);
 
   // Create a new RowSetMetadata for this tablet.
+  // Does not add the new rowset to the list of rowsets. Use one of the Update()
+  // calls to do so.
   Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
 
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
@@ -90,21 +119,40 @@ class TabletMetadata {
   const RowSetMetadata *GetRowSetForTests(int64_t id) const;
 
  private:
-  Status ReadSuperBlock(TabletSuperBlockPB *pb);
+  // TODO: get rid of this many-arg constructor in favor of a Load() and
+  // New() factory functions -- it's sort of weird that when you're loading
+  // from a master block, you're expected to pass in schema/start_key/end_key,
+  // which are themselves already stored in the superblock as well.
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
+  // Constructor for creating a new tablet.
+  TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block,
+                 const Schema& schema, const string& start_key, const string& end_key);
+
+  // Constructor for loading an existing tablet.
+  TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block);
+
+  Status LoadFromDisk();
+
+  Status ReadSuperBlock(TabletSuperBlockPB *pb);
 
   Status UpdateAndFlushUnlocked(const RowSetMetadataIds& to_remove,
                                 const RowSetMetadataVector& to_add,
+                                const Schema& new_schema,
                                 int64_t last_durable_mrs_id,
                                 shared_ptr<TabletSuperBlockPB> *super_block);
 
   Status ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *super_block,
                               const RowSetMetadataVector& rowsets);
 
+  enum State {
+    kNotLoadedYet,
+    kNotWrittenYet,
+    kInitialized
+  };
+  State state_;
+
   typedef simple_spinlock LockType;
-  LockType lock_;
+  mutable LockType lock_;
 
   string start_key_;
   string end_key_;
@@ -112,11 +160,15 @@ class TabletMetadata {
   RowSetMetadataVector rowsets_;
 
   TabletMasterBlockPB master_block_;
-  uint64_t sblk_id_;
+  uint64_t sblk_sequence_;
 
   base::subtle::Atomic64 next_rowset_idx_;
 
   int64_t last_durable_mrs_id_;
+
+  Schema schema_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };
 
 
@@ -140,13 +192,17 @@ class TabletMetadata {
 // There's a lock around the delta-blocks operations.
 class RowSetMetadata {
  public:
+  // Create a new RowSetMetadata
+  static Status CreateNew(TabletMetadata* tablet_metadata,
+                          int64_t id,
+                          const Schema& schema,
+                          gscoped_ptr<RowSetMetadata>* metadata);
 
-  RowSetMetadata(TabletMetadata *tablet_metadata, int64_t id, const Schema& schema)
-    : id_(id), schema_(schema), tablet_metadata_(tablet_metadata) {
-  }
+  // Load metadata from a protobuf which was previously read from disk.
+  static Status Load(TabletMetadata* tablet_metadata,
+                     const RowSetDataPB& pb,
+                     gscoped_ptr<RowSetMetadata>* metadata);
 
-  Status Create();
-  Status Load(const RowSetDataPB& pb);
   Status Flush() { return tablet_metadata_->Flush(); }
 
   const string ToString();
@@ -221,9 +277,20 @@ class RowSetMetadata {
   }
 
  private:
-  RowSetMetadata(TabletMetadata *tablet_metadata, int32_t id)
-    : id_(id), tablet_metadata_(tablet_metadata) {
+  explicit RowSetMetadata(TabletMetadata *tablet_metadata)
+    : initted_(false),
+      tablet_metadata_(tablet_metadata) {
   }
+
+  RowSetMetadata(TabletMetadata *tablet_metadata,
+                 int64_t id, const Schema& schema)
+    : initted_(true),
+      id_(id),
+      schema_(schema),
+      tablet_metadata_(tablet_metadata) {
+  }
+
+  Status InitFromPB(const RowSetDataPB& pb);
 
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
 
@@ -231,6 +298,9 @@ class RowSetMetadata {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadata);
+
+  bool initted_; // TODO initme
+
 
   typedef simple_spinlock LockType;
   mutable LockType deltas_lock_;

@@ -90,9 +90,9 @@ Status StatusFromPB(const AppStatusPB& pb) {
   }
 }
 
-void SchemaToPB(const Schema& schema, SchemaPB *pb) {
+Status SchemaToPB(const Schema& schema, SchemaPB *pb) {
   pb->Clear();
-  CHECK_OK(SchemaToColumnPBs(schema, pb->mutable_columns()));
+  return SchemaToColumnPBs(schema, pb->mutable_columns());
 }
 
 Status SchemaFromPB(const SchemaPB& pb, Schema *schema) {

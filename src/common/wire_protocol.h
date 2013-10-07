@@ -25,7 +25,7 @@ void StatusToPB(const Status& status, AppStatusPB* pb);
 Status StatusFromPB(const AppStatusPB& pb);
 
 // Convert the specified schema to protobuf.
-void SchemaToPB(const Schema& schema, SchemaPB *pb);
+Status SchemaToPB(const Schema& schema, SchemaPB *pb);
 
 // Returns the Schema created from the specified protobuf.
 // If the schema is invalid, return a non-OK status.

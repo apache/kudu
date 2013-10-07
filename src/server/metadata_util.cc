@@ -18,7 +18,7 @@ BlockId BlockIdFromPB(const BlockIdPB& pb) {
   return BlockId(pb.id());
 }
 
-void SchemaToPB(const Schema& schema, TableSchemaPB *pb) {
+void TableSchemaToPB(const Schema& schema, TableSchemaPB *pb) {
   pb->Clear();
   CHECK_OK(SchemaToColumnPBs(schema, pb->mutable_columns()));
   // TODO: we need some better terminology to distinguish between
@@ -27,7 +27,7 @@ void SchemaToPB(const Schema& schema, TableSchemaPB *pb) {
   // encodings, etc.
 }
 
-Status SchemaFromPB(const TableSchemaPB& pb, Schema* schema) {
+Status TableSchemaFromPB(const TableSchemaPB& pb, Schema* schema) {
   // TODO: see above
   return ColumnPBsToSchema(pb.columns(), schema);
 }
