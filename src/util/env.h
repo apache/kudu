@@ -150,6 +150,9 @@ class Env {
   // Sleep/delay the thread for the perscribed number of micro-seconds.
   virtual void SleepForMicroseconds(int micros) = 0;
 
+  // Get caller's thread id.
+  virtual uint64_t gettid() = 0;
+
  private:
   // No copying allowed
   Env(const Env&);
@@ -307,6 +310,9 @@ class EnvWrapper : public Env {
   }
   void SleepForMicroseconds(int micros) {
     target_->SleepForMicroseconds(micros);
+  }
+  uint64_t gettid() {
+    return target_->gettid();
   }
  private:
   Env* target_;
