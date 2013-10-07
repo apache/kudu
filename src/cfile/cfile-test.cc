@@ -302,16 +302,18 @@ class TestCFile : public CFileTestBase {
     ScopedColumnBlock<data_type> cb(10);
 
     DataGeneratorType data_generator;
-    for (int loop = 0; loop < 10; loop++) {
-      // Seek to a random point in the file.
-      int target = random() % (num_entries - 1);
+    const int kNumLoops = AllowSlowTests() ? num_entries : 10;
+    for (int loop = 0; loop < kNumLoops; loop++) {
+      // Seek to a random point in the file,
+      // or just try each entry as starting point if you're running SlowTests
+      int target = AllowSlowTests() ? loop : (random() % (num_entries - 1));
       SCOPED_TRACE(target);
       ASSERT_STATUS_OK(iter->SeekToOrdinal(target));
       ASSERT_TRUE(iter->HasNext());
 
       // Read and verify several ColumnBlocks from this point in the file.
       int read_offset = target;
-      for (int block = 0; block < 3; block++) {
+      for (int block = 0; block < 3 && iter->HasNext(); block++) {
         SCOPED_TRACE(block);
         size_t n = cb.nrows();
         ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
