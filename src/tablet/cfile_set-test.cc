@@ -175,6 +175,41 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_LT(stats[1].rows_read, kNumRows * 3 / 4);
 }
 
+TEST_F(TestCFileSet, TestIteratePartialSchema) {
+  const int kNumRows = 100;
+  WriteTestRowSet(kNumRows);
+
+  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
+  ASSERT_STATUS_OK(fileset->Open());
+
+  vector<size_t> sparse_cols;
+  sparse_cols.push_back(0);
+  sparse_cols.push_back(2);
+
+  Schema new_schema;
+  ASSERT_STATUS_OK(schema_.CreatePartialSchema(sparse_cols, NULL, &new_schema));
+  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(new_schema));
+  gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+
+  ASSERT_STATUS_OK(iter->Init(NULL));
+
+  // Read all the results.
+  vector<string> results;
+  ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+
+  VLOG(1) << "Results of iterating over sparse partial schema: ";
+  BOOST_FOREACH(const string &str, results) {
+    VLOG(1) << str;
+  }
+
+  // Ensure that we got the expected rows.
+  ASSERT_EQ(results.size(), kNumRows);
+  for (int i = 0; i < kNumRows; i++) {
+    ASSERT_EQ(StringPrintf("(uint32 c0=%d, uint32 c2=%d)", i * 2, i * 100),
+              results[i]);
+  }
+}
+
 // Add a range predicate on the key column and ensure that only the relevant small number of rows
 // are read off disk.
 TEST_F(TestCFileSet, TestRangeScan) {

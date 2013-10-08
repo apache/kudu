@@ -1,6 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include "common/schema.h"
+
+#include <set>
+#include <algorithm>
+
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
 #include "gutil/strings/strcat.h"
@@ -8,6 +12,10 @@
 #include "util/status.h"
 
 namespace kudu {
+
+using std::set;
+using std::tr1::unordered_set;
+using std::tr1::unordered_map;
 
 string ColumnSchema::ToString() const {
   return strings::Substitute("$0[type='$1' $2]",
@@ -66,6 +74,31 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
     id_to_index_[col_ids_[i]] = i;
   }
 
+  return Status::OK();
+}
+
+Status Schema::CreatePartialSchema(const vector<size_t>& col_indexes,
+                                   unordered_map<size_t, size_t>* old_to_new,
+                                   Schema* out) const {
+  int keys_included = 0;
+  for (int i = 0; i < num_key_columns(); i++) {
+    if (std::binary_search(col_indexes.begin(), col_indexes.end(), i)) {
+      keys_included++;
+    }
+  }
+  bool has_all_key_columns = (keys_included == num_key_columns());
+  if (keys_included > 0 && !has_all_key_columns) {
+    return Status::InvalidArgument("Partial Schema must either include all key columns or none!");
+  }
+  size_t new_idx = 0;
+  vector<ColumnSchema> cols_to_include;
+  BOOST_FOREACH(size_t col_idx, col_indexes) {
+    cols_to_include.push_back(column(col_idx));
+    if (old_to_new != NULL) {
+      (*old_to_new)[col_idx] = new_idx++;
+    }
+  }
+  RETURN_NOT_OK(out->Reset(cols_to_include, has_all_key_columns ? num_key_columns() : 0));
   return Status::OK();
 }
 

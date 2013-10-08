@@ -4,6 +4,8 @@
 
 #include <string>
 #include <vector>
+#include <tr1/unordered_map>
+#include <tr1/unordered_set>
 
 #include "gutil/stl_util.h"
 #include "common/columnblock.h"
@@ -16,6 +18,10 @@ namespace kudu {
 using cfile::CFileReader;
 using cfile::IndexTreeIterator;
 using cfile::CFileIterator;
+using metadata::RowSetMetadata;
+using metadata::TabletMetadata;
+using metadata::ColumnIndexes;
+using metadata::ColumnWriters;
 
 namespace tablet {
 
@@ -23,6 +29,7 @@ namespace {
 
 typedef DeltaMemStore::DMSTree DMSTree;
 typedef DeltaMemStore::DMSTreeIter DMSTreeIter;
+typedef std::pair<size_t, cfile::Writer *> WriterMapEntry;
 
 class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
  public:
@@ -411,6 +418,86 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 };
 
 } // anonymous namespace
+
+RowSetColumnUpdater::RowSetColumnUpdater(TabletMetadata* tablet_metadata,
+                                         const RowSetMetadata* input_rowset_metadata,
+                                         const ColumnIndexes& col_indexes)
+ : tablet_meta_(tablet_metadata),
+   input_rowset_meta_(input_rowset_metadata),
+   column_indexes_(col_indexes),
+   finished_(false) {
+}
+
+RowSetColumnUpdater::~RowSetColumnUpdater() {
+  STLDeleteValues(&column_writers_);
+}
+
+Status RowSetColumnUpdater::Open(shared_ptr<RowSetMetadata>* output_rowset_meta) {
+  CHECK(!finished_);
+
+  ColumnWriters data_writers;
+  RETURN_NOT_OK(tablet_meta_->CreateRowSetWithUpdatedColumns(column_indexes_,
+                                                             *input_rowset_meta_,
+                                                             output_rowset_meta,
+                                                             &data_writers));
+  BOOST_FOREACH(size_t col_idx, column_indexes_) {
+    cfile::WriterOptions opts;
+    opts.write_posidx = true;
+    const ColumnSchema &col = input_rowset_meta_->schema().column(col_idx);
+    // TODO: we should probably preserve the encoding of the input
+    gscoped_ptr<cfile::Writer> writer(
+        new cfile::Writer(
+            opts,
+            col.type_info().type(),
+            col.is_nullable(),
+            cfile::TypeEncodingInfo::GetDefaultEncoding(col.type_info().type()),
+            data_writers[col_idx]));
+    Status s = writer->Start();
+    if (!s.ok()) {
+      string msg = "Unable to Start() writer for column " + col.ToString();
+      RETURN_NOT_OK_PREPEND(s, msg);
+    }
+
+    LOG(INFO) << "Opened CFile writer for column " << col.ToString();
+    column_writers_[col_idx] = writer.release();
+  }
+
+  return Status::OK();
+}
+
+Status RowSetColumnUpdater::AppendColumnsFromRowBlock(const RowBlock& block) {
+  CHECK(!finished_);
+
+  BOOST_FOREACH(size_t col_idx, column_indexes_) {
+    cfile::Writer* column_writer = column_writers_[col_idx];
+    ColumnBlock column(block.column_block(col_idx));
+    if (column.is_nullable()) {
+      RETURN_NOT_OK(column_writer->AppendNullableEntries(column.null_bitmap(),
+                                                         column.data(),
+                                                         column.nrows()));
+    } else {
+      RETURN_NOT_OK(column_writer->AppendEntries(column.data(), column.nrows()));
+    }
+  }
+  return Status::OK();
+}
+
+Status RowSetColumnUpdater::Finish() {
+  CHECK(!finished_);
+
+  BOOST_FOREACH(const WriterMapEntry& writer_pair, column_writers_) {
+    Status s = writer_pair.second->Finish();
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to Finish writer for column "
+          << input_rowset_meta_->schema().column(writer_pair.first).ToString()
+          << " : " << s.ToString();
+      return s;
+    }
+  }
+
+  finished_ = true;
+  return Status::OK();
+}
 
 Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
                                   const Schema& projection,

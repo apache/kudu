@@ -4,7 +4,9 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 
+#include "cfile/cfile.h"
 #include "tablet/deltafile.h"
 
 namespace kudu {
@@ -56,6 +58,50 @@ struct DeltaCompactionInputCell {
   Slice cell;
 };
 
+
+// Inspired by DiskRowSetWriter, but handles rewriting only specified
+// columns of a single rowset. Data blocks for unchanged columns as well
+// as the index and bloom filter blocks are kept the same as in the
+// original rowset. This class is not thread-safe: the caller must
+// synchronize access to tablet_metadata.
+//
+// TODO: we probably shouldn't create a new RowSetMetadata right away
+class RowSetColumnUpdater {
+ public:
+  // Create a new column updater. The given 'tablet_metadata' and
+  // 'input_rowset_metadata' must remain valid until Open(), as they are
+  // used to create the new rowset and copy the ids of the existing data
+  // blocks; 'col_indexes' must be sorted.
+  RowSetColumnUpdater(metadata::TabletMetadata* tablet_metadata,
+                      const metadata::RowSetMetadata* input_rowset_metadata,
+                      const metadata::ColumnIndexes& col_indexes);
+
+  ~RowSetColumnUpdater();
+
+  // Set 'output_rowset_meta' to a new RowSetMetadata, create new column
+  // blocks for columns specified in the constructor, and start writers
+  // for the columns being rewritten.
+  Status Open(shared_ptr<metadata::RowSetMetadata>* output_rowset_meta);
+
+  // Writes the specified columns from RowBlock into the newly opened RowSet.
+  // Rows must be appended in an ascending order.
+  //
+  // See major_delta_compaction-test.cc (TestRowSetColumnUpdater) for
+  // sample use.
+  Status AppendColumnsFromRowBlock(const RowBlock& row_block);
+
+  Status Finish();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RowSetColumnUpdater);
+
+  metadata::TabletMetadata* tablet_meta_;
+  const metadata::RowSetMetadata* const input_rowset_meta_;
+  const metadata::ColumnIndexes column_indexes_;
+  std::tr1::unordered_map<size_t, cfile::Writer*> column_writers_;
+
+  bool finished_;
+};
 
 // Populate "lines" with a humanly readable string representing each
 // delta read from the "input" iterator

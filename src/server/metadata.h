@@ -25,6 +25,8 @@ class RowSetMetadata;
 
 typedef std::vector<shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
+typedef std::vector<size_t> ColumnIndexes;
+typedef std::tr1::unordered_map<size_t, shared_ptr<WritableFile> > ColumnWriters;
 
 extern const int64 kNoDurableMemStore;
 
@@ -102,6 +104,16 @@ class TabletMetadata {
   // Does not add the new rowset to the list of rowsets. Use one of the Update()
   // calls to do so.
   Status CreateRowSet(shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
+
+  // Sets 'dst' to a new RowSetMetadata which differs from 'src' RowSetMetadata
+  // only by columns in 'col_indexes': new data blocks are created for columns in
+  // 'col_indexes', while other columns -- as well as the bloom and ad hoc index blocks --
+  // are shared with 'src'; sets 'writers' to a map from each column index in to a new
+  // WritableFile representing the data writer for that column.
+  Status CreateRowSetWithUpdatedColumns(const ColumnIndexes& col_indexes,
+                                        const RowSetMetadata& src,
+                                        shared_ptr<RowSetMetadata>* dst,
+                                        ColumnWriters* writers);
 
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 

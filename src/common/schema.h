@@ -392,6 +392,20 @@ class Schema {
     return Schema(key_cols, num_key_columns_);
   }
 
+  // Create a new Schema which only includes columns specified by 'col_indexes'
+  // (which must be sorted, but do not need to be contiguous) and write it into
+  // 'out'; mapping between old and new column indexes is written to 'old_to_new'.
+  //
+  // E.g., if the schema is {("a", UINT32), ("b", UINT32), ("c", UINT32)}
+  // and 'col_indexes' is [0, 2] then 'out' will be set to
+  // {("a", UINT32), ("c", UINT32)} and 'old_to_new' will be
+  // { 0 => 0, 2 => 1}
+  // See cfile_set-test.cc (TestSparseProjection) and
+  // major_delta_compaction-test.cc (TestRowSetColumnUpdater) for example use.
+  Status CreatePartialSchema(const std::vector<size_t>& col_indexes,
+                             std::tr1::unordered_map<size_t, size_t>* old_to_new,
+                             Schema* out) const;
+
   // Encode the key portion of the given row into a buffer
   // such that the buffer's lexicographic comparison represents
   // the proper comparison order of the underlying types.

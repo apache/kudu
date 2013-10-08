@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <vector>
+#include <tr1/unordered_map>
 
 #include "common/row.h"
 #include "common/schema.h"
@@ -16,6 +17,7 @@ namespace kudu {
 namespace tablet {
 
 using std::vector;
+using std::tr1::unordered_map;
 
 // Copy a row and its referenced data into the given Arena.
 static Status CopyRowToArena(const Slice &row,
@@ -281,6 +283,66 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
       << "Expected: " << HexDump(expected)
       << "Got:      " << HexDump(Slice(fs));
     i++;
+  }
+}
+
+TEST(TestSchema, TestCreatePartialSchema) {
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("col1", STRING))
+                (ColumnSchema("col2", STRING))
+                (ColumnSchema("col3", STRING))
+                (ColumnSchema("col4", STRING))
+                (ColumnSchema("col5", STRING)),
+                2);
+
+  vector<size_t> partial_cols;
+  unordered_map<size_t, size_t> old_to_new;
+  {
+    // All keys are included
+    Schema partial_schema;
+    partial_cols.push_back(0);
+    partial_cols.push_back(1);
+    partial_cols.push_back(3);
+
+    ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
+    ASSERT_EQ("Schema [col1[type='string' NOT NULL], col2[type='string' NOT NULL], col4[type='string' NOT NULL]]",
+              partial_schema.ToString());
+    ASSERT_EQ(old_to_new[0], 0);
+    ASSERT_EQ(old_to_new[1], 1);
+    ASSERT_EQ(old_to_new[3], 2);
+  }
+  partial_cols.clear();
+  old_to_new.clear();
+  {
+    // No keys are included
+    Schema partial_schema;
+    partial_cols.push_back(2);
+     partial_cols.push_back(3);
+     partial_cols.push_back(4);
+     ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
+     ASSERT_EQ("Schema [col3[type='string' NOT NULL], col4[type='string' NOT NULL], col5[type='string' NOT NULL]]",
+               partial_schema.ToString());
+     ASSERT_EQ(old_to_new[2], 0);
+     ASSERT_EQ(old_to_new[3], 1);
+     ASSERT_EQ(old_to_new[4], 2);
+  }
+  partial_cols.clear();
+  {
+    // Keys are partially included
+    Schema partial_schema;
+    partial_cols.push_back(0);
+    partial_cols.push_back(4);
+    Status s = schema.CreatePartialSchema(partial_cols, NULL, &partial_schema);
+    ASSERT_TRUE(s.IsInvalidArgument());
+  }
+  partial_cols.clear();
+  partial_cols.push_back(1);
+  partial_cols.push_back(4);
+  {
+    // Keys are partially included, another variant
+    Schema partial_schema;
+    Status s = schema.CreatePartialSchema(partial_cols, NULL, &partial_schema);
+    ASSERT_TRUE(s.IsInvalidArgument());
   }
 }
 
