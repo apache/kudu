@@ -10,6 +10,16 @@ namespace tablet {
 
 using tablet::ScopedRowLock;
 
+TransactionMetrics::TransactionMetrics()
+  : successful_inserts(0),
+    successful_updates(0) {
+}
+
+void TransactionMetrics::Reset() {
+  successful_inserts = 0;
+  successful_updates = 0;
+}
+
 MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result) {
   if (result->mutations_size() == 0) {
     return MutationResultPB::NO_MUTATION;
@@ -31,6 +41,7 @@ Status TransactionContext::AddInsert(const txid_t &tx_id,
   TxOperationPB* insert = result_pb_.add_inserts();
   insert->set_type(TxOperationPB::INSERT);
   insert->set_mrs_id(mrs_id);
+  tx_metrics_.successful_inserts++;
   return Status::OK();
 }
 
@@ -38,7 +49,7 @@ void TransactionContext::AddFailedInsert(const Status &status) {
   TxOperationPB* insert = result_pb_.add_inserts();
   insert->set_type(TxOperationPB::INSERT);
   StatusToPB(status, insert->mutable_failed_status());
-  unsuccessful_ops_++;
+  failed_operations_++;
 }
 
 Status TransactionContext::AddMutation(const txid_t &tx_id,
@@ -50,6 +61,7 @@ Status TransactionContext::AddMutation(const txid_t &tx_id,
   TxOperationPB* mutation = result_pb_.add_mutations();
   mutation->set_type(TxOperationPB::MUTATE);
   mutation->mutable_mutation_result()->Swap(result.get());
+  tx_metrics_.successful_updates++;
   return Status::OK();
 }
 
@@ -75,7 +87,7 @@ void TransactionContext::AddFailedMutation(const Status &status) {
   TxOperationPB* mutation = result_pb_.add_mutations();
   mutation->set_type(TxOperationPB::MUTATE);
   StatusToPB(status, mutation->mutable_failed_status());
-  unsuccessful_ops_++;
+  failed_operations_++;
 }
 
 txid_t TransactionContext::start_mvcc_tx() {
@@ -116,7 +128,8 @@ txid_t TransactionContext::mvcc_txid() {
 void TransactionContext::Reset() {
   commit();
   result_pb_.Clear();
-  unsuccessful_ops_ = 0;
+  tx_metrics_.Reset();
+  failed_operations_ = 0;
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,

@@ -11,6 +11,7 @@
 #include "server/rpc_server.h"
 #include "server/webserver.h"
 #include "util/env.h"
+#include "util/metrics.h"
 #include "util/net/sockaddr.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
@@ -23,7 +24,8 @@ namespace server {
 
 ServerBase::ServerBase(const RpcServerOptions& rpc_opts,
                        const WebserverOptions& web_opts)
-  : rpc_server_(new RpcServer(rpc_opts)),
+  : metric_registry_(new MetricRegistry()),
+    rpc_server_(new RpcServer(rpc_opts)),
     web_server_(new Webserver(web_opts)) {
 }
 
@@ -75,6 +77,7 @@ Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
   RETURN_NOT_OK(rpc_server_->Start(messenger_, rpc_impl.Pass()));
 
   AddDefaultPathHandlers(web_server_.get());
+  RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
   RETURN_NOT_OK(web_server_->Start());
   return Status::OK();
 }

@@ -12,6 +12,7 @@
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
 #include "tablet/tablet_peer.h"
+#include "util/metrics.h"
 #include "util/test_util.h"
 
 namespace kudu {
@@ -29,7 +30,8 @@ class TsTabletManagerTest : public KuduTest {
   TsTabletManagerTest()
     : schema_(boost::assign::list_of
              (ColumnSchema("key", UINT32)),
-             1) {
+             1),
+      metric_ctx_(&metric_registry_, "ts_tablet_manager_test") {
   }
 
   virtual void SetUp() {
@@ -38,7 +40,7 @@ class TsTabletManagerTest : public KuduTest {
     fs_manager_.reset(new FsManager(env_.get(), GetTestPath("fs-root")));
     ASSERT_STATUS_OK(fs_manager_->CreateInitialFileSystemLayout());
 
-    tablet_manager_.reset(new TSTabletManager(fs_manager_.get()));
+    tablet_manager_.reset(new TSTabletManager(fs_manager_.get(), metric_ctx_));
     ASSERT_STATUS_OK(tablet_manager_->Init());
   }
 
@@ -53,6 +55,8 @@ class TsTabletManagerTest : public KuduTest {
   gscoped_ptr<TSTabletManager> tablet_manager_;
 
   Schema schema_;
+  MetricRegistry metric_registry_;
+  MetricContext metric_ctx_;
 
 };
 
@@ -88,7 +92,7 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   LOG(INFO) << "Shutting down tablet manager";
   tablet_manager_->Shutdown();
   LOG(INFO) << "Restarting tablet manager";
-  tablet_manager_.reset(new TSTabletManager(fs_manager_.get()));
+  tablet_manager_.reset(new TSTabletManager(fs_manager_.get(), metric_ctx_));
   ASSERT_STATUS_OK(tablet_manager_->Init());
 
   // Ensure that the tablet got re-loaded and re-opened off disk.

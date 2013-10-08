@@ -28,6 +28,12 @@ TEST_F(TabletServerTest, TestInsert) {
   WriteResponsePB resp;
   RpcController controller;
 
+  shared_ptr<TabletPeer> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  Counter* rows_inserted = FindOrCreateCounter(tablet->GetMetricContextForTests(),
+      METRIC_rows_inserted);
+  ASSERT_EQ(0, rows_inserted->value());
+
   // Send a bad insert which has an empty schema. This should result
   // in an error.
   {
@@ -67,6 +73,7 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_FALSE(resp.has_error());
     req.clear_to_insert_rows();
   }
+
   // Send an actual row insert.
   {
     controller.Reset();
@@ -81,6 +88,7 @@ TEST_F(TabletServerTest, TestInsert) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
     req.clear_to_insert_rows();
+    ASSERT_EQ(1, rows_inserted->value());
   }
 
   // Send a batch with multiple rows, one of which is a duplicate of
@@ -103,10 +111,20 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_EQ(2, resp.per_row_errors().Get(0).row_index());
     Status s = StatusFromPB(resp.per_row_errors().Get(0).error());
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
+    ASSERT_EQ(3, rows_inserted->value());  // This counter only counts successful inserts.
   }
 }
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
+
+  shared_ptr<TabletPeer> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  Counter* rows_inserted = FindOrCreateCounter(tablet->GetMetricContextForTests(),
+      METRIC_rows_inserted);
+  Counter* rows_updated = FindOrCreateCounter(tablet->GetMetricContextForTests(),
+      METRIC_rows_updated);
+  ASSERT_EQ(0, rows_inserted->value());
+  ASSERT_EQ(0, rows_updated->value());
 
   RpcController controller;
 
@@ -126,8 +144,11 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
     ASSERT_EQ(0, resp.per_row_errors().size());
+    ASSERT_EQ(3, rows_inserted->value());
+    ASSERT_EQ(0, rows_updated->value());
     controller.Reset();
   }
+
   // Try and mutate the rows inserted above
   {
     WriteRequestPB req;
@@ -151,8 +172,11 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
     ASSERT_EQ(0, resp.per_row_errors().size());
+    ASSERT_EQ(3, rows_inserted->value());
+    ASSERT_EQ(3, rows_updated->value());
     controller.Reset();
   }
+
   // Try and mutate a non existent row key (should get an error)
   {
     WriteRequestPB req;
@@ -170,8 +194,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
     ASSERT_EQ(1, resp.per_row_errors().size());
+    ASSERT_EQ(3, rows_updated->value());
     controller.Reset();
   }
+
   // Try and delete 1 row
   {
     WriteRequestPB req;
@@ -188,8 +214,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
     ASSERT_EQ(0, resp.per_row_errors().size());
+    ASSERT_EQ(4, rows_updated->value());
     controller.Reset();
   }
+
   // Now try and mutate a row we just deleted, we should get an error
   {
     WriteRequestPB req;
@@ -209,6 +237,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_EQ(1, resp.per_row_errors().size());
     controller.Reset();
   }
+
+  ASSERT_EQ(3, rows_inserted->value());
+  ASSERT_EQ(4, rows_updated->value());
 }
 
 // Test various invalid calls for mutations
@@ -419,7 +450,6 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(50, results.size());
 }
-
 
 // Test requesting more rows from a scanner which doesn't exist
 TEST_F(TabletServerTest, TestBadScannerID) {

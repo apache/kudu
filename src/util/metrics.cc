@@ -30,6 +30,8 @@ const char* MetricUnit::Name(Type unit) {
       return "bytes";
     case kRequests:
       return "requests";
+    case kRows:
+      return "rows";
     default:
       return "UNKNOWN UNIT";
   }

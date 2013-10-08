@@ -90,8 +90,11 @@
 #include "util/status.h"
 
 // Convenience macros.
-#define METRIC_DEFINE_counter(name, unit, desc)               \
-  ::kudu::CounterPrototype METRIC_##name(#name , unit, desc)
+#define METRIC_DEFINE_counter(name, unit, desc) \
+  ::kudu::CounterPrototype METRIC_##name(#name, unit, desc)
+
+#define METRIC_DECLARE_counter(name) \
+  extern ::kudu::CounterPrototype METRIC_##name
 
 // TODO: Implement registration macros for gauges.
 #define METRIC_DEFINE_gauge_string(name, default_value, unit, desc)
@@ -113,6 +116,7 @@ struct MetricUnit {
   enum Type {
     kBytes,
     kRequests,
+    kRows,
   };
   static const char* Name(Type unit);
 };

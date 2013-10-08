@@ -6,9 +6,21 @@
 #include "tablet/tablet.h"
 #include "consensus/log.h"
 #include "consensus/consensus.h"
+#include "util/metrics.h"
+
+// Declare these metrics prototypes for simpler unit testing of their behavior.
+METRIC_DECLARE_counter(rows_inserted);
+METRIC_DECLARE_counter(rows_updated);
 
 namespace kudu {
 namespace tablet {
+
+// Container for all metrics specific to a single tablet.
+struct TabletMetrics {
+  explicit TabletMetrics(const MetricContext& metric_ctx);
+  Counter* rows_inserted;
+  Counter* rows_updated;
+};
 
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -18,7 +30,8 @@ namespace tablet {
 class TabletPeer {
  public:
 
-  explicit TabletPeer(const std::tr1::shared_ptr<tablet::Tablet>& tablet);
+  TabletPeer(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
+      const MetricContext& metric_ctx);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
@@ -118,6 +131,9 @@ class TabletPeer {
     return tablet_;
   }
 
+  // Return handle to the metric context of this tablet peer. For unit tests.
+  const MetricContext& GetMetricContextForTests() const { return metric_ctx_; }
+
  private:
   std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<log::Log> log_;
@@ -132,6 +148,10 @@ class TabletPeer {
   // TabletPeer, PrepareTasks are executed *serially*.
   gscoped_ptr<TaskExecutor> prepare_executor_;
   gscoped_ptr<TaskExecutor> apply_executor_;
+
+  // Tablet server metrics.
+  MetricContext metric_ctx_;
+  TabletMetrics tablet_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };
@@ -177,13 +197,14 @@ class ApplyOnReplicateAndPrepareCB : public FutureCallback {
 class CommitCallback : public FutureCallback {
 
  public:
-  explicit CommitCallback(tablet::TransactionContext *tx_ctx);
+  CommitCallback(tablet::TransactionContext *tx_ctx, const TabletMetrics& metrics);
 
   void OnSuccess();
   void OnFailure(const Status &status);
 
  private:
   gscoped_ptr<tablet::TransactionContext> tx_ctx_;
+  TabletMetrics tablet_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(CommitCallback);
 };

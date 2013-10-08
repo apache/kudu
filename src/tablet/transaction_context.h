@@ -25,6 +25,14 @@ namespace tablet {
 class TabletPeer;
 class PreparedRowWrite;
 
+// All metrics associated with a TransactionContext.
+struct TransactionMetrics {
+  TransactionMetrics();
+  void Reset();
+  int successful_inserts;
+  int successful_updates;
+};
+
 // A transaction context for a batch of inserts/mutates. This class holds and
 // owns most everything related to a transaction, including the acquired locks
 // (row and component), the PreparedRowWrites, the Replicate and Commit messages.
@@ -45,7 +53,7 @@ class TransactionContext {
 
  public:
   TransactionContext()
-      : unsuccessful_ops_(0),
+      : failed_operations_(0),
         tablet_peer_(NULL),
         rpc_ctx_(NULL),
         request_(NULL),
@@ -60,7 +68,7 @@ class TransactionContext {
                      rpc::RpcContext *rpc_ctx,
                      const tserver::WriteRequestPB *request,
                      tserver::WriteResponsePB *response)
-      : unsuccessful_ops_(0),
+      : failed_operations_(0),
         tablet_peer_(tablet_peer),
         rpc_ctx_(rpc_ctx),
         request_(request),
@@ -101,8 +109,11 @@ class TransactionContext {
   // explaining why it failed.
   void AddFailedMutation(const Status &status);
 
+  // Return metrics related to this transaction.
+  const TransactionMetrics& metrics() const { return tx_metrics_; }
+
   bool is_all_success() const {
-    return unsuccessful_ops_ == 0;
+    return failed_operations_ == 0;
   }
 
   // Returns the result of this transaction in its protocol buffers form.
@@ -210,7 +221,8 @@ class TransactionContext {
   DISALLOW_COPY_AND_ASSIGN(TransactionContext);
 
   TxResultPB result_pb_;
-  int32_t unsuccessful_ops_;
+  TransactionMetrics tx_metrics_;
+  int32_t failed_operations_;
 
   // The tablet peer that is coordinating this transaction.
   TabletPeer* tablet_peer_;

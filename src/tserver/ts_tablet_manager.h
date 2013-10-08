@@ -9,6 +9,7 @@
 
 #include "gutil/macros.h"
 #include "util/locks.h"
+#include "util/metrics.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -40,7 +41,7 @@ class TSTabletManager {
  public:
   // Construct the tablet manager.
   // 'fs_manager' must remain valid until this object is destructed.
-  explicit TSTabletManager(FsManager* fs_manager);
+  TSTabletManager(FsManager* fs_manager, const MetricContext& metric_ctx);
   ~TSTabletManager();
 
   // Load all master blocks from disk, and open their respective tablets.
@@ -135,6 +136,8 @@ class TSTabletManager {
   typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
   DirtyMap dirty_tablets_;
   int32_t next_report_seq_;
+
+  MetricContext metric_ctx_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

@@ -13,6 +13,7 @@
 
 namespace kudu {
 
+class MetricRegistry;
 class NodeInstancePB;
 class Sockaddr;
 class Webserver;
@@ -57,6 +58,7 @@ class ServerBase {
   Status Start(gscoped_ptr<rpc::ServiceIf> rpc_impl);
   Status Shutdown();
 
+  gscoped_ptr<MetricRegistry> metric_registry_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;

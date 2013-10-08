@@ -32,8 +32,9 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
   : ServerBase(opts.rpc_opts, opts.webserver_opts),
     initted_(false),
     opts_(opts),
+    metric_ctx_(metric_registry_.get(), "kudu.tabletserver"),
     fs_manager_(new FsManager(opts.env, opts.base_dir)),
-    tablet_manager_(new TSTabletManager(fs_manager_.get())),
+    tablet_manager_(new TSTabletManager(fs_manager_.get(), metric_ctx_)),
     scanner_manager_(new ScannerManager()) {
 }
 

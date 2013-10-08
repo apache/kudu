@@ -18,6 +18,7 @@
 #include "tablet/tablet_peer.h"
 #include "util/env.h"
 #include "util/env_util.h"
+#include "util/metrics.h"
 #include "util/pb_util.h"
 
 using std::string;
@@ -34,9 +35,10 @@ static const char* const kTmpSuffix = ".tmp";
 namespace kudu {
 namespace tserver {
 
-TSTabletManager::TSTabletManager(FsManager* fs_manager)
+TSTabletManager::TSTabletManager(FsManager* fs_manager, const MetricContext& metric_ctx)
   : fs_manager_(fs_manager),
-    next_report_seq_(0) {
+    next_report_seq_(0),
+    metric_ctx_(metric_ctx) {
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -119,7 +121,7 @@ Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
   RETURN_NOT_OK(tablet->Open());
   // TODO: handle crash mid-creation of tablet? do we ever end up with a partially created tablet here?
 
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet));
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet, metric_ctx_));
   RETURN_NOT_OK_PREPEND(tablet_peer->Init(), "Failed to Init() TabletPeer");
   RETURN_NOT_OK_PREPEND(tablet_peer->Start(), "Failed to Start() TabletPeer");
 
