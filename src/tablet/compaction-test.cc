@@ -214,7 +214,7 @@ class TestCompaction : public KuduRowSetTest {
       CHECK(!rowsets.empty()) << "No rowsets found in " << FLAGS_merge_benchmark_input_dir;
     }
 
-    LOG_TIMING(INFO, "Compacting") {
+    LOG_TIMING(INFO, "Compacting " + std::string((OVERLAP_INPUTS ? "with overlap" : "without overlap"))) {
       DoCompact(rowsets, schema_);
     }
   }

@@ -1,12 +1,36 @@
+# Copyright (c) 2013, Cloudera, inc.
+# All rights reserved.
+
+# How to invoke:
+#  mt-tablet-test-graph.R <tsvfile> <testname>
+# This script takes in input a TSV file that contains the timing results
+# from running mt-table-test, and parsed out by graph-metrics.py
+# The file needs to have the following header:
+#  memrowset_kb    updated scanned time    num_rowsets     inserted
+# Three png are generated:
+#  - Insert rate as data is inserted
+#  - Scan rate as data is inserted
+#  - Multiple plots, where x is time, and y shows a variety of different
+#    progressions like the number of rowsets over time.
+
 library(ggplot2)
 library(reshape)
+library(Cairo)
+
+newpng<- function(filename = "img.png", width = 400, height = 400) { 
+    CairoPNG(filename, width, height) 
+} 
+
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 2) {
+  stop("usage: jobs_runtime.R <tsvfile> <testname>")
+}
+filename = args[1]
+testname = args[2]
 
 source("si_vec.R")
+newpng(paste(testname, "-1.png", sep = ""))
 
-
-if (!exists("filename")) {
-  filename <- "/tmp/graph.tsv"
-}
 print(c("Using file ", filename))
 
 d <- read.table(file=filename, header=T)
@@ -28,20 +52,19 @@ d$memrowset_bytes <- d$memrowset * 1024
 d <- subset(d, select = -c(memrowset_kb))
 
 print(ggplot(d, aes(inserted, insert_rate)) +
-          geom_point(alpha=0.02) +
+          geom_point(alpha=0.5) +
           scale_x_continuous(labels=si_vec) +
           scale_y_log10(labels=si_vec))
 
 if (exists("scan_rate", where=d)) {
-  dev.new()
+  newpng(paste(testname, "-2.png", sep = ""))
   print(ggplot(d, aes(inserted, scan_rate)) +
-            geom_point(alpha=0.01) +
+            geom_point(alpha=0.5) +
             scale_x_continuous(labels=si_vec) +
             scale_y_log10(labels=si_vec))
 }
 
-dev.new()
-
+newpng(paste(testname, "-3.png", sep = ""))
 
 d <- rename(d, c(
   insert_rate="Insert rate (rows/sec)",

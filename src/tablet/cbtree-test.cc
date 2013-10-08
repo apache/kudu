@@ -748,6 +748,9 @@ TEST_F(TestCBTree, TestScanPerformance) {
 #else
   int n_keys = 1000000;
 #endif
+  if (AllowSlowTests()) {
+    n_keys = 4000000;
+  }
   LOG_TIMING(INFO, StringPrintf("Insert %d keys", n_keys)) {
     InsertRange(&tree, 0, n_keys);
   }

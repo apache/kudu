@@ -232,12 +232,12 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
 #ifdef NDEBUG
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
   Arena arena(1024, 1024 * 1024);
-  RowBlock block(schema_, 100000, &arena);
+  const int kNumTrials = AllowSlowTests() ? 100 : 10;
+  RowBlock block(schema_, 10000 * kNumTrials, &arena);
   FillRowBlockWithTestRows(&block);
 
   RowwiseRowBlockPB pb;
 
-  const int kNumTrials = AllowSlowTests() ? 100 : 10;
   LOG_TIMING(INFO, "Converting to PB") {
     for (int i = 0; i < kNumTrials; i++) {
       pb.Clear();

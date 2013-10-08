@@ -1,3 +1,6 @@
+# Copyright (c) 2013, Cloudera, inc.
+# All rights reserved.
+
 si_num <- function (x) {
 
   if (!is.na(x)) {
