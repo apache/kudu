@@ -11,6 +11,7 @@
 
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
+#include "master/master.pb.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
 #include "tablet/tablet.h"
@@ -23,6 +24,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using kudu::tablet::TabletPeer;
+using kudu::master::TabletReportPB;
 using kudu::metadata::TabletMasterBlockPB;
 using kudu::metadata::TabletMetadata;
 using kudu::tablet::Tablet;
@@ -33,7 +35,8 @@ namespace kudu {
 namespace tserver {
 
 TSTabletManager::TSTabletManager(FsManager* fs_manager)
-  : fs_manager_(fs_manager) {
+  : fs_manager_(fs_manager),
+    next_report_seq_(0) {
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -185,6 +188,9 @@ void TSTabletManager::RegisterTablet(const std::tr1::shared_ptr<TabletPeer>& tab
   if (!InsertIfNotPresent(&tablet_map_, id, tablet_peer)) {
     LOG(FATAL) << "Unable to register tablet peer " << id << ": already registered!";
   }
+
+  MarkDirtyUnlocked(id);
+
   LOG(INFO) << "Registered tablet " << id;
 }
 
@@ -197,6 +203,80 @@ bool TSTabletManager::LookupTablet(const string& tablet_id,
   }
   *tablet_peer = *found;
   return true;
+}
+
+void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
+  TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
+  if (state != NULL) {
+    CHECK_GE(next_report_seq_, state->change_seq_);
+    state->change_seq_ = next_report_seq_;
+  } else {
+    TabletReportState state;
+    state.change_seq_ = next_report_seq_;
+
+    InsertOrDie(&dirty_tablets_, tablet_id, state);
+  }
+  VLOG(2) << "Will report tablet " << tablet_id << " in report #" << next_report_seq_;
+}
+
+Status TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
+  boost::shared_lock<rw_spinlock> lock(lock_);
+
+  int32_t acked_seq = report.sequence_number();
+  CHECK_LT(acked_seq, next_report_seq_);
+
+  // Clear the "dirty" state for any tablets which have not changed since
+  // this report.
+  for (DirtyMap::iterator it = dirty_tablets_.begin();
+       it != dirty_tablets_.end();) {
+    const TabletReportState& state = (*it).second;
+
+    if (state.change_seq_ <= acked_seq) {
+      // This entry has not changed since this tablet report, we no longer need
+      // to track it as dirty. If it becomes dirty again, it will be re-added
+      // with a higher sequence number.
+      it = dirty_tablets_.erase(it);
+      continue;
+    } else {
+      ++it;
+    }
+  }
+  return Status::OK();
+}
+
+Status TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
+  // Generate an incremental report
+  boost::shared_lock<rw_spinlock> lock(lock_);
+  report->Clear();
+  report->set_sequence_number(next_report_seq_++);
+  report->set_is_incremental(true);
+  for (DirtyMap::iterator it = dirty_tablets_.begin();
+       it != dirty_tablets_.end();) {
+    const string& tablet_id = (*it).first;
+
+    // The entry is actually dirty, so report it.
+    if (ContainsKey(tablet_map_, tablet_id)) {
+      report->add_updated_tablets()->set_tablet_id(tablet_id);
+    } else {
+      report->add_removed_tablet_ids(tablet_id);
+    }
+
+    ++it;
+  }
+  return Status::OK();
+}
+
+Status TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
+  boost::shared_lock<rw_spinlock> lock(lock_);
+  report->Clear();
+  report->set_is_incremental(false);
+  report->set_sequence_number(next_report_seq_++);
+  BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
+    const string& tablet_id = entry.first;
+    report->add_updated_tablets()->set_tablet_id(tablet_id);
+  }
+  dirty_tablets_.clear();
+  return Status::OK();
 }
 
 } // namespace tserver

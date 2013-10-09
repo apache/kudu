@@ -58,9 +58,15 @@ message TabletReportPB {
   repeated ReportedTabletPB updated_tablets = 2;
 
   // Tablet IDs which the tablet server has removed and should no longer be
-  // considered hosted here. This will always be empty in an incremental
+  // considered hosted here. This will always be empty in a non-incremental
   // report.
   repeated bytes removed_tablet_ids = 3;
+
+  // Every time the TS generates a tablet report, it creates a sequence
+  // number. This can be useful in debugging, and also determining which
+  // changes have not yet been reported to the master.
+  // The first tablet report (non-incremental) is sequence number 0.
+  required int32 sequence_number = 4;
 }
 
 // Heartbeat sent from the tablet-server to the master

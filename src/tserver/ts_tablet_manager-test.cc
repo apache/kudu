@@ -8,6 +8,7 @@
 #include <tr1/memory>
 
 #include "common/schema.h"
+#include "master/master.pb.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
 #include "tablet/tablet_peer.h"
@@ -16,12 +17,21 @@
 namespace kudu {
 namespace tserver {
 
+using master::TabletReportPB;
 using metadata::TabletMasterBlockPB;
 using tablet::TabletPeer;
 using std::tr1::shared_ptr;
 
+static const char* const kTabletId = "my-tablet-id";
+
 class TsTabletManagerTest : public KuduTest {
  public:
+  TsTabletManagerTest()
+    : schema_(boost::assign::list_of
+             (ColumnSchema("key", UINT32)),
+             1) {
+  }
+
   virtual void SetUp() {
     KuduTest::SetUp();
 
@@ -41,6 +51,9 @@ class TsTabletManagerTest : public KuduTest {
 
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<TSTabletManager> tablet_manager_;
+
+  Schema schema_;
+
 };
 
 // Test that master blocks can be persisted and loaded back from disk.
@@ -64,15 +77,10 @@ TEST_F(TsTabletManagerTest, TestPersistBlocks) {
 }
 
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
-  const string kTabletId = "my-tablet-id";
-  const Schema schema(boost::assign::list_of
-                      (ColumnSchema("c1", UINT32)),
-                      1);
-
   // Create a new tablet.
   shared_ptr<TabletPeer> peer;
   ASSERT_STATUS_OK(tablet_manager_->CreateNewTablet(
-                     kTabletId, "", "", schema, &peer));
+                     kTabletId, "", "", schema_, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
   peer.reset();
 
@@ -86,6 +94,63 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Ensure that the tablet got re-loaded and re-opened off disk.
   ASSERT_TRUE(tablet_manager_->LookupTablet(kTabletId, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
+}
+
+TEST_F(TsTabletManagerTest, TestTabletReports) {
+  TabletReportPB report;
+
+  // Generate a tablet report before any tablets are loaded. Should be empty.
+  ASSERT_STATUS_OK(tablet_manager_->GenerateFullTabletReport(&report));
+  ASSERT_FALSE(report.is_incremental());
+  ASSERT_EQ(0, report.updated_tablets().size());
+  ASSERT_EQ(0, report.sequence_number());
+  ASSERT_STATUS_OK(tablet_manager_->AcknowledgeTabletReport(report));
+
+  // Another report should now be incremental, but with no changes.
+  ASSERT_STATUS_OK(tablet_manager_->GenerateTabletReport(&report));
+  ASSERT_TRUE(report.is_incremental());
+  ASSERT_EQ(0, report.updated_tablets().size());
+  ASSERT_EQ(1, report.sequence_number());
+  ASSERT_STATUS_OK(tablet_manager_->AcknowledgeTabletReport(report));
+
+  // Create a tablet and do another incremental report - should include the tablet.
+  ASSERT_STATUS_OK(tablet_manager_->CreateNewTablet("tablet-1", "", "", schema_, NULL));
+  ASSERT_STATUS_OK(tablet_manager_->GenerateTabletReport(&report));
+  ASSERT_TRUE(report.is_incremental());
+  ASSERT_EQ(1, report.updated_tablets().size());
+  ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
+  ASSERT_EQ(2, report.sequence_number());
+
+  // If we don't acknowledge the report, and ask for another incremental report,
+  // it should include the tablet again.
+  ASSERT_STATUS_OK(tablet_manager_->GenerateTabletReport(&report));
+  ASSERT_TRUE(report.is_incremental());
+  ASSERT_EQ(1, report.updated_tablets().size());
+  ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
+  ASSERT_EQ(3, report.sequence_number());
+
+  // Now acknowledge the last report, and further incrementals should be empty.
+  ASSERT_STATUS_OK(tablet_manager_->AcknowledgeTabletReport(report));
+  ASSERT_STATUS_OK(tablet_manager_->GenerateTabletReport(&report));
+  ASSERT_TRUE(report.is_incremental());
+  ASSERT_EQ(0, report.updated_tablets().size());
+  ASSERT_EQ(4, report.sequence_number());
+  ASSERT_STATUS_OK(tablet_manager_->AcknowledgeTabletReport(report));
+
+  // Create a second tablet, and ensure the incremental report shows it.
+  ASSERT_STATUS_OK(tablet_manager_->CreateNewTablet("tablet-2", "", "", schema_, NULL));
+  ASSERT_STATUS_OK(tablet_manager_->GenerateTabletReport(&report));
+  ASSERT_TRUE(report.is_incremental());
+  ASSERT_EQ(1, report.updated_tablets().size());
+  ASSERT_EQ("tablet-2", report.updated_tablets(0).tablet_id());
+  ASSERT_EQ(5, report.sequence_number());
+  ASSERT_STATUS_OK(tablet_manager_->AcknowledgeTabletReport(report));
+
+  // Asking for a full tablet report should re-report both tablets
+  ASSERT_STATUS_OK(tablet_manager_->GenerateFullTabletReport(&report));
+  ASSERT_FALSE(report.is_incremental());
+  ASSERT_EQ(2, report.updated_tablets().size());
+  ASSERT_EQ(6, report.sequence_number());
 }
 
 } // namespace tserver

@@ -16,6 +16,10 @@ namespace kudu {
 class FsManager;
 class Schema;
 
+namespace master {
+class TabletReportPB;
+} // namespace master
+
 namespace metadata {
 class TabletMasterBlockPB;
 class TabletMetadata;
@@ -62,6 +66,26 @@ class TSTabletManager {
   bool LookupTablet(const std::string& tablet_id,
                     std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
 
+  // Generate an incremental tablet report.
+  //
+  // This will report any tablets which have changed since the last acknowleged
+  // tablet report. Once the report is successfully transferred, call
+  // AcknowledgeTabletReport() to clear the incremental state. Otherwise, the
+  // next tablet report will continue to include the same tablets until one
+  // is acknowleged.
+  //
+  // This is thread-safe to call along with tablet modification, but not safe
+  // to call from multiple threads at the same time.
+  Status GenerateTabletReport(master::TabletReportPB* report);
+
+  // Mark that the master successfully received and processed the given
+  // tablet report. This uses the report sequence number to "un-dirty" any
+  // tablets which have not changed since the acknowledged report.
+  Status AcknowledgeTabletReport(const master::TabletReportPB& report);
+
+  // Generate a full tablet report and reset any incremental state tracking.
+  Status GenerateFullTabletReport(master::TabletReportPB* report);
+
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -82,15 +106,35 @@ class TSTabletManager {
   // Add the tablet to the tablet map.
   void RegisterTablet(const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
 
+  // Mark that the given tablet ID is dirty and needs to be included in the next
+  // tablet report. This can be used for tablets which are still live as well as
+  // those which were removed.
+  //
+  // NOTE: requires that the caller holds the exclusive lock.
+  void MarkDirtyUnlocked(const std::string& tablet_id);
+
   FsManager* fs_manager_;
 
   typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<tablet::TabletPeer> > TabletMap;
 
-  // Lock protecting tablet_map_
+  // Lock protecting tablet_map_ and dirty_tablets_
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
+
+  // When a tablet is added/removed/added locally and needs to be
+  // reported to the master, an entry is added to this map. Each
+  // tablet report is assigned a sequence number, so that subsequent
+  // tablet reports only need to re-report those tablets which have
+  // changed since the last report. Each tablet tracks the sequence
+  // number at which it became dirty.
+  struct TabletReportState {
+    uint32_t change_seq_;
+  };
+  typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
+  DirtyMap dirty_tablets_;
+  int32_t next_report_seq_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

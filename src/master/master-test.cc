@@ -118,6 +118,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     req.mutable_common()->CopyFrom(common);
     TabletReportPB* tr = req.mutable_tablet_report();
     tr->set_is_incremental(false);
+    tr->set_sequence_number(0);
     ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
     ASSERT_FALSE(resp.needs_reregister());
