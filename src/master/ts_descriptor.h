@@ -40,7 +40,7 @@ class TSDescriptor {
                   const TSRegistrationPB& registration);
 
   const std::string &permanent_uuid() const { return permanent_uuid_; }
-  int32_t latest_seqno() const;
+  int64_t latest_seqno() const;
 
   bool has_tablet_report() const;
   void set_has_tablet_report(bool has_report);
@@ -56,7 +56,7 @@ class TSDescriptor {
   mutable simple_spinlock lock_;
 
   const std::string permanent_uuid_;
-  int32_t latest_seqno_;
+  int64_t latest_seqno_;
 
   // The last time a heartbeat was received for this node.
   MonoTime last_heartbeat_;

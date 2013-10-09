@@ -143,9 +143,7 @@ Status Heartbeater::Thread::ConnectToMaster() {
 }
 
 void Heartbeater::Thread::SetupCommonField(master::TSToMasterCommonPB* common) {
-  // TODO: this will get pulled from the server_ instance later.
-  common->mutable_ts_instance()->set_permanent_uuid("perm ID TODO");
-  common->mutable_ts_instance()->set_instance_seqno(1);
+  common->mutable_ts_instance()->CopyFrom(server_->instance_pb());
 }
 
 static void AddHostPortPBs(const vector<Sockaddr>& addrs,

@@ -5,10 +5,12 @@
 #include <gflags/gflags.h>
 #include <vector>
 
+#include "common/wire_protocol.pb.h"
 #include "rpc/messenger.h"
 #include "server/default-path-handlers.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
+#include "util/env.h"
 #include "util/net/sockaddr.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
@@ -43,7 +45,22 @@ Sockaddr ServerBase::first_http_address() const {
   return addrs[0];
 }
 
+const NodeInstancePB& ServerBase::instance_pb() const {
+  return *DCHECK_NOTNULL(instance_pb_.get());
+}
+
+Status ServerBase::GenerateInstanceID() {
+  // TODO: this should be something stored on local disks,
+  // with a sequence number instead of the system time.
+  instance_pb_.reset(new NodeInstancePB);
+  instance_pb_->set_permanent_uuid("TODO_perm_uuid");
+  instance_pb_->set_instance_seqno(Env::Default()->NowMicros());
+  return Status::OK();
+}
+
 Status ServerBase::Init() {
+  RETURN_NOT_OK(GenerateInstanceID());
+
   // Create the Messenger.
   rpc::MessengerBuilder builder("TODO: add a ToString for ServerBase");
 

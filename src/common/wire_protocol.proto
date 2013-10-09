@@ -54,7 +54,7 @@ message NodeInstancePB {
   //
   // On a freshly initialized server, the first sequence number
   // should be 0.
-  required int32 instance_seqno = 2;
+  required int64 instance_seqno = 2;
 }
 
 message ColumnBlockPB {

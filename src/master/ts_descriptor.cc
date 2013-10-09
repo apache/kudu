@@ -61,7 +61,7 @@ MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
   return now.GetDeltaSince(last_heartbeat_);
 }
 
-int32_t TSDescriptor::latest_seqno() const {
+int64_t TSDescriptor::latest_seqno() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   return latest_seqno_;
 }
