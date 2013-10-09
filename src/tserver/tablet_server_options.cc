@@ -15,7 +15,7 @@ namespace tserver {
 DEFINE_string(tablet_server_base_dir, "/tmp/demo-tablets",
               "Base directory for single-tablet demo server");
 
-DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7150",
+DEFINE_string(tablet_server_rpc_bind_addresses, "0.0.0.0:7050",
              "Comma-separated list of addresses for the Tablet Server"
               " to bind to for RPC connections");
 DEFINE_int32(tablet_server_web_port, TabletServer::kDefaultWebPort,
@@ -24,7 +24,7 @@ DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
 DEFINE_int32(tablet_server_num_service_threads, 10,
              "Number of RPC worker threads to run");
-DEFINE_string(tablet_server_master_addr, "127.0.0.1:7151",
+DEFINE_string(tablet_server_master_addr, "127.0.0.1:7051",
               "Address of the master which the tablet server should connect to. "
               "The master does not read this flag -- configure the master "
               "separately using 'master_server_rpc_bind_addresses'.");

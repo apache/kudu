@@ -13,7 +13,7 @@ namespace master {
 DEFINE_string(master_base_dir, "/tmp/demo-tablets",
               "Base directory for single-tablet demo server");
 
-DEFINE_string(master_rpc_bind_addresses, "0.0.0.0:7150",
+DEFINE_string(master_rpc_bind_addresses, "0.0.0.0:7051",
              "Comma-separated list of addresses for the Tablet Server"
               " to bind to for RPC connections");
 DEFINE_int32(master_web_port, Master::kDefaultWebPort,
