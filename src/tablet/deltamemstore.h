@@ -64,6 +64,8 @@ class DeltaMemStore : public DeltaStore,
 
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
+  Status AlterSchema(const Schema& schema);
+
   const Schema &schema() const {
     return schema_;
   }
@@ -84,7 +86,7 @@ class DeltaMemStore : public DeltaStore,
   }
 
   const int64_t id_;
-  const Schema schema_;
+  Schema schema_;
 
   // Concurrent B-Tree storing <key index> -> RowChangeList
   DMSTree tree_;

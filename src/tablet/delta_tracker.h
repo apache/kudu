@@ -86,6 +86,11 @@ class DeltaTracker {
   // all indexes starting with "start_idx" will be compacted.
   Status CompactStores(int start_idx, int end_idx);
 
+  // Alter DeltaMemStore Schema
+  // If the schema is changed and there are any unflushed deltas
+  // the current DMS is flushed.
+  Status AlterSchema(const Schema& schema);
+
   // Return the number of rows encompassed by this DeltaTracker. Note that
   // this is _not_ the number of updated rows, but rather the number of rows
   // in the associated CFileSet base data. All updates must have a rowid
@@ -131,7 +136,7 @@ class DeltaTracker {
                              gscoped_ptr<DeltaCompactionInput> *out);
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
-  const Schema schema_;
+  Schema schema_;
 
   // The number of rows in the DiskRowSet that this tracker is associated with.
   // This is just used for assertions to make sure that we don't update a row

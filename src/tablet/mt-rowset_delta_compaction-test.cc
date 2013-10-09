@@ -5,6 +5,7 @@
 #include <boost/thread/thread.hpp>
 #include <tr1/unordered_map>
 
+#include "gutil/stringprintf.h"
 #include "gutil/walltime.h"
 #include "util/thread_util.h"
 #include "tablet/diskrowset-test-base.h"
@@ -16,6 +17,7 @@ enum {
 };
 
 DEFINE_int32(num_update_threads, 1, "Number of updater threads");
+DEFINE_int32(num_alter_schema_threads, 0, "Number of AlterSchema threads");
 DEFINE_int32(num_flush_threads, kDefaultNumFlushThreads, "Number of flusher threads");
 DEFINE_int32(num_compaction_threads, kDefaultNumCompactionThreads, "Number of compaction threads");
 DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread, "Minimum number of seconds each thread should work");
@@ -63,6 +65,22 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     }
   }
 
+  void RowSetAlterSchemaThread(DiskRowSet *rs, int col_prefix) {
+    std::vector<ColumnSchema> columns(schema_.columns());
+    uint32_t default_value = 10 * (1 + col_prefix);
+
+    size_t count = 0;
+    WallTime start_time = WallTime_Now();
+    while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
+      columns.insert(columns.begin() + schema_.num_key_columns(),
+                     ColumnSchema(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
+                                  false, &default_value, &default_value));
+      ASSERT_STATUS_OK(rs->AlterSchema(Schema(columns, schema_.num_key_columns())));
+      boost::this_thread::sleep(boost::posix_time::milliseconds(200));
+      count++;
+    }
+  }
+
   void ReadVerify(DiskRowSet *rs) {
     Arena arena(1024, 1024*1024);
     RowBlock dst(schema_, 1000, &arena);
@@ -100,6 +118,11 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
           &TestMultiThreadedRowSetDeltaCompaction::RowSetDeltaCompactionThread, this,
           rs));
     }
+    for (int i = 0; i < FLAGS_num_alter_schema_threads; i++) {
+      alter_schema_threads_.push_back(new boost::thread(
+          &TestMultiThreadedRowSetDeltaCompaction::RowSetAlterSchemaThread, this,
+          rs, i));
+    }
   }
 
   void JoinThreads() {
@@ -115,6 +138,10 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
       ASSERT_STATUS_OK(ThreadJoiner(&compaction_threads_[i],
                                     StringPrintf("delta compaction thread %d", i)).Join());
     }
+    for (int i = 0; i < alter_schema_threads_.size(); i++) {
+      ASSERT_STATUS_OK(ThreadJoiner(&alter_schema_threads_[i],
+                                    StringPrintf("alter schema thread %d", i)).Join());
+    }
   }
 
   void WriteTestRowSetWithZeros() {
@@ -122,11 +149,21 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   }
 
   void UpdateRowSet(DiskRowSet *rs, uint32_t value) {
-    faststring update_buf;
     for (uint32_t idx = 0; idx < n_rows_; idx++) {
       MutationResultPB result;
       ASSERT_STATUS_OK_FAST(UpdateRow(rs, idx, value, &result));
     }
+  }
+
+  void TestUpdateAndVerify() {
+    WriteTestRowSetWithZeros();
+    shared_ptr<DiskRowSet> rs;
+    ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+
+    StartThreads(rs.get());
+    ASSERT_NO_FATAL_FAILURE(JoinThreads());
+
+    ASSERT_NO_FATAL_FAILURE(ReadVerify(rs.get()));
   }
 
  protected:
@@ -135,29 +172,39 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   ptr_vector<boost::thread> update_threads_;
   ptr_vector<boost::thread> flush_threads_;
   ptr_vector<boost::thread> compaction_threads_;
+  ptr_vector<boost::thread> alter_schema_threads_;
 };
+
+static void SetupFlagsForSlowTests() {
+  if (kDefaultNumSecondsPerThread == FLAGS_num_seconds_per_thread) {
+    FLAGS_num_seconds_per_thread = 40;
+  }
+  if (kDefaultNumFlushThreads == FLAGS_num_flush_threads) {
+    FLAGS_num_flush_threads = 8;
+  }
+  if (kDefaultNumCompactionThreads == FLAGS_num_compaction_threads) {
+    FLAGS_num_compaction_threads = 8;
+  }
+}
 
 TEST_F(TestMultiThreadedRowSetDeltaCompaction, TestMTUpdateAndCompact) {
   if (AllowSlowTests()) {
-    if (kDefaultNumSecondsPerThread == FLAGS_num_seconds_per_thread) {
-      FLAGS_num_seconds_per_thread = 40;
-    }
-    if (kDefaultNumFlushThreads == FLAGS_num_flush_threads) {
-      FLAGS_num_flush_threads = 8;
-    }
-    if (kDefaultNumCompactionThreads == FLAGS_num_compaction_threads) {
-      FLAGS_num_compaction_threads = 8;
-    }
+    SetupFlagsForSlowTests();
   }
 
-  WriteTestRowSetWithZeros();
-  shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  TestUpdateAndVerify();
+}
 
-  StartThreads(rs.get());
-  ASSERT_NO_FATAL_FAILURE(JoinThreads());
+TEST_F(TestMultiThreadedRowSetDeltaCompaction, TestMTAlterSchemaAndUpdates) {
+  if (AllowSlowTests()) {
+    SetupFlagsForSlowTests();
+  }
 
-  ASSERT_NO_FATAL_FAILURE(ReadVerify(rs.get()));
+  if (FLAGS_num_alter_schema_threads == 0) {
+    FLAGS_num_alter_schema_threads = 2;
+  }
+
+  TestUpdateAndVerify();
 }
 
 } // namespace tablet

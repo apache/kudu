@@ -213,7 +213,7 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
     target_stores->push_back(delta_store);
     target_ids->push_back(delta_store->id());
   }
-  out->reset(DeltaCompactionInput::Merge(inputs));
+  out->reset(DeltaCompactionInput::Merge(schema_, inputs));
   return Status::OK();
 }
 
@@ -300,7 +300,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   gscoped_ptr<DeltaCompactionInput> inputs_merge;
   RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, compacted_stores, compacted_ids, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
-  DeltaFileWriter dfw(schema_, data_writer);
+  DeltaFileWriter dfw(inputs_merge->schema(), data_writer);
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(FlushDeltaCompactionInput(inputs_merge.get(), &dfw));
   RETURN_NOT_OK(dfw.Finish());
@@ -381,7 +381,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
     return s;
   }
 
-  DeltaFileWriter dfw(schema_, data_writer);
+  DeltaFileWriter dfw(dms.schema(), data_writer);
   s = dfw.Start();
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open delta output block " << block_id.ToString() << ": "
@@ -391,6 +391,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
   RETURN_NOT_OK(dms.FlushToFile(&dfw));
   RETURN_NOT_OK(dfw.Finish());
   LOG(INFO) << "Flushed delta block: " << block_id.ToString();
+  VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms.schema().ToString();
 
   // Now re-open for read
   size_t data_size = 0;
@@ -425,9 +426,12 @@ Status DeltaTracker::Flush() {
     count = dms_->Count();
     if (count == 0) {
       // No need to flush if there are no deltas.
+      // Ensure that the DeltaMemStore is using the latest schema.
+      RETURN_NOT_OK(dms_->AlterSchema(schema_));
       return Status::OK();
     }
 
+    // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
     dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_));
 
@@ -463,6 +467,20 @@ Status DeltaTracker::Flush() {
 
   // TODO: wherever we write stuff, we should write to a tmp path
   // and rename to final path!
+}
+
+Status DeltaTracker::AlterSchema(const Schema& schema) {
+  bool require_update;
+  {
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    if ((require_update = !schema_.Equals(schema))) {
+      schema_ = schema;
+    }
+  }
+  if (!require_update) {
+    return Status::OK();
+  }
+  return Flush();
 }
 
 ////////////////////////////////////////////////////////////

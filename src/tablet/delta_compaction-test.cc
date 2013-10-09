@@ -100,7 +100,7 @@ class TestDeltaCompaction : public KuduTest {
       inputs.push_back(shared_ptr<DeltaCompactionInput>(input.release()));
       min_txid += 2;
     }
-    merged->reset(DeltaCompactionInput::Merge(inputs));
+    merged->reset(DeltaCompactionInput::Merge(schema_, inputs));
     return Status::OK();
   }
 
@@ -232,16 +232,16 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   }
 
   // Merge
-  gscoped_ptr<DeltaCompactionInput> merged(DeltaCompactionInput::Merge(inputs));
+  gscoped_ptr<DeltaCompactionInput> merged(DeltaCompactionInput::Merge(schemas.back(), inputs));
   string path = GetDeltaFilePath(deltafile_idx);
 
   gscoped_ptr<DeltaFileWriter> dfw;
-  ASSERT_STATUS_OK(GetDeltaFileWriter(path, schemas.back(), &dfw));
+  ASSERT_STATUS_OK(GetDeltaFileWriter(path, merged->schema(), &dfw));
   ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
 
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, schemas.back(), &dci));
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, merged->schema(), &dci));
 
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schemas.back()));

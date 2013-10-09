@@ -54,6 +54,8 @@ class DeltaFileWriter {
   // of (key, txid).
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
+  const Schema& schema() const { return schema_; }
+
  private:
   int64_t id_;
   const Schema schema_;

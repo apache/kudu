@@ -122,6 +122,14 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   return Status::OK();
 }
 
+Status DeltaMemStore::AlterSchema(const Schema& schema) {
+  if (Count() != 0) {
+    return Status::NotSupported("The DeltaMemStore must be empty to alter the schema");
+  }
+
+  schema_ = schema;
+  return Status::OK();
+}
 
 void DeltaMemStore::DebugPrint() const {
   tree_.DebugPrint();

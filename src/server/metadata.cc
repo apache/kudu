@@ -166,31 +166,28 @@ Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
-                                      const Schema& new_schema,
                                       shared_ptr<TabletSuperBlockPB> *super_block) {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, new_schema, last_durable_mrs_id_, super_block);
+  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id_, super_block);
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
-                                      const Schema& new_schema,
                                       int64_t last_durable_mrs_id,
                                       shared_ptr<TabletSuperBlockPB> *super_block) {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(to_remove, to_add, new_schema, last_durable_mrs_id, super_block);
+  return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id, super_block);
 }
 
 Status TabletMetadata::Flush() {
   boost::lock_guard<LockType> l(lock_);
-  return UpdateAndFlushUnlocked(RowSetMetadataIds(), RowSetMetadataVector(), schema_,
+  return UpdateAndFlushUnlocked(RowSetMetadataIds(), RowSetMetadataVector(),
                                 last_durable_mrs_id_, NULL);
 }
 
 Status TabletMetadata::UpdateAndFlushUnlocked(
     const RowSetMetadataIds& to_remove,
     const RowSetMetadataVector& to_add,
-    const Schema& new_schema,
     int64_t last_durable_mrs_id,
     shared_ptr<TabletSuperBlockPB> *super_block) {
   CHECK_NE(state_, kNotLoadedYet);
@@ -209,8 +206,6 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, to_add) {
     new_rowsets.push_back(meta);
   }
-
-  schema_ = new_schema;
 
   shared_ptr<TabletSuperBlockPB> pb(new TabletSuperBlockPB());
   RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, new_rowsets));
@@ -278,6 +273,11 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
     }
   }
   return NULL;
+}
+
+void TabletMetadata::SetSchema(const Schema& schema) {
+  boost::lock_guard<LockType> l(lock_);
+  schema_ = schema;
 }
 
 Schema TabletMetadata::schema() const {

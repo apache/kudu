@@ -57,6 +57,12 @@ MemRowSet::MemRowSet(int64_t id,
     has_logged_throttling_(0) {
 }
 
+Status MemRowSet::AlterSchema(const Schema& schema) {
+  // The MemRowSet is flushed and re-created with the new Schema.
+  // See Tablet::AlterSchema()
+  return Status::NotSupported("AlterSchema not supported by MemRowSet");
+}
+
 Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
   RETURN_NOT_OK(iter->Init(NULL));

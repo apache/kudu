@@ -70,6 +70,10 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
   }
+  virtual Status AlterSchema(const Schema& schema) {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
   virtual const Schema &schema() const {
     LOG(FATAL) << "Unimplemented";
   }

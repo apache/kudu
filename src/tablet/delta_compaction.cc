@@ -46,7 +46,9 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
   }
 
   virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+    // Reset the arena used to project the deltas to the compaction schema.
     arena_.Reset();
+
     block->resize(kRowsPerBlock);
 
     for (int i = 0; i < kRowsPerBlock && iter_->IsValid(); i++) {
@@ -59,6 +61,7 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
         RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
                                               RowChangeList(input_cell.cell), &delta_buf_));
         CHECK(arena_.RelocateSlice(Slice(delta_buf_.data(), delta_buf_.size()), &input_cell.cell));
+        DCHECK_GE(delta_buf_.size(), 0);
       }
 
       iter_->Next();
@@ -68,6 +71,10 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 
   virtual Status FinishBlock() {
     return Status::OK();
+  }
+
+  const Schema& schema() const {
+    return delta_projector_.projection();
   }
 
  private:
@@ -120,11 +127,14 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
   }
 
   virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+    // Reset the arena used by the ColumnBlock scan and used to project
+    // the deltas to the compaction schema.
+    arena_.Reset();
+
     size_t nrows = kRowsPerBlock;
     RETURN_NOT_OK(iter_->PrepareBatch(&nrows));
     RETURN_NOT_OK(iter_->Scan(&block_));
 
-    faststring buf;
     block->resize(nrows);
     for (int i = 0; i < nrows; i++) {
       DeltaCompactionInputCell &input_cell = (*block)[i];
@@ -134,8 +144,9 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
 
       if (!delta_projector_.is_identity()) {
         RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
-                                              RowChangeList(input_cell.cell), &buf));
-        CHECK(arena_.RelocateSlice(Slice(buf.data(), buf.size()), &input_cell.cell));
+                                              RowChangeList(input_cell.cell), &delta_buf_));
+        CHECK(arena_.RelocateSlice(Slice(delta_buf_.data(), delta_buf_.size()), &input_cell.cell));
+        DCHECK_GE(delta_buf_.size(), 0);
       }
     }
     block_prepared_ = true;
@@ -150,6 +161,10 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return Status::OK();
   }
 
+  const Schema& schema() const {
+    return delta_projector_.projection();
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaFileCompactionInput);
 
@@ -158,6 +173,9 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
   Arena arena_;
   ColumnBlock block_;
   DeltaProjector delta_projector_;
+
+  // Temporary buffer used for RowChangeList projection.
+  faststring delta_buf_;
 
   bool initted_;
 
@@ -224,9 +242,11 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
   };
 
  public:
-  explicit MergeDeltaCompactionInput(
-      const vector<shared_ptr<DeltaCompactionInput> > &inputs) {
+  explicit MergeDeltaCompactionInput(const Schema& schema,
+        const vector<shared_ptr<DeltaCompactionInput> > &inputs)
+      : schema_(schema) {
     BOOST_FOREACH(const shared_ptr<DeltaCompactionInput> &input, inputs) {
+      DCHECK_SCHEMA_EQ(schema_, input->schema());
       gscoped_ptr<MergeState> state(new MergeState);
       state->input = input;
       states_.push_back(state.release());
@@ -297,6 +317,10 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 
   virtual Status FinishBlock() {
     return ProcessEmptyInputs();
+  }
+
+  const Schema& schema() const {
+    return schema_;
   }
 
  private:
@@ -382,6 +406,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     }
   }
 
+  Schema schema_;
   vector<MergeState *> states_;
 };
 
@@ -404,8 +429,9 @@ Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
   return Status::OK();
 }
 
-DeltaCompactionInput *DeltaCompactionInput::Merge(const vector<shared_ptr<DeltaCompactionInput> > &inputs) {
-  return new MergeDeltaCompactionInput(inputs);
+DeltaCompactionInput *DeltaCompactionInput::Merge(const Schema& projection,
+                                                  const vector<shared_ptr<DeltaCompactionInput> > &inputs) {
+  return new MergeDeltaCompactionInput(projection, inputs);
 }
 
 static string FormatDebugDeltaCell(const Schema &schema, const DeltaCompactionInputCell &cell) {
@@ -433,12 +459,12 @@ Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string>
 }
 
 Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *out) {
+  DCHECK_SCHEMA_EQ(out->schema(), input->schema());
   RETURN_NOT_OK(input->Init());
   vector<DeltaCompactionInputCell> cells;
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&cells));
-
     BOOST_FOREACH(const DeltaCompactionInputCell &cell, cells) {
       out->AppendDelta(cell.key, RowChangeList(cell.cell));
     }

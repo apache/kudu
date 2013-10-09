@@ -32,7 +32,8 @@ class DeltaCompactionInput {
   // that will combine the deltas in the correct order -- first by rows,
   // then by the transaction ids -- such that they can be sequentially
   // appended to an on-disk delta-file.
-  static DeltaCompactionInput *Merge(const vector<shared_ptr<DeltaCompactionInput> > &inputs);
+  static DeltaCompactionInput *Merge(const Schema& projection,
+                                     const vector<shared_ptr<DeltaCompactionInput> > &inputs);
 
   virtual Status Init() = 0;
 
@@ -44,6 +45,8 @@ class DeltaCompactionInput {
   virtual Status FinishBlock() = 0;
 
   virtual bool HasMoreBlocks() = 0;
+
+  virtual const Schema& schema() const = 0;
 
   virtual ~DeltaCompactionInput() {}
 };

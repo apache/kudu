@@ -30,12 +30,11 @@ static void SetupError(TabletServerErrorPB* error,
 static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
                              WriteResponsePB* resp,
                              rpc::RpcContext* context,
-                             const Schema &tablet_schema,
+                             const Schema& tablet_key_projection,
                              bool is_inserts_block,
                              Schema* client_schema,
                              vector<const uint8_t*>* row_block) {
-
-  // Check that the schema sent by the user matches the schema of the tablet.
+  // Extract the schema of the row block
   Status s = ColumnPBsToSchema(block_pb->schema(), client_schema);
   if (!s.ok()) {
     SetupError(resp->mutable_error(), s,
@@ -44,11 +43,11 @@ static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
     return s;
   }
 
-  if (!client_schema->Equals(tablet_schema)) {
-
-    s = Status::InvalidArgument("Mismatched schema, expected",
-                                tablet_schema.ToString());
-    // TODO: support schema evolution.
+  // Check that the schema sent by the user matches the key projection of the tablet.
+  Schema client_key_projection = client_schema->CreateKeyProjection();
+  if (!client_key_projection.Equals(tablet_key_projection)) {
+    s = Status::InvalidArgument("Mismatched key projection schema, expected",
+                                tablet_key_projection.ToString());
     SetupError(resp->mutable_error(),
                s,
                TabletServerErrorPB::MISMATCHED_SCHEMA,
@@ -56,12 +55,11 @@ static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
     return s;
   }
 
+  // Extract the row block
   if (is_inserts_block) {
     s = ExtractRowsFromRowBlockPB(*client_schema, block_pb, row_block);
   } else {
-    s = ExtractRowsFromRowBlockPB(client_schema->CreateKeyProjection(),
-                                  block_pb,
-                                  row_block);
+    s = ExtractRowsFromRowBlockPB(client_key_projection, block_pb, row_block);
   }
 
   if (!s.ok()) {
@@ -99,7 +97,7 @@ Status PrepareTask::Run() {
     s = DecodeRowBlock(mutable_request->mutable_to_insert_rows(),
                        tx_ctx_->response(),
                        tx_ctx_->rpc_context(),
-                       tablet->schema(),
+                       tablet->key_schema(),
                        true,
                        inserts_client_schema.get(),
                        &to_insert);
@@ -114,7 +112,7 @@ Status PrepareTask::Run() {
     s = DecodeRowBlock(mutable_request->mutable_to_mutate_row_keys(),
                        tx_ctx_->response(),
                        tx_ctx_->rpc_context(),
-                       tablet->schema(),
+                       tablet->key_schema(),
                        false,
                        mutates_client_schema.get(),
                        &to_mutate);

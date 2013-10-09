@@ -243,6 +243,8 @@ class MemRowSet : public RowSet,
     return shared_ptr<metadata::RowSetMetadata>(reinterpret_cast<metadata::RowSetMetadata *>(NULL));
   }
 
+  Status AlterSchema(const Schema& schema);
+
   // Dump the contents of the memrowset to the given vector.
   // If 'lines' is NULL, dumps to LOG(INFO).
   //

@@ -78,6 +78,8 @@ class TabletMetadata {
     return end_key_;
   }
 
+  void SetSchema(const Schema& schema);
+
   // Return the current schema of the metadata. Note that this returns
   // a copy so should not be used in a tight loop.
   Schema schema() const;
@@ -86,7 +88,6 @@ class TabletMetadata {
 
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
-                        const Schema& new_schema,
                         shared_ptr<TabletSuperBlockPB> *super_block);
 
   // Updates the metadata adding 'to_add' rowsets, removing 'to_remove' rowsets
@@ -94,7 +95,6 @@ class TabletMetadata {
   // will be set to the newly created TabletSuperBlockPB.
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
-                        const Schema& new_schema,
                         int64_t last_durable_mrs_id,
                         shared_ptr<TabletSuperBlockPB> *super_block);
 
@@ -137,7 +137,6 @@ class TabletMetadata {
 
   Status UpdateAndFlushUnlocked(const RowSetMetadataIds& to_remove,
                                 const RowSetMetadataVector& to_add,
-                                const Schema& new_schema,
                                 int64_t last_durable_mrs_id,
                                 shared_ptr<TabletSuperBlockPB> *super_block);
 

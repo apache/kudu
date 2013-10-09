@@ -425,6 +425,10 @@ Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
 }
 
 Status Tablet::Flush() {
+  return Flush(schema());
+}
+
+Status Tablet::Flush(const Schema& schema) {
   CHECK(open_);
 
   RowSetsInCompaction input;
@@ -440,7 +444,7 @@ Status Tablet::Flush() {
   int64_t mrs_being_flushed = kNoMrsFlushed;
 
   LOG(INFO) << "Flush: entering stage 1 (freezing old memrowset from inserts)";
-  shared_ptr<MemRowSet> old_ms(new MemRowSet(next_mrs_id_, schema_));
+  shared_ptr<MemRowSet> old_ms;
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
@@ -451,7 +455,8 @@ Status Tablet::Flush() {
 
     mrs_being_flushed = memrowset_->mrs_id();
     // swap in a new memrowset
-    old_ms.swap(memrowset_);
+    old_ms = memrowset_;
+    memrowset_.reset(new MemRowSet(next_mrs_id_, schema));
     // increment the next mrs_id
     next_mrs_id_++;
 
@@ -476,7 +481,7 @@ Status Tablet::Flush() {
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
-  RETURN_NOT_OK(DoCompactionOrFlush(input, mrs_being_flushed));
+  RETURN_NOT_OK(DoCompactionOrFlush(schema, input, mrs_being_flushed));
 
   // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
@@ -484,6 +489,44 @@ Status Tablet::Flush() {
     << "after flush was triggered! Aborting to prevent dataloss.";
 
   return Status::OK();
+}
+
+// TODO: Removing and re-adding a column is not supported yet. (Add a check?)
+Status Tablet::AlterSchema(const Schema& schema) {
+  if (!key_schema_.KeyEquals(schema)) {
+    return Status::InvalidArgument("Schema keys cannot be altered",
+                                   schema.CreateKeyProjection().ToString());
+  }
+
+  {
+    boost::lock_guard<percpu_rwlock> schema_lock(schema_lock_);
+
+    // If the current schema and the new one are equal, there is nothing to do.
+    if (schema_.Equals(schema)) {
+      return Status::OK();
+    }
+
+    LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " << schema.ToString();
+    schema_ = schema;
+    metadata_->SetSchema(schema);
+
+    // Grab a local reference to the current RowSetTree. This is to avoid
+    // holding the component_lock_ for too long. See the comment on component_lock_
+    // in tablet.h for details on why that would be bad.
+    shared_ptr<RowSetTree> rowsets_copy;
+    {
+      boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+      rowsets_copy = rowsets_;
+    }
+
+    // Update the DiskRowSet/DeltaTracker
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
+      RETURN_NOT_OK(rs->AlterSchema(schema));
+    }
+  }
+
+  // Update the MemStore
+  return Flush(schema);
 }
 
 void Tablet::SetCompactionHooksForTests(
@@ -574,17 +617,16 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
     to_remove_meta.insert(rowset->metadata()->id());
   }
 
-  // TODO: Do we need the lock to prevent this from conflicting with AlterSchema?
-  // Matteo, can you take a look?
-
   // If we're flushing an mrs update the latest durable one in the metadata
   if (mrs_being_flushed != kNoMrsFlushed) {
-    return metadata_->UpdateAndFlush(to_remove_meta, to_add, schema_, mrs_being_flushed, NULL);
+    return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed, NULL);
   }
-  return metadata_->UpdateAndFlush(to_remove_meta, to_add, schema_, NULL);
+  return metadata_->UpdateAndFlush(to_remove_meta, to_add, NULL);
 }
 
-Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
+Status Tablet::DoCompactionOrFlush(const Schema& schema,
+                                   const RowSetsInCompaction &input,
+                                   int64_t mrs_being_flushed) {
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
 
   MvccSnapshot flush_snap(mvcc_);
@@ -594,9 +636,9 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostTakeMvccSnapshot());
 
   shared_ptr<CompactionInput> merge;
-  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_, &merge));
+  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema, &merge));
 
-  RollingDiskRowSetWriter drsw(metadata_.get(), schema_, bloom_sizing(),
+  RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
                                compaction_policy_->target_rowset_size());
   RETURN_NOT_OK(drsw.Open());
   RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
@@ -648,6 +690,14 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   MvccSnapshot snap2;
   AtomicSwapRowSets(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
 
+  {
+    // Ensure that the latest schema is set to the new RowSets
+    boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_rowsets) {
+      RETURN_NOT_OK(rs->AlterSchema(schema_));
+    }
+  }
+
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingRowSet());
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
@@ -674,7 +724,10 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // 3) don't allow DMS to flush in an in-progress rowset.
   LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
-  RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
+  {
+    boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
+    RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
+  }
 
   // Updating rows in the compaction outputs needs to be tracked or else we
   // loose data on recovery. However because compactions run independently
@@ -740,7 +793,7 @@ Status Tablet::Compact(CompactFlags flags) {
 
   input.DumpToLog();
 
-  return DoCompactionOrFlush(input, kNoMrsFlushed);
+  return DoCompactionOrFlush(schema(), input, kNoMrsFlushed);
 }
 
 Status Tablet::DebugDump(vector<string> *lines) {
@@ -835,13 +888,18 @@ size_t Tablet::num_rowsets() const {
   return rowsets_->all_rowsets().size();
 }
 
+Schema Tablet::schema() const {
+  boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
+  return schema_;
+}
+
 Tablet::Iterator::Iterator(const Tablet *tablet,
                            const Schema &projection,
                            const MvccSnapshot &snap)
     : tablet_(tablet),
       projection_(projection),
       snap_(snap),
-      encoder_(tablet_->schema().CreateKeyProjection()) {
+      encoder_(tablet_->key_schema()) {
 }
 
 Status Tablet::Iterator::Init(ScanSpec *spec) {

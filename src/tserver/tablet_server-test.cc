@@ -185,10 +185,8 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.error().status());
     EXPECT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Mismatched schema, expected: Schema "
-                        "[key[type='uint32' NOT NULL],"
-                        " int_val[type='uint32' NOT NULL],"
-                        " string_val[type='string' NOT NULL]]");
+                        "Mismatched key projection schema, expected: Schema "
+                        "[key[type='uint32' NOT NULL]]");
     req.clear_to_insert_rows();
   }
 

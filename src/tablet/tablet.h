@@ -126,6 +126,12 @@ class Tablet {
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
   Status Flush();
+  Status Flush(const Schema& schema);
+
+  // Alter the schema of the tablet.
+  // This operation will trigger a flush on the current MemRowSet
+  // and on all the DeltaMemStores.
+  Status AlterSchema(const Schema& schema);
 
   // Flags to change the behavior of compaction.
   enum CompactFlag {
@@ -158,7 +164,13 @@ class Tablet {
   // has a very small number of rows.
   Status DebugDump(vector<string> *lines = NULL);
 
-  const Schema &schema() const { return schema_; }
+  // Return the current schema of the metadata. Note that this returns
+  // a copy so should not be used in a tight loop.
+  Schema schema() const;
+
+  // Returns a reference to the key projection of the tablet schema.
+  // The schema keys are immutable.
+  const Schema& key_schema() const { return key_schema_; }
 
   // Return the MVCC manager for this tablet.
   MvccManager* mvcc_manager() { return &mvcc_; }
@@ -204,7 +216,9 @@ class Tablet {
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
 
-  Status DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed);
+  Status DoCompactionOrFlush(const Schema& schema,
+                             const RowSetsInCompaction &input,
+                             int64_t mrs_being_flushed);
 
   Status FlushMetadata(const RowSetVector& to_remove,
                        const metadata::RowSetMetadataVector& to_add,
@@ -266,6 +280,15 @@ class Tablet {
   // this lock, you should also hold component_lock_ in read mode so that
   // no other thread could perform a swap underneath.
   mutable boost::mutex compact_select_lock_;
+
+  // Lock protecting the schema access
+  // Shared mode:
+  //  - DoCompactionOrFlush takes the lock to access the schema to ensure that
+  //    the newly added rowsets have the latest one.
+  //  - schema returns a copy of the current schema and takes the lock
+  // Exclusive mode:
+  //  - AlterSchema take this lock to prevent reading the half set schema
+  mutable percpu_rwlock schema_lock_;
 
   bool open_;
 

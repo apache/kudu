@@ -435,6 +435,10 @@ uint64_t DiskRowSet::EstimateOnDiskSize() const {
   return base_data_->EstimateOnDiskSize();
 }
 
+Status DiskRowSet::AlterSchema(const Schema& schema) {
+  return delta_tracker_->AlterSchema(schema);
+}
+
 Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
