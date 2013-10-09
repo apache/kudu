@@ -162,7 +162,7 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
   tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
 
   Status s = InsertUnlocked(tx_ctx, tx_ctx->rows()[0]);
-  tx_ctx->commit_mvcc_tx();
+  tx_ctx->commit();
   return s;
 }
 
@@ -289,7 +289,7 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
 
   Status s = MutateRowUnlocked(tx_ctx, tx_ctx->rows()[0]);
-  tx_ctx->commit_mvcc_tx();
+  tx_ctx->commit();
   return s;
 }
 

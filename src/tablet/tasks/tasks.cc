@@ -218,7 +218,7 @@ Status ApplyTask::Run() {
   }
 
   // Perform early lock release after we've applied all changes
-  tx_ctx_->release_locks();
+  tx_ctx_->release_row_locks();
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());

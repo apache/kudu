@@ -108,6 +108,8 @@ class TabletPeer {
   //
   Status Write(TransactionContext *tx_ctx);
 
+  consensus::Consensus* consensus() { return consensus_.get(); }
+
   Tablet* tablet() {
     return tablet_.get();
   }

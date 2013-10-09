@@ -199,8 +199,8 @@ void ApplyOnReplicateAndPrepareCB::HandleFailure() {
     error->set_code(TabletServerErrorPB::UNKNOWN_ERROR);
   }
 
-  // Release all locks (no effect if no locks were acquired).
-  tx_ctx_->release_locks();
+  // Release all row locks (no effect if no locks were acquired).
+  tx_ctx_->release_row_locks();
 
   // ConsensusContext will own this pointer and dispose of it when it is no longer
   // required.
@@ -218,7 +218,7 @@ CommitCallback::CommitCallback(TransactionContext* tx_ctx)
 void CommitCallback::OnSuccess() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
-  tx_ctx_->commit_mvcc_tx();
+  tx_ctx_->commit();
   if (PREDICT_TRUE(tx_ctx_->rpc_context() != NULL)) {
     tx_ctx_->rpc_context()->RespondSuccess();
   }

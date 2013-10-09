@@ -137,9 +137,10 @@ class TransactionContext {
   // this TransactionContext doesn't have a handle to MvccManager.
   void set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx);
 
-  // Commits the Mvcc transaction. After this method is called all the inserts
-  // and mutations will become visible to other transactions.
-  void commit_mvcc_tx();
+  // Commits the Mvcc transaction and releases the component lock. After
+  // this method is called all the inserts and mutations will become
+  // visible to other transactions.
+  void commit();
 
   // Adds a PreparedRowWrite to be managed by this transaction context, as
   // created in the prepare phase.
@@ -164,9 +165,8 @@ class TransactionContext {
     return component_lock_.get();
   }
 
-  // Releases all the locks acquired by this transaction. Order is important:
-  // the component lock is released first and then the row_locks.
-  void release_locks();
+  // Releases all the row locks acquired by this transaction.
+  void release_row_locks();
 
   // Sets the ConsensusContext for this transaction, if this transaction is
   // being executed through the consensus system.

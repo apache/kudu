@@ -73,18 +73,17 @@ void TransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc
   result_pb_.set_txid(mvcc_tx_->txid().v);
 }
 
-void TransactionContext::commit_mvcc_tx() {
+void TransactionContext::commit() {
   if (mvcc_tx_.get() != NULL) {
     // commit the transaction
     mvcc_tx_->Commit();
   }
   mvcc_tx_.reset();
-  release_locks();
+  component_lock_.reset();
+  release_row_locks();
 }
 
-void TransactionContext::release_locks() {
-  // free the component lock
-  component_lock_.reset();
+void TransactionContext::release_row_locks() {
   // free the row locks
   STLDeleteElements(&rows_);
 }
@@ -97,7 +96,7 @@ txid_t TransactionContext::mvcc_txid() {
 }
 
 void TransactionContext::Reset() {
-  commit_mvcc_tx();
+  commit();
   result_pb_.Clear();
   unsuccessful_ops_ = 0;
 }
