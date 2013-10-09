@@ -33,6 +33,9 @@ class LocalConsensus : public Consensus {
                 const std::tr1::shared_ptr<FutureCallback>& commit_callback,
                 gscoped_ptr<ConsensusContext>* context);
 
+  Status LocalCommit(CommitMsg* commit_msg,
+                     std::tr1::shared_ptr<kudu::Future>* commit_future);
+
   Status Commit(ConsensusContext* context, CommitMsg *commit);
 
   Status Shutdown();

@@ -82,5 +82,20 @@ Status LocalConsensus::Commit(ConsensusContext* context, CommitMsg *commit) {
   return Status::OK();
 }
 
+Status LocalConsensus::LocalCommit(CommitMsg* commit_msg,
+                                   std::tr1::shared_ptr<kudu::Future>* commit_future) {
+  // entry for the CommitMsg, note that while LocalConsensus may assign a
+  // 'consensus' id to the commit message, a distributed implementation may
+  // not as other replicas will have no knowledge of this update.
+  OpId* commit_id = commit_msg->mutable_id();
+  commit_id->set_term(0);
+  commit_id->set_index(Barrier_AtomicIncrement(&next_op_id_, 1) - 1);
+
+  // Initiate the commit task.
+  shared_ptr<Task> commit_task(new CommitTask(log_, commit_msg));
+  RETURN_NOT_OK(log_executor_->Submit(commit_task, commit_future));
+  return Status::OK();
+}
+
 } // end namespace consensus
 } // end namespace kudu

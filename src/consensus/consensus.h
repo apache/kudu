@@ -83,6 +83,17 @@ class Consensus {
       const std::tr1::shared_ptr<FutureCallback>& commit_callback,
       gscoped_ptr<ConsensusContext>* context) = 0;
 
+  // Appends a local commit to the state machine.
+  // This function is required as different nodes have independent physical
+  // layers and therefore need to sometimes issue "local" commit messages that
+  // change only the local state and not the coordinated state machine.
+  //
+  // A successful call will yield a Future which can be used to Wait() until
+  // the commit is done or to add callbacks. This is important as LocalCommit()
+  // does not take ownership of the passed 'commit_msg'.
+  virtual Status LocalCommit(CommitMsg* commit_msg,
+                             std::tr1::shared_ptr<kudu::Future>* commit_future) = 0;
+
   // Returns the number of participants that constitutes a majority for this
   // quorum, e.g. 1 for a quorum of 1 participant, 2 for a quorum of 2,3
   // participants, 3 for a quorum of 4,5 participants etc..

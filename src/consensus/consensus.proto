@@ -51,7 +51,8 @@ message NoOp {}
 enum OperationType {
   WRITE_OP = 0;
   WRITE_ABORT = 1;
-  NO_OP = 2;
+  MISSED_DELTA = 2;
+  NO_OP = 3;
 }
 
 // A Replicate message, sent to replicas by leader to indicate this operation must
@@ -72,7 +73,7 @@ message CommitMsg {
   required OpId id = 1;
   required OperationType op_type = 2;
   // the id of the message this commit pertains to
-  required OpId commited_op_id = 3;
+  optional OpId commited_op_id = 3;
   // The response to the write request, will contain the global status
   // (OK or otherwise) and the row errors, if any.
   optional tserver.WriteResponsePB response = 4;
