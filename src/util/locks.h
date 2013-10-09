@@ -119,6 +119,13 @@ class rw_spinlock {
     Release_Store(&state_, 0);
   }
 
+  // Return true if the lock is currently held for write by any thread.
+  // This state can change at any instant, so this is only really useful
+  // for debug-mode assertions.
+  bool is_write_locked() const {
+    return NoBarrier_Load(&state_) & kWriteFlag;
+  }
+
  private:
   static const uint32_t kNumReadersMask = 0x7fffffff;
   static const uint32_t kWriteFlag = 1 << 31;

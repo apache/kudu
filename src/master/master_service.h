@@ -33,10 +33,6 @@ class MasterServiceImpl : public MasterServiceIf {
  private:
   void SetMasterInstancePB(NodeInstancePB* pb) const;
 
-  Status ProcessTabletReport(const std::tr1::shared_ptr<TSDescriptor>& ts_desc,
-                             const TabletReportPB& report,
-                             rpc::RpcContext* rpc);
-
   Master* server_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterServiceImpl);

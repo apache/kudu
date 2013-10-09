@@ -18,6 +18,7 @@ SET(MASTER_SRCS
   master_options.cc
   master_service.cc
   mini_master.cc
+  m_tablet_manager.cc
   ts_descriptor.cc
   ts_manager.cc
 )

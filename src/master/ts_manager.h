@@ -24,6 +24,12 @@ class TSRegistrationPB;
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
 //
+// Note that TSDescriptors are never deleted, even if the TS crashes
+// and has not heartbeated in quite a while. This makes it simpler to
+// keep references to TSDescriptors elsewhere in the master without
+// fear of lifecycle problems. Dead servers are "dead, but not forgotten"
+// (they live on in the heart of the master).
+//
 // This class is thread-safe.
 class TSManager {
  public:

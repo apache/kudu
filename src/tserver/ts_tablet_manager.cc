@@ -221,7 +221,7 @@ void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   VLOG(2) << "Will report tablet " << tablet_id << " in report #" << next_report_seq_;
 }
 
-Status TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
+void TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
   boost::shared_lock<rw_spinlock> lock(lock_);
 
   int32_t acked_seq = report.sequence_number();
@@ -243,10 +243,9 @@ Status TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
       ++it;
     }
   }
-  return Status::OK();
 }
 
-Status TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
+void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
   // Generate an incremental report
   boost::shared_lock<rw_spinlock> lock(lock_);
   report->Clear();
@@ -265,10 +264,9 @@ Status TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
 
     ++it;
   }
-  return Status::OK();
 }
 
-Status TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
+void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
   boost::shared_lock<rw_spinlock> lock(lock_);
   report->Clear();
   report->set_is_incremental(false);
@@ -278,7 +276,6 @@ Status TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
     report->add_updated_tablets()->set_tablet_id(tablet_id);
   }
   dirty_tablets_.clear();
-  return Status::OK();
 }
 
 } // namespace tserver

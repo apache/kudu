@@ -74,6 +74,8 @@ Status MiniTabletServer::Start() {
 
 Status MiniTabletServer::Shutdown() {
   RETURN_NOT_OK(server_->Shutdown());
+  server_.reset();
+  started_ = false;
   return Status::OK();
 }
 
@@ -95,8 +97,7 @@ const Sockaddr MiniTabletServer::bound_http_addr() const {
 }
 
 FsManager* MiniTabletServer::fs_manager() {
-  CHECK(started_);
-  return fs_manager_.get();
+  return CHECK_NOTNULL(fs_manager_.get());
 }
 
 } // namespace tserver

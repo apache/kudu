@@ -25,6 +25,7 @@ class ServicePool;
 
 namespace master {
 
+class MTabletManager;
 class TSManager;
 
 class Master : public server::ServerBase {
@@ -43,6 +44,8 @@ class Master : public server::ServerBase {
 
   TSManager* ts_manager() { return ts_manager_.get(); }
 
+  MTabletManager* tablet_manager() { return tablet_manager_.get(); }
+
  private:
   friend class MasterTest;
 
@@ -51,6 +54,7 @@ class Master : public server::ServerBase {
   bool initted_;
 
   gscoped_ptr<TSManager> ts_manager_;
+  gscoped_ptr<MTabletManager> tablet_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

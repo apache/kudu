@@ -77,15 +77,15 @@ class TSTabletManager {
   //
   // This is thread-safe to call along with tablet modification, but not safe
   // to call from multiple threads at the same time.
-  Status GenerateTabletReport(master::TabletReportPB* report);
+  void GenerateTabletReport(master::TabletReportPB* report);
 
   // Mark that the master successfully received and processed the given
   // tablet report. This uses the report sequence number to "un-dirty" any
   // tablets which have not changed since the acknowledged report.
-  Status AcknowledgeTabletReport(const master::TabletReportPB& report);
+  void AcknowledgeTabletReport(const master::TabletReportPB& report);
 
   // Generate a full tablet report and reset any incremental state tracking.
-  Status GenerateFullTabletReport(master::TabletReportPB* report);
+  void GenerateFullTabletReport(master::TabletReportPB* report);
 
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);

@@ -12,6 +12,7 @@
 #include "rpc/service_pool.h"
 #include "server/rpc_server.h"
 #include "master/master_service.h"
+#include "master/m_tablet_manager.h"
 #include "master/ts_manager.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
@@ -26,7 +27,8 @@ namespace master {
 Master::Master(const MasterOptions& opts)
   : ServerBase(opts.rpc_opts, opts.webserver_opts),
     initted_(false),
-    ts_manager_(new TSManager()) {
+    ts_manager_(new TSManager()),
+    tablet_manager_(new MTabletManager()) {
 }
 
 Master::~Master() {

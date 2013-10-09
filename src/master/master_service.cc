@@ -6,6 +6,7 @@
 #include <tr1/memory>
 
 #include "master/master.h"
+#include "master/m_tablet_manager.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
 #include "rpc/rpc_context.h"
@@ -69,7 +70,8 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   ts_desc->UpdateHeartbeatTime();
 
   if (req->has_tablet_report()) {
-    s = ProcessTabletReport(ts_desc, req->tablet_report(), rpc);
+    s = server_->tablet_manager()->ProcessTabletReport(
+      ts_desc.get(), req->tablet_report(), rpc);
     if (!s.ok()) {
       rpc->RespondFailure(s.CloneAndPrepend("Failed to process tablet report"));
       return;
@@ -82,26 +84,6 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 
   rpc->RespondSuccess();
 }
-
-Status MasterServiceImpl::ProcessTabletReport(const shared_ptr<TSDescriptor>& ts_desc,
-                                              const TabletReportPB& report,
-                                              rpc::RpcContext* rpc) {
-  LOG(INFO) << "Received tablet report from " <<
-    rpc->requestor_string() << ": " << report.DebugString();
-  if (!ts_desc->has_tablet_report() && report.is_incremental()) {
-    string msg = "Received an incremental tablet report when a full one was needed";
-    LOG(WARNING) << "Invalid tablet report from " << rpc->requestor_string() << ": "
-                 << msg;
-    return Status::IllegalState(msg);
-  }
-
-  // TODO: actually do something with the tablets - pass them to whatever
-  // component manages the tablet locations map in the master.
-
-  ts_desc->set_has_tablet_report(true);
-  return Status::OK();
-}
-
 
 void MasterServiceImpl::SetMasterInstancePB(NodeInstancePB* pb) const {
   // TODO: the master should have some persistent storage where, upon

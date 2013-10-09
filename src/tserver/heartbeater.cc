@@ -14,6 +14,7 @@
 #include "server/webserver.h"
 #include "tserver/tablet_server.h"
 #include "tserver/tablet_server_options.h"
+#include "tserver/ts_tablet_manager.h"
 #include "util/countdown_latch.h"
 #include "util/monotime.h"
 #include "util/status.h"
@@ -216,13 +217,27 @@ Status Heartbeater::Thread::DoHeartbeat() {
                           "Unable to set up registration");
   }
 
+  if (last_hb_response_.needs_full_tablet_report()) {
+    LOG(INFO) << "Sending a full tablet report to master...";
+    server_->tablet_manager()->GenerateFullTabletReport(
+      req.mutable_tablet_report());
+  } else {
+    VLOG(1) << "Sending an incremental tablet report to master...";
+    server_->tablet_manager()->GenerateTabletReport(
+      req.mutable_tablet_report());
+  }
+
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromSeconds(10));
 
   VLOG(1) << "Sending heartbeat:\n" << req.DebugString();
-  RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &last_hb_response_, &rpc),
+  master::TSHeartbeatResponsePB resp;
+  RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat");
-  VLOG(1) << "Received heartbeat response:\n" << last_hb_response_.DebugString();
+  VLOG(1) << "Received heartbeat response:\n" << resp.DebugString();
+  last_hb_response_.Swap(&resp);
+
+  server_->tablet_manager()->AcknowledgeTabletReport(req.tablet_report());
 
   return Status::OK();
 }

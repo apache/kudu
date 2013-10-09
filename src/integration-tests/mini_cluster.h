@@ -41,11 +41,11 @@ class MiniCluster {
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
   tserver::MiniTabletServer* mini_tablet_server(int idx);
 
- private:
-
   string GetMasterFsRoot();
 
   string GetTabletServerFsRoot(int idx);
+
+ private:
 
   bool started_;
 

@@ -40,13 +40,13 @@ message TSRegistrationPB {
   // TODO: add stuff like software version, etc.
 }
 
+message ReportedTabletPB {
+  required bytes tablet_id = 1;
+  // TODO: add state information, configuration info, schema version, etc?
+}
+
 // Sent by the tablet server to report the set of tablets hosted by that TS.
 message TabletReportPB {
-  message ReportedTabletPB {
-    required bytes tablet_id = 1;
-    // TODO: add state information, configuration info, schema version, etc?
-  }
-
   // If false, then this is a full report, and any prior information about
   // tablets hosted by this server should be dropped.
   required bool is_incremental = 1;
