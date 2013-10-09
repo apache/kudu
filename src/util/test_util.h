@@ -12,7 +12,7 @@
 #include "util/env.h"
 #include "util/test_macros.h"
 #include "gutil/gscoped_ptr.h"
-#include "gutil/stringprintf.h"
+#include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 
 DECLARE_bool(test_leave_files);
@@ -38,11 +38,11 @@ class KuduTest : public ::testing::Test {
 
     env_->GetTestDirectory(&test_dir_);
 
-    test_dir_ += StringPrintf(
-      "/%s.%s.%ld",
+    test_dir_ += strings::Substitute(
+      "/$0.$1.$2",
       StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
       StringReplace(test_info->name(), "/", "_", true).c_str(),
-      time(NULL));
+      env_->NowMicros());
 
     ASSERT_STATUS_OK(env_->CreateDir(test_dir_));
   }
