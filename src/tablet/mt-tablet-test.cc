@@ -32,21 +32,6 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-
-// Utility class which calls latch->CountDown() in its destructor.
-class CountDownOnScopeExit {
- public:
-  explicit CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
-  ~CountDownOnScopeExit() {
-    latch_->CountDown();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CountDownOnScopeExit);
-
-  CountDownLatch *latch_;
-};
-
 template<class SETUP>
 class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // Import some names from superclass, since C++ is stingy about

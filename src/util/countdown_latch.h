@@ -96,5 +96,19 @@ class CountDownLatch {
   uint64_t count_;
 };
 
+// Utility class which calls latch->CountDown() in its destructor.
+class CountDownOnScopeExit {
+ public:
+  explicit CountDownOnScopeExit(CountDownLatch *latch) : latch_(latch) {}
+  ~CountDownOnScopeExit() {
+    latch_->CountDown();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CountDownOnScopeExit);
+
+  CountDownLatch *latch_;
+};
+
 } // namespace kudu
 #endif
