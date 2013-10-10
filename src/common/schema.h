@@ -13,6 +13,7 @@
 #include "common/types.h"
 #include "common/common.pb.h"
 #include "common/key_encoder.h"
+#include "gutil/map-util.h"
 #include "util/status.h"
 
 // Check that two schemas are equal, yielding a useful error message in the case that
@@ -144,6 +145,7 @@ class ColumnSchema {
   }
 
  private:
+  size_t id_;
   string name_;
   const TypeInfo *type_info_;
   bool is_nullable_;
@@ -151,7 +153,6 @@ class ColumnSchema {
   std::tr1::shared_ptr<Variant> read_default_;
   std::tr1::shared_ptr<Variant> write_default_;
 };
-
 
 // The schema for a set of rows.
 //
@@ -174,8 +175,10 @@ class Schema {
     other.num_key_columns_ = num_key_columns_;
     num_key_columns_ = tmp;
     cols_.swap(other.cols_);
+    col_ids_.swap(other.col_ids_);
     col_offsets_.swap(other.col_offsets_);
     name_to_index_.swap(other.name_to_index_);
+    id_to_index_.swap(other.id_to_index_);
   }
 
   // Construct a schema with the given information.
@@ -184,15 +187,36 @@ class Schema {
   // empty schema and then use Reset(...)  so that errors can be
   // caught. If an invalid schema is passed to this constructor, an
   // assertion will be fired!
-  Schema(const vector<ColumnSchema> &cols,
+  Schema(const vector<ColumnSchema>& cols,
          int key_columns) {
     CHECK_OK(Reset(cols, key_columns));
+  }
+
+  // Construct a schema with the given information.
+  //
+  // NOTE: if the schema is user-provided, it's better to construct an
+  // empty schema and then use Reset(...)  so that errors can be
+  // caught. If an invalid schema is passed to this constructor, an
+  // assertion will be fired!
+  Schema(const vector<ColumnSchema>& cols,
+         const vector<size_t>& ids,
+         int key_columns) {
+    CHECK_OK(Reset(cols, ids, key_columns));
   }
 
   // Reset this Schema object to the given schema.
   // If this fails, the Schema object is left in an inconsistent
   // state and may not be used.
-  Status Reset(const vector<ColumnSchema> &cols,
+  Status Reset(const vector<ColumnSchema>& cols, int key_columns) {
+    std::vector<size_t> ids;
+    return Reset(cols, ids, key_columns);
+  }
+
+  // Reset this Schema object to the given schema.
+  // If this fails, the Schema object is left in an inconsistent
+  // state and may not be used.
+  Status Reset(const vector<ColumnSchema>& cols,
+               const vector<size_t>& ids,
                int key_columns);
 
   // Return the number of bytes needed to represent a single row of this schema.
@@ -229,6 +253,23 @@ class Schema {
   inline const ColumnSchema &column(size_t idx) const {
     DCHECK_LT(idx, cols_.size());
     return cols_[idx];
+  }
+
+  // Return the ColumnSchema corresponding to the given column ID.
+  inline const ColumnSchema& column_by_id(size_t id) const {
+    DCHECK_LT(id, cols_.size());
+    return cols_[find_column_by_id(id)];
+  }
+
+  // Return the column ID corresponding to the given column index
+  size_t column_id(size_t idx) const {
+    DCHECK_LT(idx, cols_.size());
+    return has_column_ids() ? col_ids_[idx] : idx;
+  }
+
+  // Return true if the schema has the IDs mapping
+  bool has_column_ids() const {
+    return !col_ids_.empty();
   }
 
   const std::vector<ColumnSchema>& columns() const {
@@ -403,9 +444,22 @@ class Schema {
   // TODO(MAYBE): Pass the ColumnSchema and not only the column index?
   template <class Projector>
   Status GetProjectionMapping(const Schema& base_schema, Projector *projector) const {
+    const bool use_column_ids = base_schema.has_column_ids() && has_column_ids();
+
     int proj_idx = 0;
-    BOOST_FOREACH(const ColumnSchema& col_schema, cols_) {
-      int base_idx = base_schema.find_column(col_schema.name());
+    for (int i = 0; i < cols_.size(); ++i) {
+      const ColumnSchema& col_schema = cols_[i];
+
+      // try to lookup the column by ID if present or just by name.
+      // Unit tests and Iter-Projections are probably always using the
+      // lookup by name. The IDs are generally set by the server on AlterTable().
+      int base_idx;
+      if (use_column_ids) {
+        base_idx = base_schema.find_column_by_id(col_ids_[i]);
+      } else {
+        base_idx = base_schema.find_column(col_schema.name());
+      }
+
       if (base_idx >= 0) {
         const ColumnSchema& base_col_schema = base_schema.column(base_idx);
         // Column present in the Base Schema...
@@ -432,12 +486,28 @@ class Schema {
   }
 
  private:
+  // Returns the column index given the column ID
+  int find_column_by_id(size_t id) const {
+    if (has_column_ids()) {
+      IdToIndexMap::const_iterator iter = id_to_index_.find(id);
+      if (PREDICT_FALSE(iter == id_to_index_.end())) {
+        return -1;
+      }
+      return iter->second;
+    }
+    return id;
+  }
+
   vector<ColumnSchema> cols_;
   size_t num_key_columns_;
+  vector<size_t> col_ids_;
   vector<size_t> col_offsets_;
 
   typedef unordered_map<string, size_t> NameToIndexMap;
   NameToIndexMap name_to_index_;
+
+  typedef unordered_map<size_t, size_t> IdToIndexMap;
+  IdToIndexMap id_to_index_;
 
   // NOTE: if you add more members, make sure to add the appropriate
   // code to swap() as well to prevent subtle bugs.

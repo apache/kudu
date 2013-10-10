@@ -44,7 +44,7 @@ string RowChangeList::ToString(const Schema &schema) const {
       return "[invalid: " + s.ToString() + ", before corruption: " + ret + "]";
     }
 
-    const ColumnSchema& col_schema = schema.column(updated_col);
+    const ColumnSchema& col_schema = schema.column_by_id(updated_col);
     ret.append(col_schema.name());
     ret.append("=");
     if (col_schema.is_nullable() && new_val == NULL) {
@@ -100,14 +100,14 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
     encoder.SetToReinsert(decoder.reinserted_row_slice());
   } else if (decoder.is_update()) {
     while (decoder.HasNext()) {
-      size_t col_idx = 0xdeadbeef; // avoid un-initialized usage warning
+      size_t col_id = 0xdeadbeef; // avoid un-initialized usage warning
       const void *col_val = NULL;
-      RETURN_NOT_OK(decoder.DecodeNext(&col_idx, &col_val));
+      RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
 
       size_t proj_idx = 0xdeadbeef; // avoid un-initialized usage warning
-      if (projector.get_proj_col_from_base_idx(col_idx, &proj_idx)) {
+      if (projector.get_proj_col_from_base_id(col_id, &proj_idx)) {
         encoder.AddColumnUpdate(proj_idx, col_val);
-      } else if (projector.get_proj_col_from_adapter_idx(col_idx, &proj_idx)) {
+      } else if (projector.get_proj_col_from_adapter_id(col_id, &proj_idx)) {
         // TODO: Handle the "different type" case (adapter_cols_mapping)
         LOG(DFATAL) << "Alter type is not implemented yet";
         return Status::NotSupported("Alter type is not implemented yet");

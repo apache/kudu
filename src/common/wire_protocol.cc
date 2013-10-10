@@ -189,6 +189,12 @@ Status SchemaToColumnPBs(const Schema& schema,
     col_pb->set_is_key(idx < schema.num_key_columns());
     idx++;
   }
+  if (schema.has_column_ids()) {
+    for (int i = 0; i < schema.num_columns(); ++i) {
+      ColumnSchemaPB* col_pb = cols->Mutable(i);
+      col_pb->set_id(schema.column_id(i));
+    }
+  }
   return Status::OK();
 }
 

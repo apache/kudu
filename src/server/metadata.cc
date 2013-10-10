@@ -276,6 +276,7 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
 }
 
 void TabletMetadata::SetSchema(const Schema& schema) {
+  DCHECK(schema.has_column_ids());
   boost::lock_guard<LockType> l(lock_);
   schema_ = schema;
 }
@@ -322,10 +323,12 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
 
   // Load Column Files
   int key_columns = 0;
+  std::vector<size_t> cols_ids;
   std::vector<ColumnSchema> cols;
   BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
     column_blocks_.push_back(BlockIdFromPB(col_pb.block()));
     cols.push_back(ColumnSchemaFromPB(col_pb.schema()));
+    cols_ids.push_back(col_pb.schema().id());
     key_columns += !!col_pb.schema().is_key();
   }
   RETURN_NOT_OK(schema_.Reset(cols, key_columns));
@@ -347,10 +350,11 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   size_t idx = 0;
   BOOST_FOREACH(const BlockId& block_id, column_blocks_) {
     ColumnDataPB *col_data = pb->add_columns();
-    col_data->set_id(idx);
+    ColumnSchemaPB *col_schema = col_data->mutable_schema();
     BlockIdToPB(block_id, col_data->mutable_block());
-    ColumnSchemaToPB(schema_.column(idx), col_data->mutable_schema());
-    col_data->mutable_schema()->set_is_key(idx < schema_.num_key_columns());
+    ColumnSchemaToPB(schema_.column(idx), col_schema);
+    col_schema->set_id(schema_.column_id(idx));
+    col_schema->set_is_key(idx < schema_.num_key_columns());
     idx++;
   }
 

@@ -27,19 +27,44 @@ class TestTabletSchema : public KuduTabletTest {
     : KuduTabletTest(CreateBaseSchema()) {
   }
 
-  void InsertBaseData(size_t nrows) {
-    for (size_t i = 0; i < nrows; ++i) {
-      RowBuilder rb(schema_);
-      rb.AddUint32(i);
-      rb.AddUint32(i);
-      TransactionContext tx_ctx;
-      ASSERT_STATUS_OK(tablet_->Insert(&tx_ctx, rb.row()));
+  void InsertRows(const Schema& schema, size_t first_key, size_t nrows) {
+    for (size_t i = first_key; i < nrows; ++i) {
+      InsertRow(schema, i);
+
       // Half of the rows will be on disk
       // and the other half in the MemRowSet
       if (i == (nrows / 2)) {
         ASSERT_STATUS_OK(tablet_->Flush());
       }
     }
+  }
+
+  void InsertRow(const Schema& schema, size_t key) {
+    RowBuilder rb(schema);
+    rb.AddUint32(key);
+    rb.AddUint32(key);
+    TransactionContext tx_ctx;
+    ASSERT_STATUS_OK(tablet_->Insert(&tx_ctx, rb.row()));
+  }
+
+  void DeleteRow(const Schema& schema, size_t key) {
+    RowBuilder rb(schema.CreateKeyProjection());
+    rb.AddUint32(key);
+    faststring buf;
+    RowChangeListEncoder mutation(schema, &buf);
+    mutation.SetToDelete();
+    TransactionContext tx_ctx;
+    ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), schema, mutation.as_changelist()));
+  }
+
+  void MutateRow(const Schema& schema, size_t key, size_t col_idx, size_t new_val) {
+    RowBuilder rb(schema.CreateKeyProjection());
+    rb.AddUint32(key);
+    faststring buf;
+    RowChangeListEncoder mutation(schema, &buf);
+    mutation.AddColumnUpdate(col_idx, &new_val);
+    TransactionContext tx_ctx;
+    ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), schema, mutation.as_changelist()));
   }
 
   void VerifyTabletRows(const Schema& projection,
@@ -68,6 +93,7 @@ class TestTabletSchema : public KuduTabletTest {
     return Schema(boost::assign::list_of
                   (ColumnSchema("key", UINT32))
                   (ColumnSchema("c1", UINT32)),
+                  boost::assign::list_of(0) (1),
                   1);
   }
 };
@@ -83,9 +109,10 @@ TEST_F(TestTabletSchema, TestRead) {
                     (ColumnSchema("key", UINT32))
                     (ColumnSchema("c2", UINT64, false, &c2_default))
                     (ColumnSchema("c3", STRING, false, &c3_default)),
+                    boost::assign::list_of(0) (2) (3),
                     1);
 
-  InsertBaseData(kNumRows);
+  InsertRows(schema_, 0, kNumRows);
 
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
@@ -115,7 +142,7 @@ TEST_F(TestTabletSchema, TestWrite) {
   const size_t kNumBaseRows = 10;
 
   // Insert some rows with the base schema
-  InsertBaseData(kNumBaseRows);
+  InsertRows(schema_, 0, kNumBaseRows);
 
   // Add one column with a default value
   const uint32_t c2_write_default = 5;
@@ -124,18 +151,13 @@ TEST_F(TestTabletSchema, TestWrite) {
             (ColumnSchema("key", UINT32))
             (ColumnSchema("c1", UINT32))
             (ColumnSchema("c2", UINT32, false, &c2_read_default, &c2_write_default)),
+            boost::assign::list_of(0) (1) (2),
             1);
   ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
 
   // Insert with base/old schema
   size_t s2Key = kNumBaseRows + 1;
-  {
-    RowBuilder rb(schema_);
-    rb.AddUint32(s2Key);
-    rb.AddUint32(s2Key);
-    TransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->Insert(&tx_ctx, rb.row()));
-  }
+  InsertRow(schema_, s2Key);
 
   // Verify the default value
   std::vector<std::pair<string, string> > keys;
@@ -144,30 +166,103 @@ TEST_F(TestTabletSchema, TestWrite) {
   VerifyTabletRows(s2, keys);
 
   // Delete the row
-  {
-    RowBuilder rb(schema_.CreateKeyProjection());
-    rb.AddUint32(s2Key);
-    faststring buf;
-    RowChangeListEncoder mutation(s2, &buf);
-    mutation.SetToDelete();
-    TransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), s2, mutation.as_changelist()));
-  }
+  DeleteRow(s2, s2Key);
+
   // Verify the default value
   VerifyTabletRows(s2, keys);
 
   // Re-Insert with base/old schema
-  {
-    RowBuilder rb(schema_);
-    rb.AddUint32(s2Key);
-    rb.AddUint32(s2Key);
-    TransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->Insert(&tx_ctx, rb.row()));
-  }
+  InsertRow(schema_, s2Key);
   VerifyTabletRows(s2, keys);
 
   // Try compact all (different schemas)
   ASSERT_STATUS_OK(tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+  VerifyTabletRows(s2, keys);
+}
+
+// Write to the table using a projection schema with a renamed field.
+TEST_F(TestTabletSchema, TestRenameProjection) {
+  std::vector<std::pair<string, string> > keys;
+
+  Schema s2(boost::assign::list_of
+            (ColumnSchema("key", UINT32))
+            (ColumnSchema("c1_renamed", UINT32)),
+            boost::assign::list_of(0) (1),
+            1);
+
+  // Insert with the base schema
+  InsertRow(schema_, 1);
+
+  // Insert with the s2 schema
+  InsertRow(s2, 2);
+
+  // Switch schema to s2
+  ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
+
+  // Insert with the base schema after AlterSchema(s2)
+  InsertRow(schema_, 3);
+
+  // Insert with the s2 schema after AlterSchema(s2)
+  InsertRow(s2, 4);
+
+  // Read and verify using the s2 schema
+  keys.clear();
+  for (int i = 1; i <= 4; ++i) {
+    keys.push_back(std::pair<string, string>(Substitute("key=$0", i), Substitute("c1_renamed=$0", i)));
+  }
+  VerifyTabletRows(s2, keys);
+
+  // Read and verify using the base schema
+  keys.clear();
+  for (int i = 1; i <= 4; ++i) {
+    keys.push_back(std::pair<string, string>(Substitute("key=$0", i), Substitute("c1=$0", i)));
+  }
+  VerifyTabletRows(schema_, keys);
+
+  // Delete the first two rows
+  DeleteRow(s2, /* key= */ 1);
+  DeleteRow(schema_, /* key= */ 2);
+
+  // Alter the remaining two rows
+  MutateRow(s2,      /* key= */ 3, /* col_idx= */ 1, /* new_val= */ 6);
+  MutateRow(schema_, /* key= */ 4, /* col_idx= */ 1, /* new_val= */ 8);
+
+  // Read and verify using the s2 schema
+  keys.clear();
+  keys.push_back(std::pair<string, string>("key=3", "c1_renamed=6"));
+  keys.push_back(std::pair<string, string>("key=4", "c1_renamed=8"));
+  VerifyTabletRows(s2, keys);
+
+  // Read and verify using the base schema
+  keys.clear();
+  keys.push_back(std::pair<string, string>("key=3", "c1=6"));
+  keys.push_back(std::pair<string, string>("key=4", "c1=8"));
+  VerifyTabletRows(schema_, keys);
+}
+
+TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
+  std::vector<std::pair<string, string> > keys;
+
+  // Insert and Mutate with the base schema
+  InsertRow(schema_, 1);
+  MutateRow(schema_, /* key= */ 1, /* col_idx= */ 1, /* new_val= */ 2);
+
+  keys.clear();
+  keys.push_back(std::pair<string, string>("key=1", "c1=2"));
+  VerifyTabletRows(schema_, keys);
+
+  Schema s2(boost::assign::list_of
+          (ColumnSchema("key", UINT32))
+          (ColumnSchema("c1", UINT32, true)),
+          boost::assign::list_of(0) (2), // NOTE that 'c1' ID is no longer 1
+          1);
+
+  // Switch schema to s2
+  ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
+
+  // Verify that the new 'c1' have the default value
+  keys.clear();
+  keys.push_back(std::pair<string, string>("key=1", "c1=NULL"));
   VerifyTabletRows(s2, keys);
 }
 

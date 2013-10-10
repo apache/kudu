@@ -16,7 +16,8 @@ string ColumnSchema::ToString() const {
                              is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
 
-Status Schema::Reset(const vector<ColumnSchema> &cols,
+Status Schema::Reset(const vector<ColumnSchema>& cols,
+                     const vector<size_t>& ids,
                      int key_columns) {
   cols_ = cols;
   num_key_columns_ = key_columns;
@@ -24,6 +25,11 @@ Status Schema::Reset(const vector<ColumnSchema> &cols,
   if (PREDICT_FALSE(key_columns > cols_.size())) {
     return Status::InvalidArgument(
       "Bad schema", "More key columns than columns");
+  }
+
+  if (PREDICT_FALSE(!ids.empty() && ids.size() != cols_.size())) {
+    return Status::InvalidArgument("Bad schema",
+      "The number of ids does not match with the number of columns");
   }
 
   // Verify that the key columns are not nullable
@@ -52,6 +58,13 @@ Status Schema::Reset(const vector<ColumnSchema> &cols,
   // Add an extra element on the end for the total
   // byte size
   col_offsets_.push_back(off);
+
+  // Initialize IDs mapping
+  col_ids_ = ids;
+  id_to_index_.clear();
+  for (int i = 0; i < ids.size(); ++i) {
+    id_to_index_[col_ids_[i]] = i;
+  }
 
   return Status::OK();
 }

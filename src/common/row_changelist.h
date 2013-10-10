@@ -106,7 +106,7 @@ class RowChangeListEncoder {
     const TypeInfo &ti = col_schema.type_info();
 
     // Encode the column index
-    InlinePutVarint32(dst_, col_idx);
+    InlinePutVarint32(dst_, schema_.column_id(col_idx));
 
     // If the column is nullable set the null flag
     if (col_schema.is_nullable()) {
@@ -209,12 +209,19 @@ class RowChangeListDecoder {
   template<class ColumnType, class ArenaType>
   Status ApplyToOneColumn(size_t row_idx, ColumnType *dst_col, size_t col_idx, ArenaType *arena) {
     DCHECK_EQ(RowChangeList::kUpdate, type_);
+
+    const ColumnSchema& col_schema = schema_.column(col_idx);
+    size_t col_id = schema_.column_id(col_idx);
+
+    // TODO: Handle the "different type" case (adapter_cols_mapping)
+    DCHECK_EQ(col_schema.type_info().type(), dst_col->type_info().type());
+
     while (HasNext()) {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-      if (updated_col == col_idx) {
-        SimpleConstCell src(schema_.column(updated_col), new_val);
+      if (updated_col == col_id) {
+        SimpleConstCell src(col_schema, new_val);
         typename ColumnType::Cell dst_cell = dst_col->cell(row_idx);
         RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
         // TODO: could potentially break; here if we're guaranteed to only have one update
@@ -251,7 +258,7 @@ class RowChangeListDecoder {
   friend class RowChangeList;
 
   // Decode the next changed column.
-  // Sets *col_idx to the changed column index.
+  // Sets *col_id to the changed column index.
   // Sets *val_out to point to the new value.
   //
   // *val_out may be set to temporary storage which is part of the
@@ -262,17 +269,17 @@ class RowChangeListDecoder {
   // be a temporary Slice object which is only temporarily valid.
   // But, that Slice object will itself point to data which is part
   // of the source data that was passed in.
-  Status DecodeNext(size_t *col_idx, const void ** val_out) {
+  Status DecodeNext(size_t *col_id, const void ** val_out) {
     DCHECK_NE(type_, RowChangeList::kUninitialized) << "Must call Init()";
     // Decode the column index.
-    uint32_t idx;
-    if (!GetVarint32(&remaining_, &idx)) {
+    uint32_t id;
+    if (!GetVarint32(&remaining_, &id)) {
       return Status::Corruption("Invalid column index varint in delta");
     }
 
-    *col_idx = idx;
+    *col_id = id;
 
-    const ColumnSchema& col_schema = schema_.column(idx);
+    const ColumnSchema& col_schema = schema_.column_by_id(id);
     const TypeInfo &ti = col_schema.type_info();
 
     // If the column is nullable check the null flag

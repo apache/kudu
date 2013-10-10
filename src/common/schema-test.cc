@@ -93,6 +93,7 @@ TEST(TestSchema, TestProjectSubset) {
                  (ColumnSchema("col2", STRING))
                  (ColumnSchema("col3", UINT32)),
                  1);
+
   Schema schema2(boost::assign::list_of
                  (ColumnSchema("col3", UINT32))
                  (ColumnSchema("col2", STRING)),
@@ -177,6 +178,39 @@ TEST(TestSchema, TestProjectMissingColumn) {
   ASSERT_EQ(row_projector.base_cols_mapping()[0].first, 0);  // val schema4
   ASSERT_EQ(row_projector.base_cols_mapping()[0].second, 1); // val schema1
   ASSERT_EQ(row_projector.projection_defaults()[0], 1);      // non_present schema4
+}
+
+// Test projection mapping using IDs.
+// This simulate a column rename ('val' -> 'val_renamed')
+// and a new column added ('non_present')
+TEST(TestSchema, TestProjectRename) {
+  Schema schema1(boost::assign::list_of
+                 (ColumnSchema("key", STRING))
+                 (ColumnSchema("val", UINT32)),
+                 boost::assign::list_of(0) (1),
+                 1);
+
+  Schema schema2(boost::assign::list_of
+                 (ColumnSchema("key", STRING))
+                 (ColumnSchema("non_present", UINT32, true))
+                 (ColumnSchema("val_renamed", UINT32)),
+                 boost::assign::list_of(0) (2) (1),
+                 1);
+
+  RowProjector row_projector;
+  ASSERT_STATUS_OK(row_projector.Init(schema1, schema2));
+
+  ASSERT_EQ(2, row_projector.base_cols_mapping().size());
+  ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
+  ASSERT_EQ(1, row_projector.projection_defaults().size());
+
+  ASSERT_EQ(row_projector.base_cols_mapping()[0].first, 0);  // key schema2
+  ASSERT_EQ(row_projector.base_cols_mapping()[0].second, 0); // key schema1
+
+  ASSERT_EQ(row_projector.base_cols_mapping()[1].first, 2);  // val_renamed schema2
+  ASSERT_EQ(row_projector.base_cols_mapping()[1].second, 1); // val schema1
+
+  ASSERT_EQ(row_projector.projection_defaults()[0], 1);      // non_present schema3
 }
 
 

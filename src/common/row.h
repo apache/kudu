@@ -265,12 +265,12 @@ class DeltaProjector {
   }
 
   // TODO: Discourage the use of this. At the moment is only in RowChangeList::Project
-  bool get_proj_col_from_base_idx(size_t base_col_idx, size_t *proj_col_idx) const {
-    return FindCopy(rbase_cols_mapping_, base_col_idx, proj_col_idx);
+  bool get_proj_col_from_base_id(size_t col_id, size_t *proj_col_idx) const {
+    return FindCopy(rbase_cols_mapping_, col_id, proj_col_idx);
   }
 
-  bool get_proj_col_from_adapter_idx(size_t base_col_idx, size_t *proj_col_idx) const {
-    return FindCopy(radapter_cols_mapping_, base_col_idx, proj_col_idx);
+  bool get_proj_col_from_adapter_id(size_t col_id, size_t *proj_col_idx) const {
+    return FindCopy(radapter_cols_mapping_, col_id, proj_col_idx);
   }
 
  private:
@@ -278,13 +278,13 @@ class DeltaProjector {
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     base_cols_mapping_[proj_col_idx] = base_col_idx;
-    rbase_cols_mapping_[base_col_idx] = proj_col_idx;
+    rbase_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
     return Status::OK();
   }
 
   Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
     adapter_cols_mapping_[proj_col_idx] = base_col_idx;
-    radapter_cols_mapping_[base_col_idx] = proj_col_idx;
+    radapter_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
     return Status::OK();
   }
 
@@ -298,9 +298,10 @@ class DeltaProjector {
   DISALLOW_COPY_AND_ASSIGN(DeltaProjector);
 
   std::tr1::unordered_map<size_t, size_t> base_cols_mapping_;     // [proj_idx] = base_idx
-  std::tr1::unordered_map<size_t, size_t> rbase_cols_mapping_;    // [base_idx] = proj_idx
+  std::tr1::unordered_map<size_t, size_t> rbase_cols_mapping_;    // [id] = proj_idx
+
   std::tr1::unordered_map<size_t, size_t> adapter_cols_mapping_;  // [proj_idx] = base_idx
-  std::tr1::unordered_map<size_t, size_t> radapter_cols_mapping_; // [base_idx] = proj_idx
+  std::tr1::unordered_map<size_t, size_t> radapter_cols_mapping_; // [id] = proj_idx
 
   Schema delta_schema_;
   Schema projection_;
