@@ -57,6 +57,9 @@ Status TabletPeer::Init() {
   // a TabletPeerOptions).
   consensus_.reset(new LocalConsensus(ConsensusOptions(), log_.get()));
 
+  // set consensus on the tablet to that it can store local state changes
+  // in the log.
+  tablet_->SetConsensus(consensus_.get());
   return Status::OK();
 }
 

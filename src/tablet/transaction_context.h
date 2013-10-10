@@ -86,6 +86,17 @@ class TransactionContext {
   Status AddMutation(const txid_t &tx_id,
                      gscoped_ptr<MutationResultPB> result);
 
+  // Adds a missed mutation to this TransactionContext.
+  // Missed mutations are the ones that are applied on Phase 2 of compaction
+  // and reflect updates to the old DeltaMemStore that were not yet present
+  // in the new DeltaMemStore.
+  // The passed 'row_id' and 'changelist' are copied into a protobuf and do
+  // not need to be alive after this method returns.
+  Status AddMissedMutation(const txid_t &tx_id,
+                           const rowid_t& row_idx,
+                           const RowChangeList& changelist,
+                           gscoped_ptr<MutationResultPB> result);
+
   // Adds a failed mutation to this TransactionContext, including the status
   // explaining why it failed.
   void AddFailedMutation(const Status &status);

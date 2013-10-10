@@ -23,7 +23,13 @@
 #include "util/status.h"
 #include "util/slice.h"
 
-namespace kudu {namespace tablet {
+namespace kudu {
+
+namespace consensus {
+class Consensus;
+}
+
+namespace tablet {
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -166,11 +172,15 @@ class Tablet {
   const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
   metadata::TabletMetadata *metadata() { return metadata_.get(); }
 
+  void SetConsensus(consensus::Consensus* consensus);
+
   void SetCompactionHooksForTests(const shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
   void SetFlushCompactCommonHooksForTests(const shared_ptr<FlushCompactCommonHooks> &hooks);
 
   int32_t CurrentMrsIdForTests() const { return memrowset_->mrs_id(); }
+
+  int32_t TotalMissedDeltasMutationsForTests() const { return total_missed_deltas_mutations_; }
 
   const std::string& tablet_id() const { return metadata_->oid(); }
 
@@ -223,10 +233,14 @@ class Tablet {
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
 
+  consensus::Consensus* consensus_;
+
   Atomic32 next_mrs_id_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;
+
+  Atomic32 total_missed_deltas_mutations_;
 
   gscoped_ptr<CompactionPolicy> compaction_policy_;
 

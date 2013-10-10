@@ -53,6 +53,24 @@ Status TransactionContext::AddMutation(const txid_t &tx_id,
   return Status::OK();
 }
 
+Status TransactionContext::AddMissedMutation(
+    const txid_t &tx_id,
+    const rowid_t& row_idx,
+    const RowChangeList& changelist,
+    gscoped_ptr<MutationResultPB> result) {
+
+  result->set_type(MutationType(result.get()));
+  TxOperationPB* mutation = result_pb_.add_mutations();
+  mutation->set_type(TxOperationPB::MUTATE);
+  mutation->set_allocated_mutation_result(result.release());
+
+  MissedDeltaMutationPB* missed_delta_mutation = mutation->mutable_missed_delta_mutation();
+  missed_delta_mutation->set_row_idx(row_idx);
+  missed_delta_mutation->set_changelist(changelist.slice().data(),
+                                        changelist.slice().size());
+  return Status::OK();
+}
+
 void TransactionContext::AddFailedMutation(const Status &status) {
   TxOperationPB* mutation = result_pb_.add_mutations();
   mutation->set_type(TxOperationPB::MUTATE);

@@ -12,6 +12,8 @@
 #include "common/iterator.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
+#include "consensus/consensus.h"
+#include "consensus/consensus.pb.h"
 #include "gutil/atomicops.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
@@ -39,6 +41,9 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
 
 namespace kudu { namespace tablet {
 
+using consensus::Consensus;
+using consensus::CommitMsg;
+using consensus::MISSED_DELTA;
 using metadata::RowSetMetadata;
 using metadata::RowSetMetadataIds;
 using metadata::RowSetMetadataVector;
@@ -67,6 +72,7 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata)
     key_schema_(schema_.CreateKeyProjection()),
     metadata_(metadata.Pass()),
     rowsets_(new RowSetTree()),
+    consensus_(NULL),
     next_mrs_id_(0),
     open_(false) {
   compaction_policy_.reset(CreateCompactionPolicy());
@@ -104,6 +110,10 @@ Status Tablet::Open() {
 
   open_ = true;
   return Status::OK();
+}
+
+void Tablet::SetConsensus(Consensus* consensus) {
+  consensus_ = consensus;
 }
 
 BloomFilterSizing Tablet::bloom_sizing() const {
@@ -578,6 +588,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
 
   MvccSnapshot flush_snap(mvcc_);
+
   VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostTakeMvccSnapshot());
@@ -678,7 +689,15 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
                                      snap2,
                                      new_rowsets));
 
-  // TODO commit the compaction transaction as soon as the WAL is in place.
+  if (PREDICT_TRUE(consensus_)) {
+    Barrier_AtomicIncrement(&total_missed_deltas_mutations_, compaction_tx.Result().mutations_size());
+    CommitMsg commit;
+    commit.mutable_result()->CopyFrom(compaction_tx.Result());
+    commit.set_op_type(MISSED_DELTA);
+    shared_ptr<Future> commit_future;
+    RETURN_NOT_OK(consensus_->LocalCommit(&commit, &commit_future));
+    commit_future->Wait();
+  }
 
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
 

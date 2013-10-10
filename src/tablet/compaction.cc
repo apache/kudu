@@ -639,8 +639,10 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
             << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
         if (s.ok()) {
-          tx_ctx->AddMutation(mut->txid(),
-                              result.Pass());
+          tx_ctx->AddMissedMutation(mut->txid(),
+                                    row_idx,
+                                    mut->changelist(),
+                                    result.Pass());
         } else {
           tx_ctx->AddFailedMutation(s);
         }
