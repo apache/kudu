@@ -43,7 +43,7 @@ thirdparty/build-if-necessary.sh
 export PATH=$(pwd)/thirdparty/installed/bin:$PATH
 export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
-rm -rf CMakeCache.txt CMakeFiles
+rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
