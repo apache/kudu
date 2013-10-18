@@ -55,7 +55,7 @@ Status TransactionContext::AddMutation(const txid_t &tx_id,
 
 Status TransactionContext::AddMissedMutation(
     const txid_t &tx_id,
-    const rowid_t& row_idx,
+    gscoped_ptr<RowwiseRowBlockPB> row_key,
     const RowChangeList& changelist,
     gscoped_ptr<MutationResultPB> result) {
 
@@ -65,7 +65,7 @@ Status TransactionContext::AddMissedMutation(
   mutation->set_allocated_mutation_result(result.release());
 
   MissedDeltaMutationPB* missed_delta_mutation = mutation->mutable_missed_delta_mutation();
-  missed_delta_mutation->set_row_idx(row_idx);
+  missed_delta_mutation->set_allocated_row_key(row_key.release());
   missed_delta_mutation->set_changelist(changelist.slice().data(),
                                         changelist.slice().size());
   return Status::OK();

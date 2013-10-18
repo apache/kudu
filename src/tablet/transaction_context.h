@@ -90,10 +90,10 @@ class TransactionContext {
   // Missed mutations are the ones that are applied on Phase 2 of compaction
   // and reflect updates to the old DeltaMemStore that were not yet present
   // in the new DeltaMemStore.
-  // The passed 'row_id' and 'changelist' are copied into a protobuf and do
-  // not need to be alive after this method returns.
+  // The passed 'changelist' is copied into a protobuf and does not need to
+  // be alive after this method returns.
   Status AddMissedMutation(const txid_t &tx_id,
-                           const rowid_t& row_idx,
+                           gscoped_ptr<RowwiseRowBlockPB> row_key,
                            const RowChangeList& changelist,
                            gscoped_ptr<MutationResultPB> result);
 

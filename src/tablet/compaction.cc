@@ -4,6 +4,8 @@
 #include <deque>
 #include <string>
 #include <vector>
+
+#include "common/wire_protocol.h"
 #include "gutil/macros.h"
 #include "gutil/stl_util.h"
 #include "tablet/compaction.h"
@@ -548,6 +550,12 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   const Schema &schema(input->schema());
   const Schema key_schema(input->schema().CreateKeyProjection());
 
+  // Arena and projector to store/project row keys for missed delta updates
+  Arena arena(1024, 1024*1024);
+  RowProjector key_projector;
+  RETURN_NOT_OK(key_projector.Init(schema, key_schema));
+  faststring buf;
+
   rowid_t row_idx = 0;
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
@@ -639,8 +647,23 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
             << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
         if (s.ok()) {
+          // TODO Making missed deltas take the whole row key is a lot simpler
+          // than just storing the row_idx (which would require a complex
+          // method such as this one to find the right delta to put in on
+          // replay and accessing private tablet state).
+          // On the other hand using a row block for a single row key
+          // seems wasteful...
+          gscoped_ptr<RowwiseRowBlockPB> row_block(new RowwiseRowBlockPB);
+          SchemaToColumnPBs(schema, row_block->mutable_schema());
+
+          buf.clear();
+          ContiguousRow row_key(key_schema, buf.data());
+          key_projector.ProjectRowForWrite(row.row, &row_key, &arena);
+          ConstContiguousRow const_row_key(row_key);
+          AddRowToRowBlockPB(const_row_key, row_block.get());
+
           tx_ctx->AddMissedMutation(mut->txid(),
-                                    row_idx,
+                                    row_block.Pass(),
                                     mut->changelist(),
                                     result.Pass());
         } else {

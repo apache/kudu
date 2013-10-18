@@ -29,10 +29,10 @@ message MutationResultPB {
 }
 
 // A mutation executed during the ReupdateMissedDeltas() phase of compaction/flush.
-// Needs to keep the actual row_idx and changelist of the mutated row so that we
+// Needs to keep the actual row key and changelist of the mutated row so that we
 // can replay it on recovery.
 message MissedDeltaMutationPB {
-  required int64 row_idx = 1;
+  required kudu.RowwiseRowBlockPB row_key = 1;
   required bytes changelist = 2;
 }
 
