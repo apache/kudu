@@ -115,7 +115,7 @@ TEST(TestLogUtil, TestFourStaleSegmentsWithNoCommonStoresWithCurrent) {
 
   LogSegmentHeader seg1_header;
   TabletSuperBlockPB* seg1_sb = seg1_header.mutable_tablet_meta();
-  seg1_sb->set_last_durable_mrs_id(metadata::kNoDurableMrs);
+  seg1_sb->set_last_durable_mrs_id(metadata::kNoDurableMemStore);
 
   shared_ptr<ReadableLogSegment> seg1(new ReadableLogSegment(seg1_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));
@@ -169,7 +169,7 @@ TEST(TestLogUtil, TestThreeSegmentsTwoStaleOneCurrent) {
 
   LogSegmentHeader seg1_header;
   TabletSuperBlockPB* seg1_sb = seg1_header.mutable_tablet_meta();
-  seg1_sb->set_last_durable_mrs_id(metadata::kNoDurableMrs);
+  seg1_sb->set_last_durable_mrs_id(metadata::kNoDurableMemStore);
 
   shared_ptr<ReadableLogSegment> seg1(new ReadableLogSegment(seg1_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));

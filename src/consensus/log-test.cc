@@ -38,6 +38,7 @@ using metadata::TabletMasterBlockPB;
 using metadata::RowSetDataPB;
 using metadata::DeltaDataPB;
 using metadata::BlockIdPB;
+using metadata::kNoDurableMemStore;
 
 using tablet::TxResultPB;
 using tablet::TxOperationPB;
@@ -111,11 +112,13 @@ class LogTest : public KuduTest {
         DeltaDataPB* delta_data = row_set->add_deltas();
         delta_data->set_id(delta.second);
         delta_data->mutable_block()->CopyFrom(dummy);
+        row_set->set_last_durable_dms_id(delta.second);
       }
     // default DRS (rs 0, no delta, i.e. delta 0 is in memory)
     } else {
       RowSetDataPB* row_set = meta->add_rowsets();
       row_set->set_id(0);
+      row_set->set_last_durable_dms_id(kNoDurableMemStore);
     }
   }
 
@@ -330,11 +333,11 @@ TEST_F(LogTest, TestSegmentRollover) {
   // set a small segment size so that we have roll overs
   BuildLog();
   log_->SetMaxSegmentSizeForTests(1024);
-  // this adds to 20 segments
+  // this adds to 21 segments
   AppendBatchAndCommitEntryPairsToLog(100);
 
-  // expect 19 previous_ segments plus the current_ one
-  ASSERT_EQ(19, log_->previous_segments().size());
+  // expect 20 previous_ segments plus the current_ one
+  ASSERT_EQ(20, log_->previous_segments().size());
   ASSERT_STATUS_OK(log_->Close());
 
   BuildLogReader();

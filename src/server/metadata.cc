@@ -22,7 +22,7 @@ namespace metadata {
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;
 
-const int64 kNoDurableMrs = -1;
+const int64 kNoDurableMemStore = -1;
 
 // ============================================================================
 //  Tablet Metadata
@@ -77,7 +77,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
     master_block_(master_block),
     sblk_sequence_(0),
     next_rowset_idx_(0),
-    last_durable_mrs_id_(kNoDurableMrs),
+    last_durable_mrs_id_(kNoDurableMemStore),
     schema_(schema) {
 }
 
@@ -339,6 +339,7 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
       std::pair<int64_t, BlockId>(delta_pb.id(), BlockIdFromPB(delta_pb.block())));
   }
 
+  last_durable_dms_id_ = pb.last_durable_dms_id();
   initted_ = true;
   return Status::OK();
 }
@@ -363,6 +364,7 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
     typedef std::pair<uint32_t, BlockId> DeltaDataBlock;
 
     boost::lock_guard<LockType> l(deltas_lock_);
+    pb->set_last_durable_dms_id(last_durable_dms_id_);
     BOOST_FOREACH(const DeltaDataBlock& delta_block, delta_blocks_) {
       DeltaDataPB *delta_pb = pb->add_deltas();
       delta_pb->set_id(delta_block.first);
@@ -410,6 +412,8 @@ Status RowSetMetadata::AtomicRemoveDeltaDataBlocks(size_t start_idx, size_t end_
 
 Status RowSetMetadata::CommitDeltaDataBlock(int64_t id, const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
+  DCHECK_GE(id, last_durable_dms_id_);
+  last_durable_dms_id_ = id;
   delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
   return Status::OK();
 }

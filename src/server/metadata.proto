@@ -74,10 +74,11 @@ message DeltaDataPB {
 
 message RowSetDataPB {
   required uint64 id = 1;
-  repeated ColumnDataPB columns = 2;
-  repeated DeltaDataPB deltas = 3;
-  optional BlockIdPB bloom_block = 4;
-  optional BlockIdPB adhoc_index_block = 5;
+  required int64 last_durable_dms_id = 2;
+  repeated ColumnDataPB columns = 3;
+  repeated DeltaDataPB deltas = 4;
+  optional BlockIdPB bloom_block = 5;
+  optional BlockIdPB adhoc_index_block = 6;
 }
 
 // The super-block keeps track of the tablet data blocks.

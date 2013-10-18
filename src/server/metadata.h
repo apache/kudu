@@ -26,7 +26,7 @@ class RowSetMetadata;
 typedef std::vector<shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
 
-extern const int64 kNoDurableMrs;
+extern const int64 kNoDurableMemStore;
 
 // Manages the "blocks tracking" for the specified tablet.
 //
@@ -267,6 +267,8 @@ class RowSetMetadata {
 
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
 
+  int64_t last_durable_dms_id() const { return last_durable_dms_id_; }
+
   bool HasColumnDataBlockForTests(size_t idx) const {
     return column_blocks_.size() > idx && fs_manager()->BlockExists(column_blocks_[idx]);
   }
@@ -278,7 +280,8 @@ class RowSetMetadata {
  private:
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
     : initted_(false),
-      tablet_metadata_(tablet_metadata) {
+      tablet_metadata_(tablet_metadata),
+      last_durable_dms_id_(kNoDurableMemStore) {
   }
 
   RowSetMetadata(TabletMetadata *tablet_metadata,
@@ -286,7 +289,8 @@ class RowSetMetadata {
     : initted_(true),
       id_(id),
       schema_(schema),
-      tablet_metadata_(tablet_metadata) {
+      tablet_metadata_(tablet_metadata),
+      last_durable_dms_id_(kNoDurableMemStore) {
   }
 
   Status InitFromPB(const RowSetDataPB& pb);
@@ -311,6 +315,8 @@ class RowSetMetadata {
   std::vector<BlockId> column_blocks_;
   std::vector<std::pair<int64_t, BlockId> > delta_blocks_;
   TabletMetadata *tablet_metadata_;
+
+  int64_t last_durable_dms_id_;
 
   friend class TabletMetadata;
 };
