@@ -72,6 +72,12 @@ Status Log::Init() {
             << " segments from path: " << fs_manager_->GetWalsRootDir();
   }
 
+  if (options_.force_fsync_all) {
+    LOG(INFO) << "Log is configured to fsync() on all Append() calls";
+  } else {
+    LOG(INFO) << "Log is configured to *not* fsync() on all Append() calls";
+  }
+
   // we always create a new segment when the log starts.
   RETURN_NOT_OK(CreateNewSegment(*next_segment_header_.get()));
   state_ = kLogWriting;

@@ -18,6 +18,7 @@ namespace log {
 
 using consensus::OpId;
 using env_util::ReadFully;
+using strings::Substitute;
 
 // the maximum header size (8 MB)
 const uint32_t kMaxHeaderSize = 8 * 1024 * 1024;
@@ -35,7 +36,24 @@ Status LogReader::Open(FsManager *fs_manager,
                        const string& tablet_oid,
                        gscoped_ptr<LogReader> *reader) {
   gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, tablet_oid));
-  RETURN_NOT_OK(log_reader->Init())
+
+
+  string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_oid);
+
+  RETURN_NOT_OK(log_reader->Init(tablet_wal_path))
+  reader->reset(log_reader.release());
+  return Status::OK();
+}
+
+Status LogReader::Open(FsManager *fs_manager,
+                       const string& tablet_oid,
+                       uint64_t recovery_ts,
+                       gscoped_ptr<LogReader>* reader) {
+  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, tablet_oid));
+
+  string tablet_wal_path = fs_manager->GetTabletWalRecoveryDir(tablet_oid, recovery_ts);
+
+  RETURN_NOT_OK(log_reader->Init(tablet_wal_path))
   reader->reset(log_reader.release());
   return Status::OK();
 }
@@ -47,13 +65,10 @@ LogReader::LogReader(FsManager *fs_manager,
   state_(kLogReaderInitialized) {
 }
 
-Status LogReader::Init() {
+Status LogReader::Init(const string& tablet_wal_path) {
   CHECK_EQ(state_, kLogReaderInitialized) << "bad state for Init(): " << state_;
 
   Env* env = fs_manager_->env();
-
-  string tablet_wal_path = env->JoinPathSegments(
-      fs_manager_->GetWalsRootDir(), tablet_oid_);
 
   if (!fs_manager_->Exists(tablet_wal_path)) {
     return Status::IllegalState("Cannot find wal location at", tablet_wal_path);
@@ -84,6 +99,7 @@ Status LogReader::Init() {
       segments_.push_back(segment);
     }
   }
+
   // sort the segments
   sort(segments_.begin(), segments_.end(), CompareSegments);
   state_ = kLogReaderReading;
@@ -103,7 +119,7 @@ Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
       DVLOG(1) << "Read Log entry: " << current->DebugString();
       entries->push_back(current.release());
     } else {
-      return Status::Corruption(strings::Substitute("Log File corrupted, "
+      RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
           "cannot read further. 'entries' contains log entries read up to $0"
           " bytes", offset));
     }

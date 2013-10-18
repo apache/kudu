@@ -16,9 +16,17 @@ namespace log {
 // LogReader::ReadEntries().
 class LogReader {
  public:
-  // Opens a LogReader and sets 'reader' to the newly created LogReader.
+  // Opens a LogReader on the default tablet log directory, and sets
+  // 'reader' to the newly created LogReader.
   static Status Open(FsManager *fs_manager,
                      const string& tablet_oid,
+                     gscoped_ptr<LogReader> *reader);
+
+  // Opens a LogReader on a specific tablet log recovery directory, and sets
+  // 'reader' to the newly created LogReader.
+  static Status Open(FsManager *fs_manager,
+                     const string& tablet_oid,
+                     uint64_t recovery_ts,
                      gscoped_ptr<LogReader> *reader);
 
   // Reads all entries of the provided segment, adds them the 'entries' vector.
@@ -44,8 +52,8 @@ class LogReader {
   LogReader(FsManager *fs_manager,
             const string& tablet_name);
 
-  // Reads the headers of all segments in path_.
-  Status Init();
+  // Reads the headers of all segments in 'path_'.
+  Status Init(const string& path_);
 
   // Parses the magic and header length and sets *parsed_len to the header size.
   static Status ParseMagicAndLength(const Slice &data,
