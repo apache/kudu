@@ -16,6 +16,7 @@ namespace kudu {
 //  FS Paths
 // ==========================================================================
 const char *FsManager::kWalsDirName = "wals";
+const char *FsManager::kWalsRecoveryDirPrefix = ".recovery";
 const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
@@ -146,27 +147,6 @@ Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
   LOG(WARNING) << "Unable to read '"+ block_id.ToString() +"' metadata block, marking as corrupted";
   env_->RenameFile(path, path + kCorruptedSuffix);
   return Status::Corruption("Unable to read '" + block_id.ToString() + "' metadata block");
-}
-
-// ==========================================================================
-//  Wal read/write interfaces
-// ==========================================================================
-
-Status FsManager::NewWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                             shared_ptr<WritableFile> *writer) {
-  string path = GetWalFilePath(server, prefix, timestamp);
-  if (env_->FileExists(path)) {
-    return Status::AlreadyPresent("Another WAL with the same timestamp already exists. ",
-      "server=" + server + " timestamp=" +  boost::lexical_cast<string>(timestamp));
-  }
-  // TODO: The dir should be created by the new file...
-  CreateWalsDir(server, prefix, timestamp);
-  return env_util::OpenFileForWrite(env_, path, writer);
-}
-
-Status FsManager::OpenWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                              shared_ptr<RandomAccessFile> *reader) {
-  return env_util::OpenFileForRandom(env_, GetWalFilePath(server, prefix, timestamp), reader);
 }
 
 } // namespace kudu

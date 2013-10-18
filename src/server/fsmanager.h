@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gutil/gscoped_ptr.h"
+#include "gutil/strings/substitute.h"
 #include "gutil/strtoint.h"
 #include "server/oid_generator.h"
 #include "util/env.h"
@@ -123,21 +124,6 @@ class FsManager {
   Status ReadMetadataBlock(const BlockId& block_id, MessageLite *msg);
 
   // ==========================================================================
-  //  Wal read/write interfaces
-  // ==========================================================================
-
-  // TODO the Log (the actual implementation of WAL) does not comply with how files
-  // are created/retrieved here. For instance we moved away from using timestamps.
-  // This needs to be changed to comply to the actual log file/segment format.
-  // For now the Log simply uses FsManager's exposed env_ to perform all of this.
-
-
-  Status NewWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                    shared_ptr<WritableFile> *writer);
-  Status OpenWalFile(const string& server, const string& prefix, uint64_t timestamp,
-                     shared_ptr<RandomAccessFile> *reader);
-
-  // ==========================================================================
   //  on-disk path
   // ==========================================================================
   const string& GetRootDir() const {
@@ -162,10 +148,16 @@ class FsManager {
     return env_->JoinPathSegments(root_path_, kWalsDirName);
   }
 
-  string GetWalFilePath(const string& server, const string& prefix, uint64_t timestamp) const {
-    string path = env_->JoinPathSegments(GetWalsRootDir(), server);
-    path = env_->JoinPathSegments(path, boost::lexical_cast<string>(timestamp / kWalPartitionMillis));
-    return env_->JoinPathSegments(path, prefix + "." + boost::lexical_cast<string>(timestamp));
+  string GetTabletWalDir(const std::string& tablet_id) const {
+    return env_->JoinPathSegments(GetWalsRootDir(), tablet_id);
+  }
+
+  string GetTabletWalRecoveryDir(const std::string& tablet_id, uint64_t timestamp) const {
+    string path = env_->JoinPathSegments(GetWalsRootDir(), tablet_id);
+    path = env_->JoinPathSegments(path, strings::Substitute("$0-$1",
+                                                            kWalsRecoveryDirPrefix,
+                                                            boost::lexical_cast<string>(timestamp)));
+    return path;
   }
 
   // Return the directory where tablet master blocks should be stored.
@@ -223,17 +215,6 @@ class FsManager {
     return CreateDirIfMissing(path);
   }
 
-  Status CreateWalsDir(const string& server, const string& prefix, uint64_t timestamp) {
-    string path = GetWalsRootDir();
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = env_->JoinPathSegments(GetWalsRootDir(), server);
-    RETURN_NOT_OK(CreateDirIfMissing(path));
-
-    path = env_->JoinPathSegments(path, boost::lexical_cast<string>(timestamp / kWalPartitionMillis));
-    return CreateDirIfMissing(path);
-  }
-
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
@@ -243,8 +224,8 @@ class FsManager {
   static const char *kDataDirName;
   static const char *kMasterBlockDirName;
   static const char *kWalsDirName;
+  static const char *kWalsRecoveryDirPrefix;
   static const char *kCorruptedSuffix;
-  static const uint64_t kWalPartitionMillis = 3600000;   // 1hour
 
   Env *env_;
   string root_path_;
