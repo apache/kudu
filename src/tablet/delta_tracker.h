@@ -54,6 +54,11 @@ class DeltaTracker {
   shared_ptr<DeltaIterator> NewDeltaIterator(const Schema &schema,
                                                       const MvccSnapshot &snap) const;
 
+  // Like NewDeltaIterator() but only includes file based stores, does not include
+  // the DMS.
+  shared_ptr<DeltaIterator> NewDeltaFileIterator(const Schema &schema,
+                                                 const MvccSnapshot &snap,
+                                                 int64_t* last_store_id) const;
 
   Status Open();
   Status Flush();
@@ -105,6 +110,10 @@ class DeltaTracker {
 
   const Schema& schema() const;
 
+  boost::mutex* compact_flush_lock() {
+    return &compact_flush_lock_;
+  }
+
  private:
   friend class DiskRowSet;
 
@@ -114,6 +123,7 @@ class DeltaTracker {
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestRowSet, TestMakeDeltaCompactionInput);
   FRIEND_TEST(TestRowSet, TestCompactStores);
+  FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(const DeltaMemStore &dms,
@@ -142,6 +152,12 @@ class DeltaTracker {
                              vector<shared_ptr<DeltaStore > > *target_stores,
                              vector<int64_t> *target_ids,
                              gscoped_ptr<DeltaCompactionInput> *out);
+
+  // Set this delta tracker's DeltaMemStore to 'new_dms'.
+  //
+  // NOTE: this is an internal API strictly for used during
+  // compactions.
+  void SetDMS(const shared_ptr<DeltaMemStore> &new_dms);
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
   Schema schema_;
@@ -172,7 +188,7 @@ class DeltaTracker {
   // (that both first acquire this lock and then component_lock) will deadlock.
   //
   // TODO(perf): this needs to be more fine grained
-  mutable boost::mutex flush_or_compact_lock_;
+  mutable boost::mutex compact_flush_lock_;
 };
 
 
@@ -222,6 +238,8 @@ class DeltaApplier : public ColumnwiseIterator {
   Status MaterializeColumn(size_t col_idx, ColumnBlock *dst);
  private:
   friend class DeltaTracker;
+
+  FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
 
   DISALLOW_COPY_AND_ASSIGN(DeltaApplier);
 

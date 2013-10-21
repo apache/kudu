@@ -218,6 +218,20 @@ class Tablet {
 
   int32_t TotalMissedDeltasMutationsForTests() const { return total_missed_deltas_mutations_; }
 
+  // Runs a major delta major compaction on columns at specified
+  // indexes in 'input_rowset'; 'column_indexes' must be sorted.
+  // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
+  // a shared_ptr API for now?)
+  //
+  // TODO: Handle MVCC to support MemRowSet and handle deltas in DeltaMemStore
+  Status DoMajorDeltaCompaction(const metadata::ColumnIndexes& column_indexes,
+                                shared_ptr<RowSet> input_rowset);
+
+  // Method used by tests to retrieve all rowsets of this table. This
+  // will be removed once code for selecting the appropriate RowSet is
+  // finished and delta files is finished is part of Tablet class.
+  void GetRowSetsForTests(vector<shared_ptr<RowSet> >* out);
+
   const std::string& tablet_id() const { return metadata_->oid(); }
 
   // Return the metrics for this tablet.

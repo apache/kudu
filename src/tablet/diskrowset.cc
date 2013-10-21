@@ -18,6 +18,7 @@
 #include "gutil/strings/strip.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
+#include "tablet/delta_compaction.h"
 #include "util/status.h"
 
 namespace kudu { namespace tablet {
@@ -27,6 +28,7 @@ using cfile::ReaderOptions;
 using metadata::RowSetMetadata;
 using metadata::RowSetMetadataVector;
 using metadata::TabletMetadata;
+using metadata::ColumnIndexes;
 using std::string;
 using std::tr1::shared_ptr;
 
@@ -358,6 +360,20 @@ Status DiskRowSet::FlushDeltas() {
 
 Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
+}
+
+MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(RowSetColumnUpdater* updater,
+                                                          int64_t* last_store_id) const {
+  CHECK(open_);
+
+  shared_ptr<DeltaIterator> delta_iter = delta_tracker_->NewDeltaFileIterator(
+      schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions(), last_store_id);
+  return new MajorDeltaCompaction(delta_iter, updater);
+}
+
+void DiskRowSet::SetDMSFrom(DiskRowSet* rs) {
+  // Concurrency issues are handled by the DeltaTracker::SetDMS
+  delta_tracker_->SetDMS(rs->delta_tracker()->dms_);
 }
 
 RowwiseIterator *DiskRowSet::NewRowIterator(const Schema &projection,

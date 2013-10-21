@@ -528,6 +528,41 @@ string DeltaFileIterator::ToString() const {
   return "DeltaFileIterator(" + dfr_->path() + ")";
 }
 
+struct FilterAndAppendVisitor {
+
+  Status Visit(const DeltaKey& key, const Slice& deltas) {
+    faststring buf;
+    RowChangeListEncoder enc(dfi->dfr_->schema(), &buf);
+    RETURN_NOT_OK(
+        RowChangeListDecoder::RemoveColumnsFromChangeList(RowChangeList(deltas),
+                                                          column_indexes,
+                                                          dfi->dfr_->schema(),
+                                                          &enc));
+    if (enc.is_initialized()) {
+      RowChangeList rcl = enc.as_changelist();
+      DeltaKeyAndUpdate upd;
+      upd.key = key;
+      CHECK(arena->RelocateSlice(rcl.slice(), &upd.cell));
+      out->push_back(upd);
+    }
+    // if enc.is_initialized() return false, that means deltas only
+    // contained the specified columns.
+    return Status::OK();
+  }
+
+  const DeltaFileIterator* dfi;
+  const metadata::ColumnIndexes& column_indexes;
+  vector<DeltaKeyAndUpdate>* out;
+  Arena* arena;
+};
+
+Status DeltaFileIterator::FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+                                                 vector<DeltaKeyAndUpdate>* out,
+                                                 Arena* arena) {
+  FilterAndAppendVisitor visitor = {this, col_indexes, out, arena};
+  return VisitMutations(&visitor);
+}
+
 void DeltaFileIterator::FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas,
                                              const string &msg) {
   LOG(FATAL) << "Saw unexpected delta type in deltafile " << dfr_->path() << ": "

@@ -46,6 +46,9 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
   virtual Status ApplyDeletes(SelectionVector *sel_vec);
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+  virtual Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+                                        vector<DeltaKeyAndUpdate>* out,
+                                        Arena* arena);
   virtual string ToString() const;
 
  private:
@@ -102,6 +105,21 @@ Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *are
   return Status::OK();
 }
 
+struct DeltaKeyUpdateComparator {
+  bool operator() (const DeltaKeyAndUpdate& a, const DeltaKeyAndUpdate &b) {
+    return a.key.CompareTo(b.key) < 0;
+  }
+};
+
+Status DeltaIteratorMerger::FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+                                                   vector<DeltaKeyAndUpdate>* out,
+                                                   Arena* arena) {
+  BOOST_FOREACH(const shared_ptr<DeltaIterator>& iter, iters_) {
+    RETURN_NOT_OK(iter->FilterColumnsAndAppend(col_indexes, out, arena));
+  }
+  std::sort(out->begin(), out->end(), DeltaKeyUpdateComparator());
+  return Status::OK();
+}
 
 string DeltaIteratorMerger::ToString() const {
   string ret;
@@ -250,7 +268,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   // Prevent concurrent compactions or a compaction concurrent with a flush
   //
   // TODO(perf): this could be more fine grained
-  boost::lock_guard<boost::mutex> l(flush_or_compact_lock_);
+  boost::lock_guard<boost::mutex> l(compact_flush_lock_);
 
   if (end_idx == -1) {
     end_idx = delta_stores_.size() - 1;
@@ -318,6 +336,20 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema &schema,
                                                          const MvccSnapshot &snap) const {
   std::vector<shared_ptr<DeltaStore> > stores;
   CollectStores(&stores);
+  return DeltaIteratorMerger::Create(stores, schema, snap);
+}
+
+shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(const Schema& schema,
+                                                             const MvccSnapshot& snap,
+                                                             int64_t* last_store_id) const {
+  std::vector<shared_ptr<DeltaStore> > stores;
+  {
+    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    // TODO perf: is this really needed? Will check
+    // DeltaIteratorMerger::Create()
+    stores.assign(delta_stores_.begin(), delta_stores_.end());
+  }
+  *last_store_id = stores.back()->id();
   return DeltaIteratorMerger::Create(stores, schema, snap);
 }
 
@@ -412,7 +444,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
 }
 
 Status DeltaTracker::Flush() {
-  boost::lock_guard<boost::mutex> l(flush_or_compact_lock_);
+  boost::lock_guard<boost::mutex> l(compact_flush_lock_);
 
   // First, swap out the old DeltaMemStore a new one,
   // and add it to the list of delta stores to be reflected
@@ -468,6 +500,11 @@ Status DeltaTracker::Flush() {
 
   // TODO: wherever we write stuff, we should write to a tmp path
   // and rename to final path!
+}
+
+void DeltaTracker::SetDMS(const shared_ptr<DeltaMemStore>& dms) {
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  dms_ = dms;
 }
 
 Status DeltaTracker::AlterSchema(const Schema& schema) {

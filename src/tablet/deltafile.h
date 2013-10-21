@@ -149,6 +149,9 @@ class DeltaFileIterator : public DeltaIterator {
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst);
   Status ApplyDeletes(SelectionVector *sel_vec);
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena);
+  Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+                                vector<DeltaKeyAndUpdate>* out,
+                                Arena* arena);
   string ToString() const;
 
  private:
@@ -156,6 +159,7 @@ class DeltaFileIterator : public DeltaIterator {
   friend struct ApplyingVisitor;
   friend struct CollectingVisitor;
   friend struct DeletingVisitor;
+  friend struct FilterAndAppendVisitor;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
 

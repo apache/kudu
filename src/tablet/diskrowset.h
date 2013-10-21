@@ -169,6 +169,9 @@ class RollingDiskRowSetWriter {
 // DiskRowSet
 ////////////////////////////////////////////////////////////
 
+class MajorDeltaCompaction;
+class RowSetColumnUpdater;
+
 class DiskRowSet : public RowSet {
  public:
   static const char *kMinKeyMetaEntryName;
@@ -273,10 +276,24 @@ class DiskRowSet : public RowSet {
   FRIEND_TEST(TestCompaction, TestOneToOne);
   DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
   friend class CompactionInput;
+  friend class Tablet;
 
   explicit DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
 
   Status Open();
+
+  // Create a new major delta compaction object, with 'updater', and a
+  // merge of all of deltafiles in this object's delta tracker as
+  // input. Sets 'delta_store_id' to the correct delta store id to use
+  // for the delta file created by this delta compaction
+  // 'updater' must remain valid for the lifetime of the returned
+  // NewMajorDeltaCompaction() object.
+  MajorDeltaCompaction* NewMajorDeltaCompaction(RowSetColumnUpdater* updater,
+                                                int64_t* delta_store_id) const;
+
+  // Points this object's delta memstore to delta memstore in
+  // 'rs'.
+  void SetDMSFrom(DiskRowSet* rs);
 
   shared_ptr<metadata::RowSetMetadata> rowset_metadata_;
 

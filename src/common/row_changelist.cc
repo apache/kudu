@@ -118,4 +118,27 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
   return Status::OK();
 }
 
+Status RowChangeListDecoder::RemoveColumnsFromChangeList(const RowChangeList& src,
+                                                         const std::vector<size_t>& column_indexes,
+                                                         const Schema &schema,
+                                                         RowChangeListEncoder* out) {
+  RowChangeListDecoder decoder(schema, src);
+  RETURN_NOT_OK(decoder.Init());
+  if (decoder.is_delete()) {
+    out->SetToDelete();
+  } else if (decoder.is_reinsert()) {
+    out->SetToReinsert(decoder.reinserted_row_slice());
+  } else if (decoder.is_update()) {
+    while (decoder.HasNext()) {
+      size_t col_id = 0xdeadbeef;
+      const void *col_val = NULL;
+      RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
+      if (!std::binary_search(column_indexes.begin(), column_indexes.end(), col_id)) {
+        out->AddColumnUpdate(col_id, col_val);
+      }
+    }
+  }
+  return Status::OK();
+}
+
 } // namespace kudu

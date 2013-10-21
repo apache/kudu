@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 #include "common/row.h"
 #include "common/schema.h"
@@ -140,6 +141,10 @@ class RowChangeListEncoder {
     return RowChangeList(*dst_);
   }
 
+  bool is_initialized() const {
+    return type_ != RowChangeList::kUninitialized;
+  }
+
  private:
   void SetType(RowChangeList::ChangeType type) {
     DCHECK_EQ(type_, RowChangeList::kUninitialized);
@@ -260,6 +265,19 @@ class RowChangeListDecoder {
   static Status ProjectUpdate(const DeltaProjector& projector,
                               const RowChangeList& src,
                               faststring *buf);
+
+  // If 'src' is an update, then only add changes for columns
+  // specified by 'column_indexes' to 'out'. Delete and Re-insert
+  // changes are added to 'out' as-is. If an update only contained
+  // changes for 'column_indexes', then out->is_initialized() will
+  // return false.
+  // 'column_indexes' must be sorted; 'out' must be
+  // valid for the duration of this method, but not have been
+  // previously initialized.
+  static Status RemoveColumnsFromChangeList(const RowChangeList& src,
+                                            const std::vector<size_t>& column_indexes,
+                                            const Schema& schema,
+                                            RowChangeListEncoder* out);
 
  private:
   FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);

@@ -14,7 +14,6 @@
 #include "util/test_util.h"
 #include "gutil/algorithm.h"
 
-
 namespace kudu {
 namespace tablet {
 
@@ -56,8 +55,93 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
     }
     ASSERT_STATUS_OK(rsw.Finish());
   }
+
+  void WriteTestTablet(int nrows) {
+    WriteTransactionContext tx_ctx;
+    RowBuilder rb(schema_);
+
+    for (int i = 0; i < nrows; i++) {
+      rb.Reset();
+      tx_ctx.Reset();
+      rb.AddString(StringPrintf("hello %08d", i));
+      rb.AddUint32(i * 2);
+      rb.AddString(StringPrintf("a %08d", i * 2));
+      rb.AddUint32(i * 10);
+      rb.AddString(StringPrintf("b %08d", i * 10));
+      ASSERT_STATUS_OK_FAST(tablet_->Insert(&tx_ctx, rb.row()));
+    }
+  }
+
+  void UpdateRows(int nrows, bool even) {
+    WriteTransactionContext tx_ctx;
+    faststring update_buf;
+    RowChangeListEncoder update(schema_, &update_buf);
+    RowBuilder rb(schema_.CreateKeyProjection());
+    for (int idx = 0; idx < nrows; idx++) {
+      if ((idx % 2 == 0) == even) {
+        string key_str = StringPrintf("hello %08d",  idx);
+        tx_ctx.Reset();
+        rb.Reset();
+        rb.AddString(key_str);
+        uint32_t col1_val = idx * 3;
+        uint32_t col3_val = idx * 11;
+        Slice col4_val("major delta compaction");
+        update.AddColumnUpdate(1, &col1_val);
+        update.AddColumnUpdate(3, &col3_val);
+        update.AddColumnUpdate(4, &col4_val);
+        ASSERT_STATUS_OK(tablet_->MutateRow(
+            &tx_ctx, rb.row(), schema_, RowChangeList(update_buf)));
+      }
+    }
+  }
+
+  MvccManager mvcc_;
 };
 
+// Tests a major delta compaction run
+// Verifies that the output rowset accurately reflects the mutations, but keeps the
+// unchanged columns intact.
+TEST_F(TestMajorDeltaCompaction, TestCompact) {
+  const int kNumRows = 100;
+  ASSERT_NO_FATAL_FAILURE(WriteTestTablet(kNumRows));
+  tablet_->Flush();
+
+  vector<shared_ptr<RowSet> > all_rowsets;
+  tablet_->GetRowSetsForTests(&all_rowsets);
+
+  shared_ptr<RowSet> rs = all_rowsets.front();
+  shared_ptr<RowSetMetadata> meta = rs->metadata();
+
+  // Update the even rows and flush deltas
+  ASSERT_NO_FATAL_FAILURE(UpdateRows(kNumRows, false));
+  // TODO once Jd's method for flushing deltas from Tablet is committed, use this.
+  ASSERT_STATUS_OK(down_cast<DiskRowSet*>(rs.get())->FlushDeltas());
+
+  // Update the odd rows and flush deltas
+  ASSERT_NO_FATAL_FAILURE(UpdateRows(kNumRows, true));
+  ASSERT_STATUS_OK(down_cast<DiskRowSet*>(rs.get())->FlushDeltas());
+
+  vector<size_t> cols;
+  cols.push_back(1);
+  cols.push_back(3);
+
+  ASSERT_STATUS_OK(tablet_->DoMajorDeltaCompaction(cols, rs));
+
+  gscoped_ptr<RowwiseIterator> row_iter;
+  ASSERT_STATUS_OK(tablet_->NewRowIterator(schema_, &row_iter));
+  ASSERT_STATUS_OK(row_iter->Init(NULL));
+  vector<string> results;
+  ASSERT_STATUS_OK(IterateToStringList(row_iter.get(), &results));
+  VLOG(1) << "Results of iterating over the updated materialized rows:";
+  for (int i = 0; i < results.size(); i++) {
+    const string& str = results[i];
+    VLOG(1) << str;
+    string expected = StringPrintf(
+        "(string key=hello %08d, uint32 val1=%d, string val2=a %08d, uint32 val3=%d, string val4=%s)",
+        i, i * 3, i * 2, i * 11, "major delta compaction");
+    ASSERT_EQ(expected, str);
+  }
+}
 
 // Tests modifying specified columns of an existing DiskRowSet
 TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
@@ -71,11 +155,10 @@ TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
   cols.push_back(2);
   cols.push_back(4);
 
-  shared_ptr<RowSetMetadata> rowset_meta_out;
-
   RowSetColumnUpdater col_updater(tablet_->metadata(),
-                                  rowset_meta_.get(),
+                                  rowset_meta_,
                                   cols);
+  shared_ptr<RowSetMetadata> rowset_meta_out;
   ASSERT_STATUS_OK(col_updater.Open(&rowset_meta_out));
 
   Schema projection;
@@ -131,7 +214,8 @@ TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
   string expected_last = StringPrintf(
       "(string key=hello %08d, uint32 val1=%d, string val2=2 %08d, uint32 val3=%d, string val4=4 %08d)",
       last_row, last_row * 2, last_row * 2, last_row * 10, last_row * 10);
-  ASSERT_EQ(expected_last, results.back());
+      ASSERT_EQ(expected_last, results.back());
+
 }
 
 } // namespace tablet

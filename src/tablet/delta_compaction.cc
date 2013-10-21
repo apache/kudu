@@ -4,14 +4,18 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
 #include "gutil/stl_util.h"
+#include "gutil/strings/join.h"
 #include "common/columnblock.h"
 #include "cfile/cfile_reader.h"
+#include "tablet/cfile_set.h"
 #include "tablet/delta_key.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/mvcc.h"
 
 namespace kudu {
 
@@ -30,6 +34,8 @@ namespace {
 typedef DeltaMemStore::DMSTree DMSTree;
 typedef DeltaMemStore::DMSTreeIter DMSTreeIter;
 typedef std::pair<size_t, cfile::Writer *> WriterMapEntry;
+
+const size_t kRowsPerBlock = 100; // Number of rows per block of columns
 
 class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
  public:
@@ -52,7 +58,7 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
     return iter_->IsValid();
   }
 
-  virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) {
     // Reset the arena used to project the deltas to the compaction schema.
     arena_.Reset();
 
@@ -60,7 +66,7 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 
     for (int i = 0; i < kRowsPerBlock && iter_->IsValid(); i++) {
       Slice key_slice;
-      DeltaCompactionInputCell &input_cell = (*block)[i];
+      DeltaKeyAndUpdate &input_cell = (*block)[i];
       iter_->GetCurrentEntry(&key_slice, &input_cell.cell);
       RETURN_NOT_OK(input_cell.key.DecodeFrom(&key_slice));
 
@@ -96,10 +102,6 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
   faststring delta_buf_;
 
   DeltaProjector delta_projector_;
-
-  enum {
-    kRowsPerBlock = 100 // Number of rows per block of columns
-  };
 };
 
 class DeltaFileCompactionInput : public DeltaCompactionInput {
@@ -133,7 +135,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return iter_->HasNext();
   }
 
-  virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) {
     // Reset the arena used by the ColumnBlock scan and used to project
     // the deltas to the compaction schema.
     arena_.Reset();
@@ -144,7 +146,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
 
     block->resize(nrows);
     for (int i = 0; i < nrows; i++) {
-      DeltaCompactionInputCell &input_cell = (*block)[i];
+      DeltaKeyAndUpdate &input_cell = (*block)[i];
       Slice s(data_[i]);
       RETURN_NOT_OK(input_cell.key.DecodeFrom(&s));
       input_cell.cell = s;
@@ -185,11 +187,6 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
   faststring delta_buf_;
 
   bool initted_;
-
-  enum {
-    kRowsPerBlock = 100 // Number of rows per block of columns
-  };
-
   bool block_prepared_;
 };
 
@@ -216,7 +213,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
       return pending_idx >= pending.size();
     }
 
-    const DeltaCompactionInputCell &next() const {
+    const DeltaKeyAndUpdate &next() const {
       return pending[pending_idx];
     }
 
@@ -242,7 +239,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     }
 
     shared_ptr<DeltaCompactionInput> input;
-    vector<DeltaCompactionInputCell> pending;
+    vector<DeltaKeyAndUpdate> pending;
     int pending_idx;
 
     vector<MergeState *> dominated;
@@ -284,14 +281,14 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     return false;
   }
 
-  virtual Status PrepareBlock(vector<DeltaCompactionInputCell> *block) {
+  virtual Status PrepareBlock(vector<DeltaKeyAndUpdate> *block) {
     CHECK(!states_.empty());
 
     block->clear();
 
     while (true) {
       int smallest_idx = -1;
-      DeltaCompactionInputCell smallest;
+      DeltaKeyAndUpdate smallest;
 
       // Iterate over the inputs to find the one with the smallest next row.
       // It may seem like an O(n lg k) merge using a heap would be more efficient,
@@ -420,11 +417,12 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 } // anonymous namespace
 
 RowSetColumnUpdater::RowSetColumnUpdater(TabletMetadata* tablet_metadata,
-                                         const RowSetMetadata* input_rowset_metadata,
+                                         const shared_ptr<RowSetMetadata>& input_rowset_metadata,
                                          const ColumnIndexes& col_indexes)
  : tablet_meta_(tablet_metadata),
    input_rowset_meta_(input_rowset_metadata),
    column_indexes_(col_indexes),
+   base_schema_(input_rowset_metadata->schema()),
    finished_(false) {
 }
 
@@ -434,6 +432,10 @@ RowSetColumnUpdater::~RowSetColumnUpdater() {
 
 Status RowSetColumnUpdater::Open(shared_ptr<RowSetMetadata>* output_rowset_meta) {
   CHECK(!finished_);
+
+  RETURN_NOT_OK(base_schema_.CreatePartialSchema(column_indexes_,
+                                                 &old_to_new_,
+                                                 &partial_schema_));
 
   ColumnWriters data_writers;
   RETURN_NOT_OK(tablet_meta_->CreateRowSetWithUpdatedColumns(column_indexes_,
@@ -499,6 +501,109 @@ Status RowSetColumnUpdater::Finish() {
   return Status::OK();
 }
 
+string RowSetColumnUpdater::ColumnNamesToString() const {
+  std::string result;
+  BOOST_FOREACH(size_t col_idx, column_indexes_) {
+    result += base_schema_.column(col_idx).ToString() + " ";
+  }
+  return result;
+}
+
+MajorDeltaCompaction::MajorDeltaCompaction(const shared_ptr<DeltaIterator>& delta_iter,
+                                           RowSetColumnUpdater* rsu)
+    : delta_iter_(delta_iter),
+      rsu_(rsu),
+      nrows_(0),
+      state_(kInitialized) {
+}
+
+Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *deltas_written) {
+  CHECK_EQ(state_, kInitialized);
+
+  const Schema& base_schema = rsu_->base_schema();
+  const Schema& partial_schema = rsu_->partial_schema();
+
+  shared_ptr<CFileSet> cfileset(new CFileSet(rsu_->input_rowset_meta()));
+  RETURN_NOT_OK(cfileset->Open());
+  shared_ptr<CFileSet::Iterator> cfileset_iter(cfileset->NewIterator(partial_schema));
+
+  RETURN_NOT_OK_PREPEND(
+      cfileset_iter->Init(NULL),
+      "Unable to open iterator for specified columns (" + partial_schema.ToString() + ")");
+
+  RETURN_NOT_OK(delta_iter_->Init());
+  RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
+
+  Arena arena(32 * 1024, 128 * 1024);
+  RowBlock block(base_schema, kRowsPerBlock, &arena);
+
+  DVLOG(1) << "Applying deltas and flushing for columns (" << partial_schema.ToString() << ")";
+
+  RETURN_NOT_OK(dfw->Start());
+
+  // Iterate over the rows
+  // For each iteration:
+  // - apply the deltas for each column
+  // - append deltas for other columns to 'dfw'
+  while (cfileset_iter->HasNext()) {
+    size_t n = block.row_capacity();
+    arena.Reset();
+    RETURN_NOT_OK(cfileset_iter->PrepareBatch(&n));
+
+    block.Resize(n);
+    nrows_ += n;
+
+    RETURN_NOT_OK(delta_iter_->PrepareBatch(n));
+    BOOST_FOREACH(size_t col_idx, rsu_->column_indexes()) {
+      size_t new_idx = rsu_->old_to_new(col_idx);
+      ColumnBlock col_block(block.column_block(col_idx));
+      RETURN_NOT_OK(cfileset_iter->MaterializeColumn(new_idx, &col_block));
+      RETURN_NOT_OK(delta_iter_->ApplyUpdates(col_idx, &col_block));
+    }
+    RETURN_NOT_OK(rsu_->AppendColumnsFromRowBlock(block));
+
+    arena.Reset();
+    vector<DeltaKeyAndUpdate> out;
+    RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(rsu_->column_indexes(), &out, &arena));
+    BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
+      dfw->AppendDelta(key_and_update.key, RowChangeList(key_and_update.cell));
+    }
+    *deltas_written += out.size();
+    RETURN_NOT_OK(cfileset_iter->FinishBatch());
+  }
+
+  RETURN_NOT_OK(rsu_->Finish());
+  RETURN_NOT_OK(dfw->Finish());
+
+  DVLOG(1) << "Applied all outstanding deltas for columns " << partial_schema.ToString() <<
+      ", and flushed the resulting rowsets and a total of " << *deltas_written << " deltas to disk.";
+
+  state_ = kFinished;
+  return Status::OK();
+}
+
+Status MajorDeltaCompaction::Compact(shared_ptr<RowSetMetadata>* output,
+                                     BlockId* block_id, size_t* deltas_written) {
+  CHECK_EQ(state_, kInitialized);
+
+  LOG(INFO) << "Starting major delta compaction for columns " <<
+      rsu_->ColumnNamesToString();
+
+  RETURN_NOT_OK(rsu_->Open(output));
+
+  shared_ptr<WritableFile> data_writer;
+  RETURN_NOT_OK_PREPEND((*output)->NewDeltaDataBlock(&data_writer, block_id),
+                        "Unable to create delta output block " + block_id->ToString());
+
+  DeltaFileWriter dfw(rsu_->base_schema(), data_writer);
+  RETURN_NOT_OK(FlushRowSetAndDeltas(&dfw, deltas_written));
+
+  LOG(INFO) << "Finished major delta compaction of columns " <<
+      rsu_->ColumnNamesToString();
+
+  return Status::OK();
+}
+
 Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
                                   const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
@@ -524,7 +629,7 @@ DeltaCompactionInput *DeltaCompactionInput::Merge(const Schema& projection,
   return new MergeDeltaCompactionInput(projection, inputs);
 }
 
-static string FormatDebugDeltaCell(const Schema &schema, const DeltaCompactionInputCell &cell) {
+static string FormatDebugDeltaCell(const Schema &schema, const DeltaKeyAndUpdate &cell) {
   string key_str = StringPrintf("(row %04u@tx%04"TXID_PRINT_FORMAT")", cell.key.row_idx(),
                                 cell.key.txid().v);
   return StringPrintf("(delta key=%s, change_list=%s)", key_str.c_str(),
@@ -534,12 +639,12 @@ static string FormatDebugDeltaCell(const Schema &schema, const DeltaCompactionIn
 Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string> *lines,
                                      const Schema &schema) {
   RETURN_NOT_OK(input->Init());
-  vector<DeltaCompactionInputCell> cells;
+  vector<DeltaKeyAndUpdate> cells;
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&cells));
 
-    BOOST_FOREACH(const DeltaCompactionInputCell &cell, cells) {
+    BOOST_FOREACH(const DeltaKeyAndUpdate &cell, cells) {
       LOG_STRING(INFO, lines) << FormatDebugDeltaCell(schema, cell);
     }
     RETURN_NOT_OK(input->FinishBlock());
@@ -552,11 +657,11 @@ Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *o
   DCHECK_EQ(out->schema().has_column_ids(), input->schema().has_column_ids());
   DCHECK_SCHEMA_EQ(out->schema(), input->schema());
   RETURN_NOT_OK(input->Init());
-  vector<DeltaCompactionInputCell> cells;
+  vector<DeltaKeyAndUpdate> cells;
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&cells));
-    BOOST_FOREACH(const DeltaCompactionInputCell &cell, cells) {
+    BOOST_FOREACH(const DeltaKeyAndUpdate &cell, cells) {
       out->AppendDelta(cell.key, RowChangeList(cell.cell));
     }
     RETURN_NOT_OK(input->FinishBlock());

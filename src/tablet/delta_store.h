@@ -14,6 +14,7 @@
 namespace kudu { namespace tablet {
 
 class DeltaIterator;
+class DeltaFileWriter;
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaFileReader.
@@ -57,6 +58,12 @@ class DeltaStore {
 //     CHECK_OK(iter->ApplyUpdates(1, rowblock.column(1)))
 //     ...
 //  }
+
+struct DeltaKeyAndUpdate {
+  DeltaKey key;
+  Slice cell;
+};
+
 class DeltaIterator {
  public:
   // Initialize the iterator. This must be called once before any other
@@ -93,6 +100,15 @@ class DeltaIterator {
   //
   // The Mutation objects will be allocated out of the provided Arena, which must be non-NULL.
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) = 0;
+
+  // Iterate through all deltas, adding deltas for columns not
+  // specified in 'col_indexes' to 'out'.
+  //
+  // The delta objects will be allocated out the provided Arena which
+  // must be non-NULL.
+  virtual Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
+                                        vector<DeltaKeyAndUpdate>* out,
+                                        Arena* arena) = 0;
 
   // Return a string representation suitable for debug printouts.
   virtual std::string ToString() const = 0;

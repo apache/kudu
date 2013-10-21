@@ -26,6 +26,7 @@
 #include "tablet/tablet.h"
 #include "tablet/tablet_metrics.h"
 #include "tablet/diskrowset.h"
+#include "tablet/delta_compaction.cc"
 #include "util/bloom_filter.h"
 #include "util/env.h"
 #include "util/metrics.h"
@@ -51,6 +52,7 @@ using metadata::RowSetMetadata;
 using metadata::RowSetMetadataIds;
 using metadata::RowSetMetadataVector;
 using metadata::TabletMetadata;
+using metadata::ColumnIndexes;
 using std::string;
 using std::set;
 using std::vector;
@@ -485,6 +487,65 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
   }
 }
 
+Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
+                                      shared_ptr<RowSet> input_rs) {
+  vector<shared_ptr<RowSet> > new_rowsets;
+  vector<shared_ptr<RowSet> > input_rowsets;
+
+  gscoped_ptr<RowSetColumnUpdater> updater;
+  DiskRowSet* input_drs = NULL;
+  int64_t delta_store_id;
+  gscoped_ptr<MajorDeltaCompaction> compaction;
+
+  {
+    // Avoid holding component_lock_ for too long
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    updater.reset(new RowSetColumnUpdater(metadata(), input_rs->metadata(), column_indexes));
+    input_drs = down_cast<DiskRowSet*>(input_rs.get());
+    compaction.reset(input_drs->NewMajorDeltaCompaction(updater.get(), &delta_store_id));
+  }
+
+  shared_ptr<DiskRowSet> new_rowset;
+  shared_ptr<RowSetMetadata> meta;
+  {
+    // TODO: make this more fine-grained if possible. Will make sense
+    // to re-touch this area once integrated with maintenance ops
+    // scheduling.
+    shared_ptr<boost::mutex::scoped_try_lock> input_rs_lock(
+        new boost::mutex::scoped_try_lock(*input_drs->compact_flush_lock()));
+    CHECK(input_rs_lock->owns_lock());
+
+    shared_ptr<boost::mutex::scoped_try_lock> input_dt_lock(
+        new boost::mutex::scoped_try_lock(*input_drs->delta_tracker()->compact_flush_lock()));
+    CHECK(input_dt_lock->owns_lock());
+
+    boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
+
+    BlockId delta_block;
+    size_t ndeltas = 0;
+
+    RETURN_NOT_OK(compaction->Compact(&meta, &delta_block, &ndeltas));
+    if (ndeltas > 0) {
+      RETURN_NOT_OK(meta->CommitDeltaDataBlock(delta_store_id, delta_block));
+    }
+    RETURN_NOT_OK_PREPEND(meta->Flush(),
+                          "Unable to commit rowset metadata " + meta->ToString());
+    RETURN_NOT_OK_PREPEND(DiskRowSet::Open(meta, &new_rowset),
+                          "Unable to open compaction results " + meta->ToString());
+
+    new_rowset->SetDMSFrom(input_drs);
+
+    new_rowsets.push_back(new_rowset);
+    input_rowsets.push_back(input_rs);
+
+    // Ensure that the latest schema is set to the new RowSets
+    RETURN_NOT_OK(new_rowset->AlterSchema(schema_));
+
+    AtomicSwapRowSets(input_rowsets, new_rowsets);
+    return FlushMetadata(new_rowsets, boost::assign::list_of(meta), kNoMrsFlushed);
+  }
+}
+
 Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
   //BOOST_FOREACH(const shared_ptr<RowSet> &l_input, input.rowsets()) {
   //  LOG(INFO) << "Removing compaction input rowset " << l_input->ToString();
@@ -691,6 +752,17 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     LOG(FATAL) << "Was unable to find all rowsets selected for compaction";
   }
   return Status::OK();
+}
+
+void Tablet::GetRowSetsForTests(RowSetVector* out) {
+  shared_ptr<RowSetTree> rowsets_copy;
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    rowsets_copy = rowsets_;
+  }
+  BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
+    out->push_back(rs);
+  }
 }
 
 Status Tablet::FlushMetadata(const RowSetVector& to_remove,
