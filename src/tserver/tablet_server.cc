@@ -91,14 +91,13 @@ Status TabletServer::Start() {
 }
 
 Status TabletServer::Shutdown() {
-  CHECK(initted_);
   LOG(INFO) << "TabletServer shutting down...";
 
-  WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-
-  WARN_NOT_OK(ServerBase::Shutdown(), "Failed to shutdown server base components");
-
-  tablet_manager_->Shutdown();
+  if (initted_) {
+    WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
+    WARN_NOT_OK(ServerBase::Shutdown(), "Failed to shutdown server base components");
+    tablet_manager_->Shutdown();
+  }
 
   LOG(INFO) << "TabletServer shut down complete. Bye!";
 
