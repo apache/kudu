@@ -36,7 +36,7 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   for (int i = 0; i < key_columns; ++i) {
     if (PREDICT_FALSE(cols_[i].is_nullable())) {
       return Status::InvalidArgument(
-        "Bad schema", "Nullable key columns not supported");
+        "Bad schema", strings::Substitute("Nullable key columns are not supported: $0", cols_[i].name()));
     }
   }
 
@@ -78,6 +78,115 @@ string Schema::ToString() const {
   return StrCat("Schema [",
                 JoinStrings(col_strs, ", "),
                 "]");
+}
+
+// ============================================================================
+//  Schema Builder
+// ============================================================================
+void SchemaBuilder::Reset() {
+  cols_.clear();
+  col_ids_.clear();
+  col_names_.clear();
+  num_key_columns_ = 0;
+  id_ = 0;
+}
+
+void SchemaBuilder::Reset(const Schema& schema) {
+  cols_ = schema.cols_;
+  col_ids_ = schema.col_ids_;
+  num_key_columns_ = schema.num_key_columns_;
+  for (int i = 0; i < cols_.size(); ++i) {
+    col_names_.insert(cols_[i].name());
+  }
+
+  if (col_ids_.empty()) {
+    for (int i = 0; i < cols_.size(); ++i) {
+      col_ids_.push_back(i);
+    }
+    id_ = cols_.size();
+  } else {
+    id_ = *std::max_element(col_ids_.begin(), col_ids_.end()) + 1;
+  }
+}
+
+Status SchemaBuilder::AddKeyColumn(const string& name, DataType type) {
+  return AddColumn(ColumnSchema(name, type), true);
+}
+
+Status SchemaBuilder::AddColumn(const string& name,
+                                DataType type,
+                                bool is_nullable,
+                                const void *read_default,
+                                const void *write_default) {
+  return AddColumn(ColumnSchema(name, type, is_nullable, read_default, write_default), false);
+}
+
+Status SchemaBuilder::RemoveColumn(const string& name) {
+  unordered_set<string>::const_iterator it_names;
+  if ((it_names = col_names_.find(name)) == col_names_.end()) {
+    return Status::NotFound("The specified column does not exist", name);
+  }
+
+  col_names_.erase(it_names);
+  for (int i = 0; i < cols_.size(); ++i) {
+    if (name == cols_[i].name()) {
+      cols_.erase(cols_.begin() + i);
+      col_ids_.erase(col_ids_.begin() + i);
+      if (i < num_key_columns_) {
+        num_key_columns_--;
+      }
+      return Status::OK();
+    }
+  }
+
+  // Never reached
+  return Status::Corruption("Unable to remove existing column");
+}
+
+Status SchemaBuilder::RenameColumn(const string& old_name, const string& new_name) {
+  unordered_set<string>::const_iterator it_names;
+
+  // check if 'new_name' is already in use
+  if ((it_names = col_names_.find(new_name)) != col_names_.end()) {
+    return Status::AlreadyPresent("The column already exists", new_name);
+  }
+
+  // check if the 'old_name' column exists
+  if ((it_names = col_names_.find(old_name)) == col_names_.end()) {
+    return Status::NotFound("The specified column does not exist", old_name);
+  }
+
+  col_names_.erase(it_names);   // TODO: Should this one stay and marked as alias?
+  col_names_.insert(new_name);
+
+  BOOST_FOREACH(ColumnSchema& col_schema, cols_) {
+    if (old_name == col_schema.name()) {
+      col_schema.set_name(new_name);
+      return Status::OK();
+    }
+  }
+
+  // Never reached
+  return Status::IllegalState("Unable to rename existing column");
+}
+
+Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
+  if (ContainsKey(col_names_, column.name())) {
+    return Status::AlreadyPresent("The column already exists", column.name());
+  }
+
+  col_names_.insert(column.name());
+  if (is_key) {
+    cols_.insert(cols_.begin() + num_key_columns_, column);
+    col_ids_.insert(col_ids_.begin() + num_key_columns_, id_);
+    num_key_columns_++;
+  } else {
+    cols_.push_back(column);
+    col_ids_.push_back(id_);
+  }
+
+  id_++;
+  return Status::OK();
 }
 
 } // namespace kudu

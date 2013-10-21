@@ -184,18 +184,15 @@ TEST(TestSchema, TestProjectMissingColumn) {
 // This simulate a column rename ('val' -> 'val_renamed')
 // and a new column added ('non_present')
 TEST(TestSchema, TestProjectRename) {
-  Schema schema1(boost::assign::list_of
-                 (ColumnSchema("key", STRING))
-                 (ColumnSchema("val", UINT32)),
-                 boost::assign::list_of(0) (1),
-                 1);
+  SchemaBuilder builder;
+  ASSERT_STATUS_OK(builder.AddKeyColumn("key", STRING));
+  ASSERT_STATUS_OK(builder.AddColumn("val", UINT32));
+  Schema schema1 = builder.Build();
 
-  Schema schema2(boost::assign::list_of
-                 (ColumnSchema("key", STRING))
-                 (ColumnSchema("non_present", UINT32, true))
-                 (ColumnSchema("val_renamed", UINT32)),
-                 boost::assign::list_of(0) (2) (1),
-                 1);
+  builder.Reset(schema1);
+  ASSERT_STATUS_OK(builder.AddNullableColumn("non_present", UINT32));
+  ASSERT_STATUS_OK(builder.RenameColumn("val", "val_renamed"));
+  Schema schema2 = builder.Build();
 
   RowProjector row_projector;
   ASSERT_STATUS_OK(row_projector.Init(schema1, schema2));
@@ -207,10 +204,10 @@ TEST(TestSchema, TestProjectRename) {
   ASSERT_EQ(row_projector.base_cols_mapping()[0].first, 0);  // key schema2
   ASSERT_EQ(row_projector.base_cols_mapping()[0].second, 0); // key schema1
 
-  ASSERT_EQ(row_projector.base_cols_mapping()[1].first, 2);  // val_renamed schema2
+  ASSERT_EQ(row_projector.base_cols_mapping()[1].first, 1);  // val_renamed schema2
   ASSERT_EQ(row_projector.base_cols_mapping()[1].second, 1); // val schema1
 
-  ASSERT_EQ(row_projector.projection_defaults()[0], 1);      // non_present schema3
+  ASSERT_EQ(row_projector.projection_defaults()[0], 2);      // non_present schema2
 }
 
 

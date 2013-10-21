@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
+#include <tr1/unordered_set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,6 +33,7 @@ namespace kudu {
 
 using std::vector;
 using std::tr1::unordered_map;
+using std::tr1::unordered_set;
 
 // The schema for a given column.
 //
@@ -145,6 +147,12 @@ class ColumnSchema {
   }
 
  private:
+  friend class SchemaBuilder;
+
+  void set_name(const string& name) {
+    name_ = name;
+  }
+
   size_t id_;
   string name_;
   const TypeInfo *type_info_;
@@ -486,6 +494,8 @@ class Schema {
   }
 
  private:
+  friend class SchemaBuilder;
+
   // Returns the column index given the column ID
   int find_column_by_id(size_t id) const {
     if (has_column_ids()) {
@@ -511,6 +521,59 @@ class Schema {
 
   // NOTE: if you add more members, make sure to add the appropriate
   // code to swap() as well to prevent subtle bugs.
+};
+
+// Helper used for schema creation/editing.
+//
+// Example:
+//   Status s;
+//   SchemaBuilder builder(base_schema);
+//   s = builder.RemoveColumn("value");
+//   s = builder.AddKeyColumn("key2", STRING);
+//   s = builder.AddColumn("new_c1", UINT32);
+//   ...
+//   Schema new_schema = builder.Build();
+class SchemaBuilder {
+ public:
+  explicit SchemaBuilder() { Reset(); }
+  explicit SchemaBuilder(const Schema& schema) { Reset(schema); }
+
+  void Reset();
+  void Reset(const Schema& schema);
+
+  bool is_valid() const { return cols_.size() > 0; }
+  Schema Build() const { return Schema(cols_, col_ids_, num_key_columns_); }
+
+  Status AddKeyColumn(const string& name, DataType type);
+
+  Status AddColumn(const string& name, DataType type) {
+    return AddColumn(name, type, false, NULL, NULL);
+  }
+
+  Status AddNullableColumn(const string& name, DataType type) {
+    return AddColumn(name, type, true, NULL, NULL);
+  }
+
+  Status AddColumn(const string& name,
+                   DataType type,
+                   bool is_nullable,
+                   const void *read_default,
+                   const void *write_default);
+
+  Status RemoveColumn(const string& name);
+  Status RenameColumn(const string& old_name, const string& new_name);
+
+ private:
+  Status AddColumn(const ColumnSchema& column, bool is_key);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);
+
+  uint64_t id_;
+  vector<size_t> col_ids_;
+  vector<ColumnSchema> cols_;
+  unordered_set<string> col_names_;
+  size_t num_key_columns_;
 };
 
 } // namespace kudu

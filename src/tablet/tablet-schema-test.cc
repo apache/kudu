@@ -90,11 +90,10 @@ class TestTabletSchema : public KuduTabletTest {
 
  private:
   Schema CreateBaseSchema() {
-    return Schema(boost::assign::list_of
-                  (ColumnSchema("key", UINT32))
-                  (ColumnSchema("c1", UINT32)),
-                  boost::assign::list_of(0) (1),
-                  1);
+    SchemaBuilder builder;
+    CHECK(builder.AddKeyColumn("key", UINT32).ok());
+    CHECK(builder.AddColumn("c1", UINT32).ok());
+    return builder.Build();
   }
 };
 
@@ -109,7 +108,6 @@ TEST_F(TestTabletSchema, TestRead) {
                     (ColumnSchema("key", UINT32))
                     (ColumnSchema("c2", UINT64, false, &c2_default))
                     (ColumnSchema("c3", STRING, false, &c3_default)),
-                    boost::assign::list_of(0) (2) (3),
                     1);
 
   InsertRows(schema_, 0, kNumRows);
@@ -147,12 +145,11 @@ TEST_F(TestTabletSchema, TestWrite) {
   // Add one column with a default value
   const uint32_t c2_write_default = 5;
   const uint32_t c2_read_default = 7;
-  Schema s2(boost::assign::list_of
-            (ColumnSchema("key", UINT32))
-            (ColumnSchema("c1", UINT32))
-            (ColumnSchema("c2", UINT32, false, &c2_read_default, &c2_write_default)),
-            boost::assign::list_of(0) (1) (2),
-            1);
+
+  SchemaBuilder builder(schema_);
+  ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
+  Schema s2 = builder.Build();
+
   ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
 
   // Insert with base/old schema
@@ -184,11 +181,9 @@ TEST_F(TestTabletSchema, TestWrite) {
 TEST_F(TestTabletSchema, TestRenameProjection) {
   std::vector<std::pair<string, string> > keys;
 
-  Schema s2(boost::assign::list_of
-            (ColumnSchema("key", UINT32))
-            (ColumnSchema("c1_renamed", UINT32)),
-            boost::assign::list_of(0) (1),
-            1);
+  SchemaBuilder builder(schema_);
+  ASSERT_STATUS_OK(builder.RenameColumn("c1", "c1_renamed"));
+  Schema s2 = builder.Build();
 
   // Insert with the base schema
   InsertRow(schema_, 1);
@@ -240,6 +235,7 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   VerifyTabletRows(schema_, keys);
 }
 
+// Verify that removing a column and re-adding it will not result in making old data visible
 TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   std::vector<std::pair<string, string> > keys;
 
@@ -251,11 +247,12 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   keys.push_back(std::pair<string, string>("key=1", "c1=2"));
   VerifyTabletRows(schema_, keys);
 
-  Schema s2(boost::assign::list_of
-          (ColumnSchema("key", UINT32))
-          (ColumnSchema("c1", UINT32, true)),
-          boost::assign::list_of(0) (2), // NOTE that 'c1' ID is no longer 1
-          1);
+  SchemaBuilder builder(schema_);
+  ASSERT_STATUS_OK(builder.RemoveColumn("c1"));
+  // NOTE this new 'c1' will have a different id from the previous one
+  //      so the data added to the previous 'c1' will not be visible.
+  ASSERT_STATUS_OK(builder.AddNullableColumn("c1", UINT32));
+  Schema s2 = builder.Build();
 
   // Switch schema to s2
   ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
