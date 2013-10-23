@@ -15,7 +15,7 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
     : log_(log),
       log_executor_(TaskExecutor::CreateNew(1)),
       commit_executor_(TaskExecutor::CreateNew(1)),
-      next_op_id_(1) {
+      next_op_id_(log->last_entry_id().index() + 1) {
 }
 
 Status LocalConsensus::Start() {
