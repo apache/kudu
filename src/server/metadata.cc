@@ -192,6 +192,7 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
     shared_ptr<TabletSuperBlockPB> *super_block) {
   CHECK_NE(state_, kNotLoadedYet);
   DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
+  last_durable_mrs_id_ = last_durable_mrs_id;
 
   RowSetMetadataVector new_rowsets = rowsets_;
   RowSetMetadataVector::iterator it = new_rowsets.begin();
