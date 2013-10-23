@@ -54,6 +54,10 @@ class Log {
     return next_segment_header_.get();
   }
 
+  const consensus::OpId& last_entry_id() const {
+    return next_segment_header_->initial_id();
+  }
+
   // Runs the garbage collector on the set of previous segments. Segments that
   // only refer to in-mem state that has been flushed are candidates for
   // garbage collection.
