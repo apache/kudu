@@ -386,7 +386,7 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   return Status::OK();
 }
 
-const string RowSetMetadata::ToString() {
+const string RowSetMetadata::ToString() const {
   return "RowSet(" + boost::lexical_cast<string>(id_) + ")";
 }
 

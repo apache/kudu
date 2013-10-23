@@ -204,7 +204,7 @@ class RowSetMetadata {
 
   Status Flush() { return tablet_metadata_->Flush(); }
 
-  const string ToString();
+  const string ToString() const;
 
   int64_t id() const { return id_; }
 
