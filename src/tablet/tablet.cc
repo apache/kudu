@@ -155,7 +155,6 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
   DCHECK(tx_ctx) << "you must have a transaction context";
 
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, row.schema());
-  RowSetKeyProbe probe(row);
 
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
