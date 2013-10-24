@@ -1,38 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
-
-#include <boost/assign/list_of.hpp>
-#include <boost/foreach.hpp>
-#include <gtest/gtest.h>
-
-#include <tr1/memory>
-#include <vector>
-
-#include "common/wire_protocol.h"
-#include "common/wire_protocol-test-util.h"
-#include "common/schema.h"
-#include "consensus/log_reader.h"
-#include "gutil/strings/join.h"
-#include "gutil/stl_util.h"
-#include "server/metadata.h"
-#include "server/metadata_util.h"
-#include "server/rpc_server.h"
-#include "tablet/tablet.h"
-#include "tablet/tablet_peer.h"
-#include "tserver/mini_tablet_server.h"
-#include "tserver/scanners.h"
-#include "tserver/tablet_server.h"
-#include "tserver/tserver.proxy.h"
-#include "tserver/ts_tablet_manager.h"
-#include "util/net/sockaddr.h"
-#include "util/status.h"
-#include "util/coding.h"
-#include "util/test_util.h"
-#include "rpc/messenger.h"
+#include "tserver/tablet_server-test-base.h"
 
 using std::string;
 using std::tr1::shared_ptr;
-using kudu::log::LogEntry;
-using kudu::log::LogReader;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -41,116 +11,6 @@ using kudu::tablet::TabletPeer;
 
 namespace kudu {
 namespace tserver {
-
-class TabletServerTest : public KuduTest {
- public:
-  TabletServerTest() {
-    CreateTestSchema(&schema_);
-    key_schema_ = schema_.CreateKeyProjection();
-    rb_.reset(new RowBuilder(schema_));
-  }
-
-  virtual void SetUp() {
-    KuduTest::SetUp();
-
-    // Start server.
-    mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
-    ASSERT_STATUS_OK(mini_server_->Start());
-
-    // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(
-                  kTabletId, &tablet_peer_));
-
-    // Connect to it.
-    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_rpc_addr(), &proxy_));
-  }
-
-  virtual void TearDown() {
-    KuduTest::TearDown();
-  }
-
- private:
-
-  void CreateClientProxy(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy) {
-    if (!client_messenger_) {
-      MessengerBuilder bld("Client");
-      ASSERT_STATUS_OK(bld.Build(&client_messenger_));
-    }
-    proxy->reset(new TabletServerServiceProxy(client_messenger_, addr));
-  }
-
- protected:
-  static const char* kTabletId;
-
-  // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-  void InsertTestRows(int num_rows) {
-    tablet::TransactionContext tx_ctx;
-    for (int i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(i)));
-      tx_ctx.Reset();
-    }
-  }
-
-  ConstContiguousRow BuildTestRow(int index) {
-    rb_->Reset();
-    rb_->AddUint32(index);
-    rb_->AddUint32(index * 2);
-    rb_->AddString(StringPrintf("hello %d", index));
-    return rb_->row();
-  }
-
-  void DrainScannerToStrings(const string& scanner_id, const Schema& projection,
-                             vector<string>* results) {
-    RpcController rpc;
-    ScanRequestPB req;
-    ScanResponsePB resp;
-    req.set_scanner_id(scanner_id);
-
-    do {
-      rpc.Reset();
-      req.set_batch_size_bytes(10000);
-      SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
-      SCOPED_TRACE(resp.DebugString());
-      ASSERT_FALSE(resp.has_error());
-
-      vector<const uint8_t*> rows;
-      ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection,resp.mutable_data(), &rows));
-      LOG(INFO) << "Round trip got " << rows.size() << " rows";
-      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-        ConstContiguousRow row(projection, row_ptr);
-        results->push_back(projection.DebugRow(row));
-      }
-    } while (resp.has_more_results());
-  }
-
-  void CheckLogEntries(int expected) {
-    mini_server_->Shutdown();
-
-    gscoped_ptr<LogReader> reader;
-    ASSERT_STATUS_OK(LogReader::Open(mini_server_->fs_manager(), kTabletId, &reader));
-    ASSERT_EQ(1, reader->size());
-
-    vector<LogEntry* > entries;
-    ElementDeleter deleter(&entries);
-    ASSERT_STATUS_OK(reader->ReadEntries(reader->segments()[0], &entries));
-    ASSERT_EQ(expected, entries.size());
-  }
-
-  Schema schema_;
-  Schema key_schema_;
-  gscoped_ptr<RowBuilder> rb_;
-
-  shared_ptr<Messenger> client_messenger_;
-
-  gscoped_ptr<MiniTabletServer> mini_server_;
-  shared_ptr<TabletPeer> tablet_peer_;
-  gscoped_ptr<TabletServerServiceProxy> proxy_;
-};
-
-const char* TabletServerTest::kTabletId = "TestTablet";
-
 
 TEST_F(TabletServerTest, TestPingServer) {
   // Ping the server.
@@ -244,9 +104,6 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.per_row_errors().Get(0).error());
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
   }
-
-  // one entry for each request and one for each commit
-  CheckLogEntries(8);
 }
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
@@ -315,7 +172,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_EQ(1, resp.per_row_errors().size());
     controller.Reset();
   }
-  // Try and delete the rows
+  // Try and delete 1 row
   {
     WriteRequestPB req;
     WriteResponsePB resp;
@@ -325,8 +182,6 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     data->set_num_key_columns(schema_.num_key_columns());
     faststring mutations;
     AddTestDeletionToRowBlockAndBuffer(schema_, 1, data, &mutations);
-    AddTestDeletionToRowBlockAndBuffer(schema_, 2, data, &mutations);
-    AddTestDeletionToRowBlockAndBuffer(schema_, 3, data, &mutations);
     req.set_encoded_mutations(mutations.data(), mutations.size());
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
@@ -354,10 +209,6 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_EQ(1, resp.per_row_errors().size());
     controller.Reset();
   }
-
-  // one entry for each request and one for each commit
-  CheckLogEntries(10);
-
 }
 
 // Test various invalid calls for mutations
@@ -436,16 +287,13 @@ TEST_F(TabletServerTest, TestInvalidMutations) {
     controller.Reset();
   }
 
-  // one entry for each request and one for each commit
-  CheckLogEntries(8);
-
   // TODO: add test for UPDATE with a column which doesn't exist,
   // or otherwise malformed.
 }
 
 TEST_F(TabletServerTest, TestScan) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
-  InsertTestRows(num_rows);
+  InsertTestRowsDirect(num_rows);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -496,7 +344,7 @@ TEST_F(TabletServerTest, TestScan) {
 }
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {
-  InsertTestRows(100);
+  InsertTestRowsDirect(100);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -536,7 +384,7 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
   // but should do so.
 
   int num_rows = AllowSlowTests() ? 10000 : 1000;
-  InsertTestRows(num_rows);
+  InsertTestRowsDirect(num_rows);
 
   ScanRequestPB req;
   ScanResponsePB resp;
