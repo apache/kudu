@@ -8,6 +8,10 @@ libev-*
 protobuf-*
 snappy-*
 zlib-*
+curl-*
+gcovr-*
+rapidjson-*
+squeasel-*
 installed/
 install_manifest.txt
 .build-hash
