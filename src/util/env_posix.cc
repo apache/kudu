@@ -20,9 +20,16 @@
 
 #include <deque>
 
+#include "gutil/atomicops.h"
 #include "util/env.h"
 #include "util/errno.h"
 #include "util/slice.h"
+
+using base::subtle::Atomic64;
+using base::subtle::Barrier_AtomicIncrement;
+
+static __thread uint64_t thread_local_id;
+static Atomic64 cur_thread_local_id_;
 
 namespace kudu {
 
@@ -586,10 +593,13 @@ class PosixEnv : public Env {
   }
 
   virtual uint64_t gettid() {
-    pthread_t tid = pthread_self();
-    uint64_t thread_id = 0;
-    memcpy(&thread_id, &tid, std::min(sizeof(thread_id), sizeof(tid)));
-    return thread_id;
+    // Platform-independent thread ID.  We can't use pthread_self here,
+    // because that function returns a totally opaque ID, which can't be
+    // compared via normal means.
+    if (thread_local_id == 0) {
+      thread_local_id = Barrier_AtomicIncrement(&cur_thread_local_id_, 1);
+    }
+    return thread_local_id;
   }
 
   virtual uint64_t NowMicros() {
