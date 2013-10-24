@@ -3,27 +3,18 @@
 #ifndef KUDU_TABLET_LOCK_MANAGER_H
 #define KUDU_TABLET_LOCK_MANAGER_H
 
-#include <boost/thread/mutex.hpp>
 #include "gutil/macros.h"
 #include "util/slice.h"
 
 namespace kudu { namespace tablet {
 
 class LockManager;
-struct LockEntry;
-
-// The entry returned to a thread which has taken a lock.
-// Callers should generally use ScopedRowLock (see below).
-struct LockEntry {
-  LockEntry() { }
-  boost::mutex *mutex;
-  DISALLOW_COPY_AND_ASSIGN(LockEntry);
-};
+class LockTable;
+class LockEntry;
 
 // Super-simple lock manager implementation. This only supports exclusive
 // locks, and makes no attempt to prevent deadlocks if a single thread
-// takes multiple locks. Additionally, the locking is just based on the
-// hash of the key, so two different lock keys may actually conflict.
+// takes multiple locks.
 //
 // In the future when we want to support multi-row transactions of some kind
 // we'll have to implement a proper lock manager with all its trappings,
@@ -31,9 +22,11 @@ struct LockEntry {
 class LockManager {
  public:
   LockManager();
+  ~LockManager();
 
   enum LockStatus {
-    LOCK_ACQUIRED = 0
+    LOCK_ACQUIRED = 0,
+    LOCK_BUSY = 1,
   };
 
   enum LockMode {
@@ -42,15 +35,13 @@ class LockManager {
 
  private:
   friend class ScopedRowLock;
+  friend class LockManagerTest;
 
-  LockStatus Lock(const Slice &key, LockMode mode, LockEntry *entry);
+  LockStatus Lock(const Slice& key, LockMode mode, LockEntry **entry);
+  LockStatus TryLock(const Slice& key, LockMode mode, LockEntry **entry);
   void Release(LockEntry *lock);
 
-  gscoped_array<boost::mutex> locks_;
-
-  enum {
-    kNumShards = 1024
-  };
+  LockTable *locks_;
 
   DISALLOW_COPY_AND_ASSIGN(LockManager);
 };
@@ -82,7 +73,7 @@ class ScopedRowLock {
   const LockManager::LockMode mode_;
 
   bool acquired_;
-  LockEntry entry_;
+  LockEntry *entry_;
 };
 
 } // namespace tablet
