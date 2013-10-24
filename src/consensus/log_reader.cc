@@ -67,6 +67,7 @@ LogReader::LogReader(FsManager *fs_manager,
 
 Status LogReader::Init(const string& tablet_wal_path) {
   CHECK_EQ(state_, kLogReaderInitialized) << "bad state for Init(): " << state_;
+  VLOG(1) << "Reading wal from path:" << tablet_wal_path;
 
   Env* env = fs_manager_->env();
 
@@ -116,7 +117,7 @@ Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
     gscoped_ptr<LogEntry> current;
     Status status = ReadEntry(segment, &tmp_buf, &offset, &current);
     if (status.ok()) {
-      DVLOG(1) << "Read Log entry: " << current->DebugString();
+      VLOG(3) << "Read Log entry: " << current->DebugString();
       entries->push_back(current.release());
     } else {
       RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
