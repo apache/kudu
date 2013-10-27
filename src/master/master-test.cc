@@ -130,5 +130,57 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_EQ(1, descs.size()) << "Should still only have one TS registered";
 }
 
+TEST_F(MasterTest, TestTabletLocations) {
+  const string kTabletId = "fake-tablet-id";
+  const string kTabletServerId = "my-ts-uuid";
+  TSToMasterCommonPB common;
+  common.mutable_ts_instance()->set_permanent_uuid(kTabletServerId);
+  common.mutable_ts_instance()->set_instance_seqno(1);
+
+  // Register the fake TS, including a single tablet.
+  TSRegistrationPB fake_reg;
+  MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
+  MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    TabletReportPB* tr = req.mutable_tablet_report();
+    tr->set_is_incremental(false);
+    tr->set_sequence_number(0);
+    tr->add_updated_tablets()->set_tablet_id(kTabletId);
+
+    ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+  }
+
+  // Look up the tablet locations -- should return the server we just
+  // registered.
+  {
+    GetTabletLocationsRequestPB req;
+    GetTabletLocationsResponsePB resp;
+    RpcController rpc;
+    req.add_tablet_ids(kTabletId);
+
+    ASSERT_STATUS_OK(proxy_->GetTabletLocations(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+
+    // Verify the tablet location.
+    ASSERT_EQ(1, resp.tablet_locations().size());
+    EXPECT_EQ("tablet_id: \"fake-tablet-id\"\n"
+              "replicas {\n"
+              "  ts_info {\n"
+              "    permanent_uuid: \"my-ts-uuid\"\n"
+              "    rpc_addresses {\n"
+              "      host: \"localhost\"\n"
+              "      port: 1000\n"
+              "    }\n"
+              "  }\n"
+              "}\n",
+              resp.tablet_locations(0).DebugString());
+  }
+}
+
 } // namespace master
 } // namespace kudu

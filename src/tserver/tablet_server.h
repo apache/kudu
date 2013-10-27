@@ -74,8 +74,6 @@ class TabletServer : public server::ServerBase {
 
   gscoped_ptr<FsManager> fs_manager_;
 
-  metadata::TabletServerPB tablet_server_pb_;
-
   // Manager for tablets which are available on this server.
   gscoped_ptr<TSTabletManager> tablet_manager_;
 

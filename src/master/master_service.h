@@ -30,6 +30,10 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void TSHeartbeat(const TSHeartbeatRequestPB* req,
                            TSHeartbeatResponsePB* resp,
                            rpc::RpcContext* rpc);
+
+  virtual void GetTabletLocations(const GetTabletLocationsRequestPB* req,
+                                  GetTabletLocationsResponsePB* resp,
+                                  rpc::RpcContext* rpc);
  private:
   void SetMasterInstancePB(NodeInstancePB* pb) const;
 

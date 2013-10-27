@@ -22,7 +22,6 @@
 using std::tr1::shared_ptr;
 using std::vector;
 using kudu::rpc::ServiceIf;
-using kudu::metadata::TabletServerPB;
 using kudu::tablet::TabletPeer;
 
 namespace kudu {
@@ -74,10 +73,6 @@ Status TabletServer::Init() {
                         "Could not init Tablet Manager");
 
   RETURN_NOT_OK(ServerBase::Init());
-
-  // TODO replace this with a 'real' address for dist execution.
-  tablet_server_pb_.set_hostname("TODO");
-  tablet_server_pb_.set_port(0);
 
   initted_ = true;
   return Status::OK();

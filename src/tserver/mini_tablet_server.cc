@@ -22,20 +22,6 @@
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
-using kudu::consensus::Consensus;
-using kudu::consensus::ConsensusOptions;
-using kudu::consensus::QuorumPeerPB;
-using kudu::consensus::QuorumPB;
-using kudu::consensus::OpId;
-using kudu::consensus::LEADER;
-using kudu::consensus::LocalConsensus;
-using kudu::log::Log;
-using kudu::log::LogOptions;
-using kudu::metadata::TabletMetadata;
-using kudu::metadata::TabletServerPB;
-using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
-
 namespace kudu {
 namespace tserver {
 

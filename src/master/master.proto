@@ -102,9 +102,56 @@ message TSHeartbeatResponsePB {
 message TSTabletReportResponsePB {
 }
 
+//////////////////////////////
+// GetTabletLocations
+//////////////////////////////
+
+message TabletLocationsPB {
+  required bytes tablet_id = 1;
+
+  message ReplicaPB {
+    required TSInfoPB ts_info = 1;
+
+    // TODO: will also include some flags like which one is the
+    // current leader for the tablet here, etc.
+  }
+
+  repeated ReplicaPB replicas = 2;
+}
+
+// Info about a single tablet server, returned to the client as part
+// of the GetTabletLocations response. This can be used on the client
+// to update the local cache of where each TS UUID is located. In
+// the future we may also want to transmit software version info,
+// load info, topology, etc.
+message TSInfoPB {
+  required bytes permanent_uuid = 1;
+
+  repeated HostPortPB rpc_addresses = 2;
+}
+
+message GetTabletLocationsRequestPB {
+  // The tablet IDs about which to fetch info.
+  repeated bytes tablet_ids = 1;
+}
+
+message GetTabletLocationsResponsePB {
+  repeated TabletLocationsPB tablet_locations = 1;
+
+  // TODO: fill in Errors for bad tablet IDs.
+  message Error {
+    required bytes tablet_id = 1;
+    required AppStatusPB status = 2;
+  }
+  repeated Error errors = 2;
+}
+
 service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
   // TS->Master RPCs
   rpc TSHeartbeat(TSHeartbeatRequestPB) returns (TSHeartbeatResponsePB);
+
+  // Client->Master RPCs
+  rpc GetTabletLocations(GetTabletLocationsRequestPB) returns (GetTabletLocationsResponsePB);
 }

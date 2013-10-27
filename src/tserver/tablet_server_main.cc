@@ -22,8 +22,6 @@
 
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
 
-using kudu::metadata::TabletMetadata;
-using kudu::metadata::TabletServerPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;

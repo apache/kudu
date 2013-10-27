@@ -2,8 +2,10 @@
 
 #include "master/master_service.h"
 
+#include <boost/foreach.hpp>
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
 #include "master/master.h"
 #include "master/m_tablet_manager.h"
@@ -92,6 +94,34 @@ void MasterServiceImpl::SetMasterInstancePB(NodeInstancePB* pb) const {
   // for now.
   pb->set_permanent_uuid("TODO permanent");
   pb->set_instance_seqno(1);
+}
+
+void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* req,
+                                           GetTabletLocationsResponsePB* resp,
+                                           rpc::RpcContext* rpc) {
+
+  TSRegistrationPB reg;
+  vector<TSDescriptor*> locs;
+  BOOST_FOREACH(const string& tablet_id, req->tablet_ids()) {
+    // TODO: Add some kind of verification that the tablet is actually valid
+    // (i.e that it is present in the 'tablets' system table)
+    // TODO: once we have catalog data. ACL checks would also go here, probably.
+    server_->tablet_manager()->GetTabletLocations(tablet_id, &locs);
+
+    TabletLocationsPB* locs_pb = resp->add_tablet_locations();
+    locs_pb->set_tablet_id(tablet_id);
+
+    BOOST_FOREACH(const TSDescriptor* ts_desc, locs) {
+      TabletLocationsPB_ReplicaPB* replica = locs_pb->add_replicas();
+      TSInfoPB* tsinfo_pb = replica->mutable_ts_info();
+      tsinfo_pb->set_permanent_uuid(ts_desc->permanent_uuid());
+
+      ts_desc->GetRegistration(&reg);
+      tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+    }
+  }
+
+  rpc->RespondSuccess();
 }
 
 } // namespace master

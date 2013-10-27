@@ -3,7 +3,6 @@ package kudu.consensus;
 
 import "common/common.proto";
 import "common/wire_protocol.proto";
-import "server/metadata.proto";
 import "tablet/tablet.proto";
 import "tserver/tserver.proto";
 
@@ -29,7 +28,7 @@ enum QuorumPeerStatus {
 
 // A peer in a quorum.
 message QuorumPeerPB {
-  required kudu.metadata.TabletServerPB server = 1;
+  required bytes server_uuid = 1;
   required QuorumPeerStatus status = 2;
 }
 
