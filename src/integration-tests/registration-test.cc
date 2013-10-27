@@ -5,12 +5,12 @@
 #include <string>
 #include <tr1/memory>
 
-#include "master/master.h"
+#include "integration-tests/mini_cluster.h"
 #include "master/mini_master.h"
+#include "master/master.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
 #include "gutil/gscoped_ptr.h"
-#include "tserver/mini_tablet_server.h"
 #include "util/test_util.h"
 #include "util/stopwatch.h"
 
@@ -20,7 +20,6 @@ namespace kudu {
 
 using std::vector;
 using std::tr1::shared_ptr;
-using tserver::MiniTabletServer;
 using master::MiniMaster;
 
 static const double kRegistrationWaitTimeSeconds = 5.0;
@@ -37,17 +36,13 @@ class RegistrationTest : public KuduTest {
     FLAGS_heartbeat_interval_ms = 10;
 
     KuduTest::SetUp();
-    master_.reset(new MiniMaster(env_.get(), GetTestPath("master-root")));
-    ASSERT_STATUS_OK(master_->Start());
 
-    ts_.reset(new MiniTabletServer(env_.get(), GetTestPath("ts-root")));
-    ts_->options()->master_hostport = HostPort(master_->bound_rpc_addr());
-    ASSERT_STATUS_OK(ts_->Start());
+    cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
+    ASSERT_STATUS_OK(cluster_->Start());
   }
 
   virtual void TearDown() {
-    ASSERT_STATUS_OK(ts_->Shutdown());
-    ASSERT_STATUS_OK(master_->Shutdown());
+    ASSERT_STATUS_OK(cluster_->Shutdown());
   }
 
  protected:
@@ -58,7 +53,7 @@ class RegistrationTest : public KuduTest {
     sw.start();
     while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
       vector<shared_ptr<master::TSDescriptor> > descs;
-      master_->master()->ts_manager()->GetAllDescriptors(&descs);
+      cluster_->mini_master()->master()->ts_manager()->GetAllDescriptors(&descs);
       if (!descs.empty()) {
         LOG(INFO) << "TS registered with Master after " << sw.elapsed().wall_seconds() << "s";
         return;
@@ -68,8 +63,7 @@ class RegistrationTest : public KuduTest {
     FAIL() << "TS never registered with master";
   }
 
-  gscoped_ptr<MiniTabletServer> ts_;
-  gscoped_ptr<MiniMaster> master_;
+  gscoped_ptr<MiniCluster> cluster_;
 };
 
 TEST_F(RegistrationTest, TestTSRegisters) {
@@ -77,7 +71,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 
   // Restart the master, so it loses the descriptor, and ensure that the
   // hearbeater thread handles re-registering.
-  ASSERT_STATUS_OK(master_->Restart());
+  ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
 
   ASSERT_NO_FATAL_FAILURE(WaitForRegistration());
 
