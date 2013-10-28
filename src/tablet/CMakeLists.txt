@@ -30,7 +30,6 @@ ADD_DEPENDENCIES(tablet_proto kudu_common)
 SET(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
 
 ADD_LIBRARY(tablet ${TABLET_SRCS})
-target_link_libraries(tablet tserver_proto)
 ADD_DEPENDENCIES(tablet kudu_common)
 ADD_DEPENDENCIES(tablet gutil)
 ADD_DEPENDENCIES(tablet cfile_proto)

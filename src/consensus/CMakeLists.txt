@@ -40,6 +40,8 @@ SET(CONSENSUS_SRCS
 )
 
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})
+target_link_libraries(consensus krpc)
+target_link_libraries(consensus tserver_proto)
 ADD_DEPENDENCIES(consensus kudu_common)
 ADD_DEPENDENCIES(consensus consensus_proto)
 ADD_DEPENDENCIES(consensus log)

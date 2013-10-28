@@ -42,10 +42,6 @@ ADD_DEPENDENCIES(tserver consensus)
 ADD_DEPENDENCIES(tserver consensus_proto)
 
 # Tests
-# TODO: following is an ugly workaround because we currently have a cyclic
-# dependency between tserver and tablet, due to TabletPeer using the tserver
-# protobuf stuff. Should resolve this.
-SET(KUDU_TEST_LINK_LIBS tserver ${KUDU_TEST_LINK_LIBS} tserver)
 ADD_KUDU_TEST(tablet_server-test)
 ADD_KUDU_TEST(scanners-test)
 ADD_KUDU_TEST(ts_tablet_manager-test)
