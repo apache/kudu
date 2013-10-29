@@ -31,34 +31,32 @@ class MiniCluster {
 
    // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
    // All servers run on the loopback interface with ephemeral ports.
-   Status Start();
-   Status Shutdown();
+  Status Start();
+  Status Shutdown();
 
-   // Returns the Master for this MiniCluster.
-   master::MiniMaster* mini_master() { return mini_master_.get(); }
+  // Returns the Master for this MiniCluster.
+  master::MiniMaster* mini_master() { return mini_master_.get(); }
 
-   // Returns the TabletServer at index 'idx' of this MiniCluster.
-   // 'idx' must be between 0 and 'num_tablet_servers' -1.
-   tserver::MiniTabletServer* mini_tablet_server(int idx);
+  // Returns the TabletServer at index 'idx' of this MiniCluster.
+  // 'idx' must be between 0 and 'num_tablet_servers' -1.
+  tserver::MiniTabletServer* mini_tablet_server(int idx);
 
-  private:
+ private:
 
-   string GetMasterFsRoot();
+  string GetMasterFsRoot();
 
-   string GetTabletServerFsRoot(int idx);
+  string GetTabletServerFsRoot(int idx);
 
-   bool started_;
+  bool started_;
 
-   ATTRIBUTE_MEMBER_UNUSED Env* const env_;
-   const std::string fs_root_;
-   const int num_tablet_servers_;
+  Env* const env_;
+  const std::string fs_root_;
+  const int num_tablet_servers_;
 
-   gscoped_ptr<master::MiniMaster> mini_master_;
-   vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
+  gscoped_ptr<master::MiniMaster> mini_master_;
+  vector<std::tr1::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
 };
 
 } // namespace kudu
 
 #endif /* KUDU_INTEGRATION_TESTS_MINI_CLUSTER_H */
-
-

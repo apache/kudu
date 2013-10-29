@@ -36,14 +36,15 @@ Status MiniCluster::Start() {
 
   // start the master (we need the port to set on the servers)
   gscoped_ptr<MiniMaster> mini_master(new MiniMaster(env_, GetMasterFsRoot()));
-  RETURN_NOT_OK(mini_master->Start());
+  RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
   mini_master_.reset(mini_master.release());
 
   for (int i = 0; i < num_tablet_servers_; i++) {
     gscoped_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(env_, GetTabletServerFsRoot(i)));
     // set the master port
     tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
-    RETURN_NOT_OK(tablet_server->Start());
+    RETURN_NOT_OK_PREPEND(tablet_server->Start(),
+                          Substitute("Couldn't start TS #$0", i));
     mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
   }
   started_ = true;
