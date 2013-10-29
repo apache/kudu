@@ -117,7 +117,9 @@ Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
     gscoped_ptr<LogEntry> current;
     Status status = ReadEntry(segment, &tmp_buf, &offset, &current);
     if (status.ok()) {
-      VLOG(3) << "Read Log entry: " << current->DebugString();
+      if (VLOG_IS_ON(3)) {
+        VLOG(3) << "Read Log entry: " << current->DebugString();
+      }
       entries->push_back(current.release());
     } else {
       RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
