@@ -88,7 +88,7 @@ void SchemaBuilder::Reset() {
   col_ids_.clear();
   col_names_.clear();
   num_key_columns_ = 0;
-  id_ = 0;
+  next_id_ = 0;
 }
 
 void SchemaBuilder::Reset(const Schema& schema) {
@@ -103,9 +103,9 @@ void SchemaBuilder::Reset(const Schema& schema) {
     for (int i = 0; i < cols_.size(); ++i) {
       col_ids_.push_back(i);
     }
-    id_ = cols_.size();
+    next_id_ = cols_.size();
   } else {
-    id_ = *std::max_element(col_ids_.begin(), col_ids_.end()) + 1;
+    next_id_ = *std::max_element(col_ids_.begin(), col_ids_.end()) + 1;
   }
 }
 
@@ -139,7 +139,7 @@ Status SchemaBuilder::RemoveColumn(const string& name) {
     }
   }
 
-  // Never reached
+  LOG(FATAL) << "Should not reach here";
   return Status::Corruption("Unable to remove existing column");
 }
 
@@ -166,7 +166,7 @@ Status SchemaBuilder::RenameColumn(const string& old_name, const string& new_nam
     }
   }
 
-  // Never reached
+  LOG(FATAL) << "Should not reach here";
   return Status::IllegalState("Unable to rename existing column");
 }
 
@@ -178,14 +178,14 @@ Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
   col_names_.insert(column.name());
   if (is_key) {
     cols_.insert(cols_.begin() + num_key_columns_, column);
-    col_ids_.insert(col_ids_.begin() + num_key_columns_, id_);
+    col_ids_.insert(col_ids_.begin() + num_key_columns_, next_id_);
     num_key_columns_++;
   } else {
     cols_.push_back(column);
-    col_ids_.push_back(id_);
+    col_ids_.push_back(next_id_);
   }
 
-  id_++;
+  next_id_++;
   return Status::OK();
 }
 

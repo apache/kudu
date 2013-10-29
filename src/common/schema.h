@@ -569,7 +569,7 @@ class SchemaBuilder {
  private:
   DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);
 
-  uint64_t id_;
+  uint64_t next_id_;
   vector<size_t> col_ids_;
   vector<ColumnSchema> cols_;
   unordered_set<string> col_names_;

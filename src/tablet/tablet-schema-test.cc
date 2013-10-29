@@ -91,8 +91,8 @@ class TestTabletSchema : public KuduTabletTest {
  private:
   Schema CreateBaseSchema() {
     SchemaBuilder builder;
-    CHECK(builder.AddKeyColumn("key", UINT32).ok());
-    CHECK(builder.AddColumn("c1", UINT32).ok());
+    CHECK_OK(builder.AddKeyColumn("key", UINT32));
+    CHECK_OK(builder.AddColumn("c1", UINT32));
     return builder.Build();
   }
 };
