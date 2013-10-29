@@ -994,6 +994,7 @@ class CBTree {
       retry_in_leaf:
       {
         GetResult ret;
+        Slice key_in_node, val_in_node;
         bool exact;
         size_t idx = leaf->Find(key, &exact);
         DebugRacyPoint();
@@ -1001,14 +1002,12 @@ class CBTree {
         if (!exact) {
           ret = GET_NOT_FOUND;
         } else {
-          Slice key_in_node, val_in_node;
           leaf->Get(idx, &key_in_node, &val_in_node);
           *buf_len = val_in_node.size();
 
           if (PREDICT_FALSE(val_in_node.size() > in_buf_len)) {
             ret = GET_TOO_BIG;
           } else {
-            memcpy(buf, val_in_node.data(), val_in_node.size());
             ret = GET_SUCCESS;
           }
         }
@@ -1021,6 +1020,9 @@ class CBTree {
         } else if (VersionField::IsDifferent(version, new_version)) {
           version = new_version;
           goto retry_in_leaf;
+        }
+        if (ret == GET_SUCCESS) {
+          memcpy(buf, val_in_node.data(), val_in_node.size());
         }
         return ret;
       }
