@@ -34,6 +34,8 @@ ADD_DEPENDENCIES(tablet kudu_common)
 ADD_DEPENDENCIES(tablet gutil)
 ADD_DEPENDENCIES(tablet cfile_proto)
 ADD_DEPENDENCIES(tablet server)
+ADD_DEPENDENCIES(tablet consensus_proto)
+ADD_DEPENDENCIES(tablet log_proto)
 
 # tablet-test
 ADD_KUDU_TEST(tablet-test)
