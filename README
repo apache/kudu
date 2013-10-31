@@ -3,7 +3,7 @@ System Requirements
 The following dependencies are necessary to build kudu:
 
 - gcc 4.4 or higher
-- boost 1.41 or higher including boost::thread and the boost PIC module
+- boost >= 1.41 and < 1.53 including boost::thread and the boost PIC module
 - cmake 2.8.7
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
 
