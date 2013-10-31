@@ -5,7 +5,7 @@ SET(CLIENT_SRCS
 )
 
 add_library(client ${CLIENT_SRCS})
-SET(CLIENT_DEPS kudu_common tserver_proto krpc)
+SET(CLIENT_DEPS kudu_common tserver_proto tserver_service_proto krpc)
 ADD_DEPENDENCIES(client ${CLIENT_DEPS})
 
 # Tests

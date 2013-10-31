@@ -4,14 +4,19 @@ PROTOBUF_GENERATE_CPP(TSERVER_PROTO_SRCS TSERVER_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES tserver.proto)
+
+add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
+ADD_DEPENDENCIES(tserver_proto kudu_common)
+
 KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
-  PROTO_FILES tserver.proto)
+  PROTO_FILES tserver_service.proto)
+  
+add_library(tserver_service_proto ${TSERVER_KRPC_SRCS})
+target_link_libraries(tserver_service_proto krpc)
+ADD_DEPENDENCIES(tserver_service_proto kudu_common)
 
-add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS} ${TSERVER_KRPC_SRCS})
-ADD_DEPENDENCIES(tserver_proto kudu_common)
-ADD_DEPENDENCIES(tserver_proto rpc_header_proto)
 
 SET(TSERVER_SRCS
   heartbeater.cc
@@ -25,6 +30,7 @@ SET(TSERVER_SRCS
 
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver tserver_proto)
+target_link_libraries(tserver tserver_service_proto)
 target_link_libraries(tserver master_proto)
 target_link_libraries(tserver consensus_proto)
 target_link_libraries(tserver log_proto)
@@ -35,6 +41,7 @@ ADD_DEPENDENCIES(tserver kudu_common)
 ADD_DEPENDENCIES(tserver server)
 ADD_DEPENDENCIES(tserver tablet)
 ADD_DEPENDENCIES(tserver tserver_proto)
+ADD_DEPENDENCIES(tserver tserver_service_proto)
 ADD_DEPENDENCIES(tserver krpc)
 ADD_DEPENDENCIES(tserver log)
 ADD_DEPENDENCIES(tserver log_proto)

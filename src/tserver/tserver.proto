@@ -195,9 +195,3 @@ message ScanResponsePB {
   // the scanner.
   optional RowwiseRowBlockPB data = 4;
 }
-
-service TabletServerService {
-  rpc Ping(PingRequestPB) returns (PingResponsePB);
-  rpc Write(WriteRequestPB) returns (WriteResponsePB);
-  rpc Scan(ScanRequestPB) returns (ScanResponsePB);
-}

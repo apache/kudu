@@ -6,7 +6,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "util/status.h"
-#include "tserver/tserver.proxy.h" // TODO: move this to a protocol/ module
+#include "tserver/tserver_service.proxy.h" // TODO: move this to a protocol/ module
 #include <string>
 #include <tr1/memory>
 #include <vector>

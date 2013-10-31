@@ -1,0 +1,19 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu.tserver;
+
+import "common/common.proto";
+import "common/wire_protocol.proto";
+import "tserver/tserver.proto";
+
+// ===========================================================================
+// Internal Consensus Messages and State
+// TODO these are simple wrappers around the consensus defined PBs because
+// krpc doesn't support namespaces.
+// ===========================================================================
+
+service TabletServerService {
+
+  rpc Ping(PingRequestPB) returns (PingResponsePB);
+  rpc Write(WriteRequestPB) returns (WriteResponsePB);
+  rpc Scan(ScanRequestPB) returns (ScanResponsePB);
+}

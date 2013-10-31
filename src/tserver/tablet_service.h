@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "tserver/tserver.service.h"
+#include "tserver/tserver_service.service.h"
 
 namespace kudu {
 

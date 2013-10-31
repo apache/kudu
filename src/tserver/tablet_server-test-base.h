@@ -28,7 +28,7 @@
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
-#include "tserver/tserver.proxy.h"
+#include "tserver/tserver_service.proxy.h"
 #include "tserver/scanners.h"
 #include "util/test_graph.h"
 #include "util/test_util.h"
