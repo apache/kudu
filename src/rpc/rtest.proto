@@ -4,6 +4,7 @@
 package kudu.rpc_test;
 
 import "rpc/rpc_header.proto";
+import "rpc/rtest_diff_package.proto";
 
 message AddRequestPB {
   required uint32 x = 1;
@@ -50,4 +51,6 @@ service CalculatorService {
   rpc Sleep(SleepRequestPB) returns(SleepResponsePB);
   rpc Echo(EchoRequestPB) returns(EchoResponsePB);
   rpc WhoAmI(WhoAmIRequestPB) returns (WhoAmIResponsePB);
+  rpc TestArgumentsInDiffPackage(kudu.rpc_test_diff_package.ReqDiffPackagePB)
+    returns(kudu.rpc_test_diff_package.RespDiffPackagePB);
 }

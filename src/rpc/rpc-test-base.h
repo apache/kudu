@@ -34,6 +34,8 @@ using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
 using kudu::rpc_test::WhoAmIRequestPB;
 using kudu::rpc_test::WhoAmIResponsePB;
+using kudu::rpc_test_diff_package::ReqDiffPackagePB;
+using kudu::rpc_test_diff_package::RespDiffPackagePB;
 
 using std::tr1::shared_ptr;
 
@@ -125,6 +127,12 @@ class CalculatorService : public CalculatorServiceIf {
     }
     resp->mutable_credentials()->set_real_user(creds.real_user());
     resp->set_address(context->remote_address().ToString());
+    context->RespondSuccess();
+  }
+
+  virtual void TestArgumentsInDiffPackage(const ReqDiffPackagePB *req,
+                                          RespDiffPackagePB *resp,
+                                          ::kudu::rpc::RpcContext *context) {
     context->RespondSuccess();
   }
 

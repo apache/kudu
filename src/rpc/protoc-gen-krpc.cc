@@ -23,7 +23,9 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/split.h"
+#include "gutil/strings/join.h"
 #include "gutil/strings/strip.h"
+#include "gutil/strings/stringpiece.h"
 #include "util/status.h"
 #include "util/string_case.h"
 
@@ -146,14 +148,45 @@ class MethodSubstitutions : public Substituter {
  public:
   explicit MethodSubstitutions(const MethodDescriptor *method)
     : rpc_name_(method->name()),
-      request_(method->input_type()->name()),
-      response_(method->output_type()->name()) {
+      request_(ReplaceNamespaceDelimiters(
+          StripNamespaceIfPossible(method->service()->full_name(),
+                                   method->input_type()->full_name()))),
+      response_(ReplaceNamespaceDelimiters(
+          StripNamespaceIfPossible(method->service()->full_name(),
+                                   method->output_type()->full_name()))) {
+
   }
 
   virtual void InitSubstitutionMap(map<string, string> *map) const {
     (*map)["rpc_name"] = rpc_name_;
     (*map)["request"] = request_;
     (*map)["response"] = response_;
+
+  }
+
+  // Strips the package from method arguments if they are in the same package as
+  // the service, otherwise leaves them so that we can have fully qualified
+  // namespaces for method arguments.
+  std::string StripNamespaceIfPossible(const std::string& service_full_name,
+                                       const std::string& arg_full_name) {
+    StringPiece service_package(service_full_name);
+    if (!service_package.contains(".")) {
+      return arg_full_name;
+    }
+    // remove the service name so that we are left with only the package, including
+    // the last '.' so that we account for different packages with the same prefix.
+    service_package.remove_suffix(service_package.length() -
+                                  service_package.find_last_of(".") - 1);
+
+    StringPiece argfqn(arg_full_name);
+    if (argfqn.starts_with(service_package)) {
+      argfqn.remove_prefix(argfqn.find_last_of(".") + 1);
+    }
+    return argfqn.ToString();
+  }
+
+  std::string ReplaceNamespaceDelimiters(const std::string& arg_full_name) {
+    return JoinStrings(strings::Split(arg_full_name, "."), "::");
   }
 
  private:

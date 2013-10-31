@@ -52,15 +52,21 @@ target_link_libraries(protoc-gen-krpc
     kudu_util)
 
 #### RPC test
+PROTOBUF_GENERATE_CPP(RPC_TEST_DIFF_PACKAGE_SRCS RPC_TEST_DIFF_PACKAGE_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES rtest_diff_package.proto)
+add_library(rtest_diff_package_proto ${RPC_TEST_DIFF_PACKAGE_SRCS} ${RPC_TEST_DIFF_PACKAGE_HDRS})
+
 KRPC_GENERATE(RTEST_KRPC_SRCS RTEST_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES rtest.proto)
-
 add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
+target_link_libraries(rtest_krpc rtest_diff_package_proto)
 
 ADD_KUDU_TEST(rpc-test)
-TARGET_LINK_LIBRARIES(rpc-test rtest_krpc krpc)
+TARGET_LINK_LIBRARIES(rpc-test rtest_krpc  krpc)
 
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
 TARGET_LINK_LIBRARIES(rpc-bench rtest_krpc krpc)

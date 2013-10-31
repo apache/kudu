@@ -1,0 +1,12 @@
+// Copyright (c) 2013, Cloudera, inc.
+//
+// Request/Response in different package to test that RPC methods
+// handle arguments with packages different from the service itself.
+package kudu.rpc_test_diff_package;
+
+import "rpc/rpc_header.proto";
+
+message ReqDiffPackagePB {
+}
+message RespDiffPackagePB {
+}
