@@ -2,6 +2,11 @@
 
 PREFIX=$TP_DIR/installed
 
+# This URL corresponds to the CloudFront Distribution for the S3
+# bucket cloudera-thirdparty-libs which is directly accessible at
+# http://cloudera-thirdparty-libs.s3.amazonaws.com/
+CLOUDFRONT_URL_PREFIX=http://d3dr9sfxru4sde.cloudfront.net
+
 GFLAGS_VERSION=1.5
 GFLAGS_DIR=$TP_DIR/gflags-$GFLAGS_VERSION
 
