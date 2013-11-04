@@ -12,7 +12,7 @@
 #include "common/wire_protocol.h"
 #include "common/row.h"
 #include "common/schema.h"
-#include "tserver/tserver.proxy.h"
+#include "tserver/tserver_service.proxy.h"
 #include "tserver/tserver.pb.h"
 #include "twitter-demo/parser.h"
 #include "twitter-demo/twitter-schema.h"

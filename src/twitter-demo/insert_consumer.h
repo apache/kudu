@@ -9,7 +9,7 @@
 
 #include "common/schema.h"
 #include "rpc/rpc_controller.h"
-#include "tserver/tserver.proxy.h"
+#include "tserver/tserver_service.proxy.h"
 #include "twitter-demo/parser.h"
 #include "util/locks.h"
 #include "util/slice.h"

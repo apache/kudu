@@ -14,7 +14,7 @@
 #include "gutil/once.h"
 #include "rpc/messenger.h"
 #include "tserver/tablet_server.h"
-#include "tserver/tserver.proxy.h"
+#include "tserver/tserver_service.proxy.h"
 #include "util/net/net_util.h"
 #include "util/slice.h"
 #include "util/status.h"
