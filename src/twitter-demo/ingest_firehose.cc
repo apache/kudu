@@ -95,7 +95,7 @@ static int main(int argc, char** argv) {
     LOG(FATAL) << "Unknown sink: " << FLAGS_twitter_firehose_sink;
   }
 
-  if (FLAGS_twitter_firehose_sink == "api") {
+  if (FLAGS_twitter_firehose_source == "api") {
     TwitterStreamer streamer(consumer.get());
     CHECK_OK(streamer.Init());
     CHECK_OK(streamer.Start());
