@@ -20,7 +20,7 @@ for flag in "$@" ; do
   esac
 done
 
-if $ONLY_CHANGED ; then
+if $ONLY_CHANGED; then
   FILES=$(git diff --name-only $($ME/get-upstream-commit.sh)  \
     | egrep  '\.(cc|h)$' | grep -v gutil)
   if [ -z "$FILES" ]; then
@@ -28,7 +28,7 @@ if $ONLY_CHANGED ; then
     exit 0
   fi
 else
-  FILES=$(find $ROOT/src -name *.cc -or -name *.h | grep -v .pb. | grep -v gutil)
+  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v .pb. | grep -v gutil)
 fi
 
 cd $ROOT
