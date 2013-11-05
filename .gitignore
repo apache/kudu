@@ -12,6 +12,7 @@ CTestTestfile.cmake
 TAGS
 cscope.*
 Testing
+nbproject/
 perf.data
 perf.data.old
 oprofile_data
