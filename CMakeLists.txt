@@ -286,8 +286,8 @@ set(TEST_ONLY_LIBS ${TEST_ONLY_LIBS} ${CURL_LIBRARIES})
 # Linker setup
 ############################################################
 SET(KUDU_DEP_LIBS ${LIBS})
-SET(KUDU_LINK_LIBS master master_proto tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
-SET(KUDU_TEST_LINK_LIBS ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
+SET(KUDU_LINK_LIBS client master master_proto tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
+SET(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
 # "make ctags" target

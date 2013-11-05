@@ -2,6 +2,7 @@
 
 SET(CLIENT_SRCS
   client.cc
+  meta_cache.cc
 )
 
 add_library(client ${CLIENT_SRCS})

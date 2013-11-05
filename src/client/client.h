@@ -17,17 +17,21 @@ namespace rpc {
 class Messenger;
 }
 
+namespace master {
+class MasterServiceProxy;
+}
+
 namespace client {
 
 class KuduTable;
+class MetaCache;
 
 struct KuduClientOptions {
   KuduClientOptions();
 
-  // The RPC address of the tablet server to connect to.
-  // When we are multi-node, this will switch to be whatever we use
-  // to bootstrap the client -- perhaps a list of master addresses.
-  std::string tablet_server_addr;
+  // The RPC address of the master.
+  // When we have a replicated master, this will switch to a vector of addresses.
+  std::string master_server_addr;
 };
 
 // A connection to a Kudu cluster.
@@ -40,8 +44,23 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   // Open the table with the given name.
   Status OpenTable(const std::string& table_name, std::tr1::shared_ptr<KuduTable>* table);
 
+  const std::tr1::shared_ptr<rpc::Messenger>& messenger() const {
+    return messenger_;
+  }
+
+  // Return a proxy to the current master.
+  // TODO: in the future, the master might move around (switch leaders), etc.
+  // So, this returns a copy of the shared_ptr instead of a reference, in case it
+  // gets modified.
+  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy() const {
+    return master_proxy_;
+  }
+
+  const KuduClientOptions& options() const { return options_; }
+
  private:
   friend class KuduTable;
+  friend class RemoteTablet;
 
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();
@@ -53,9 +72,10 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   KuduClientOptions options_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
 
-  // The proxy to the single tablet server. Eventually this will be some
-  // kind of map from server ID to proxy.
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  gscoped_ptr<MetaCache> meta_cache_;
+
+  // Proxy to the master.
+  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };
@@ -76,6 +96,11 @@ class KuduTable {
   Status Open();
 
   std::tr1::shared_ptr<KuduClient> client_;
+
+  // TODO: this will eventually go away, since every request will potentially go
+  // to a different server. Instead, each request should lookup the RemoteTablet,
+  // instance, use that to get a RemoteTabletServer, and then use that to obtain
+  // the proxy.
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
   std::string name_;
 

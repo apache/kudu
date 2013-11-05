@@ -3,22 +3,25 @@
 #include <boost/bind.hpp>
 #include "common/wire_protocol.h"
 #include "client/client.h"
+#include "client/meta_cache.h"
+#include "master/master.h" // TODO: remove this include - just needed for default port
+#include "master/master.proxy.h"
 #include "rpc/messenger.h"
+#include "util/countdown_latch.h"
 #include "util/net/net_util.h"
 #include "util/status.h"
-#include "tserver/tablet_server.h" // TODO: remove this include - just needed for default port
 #include <tr1/memory>
 #include <vector>
 
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using kudu::master::MasterServiceProxy;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
 using kudu::tserver::ScanRequestPB;
 using kudu::tserver::ScanResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
-using kudu::tserver::TabletServer;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 
@@ -48,20 +51,25 @@ Status KuduClient::Init() {
 
   // Init proxy.
   vector<Sockaddr> addrs;
-  RETURN_NOT_OK(ParseAddressList(options_.tablet_server_addr, TabletServer::kDefaultPort, &addrs));
+  RETURN_NOT_OK(ParseAddressList(options_.master_server_addr,
+                                 master::Master::kDefaultPort, &addrs));
 
   if (addrs.size() > 1) {
-    LOG(WARNING) << "Specified tablet server address '" << options_.tablet_server_addr << "' "
+    LOG(WARNING) << "Specified master server address '" << options_.master_server_addr << "' "
                  << "resolved to multiple IPs. Using " << addrs[0].ToString();
   }
-  proxy_.reset(new TabletServerServiceProxy(messenger_, addrs[0]));
+  master_proxy_.reset(new MasterServiceProxy(messenger_, addrs[0]));
+
+  meta_cache_.reset(new MetaCache(this));
+
+  initted_ = true;
 
   return Status::OK();
 }
 
 Status KuduClient::OpenTable(const std::string& table_name,
                              shared_ptr<KuduTable>* table) {
-  CHECK(proxy_) << "Must Init()";
+  CHECK(initted_) << "Must Init()";
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
   shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name));
@@ -71,12 +79,39 @@ Status KuduClient::OpenTable(const std::string& table_name,
   return Status::OK();
 }
 
+// Callback for use with boost::bind. Useful to convert async functions which take StatusCallbacks
+// into synchronous calls.
+static void AssignStatusAndTriggerLatch(const Status& status, CountDownLatch* latch,
+                                        Status* result_status) {
+  *result_status = status;
+  latch->CountDown();
+}
+
 Status KuduClient::GetTabletProxy(const std::string& tablet_id,
                                   shared_ptr<TabletServerServiceProxy>* proxy) {
-  *proxy = proxy_;
+  // TODO: write a proper async version of this for async client.
+  shared_ptr<RemoteTablet> remote_tablet;
+  meta_cache_->LookupTablet(tablet_id, &remote_tablet);
+
+  CountDownLatch latch(1);
+  Status s;
+  remote_tablet->Refresh(this, boost::bind(AssignStatusAndTriggerLatch, _1, &latch, &s), false);
+  latch.Wait();
+  RETURN_NOT_OK(s);
+
+  RemoteTabletServer* ts = remote_tablet->replica_tserver(0);
+  latch.Reset(1);
+  ts->RefreshProxy(this, boost::bind(AssignStatusAndTriggerLatch, _1, &latch, &s), false);
+  latch.Wait();
+  RETURN_NOT_OK(s);
+
+  *proxy = ts->proxy();
   return Status::OK();
 }
 
+////////////////////////////////////////////////////////////
+// KuduTable
+////////////////////////////////////////////////////////////
 
 KuduTable::KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
                      const std::string& name)
@@ -89,6 +124,10 @@ Status KuduTable::Open() {
   RETURN_NOT_OK(client_->GetTabletProxy(name_, &proxy_));
   return Status::OK();
 }
+
+////////////////////////////////////////////////////////////
+// KuduScanner
+////////////////////////////////////////////////////////////
 
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),

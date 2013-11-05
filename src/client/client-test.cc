@@ -11,6 +11,8 @@
 #include "client/client.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
+#include "integration-tests/mini_cluster.h"
+#include "master/mini_master.h"
 #include "tablet/tablet_peer.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/scanners.h"
@@ -21,6 +23,7 @@
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
+DECLARE_int32(heartbeat_interval_ms);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 using std::tr1::shared_ptr;
@@ -46,18 +49,26 @@ class ClientTest : public KuduTest {
   virtual void SetUp() {
     KuduTest::SetUp();
 
-    // Start server.
-    mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
-    ASSERT_STATUS_OK(mini_server_->Start());
+    FLAGS_heartbeat_interval_ms = 10;
+
+    // Start minicluster
+    cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
+    ASSERT_STATUS_OK(cluster_->Start());
 
     // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(kTabletId, schema_));
+    ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
                   kTabletId, &tablet_peer_));
+
+    // Wait for the tablet to be reported to the master.
+    // TODO: add tests where we access tablets which aren't available.
+    // TODO: currently OpenTable() actually tries to access the tablet,
+    // but should be lazy until first access maybe?
+    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(kTabletId, 1));
 
     // Connect to it.
     KuduClientOptions opts;
-    opts.tablet_server_addr = mini_server_->bound_rpc_addr().ToString();
+    opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
     ASSERT_STATUS_OK(client_->OpenTable(kTabletId, &client_table_));
   }
@@ -141,7 +152,7 @@ class ClientTest : public KuduTest {
   Schema schema_;
   RowBuilder rb_;
 
-  gscoped_ptr<MiniTabletServer> mini_server_;
+  gscoped_ptr<MiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> client_table_;
   shared_ptr<TabletPeer> tablet_peer_;
@@ -197,7 +208,7 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
 TEST_F(ClientTest, TestCloseScanner) {
   InsertTestRows(10);
 
-  const tserver::ScannerManager* manager = mini_server_->server()->scanner_manager();
+  const tserver::ScannerManager* manager = cluster_->mini_tablet_server(0)->server()->scanner_manager();
   // Open the scanner, make sure we see 1 registered scanner.
   {
     SCOPED_TRACE("Explicit close");
