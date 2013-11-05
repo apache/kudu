@@ -15,6 +15,7 @@
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet_peer.h"
 #include "util/env.h"
 #include "util/env_util.h"
@@ -24,6 +25,7 @@
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using kudu::log::Log;
 using kudu::tablet::TabletPeer;
 using kudu::master::TabletReportPB;
 using kudu::metadata::TabletMasterBlockPB;
@@ -60,6 +62,9 @@ Status TSTabletManager::Init() {
       continue;
     }
 
+    // TODO Opening a tablet might require fetching blocks, log segments and updates from
+    // other nodes so we should probably make opening the tablet an async thing so that we
+    // can do multiple ones at the same time.
     RETURN_NOT_OK_PREPEND(OpenTablet(child), "Failed to open tablet " + child);
     // TODO: should we still start up even if some fraction of the tablets are unavailable?
     // perhaps create a TabletPeer in a corrupt state? Probably -- so we have a kind of
@@ -116,12 +121,14 @@ Status TSTabletManager::OpenTablet(const string& tablet_id) {
 
 Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
                                    shared_ptr<TabletPeer>* peer) {
-  shared_ptr<Tablet> tablet(new Tablet(meta.Pass()));
 
-  RETURN_NOT_OK(tablet->Open());
+  shared_ptr<Tablet> tablet;
+  gscoped_ptr<Log> log;
+
   // TODO: handle crash mid-creation of tablet? do we ever end up with a partially created tablet here?
+  RETURN_NOT_OK(BootstrapTablet(meta.Pass(), &tablet, &log));
 
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet, metric_ctx_));
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet, log.Pass(), metric_ctx_));
   RETURN_NOT_OK_PREPEND(tablet_peer->Init(), "Failed to Init() TabletPeer");
   RETURN_NOT_OK_PREPEND(tablet_peer->Start(), "Failed to Start() TabletPeer");
 

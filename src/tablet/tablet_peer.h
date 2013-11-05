@@ -31,7 +31,8 @@ class TabletPeer {
  public:
 
   TabletPeer(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
-      const MetricContext& metric_ctx);
+             gscoped_ptr<log::Log> log,
+             const MetricContext& metric_ctx);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
@@ -141,6 +142,10 @@ class TabletPeer {
   typedef simple_spinlock LockType;
   LockType lock_;
 
+  // Tablet server metrics.
+  MetricContext metric_ctx_;
+  TabletMetrics tablet_metrics_;
+
   // TODO move these executors to TabletServer when we support multiple tablets
   // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_executor_'
   // is single-threaded, moving to a multi-tablet setup where multiple TabletPeers
@@ -148,10 +153,6 @@ class TabletPeer {
   // TabletPeer, PrepareTasks are executed *serially*.
   gscoped_ptr<TaskExecutor> prepare_executor_;
   gscoped_ptr<TaskExecutor> apply_executor_;
-
-  // Tablet server metrics.
-  MetricContext metric_ctx_;
-  TabletMetrics tablet_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };

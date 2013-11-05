@@ -1,0 +1,925 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+#include "tablet/tablet_bootstrap.h"
+
+#include <boost/foreach.hpp>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "common/wire_protocol.h"
+#include "consensus/log.h"
+#include "consensus/log_reader.h"
+#include "gutil/stl_util.h"
+#include "gutil/strings/util.h"
+#include "gutil/walltime.h"
+#include "server/metadata.h"
+#include "server/fsmanager.h"
+#include "tablet/lock_manager.h"
+#include "tablet/tablet.h"
+#include "tablet/transaction_context.h"
+#include "util/locks.h"
+
+using boost::shared_lock;
+using kudu::consensus::OpId;
+using kudu::consensus::CommitMsg;
+using kudu::consensus::ReplicateMsg;
+using kudu::consensus::MISSED_DELTA;
+using kudu::consensus::WRITE_OP;
+using kudu::consensus::WRITE_ABORT;
+using kudu::log::COMMIT;
+using kudu::log::Log;
+using kudu::log::LogEntry;
+using kudu::log::LogOptions;
+using kudu::log::LogReader;
+using kudu::log::REPLICATE;
+using kudu::metadata::TabletMetadata;
+using kudu::metadata::TabletSuperBlockPB;
+using kudu::metadata::RowSetMetadata;
+using kudu::tablet::MutationResultPB;
+using kudu::tablet::PreparedRowWrite;
+using kudu::tablet::Tablet;
+using kudu::tserver::WriteRequestPB;
+using std::tr1::shared_ptr;
+using strings::Substitute;
+
+#define DEBUG_INFO DebugInfo(tablet_->metadata()->oid(),  \
+    segment_idx, \
+    entry_idx, \
+    log_reader_->segments()[segment_idx]->path(),\
+    *entry)
+
+namespace kudu {
+namespace tablet {
+struct MutationInput;
+
+static const char* const kTmpSuffix = ".tmp";
+
+// Bootstraps an existing tablet, fetching the initial state from other replicas
+// or locally and rebuilding soft state by playing log segments. A bootstrapped tablet
+// can then be added to an existing quorum as a LEARNER, which will bring its
+// state up to date with the rest of the quorum, or it can start serving the data
+// itself, after it has been appointed LEADER of that particular quorum.
+//
+// TODO Because the table that is being rebuilt is never flushed/compacted, consensus
+// is only set on the tablet after bootstrap, when we get to flushes/compactions though
+// we need to set it before replay or we won't be able to re-rebuild.
+class TabletBootstrap {
+ public:
+  explicit TabletBootstrap(gscoped_ptr<metadata::TabletMetadata> meta);
+
+  // Plays the log segments, rebuilding the portion of the Tablet's soft
+  // state that is present in the log (additional soft state may be present
+  // in other replicas).
+  // A successful call will yield the rebuilt tablet and the rebuilt log.
+  Status BootstrapTablet(std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
+                         gscoped_ptr<log::Log>* rebuilt_log);
+
+ private:
+  // Fetches the latest blocks for a tablet and Open()s that tablet.
+  //
+  // TODO get blocks from other replicas
+  Status FetchBlocksAndOpenTablet(bool* fetched);
+
+  // Fetches the latest log segments for the Tablet that will allow to rebuild
+  // the tablet's soft state. If there are existing log segments in the tablet's
+  // log directly they are moved to a "log-recovery" directory which is deleted
+  // when the replay process is completed (as they have been duplicated in the
+  // current log directory).
+  //
+  // If a "log-recovery" directory is already present the segments in the log
+  // directory are ignored and deleted, as this might signal the node went down
+  // in the middle of recovering.
+  //
+  // TODO get log segments from other replicas.
+  Status FetchLogSegments(bool* fetched);
+
+  // Opens a new log in the tablet's log directory.
+  // The directory is expected to be clean.
+  Status OpenNewLog();
+
+  // Moves the log segments present in the tablet's log dir into a log recovery
+  // directory. Replaying these segments will create a new log that will go into
+  // this directory. If there were any log segments to move to the log recovery
+  // directory 'moved' is set to true.
+  Status MoveLocalSegmentsToRecoveryDir(bool* moved);
+
+  // Plays the log segments into the tablet being built.
+  // The process of playing the segments generates a new log that can be continued
+  // later on when then tablet is rebuilt and starts accepting writes from clients.
+  Status PlaySegments();
+
+  Status PlayRequest(ReplicateMsg* replicate_msg,
+                     const consensus::CommitMsg& commit_msg);
+
+  // Plays missed deltas mutations, skipping those that have already been flushed.
+  // Missed delta mutations are appended to the new log as the original mutations
+  // were logged as not applied.
+  Status PlayMissedDeltaUpdates(const consensus::CommitMsg& commit_msg);
+
+  // Plays inserts, skipping those that have already been flushed.
+  Status PlayInsertions(TransactionContext* tx_ctx,
+                        RowwiseRowBlockPB* rows,
+                        const TxResultPB& result,
+                        const consensus::OpId& committed_op_id,
+                        int32_t* last_insert_op_idx);
+
+  // Plays a mutations block, skipping those that have already been flushed.
+  Status PlayMutations(TransactionContext* tx_ctx,
+                       RowwiseRowBlockPB* row_keys,
+                       const string& encoded_mutations,
+                       const TxResultPB& result,
+                       const consensus::OpId& committed_op_id,
+                       int32_t first_mutate_op_idx);
+
+  // Plays a single mutation. 'applied_mutation' indicates whether the mutation
+  // was actually applied or was skipped.
+  Status PlayMutation(const MutationInput& mutation_input,
+                      const TxOperationPB& op_result,
+                      bool* applied_mutation);
+
+  // Checks if the MRS that is the target of this mutation has
+  // been flushed and applies it otherwise. 'applied_mutation'
+  // indicates whether the mutation was actually applied or was
+  // skipped.
+  Status HandleMRSMutation(const MutationInput& mutation_input,
+                           const MutationTargetPB& mutation_target,
+                           bool* applied_mutation);
+
+  // Checks if the DMS that is the target of this mutation has
+  // been flushed and applies it otherwise. 'applied_mutation'
+  // indicates whether the mutation was actually applied or was
+  // skipped.
+  Status HandleDMSMutation(const MutationInput& mutation_input,
+                           const MutationTargetPB& mutation_target,
+                           bool* applied_mutation);
+
+  // Applies a mutation
+  Status ApplyMutation(const MutationInput& mutation_input);
+
+  gscoped_ptr<metadata::TabletMetadata> meta_;
+  gscoped_ptr<tablet::Tablet> tablet_;
+  gscoped_ptr<log::Log> log_;
+  gscoped_ptr<log::LogReader> log_reader_;
+  uint64_t recovery_ts_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
+};
+
+// helper to encapsulate the arguments required for a mutation
+struct MutationInput {
+  MutationInput(TransactionContext* tx_ctx,
+                const consensus::OpId& committed_op_id,
+                int mutation_op_block_index,
+                const Schema& key_schema,
+                const Schema& changelist_schema,
+                const uint8_t* row_key_ptr,
+                const RowChangeList* changelist);
+
+  TransactionContext* tx_ctx;
+  const consensus::OpId& committed_op_id;
+  int mutation_op_block_index;
+  const Schema& key_schema;
+  const Schema& changelist_schema;
+  const uint8_t* row_key_ptr;
+  const RowChangeList* changelist;
+};
+
+Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+                       std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
+                       gscoped_ptr<log::Log>* rebuilt_log) {
+  TabletBootstrap bootstrap(meta.Pass());
+  RETURN_NOT_OK(bootstrap.BootstrapTablet(rebuilt_tablet, rebuilt_log));
+  return Status::OK();
+}
+
+// helper hash functor
+struct OpIdHashFunction {
+  size_t operator()(OpId id) const {
+    return (id.term() + 31) ^ id.index();
+  }
+};
+
+// helper equals functor
+struct OpIdEqualsTo {
+  bool operator()(const OpId &left, const OpId &right) const {
+    return left.term() == right.term() && left.index() == right.index();
+  }
+};
+
+MutationInput::MutationInput(TransactionContext* tx_ctx_,
+                             const consensus::OpId& committed_op_id_,
+                             int mutation_op_block_index_,
+                             const Schema& key_schema_,
+                             const Schema& changelist_schema_,
+                             const uint8_t* row_key_ptr_,
+                             const RowChangeList* changelist_)
+    : tx_ctx(tx_ctx_),
+      committed_op_id(committed_op_id_),
+      mutation_op_block_index(mutation_op_block_index_),
+      key_schema(key_schema_),
+      changelist_schema(changelist_schema_),
+      row_key_ptr(row_key_ptr_),
+      changelist(changelist_) {
+}
+
+static Status DecodeBlock(RowwiseRowBlockPB* block_pb,
+                          bool is_inserts,
+                          Schema* client_schema,
+                          vector<const uint8_t*>* row_block) {
+
+  RETURN_NOT_OK(ColumnPBsToSchema(block_pb->schema(), client_schema));
+  if (is_inserts) {
+    RETURN_NOT_OK(ExtractRowsFromRowBlockPB(*client_schema, block_pb, row_block));
+  } else {
+    RETURN_NOT_OK(ExtractRowsFromRowBlockPB(client_schema->CreateKeyProjection(),
+                                            block_pb,
+                                            row_block));
+  }
+  return Status::OK();
+}
+
+static string DebugInfo(const string& tablet_id,
+                        int segment_idx,
+                        int entry_idx,
+                        const string& segment_path,
+                        const LogEntry& entry) {
+  return Substitute("Debug Info: Error playing entry $0 of segment $1 of tablet $2. "
+      "Segment path: $3. Entry: $4", entry_idx, segment_idx, tablet_id,
+      segment_path, entry.ShortDebugString());
+}
+
+TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta)
+    : meta_(meta.Pass()),
+      recovery_ts_(GetCurrentTimeMicros()) {
+}
+
+Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
+                                        gscoped_ptr<Log>* rebuilt_log) {
+
+  string tablet_name = meta_->oid();
+
+  LOG(INFO) << "Bootstrapping tablet: " << tablet_name;
+
+  if (VLOG_IS_ON(1)) {
+    shared_ptr<TabletSuperBlockPB> super_block;
+    RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
+    VLOG(1) << "Tablet Metadata: " << super_block->DebugString();
+  }
+
+  // TODO these are done serially for now, but there is no reason why fetching
+  // the tablet's blocks and log segments cannot be done in parallel, particularly
+  // in a dist. setting.
+  bool fetched_blocks;
+  RETURN_NOT_OK(FetchBlocksAndOpenTablet(&fetched_blocks));
+
+  bool fetched_segments;
+  RETURN_NOT_OK(FetchLogSegments(&fetched_segments));
+
+  // This is a new tablet just return OK()
+  if (!fetched_blocks && !fetched_segments) {
+    LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_name
+        << " creating new one.";
+    OpenNewLog();
+    rebuilt_tablet->reset(tablet_.release());
+    rebuilt_log->reset(log_.release());
+    return Status::OK();
+  }
+
+
+  // If there were blocks there must be segments to replay
+  // TODO this actually may not be a requirement if the tablet was Flush()ed
+  // before shutdown *and* the Log was GC()'d but because we aren't doing Log
+  // GC on shutdown there should be some segments available even if there is
+  // no soft state to rebuild.
+  if (fetched_blocks && !fetched_segments) {
+    return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log segments could be found.",
+                                           tablet_name));
+  }
+
+  RETURN_NOT_OK_PREPEND(PlaySegments(), "Failed log replay. Reason");
+
+  LOG(INFO) << "Bootstrap of tablet: " << tablet_name << " Complete.";
+  rebuilt_tablet->reset(tablet_.release());
+  rebuilt_log->reset(log_.release());
+  return Status::OK();
+}
+
+Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
+  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass()));
+  // doing nothing for now except opening a tablet locally.
+  RETURN_NOT_OK(tablet->Open());
+  // set 'fetched' to true if there were any local blocks present
+  *fetched = tablet->num_rowsets() != 0;
+  tablet_.reset(tablet.release());
+  return Status::OK();
+}
+
+Status TabletBootstrap::FetchLogSegments(bool* fetched) {
+
+  RETURN_NOT_OK(MoveLocalSegmentsToRecoveryDir(fetched));
+
+  // TODO in a dist setting we want to get segments from other nodes
+  // and do not require that local segments are present but for now
+  // we do, i.e. a tablet having local blocks but no local log segments
+  // signals lost state.
+  if (!*fetched) {
+    return Status::OK();
+  }
+
+  VLOG(1) << "Existing Log segments found, opening log reader.";
+  // Open the reader.
+  RETURN_NOT_OK_PREPEND(LogReader::Open(tablet_->metadata()->fs_manager(),
+                                        tablet_->metadata()->oid(),
+                                        recovery_ts_,
+                                        &log_reader_), "Could not open LogReader. Reason");
+  return Status::OK();
+}
+
+Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
+
+  *moved = false;
+
+  // TODO use cmcabe's idea wrt to moving the whole dir instead of
+  // file-by-file
+  FsManager* fs_manager = tablet_->metadata()->fs_manager();
+
+  string log_dir = fs_manager->GetTabletWalDir(tablet_->metadata()->oid());
+  string log_recovery_dir = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->oid(),
+                                                                recovery_ts_);
+
+  if (!fs_manager->Exists(log_dir)) {
+    fs_manager->CreateDirIfMissing(log_dir);
+    return Status::OK();
+  }
+
+  CHECK(!fs_manager->Exists(log_recovery_dir))
+      << "There is already a log/wal recovery directory: " << log_recovery_dir;
+
+  RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_recovery_dir),
+                        "Could not create log recovery dir.");
+
+  vector<string> children;
+  RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
+                        "Couldn't list log segments.");
+
+  // move the files to the recovery directory
+  BOOST_FOREACH(const string& child, children) {
+    if (HasSuffixString(child, kTmpSuffix)) {
+      LOG(WARNING) << "Ignoring tmp file in log recovery dir: " << child;
+      continue;
+    }
+
+    if (HasPrefixString(child, ".")) {
+      // Hidden file or ./..
+      VLOG(1) << "Ignoring hidden file in log recovery dir: " << child;
+      continue;
+    }
+
+    string source_path = fs_manager->env()->JoinPathSegments(log_dir, child);
+    string dest_path = fs_manager->env()->JoinPathSegments(log_recovery_dir,
+                                                           child);
+
+    RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(source_path,
+                                                        dest_path),
+                          Substitute("Could not move log segment from: $0 to: $1",
+                                     source_path,
+                                     dest_path));
+    VLOG(1) << "Moved log segment from: " << source_path << " to: " << dest_path;
+    *moved = true;
+  }
+  return Status::OK();
+}
+
+Status TabletBootstrap::OpenNewLog() {
+  OpId init;
+  init.set_term(0);
+  init.set_index(0);
+  shared_ptr<TabletSuperBlockPB> super_block;
+  RETURN_NOT_OK(tablet_->metadata()->ToSuperBlock(&super_block));
+  RETURN_NOT_OK(Log::Open(LogOptions(),
+                          tablet_->metadata()->fs_manager(),
+                          *super_block.get(),
+                          init,
+                          &log_));
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlaySegments() {
+  OpenNewLog();
+
+  unordered_map<OpId, LogEntry, OpIdHashFunction, OpIdEqualsTo> unpaired_ops;
+  for (int segment_idx = 0; segment_idx < log_reader_->size(); ++segment_idx) {
+    vector<LogEntry*> entries;
+    ElementDeleter deleter(&entries);
+    Status s = log_reader_->ReadEntries(log_reader_->segments()[segment_idx], &entries);
+    for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
+      LogEntry* entry = entries[entry_idx];
+      if (VLOG_IS_ON(1)) {
+        VLOG(1) << "Reading entry: " << entry->ShortDebugString();
+      }
+      switch (entry->type()) {
+        case REPLICATE:
+        {
+          pair<unordered_map<OpId, LogEntry, OpIdHashFunction, OpIdEqualsTo>::iterator, bool> result =
+              unpaired_ops.insert(pair<OpId, LogEntry>(entry->msg().id(), *entry));
+          if (!result.second) {
+            const LogEntry& existing_entry = (*(result.first)).second;
+              return Status::Corruption(
+                  Substitute("Failed Replay. Found previous entry with the same id: $0.\n$1",
+                             existing_entry.ShortDebugString(), DEBUG_INFO));
+          }
+          break;
+        }
+        // check the unpaired ops for the matching replicate msg, abort if not found
+        case COMMIT:
+        {
+          const OpId& id = entry->commit().commited_op_id();
+          LogEntry* existing_entry = FindOrNull(unpaired_ops, id);
+          if (existing_entry != NULL) {
+            switch (entry->commit().op_type()) {
+              case WRITE_ABORT:
+                // aborted write, log and continue
+                if (VLOG_IS_ON(1)) {
+                  VLOG(1) << "Skipping replicate message because it was originally aborted."
+                      << " OpId: " << entry->commit().commited_op_id().DebugString();
+                }
+                break;
+              case WRITE_OP:
+                // successful write, play it into the tablet, filtering flushed entries
+                RETURN_NOT_OK_PREPEND(PlayRequest(existing_entry->mutable_msg(), entry->commit()),
+                                      Substitute("Failed to play request. ReplicateMsg: $0 CommitMsg: $1.\n$2\nReason",
+                                                 existing_entry->msg().DebugString(),
+                                                 entry->commit().DebugString(), DEBUG_INFO));
+                break;
+              default:
+                return Status::IllegalState(Substitute("Unsupported entry type.\n$0", DEBUG_INFO));
+            }
+            break;
+          // For now, MISSED_DELTA commits are the only ones with no corresponding ReplicateMsg
+          } else {
+            if (entry->commit().op_type() != MISSED_DELTA) {
+              return Status::IllegalState(Substitute("Found non- MISSED_DELTA orphaned commit: $0\n$1",
+                                                     entry->commit().DebugString(), DEBUG_INFO));
+            }
+            // writes performed during flushes/compactions
+            RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->commit()),
+                                  Substitute("Failed to play MISSED_DELTA updates.\n$0\nReason", DEBUG_INFO));
+            break;
+          }
+        }
+        // TODO support other op types when we run distributedly
+        default:
+          return Status::IllegalState(Substitute("Unexpected log entry type.\n$0", DEBUG_INFO));
+      }
+    }
+    // If the LogReader failed to read for some reason, after we try and play the entries it
+    // did read, fail with Status::Corruption();
+    if (PREDICT_FALSE(!s.ok())) {
+      return Status::Corruption(Substitute("Error reading Log Segment of tablet: $0. "
+                                           "Read up to entry: $1 of segment: $2, in path: $3.",
+                                           tablet_->metadata()->oid(),
+                                           entries.size(),
+                                           segment_idx,
+                                           log_reader_->segments()[segment_idx]->path()));
+    }
+  }
+
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayRequest(ReplicateMsg* replicate_msg,
+                                    const CommitMsg& commit_msg) {
+  WriteRequestPB* write = replicate_msg->mutable_write();
+
+  // TODO should we re-append to the new log when all operations were
+  // skipped? On one hand appending allows this node to catch up other
+  // nodes even its log entries go back further than its current
+  // flushed state. On the other hand it just seems wasteful...
+
+  // Append the replicate message to the log as is
+  LogEntry replicate_entry;
+  replicate_entry.set_type(REPLICATE);
+  replicate_entry.mutable_msg()->CopyFrom(*replicate_msg);
+  RETURN_NOT_OK(log_->Append(replicate_entry));
+
+  TransactionContext tx_ctx;
+  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
+  tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
+
+  int32_t last_insert_op_idx = 0;
+  if (replicate_msg->write().has_to_insert_rows()) {
+    RETURN_NOT_OK(PlayInsertions(&tx_ctx,
+                                 write->mutable_to_insert_rows(),
+                                 commit_msg.result(),
+                                 replicate_msg->id(),
+                                 &last_insert_op_idx));
+  }
+  if (replicate_msg->write().has_to_mutate_row_keys()) {
+    RETURN_NOT_OK(PlayMutations(&tx_ctx,
+                                write->mutable_to_mutate_row_keys(),
+                                write->encoded_mutations(),
+                                commit_msg.result(),
+                                replicate_msg->id(),
+                                last_insert_op_idx));
+  }
+
+  // Append the commit msg to the log but replace the result with the new one
+  LogEntry commit_entry;
+  commit_entry.set_type(COMMIT);
+  CommitMsg* commit = commit_entry.mutable_commit();
+  commit->CopyFrom(commit_msg);
+  commit->mutable_result()->CopyFrom(tx_ctx.Result());
+  RETURN_NOT_OK(log_->Append(commit_entry));
+
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
+
+  // dummy id to pass to PlayMutation(), this will not be stored in the log.
+  OpId missed_delta_id;
+  missed_delta_id.set_term(-1);
+  missed_delta_id.set_index(-1);
+
+  // Missed delta mutations, even though they are applied as regular mutations on replay,
+  // they need to keep their MISSED_DELTA status. This because on log replay, as with the original
+  // mutation, the original commit log entry indicates that the mutation is already
+  // flushed when in fact it isn't.
+  // In order to solve this we can keep the original missed delta, but need to update it to
+  // the store to which it was applied on replay, as it might not be the same store as the
+  // original MISSED_DELTA.
+  LogEntry commit_entry;
+  commit_entry.set_type(COMMIT);
+  CommitMsg* new_commit = commit_entry.mutable_commit();
+  new_commit->CopyFrom(commit_msg);
+
+  TransactionContext tx_ctx;
+  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
+  tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
+
+  int missed_delta_idx = 0;
+  BOOST_FOREACH(const TxOperationPB& operation, commit_msg.result().mutations()) {
+    if (PREDICT_FALSE(!operation.has_missed_delta_mutation())) {
+      return Status::Corruption(Substitute("Missed delta operation must have missed delta mutations: $0",
+                                           operation.ShortDebugString()));
+    }
+    MissedDeltaMutationPB missed_delta = operation.missed_delta_mutation();
+
+    Schema mutation_schema;
+    vector<const uint8_t*> row_block;
+    RETURN_NOT_OK(DecodeBlock(missed_delta.mutable_row_key(),
+                              false,
+                              &mutation_schema,
+                              &row_block));
+
+    Schema mutation_key_schema = mutation_schema.CreateKeyProjection();
+
+    if (PREDICT_FALSE(row_block.size() != 1)) {
+      return Status::Corruption(Substitute("A Missed Delta Update mutation should only have one key. "
+                                           "Mutation: $0", missed_delta.ShortDebugString()));
+    }
+
+    const uint8_t* row_key_ptr = row_block[0];
+    RowChangeList changelist(missed_delta.changelist());
+
+    MutationInput mutation_input(&tx_ctx,
+                                 missed_delta_id,
+                                 0,
+                                 mutation_key_schema,
+                                 mutation_schema,
+                                 row_key_ptr,
+                                 &changelist);
+
+    bool applied_mutation = false;
+    RETURN_NOT_OK_PREPEND(PlayMutation(mutation_input,
+                                       operation,
+                                       &applied_mutation),
+                          Substitute("Failed to apply MISSED_DELTA mutation: $0\nReason",
+                                     missed_delta.ShortDebugString()));
+
+    // Here is where we update the original missed delta to set whichever stores
+    // it was applied to on replay or set the status if it was skipped.
+    const TxResultPB& result = tx_ctx.Result();
+
+    // First do some sanity checks
+    if (PREDICT_FALSE(new_commit->mutable_result()->mutations_size() < missed_delta_idx)) {
+      return Status::Corruption(Substitute("new MISSED_DELTA commit must have at least as many result as the original."
+          "\nApplied: $0\nOriginal: $1", new_commit->ShortDebugString(), operation.ShortDebugString()));
+    }
+
+    TxOperationPB* new_operation = new_commit->mutable_result()->mutable_mutations(missed_delta_idx);
+
+    if (applied_mutation) {
+      // confirm that the result is the expected one
+      if (PREDICT_FALSE(!result.mutations(missed_delta_idx).has_mutation_result())) {
+        return Status::Corruption(Substitute("MISSED_DELTA mutation was applied but the original mutation had no result."
+            "\nApplied: $0\nOriginal: $1", new_operation->ShortDebugString(), operation.ShortDebugString()));
+      }
+      new_operation->mutable_mutation_result()->CopyFrom(result.mutations(missed_delta_idx).mutation_result());
+    } else {
+      // confirm that the result is the expected one
+      if (PREDICT_FALSE(!result.mutations(missed_delta_idx).has_failed_status())) {
+        return Status::Corruption(Substitute("MISSED_DELTA mutation failed to apply but the original mutation had no failed status."
+            "\nApplied: $0\nOriginal: $1", new_operation->ShortDebugString(), operation.ShortDebugString()));
+      }
+      new_operation->mutable_failed_status()->CopyFrom(result.mutations(missed_delta_idx).failed_status());
+    }
+
+    missed_delta_idx++;
+  }
+
+  RETURN_NOT_OK(log_->Append(commit_entry));
+
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayInsertions(TransactionContext* tx_ctx,
+                                       RowwiseRowBlockPB* rows,
+                                       const TxResultPB& result,
+                                       const OpId& committed_op_id,
+                                       int32_t* last_insert_op_idx) {
+
+  Schema inserts_schema;
+  vector<const uint8_t*> row_block;
+  RETURN_NOT_OK_PREPEND(DecodeBlock(rows,
+                                    true,
+                                    &inserts_schema,
+                                    &row_block),
+                        Substitute("Could not decode block: $0", rows->ShortDebugString()));
+
+  int32_t insert_idx = 0;
+  BOOST_FOREACH(const uint8_t* row_ptr, row_block) {
+    TxOperationPB op_result = result.inserts(insert_idx++);
+    // check if the insert failed in the original transaction
+    if (PREDICT_FALSE(op_result.has_failed_status())) {
+      if (VLOG_IS_ON(1)) {
+        VLOG(1) << "Skipping insert that resulted in error. OpId: "
+            << committed_op_id.DebugString() << " insert index: "
+            << insert_idx - 1 << " original error: "
+            << op_result.failed_status().DebugString();
+      }
+      tx_ctx->AddFailedInsert(Status::RuntimeError("Row insert failed previously."));
+      continue;
+    }
+    if (PREDICT_FALSE(!op_result.has_mrs_id())) {
+      return Status::Corruption(Substitute("Insert operation result must have an mrs_id: $0",
+                                           op_result.ShortDebugString()));
+    }
+    // check if the insert is already flushed
+    if (op_result.mrs_id() <= tablet_->metadata()->lastest_durable_mrs_id()) {
+      if (VLOG_IS_ON(1)) {
+        VLOG(1) << "Skipping insert that was already flushed. OpId: "
+            << committed_op_id.DebugString() << " insert index: "
+            << insert_idx - 1 << " flushed to: " << op_result.mrs_id()
+            << " latest durable mrs id: " << tablet_->metadata()->lastest_durable_mrs_id();
+      }
+      tx_ctx->AddFailedInsert(Status::AlreadyPresent("Row to insert was already flushed."));
+      continue;
+    }
+    // Note: Using InsertUnlocked as the old API will eventually disappear
+
+    gscoped_ptr<shared_lock<rw_spinlock> > component_lock(
+        new shared_lock<rw_spinlock>(tablet_->component_lock()->get_lock()));
+    tx_ctx->set_component_lock(component_lock.Pass());
+
+    ConstContiguousRow* row = new ConstContiguousRow(inserts_schema,
+                                                     row_ptr);
+
+    row = tx_ctx->AddToAutoReleasePool(row);
+    gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
+    gscoped_ptr<PreparedRowWrite> prepared_row;
+    // TODO maybe we shouldn't acquire the row lock on replay?
+    RETURN_NOT_OK(tablet_->CreatePreparedInsert(row, &prepared_row));
+
+    // apply the insert to the tablet
+    RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_ctx, prepared_row.get()),
+                          Substitute("Failed to insert row $0. Reason",
+                                     inserts_schema.DebugRow(*row)));
+
+    if (VLOG_IS_ON(1)) {
+      VLOG(1) << "Applied Insert. OpId: "
+          << committed_op_id.DebugString() << " insert index: "
+          << insert_idx - 1 << " row: " << inserts_schema.DebugRow(*row);
+    }
+  }
+  *last_insert_op_idx = insert_idx;
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayMutations(TransactionContext* tx_ctx,
+                                      RowwiseRowBlockPB* row_keys,
+                                      const string& encoded_mutations,
+                                      const TxResultPB& result,
+                                      const OpId& committed_op_id,
+                                      int32_t first_mutate_op_idx) {
+  Schema mutates_schema;
+  vector<const uint8_t*> row_key_block;
+  RETURN_NOT_OK(DecodeBlock(row_keys,
+                            false,
+                            &mutates_schema,
+                            &row_key_block));
+
+  Schema mutates_key_schema = mutates_schema.CreateKeyProjection();
+  vector<const RowChangeList *> mutations;
+  ElementDeleter deleter(&mutations);
+  RETURN_NOT_OK(ExtractMutationsFromBuffer(row_key_block.size(),
+                                 reinterpret_cast<const uint8_t*>(
+                                     encoded_mutations.data()),
+                                     encoded_mutations.size(),
+                                     &mutations));
+
+  uint32_t mutate_op_idx = first_mutate_op_idx;
+  BOOST_FOREACH(const uint8_t* row_key_ptr, row_key_block) {
+    const TxOperationPB& op_result = result.mutations(mutate_op_idx++);
+    // check if the mutation failed in the original transaction
+    if (PREDICT_FALSE(op_result.has_failed_status())) {
+      if (VLOG_IS_ON(1)) {
+        VLOG(1) << "Skipping mutation that resulted in error. OpId: "
+            << committed_op_id.DebugString() << " mutation index: "
+            << mutate_op_idx - 1 << " original error: "
+            << op_result.failed_status().DebugString();
+      }
+      tx_ctx->AddFailedMutation(Status::RuntimeError("Row mutate failed previously."));
+      continue;
+    }
+    MutationInput mutation_input(tx_ctx,
+                                 committed_op_id,
+                                 mutate_op_idx - 1,
+                                 mutates_key_schema,
+                                 mutates_schema,
+                                 row_key_ptr,
+                                 mutations[mutate_op_idx -1]);
+    bool applied_mutation = false;
+    RETURN_NOT_OK(PlayMutation(mutation_input, op_result, &applied_mutation));
+  }
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
+                                     const TxOperationPB& op_result,
+                                     bool* applied_mutation) {
+
+  switch (op_result.mutation_result().type()) {
+    // With MRS_MUTATIONs we do much like with inserts, i.e. we check if the
+    // MRS has not been flushed and apply it otherwise.
+    case MutationResultPB::MRS_MUTATION:
+    {
+      if (PREDICT_FALSE(op_result.mutation_result().mutations_size() != 1)) {
+        return Status::Corruption(Substitute("MRS Mutations must only have one mutation: $0",
+                                             op_result.ShortDebugString()));
+      }
+      const MutationTargetPB& mutation_target = op_result.mutation_result().mutations(0);
+      RETURN_NOT_OK(HandleMRSMutation(mutation_input, mutation_target, applied_mutation));
+      return Status::OK();
+    }
+    // With DELTA_MUTATIONs we check if the delta of the rs in question has
+    // been flushed and apply it otherwise.
+    case MutationResultPB::DELTA_MUTATION:
+    {
+      if (PREDICT_FALSE(op_result.mutation_result().mutations_size() != 1)) {
+        return Status::Corruption(Substitute("DMS Mutations must only have one mutation: $0",
+                                             op_result.ShortDebugString()));
+      }
+      const MutationTargetPB& mutation_target = op_result.mutation_result().mutations(0);
+      RETURN_NOT_OK(HandleDMSMutation(mutation_input, mutation_target, applied_mutation));
+      return Status::OK();
+    }
+    // Duplicated mutations happen mid compaction, and either one has been
+    // flushed or none have been flushed.
+    case MutationResultPB::DUPLICATED_MUTATION:
+    {
+      if (PREDICT_FALSE(op_result.mutation_result().mutations_size() != 2)) {
+        return Status::Corruption(Substitute("Duplicated Mutations must have two mutations: $0",
+                                             op_result.ShortDebugString()));
+      }
+
+      // The first mutation in a duplicated mutation might not have been flushed when
+      // a node fails mid compaction/flush, after swapping in the duplicating rowsets
+      // but before flushing the new metadata. If the first mutation was applied
+      // we skip the second.
+      const MutationTargetPB& first_mutation_target = op_result.mutation_result().mutations(0);
+      if (first_mutation_target.has_mrs_id()) {
+        RETURN_NOT_OK(HandleMRSMutation(mutation_input, first_mutation_target, applied_mutation));
+      } else {
+        RETURN_NOT_OK(HandleDMSMutation(mutation_input, first_mutation_target, applied_mutation));
+      }
+
+      if (*applied_mutation) return Status::OK();
+
+
+
+      // If the first mutation was not applied we remove the result as duplicated
+      // mutations turn into regular mutations on replay.
+      // We need to const cast the result to remove the last mutation result.
+      const_cast<TxResultPB&>(mutation_input.tx_ctx->Result()).mutable_mutations()->RemoveLast();
+
+      // If the first duplicated mutation was not applied we try to apply the second
+      const MutationTargetPB& second_mutation_target = op_result.mutation_result().mutations(1);
+      if (second_mutation_target.has_mrs_id()) {
+        RETURN_NOT_OK(HandleMRSMutation(mutation_input, second_mutation_target, applied_mutation));
+      } else {
+        RETURN_NOT_OK(HandleDMSMutation(mutation_input, second_mutation_target, applied_mutation));
+      }
+      return Status::OK();
+    }
+    default:
+      return Status::IllegalState(Substitute("Unsupported mutation type: $0", op_result.ShortDebugString()));
+  }
+  LOG(DFATAL);
+  return Status::IllegalState("");
+}
+
+Status TabletBootstrap::HandleMRSMutation(const MutationInput& mutation_input,
+                                          const MutationTargetPB& mutation_target,
+                                          bool* applied_mutation) {
+  if (mutation_target.mrs_id() <= tablet_->metadata()->lastest_durable_mrs_id()) {
+    string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
+    if (VLOG_IS_ON(1)) {
+      VLOG(1) << "Skipping MRS_MUTATION that was already flushed. OpId: "
+          << mutation_input.committed_op_id.DebugString()
+          << " insert index: " << mutation_input.mutation_op_block_index
+          << " flushed to: " << mutation_target.mrs_id()
+          << " latest durable mrs id: " << mutation_target.mrs_id()
+          << " mutation: " << mutation;
+    }
+    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(Substitute("MRS mutation flushed: $0", mutation)));
+    *applied_mutation = false;
+    return Status::OK();
+  }
+  RETURN_NOT_OK(ApplyMutation(mutation_input));
+  *applied_mutation = true;
+  return Status::OK();
+}
+
+Status TabletBootstrap::HandleDMSMutation(const MutationInput& mutation_input,
+                                          const MutationTargetPB& mutation_target,
+                                          bool* applied_mutation) {
+  // TODO right now this is using GetRowSetForTests which goes through
+  // the rs's every time. Just adding a method that gets row sets by id
+  // is not enough. We really need to take a snapshot of the initial
+  // metadata with regard to which row sets are alive at the time. By
+  // doing this we decouple replaying from the current state of the tablet,
+  // which allows us to do compactions/flushes on replay.
+  const RowSetMetadata* row_set = tablet_->metadata()->GetRowSetForTests(mutation_target.rs_id());
+
+  // if we can't find the row_set it was compacted
+  if (row_set == NULL) {
+    string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
+    if (VLOG_IS_ON(1)) {
+      VLOG(1) << "Skipping DELTA_MUTATION that was already compacted. OpId: "
+          << mutation_input.committed_op_id.DebugString()
+          << " mutation index: " << mutation_input.mutation_op_block_index
+          << " flushed to: " << mutation_target.rs_id()
+          << " mutation: " <<mutation;
+    }
+    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(Substitute("DMS mutation flushed and compacted: $0", mutation)));
+    *applied_mutation = false;
+    return Status::OK();
+  }
+
+  // if it exists we check if the mutation is already flushed
+  if (mutation_target.delta_id() <= row_set->last_durable_dms_id()) {
+    string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
+    if (VLOG_IS_ON(1)) {
+      VLOG(1) << "Skipping DELTA_MUTATION that was already flushed. OpId: "
+          << mutation_input.committed_op_id.DebugString()
+          << " mutation index: " << mutation_input.mutation_op_block_index
+          << " flushed to: " << mutation_target.rs_id()
+          << " latest durable dms id: " << row_set->last_durable_dms_id()
+          << " mutation: " << mutation;
+    }
+    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(Substitute("DMS mutation flushed: $0", mutation)));
+    *applied_mutation = false;
+    return Status::OK();
+  }
+  RETURN_NOT_OK(ApplyMutation(mutation_input));
+  *applied_mutation = true;
+  return Status::OK();
+}
+
+Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
+  gscoped_ptr<ConstContiguousRow> row_key(new ConstContiguousRow(mutation_input.key_schema,
+                                                                 mutation_input.row_key_ptr));
+  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
+  gscoped_ptr<PreparedRowWrite> prepared_row;
+  // TODO maybe we shouldn't acquire the row lock on replay?
+  RETURN_NOT_OK(tablet_->CreatePreparedMutate(row_key.get(),
+                                              &mutation_input.changelist_schema,
+                                              mutation_input.changelist,
+                                              &prepared_row));
+
+  // apply the mutation to the tablet
+  RETURN_NOT_OK(tablet_->MutateRowUnlocked(mutation_input.tx_ctx, prepared_row.get()));
+
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Applied Mutation. OpId: " << mutation_input.committed_op_id.DebugString()
+          << " mutation index: " << mutation_input.mutation_op_block_index
+          << " row key: " << mutation_input.key_schema.DebugRow(*row_key)
+          << " mutation: " << mutation_input.changelist->ToString(mutation_input.changelist_schema);
+  }
+  return Status::OK();
+}
+
+} // namespace tablet
+} // namespace kudu

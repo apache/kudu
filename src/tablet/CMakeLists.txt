@@ -3,6 +3,7 @@
 SET(TABLET_SRCS
   tasks/tasks.cc
   tablet.cc
+  tablet_bootstrap.cc
   tablet_peer.cc
   transaction_context.cc
   cfile_set.cc

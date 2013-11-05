@@ -113,6 +113,11 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
     ASSERT_EQ(3, rows_inserted->value());  // This counter only counts successful inserts.
   }
+
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(boost::assign::list_of(KeyValue(1, 1))
+                                   (KeyValue(2, 1))
+                                   (KeyValue(1234, 5678)));
 }
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
@@ -240,6 +245,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
   ASSERT_EQ(3, rows_inserted->value());
   ASSERT_EQ(4, rows_updated->value());
+
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(boost::assign::list_of(KeyValue(2, 3))
+                                   (KeyValue(3, 4)));
 }
 
 // Test various invalid calls for mutations
@@ -318,8 +327,172 @@ TEST_F(TabletServerTest, TestInvalidMutations) {
     controller.Reset();
   }
 
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  // expect no rows since all mutations failed
+  VerifyRows(vector<KeyValue>());
+
   // TODO: add test for UPDATE with a column which doesn't exist,
   // or otherwise malformed.
+}
+
+// Executes mutations each time a Tablet goes through a compaction/flush
+// lifecycle hook. This allows to create mutations of all possible types
+// deterministically. The purpose is to make sure such mutations are replayed
+// correctly on tablet bootstrap.
+class MyCommonHooks : public Tablet::FlushCompactCommonHooks,
+                      public Tablet::FlushFaultHooks,
+                      public Tablet::CompactionFaultHooks {
+ public:
+  explicit MyCommonHooks(TabletServerTest* test)
+  : test_(test),
+    iteration_(0) {}
+
+  Status DoHook(uint32_t key, uint32_t new_int_val) {
+    test_->UpdateTestRowRemote(0, key, new_int_val);
+    return Status::OK();
+  }
+
+  // This should go in pre-flush and get flushed
+  virtual Status PostSwapNewMemRowSet() {
+    return DoHook(1, 10 + iteration_);
+  }
+  // This should go in after the flush, but before
+  // the duplicating row set, i.e., this should appear as
+  // a missed delta.
+  virtual Status PostTakeMvccSnapshot() {
+    return DoHook(2, 20 + iteration_);
+  }
+  // This too should appear as a missed delta.
+  virtual Status PostWriteSnapshot() {
+    return DoHook(3, 30 + iteration_);
+  }
+  // This should appear as a duplicated mutation
+  virtual Status PostSwapInDuplicatingRowSet() {
+    return DoHook(4, 40 + iteration_);
+  }
+  // This too should appear as a duplicated mutation
+  virtual Status PostReupdateMissedDeltas() {
+    return DoHook(5, 50 + iteration_);
+  }
+  // This should go into the new delta.
+  virtual Status PostSwapNewRowSet() {
+    return DoHook(6, 60 + iteration_);
+  }
+  // This should go in pre-flush (only on compactions)
+  virtual Status PostSelectIterators() {
+    return DoHook(7, 70 + iteration_);
+  }
+  void increment_iteration() {
+    iteration_++;
+  }
+ protected:
+  TabletServerTest* test_;
+  int iteration_;
+};
+
+// Tests performing mutations that are going to the initial MRS
+// or to a DMS, when the MRS is flushed. This also tests that the
+// log produced on recovery allows to re-recover the original state.
+TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
+
+  InsertTestRowsRemote(0, 1, 7);
+
+  shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
+
+  tablet_peer_->tablet()->SetFlushHooksForTests(hooks);
+  tablet_peer_->tablet()->SetCompactionHooksForTests(hooks);
+  tablet_peer_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
+
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+
+  // Shutdown the tserver and try and rebuild the tablet from the log
+  // produced on recovery (recovery flushed no state, but produced a new
+  // log).
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(boost::assign::list_of(KeyValue(1, 10))
+                                   (KeyValue(2, 20))
+                                   (KeyValue(3, 30))
+                                   (KeyValue(4, 40))
+                                   (KeyValue(5, 50))
+                                   (KeyValue(6, 60))
+                                   // the last hook only fires on compaction
+                                   // so this isn't mutated
+                                   (KeyValue(7, 7)));
+
+  // Shutdown and rebuild again to test that the log generated during
+  // the previous recovery allows to perform recovery again.
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(boost::assign::list_of(KeyValue(1, 10))
+                                   (KeyValue(2, 20))
+                                   (KeyValue(3, 30))
+                                   (KeyValue(4, 40))
+                                   (KeyValue(5, 50))
+                                   (KeyValue(6, 60))
+                                   (KeyValue(7, 7)));
+}
+
+// Tests performing mutations that are going to a DMS or to the following
+// DMS, when the initial one is flushed.
+TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
+
+  InsertTestRowsRemote(0, 1, 7);
+
+  shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
+
+  tablet_peer_->tablet()->SetFlushHooksForTests(hooks);
+  tablet_peer_->tablet()->SetCompactionHooksForTests(hooks);
+  tablet_peer_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
+
+  // flush the first time
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(boost::assign::list_of(KeyValue(1, 10))
+                                   (KeyValue(2, 20))
+                                   (KeyValue(3, 30))
+                                   (KeyValue(4, 40))
+                                   (KeyValue(5, 50))
+                                   (KeyValue(6, 60))
+                                   (KeyValue(7, 7)));
+  hooks->increment_iteration();
+
+  // set the hooks on the new tablet
+  tablet_peer_->tablet()->SetFlushHooksForTests(hooks);
+  tablet_peer_->tablet()->SetCompactionHooksForTests(hooks);
+  tablet_peer_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
+
+  // insert an additional row so that we can flush
+  InsertTestRowsRemote(0, 8, 1);
+
+  // flush an additional MRS so that we have two DiskRowSets and then compact
+  // them making sure that mutations executed mid compaction are replayed as
+  // expected
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  VerifyRows(boost::assign::list_of(KeyValue(1, 11))
+                                   (KeyValue(2, 21))
+                                   (KeyValue(3, 31))
+                                   (KeyValue(4, 41))
+                                   (KeyValue(5, 51))
+                                   (KeyValue(6, 61))
+                                   (KeyValue(7, 7))
+                                   (KeyValue(8, 8)));
+
+  hooks->increment_iteration();
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+
+  // Shutdown the tserver and try and rebuild the tablet from the log
+  // produced on recovery (recovery flushed no state, but produced a new
+  // log).
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(boost::assign::list_of(KeyValue(1, 11))
+                                   (KeyValue(2, 22))
+                                   (KeyValue(3, 32))
+                                   (KeyValue(4, 42))
+                                   (KeyValue(5, 52))
+                                   (KeyValue(6, 62))
+                                   (KeyValue(7, 72))
+                                   (KeyValue(8, 8)));
+
 }
 
 TEST_F(TabletServerTest, TestScan) {

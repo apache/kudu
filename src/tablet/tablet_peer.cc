@@ -34,14 +34,19 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     rows_updated(FindOrCreateCounter(metric_ctx, METRIC_rows_updated)) {
 }
 
-TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet, const MetricContext& metric_ctx)
-  : tablet_(tablet),
-    prepare_executor_(TaskExecutor::CreateNew(1)),
-    metric_ctx_(metric_ctx, strings::Substitute("tablet.tablet-$0", tablet_->tablet_id())),
-    tablet_metrics_(metric_ctx_) {
+TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
+                       gscoped_ptr<Log> log,
+                       const MetricContext& metric_ctx)
+    : tablet_(tablet),
+      log_(log.Pass()),
+      metric_ctx_(metric_ctx, strings::Substitute("tablet.tablet-$0", tablet_->tablet_id())),
+      tablet_metrics_(metric_ctx_),
+      // prepare executor has a single thread as prepare must be done in order
+      // of submission
+      prepare_executor_(TaskExecutor::CreateNew(1)) {
+  DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
+  DCHECK(log_) << "A TabletPeer must be provided with a Log";
 
-  // prepare executor has a single thread as prepare must be done in order
-  // of submission
   errno = 0;
   int n_cpus = sysconf(_SC_NPROCESSORS_CONF);
   CHECK_EQ(errno, 0) << ErrnoToString(errno);
@@ -52,20 +57,6 @@ TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet, const MetricContext& me
 // TODO a distributed implementation of consensus will need to receive the
 // configuration before Init().
 Status TabletPeer::Init() {
-  OpId initial_id;
-  initial_id.set_term(0);
-  initial_id.set_index(0);
-
-  shared_ptr<metadata::TabletSuperBlockPB> super_block;
-  RETURN_NOT_OK(tablet_->metadata()->ToSuperBlock(&super_block));
-
-  gscoped_ptr<Log> log;
-  RETURN_NOT_OK(Log::Open(LogOptions(),
-                          tablet_->metadata()->fs_manager(),
-                          *super_block,
-                          initial_id,
-                          &log));
-  log_.reset(log.release());
 
   // TODO support different consensus implementations (possibly by adding
   // a TabletPeerOptions).

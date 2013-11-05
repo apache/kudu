@@ -58,6 +58,8 @@ using kudu::tablet::MissedDeltaMutationPB;
 namespace kudu {
 namespace tserver {
 
+static const int kSharedRegionSize = 4096;
+
 // NOTE: Supports up to 256 inserters/updaters
 struct SharedData {
   // Keeps the last ACK'd insert for each inserter thread.
@@ -81,7 +83,24 @@ class TabletServerTest : public KuduTest {
   // Starts the tablet server, override to start it later.
   virtual void SetUp() {
     KuduTest::SetUp();
+    CreateSharedRegion();
     StartTabletServer();
+  }
+
+  virtual void TearDown() {
+    DeleteSharedRegion();
+    KuduTest::TearDown();
+  }
+
+  // create a shared region for the processes to be able to communicate
+  virtual void CreateSharedRegion() {
+    shared_region_ = mmap(NULL, kSharedRegionSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    CHECK(shared_region_) << "Could not mmap: " << ErrnoToString(errno);
+    shared_data_ = reinterpret_cast<volatile SharedData*>(shared_region_);
+  }
+
+  virtual void DeleteSharedRegion() {
+    munmap(shared_region_, kSharedRegionSize);
   }
 
   virtual void StartTabletServer() {
@@ -95,6 +114,45 @@ class TabletServerTest : public KuduTest {
 
     // Connect to it.
     ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_rpc_addr(), &proxy_));
+  }
+
+  void UpdateTestRowRemote(int tid,
+                           uint64_t row_idx,
+                           uint32_t new_val,
+                           TimeSeries *ts = NULL) {
+
+    WriteRequestPB req;
+    req.set_tablet_id(kTabletId);
+
+    WriteResponsePB resp;
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
+
+    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
+    data->set_num_key_columns(schema_.num_key_columns());
+
+    string new_string_val(strings::Substitute("mutated$0", row_idx));
+    Slice mutation(new_string_val);
+    faststring mutations;
+    AddTestMutationToRowBlockAndBuffer(schema_,
+                                       row_idx,
+                                       new_val,
+                                       mutation,
+                                       data,
+                                       &mutations);
+
+    req.set_encoded_mutations(mutations.data(), mutations.size());
+
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
+    ASSERT_EQ(0, resp.per_row_errors_size());
+    shared_data_->last_updated[tid] = new_val;
+    if (ts) {
+      ts->AddValue(1);
+    }
   }
 
  private:
@@ -161,7 +219,7 @@ class TabletServerTest : public KuduTest {
       uint64_t last_row_in_batch = first_row_in_batch + count/num_batches;
 
       for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
-        AddTestRowToBlockPB(schema_, j, j, "hello world via RPC", data.get());
+        AddTestRowToBlockPB(schema_, j, j, strings::Substitute("original$0", j), data.get());
       }
 
       req.set_allocated_to_insert_rows(data.release());
@@ -169,7 +227,7 @@ class TabletServerTest : public KuduTest {
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
       ASSERT_EQ(0, resp.per_row_errors_size());
-      shared_data->last_inserted[tid] = last_row_in_batch;
+      shared_data_->last_inserted[tid] = last_row_in_batch;
 
       inserted_since_last_report += count/num_batches;
       if ((inserted_since_last_report > 100) && ts) {
@@ -184,43 +242,6 @@ class TabletServerTest : public KuduTest {
 
     if (ts) {
       ts->AddValue(static_cast<double>(inserted_since_last_report));
-    }
-  }
-
-  void UpdateTestRowRemote(int tid,
-                           uint64_t row_idx,
-                           uint32_t new_val,
-                           TimeSeries *ts = NULL) {
-
-    WriteRequestPB req;
-    req.set_tablet_id(kTabletId);
-
-    WriteResponsePB resp;
-    RpcController controller;
-    controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
-
-    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
-
-    Slice mutation("*mutated* hello world via RPC");
-    faststring mutations;
-    AddTestMutationToRowBlockAndBuffer(schema_,
-                                       row_idx,
-                                       new_val, mutation,
-                                       data,
-                                       &mutations);
-
-    req.set_encoded_mutations(mutations.data(), mutations.size());
-
-    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
-
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
-    ASSERT_EQ(0, resp.per_row_errors_size());
-    shared_data->last_updated[tid] = new_val;
-    if (ts) {
-      ts->AddValue(1);
     }
   }
 
@@ -258,6 +279,51 @@ class TabletServerTest : public KuduTest {
     } while (resp.has_more_results());
   }
 
+  void ShutdownAndRebuildTablet() {
+    if (mini_server_.get()) {
+      mini_server_->Shutdown();
+    }
+
+    // Start server.
+    mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
+    // this should open the tablet created on StartTabletServer()
+    ASSERT_STATUS_OK(mini_server_->Start());
+
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
+    // Connect to it.
+    ASSERT_NO_FATAL_FAILURE(CreateClientProxy(mini_server_->bound_rpc_addr(), &proxy_));
+  }
+
+  // Verifies that a set of expected rows (key, value) is present in the tablet.
+  void VerifyRows(const vector<KeyValue>& expected) {
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_STATUS_OK(tablet_peer_->tablet()->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(iter->Init(NULL));
+
+    int batch_size = std::max(
+        (size_t)1, std::min((size_t)(expected.size() / 10),
+                            4*1024*1024 / schema_.byte_size()));
+
+    Arena arena(32*1024, 256*1024);
+    RowBlock block(schema_, batch_size, &arena);
+
+    int count = 0;
+    while (iter->HasNext()) {
+      ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
+      RowBlockRow rb_row = block.row(0);
+      for (int i = 0; i < block.nrows(); i++) {
+        if (block.selection_vector()->IsRowSelected(i)) {
+          rb_row.Reset(&block, i);
+          ASSERT_LT(count, expected.size());
+          ASSERT_EQ(expected[count].first, *schema_.ExtractColumnFromRow<UINT32>(rb_row, 0));
+          ASSERT_EQ(expected[count].second, *schema_.ExtractColumnFromRow<UINT32>(rb_row, 1));
+          count++;
+        }
+      }
+    }
+    ASSERT_EQ(count, expected.size());
+  }
+
   Schema schema_;
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
@@ -268,8 +334,8 @@ class TabletServerTest : public KuduTest {
   shared_ptr<TabletPeer> tablet_peer_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
 
-  volatile SharedData* shared_data;
-  void* shared_region;
+  volatile SharedData* shared_data_;
+  void* shared_region_;
 };
 
 const char* TabletServerTest::kTabletId = "TestTablet";
