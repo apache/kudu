@@ -14,6 +14,7 @@ namespace kudu {
 
 namespace master {
 class MiniMaster;
+class TSDescriptor;
 }
 
 namespace tserver {
@@ -45,7 +46,32 @@ class MiniCluster {
 
   string GetTabletServerFsRoot(int idx);
 
+  // Wait for the given tablet to have 'expected_count' replicas
+  // reported on the master.
+  // Requires that the master has started.
+  // Returns a bad Status if the tablet does not reach the required count
+  // within kTabletReportWaitTimeSeconds.
+  Status WaitForReplicaCount(const string& tablet_id, int expected_count);
+
+  // Wait for the given tablet to have 'expected_count' replicas
+  // reported on the master. Returns the locations in '*locations'.
+  // Requires that the master has started;
+  // Returns a bad Status if the tablet does not reach the required count
+  // within kTabletReportWaitTimeSeconds.
+  Status WaitForReplicaCount(const string& tablet_id,
+                             int expected_count,
+                             vector<master::TSDescriptor*>* locations);
+
+  // Wait until the number of registered tablet servers reaches the given
+  // count. Returns Status::TimedOut if the desired count is not achieved
+  // within kRegistrationWaitTimeSeconds.
+  Status WaitForTabletServerCount(int count);
+
  private:
+  enum {
+    kTabletReportWaitTimeSeconds = 5,
+    kRegistrationWaitTimeSeconds = 5
+  };
 
   bool started_;
 

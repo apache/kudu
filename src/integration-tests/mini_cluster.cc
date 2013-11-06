@@ -6,15 +6,20 @@
 
 #include "gutil/strings/substitute.h"
 #include "master/mini_master.h"
+#include "master/master.h"
+#include "master/m_tablet_manager.h"
+#include "master/ts_manager.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
 #include "util/status.h"
+#include "util/stopwatch.h"
 
 using strings::Substitute;
 
 namespace kudu {
 
 using master::MiniMaster;
+using master::TSDescriptor;
 using std::tr1::shared_ptr;
 using tserver::MiniTabletServer;
 
@@ -73,6 +78,43 @@ string MiniCluster::GetMasterFsRoot() {
 
 string MiniCluster::GetTabletServerFsRoot(int idx) {
   return env_->JoinPathSegments(fs_root_, Substitute("ts-$0-root", idx));
+}
+
+Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
+                                        int expected_count) {
+  vector<TSDescriptor*> locs;
+  return WaitForReplicaCount(tablet_id, expected_count, &locs);
+}
+
+Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
+                                        int expected_count,
+                                        vector<TSDescriptor*>* locations) {
+  locations->clear();
+  Stopwatch sw;
+  sw.start();
+  while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
+    mini_master_->master()->tablet_manager()->GetTabletLocations(tablet_id, locations);
+    if (locations->size() == expected_count) return Status::OK();
+
+    usleep(1 * 1000); // 1ms
+  }
+  return Status::TimedOut(Substitute("Tablet $0 never reached expected replica count $1",
+                                     tablet_id, expected_count));
+}
+
+Status MiniCluster::WaitForTabletServerCount(int count) {
+  Stopwatch sw;
+  sw.start();
+  while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
+    vector<shared_ptr<master::TSDescriptor> > descs;
+    mini_master_->master()->ts_manager()->GetAllDescriptors(&descs);
+    if (descs.size() != count) {
+      LOG(INFO) << count << " TS(s) registered with Master after " << sw.elapsed().wall_seconds() << "s";
+      return Status::OK();
+    }
+    usleep(1 * 1000); // 1ms
+  }
+  return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
 }
 
 } // namespace kudu
