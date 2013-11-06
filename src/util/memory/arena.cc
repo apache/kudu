@@ -47,7 +47,8 @@ template <bool THREADSAFE>
 ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_size)
     : buffer_allocator_(HeapBufferAllocator::Get()),
       max_buffer_size_(max_buffer_size),
-      arena_footprint_(0) {
+      arena_footprint_(0),
+      warned_(false) {
   AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
