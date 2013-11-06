@@ -119,12 +119,8 @@ if ("${KUDU_GENERATE_COVERAGE}")
 endif()
 
 # set compile output directory
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR
-    "${CMAKE_BUILD_TYPE}" STREQUAL "CODE_COVERAGE_DEBUG")
-  set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/debug/")
-else()
-  set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/release/")
-endif()
+STRING (TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWERCASE)
+set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE_LOWERCASE}/")
 
 # Link build/latest to the current build directory, to avoid developers
 # accidentally running the latest debug build when in fact they're building
