@@ -71,7 +71,7 @@ class RegistrationTest : public KuduTest {
 };
 
 TEST_F(RegistrationTest, TestTSRegisters) {
-  ASSERT_NO_FATAL_FAILURE(cluster_->WaitForTabletServerCount(1));
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
   ASSERT_NO_FATAL_FAILURE(CheckTabletServersPage());
 
@@ -79,7 +79,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   // hearbeater thread handles re-registering.
   ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
 
-  ASSERT_NO_FATAL_FAILURE(cluster_->WaitForTabletServerCount(1));
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
   // TODO: when the instance ID / sequence number stuff is implemented,
   // restart the TS and ensure that it re-registers with the newer sequence
@@ -91,7 +91,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 // to something more appropriate - doesn't seem worth having separate
 // whole test suites for registration, tablet reports, etc.
 TEST_F(RegistrationTest, TestTabletReports) {
-  ASSERT_NO_FATAL_FAILURE(cluster_->WaitForTabletServerCount(1));
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string ts_root = cluster_->GetTabletServerFsRoot(0);

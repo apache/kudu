@@ -108,7 +108,7 @@ Status MiniCluster::WaitForTabletServerCount(int count) {
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
     vector<shared_ptr<master::TSDescriptor> > descs;
     mini_master_->master()->ts_manager()->GetAllDescriptors(&descs);
-    if (descs.size() != count) {
+    if (descs.size() == count) {
       LOG(INFO) << count << " TS(s) registered with Master after " << sw.elapsed().wall_seconds() << "s";
       return Status::OK();
     }
