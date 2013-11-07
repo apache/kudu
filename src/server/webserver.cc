@@ -293,7 +293,7 @@ void Webserver::RegisterPathHandler(const string& path,
 const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " <html>"
 "   <head><title>Cloudera Kudu</title>"
-" <link href='www/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen'>"
+" <link href='www/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
 "  <style>"
 "  body {"
 "    padding-top: 60px; "
@@ -309,7 +309,7 @@ static const char* const NAVIGATION_BAR_PREFIX =
 "      <div class='navbar-inner'>"
 "        <div class='container'>"
 "          <a href='/'>"
-"            <img src=\"/www/logo.png\" width=55 height=52 alt=\"Kudu\" style=\"float:left\"/>"
+"            <img src=\"/www/logo.png\" width='55' height='52' alt=\"Kudu\" style=\"float:left\"/>"
 "          </a>"
 "          <div class='nav-collapse collapse'>"
 "            <ul class='nav'>";
