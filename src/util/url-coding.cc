@@ -186,4 +186,10 @@ void EscapeForHtml(const string& in, stringstream* out) {
   }
 }
 
+std::string EscapeForHtmlToString(const std::string& in) {
+  stringstream str;
+  EscapeForHtml(in, &str);
+  return str.str();
+}
+
 } // namespace kudu

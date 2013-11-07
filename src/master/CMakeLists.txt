@@ -17,6 +17,7 @@ SET(MASTER_SRCS
   master.cc
   master_options.cc
   master_service.cc
+  master-path-handlers.cc
   mini_master.cc
   m_tablet_manager.cc
   ts_descriptor.cc

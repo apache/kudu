@@ -12,6 +12,7 @@
 #include "rpc/service_pool.h"
 #include "server/rpc_server.h"
 #include "master/master_service.h"
+#include "master/master-path-handlers.h"
 #include "master/m_tablet_manager.h"
 #include "master/ts_manager.h"
 #include "util/net/net_util.h"
@@ -28,7 +29,8 @@ Master::Master(const MasterOptions& opts)
   : ServerBase(opts.rpc_opts, opts.webserver_opts),
     initted_(false),
     ts_manager_(new TSManager()),
-    tablet_manager_(new MTabletManager()) {
+    tablet_manager_(new MTabletManager()),
+    path_handlers_(new MasterPathHandlers(this)) {
 }
 
 Master::~Master() {
@@ -44,6 +46,9 @@ string Master::ToString() const {
 Status Master::Init() {
   CHECK(!initted_);
   RETURN_NOT_OK(ServerBase::Init());
+
+  RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+
   initted_ = true;
   return Status::OK();
 }

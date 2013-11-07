@@ -27,6 +27,7 @@ namespace master {
 
 class MTabletManager;
 class TSManager;
+class MasterPathHandlers;
 
 class Master : public server::ServerBase {
  public:
@@ -55,6 +56,7 @@ class Master : public server::ServerBase {
 
   gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<MTabletManager> tablet_manager_;
+  gscoped_ptr<MasterPathHandlers> path_handlers_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

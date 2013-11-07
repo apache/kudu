@@ -13,6 +13,9 @@
 #include "master/master.h"
 #include "master/ts_descriptor.h"
 #include "tserver/mini_tablet_server.h"
+#include "tserver/tablet_server.h"
+#include "util/curl_util.h"
+#include "util/faststring.h"
 #include "util/test_util.h"
 #include "util/stopwatch.h"
 
@@ -50,6 +53,18 @@ class RegistrationTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->Shutdown());
   }
 
+  void CheckTabletServersPage() {
+    EasyCurl c;
+    faststring buf;
+    string addr = cluster_->mini_master()->bound_http_addr().ToString();
+    ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablet-servers", addr),
+                                &buf));
+
+    // Should include the TS UUID
+    string expected_uuid = cluster_->mini_tablet_server(0)->server()->instance_pb().permanent_uuid();
+    ASSERT_STR_CONTAINS(buf.ToString(), expected_uuid);
+  }
+
  protected:
   gscoped_ptr<MiniCluster> cluster_;
   Schema schema_;
@@ -57,6 +72,8 @@ class RegistrationTest : public KuduTest {
 
 TEST_F(RegistrationTest, TestTSRegisters) {
   ASSERT_NO_FATAL_FAILURE(cluster_->WaitForTabletServerCount(1));
+
+  ASSERT_NO_FATAL_FAILURE(CheckTabletServersPage());
 
   // Restart the master, so it loses the descriptor, and ensure that the
   // hearbeater thread handles re-registering.
