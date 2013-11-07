@@ -780,14 +780,15 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
 Status Tablet::Compact(CompactFlags flags) {
   CHECK(open_);
 
-  LOG(INFO) << "Compaction: entering stage 1 (collecting rowsets)";
   RowSetsInCompaction input;
   // Step 1. Capture the rowsets to be merged
   RETURN_NOT_OK(PickRowSetsToCompact(&input, flags));
   if (input.num_rowsets() < 2) {
-    LOG(INFO) << "Not enough rowsets to run compaction! Aborting...";
+    VLOG(1) << "Not enough rowsets to run compaction! Aborting...";
     return Status::OK();
   }
+  LOG(INFO) << "Compaction: stage 1 complete, picked "
+            << input.num_rowsets() << " rowsets to compact";
   if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
 
   input.DumpToLog();
