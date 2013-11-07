@@ -287,6 +287,16 @@ class LogTest : public KuduTest {
   vector<LogEntry* > entries_;
 };
 
+// Test that the reader can read from the log even if it hasn't been
+// properly closed.
+TEST_F(LogTest, TestLogNotTrimmed) {
+  BuildLog();
+  BuildLogReader();
+  vector<LogEntry*> entries;
+  ElementDeleter deleter(&entries);
+  ASSERT_STATUS_OK(log_reader_->ReadEntries(log_reader_->segments()[0], &entries));
+}
+
 // Tests that the log reader reads up until some corrupt entry is found.
 // TODO test partially written/corrupt headers
 TEST_F(LogTest, TestCorruptLog) {

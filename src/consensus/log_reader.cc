@@ -115,7 +115,16 @@ Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
   faststring tmp_buf;
   while (offset < segment->file_size()) {
     gscoped_ptr<LogEntry> current;
-    Status status = ReadEntry(segment, &tmp_buf, &offset, &current);
+
+    // Read the entry length first, if we get 0 back that just means that
+    // the log hasn't been ftruncated().
+    uint32_t length;
+    RETURN_NOT_OK(ReadEntryLength(segment, &offset, &length));
+    if (length == 0) {
+      return Status::OK();
+    }
+
+    Status status = ReadEntry(segment, &tmp_buf, &offset, length, &current);
     if (status.ok()) {
       if (VLOG_IS_ON(3)) {
         VLOG(3) << "Read Log entry: " << current->DebugString();
@@ -212,10 +221,8 @@ Status LogReader::ReadEntryLength(
 Status LogReader::ReadEntry(const shared_ptr<ReadableLogSegment> &segment,
                             faststring *tmp_buf,
                             uint64_t *offset,
+                            uint32_t length,
                             gscoped_ptr<LogEntry> *entry) {
-
-  uint32_t length;
-  RETURN_NOT_OK(ReadEntryLength(segment, offset, &length));
 
   if (length == 0 || length > segment->file_size() - *offset) {
     return Status::Corruption(StringPrintf("Invalid entry length %d.", length));

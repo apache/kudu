@@ -89,6 +89,7 @@ class LogReader {
       const std::tr1::shared_ptr<ReadableLogSegment> &segment,
       faststring *tmp_buf,
       uint64_t *offset,
+      uint32_t length,
       gscoped_ptr<LogEntry> *entry);
 
   FsManager *fs_manager_;
