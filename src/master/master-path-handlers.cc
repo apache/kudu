@@ -34,13 +34,20 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args,
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
   BOOST_FOREACH(const std::tr1::shared_ptr<TSDescriptor>& desc, descs) {
-    const string uuid = desc->permanent_uuid();
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     TSRegistrationPB reg;
     desc->GetRegistration(&reg);
 
+    string uuid_cell = EscapeForHtmlToString(desc->permanent_uuid());
+    if (reg.http_addresses().size() > 0) {
+      uuid_cell = Substitute("<a href=\"http://$0:$1/\">$2</a>",
+                           reg.http_addresses(0).host(),
+                           reg.http_addresses(0).port(),
+                           uuid_cell);
+    }
+
     *output << Substitute("<tr><th>$0</th><td>$1</td><td><code>$2</code></td></tr>\n",
-                          EscapeForHtmlToString(uuid), time_since_hb,
+                          uuid_cell, time_since_hb,
                           EscapeForHtmlToString(reg.ShortDebugString()));
   }
   *output << "</table>\n";
