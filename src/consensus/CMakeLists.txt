@@ -61,3 +61,20 @@ SET(KUDU_TEST_LINK_LIBS
 
 ADD_KUDU_TEST(log_util-test)
 ADD_KUDU_TEST(log-test)
+
+#Tools
+SET(KUDU_LINK_LIBS
+  log
+  server
+  consensus
+  tserver
+  kudu_common
+  kudu_util
+  gutil
+  cfile
+  tablet
+  ${KUDU_LINK_LIBS}
+)
+
+ADD_EXECUTABLE(log-dump log-dump.cc)
+TARGET_LINK_LIBRARIES(log-dump ${KUDU_LINK_LIBS})
