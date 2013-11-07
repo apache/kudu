@@ -64,6 +64,7 @@
 #include "util/stopwatch.h"
 #include "tablet/tablet.h"
 #include "tablet/transaction_context.h"
+#include "benchmarks/tpch/tpch-schemas.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -118,35 +119,6 @@ struct hash {
 
 static const boost::char_separator<char> kPipeSeparator("|");
 
-static const Schema kSchema(boost::assign::list_of
-                            (ColumnSchema("l_orderkey", UINT32))
-                            (ColumnSchema("l_linenumber", UINT32))
-                            (ColumnSchema("l_partkey", UINT32))
-                            (ColumnSchema("l_suppkey", UINT32))
-                            (ColumnSchema("l_quantity", UINT32)) // decimal??
-                            (ColumnSchema("l_extendedprice", UINT32)) // storing * 100
-                            (ColumnSchema("l_discount", UINT32)) // storing * 100
-                            (ColumnSchema("l_tax", UINT32)) // storing * 100
-                            (ColumnSchema("l_returnflag", STRING))
-                            (ColumnSchema("l_linestatus", STRING))
-                            (ColumnSchema("l_shipdate", STRING, true))
-                            (ColumnSchema("l_commitdate", STRING))
-                            (ColumnSchema("l_receiptdate", STRING))
-                            (ColumnSchema("l_shipinstruct", STRING))
-                            (ColumnSchema("l_shipmode", STRING))
-                            (ColumnSchema("l_comment", STRING))
-                            , 2);
-
-const Schema kQuerySchema(boost::assign::list_of
-                            (ColumnSchema("l_shipdate", STRING, true))
-                            (ColumnSchema("l_returnflag", STRING))
-                            (ColumnSchema("l_linestatus", STRING))
-                            (ColumnSchema("l_quantity", UINT32))
-                            (ColumnSchema("l_extendedprice", UINT32))
-                            (ColumnSchema("l_discount", UINT32))
-                            (ColumnSchema("l_tax", UINT32))
-                            , 0);
-
 // returns true if the tablet is empty and needs to be loaded.
 bool OpenTablet(FsManager* fs_manager, gscoped_ptr<tablet::Tablet> *tablet) {
   // Hard-coded master block
@@ -158,7 +130,7 @@ bool OpenTablet(FsManager* fs_manager, gscoped_ptr<tablet::Tablet> *tablet) {
   // Try to load it. If it was not found, create a new one.
   gscoped_ptr<kudu::metadata::TabletMetadata> metadata;
   CHECK_OK(TabletMetadata::LoadOrCreate(fs_manager, master_block,
-                                        kSchema, "", "", &metadata));
+                                        tpch::CreateLineItemSchema(), "", "", &metadata));
 
   tablet->reset(new tablet::Tablet(metadata.Pass()));
   CHECK_OK((*tablet)->Open());
@@ -188,7 +160,7 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
   CHECK(in.is_open()) << "not able to open input file: " << path;
 
   string line;
-  RowBuilder rb(kSchema);
+  RowBuilder rb(tpch::CreateLineItemSchema());
   vector<string> columns;
 
   tablet::TransactionContext tx_ctx;
@@ -229,15 +201,16 @@ void Tpch1(gscoped_ptr<tablet::Tablet> &tablet) {
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
   gscoped_ptr<RowwiseIterator> iter;
-  CHECK_OK(tablet->NewRowIterator(kQuerySchema, &iter));
+  Schema query_schema(tpch::CreateTpch1QuerySchema());
+  CHECK_OK(tablet->NewRowIterator(query_schema, &iter));
   Slice date("1998-09-02");
   ScanSpec spec;
-  ColumnRangePredicate pred1(kQuerySchema.column(0), boost::none, &date);
+  ColumnRangePredicate pred1(query_schema.column(0), boost::none, &date);
   spec.AddPredicate(pred1);
   CHECK_OK(iter->Init(&spec));
 
   Arena arena(32*1024, 256*1024);
-  RowBlock block(kQuerySchema, 1000, &arena);
+  RowBlock block(query_schema, 1000, &arena);
   int matching_rows = 0;
   slice_map_map results;
   Result *r;

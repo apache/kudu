@@ -17,50 +17,52 @@
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
 #include "twitter-demo/twitter-schema.h"
+#include "benchmarks/tpch/tpch-schemas.h"
 #include "util/env.h"
 #include "util/logging.h"
-
-DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
 
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;
 
+static const char* const kTwitterTabletId = "twitter";
+static const char* const kTPCH1TabletId = "tpch1";
+
+DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
+DEFINE_string(tablet_server_tablet_id, kTwitterTabletId,
+              "Which tablet to use: twitter (default) or tpch1");
+
 namespace kudu {
 namespace tserver {
 
-static const char* const kTwitterTabletId = "twitter";
-
-// For the sake of demos, hard-code the twitter demo schema
-// here in the tablet server. This will go away as soon as
-// we have support for dynamically creating and dropping
-// tables.
+// For demos, keep only a single tablet that can be either twitter or tpch1
 class TemporaryTabletsForDemos {
  public:
-  explicit TemporaryTabletsForDemos(TabletServer* server)
-    : twitter_schema_(twitter_demo::CreateTwitterSchema()) {
+  explicit TemporaryTabletsForDemos(TabletServer* server, Schema schema,
+                                    const string& tablet_id)
+    : schema_(schema) {
 
     shared_ptr<TabletPeer> peer;
-    if (server->tablet_manager()->LookupTablet(kTwitterTabletId, &peer)) {
-      CHECK(twitter_schema_.Equals(peer->tablet()->schema()))
-        << "Bad schema for twitter tablet loaded on disk: " <<
+    if (server->tablet_manager()->LookupTablet(tablet_id, &peer)) {
+      CHECK(schema_.Equals(peer->tablet()->schema()))
+        << "Bad schema loaded on disk: " <<
         peer->tablet()->schema().ToString();
-      LOG(INFO) << "Using previously-created twitter tablet";
+      LOG(INFO) << "Using previously-created tablet";
     } else {
       CHECK_OK(server->tablet_manager()->CreateNewTablet(
-                 kTwitterTabletId, "", "", twitter_schema_, &peer));
+                 tablet_id, "", "", schema_, &peer));
     }
-    twitter_tablet_ = peer->shared_tablet();
+    tablet_ = peer->shared_tablet();
   }
 
-  const shared_ptr<Tablet>& twitter_tablet() {
-    return twitter_tablet_;
+  const shared_ptr<Tablet>& tablet() {
+    return tablet_;
   }
 
  private:
-  Schema twitter_schema_;
+  Schema schema_;
 
-  shared_ptr<Tablet> twitter_tablet_;
+  shared_ptr<Tablet> tablet_;
 
   DISALLOW_COPY_AND_ASSIGN(TemporaryTabletsForDemos);
 };
@@ -98,15 +100,18 @@ static int TabletServerMain(int argc, char** argv) {
   CHECK_OK(server.Init());
 
   LOG(INFO) << "Setting up demo tablets...";
-  TemporaryTabletsForDemos demo_setup(&server);
+  string id(FLAGS_tablet_server_tablet_id);
+  Schema schema = id == kTwitterTabletId ? twitter_demo::CreateTwitterSchema() :
+                                           tpch::CreateLineItemSchema();
+  TemporaryTabletsForDemos demo_setup(&server, schema, id);
 
   // Temporary hack for demos: start threads which compact/flush the tablet.
   // Eventually this will be part of TabletServer itself, and take care of deciding
   // which tablet to perform operations on. But as a stop-gap, just start these
   // simple threads here from main.
   LOG(INFO) << "Starting flush/compact threads";
-  boost::thread compact_thread(CompactThread, demo_setup.twitter_tablet().get());
-  boost::thread flush_thread(FlushThread, demo_setup.twitter_tablet().get());
+  boost::thread compact_thread(CompactThread, demo_setup.tablet().get());
+  boost::thread flush_thread(FlushThread, demo_setup.tablet().get());
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());
