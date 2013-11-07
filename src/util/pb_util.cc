@@ -7,14 +7,22 @@
 // Some of this code is cribbed from the protobuf source,
 // but modified to work with kudu's 'faststring' instead of STL strings.
 
+#include "util/pb_util.h"
+
 #include <glog/logging.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/message_lite.h>
+#include <string>
+#include <tr1/memory>
 
-#include "util/pb_util.h"
 #include "util/pb_util-internal.h"
 #include "util/status.h"
 #include "util/env.h"
+#include "util/env_util.h"
+
+using std::tr1::shared_ptr;
+
+static const char* const kTmpSuffix = ".tmp";
 
 namespace kudu {
 namespace pb_util {
@@ -63,7 +71,7 @@ string InitializationErrorMessage(const char* action,
   return result;
 }
 
-} // anonymous
+} // anonymous namespace
 
 bool AppendToString(const MessageLite &msg, faststring *output) {
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
@@ -105,6 +113,34 @@ bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile) {
   WritableFileOutputStream ostream(wfile);
   bool res = msg.SerializeToZeroCopyStream(&ostream);
   return res && ostream.Flush();
+}
+
+Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg) {
+  const string path_tmp = path + kTmpSuffix;
+
+  shared_ptr<WritableFile> file;
+  RETURN_NOT_OK_PREPEND(env_util::OpenFileForWrite(env, path_tmp, &file),
+                        "Couldn't open master block file in " + path_tmp);
+  env_util::ScopedFileDeleter tmp_deleter(env, path_tmp);
+
+  if (!SerializeToWritableFile(msg, file.get())) {
+    return Status::IOError("Failed to serialize to file");
+  }
+  RETURN_NOT_OK_PREPEND(file->Flush(), "Failed to Flush() " + path_tmp);
+  RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
+  RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + path_tmp);
+  RETURN_NOT_OK_PREPEND(env->RenameFile(path_tmp, path), "Failed to rename tmp file to " + path);
+  tmp_deleter.Cancel();
+  return Status::OK();
+}
+
+Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg) {
+  shared_ptr<SequentialFile> rfile;
+  RETURN_NOT_OK(env_util::OpenFileForSequential(env, path, &rfile));
+  if (!ParseFromSequentialFile(msg, rfile.get())) {
+    return Status::IOError("Unable to parse PB from path", path);
+  }
+  return Status::OK();
 }
 
 } // namespace pb_util

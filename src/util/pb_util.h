@@ -7,6 +7,7 @@
 #ifndef KUDU_UTIL_PB_UTIL_H
 #define KUDU_UTIL_PB_UTIL_H
 
+#include <string>
 #include "util/faststring.h"
 
 namespace google { namespace protobuf {
@@ -16,9 +17,10 @@ class MessageLite;
 
 namespace kudu {
 
+class Env;
 class SequentialFile;
-class WritableFile;
 class Status;
+class WritableFile;
 
 namespace pb_util {
 
@@ -43,6 +45,12 @@ Status ParseFromArray(MessageLite* msg, const uint8_t* data, uint32_t length);
 
 // See MessageLite::SerializeToZeroCopyStream.
 bool SerializeToWritableFile(const MessageLite& msg, WritableFile *wfile);
+
+// Load a protobuf from the given path.
+Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg);
+
+// Serialize a protobuf to the given path.
+Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg);
 
 } // namespace pb_util
 } // namespace kudu

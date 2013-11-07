@@ -122,31 +122,23 @@ Status FsManager::WriteMetadataBlock(const BlockId& block_id, const MessageLite&
   // Write the new metadata file
   shared_ptr<WritableFile> wfile;
   string path = GetBlockPath(block_id);
-  RETURN_NOT_OK(env_util::OpenFileForWrite(env_, path, &wfile));
-  if (!pb_util::SerializeToWritableFile(msg, wfile.get())) {
-    return Status::IOError("Unable to write the new '" + block_id.ToString() + "' metadata block");
-  }
-  wfile->Close();
-
-  return Status::OK();
+  return pb_util::WritePBToPath(env_, path, msg);
 }
 
 Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
   VLOG(1) << "Reading Metadata Block " << block_id.ToString();
 
-  shared_ptr<SequentialFile> rfile;
   string path = GetBlockPath(block_id);
-  RETURN_NOT_OK(env_util::OpenFileForSequential(env_, path, &rfile));
-  if (pb_util::ParseFromSequentialFile(msg, rfile.get())) {
-    return Status::OK();
+  Status s = pb_util::ReadPBFromPath(env_, path, msg);
+  if (!s.ok()) {
+    // TODO: Is this failed due to an I/O Problem or because the file is corrupted?
+    //       if is an I/O problem we shouldn't try another one.
+    //       Add a (length, checksum) block at the end of the PB.
+    LOG(WARNING) << "Unable to read '"+ block_id.ToString() +"' metadata block, marking as corrupted";
+    env_->RenameFile(path, path + kCorruptedSuffix);
+    return s.CloneAndPrepend("Unable to read '" + block_id.ToString() + "' metadata block");
   }
-
-  // TODO: Is this failed due to an I/O Problem or because the file is corrupted?
-  //       if is an I/O problem we shouldn't try another one.
-  //       Add a (length, checksum) block at the end of the PB.
-  LOG(WARNING) << "Unable to read '"+ block_id.ToString() +"' metadata block, marking as corrupted";
-  env_->RenameFile(path, path + kCorruptedSuffix);
-  return Status::Corruption("Unable to read '" + block_id.ToString() + "' metadata block");
+  return Status::OK();
 }
 
 } // namespace kudu

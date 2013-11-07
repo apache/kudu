@@ -150,37 +150,13 @@ void TSTabletManager::Shutdown() {
 }
 
 Status TSTabletManager::PersistMasterBlock(const TabletMasterBlockPB& pb) {
-  // TODO: refactor this "atomic write" stuff into a utility function.
-  Env* env = fs_manager_->env();
   string path = fs_manager_->GetMasterBlockPath(pb.tablet_id());
-  string path_tmp = path + kTmpSuffix;
-
-  shared_ptr<WritableFile> file;
-  RETURN_NOT_OK_PREPEND(env_util::OpenFileForWrite(env, path_tmp, &file),
-                        "Couldn't open master block file in " + path_tmp);
-  env_util::ScopedFileDeleter tmp_deleter(env, path_tmp);
-
-  if (!pb_util::SerializeToWritableFile(pb, file.get())) {
-    return Status::IOError("Failed to serialize to file");
-  }
-  RETURN_NOT_OK_PREPEND(file->Flush(), "Failed to Flush() " + path_tmp);
-  RETURN_NOT_OK_PREPEND(file->Sync(), "Failed to Sync() " + path_tmp);
-  RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + path_tmp);
-  RETURN_NOT_OK_PREPEND(env->RenameFile(path_tmp, path), "Failed to rename tmp file to " + path);
-  tmp_deleter.Cancel();
-  return Status::OK();
+  return pb_util::WritePBToPath(fs_manager_->env(), path, pb);
 }
 
 Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlockPB* block) {
-  // TODO: refactor this into some common utility function shared with the metadata block
-  // stuff in FsManager
   string path = fs_manager_->GetMasterBlockPath(tablet_id);
-  shared_ptr<SequentialFile> rfile;
-  RETURN_NOT_OK(env_util::OpenFileForSequential(fs_manager_->env(), path, &rfile));
-  if (!pb_util::ParseFromSequentialFile(block, rfile.get())) {
-    return Status::IOError("Unable to parse tablet master block from " + path);
-  }
-
+  RETURN_NOT_OK(pb_util::ReadPBFromPath(fs_manager_->env(), path, block));
   if (tablet_id != block->tablet_id()) {
     LOG_AND_RETURN(ERROR, Status::Corruption(
                      strings::Substitute("Corrupt master block $0: PB has wrong tablet ID",
