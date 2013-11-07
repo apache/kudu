@@ -35,8 +35,6 @@ class MasterServiceImpl : public MasterServiceIf {
                                   GetTabletLocationsResponsePB* resp,
                                   rpc::RpcContext* rpc);
  private:
-  void SetMasterInstancePB(NodeInstancePB* pb) const;
-
   Master* server_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterServiceImpl);

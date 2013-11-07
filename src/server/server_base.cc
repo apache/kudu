@@ -3,11 +3,13 @@
 #include "server/server_base.h"
 
 #include <gflags/gflags.h>
+#include <string>
 #include <vector>
 
 #include "common/wire_protocol.pb.h"
 #include "rpc/messenger.h"
 #include "server/default-path-handlers.h"
+#include "server/fsmanager.h"
 #include "server/rpc_server.h"
 #include "server/webserver.h"
 #include "util/env.h"
@@ -22,9 +24,11 @@ using std::vector;
 namespace kudu {
 namespace server {
 
-ServerBase::ServerBase(const RpcServerOptions& rpc_opts,
+ServerBase::ServerBase(Env* env, const string& base_dir,
+                       const RpcServerOptions& rpc_opts,
                        const WebserverOptions& web_opts)
-  : metric_registry_(new MetricRegistry()),
+  : fs_manager_(new FsManager(env, base_dir)),
+    metric_registry_(new MetricRegistry()),
     rpc_server_(new RpcServer(rpc_opts)),
     web_server_(new Webserver(web_opts)) {
 }
@@ -52,15 +56,23 @@ const NodeInstancePB& ServerBase::instance_pb() const {
 }
 
 Status ServerBase::GenerateInstanceID() {
-  // TODO: this should be something stored on local disks,
-  // with a sequence number instead of the system time.
   instance_pb_.reset(new NodeInstancePB);
-  instance_pb_->set_permanent_uuid("TODO_perm_uuid");
+  instance_pb_->set_permanent_uuid(fs_manager_->uuid());
+  // TODO: maybe actually bump a sequence number on local disk instead of
+  // using time.
   instance_pb_->set_instance_seqno(Env::Default()->NowMicros());
   return Status::OK();
 }
 
 Status ServerBase::Init() {
+  Status s = fs_manager_->Open();
+  if (s.IsNotFound()) {
+    RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
+                          "Could not create new FS layout");
+    s = fs_manager_->Open();
+  }
+  RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
+
   RETURN_NOT_OK(GenerateInstanceID());
 
   // Create the Messenger.

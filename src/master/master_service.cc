@@ -31,7 +31,7 @@ void MasterServiceImpl::Ping(const PingRequestPB* req,
 void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
                                     TSHeartbeatResponsePB* resp,
                                     rpc::RpcContext* rpc) {
-  SetMasterInstancePB(resp->mutable_master_instance());
+  resp->mutable_master_instance()->CopyFrom(server_->instance_pb());
 
   shared_ptr<TSDescriptor> ts_desc;
   Status s;
@@ -85,15 +85,6 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   }
 
   rpc->RespondSuccess();
-}
-
-void MasterServiceImpl::SetMasterInstancePB(NodeInstancePB* pb) const {
-  // TODO: the master should have some persistent storage where, upon
-  // first startup, it picks a permanent UUID, and then on other startups
-  // generates an instance ID. The TS will also need this. Stubbed out
-  // for now.
-  pb->set_permanent_uuid("TODO permanent");
-  pb->set_instance_seqno(1);
 }
 
 void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* req,

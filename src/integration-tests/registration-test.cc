@@ -13,6 +13,7 @@
 #include "master/master.h"
 #include "master/master.pb.h"
 #include "master/ts_descriptor.h"
+#include "server/fsmanager.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
 #include "util/curl_util.h"
@@ -99,6 +100,12 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   // number.
 }
 
+// Test starting multiple tablet servers and ensuring they both register with the master.
+TEST_F(RegistrationTest, TestMultipleTS) {
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+  ASSERT_STATUS_OK(cluster_->AddTabletServer());
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(2));
+}
 
 // TODO: this doesn't belong under "RegistrationTest" - rename this file
 // to something more appropriate - doesn't seem worth having separate
@@ -129,12 +136,14 @@ TEST_F(RegistrationTest, TestTabletReports) {
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-1", 1, &locs));
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-2", 1, &locs));
 
-  // Restart the TS after clearing its data. On restart, it will send
+  // Restart the TS after clearing its master blocks. On restart, it will send
   // a full tablet report, without any of the tablets. This causes the
   // master to remove the tablet locations.
   LOG(INFO) << "Shutting down TS, clearing data, and restarting it";
   ASSERT_STATUS_OK(ts->Shutdown());
-  ASSERT_STATUS_OK(env_->DeleteRecursively(ts_root));
+  string master_block_dir = ts->fs_manager()->GetMasterBlockDir();
+  ASSERT_STATUS_OK(env_->DeleteRecursively(master_block_dir));
+  ASSERT_STATUS_OK(env_->CreateDir(master_block_dir));
   ASSERT_STATUS_OK(ts->Start());
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-1", 0, &locs));
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-2", 0, &locs));

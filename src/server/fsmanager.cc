@@ -3,12 +3,19 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 
-#include "gutil/strings/strip.h"
 #include "gutil/strings/numbers.h"
+#include "gutil/strings/strip.h"
+#include "gutil/strings/substitute.h"
 #include "gutil/strtoint.h"
+#include "gutil/walltime.h"
 #include "server/fsmanager.h"
+#include "server/metadata.pb.h"
 #include "util/env_util.h"
+#include "util/net/net_util.h"
 #include "util/pb_util.h"
+
+using kudu::metadata::InstanceMetadataPB;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -20,6 +27,7 @@ const char *FsManager::kWalsRecoveryDirPrefix = ".recovery";
 const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
+const char *FsManager::kInstanceMetadataFileName = "instance";
 
 const char *FsMetadataTypeToString(FsMetadataType type) {
   switch (type) {
@@ -30,6 +38,21 @@ const char *FsMetadataTypeToString(FsMetadataType type) {
   /* Never reached */
   DCHECK(0);
   return(NULL);
+}
+
+FsManager::FsManager(Env *env, const string& root_path)
+  : env_(env), root_path_(root_path) {
+}
+
+FsManager::~FsManager() {
+}
+
+Status FsManager::Open() {
+  gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
+  RETURN_NOT_OK(pb_util::ReadPBFromPath(env_, GetInstanceMetadataPath(), pb.get()));
+  metadata_.reset(pb.release());
+  LOG(INFO) << "Opened local filesystem:\n" << metadata_->DebugString();
+  return Status::OK();
 }
 
 Status FsManager::CreateInitialFileSystemLayout() {
@@ -45,7 +68,35 @@ Status FsManager::CreateInitialFileSystemLayout() {
   // Initialize master block dir
   RETURN_NOT_OK(CreateDirIfMissing(GetMasterBlockDir()));
 
+  if (!env_->FileExists(GetInstanceMetadataPath())) {
+    RETURN_NOT_OK(CreateAndWriteInstanceMetadata());
+  }
+
   return Status::OK();
+}
+
+Status FsManager::CreateAndWriteInstanceMetadata() {
+  InstanceMetadataPB new_instance;
+  new_instance.set_uuid(GenerateName());
+
+  string time_str;
+  StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(NULL), false);
+  string hostname;
+  if (!GetHostname(&hostname).ok()) {
+    hostname = "<unknown host>";
+  }
+  new_instance.set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
+
+  const string path = GetInstanceMetadataPath();
+
+  RETURN_NOT_OK(pb_util::WritePBToPath(env_, path, new_instance));
+  LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
+            << new_instance.DebugString();
+  return Status::OK();
+}
+
+const string& FsManager::uuid() const {
+  return CHECK_NOTNULL(metadata_.get())->uuid();
 }
 
 string FsManager::GetMasterBlockDir() const {
@@ -54,6 +105,10 @@ string FsManager::GetMasterBlockDir() const {
 
 string FsManager::GetMasterBlockPath(const std::string& tablet_id) const {
   return env_->JoinPathSegments(GetMasterBlockDir(), tablet_id);
+}
+
+string FsManager::GetInstanceMetadataPath() const {
+  return env_->JoinPathSegments(GetRootDir(), kInstanceMetadataFileName);
 }
 
 // ==========================================================================
@@ -130,11 +185,15 @@ Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
 
   string path = GetBlockPath(block_id);
   Status s = pb_util::ReadPBFromPath(env_, path, msg);
+  if (s.IsNotFound()) {
+    return s;
+  }
   if (!s.ok()) {
     // TODO: Is this failed due to an I/O Problem or because the file is corrupted?
     //       if is an I/O problem we shouldn't try another one.
     //       Add a (length, checksum) block at the end of the PB.
-    LOG(WARNING) << "Unable to read '"+ block_id.ToString() +"' metadata block, marking as corrupted";
+    LOG(WARNING) << "Unable to read '" << block_id.ToString() << "' metadata block"
+                 << " (" << s.ToString() << "): marking as corrupted";
     env_->RenameFile(path, path + kCorruptedSuffix);
     return s.CloneAndPrepend("Unable to read '" + block_id.ToString() + "' metadata block");
   }

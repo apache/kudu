@@ -45,14 +45,23 @@ Status MiniCluster::Start() {
   mini_master_.reset(mini_master.release());
 
   for (int i = 0; i < num_tablet_servers_; i++) {
-    gscoped_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(env_, GetTabletServerFsRoot(i)));
-    // set the master port
-    tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
-    RETURN_NOT_OK_PREPEND(tablet_server->Start(),
-                          Substitute("Couldn't start TS #$0", i));
-    mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
+    AddTabletServer();
   }
   started_ = true;
+  return Status::OK();
+}
+
+Status MiniCluster::AddTabletServer() {
+  if (!mini_master_) {
+    return Status::IllegalState("Master not yet initialized");
+  }
+  int new_idx = mini_tablet_servers_.size();
+
+  gscoped_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(env_, GetTabletServerFsRoot(new_idx)));
+  // set the master port
+  tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
+  RETURN_NOT_OK(tablet_server->Start())
+  mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
   return Status::OK();
 }
 

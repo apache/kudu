@@ -47,6 +47,7 @@ Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
   // Start RPC server on loopback.
   opts.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
   opts.webserver_opts.port = web_port;
+  opts.base_dir = fs_root_;
 
   gscoped_ptr<Master> server(new Master(opts));
   RETURN_NOT_OK(server->Init());

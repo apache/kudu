@@ -35,6 +35,10 @@ class MiniCluster {
   Status Start();
   Status Shutdown();
 
+  // Add a new TS to the cluster. The new TS is started.
+  // Requires that the master is already running.
+  Status AddTabletServer();
+
   // Returns the Master for this MiniCluster.
   master::MiniMaster* mini_master() { return mini_master_.get(); }
 

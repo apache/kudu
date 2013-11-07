@@ -28,11 +28,10 @@ namespace kudu {
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
-  : ServerBase(opts.rpc_opts, opts.webserver_opts),
+  : ServerBase(opts.env, opts.base_dir, opts.rpc_opts, opts.webserver_opts),
     initted_(false),
     opts_(opts),
     metric_ctx_(metric_registry_.get(), "kudu.tabletserver"),
-    fs_manager_(new FsManager(opts.env, opts.base_dir)),
     tablet_manager_(new TSTabletManager(fs_manager_.get(), metric_ctx_)),
     scanner_manager_(new ScannerManager()) {
 }
@@ -65,14 +64,12 @@ Status TabletServer::Init() {
   // our heartbeat thread will loop until successfully connecting.
   RETURN_NOT_OK(ValidateMasterAddressResolution());
 
-  heartbeater_.reset(new Heartbeater(opts_, this));
+  RETURN_NOT_OK(ServerBase::Init());
 
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
-                        "Could not init FS layout");
   RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
                         "Could not init Tablet Manager");
 
-  RETURN_NOT_OK(ServerBase::Init());
+  heartbeater_.reset(new Heartbeater(opts_, this));
 
   initted_ = true;
   return Status::OK();

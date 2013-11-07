@@ -24,6 +24,10 @@ using std::vector;
 using std::tr1::shared_ptr;
 using google::protobuf::MessageLite;
 
+namespace metadata {
+class InstanceMetadataPB;
+} // namespace metadata
+
 class BlockId {
  public:
   BlockId() {}
@@ -92,14 +96,24 @@ const char *FsMetadataTypeToString(FsMetadataType type);
 //    <kudu.root.dir>/data/<prefix-0>/<prefix-2>/<prefix-4>/<name>
 class FsManager {
  public:
-  FsManager(Env *env, const string& root_path)
-    : env_(env), root_path_(root_path)
-  {}
+  FsManager(Env *env, const string& root_path);
+
+  ~FsManager();
+
+  // Initialize and load the basic filesystem metadata.
+  // If the file system has not been initialized, returns NotFound.
+  // In that case, CreateInitialFileSystemLayout may be used to initialize
+  // the on-disk structures.
+  Status Open();
 
   // Create the initial filesystem layout.
   // This has no effect if the layout is already initialized.
   Status CreateInitialFileSystemLayout();
   void DumpFileSystemTree(ostream& out);
+
+  // Return the UUID persisted in the local filesystem. If Open()
+  // has not been called, this will crash.
+  const std::string& uuid() const;
 
   // ==========================================================================
   //  Data read/write interfaces
@@ -166,6 +180,9 @@ class FsManager {
   // Return the path for a specific tablet's master block.
   string GetMasterBlockPath(const std::string& tablet_id) const;
 
+  // Return the path where InstanceMetadataPB is stored.
+  string GetInstanceMetadataPath() const;
+
   // ==========================================================================
   //  Name generator
   // ==========================================================================
@@ -215,6 +232,10 @@ class FsManager {
     return CreateDirIfMissing(path);
   }
 
+  // Create a new InstanceMetadataPB and save it to the filesystem.
+  // Does not mutate the current state of the fsmanager.
+  Status CreateAndWriteInstanceMetadata();
+
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
@@ -226,11 +247,14 @@ class FsManager {
   static const char *kWalsDirName;
   static const char *kWalsRecoveryDirPrefix;
   static const char *kCorruptedSuffix;
+  static const char *kInstanceMetadataFileName;
 
   Env *env_;
   string root_path_;
 
   ObjectIdGenerator oid_generator_;
+
+  gscoped_ptr<metadata::InstanceMetadataPB> metadata_;
 
   DISALLOW_COPY_AND_ASSIGN(FsManager);
 };

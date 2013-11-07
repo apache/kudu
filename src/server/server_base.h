@@ -2,6 +2,7 @@
 #ifndef KUDU_SERVER_SERVER_BASE_H
 #define KUDU_SERVER_SERVER_BASE_H
 
+#include <string>
 #include <tr1/memory>
 
 #include "gutil/gscoped_ptr.h"
@@ -13,6 +14,8 @@
 
 namespace kudu {
 
+class Env;
+class FsManager;
 class MetricRegistry;
 class NodeInstancePB;
 class Sockaddr;
@@ -28,9 +31,6 @@ namespace server {
 // Base class for tablet server and master.
 // Handles starting and stopping the RPC server and web server,
 // and provides a common interface for server-type-agnostic functions.
-//
-// TODO: this is probably the hook point for things like the metrics registry
-// and other shared infrastructure which both the master and the TS will need.
 class ServerBase {
  public:
   const RpcServer *rpc_server() const { return rpc_server_.get(); }
@@ -45,12 +45,15 @@ class ServerBase {
   // FATALs if the server is not started.
   Sockaddr first_http_address() const;
 
+  FsManager* fs_manager() { return fs_manager_.get(); }
+
   // Return the instance identifier of this server.
   // This may not be called until after the server is Initted.
   const NodeInstancePB& instance_pb() const;
 
  protected:
-  ServerBase(const RpcServerOptions& rpc_opts,
+  ServerBase(Env* env, const std::string& base_dir,
+             const RpcServerOptions& rpc_opts,
              const WebserverOptions& web_opts);
   virtual ~ServerBase();
 
@@ -58,6 +61,7 @@ class ServerBase {
   Status Start(gscoped_ptr<rpc::ServiceIf> rpc_impl);
   Status Shutdown();
 
+  gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<MetricRegistry> metric_registry_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;

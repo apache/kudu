@@ -55,8 +55,6 @@ class TabletServer : public server::ServerBase {
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
 
-  FsManager* fs_manager() { return fs_manager_.get(); }
-
   // Returns tablet server metric context. Primarily for use by unit tests.
   const MetricContext& GetMetricContextForTests() const { return metric_ctx_; }
 
@@ -71,8 +69,6 @@ class TabletServer : public server::ServerBase {
   const TabletServerOptions opts_;
 
   const MetricContext metric_ctx_;
-
-  gscoped_ptr<FsManager> fs_manager_;
 
   // Manager for tablets which are available on this server.
   gscoped_ptr<TSTabletManager> tablet_manager_;
