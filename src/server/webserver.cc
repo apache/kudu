@@ -105,7 +105,7 @@ Status Webserver::Start() {
 
   vector<const char*> options;
 
-  if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
+  if (static_pages_available()) {
     LOG(INFO) << "Document root: " << opts_.doc_root;
     options.push_back("document_root");
     options.push_back(opts_.doc_root.c_str());
@@ -332,6 +332,16 @@ void Webserver::BootstrapPageHeader(stringstream* output) {
     }
   }
   (*output) << NAVIGATION_BAR_SUFFIX;
+
+  if (!static_pages_available()) {
+    (*output) << "<div style=\"color: red\"><strong>"
+              << "Static pages not available. Configure KUDU_HOME or use the --webserver_doc_root "
+              << "flag to fix page styling.</strong></div>\n";
+  }
+}
+
+bool Webserver::static_pages_available() const {
+  return !opts_.doc_root.empty() && opts_.enable_doc_root;
 }
 
 void Webserver::BootstrapPageFooter(stringstream* output) {

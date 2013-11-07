@@ -95,6 +95,8 @@ class Webserver {
     std::vector<PathHandlerCallback> callbacks_;
   };
 
+  bool static_pages_available() const;
+
   // Build the string to pass to mongoose specifying where to bind.
   Status BuildListenSpec(std::string* spec) const;
 
