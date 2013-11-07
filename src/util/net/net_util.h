@@ -52,10 +52,11 @@ Status ParseAddressList(const std::string& addr_list,
                         uint16_t default_port,
                         std::vector<Sockaddr>* addresses);
 
-
 // Return true if the given port is likely to need root privileges to bind to.
 bool IsPrivilegedPort(uint16_t port);
 
+// Return the local machine's hostname.
+Status GetHostname(std::string* hostname);
 
 } // namespace kudu
 #endif

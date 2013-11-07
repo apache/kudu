@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "util/errno.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "gutil/map-util.h"
@@ -130,5 +131,16 @@ Status ParseAddressList(const std::string& addr_list,
   return Status::OK();
 }
 
+Status GetHostname(string* hostname) {
+  char name[HOST_NAME_MAX];
+  int ret = gethostname(name, HOST_NAME_MAX);
+  if (ret != 0) {
+    return Status::NetworkError("Unable to determine local hostname",
+                                ErrnoToString(errno),
+                                errno);
+  }
+  *hostname = name;
+  return Status::OK();
+}
 
 } // namespace kudu

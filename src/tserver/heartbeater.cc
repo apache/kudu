@@ -17,6 +17,7 @@
 #include "tserver/ts_tablet_manager.h"
 #include "util/countdown_latch.h"
 #include "util/monotime.h"
+#include "util/net/net_util.h"
 #include "util/status.h"
 #include "util/thread_util.h"
 
@@ -147,13 +148,18 @@ void Heartbeater::Thread::SetupCommonField(master::TSToMasterCommonPB* common) {
   common->mutable_ts_instance()->CopyFrom(server_->instance_pb());
 }
 
-static void AddHostPortPBs(const vector<Sockaddr>& addrs,
+static Status AddHostPortPBs(const vector<Sockaddr>& addrs,
                            RepeatedPtrField<HostPortPB>* pbs) {
   BOOST_FOREACH(const Sockaddr& addr, addrs) {
     HostPortPB* pb = pbs->Add();
-    pb->set_host(addr.host());
+    if (addr.IsWildcard()) {
+      RETURN_NOT_OK(GetHostname(pb->mutable_host()));
+    } else {
+      pb->set_host(addr.host());
+    }
     pb->set_port(addr.port());
   }
+  return Status::OK();
 }
 
 Status Heartbeater::Thread::SetupRegistration(master::TSRegistrationPB* reg) {

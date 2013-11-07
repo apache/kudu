@@ -66,6 +66,8 @@ class MiniCluster {
   // count. Returns Status::TimedOut if the desired count is not achieved
   // within kRegistrationWaitTimeSeconds.
   Status WaitForTabletServerCount(int count);
+  Status WaitForTabletServerCount(int count,
+                                  std::vector<std::tr1::shared_ptr<master::TSDescriptor> >* descs);
 
  private:
   enum {

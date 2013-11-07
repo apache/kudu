@@ -11,6 +11,7 @@
 #include "integration-tests/mini_cluster.h"
 #include "master/mini_master.h"
 #include "master/master.h"
+#include "master/master.pb.h"
 #include "master/ts_descriptor.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
@@ -71,7 +72,19 @@ class RegistrationTest : public KuduTest {
 };
 
 TEST_F(RegistrationTest, TestTSRegisters) {
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+  // Wait for the TS to register.
+  vector<shared_ptr<TSDescriptor> > descs;
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1, &descs));
+  ASSERT_EQ(1, descs.size());
+
+  // Verify that the registration is sane.
+  master::TSRegistrationPB reg;
+  descs[0]->GetRegistration(&reg);
+  {
+    SCOPED_TRACE(reg.ShortDebugString());
+    ASSERT_EQ(reg.ShortDebugString().find("0.0.0.0"), string::npos)
+      << "Should not include wildcards in registration";
+  }
 
   ASSERT_NO_FATAL_FAILURE(CheckTabletServersPage());
 

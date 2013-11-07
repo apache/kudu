@@ -103,12 +103,17 @@ Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
 }
 
 Status MiniCluster::WaitForTabletServerCount(int count) {
+  vector<shared_ptr<master::TSDescriptor> > descs;
+  return WaitForTabletServerCount(count, &descs);
+}
+
+Status MiniCluster::WaitForTabletServerCount(int count,
+                                             vector<shared_ptr<TSDescriptor> >* descs) {
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
-    vector<shared_ptr<master::TSDescriptor> > descs;
-    mini_master_->master()->ts_manager()->GetAllDescriptors(&descs);
-    if (descs.size() == count) {
+    mini_master_->master()->ts_manager()->GetAllDescriptors(descs);
+    if (descs->size() == count) {
       LOG(INFO) << count << " TS(s) registered with Master after " << sw.elapsed().wall_seconds() << "s";
       return Status::OK();
     }
