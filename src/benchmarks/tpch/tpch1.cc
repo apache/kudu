@@ -62,20 +62,18 @@
 #include "gutil/strings/numbers.h"
 #include "util/slice.h"
 #include "util/stopwatch.h"
-#include "tablet/tablet.h"
-#include "tablet/transaction_context.h"
 #include "benchmarks/tpch/tpch-schemas.h"
+#include "benchmarks/tpch/line_item_dao.h"
+#include "benchmarks/tpch/local_line_item_dao.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
 DEFINE_string(tpch_path_to_tablet, "/tmp/tpch", "The full path to the tablet's directory.");
+DEFINE_string(tpch_query_mode, "local", "Write a <local> tablet or to a <remote> cluster");
 DEFINE_int32(tpch_num_query_iterations, 1, "Number of times the query will be run.");
 DEFINE_int32(tpch_expected_matching_rows, 5916591, "Number of rows that should match the query.");
 
 namespace kudu {
-
-using metadata::TabletMasterBlockPB;
-using metadata::TabletMetadata;
 
 typedef boost::tokenizer<boost::char_separator<char> > Tokenizer;
 
@@ -119,24 +117,6 @@ struct hash {
 
 static const boost::char_separator<char> kPipeSeparator("|");
 
-// returns true if the tablet is empty and needs to be loaded.
-bool OpenTablet(FsManager* fs_manager, gscoped_ptr<tablet::Tablet> *tablet) {
-  // Hard-coded master block
-  TabletMasterBlockPB master_block;
-  master_block.set_tablet_id("tpch1");
-  master_block.set_block_a("9865b0f142ed4d1aaa7dac6eddf281e4");
-  master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
-
-  // Try to load it. If it was not found, create a new one.
-  gscoped_ptr<kudu::metadata::TabletMetadata> metadata;
-  CHECK_OK(TabletMetadata::LoadOrCreate(fs_manager, master_block,
-                                        tpch::CreateLineItemSchema(), "", "", &metadata));
-
-  tablet->reset(new tablet::Tablet(metadata.Pass()));
-  CHECK_OK((*tablet)->Open());
-  return (*tablet)->num_rowsets() == 0;
-}
-
 void ConvertToIntAndPopulate(const string &chars, RowBuilder *rb) {
   int number;
   bool ok_parse = SimpleAtoi(chars.c_str(), &number);
@@ -155,7 +135,7 @@ void ConvertDoubleToIntAndPopulate(const string &chars, RowBuilder *rb) {
   rb->AddUint32(new_num);
 }
 
-void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
+void LoadLineItems(const string &path, LineItemDAO *dao) {
   std::ifstream in(path.c_str());
   CHECK(in.is_open()) << "not able to open input file: " << path;
 
@@ -163,7 +143,6 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
   RowBuilder rb(tpch::CreateLineItemSchema());
   vector<string> columns;
 
-  tablet::TransactionContext tx_ctx;
   while (getline(in,line)) {
     columns.clear();
     rb.Reset();
@@ -183,11 +162,9 @@ void LoadLineItems(const string &path, gscoped_ptr<tablet::Tablet> &tablet) {
     for (int i = 8; i < 16; i++)  {
       rb.AddString(Slice(columns[i]));
     }
-
-    CHECK_OK(tablet->Insert(&tx_ctx, rb.row()));
-    tx_ctx.Reset();
+    dao->WriteLine(&rb);
   }
-  CHECK_OK(tablet->Flush());
+  dao->FinishWriting();
 }
 
 // this function encapsulates the ugliness of efficiently getting the value
@@ -196,26 +173,25 @@ const extract_type * ExtractColumn(RowBlock &block, int row, int column) {
   return reinterpret_cast<const extract_type *>(block.column_block(column).cell_ptr(row));
 }
 
-void Tpch1(gscoped_ptr<tablet::Tablet> &tablet) {
+void Tpch1(LineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
-  gscoped_ptr<RowwiseIterator> iter;
   Schema query_schema(tpch::CreateTpch1QuerySchema());
-  CHECK_OK(tablet->NewRowIterator(query_schema, &iter));
   Slice date("1998-09-02");
   ScanSpec spec;
   ColumnRangePredicate pred1(query_schema.column(0), boost::none, &date);
   spec.AddPredicate(pred1);
-  CHECK_OK(iter->Init(&spec));
+
+  dao->OpenScanner(query_schema, &spec);
 
   Arena arena(32*1024, 256*1024);
   RowBlock block(query_schema, 1000, &arena);
   int matching_rows = 0;
   slice_map_map results;
   Result *r;
-  while (iter->HasNext()) {
-    CHECK_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
+  while (dao->HasMore()) {
+    dao->GetNext(&block);
     RowBlockRow rb_row;
     for (int i = 0; i < block.nrows(); i++) {
       if (!block.selection_vector()->IsRowSelected(i)) continue;
@@ -291,23 +267,26 @@ void Tpch1(gscoped_ptr<tablet::Tablet> &tablet) {
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  gscoped_ptr<kudu::LineItemDAO> dao;
+  if (FLAGS_tpch_query_mode == "local") {
+    dao.reset(new kudu::LocalLineItemDAO(FLAGS_tpch_path_to_tablet));
+  } else {
+    return 1;
+  }
 
-  gscoped_ptr<kudu::tablet::Tablet> tablet;
+  dao->Init();
 
-  kudu::FsManager fs_manager(kudu::Env::Default(), FLAGS_tpch_path_to_tablet);
-  fs_manager.CreateInitialFileSystemLayout();
-
-  bool needs_loading = kudu::OpenTablet(&fs_manager, &tablet);
+  bool needs_loading = dao->IsTableEmpty();
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {
-      kudu::LoadLineItems(FLAGS_tpch_path_to_data, tablet);
+      kudu::LoadLineItems(FLAGS_tpch_path_to_data, dao.get());
     }
   } else {
     LOG(INFO) << "Data already in place";
   }
   for (int i = 0; i < FLAGS_tpch_num_query_iterations; i++) {
     LOG_TIMING(INFO, StringPrintf("querying for iteration # %d", i)) {
-      kudu::Tpch1(tablet);
+      kudu::Tpch1(dao.get());
     }
   }
 
