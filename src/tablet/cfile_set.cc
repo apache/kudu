@@ -169,8 +169,10 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
   return ret;
 }
 
-Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
+Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
+                         ProbeStats* stats) const {
   if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
+    stats->blooms_consulted++;
     bool present;
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), &present);
     if (s.ok() && !present) {
@@ -183,6 +185,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
     }
   }
 
+  stats->keys_consulted++;
   CFileIterator *key_iter = NULL;
   RETURN_NOT_OK(NewKeyIterator(&key_iter));
 
@@ -199,9 +202,9 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const {
 }
 
 Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                 rowid_t *rowid) const {
+                                 rowid_t *rowid, ProbeStats* stats) const {
 
-  Status s = FindRow(probe, rowid);
+  Status s = FindRow(probe, rowid, stats);
   if (s.IsNotFound()) {
     // In the case that the key comes past the end of the file, Seek
     // will return NotFound. In that case, it is OK from this function's

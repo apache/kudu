@@ -20,7 +20,7 @@ class TestRowSetTree : public KuduTest {
 // Mock implementation of RowSet which just aborts on every call.
 class MockRowSet : public RowSet {
  public:
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
+  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present, ProbeStats* stats) const {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

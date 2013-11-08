@@ -200,7 +200,8 @@ class MemRowSet : public RowSet,
   }
 
   // TODO: unit test me
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                         ProbeStats* stats) const;
 
   // Return the memory footprint of this memrowset.
   // Note that this may be larger than the sum of the data

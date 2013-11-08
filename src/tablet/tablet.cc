@@ -198,6 +198,11 @@ Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
 
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
 
+  ProbeStats stats;
+
+  // Submit the stats before returning from this function
+  ProbeStatsSubmitter submitter(stats, metrics_.get());
+
   // First, ensure that it is a unique key by checking all the open
   // RowSets
   if (FLAGS_tablet_do_dup_key_checks) {
@@ -206,9 +211,12 @@ Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
 
     BOOST_FOREACH(const RowSet *rowset, to_check) {
       bool present = false;
-      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->probe(), &present));
+      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->probe(), &present, &stats));
       if (PREDICT_FALSE(present)) {
         Status s = Status::AlreadyPresent("key already present");
+        if (metrics_) {
+          metrics_->insertions_failed_dup_key->Increment();
+        }
         tx_ctx->AddFailedInsert(s);
         return s;
       }

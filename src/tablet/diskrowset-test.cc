@@ -65,6 +65,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   }
 
   // Test that CheckRowPresent returns correct results
+  ProbeStats stats;
 
   // 1. Check a key which comes before all keys in rowset
   {
@@ -72,7 +73,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("h"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
+    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -82,7 +83,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("z"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
+    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -93,7 +94,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("hello 00000000000049x"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
+    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -105,7 +106,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice(buf));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present));
+    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_TRUE(present);
   }
 }

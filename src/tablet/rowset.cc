@@ -138,10 +138,10 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
 }
 
 Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
-                              bool *present) const {
+                                          bool *present, ProbeStats* stats) const {
   *present = false;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
-    RETURN_NOT_OK(rowset->CheckRowPresent(probe, present));
+    RETURN_NOT_OK(rowset->CheckRowPresent(probe, present, stats));
     if (present) {
       return Status::OK();
     }

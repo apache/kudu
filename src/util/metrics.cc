@@ -32,6 +32,8 @@ const char* MetricUnit::Name(Type unit) {
       return "requests";
     case kRows:
       return "rows";
+    case kProbes:
+      return "probes";
     default:
       return "UNKNOWN UNIT";
   }

@@ -56,7 +56,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   uint64_t EstimateOnDiskSize() const;
 
   // Determine the index of the given row key.
-  Status FindRow(const RowSetKeyProbe &probe, rowid_t *idx) const;
+  Status FindRow(const RowSetKeyProbe &probe, rowid_t *idx, ProbeStats* stats) const;
 
   const Schema &schema() const { return rowset_metadata_->schema(); }
 
@@ -67,7 +67,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   // Check if the given row is present. If it is, sets *rowid to the
   // row's index.
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                         rowid_t *rowid) const;
+                         rowid_t *rowid, ProbeStats* stats) const;
 
   virtual ~CFileSet();
 

@@ -345,7 +345,8 @@ Status DeltaTracker::Update(txid_t txid,
   return s;
 }
 
-Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
+                                     ProbeStats* stats) const {
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
 
   DCHECK_LT(row_idx, num_rows_);
@@ -359,6 +360,7 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
   // Then check backwards through the list of trackers.
   BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore> &ds, delta_stores_) {
+    stats->deltas_consulted++;
     RETURN_NOT_OK(ds->CheckRowDeleted(row_idx, deleted));
     if (*deleted) {
       return Status::OK();

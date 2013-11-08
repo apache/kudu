@@ -220,7 +220,7 @@ class DiskRowSet : public RowSet {
                    const RowChangeList &update,
                    MutationResultPB* result);
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present, ProbeStats* stats) const;
 
   ////////////////////
   // Read functions.

@@ -32,6 +32,7 @@ class CompactionInput;
 class MvccSnapshot;
 class RowSetKeyProbe;
 class MutationResultPB;
+struct ProbeStats;
 
 class RowSet {
  public:
@@ -42,7 +43,8 @@ class RowSet {
   // If the row was once present in this rowset, but no longer present
   // due to a DELETE, then this should set *present = false, as if
   // it were never there.
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const = 0;
+  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                                 ProbeStats* stats) const = 0;
 
   // Update/delete a row in this rowset.
   // The 'update_schema' is the client schema used to encode the 'update' RowChangeList.
@@ -173,6 +175,32 @@ class RowSetKeyProbe {
   BloomKeyProbe bloom_probe_;
 };
 
+// Statistics collected during row operations, counting how many times
+// various structures had to be consulted to perform the operation.
+//
+// These eventually propagate into tablet-scoped metrics, and when we
+// have RPC tracing capability, we could also stringify them into the
+// trace to understand why an RPC may have been slow.
+struct ProbeStats {
+  ProbeStats()
+    : blooms_consulted(0),
+      keys_consulted(0),
+      deltas_consulted(0),
+      mrs_consulted(0) {
+  }
+
+  // Incremented for each bloom filter consulted.
+  int blooms_consulted;
+
+  // Incremented for each key cfile consulted.
+  int keys_consulted;
+
+  // Incremented for each delta file consulted.
+  int deltas_consulted;
+
+  // Incremented for each MemRowSet consulted.
+  int mrs_consulted;
+};
 
 // RowSet which is used during the middle of a flush or compaction.
 // It consists of a set of one or more input rowsets, and a single
@@ -192,7 +220,8 @@ class DuplicatingRowSet : public RowSet {
                    const RowChangeList &update,
                    MutationResultPB* result);
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                         ProbeStats* stats) const;
 
   RowwiseIterator *NewRowIterator(const Schema &projection,
                                   const MvccSnapshot &snap) const;

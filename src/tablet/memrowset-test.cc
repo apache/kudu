@@ -57,8 +57,9 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
+    ProbeStats stats;
 
-    return mrs.CheckRowPresent(probe, present);
+    return mrs.CheckRowPresent(probe, present, &stats);
   }
 
   Status InsertRows(MemRowSet *mrs, int num_rows) {

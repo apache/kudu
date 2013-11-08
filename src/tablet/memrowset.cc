@@ -195,10 +195,13 @@ Status MemRowSet::MutateRow(txid_t txid,
   return Status::OK();
 }
 
-Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present) const {
+Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
+                                  ProbeStats* stats) const {
   // Use a PreparedMutation here even though we don't plan to mutate. Even though
   // this takes a lock rather than an optimistic copy, it should be a very short
   // critical section, and this call is only made on updates, which are rare.
+
+  stats->mrs_consulted++;
 
   btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
   mutation.Prepare(const_cast<MSBTree *>(&tree_));

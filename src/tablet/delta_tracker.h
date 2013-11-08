@@ -27,11 +27,12 @@ namespace tablet {
 
 using std::tr1::shared_ptr;
 
+class DeltaCompactionInput;
 class DeltaMemStore;
 class DeltaFileReader;
 class MutationResultPB;
 class MutationTargetPB;
-class DeltaCompactionInput;
+struct ProbeStats;
 
 // The DeltaTracker is the part of a DiskRowSet which is responsible for
 // tracking modifications against the base data. It consists of a set of
@@ -71,7 +72,7 @@ class DeltaTracker {
   // delta for this row is a deletion.
   //
   // Sets *deleted to true if so; otherwise sets it to false.
-  Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
+  Status CheckRowDeleted(rowid_t row_idx, bool *deleted, ProbeStats* stats) const;
 
   // Compacts all deltafiles
   //

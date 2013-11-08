@@ -156,8 +156,8 @@ class TestRowSet : public KuduRowSetTest {
     RowBuilder rb(schema_.CreateKeyProjection());
     BuildRowKey(&rb, row_idx);
     RowSetKeyProbe probe(rb.row());
-
-    return rs.CheckRowPresent(probe, present);
+    ProbeStats stats;
+    return rs.CheckRowPresent(probe, present, &stats);
   }
 
   // Verify the contents of the given rowset.

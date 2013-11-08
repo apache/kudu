@@ -117,6 +117,7 @@ struct MetricUnit {
     kBytes,
     kRequests,
     kRows,
+    kProbes
   };
   static const char* Name(Type unit);
 };
