@@ -43,15 +43,11 @@ using kudu::tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
-#define DEBUG_INFO DebugInfo(tablet_->metadata()->oid(),  \
-    segment_idx, \
-    entry_idx, \
-    log_reader_->segments()[segment_idx]->path(),\
-    *entry)
 
 namespace kudu {
 namespace tablet {
 struct MutationInput;
+struct ReplayState;
 
 static const char* const kTmpSuffix = ".tmp";
 
@@ -157,6 +153,12 @@ class TabletBootstrap {
 
   // Applies a mutation
   Status ApplyMutation(const MutationInput& mutation_input);
+
+  // Handlers for each type of message seen in the log during replay.
+  Status HandleEntry(ReplayState* state, LogEntry* entry);
+  Status HandleReplicateMessage(ReplayState* state, LogEntry* entry);
+  Status HandleCommitMessage(ReplayState* state, LogEntry* entry);
+  Status HandleEntryPair(LogEntry* replicate_entry, LogEntry* commit_entry);
 
   gscoped_ptr<metadata::TabletMetadata> meta_;
   MetricContext* metric_context_;
@@ -410,83 +412,202 @@ Status TabletBootstrap::OpenNewLog() {
   return Status::OK();
 }
 
-Status TabletBootstrap::PlaySegments() {
-  OpenNewLog();
+typedef unordered_map<OpId, LogEntry*, OpIdHashFunction, OpIdEqualsTo> OpToEntryMap;
 
-  unordered_map<OpId, LogEntry, OpIdHashFunction, OpIdEqualsTo> unpaired_ops;
+// State kept during replay.
+struct ReplayState {
+  ReplayState() {
+    prev_op_id.set_term(0);
+    prev_op_id.set_index(0);
+  }
+
+  ~ReplayState() {
+    STLDeleteValues(&pending_replicates);
+  }
+
+  // Return true if 'b' is allowed to immediately follow 'a' in the log.
+  bool valid_sequence(const OpId& a, const OpId& b) {
+    if (a.term() == 0 && a.index() == 0) {
+      // Not initialized - can start with any opid.
+      return true;
+    }
+
+    // Within the same term, each entry should be have an index
+    // exactly one higher than the previous.
+    if (b.term() == a.term() &&
+        b.index() != a.index() + 1) {
+      return false;
+    }
+
+    // If the the terms don't match, then the new term should be higher
+    if (b.term() < a.term()) {
+      return false;
+    }
+    return true;
+  }
+
+  // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
+  Status CheckOpId(const OpId& id) {
+    if (!valid_sequence(prev_op_id, id)) {
+      return Status::Corruption(
+        Substitute("Unexpected opid $0 following opid $1",
+                   id.ShortDebugString(),
+                   prev_op_id.ShortDebugString()));
+    }
+
+    prev_op_id.CopyFrom(id);
+    return Status::OK();
+  }
+
+  OpId prev_op_id;
+
+  // REPLICATE log entries whose corresponding COMMIT/ABORT record has
+  // not yet been seen. Keyed by opid.
+  OpToEntryMap pending_replicates;
+};
+
+// Handle the given log entry. If OK is returned, then takes ownership of 'entry'.
+// Otherwise, caller frees.
+Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntry* entry) {
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Handling entry: " << entry->ShortDebugString();
+  }
+
+  switch (entry->type()) {
+    case REPLICATE:
+      RETURN_NOT_OK(HandleReplicateMessage(state, entry));
+      break;
+
+    // check the unpaired ops for the matching replicate msg, abort if not found
+    case COMMIT:
+      // TODO: 'COMMIT' is sort of a misnomer since it can also be ABORT?
+      RETURN_NOT_OK(HandleCommitMessage(state, entry));
+      break;
+
+    // TODO support other op types when we run distributedly
+    default:
+      return Status::Corruption(Substitute("Unexpected log entry type: $0", entry->type()));
+  }
+  return Status::OK();
+}
+
+Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntry* entry) {
+  RETURN_NOT_OK(state->CheckOpId(entry->msg().id()));
+
+  // TODO: Probably should be logging the REPLICATE messages back to the new log here,
+  // rather than when they get matched up. This preserves the order of REPLICATE.
+  // See KUDU-45.
+
+  LogEntry** existing_entry_ptr = InsertOrReturnExisting(
+    &state->pending_replicates, entry->msg().id(), entry);
+  if (existing_entry_ptr) {
+    LogEntry* existing_entry = *existing_entry_ptr;
+    // We already had an entry with the same ID.
+    return Status::Corruption("Found previous entry with the same id",
+                              existing_entry->ShortDebugString());
+  }
+  return Status::OK();
+}
+
+// Deletes 'entry' only on OK status.
+Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry) {
+  // TODO: on a term switch, the first commit in any term should discard any
+  // pending REPLICATEs from the previous term.
+
+  RETURN_NOT_OK(state->CheckOpId(entry->commit().id()));
+
+  // Match up the COMMIT/ABORT record with the original entry that it's applied to.
+  const OpId& id = entry->commit().commited_op_id();
+
+  gscoped_ptr<LogEntry> existing_entry(EraseKeyReturnValuePtr(&state->pending_replicates, id));
+  if (existing_entry != NULL) {
+    RETURN_NOT_OK(HandleEntryPair(existing_entry.get(), entry));
+  } else {
+    // A COMMIT entry which refers to an earlier op_id which has already been handled.
+    // For now, MISSED_DELTA commits are the only ones with no corresponding ReplicateMsg
+    if (entry->commit().op_type() != MISSED_DELTA) {
+      return Status::Corruption(Substitute("Found non- MISSED_DELTA orphaned commit: $0",
+                                             entry->commit().DebugString()));
+    }
+    // writes performed during flushes/compactions
+    RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->commit()),
+                          Substitute("Failed to play MISSED_DELTA updates"));
+  }
+
+  delete entry;
+  return Status::OK();
+}
+
+// Never deletes 'replicate_entry'.
+// Deletes 'commit_entry' only on OK status.
+Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* commit_entry) {
+  switch (commit_entry->commit().op_type()) {
+    case WRITE_ABORT:
+      // aborted write, log and continue
+      if (VLOG_IS_ON(1)) {
+        VLOG(1) << "Skipping replicate message because it was originally aborted."
+                << " OpId: " << commit_entry->commit().commited_op_id().DebugString();
+      }
+      break;
+
+    case WRITE_OP:
+      // successful write, play it into the tablet, filtering flushed entries
+      RETURN_NOT_OK_PREPEND(PlayRequest(replicate_entry->mutable_msg(), commit_entry->commit()),
+                            Substitute("Failed to play request. ReplicateMsg: $0 CommitMsg: $1\n",
+                                       replicate_entry->msg().DebugString(),
+                                       commit_entry->commit().DebugString()));
+      break;
+
+    default:
+      return Status::IllegalState(Substitute("Unsupported commit entry type: $0",
+                                             commit_entry->commit().op_type()));
+  }
+
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlaySegments() {
+  RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
+
+  ReplayState state;
   for (int segment_idx = 0; segment_idx < log_reader_->size(); ++segment_idx) {
     vector<LogEntry*> entries;
     ElementDeleter deleter(&entries);
-    Status s = log_reader_->ReadEntries(log_reader_->segments()[segment_idx], &entries);
+    Status read_status = log_reader_->ReadEntries(log_reader_->segments()[segment_idx], &entries);
     for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
       LogEntry* entry = entries[entry_idx];
-      if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Reading entry: " << entry->ShortDebugString();
-      }
-      switch (entry->type()) {
-        case REPLICATE:
-        {
-          pair<unordered_map<OpId, LogEntry, OpIdHashFunction, OpIdEqualsTo>::iterator, bool> result =
-              unpaired_ops.insert(pair<OpId, LogEntry>(entry->msg().id(), *entry));
-          if (!result.second) {
-            const LogEntry& existing_entry = (*(result.first)).second;
-              return Status::Corruption(
-                  Substitute("Failed Replay. Found previous entry with the same id: $0.\n$1",
-                             existing_entry.ShortDebugString(), DEBUG_INFO));
-          }
-          break;
-        }
-        // check the unpaired ops for the matching replicate msg, abort if not found
-        case COMMIT:
-        {
-          const OpId& id = entry->commit().commited_op_id();
-          LogEntry* existing_entry = FindOrNull(unpaired_ops, id);
-          if (existing_entry != NULL) {
-            switch (entry->commit().op_type()) {
-              case WRITE_ABORT:
-                // aborted write, log and continue
-                if (VLOG_IS_ON(1)) {
-                  VLOG(1) << "Skipping replicate message because it was originally aborted."
-                      << " OpId: " << entry->commit().commited_op_id().DebugString();
-                }
-                break;
-              case WRITE_OP:
-                // successful write, play it into the tablet, filtering flushed entries
-                RETURN_NOT_OK_PREPEND(PlayRequest(existing_entry->mutable_msg(), entry->commit()),
-                                      Substitute("Failed to play request. ReplicateMsg: $0 CommitMsg: $1.\n$2\nReason",
-                                                 existing_entry->msg().DebugString(),
-                                                 entry->commit().DebugString(), DEBUG_INFO));
-                break;
-              default:
-                return Status::IllegalState(Substitute("Unsupported entry type.\n$0", DEBUG_INFO));
-            }
-            break;
-          // For now, MISSED_DELTA commits are the only ones with no corresponding ReplicateMsg
-          } else {
-            if (entry->commit().op_type() != MISSED_DELTA) {
-              return Status::IllegalState(Substitute("Found non- MISSED_DELTA orphaned commit: $0\n$1",
-                                                     entry->commit().DebugString(), DEBUG_INFO));
-            }
-            // writes performed during flushes/compactions
-            RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->commit()),
-                                  Substitute("Failed to play MISSED_DELTA updates.\n$0\nReason", DEBUG_INFO));
-            break;
-          }
-        }
-        // TODO support other op types when we run distributedly
-        default:
-          return Status::IllegalState(Substitute("Unexpected log entry type.\n$0", DEBUG_INFO));
-      }
+      RETURN_NOT_OK_PREPEND(HandleEntry(&state, entry),
+                            DebugInfo(tablet_->tablet_id(), segment_idx,
+                                      entry_idx, log_reader_->segments()[segment_idx]->path(),
+                                      *entry));
+
+      // If ReplayEntry returns OK, then it has taken ownership of the entry.
+      // So, we have to remove it from the entries vector to avoid it getting freed by
+      // ElementDeleter.
+      entries[entry_idx] = NULL;
     }
-    // If the LogReader failed to read for some reason, after we try and play the entries it
-    // did read, fail with Status::Corruption();
-    if (PREDICT_FALSE(!s.ok())) {
+
+    // If the LogReader failed to read for some reason, we'll still try to replay as many entries
+    // as possible, and then fail with Corruption.
+    // TODO: this is sort of scary -- why doesn't LogReader expose an entry-by-entry iterator-like
+    // API instead? Seems better to avoid exposing the idea of segments to callers.
+    if (PREDICT_FALSE(!read_status.ok())) {
       return Status::Corruption(Substitute("Error reading Log Segment of tablet: $0. "
                                            "Read up to entry: $1 of segment: $2, in path: $3.",
-                                           tablet_->metadata()->oid(),
+                                           tablet_->tablet_id(),
                                            entries.size(),
                                            segment_idx,
                                            log_reader_->segments()[segment_idx]->path()));
+    }
+  }
+
+  int num_orphaned = state.pending_replicates.size();
+  if (num_orphaned > 0) {
+    LOG(INFO) << "WAL for " << tablet_->tablet_id() << " included " << num_orphaned
+              << " REPLICATE messages with no corresponding commit/abort messages."
+              << " These transactions were probably in-flight when the server crashed.";
+    BOOST_FOREACH(const OpToEntryMap::value_type& e, state.pending_replicates) {
+      LOG(INFO) << "  " << e.second->ShortDebugString();
     }
   }
 

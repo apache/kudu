@@ -18,6 +18,8 @@ enum LogEntryType {
 // An entry in the wal/sm log.
 message LogEntry {
   required LogEntryType type = 1;
+  // TODO: rename 'msg' to 'replicate_msg' or something
+  // TODO: should move the OpId up to this PB?
   optional kudu.consensus.ReplicateMsg msg = 2;
   optional kudu.consensus.CommitMsg commit = 3;
   optional metadata.TabletSuperBlockPB tablet_meta = 4;
