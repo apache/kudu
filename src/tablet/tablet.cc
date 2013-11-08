@@ -20,12 +20,15 @@
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/strip.h"
+#include "gutil/strings/substitute.h"
 #include "tablet/compaction.h"
 #include "tablet/compaction_policy.h"
 #include "tablet/tablet.h"
+#include "tablet/tablet_metrics.h"
 #include "tablet/diskrowset.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
+#include "util/metrics.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
@@ -52,6 +55,7 @@ using std::string;
 using std::set;
 using std::vector;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 using base::subtle::Barrier_AtomicIncrement;
 
 static const int64_t kNoMrsFlushed = -1;
@@ -67,7 +71,8 @@ static CompactionPolicy *CreateCompactionPolicy() {
   return NULL;
 }
 
-Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata)
+Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
+               const MetricContext* parent_metric_context)
   : schema_(metadata->schema()),
     key_schema_(schema_.CreateKeyProjection()),
     metadata_(metadata.Pass()),
@@ -76,6 +81,12 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata)
     next_mrs_id_(0),
     open_(false) {
   compaction_policy_.reset(CreateCompactionPolicy());
+
+  if (parent_metric_context) {
+    metric_context_.reset(new MetricContext(*parent_metric_context,
+                                            Substitute("tablet.tablet-$0", tablet_id())));
+    metrics_.reset(new TabletMetrics(*metric_context_));
+  }
 }
 
 Tablet::~Tablet() {

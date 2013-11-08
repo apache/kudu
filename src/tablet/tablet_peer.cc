@@ -5,13 +5,8 @@
 #include "consensus/local_consensus.h"
 #include "gutil/strings/substitute.h"
 #include "tablet/tasks/tasks.h"
+#include "tablet/tablet_metrics.h"
 #include "util/metrics.h"
-
-// Tablet-specific metrics.
-METRIC_DEFINE_counter(rows_inserted, kudu::MetricUnit::kRows,
-    "Number of rows inserted into this tablet since service start");
-METRIC_DEFINE_counter(rows_updated, kudu::MetricUnit::kRows,
-    "Number of row update operations performed on this tablet since service start");
 
 namespace kudu {
 namespace tablet {
@@ -29,18 +24,10 @@ using log::Log;
 using log::LogOptions;
 using tserver::TabletServerErrorPB;
 
-TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
-  : rows_inserted(FindOrCreateCounter(metric_ctx, METRIC_rows_inserted)),
-    rows_updated(FindOrCreateCounter(metric_ctx, METRIC_rows_updated)) {
-}
-
 TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
-                       gscoped_ptr<Log> log,
-                       const MetricContext& metric_ctx)
+                       gscoped_ptr<Log> log)
     : tablet_(tablet),
       log_(log.Pass()),
-      metric_ctx_(metric_ctx, strings::Substitute("tablet.tablet-$0", tablet_->tablet_id())),
-      tablet_metrics_(metric_ctx_),
       // prepare executor has a single thread as prepare must be done in order
       // of submission
       prepare_executor_(TaskExecutor::CreateNew(1)) {
@@ -91,7 +78,7 @@ Status TabletPeer::Write(TransactionContext *tx_ctx) {
   replicate_msg->set_op_type(WRITE_OP);
   replicate_msg->mutable_write()->CopyFrom(*tx_ctx->request());
 
-  shared_ptr<FutureCallback> commit_clbk(new CommitCallback(tx_ctx, tablet_metrics_));
+  shared_ptr<FutureCallback> commit_clbk(new CommitCallback(tx_ctx));
 
   // The callback for both the log and the prepare task
   shared_ptr<FutureCallback> apply_clbk(
@@ -219,9 +206,8 @@ void ApplyOnReplicateAndPrepareCB::HandleFailure() {
   tx_ctx_->consensus_ctx()->Commit(commit.Pass());
 }
 
-CommitCallback::CommitCallback(TransactionContext* tx_ctx, const TabletMetrics& metrics)
-    : tx_ctx_(tx_ctx),
-      tablet_metrics_(metrics) {
+CommitCallback::CommitCallback(TransactionContext* tx_ctx)
+  : tx_ctx_(tx_ctx) {
 }
 
 void CommitCallback::OnSuccess() {
@@ -232,9 +218,14 @@ void CommitCallback::OnSuccess() {
     tx_ctx_->rpc_context()->RespondSuccess();
   }
 
+  TabletMetrics* metrics = tx_ctx_->tablet_peer()->tablet()->metrics();
   // Update tablet server metrics.
-  tablet_metrics_.rows_inserted->IncrementBy(tx_ctx_->metrics().successful_inserts);
-  tablet_metrics_.rows_updated->IncrementBy(tx_ctx_->metrics().successful_updates);
+  if (metrics) {
+    // TODO: should we change this so it's actually incremented by the
+    // Tablet code itself instead of this wrapper code?
+    metrics->rows_inserted->IncrementBy(tx_ctx_->metrics().successful_inserts);
+    metrics->rows_updated->IncrementBy(tx_ctx_->metrics().successful_updates);
+  }
 }
 
 void CommitCallback::OnFailure(const Status &status) {

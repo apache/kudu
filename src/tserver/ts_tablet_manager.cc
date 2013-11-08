@@ -126,9 +126,9 @@ Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
   gscoped_ptr<Log> log;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a partially created tablet here?
-  RETURN_NOT_OK(BootstrapTablet(meta.Pass(), &tablet, &log));
+  RETURN_NOT_OK(BootstrapTablet(meta.Pass(), &metric_ctx_, &tablet, &log));
 
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet, log.Pass(), metric_ctx_));
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet, log.Pass()));
   RETURN_NOT_OK_PREPEND(tablet_peer->Init(), "Failed to Init() TabletPeer");
   RETURN_NOT_OK_PREPEND(tablet_peer->Start(), "Failed to Start() TabletPeer");
 

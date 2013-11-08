@@ -8,19 +8,8 @@
 #include "consensus/consensus.h"
 #include "util/metrics.h"
 
-// Declare these metrics prototypes for simpler unit testing of their behavior.
-METRIC_DECLARE_counter(rows_inserted);
-METRIC_DECLARE_counter(rows_updated);
-
 namespace kudu {
 namespace tablet {
-
-// Container for all metrics specific to a single tablet.
-struct TabletMetrics {
-  explicit TabletMetrics(const MetricContext& metric_ctx);
-  Counter* rows_inserted;
-  Counter* rows_updated;
-};
 
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -31,8 +20,7 @@ class TabletPeer {
  public:
 
   TabletPeer(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
-             gscoped_ptr<log::Log> log,
-             const MetricContext& metric_ctx);
+             gscoped_ptr<log::Log> log);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
@@ -132,19 +120,12 @@ class TabletPeer {
     return tablet_;
   }
 
-  // Return handle to the metric context of this tablet peer. For unit tests.
-  const MetricContext& GetMetricContextForTests() const { return metric_ctx_; }
-
  private:
   std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<consensus::Consensus> consensus_;
   typedef simple_spinlock LockType;
   LockType lock_;
-
-  // Tablet server metrics.
-  MetricContext metric_ctx_;
-  TabletMetrics tablet_metrics_;
 
   // TODO move these executors to TabletServer when we support multiple tablets
   // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_executor_'
@@ -196,16 +177,14 @@ class ApplyOnReplicateAndPrepareCB : public FutureCallback {
 // Callback that commits the mvcc transaction, responds to the client and
 // performs cleanup.
 class CommitCallback : public FutureCallback {
-
  public:
-  CommitCallback(tablet::TransactionContext *tx_ctx, const TabletMetrics& metrics);
+  explicit CommitCallback(tablet::TransactionContext *tx_ctx);
 
   void OnSuccess();
   void OnFailure(const Status &status);
 
  private:
   gscoped_ptr<tablet::TransactionContext> tx_ctx_;
-  TabletMetrics tablet_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(CommitCallback);
 };

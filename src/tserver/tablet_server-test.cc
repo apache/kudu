@@ -9,6 +9,10 @@ using kudu::rpc::RpcController;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 
+// Declare these metrics prototypes for simpler unit testing of their behavior.
+METRIC_DECLARE_counter(rows_inserted);
+METRIC_DECLARE_counter(rows_updated);
+
 namespace kudu {
 namespace tserver {
 
@@ -30,7 +34,7 @@ TEST_F(TabletServerTest, TestInsert) {
 
   shared_ptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-  Counter* rows_inserted = FindOrCreateCounter(tablet->GetMetricContextForTests(),
+  Counter* rows_inserted = FindOrCreateCounter(*tablet->tablet()->GetMetricContextForTests(),
       METRIC_rows_inserted);
   ASSERT_EQ(0, rows_inserted->value());
 
@@ -124,9 +128,9 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
   shared_ptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-  Counter* rows_inserted = FindOrCreateCounter(tablet->GetMetricContextForTests(),
+  Counter* rows_inserted = FindOrCreateCounter(*tablet->tablet()->GetMetricContextForTests(),
       METRIC_rows_inserted);
-  Counter* rows_updated = FindOrCreateCounter(tablet->GetMetricContextForTests(),
+  Counter* rows_updated = FindOrCreateCounter(*tablet->tablet()->GetMetricContextForTests(),
       METRIC_rows_updated);
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());

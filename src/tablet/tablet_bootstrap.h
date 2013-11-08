@@ -9,6 +9,8 @@
 
 namespace kudu {
 
+class MetricContext;
+
 namespace log {
 class Log;
 }
@@ -29,6 +31,7 @@ extern const char* kLogRecoveryDir;
 // TODO make this async and allow the caller to check on the status of recovery
 // for monitoring purposes.
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+                       MetricContext* metric_context,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log);
 

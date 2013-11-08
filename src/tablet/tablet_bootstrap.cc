@@ -66,7 +66,8 @@ static const char* const kTmpSuffix = ".tmp";
 // we need to set it before replay or we won't be able to re-rebuild.
 class TabletBootstrap {
  public:
-  explicit TabletBootstrap(gscoped_ptr<metadata::TabletMetadata> meta);
+  TabletBootstrap(gscoped_ptr<metadata::TabletMetadata> meta,
+                  MetricContext* metric_context);
 
   // Plays the log segments, rebuilding the portion of the Tablet's soft
   // state that is present in the log (additional soft state may be present
@@ -158,6 +159,7 @@ class TabletBootstrap {
   Status ApplyMutation(const MutationInput& mutation_input);
 
   gscoped_ptr<metadata::TabletMetadata> meta_;
+  MetricContext* metric_context_;
   gscoped_ptr<tablet::Tablet> tablet_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<log::LogReader> log_reader_;
@@ -186,9 +188,10 @@ struct MutationInput {
 };
 
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+                       MetricContext* metric_context,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log) {
-  TabletBootstrap bootstrap(meta.Pass());
+  TabletBootstrap bootstrap(meta.Pass(), metric_context);
   RETURN_NOT_OK(bootstrap.BootstrapTablet(rebuilt_tablet, rebuilt_log));
   return Status::OK();
 }
@@ -249,8 +252,10 @@ static string DebugInfo(const string& tablet_id,
       segment_path, entry.ShortDebugString());
 }
 
-TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta)
+TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
+                                 MetricContext* metric_context)
     : meta_(meta.Pass()),
+      metric_context_(metric_context),
       recovery_ts_(GetCurrentTimeMicros()) {
 }
 
@@ -306,7 +311,7 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
 }
 
 Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
-  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass()));
+  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass(), metric_context_));
   // doing nothing for now except opening a tablet locally.
   RETURN_NOT_OK(tablet->Open());
   // set 'fetched' to true if there were any local blocks present

@@ -25,6 +25,8 @@
 
 namespace kudu {
 
+class MetricContext;
+
 namespace consensus {
 class Consensus;
 }
@@ -36,6 +38,7 @@ using std::tr1::shared_ptr;
 
 class RowSetsInCompaction;
 class CompactionPolicy;
+struct TabletMetrics;
 
 class Tablet {
  public:
@@ -44,7 +47,13 @@ class Tablet {
   class FlushFaultHooks;
   class Iterator;
 
-  explicit Tablet(gscoped_ptr<metadata::TabletMetadata> metadata);
+  // Create a new tablet.
+  //
+  // If 'parent_metrics_context' is non-NULL, then this tablet will store
+  // metrics in a sub-context of this context. Otherwise, no metrics are collected.
+  Tablet(gscoped_ptr<metadata::TabletMetadata> metadata,
+         const MetricContext* parent_metric_context = NULL);
+
   ~Tablet();
 
   // Open the tablet.
@@ -196,6 +205,13 @@ class Tablet {
 
   const std::string& tablet_id() const { return metadata_->oid(); }
 
+  // Return the metrics for this tablet.
+  // May be NULL in unit tests, etc.
+  TabletMetrics* metrics() { return metrics_.get(); }
+
+  // Return handle to the metric context of this tablet. For unit tests.
+  const MetricContext* GetMetricContextForTests() const { return metric_context_.get(); }
+
  private:
   friend class Iterator;
 
@@ -246,6 +262,9 @@ class Tablet {
   gscoped_ptr<metadata::TabletMetadata> metadata_;
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
+
+  gscoped_ptr<MetricContext> metric_context_;
+  gscoped_ptr<TabletMetrics> metrics_;
 
   consensus::Consensus* consensus_;
 
