@@ -34,7 +34,7 @@ SET(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread 
 #   3. Build again with CMAKE_BUILD_TYPE_PROFILE_BUILD
 #     -fprofile-use: Compiler will use the profile outputs for optimizations
 SET(CXX_FLAGS_DEBUG "-ggdb")
-SET(CXX_FLAGS_FASTDEBUG "-ggdb -O1")
+SET(CXX_FLAGS_FASTDEBUG "-ggdb -O1 -fno-omit-frame-pointer")
 SET(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -Wno-strict-aliasing")
 
 if (NOT "${KUDU_USE_LTO}" STREQUAL "")
