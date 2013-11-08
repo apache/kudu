@@ -25,7 +25,7 @@ METRIC_DEFINE_counter(mrs_consulted, kudu::MetricUnit::kProbes,
 namespace kudu {
 namespace tablet {
 
-#define MINIT(x) x(FindOrCreateCounter(metric_ctx, METRIC_##x))
+#define MINIT(x) x(METRIC_##x.Instantiate(metric_ctx))
 TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
   : MINIT(rows_inserted),
     MINIT(rows_updated),

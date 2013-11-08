@@ -67,8 +67,8 @@ MetricRegistry::~MetricRegistry() {
   STLDeleteValues(&metrics_);
 }
 
-Counter* MetricRegistry::FindOrCreateCounter(const string& name, MetricUnit::Type unit,
-    const string& description) {
+Counter* MetricRegistry::FindOrCreateCounter(const std::string& name,
+                                             const CounterPrototype& proto) {
   boost::lock_guard<simple_spinlock> l(lock_);
   Metric* metric = FindPtrOrNull(metrics_, name);
   if (metric != NULL) {
@@ -77,7 +77,7 @@ Counter* MetricRegistry::FindOrCreateCounter(const string& name, MetricUnit::Typ
       << " but found " << MetricType::Name(metric->type());
     return down_cast<Counter*>(metric);
   }
-  Counter* counter = new Counter(unit, description);
+  Counter* counter = new Counter(proto);
   InsertOrDie(&metrics_, name, counter);
   return counter;
 }
@@ -199,10 +199,15 @@ template<> void AtomicGauge<double>::WriteSpecificValue(JsonWriter* writer, doub
 // See: http://www.cs.bgu.ac.il/~hendlerd/papers/flat-combining.pdf
 // Or: use thread locals and then sum them
 
-Counter::Counter(MetricUnit::Type unit, const std::string& description)
-  : value_(),
-    unit_(unit),
-    description_(description) {
+Counter* CounterPrototype::Instantiate(const MetricContext& context) {
+  return context.metrics()->FindOrCreateCounter(
+    context.prefix() + "." + name_, *this);
+}
+
+Counter::Counter(const CounterPrototype& proto)
+  : value_(0),
+    unit_(proto.unit()),
+    description_(proto.description()) {
 }
 
 int64_t Counter::value() const {
@@ -249,11 +254,6 @@ Status Counter::WriteAsJson(const string& name, JsonWriter* writer) const {
 
   writer->EndObject();
   return Status::OK();
-}
-
-Counter* FindOrCreateCounter(const MetricContext& context, const CounterPrototype& proto) {
-  return context.metrics()->FindOrCreateCounter(context.prefix() + "." + proto.name(),
-    proto.unit(), proto.description());
 }
 
 } // namespace kudu

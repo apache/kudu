@@ -53,8 +53,8 @@ TEST_F(TabletServerTest, TestInsert) {
 
   shared_ptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-  Counter* rows_inserted = FindOrCreateCounter(*tablet->tablet()->GetMetricContextForTests(),
-      METRIC_rows_inserted);
+  Counter* rows_inserted =
+      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContextForTests());
   ASSERT_EQ(0, rows_inserted->value());
 
   // Send a bad insert which has an empty schema. This should result
@@ -147,10 +147,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
   shared_ptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-  Counter* rows_inserted = FindOrCreateCounter(*tablet->tablet()->GetMetricContextForTests(),
-      METRIC_rows_inserted);
-  Counter* rows_updated = FindOrCreateCounter(*tablet->tablet()->GetMetricContextForTests(),
-      METRIC_rows_updated);
+  Counter* rows_inserted =
+      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContextForTests());
+  Counter* rows_updated =
+      METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContextForTests());
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());
 

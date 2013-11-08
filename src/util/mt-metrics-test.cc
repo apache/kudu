@@ -50,9 +50,11 @@ static void RunWithManyThreads(boost::function<void()>* f, int num_threads) {
   }
 }
 
+METRIC_DEFINE_counter(test_counter, MetricUnit::kRequests, "Test counter");
+
 // Ensure that incrementing a counter is thread-safe.
 TEST_F(MultiThreadedMetricsTest, CounterIncrementTest) {
-  Counter counter(MetricUnit::kRequests, "Test counter");
+  Counter counter(METRIC_test_counter);
   int num_threads = FLAGS_mt_metrics_test_num_threads;
   int num_increments = 1000;
   boost::function<void()> f =
@@ -67,7 +69,7 @@ void MultiThreadedMetricsTest::RegisterCounters(MetricRegistry* metrics, const s
   uint64_t tid = Env::Default()->gettid();
   for (int i = 0; i < num_counters; i++) {
     string name = strings::Substitute("$0-$1-$2", name_prefix, tid, i);
-    metrics->FindOrCreateCounter(name, MetricUnit::kBytes, name)->Increment();
+    metrics->FindOrCreateCounter(name, METRIC_test_counter)->Increment();
   }
 }
 

@@ -20,10 +20,12 @@ TEST_F(MetricsTest, SimpleIntegerGaugeTest) {
   ASSERT_EQ(5, quarters_in_my_pocket.value());
 }
 
+METRIC_DEFINE_counter(reqs_pending, MetricUnit::kRequests,
+                      "Number of requests pending");
+
 TEST_F(MetricsTest, SimpleCounterTest) {
-  string desc = "Number of requests pending";
-  Counter requests(MetricUnit::kRequests, desc);
-  ASSERT_EQ(desc, requests.description());
+  Counter requests(METRIC_reqs_pending);
+  ASSERT_EQ("Number of requests pending", requests.description());
   ASSERT_EQ(0, requests.value());
   requests.Increment();
   ASSERT_EQ(1, requests.value());
@@ -37,8 +39,8 @@ TEST_F(MetricsTest, SimpleCounterTest) {
 
 TEST_F(MetricsTest, JsonPrintTest) {
   MetricRegistry metrics;
-  Counter* bytes_seen = CHECK_NOTNULL(metrics.FindOrCreateCounter("bytes_seen",
-      MetricUnit::kBytes, "Number of bytes seen"));
+  Counter* bytes_seen = CHECK_NOTNULL(
+    metrics.FindOrCreateCounter("reqs_pending", METRIC_reqs_pending));
   bytes_seen->Increment();
 
   // Generate the JSON.
@@ -51,7 +53,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   d.Parse<0>(out.str().c_str());
   // Note: you need to specify 0u instead of just 0 because the rapidjson Value
   // class overloads both operator[int] and operator[char*] and 0 == NULL.
-  ASSERT_EQ(string("bytes_seen"), string(d["metrics"][0u]["name"].GetString()));
+  ASSERT_EQ(string("reqs_pending"), string(d["metrics"][0u]["name"].GetString()));
   ASSERT_EQ(1L, d["metrics"][0u]["value"].GetInt64());
 }
 

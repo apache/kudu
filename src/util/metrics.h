@@ -40,7 +40,7 @@
 //   METRIC_DEFINE_counter(ping_requests, kudu::MetricUnit::kRequests,
 //       "Number of Ping() RPC requests this server has handled since service start");
 //
-//   Counter* ping_requests_ = FindOrCreateCounter(metric_context_, METRIC_ping_requests);
+//   Counter* ping_requests_ = METRIC_ping_requests.Instantiate(metric_context_);
 //   ping_requests_->Increment();
 //
 // Using the above API, you can pass a MetricRegistry to subsystems so that they can register
@@ -151,15 +151,15 @@ class MetricRegistry {
   ~MetricRegistry();
   Status WriteAsJson(JsonWriter* writer) const;
  private:
-  friend Counter* FindOrCreateCounter(const MetricContext& context, const CounterPrototype& proto);
+  friend class CounterPrototype;
   friend class MultiThreadedMetricsTest;  // For unit testing.
   FRIEND_TEST(MetricsTest, JsonPrintTest);
   FRIEND_TEST(MultiThreadedMetricsTest, AddCounterToRegistryTest);
 
   typedef std::tr1::unordered_map<string, Metric*> UnorderedMetricMap;
 
-  Counter* FindOrCreateCounter(const std::string& name, MetricUnit::Type unit,
-      const std::string& description);
+  Counter* FindOrCreateCounter(const std::string& name,
+                               const CounterPrototype& proto);
 
   // Not thread-safe, used for tests.
   const UnorderedMetricMap& metrics() const { return metrics_; }
@@ -275,6 +275,9 @@ class CounterPrototype {
   const std::string& name() const { return name_; }
   MetricUnit::Type unit() const { return unit_; }
   const std::string& description() const { return description_; }
+
+  Counter* Instantiate(const MetricContext& context);
+
  private:
   const std::string name_;
   const MetricUnit::Type unit_;
@@ -300,16 +303,13 @@ class Counter : public Metric {
   FRIEND_TEST(MetricsTest, SimpleCounterTest);
   FRIEND_TEST(MultiThreadedMetricsTest, CounterIncrementTest);
 
-  Counter(MetricUnit::Type unit, const std::string& description);
+  explicit Counter(const CounterPrototype& proto);
 
   base::subtle::Atomic64 value_;
   const MetricUnit::Type unit_;
   const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(Counter);
 };
-
-// Factory function.
-Counter* FindOrCreateCounter(const MetricContext& context, const CounterPrototype& proto);
 
 } // namespace kudu
 
