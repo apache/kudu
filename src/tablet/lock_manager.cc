@@ -12,6 +12,8 @@
 
 namespace kudu { namespace tablet {
 
+class TransactionContext;
+
 // ============================================================================
 //  LockTable
 // ============================================================================
@@ -35,7 +37,7 @@ class LockEntry {
   }
 
   // Mutex used by the LockManager
-  boost::mutex mutex;
+  boost::timed_mutex mutex;
 
  private:
   friend class LockTable;
@@ -60,6 +62,9 @@ class LockEntry {
 
   // buffer of the key, allocated on insertion by CopyKey()
   faststring key_buf_;
+
+  // The transaction currently holding the lock
+  const TransactionContext* holder_;
 };
 
 class LockTable {
@@ -235,13 +240,13 @@ void LockTable::Resize() {
 //  ScopedRowLock
 // ============================================================================
 
-ScopedRowLock::ScopedRowLock(LockManager *manager, const Slice &key,
+ScopedRowLock::ScopedRowLock(LockManager *manager,
+                             const TransactionContext* tx,
+                             const Slice &key,
                              LockManager::LockMode mode)
   : manager_(DCHECK_NOTNULL(manager)),
-    key_(key),
-    mode_(mode),
     acquired_(false) {
-  LockManager::LockStatus ls = manager_->Lock(key, mode, &entry_);
+  LockManager::LockStatus ls = manager_->Lock(key, tx, mode, &entry_);
 
   // We currently only support single-row mutations in this super-simple
   // lock manager, so we should always be able to acquire a lock -- no
@@ -276,14 +281,40 @@ LockManager::~LockManager() {
 }
 
 LockManager::LockStatus LockManager::Lock(const Slice& key,
+                                          const TransactionContext* tx,
                                           LockManager::LockMode mode,
                                           LockEntry **entry) {
   *entry = locks_->GetLockEntry(key);
-  (*entry)->mutex.lock();
+
+  // We expect low contention, so just try to try_lock first. This is faster
+  // than a timed_lock, since we don't have to do a syscall to get the current
+  // time.
+  if (!(*entry)->mutex.try_lock()) {
+    CHECK_NE((*entry)->holder_, tx) << "Same transaction trying to lock row "
+                                    << key.ToDebugString();
+
+    // If we couldn't immediately acquire the lock, do a timed lock so we can
+    // warn if it takes a long time.
+    // TODO: would be nice to hook in some histogram metric about lock acquisition
+    // time.
+    int waited_seconds = 0;
+    while (!(*entry)->mutex.timed_lock(boost::posix_time::seconds(1))) {
+      LOG(WARNING) << "Waited " << (++waited_seconds) << " to obtain row lock on key "
+                   << key.ToDebugString();
+      // TODO: add RPC trace annotation here. Above warning should also include an RPC
+      // trace ID.
+      // TODO: would be nice to also include some info about the blocking transaction,
+      // but it's a bit tricky to do in a non-racy fashion (the other transaction may
+      // complete at any point)
+    }
+  }
+
+  (*entry)->holder_ = tx;
   return LOCK_ACQUIRED;
 }
 
 LockManager::LockStatus LockManager::TryLock(const Slice& key,
+                                             const TransactionContext* tx,
                                              LockManager::LockMode mode,
                                              LockEntry **entry) {
   *entry = locks_->GetLockEntry(key);
@@ -292,11 +323,13 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
     locks_->ReleaseLockEntry(*entry);
     return LOCK_BUSY;
   }
+  (*entry)->holder_ = tx;
   return LOCK_ACQUIRED;
 }
 
 void LockManager::Release(LockEntry *lock) {
-  DCHECK_NOTNULL(lock)->mutex.unlock();
+  DCHECK_NOTNULL(lock)->holder_ = NULL;
+  lock->mutex.unlock();
   locks_->ReleaseLockEntry(lock);
 }
 

@@ -145,7 +145,7 @@ Status PrepareTask::Run() {
     row = tx_ctx_->AddToAutoReleasePool(row);
 
     gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedInsert(row, &row_write));
+    RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx_, row, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());
   }
 
@@ -162,7 +162,7 @@ Status PrepareTask::Run() {
     const RowChangeList* mutation = tx_ctx_->AddToAutoReleasePool(mutations[i]);
 
     gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedMutate(row_key,
+    RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx_, row_key,
         mutates_client_schema.get(), mutation, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());
     ++i;

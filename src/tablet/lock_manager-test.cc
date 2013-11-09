@@ -25,12 +25,15 @@ DEFINE_int32(num_iterations, 1000, "number of iterations per client thread");
 namespace kudu {
 namespace tablet {
 
+static const TransactionContext* kFakeTransaction =
+  reinterpret_cast<TransactionContext*>(0xdeadbeef);
+
 class LockManagerTest : public KuduTest {
  public:
   void VerifyAlreadyLocked(const Slice& key) {
     LockEntry *entry;
     ASSERT_EQ(LockManager::LOCK_BUSY,
-              lock_manager_.TryLock(key, LockManager::LOCK_EXCLUSIVE, &entry));
+              lock_manager_.TryLock(key, kFakeTransaction, LockManager::LOCK_EXCLUSIVE, &entry));
   }
 
   LockManager lock_manager_;
@@ -38,16 +41,26 @@ class LockManagerTest : public KuduTest {
 
 TEST_F(LockManagerTest, TestLockUnlockSingleRow) {
   Slice key_a("a");
-  ScopedRowLock(&lock_manager_, key_a, LockManager::LOCK_EXCLUSIVE);
-  ScopedRowLock(&lock_manager_, key_a, LockManager::LOCK_EXCLUSIVE);
-  ScopedRowLock(&lock_manager_, key_a, LockManager::LOCK_EXCLUSIVE);
+  ScopedRowLock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  ScopedRowLock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  ScopedRowLock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+}
+
+// Test if the same transaction locks the same row multiple times.
+// This should FATAL rather than deadlock.
+TEST_F(LockManagerTest, TestMultiplyLockSameRow) {
+  ASSERT_DEATH({
+      Slice key_a("a");
+      ScopedRowLock first_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+      ScopedRowLock second_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+    }, "Check failed.*Same transaction trying to lock row a");
 }
 
 TEST_F(LockManagerTest, TestLockUnlockMultipleRows) {
   Slice key_a("a"), key_b("b");
   for (int i = 0; i < 3; ++i) {
-    ScopedRowLock l1(&lock_manager_, key_a, LockManager::LOCK_EXCLUSIVE);
-    ScopedRowLock l2(&lock_manager_, key_b, LockManager::LOCK_EXCLUSIVE);
+    ScopedRowLock l1(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+    ScopedRowLock l2(&lock_manager_, kFakeTransaction, key_b, LockManager::LOCK_EXCLUSIVE);
     VerifyAlreadyLocked(key_a);
     VerifyAlreadyLocked(key_b);
   }
@@ -55,8 +68,7 @@ TEST_F(LockManagerTest, TestLockUnlockMultipleRows) {
 
 TEST_F(LockManagerTest, TestRelockSameRow) {
   Slice key_a("a");
-  ScopedRowLock row_lock(&lock_manager_, key_a,
-                               LockManager::LOCK_EXCLUSIVE);
+  ScopedRowLock row_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
   VerifyAlreadyLocked(key_a);
 }
 
@@ -103,8 +115,7 @@ class LmTestThread {
                const vector<LmTestResource*> resources)
     : manager_(manager),
       keys_(keys),
-      resources_(resources),
-      tid_(Env::Default()->gettid()) {
+      resources_(resources) {
   }
 
   void Start() {
@@ -112,13 +123,17 @@ class LmTestThread {
   }
 
   void Run() {
+    tid_ = Env::Default()->gettid();
+    const TransactionContext* my_txn = reinterpret_cast<TransactionContext*>(tid_);
+
     std::sort(keys_.begin(), keys_.end());
     for (int i = 0; i < FLAGS_num_iterations; i++) {
       std::vector<shared_ptr<ScopedRowLock> > locks;
       // TODO: We don't have an API for multi-row
       BOOST_FOREACH(const Slice* key, keys_) {
         locks.push_back(shared_ptr<ScopedRowLock>(
-            new ScopedRowLock(manager_, *key, LockManager::LOCK_EXCLUSIVE)));
+                          new ScopedRowLock(manager_, my_txn,
+                                            *key, LockManager::LOCK_EXCLUSIVE)));
       }
 
       BOOST_FOREACH(LmTestResource* r, resources_) {
@@ -143,7 +158,7 @@ class LmTestThread {
   LockManager* manager_;
   vector<const Slice*> keys_;
   const vector<LmTestResource*> resources_;
-  const uint64_t tid_;
+  uint64_t tid_;
   gscoped_ptr<boost::thread> thread_;
 };
 

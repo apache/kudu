@@ -70,7 +70,8 @@ class Tablet {
   // can make the PreparedRowWrite own the row and can revert to passing just
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedInsert(const ConstContiguousRow* row,
+  Status CreatePreparedInsert(const TransactionContext* tx_ctx,
+                              const ConstContiguousRow* row,
                               gscoped_ptr<PreparedRowWrite>* row_write);
 
   // Insert a new row into the tablet.
@@ -101,7 +102,8 @@ class Tablet {
   // can make the PreparedRowWrite own the row and can revert to passing just
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedMutate(const ConstContiguousRow* row_key,
+  Status CreatePreparedMutate(const TransactionContext* tx_ctx,
+                              const ConstContiguousRow* row_key,
                               const Schema* changelist_schema,
                               const RowChangeList* changelist,
                               gscoped_ptr<PreparedRowWrite>* row_write);

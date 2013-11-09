@@ -695,7 +695,7 @@ Status TabletBootstrap::PlayInsertions(TransactionContext* tx_ctx,
     gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
     gscoped_ptr<PreparedRowWrite> prepared_row;
     // TODO maybe we shouldn't acquire the row lock on replay?
-    RETURN_NOT_OK(tablet_->CreatePreparedInsert(row, &prepared_row));
+    RETURN_NOT_OK(tablet_->CreatePreparedInsert(tx_ctx, row, &prepared_row));
 
     // apply the insert to the tablet
     RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_ctx, prepared_row.get()),
@@ -909,7 +909,7 @@ Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
-  RETURN_NOT_OK(tablet_->CreatePreparedMutate(row_key.get(),
+  RETURN_NOT_OK(tablet_->CreatePreparedMutate(mutation_input.tx_ctx, row_key.get(),
                                               &mutation_input.changelist_schema,
                                               mutation_input.changelist,
                                               &prepared_row));
