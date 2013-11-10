@@ -19,6 +19,7 @@ ADD_LIBRARY(gutil
 ./strings/memutil.cc
 ./strings/charset.cc
 ./strings/util.cc
+./strings/human_readable.cc
 ./strings/join.cc
 ./strings/numbers.cc
 ./strings/split.cc
