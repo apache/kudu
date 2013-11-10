@@ -56,7 +56,7 @@ TEST_F(TabletServerTest, TestInsert) {
     EXPECT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Mismatched key projection schema, expected: Schema "
-                        "[key[type='uint32' NOT NULL]]");
+                        "[key[uint32 NOT NULL]]");
     req.clear_to_insert_rows();
   }
 

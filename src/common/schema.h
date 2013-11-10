@@ -87,7 +87,13 @@ class ColumnSchema {
     return name_;
   }
 
+  // Return a string identifying this column, including its
+  // name.
   string ToString() const;
+
+  // Same as above, but only including the type information.
+  // For example, "STRING NOT NULL".
+  string TypeToString() const;
 
   // Returns true if the column has a read default value
   bool has_read_default() const {

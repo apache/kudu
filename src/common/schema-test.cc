@@ -41,7 +41,7 @@ static Status CopyRowToArena(const Slice &row,
 // Test basic functionality of Schema definition
 TEST(TestSchema, TestSchema) {
   ColumnSchema col1("key", STRING);
-  ColumnSchema col2("uint32val", UINT32);
+  ColumnSchema col2("uint32val", UINT32, true);
   ColumnSchema col3("int32val", INT32);
 
   vector<ColumnSchema> cols = boost::assign::list_of
@@ -53,6 +53,12 @@ TEST(TestSchema, TestSchema) {
   ASSERT_EQ(3, schema.num_columns());
   ASSERT_EQ(0, schema.column_offset(0));
   ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
+
+  EXPECT_EQ("Schema [key[string NOT NULL], "
+            "uint32val[uint32 NULLABLE], "
+            "int32val[int32 NOT NULL]]", schema.ToString());
+  EXPECT_EQ("key[string NOT NULL]", schema.column(0).ToString());
+  EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
 }
 
 TEST(TestSchema, TestSwap) {
@@ -305,7 +311,7 @@ TEST(TestSchema, TestCreatePartialSchema) {
     partial_cols.push_back(3);
 
     ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
-    ASSERT_EQ("Schema [col1[type='string' NOT NULL], col2[type='string' NOT NULL], col4[type='string' NOT NULL]]",
+    ASSERT_EQ("Schema [col1[string NOT NULL], col2[string NOT NULL], col4[string NOT NULL]]",
               partial_schema.ToString());
     ASSERT_EQ(old_to_new[0], 0);
     ASSERT_EQ(old_to_new[1], 1);
@@ -320,7 +326,7 @@ TEST(TestSchema, TestCreatePartialSchema) {
      partial_cols.push_back(3);
      partial_cols.push_back(4);
      ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
-     ASSERT_EQ("Schema [col3[type='string' NOT NULL], col4[type='string' NOT NULL], col5[type='string' NOT NULL]]",
+     ASSERT_EQ("Schema [col3[string NOT NULL], col4[string NOT NULL], col5[string NOT NULL]]",
                partial_schema.ToString());
      ASSERT_EQ(old_to_new[2], 0);
      ASSERT_EQ(old_to_new[3], 1);

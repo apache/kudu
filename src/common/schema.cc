@@ -18,8 +18,13 @@ using std::tr1::unordered_set;
 using std::tr1::unordered_map;
 
 string ColumnSchema::ToString() const {
-  return strings::Substitute("$0[type='$1' $2]",
+  return strings::Substitute("$0[$1]",
                              name_,
+                             TypeToString());
+}
+
+string ColumnSchema::TypeToString() const {
+  return strings::Substitute("$0 $1",
                              type_info_->name(),
                              is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
