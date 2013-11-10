@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include "tserver/tablet_server-test-base.h"
 
+#include "util/curl_util.h"
+
 using std::string;
 using std::tr1::shared_ptr;
 using kudu::rpc::Messenger;
@@ -22,6 +24,23 @@ TEST_F(TabletServerTest, TestPingServer) {
   PingResponsePB resp;
   RpcController controller;
   ASSERT_STATUS_OK(proxy_->Ping(req, &resp, &controller));
+}
+
+TEST_F(TabletServerTest, TestWebPages) {
+  EasyCurl c;
+  faststring buf;
+  string addr = mini_server_->bound_http_addr().ToString();
+
+  // Tablets page should list tablet.
+  ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablets", addr),
+                              &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
+
+  // Tablet page should include the schema.
+  ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablet?id=$1", addr, kTabletId),
+                              &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "<th>key</th>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NOT NULL</td>");
 }
 
 TEST_F(TabletServerTest, TestInsert) {

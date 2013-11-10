@@ -190,6 +190,11 @@ bool TSTabletManager::LookupTablet(const string& tablet_id,
   return true;
 }
 
+void TSTabletManager::GetTabletPeers(vector<shared_ptr<TabletPeer> >* tablet_peers) const {
+  boost::shared_lock<rw_spinlock> lock(lock_);
+  AppendValuesFromMap(tablet_map_, tablet_peers);
+}
+
 void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
   if (state != NULL) {

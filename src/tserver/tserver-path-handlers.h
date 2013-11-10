@@ -1,0 +1,38 @@
+// Copyright (c) 2013, Cloudera, inc.
+#ifndef KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
+#define KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
+
+#include "gutil/macros.h"
+#include "server/webserver.h"
+
+#include <sstream>
+
+namespace kudu {
+namespace tserver {
+
+class TabletServer;
+
+class TabletServerPathHandlers {
+ public:
+  explicit TabletServerPathHandlers(TabletServer* tserver)
+    : tserver_(tserver) {
+  }
+
+  ~TabletServerPathHandlers();
+
+  Status Register(Webserver* server);
+
+ private:
+  void HandleTabletsPage(const Webserver::ArgumentMap& args,
+                         std::stringstream* output);
+  void HandleTabletPage(const Webserver::ArgumentMap& args,
+                        std::stringstream* output);
+
+  TabletServer* tserver_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabletServerPathHandlers);
+};
+
+} // namespace tserver
+} // namespace kudu
+#endif /* KUDU_TSERVER_TSERVER_PATH_HANDLERS_H */

@@ -73,6 +73,12 @@ void UrlEncode(const string& in, string* out, bool hive_compat) {
   UrlEncode(in.c_str(), in.size(), out, hive_compat);
 }
 
+string UrlEncodeToString(const std::string& in, bool hive_compat) {
+  string ret;
+  UrlEncode(in, &ret, hive_compat);
+  return ret;
+}
+
 // Adapted from
 // http://www.boost.org/doc/libs/1_40_0/doc/html/boost_asio/
 //   example/http/server3/request_handler.cpp

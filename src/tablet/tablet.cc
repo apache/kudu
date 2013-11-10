@@ -894,6 +894,22 @@ Status Tablet::CountRows(uint64_t *count) const {
   return Status::OK();
 }
 
+size_t Tablet::EstimateOnDiskSize() const {
+  shared_ptr<RowSetTree> rowsets_copy;
+
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    rowsets_copy = rowsets_;
+  }
+
+  size_t ret = 0;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+    ret += rowset->EstimateOnDiskSize();
+  }
+
+  return ret;
+}
+
 size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return rowsets_->all_rowsets().size();

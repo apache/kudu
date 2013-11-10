@@ -29,6 +29,7 @@ namespace kudu {
 void UrlEncode(const std::string& in, std::string* out, bool hive_compat = false);
 void UrlEncode(const std::vector<uint8_t>& in, std::string* out,
     bool hive_compat = false);
+std::string UrlEncodeToString(const std::string& in, bool hive_compat = false);
 
 // Utility method to decode a string that was URL-encoded. Returns
 // true unless the string could not be correctly decoded.

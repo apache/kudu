@@ -15,6 +15,7 @@
 #include "tserver/scanners.h"
 #include "tserver/tablet_service.h"
 #include "tserver/ts_tablet_manager.h"
+#include "tserver/tserver-path-handlers.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -33,7 +34,8 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
     opts_(opts),
     metric_ctx_(metric_registry_.get(), "kudu.tabletserver"),
     tablet_manager_(new TSTabletManager(fs_manager_.get(), metric_ctx_)),
-    scanner_manager_(new ScannerManager()) {
+    scanner_manager_(new ScannerManager()),
+    path_handlers_(new TabletServerPathHandlers(this)) {
 }
 
 TabletServer::~TabletServer() {
@@ -65,6 +67,7 @@ Status TabletServer::Init() {
   RETURN_NOT_OK(ValidateMasterAddressResolution());
 
   RETURN_NOT_OK(ServerBase::Init());
+  RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
 
   RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
                         "Could not init Tablet Manager");

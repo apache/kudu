@@ -6,6 +6,7 @@
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
+#include <vector>
 
 #include "gutil/macros.h"
 #include "util/locks.h"
@@ -86,6 +87,9 @@ class TSTabletManager {
 
   // Generate a full tablet report and reset any incremental state tracking.
   void GenerateFullTabletReport(master::TabletReportPB* report);
+
+  // Get all of the tablets currently hosted on this server.
+  void GetTabletPeers(std::vector<std::tr1::shared_ptr<tablet::TabletPeer> >* tablet_peers) const;
 
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);

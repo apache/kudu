@@ -32,6 +32,7 @@ namespace tserver {
 class Heartbeater;
 class MutatorManager;
 class ScannerManager;
+class TabletServerPathHandlers;
 class TSTabletManager;
 
 class TabletServer : public server::ServerBase {
@@ -80,6 +81,9 @@ class TabletServer : public server::ServerBase {
 
   // Thread responsible for heartbeating to the master.
   gscoped_ptr<Heartbeater> heartbeater_;
+
+  // Webserver path handlers
+  gscoped_ptr<TabletServerPathHandlers> path_handlers_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServer);
 };

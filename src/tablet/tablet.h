@@ -159,6 +159,9 @@ class Tablet {
     return memrowset_->memory_footprint();
   }
 
+  // Estimate the total on-disk size of this tablet, in bytes.
+  size_t EstimateOnDiskSize() const;
+
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
 
