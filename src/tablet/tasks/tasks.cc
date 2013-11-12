@@ -128,6 +128,12 @@ Status PrepareTask::Run() {
                                      mutable_request->encoded_mutations().size(),
                                      &mutations);
 
+  if (PREDICT_FALSE(to_mutate.size() != mutations.size())) {
+    s = Status::InvalidArgument(strings::Substitute("Different number of row keys: $0 and mutations: $1",
+                                                    to_mutate.size(),
+                                                    mutations.size()));
+  }
+
   if (PREDICT_FALSE(!s.ok())) {
     SetupError(tx_ctx_->response()->mutable_error(),
                s,
