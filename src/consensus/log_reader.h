@@ -29,6 +29,11 @@ class LogReader {
                      uint64_t recovery_ts,
                      gscoped_ptr<LogReader> *reader);
 
+  // Initializes a ReadableLogSegment based on a log file on the provided path.
+  static Status InitSegment(Env* env,
+                            const string &log_file,
+                            shared_ptr<ReadableLogSegment>* segment);
+
   // Reads all entries of the provided segment, adds them the 'entries' vector.
   // The 'entries' vector owns the read entries.
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all

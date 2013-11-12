@@ -86,16 +86,8 @@ Status LogReader::Init(const string& tablet_wal_path) {
   BOOST_FOREACH(const string &log_file, log_files) {
     if (HasPrefixString(log_file, kLogPrefix)) {
       string fqp = env->JoinPathSegments(tablet_wal_path, log_file);
-      VLOG(1) << "Parsing segment: " << log_file;
-      uint64_t file_size;
-      RETURN_NOT_OK(env->GetFileSize(fqp, &file_size));
-      shared_ptr<RandomAccessFile> file;
-      RETURN_NOT_OK(kudu::env_util::OpenFileForRandom(env, fqp, &file));
       shared_ptr<ReadableLogSegment> segment;
-      RETURN_NOT_OK(ParseHeaderAndBuildSegment(file_size,
-                                               fqp,
-                                               file,
-                                               &segment));
+      RETURN_NOT_OK(InitSegment(env, fqp, &segment));
       DCHECK(segment);
       segments_.push_back(segment);
     }
@@ -104,6 +96,21 @@ Status LogReader::Init(const string& tablet_wal_path) {
   // sort the segments
   sort(segments_.begin(), segments_.end(), CompareSegments);
   state_ = kLogReaderReading;
+  return Status::OK();
+}
+
+Status LogReader::InitSegment(Env* env,
+                              const string &log_file,
+                              shared_ptr<ReadableLogSegment>* segment) {
+  VLOG(1) << "Parsing segment: " << log_file;
+  uint64_t file_size;
+  RETURN_NOT_OK(env->GetFileSize(log_file, &file_size));
+  shared_ptr<RandomAccessFile> file;
+  RETURN_NOT_OK(kudu::env_util::OpenFileForRandom(env, log_file, &file));
+  RETURN_NOT_OK(ParseHeaderAndBuildSegment(file_size,
+                                           log_file,
+                                           file,
+                                           segment));
   return Status::OK();
 }
 

@@ -19,6 +19,20 @@ using std::string;
 using std::cout;
 using std::endl;
 
+void PrintSegment(LogReader* reader,
+                  const shared_ptr<ReadableLogSegment>& segment) {
+  if (FLAGS_print_headers) {
+    cout << "Header:\n" << segment->header().DebugString();
+  }
+  vector<LogEntry*> entries;
+  CHECK_OK(reader->ReadEntries(segment, &entries));
+  if (FLAGS_print_entries) {
+    BOOST_FOREACH(const LogEntry* entry, entries) {
+      cout << "Entry:\n" << entry->DebugString();
+    }
+  }
+}
+
 void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
@@ -28,18 +42,18 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   vector<LogEntry*> entries;
   ElementDeleter deleter(&entries);
   BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, reader->segments()) {
-    cout << "Reading Segment: " << segment->path() << std::endl;
-    if (FLAGS_print_headers) {
-      cout << "Header:\n" << segment->header().DebugString();
-    }
-    entries.clear();
-    CHECK_OK(reader->ReadEntries(segment, &entries));
-    if (FLAGS_print_entries) {
-      BOOST_FOREACH(const LogEntry* entry, entries) {
-        cout << "Entry:\n" << entry->DebugString();
-      }
-    }
+    PrintSegment(reader.get(), segment);
   }
+}
+
+
+void DumpSegment(const string &segment_path) {
+  Env *env = Env::Default();
+  gscoped_ptr<LogReader> reader;
+  shared_ptr<ReadableLogSegment> segment;
+  CHECK_OK(LogReader::InitSegment(env, segment_path, &segment));
+  CHECK(segment);
+  PrintSegment(reader.get(), segment);
 }
 
 } // namespace log
@@ -48,11 +62,16 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 3) {
-    std::cerr << "usage: " << argv[0] << " <tserver root path> <tablet_name>" << std::endl;
+  if (argc < 2  && argc > 3) {
+    std::cerr << "usage: " << argv[0] << " <tserver root path> <tablet_name>"
+        " | <log segment path> " << std::endl;
     return 1;
   }
-  kudu::log::DumpLog(argv[1], argv[2]);
+  if (argc == 2) {
+    kudu::log::DumpSegment(argv[1]);
+  } else {
+    kudu::log::DumpLog(argv[1], argv[2]);
+  }
 
   return 0;
 }
