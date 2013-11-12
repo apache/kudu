@@ -72,7 +72,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this, server_addr,
         GenericCalculatorService::kAddMethodName, &status4), &thread4));
 
-  usleep(50000);
+  usleep(50000); // 50ms
 
   // Shut down server.
   server_messenger_->Shutdown();
@@ -131,7 +131,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
         GenericCalculatorService::kAddMethodName, &status3), &thread3));
 
   // One should immediately fail due to backpressure. We provide a little bit of time for that.
-  usleep(100000);
+  usleep(100000); // 100ms
 
   // The rest would time out after 10 sec, but we help them along.
   server_messenger_->Shutdown();

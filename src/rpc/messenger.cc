@@ -145,7 +145,6 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   if (PREDICT_TRUE(s == QUEUE_SUCCESS)) {
     return;
   }
-  // TODO: write a test for backpressure!
 
   if (s == QUEUE_FULL) {
     c->RespondFailure(

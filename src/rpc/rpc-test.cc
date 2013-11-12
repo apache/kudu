@@ -119,6 +119,7 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
   // Only run one reactor per messenger, so we can grab the metrics from that
   // one without having to check all.
   n_server_reactor_threads_ = 1;
+  keepalive_time_ms_ = 50;
 
   // Set up server.
   Sockaddr server_addr;
@@ -142,8 +143,7 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
   ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
   ASSERT_EQ(1, metrics.num_client_connections_) << "Client should have 1 client connections";
 
-  // TODO: mock out time in the test!
-  sleep(2);
+  usleep(100000); // 100ms
 
   // After sleeping, the keepalive timer should have closed both sides of
   // the connection.
