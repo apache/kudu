@@ -43,7 +43,7 @@ class TestTabletSchema : public KuduTabletTest {
     RowBuilder rb(schema);
     rb.AddUint32(key);
     rb.AddUint32(key);
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     ASSERT_STATUS_OK(tablet_->Insert(&tx_ctx, rb.row()));
   }
 
@@ -53,7 +53,7 @@ class TestTabletSchema : public KuduTabletTest {
     faststring buf;
     RowChangeListEncoder mutation(schema, &buf);
     mutation.SetToDelete();
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), schema, mutation.as_changelist()));
   }
 
@@ -63,7 +63,7 @@ class TestTabletSchema : public KuduTabletTest {
     faststring buf;
     RowChangeListEncoder mutation(schema, &buf);
     mutation.AddColumnUpdate(col_idx, &new_val);
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), schema, mutation.as_changelist()));
   }
 
@@ -149,7 +149,6 @@ TEST_F(TestTabletSchema, TestWrite) {
   SchemaBuilder builder(schema_);
   ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
   Schema s2 = builder.Build();
-
   ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
 
   // Insert with base/old schema

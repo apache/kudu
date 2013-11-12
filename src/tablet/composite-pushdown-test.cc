@@ -36,7 +36,7 @@ class CompositePushdownTest : public KuduTabletTest {
 
     uint32_t nrows = 10 * 12 * 28;
     int i = 0;
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     for (uint16_t year = 2000; year <= 2010; year++) {
       for (uint8_t month = 1; month <= 12; month++) {
         for (uint8_t day = 1; day <= 28; day++) {

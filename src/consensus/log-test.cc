@@ -145,7 +145,7 @@ class LogTest : public KuduTest {
     op_id->set_term(0);
     op_id->set_index(index);
 
-    WriteRequestPB* batch_request = replicate->mutable_write();
+    WriteRequestPB* batch_request = replicate->mutable_write_request();
     AddTestRowToBlockPB(schema_,
                         index,
                         0,

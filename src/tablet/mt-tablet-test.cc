@@ -109,7 +109,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           uint32_t new_val = old_val + 1;
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
-          TransactionContext dummy;
+          WriteTransactionContext dummy;
           CHECK_OK(tablet_->MutateRow(&dummy, rb.row(), schema_, RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
@@ -258,7 +258,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     while (running_insert_count_.count() > 0) {
       for (int i = 0; i < 100; i++) {
         this->InsertTestRows(tid, 1, iteration++);
-        TransactionContext tx_ctx;
+        WriteTransactionContext tx_ctx;
         CHECK_OK(this->DeleteTestRow(&tx_ctx, tid));
       }
     }
@@ -271,7 +271,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   void StubbornlyUpdateSameRowThread(int tid) {
     uint32_t iteration = 0;
     while (running_insert_count_.count() > 0) {
-      TransactionContext tx_ctx;
+      WriteTransactionContext tx_ctx;
       for (int i = 0; i < 100; i++) {
         tx_ctx.Reset();
         Status s = this->UpdateTestRow(&tx_ctx, tid, iteration++);

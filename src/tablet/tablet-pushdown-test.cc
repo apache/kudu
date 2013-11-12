@@ -48,7 +48,7 @@ class TabletPushdownTest : public KuduTabletTest,
       nrows = 100000;
     }
 
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     for (uint64_t i = 0; i < nrows; i++) {
       rb.Reset();
       rb.AddUint32(i);

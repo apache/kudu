@@ -162,7 +162,7 @@ Status Tablet::CreatePreparedInsert(const TransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status Tablet::Insert(TransactionContext *tx_ctx,
+Status Tablet::Insert(WriteTransactionContext *tx_ctx,
                       const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
   DCHECK(tx_ctx) << "you must have a transaction context";
@@ -188,12 +188,12 @@ Status Tablet::Insert(TransactionContext *tx_ctx,
   return s;
 }
 
-Status Tablet::InsertUnlocked(TransactionContext *tx_ctx,
+Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
                               const PreparedRowWrite* insert) {
   CHECK(open_) << "must Open() first!";
-  // make sure that the TransactionContext has the component lock and that
+  // make sure that the WriteTransactionContext has the component lock and that
   // there the PreparedRowWrite has the row lock.
-  DCHECK(tx_ctx->component_lock()) << "TransactionContext must hold the component lock.";
+  DCHECK(tx_ctx->component_lock()) << "WriteTransactionContext must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
 
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
@@ -255,14 +255,14 @@ Status Tablet::CreatePreparedMutate(const TransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status Tablet::MutateRow(TransactionContext *tx_ctx,
+Status Tablet::MutateRow(WriteTransactionContext *tx_ctx,
                          const ConstContiguousRow& row_key,
                          const Schema& update_schema,
                          const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
-  CHECK(tx_ctx->rows().empty()) << "TransactionContext must have no PreparedRowWrites.";
+  CHECK(tx_ctx->rows().empty()) << "WriteTransactionContext must have no PreparedRowWrites.";
 
   // The order of the next three steps is critical!
   //
@@ -325,7 +325,7 @@ Status Tablet::MutateRow(TransactionContext *tx_ctx,
   return s;
 }
 
-Status Tablet::MutateRowUnlocked(TransactionContext *tx_ctx,
+Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
                                  const PreparedRowWrite* mutate) {
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *mutate->schema());
 
@@ -513,7 +513,6 @@ Status Tablet::Flush(const Schema& schema) {
   return Status::OK();
 }
 
-// TODO: Removing and re-adding a column is not supported yet. (Add a check?)
 Status Tablet::AlterSchema(const Schema& schema) {
   if (!key_schema_.KeyEquals(schema)) {
     return Status::InvalidArgument("Schema keys cannot be altered",
@@ -756,7 +755,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // of the replicated state machine this transaction is committed locally
   // only _and_ the commit must include the actual row data (vs. normally
   // only including the ids of the destination MemRowSets/DeltaRowStores).
-  TransactionContext compaction_tx;
+  WriteTransactionContext compaction_tx;
   RETURN_NOT_OK(ReupdateMissedDeltas(metadata_->oid(),
                                      &compaction_tx,
                                      merge.get(),

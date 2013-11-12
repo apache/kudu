@@ -99,7 +99,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   this->setup_.BuildRow(&rb, 12345);
   ConstContiguousRow row(rb.schema(), rb.data());
 
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, row));
   ASSERT_EQ(1, tx_ctx.Result().inserts().size());
 
@@ -130,7 +130,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 // Test flushes and compactions dealing with deleted rows.
 TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
 
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
@@ -197,7 +197,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
 TYPED_TEST(TestTablet, TestFlushWithReinsert) {
 
   // Insert, delete, and re-insert a row in the MRS.
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
@@ -218,7 +218,7 @@ TYPED_TEST(TestTablet, TestFlushWithReinsert) {
 // of a flush.
 TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
   // Insert/delete/insert/delete in MemRowStore.
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
@@ -237,7 +237,7 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
     explicit MyCommonHooks(TestFixture *test) : test_(test) {}
 
     Status PostWriteSnapshot() {
-      TransactionContext tx_ctx;
+      WriteTransactionContext tx_ctx;
       test_->InsertTestRow(&tx_ctx, 0, 1);
       tx_ctx.Reset();
       CHECK_OK(test_->DeleteTestRow(&tx_ctx, 0));
@@ -280,7 +280,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, kInRowSet1);
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
@@ -335,7 +335,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // Put a row in disk rowset 1 (insert and flush)
   RowBuilder rb(this->schema_);
   unordered_set<uint32_t> inserted;
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   for (uint32_t i = 0; i < max_rows; i++) {
     rb.Reset();
     tx_ctx.Reset();
@@ -422,7 +422,7 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
 // the most recent value.
 TYPED_TEST(TestTablet, TestMultipleUpdates) {
   // Insert and update several times in MemRowSet
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 1));
@@ -558,7 +558,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
         i_(0) {
   }
   Status DoHook(MutationResultPB::MutationTypePB expected_mutation_type) {
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     RETURN_NOT_OK(test_->DeleteTestRow(&tx_ctx, i_));
     CHECK_EQ(expected_mutation_type, last_mutation(tx_ctx).type());
     if (PREDICT_FALSE(expected_mutation_type == MutationResultPB::DUPLICATED_MUTATION)) {

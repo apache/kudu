@@ -25,8 +25,8 @@ using kudu::consensus::OpId;
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::MISSED_DELTA;
+using kudu::consensus::OP_ABORT;
 using kudu::consensus::WRITE_OP;
-using kudu::consensus::WRITE_ABORT;
 using kudu::log::COMMIT;
 using kudu::log::Log;
 using kudu::log::LogEntry;
@@ -106,8 +106,8 @@ class TabletBootstrap {
   // later on when then tablet is rebuilt and starts accepting writes from clients.
   Status PlaySegments();
 
-  Status PlayRequest(ReplicateMsg* replicate_msg,
-                     const consensus::CommitMsg& commit_msg);
+  Status PlayWriteRequest(ReplicateMsg* replicate_msg,
+                          const consensus::CommitMsg& commit_msg);
 
   // Plays missed deltas mutations, skipping those that have already been flushed.
   // Missed delta mutations are appended to the new log as the original mutations
@@ -115,14 +115,14 @@ class TabletBootstrap {
   Status PlayMissedDeltaUpdates(const consensus::CommitMsg& commit_msg);
 
   // Plays inserts, skipping those that have already been flushed.
-  Status PlayInsertions(TransactionContext* tx_ctx,
+  Status PlayInsertions(WriteTransactionContext* tx_ctx,
                         RowwiseRowBlockPB* rows,
                         const TxResultPB& result,
                         const consensus::OpId& committed_op_id,
                         int32_t* last_insert_op_idx);
 
   // Plays a mutations block, skipping those that have already been flushed.
-  Status PlayMutations(TransactionContext* tx_ctx,
+  Status PlayMutations(WriteTransactionContext* tx_ctx,
                        RowwiseRowBlockPB* row_keys,
                        const string& encoded_mutations,
                        const TxResultPB& result,
@@ -172,7 +172,7 @@ class TabletBootstrap {
 
 // helper to encapsulate the arguments required for a mutation
 struct MutationInput {
-  MutationInput(TransactionContext* tx_ctx,
+  MutationInput(WriteTransactionContext* tx_ctx,
                 const consensus::OpId& committed_op_id,
                 int mutation_op_block_index,
                 const Schema& key_schema,
@@ -180,7 +180,7 @@ struct MutationInput {
                 const uint8_t* row_key_ptr,
                 const RowChangeList* changelist);
 
-  TransactionContext* tx_ctx;
+  WriteTransactionContext* tx_ctx;
   const consensus::OpId& committed_op_id;
   int mutation_op_block_index;
   const Schema& key_schema;
@@ -212,7 +212,7 @@ struct OpIdEqualsTo {
   }
 };
 
-MutationInput::MutationInput(TransactionContext* tx_ctx_,
+MutationInput::MutationInput(WriteTransactionContext* tx_ctx_,
                              const consensus::OpId& committed_op_id_,
                              int mutation_op_block_index_,
                              const Schema& key_schema_,
@@ -542,7 +542,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
 // Deletes 'commit_entry' only on OK status.
 Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* commit_entry) {
   switch (commit_entry->commit().op_type()) {
-    case WRITE_ABORT:
+    case OP_ABORT:
       // aborted write, log and continue
       if (VLOG_IS_ON(1)) {
         VLOG(1) << "Skipping replicate message because it was originally aborted."
@@ -552,8 +552,8 @@ Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* com
 
     case WRITE_OP:
       // successful write, play it into the tablet, filtering flushed entries
-      RETURN_NOT_OK_PREPEND(PlayRequest(replicate_entry->mutable_msg(), commit_entry->commit()),
-                            Substitute("Failed to play request. ReplicateMsg: $0 CommitMsg: $1\n",
+      RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_msg(), commit_entry->commit()),
+                            Substitute("Failed to play write request. ReplicateMsg: $0 CommitMsg: $1\n",
                                        replicate_entry->msg().DebugString(),
                                        commit_entry->commit().DebugString()));
       break;
@@ -614,9 +614,9 @@ Status TabletBootstrap::PlaySegments() {
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayRequest(ReplicateMsg* replicate_msg,
-                                    const CommitMsg& commit_msg) {
-  WriteRequestPB* write = replicate_msg->mutable_write();
+Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
+                                         const CommitMsg& commit_msg) {
+  WriteRequestPB* write = replicate_msg->mutable_write_request();
 
   // TODO should we re-append to the new log when all operations were
   // skipped? On one hand appending allows this node to catch up other
@@ -629,19 +629,19 @@ Status TabletBootstrap::PlayRequest(ReplicateMsg* replicate_msg,
   replicate_entry.mutable_msg()->CopyFrom(*replicate_msg);
   RETURN_NOT_OK(log_->Append(replicate_entry));
 
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
   tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
 
   int32_t last_insert_op_idx = 0;
-  if (replicate_msg->write().has_to_insert_rows()) {
+  if (replicate_msg->write_request().has_to_insert_rows()) {
     RETURN_NOT_OK(PlayInsertions(&tx_ctx,
                                  write->mutable_to_insert_rows(),
                                  commit_msg.result(),
                                  replicate_msg->id(),
                                  &last_insert_op_idx));
   }
-  if (replicate_msg->write().has_to_mutate_row_keys()) {
+  if (replicate_msg->write_request().has_to_mutate_row_keys()) {
     RETURN_NOT_OK(PlayMutations(&tx_ctx,
                                 write->mutable_to_mutate_row_keys(),
                                 write->encoded_mutations(),
@@ -680,7 +680,7 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
   CommitMsg* new_commit = commit_entry.mutable_commit();
   new_commit->CopyFrom(commit_msg);
 
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
   tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
 
@@ -760,7 +760,7 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayInsertions(TransactionContext* tx_ctx,
+Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                                        RowwiseRowBlockPB* rows,
                                        const TxResultPB& result,
                                        const OpId& committed_op_id,
@@ -833,7 +833,7 @@ Status TabletBootstrap::PlayInsertions(TransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayMutations(TransactionContext* tx_ctx,
+Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
                                       RowwiseRowBlockPB* row_keys,
                                       const string& encoded_mutations,
                                       const TxResultPB& result,

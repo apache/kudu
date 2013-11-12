@@ -303,7 +303,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   UpdateRows(rs.get(), 1000, 0, 3);
 
   string dummy_name = "";
-  TransactionContext tx_ctx;
+  WriteTransactionContext tx_ctx;
 
   ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
                                         &tx_ctx,

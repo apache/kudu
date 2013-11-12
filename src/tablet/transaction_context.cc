@@ -33,8 +33,7 @@ MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result) {
   return MutationResultPB::DUPLICATED_MUTATION;
 }
 
-Status TransactionContext::AddInsert(const txid_t &tx_id,
-                                     int64_t mrs_id) {
+Status WriteTransactionContext::AddInsert(const txid_t &tx_id, int64_t mrs_id) {
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->txid(), tx_id) << "tx_id doesn't match the id of the ongoing transaction";
   }
@@ -45,15 +44,14 @@ Status TransactionContext::AddInsert(const txid_t &tx_id,
   return Status::OK();
 }
 
-void TransactionContext::AddFailedInsert(const Status &status) {
+void WriteTransactionContext::AddFailedInsert(const Status &status) {
   TxOperationPB* insert = result_pb_.add_inserts();
   insert->set_type(TxOperationPB::INSERT);
   StatusToPB(status, insert->mutable_failed_status());
   failed_operations_++;
 }
 
-Status TransactionContext::AddMutation(const txid_t &tx_id,
-                                       gscoped_ptr<MutationResultPB> result) {
+Status WriteTransactionContext::AddMutation(const txid_t &tx_id, gscoped_ptr<MutationResultPB> result) {
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->txid(), tx_id) << "tx_id doesn't match the id of the ongoing transaction";
   }
@@ -65,7 +63,7 @@ Status TransactionContext::AddMutation(const txid_t &tx_id,
   return Status::OK();
 }
 
-Status TransactionContext::AddMissedMutation(
+Status WriteTransactionContext::AddMissedMutation(
     const txid_t &tx_id,
     gscoped_ptr<RowwiseRowBlockPB> row_key,
     const RowChangeList& changelist,
@@ -83,27 +81,27 @@ Status TransactionContext::AddMissedMutation(
   return Status::OK();
 }
 
-void TransactionContext::AddFailedMutation(const Status &status) {
+void WriteTransactionContext::AddFailedMutation(const Status &status) {
   TxOperationPB* mutation = result_pb_.add_mutations();
   mutation->set_type(TxOperationPB::MUTATE);
   StatusToPB(status, mutation->mutable_failed_status());
   failed_operations_++;
 }
 
-txid_t TransactionContext::start_mvcc_tx() {
+txid_t WriteTransactionContext::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
   result_pb_.set_txid(mvcc_tx_->txid().v);
   return mvcc_tx_->txid();
 }
 
-void TransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
+void WriteTransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(mvcc_tx.release());
   result_pb_.set_txid(mvcc_tx_->txid().v);
 }
 
-void TransactionContext::commit() {
+void WriteTransactionContext::commit() {
   if (mvcc_tx_.get() != NULL) {
     // commit the transaction
     mvcc_tx_->Commit();
@@ -113,19 +111,19 @@ void TransactionContext::commit() {
   release_row_locks();
 }
 
-void TransactionContext::release_row_locks() {
+void WriteTransactionContext::release_row_locks() {
   // free the row locks
   STLDeleteElements(&rows_);
 }
 
-txid_t TransactionContext::mvcc_txid() {
+txid_t WriteTransactionContext::mvcc_txid() {
   if (mvcc_tx_.get() == NULL) {
     return txid_t::kInvalidTxId;
   }
   return mvcc_tx_->txid();
 }
 
-void TransactionContext::Reset() {
+void WriteTransactionContext::Reset() {
   commit();
   result_pb_.Clear();
   tx_metrics_.Reset();

@@ -38,7 +38,7 @@ class LocalLineItemDAO : public LineItemDAO {
  private:
   kudu::FsManager fs_manager_;
   gscoped_ptr<kudu::tablet::Tablet> tablet_;
-  tablet::TransactionContext tx_ctx_;
+  tablet::WriteTransactionContext tx_ctx_;
   gscoped_ptr<RowwiseIterator> current_iter_;
 };
 

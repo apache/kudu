@@ -21,12 +21,14 @@ using tserver::WriteResponsePB;
 
 static void SetupError(TabletServerErrorPB* error,
                        const Status& s,
-                       TabletServerErrorPB::Code code,
-                       rpc::RpcContext* context) {
+                       TabletServerErrorPB::Code code) {
   StatusToPB(s, error->mutable_status());
   error->set_code(code);
 }
 
+// ============================================================================
+//  Write related methods
+// ============================================================================
 static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
                              WriteResponsePB* resp,
                              rpc::RpcContext* context,
@@ -38,8 +40,7 @@ static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
   Status s = ColumnPBsToSchema(block_pb->schema(), client_schema);
   if (!s.ok()) {
     SetupError(resp->mutable_error(), s,
-               TabletServerErrorPB::INVALID_SCHEMA,
-               context);
+               TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
 
@@ -48,10 +49,8 @@ static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
   if (!client_key_projection.Equals(tablet_key_projection)) {
     s = Status::InvalidArgument("Mismatched key projection schema, expected",
                                 tablet_key_projection.ToString());
-    SetupError(resp->mutable_error(),
-               s,
-               TabletServerErrorPB::MISMATCHED_SCHEMA,
-               context);
+    SetupError(resp->mutable_error(), s,
+               TabletServerErrorPB::MISMATCHED_SCHEMA);
     return s;
   }
 
@@ -64,18 +63,17 @@ static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
 
   if (!s.ok()) {
     SetupError(resp->mutable_error(), s,
-               TabletServerErrorPB::INVALID_ROW_BLOCK,
-               context);
+               TabletServerErrorPB::INVALID_ROW_BLOCK);
     return s;
   }
   return Status::OK();
 }
 
-PrepareTask::PrepareTask(TransactionContext *tx_ctx)
-: tx_ctx_(tx_ctx) {
+PrepareWriteTask::PrepareWriteTask(WriteTransactionContext *tx_ctx)
+  : tx_ctx_(tx_ctx) {
 }
 
-Status PrepareTask::Run() {
+Status PrepareWriteTask::Run() {
 
   // In order to avoid a copy, we mutate the row blocks for insert and
   // mutate in-place. Because the RPC framework gives us our request as a
@@ -135,10 +133,8 @@ Status PrepareTask::Run() {
   }
 
   if (PREDICT_FALSE(!s.ok())) {
-    SetupError(tx_ctx_->response()->mutable_error(),
-               s,
-               TabletServerErrorPB::INVALID_MUTATION,
-               tx_ctx_->rpc_context());
+    SetupError(tx_ctx_->response()->mutable_error(), s,
+               TabletServerErrorPB::INVALID_MUTATION);
     return s;
   }
 
@@ -186,15 +182,15 @@ Status PrepareTask::Run() {
 }
 
 // No support for abort, currently
-bool PrepareTask::Abort() {
+bool PrepareWriteTask::Abort() {
   return false;
 }
 
-ApplyTask::ApplyTask(tablet::TransactionContext *tx_ctx)
-: tx_ctx_(tx_ctx) {
+ApplyWriteTask::ApplyWriteTask(WriteTransactionContext *tx_ctx)
+  : tx_ctx_(tx_ctx) {
 }
 
-Status ApplyTask::Run() {
+Status ApplyWriteTask::Run() {
 
   tx_ctx_->start_mvcc_tx();
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
@@ -231,7 +227,7 @@ Status ApplyTask::Run() {
   return Status::OK();
 }
 
-bool ApplyTask::Abort() {
+bool ApplyWriteTask::Abort() {
   return false;
 }
 

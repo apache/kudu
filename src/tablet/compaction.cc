@@ -525,7 +525,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
 }
 
 Status ReupdateMissedDeltas(const string &tablet_name,
-                            TransactionContext *tx_ctx,
+                            WriteTransactionContext *tx_ctx,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,

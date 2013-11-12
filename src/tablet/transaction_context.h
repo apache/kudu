@@ -33,6 +33,59 @@ struct TransactionMetrics {
   int successful_updates;
 };
 
+class TransactionContext {
+ public:
+  // Sets the ConsensusContext for this transaction, if this transaction is
+  // being executed through the consensus system.
+  void set_consensus_ctx(gscoped_ptr<consensus::ConsensusContext> consensus_ctx) {
+    consensus_ctx_.reset(consensus_ctx.release());
+  }
+
+  // Returns the ConsensusContext being used, if this transaction is being
+  // executed through the consensus system or NULL if it's not.
+  consensus::ConsensusContext* consensus_ctx() {
+    return consensus_ctx_.get();
+  }
+
+  TabletPeer* tablet_peer() const { return tablet_peer_; }
+
+  // Return metrics related to this transaction.
+  const TransactionMetrics& metrics() const { return tx_metrics_; }
+
+  // Returns the RPCContext that triggered this transaction, if this
+  // transaction was triggered by a client.
+  rpc::RpcContext *rpc_context() {
+    return rpc_ctx_;
+  }
+
+  // Sets a heap object to be managed by this transaction's AutoReleasePool.
+  template <class T>
+  T* AddToAutoReleasePool(T* t) {
+    return pool_.Add(t);
+  }
+
+ protected:
+  TransactionContext(TabletPeer* tablet_peer, rpc::RpcContext* rpc_ctx)
+      : tablet_peer_(tablet_peer),
+        rpc_ctx_(rpc_ctx) {
+  }
+
+  TransactionMetrics tx_metrics_;
+
+  // The tablet peer that is coordinating this transaction.
+  TabletPeer* tablet_peer_;
+
+  // pointers to the rpc context, request and response, lifecyle
+  // is managed by the rpc subsystem. These pointers maybe NULL if the
+  // transaction was not initiated by an RPC call.
+  rpc::RpcContext* rpc_ctx_;
+
+  AutoReleasePool pool_;
+
+  gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
+};
+
+
 // A transaction context for a batch of inserts/mutates. This class holds and
 // owns most everything related to a transaction, including the acquired locks
 // (row and component), the PreparedRowWrites, the Replicate and Commit messages.
@@ -49,33 +102,29 @@ struct TransactionMetrics {
 // on the WAL.
 //
 // NOTE: this class isn't thread safe.
-class TransactionContext {
+class WriteTransactionContext : public TransactionContext {
 
  public:
-  TransactionContext()
-      : failed_operations_(0),
-        tablet_peer_(NULL),
-        rpc_ctx_(NULL),
+  WriteTransactionContext()
+      : TransactionContext(NULL, NULL),
+        failed_operations_(0),
         request_(NULL),
         response_(NULL),
         component_lock_(NULL),
-        mvcc_tx_(NULL),
-        consensus_ctx_(NULL) {
+        mvcc_tx_(NULL) {
     result_pb_.set_txid(txid_t::kInvalidTxId.v);
   }
 
-  TransactionContext(TabletPeer* tablet_peer,
-                     rpc::RpcContext *rpc_ctx,
-                     const tserver::WriteRequestPB *request,
-                     tserver::WriteResponsePB *response)
-      : failed_operations_(0),
-        tablet_peer_(tablet_peer),
-        rpc_ctx_(rpc_ctx),
+  WriteTransactionContext(TabletPeer* tablet_peer,
+                          rpc::RpcContext *rpc_ctx,
+                          const tserver::WriteRequestPB *request,
+                          tserver::WriteResponsePB *response)
+      : TransactionContext(tablet_peer, rpc_ctx),
+        failed_operations_(0),
         request_(request),
         response_(response),
         component_lock_(NULL),
-        mvcc_tx_(NULL),
-        consensus_ctx_(NULL) {
+        mvcc_tx_(NULL) {
     result_pb_.set_txid(txid_t::kInvalidTxId.v);
   }
 
@@ -109,9 +158,6 @@ class TransactionContext {
   // explaining why it failed.
   void AddFailedMutation(const Status &status);
 
-  // Return metrics related to this transaction.
-  const TransactionMetrics& metrics() const { return tx_metrics_; }
-
   bool is_all_success() const {
     return failed_operations_ == 0;
   }
@@ -124,13 +170,9 @@ class TransactionContext {
     return result_pb_;
   }
 
-  TabletPeer* tablet_peer() {
-    return tablet_peer_;
-  }
-
   // Returns the original client request for this transaction, if there was
   // one.
-  const tserver::WriteRequestPB *request() {
+  const tserver::WriteRequestPB *request() const {
     return request_;
   }
 
@@ -138,12 +180,6 @@ class TransactionContext {
   // transaction is completed, if this transaction was started by a client.
   tserver::WriteResponsePB *response() {
     return response_;
-  }
-
-  // Returns the RPCContext that triggered this transaction, if this
-  // transaction was triggered by a client.
-  rpc::RpcContext *rpc_context() {
-    return rpc_ctx_;
   }
 
   // Returns the Mvcc transaction id for the ongoing transaction or
@@ -190,47 +226,24 @@ class TransactionContext {
   // Releases all the row locks acquired by this transaction.
   void release_row_locks();
 
-  // Sets the ConsensusContext for this transaction, if this transaction is
-  // being executed through the consensus system.
-  void set_consensus_ctx(gscoped_ptr<consensus::ConsensusContext> consensus_ctx) {
-    consensus_ctx_.reset(consensus_ctx.release());
-  }
-
-  // Returns the ConsensusContext being used, if this transaction is being
-  // executed through the consensus system or NULL if it's not.
-  consensus::ConsensusContext* consensus_ctx() {
-    return consensus_ctx_.get();
-  }
-
-  // Sets a heap object to be managed by this transaction's AutoReleasePool.
-  template <class T>
-  T* AddToAutoReleasePool(T* t) {
-    return pool_.Add(t);
-  }
-
   // Resets this TransactionContext, releasing all locks, destroying all prepared
   // writes, clearing the transaction result _and_ committing the current Mvcc
   // transaction.
   void Reset();
 
-  ~TransactionContext() {
+  ~WriteTransactionContext() {
     Reset();
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(TransactionContext);
+  DISALLOW_COPY_AND_ASSIGN(WriteTransactionContext);
 
   TxResultPB result_pb_;
-  TransactionMetrics tx_metrics_;
   int32_t failed_operations_;
-
-  // The tablet peer that is coordinating this transaction.
-  TabletPeer* tablet_peer_;
 
   // pointers to the rpc context, request and response, lifecyle
   // is managed by the rpc subsystem. These pointers maybe NULL if the
   // transaction was not initiated by an RPC call.
-  rpc::RpcContext* rpc_ctx_;
   const tserver::WriteRequestPB* request_;
   tserver::WriteResponsePB* response_;
 
@@ -239,9 +252,6 @@ class TransactionContext {
   // the component lock, acquired by all inserters/updaters
   gscoped_ptr<boost::shared_lock<rw_spinlock> > component_lock_;
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
-  gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
-
-  AutoReleasePool pool_;
 };
 
 // Calculates type of the mutation based on the set fields and number of targets.

@@ -115,7 +115,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap, RollingDiskRowSet
 //
 // All effectively applied mutations are collected in compaction_tc.
 Status ReupdateMissedDeltas(const string &tablet_name,
-                            TransactionContext *compaction_tc,
+                            WriteTransactionContext *compaction_tc,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,

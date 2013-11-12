@@ -43,9 +43,6 @@ using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using kudu::log::LogEntry;
 using kudu::log::COMMIT;
-using kudu::consensus::WRITE_OP;
-using kudu::consensus::WRITE_ABORT;
-using kudu::consensus::MISSED_DELTA;
 using kudu::log::LogReader;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
@@ -170,7 +167,7 @@ class TabletServerTest : public KuduTest {
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRowsDirect(uint64_t num_rows) {
-    tablet::TransactionContext tx_ctx;
+    tablet::WriteTransactionContext tx_ctx;
     for (uint64_t i = 0; i < num_rows; i++) {
       CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(i)));
       tx_ctx.Reset();

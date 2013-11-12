@@ -86,12 +86,12 @@ class Tablet {
   // Returns Status::AlreadyPresent() if an entry with the same key is already
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
-  Status Insert(TransactionContext *tx_ctx, const ConstContiguousRow& row);
+  Status Insert(WriteTransactionContext *tx_ctx, const ConstContiguousRow& row);
 
   // A version of Insert that does not acquire locks and instead assumes that
   // they were already acquired. Requires that handles for the relevant locks
   // and Mvcc transaction are present in the transaction context.
-  Status InsertUnlocked(TransactionContext *tx_ctx,
+  Status InsertUnlocked(WriteTransactionContext *tx_ctx,
                         const PreparedRowWrite* insert);
 
   // Creates a PreparedRowWrite with write_type() MUTATE, acquires the row lock
@@ -114,7 +114,7 @@ class Tablet {
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status MutateRow(TransactionContext *tx_ctx,
+  Status MutateRow(WriteTransactionContext *tx_ctx,
                    const ConstContiguousRow& row_key,
                    const Schema& update_schema,
                    const RowChangeList& update);
@@ -122,7 +122,7 @@ class Tablet {
   // A version of MutateRow that does not acquire locks and instead assumes
   // they were already acquired. Requires that handles for the relevant locks
   // and Mvcc transaction are present in the transaction context.
-  Status MutateRowUnlocked(TransactionContext *tx_ctx,
+  Status MutateRowUnlocked(WriteTransactionContext *tx_ctx,
                            const PreparedRowWrite* mutate);
 
   // Create a new row iterator which yields the rows as of the current MVCC

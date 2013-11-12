@@ -108,7 +108,7 @@ class TabletPeer {
   //    the mvcc transaction committed (making the updates visible to other
   //    transactions) and the transaction's resources released.
   //
-  Status Write(TransactionContext *tx_ctx);
+  Status Write(WriteTransactionContext *tx_ctx);
 
   consensus::Consensus* consensus() { return consensus_.get(); }
 
@@ -121,6 +121,12 @@ class TabletPeer {
   }
 
  private:
+  Status ExecuteTransaction(TransactionContext *tx_ctx,
+                            gscoped_ptr<consensus::ReplicateMsg> replicate_msg,
+                            const shared_ptr<Task>& prepare_task,
+                            const shared_ptr<FutureCallback>& apply_clbk,
+                            const shared_ptr<FutureCallback>& commit_clbk);
+
   std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<consensus::Consensus> consensus_;
@@ -136,57 +142,6 @@ class TabletPeer {
   gscoped_ptr<TaskExecutor> apply_executor_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
-};
-
-// The callback that triggers ApplyTask to be submitted.
-// This callback is used twice, once for Log (through consensus) and once for
-// Prepare (through the prepare_executor_ in TabletPeer). So only after
-// the second call to OnSuccess() is the Apply task started.
-class ApplyOnReplicateAndPrepareCB : public FutureCallback {
- public:
-  ApplyOnReplicateAndPrepareCB(tablet::TransactionContext* tx_ctx_,
-                               TaskExecutor* apply_executor);
-  void OnSuccess();
-  void OnFailure(const Status& status);
-
-  // On failure one of several things might have happened:
-  // 1 - None of Prepare or Append were submitted.
-  // 2 - Append was submitted but Prepare failed to submit.
-  // 3 - Both Append and Prepare were submitted but one of them failed
-  //     afterwards.
-  // 4 - Both Append and Prepare succeeded but submitting Apply failed.
-  //
-  // In case 1 this callback does the cleanup and answers the client. In cases
-  // 2,3,4, this callback submits a commit abort message to consensus and quits.
-  // The commit callback will answer the client later on.
-  void HandleFailure();
-
-  // When this callback goes out of scope we check that it's been called twice,
-  // failing the transaction otherwise.
-  ~ApplyOnReplicateAndPrepareCB();
-
- private:
-  Atomic32 num_calls_;
-  tablet::TransactionContext* tx_ctx_;
-  TaskExecutor* apply_executor_;
-  Status status_;
-
-  DISALLOW_COPY_AND_ASSIGN(ApplyOnReplicateAndPrepareCB);
-};
-
-// Callback that commits the mvcc transaction, responds to the client and
-// performs cleanup.
-class CommitCallback : public FutureCallback {
- public:
-  explicit CommitCallback(tablet::TransactionContext *tx_ctx);
-
-  void OnSuccess();
-  void OnFailure(const Status &status);
-
- private:
-  gscoped_ptr<tablet::TransactionContext> tx_ctx_;
-
-  DISALLOW_COPY_AND_ASSIGN(CommitCallback);
 };
 
 }  // namespace tablet

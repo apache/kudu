@@ -21,7 +21,7 @@
 #include "util/status.h"
 
 using kudu::tablet::TabletPeer;
-using kudu::tablet::TransactionContext;
+using kudu::tablet::WriteTransactionContext;
 using std::tr1::shared_ptr;
 using std::vector;
 using google::protobuf::RepeatedPtrField;
@@ -83,10 +83,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   }
   DCHECK(tablet_peer) << "Null tablet peer";
 
-  TransactionContext *tx_ctx = new TransactionContext(tablet_peer.get(),
-                                                      context,
-                                                      req,
-                                                      resp);
+  WriteTransactionContext *tx_ctx =
+    new WriteTransactionContext(tablet_peer.get(), context, req, resp);
 
   // Submit the write. The RPC will be responded to asynchronously.
   Status s = tablet_peer->Write(tx_ctx);
@@ -95,7 +93,6 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
   }
-  return;
 }
 
 void TabletServiceImpl::Scan(const ScanRequestPB* req,

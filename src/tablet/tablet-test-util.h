@@ -78,7 +78,7 @@ class KuduRowSetTest : public KuduTabletTest {
 };
 
 // Helper to get the last mutation result on the transaction context.
-static inline const MutationResultPB& last_mutation(const TransactionContext &tx_ctx) {
+static inline const MutationResultPB& last_mutation(const WriteTransactionContext &tx_ctx) {
   CHECK_GE(tx_ctx.Result().mutations_size(), 1);
   return tx_ctx.Result().mutations(tx_ctx.Result().mutations_size() - 1).mutation_result();
 }

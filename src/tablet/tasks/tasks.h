@@ -9,8 +9,7 @@
 namespace kudu {
 namespace tablet {
 
-class TransactionContext;
-
+class WriteTransactionContext;
 class TabletPeer;
 
 //=============================================================================
@@ -22,17 +21,17 @@ class TabletPeer;
 // Acquires all the relevant row locks for the transaction, the tablet
 // component_lock in shared mode and starts an Mvcc transaction. When the task
 // is finished, the next one in the pipeline must take ownership of these.
-class PrepareTask : public Task {
+class PrepareWriteTask : public Task {
  public:
-  explicit PrepareTask(tablet::TransactionContext *tx_ctx);
+  explicit PrepareWriteTask(WriteTransactionContext *tx_ctx);
 
   Status Run();
   bool Abort();
 
  private:
-  tablet::TransactionContext *tx_ctx_;
+  WriteTransactionContext *tx_ctx_;
 
-  DISALLOW_COPY_AND_ASSIGN(PrepareTask);
+  DISALLOW_COPY_AND_ASSIGN(PrepareWriteTask);
 };
 
 // Actually applies inserts/mutates into the tablet. After these start being
@@ -51,17 +50,17 @@ class PrepareTask : public Task {
 // are placed in the queue (but not necessarily in the same order of the
 // original requests) which is already a requirement of the consensus
 // algorithm.
-class ApplyTask : public Task {
+class ApplyWriteTask : public Task {
  public:
-  explicit ApplyTask(tablet::TransactionContext *tx_ctx);
+  explicit ApplyWriteTask(WriteTransactionContext *tx_ctx);
 
   Status Run();
   bool Abort();
 
  private:
-  tablet::TransactionContext *tx_ctx_;
+  WriteTransactionContext *tx_ctx_;
 
-  DISALLOW_COPY_AND_ASSIGN(ApplyTask);
+  DISALLOW_COPY_AND_ASSIGN(ApplyWriteTask);
 };
 
 }  // namespace tablet

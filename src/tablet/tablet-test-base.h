@@ -89,7 +89,7 @@ struct StringKeyTestSetup {
       buf, row_idx, update_count);
   }
 
-  Status DoUpdate(TransactionContext *tx_ctx,
+  Status DoUpdate(WriteTransactionContext *tx_ctx,
                   Tablet *tablet,
                   uint64_t row_idx,
                   uint32_t *new_val) {
@@ -187,7 +187,7 @@ struct CompositeKeyTestSetup {
       buf, row_idx, row_idx, update_count);
   }
 
-  Status DoUpdate(TransactionContext *tx_ctx,
+  Status DoUpdate(WriteTransactionContext *tx_ctx,
                   Tablet *tablet,
                   uint64_t row_idx,
                   uint32_t *new_val) {
@@ -273,7 +273,7 @@ struct IntKeyTestSetup {
     return "";
   }
 
-  Status DoUpdate(TransactionContext *tx_ctx,
+  Status DoUpdate(WriteTransactionContext *tx_ctx,
                   Tablet *tablet,
                   int64_t row_idx,
                   uint32_t *new_val) {
@@ -529,7 +529,7 @@ struct NullableValueTestSetup {
       (uint32_t)row_idx, row_idx, update_count);
   }
 
-  Status DoUpdate(TransactionContext *tx_ctx,
+  Status DoUpdate(WriteTransactionContext *tx_ctx,
                   Tablet *tablet,
                   uint64_t row_idx,
                   uint32_t *new_val) {
@@ -625,7 +625,7 @@ class TabletTestBase : public KuduTabletTest {
                       uint64_t count,
                       uint32_t update_count_val,
                       TimeSeries *ts = NULL) {
-    TransactionContext tx_ctx;
+    WriteTransactionContext tx_ctx;
     RowBuilder rb(schema_);
 
     uint64_t inserted_since_last_report = 0;
@@ -647,7 +647,7 @@ class TabletTestBase : public KuduTabletTest {
   }
 
   // Inserts a single test row within a transaction.
-  void InsertTestRow(TransactionContext *tx_ctx,
+  void InsertTestRow(WriteTransactionContext *tx_ctx,
                      uint64_t row,
                      uint32_t update_count_val) {
     RowBuilder rb(schema_);
@@ -656,7 +656,7 @@ class TabletTestBase : public KuduTabletTest {
     CHECK_OK(tablet_->Insert(tx_ctx, rb.row()));
   }
 
-  Status UpdateTestRow(TransactionContext *tx_ctx,
+  Status UpdateTestRow(WriteTransactionContext *tx_ctx,
                        uint64_t row_idx,
                        uint32_t new_val) {
     RowBuilder rb(schema_.CreateKeyProjection());
@@ -670,7 +670,7 @@ class TabletTestBase : public KuduTabletTest {
     return tablet_->MutateRow(tx_ctx, rb.row(), schema_, RowChangeList(buf));
   }
 
-  Status DeleteTestRow(TransactionContext *tx_ctx, uint64_t row_idx) {
+  Status DeleteTestRow(WriteTransactionContext *tx_ctx, uint64_t row_idx) {
     RowBuilder rb(schema_.CreateKeyProjection());
     setup_.BuildRowKey(&rb, row_idx);
     faststring buf;
