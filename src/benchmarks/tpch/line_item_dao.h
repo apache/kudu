@@ -11,7 +11,8 @@ namespace kudu {
 // Abstract class to read/write line item rows
 class LineItemDAO {
  public:
-  virtual void WriteLine(RowBuilder *rb) = 0;
+  virtual void WriteLine(const ConstContiguousRow &row) = 0;
+  virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations) = 0;
   virtual void Init() = 0;
   virtual void FinishWriting() = 0;
   virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) = 0;

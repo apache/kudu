@@ -25,7 +25,8 @@ class LocalLineItemDAO : public LineItemDAO {
       fs_manager_.Open();
     }
   }
-  virtual void WriteLine(RowBuilder *rb);
+  virtual void WriteLine(const ConstContiguousRow &row);
+  virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations);
   virtual void Init();
   virtual void FinishWriting();
   virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec);

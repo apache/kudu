@@ -28,9 +28,15 @@ void LocalLineItemDAO::Init() {
   CHECK_OK(tablet_->Open());
 }
 
-void LocalLineItemDAO::WriteLine(RowBuilder *rb) {
-  CHECK_OK(tablet_->Insert(&tx_ctx_, rb->row()));
+void LocalLineItemDAO::WriteLine(const ConstContiguousRow &row) {
+  CHECK_OK(tablet_->Insert(&tx_ctx_, row));
   tx_ctx_.Reset();
+}
+
+void LocalLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring &mutations) {
+  // Call MutateRow with context, rb, schema and a list of changes such as:
+  // RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
+  // CHECK_OK(tablet_->MutateRow(&dummy, rb.row(), schema_, RowChangeList(update_buf)));
 }
 
 void LocalLineItemDAO::FinishWriting() {

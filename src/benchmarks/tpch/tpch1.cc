@@ -65,6 +65,7 @@
 #include "benchmarks/tpch/tpch-schemas.h"
 #include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/local_line_item_dao.h"
+#include "benchmarks/tpch/rpc_line_item_dao.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -72,6 +73,7 @@ DEFINE_string(tpch_path_to_tablet, "/tmp/tpch", "The full path to the tablet's d
 DEFINE_string(tpch_query_mode, "local", "Write a <local> tablet or to a <remote> cluster");
 DEFINE_int32(tpch_num_query_iterations, 1, "Number of times the query will be run.");
 DEFINE_int32(tpch_expected_matching_rows, 5916591, "Number of rows that should match the query.");
+DEFINE_string(tpch_update_or_insert, "insert", "Should we update or insert.");
 
 namespace kudu {
 
@@ -135,12 +137,13 @@ void ConvertDoubleToIntAndPopulate(const string &chars, RowBuilder *rb) {
   rb->AddUint32(new_num);
 }
 
-void LoadLineItems(const string &path, LineItemDAO *dao) {
+void LoadLineItems(const string &path, LineItemDAO *dao, bool insert) {
   std::ifstream in(path.c_str());
   CHECK(in.is_open()) << "not able to open input file: " << path;
 
   string line;
-  RowBuilder rb(tpch::CreateLineItemSchema());
+  Schema schema(tpch::CreateLineItemSchema());
+  RowBuilder rb(insert ? schema : schema.CreateKeyProjection());
   vector<string> columns;
 
   while (getline(in,line)) {
@@ -153,16 +156,24 @@ void LoadLineItems(const string &path, LineItemDAO *dao) {
 
     ConvertToIntAndPopulate(columns[0], &rb);
     ConvertToIntAndPopulate(columns[3], &rb);
-    ConvertToIntAndPopulate(columns[1], &rb);
-    ConvertToIntAndPopulate(columns[2], &rb);
-    ConvertToIntAndPopulate(columns[4], &rb);
-    ConvertDoubleToIntAndPopulate(columns[5], &rb);
-    ConvertDoubleToIntAndPopulate(columns[6], &rb);
-    ConvertDoubleToIntAndPopulate(columns[7], &rb);
-    for (int i = 8; i < 16; i++)  {
-      rb.AddString(Slice(columns[i]));
+    if (insert) {
+      ConvertToIntAndPopulate(columns[1], &rb);
+      ConvertToIntAndPopulate(columns[2], &rb);
+      ConvertToIntAndPopulate(columns[4], &rb);
+      ConvertDoubleToIntAndPopulate(columns[5], &rb);
+      ConvertDoubleToIntAndPopulate(columns[6], &rb);
+      ConvertDoubleToIntAndPopulate(columns[7], &rb);
+      for (int i = 8; i < 16; i++)  {
+        rb.AddString(Slice(columns[i]));
+      }
+      dao->WriteLine(rb.row());
+    } else {
+      faststring mutations;
+      RowChangeListEncoder encoder(schema, &mutations);
+      Slice new_data(columns[15]);
+      encoder.AddColumnUpdate(15, &new_data);
+      dao->MutateLine(rb.row(), mutations);
     }
-    dao->WriteLine(&rb);
   }
   dao->FinishWriting();
 }
@@ -271,15 +282,16 @@ int main(int argc, char **argv) {
   if (FLAGS_tpch_query_mode == "local") {
     dao.reset(new kudu::LocalLineItemDAO(FLAGS_tpch_path_to_tablet));
   } else {
-    return 1;
+    dao.reset(new kudu::RpcLineItemDAO());
   }
 
   dao->Init();
 
   bool needs_loading = dao->IsTableEmpty();
+  bool is_insert = FLAGS_tpch_update_or_insert == "insert";
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {
-      kudu::LoadLineItems(FLAGS_tpch_path_to_data, dao.get());
+      kudu::LoadLineItems(FLAGS_tpch_path_to_data, dao.get(), is_insert);
     }
   } else {
     LOG(INFO) << "Data already in place";
