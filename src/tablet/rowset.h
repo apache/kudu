@@ -107,6 +107,12 @@ class RowSet {
   // Returns the metadata associated with this rowset.
   virtual shared_ptr<metadata::RowSetMetadata> metadata() = 0;
 
+  // Get the size of the delta's MemStore
+  virtual size_t DeltaMemStoreSize() const = 0;
+
+  // Flush the DMS if there's one
+  virtual Status FlushDeltas() = 0;
+
   virtual ~RowSet() {}
 
   // Return true if this RowSet is available for compaction, based on
@@ -254,6 +260,10 @@ class DuplicatingRowSet : public RowSet {
   const Schema &schema() const {
     return schema_;
   }
+
+  size_t DeltaMemStoreSize() const { return 0; }
+
+  Status FlushDeltas() { return Status::OK(); }
 
  private:
   friend class Tablet;

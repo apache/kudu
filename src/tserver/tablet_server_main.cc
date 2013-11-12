@@ -78,6 +78,17 @@ static void FlushThread(Tablet* tablet) {
   }
 }
 
+static void FlushDeltaMemStoresThread(Tablet* tablet) {
+  while (true) {
+    if (tablet->DeltaMemStoresSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      CHECK_OK(tablet->FlushBiggestDMS());
+    } else {
+      VLOG(1) << "Not flushing, delta MemStores not very full";
+    }
+    usleep(250 * 1000);
+  }
+}
+
 static void CompactThread(Tablet* tablet) {
   while (true) {
     CHECK_OK(tablet->Compact(Tablet::COMPACT_NO_FLAGS));
@@ -112,6 +123,7 @@ static int TabletServerMain(int argc, char** argv) {
   LOG(INFO) << "Starting flush/compact threads";
   boost::thread compact_thread(CompactThread, demo_setup.tablet().get());
   boost::thread flush_thread(FlushThread, demo_setup.tablet().get());
+  boost::thread flushdm_thread(FlushDeltaMemStoresThread, demo_setup.tablet().get());
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());

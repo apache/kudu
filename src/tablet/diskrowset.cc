@@ -438,6 +438,11 @@ uint64_t DiskRowSet::EstimateOnDiskSize() const {
   return base_data_->EstimateOnDiskSize();
 }
 
+size_t DiskRowSet::DeltaMemStoreSize() const {
+  CHECK(open_);
+  return delta_tracker_->DeltaMemStoreSize();
+}
+
 Status DiskRowSet::AlterSchema(const Schema& schema) {
   return delta_tracker_->AlterSchema(schema);
 }

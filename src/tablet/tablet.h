@@ -164,6 +164,12 @@ class Tablet {
   // Estimate the total on-disk size of this tablet, in bytes.
   size_t EstimateOnDiskSize() const;
 
+  // Get the total size of all the DMS
+  size_t DeltaMemStoresSize() const;
+
+  // Flush only the biggest DMS
+  Status FlushBiggestDMS();
+
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
 

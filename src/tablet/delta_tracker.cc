@@ -485,6 +485,10 @@ Status DeltaTracker::AlterSchema(const Schema& schema) {
   return Flush();
 }
 
+size_t DeltaTracker::DeltaMemStoreSize() const {
+  return dms_->memory_footprint();
+}
+
 ////////////////////////////////////////////////////////////
 // Delta merger
 ////////////////////////////////////////////////////////////

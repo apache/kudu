@@ -77,6 +77,16 @@ class MockRowSet : public RowSet {
   virtual const Schema &schema() const {
     LOG(FATAL) << "Unimplemented";
   }
+
+  virtual size_t DeltaMemStoreSize() const {
+    LOG(FATAL) << "Unimplemented";
+    return 0;
+   }
+
+  virtual Status FlushDeltas() {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
 };
 
 // Mock which implements GetBounds() with constant provided bonuds.

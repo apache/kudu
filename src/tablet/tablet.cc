@@ -922,6 +922,42 @@ size_t Tablet::EstimateOnDiskSize() const {
   return ret;
 }
 
+size_t Tablet::DeltaMemStoresSize() const {
+  shared_ptr<RowSetTree> rowsets_copy;
+
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    rowsets_copy = rowsets_;
+  }
+
+  size_t ret = 0;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+      ret += rowset->DeltaMemStoreSize();
+  }
+
+  return ret;
+}
+
+Status Tablet::FlushBiggestDMS() {
+  shared_ptr<RowSetTree> rowsets_copy;
+
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    rowsets_copy = rowsets_;
+  }
+
+  int64_t max_size = -1;
+  shared_ptr<RowSet> biggest_dms;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+    int64_t current = rowset->DeltaMemStoreSize();
+    if (current > max_size) {
+      max_size = current;
+      biggest_dms = rowset;
+    }
+  }
+  return max_size > 0 ? biggest_dms->FlushDeltas() : Status::OK();
+}
+
 size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return rowsets_->all_rowsets().size();

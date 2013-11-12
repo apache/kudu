@@ -75,6 +75,10 @@ class DeltaMemStore : public DeltaStore,
   typedef btree::CBTree<btree::BTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
 
+  size_t memory_footprint() const {
+    return arena_.memory_footprint() + tree_.estimate_memory_usage();
+  }
+
  private:
   friend class DMSIterator;
   friend class DeltaCompactionInput;

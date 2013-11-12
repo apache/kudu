@@ -241,6 +241,8 @@ class DiskRowSet : public RowSet {
   // Estimate the number of bytes on-disk
   uint64_t EstimateOnDiskSize() const;
 
+  size_t DeltaMemStoreSize() const;
+
   Status AlterSchema(const Schema& schema);
 
   boost::mutex *compact_flush_lock() {

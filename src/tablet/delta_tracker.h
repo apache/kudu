@@ -98,6 +98,9 @@ class DeltaTracker {
   // strictly less than num_rows().
   int64_t num_rows() const { return num_rows_; }
 
+  // Get the delta MemStore's size in bytes
+  size_t DeltaMemStoreSize() const;
+
  private:
   friend class DiskRowSet;
 

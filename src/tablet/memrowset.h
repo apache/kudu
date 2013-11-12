@@ -268,6 +268,10 @@ class MemRowSet : public RowSet,
     return debug_update_count_;
   }
 
+  size_t DeltaMemStoreSize() const { return 0; }
+
+  Status FlushDeltas() { return Status::OK(); }
+
  private:
   friend class Iterator;
 
