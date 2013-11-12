@@ -72,6 +72,29 @@ void JsonWriter::EndObject() { impl_->EndObject(); }
 void JsonWriter::StartArray() { impl_->StartArray(); }
 void JsonWriter::EndArray() { impl_->EndArray(); }
 
+// Specializations for common primitive metric types.
+template<> void JsonWriter::Value(const bool& val) {
+  Bool(val);
+}
+template<> void JsonWriter::Value(const int32_t& val) {
+  Int(val);
+}
+template<> void JsonWriter::Value(const uint32_t& val) {
+  Uint(val);
+}
+template<> void JsonWriter::Value(const int64_t& val) {
+  Int64(val);
+}
+template<> void JsonWriter::Value(const uint64_t& val) {
+  Uint64(val);
+}
+template<> void JsonWriter::Value(const double& val) {
+  Double(val);
+}
+template<> void JsonWriter::Value(const string& val) {
+  String(val);
+}
+
 //
 // UTF8StringStreamBuffer
 //

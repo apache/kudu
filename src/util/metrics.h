@@ -80,12 +80,14 @@
 //
 /////////////////////////////////////////////////////
 
+#include <boost/function.hpp>
 #include <string>
 #include <tr1/unordered_map>
 
 #include <gtest/gtest.h>
 
 #include "gutil/atomicops.h"
+#include "util/jsonwriter.h"
 #include "util/locks.h"
 #include "util/status.h"
 
@@ -96,19 +98,46 @@
 #define METRIC_DECLARE_counter(name) \
   extern ::kudu::CounterPrototype METRIC_##name
 
-// TODO: Implement registration macros for gauges.
-#define METRIC_DEFINE_gauge_string(name, default_value, unit, desc)
-#define METRIC_DEFINE_gauge_bool(name, default_value, unit, desc)
-#define METRIC_DEFINE_gauge_integer(name, default_value, unit, desc)
-#define METRIC_DEFINE_gauge_double(name, default_value, unit, desc)
+#define METRIC_DEFINE_gauge_string(name, unit, desc) \
+  ::kudu::GaugePrototype<std::string> METRIC_##name(#name, unit, desc)
+#define METRIC_DEFINE_gauge_bool(name, unit, desc) \
+  ::kudu::GaugePrototype<bool> METRIC_##name(#name, unit, desc)
+#define METRIC_DEFINE_gauge_int32(name, unit, desc) \
+  ::kudu::GaugePrototype<int32_t> METRIC_##name(#name, unit, desc)
+#define METRIC_DEFINE_gauge_uint32(name, unit, desc) \
+  ::kudu::GaugePrototype<uint32_t> METRIC_##name(#name, unit, desc)
+#define METRIC_DEFINE_gauge_int64(name, unit, desc) \
+  ::kudu::GaugePrototype<int64_t> METRIC_##name(#name, unit, desc)
+#define METRIC_DEFINE_gauge_uint64(name, unit, desc) \
+  ::kudu::GaugePrototype<uint64_t> METRIC_##name(#name, unit, desc)
+#define METRIC_DEFINE_gauge_double(name, unit, desc) \
+  ::kudu::GaugePrototype<double> METRIC_##name(#name, unit, desc)
+
+#define METRIC_DECLARE_gauge_string(name) \
+  extern ::kudu::GaugePrototype<std::string> METRIC_##name
+#define METRIC_DECLARE_gauge_bool(name) \
+  extern ::kudu::GaugePrototype<bool> METRIC_##name
+#define METRIC_DECLARE_gauge_int32(name) \
+  extern ::kudu::GaugePrototype<int32_t> METRIC_##name
+#define METRIC_DECLARE_gauge_uint32(name) \
+  extern ::kudu::GaugePrototype<uint32_t> METRIC_##name
+#define METRIC_DECLARE_gauge_int64(name) \
+  extern ::kudu::GaugePrototype<int64_t> METRIC_##name
+#define METRIC_DECLARE_gauge_uint64(name) \
+  extern ::kudu::GaugePrototype<uint64_t> METRIC_##name
+#define METRIC_DECLARE_gauge_double(name) \
+  extern ::kudu::GaugePrototype<double> METRIC_##name
 
 namespace kudu {
 
 class Counter;
-class Gauge;
-class JsonWriter;
-class MetricContext;
 class CounterPrototype;
+class Gauge;
+
+template<typename T>
+class GaugePrototype;
+
+class MetricContext;
 
 // Unit types to be used with metrics.
 // As additional units are required, add them to this enum and also to Name().
@@ -150,16 +179,43 @@ class MetricRegistry {
   MetricRegistry();
   ~MetricRegistry();
   Status WriteAsJson(JsonWriter* writer) const;
+
+  Counter* FindOrCreateCounter(const std::string& name,
+                               const CounterPrototype& proto);
+
+  template<typename T>
+  Gauge* FindOrCreateGauge(const std::string& name,
+                           const GaugePrototype<T>& proto,
+                           const T& initial_value);
+
+  template<typename T>
+  Gauge* FindOrCreateFunctionGauge(const std::string& name,
+                                   const GaugePrototype<T>& proto,
+                                   const boost::function<T()>& function);
+
  private:
-  friend class CounterPrototype;
   friend class MultiThreadedMetricsTest;  // For unit testing.
   FRIEND_TEST(MetricsTest, JsonPrintTest);
   FRIEND_TEST(MultiThreadedMetricsTest, AddCounterToRegistryTest);
 
   typedef std::tr1::unordered_map<string, Metric*> UnorderedMetricMap;
 
-  Counter* FindOrCreateCounter(const std::string& name,
-                               const CounterPrototype& proto);
+  // Attempt to find metric in map and downcast it to specified template type.
+  // Returns NULL if the named metric is not found.
+  // Must be called while holding the registry lock.
+  template<typename T>
+  T* FindMetricUnlocked(const std::string& name,
+                        MetricType::Type metric_type);
+
+  template<typename T>
+  Gauge* CreateGauge(const std::string& name,
+                     const GaugePrototype<T>& proto,
+                     const T& initial_value);
+
+  template<typename T>
+  Gauge* CreateFunctionGauge(const std::string& name,
+                             const GaugePrototype<T>& proto,
+                             const boost::function<T()>& function);
 
   // Not thread-safe, used for tests.
   const UnorderedMetricMap& metrics() const { return metrics_; }
@@ -194,18 +250,58 @@ class MetricContext {
   const std::string prefix_;
 };
 
+// A description of a Gauge.
+template<typename T>
+class GaugePrototype {
+ public:
+  GaugePrototype(const std::string& name,
+                 MetricUnit::Type unit, const std::string& description)
+    : name_(name),
+      unit_(unit),
+      description_(description) {
+  }
+
+  const std::string& name() const { return name_; }
+  MetricUnit::Type unit() const { return unit_; }
+  const std::string& description() const { return description_; }
+
+  // Instantiate a "manual" gauge.
+  Gauge* Instantiate(const MetricContext& context,
+                     const T& initial_value) {
+    return context.metrics()->FindOrCreateGauge(
+        context.prefix() + "." + name_, *this, initial_value);
+  }
+
+  // Instantiate a gauge that is backed by the given callback.
+  Gauge* InstantiateFunctionGauge(const MetricContext& context,
+                                  const boost::function<T()>& function) {
+    return context.metrics()->FindOrCreateFunctionGauge(
+        context.prefix() + "." + name_, *this, function);
+  }
+
+ private:
+  const std::string name_;
+  const MetricUnit::Type unit_;
+  const std::string description_;
+  DISALLOW_COPY_AND_ASSIGN(GaugePrototype);
+};
+
 // Abstract base class to provide point-in-time metric values.
 class Gauge : public Metric {
  public:
+  Gauge(const MetricUnit::Type& unit, const std::string& description)
+    : unit_(unit),
+      description_(description) {
+  }
   virtual ~Gauge() {}
   virtual MetricType::Type type() const { return MetricType::kGauge; }
-  // TODO: Make Gauge units an enum as well?
-  virtual const std::string& unit() const = 0;
-  virtual const std::string& description() const = 0;
+  virtual const MetricUnit::Type& unit() const { return unit_; }
+  virtual const std::string& description() const { return description_; }
   virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const;
  protected:
-  Gauge() {}
   virtual void WriteValue(JsonWriter* writer) const = 0;
+  const MetricUnit::Type unit_;
+  const std::string description_;
  private:
   DISALLOW_COPY_AND_ASSIGN(Gauge);
 };
@@ -213,18 +309,14 @@ class Gauge : public Metric {
 // Gauge implementation for string that uses locks to ensure thread safety.
 class StringGauge : public Gauge {
  public:
-  StringGauge(const std::string& unit, const std::string& description);
+  StringGauge(const GaugePrototype<std::string>& proto, const std::string& initial_value);
   std::string value() const;
   void set_value(const std::string& value);
-  virtual const std::string& unit() const { return unit_; }
-  virtual const std::string& description() const { return description_; }
  protected:
   virtual void WriteValue(JsonWriter* writer) const;
  private:
   std::string value_;
   mutable simple_spinlock lock_;  // Guards value_
-  const std::string unit_;
-  const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(StringGauge);
 };
 
@@ -232,10 +324,9 @@ class StringGauge : public Gauge {
 template <typename T>
 class AtomicGauge : public Gauge {
  public:
-  AtomicGauge(const std::string& unit, const std::string& description)
-    : value_(),
-     unit_(unit),
-     description_(description) {
+  AtomicGauge(const GaugePrototype<T>& proto, T initial_value)
+    : Gauge(proto.unit(), proto.description()),
+      value_(initial_value) {
   }
   T value() const {
     return static_cast<T>(base::subtle::Release_Load(&value_));
@@ -243,25 +334,34 @@ class AtomicGauge : public Gauge {
   void set_value(const T& value) {
     base::subtle::NoBarrier_Store(&value_, static_cast<base::subtle::Atomic64>(value));
   }
-  virtual const std::string& unit() const { return unit_; }
-  virtual const std::string& description() const { return description_; }
  protected:
   virtual void WriteValue(JsonWriter* writer) const {
-    WriteSpecificValue(writer, value());
+    writer->Value(value());
   }
-  // Implement this method in specializations.
-  static void WriteSpecificValue(JsonWriter* writer, T val);
  private:
   base::subtle::Atomic64 value_;
-  const std::string unit_;
-  const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(AtomicGauge);
 };
 
-// Convenient typedefs for common primitive metric types.
-typedef class AtomicGauge<bool> BooleanGauge;
-typedef class AtomicGauge<int64_t> IntegerGauge;
-typedef class AtomicGauge<double> DoubleGauge;
+// A Gauge that calls back to a function to get its value.
+template <typename T>
+class FunctionGauge : public Gauge {
+ public:
+  FunctionGauge(const GaugePrototype<T>& proto,
+                const boost::function<T()>& function)
+    : Gauge(proto.unit(), proto.description()),
+      function_(function) {
+  }
+  T value() const {
+    return function_();
+  }
+  virtual void WriteValue(JsonWriter* writer) const {
+    writer->Value(value());
+  }
+ private:
+  boost::function<T()> function_;
+  DISALLOW_COPY_AND_ASSIGN(FunctionGauge);
+};
 
 // Prototype for a counter.
 class CounterPrototype {

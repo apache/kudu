@@ -67,20 +67,109 @@ MetricRegistry::~MetricRegistry() {
   STLDeleteValues(&metrics_);
 }
 
-Counter* MetricRegistry::FindOrCreateCounter(const std::string& name,
-                                             const CounterPrototype& proto) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+template<typename T>
+T* MetricRegistry::FindMetricUnlocked(const std::string& name,
+                                      MetricType::Type metric_type) {
   Metric* metric = FindPtrOrNull(metrics_, name);
   if (metric != NULL) {
     CHECK_EQ(MetricType::kCounter, metric->type())
       << "Downcast expects " << MetricType::Name(MetricType::kCounter)
       << " but found " << MetricType::Name(metric->type());
-    return down_cast<Counter*>(metric);
+    return down_cast<T*>(metric);
   }
-  Counter* counter = new Counter(proto);
-  InsertOrDie(&metrics_, name, counter);
+  return NULL;
+}
+
+Counter* MetricRegistry::FindOrCreateCounter(const std::string& name,
+                                             const CounterPrototype& proto) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  Counter* counter = FindMetricUnlocked<Counter>(name, MetricType::kCounter);
+  if (!counter) {
+    counter = new Counter(proto);
+    InsertOrDie(&metrics_, name, counter);
+  }
   return counter;
 }
+
+template<typename T>
+Gauge* MetricRegistry::CreateGauge(const std::string& name,
+                                   const GaugePrototype<T>& proto,
+                                   const T& initial_value) {
+  return new AtomicGauge<T>(proto, initial_value);
+}
+
+// Specialization for StringGauge.
+template<>
+Gauge* MetricRegistry::CreateGauge(const std::string& name,
+                                   const GaugePrototype<std::string>& proto,
+                                   const std::string& initial_value) {
+  return new StringGauge(proto, initial_value);
+}
+
+template<typename T>
+Gauge* MetricRegistry::CreateFunctionGauge(const std::string& name,
+                                           const GaugePrototype<T>& proto,
+                                           const boost::function<T()>& function) {
+  return new FunctionGauge<T>(proto, function);
+}
+
+template<typename T>
+Gauge* MetricRegistry::FindOrCreateGauge(const std::string& name,
+                                         const GaugePrototype<T>& proto,
+                                         const T& initial_value) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  Gauge* gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
+  if (!gauge) {
+    gauge = CreateGauge(name, proto, initial_value);
+    InsertOrDie(&metrics_, name, gauge);
+  }
+  return gauge;
+}
+
+// Explicit instantiation.
+template Gauge* MetricRegistry::FindOrCreateGauge<bool>(
+    const std::string&, const GaugePrototype<bool>&, const bool&);
+template Gauge* MetricRegistry::FindOrCreateGauge<int32_t>(
+    const std::string&, const GaugePrototype<int32_t>&, const int32_t&);
+template Gauge* MetricRegistry::FindOrCreateGauge<uint32_t>(
+    const std::string&, const GaugePrototype<uint32_t>&, const uint32_t&);
+template Gauge* MetricRegistry::FindOrCreateGauge<int64_t>(
+    const std::string&, const GaugePrototype<int64_t>&, const int64_t&);
+template Gauge* MetricRegistry::FindOrCreateGauge<uint64_t>(
+    const std::string&, const GaugePrototype<uint64_t>&, const uint64_t&);
+template Gauge* MetricRegistry::FindOrCreateGauge<double>(
+    const std::string&, const GaugePrototype<double>&, const double&);
+template Gauge* MetricRegistry::FindOrCreateGauge<string>(
+    const std::string&, const GaugePrototype<string>&, const string&);
+
+template<typename T>
+Gauge* MetricRegistry::FindOrCreateFunctionGauge(const std::string& name,
+                                                 const GaugePrototype<T>& proto,
+                                                 const boost::function<T()>& function) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  Gauge* gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
+  if (!gauge) {
+    gauge = CreateFunctionGauge(name, proto, function);
+    InsertOrDie(&metrics_, name, gauge);
+  }
+  return gauge;
+}
+
+// Explicit instantiation.
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<bool>(
+    const std::string&, const GaugePrototype<bool>&, const boost::function<bool()>&);
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<int32_t>(
+    const std::string&, const GaugePrototype<int32_t>&, const boost::function<int32_t()>&);
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<uint32_t>(
+    const std::string&, const GaugePrototype<uint32_t>&, const boost::function<uint32_t()>&);
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<int64_t>(
+    const std::string&, const GaugePrototype<int64_t>&, const boost::function<int64_t()>&);
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<uint64_t>(
+    const std::string&, const GaugePrototype<uint64_t>&, const boost::function<uint64_t()>&);
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<double>(
+    const std::string&, const GaugePrototype<double>&, const boost::function<double()>&);
+template Gauge* MetricRegistry::FindOrCreateFunctionGauge<string>(
+    const std::string&, const GaugePrototype<string>&, const boost::function<string()>&);
 
 Status MetricRegistry::WriteAsJson(JsonWriter* writer) const {
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
@@ -142,7 +231,7 @@ Status Gauge::WriteAsJson(const string& name, JsonWriter* writer) const {
   WriteValue(writer);
 
   writer->String("unit");
-  writer->String(unit());
+  writer->String(MetricUnit::Name(unit()));
 
   writer->String("description");
   writer->String(description());
@@ -155,10 +244,10 @@ Status Gauge::WriteAsJson(const string& name, JsonWriter* writer) const {
 // StringGauge
 //
 
-StringGauge::StringGauge(const std::string& unit, const std::string& description)
-  : value_(),
-    unit_(unit),
-    description_(description) {
+StringGauge::StringGauge(const GaugePrototype<string>& proto,
+                         const string& initial_value)
+  : Gauge(proto.unit(), proto.description()),
+    value_(initial_value) {
 }
 
 std::string StringGauge::value() const {
@@ -173,21 +262,6 @@ void StringGauge::set_value(const std::string& value) {
 
 void StringGauge::WriteValue(JsonWriter* writer) const {
   writer->String(value());
-}
-
-//
-// AtomicGauge
-//
-
-// Specializations for common primitive metric types.
-template<> void AtomicGauge<bool>::WriteSpecificValue(JsonWriter* writer, bool val) {
-  writer->Bool(val);
-}
-template<> void AtomicGauge<int64_t>::WriteSpecificValue(JsonWriter* writer, int64_t val) {
-  writer->Int64(val);
-}
-template<> void AtomicGauge<double>::WriteSpecificValue(JsonWriter* writer, double val) {
-  writer->Double(val);
 }
 
 //

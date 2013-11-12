@@ -38,6 +38,9 @@ class JsonWriter {
   void String(const char* str);
   void String(const std::string& str);
 
+  template<typename T>
+  void Value(const T& val);
+
   void StartObject();
   void EndObject();
   void StartArray();

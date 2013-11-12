@@ -11,15 +11,6 @@ namespace kudu {
 class MetricsTest : public KuduTest {
 };
 
-TEST_F(MetricsTest, SimpleIntegerGaugeTest) {
-  string desc = "Number of quarters in my pocket";
-  IntegerGauge quarters_in_my_pocket("quarters", desc);
-  ASSERT_EQ(desc, quarters_in_my_pocket.description());
-  ASSERT_EQ(0, quarters_in_my_pocket.value());
-  quarters_in_my_pocket.set_value(5);
-  ASSERT_EQ(5, quarters_in_my_pocket.value());
-}
-
 METRIC_DEFINE_counter(reqs_pending, MetricUnit::kRequests,
                       "Number of requests pending");
 
@@ -35,6 +26,30 @@ TEST_F(MetricsTest, SimpleCounterTest) {
   ASSERT_EQ(2, requests.value());
   requests.DecrementBy(2);
   ASSERT_EQ(0, requests.value());
+}
+
+METRIC_DEFINE_gauge_uint64(fake_memory_usage, MetricUnit::kBytes, "Test Gauge 1");
+
+TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
+  AtomicGauge<uint64_t> mem_usage(METRIC_fake_memory_usage, 7);
+  ASSERT_EQ(METRIC_fake_memory_usage.description(), mem_usage.description());
+  ASSERT_EQ(7, mem_usage.value());
+  mem_usage.set_value(5);
+  ASSERT_EQ(5, mem_usage.value());
+}
+
+METRIC_DEFINE_gauge_int64(test_func_gauge, MetricUnit::kBytes, "Test Gauge 2");
+
+static int64_t MyFunction() {
+  return 12345;
+}
+
+TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+  FunctionGauge<int64_t>* gauge = down_cast< FunctionGauge<int64_t>* >(
+      METRIC_test_func_gauge.InstantiateFunctionGauge(context, MyFunction));
+  ASSERT_EQ(12345, gauge->value());
 }
 
 TEST_F(MetricsTest, JsonPrintTest) {
