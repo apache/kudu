@@ -42,7 +42,7 @@ class ClientTest : public KuduTest {
     : schema_(boost::assign::list_of
               (ColumnSchema("key", UINT32))
               (ColumnSchema("int_val", UINT32))
-              (ColumnSchema("string_val", STRING)),
+              (ColumnSchema("string_val", STRING, true)),
               1),
       rb_(schema_) {
   }
@@ -68,7 +68,7 @@ class ClientTest : public KuduTest {
     KuduClientOptions opts;
     opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
-    ASSERT_STATUS_OK(client_->OpenTable(kTabletId, &client_table_));
+    ASSERT_STATUS_OK(client_->OpenTable(kTabletId, schema_, &client_table_));
   }
 
  protected:
@@ -160,7 +160,7 @@ const char* const ClientTest::kTabletId = "TestTablet";
 
 TEST_F(ClientTest, TestBadTable) {
   shared_ptr<KuduTable> t;
-  Status s = client_->OpenTable("xxx-does-not-exist", &t);
+  Status s = client_->OpenTable("xxx-does-not-exist", Schema(), &t);
   ASSERT_EQ("Not found: No replicas for tablet xxx-does-not-exist", s.ToString());
 }
 
@@ -169,7 +169,7 @@ TEST_F(ClientTest, TestBadTable) {
 TEST_F(ClientTest, TestMasterDown) {
   ASSERT_STATUS_OK(cluster_->mini_master()->Shutdown());
   shared_ptr<KuduTable> t;
-  Status s = client_->OpenTable("other-tablet", &t);
+  Status s = client_->OpenTable("other-tablet", Schema(), &t);
   ASSERT_TRUE(s.IsNetworkError());
   ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
 }
@@ -252,6 +252,22 @@ TEST_F(ClientTest, TestCloseScanner) {
     // Above scanner went out of scope, so the destructor should close asynchronously.
     AssertScannersDisappear(manager);
   }
+}
+
+TEST_F(ClientTest, TestInsert) {
+  gscoped_ptr<KuduSession> session = client_->NewSession();
+  gscoped_ptr<Insert> insert = client_table_->NewInsert();
+  // Try inserting without specifying a key: should fail.
+  ASSERT_STATUS_OK(insert->SetUInt32("int_val", 54321));
+  ASSERT_STATUS_OK(insert->SetStringCopy("string_val", "hello world"));
+
+  Status s = session->Apply(&insert);
+  ASSERT_EQ("Illegal state: Key not specified: uint32 int_val=54321, string string_val=hello world",
+            s.ToString());
+
+  ASSERT_STATUS_OK(insert->SetUInt32("key", 12345));
+  ASSERT_STATUS_OK(session->Apply(&insert));
+  ASSERT_TRUE(insert == NULL) << "Successful insert should take ownership";
 }
 
 } // namespace client

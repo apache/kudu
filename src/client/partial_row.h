@@ -27,7 +27,7 @@ class PartialRow {
   // The given Schema object must remain valid for the lifetime of this
   // row.
   explicit PartialRow(const Schema* schema);
-  ~PartialRow();
+  virtual ~PartialRow();
 
   Status SetInt8(const Slice& col_name, int8_t val);
   Status SetInt16(const Slice& col_name, int16_t val);

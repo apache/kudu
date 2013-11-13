@@ -30,15 +30,17 @@ using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
 void RpcLineItemDAO::Init() {
+  const Schema s = tpch::CreateLineItemSchema();
+
   client::KuduClientOptions opts;
   opts.master_server_addr = master_address_;
   CHECK_OK(client::KuduClient::Create(opts, &client_));
   CHECK_OK(client_->GetTabletProxy(kTabletId, &proxy_));
-  CHECK_OK(client_->OpenTable(kTabletId, &client_table_));
+  CHECK_OK(client_->OpenTable(kTabletId, s, &client_table_));
 
   request_.set_tablet_id(kTabletId);
-  CHECK_OK(SchemaToColumnPBs(tpch::CreateLineItemSchema(), request_.mutable_to_insert_rows()->mutable_schema()));
-  CHECK_OK(SchemaToColumnPBs(tpch::CreateLineItemSchema(), request_.mutable_to_mutate_row_keys()->mutable_schema()));
+  CHECK_OK(SchemaToColumnPBs(s, request_.mutable_to_insert_rows()->mutable_schema()));
+  CHECK_OK(SchemaToColumnPBs(s, request_.mutable_to_mutate_row_keys()->mutable_schema()));
 }
 
 void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {

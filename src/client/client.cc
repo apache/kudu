@@ -1,9 +1,12 @@
 // Copyright (c) 2013, Cloudera,inc.
 
 #include <boost/bind.hpp>
-#include "common/wire_protocol.h"
 #include "client/client.h"
 #include "client/meta_cache.h"
+#include "common/row.h"
+#include "common/wire_protocol.h"
+#include "gutil/casts.h"
+#include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.proxy.h"
@@ -28,6 +31,10 @@ using kudu::tserver::ScanResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+
+MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
+                 kudu::client::KuduSession::AUTO_FLUSH_SYNC,
+                 kudu::client::KuduSession::MANUAL_FLUSH);
 
 namespace kudu {
 namespace client {
@@ -57,7 +64,9 @@ Status KuduClient::Init() {
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(ParseAddressList(options_.master_server_addr,
                                  master::Master::kDefaultPort, &addrs));
-
+  if (addrs.empty()) {
+    return Status::InvalidArgument("No master address specified");
+  }
   if (addrs.size() > 1) {
     LOG(WARNING) << "Specified master server address '" << options_.master_server_addr << "' "
                  << "resolved to multiple IPs. Using " << addrs[0].ToString();
@@ -73,15 +82,20 @@ Status KuduClient::Init() {
 }
 
 Status KuduClient::OpenTable(const std::string& table_name,
+                             const Schema& schema,
                              shared_ptr<KuduTable>* table) {
   CHECK(initted_) << "Must Init()";
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
-  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name));
+  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
   RETURN_NOT_OK(ret->Open());
   table->swap(ret);
 
   return Status::OK();
+}
+
+gscoped_ptr<KuduSession> KuduClient::NewSession() {
+  return gscoped_ptr<KuduSession>(new KuduSession(shared_from_this()));
 }
 
 Status KuduClient::GetTabletProxy(const std::string& tablet_id,
@@ -115,9 +129,11 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
 ////////////////////////////////////////////////////////////
 
 KuduTable::KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
-                     const std::string& name)
+                     const std::string& name,
+                     const Schema& schema)
   : client_(client),
-    name_(name) {
+    name_(name),
+    schema_(schema) {
 }
 
 Status KuduTable::Open() {
@@ -125,6 +141,84 @@ Status KuduTable::Open() {
   RETURN_NOT_OK(client_->GetTabletProxy(name_, &proxy_));
   return Status::OK();
 }
+
+gscoped_ptr<Insert> KuduTable::NewInsert() {
+  return gscoped_ptr<Insert>(new Insert(this));
+}
+
+////////////////////////////////////////////////////////////
+// KuduSession
+////////////////////////////////////////////////////////////
+
+KuduSession::KuduSession(const std::tr1::shared_ptr<KuduClient>& client)
+  : client_(client),
+    flush_mode_(AUTO_FLUSH_SYNC) {
+}
+
+KuduSession::~KuduSession() {
+  STLDeleteElements(&write_buffer_);
+}
+
+Status KuduSession::SetFlushMode(FlushMode m) {
+  if (!write_buffer_.empty()) {
+    // TODO: there may be a more reasonable behavior here.
+    return Status::IllegalState("Cannot change flush mode when writes are buffered");
+  }
+  if (!tight_enum_test<FlushMode>(m)) {
+    // Be paranoid in client code.
+    return Status::InvalidArgument("Bad flush mode");
+  }
+
+  flush_mode_ = m;
+  return Status::OK();
+}
+
+Status KuduSession::Apply(gscoped_ptr<Insert>* insert_scoped) {
+  Insert* insert = insert_scoped->get();
+  if (!insert->IsKeySet()) {
+    return Status::IllegalState("Key not specified", insert->ToString());
+  }
+
+  // TODO: for now, our RPC layer requires that all columns are set.
+  // We have to switch the RPC to use PartialRowsPB instead of a row block,
+  // but as a place-holder just ensure that all the columns are set.
+  for (int i = 0; i < insert->table()->schema().num_columns(); i++) {
+    if (!insert->IsColumnSet(i)) {
+      return Status::NotSupported("TODO: have to support partial row inserts");
+    }
+  }
+
+  write_buffer_.push_back(insert_scoped->release());
+
+  if (flush_mode_ == AUTO_FLUSH_SYNC) {
+    RETURN_NOT_OK(Flush());
+  }
+
+  return Status::OK();
+}
+
+Status KuduSession::Flush() {
+  // TODO: actually implement Flush sending the RPCs to the server.
+  // For now just clear the buffer.
+  STLDeleteElements(&write_buffer_);
+  return Status::OK();
+}
+
+void KuduSession::GetPendingErrors(std::vector<Error*>* errors, bool* overflowed) {
+  *overflowed = false;
+  // TODO: need to implement error collection, etc.
+}
+
+////////////////////////////////////////////////////////////
+// Mutation classes (Insert/Update/Delete)
+////////////////////////////////////////////////////////////
+
+Insert::Insert(KuduTable* table)
+  : PartialRow(&table->schema()),
+    table_(table) {
+}
+
+Insert::~Insert() {}
 
 ////////////////////////////////////////////////////////////
 // KuduScanner
