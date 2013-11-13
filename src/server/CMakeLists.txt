@@ -19,6 +19,7 @@ SET(SERVER_SRCS
   pprof-path-handlers.cc
   rpc_server.cc
   server_base.cc
+  tcmalloc_metrics.cc
   webserver.cc
   webserver_options.cc
 )

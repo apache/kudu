@@ -61,8 +61,8 @@ class ServerBase {
   Status Start(gscoped_ptr<rpc::ServiceIf> rpc_impl);
   Status Shutdown();
 
-  gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<MetricRegistry> metric_registry_;
+  gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;

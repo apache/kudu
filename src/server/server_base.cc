@@ -11,6 +11,7 @@
 #include "server/default-path-handlers.h"
 #include "server/fsmanager.h"
 #include "server/rpc_server.h"
+#include "server/tcmalloc_metrics.h"
 #include "server/webserver.h"
 #include "util/env.h"
 #include "util/metrics.h"
@@ -27,8 +28,8 @@ namespace server {
 ServerBase::ServerBase(Env* env, const string& base_dir,
                        const RpcServerOptions& rpc_opts,
                        const WebserverOptions& web_opts)
-  : fs_manager_(new FsManager(env, base_dir)),
-    metric_registry_(new MetricRegistry()),
+  : metric_registry_(new MetricRegistry()),
+    fs_manager_(new FsManager(env, base_dir)),
     rpc_server_(new RpcServer(rpc_opts)),
     web_server_(new Webserver(web_opts)) {
 }
@@ -65,6 +66,8 @@ Status ServerBase::GenerateInstanceID() {
 }
 
 Status ServerBase::Init() {
+  tcmalloc::RegisterMetrics(metric_registry_.get());
+
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {
     RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
