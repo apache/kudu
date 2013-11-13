@@ -14,6 +14,7 @@
 #include "gutil/casts.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
+#include "util/bitmap.h"
 #include "util/faststring.h"
 #include "util/memory/arena.h"
 
@@ -197,6 +198,23 @@ class RowChangeListDecoder {
   Slice reinserted_row_slice() const {
     DCHECK(is_reinsert());
     return remaining_;
+  }
+
+
+  // Sets bits in 'bitmap' that  correspond to column indexes that are
+  // present in the underlying RowChangeList. The bitmap is not zeroed
+  // by this  function, it is  the caller's responsibility to  zero it
+  // first.
+  Status GetIncludedColumns(uint8_t* bitmap) {
+    while (HasNext()) {
+      size_t col_id = 0xdeadbeef;
+      const void* col_val = NULL;
+      RETURN_NOT_OK(DecodeNext(&col_id, &col_val));
+      size_t col_idx = schema_.find_column_by_id(col_id);
+      CHECK_NE(col_idx, -1);
+      BitmapSet(bitmap, col_idx);
+    }
+    return Status::OK();
   }
 
   template<class RowType, class ArenaType>

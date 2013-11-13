@@ -8,6 +8,7 @@
 #include "gutil/port.h"
 #include "util/hexdump.h"
 #include "util/status.h"
+#include "util/bitmap.h"
 #include "tablet/mvcc.h"
 
 namespace kudu { namespace tablet {
@@ -19,7 +20,9 @@ namespace kudu { namespace tablet {
 DeltaMemStore::DeltaMemStore(int64_t id, const Schema &schema)
   : id_(id),
     schema_(schema),
-    arena_(8*1024, 1*1024*1024) {
+    arena_(8*1024, 1*1024*1024),
+    column_update_counts_(schema.num_columns(), 0),
+    delete_count_(0) {
   CHECK(schema.has_column_ids());
 }
 
@@ -45,6 +48,36 @@ Status DeltaMemStore::Update(txid_t txid,
   if (!mutation.Insert(update.slice())) {
     return Status::IOError("Unable to insert into tree");
   }
+
+  RETURN_NOT_OK(UpdateStats(update));
+  return Status::OK();
+}
+
+Status DeltaMemStore::UpdateStats(const RowChangeList& update) {
+  // We'd like to maintain per column statistics of updates and deletes.
+  // Problem is that with updates, the column ids are encoded in the RowChangeList
+  // itself. In the long term, we should use bitmaps in RowChangeList to represent
+  // the columns as opposed to the existing [(id, change)] format -- this will be
+  // substantial change and useful elsewhere in the code. However, for now we're
+  // using the hacky approach of decoding the changelist and extracting the column ids.
+  RowChangeListDecoder update_decoder(schema_, update);
+  RETURN_NOT_OK(update_decoder.Init());
+  if (PREDICT_FALSE(update_decoder.is_delete())) {
+    base::subtle::NoBarrier_AtomicIncrement(&delete_count_, 1);
+  } else if (PREDICT_TRUE(update_decoder.is_update())) {
+    // VLAs aren't officially part of any C++ standard, but they're supported by
+    // both gcc and clang.
+    size_t bitmap_size = BitmapSize(schema_.num_columns());
+    uint8_t bitmap[bitmap_size];
+    memset(bitmap, 0, bitmap_size);
+    RETURN_NOT_OK(update_decoder.GetIncludedColumns(bitmap));
+    for (TrueBitIterator iter(bitmap, schema_.num_columns());
+         !iter.done();
+         ++iter) {
+      size_t col_id = *iter;
+      base::subtle::NoBarrier_AtomicIncrement(&column_update_counts_[col_id], 1);
+    }
+  } // Don't handle re-inserts
   return Status::OK();
 }
 
@@ -109,6 +142,10 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 Status DeltaMemStore::AlterSchema(const Schema& schema) {
   if (Count() != 0) {
     return Status::NotSupported("The DeltaMemStore must be empty to alter the schema");
+  }
+
+  if (schema.num_columns() > column_update_counts_.size()) {
+    column_update_counts_.resize(schema.num_columns(), 0);
   }
 
   schema_ = schema;

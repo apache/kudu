@@ -88,6 +88,28 @@ static void GenerateRandomIndexes(uint32_t range, uint32_t count,
   }
 }
 
+TEST_F(TestDeltaMemStore, TestUpdateCount) {
+  uint32_t n_rows = 1000;
+  faststring update_buf;
+
+  RowChangeListEncoder update(schema_, &update_buf);
+  for (uint32_t idx = 0; idx < n_rows; idx++) {
+    update.Reset();
+    if (idx % 4 == 0) {
+      char buf[256] = "update buf";
+      Slice s(buf);
+      update.AddColumnUpdate(kStringColumn, &s);
+    }
+    if (idx % 2 == 0) {
+      ScopedTransaction tx(&mvcc_);
+      uint32_t new_val = idx * 10;
+      update.AddColumnUpdate(kIntColumn, &new_val);
+      dms_->Update(tx.txid(), idx, RowChangeList(update_buf));
+    }
+  }
+  ASSERT_EQ(n_rows / 2, dms_->update_count(kIntColumn));
+  ASSERT_EQ(n_rows / 4, dms_->update_count(kStringColumn));
+}
 
 TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {
 
@@ -193,6 +215,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
   // Ensure we end up two entries for the cell.
   ASSERT_EQ(2, dms_->Count());
+  ASSERT_EQ(2, dms_->update_count(kStringColumn));
 
   // Ensure that we ended up with the right data.
   ScopedColumnBlock<STRING> read_back(1);

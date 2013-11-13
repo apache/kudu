@@ -5,11 +5,13 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
+#include <boost/thread/mutex.hpp>
 
 #include "common/columnblock.h"
 #include "common/row_changelist.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
+#include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "tablet/concurrent_btree.h"
@@ -71,6 +73,14 @@ class DeltaMemStore : public DeltaStore,
 
   const int64_t id() const { return id_; }
 
+  int64_t update_count(size_t col_idx) const {
+    return static_cast<int64_t>(base::subtle::Acquire_Load(&column_update_counts_[col_idx]));
+  }
+
+  int64_t delete_count() const {
+    return static_cast<int64_t>(base::subtle::Acquire_Load(&delete_count_));
+  }
+
   typedef btree::CBTree<btree::BTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<btree::BTreeTraits> DMSTreeIter;
 
@@ -88,6 +98,10 @@ class DeltaMemStore : public DeltaStore,
     return tree_;
   }
 
+  // Update delta statistics -- we use this to know whether or not to
+  // begin delta compactions.
+  Status UpdateStats(const RowChangeList& update);
+
   const int64_t id_;
   Schema schema_;
 
@@ -95,6 +109,12 @@ class DeltaMemStore : public DeltaStore,
   DMSTree tree_;
 
   ThreadSafeArena arena_;
+
+  // Per column update counts
+  vector<base::subtle::Atomic64> column_update_counts_;
+
+  // Deletes are per-row vs per-column
+  base::subtle::Atomic64 delete_count_;
 };
 
 // Iterator over the deltas currently in the delta memstore.

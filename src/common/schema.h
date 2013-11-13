@@ -546,9 +546,6 @@ class Schema {
     return Status::OK();
   }
 
- private:
-  friend class SchemaBuilder;
-
   // Returns the column index given the column ID
   int find_column_by_id(size_t id) const {
     if (has_column_ids()) {
@@ -560,6 +557,9 @@ class Schema {
     }
     return id;
   }
+
+ private:
+  friend class SchemaBuilder;
 
   vector<ColumnSchema> cols_;
   size_t num_key_columns_;
