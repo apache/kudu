@@ -81,19 +81,6 @@ message ColumnBlockPB {
   optional bytes indirect_data = 4;
 }
 
-// A row block in which each column is stored contiguously and
-// separately.
-//
-// This is typically used for the result of scans, where the data
-// comes off disk in this form.
-//
-// TODO: this is currently unused. It will become used when we implement
-// scan RPCs.
-message ColumnarRowBlockPB {
-  required int32 num_rows = 1;
-  repeated ColumnBlockPB column_blocks = 2;
-}
-
 // A row block in which each row is stored contiguously.
 message RowwiseRowBlockPB {
   repeated ColumnSchemaPB schema = 1;
