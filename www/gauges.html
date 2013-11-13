@@ -11,24 +11,28 @@ wrote: "no special license. feel free to use it however you like."
 
       <style>
 
-        body
-        {
-        font: 10px arial;
+        body {
+          font: 10px arial;
         }
         .gauge-container {
-        float:left;
-        border: 1px solid #666;
-        margin: 1em;
+          float: left;
+          width: 320px;
+          height: 350px;
+          margin: 1em;
+          /* border: 1px solid #666; */
         }
         .metric-name {
-        font-weight: bold;
+          font-weight: bold;
+        }
+        .metric-gauge-display {
+          padding: 1em 0;
         }
         .metric-label {
         }
 
       </style>
 
-      <script type="text/javascript" src="http://mbostock.github.com/d3/d3.js"></script>
+      <script type="text/javascript" src="d3.v2.js"></script>
       <script type="text/javascript" src="gauge.js"></script>
       <script type="text/javascript" src="metric-gauges.js"></script>
     </head>
