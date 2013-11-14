@@ -180,6 +180,13 @@ TEST_F(ClientTest, TestScan) {
   DoTestScanWithStringPredicate();
 }
 
+TEST_F(ClientTest, TestScanEmptyTable) {
+  KuduScanner scanner(client_table_.get());
+  ASSERT_STATUS_OK(scanner.Open());
+  ASSERT_FALSE(scanner.HasMoreRows());
+  scanner.Close();
+}
+
 // Test scanning with an empty projection. This should yield an empty
 // row block with the proper number of rows filled in. Impala issues
 // scans like this in order to implement COUNT(*).

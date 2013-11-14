@@ -175,8 +175,12 @@ Status KuduScanner::Open() {
   CHECK(!last_response_.has_data()) << "TODO: handle data with initial response";
 
   next_req_.clear_new_scan_request();
-  next_req_.set_scanner_id(last_response_.scanner_id());
-  VLOG(1) << "Started scanner " << last_response_.scanner_id();
+  if (last_response_.has_more_results()) {
+    next_req_.set_scanner_id(last_response_.scanner_id());
+    VLOG(1) << "Started scanner " << last_response_.scanner_id();
+  } else {
+    VLOG(1) << "Scanner matched no rows, no scanner ID assigned.";
+  }
 
   open_ = true;
   return Status::OK();
@@ -203,7 +207,15 @@ struct CloseCallback {
 
 void KuduScanner::Close() {
   if (!open_) return;
-  DCHECK(!next_req_.scanner_id().empty());
+
+  if (next_req_.scanner_id().empty()) {
+    // In the case that the scan matched no rows, and this was determined
+    // in the Open() call, then we won't have been assigned a scanner ID
+    // at all. So, no need to close on the server side.
+    open_ = false;
+    return;
+  }
+
   CloseCallback* closer = new CloseCallback;
   closer->scanner_id = next_req_.scanner_id();
   next_req_.set_batch_size_bytes(0);
