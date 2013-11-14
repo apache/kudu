@@ -599,6 +599,11 @@ Status TabletBootstrap::PlaySegments() {
                                            segment_idx,
                                            log_reader_->segments()[segment_idx]->path()));
     }
+
+    // TODO: could be more granular here and log during the segments as well, plus give info about
+    // number of MB processed, but this is better than nothing.
+    LOG(INFO) << Substitute("Replayed $0/$1 log segments for tablet $2", segment_idx + 1, log_reader_->size(),
+                            tablet_->tablet_id());
   }
 
   int num_orphaned = state.pending_replicates.size();
