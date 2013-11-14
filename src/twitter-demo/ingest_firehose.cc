@@ -7,14 +7,15 @@
 #include <curl/curl.h>
 #include <fstream>
 
-#include "twitter-demo/oauth.h"
-#include "twitter-demo/insert_consumer.h"
-#include "twitter-demo/twitter_streamer.h"
+#include "client/client.h"
 #include "gutil/macros.h"
 #include "gutil/once.h"
 #include "rpc/messenger.h"
-#include "tserver/tablet_server.h"
+#include "master/master.h"
 #include "tserver/tserver_service.proxy.h"
+#include "twitter-demo/oauth.h"
+#include "twitter-demo/insert_consumer.h"
+#include "twitter-demo/twitter_streamer.h"
 #include "util/net/net_util.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -22,8 +23,8 @@
 DEFINE_string(twitter_firehose_sink, "console",
               "Where to write firehose output.\n"
               "Valid values: console,rpc");
-DEFINE_string(twitter_rpc_sink_address, "localhost",
-              "Address of tablet server to write to");
+DEFINE_string(twitter_rpc_master_address, "localhost",
+              "Address of master for the cluster to write to");
 
 DEFINE_string(twitter_firehose_source, "api",
               "Where to obtain firehose input.\n"
@@ -39,7 +40,6 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace twitter_demo {
 
-using tserver::TabletServer;
 using tserver::TabletServerServiceProxy;
 
 // Consumer which simply logs messages to the console.
@@ -51,20 +51,13 @@ class LoggingConsumer : public TwitterConsumer {
 };
 
 gscoped_ptr<TwitterConsumer> CreateInsertConsumer() {
-  HostPort hp;
-  CHECK_OK(hp.ParseString(FLAGS_twitter_rpc_sink_address, TabletServer::kDefaultPort));
-  std::vector<Sockaddr> addrs;
-  CHECK_OK(hp.ResolveAddresses(&addrs));
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Host resolved to more than one address, using: "
-                 << addrs.front().ToString();
-  }
+  client::KuduClientOptions opts;
+  opts.master_server_addr = FLAGS_twitter_rpc_master_address;
+  shared_ptr<client::KuduClient> client;
+  CHECK_OK(client::KuduClient::Create(opts, &client));
 
-  shared_ptr<rpc::Messenger> msgr;
-  rpc::MessengerBuilder bld("Client");
-  CHECK_OK(bld.Build(&msgr));
-  shared_ptr<TabletServerServiceProxy> proxy(
-    new TabletServerServiceProxy(msgr, addrs.front()));
+  shared_ptr<TabletServerServiceProxy> proxy;
+  CHECK_OK(client->GetTabletProxy("twitter", &proxy));
   return gscoped_ptr<TwitterConsumer>(new InsertConsumer(proxy));
 }
 

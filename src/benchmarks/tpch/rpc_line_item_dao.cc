@@ -3,43 +3,38 @@
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 #include <vector>
+#include <tr1/memory>
 
+#include "client/client.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
-#include "rpc/messenger.h"
 #include "common/wire_protocol.h"
-#include "tserver/tablet_server.h"
 #include "tserver/tserver_service.proxy.h"
-#include "util/net/net_util.h"
 #include "util/status.h"
 #include "benchmarks/tpch/rpc_line_item_dao.h"
 #include "util/locks.h"
 #include "util/coding.h"
 
+DEFINE_string(master_address, "localhost",
+              "Address of master for the cluster to operate on");
+
+const char * const kTabletId = "tpch1";
+
+using std::tr1::shared_ptr;
+
 namespace kudu {
 
-using tserver::TabletServer;
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
 void RpcLineItemDAO::Init() {
-  HostPort hp;
-  // Port currently hardcoded until #838 gets in
-  CHECK_OK(hp.ParseString("localhost", 61030));
-  std::vector<Sockaddr> addrs;
-  CHECK_OK(hp.ResolveAddresses(&addrs));
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Host resolved to more than one address, using: "
-                 << addrs.front().ToString();
-  }
-
-  shared_ptr<rpc::Messenger> msgr;
-  rpc::MessengerBuilder bld("Client");
-  CHECK_OK(bld.Build(&msgr));
-  proxy_.reset(
-    new TabletServerServiceProxy(msgr, addrs.front()));
+  client::KuduClientOptions opts;
+  opts.master_server_addr = FLAGS_master_address;
+  shared_ptr<client::KuduClient> client;
+  CHECK_OK(client::KuduClient::Create(opts, &client));
+  CHECK_OK(client->GetTabletProxy(kTabletId, &proxy_));
 }
 
 void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {

@@ -51,6 +51,11 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
     return messenger_;
   }
 
+  // TODO: this is only here temporarily. Eventually, users of this API should
+  // not ever be exposed to the actual RPC proxy directly.
+  Status GetTabletProxy(const std::string& tablet_id,
+                        std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
+
   // Return a proxy to the current master.
   // TODO: in the future, the master might move around (switch leaders), etc.
   // So, this returns a copy of the shared_ptr instead of a reference, in case it
@@ -67,9 +72,6 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();
-
-  Status GetTabletProxy(const std::string& tablet_id,
-                        std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
 
   bool initted_;
   KuduClientOptions options_;

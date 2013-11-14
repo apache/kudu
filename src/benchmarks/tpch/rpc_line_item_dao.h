@@ -9,6 +9,8 @@
 #include "tserver/tserver_service.proxy.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 
+#include <tr1/memory>
+
 namespace kudu {
 
 using tserver::TabletServerServiceProxy;
@@ -34,7 +36,7 @@ class RpcLineItemDAO : public LineItemDAO {
   ~RpcLineItemDAO();
 
  private:
-  gscoped_ptr<TabletServerServiceProxy> proxy_;
+  std::tr1::shared_ptr<TabletServerServiceProxy> proxy_;
   tserver::WriteRequestPB request_;
   tserver::WriteResponsePB response_;
   rpc::RpcController rpc_;
