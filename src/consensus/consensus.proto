@@ -69,7 +69,7 @@ message ReplicateMsg {
 // that required a consensus round.
 message CommitMsg {
   // the id of the commit message itself
-  required OpId id = 1;
+  optional OpId id = 1;
   required OperationType op_type = 2;
   // the id of the message this commit pertains to
   optional OpId commited_op_id = 3;

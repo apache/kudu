@@ -514,7 +514,9 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
   // TODO: on a term switch, the first commit in any term should discard any
   // pending REPLICATEs from the previous term.
 
-  RETURN_NOT_OK(state->CheckOpId(entry->commit().id()));
+  if (entry->commit().has_id()) {
+    RETURN_NOT_OK(state->CheckOpId(entry->commit().id()));
+  }
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
   const OpId& id = entry->commit().commited_op_id();
