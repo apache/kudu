@@ -163,6 +163,16 @@ TEST_F(ClientTest, TestBadTable) {
   ASSERT_EQ("Not found: No replicas for tablet xxx-does-not-exist", s.ToString());
 }
 
+// Test that, if the master is down, we get an appropriate error
+// message.
+TEST_F(ClientTest, TestMasterDown) {
+  ASSERT_STATUS_OK(cluster_->mini_master()->Shutdown());
+  shared_ptr<KuduTable> t;
+  Status s = client_->OpenTable("other-tablet", &t);
+  ASSERT_TRUE(s.IsNetworkError());
+  ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
+}
+
 TEST_F(ClientTest, TestScan) {
   InsertTestRows(FLAGS_test_scan_num_rows);
 

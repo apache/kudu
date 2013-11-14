@@ -137,8 +137,11 @@ void RemoteTablet::GetTabletLocationsCB(KuduClient* client, InFlightRefresh* ifr
 
   Status s = ifr->rpc.status();
 
-  if (ifr->resp.tablet_locations().size() != 1 ||
-      ifr->resp.tablet_locations(0).tablet_id() != tablet_id_) {
+  // If the RPC succeeded, but the response is missing the locations for the
+  // tablet we requested, return an error.
+  if (s.ok() &&
+      (ifr->resp.tablet_locations().size() != 1 ||
+       ifr->resp.tablet_locations(0).tablet_id() != tablet_id_)) {
     // TODO: need better error handling here.
     s = Status::NotFound("RPC response invalid", ifr->resp.DebugString());
   }
