@@ -53,6 +53,7 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
   RequestHeader header;
   header.set_call_id(call_id());
   header.set_method_name(method());
+  header.set_timeout_millis(controller_->timeout().ToMilliseconds());
 
   serialization::SerializeHeader(header, param_len, &header_buf_);
 

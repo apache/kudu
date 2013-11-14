@@ -16,6 +16,7 @@ class Message;
 namespace kudu {
 
 class Sockaddr;
+class Trace;
 
 namespace rpc {
 
@@ -37,6 +38,9 @@ class RpcContext {
              google::protobuf::Message *response_pb);
 
   ~RpcContext();
+
+  // Return the trace buffer for this call.
+  Trace* trace();
 
   // Send a response to the call. The service may call this method
   // before or after returning from the original handler method,

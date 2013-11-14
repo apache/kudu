@@ -174,6 +174,11 @@ message RequestHeader {
 
   // TODO: Trace info.
   // optional RPCTInfo trace_info = 9;
+
+  // Propagate the timeout as specified by the user. Note that, since there is some
+  // transit time between the client and server, if you wait exactly this amount of
+  // time and then respond, you are likely to cause a timeout on the client.
+  optional uint32 timeout_millis = 10;
 }
 
 message ResponseHeader {

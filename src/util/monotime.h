@@ -24,6 +24,7 @@ class MonoDelta {
   bool Equals(const MonoDelta &rhs) const;
   std::string ToString() const;
   double ToSeconds() const;
+  int64_t ToMilliseconds() const;
   int64_t ToMicroseconds() const;
   int64_t ToNanoseconds() const;
 

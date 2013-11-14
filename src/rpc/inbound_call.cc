@@ -8,6 +8,7 @@
 
 #include "rpc/connection.h"
 #include "rpc/serialization.h"
+#include "util/trace.h"
 
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
@@ -18,8 +19,12 @@ using std::vector;
 namespace kudu { namespace rpc {
 
 InboundCall::InboundCall(const shared_ptr<Connection> &conn)
-  : conn_(conn)
-{}
+  : conn_(conn),
+    receive_timestamp_(MonoTime::Now(MonoTime::FINE)),
+    trace_(new Trace) {
+}
+
+InboundCall::~InboundCall() {}
 
 Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_request_));
@@ -35,6 +40,8 @@ void InboundCall::RespondSuccess(const MessageLite& response) {
     LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
   }
 
+  trace_->Message("Queueing success response");
+  LogIfSlow();
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
 }
 
@@ -48,6 +55,8 @@ void InboundCall::RespondFailure(const Status& status) {
     LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
   }
 
+  trace_->Message("Queueing failure response");
+  LogIfSlow();
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
 }
 
@@ -80,12 +89,38 @@ string InboundCall::ToString() const {
                       header_.call_id());
 }
 
+void InboundCall::LogIfSlow() const {
+  if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) return;
+
+  double log_threshold = header_.timeout_millis() * 0.75f;
+
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  int total_time = now.GetDeltaSince(receive_timestamp_).ToMilliseconds();
+
+  if (total_time > log_threshold) {
+    // TODO: consider pushing this onto another thread since it may be slow.
+    // The traces may also be too large to fit in a log message.
+    LOG(WARNING) << ToString() << " took " << total_time << "ms (client timeout "
+                 << header_.timeout_millis() << ").";
+    std::stringstream stream;
+    trace_->Dump(&stream);
+    std::string s = stream.str();
+    if (!s.empty()) {
+      LOG(WARNING) << "Trace:\n" << s;
+    }
+  }
+}
+
 const UserCredentials& InboundCall::user_credentials() const {
   return conn_->user_credentials();
 }
 
 const Sockaddr& InboundCall::remote_address() const {
   return conn_->remote();
+}
+
+Trace* InboundCall::trace() {
+  return trace_.get();
 }
 
 } // namespace rpc

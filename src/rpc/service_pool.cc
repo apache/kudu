@@ -14,6 +14,7 @@
 #include "rpc/service_if.h"
 #include "util/status.h"
 #include "util/thread_util.h"
+#include "util/trace.h"
 
 using std::tr1::shared_ptr;
 
@@ -53,6 +54,8 @@ void ServicePool::RunThread() {
       VLOG(1) << "ServicePool: messenger shutting down.";
       return;
     }
+
+    incoming->trace()->Message("Handling call");
 
     // Release the InboundCall pointer -- when the call is responded to,
     // it will get deleted at that point.

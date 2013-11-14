@@ -14,6 +14,7 @@
 #include "rpc/rpc_header.pb.h"
 #include "rpc/transfer.h"
 #include "util/faststring.h"
+#include "util/monotime.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -24,6 +25,9 @@ class Message;
 } // namespace google
 
 namespace kudu {
+
+class Trace;
+
 namespace rpc {
 
 class Connection;
@@ -33,6 +37,7 @@ class UserCredentials;
 class InboundCall {
  public:
   explicit InboundCall(const std::tr1::shared_ptr<Connection>& conn);
+  ~InboundCall();
 
   // Parse an inbound call message.
   //
@@ -81,6 +86,8 @@ class InboundCall {
 
   const Sockaddr& remote_address() const;
 
+  Trace* trace();
+
  private:
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a
@@ -88,8 +95,16 @@ class InboundCall {
   Status SerializeResponseBuffer(const google::protobuf::MessageLite& response,
                                  bool is_success);
 
+  // Log a WARNING message if the RPC response was slow enough that the
+  // client likely timed out. This is based on the client-provided timeout
+  // value.
+  void LogIfSlow() const;
+
   // The connection on which this inbound call arrived.
   std::tr1::shared_ptr<Connection> conn_;
+
+  // The time at which the call was received off the wire.
+  MonoTime receive_timestamp_;
 
   // The header of the incoming call. Set by ParseFrom()
   RequestHeader header_;
@@ -106,6 +121,9 @@ class InboundCall {
   // The buffers for serialized response. Set by SerializeResponseBuffer().
   faststring response_hdr_buf_;
   faststring response_msg_buf_;
+
+  // The trace buffer
+  gscoped_ptr<Trace> trace_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

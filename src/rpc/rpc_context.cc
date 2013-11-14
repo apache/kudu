@@ -42,5 +42,9 @@ std::string RpcContext::requestor_string() const {
     call_->remote_address().ToString();
 }
 
+Trace* RpcContext::trace() {
+  return call_->trace();
+}
+
 } // namespace rpc
 } // namespace kudu

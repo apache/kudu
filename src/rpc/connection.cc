@@ -25,6 +25,7 @@
 #include "rpc/transfer.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
+#include "util/trace.h"
 
 using std::tr1::shared_ptr;
 using std::vector;
