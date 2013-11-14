@@ -605,7 +605,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   }
 
   if (best_optimal <= 0) {
-    LOG(INFO) << "Best compaction available makes things worse. Not compacting.";
+    VLOG(1) << "Best compaction available makes things worse. Not compacting.";
     return Status::OK();
   }
 
