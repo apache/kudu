@@ -62,7 +62,7 @@ void DumpSegment(const string &segment_path) {
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc < 2  && argc > 3) {
+  if (argc < 2 || argc > 3) {
     std::cerr << "usage: " << argv[0] << " <tserver root path> <tablet_name>"
         " | <log segment path> " << std::endl;
     return 1;
