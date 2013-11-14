@@ -1,0 +1,108 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+#include "util/trace.h"
+
+#include <boost/foreach.hpp>
+#include <iomanip>
+#include <ios>
+#include <ostream>
+
+#include "gutil/strings/substitute.h"
+#include "gutil/walltime.h"
+#include "util/memory/arena.h"
+
+namespace kudu {
+
+using strings::internal::SubstituteArg;
+
+Trace::Trace()
+  : arena_(new ThreadSafeArena(1024, 128*1024)) {
+}
+
+Trace::~Trace() {
+}
+
+// Struct which precedes each entry in the trace.
+struct TraceEntry {
+  MicrosecondsInt64 timestamp_micros;
+  uint32_t message_len;
+
+  // The actual trace message follows the entry header.
+  char* message() {
+    return reinterpret_cast<char*>(this) + sizeof(*this);
+  }
+};
+
+void Trace::SubstituteAndTrace(StringPiece format,
+                               const SubstituteArg& arg0, const SubstituteArg& arg1,
+                               const SubstituteArg& arg2, const SubstituteArg& arg3,
+                               const SubstituteArg& arg4, const SubstituteArg& arg5,
+                               const SubstituteArg& arg6, const SubstituteArg& arg7,
+                               const SubstituteArg& arg8, const SubstituteArg& arg9) {
+  const SubstituteArg* const args_array[] = {
+    &arg0, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9, NULL
+  };
+
+  int msg_len = strings::internal::SubstitutedSize(format, args_array);
+
+  TraceEntry* entry = NewEntry(msg_len);
+  SubstituteToBuffer(format, args_array, entry->message());
+
+  boost::lock_guard<simple_spinlock> l(lock_);
+  entries_.push_back(entry);
+}
+
+TraceEntry* Trace::NewEntry(int msg_len) {
+  int size = sizeof(TraceEntry) + msg_len;
+  uint8_t* dst = reinterpret_cast<uint8_t*>(arena_->AllocateBytes(size));
+  TraceEntry* header = reinterpret_cast<TraceEntry*>(dst);
+  header->timestamp_micros = GetCurrentTimeMicros();
+  header->message_len = msg_len;
+  return header;
+}
+
+void Trace::Message(StringPiece s) {
+  TraceEntry* entry = NewEntry(s.length());
+  memcpy(entry->message(), s.data(), s.length());
+
+  boost::lock_guard<simple_spinlock> l(lock_);
+  entries_.push_back(entry);
+}
+
+void Trace::Dump(std::ostream* out) const {
+  vector<TraceEntry*> entries;
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    entries = entries_;
+  }
+
+  // Save original flags.
+  std::ios::fmtflags save_flags(out->flags());
+
+  BOOST_FOREACH(TraceEntry* e, entries) {
+    // Log format borrowed from glog/logging.cc
+    time_t secs_since_epoch = e->timestamp_micros / 1000000;
+    int usecs = e->timestamp_micros % 1000000;
+    struct tm tm_time;
+    localtime_r(&secs_since_epoch, &tm_time);
+
+    using std::setw;
+    out->fill('0');
+
+    *out << setw(2) << (1 + tm_time.tm_mon)
+         << setw(2) << tm_time.tm_mday
+         << ' '
+         << setw(2) << tm_time.tm_hour  << ':'
+         << setw(2) << tm_time.tm_min   << ':'
+         << setw(2) << tm_time.tm_sec   << "."
+         << setw(6) << usecs << " ";
+    out->write(reinterpret_cast<char*>(e) + sizeof(TraceEntry),
+               e->message_len);
+    *out << std::endl;
+  }
+
+  // Restore stream flags.
+  out->flags(save_flags);
+}
+
+} // namespace kudu

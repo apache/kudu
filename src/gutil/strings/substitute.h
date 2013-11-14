@@ -141,6 +141,19 @@ class SubstituteArg {
   char scratch_[kFastToBufferSize];
 };
 
+// Return the length of the resulting string after performing the given
+// substitution.
+int SubstitutedSize(StringPiece format,
+                    const SubstituteArg* const* args_array);
+
+// Perform the given substitution into 'target'. 'target' must have
+// space for the result -- use SubstitutedSize() to determine how many
+// bytes are required.  Returns a pointer to the next byte following
+// the result in 'target'.
+char* SubstituteToBuffer(StringPiece format,
+                         const SubstituteArg* const* args_array,
+                         char* target);
+
 }  // namespace internal
 
 void SubstituteAndAppend(

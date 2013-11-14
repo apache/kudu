@@ -25,25 +25,16 @@ static int CountSubstituteArgs(const SubstituteArg* const* args_array) {
   return count;
 }
 
-void SubstituteAndAppend(
-    string* output, StringPiece format,
-    const SubstituteArg& arg0, const SubstituteArg& arg1,
-    const SubstituteArg& arg2, const SubstituteArg& arg3,
-    const SubstituteArg& arg4, const SubstituteArg& arg5,
-    const SubstituteArg& arg6, const SubstituteArg& arg7,
-    const SubstituteArg& arg8, const SubstituteArg& arg9) {
-  const SubstituteArg* const args_array[] = {
-    &arg0, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9, NULL
-  };
-
-  // Determine total size needed.
+namespace internal {
+int SubstitutedSize(StringPiece format,
+                    const SubstituteArg* const* args_array) {
   int size = 0;
   for (int i = 0; i < format.size(); i++) {
     if (format[i] == '$') {
       if (i+1 >= format.size()) {
         LOG(DFATAL) << "Invalid strings::Substitute() format string: \""
                     << CEscape(format) << "\".";
-        return;
+        return 0;
       } else if (ascii_isdigit(format[i+1])) {
         int index = format[i+1] - '0';
         if (args_array[index]->size() == -1) {
@@ -52,7 +43,7 @@ void SubstituteAndAppend(
             << index << "\", but only " << CountSubstituteArgs(args_array)
             << " args were given.  Full format string was: \""
             << CEscape(format) << "\".";
-          return;
+          return 0;
         }
         size += args_array[index]->size();
         ++i;  // Skip next char.
@@ -62,19 +53,18 @@ void SubstituteAndAppend(
       } else {
         LOG(DFATAL) << "Invalid strings::Substitute() format string: \""
                     << CEscape(format) << "\".";
-        return;
+        return 0;
       }
     } else {
       ++size;
     }
   }
+  return size;
+}
 
-  if (size == 0) return;
-
-  // Build the string.
-  int original_size = output->size();
-  STLStringResizeUninitialized(output, original_size + size);
-  char* target = string_as_array(output) + original_size;
+char* SubstituteToBuffer(StringPiece format,
+                         const SubstituteArg* const* args_array,
+                         char* target) {
   for (int i = 0; i < format.size(); i++) {
     if (format[i] == '$') {
       if (ascii_isdigit(format[i+1])) {
@@ -90,7 +80,32 @@ void SubstituteAndAppend(
       *target++ = format[i];
     }
   }
+  return target;
+}
 
+} // namespace internal
+
+void SubstituteAndAppend(
+    string* output, StringPiece format,
+    const SubstituteArg& arg0, const SubstituteArg& arg1,
+    const SubstituteArg& arg2, const SubstituteArg& arg3,
+    const SubstituteArg& arg4, const SubstituteArg& arg5,
+    const SubstituteArg& arg6, const SubstituteArg& arg7,
+    const SubstituteArg& arg8, const SubstituteArg& arg9) {
+  const SubstituteArg* const args_array[] = {
+    &arg0, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9, NULL
+  };
+
+  // Determine total size needed.
+  int size = SubstitutedSize(format, args_array);
+  if (size == 0) return;
+
+  // Build the string.
+  int original_size = output->size();
+  STLStringResizeUninitialized(output, original_size + size);
+  char* target = string_as_array(output) + original_size;
+
+  target = SubstituteToBuffer(format, args_array, target);
   DCHECK_EQ(target - output->data(), output->size());
 }
 

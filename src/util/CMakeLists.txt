@@ -27,6 +27,7 @@ ADD_LIBRARY(kudu_util
   task_executor.cc
   test_graph.cc
   thread_util.cc
+  trace.cc
   user.cc
   errno.cc
   monotime.cc
@@ -69,3 +70,4 @@ ADD_KUDU_TEST(safe_math-test)
 ADD_KUDU_TEST(bit-util-test)
 ADD_KUDU_TEST(thread_util-test)
 ADD_KUDU_TEST(url-coding-test)
+ADD_KUDU_TEST(trace-test)
