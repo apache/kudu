@@ -21,7 +21,7 @@ inline Schema CreateLineItemSchema() {
                 (ColumnSchema("l_tax", UINT32)) // storing * 100
                 (ColumnSchema("l_returnflag", STRING))
                 (ColumnSchema("l_linestatus", STRING))
-                (ColumnSchema("l_shipdate", STRING, true))
+                (ColumnSchema("l_shipdate", STRING))
                 (ColumnSchema("l_commitdate", STRING))
                 (ColumnSchema("l_receiptdate", STRING))
                 (ColumnSchema("l_shipinstruct", STRING))
@@ -32,7 +32,7 @@ inline Schema CreateLineItemSchema() {
 
 inline Schema CreateTpch1QuerySchema() {
   return Schema(boost::assign::list_of
-                (ColumnSchema("l_shipdate", STRING, true))
+                (ColumnSchema("l_shipdate", STRING))
                 (ColumnSchema("l_returnflag", STRING))
                 (ColumnSchema("l_linestatus", STRING))
                 (ColumnSchema("l_quantity", UINT32))
