@@ -4,10 +4,13 @@
 
 #include "gutil/macros.h"
 #include "server/webserver.h"
-
+#include <string>
 #include <sstream>
 
 namespace kudu {
+
+class Schema;
+
 namespace tserver {
 
 class TabletServer;
@@ -27,6 +30,10 @@ class TabletServerPathHandlers {
                          std::stringstream* output);
   void HandleTabletPage(const Webserver::ArgumentMap& args,
                         std::stringstream* output);
+
+  void OutputSchemaTable(const Schema& schema, std::stringstream* output);
+  void OutputImpalaSchema(const std::string& table_name,
+                          const Schema& schema, std::stringstream* output);
 
   TabletServer* tserver_;
 
