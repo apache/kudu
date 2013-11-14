@@ -42,6 +42,9 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
                        std::tr1::shared_ptr<KuduClient>* client);
 
   // Open the table with the given name.
+  //
+  // TODO: currently OpenTable() actually tries to access the tablet,
+  // but should be lazy until first access maybe? Or offer an async OpenTable.
   Status OpenTable(const std::string& table_name, std::tr1::shared_ptr<KuduTable>* table);
 
   const std::tr1::shared_ptr<rpc::Messenger>& messenger() const {

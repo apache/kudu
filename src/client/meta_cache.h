@@ -99,7 +99,12 @@ class RemoteTablet {
   void Refresh(KuduClient* cient, const StatusCallback& cb,
                bool force);
 
-  RemoteTabletServer* replica_tserver(int idx) { return replicas_[idx].ts; }
+  // Return the tablet server hosting the Nth replica.
+  //
+  // Returns NULL if 'idx' is out of bounds. Since the list of
+  // replicas may be updated by other threads concurrenctly, callers
+  // should always check the result against NULL.
+  RemoteTabletServer* replica_tserver(int idx);
 
   const std::string& tablet_id() const { return tablet_id_; }
 

@@ -4,6 +4,7 @@
 #include "common/wire_protocol.h"
 #include "client/client.h"
 #include "client/meta_cache.h"
+#include "gutil/strings/substitute.h"
 #include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.proxy.h"
 #include "rpc/messenger.h"
@@ -16,6 +17,7 @@
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 using kudu::master::MasterServiceProxy;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
@@ -100,6 +102,10 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
   RETURN_NOT_OK(s);
 
   RemoteTabletServer* ts = remote_tablet->replica_tserver(0);
+  if (ts == NULL) {
+    return Status::NotFound(Substitute("No replicas for tablet $0", tablet_id));
+  }
+
   latch.Reset(1);
   ts->RefreshProxy(this, boost::bind(AssignStatusAndTriggerLatch, _1, &latch, &s), false);
   latch.Wait();

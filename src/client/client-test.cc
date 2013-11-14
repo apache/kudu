@@ -61,9 +61,6 @@ class ClientTest : public KuduTest {
                   kTabletId, &tablet_peer_));
 
     // Wait for the tablet to be reported to the master.
-    // TODO: add tests where we access tablets which aren't available.
-    // TODO: currently OpenTable() actually tries to access the tablet,
-    // but should be lazy until first access maybe?
     ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(kTabletId, 1));
 
     // Connect to it.
@@ -159,6 +156,12 @@ class ClientTest : public KuduTest {
 };
 
 const char* const ClientTest::kTabletId = "TestTablet";
+
+TEST_F(ClientTest, TestBadTable) {
+  shared_ptr<KuduTable> t;
+  Status s = client_->OpenTable("xxx-does-not-exist", &t);
+  ASSERT_EQ("Not found: No replicas for tablet xxx-does-not-exist", s.ToString());
+}
 
 TEST_F(ClientTest, TestScan) {
   InsertTestRows(FLAGS_test_scan_num_rows);

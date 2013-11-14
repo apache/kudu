@@ -165,6 +165,13 @@ void RemoteTablet::GetTabletLocationsCB(KuduClient* client, InFlightRefresh* ifr
   ifr->user_callback(s);
 }
 
+RemoteTabletServer* RemoteTablet::replica_tserver(int idx) {
+  CHECK_GE(idx, 0);
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (idx >= replicas_.size()) return NULL;
+  return replicas_[idx].ts;
+}
+
 ////////////////////////////////////////////////////////////
 
 MetaCache::MetaCache(KuduClient* client)
