@@ -196,12 +196,10 @@ class DiskRowSet : public RowSet {
   // flushing even if we didn't actually create a delta file.
   Status FlushDeltas();
 
-  // Perform delta store compaction.
-  //
-  // TODO currently this performs a minor compaction on all delta store. Next
-  // step would be to look at various heuristics and determine if a major, minor,
-  // or no compaction is warranted.
-  Status CompactDeltaStores();
+  // Perform delta store minor compaction.
+  // This compacts the delta files down to a single one.
+  // If there is already only a single delta file, this does nothing.
+  Status MinorCompactDeltaStores();
 
   ////////////////////////////////////////////////////////////
   // RowSet implementation
@@ -242,6 +240,8 @@ class DiskRowSet : public RowSet {
   uint64_t EstimateOnDiskSize() const;
 
   size_t DeltaMemStoreSize() const;
+
+  size_t CountDeltaStores() const;
 
   Status AlterSchema(const Schema& schema);
 

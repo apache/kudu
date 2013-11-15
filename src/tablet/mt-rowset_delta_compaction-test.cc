@@ -61,7 +61,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   void RowSetDeltaCompactionThread(DiskRowSet *rs) {
     WallTime start_time = WallTime_Now();
     while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
-      ASSERT_STATUS_OK(rs->CompactDeltaStores());
+      ASSERT_STATUS_OK(rs->MinorCompactDeltaStores());
     }
   }
 

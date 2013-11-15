@@ -931,7 +931,7 @@ size_t Tablet::DeltaMemStoresSize() const {
 
   size_t ret = 0;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
-      ret += rowset->DeltaMemStoreSize();
+    ret += rowset->DeltaMemStoreSize();
   }
 
   return ret;
@@ -955,6 +955,31 @@ Status Tablet::FlushBiggestDMS() {
     }
   }
   return max_size > 0 ? biggest_dms->FlushDeltas() : Status::OK();
+}
+
+Status Tablet::MinorCompactWorstDeltas() {
+  shared_ptr<RowSetTree> rowsets_copy;
+
+  {
+    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    rowsets_copy = rowsets_;
+  }
+
+  int worst_delta_count = -1;
+  shared_ptr<RowSet> worst_rs;
+  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
+    int count = rowset->CountDeltaStores();
+    if (count > worst_delta_count) {
+      worst_rs = rowset;
+      worst_delta_count = count;
+    }
+  }
+
+  if (worst_delta_count > 1) {
+    RETURN_NOT_OK_PREPEND(worst_rs->MinorCompactDeltaStores(),
+                          "Failed minor delta compaction on " + worst_rs->ToString());
+  }
+  return Status::OK();
 }
 
 size_t Tablet::num_rowsets() const {

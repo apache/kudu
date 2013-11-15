@@ -97,6 +97,14 @@ static void CompactThread(Tablet* tablet) {
   }
 }
 
+static void CompactDeltasThread(Tablet* tablet) {
+  while (true) {
+    CHECK_OK(tablet->MinorCompactWorstDeltas());
+
+    usleep(3000 * 1000);
+  }
+}
+
 static int TabletServerMain(int argc, char** argv) {
   InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
@@ -122,6 +130,7 @@ static int TabletServerMain(int argc, char** argv) {
   // simple threads here from main.
   LOG(INFO) << "Starting flush/compact threads";
   boost::thread compact_thread(CompactThread, demo_setup.tablet().get());
+  boost::thread compact_deltas_thread(CompactDeltasThread, demo_setup.tablet().get());
   boost::thread flush_thread(FlushThread, demo_setup.tablet().get());
   boost::thread flushdm_thread(FlushDeltaMemStoresThread, demo_setup.tablet().get());
 

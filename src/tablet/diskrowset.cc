@@ -355,7 +355,7 @@ Status DiskRowSet::FlushDeltas() {
   return delta_tracker_->Flush();
 }
 
-Status DiskRowSet::CompactDeltaStores() {
+Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
 }
 
@@ -441,6 +441,11 @@ uint64_t DiskRowSet::EstimateOnDiskSize() const {
 size_t DiskRowSet::DeltaMemStoreSize() const {
   CHECK(open_);
   return delta_tracker_->DeltaMemStoreSize();
+}
+
+size_t DiskRowSet::CountDeltaStores() const {
+  CHECK(open_);
+  return delta_tracker_->CountDeltaStores();
 }
 
 Status DiskRowSet::AlterSchema(const Schema& schema) {

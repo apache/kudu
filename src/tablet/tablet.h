@@ -170,6 +170,10 @@ class Tablet {
   // Flush only the biggest DMS
   Status FlushBiggestDMS();
 
+  // Finds the RowSet which has the most separate delta files and
+  // issues a minor delta compaction.
+  Status MinorCompactWorstDeltas();
+
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
 

@@ -110,8 +110,16 @@ class RowSet {
   // Get the size of the delta's MemStore
   virtual size_t DeltaMemStoreSize() const = 0;
 
+  // Return the number of separate delta stores in the rowset,
+  // not including the DeltaMemStore.
+  virtual size_t CountDeltaStores() const = 0;
+
   // Flush the DMS if there's one
   virtual Status FlushDeltas() = 0;
+
+  // Compact delta stores if more than one.
+  virtual Status MinorCompactDeltaStores() = 0;
+
 
   virtual ~RowSet() {}
 
@@ -263,7 +271,11 @@ class DuplicatingRowSet : public RowSet {
 
   size_t DeltaMemStoreSize() const { return 0; }
 
+  size_t CountDeltaStores() const { return 0; }
+
   Status FlushDeltas() { return Status::OK(); }
+
+  Status MinorCompactDeltaStores() { return Status::OK(); }
 
  private:
   friend class Tablet;

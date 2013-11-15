@@ -101,6 +101,9 @@ class DeltaTracker {
   // Get the delta MemStore's size in bytes
   size_t DeltaMemStoreSize() const;
 
+  // Return the number of delta stores, not including the DeltaMemStore.
+  size_t CountDeltaStores() const;
+
  private:
   friend class DiskRowSet;
 

@@ -270,7 +270,11 @@ class MemRowSet : public RowSet,
 
   size_t DeltaMemStoreSize() const { return 0; }
 
+  size_t CountDeltaStores() const { return 0; }
+
   Status FlushDeltas() { return Status::OK(); }
+
+  Status MinorCompactDeltaStores() { return Status::OK(); }
 
  private:
   friend class Iterator;

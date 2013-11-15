@@ -81,9 +81,19 @@ class MockRowSet : public RowSet {
   virtual size_t DeltaMemStoreSize() const {
     LOG(FATAL) << "Unimplemented";
     return 0;
-   }
+  }
+
+  virtual size_t CountDeltaStores() const {
+    LOG(FATAL) << "Unimplemented";
+    return 0;
+  }
 
   virtual Status FlushDeltas() {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
+
+  virtual Status MinorCompactDeltaStores() {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

@@ -240,7 +240,7 @@ Status DeltaTracker::AtomicUpdateStores(size_t start_idx, size_t end_idx,
 }
 
 Status DeltaTracker::Compact() {
-  if (delta_stores_.size() == 0) {
+  if (CountDeltaStores() <= 1) {
     return Status::OK();
   }
   return CompactStores(0, -1);
@@ -489,6 +489,10 @@ size_t DeltaTracker::DeltaMemStoreSize() const {
   return dms_->memory_footprint();
 }
 
+size_t DeltaTracker::CountDeltaStores() const {
+  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  return delta_stores_.size();
+}
 ////////////////////////////////////////////////////////////
 // Delta merger
 ////////////////////////////////////////////////////////////
