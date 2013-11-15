@@ -124,7 +124,7 @@ function Gauge(placeholderName, configuration)
 	  .attr("y", point.y)
 	  .attr("dy", fontSize / 3)
 	  .attr("text-anchor", major == this.config.min ? "start" : "end")
-	  .text(major)
+	  .text(this.formatValue(major))
 	  .style("font-size", fontSize + "px")
 	  .style("fill", "#333")
 	  .style("stroke-width", "0px");
@@ -213,11 +213,27 @@ function Gauge(placeholderName, configuration)
       .attr("transform", function() { return "translate(" + self.config.cx + ", " + self.config.cy + ") rotate(270)" });
   }
 
+  this.formatValue = function(value) {
+    if (value > 1000*1000*1000) {
+      var g = value/1000000000;
+      return g.toFixed(2) + "G";
+    }
+    if (value > 1000*1000) {
+      var m = value/1000000;
+      return m.toFixed(2) + "M";
+    }
+    if (value > 1000) {
+      var k = value / 1000;
+      return k.toFixed(2) + "K";
+    }
+    return value;
+  }
+
   this.redraw = function(value, transitionDuration)
   {
     var pointerContainer = this.body.select(".pointerContainer");
 
-    pointerContainer.selectAll("text").text(Math.round(value));
+    pointerContainer.selectAll("text").text(this.formatValue(value));
 
     var pointer = pointerContainer.selectAll("path");
     pointer.transition()
