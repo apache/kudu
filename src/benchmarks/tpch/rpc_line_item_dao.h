@@ -36,6 +36,8 @@ class RpcLineItemDAO : public LineItemDAO {
   ~RpcLineItemDAO();
 
  private:
+  void ApplyBackpressure();
+
   std::tr1::shared_ptr<TabletServerServiceProxy> proxy_;
   tserver::WriteRequestPB request_;
   tserver::WriteResponsePB response_;

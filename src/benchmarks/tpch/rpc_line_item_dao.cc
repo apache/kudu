@@ -18,6 +18,8 @@
 
 DEFINE_string(master_address, "localhost",
               "Address of master for the cluster to operate on");
+DEFINE_int32(tpch_max_batch_size, 1000,
+             "Maximum number of inserts/updates to batch at once");
 
 const char * const kTabletId = "tpch1";
 
@@ -41,6 +43,7 @@ void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {
   RowwiseRowBlockPB* data = request_.mutable_to_insert_rows();
   AddRowToRowBlockPB(row, data);
   DoWriteAsync(data);
+  ApplyBackpressure();
 }
 
 void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring &mutations) {
@@ -53,6 +56,23 @@ void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring 
   request_.set_encoded_mutations(tmp.data(), tmp.size());
 
   DoWriteAsync(keys);
+  ApplyBackpressure();
+}
+
+void RpcLineItemDAO::ApplyBackpressure() {
+  while (true) {
+    {
+      boost::lock_guard<simple_spinlock> l(lock_);
+      if (!request_pending_) return;
+
+      int row_count = request_.to_insert_rows().num_rows() +
+        request_.to_mutate_row_keys().num_rows();
+      if (row_count < FLAGS_tpch_max_batch_size) {
+        break;
+      }
+    }
+    usleep(1000);
+  }
 }
 
 void RpcLineItemDAO::DoWriteAsync(RowwiseRowBlockPB *data) {
@@ -81,7 +101,10 @@ void RpcLineItemDAO::BatchFinished() {
 
   Status s = rpc_.status();
   if (!s.ok()) {
-    LOG(WARNING) << "RPC error inserting row: " << s.ToString();
+    int n_rows = request_.to_insert_rows().num_rows() +
+      request_.to_mutate_row_keys().num_rows();
+    LOG(WARNING) << "RPC error inserting row: " << s.ToString()
+                 << " (" << n_rows << " rows, " << request_.ByteSize() << " bytes)";
     return;
   }
 
