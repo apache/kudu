@@ -16,8 +16,9 @@ class TestPredicate : public KuduTest {
     arena_(1024, 4096),
     n_rows_(100),
     schema_(boost::assign::list_of
-           (ColumnSchema("col0", UINT32))
-           (ColumnSchema("col1", UINT32)),
+            (ColumnSchema("col0", UINT32))
+            (ColumnSchema("col1", UINT32))
+            (ColumnSchema("col2", STRING)),
             1),
     row_block_(schema_, n_rows_, &arena_)
   {}
@@ -29,6 +30,8 @@ class TestPredicate : public KuduTest {
   // 1      10
   // ...    ...
   // N      N * 10
+  //
+  // The third STRING column is left unset.
   void SetUp() {
     ColumnBlock col0 = row_block_.column_block(0, n_rows_);
     ColumnBlock col1 = row_block_.column_block(1, n_rows_);
@@ -81,6 +84,23 @@ TEST_F(TestPredicate, TestColumnRange) {
   ASSERT_EQ("(`col1` >= 250)", pred2.ToString());
   pred2.Evaluate(&row_block_, &selvec);
   ASSERT_EQ(5, selvec.CountSelected()) << "Only 5 rows should be left (25-29)";
+}
+
+// Regression test for KUDU-54: should not try to access rows for which the
+// selection vector is 0.
+TEST_F(TestPredicate, TestDontEvalauteOnUnselectedRows) {
+  SelectionVector selvec(n_rows_);
+  selvec.SetAllFalse();
+
+  // Fill the STRING column with garbage data.
+  OverwriteWithPattern(reinterpret_cast<char*>(row_block_.column_block(2).data()),
+                       row_block_.column_block(2).stride() * row_block_.nrows(),
+                       "JUNKDATA");
+
+  Slice lower("lower");
+  ColumnRangePredicate p(schema_.column(2), &lower, boost::none);
+  p.Evaluate(&row_block_, &selvec);
+  ASSERT_EQ(0, selvec.CountSelected());
 }
 
 } // namespace kudu

@@ -50,12 +50,6 @@ ColumnRangePredicate::ColumnRangePredicate(const ColumnSchema &col,
 
 
 void ColumnRangePredicate::Evaluate(RowBlock *block, SelectionVector *vec) const {
-  // TODO: this evaluates on every row, whereas we only need to evaluate on
-  // rows where the selection vector is currently true.
-  // Perhaps we should swap implementations here based on the current selectivity:
-  // - if only a small number of bits are set, only evaluate on the set bits
-  // - if most bits are set, evaluate on all the bits
-
   int col_idx = block->schema().find_column(col_.name());
   CHECK_GE(col_idx, 0) << "bad col: " << col_.ToString();
 
@@ -67,6 +61,7 @@ void ColumnRangePredicate::Evaluate(RowBlock *block, SelectionVector *vec) const
   // expression evaluation somewhere here, so this is just a stub.
   if (cblock.is_nullable()) {
     for (size_t i = 0; i < block->nrows(); i++) {
+      if (!vec->IsRowSelected(i)) continue;
       const void *cell = cblock.nullable_cell_ptr(i);
       if (cell == NULL || !range_.ContainsCell(cell)) {
         BitmapClear(vec->mutable_bitmap(), i);
@@ -74,6 +69,7 @@ void ColumnRangePredicate::Evaluate(RowBlock *block, SelectionVector *vec) const
     }
   } else {
     for (size_t i = 0; i < block->nrows(); i++) {
+      if (!vec->IsRowSelected(i)) continue;
       const void *cell = cblock.cell_ptr(i);
       if (!range_.ContainsCell(cell)) {
         BitmapClear(vec->mutable_bitmap(), i);

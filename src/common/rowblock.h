@@ -80,6 +80,11 @@ class SelectionVector {
     }
   }
 
+  // Set all bits in the bitmap to 0
+  void SetAllFalse() {
+    memset(&bitmap_[0], 0, n_bytes_);
+  }
+
   size_t nrows() const { return n_rows_; }
 
  private:
