@@ -226,7 +226,7 @@ function Gauge(placeholderName, configuration)
       var k = value / 1000;
       return k.toFixed(2) + "K";
     }
-    return value;
+    return value.toFixed(1);
   }
 
   this.redraw = function(value, transitionDuration)
