@@ -167,7 +167,7 @@ Status KuduScanner::Open() {
 
   controller_.Reset();
   // TODO: make configurable through API
-  const int kOpenTimeoutMs = 1000;
+  const int kOpenTimeoutMs = 5000;
   controller_.set_timeout(MonoDelta::FromMilliseconds(kOpenTimeoutMs));
 
   RETURN_NOT_OK(table_->proxy_->Scan(next_req_, &last_response_, &controller_));

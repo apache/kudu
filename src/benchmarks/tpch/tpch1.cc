@@ -42,15 +42,11 @@
 // 'N','O',74476040,111701729697.7,106118230307.6,110367043872.5,25.5,38249.1,0,2920374
 // 'R','F',37719753,56568041380.9,53741292684.6,55889619119.8,25.5,38250.9,0.1,1478870
 // ====
-#include <stdio.h>
 #include <stdlib.h>
 
-#include <boost/assign/list_of.hpp>
 #include <boost/tokenizer.hpp>
 #include <glog/logging.h>
 
-#include <iostream>
-#include <fstream>
 #include <map>
 
 #include "common/scan_predicate.h"
@@ -66,6 +62,7 @@
 #include "benchmarks/tpch/line_item_dao.h"
 #include "benchmarks/tpch/local_line_item_dao.h"
 #include "benchmarks/tpch/rpc_line_item_dao.h"
+#include "benchmarks/tpch/line_item_tsv_importer.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -73,11 +70,12 @@ DEFINE_string(tpch_path_to_tablet, "/tmp/tpch", "The full path to the tablet's d
 DEFINE_string(tpch_query_mode, "local", "Write a <local> tablet or to a <remote> cluster");
 DEFINE_int32(tpch_num_query_iterations, 1, "Number of times the query will be run.");
 DEFINE_int32(tpch_expected_matching_rows, 5916591, "Number of rows that should match the query.");
-DEFINE_string(tpch_update_or_insert, "insert", "Should we update or insert.");
+DEFINE_string(master_address, "localhost",
+              "Address of master for the cluster to operate on");
+DEFINE_int32(tpch_max_batch_size, 1000,
+             "Maximum number of inserts/updates to batch at once");
 
 namespace kudu {
-
-typedef boost::tokenizer<boost::char_separator<char> > Tokenizer;
 
 struct Result {
   int l_quantity;
@@ -117,63 +115,13 @@ struct hash {
   }
 };
 
-static const boost::char_separator<char> kPipeSeparator("|");
-
-void ConvertToIntAndPopulate(const string &chars, RowBuilder *rb) {
-  int number;
-  bool ok_parse = SimpleAtoi(chars.c_str(), &number);
-  CHECK(ok_parse);
-  rb->AddUint32(number);
-}
-
-void ConvertDoubleToIntAndPopulate(const string &chars, RowBuilder *rb) {
-  char *error = NULL;
-  errno = 0;
-  const char *cstr = chars.c_str();
-  double number = strtod(cstr, &error);
-  CHECK(errno == 0 &&  // overflow/underflow happened
-      error != cstr);
-  int new_num = number * 100;
-  rb->AddUint32(new_num);
-}
-
-void LoadLineItems(const string &path, LineItemDAO *dao, bool insert) {
-  std::ifstream in(path.c_str());
-  CHECK(in.is_open()) << "not able to open input file: " << path;
-
-  string line;
+void LoadLineItems(const string &path, LineItemDAO *dao) {
   Schema schema(tpch::CreateLineItemSchema());
-  RowBuilder rb(insert ? schema : schema.CreateKeyProjection());
-  vector<string> columns;
+  RowBuilder rb(schema);
+  LineItemTsvImporter importer(path);
 
-  while (getline(in,line)) {
-    columns.clear();
-    rb.Reset();
-    Tokenizer tokens(line, kPipeSeparator);
-
-    // grab all the columns individually
-    columns.assign(tokens.begin(), tokens.end());
-
-    ConvertToIntAndPopulate(columns[0], &rb);
-    ConvertToIntAndPopulate(columns[3], &rb);
-    if (insert) {
-      ConvertToIntAndPopulate(columns[1], &rb);
-      ConvertToIntAndPopulate(columns[2], &rb);
-      ConvertToIntAndPopulate(columns[4], &rb);
-      ConvertDoubleToIntAndPopulate(columns[5], &rb);
-      ConvertDoubleToIntAndPopulate(columns[6], &rb);
-      ConvertDoubleToIntAndPopulate(columns[7], &rb);
-      for (int i = 8; i < 16; i++)  {
-        rb.AddString(Slice(columns[i]));
-      }
-      dao->WriteLine(rb.row());
-    } else {
-      faststring mutations;
-      RowChangeListEncoder encoder(schema, &mutations);
-      Slice new_data(columns[15]);
-      encoder.AddColumnUpdate(15, &new_data);
-      dao->MutateLine(rb.row(), mutations);
-    }
+  while (importer.GetNextLine(rb) != 0) {
+    dao->WriteLine(rb.row());
   }
   dao->FinishWriting();
 }
@@ -282,16 +230,16 @@ int main(int argc, char **argv) {
   if (FLAGS_tpch_query_mode == "local") {
     dao.reset(new kudu::LocalLineItemDAO(FLAGS_tpch_path_to_tablet));
   } else {
-    dao.reset(new kudu::RpcLineItemDAO());
+    dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address,
+                                         FLAGS_tpch_max_batch_size));
   }
 
   dao->Init();
 
   bool needs_loading = dao->IsTableEmpty();
-  bool is_insert = FLAGS_tpch_update_or_insert == "insert";
   if (needs_loading) {
     LOG_TIMING(INFO, "loading") {
-      kudu::LoadLineItems(FLAGS_tpch_path_to_data, dao.get(), is_insert);
+      kudu::LoadLineItems(FLAGS_tpch_path_to_data, dao.get());
     }
   } else {
     LOG(INFO) << "Data already in place";

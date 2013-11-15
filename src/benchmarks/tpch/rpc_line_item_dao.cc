@@ -4,6 +4,9 @@
 #include <glog/logging.h>
 #include <vector>
 #include <tr1/memory>
+#include <utility>
+
+#include "gutil/map-util.h"
 
 #include "client/client.h"
 #include "common/scan_spec.h"
@@ -16,30 +19,30 @@
 #include "util/locks.h"
 #include "util/coding.h"
 
-DEFINE_string(master_address, "localhost",
-              "Address of master for the cluster to operate on");
-DEFINE_int32(tpch_max_batch_size, 1000,
-             "Maximum number of inserts/updates to batch at once");
-
 const char * const kTabletId = "tpch1";
 
 using std::tr1::shared_ptr;
 
 namespace kudu {
-
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
 void RpcLineItemDAO::Init() {
   client::KuduClientOptions opts;
-  opts.master_server_addr = FLAGS_master_address;
-  shared_ptr<client::KuduClient> client;
-  CHECK_OK(client::KuduClient::Create(opts, &client));
-  CHECK_OK(client->GetTabletProxy(kTabletId, &proxy_));
+  opts.master_server_addr = master_address_;
+  CHECK_OK(client::KuduClient::Create(opts, &client_));
+  CHECK_OK(client_->GetTabletProxy(kTabletId, &proxy_));
+  CHECK_OK(client_->OpenTable(kTabletId, &client_table_));
+
+  request_.set_tablet_id(kTabletId);
+  CHECK_OK(SchemaToColumnPBs(tpch::CreateLineItemSchema(), request_.mutable_to_insert_rows()->mutable_schema()));
+  CHECK_OK(SchemaToColumnPBs(tpch::CreateLineItemSchema(), request_.mutable_to_mutate_row_keys()->mutable_schema()));
 }
 
 void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {
+  if (!ShouldAddKey(row)) return;
+
   RowwiseRowBlockPB* data = request_.mutable_to_insert_rows();
   AddRowToRowBlockPB(row, data);
   DoWriteAsync(data);
@@ -47,6 +50,8 @@ void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {
 }
 
 void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring &mutations) {
+  if (!ShouldAddKey(row)) return;
+
   RowwiseRowBlockPB* keys = request_.mutable_to_mutate_row_keys();
   AddRowToRowBlockPB(row, keys);
 
@@ -59,6 +64,15 @@ void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring 
   ApplyBackpressure();
 }
 
+bool RpcLineItemDAO::ShouldAddKey(const ConstContiguousRow &row) {
+  uint32_t l_ordernumber = *row.schema().ExtractColumnFromRow<UINT32>(row, 0);
+  uint32_t l_linenumber = *row.schema().ExtractColumnFromRow<UINT32>(row, 1);
+  std::pair<uint32_t, uint32_t> composite_k(l_ordernumber, l_linenumber);
+
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return InsertIfNotPresent(&orders_in_request_, composite_k);
+}
+
 void RpcLineItemDAO::ApplyBackpressure() {
   while (true) {
     {
@@ -67,7 +81,7 @@ void RpcLineItemDAO::ApplyBackpressure() {
 
       int row_count = request_.to_insert_rows().num_rows() +
         request_.to_mutate_row_keys().num_rows();
-      if (row_count < FLAGS_tpch_max_batch_size) {
+      if (row_count < batch_size_) {
         break;
       }
     }
@@ -81,7 +95,7 @@ void RpcLineItemDAO::DoWriteAsync(RowwiseRowBlockPB *data) {
     request_pending_ = true;
 
     rpc_.Reset();
-    rpc_.set_timeout(MonoDelta::FromMilliseconds(1000));
+    rpc_.set_timeout(MonoDelta::FromMilliseconds(2000));
     VLOG(1) << "Sending batch of " << data->num_rows();
     proxy_->WriteAsync(request_, &response_, &rpc_, boost::bind(&RpcLineItemDAO::BatchFinished, this));
 
@@ -90,8 +104,7 @@ void RpcLineItemDAO::DoWriteAsync(RowwiseRowBlockPB *data) {
     data->clear_rows();
     data->clear_indirect_data();
     request_.clear_encoded_mutations();
-    //request_.clear_to_mutate_row_keys();
-    //request_.clear_to_insert_rows();
+    orders_in_request_.clear();
   }
 }
 
@@ -123,25 +136,47 @@ void RpcLineItemDAO::BatchFinished() {
 }
 
 void RpcLineItemDAO::FinishWriting() {
+  while (true) {
+    {
+      boost::lock_guard<simple_spinlock> l(lock_);
+      if (!request_pending_) return;
+    }
+    usleep(1000);
+  }
 }
 
-void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {
+void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {}
+
+void RpcLineItemDAO::OpenScanner(Schema &query_schema, ColumnRangePredicatePB &pred) {
+  client::KuduScanner *scanner = new client::KuduScanner(client_table_.get());
+  current_scanner_.reset(scanner);
+  CHECK_OK(current_scanner_->SetProjection(query_schema));
+  if (pred.has_column()) {
+    CHECK_OK(current_scanner_->AddConjunctPredicate(pred));
+  }
+  CHECK_OK(current_scanner_->Open());
 }
 
 bool RpcLineItemDAO::HasMore() {
-  return true;
+  bool has_more = current_scanner_->HasMoreRows();
+  if (!has_more) {
+    current_scanner_->Close();
+  }
+  return has_more;
 }
 
-void RpcLineItemDAO::GetNext(RowBlock *block) {
 
+void RpcLineItemDAO::GetNext(vector<const uint8_t*> *rows) {
+  CHECK_OK(current_scanner_->NextBatch(rows));
 }
 
 bool RpcLineItemDAO::IsTableEmpty() {
   return true;
 }
 
+void RpcLineItemDAO::GetNext(RowBlock *block) {}
 RpcLineItemDAO::~RpcLineItemDAO() {
-
+  FinishWriting();
 }
 
 } // namespace kudu
