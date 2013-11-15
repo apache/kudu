@@ -344,11 +344,16 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     return s;
   }
 
+  ProbeStats stats;
+  // Submit the stats before returning from this function
+  ProbeStatsSubmitter submitter(stats, metrics_.get());
+
   // First try to update in memrowset.
   s = memrowset_->MutateRow(tx_ctx->mvcc_txid(),
                             *mutate->probe(),
                             *mutate->schema(),
                             *mutate->changelist(),
+                            &stats,
                             result.get());
   if (s.ok()) {
     RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
@@ -365,7 +370,8 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->schema(), *mutate->changelist(), result.get());
+    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->schema(), *mutate->changelist(),
+                      &stats, result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
       return s;

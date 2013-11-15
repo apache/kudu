@@ -380,24 +380,23 @@ Status DiskRowSet::MutateRow(txid_t txid,
                              const RowSetKeyProbe &probe,
                              const Schema& update_schema,
                              const RowChangeList &update,
+                             ProbeStats* stats,
                              MutationResultPB* result) {
   CHECK(open_);
 
-  ProbeStats stats;
   rowid_t row_idx;
-  RETURN_NOT_OK(base_data_->FindRow(probe, &row_idx, &stats));
+  RETURN_NOT_OK(base_data_->FindRow(probe, &row_idx, stats));
 
   // It's possible that the row key exists in this DiskRowSet, but it has
   // in fact been Deleted already. Check with the delta tracker to be sure.
   bool deleted;
-  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted, &stats));
+  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted, stats));
   if (deleted) {
     return Status::NotFound("row not found");
   }
 
   RETURN_NOT_OK(delta_tracker_->Update(txid, row_idx, update_schema, update, result));
 
-  // TODO: propagate ProbeStats up
   return Status::OK();
 }
 

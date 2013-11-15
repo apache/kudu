@@ -83,6 +83,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
                                     const RowSetKeyProbe &probe,
                                     const Schema& update_schema,
                                     const RowChangeList &update,
+                                    ProbeStats* stats,
                                     MutationResultPB* result) {
   // Duplicate the update to both the relevant input rowset and the output rowset.
   //
@@ -95,7 +96,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
   // First mutate the relevant input rowset.
   bool updated = false;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
-    Status s = rowset->MutateRow(txid, probe, update_schema, update, result);
+    Status s = rowset->MutateRow(txid, probe, update_schema, update, stats, result);
     if (s.ok()) {
       updated = true;
       break;
@@ -115,7 +116,7 @@ Status DuplicatingRowSet::MutateRow(txid_t txid,
   // If it succeeded there, we also need to mirror into the new rowset.
   int mirrored_count = 0;
   BOOST_FOREACH(const shared_ptr<RowSet> &new_rowset, new_rowsets_) {
-    Status s = new_rowset->MutateRow(txid, probe, update_schema, update, result);
+    Status s = new_rowset->MutateRow(txid, probe, update_schema, update, stats, result);
     if (s.ok()) {
       mirrored_count++;
       #ifdef NDEBUG

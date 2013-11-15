@@ -28,6 +28,7 @@ class MockRowSet : public RowSet {
                            const RowSetKeyProbe &probe,
                            const Schema& update_schema,
                            const RowChangeList &update,
+                           ProbeStats* stats,
                            MutationResultPB *result) {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();

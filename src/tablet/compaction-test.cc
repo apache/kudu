@@ -77,11 +77,13 @@ class TestCompaction : public KuduRowSetTest {
       RowBuilder rb(schema.CreateKeyProjection());
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
+      ProbeStats stats;
       MutationResultPB result;
       ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(),
                                          probe,
                                          schema,
                                          RowChangeList(update_buf),
+                                         &stats,
                                          &result));
     }
   }

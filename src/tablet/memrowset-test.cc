@@ -96,10 +96,12 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
+    ProbeStats stats;
     return mrs->MutateRow(tx.txid(),
                           probe,
                           schema_,
                           RowChangeList(mutation_buf_),
+                          &stats,
                           result);
   }
 
@@ -112,10 +114,12 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
+    ProbeStats stats;
     return mrs->MutateRow(tx.txid(),
                           probe,
                           schema_,
                           RowChangeList(mutation_buf_),
+                          &stats,
                           result);
   }
 
@@ -467,7 +471,9 @@ TEST_F(TestMemRowSet, TestMutationWithDifferentSchema) {
     RowSetKeyProbe probe(rb.row());
 
     MutationResultPB result;
-    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2, RowChangeList(mutation_buf_), &result));
+    ProbeStats stats;
+    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2,
+                                    RowChangeList(mutation_buf_), &stats, &result));
     ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
     ASSERT_EQ(0L, result.mutations(0).mrs_id());
   }
@@ -485,7 +491,9 @@ TEST_F(TestMemRowSet, TestMutationWithDifferentSchema) {
     RowSetKeyProbe probe(rb.row());
 
     MutationResultPB result;
-    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2, RowChangeList(mutation_buf_), &result));
+    ProbeStats stats;
+    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2,
+                                    RowChangeList(mutation_buf_), &stats, &result));
     ASSERT_EQ(0L, result.mutations_size());
   }
 

@@ -55,6 +55,7 @@ class RowSet {
                            const RowSetKeyProbe &probe,
                            const Schema& update_schema,
                            const RowChangeList &update,
+                           ProbeStats* stats,
                            MutationResultPB* result) = 0;
 
   // Return a new RowIterator for this rowset, with the given projection.
@@ -232,6 +233,7 @@ class DuplicatingRowSet : public RowSet {
                    const RowSetKeyProbe &probe,
                    const Schema& update_schema,
                    const RowChangeList &update,
+                   ProbeStats* stats,
                    MutationResultPB* result);
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,

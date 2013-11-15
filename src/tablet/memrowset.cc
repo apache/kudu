@@ -153,6 +153,7 @@ Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
                             const Schema& delta_schema,
                             const RowChangeList &delta,
+                            ProbeStats* stats,
                             MutationResultPB *result) {
   {
     btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
@@ -187,6 +188,8 @@ Status MemRowSet::MutateRow(txid_t txid,
     MutationTargetPB* target = result->add_mutations();
     target->set_mrs_id(id_);
   }
+
+  stats->mrs_consulted++;
 
   // Throttle the writer if we're low on memory, but do this outside of the lock
   // so we don't slow down readers.

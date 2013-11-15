@@ -163,6 +163,7 @@ class MemRowSet : public RowSet,
                    const RowSetKeyProbe &probe,
                    const Schema& delta_schema,
                    const RowChangeList &delta,
+                   ProbeStats* stats,
                    MutationResultPB *result);
 
   // Return the number of entries in the memrowset.
