@@ -27,11 +27,12 @@
 // child contexts.
 // Metric: Base class that all metrics inherit from. Knows how to output JSON and has a type.
 // Gauge: Set or get a point-in-time value.
-//  - StringGauge: Gauge for a string value.
-//  - BooleanGauge, IntegerGauge, DoubleGauge: Lock-free gauges.
+//  - string: Gauge for a string value.
+//  - Primitive types (bool, int64_t/uint64_t, double): Lock-free gauges.
 // Counter: Get, reset, increment or decrement an int64_t value.
+// Histogram: Increment buckets of values segmented by configurable max and precision.
 //
-// TODO: Implement Histogram, Meter, Timer.
+// TODO: Implement Meter, Timer.
 //
 // =============
 // Example usage
@@ -46,8 +47,6 @@
 // Using the above API, you can pass a MetricRegistry to subsystems so that they can register
 // individual counters with their specific MetricRegistry and thus have separate subsystems
 // with the same counter names.
-//
-// TODO: Implement registration macros for gauges.
 //
 // ===========
 // JSON output
@@ -128,14 +127,24 @@
 #define METRIC_DECLARE_gauge_double(name) \
   extern ::kudu::GaugePrototype<double> METRIC_##name
 
+#define METRIC_DEFINE_histogram(name, unit, desc, max_val, num_sig_digits) \
+  ::kudu::HistogramPrototype METRIC_##name(#name, unit, desc, max_val, num_sig_digits)
+
+#define METRIC_DECLARE_histogram(name) \
+  extern ::kudu::HistogramPrototype METRIC_##name
+
 namespace kudu {
 
 class Counter;
 class CounterPrototype;
-class Gauge;
 
+class Gauge;
 template<typename T>
 class GaugePrototype;
+
+class HdrHistogram;
+class Histogram;
+class HistogramPrototype;
 
 class MetricContext;
 
@@ -146,18 +155,23 @@ struct MetricUnit {
     kBytes,
     kRequests,
     kRows,
-    kProbes
+    kProbes,
+    kNanoseconds,
+    kMicroseconds,
+    kMilliseconds,
+    kSeconds,
   };
   static const char* Name(Type unit);
 };
 
 class MetricType {
  public:
-  enum Type { kGauge, kCounter };
+  enum Type { kGauge, kCounter, kHistogram };
   static const char* Name(Type t);
  private:
   static const char* const kGaugeType;
   static const char* const kCounterType;
+  static const char* const kHistogramType;
 };
 
 // Base class to allow for putting all metrics into a single container.
@@ -192,6 +206,9 @@ class MetricRegistry {
   Gauge* FindOrCreateFunctionGauge(const std::string& name,
                                    const GaugePrototype<T>& proto,
                                    const boost::function<T()>& function);
+
+  Histogram* FindOrCreateHistogram(const std::string& name,
+                                   const HistogramPrototype& proto);
 
  private:
   friend class MultiThreadedMetricsTest;  // For unit testing.
@@ -409,6 +426,47 @@ class Counter : public Metric {
   const MetricUnit::Type unit_;
   const std::string description_;
   DISALLOW_COPY_AND_ASSIGN(Counter);
+};
+
+class HistogramPrototype {
+ public:
+  HistogramPrototype(const std::string& name, MetricUnit::Type unit,
+                     const std::string& description,
+                     uint64_t max_trackable_value, int num_sig_digits);
+  Histogram* Instantiate(const MetricContext& context);
+  const std::string& name() const { return name_; }
+  MetricUnit::Type unit() const { return unit_; }
+  const std::string& description() const { return description_; }
+  uint64_t max_trackable_value() const { return max_trackable_value_; }
+  int num_sig_digits() const { return num_sig_digits_; }
+
+ private:
+  const std::string name_;
+  const MetricUnit::Type unit_;
+  const std::string description_;
+  const uint64_t max_trackable_value_;
+  const int num_sig_digits_;
+  DISALLOW_COPY_AND_ASSIGN(HistogramPrototype);
+};
+
+class Histogram : public Metric {
+ public:
+  void Increment(uint64_t value);
+  void IncrementBy(uint64_t value, uint64_t amount);
+
+  const std::string& description() const { return description_; }
+  virtual MetricType::Type type() const { return MetricType::kHistogram; }
+  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const;
+
+ private:
+  friend class MetricRegistry;
+  FRIEND_TEST(MetricsTest, SimpleHistogramTest);
+  explicit Histogram(const HistogramPrototype& proto);
+
+  const gscoped_ptr<HdrHistogram> histogram_;
+  const MetricUnit::Type unit_;
+  const std::string description_;
+  DISALLOW_COPY_AND_ASSIGN(Histogram);
 };
 
 } // namespace kudu

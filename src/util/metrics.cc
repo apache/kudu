@@ -10,6 +10,8 @@
 #include "gutil/casts.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
+#include "util/hdr_histogram.h"
 #include "util/jsonwriter.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -19,6 +21,7 @@ namespace kudu {
 using std::string;
 using std::vector;
 using std::tr1::unordered_map;
+using strings::Substitute;
 
 //
 // MetricUnit
@@ -34,6 +37,14 @@ const char* MetricUnit::Name(Type unit) {
       return "rows";
     case kProbes:
       return "probes";
+    case kNanoseconds:
+      return "nanoseconds";
+    case kMicroseconds:
+      return "microseconds";
+    case kMilliseconds:
+      return "milliseconds";
+    case kSeconds:
+      return "seconds";
     default:
       return "UNKNOWN UNIT";
   }
@@ -45,12 +56,15 @@ const char* MetricUnit::Name(Type unit) {
 
 const char* const MetricType::kGaugeType = "gauge";
 const char* const MetricType::kCounterType = "counter";
+const char* const MetricType::kHistogramType = "histogram";
 const char* MetricType::Name(MetricType::Type type) {
   switch (type) {
     case kGauge:
       return kGaugeType;
     case kCounter:
       return kCounterType;
+    case kHistogram:
+      return kHistogramType;
     default:
       return "UNKNOWN TYPE";
   }
@@ -170,6 +184,17 @@ template Gauge* MetricRegistry::FindOrCreateFunctionGauge<double>(
     const std::string&, const GaugePrototype<double>&, const boost::function<double()>&);
 template Gauge* MetricRegistry::FindOrCreateFunctionGauge<string>(
     const std::string&, const GaugePrototype<string>&, const boost::function<string()>&);
+
+Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
+                                                 const HistogramPrototype& proto) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  Histogram* histogram = FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
+  if (!histogram) {
+    histogram = new Histogram(proto);
+    InsertOrDie(&metrics_, name, histogram);
+  }
+  return histogram;
+}
 
 Status MetricRegistry::WriteAsJson(JsonWriter* writer) const {
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
@@ -322,6 +347,106 @@ Status Counter::WriteAsJson(const string& name, JsonWriter* writer) const {
 
   writer->String("unit");
   writer->String(MetricUnit::Name(unit_));
+
+  writer->String("description");
+  writer->String(description_);
+
+  writer->EndObject();
+  return Status::OK();
+}
+
+/////////////////////////////////////////////////
+// HistogramPrototype
+/////////////////////////////////////////////////
+
+HistogramPrototype::HistogramPrototype(const std::string& name, MetricUnit::Type unit,
+                                       const std::string& description,
+                                       uint64_t max_trackable_value, int num_sig_digits)
+  : name_(name),
+    unit_(unit),
+    description_(description),
+    max_trackable_value_(max_trackable_value),
+    num_sig_digits_(num_sig_digits) {
+  // Better to crash at definition time that at instantiation time.
+  CHECK(HdrHistogram::IsValidHighestTrackableValue(max_trackable_value))
+      << Substitute("Invalid max trackable value on histogram $0: $1",
+                    name, max_trackable_value);
+  CHECK(HdrHistogram::IsValidNumSignificantDigits(num_sig_digits))
+      << Substitute("Invalid number of significant digits on histogram $0: $1",
+                    name, num_sig_digits);
+}
+
+Histogram* HistogramPrototype::Instantiate(const MetricContext& context) {
+  return context.metrics()->FindOrCreateHistogram(
+    context.prefix() + "." + name_, *this);
+}
+
+/////////////////////////////////////////////////
+// Histogram
+/////////////////////////////////////////////////
+
+Histogram::Histogram(const HistogramPrototype& proto)
+  : histogram_(new HdrHistogram()),
+    unit_(proto.unit()),
+    description_(proto.description()) {
+  CHECK_OK(histogram_->Init(proto.max_trackable_value(), proto.num_sig_digits()));
+}
+
+void Histogram::Increment(uint64_t value) {
+  histogram_->Increment(value);
+}
+
+void Histogram::IncrementBy(uint64_t value, uint64_t amount) {
+  histogram_->IncrementBy(value, amount);
+}
+
+Status Histogram::WriteAsJson(const std::string& name, JsonWriter* writer) const {
+  HdrHistogram snapshot;
+  RETURN_NOT_OK(histogram_->CopyTo(&snapshot));
+
+  writer->StartObject();
+
+  writer->String("type");
+  writer->String(MetricType::Name(type()));
+
+  writer->String("name");
+  writer->String(name);
+
+  writer->String("unit");
+  writer->String(MetricUnit::Name(unit_));
+
+  writer->String("max_trackable_value");
+  writer->Uint64(snapshot.highest_trackable_value());
+
+  writer->String("num_sig_digits");
+  writer->Uint64(snapshot.num_significant_digits());
+
+  writer->String("total_count");
+  writer->Uint64(snapshot.TotalCount());
+
+  writer->String("min");
+  writer->Uint64(snapshot.MinValue());
+
+  writer->String("mean");
+  writer->Double(snapshot.MeanValue());
+
+  writer->String("percentile_75");
+  writer->Uint64(snapshot.ValueAtPercentile(75));
+
+  writer->String("percentile_95");
+  writer->Uint64(snapshot.ValueAtPercentile(95));
+
+  writer->String("percentile_99");
+  writer->Uint64(snapshot.ValueAtPercentile(99));
+
+  writer->String("percentile_99_9");
+  writer->Uint64(snapshot.ValueAtPercentile(99.9));
+
+  writer->String("percentile_99_99");
+  writer->Uint64(snapshot.ValueAtPercentile(99.99));
+
+  writer->String("max");
+  writer->Uint64(snapshot.MaxValue());
 
   writer->String("description");
   writer->String(description_);

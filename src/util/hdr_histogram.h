@@ -50,6 +50,10 @@ class HdrHistogram {
  public:
   HdrHistogram();
 
+  // Validate your params before trying to construct the object.
+  static bool IsValidHighestTrackableValue(uint64_t highest_trackable_value);
+  static bool IsValidNumSignificantDigits(int num_significant_digits);
+
   // Specify the highest trackable value so that the class has a bound on the
   // number of buckets, and # of significant digits (in decimal) so that the
   // class can determine the granularity of those buckets.

@@ -33,13 +33,21 @@ HdrHistogram::HdrHistogram()
     counts_() {
 }
 
+bool HdrHistogram::IsValidHighestTrackableValue(uint64_t highest_trackable_value) {
+  return highest_trackable_value >= 2;
+}
+
+bool HdrHistogram::IsValidNumSignificantDigits(int num_significant_digits) {
+  return num_significant_digits >= 1 && num_significant_digits <= 5;
+}
+
 Status HdrHistogram::Init(uint64_t highest_trackable_value, int num_significant_digits) {
   // Verify argument validity
-  if (highest_trackable_value < 2) {
+  if (!IsValidHighestTrackableValue(highest_trackable_value)) {
     return Status::InvalidArgument("highest_trackable_value must be >= 2");
   }
   highest_trackable_value_ = highest_trackable_value;
-  if ((num_significant_digits < 1) || (num_significant_digits > 5)) {
+  if (!IsValidNumSignificantDigits(num_significant_digits)) {
     return Status::InvalidArgument("num_significant_digits must be between 1 and 5");
   }
   num_significant_digits_ = num_significant_digits;

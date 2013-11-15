@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
+#include "util/hdr_histogram.h"
 #include "util/jsonwriter.h"
 #include "util/metrics.h"
 #include "util/test_util.h"
@@ -50,6 +51,21 @@ TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
   FunctionGauge<int64_t>* gauge = down_cast< FunctionGauge<int64_t>* >(
       METRIC_test_func_gauge.InstantiateFunctionGauge(context, MyFunction));
   ASSERT_EQ(12345, gauge->value());
+}
+
+METRIC_DEFINE_histogram(test_hist, MetricUnit::kMilliseconds, "foo", 1000000, 3);
+
+TEST_F(MetricsTest, SimpleHistogramTest) {
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+  Histogram* hist = METRIC_test_hist.Instantiate(context);
+  hist->Increment(2);
+  hist->IncrementBy(4, 1);
+  ASSERT_EQ(2, hist->histogram_->MinValue());
+  ASSERT_EQ(3, hist->histogram_->MeanValue());
+  ASSERT_EQ(4, hist->histogram_->MaxValue());
+  ASSERT_EQ(2, hist->histogram_->TotalCount());
+  // TODO: Test coverage needs to be improved a lot.
 }
 
 TEST_F(MetricsTest, JsonPrintTest) {
