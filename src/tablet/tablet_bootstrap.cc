@@ -502,9 +502,8 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntry* entry) {
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntry* entry) {
   RETURN_NOT_OK(state->CheckOpId(entry->msg().id()));
 
-  // TODO: Probably should be logging the REPLICATE messages back to the new log here,
-  // rather than when they get matched up. This preserves the order of REPLICATE.
-  // See KUDU-45.
+  // Append the replicate message to the log as is
+  RETURN_NOT_OK(log_->Append(*entry));
 
   LogEntry** existing_entry_ptr = InsertOrReturnExisting(
     &state->pending_replicates, entry->msg().id(), entry);
@@ -637,12 +636,6 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   // skipped? On one hand appending allows this node to catch up other
   // nodes even its log entries go back further than its current
   // flushed state. On the other hand it just seems wasteful...
-
-  // Append the replicate message to the log as is
-  LogEntry replicate_entry;
-  replicate_entry.set_type(REPLICATE);
-  replicate_entry.mutable_msg()->CopyFrom(*replicate_msg);
-  RETURN_NOT_OK(log_->Append(replicate_entry));
 
   WriteTransactionContext tx_ctx;
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
