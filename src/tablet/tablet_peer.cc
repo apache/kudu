@@ -7,6 +7,7 @@
 #include "tablet/tasks/tasks.h"
 #include "tablet/tablet_metrics.h"
 #include "util/metrics.h"
+#include "util/trace.h"
 
 namespace kudu {
 namespace tablet {
@@ -185,13 +186,18 @@ class WriteCommitCallback : public FutureCallback {
 void WriteCommitCallback::OnSuccess() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("WriteCommitCallback: making edits visible");
+  }
   tx_ctx_->commit();
+
+  // Respond to the RPC.
   if (PREDICT_TRUE(tx_ctx_->rpc_context() != NULL)) {
     tx_ctx_->rpc_context()->RespondSuccess();
   }
 
-  TabletMetrics* metrics = tx_ctx_->tablet_peer()->tablet()->metrics();
   // Update tablet server metrics.
+  TabletMetrics* metrics = tx_ctx_->tablet_peer()->tablet()->metrics();
   if (metrics) {
     // TODO: should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?

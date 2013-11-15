@@ -8,6 +8,7 @@
 #include "tablet/tablet_peer.h"
 #include "tablet/transaction_context.h"
 #include "tserver/tserver.pb.h"
+#include "util/trace.h"
 
 namespace kudu {
 namespace tablet {
@@ -74,6 +75,9 @@ PrepareWriteTask::PrepareWriteTask(WriteTransactionContext *tx_ctx)
 }
 
 Status PrepareWriteTask::Run() {
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("PREPARE: Starting");
+  }
 
   // In order to avoid a copy, we mutate the row blocks for insert and
   // mutate in-place. Because the RPC framework gives us our request as a
@@ -138,6 +142,12 @@ Status PrepareWriteTask::Run() {
     return s;
   }
 
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->SubstituteAndTrace(
+      "PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
+      to_insert.size(), to_mutate.size());
+  }
+
   // Now acquire row locks and prepare everything for apply
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
@@ -170,6 +180,9 @@ Status PrepareWriteTask::Run() {
     ++i;
   }
 
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("PREPARE: Acquiring component lock");
+  }
   // acquire the component lock just before finishing prepare
   gscoped_ptr<shared_lock<rw_spinlock> > component_lock_(
       new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
@@ -178,6 +191,10 @@ Status PrepareWriteTask::Run() {
   tx_ctx_->AddToAutoReleasePool(inserts_client_schema.release());
   tx_ctx_->AddToAutoReleasePool(mutates_client_schema.release());
   tx_ctx_->AddToAutoReleasePool(mutates_key_projection_ptr.release());
+
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("PREPARE: finished");
+  }
   return s;
 }
 
@@ -191,6 +208,9 @@ ApplyWriteTask::ApplyWriteTask(WriteTransactionContext *tx_ctx)
 }
 
 Status ApplyWriteTask::Run() {
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("APPLY: Starting");
+  }
 
   tx_ctx_->start_mvcc_tx();
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
@@ -217,13 +237,24 @@ Status ApplyWriteTask::Run() {
     i++;
   }
 
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("APPLY: Releasing row locks");
+  }
+
   // Perform early lock release after we've applied all changes
   tx_ctx_->release_row_locks();
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());
   commit->set_op_type(WRITE_OP);
+
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("APPLY: finished, triggering COMMIT");
+  }
+
   tx_ctx_->consensus_ctx()->Commit(commit.Pass());
+  // NB: do not use tx_ctx_ after this point, because the commit may have
+  // succeeded, in which case the context may have been torn down.
   return Status::OK();
 }
 
