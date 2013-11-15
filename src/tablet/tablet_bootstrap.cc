@@ -249,9 +249,17 @@ static string DebugInfo(const string& tablet_id,
                         int entry_idx,
                         const string& segment_path,
                         const LogEntry& entry) {
+  // Truncate the debug string to a reasonable length for logging.
+  // Otherwise, glog will truncate for us and we may miss important
+  // information which came after this long string.
+  string debug_str = entry.ShortDebugString();
+  if (debug_str.size() > 500) {
+    debug_str.resize(500);
+    debug_str.append("...");
+  }
   return Substitute("Debug Info: Error playing entry $0 of segment $1 of tablet $2. "
-      "Segment path: $3. Entry: $4", entry_idx, segment_idx, tablet_id,
-      segment_path, entry.ShortDebugString());
+                    "Segment path: $3. Entry: $4", entry_idx, segment_idx, tablet_id,
+                    segment_path, debug_str);
 }
 
 TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
