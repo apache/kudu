@@ -8,10 +8,13 @@
 #include "consensus/log_reader.h"
 #include "gutil/stl_util.h"
 #include "util/env.h"
+#include "util/pb_util.h"
 
 DEFINE_bool(print_headers, true, "print the log segment headers");
 DEFINE_bool(print_entries, true, "print all log entries");
-
+DEFINE_int32(truncate_data, 100,
+             "Truncate the data fields to the given number of bytes "
+             "before printing. Set to 0 to disable");
 namespace kudu {
 namespace log {
 
@@ -27,7 +30,10 @@ void PrintSegment(LogReader* reader,
   vector<LogEntry*> entries;
   CHECK_OK(reader->ReadEntries(segment, &entries));
   if (FLAGS_print_entries) {
-    BOOST_FOREACH(const LogEntry* entry, entries) {
+    BOOST_FOREACH(LogEntry* entry, entries) {
+      if (FLAGS_truncate_data > 0) {
+        pb_util::TruncateFields(entry, FLAGS_truncate_data);
+      }
       cout << "Entry:\n" << entry->DebugString();
     }
   }
@@ -45,7 +51,6 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
     PrintSegment(reader.get(), segment);
   }
 }
-
 
 void DumpSegment(const string &segment_path) {
   Env *env = Env::Default();

@@ -9,17 +9,26 @@
 
 #include "util/pb_util.h"
 
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/descriptor.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/message_lite.h>
+#include <google/protobuf/message.h>
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
 #include "util/pb_util-internal.h"
 #include "util/status.h"
 #include "util/env.h"
 #include "util/env_util.h"
 
+using google::protobuf::FieldDescriptor;
+using google::protobuf::Message;
+using google::protobuf::MessageLite;
+using google::protobuf::Reflection;
+using std::string;
 using std::tr1::shared_ptr;
 
 static const char* const kTmpSuffix = ".tmp";
@@ -28,9 +37,6 @@ namespace kudu {
 namespace pb_util {
 
 namespace {
-
-using google::protobuf::MessageLite;
-using std::string;
 
 // When serializing, we first compute the byte size, then serialize the message.
 // If serialization produces a different number of bytes than expected, we
@@ -141,6 +147,52 @@ Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg) {
     return Status::IOError("Unable to parse PB from path", path);
   }
   return Status::OK();
+}
+
+static void TruncateString(string* s, int max_len) {
+  if (s->size() > max_len) {
+    s->resize(max_len);
+    s->append("<truncated>");
+  }
+}
+
+void TruncateFields(Message* message, int max_len) {
+  const Reflection* reflection = message->GetReflection();
+  vector<const FieldDescriptor*> fields;
+  reflection->ListFields(*message, &fields);
+  BOOST_FOREACH(const FieldDescriptor* field, fields) {
+    if (field->is_repeated()) {
+      for (int i = 0; i < reflection->FieldSize(*message, field); i++) {
+        switch (field->cpp_type()) {
+          case FieldDescriptor::CPPTYPE_STRING: {
+            const string& s_const = reflection->GetRepeatedStringReference(*message, field, i, NULL);
+            TruncateString(const_cast<string*>(&s_const), max_len);
+            break;
+          }
+          case FieldDescriptor::CPPTYPE_MESSAGE: {
+            TruncateFields(reflection->MutableRepeatedMessage(message, field, i), max_len);
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    } else {
+      switch (field->cpp_type()) {
+        case FieldDescriptor::CPPTYPE_STRING: {
+          const string& s_const = reflection->GetStringReference(*message, field, NULL);
+          TruncateString(const_cast<string*>(&s_const), max_len);
+          break;
+        }
+        case FieldDescriptor::CPPTYPE_MESSAGE: {
+          TruncateFields(reflection->MutableMessage(message, field), max_len);
+          break;
+        }
+        default:
+          break;
+      }
+    }
+  }
 }
 
 } // namespace pb_util

@@ -12,6 +12,7 @@
 
 namespace google { namespace protobuf {
 class MessageLite;
+class Message;
 }
 }
 
@@ -51,6 +52,10 @@ Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg);
 
 // Serialize a protobuf to the given path.
 Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg);
+
+// Truncate any 'bytes' or 'string' fields of this message to max_len.
+// The text "<truncated>" is appended to any such truncated fields.
+void TruncateFields(google::protobuf::Message* message, int max_len);
 
 } // namespace pb_util
 } // namespace kudu
