@@ -23,6 +23,7 @@ struct TabletMetrics {
   Counter* rows_inserted;
   Counter* rows_updated;
   Counter* insertions_failed_dup_key;
+  Counter* scans_started;
 
   // Probe stats
   Counter* blooms_consulted;

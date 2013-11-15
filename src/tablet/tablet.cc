@@ -143,6 +143,9 @@ Status Tablet::NewRowIterator(const Schema &projection,
 Status Tablet::NewRowIterator(const Schema &projection,
                               const MvccSnapshot &snap,
                               gscoped_ptr<RowwiseIterator> *iter) const {
+  if (metrics_) {
+    metrics_->scans_started->Increment();
+  }
   iter->reset(new Iterator(this, projection, snap));
   return Status::OK();
 }
