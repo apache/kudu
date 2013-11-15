@@ -36,12 +36,22 @@ and licensed under the Apache 2.0 License or the under the BSD-style Chromium li
 
 --------------------------------------------------------------------------------
 
+src/gutil/utf: Copyright (c) Lucent Technologies. see src/gutil/utf/LICENSE
+
+--------------------------------------------------------------------------------
+
 Some portions (parts of src/util) copyright (c) The LevelDB Authors and licensed
 under the Apache 2.0 License.
 
 --------------------------------------------------------------------------------
 
-src/gutil/utf: Copyright (c) Lucent Technologies. see src/gutil/utf/LICENSE
+Some portions (parts of src/util) were ported from Java to C++, particularly
+the HdrHistogram classes. The original Java source code was released into the
+public domain and has the following copyright notice:
+
+* This code was Written by Gil Tene of Azul Systems, and released to the
+* public domain, as explained at
+  http://creativecommons.org/publicdomain/zero/1.0/
 
 --------------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ ADD_LIBRARY(kudu_util
   coding.cc
   curl_util.cc
   group_varint.cc
+  hdr_histogram.cc
   jsonwriter.cc
   memcmpable_varint.cc
   metrics.cc
@@ -46,6 +47,7 @@ ADD_KUDU_TEST(env-test)
 ADD_KUDU_TEST(memory/arena-test)
 ADD_KUDU_TEST(bloom_filter-test)
 ADD_KUDU_TEST(group_varint-test)
+ADD_KUDU_TEST(hdr_histogram-test)
 ADD_KUDU_TEST(knapsack_solver-test)
 ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(interval_tree-test)
