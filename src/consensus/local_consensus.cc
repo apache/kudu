@@ -36,10 +36,13 @@ Status LocalConsensus::Append(
     const std::tr1::shared_ptr<FutureCallback>& commit_callback,
     gscoped_ptr<ConsensusContext>* context) {
 
+  // TODO add a test for this once we get delayed executors (KUDU-52)
+  boost::lock_guard<simple_spinlock> lock(lock_);
+
   // create the new op id for the entry.
   OpId* op_id = entry->mutable_id();
   op_id->set_term(0);
-  op_id->set_index(Barrier_AtomicIncrement(&next_op_id_, 1) - 1);
+  op_id->set_index(next_op_id_++);
 
   // create the consensus context for this round
   gscoped_ptr<ConsensusContext> new_context(new ConsensusContext(this, entry.Pass(),
@@ -59,10 +62,13 @@ Status LocalConsensus::Append(
 
 Status LocalConsensus::Commit(ConsensusContext* context, CommitMsg *commit) {
 
+  // TODO add a test for this once we get delayed executors (KUDU-52)
+  boost::lock_guard<simple_spinlock> lock(lock_);
+
   // entry for the CommitMsg
   OpId commit_id;
   commit_id.set_term(0);
-  commit_id.set_index(Barrier_AtomicIncrement(&next_op_id_, 1) - 1);
+  commit_id.set_index(next_op_id_++);
   commit->mutable_id()->CopyFrom(commit_id);
 
   // the commit callback is the very last thing to execute in a transaction

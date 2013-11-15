@@ -61,7 +61,12 @@ class LocalConsensus : public Consensus {
   QuorumPeerPB peer_;
   gscoped_ptr<TaskExecutor> log_executor_;
   gscoped_ptr<TaskExecutor> commit_executor_;
-  base::subtle::Atomic64 next_op_id_;
+  int64 next_op_id_;
+
+  // lock serializes the commit id generation and subsequent
+  // task (log) submission as well as replicate id generation
+  // and subsequent task submission.
+  simple_spinlock lock_;
 
 };
 
