@@ -18,6 +18,7 @@
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
 #include "tserver/tserver.pb.h"
+#include "util/monotime.h"
 #include "util/status.h"
 
 using kudu::tablet::TabletPeer;
@@ -316,6 +317,12 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   size_t batch_size_bytes = GetBatchSizeBytes(req);
   resp->mutable_data()->mutable_rows()->reserve(batch_size_bytes * 11 / 10);
 
+  // TODO: in the future, use the client timeout to set a budget. For now,
+  // just use a half second, which should be plenty to amortize call overhead.
+  int budget_ms = 500;
+  MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(budget_ms));
+
   while (iter->HasNext()) {
     Status s = RowwiseIterator::CopyBlock(iter, &block);
     if (PREDICT_FALSE(!s.ok())) {
@@ -332,7 +339,10 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     //
     // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
     size_t response_size = resp->data().rows().size() + resp->data().indirect_data().size();
-    if (response_size >= batch_size_bytes) {
+
+    MonoTime now = MonoTime::Now(MonoTime::COARSE);
+    if (!now.ComesBefore(deadline) ||
+        response_size >= batch_size_bytes) {
       break;
     }
   }
