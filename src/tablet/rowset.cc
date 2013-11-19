@@ -143,7 +143,7 @@ Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
   *present = false;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
     RETURN_NOT_OK(rowset->CheckRowPresent(probe, present, stats));
-    if (present) {
+    if (*present) {
       return Status::OK();
     }
   }
