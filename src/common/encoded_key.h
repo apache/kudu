@@ -36,7 +36,7 @@ class EncodedKey {
 
  private:
   const int num_key_cols_;
-  const Slice encoded_key_;
+  Slice encoded_key_;
   gscoped_ptr<uint8_t[]> data_;
   vector<const void *> raw_keys_;
 };

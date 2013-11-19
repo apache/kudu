@@ -14,9 +14,11 @@ using std::string;
 EncodedKey::EncodedKey(faststring *data,
                        vector<const void *> *raw_keys,
                        size_t num_key_cols)
- : num_key_cols_(num_key_cols),
-   encoded_key_(*data),
-   data_(data->release()) {
+  : num_key_cols_(num_key_cols) {
+  int len = data->size();
+  data_.reset(data->release());
+  encoded_key_ = Slice(data_.get(), len);
+
   DCHECK_LE(raw_keys->size(), num_key_cols);
 
   raw_keys_.swap(*raw_keys);

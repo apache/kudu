@@ -6,6 +6,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "gutil/port.h"
 #include "gutil/strings/fastmem.h"
 
 namespace kudu {
@@ -16,17 +17,25 @@ namespace kudu {
 class faststring {
  public:
   faststring() :
-    data_(new uint8_t[kInitialCapacity]),
+    data_(initial_data_),
     len_(0),
     capacity_(kInitialCapacity) {
   }
 
   // Construct a string with the given capacity, in bytes.
   explicit faststring(size_t capacity)
-    : len_(0),
-      capacity_(capacity) {
-    if (capacity > 0) {
-      data_.reset(new uint8_t[capacity]);
+    : data_(initial_data_),
+      len_(0),
+      capacity_(kInitialCapacity) {
+    if (capacity > capacity_) {
+      data_ = new uint8_t[capacity];
+      capacity_ = capacity;
+    }
+  }
+
+  ~faststring() {
+    if (data_ != initial_data_) {
+      delete[] data_;
     }
   }
 
@@ -49,13 +58,18 @@ class faststring {
     len_ = newsize;
   }
 
-  // Releases the underlying array; after this, the underlying array
-  // will be NULL. The underlying array will be re-initialized after
-  // the next reserve() call (which also happens when appending).
-  uint8_t *release() {
-    uint8_t *ret = data_.release();
+  // Releases the underlying array; after this, the buffer is left empty.
+  //
+  // NOTE: the data pointer returned by release() is not necessarily the pointer
+  uint8_t *release() WARN_UNUSED_RESULT {
+    uint8_t *ret = data_;
+    if (ret == initial_data_) {
+      ret = new uint8_t[len_];
+      memcpy(ret, data_, len_);
+    }
     len_ = 0;
-    capacity_ = 0;
+    capacity_ = kInitialCapacity;
+    data_ = initial_data_;
     return ret;
   }
 
@@ -69,7 +83,10 @@ class faststring {
       strings::memcpy_inlined(&newdata[0], &data_[0], len_);
     }
     capacity_ = newcapacity;
-    data_.swap(newdata);
+    if (data_ != initial_data_) {
+      delete[] data_;
+    }
+    data_ = newdata.release();
   }
 
   // Append the given data to the string, resizing capcaity as necessary.
@@ -208,10 +225,11 @@ class faststring {
   DISALLOW_COPY_AND_ASSIGN(faststring);
 
   enum {
-    kInitialCapacity = 16
+    kInitialCapacity = 32
   };
 
-  gscoped_array<uint8_t> data_;
+  uint8_t* data_;
+  uint8_t initial_data_[kInitialCapacity];
   size_t len_;
   size_t capacity_;
 };
