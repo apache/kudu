@@ -17,6 +17,7 @@
 #include "gutil/stringprintf.h"
 #include "tablet/diskrowset.h"
 #include "tablet/tablet-test-util.h"
+#include "tablet/transactions/write_util.h"
 #include "util/env.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"

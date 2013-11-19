@@ -12,6 +12,7 @@
 #include "tablet/concurrent_btree.h"
 #include "tablet/mutation.h"
 #include "tablet/rowset.h"
+#include "tablet/tablet.pb.h"
 #include "util/memory/arena.h"
 #include "util/memory/memory.h"
 #include "util/status.h"

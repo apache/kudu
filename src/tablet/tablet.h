@@ -17,7 +17,6 @@
 #include "tablet/memrowset.h"
 #include "tablet/lock_manager.h"
 #include "tablet/rowset_tree.h"
-#include "tablet/transaction_context.h"
 #include "util/env.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -38,7 +37,9 @@ using std::tr1::shared_ptr;
 
 class RowSetsInCompaction;
 class CompactionPolicy;
+class PreparedRowWrite;
 struct TabletMetrics;
+class WriteTransactionContext;
 
 class Tablet {
  public:
@@ -70,7 +71,7 @@ class Tablet {
   // can make the PreparedRowWrite own the row and can revert to passing just
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedInsert(const TransactionContext* tx_ctx,
+  Status CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
                               const ConstContiguousRow* row,
                               gscoped_ptr<PreparedRowWrite>* row_write);
 
@@ -102,7 +103,7 @@ class Tablet {
   // can make the PreparedRowWrite own the row and can revert to passing just
   // the raw row data, but right now we need to pass the built ConstContinuousRow
   // as there are cases where row is passed as a reference (old API).
-  Status CreatePreparedMutate(const TransactionContext* tx_ctx,
+  Status CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                               const ConstContiguousRow* row_key,
                               const Schema* changelist_schema,
                               const RowChangeList* changelist,

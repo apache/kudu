@@ -12,8 +12,9 @@
 #include "consensus/consensus.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
+#include "rpc/rpc_context.h"
 #include "tablet/tablet_peer.h"
-#include "tablet/transaction_context.h"
+#include "tablet/transactions/write_transaction.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
@@ -89,7 +90,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     new WriteTransactionContext(tablet_peer.get(), context, req, resp);
 
   // Submit the write. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->Write(tx_ctx);
+  Status s = tablet_peer->SubmitWrite(tx_ctx);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

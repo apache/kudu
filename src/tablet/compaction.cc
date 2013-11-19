@@ -10,6 +10,8 @@
 #include "gutil/stl_util.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
+#include "tablet/tablet.pb.h"
+#include "tablet/transactions/write_transaction.h"
 
 namespace kudu {
 namespace tablet {

@@ -17,7 +17,7 @@
 #include "server/fsmanager.h"
 #include "tablet/lock_manager.h"
 #include "tablet/tablet.h"
-#include "tablet/transaction_context.h"
+#include "tablet/transactions/write_transaction.h"
 #include "util/locks.h"
 
 using boost::shared_lock;

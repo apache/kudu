@@ -1,12 +1,13 @@
 # Copyright (c) 2012, Cloudera, inc.
 
 SET(TABLET_SRCS
-  tasks/tasks.cc
   tablet.cc
   tablet_bootstrap.cc
   tablet_metrics.cc
   tablet_peer.cc
-  transaction_context.cc
+  transactions/transaction.cc
+  transactions/write_transaction.cc
+  transactions/write_util.cc
   cfile_set.cc
   compaction.cc
   compaction_policy.cc
@@ -30,7 +31,6 @@ add_library(tablet_proto ${TABLET_PROTO_SRCS} ${TABLET_PROTO_HDRS})
 ADD_DEPENDENCIES(tablet_proto kudu_common)
 
 SET(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
-
 ADD_LIBRARY(tablet ${TABLET_SRCS})
 ADD_DEPENDENCIES(tablet kudu_common)
 ADD_DEPENDENCIES(tablet gutil)

@@ -11,6 +11,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
+#include "common/wire_protocol.h"
 #include "benchmarks/tpch/line_item_dao.h"
 #include "tserver/tserver_service.proxy.h"
 #include "benchmarks/tpch/tpch-schemas.h"

@@ -9,6 +9,7 @@
 #include "common/scan_spec.h"
 #include "tablet/memrowset.h"
 #include "tablet/tablet-test-util.h"
+#include "tablet/transactions/write_util.h"
 #include "util/stopwatch.h"
 #include "util/test_macros.h"
 

@@ -14,6 +14,7 @@
 #include "integration-tests/mini_cluster.h"
 #include "master/mini_master.h"
 #include "tablet/tablet_peer.h"
+#include "tablet/transactions/write_transaction.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"

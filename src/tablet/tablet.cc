@@ -26,7 +26,8 @@
 #include "tablet/tablet.h"
 #include "tablet/tablet_metrics.h"
 #include "tablet/diskrowset.h"
-#include "tablet/delta_compaction.cc"
+#include "tablet/delta_compaction.h"
+#include "tablet/transactions/write_transaction.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
 #include "util/metrics.h"
@@ -159,7 +160,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
   return Status::OK();
 }
 
-Status Tablet::CreatePreparedInsert(const TransactionContext* tx_ctx,
+Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
                                     const ConstContiguousRow* row,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
@@ -267,7 +268,7 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
   return s;
 }
 
-Status Tablet::CreatePreparedMutate(const TransactionContext* tx_ctx,
+Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                                     const ConstContiguousRow* row_key,
                                     const Schema* changelist_schema,
                                     const RowChangeList* changelist,

@@ -8,7 +8,7 @@
 #include "common/schema.h"
 #include "common/row.h"
 #include "tablet/tablet.h"
-#include "tablet/transaction_context.h"
+#include "tablet/transactions/write_transaction.h"
 #include "benchmarks/tpch/line_item_dao.h"
 
 namespace kudu {

@@ -3,7 +3,6 @@
 #include "common/schema.h"
 #include "common/row.h"
 #include "tablet/tablet.h"
-#include "tablet/transaction_context.h"
 #include "benchmarks/tpch/local_line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 

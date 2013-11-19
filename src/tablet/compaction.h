@@ -9,12 +9,11 @@
 #include "common/iterator.h"
 #include "tablet/diskrowset.h"
 #include "tablet/memrowset.h"
-#include "tablet/transaction_context.h"
 
 namespace kudu {
 namespace tablet {
-
 struct CompactionInputRow;
+class WriteTransactionContext;
 
 // Interface for an input feeding into a compaction or flush.
 class CompactionInput {

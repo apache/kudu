@@ -25,6 +25,7 @@
 #include "gutil/stl_util.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
+#include "tablet/transactions/write_transaction.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"

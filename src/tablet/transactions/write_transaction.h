@@ -1,90 +1,35 @@
-// Copyright (c) 2012, Cloudera, inc.
-#ifndef KUDU_TABLET_TRANSACTION_CONTEXT_H_
-#define KUDU_TABLET_TRANSACTION_CONTEXT_H_
+// Copyright (c) 2013, Cloudera, inc.
 
-#include <string>
+#ifndef KUDU_TABLET_WRITE_TRANSACTION_H_
+#define KUDU_TABLET_WRITE_TRANSACTION_H_
+
 #include <vector>
 
-#include "common/row.h"
-#include "common/row_changelist.h"
-#include "common/wire_protocol.h"
-#include "consensus/consensus.h"
-#include "rpc/rpc_context.h"
-#include "rpc/service_if.h"
-#include "tablet/lock_manager.h"
+#include "common/schema.h"
+#include "gutil/macros.h"
 #include "tablet/mvcc.h"
-#include "tablet/rowset.h"
 #include "tablet/tablet.pb.h"
-#include "tserver/tserver.pb.h"
-#include "util/auto_release_pool.h"
+#include "tablet/transactions/transaction.h"
+#include "util/task_executor.h"
 
 namespace kudu {
+class ConstContiguousRow;
+class RowwiseRowBlockPB;
+class RowChangeList;
+
+namespace consensus {
+class Consensus;
+}
+
+namespace tserver {
+class WriteRequestPB;
+class WriteResponsePB;
+}
 
 namespace tablet {
-
-class TabletPeer;
 class PreparedRowWrite;
-
-// All metrics associated with a TransactionContext.
-struct TransactionMetrics {
-  TransactionMetrics();
-  void Reset();
-  int successful_inserts;
-  int successful_updates;
-};
-
-class TransactionContext {
- public:
-  // Sets the ConsensusContext for this transaction, if this transaction is
-  // being executed through the consensus system.
-  void set_consensus_ctx(gscoped_ptr<consensus::ConsensusContext> consensus_ctx) {
-    consensus_ctx_.reset(consensus_ctx.release());
-  }
-
-  // Returns the ConsensusContext being used, if this transaction is being
-  // executed through the consensus system or NULL if it's not.
-  consensus::ConsensusContext* consensus_ctx() {
-    return consensus_ctx_.get();
-  }
-
-  TabletPeer* tablet_peer() const { return tablet_peer_; }
-
-  // Return metrics related to this transaction.
-  const TransactionMetrics& metrics() const { return tx_metrics_; }
-
-  // Returns the RPCContext that triggered this transaction, if this
-  // transaction was triggered by a client.
-  rpc::RpcContext *rpc_context() {
-    return rpc_ctx_;
-  }
-
-  // Sets a heap object to be managed by this transaction's AutoReleasePool.
-  template <class T>
-  T* AddToAutoReleasePool(T* t) {
-    return pool_.Add(t);
-  }
-
- protected:
-  TransactionContext(TabletPeer* tablet_peer, rpc::RpcContext* rpc_ctx)
-      : tablet_peer_(tablet_peer),
-        rpc_ctx_(rpc_ctx) {
-  }
-
-  TransactionMetrics tx_metrics_;
-
-  // The tablet peer that is coordinating this transaction.
-  TabletPeer* tablet_peer_;
-
-  // pointers to the rpc context, request and response, lifecyle
-  // is managed by the rpc subsystem. These pointers maybe NULL if the
-  // transaction was not initiated by an RPC call.
-  rpc::RpcContext* rpc_ctx_;
-
-  AutoReleasePool pool_;
-
-  gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
-};
-
+class RowSetKeyProbe;
+class ScopedRowLock;
 
 // A transaction context for a batch of inserts/mutates. This class holds and
 // owns most everything related to a transaction, including the acquired locks
@@ -254,8 +199,129 @@ class WriteTransactionContext : public TransactionContext {
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
 };
 
-// Calculates type of the mutation based on the set fields and number of targets.
-MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
+// Executes a write transaction, leader side.
+//
+// Transaction execution is illustrated in the next diagram. (Further
+// illustration of the inner workings of the consensus system can be found
+// in consensus/consensus.h).
+//
+//                                 + 1) Execute()
+//                                 |
+//                                 |
+//                                 |
+//                         +-------+-------+
+//                         |       |       |
+// 3) Consensus::Append()  |       v       | 2) Prepare()
+//                         |   (returns)   |
+//                         v               v
+//                  +------------------------------+
+//               4) |      PrepareSucceeded()      |
+//                  |------------------------------|
+//                  | - continues once both        |
+//                  |   phases have finished       |
+//                  +--------------+---------------+
+//                                 |
+//                                 | Submits Apply()
+//                                 v
+//                     +-------------------------+
+//                  5) |         Apply           |
+//                     |-------------------------|
+//                     | - applies transaction   |
+//                     +-------------------------+
+//                                 |
+//                                 | 6) Calls Consensus::Commit()
+//                                 v
+//                                 + ApplySucceeded().
+//
+// 1) TabletPeer calls LeaderWriteTransaction::Execute() which creates the ReplicateMsg,
+//    calls Consensus::Append() and LeaderWriteTransaction::Prepare(). Both calls execute
+//    asynchronously.
+//
+// 2) The Prepare() call executes the sequence of steps required for a write
+//    transaction, leader side. This means, decoding the client's request, and acquiring
+//    all relevant row locks, as well as the component lock in shared mode.
+//
+// 3) Consensus::Append() completes when having replicated and persisted the client's
+//    request. Depending on the consensus algorithm this might mean just writing to
+//    local disk, or replicating the request across quorum replicas.
+//
+// 4) PrepareSucceeded() is called as a callback when both Consensus::Append() and
+//    Prepare() complete. When PrepareSucceeded() is is called twice (independently
+//    of who finishes first) Apply() is called, asynchronously.
+//
+// 5) When Apply() starts execution the TransactionContext must have been
+//    passed all the PreparedRowWrites (each containing a row lock) and the
+//    'component_lock'. Apply() starts the mvcc transaction and calls
+//    Tablet::InsertUnlocked/Tablet::MutateUnlocked with each of the
+//    PreparedRowWrites. Apply() keeps track of any single row errors
+//    that might have occurred while inserting/mutating and sets those in
+//    WriteResponse. TransactionContext is passed with each insert/mutate
+//    to keep track of which in-memory stores were mutated.
+//    After all the inserts/mutates are performed Apply() releases row
+//    locks (see 'Implementation Techniques for Main Memory Database Systems',
+//    DeWitt et. al.). It then readies the CommitMsg with the TXResultPB in
+//    transaction context and calls ConsensusContext::Commit() which will
+//    in turn trigger a commit of the consensus system.
+//
+// 6) After the consensus system deems the CommitMsg committed (which might
+//    have different requirements depending on the consensus algorithm) the
+//    ApplySucceeded callback is called and the transaction is considered
+//    completed, the mvcc transaction committed (making the updates visible
+//    to other transactions), the metrics updated and the transaction's
+//    resources released.
+//
+class LeaderWriteTransaction : public LeaderTransaction {
+ public:
+  LeaderWriteTransaction(WriteTransactionContext* tx_ctx,
+                         consensus::Consensus* consensus,
+                         TaskExecutor* prepare_executor,
+                         TaskExecutor* apply_executor,
+                         simple_spinlock& prepare_replicate_lock);
+ protected:
+
+  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);
+
+  // Executes a Prepare for a write transaction, leader side.
+  //
+  // Acquires all the relevant row locks for the transaction, the tablet
+  // component_lock in shared mode and starts an Mvcc transaction. When the task
+  // is finished, the next one in the pipeline must take ownership of these.
+  virtual Status Prepare();
+
+  // Releases the write transaction's row locks and sets up the error in the WriteResponse
+  virtual void PrepareFailedPreCommitHooks(gscoped_ptr<consensus::CommitMsg>* commit_msg);
+
+  // Executes an Apply for a write transaction, leader side.
+  //
+  // Actually applies inserts/mutates into the tablet. After these start being
+  // applied, the transaction must run to completion as there is currently no
+  // means of undoing an update.
+  //
+  // After completing the inserts/mutates, the row locks and the mvcc transaction
+  // can be released, allowing other transactions to update the same rows.
+  // However the component lock must not be released until the commit msg, which
+  // indicates where each of the inserts/mutates were applied, is persisted to
+  // stable storage. Because of this ApplyTask must enqueue a CommitTask before
+  // releasing both the row locks and deleting the MvccTransaction as we need to
+  // make sure that Commits that touch the same set of rows are persisted in
+  // order, for recovery.
+  // This, of course, assumes that commits are executed in the same order they
+  // are placed in the queue (but not necessarily in the same order of the
+  // original requests) which is already a requirement of the consensus
+  // algorithm.
+  virtual Status Apply();
+
+  // Actually commits the mvcc transaction.
+  virtual void ApplySucceeded();
+
+  virtual void UpdateMetrics();
+
+  virtual WriteTransactionContext* tx_ctx() { return tx_ctx_.get(); }
+
+ private:
+  gscoped_ptr<WriteTransactionContext> tx_ctx_;
+  DISALLOW_COPY_AND_ASSIGN(LeaderWriteTransaction);
+};
 
 // A context for a single row in a transaction. Contains the row, the probe
 // and the row lock for an insert, or the row_key, the probe, the mutation
@@ -324,4 +390,5 @@ class PreparedRowWrite {
 }  // namespace tablet
 }  // namespace kudu
 
-#endif /* KUDU_TABLET_TRANSACTION_CONTEXT_H_ */
+
+#endif /* KUDU_TABLET_WRITE_TRANSACTION_H_ */

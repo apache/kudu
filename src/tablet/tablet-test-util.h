@@ -9,6 +9,7 @@
 #include "gutil/strings/join.h"
 #include "gutil/casts.h"
 #include "tablet/tablet.h"
+#include "tablet/transactions/write_transaction.h"
 #include "util/test_util.h"
 
 namespace kudu {
