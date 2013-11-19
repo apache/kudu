@@ -16,7 +16,9 @@ namespace kudu {
 using strings::internal::SubstituteArg;
 
 Trace::Trace()
-  : arena_(new ThreadSafeArena(1024, 128*1024)) {
+  : arena_(new ThreadSafeArena(1024, 128*1024)),
+    entries_head_(NULL),
+    entries_tail_(NULL) {
 }
 
 Trace::~Trace() {
@@ -26,6 +28,7 @@ Trace::~Trace() {
 struct TraceEntry {
   MicrosecondsInt64 timestamp_micros;
   uint32_t message_len;
+  TraceEntry* next;
 
   // The actual trace message follows the entry header.
   char* message() {
@@ -47,33 +50,50 @@ void Trace::SubstituteAndTrace(StringPiece format,
 
   TraceEntry* entry = NewEntry(msg_len);
   SubstituteToBuffer(format, args_array, entry->message());
-
-  boost::lock_guard<simple_spinlock> l(lock_);
-  entries_.push_back(entry);
+  AddEntry(entry);
 }
 
 TraceEntry* Trace::NewEntry(int msg_len) {
   int size = sizeof(TraceEntry) + msg_len;
   uint8_t* dst = reinterpret_cast<uint8_t*>(arena_->AllocateBytes(size));
-  TraceEntry* header = reinterpret_cast<TraceEntry*>(dst);
-  header->timestamp_micros = GetCurrentTimeMicros();
-  header->message_len = msg_len;
-  return header;
+  TraceEntry* entry = reinterpret_cast<TraceEntry*>(dst);
+  entry->timestamp_micros = GetCurrentTimeMicros();
+  entry->message_len = msg_len;
+  return entry;
 }
 
 void Trace::Message(StringPiece s) {
   TraceEntry* entry = NewEntry(s.length());
   memcpy(entry->message(), s.data(), s.length());
+  AddEntry(entry);
+}
 
+void Trace::AddEntry(TraceEntry* entry) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  entries_.push_back(entry);
+  entry->next = NULL;
+
+  if (entries_tail_ != NULL) {
+    entries_tail_->next = entry;
+  } else {
+    DCHECK(entries_head_ == NULL);
+    entries_head_ = entry;
+  }
+  entries_tail_ = entry;
 }
 
 void Trace::Dump(std::ostream* out) const {
+  // Gather a copy of the list of entries under the lock. This is fast
+  // enough that we aren't worried about stalling concurrent tracers
+  // (whereas doing the logging itself while holding the lock might be
+  // too slow, if the output stream is a file, for example).
   vector<TraceEntry*> entries;
   {
     boost::lock_guard<simple_spinlock> l(lock_);
-    entries = entries_;
+    for (TraceEntry* cur = entries_head_;
+         cur != NULL;
+         cur = cur->next) {
+      entries.push_back(cur);
+    }
   }
 
   // Save original flags.

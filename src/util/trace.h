@@ -48,11 +48,21 @@ class Trace {
 
  private:
 
+  // Allocate a new entry from the arena, with enough space to hold a
+  // message of length 'len'.
   TraceEntry* NewEntry(int len);
 
-  mutable simple_spinlock lock_;
+  // Add the entry to the linked list of entries.
+  void AddEntry(TraceEntry* entry);
+
   gscoped_ptr<ThreadSafeArena> arena_;
-  std::vector<TraceEntry*> entries_;
+
+  // Lock protecting the entries linked list.
+  mutable simple_spinlock lock_;
+  // The head of the linked list of entries (allocated inside arena_)
+  TraceEntry* entries_head_;
+  // The tail of the linked list of entries (allocated inside arena_)
+  TraceEntry* entries_tail_;
 
   DISALLOW_COPY_AND_ASSIGN(Trace);
 };
