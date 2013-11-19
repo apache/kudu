@@ -19,8 +19,13 @@ TEST(TestTaskExecutor, TestNoTaskOpenClose) {
   executor->Shutdown();
 }
 
-static void SimpleFunc(int a, int b) {
-  LOG(INFO)<< "Executing SimpleFunc(" << a << ", " << b << ")";
+static void SimpleListenerFunc(int a, int b) {
+  LOG(INFO)<< "Executing SimpleListenerFunc(" << a << ", " << b << ")";
+}
+
+static Status SimpleRunFunc(Status status) {
+  LOG(INFO)<< "Executing SimpleRunFunc(" << status.ToString() << ")";
+  return status;
 }
 
 class SimpleTask : public Task {
@@ -107,10 +112,10 @@ TEST(TestTaskExecutor, TestFutureListeners) {
                    &future));
 
   // Add simple generic function as listener
-  future->AddListener(boost::bind(&SimpleFunc, 10, 20));
+  future->AddListener(boost::bind(&SimpleListenerFunc, 10, 20));
 
   // Add simple function on a thread pool as listener
-  boost::function<void()> func = boost::bind(&SimpleFunc, 30, 40);
+  boost::function<void()> func = boost::bind(&SimpleListenerFunc, 30, 40);
   future->AddListener(boost::bind(&ThreadPool::SubmitFunc, thread_pool, func));
 
   // Add simple runnable on a thread pool as listener
@@ -346,6 +351,32 @@ TEST(TestTaskExecutor, TestAbortSuccessAndFailure) {
   ASSERT_EQ(1, result.count());
 
   executor->Shutdown();
+}
+
+TEST(TestTaskExecutor, TestRunAndAbortBindMethods) {
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  std::tr1::shared_ptr<Future> future;
+  // test bind with a function that returns OK
+  ASSERT_STATUS_OK(executor->Submit(boost::bind(&SimpleRunFunc, Status::OK()), &future));
+  future->Wait();
+  ASSERT_EQ(future->status().CodeAsString(), Status::OK().CodeAsString());
+
+  future.reset();
+  // test bind with a function that returns Status::IllegalState
+  ASSERT_STATUS_OK(executor->Submit(boost::bind(&SimpleRunFunc, Status::IllegalState("")),
+                                    &future));
+  future->Wait();
+  ASSERT_EQ(future->status().CodeAsString(), Status::IllegalState("").CodeAsString());
+
+  // test bind with an abortable task
+  future.reset();
+  gscoped_ptr<AbortableHangingTask> task(new AbortableHangingTask);
+  ASSERT_STATUS_OK(executor->Submit(boost::bind(&AbortableHangingTask::Run, task.get()),
+                                    boost::bind(&AbortableHangingTask::Abort, task.get()),
+                                    &future));
+  ASSERT_TRUE(future->Abort());
+  future->Wait();
+  ASSERT_TRUE(future->is_aborted());
 }
 
 // Test Abort() before SubmitFutureTask().

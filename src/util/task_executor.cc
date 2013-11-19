@@ -113,6 +113,18 @@ Status TaskExecutor::Submit(const std::tr1::shared_ptr<Task>& task,
   return thread_pool_->Submit(future_task);
 }
 
+
+Status TaskExecutor::Submit(const boost::function<Status()>& run_method,
+                            std::tr1::shared_ptr<Future>* future) {
+  return Submit(std::tr1::shared_ptr<Task>(new BoundTask(run_method)), future);
+}
+
+Status TaskExecutor::Submit(const boost::function<Status()>& run_method,
+                            const boost::function<bool()>& abort_method,
+                            std::tr1::shared_ptr<Future>* future) {
+  return Submit(std::tr1::shared_ptr<Task>(new BoundTask(run_method, abort_method)), future);
+}
+
 Status TaskExecutor::SubmitFutureTask(const std::tr1::shared_ptr<FutureTask>* future_task) {
   CHECK(future_task != NULL);
   return thread_pool_->Submit(*future_task);

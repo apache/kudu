@@ -36,6 +36,37 @@ class FutureCallback {
   }
 };
 
+class BoundFunctionCallback : public FutureCallback {
+ public:
+  explicit BoundFunctionCallback(const boost::function<void()>& on_success)
+      : on_success_(on_success),
+        on_failure_(boost::bind(&BoundFunctionCallback::DefaultOnFailure, _1)) {
+  }
+
+  BoundFunctionCallback(const boost::function<void()>& on_success,
+                        const boost::function<void(const Status&)>& on_failure)
+      : on_success_(on_success),
+        on_failure_(on_failure) {
+  }
+
+  void OnSuccess() {
+    on_success_();
+  }
+  void OnFailure(const Status& status) {
+    on_failure_(status);
+  }
+
+ private:
+  static void DefaultOnFailure(const Status& status) {
+    DLOG(WARNING) << "Task failed silently with status: " << status.ToString();
+  }
+
+  boost::function<void()> on_success_;
+  boost::function<void(const Status&)> on_failure_;
+
+  DISALLOW_COPY_AND_ASSIGN(BoundFunctionCallback);
+};
+
 // A Future for a Task. Allows to inspect the execution state of the task,
 // block waiting for completion.
 class Future {
@@ -91,15 +122,16 @@ class Future {
   //   future->AddListener(boost::bind(&TaskExecutor::Submit, executor,
   //                                   listener_task, &listener_future));
   void AddListener(const boost::function<void()>& func) {
-    AddListener(func, func);
+    AddListener(std::tr1::shared_ptr<FutureCallback>(
+           new BoundFunctionCallback(func)));
   }
 
   // Add a binded function to call on task success and a binded function to call on failure
   // (See AddListener(boost::function) for details)
   void AddListener(const boost::function<void()>& on_success,
-                   const boost::function<void()>& on_failure) {
+                   const boost::function<void(const Status&)>& on_failure) {
     AddListener(std::tr1::shared_ptr<FutureCallback>(
-        new BindedFuncCallback(on_success, on_failure)));
+        new BoundFunctionCallback(on_success, on_failure)));
   }
 
   // Waits for the task finished state for the given duration of time.
@@ -114,27 +146,6 @@ class Future {
 
   virtual ~Future() {
   }
-
- private:
-  class BindedFuncCallback : public FutureCallback {
-   public:
-    BindedFuncCallback(const boost::function<void()>& on_success,
-                       const boost::function<void()>& on_failure)
-   : on_success_(on_success),
-     on_failure_(on_failure) {
-    }
-
-    void OnSuccess() {
-      on_success_();
-    }
-    void OnFailure(const Status& status) {
-      on_failure_();
-    }
-
-   private:
-    boost::function<void()> on_success_;
-    boost::function<void()> on_failure_;
-  };
 };
 
 // A generic task to be executed by Task executor.
@@ -148,6 +159,42 @@ class Task {
   virtual bool Abort() = 0;
   virtual ~Task() {
   }
+};
+
+// A generic task that accepts methods and executes them on Run() and
+// Abort().
+class BoundTask : public Task {
+ public:
+
+  explicit BoundTask(const boost::function<Status()>& run)
+      : run_(run),
+        abort_(boost::bind(&BoundTask::DefaultAbort)) {
+  }
+
+  BoundTask(const boost::function<Status()>& run,
+            const boost::function<bool()>& abort)
+      : run_(run),
+        abort_(abort) {
+  }
+
+  Status Run() {
+    return run_();
+  }
+
+  bool Abort() {
+    return abort_();
+  }
+
+ private:
+
+  static bool DefaultAbort() {
+    return false;
+  }
+
+  boost::function<Status()> run_;
+  boost::function<bool()> abort_;
+
+  DISALLOW_COPY_AND_ASSIGN(BoundTask);
 };
 
 // And implementation of Runnable and Future that takes a Task, executes it,
@@ -235,6 +282,18 @@ class TaskExecutor {
   //    executor->Submit(task, &future);
   //    future->Wait();
   Status Submit(const std::tr1::shared_ptr<Task>& task,
+                std::tr1::shared_ptr<Future> *future)
+                WARN_UNUSED_RESULT;
+
+  // Submit a method to be executed through this executor.
+  Status Submit(const boost::function<Status()>& run_method,
+                std::tr1::shared_ptr<Future> *future)
+                WARN_UNUSED_RESULT;
+
+  // Submit a method to be executed through this executor and a method
+  // to be executed on Future::Abort().
+  Status Submit(const boost::function<Status()>& run_method,
+                const boost::function<bool()>& abort_method,
                 std::tr1::shared_ptr<Future> *future)
                 WARN_UNUSED_RESULT;
 
