@@ -1,0 +1,145 @@
+// Copyright (c) 2013, Cloudera, inc.
+package kudu;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Represents table's schema which is essentially a list of columns.
+ * This class offers a few utility methods for querying it.
+ */
+public class Schema {
+
+  private final List<ColumnSchema> columns;
+  private final Map<String, ColumnSchema> columnsMap;
+  private final int[] columnOffsets;
+  private final int stringCount;
+  private final int rowSize;
+  private final int keysCount;
+
+  /**
+   * Constructs a schema using the specified columns and does some internal accounting
+   * @param columns
+   */
+  public Schema(List<ColumnSchema> columns) {
+    this.columns = columns;
+    int strcnt = 0;
+    int keycnt = 0;
+    this.columnOffsets = new int[columns.size()];
+    this.columnsMap = new HashMap<String, ColumnSchema>(columns.size());
+    int pos = 0;
+    int i = 0;
+    // pre-compute a few counts and offsets
+    for (ColumnSchema col : this.columns) {
+      this.columnsMap.put(col.getName(), col);
+      columnOffsets[i] = pos;
+      pos += col.getType().getSize();
+      if (col.getType() == Type.STRING) {
+        strcnt++;
+      }
+      if (col.isKey()) {
+        keycnt++;
+      }
+      i++;
+    }
+    this.stringCount = strcnt;
+    this.keysCount = keycnt;
+    this.rowSize = getRowSize(columns);
+  }
+
+  /**
+   * Get the list of columns used to create this schema
+   * @return list of columns
+   */
+  public List<ColumnSchema> getColumns() {
+    return this.columns;
+  }
+
+  /**
+   * Get the count of Strings in this schema
+   * @return strings count
+   */
+  public int getStringCount() {
+    return this.stringCount;
+  }
+
+  /**
+   * Get the size a row built using this schema would be
+   * @return size in bytes
+   */
+  public int getRowSize() {
+    return this.rowSize;
+  }
+
+  /**
+   * Get the index at which this column can be found in the bacling byte array
+   * @param idx column's index
+   * @return column's offset
+   */
+  public int getColumnOffset(int idx) {
+    return this.columnOffsets[idx];
+  }
+
+  /**
+   * Get the column at the specified index in the original list
+   * @param idx column's index
+   * @return the column
+   */
+  public ColumnSchema getColumn(int idx) {
+    return this.columns.get(idx);
+  }
+
+  /**
+   * Get the column associated with the specified name
+   * @param columnName column's name
+   * @return the column
+   */
+  public ColumnSchema getColumn(String columnName) {
+    return this.columnsMap.get(columnName);
+  }
+
+  /**
+   * Get the count of columns in this schema
+   * @return count of columns
+   */
+  public int getColumnCount() {
+    return this.columns.size();
+  }
+
+  /**
+   * Get the count of columns that are part of the keys
+   * @return count of keys
+   */
+  public int getKeysCount() {
+    return this.keysCount;
+  }
+
+  /**
+   * Get a schema that only contains the columns which are part of the key
+   * @return new schema with only the keys
+   */
+  public Schema getRowKeyProjection() {
+    List<ColumnSchema> columns = new ArrayList<ColumnSchema>(this.keysCount);
+    for (ColumnSchema col : this.columns) {
+      if (col.isKey()) {
+        columns.add(col);
+      }
+    }
+    return new Schema(columns);
+  }
+
+  /**
+   * Gives the size in bytes for a single row given the specified schema
+   * @param schema row's schema
+   * @return row size in bytes
+   */
+  public static int getRowSize(List<ColumnSchema> schema) {
+    int totalSize = 0;
+    for (ColumnSchema column : schema) {
+      totalSize += column.getType().getSize();
+    }
+    return totalSize;
+  }
+}

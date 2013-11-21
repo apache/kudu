@@ -27,6 +27,7 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-1}
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
 LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
+export TOOLCHAIN=/mnt/toolchain/toolchain.sh
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
@@ -87,3 +88,11 @@ if [ "$DO_COVERAGE" == "1" ]; then
   echo Generating coverage report...
   ./thirdparty/gcovr-3.0/scripts/gcovr -r src/  -e '.*\.pb\..*' --xml > build/coverage.xml
 fi
+
+export PATH=$(pwd)/build/latest/:$PATH
+if [ -f "$TOOLCHAIN" ]; then
+  source $TOOLCHAIN
+fi
+cd java
+./kudu-client/dev-support/build-proto.sh
+mvn clean test
