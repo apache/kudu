@@ -101,6 +101,8 @@ void IncrementBackpressureOrShutdown(const Status* status, int* backpressure, in
     ++(*backpressure);
   } else if (msg.find("shutting down") != string::npos) {
     ++(*shutdown);
+  } else if (msg.find("got EOF from remote") != string::npos) {
+    ++(*shutdown);
   } else {
     FAIL() << "Unexpected status message: " << msg;
   }
