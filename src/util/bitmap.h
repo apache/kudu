@@ -171,8 +171,8 @@ class TrueBitIterator {
       cur_byte_ = bitmap_[cur_byte_idx_];
       bit_idx_ = cur_byte_idx_ * 8;
     }
-    LOG(INFO) << "Found next nonzero byte at " << cur_byte_idx_
-              << " val=" << cur_byte_;
+    DVLOG(2) << "Found next nonzero byte at " << cur_byte_idx_
+             << " val=" << cur_byte_;
 
     DCHECK_NE(cur_byte_, 0);
     int set_bit = Bits::FindLSBSetNonZero(cur_byte_);
