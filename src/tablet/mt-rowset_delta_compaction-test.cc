@@ -66,16 +66,15 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   }
 
   void RowSetAlterSchemaThread(DiskRowSet *rs, int col_prefix) {
-    std::vector<ColumnSchema> columns(schema_.columns());
+    SchemaBuilder builder(rs->schema());
     uint32_t default_value = 10 * (1 + col_prefix);
 
     size_t count = 0;
     WallTime start_time = WallTime_Now();
     while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
-      columns.insert(columns.begin() + schema_.num_key_columns(),
-                     ColumnSchema(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
-                                  false, &default_value, &default_value));
-      ASSERT_STATUS_OK(rs->AlterSchema(Schema(columns, schema_.num_key_columns())));
+      builder.AddColumn(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
+                        false, &default_value, &default_value);
+      ASSERT_STATUS_OK(rs->AlterSchema(builder.Build()));
       boost::this_thread::sleep(boost::posix_time::milliseconds(200));
       count++;
     }
@@ -83,10 +82,9 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   void ReadVerify(DiskRowSet *rs) {
     Arena arena(1024, 1024*1024);
-    RowBlock dst(schema_, 1000, &arena);
+    RowBlock dst(rs->schema(), 1000, &arena);
     gscoped_ptr<RowwiseIterator> iter;
-    iter.reset(
-        rs->NewRowIterator(schema_, MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+    iter.reset(rs->NewRowIterator(rs->schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_STATUS_OK(iter->Init(NULL));
     while (iter->HasNext()) {
@@ -96,7 +94,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
       ASSERT_STATUS_OK_FAST(iter->MaterializeBlock(&dst));
       ASSERT_STATUS_OK_FAST(iter->FinishBatch());
       for (size_t j = 0; j < n; j++) {
-        uint32_t val = *schema_.ExtractColumnFromRow<UINT32>(dst.row(j), 1);
+        uint32_t val = *rs->schema().ExtractColumnFromRow<UINT32>(dst.row(j), 1);
         ASSERT_GE(val, expected);
       }
     }

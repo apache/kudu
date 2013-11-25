@@ -379,7 +379,7 @@ class MergeCompactionInput : public CompactionInput {
 CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
                                          const Schema& projection,
                                          const MvccSnapshot &snap) {
-
+  CHECK(projection.has_column_ids());
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
   shared_ptr<DeltaIterator> deltas(rowset.delta_tracker_->NewDeltaIterator(projection, snap));
@@ -390,17 +390,21 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
 CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
                                          const Schema& projection,
                                          const MvccSnapshot &snap) {
+  CHECK(projection.has_column_ids());
   return new MemRowSetCompactionInput(memrowset, snap, projection);
 }
 
 CompactionInput *CompactionInput::Merge(const vector<shared_ptr<CompactionInput> > &inputs,
                                         const Schema &schema) {
+  CHECK(schema.has_column_ids());
   return new MergeCompactionInput(inputs, schema);
 }
 
 
 Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
                                                  shared_ptr<CompactionInput> *out) const {
+  CHECK(schema.has_column_ids());
+
   vector<shared_ptr<CompactionInput> > inputs;
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
     shared_ptr<CompactionInput> input(rs->NewCompactionInput(schema, snap));
@@ -481,6 +485,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
 
+  DCHECK(out->schema().has_column_ids());
   RowBlock block(out->schema(), 100, NULL);
 
   while (input->HasMoreBlocks()) {
@@ -490,6 +495,7 @@ Status Flush(CompactionInput *input, const MvccSnapshot &snap,
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
       const Schema& schema(input_row.row.schema());
       DCHECK_SCHEMA_EQ(schema, out->schema());
+      DCHECK(schema.has_column_ids());
 
       RowBlockRow dst_row = block.row(n);
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
@@ -639,9 +645,9 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         }
 
         gscoped_ptr<MutationResultPB> result(new MutationResultPB);
+        DCHECK_SCHEMA_EQ(schema, cur_tracker->schema());
         Status s = cur_tracker->Update(mut->txid(),
                                        row_idx,
-                                       schema,
                                        mut->changelist(),
                                        result.get());
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
@@ -654,7 +660,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           // On the other hand using a row block for a single row key
           // seems wasteful...
           gscoped_ptr<RowwiseRowBlockPB> row_block(new RowwiseRowBlockPB);
-          SchemaToColumnPBs(schema, row_block->mutable_schema());
+          SchemaToColumnPBsWithoutIds(schema, row_block->mutable_schema());
 
           buf.clear();
           ContiguousRow row_key(key_schema, buf.data());

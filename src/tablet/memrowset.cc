@@ -55,6 +55,7 @@ MemRowSet::MemRowSet(int64_t id,
     debug_insert_count_(0),
     debug_update_count_(0),
     has_logged_throttling_(0) {
+  CHECK(schema.has_column_ids());
 }
 
 Status MemRowSet::AlterSchema(const Schema& schema) {
@@ -82,6 +83,9 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 
 Status MemRowSet::Insert(txid_t txid,
                          const ConstContiguousRow& row) {
+  CHECK(row.schema().has_column_ids());
+  DCHECK_SCHEMA_EQ(schema_, row.schema());
+
   faststring enc_key_buf;
   schema_.EncodeComparableKey(row, &enc_key_buf);
   Slice enc_key(enc_key_buf);
@@ -111,7 +115,7 @@ Status MemRowSet::Insert(txid_t txid,
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_txid = txid;
   mrsrow.header_->mutation_head = NULL;
-  RETURN_NOT_OK(ProjectCells(row, &mrsrow));
+  RETURN_NOT_OK(mrsrow.CopyRow(row, &arena_));
 
   CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
@@ -123,6 +127,7 @@ Status MemRowSet::Insert(txid_t txid,
 }
 
 Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *ms_row) {
+  DCHECK_SCHEMA_EQ(schema_, row.schema());
 
   // TODO(perf): This path makes some unnecessary copies that could be reduced,
   // but let's assume that REINSERT is really rare and code for clarity over speed
@@ -131,7 +136,7 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
   // Make a copy of the row, and relocate any of its indirected data into
   // our Arena.
   DEFINE_MRSROW_ON_STACK(this, row_copy, row_copy_slice);
-  RETURN_NOT_OK(ProjectCells(row, &row_copy));
+  RETURN_NOT_OK(row_copy.CopyRow(row, &arena_));
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;
@@ -151,7 +156,6 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
 
 Status MemRowSet::MutateRow(txid_t txid,
                             const RowSetKeyProbe &probe,
-                            const Schema& delta_schema,
                             const RowChangeList &delta,
                             ProbeStats* stats,
                             MutationResultPB *result) {
@@ -173,12 +177,7 @@ Status MemRowSet::MutateRow(txid_t txid,
     }
 
     // Append to the linked list of mutations for this row.
-    Mutation *mut = NULL;
-    RETURN_NOT_OK(ProjectDelta(txid, delta_schema, delta, &mut));
-    if (mut == NULL) {
-      VLOG(1) << "The projected update results empty, skipping it: " << delta.ToString(delta_schema);
-      return Status::OK();
-    }
+    Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
 
     // This function has "release" semantics which ensures that the memory writes
     // for the mutation are fully published before any concurrent reader sees
@@ -240,38 +239,6 @@ void MemRowSet::SlowMutators() {
     size_t us_to_sleep = over_mem / 1024 / 512;
     boost::this_thread::sleep(boost::posix_time::microseconds(us_to_sleep));
   }
-}
-
-Status MemRowSet::ProjectCells(const ConstContiguousRow& src_row, MRSRow *dst_row) {
-  if (schema_.Equals(src_row.schema())) {
-    // the representation of the MRSRow and ConstContiguousRow is the same.
-    // so, instead of using CopyRow we can just do a memcpy.
-    memcpy(dst_row->row_slice_.mutable_data(), src_row.row_data(), dst_row->row_slice_.size());
-    // Copy any referred-to memory to arena.
-    return kudu::RelocateIndirectDataToArena(dst_row, &arena_);
-  } else {
-    RowProjector projector;
-    RETURN_NOT_OK(projector.Init(src_row.schema(), schema_));
-    return projector.ProjectRowForWrite(src_row, dst_row, &arena_);
-  }
-}
-
-Status MemRowSet::ProjectDelta(txid_t txid,
-                               const Schema& delta_schema,
-                               const RowChangeList &delta,
-                               Mutation **mutation) {
-  if (schema_.Equals(delta_schema)) {
-    *mutation = Mutation::CreateInArena(&arena_, txid, delta);
-  } else {
-    DeltaProjector projector(delta_schema, schema_);
-    RETURN_NOT_OK(projector.Init());
-    faststring delta_buf;
-    RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector, delta, &delta_buf));
-    if (delta_buf.size() > 0) {
-      *mutation = Mutation::CreateInArena(&arena_, txid, RowChangeList(delta_buf));
-    }
-  }
-  return Status::OK();
 }
 
 MemRowSet::Iterator *MemRowSet::NewIterator(const Schema &projection,

@@ -80,6 +80,7 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
     consensus_(NULL),
     next_mrs_id_(0),
     open_(false) {
+  CHECK(schema_.has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
   if (parent_metric_context) {
@@ -94,6 +95,7 @@ Tablet::~Tablet() {
 
 Status Tablet::Open() {
   CHECK(!open_) << "already open";
+  CHECK(schema_.has_column_ids());
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
   next_mrs_id_ = metadata_->lastest_durable_mrs_id() + 1;
@@ -121,6 +123,11 @@ Status Tablet::Open() {
 
   open_ = true;
   return Status::OK();
+}
+
+Status Tablet::GetMappedReadProjection(const Schema& projection,
+                                       Schema *mapped_projection) const {
+  return schema_.GetMappedReadProjection(projection, mapped_projection);
 }
 
 void Tablet::SetConsensus(Consensus* consensus) {
@@ -165,6 +172,15 @@ Status Tablet::CreatePreparedInsert(const TransactionContext* tx_ctx,
   return Status::OK();
 }
 
+static Status ProjectRowForInsert(const Schema& tablet_schema,
+                                  const ConstContiguousRow& src_row,
+                                  ContiguousRow *dst_row) {
+  // TODO: Add fast path if the schemas are the same
+  RowProjector projector;
+  RETURN_NOT_OK(projector.Init(src_row.schema(), tablet_schema));
+  return projector.ProjectRowForWrite(src_row, dst_row, static_cast<Arena*>(NULL));
+}
+
 Status Tablet::Insert(WriteTransactionContext *tx_ctx,
                       const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
@@ -199,7 +215,16 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
   DCHECK(tx_ctx->component_lock()) << "WriteTransactionContext must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
 
+  CHECK(!insert->row()->schema().has_column_ids());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
+
+  // TODO: Move this in the decode step, since the schema is the same for the batch
+  // TODO: Add a "identity" case without projection
+  RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(insert->row()->schema()));
+  uint8_t rowbuf[ContiguousRowHelper::row_size(schema_)];
+  ContiguousRow proj_row(schema_, rowbuf);
+  ProjectRowForInsert(schema_, *insert->row(), &proj_row);
+  ConstContiguousRow cproj_row(proj_row);
 
   ProbeStats stats;
 
@@ -231,7 +256,7 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(tx_ctx->mvcc_txid(), *insert->row());
+  Status s = memrowset_->Insert(tx_ctx->mvcc_txid(), cproj_row);
   if (PREDICT_TRUE(s.ok())) {
     RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_txid(), memrowset_->mrs_id()));
   } else {
@@ -331,9 +356,9 @@ Status Tablet::MutateRow(WriteTransactionContext *tx_ctx,
 Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
                                  const PreparedRowWrite* mutate) {
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *mutate->schema());
+  CHECK(!mutate->schema()->has_column_ids());
 
   gscoped_ptr<MutationResultPB> result(new MutationResultPB());
-
   // Validate the update.
   RowChangeListDecoder rcl_decoder(*mutate->schema(), *mutate->changelist());
   Status s = rcl_decoder.Init();
@@ -347,6 +372,20 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     return s;
   }
 
+  // Convert the client RowChangeList to a server RowChangeList (with IDs)
+  // TODO: This should be on the request parsing side...
+  // TODO: Add fast path if the schemas are the same
+  faststring rclbuf;
+  RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(*mutate->schema()));
+  DeltaProjector projector(*mutate->schema(), schema_);
+  RETURN_NOT_OK(mutate->schema()->GetProjectionMapping(schema_, &projector));
+  RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector, *mutate->changelist(), &rclbuf));
+  RowChangeList changelist(rclbuf);
+  if (!s.ok()) {
+    tx_ctx->AddFailedMutation(s);
+    return s;
+  }
+
   ProbeStats stats;
   // Submit the stats before returning from this function
   ProbeStatsSubmitter submitter(stats, metrics_.get());
@@ -354,8 +393,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   // First try to update in memrowset.
   s = memrowset_->MutateRow(tx_ctx->mvcc_txid(),
                             *mutate->probe(),
-                            *mutate->schema(),
-                            *mutate->changelist(),
+                            changelist,
                             &stats,
                             result.get());
   if (s.ok()) {
@@ -373,8 +411,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->schema(), *mutate->changelist(),
-                      &stats, result.get());
+    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), changelist, &stats, result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
       return s;
@@ -455,15 +492,51 @@ Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
   return Status::OK();
 }
 
+
 Status Tablet::Flush() {
-  return Flush(schema());
+  RowSetsInCompaction input;
+  shared_ptr<MemRowSet> old_ms;
+  {
+    // Lock the component_lock_ in exclusive mode.
+    // This shuts out any concurrent readers or writers for as long
+    // as the swap takes.
+    boost::lock_guard<percpu_rwlock> lock(component_lock_);
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema(), &input, &old_ms));
+  }
+  return Flush(input, old_ms, schema());
 }
 
-Status Tablet::Flush(const Schema& schema) {
+Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema, RowSetsInCompaction *compaction, shared_ptr<MemRowSet> *old_ms) {
+  // swap in a new memrowset
+  *old_ms = memrowset_;
+  memrowset_.reset(new MemRowSet(next_mrs_id_, schema));
+  // increment the next mrs_id
+  next_mrs_id_++;
+
+  if ((*old_ms)->empty()) {
+    return Status::OK();
+  }
+
+  // Mark the memrowset rowset as locked, so compactions won't consider it
+  // for inclusion in any concurrent compactions.
+  shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
+    new boost::mutex::scoped_try_lock(*((*old_ms)->compact_flush_lock())));
+  CHECK(ms_lock->owns_lock());
+  compaction->AddRowSet(*old_ms, ms_lock);
+
+  AtomicSwapRowSetsUnlocked(RowSetVector(), boost::assign::list_of(*old_ms), NULL);
+
+  return Status::OK();
+}
+
+Status Tablet::Flush(const RowSetsInCompaction& input, const shared_ptr<MemRowSet>& old_ms, const Schema& schema) {
   CHECK(open_);
 
-  RowSetsInCompaction input;
-  uint64_t start_insert_count;
+  if (input.num_rowsets() == 1 && old_ms->empty()) {
+    // flushing empty memrowset is a no-op
+    LOG(INFO) << "Flush requested on empty memrowset";
+    return Status::OK();
+  }
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
   // it in as a new rowset, replacing it with an empty one.
@@ -472,41 +545,11 @@ Status Tablet::Flush(const Schema& schema) {
   // use to improve iteration performance during the flush. The old design
   // used this, but not certain whether it's still doable with the new design.
 
-  int64_t mrs_being_flushed = kNoMrsFlushed;
+  uint64_t start_insert_count = old_ms->debug_insert_count();
+  int64_t mrs_being_flushed = old_ms->mrs_id();
 
   LOG(INFO) << "Flush: entering stage 1 (freezing old memrowset from inserts)";
-  shared_ptr<MemRowSet> old_ms;
-  {
-    // Lock the component_lock_ in exclusive mode.
-    // This shuts out any concurrent readers or writers for as long
-    // as the swap takes.
-    boost::lock_guard<percpu_rwlock> lock(component_lock_);
 
-    start_insert_count = memrowset_->debug_insert_count();
-
-    mrs_being_flushed = memrowset_->mrs_id();
-    // swap in a new memrowset
-    old_ms = memrowset_;
-    memrowset_.reset(new MemRowSet(next_mrs_id_, schema));
-    // increment the next mrs_id
-    next_mrs_id_++;
-
-
-    if (old_ms->empty()) {
-      // flushing empty memrowset is a no-op
-      LOG(INFO) << "Flush requested on empty memrowset";
-      return Status::OK();
-    }
-
-    // Mark the memrowset rowset as locked, so compactions won't consider it
-    // for inclusion in any concurrent compactions.
-    shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
-      new boost::mutex::scoped_try_lock(*old_ms->compact_flush_lock()));
-    CHECK(ms_lock->owns_lock());
-    input.AddRowSet(old_ms, ms_lock);
-
-    AtomicSwapRowSetsUnlocked(RowSetVector(), boost::assign::list_of(old_ms), NULL);
-  }
   if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemRowSet());
 
   input.DumpToLog();
@@ -528,35 +571,48 @@ Status Tablet::AlterSchema(const Schema& schema) {
                                    schema.CreateKeyProjection().ToString());
   }
 
+  RowSetsInCompaction input;
+  shared_ptr<MemRowSet> old_ms;
   {
-    boost::lock_guard<percpu_rwlock> schema_lock(schema_lock_);
+    // TODO: Take a "global tablet lock"
+    // (We should probably add the RW sched)
+    //
+    // User Operation Sched:
+    //  SHARED_LOCK: read and writes can happen concurrently
+    //  EXCLUSIVE_LOCK: alter schema must run when no reads/writes are in progress
+    //                  but we can keep compaction running, since is not a big deal
+    //                  if we compact something with the old schema, we have already
+    //                  plenty of files with the old schema.
+    boost::lock_guard<percpu_rwlock> tablet_big_lock(component_lock_);
 
-    // If the current schema and the new one are equal, there is nothing to do.
-    if (schema_.Equals(schema)) {
-      return Status::OK();
-    }
-
-    LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " << schema.ToString();
-    schema_ = schema;
-    metadata_->SetSchema(schema);
-
-    // Grab a local reference to the current RowSetTree. This is to avoid
-    // holding the component_lock_ for too long. See the comment on component_lock_
-    // in tablet.h for details on why that would be bad.
-    shared_ptr<RowSetTree> rowsets_copy;
     {
-      boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-      rowsets_copy = rowsets_;
+      boost::lock_guard<percpu_rwlock> schema_lock(schema_lock_);
+
+      // If the current schema and the new one are equal, there is nothing to do.
+      if (schema_.Equals(schema)) {
+        return Status::OK();
+      }
+
+      LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " << schema.ToString();
+      schema_ = schema;
+      metadata_->SetSchema(schema);
+
+      // Update the DiskRowSet/DeltaTracker
+      // TODO: This triggers a flush of the DeltaMemStores...
+      //       The flush should be just a message (async)...
+      //       with the current code the only way we can do a flush ouside this big lock
+      //       is to get the list of DeltaMemStores out from the AlterSchema method...
+      BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
+        RETURN_NOT_OK(rs->AlterSchema(schema));
+      }
     }
 
-    // Update the DiskRowSet/DeltaTracker
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
-      RETURN_NOT_OK(rs->AlterSchema(schema));
-    }
+    // Replace the MemRowSet
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema, &input, &old_ms));
   }
 
-  // Update the MemStore
-  return Flush(schema);
+  // Flush the old MemRowSet
+  return Flush(input, old_ms, schema);
 }
 
 void Tablet::SetCompactionHooksForTests(
@@ -1012,6 +1068,9 @@ Tablet::Iterator::Iterator(const Tablet *tablet,
 
 Status Tablet::Iterator::Init(ScanSpec *spec) {
   DCHECK(iter_.get() == NULL);
+
+  RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
+
   vector<shared_ptr<RowwiseIterator> > iters;
   if (spec != NULL) {
     encoder_.EncodeRangePredicates(spec);

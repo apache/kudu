@@ -163,7 +163,8 @@ TEST(TestSchema, TestProjectMissingColumn) {
   RowProjector row_projector;
   Status s = row_projector.Init(schema1, schema2);
   ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.message().ToString(), "must have a default value or be nullable");
+  ASSERT_STR_CONTAINS(s.message().ToString(),
+    "does not exists in the projection, and it does not have a default value or a nullable type");
 
   // Verify Default nullable column with no default value
   ASSERT_STATUS_OK(row_projector.Init(schema1, schema3));

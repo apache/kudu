@@ -53,7 +53,6 @@ class RowSet {
   // Status::NotFound().
   virtual Status MutateRow(txid_t txid,
                            const RowSetKeyProbe &probe,
-                           const Schema& update_schema,
                            const RowChangeList &update,
                            ProbeStats* stats,
                            MutationResultPB* result) = 0;
@@ -231,7 +230,6 @@ class DuplicatingRowSet : public RowSet {
 
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
-                   const Schema& update_schema,
                    const RowChangeList &update,
                    ProbeStats* stats,
                    MutationResultPB* result);

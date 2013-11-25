@@ -280,7 +280,7 @@ struct IntKeyTestSetup {
     RowBuilder rb(test_key_schema_);
     BuildRowKey(&rb, row_idx);
     faststring buf;
-    *new_val = (10000 + row_idx) * (row_idx % 2 == 0 ? -1 : 1);
+    *new_val = 10000 + row_idx;
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
     return tablet->MutateRow(tx_ctx, rb.row(), test_schema_, RowChangeList(buf));
   }

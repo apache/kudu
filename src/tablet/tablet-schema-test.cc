@@ -90,48 +90,31 @@ class TestTabletSchema : public KuduTabletTest {
 
  private:
   Schema CreateBaseSchema() {
-    SchemaBuilder builder;
-    CHECK_OK(builder.AddKeyColumn("key", UINT32));
-    CHECK_OK(builder.AddColumn("c1", UINT32));
-    return builder.Build();
+    return Schema(boost::assign::list_of
+                   (ColumnSchema("key", UINT32))
+                   (ColumnSchema("c1", UINT32)),
+                   1);
   }
 };
 
 // Read from a tablet using a projection schema with columns not present in
-// the original schema. Vertify that the new columns are added and have the
-// default value.
+// the original schema. Verify that the server reject the request.
 TEST_F(TestTabletSchema, TestRead) {
   const size_t kNumRows = 10;
-  const uint64_t c2_default = 25;
-  const Slice c3_default("Hello World");
   Schema projection(boost::assign::list_of
                     (ColumnSchema("key", UINT32))
-                    (ColumnSchema("c2", UINT64, false, &c2_default))
-                    (ColumnSchema("c3", STRING, false, &c3_default)),
+                    (ColumnSchema("c2", UINT64))
+                    (ColumnSchema("c3", STRING)),
                     1);
 
   InsertRows(schema_, 0, kNumRows);
 
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_STATUS_OK(tablet_->NewRowIterator(projection, &iter));
-  ASSERT_STATUS_OK(iter->Init(NULL));
 
-  size_t nrows = 0;
-  Arena arena(32*1024, 256*1024);
-  RowBlock block(projection, 20, &arena);
-  while (iter->HasNext()) {
-    ASSERT_STATUS_OK(RowwiseIterator::CopyBlock(iter.get(), &block));
-
-    for (size_t i = 0; i < block.nrows(); ++i) {
-      RowBlockRow row = block.row(i);
-      uint32_t key = *projection.ExtractColumnFromRow<UINT32>(row, 0);
-      ASSERT_TRUE(key >= 0 && key <= kNumRows);
-      ASSERT_EQ(c2_default, *projection.ExtractColumnFromRow<UINT64>(row, 1));
-      ASSERT_EQ(c3_default, *projection.ExtractColumnFromRow<STRING>(row, 2));
-      nrows++;
-    }
-  }
-  ASSERT_EQ(kNumRows, nrows);
+  Status s = iter->Init(NULL);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.message().ToString(), "Some columns are not present in the current schema: c2, c3");
 }
 
 // Write to the tablet using different schemas,
@@ -146,10 +129,10 @@ TEST_F(TestTabletSchema, TestWrite) {
   const uint32_t c2_write_default = 5;
   const uint32_t c2_read_default = 7;
 
-  SchemaBuilder builder(schema_);
+  SchemaBuilder builder(tablet_->metadata()->schema());
   ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
-  Schema s2 = builder.Build();
-  ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
+  ASSERT_STATUS_OK(tablet_->AlterSchema(builder.Build()));
+  Schema s2 = builder.BuildWithoutIds();
 
   // Insert with base/old schema
   size_t s2Key = kNumBaseRows + 1;
@@ -180,24 +163,17 @@ TEST_F(TestTabletSchema, TestWrite) {
 TEST_F(TestTabletSchema, TestRenameProjection) {
   std::vector<std::pair<string, string> > keys;
 
-  SchemaBuilder builder(schema_);
-  ASSERT_STATUS_OK(builder.RenameColumn("c1", "c1_renamed"));
-  Schema s2 = builder.Build();
-
   // Insert with the base schema
   InsertRow(schema_, 1);
 
-  // Insert with the s2 schema
-  InsertRow(s2, 2);
-
   // Switch schema to s2
-  ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
-
-  // Insert with the base schema after AlterSchema(s2)
-  InsertRow(schema_, 3);
+  SchemaBuilder builder(tablet_->metadata()->schema());
+  ASSERT_STATUS_OK(builder.RenameColumn("c1", "c1_renamed"));
+  ASSERT_STATUS_OK(tablet_->AlterSchema(builder.Build()));
+  Schema s2 = builder.BuildWithoutIds();
 
   // Insert with the s2 schema after AlterSchema(s2)
-  InsertRow(s2, 4);
+  InsertRow(s2, 2);
 
   // Read and verify using the s2 schema
   keys.clear();
@@ -206,32 +182,16 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   }
   VerifyTabletRows(s2, keys);
 
-  // Read and verify using the base schema
-  keys.clear();
-  for (int i = 1; i <= 4; ++i) {
-    keys.push_back(std::pair<string, string>(Substitute("key=$0", i), Substitute("c1=$0", i)));
-  }
-  VerifyTabletRows(schema_, keys);
-
   // Delete the first two rows
   DeleteRow(s2, /* key= */ 1);
-  DeleteRow(schema_, /* key= */ 2);
 
-  // Alter the remaining two rows
-  MutateRow(s2,      /* key= */ 3, /* col_idx= */ 1, /* new_val= */ 6);
-  MutateRow(schema_, /* key= */ 4, /* col_idx= */ 1, /* new_val= */ 8);
+  // Alter the remaining row
+  MutateRow(s2,      /* key= */ 2, /* col_idx= */ 1, /* new_val= */ 6);
 
   // Read and verify using the s2 schema
   keys.clear();
-  keys.push_back(std::pair<string, string>("key=3", "c1_renamed=6"));
-  keys.push_back(std::pair<string, string>("key=4", "c1_renamed=8"));
+  keys.push_back(std::pair<string, string>("key=2", "c1_renamed=6"));
   VerifyTabletRows(s2, keys);
-
-  // Read and verify using the base schema
-  keys.clear();
-  keys.push_back(std::pair<string, string>("key=3", "c1=6"));
-  keys.push_back(std::pair<string, string>("key=4", "c1=8"));
-  VerifyTabletRows(schema_, keys);
 }
 
 // Verify that removing a column and re-adding it will not result in making old data visible
@@ -246,15 +206,14 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   keys.push_back(std::pair<string, string>("key=1", "c1=2"));
   VerifyTabletRows(schema_, keys);
 
-  SchemaBuilder builder(schema_);
+  // Switch schema to s2
+  SchemaBuilder builder(tablet_->metadata()->schema());
   ASSERT_STATUS_OK(builder.RemoveColumn("c1"));
   // NOTE this new 'c1' will have a different id from the previous one
   //      so the data added to the previous 'c1' will not be visible.
   ASSERT_STATUS_OK(builder.AddNullableColumn("c1", UINT32));
-  Schema s2 = builder.Build();
-
-  // Switch schema to s2
-  ASSERT_STATUS_OK(tablet_->AlterSchema(s2));
+  ASSERT_STATUS_OK(tablet_->AlterSchema(builder.Build()));
+  Schema s2 = builder.BuildWithoutIds();
 
   // Verify that the new 'c1' have the default value
   keys.clear();

@@ -45,6 +45,8 @@ static Status DecodeRowBlock(RowwiseRowBlockPB* block_pb,
     return s;
   }
 
+  DCHECK(!client_schema->has_column_ids());
+
   // Check that the schema sent by the user matches the key projection of the tablet.
   Schema client_key_projection = client_schema->CreateKeyProjection();
   if (!client_key_projection.Equals(tablet_key_projection)) {

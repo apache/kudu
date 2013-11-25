@@ -51,6 +51,10 @@ class RowChangeList {
     return encoded_data_[0] == kReinsert;
   }
 
+  bool is_null() const {
+    return encoded_data_.size() == 0;
+  }
+
   enum ChangeType {
     ChangeType_min = 0,
     kUninitialized = 0,
@@ -105,8 +109,12 @@ class RowChangeListEncoder {
     const ColumnSchema& col_schema = schema_.column(col_idx);
     const TypeInfo &ti = col_schema.type_info();
 
-    // Encode the column index
-    InlinePutVarint32(dst_, schema_.column_id(col_idx));
+    // TODO: This is shared between the server and the client :(
+    // Encode the column index if is coming from the client (no IDs)
+    // Encode the column ID if is coming from the server (with IDs)
+    // The MutateRow Projection step will figure out the client to server mapping.
+    size_t col_id = schema_.has_column_ids() ? schema_.column_id(col_idx) : col_idx;
+    InlinePutVarint32(dst_, col_id);
 
     // If the column is nullable set the null flag
     if (col_schema.is_nullable()) {

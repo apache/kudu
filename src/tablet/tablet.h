@@ -270,7 +270,24 @@ class Tablet {
   // Delete the underlying storage for the input layers in a compaction.
   Status DeleteCompactionInputs(const RowSetsInCompaction &input);
 
+  // Create a new MemRowSet with the specified 'schema' and replace the current one.
+  // The 'old_ms' pointer will be set to the current MemRowSet set before the replacement.
+  // If the MemRowSet is not empty it will be added to the 'compaction' input
+  // and the MemRowSet compaction lock will be taken to prevent the inclusion
+  // in any concurrent compactions.
+  Status ReplaceMemRowSetUnlocked(const Schema& schema,
+                                  RowSetsInCompaction *compaction,
+                                  shared_ptr<MemRowSet> *old_ms);
+  Status Flush(const RowSetsInCompaction& input,
+               const shared_ptr<MemRowSet>& old_ms,
+               const Schema& schema);
+
   BloomFilterSizing bloom_sizing() const;
+
+  // Convert the specified read client schema (without IDs) to a server schema (with IDs)
+  // This method is used by NewRowIterator().
+  Status GetMappedReadProjection(const Schema& projection,
+                                 Schema *mapped_projection) const;
 
   Schema schema_;
   Schema key_schema_;
@@ -389,7 +406,7 @@ class Tablet::Iterator : public RowwiseIterator {
            const MvccSnapshot &snap);
 
   const Tablet *tablet_;
-  const Schema projection_;
+  Schema projection_;
   const MvccSnapshot snap_;
   gscoped_ptr<UnionIterator> iter_;
   RangePredicateEncoder encoder_;

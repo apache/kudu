@@ -329,14 +329,13 @@ ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterat
 
 Status DeltaTracker::Update(txid_t txid,
                             rowid_t row_idx,
-                            const Schema& update_schema,
                             const RowChangeList &update,
                             MutationResultPB* result) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   DCHECK_LT(row_idx, num_rows_);
 
-  Status s = dms_->Update(txid, row_idx, update_schema, update);
+  Status s = dms_->Update(txid, row_idx, update);
   if (s.ok()) {
     MutationTargetPB* target = result->add_mutations();
     target->set_rs_id(rowset_metadata_->id());
@@ -493,6 +492,11 @@ size_t DeltaTracker::CountDeltaStores() const {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
   return delta_stores_.size();
 }
+
+const Schema& DeltaTracker::schema() const {
+  return dms_->schema();
+}
+
 ////////////////////////////////////////////////////////////
 // Delta merger
 ////////////////////////////////////////////////////////////

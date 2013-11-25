@@ -35,9 +35,13 @@ class TestDeltaCompaction : public KuduTest {
  public:
   TestDeltaCompaction()
       : deltafile_idx_(0),
-        schema_(boost::assign::list_of
-                (ColumnSchema("val", UINT32)),
-                0) {
+        schema_(CreateSchema()) {
+  }
+
+  static Schema CreateSchema() {
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddColumn("val", UINT32));
+    return builder.Build();
   }
 
   string GetDeltaFilePath(int64_t deltafile_idx) {
@@ -156,20 +160,19 @@ TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
 }
 
 TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
-  std::vector<ColumnSchema> columns(schema_.columns());
-
   vector<Schema> schemas;
-  schemas.push_back(schema_);
+  SchemaBuilder builder(schema_);
+  schemas.push_back(builder.Build());
 
   // Add an int column with default
   uint32_t default_c2 = 10;
-  columns.push_back(ColumnSchema("c2", UINT32, false, &default_c2, &default_c2));
-  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+  ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &default_c2, &default_c2));
+  schemas.push_back(builder.Build());
 
   // add a string column with default
   Slice default_c3("Hello World");
-  columns.push_back(ColumnSchema("c3", STRING, false, &default_c3, &default_c3));
-  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+  ASSERT_STATUS_OK(builder.AddColumn("c3", STRING, false, &default_c3, &default_c3));
+  schemas.push_back(builder.Build());
 
   vector<shared_ptr<DeltaCompactionInput> > inputs;
 

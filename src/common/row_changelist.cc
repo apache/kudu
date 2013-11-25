@@ -12,6 +12,7 @@ using strings::Substitute;
 namespace kudu {
 
 string RowChangeList::ToString(const Schema &schema) const {
+  DCHECK_GT(encoded_data_.size(), 0);
   RowChangeListDecoder decoder(schema, *this);
 
   Status s = decoder.Init();
@@ -104,10 +105,10 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
       const void *col_val = NULL;
       RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
 
-      size_t proj_idx = 0xdeadbeef; // avoid un-initialized usage warning
-      if (projector.get_proj_col_from_base_id(col_id, &proj_idx)) {
-        encoder.AddColumnUpdate(proj_idx, col_val);
-      } else if (projector.get_proj_col_from_adapter_id(col_id, &proj_idx)) {
+      size_t proj_id = 0xdeadbeef; // avoid un-initialized usage warning
+      if (projector.get_proj_col_from_base_id(col_id, &proj_id)) {
+        encoder.AddColumnUpdate(proj_id, col_val);
+      } else if (projector.get_proj_col_from_adapter_id(col_id, &proj_id)) {
         // TODO: Handle the "different type" case (adapter_cols_mapping)
         LOG(DFATAL) << "Alter type is not implemented yet";
         return Status::NotSupported("Alter type is not implemented yet");

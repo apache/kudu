@@ -44,6 +44,15 @@ class TsTabletManagerTest : public KuduTest {
     ASSERT_STATUS_OK(tablet_manager_->Init());
   }
 
+  Status CreateNewTablet(const std::string& tablet_id,
+                         const std::string& start_key, const std::string& end_key,
+                         const Schema& schema,
+                         std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) {
+    return tablet_manager_->CreateNewTablet(tablet_id, start_key, end_key,
+                                            SchemaBuilder(schema).Build(),
+                                            tablet_peer);
+  }
+
  protected:
   void CreateTestMasterBlock(const string& tid, TabletMasterBlockPB* pb) {
     pb->set_tablet_id(tid);
@@ -83,8 +92,7 @@ TEST_F(TsTabletManagerTest, TestPersistBlocks) {
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
   shared_ptr<TabletPeer> peer;
-  ASSERT_STATUS_OK(tablet_manager_->CreateNewTablet(
-                     kTabletId, "", "", schema_, &peer));
+  ASSERT_STATUS_OK(CreateNewTablet(kTabletId, "", "", schema_, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
   peer.reset();
 
@@ -118,7 +126,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->AcknowledgeTabletReport(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_STATUS_OK(tablet_manager_->CreateNewTablet("tablet-1", "", "", schema_, NULL));
+  ASSERT_STATUS_OK(CreateNewTablet("tablet-1", "", "", schema_, NULL));
   tablet_manager_->GenerateTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
@@ -142,7 +150,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->AcknowledgeTabletReport(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_STATUS_OK(tablet_manager_->CreateNewTablet("tablet-2", "", "", schema_, NULL));
+  ASSERT_STATUS_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
   tablet_manager_->GenerateTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());

@@ -38,7 +38,6 @@ class DeltaMemStore : public DeltaStore,
   // Copies the data, as well as any referenced values into this DMS's local
   // arena.
   Status Update(txid_t txid, rowid_t row_idx,
-                const Schema& update_schema,
                 const RowChangeList &update);
 
   size_t Count() const {

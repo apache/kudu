@@ -50,7 +50,7 @@ class TemporaryTabletsForDemos {
       LOG(INFO) << "Using previously-created tablet";
     } else {
       CHECK_OK(server->tablet_manager()->CreateNewTablet(
-                 tablet_id, "", "", schema_, &peer));
+                 tablet_id, "", "", SchemaBuilder(schema_).Build(), &peer));
     }
     tablet_ = peer->shared_tablet();
   }

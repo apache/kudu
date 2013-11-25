@@ -52,6 +52,14 @@ Status SchemaToColumnPBs(
   const Schema& schema,
   google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols);
 
+// Extract the columns of the given Schema into protobuf objects.
+// This method will not add the Column IDs to protobuf
+//
+// The 'cols' list is replaced by this method.
+Status SchemaToColumnPBsWithoutIds(
+  const Schema& schema,
+  google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols);
+
 // Encode the given row into the provided protobuf.
 //
 // All data (both direct and indirect) is copied into the protobuf by this method,

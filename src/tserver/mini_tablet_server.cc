@@ -69,7 +69,7 @@ Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
                                        const Schema& schema) {
   CHECK(started_) << "Must Start()";
   return server_->tablet_manager()->CreateNewTablet(
-    tablet_id, "", "", schema, NULL);
+    tablet_id, "", "", SchemaBuilder(schema).Build(), NULL);
 }
 
 const Sockaddr MiniTabletServer::bound_rpc_addr() const {

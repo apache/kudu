@@ -107,10 +107,68 @@ Status Schema::CreatePartialSchema(const vector<size_t>& col_indexes,
   return Status::OK();
 }
 
+Status Schema::VerifyProjectionCompatibility(const Schema& projection) const {
+  DCHECK(has_column_ids()) "The server schema must have IDs";
+  DCHECK(!projection.has_column_ids()) << "The client schema shouldn't have IDs";
+
+  vector<string> missing_columns;
+  BOOST_FOREACH(const ColumnSchema& pcol, projection.columns()) {
+    int index = find_column(pcol.name());
+    if (index < 0) {
+      missing_columns.push_back(pcol.name());
+    } else if (!pcol.EqualsType(cols_[index])) {
+      // TODO: We don't support query with type adaptors yet
+      return Status::InvalidArgument("The column '" + pcol.name() + "' must have type " +
+                                     cols_[index].TypeToString() + " found " + pcol.TypeToString());
+    }
+  }
+
+  if (!missing_columns.empty()) {
+    return Status::InvalidArgument("Some columns are not present in the current schema",
+                                   JoinStrings(missing_columns, ", "));
+  }
+  return Status::OK();
+}
+
+
+Status Schema::GetMappedReadProjection(const Schema& projection,
+                                       Schema *mapped_projection) const {
+  // - The user projection may have different columns from the ones on the tablet
+  // - User columns non present in the tablet are considered errors
+  // - The user projection is not supposed to have the defaults or the nullable
+  //   information on each field. The current tablet schema is supposed to.
+  // - Each CFileSet may have a different schema and each CFileSet::Iterator
+  //   must use projection from the CFileSet schema to the mapped user schema.
+  RETURN_NOT_OK(VerifyProjectionCompatibility(projection));
+
+  // Get the Projection Mapping
+  vector<ColumnSchema> mapped_cols;
+  vector<size_t> mapped_ids;
+
+  mapped_cols.reserve(projection.num_columns());
+  mapped_ids.reserve(projection.num_columns());
+
+  BOOST_FOREACH(const ColumnSchema& col, projection.columns()) {
+    int index = find_column(col.name());
+    DCHECK_GE(index, 0) << col.name();
+    mapped_cols.push_back(cols_[index]);
+    mapped_ids.push_back(col_ids_[index]);
+  }
+
+  mapped_projection->Reset(mapped_cols, mapped_ids, projection.num_key_columns());
+  return Status::OK();
+}
+
 string Schema::ToString() const {
   vector<string> col_strs;
-  BOOST_FOREACH(const ColumnSchema &col, cols_) {
-    col_strs.push_back(col.ToString());
+  if (has_column_ids()) {
+    for (int i = 0; i < cols_.size(); ++i) {
+      col_strs.push_back(strings::Substitute("$0:$1", col_ids_[i], cols_[i].ToString()));
+    }
+  } else {
+    BOOST_FOREACH(const ColumnSchema &col, cols_) {
+      col_strs.push_back(col.ToString());
+    }
   }
 
   return StrCat("Schema [",

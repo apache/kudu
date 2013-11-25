@@ -177,10 +177,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     // Scan a projection with only an int column.
     // This is provided by both harnesses.
-    Schema projection = Schema(boost::assign::list_of
-                               (ColumnSchema("val", UINT32, true)), // TODO: This should pick the test one
-                               0);
-
+    ColumnSchema valcol = tablet_->schema().column(tablet_->schema().find_column("val"));
+    Schema projection = Schema(boost::assign::list_of(valcol), 0);
 
     static const int kBufInts = 1024*1024 / 8;
     RowBlock block(projection, kBufInts, &arena);

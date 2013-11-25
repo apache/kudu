@@ -502,6 +502,8 @@ struct CollectingVisitor {
     RowChangeList changelist(deltas);
     if (!dfi->projector_.is_identity()) {
       RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(dfi->projector_, changelist, &dfi->delta_buf_));
+      // The projection resulted in an empty mutation (e.g. update of a removed column)
+      if (dfi->delta_buf_.size() == 0) return Status::OK();
       changelist = RowChangeList(dfi->delta_buf_);
     }
 

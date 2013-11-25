@@ -31,11 +31,15 @@ class TestDeltaFile : public ::testing::Test {
  public:
   TestDeltaFile() :
     env_(NewMemEnv(Env::Default())),
-    schema_(boost::assign::list_of
-            (ColumnSchema("val", UINT32)),
-            1),
+    schema_(CreateSchema()),
     arena_(1024, 1024)
   {}
+
+  static Schema CreateSchema() {
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddColumn("val", UINT32));
+    return builder.Build();
+  }
 
   void WriteTestFile() {
     shared_ptr<WritableFile> file;

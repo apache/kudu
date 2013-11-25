@@ -35,10 +35,14 @@ class KuduTabletTest : public KuduTest {
     master_block.set_block_a("00000000000000000000000000000000");
     master_block.set_block_b("11111111111111111111111111111111");
 
+    // Build a schema with IDs
+    Schema server_schema = SchemaBuilder(schema_).Build();
+
+    // Build the Tablet
     fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
     gscoped_ptr<metadata::TabletMetadata> metadata;
     ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(
-                      fs_manager_.get(), master_block, schema_, "", "",
+                      fs_manager_.get(), master_block, server_schema, "", "",
                       &metadata));
     tablet_.reset(new Tablet(metadata.Pass()));
     ASSERT_STATUS_OK(tablet_->Open());
@@ -66,7 +70,7 @@ class KuduRowSetTest : public KuduTabletTest {
 
   virtual void SetUp() {
     KuduTabletTest::SetUp();
-    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_, schema_));
+    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_, SchemaBuilder(schema_).Build()));
   }
 
   Status FlushMetadata() {

@@ -33,12 +33,16 @@ static const char *kRowKeyFormat = "hello %08d";
 class TestCompaction : public KuduRowSetTest {
  public:
   TestCompaction() :
-    KuduRowSetTest(Schema(boost::assign::list_of
-            (ColumnSchema("key", STRING))
-            (ColumnSchema("val", UINT32)),
-            1)),
+    KuduRowSetTest(CreateSchema()),
     row_builder_(schema_)
   {}
+
+  static Schema CreateSchema() {
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddKeyColumn("key", STRING));
+    CHECK_OK(builder.AddColumn("val", UINT32));
+    return builder.Build();
+  }
 
   // Insert n_rows rows of data.
   // Each row is the tuple: (string key=hello <n*10 + delta>, val=<n>)
@@ -54,7 +58,17 @@ class TestCompaction : public KuduRowSetTest {
     snprintf(key_buf_, sizeof(key_buf_), kRowKeyFormat, row_key);
     row_builder_.AddString(Slice(key_buf_));
     row_builder_.AddUint32(val);
-    ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), row_builder_.row()));
+    if (!mrs->schema().Equals(row_builder_.schema())) {
+      // The MemRowSet is not projecting the row, so must be done by the caller
+      RowProjector projector;
+      uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
+      ContiguousRow dst_row(mrs->schema(), rowbuf);
+      ASSERT_STATUS_OK_FAST(projector.Init(row_builder_.schema(), mrs->schema()));
+      ASSERT_STATUS_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(), &dst_row, static_cast<Arena*>(NULL)));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), ConstContiguousRow(dst_row)));
+    } else {
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), row_builder_.row()));
+    }
   }
 
   // Update n_rows rows of data.
@@ -81,7 +95,6 @@ class TestCompaction : public KuduRowSetTest {
       MutationResultPB result;
       ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(),
                                          probe,
-                                         schema,
                                          RowChangeList(update_buf),
                                          &stats,
                                          &result));
@@ -340,22 +353,19 @@ TEST_F(TestCompaction, TestMerge) {
 
 // test compacting when the inputs have different base schemas
 TEST_F(TestCompaction, TestMergeMultipleSchemas) {
-  std::vector<ColumnSchema> columns(schema_.columns());
-
   vector<Schema> schemas;
+  SchemaBuilder builder(schema_);
   schemas.push_back(schema_);
 
   // Add an int column with default
   uint32_t default_c2 = 10;
-  columns.insert(columns.begin() + schema_.num_key_columns(),
-                 ColumnSchema("c2", UINT32, false, &default_c2, &default_c2));
-  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+  CHECK_OK(builder.AddColumn("c2", UINT32, false, &default_c2, &default_c2));
+  schemas.push_back(builder.Build());
 
   // add a string column with default
   Slice default_c3("Hello World");
-  columns.insert(columns.begin() + schema_.num_key_columns(),
-                 ColumnSchema("c3", STRING, false, &default_c3, &default_c3));
-  schemas.push_back(Schema(columns, schema_.num_key_columns()));
+  CHECK_OK(builder.AddColumn("c3", STRING, false, &default_c3, &default_c3));
+  schemas.push_back(builder.Build());
 
   DoMerge(schemas.back(), schemas);
 }

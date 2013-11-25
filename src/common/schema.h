@@ -15,6 +15,7 @@
 #include "common/common.pb.h"
 #include "common/key_encoder.h"
 #include "gutil/map-util.h"
+#include "gutil/strings/substitute.h"
 #include "util/status.h"
 
 // Check that two schemas are equal, yielding a useful error message in the case that
@@ -134,11 +135,27 @@ class ColumnSchema {
   }
 
   bool EqualsType(const ColumnSchema &other) const {
-    return type_info().type() == other.type_info().type();
+    return is_nullable_ == other.is_nullable_ &&
+           type_info().type() == other.type_info().type();
   }
 
   bool Equals(const ColumnSchema &other) const {
-    return EqualsType(other) && this->name_ == other.name_;
+    if (!EqualsType(other) || this->name_ != other.name_)
+      return false;
+
+    if (read_default_ == NULL && other.read_default_ != NULL)
+      return false;
+
+    if (write_default_ == NULL && other.write_default_ != NULL)
+      return false;
+
+    if (read_default_ != NULL && !read_default_->Equals(other.read_default_.get()))
+      return false;
+
+    if (write_default_ != NULL && !write_default_->Equals(other.write_default_.get()))
+      return false;
+
+    return true;
   }
 
   int Compare(const void *lhs, const void *rhs) const {
@@ -277,8 +294,9 @@ class Schema {
 
   // Return the column ID corresponding to the given column index
   size_t column_id(size_t idx) const {
+    DCHECK(has_column_ids());
     DCHECK_LT(idx, cols_.size());
-    return has_column_ids() ? col_ids_[idx] : idx;
+    return col_ids_[idx];
   }
 
   // Return true if the schema has the IDs mapping
@@ -461,6 +479,16 @@ class Schema {
     return true;
   }
 
+  // Return a non-OK status if the project is not compatible with the current schema
+  // - User columns non present in the tablet are considered errors
+  // - Matching columns with different types, at the moment, are considered errors
+  Status VerifyProjectionCompatibility(const Schema& projection) const;
+
+  // Returns the projection schema mapped on the current one
+  // If the project is invalid, return a non-OK status.
+  Status GetMappedReadProjection(const Schema& projection,
+                                 Schema *mapped_projection) const;
+
   // Loops through the projection schema and calls the projector methods:
   // - Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx)
   //   called if the column already exists in the base schema.
@@ -494,7 +522,7 @@ class Schema {
         if (!col_schema.EqualsType(base_col_schema)) {
           // ...but with a different type, (TODO: try with an adaptor)
           return Status::InvalidArgument("The column '" + col_schema.name() + "' must have type " +
-                                         DataType_Name(base_col_schema.type_info().type()));
+                                         base_col_schema.TypeToString() + " found " + col_schema.TypeToString());
         } else {
           RETURN_NOT_OK(projector->ProjectBaseColumn(proj_idx, base_idx));
         }
@@ -502,7 +530,7 @@ class Schema {
         bool has_default = col_schema.has_read_default() || col_schema.has_write_default();
         if (!has_default && !col_schema.is_nullable()) {
           return Status::InvalidArgument("The column '" + col_schema.name() +
-                                         "' must have a default value or be nullable");
+                "' does not exists in the projection, and it does not have a default value or a nullable type");
         }
 
         // Column missing from the Base Schema, use the default value of the projection
@@ -562,7 +590,9 @@ class SchemaBuilder {
   void Reset(const Schema& schema);
 
   bool is_valid() const { return cols_.size() > 0; }
+
   Schema Build() const { return Schema(cols_, col_ids_, num_key_columns_); }
+  Schema BuildWithoutIds() const { return Schema(cols_, num_key_columns_); }
 
   Status AddKeyColumn(const string& name, DataType type);
 

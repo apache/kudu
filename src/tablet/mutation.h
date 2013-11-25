@@ -78,6 +78,7 @@ class Mutation {
 template<class ArenaType>
 inline Mutation *Mutation::CreateInArena(
   ArenaType *arena, txid_t txid, const RowChangeList &rcl) {
+  DCHECK(!rcl.is_null());
 
   size_t size = sizeof(Mutation) + rcl.slice().size();
   void *storage = arena->AllocateBytesAligned(size, BASE_PORT_H_ALIGN_OF(Mutation));

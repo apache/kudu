@@ -502,6 +502,7 @@ Status RowSetColumnUpdater::Finish() {
 Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
                                   const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
+  CHECK(projection.has_column_ids());
   gscoped_ptr<CFileIterator> iter;
   RETURN_NOT_OK(reader.cfile_reader()->NewIterator(&iter));
   input->reset(new DeltaFileCompactionInput(reader.schema(), projection, iter.Pass()));
@@ -511,6 +512,7 @@ Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
 Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
                                   const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
+  CHECK(projection.has_column_ids());
   gscoped_ptr<DMSTreeIter> iter(dms.tree().NewIterator());
   input->reset(new DeltaMemStoreCompactionInput(dms.schema(), projection, iter.Pass()));
   return Status::OK();
@@ -518,6 +520,7 @@ Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
 
 DeltaCompactionInput *DeltaCompactionInput::Merge(const Schema& projection,
                                                   const vector<shared_ptr<DeltaCompactionInput> > &inputs) {
+  CHECK(projection.has_column_ids());
   return new MergeDeltaCompactionInput(projection, inputs);
 }
 
@@ -546,6 +549,7 @@ Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string>
 }
 
 Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *out) {
+  DCHECK_EQ(out->schema().has_column_ids(), input->schema().has_column_ids());
   DCHECK_SCHEMA_EQ(out->schema(), input->schema());
   RETURN_NOT_OK(input->Init());
   vector<DeltaCompactionInputCell> cells;

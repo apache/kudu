@@ -97,6 +97,15 @@ class MRSRow {
  private:
   friend class MemRowSet;
 
+  template <class ArenaType>
+  Status CopyRow(const ConstContiguousRow& row, ArenaType *arena) {
+    // the representation of the MRSRow and ConstContiguousRow is the same.
+    // so, instead of using CopyRow we can just do a memcpy.
+    memcpy(row_slice_.mutable_data(), row.row_data(), row_slice_.size());
+    // Copy any referred-to memory to arena.
+    return kudu::RelocateIndirectDataToArena(this, arena);
+  }
+
   struct Header {
     // txid_t for the transaction which inserted this row. If a scanner with an
     // older snapshot sees this row, it will be ignored.
@@ -161,7 +170,6 @@ class MemRowSet : public RowSet,
   // Returns Status::NotFound if the row doesn't exist.
   Status MutateRow(txid_t txid,
                    const RowSetKeyProbe &probe,
-                   const Schema& delta_schema,
                    const RowChangeList &delta,
                    ProbeStats* stats,
                    MutationResultPB *result);
@@ -291,14 +299,6 @@ class MemRowSet : public RowSet,
                   const ConstContiguousRow& row_data,
                   MRSRow *row);
 
-  Status ProjectCells(const ConstContiguousRow& src_row,
-                      MRSRow *dst_row);
-
-  Status ProjectDelta(txid_t txid,
-                      const Schema& delta_schema,
-                      const RowChangeList &delta,
-                      Mutation **mutation);
-
   typedef btree::CBTree<btree::BTreeTraits> MSBTree;
 
   int64_t id_;
@@ -389,8 +389,13 @@ class MemRowSet::Iterator : public RowwiseIterator {
       DCHECK(mutation_arena != NULL);
 
       Mutation *prev = NULL;
+      *mutation_head = NULL;
       for (const Mutation *mut = src_row.mutation_head(); mut != NULL; mut = mut->next()) {
         RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_, mut->changelist(), &delta_buf_));
+
+        // The projection resulted in an empty mutation (e.g. update of a removed column)
+        if (delta_buf_.size() == 0) continue;
+
         Mutation *mutation = Mutation::CreateInArena(mutation_arena, mut->txid(), RowChangeList(delta_buf_));
         if (prev != NULL) {
           prev->set_next(mutation);

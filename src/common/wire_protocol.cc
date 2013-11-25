@@ -155,6 +155,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
                          Schema* schema) {
 
   vector<ColumnSchema> columns;
+  vector<size_t> column_ids;
   columns.reserve(column_pbs.size());
   int num_key_columns = 0;
   bool is_handling_key = true;
@@ -169,6 +170,9 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
     } else {
       is_handling_key = false;
     }
+    if (pb.has_id()) {
+      column_ids.push_back(pb.id());
+    }
   }
 
   DCHECK_LE(num_key_columns, columns.size());
@@ -176,11 +180,11 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
   // TODO(perf): could make the following faster by adding a
   // Reset() variant which actually takes ownership of the column
   // vector.
-  return schema->Reset(columns, num_key_columns);
+  return schema->Reset(columns, column_ids, num_key_columns);
 }
 
-Status SchemaToColumnPBs(const Schema& schema,
-                         RepeatedPtrField<ColumnSchemaPB>* cols) {
+Status SchemaToColumnPBsWithoutIds(const Schema& schema,
+                                   RepeatedPtrField<ColumnSchemaPB>* cols) {
   cols->Clear();
   int idx = 0;
   BOOST_FOREACH(const ColumnSchema& col, schema.columns()) {
@@ -189,6 +193,12 @@ Status SchemaToColumnPBs(const Schema& schema,
     col_pb->set_is_key(idx < schema.num_key_columns());
     idx++;
   }
+  return Status::OK();
+}
+
+Status SchemaToColumnPBs(const Schema& schema,
+                         RepeatedPtrField<ColumnSchemaPB>* cols) {
+  RETURN_NOT_OK(SchemaToColumnPBsWithoutIds(schema, cols));
   if (schema.has_column_ids()) {
     for (int i = 0; i < schema.num_columns(); ++i) {
       ColumnSchemaPB* col_pb = cols->Mutable(i);

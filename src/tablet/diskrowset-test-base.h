@@ -42,12 +42,10 @@ class TestRowSet : public KuduRowSetTest {
 
  protected:
   static Schema CreateTestSchema() {
-    ColumnSchema col1("key", STRING);
-    ColumnSchema col2("val", UINT32);
-
-    vector<ColumnSchema> cols = boost::assign::list_of
-      (col1)(col2);
-    return Schema(cols, 1);
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddKeyColumn("key", STRING));
+    CHECK_OK(builder.AddColumn("val", UINT32));
+    return builder.Build();
   }
 
   void BuildRowKey(RowBuilder *rb, int row_idx) {
@@ -150,7 +148,7 @@ class TestRowSet : public KuduRowSetTest {
 
     ProbeStats stats;
     ScopedTransaction tx(&mvcc_);
-    return rs->MutateRow(tx.txid(), probe, schema_, mutation, &stats, result);
+    return rs->MutateRow(tx.txid(), probe, mutation, &stats, result);
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {

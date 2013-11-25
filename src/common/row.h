@@ -278,13 +278,21 @@ class DeltaProjector {
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     base_cols_mapping_[proj_col_idx] = base_col_idx;
-    rbase_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
+    if (delta_schema_.has_column_ids()) {
+      rbase_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
+    } else {
+      rbase_cols_mapping_[proj_col_idx] = proj_col_idx;
+    }
     return Status::OK();
   }
 
   Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
     adapter_cols_mapping_[proj_col_idx] = base_col_idx;
-    radapter_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
+    if (delta_schema_.has_column_ids()) {
+      radapter_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
+    } else {
+      radapter_cols_mapping_[proj_col_idx] = proj_col_idx;
+    }
     return Status::OK();
   }
 

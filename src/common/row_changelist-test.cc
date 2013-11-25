@@ -17,12 +17,16 @@ namespace kudu {
 class TestRowChangeList : public KuduTest {
  public:
   TestRowChangeList() :
-    schema_(boost::assign::list_of
-            (ColumnSchema("col1", STRING))
-            (ColumnSchema("col2", STRING))
-            (ColumnSchema("col3", UINT32)),
-            1)
+    schema_(CreateSchema())
   {}
+
+  static Schema CreateSchema() {
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddKeyColumn("col1", STRING));
+    CHECK_OK(builder.AddColumn("col2", STRING));
+    CHECK_OK(builder.AddColumn("col3", UINT32));
+    return(builder.Build());
+  }
 
  protected:
   Schema schema_;

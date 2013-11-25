@@ -24,12 +24,16 @@ class TestMemRowSet : public ::testing::Test {
  public:
   TestMemRowSet() :
     ::testing::Test(),
-    schema_(boost::assign::list_of
-            (ColumnSchema("key", STRING))
-            (ColumnSchema("val", UINT32)),
-            1),
+    schema_(CreateSchema()),
     key_schema_(schema_.CreateKeyProjection())
   {}
+
+  static Schema CreateSchema() {
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddKeyColumn("key", STRING));
+    CHECK_OK(builder.AddColumn("val", UINT32));
+    return builder.Build();
+  }
 
  protected:
   // Check that the given row in the memrowset contains the given data.
@@ -99,7 +103,6 @@ class TestMemRowSet : public ::testing::Test {
     ProbeStats stats;
     return mrs->MutateRow(tx.txid(),
                           probe,
-                          schema_,
                           RowChangeList(mutation_buf_),
                           &stats,
                           result);
@@ -117,7 +120,6 @@ class TestMemRowSet : public ::testing::Test {
     ProbeStats stats;
     return mrs->MutateRow(tx.txid(),
                           probe,
-                          schema_,
                           RowChangeList(mutation_buf_),
                           &stats,
                           result);
@@ -160,10 +162,11 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
 
 TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 
-  Schema compound_key_schema(boost::assign::list_of
-                              (ColumnSchema("key1", STRING))
-                              (ColumnSchema("key2", INT32))
-                              (ColumnSchema("val", UINT32)), 2);
+  SchemaBuilder builder;
+  ASSERT_STATUS_OK(builder.AddKeyColumn("key1", STRING));
+  ASSERT_STATUS_OK(builder.AddKeyColumn("key2", INT32));
+  ASSERT_STATUS_OK(builder.AddColumn("val", UINT32));
+  Schema compound_key_schema = builder.Build();
 
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, compound_key_schema));
 
@@ -438,69 +441,6 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
               << rows[0];
     EXPECT_EQ(expected, rows[0]);
   }
-}
-
-// Test that passing a RowChangeList with a schema that is different from
-// the current one in the MemRowSet triggers the RowChangeList projection.
-TEST_F(TestMemRowSet, TestMutationWithDifferentSchema) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
-
-  // Add an int column to the base schema
-  std::vector<ColumnSchema> columns(schema_.columns());
-  columns.insert(columns.begin() + 1, ColumnSchema("new_column", UINT32));
-  Schema schema2(columns, schema_.num_key_columns());
-
-  const size_t kNewU32ColumnIdx = 1;    // 'new_column' index in 'schema2'
-  const size_t kValColumnIdx = 2;       // 'val' index in 'schema2'
-
-  // Insert a row ("row0", 0)
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), "row0", 0));
-
-  // Update "row0" using schema 2 (The projection will be applied)
-  {
-    ScopedTransaction tx(&mvcc_);
-    mutation_buf_.clear();
-    RowChangeListEncoder update(schema2, &mutation_buf_);
-    uint32_t new_val = 1;
-    update.AddColumnUpdate(kNewU32ColumnIdx, &new_val);
-    new_val = 5;
-    update.AddColumnUpdate(kValColumnIdx, &new_val);
-
-    RowBuilder rb(key_schema_);
-    rb.AddString(Slice("row0"));
-    RowSetKeyProbe probe(rb.row());
-
-    MutationResultPB result;
-    ProbeStats stats;
-    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2,
-                                    RowChangeList(mutation_buf_), &stats, &result));
-    ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
-    ASSERT_EQ(0L, result.mutations(0).mrs_id());
-  }
-
-  // Update "row0" using schema 2 (The projection will be applied and result in an empty update)
-  {
-    ScopedTransaction tx(&mvcc_);
-    mutation_buf_.clear();
-    RowChangeListEncoder update(schema2, &mutation_buf_);
-    uint32_t new_val = 2;
-    update.AddColumnUpdate(kNewU32ColumnIdx, &new_val);
-
-    RowBuilder rb(key_schema_);
-    rb.AddString(Slice("row0"));
-    RowSetKeyProbe probe(rb.row());
-
-    MutationResultPB result;
-    ProbeStats stats;
-    ASSERT_STATUS_OK(mrs->MutateRow(tx.txid(), probe, schema2,
-                                    RowChangeList(mutation_buf_), &stats, &result));
-    ASSERT_EQ(0L, result.mutations_size());
-  }
-
-  vector<string> rows;
-  ASSERT_STATUS_OK(kudu::tablet::DumpRowSet(*mrs, schema_, MvccSnapshot(mvcc_), &rows));
-  ASSERT_EQ(1, rows.size());
-  ASSERT_EQ(rows[0], "(string key=row0, uint32 val=5)");
 }
 
 } // namespace tablet

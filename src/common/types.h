@@ -311,6 +311,12 @@ class Variant {
     return NULL;
   }
 
+  bool Equals(const Variant *other) const {
+    if (other == NULL || type_ != other->type_)
+      return false;
+    return GetTypeInfo(type_).Compare(value(), other->value()) == 0;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(Variant);
 

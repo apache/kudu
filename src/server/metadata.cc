@@ -79,6 +79,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
     next_rowset_idx_(0),
     last_durable_mrs_id_(kNoDurableMemStore),
     schema_(schema) {
+  CHECK(schema_.has_column_ids());
 }
 
 TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block)
@@ -107,6 +108,7 @@ Status TabletMetadata::LoadFromDisk() {
   RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), &schema_),
                         "Failed to parse Schema from superblock " +
                         superblock.ShortDebugString());
+  DCHECK(schema_.has_column_ids());
 
   BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
     gscoped_ptr<RowSetMetadata> rowset_meta;
@@ -251,6 +253,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
     meta->ToProtobuf(pb->add_rowsets());
   }
 
+  DCHECK(schema_.has_column_ids());
   RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb->mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
@@ -359,7 +362,7 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
     cols_ids.push_back(col_pb.schema().id());
     key_columns += !!col_pb.schema().is_key();
   }
-  RETURN_NOT_OK(schema_.Reset(cols, key_columns));
+  RETURN_NOT_OK(schema_.Reset(cols, cols_ids, key_columns));
 
   // Load Delta Files
   BOOST_FOREACH(const DeltaDataPB& delta_pb, pb.deltas()) {

@@ -255,6 +255,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata
     target_rowset_size_(target_rowset_size),
     output_index_(0),
     written_count_(0) {
+  CHECK(schema.has_column_ids());
 }
 
 Status RollingDiskRowSetWriter::Open() {
@@ -378,7 +379,6 @@ CompactionInput *DiskRowSet::NewCompactionInput(const Schema& projection,
 
 Status DiskRowSet::MutateRow(txid_t txid,
                              const RowSetKeyProbe &probe,
-                             const Schema& update_schema,
                              const RowChangeList &update,
                              ProbeStats* stats,
                              MutationResultPB* result) {
@@ -395,7 +395,7 @@ Status DiskRowSet::MutateRow(txid_t txid,
     return Status::NotFound("row not found");
   }
 
-  RETURN_NOT_OK(delta_tracker_->Update(txid, row_idx, update_schema, update, result));
+  RETURN_NOT_OK(delta_tracker_->Update(txid, row_idx, update, result));
 
   return Status::OK();
 }

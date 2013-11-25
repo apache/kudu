@@ -303,6 +303,7 @@ class RowSetMetadata {
       schema_(schema),
       tablet_metadata_(tablet_metadata),
       last_durable_dms_id_(kNoDurableMemStore) {
+    CHECK(schema.has_column_ids());
   }
 
   Status InitFromPB(const RowSetDataPB& pb);

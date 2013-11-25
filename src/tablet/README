@@ -84,8 +84,15 @@ If we don't remove the data of the dropped column we must have a Column ID.
 The user requests (only names) are mapped to the latest schema IDs.
 
   e.g.    cfile-set  [a, b, c, d]   -> [0, 1, 2, 3]
-          projection [b, f, a]      -> [0:2, 1:DEFAULT, 2:0]
+          projection [b, a]      -> [0:2, 2:0]
 
+RPC User Projections
+ - No IDs or default values must be specified (Type and Nullability are required)
+ - Resolved by the tablet on Insert, Mutate and NewIterator
+   The Resolution steps maps the user column names to the latest schema column IDs.
+ - User Columns not present in the latest (tablet) schema are considered errors
+ - User Columns with a different type from the ones present in the tablet schema are not resolved yet
+   A different Type is considered an error, later we will add an Adapter to try to get out the result.
 
 ============================================================
 MVCC Overview

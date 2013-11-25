@@ -234,6 +234,7 @@ static Status DecodeBlock(RowwiseRowBlockPB* block_pb,
                           vector<const uint8_t*>* row_block) {
 
   RETURN_NOT_OK(ColumnPBsToSchema(block_pb->schema(), client_schema));
+  DCHECK(!client_schema->has_column_ids());
   if (is_inserts) {
     RETURN_NOT_OK(ExtractRowsFromRowBlockPB(*client_schema, block_pb, row_block));
   } else {
