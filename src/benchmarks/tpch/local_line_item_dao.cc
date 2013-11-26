@@ -20,9 +20,10 @@ void LocalLineItemDAO::Init() {
   master_block.set_block_b("b0f65c47c2a84dcf9ec4e95dd63f4393");
 
   // Try to load it. If it was not found, create a new one.
+  Schema s = SchemaBuilder(tpch::CreateLineItemSchema()).Build();
   gscoped_ptr<kudu::metadata::TabletMetadata> metadata;
-  CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_, master_block,
-                                        tpch::CreateLineItemSchema(), "", "", &metadata));
+  CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_, master_block, s,
+                                        "", "", &metadata));
 
   tablet_.reset(new tablet::Tablet(metadata.Pass()));
   CHECK_OK(tablet_->Open());
