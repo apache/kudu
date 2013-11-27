@@ -62,6 +62,13 @@ class RemoteTabletServer {
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy() const;
 
  private:
+  // Internal callback for DNS resolution.
+  void DnsResolutionFinished(const Status &result_status,
+                             const HostPort& hp,
+                             vector<Sockaddr>* addrs,
+                             KuduClient* client,
+                             const StatusCallback& user_callback);
+
   mutable simple_spinlock lock_;
   const std::string uuid_;
 

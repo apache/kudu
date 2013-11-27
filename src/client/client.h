@@ -13,6 +13,8 @@
 
 namespace kudu {
 
+class DnsResolver;
+
 namespace rpc {
 class Messenger;
 }
@@ -66,6 +68,8 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 
   const KuduClientOptions& options() const { return options_; }
 
+  DnsResolver* dns_resolver() { return dns_resolver_.get(); }
+
  private:
   friend class KuduTable;
   friend class RemoteTablet;
@@ -77,6 +81,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   KuduClientOptions options_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
 
+  gscoped_ptr<DnsResolver> dns_resolver_;
   gscoped_ptr<MetaCache> meta_cache_;
 
   // Proxy to the master.

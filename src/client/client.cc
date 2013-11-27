@@ -8,7 +8,9 @@
 #include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.proxy.h"
 #include "rpc/messenger.h"
+#include "util/async_util.h"
 #include "util/countdown_latch.h"
+#include "util/net/dns_resolver.h"
 #include "util/net/net_util.h"
 #include "util/status.h"
 #include <tr1/memory>
@@ -63,6 +65,7 @@ Status KuduClient::Init() {
   master_proxy_.reset(new MasterServiceProxy(messenger_, addrs[0]));
 
   meta_cache_.reset(new MetaCache(this));
+  dns_resolver_.reset(new DnsResolver());
 
   initted_ = true;
 
@@ -81,14 +84,6 @@ Status KuduClient::OpenTable(const std::string& table_name,
   return Status::OK();
 }
 
-// Callback for use with boost::bind. Useful to convert async functions which take StatusCallbacks
-// into synchronous calls.
-static void AssignStatusAndTriggerLatch(const Status& status, CountDownLatch* latch,
-                                        Status* result_status) {
-  *result_status = status;
-  latch->CountDown();
-}
-
 Status KuduClient::GetTabletProxy(const std::string& tablet_id,
                                   shared_ptr<TabletServerServiceProxy>* proxy) {
   // TODO: write a proper async version of this for async client.
@@ -97,7 +92,7 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
 
   CountDownLatch latch(1);
   Status s;
-  remote_tablet->Refresh(this, boost::bind(AssignStatusAndTriggerLatch, _1, &latch, &s), false);
+  remote_tablet->Refresh(this, AssignStatusAndTriggerLatch(&s, &latch), false);
   latch.Wait();
   RETURN_NOT_OK(s);
 
@@ -107,7 +102,7 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
   }
 
   latch.Reset(1);
-  ts->RefreshProxy(this, boost::bind(AssignStatusAndTriggerLatch, _1, &latch, &s), false);
+  ts->RefreshProxy(this, AssignStatusAndTriggerLatch(&s, &latch), false);
   latch.Wait();
   RETURN_NOT_OK(s);
 

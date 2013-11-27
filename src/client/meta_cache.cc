@@ -5,6 +5,7 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "master/master.proxy.h"
+#include "util/net/dns_resolver.h"
 #include "util/net/net_util.h"
 
 #include <boost/bind.hpp>
@@ -32,6 +33,35 @@ RemoteTabletServer::RemoteTabletServer(const master::TSInfoPB& pb)
   Update(pb);
 }
 
+void RemoteTabletServer::DnsResolutionFinished(const Status &result_status,
+                                               const HostPort& hp,
+                                               vector<Sockaddr>* addrs,
+                                               KuduClient* client,
+                                               const StatusCallback& user_callback) {
+  gscoped_ptr<vector<Sockaddr> > scoped_addrs(addrs);
+
+  Status s = result_status;
+
+  if (s.ok() && addrs->empty()) {
+    s = Status::NotFound("No addresses for " + hp.ToString());
+  }
+
+  if (!s.ok()) {
+    s = s.CloneAndPrepend("Failed to resolve address for TS " + uuid_);
+    user_callback(s);
+    return;
+  }
+
+  VLOG(1) << "Successfully resolved " << hp.ToString() << ": "
+          << (*addrs)[0].ToString();
+
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    proxy_.reset(new TabletServerServiceProxy(client->messenger(), (*addrs)[0]));
+  }
+  user_callback(s);
+}
+
 void RemoteTabletServer::RefreshProxy(KuduClient* client,
                                       const StatusCallback& cb,
                                       bool force) {
@@ -51,29 +81,10 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
     hp = rpc_hostports_[0];
   }
 
-  // TODO: the DNS resolution should be done asynchronously in a thread-pool.
-  // For now, we'll just do it inline, but still provide an async API so that
-  // we can async-ify this in the future without changing callers.
-  vector<Sockaddr> addrs;
-  Status s = hp.ResolveAddresses(&addrs);
-  if (s.ok() && addrs.empty()) {
-    s = Status::NotFound("No addresses for " + hp.ToString());
-  }
-
-  if (!s.ok()) {
-    s = s.CloneAndPrepend("Failed to resolve address for TS " + uuid_);
-    cb(s);
-    return;
-  }
-
-  VLOG(1) << "Successfully resolved " << hp.ToString() << ": "
-          << addrs[0].ToString();
-
-  {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    proxy_.reset(new TabletServerServiceProxy(client->messenger(), addrs[0]));
-  }
-  cb(s);
+  vector<Sockaddr>* addrs = new vector<Sockaddr>();
+  client->dns_resolver()->ResolveAddresses(
+    hp, addrs, boost::bind(&RemoteTabletServer::DnsResolutionFinished,
+                           this, _1, hp, addrs, client, cb));
 }
 
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {

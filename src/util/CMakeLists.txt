@@ -16,6 +16,7 @@ ADD_LIBRARY(kudu_util
   logging.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
+  net/dns_resolver.cc
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
@@ -56,6 +57,7 @@ ADD_KUDU_TEST(memenv/memenv-test)
 ADD_KUDU_TEST(metrics-test)
 ADD_KUDU_TEST(mt-metrics-test RUN_SERIAL true)
 ADD_KUDU_TEST(net/net_util-test)
+ADD_KUDU_TEST(net/dns_resolver-test)
 ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(rle-test)
 ADD_KUDU_TEST(status-test)
