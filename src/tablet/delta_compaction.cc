@@ -42,8 +42,10 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 
   explicit DeltaMemStoreCompactionInput(const Schema& schema,
                                         const Schema& projection,
+                                        const DeltaStats& stats,
                                         gscoped_ptr<DMSTreeIter> iter)
-      : iter_(iter.Pass()),
+      : stats_(stats),
+        iter_(iter.Pass()),
         arena_(32*1024, 128*1024),
         delta_projector_(schema, projection) {
   }
@@ -90,8 +92,14 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
     return delta_projector_.projection();
   }
 
+  const DeltaStats& stats() const {
+    return stats_;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStoreCompactionInput);
+
+  DeltaStats stats_;
 
   gscoped_ptr<DMSTreeIter> iter_;
 
@@ -108,9 +116,11 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
  public:
 
   explicit DeltaFileCompactionInput(const Schema& schema,
-                                    const Schema& projection,
+                                    const Schema& projection,           \
+                                    const DeltaStats& stats,
                                     gscoped_ptr<CFileIterator> iter)
       : iter_(iter.Pass()),
+        stats_(stats),
         data_(new Slice[kRowsPerBlock]),
         arena_(32*1024, 128*1024),
         block_(GetTypeInfo(STRING),
@@ -174,10 +184,15 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return delta_projector_.projection();
   }
 
+  const DeltaStats& stats() const {
+    return stats_;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaFileCompactionInput);
 
   gscoped_ptr<CFileIterator> iter_;
+  DeltaStats stats_;
   gscoped_ptr<Slice[]> data_;
   Arena arena_;
   ColumnBlock block_;
@@ -248,10 +263,15 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
  public:
   explicit MergeDeltaCompactionInput(const Schema& schema,
         const vector<shared_ptr<DeltaCompactionInput> > &inputs)
-      : schema_(schema) {
+      : schema_(schema),
+        stats_(schema.num_columns()) {
     BOOST_FOREACH(const shared_ptr<DeltaCompactionInput> &input, inputs) {
       DCHECK_SCHEMA_EQ(schema_, input->schema());
       gscoped_ptr<MergeState> state(new MergeState);
+      stats_.IncrDeleteCount<false>(input->stats().delete_count());
+      for (size_t idx = 0; idx < input->stats().num_columns(); idx++) {
+        stats_.IncrUpdateCount<false>(idx, input->stats().update_count(idx));
+      }
       state->input = input;
       states_.push_back(state.release());
     }
@@ -325,6 +345,10 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 
   const Schema& schema() const {
     return schema_;
+  }
+
+  const DeltaStats& stats() const {
+    return stats_;
   }
 
  private:
@@ -411,7 +435,9 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
   }
 
   Schema schema_;
+  DeltaStats stats_;
   vector<MergeState *> states_;
+  vector<int64_t> update_counts_;
 };
 
 } // anonymous namespace
@@ -541,6 +567,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
 
   RETURN_NOT_OK(dfw->Start());
 
+  DeltaStats stats(base_schema.num_columns());
   // Iterate over the rows
   // For each iteration:
   // - apply the deltas for each column
@@ -566,13 +593,16 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
     vector<DeltaKeyAndUpdate> out;
     RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(rsu_->column_indexes(), &out, &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
-      dfw->AppendDelta(key_and_update.key, RowChangeList(key_and_update.cell));
+      RowChangeList update(key_and_update.cell);
+      dfw->AppendDelta(key_and_update.key, update);
+      stats.UpdateStats<false>(base_schema, update);
     }
     *deltas_written += out.size();
     RETURN_NOT_OK(cfileset_iter->FinishBatch());
   }
 
   RETURN_NOT_OK(rsu_->Finish());
+  RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
   RETURN_NOT_OK(dfw->Finish());
 
   DVLOG(1) << "Applied all outstanding deltas for columns " << partial_schema.ToString() <<
@@ -610,7 +640,8 @@ Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
   CHECK(projection.has_column_ids());
   gscoped_ptr<CFileIterator> iter;
   RETURN_NOT_OK(reader.cfile_reader()->NewIterator(&iter));
-  input->reset(new DeltaFileCompactionInput(reader.schema(), projection, iter.Pass()));
+  input->reset(new DeltaFileCompactionInput(reader.schema(), projection, reader.delta_stats(),
+                                            iter.Pass()));
   return Status::OK();
 }
 
@@ -619,7 +650,8 @@ Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
   CHECK(projection.has_column_ids());
   gscoped_ptr<DMSTreeIter> iter(dms.tree().NewIterator());
-  input->reset(new DeltaMemStoreCompactionInput(dms.schema(), projection, iter.Pass()));
+  input->reset(new DeltaMemStoreCompactionInput(dms.schema(), projection, dms.delta_stats(),
+                                                iter.Pass()));
   return Status::OK();
 }
 
@@ -667,6 +699,7 @@ Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *o
     RETURN_NOT_OK(input->FinishBlock());
   }
 
+  out->WriteDeltaStats(input->stats());
   return Status::OK();
 }
 

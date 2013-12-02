@@ -107,8 +107,8 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
       dms_->Update(tx.txid(), idx, RowChangeList(update_buf));
     }
   }
-  ASSERT_EQ(n_rows / 2, dms_->update_count(kIntColumn));
-  ASSERT_EQ(n_rows / 4, dms_->update_count(kStringColumn));
+  ASSERT_EQ(n_rows / 2, dms_->delta_stats().update_count(kIntColumn));
+  ASSERT_EQ(n_rows / 4, dms_->delta_stats().update_count(kStringColumn));
 }
 
 TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {
@@ -215,7 +215,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
   // Ensure we end up two entries for the cell.
   ASSERT_EQ(2, dms_->Count());
-  ASSERT_EQ(2, dms_->update_count(kStringColumn));
+  ASSERT_EQ(2, dms_->delta_stats().update_count(kStringColumn));
 
   // Ensure that we ended up with the right data.
   ScopedColumnBlock<STRING> read_back(1);

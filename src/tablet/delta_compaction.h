@@ -50,6 +50,8 @@ class DeltaCompactionInput {
 
   virtual const Schema& schema() const = 0;
 
+  virtual const DeltaStats& stats() const = 0;
+
   virtual ~DeltaCompactionInput() {}
 };
 

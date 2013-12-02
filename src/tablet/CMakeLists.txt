@@ -19,7 +19,7 @@ SET(TABLET_SRCS
   mvcc.cc
   rowset.cc
   rowset_tree.cc
-  deltamemstore.cc deltafile.cc delta_tracker.cc
+  delta_stats.cc deltamemstore.cc deltafile.cc delta_tracker.cc
   delta_compaction.cc
 )
 

@@ -10,6 +10,7 @@
 #include "util/status.h"
 #include "tablet/mutation.h"
 #include "tablet/mvcc.h"
+#include "tablet/delta_stats.h"
 
 namespace kudu { namespace tablet {
 
@@ -35,6 +36,10 @@ class DeltaStore {
 
   // Returns the id of this delta store within the row set.
   virtual const int64_t id() const = 0;
+
+  virtual const DeltaStats& delta_stats() const = 0;
+
+  virtual const Schema& schema() const = 0;
 
   virtual ~DeltaStore() {}
 };

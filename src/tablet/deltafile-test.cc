@@ -61,7 +61,9 @@ class TestDeltaFile : public ::testing::Test {
 
       ASSERT_STATUS_OK_FAST(dfw.AppendDelta(key, RowChangeList(buf)));
     }
-
+    DeltaStats stats(schema_.num_columns());
+    stats.IncrUpdateCount<false>(0, FLAGS_last_row_to_update / 2);
+    ASSERT_STATUS_OK(dfw.WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw.Finish());
   }
 
@@ -79,7 +81,8 @@ class TestDeltaFile : public ::testing::Test {
   void VerifyTestFile() {
     gscoped_ptr<DeltaFileReader> reader;
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
-
+    ASSERT_EQ(FLAGS_last_row_to_update / 2, reader->delta_stats().update_count(0));
+    ASSERT_EQ(0, reader->delta_stats().delete_count());
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));
     ASSERT_STATUS_OK(it->Init());

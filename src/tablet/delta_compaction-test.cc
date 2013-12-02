@@ -78,6 +78,7 @@ class TestDeltaCompaction : public KuduTest {
 
     faststring buf;
 
+    int64_t num_updates = 0;
     for (int i = first_row; i < limit; i++) {
       buf.clear();
       RowChangeListEncoder update(schema_, &buf);
@@ -88,8 +89,12 @@ class TestDeltaCompaction : public KuduTest {
         DeltaKey key(i, txid_t(curr_txid));
         RETURN_NOT_OK(dfw->AppendDelta(key, RowChangeList(buf)));
         curr_txid++;
+        num_updates++;
       }
     }
+    DeltaStats stats(schema_.num_columns());
+    stats.IncrUpdateCount<false>(0, num_updates);
+    RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
     RETURN_NOT_OK(dfw->Finish());
     RETURN_NOT_OK(OpenAsCompactionInput(path, deltafile_idx_, schema_, dci));
     return Status::OK();
@@ -192,10 +197,12 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     // and update number (see update_value assignment).
     size_t kNumUpdates = 10;
     size_t kNumMultipleUpdates = kNumUpdates / 2;
+    DeltaStats stats(schema.num_columns());
     for (size_t i = 0; i < kNumUpdates; ++i) {
       buf.clear();
       RowChangeListEncoder update(schema, &buf);
       for (size_t col_idx = schema.num_key_columns(); col_idx < schema.num_columns(); ++col_idx) {
+        stats.IncrUpdateCount<false>(col_idx, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);
         int update_value = deltafile_idx * 100 + i;
         switch (col_schema.type_info().type()) {
@@ -227,6 +234,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       row_id++;
     }
 
+    ASSERT_STATUS_OK(dfw->WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw->Finish());
     gscoped_ptr<DeltaCompactionInput> dci;
     ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, schemas.back(), &dci));

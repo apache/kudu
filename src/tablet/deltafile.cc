@@ -33,10 +33,38 @@ using cfile::CFileReader;
 namespace tablet {
 
 const char * const DeltaFileReader::kSchemaMetaEntryName = "schema";
+const char * const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
+
+namespace {
+
+Status DeltaStatsToPB(const DeltaStats& delta_stats,
+                      size_t ncols,
+                      DeltaStatsPB* pb) {
+  pb->Clear();
+  pb->set_delete_count(delta_stats.delete_count());
+  for (size_t idx = 0; idx < ncols; idx++) {
+    int64_t update_count = delta_stats.update_count(idx);
+    pb->add_per_column_update_count(update_count);
+  }
+  return Status::OK();
+}
+
+Status DeltaStatsFromPB(const DeltaStatsPB& pb,
+                        DeltaStats* delta_stats) {
+  delta_stats->IncrDeleteCount<false>(pb.delete_count());
+  for (size_t idx = 0; idx < delta_stats->num_columns(); idx++) {
+    delta_stats->IncrUpdateCount<false>(idx, pb.per_column_update_count(idx));
+  }
+  return Status::OK();
+}
+
+} // namespace
+
+
 
 DeltaFileWriter::DeltaFileWriter(const Schema &schema,
                                  const shared_ptr<WritableFile> &file) :
-   schema_(schema)
+    schema_(schema)
 #ifndef NDEBUG
   ,has_appended_(false)
 #endif
@@ -101,6 +129,20 @@ Status DeltaFileWriter::WriteSchema() {
   return Status::OK();
 }
 
+Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
+  DeltaStatsPB delta_stats_pb;
+  CHECK_OK(DeltaStatsToPB(stats, schema_.num_columns(), &delta_stats_pb));
+
+  faststring buf;
+  if (!pb_util::SerializeToString(delta_stats_pb, &buf)) {
+    return Status::IOError("Unable to serialize DeltaStatsPB", delta_stats_pb.DebugString());
+  }
+
+  writer_->AddMetadataPair(DeltaFileReader::kDeltaStatsEntryName, buf.ToString());
+  return Status::OK();
+}
+
+
 ////////////////////////////////////////////////////////////
 // Reader
 ////////////////////////////////////////////////////////////
@@ -150,7 +192,8 @@ Status DeltaFileReader::Init() {
 
   // Initialize delta file schema
   RETURN_NOT_OK(ReadSchema());
-
+  // Initialize delta file stats
+  RETURN_NOT_OK(ReadDeltaStats());
   return Status::OK();
 }
 
@@ -165,6 +208,22 @@ Status DeltaFileReader::ReadSchema() {
     return Status::Corruption("unable to parse schema protobuf");
   }
   return SchemaFromPB(schema_pb, &schema_);
+}
+
+Status DeltaFileReader::ReadDeltaStats() {
+  string filestats_pb_buf;
+  if (!reader_->GetMetadataEntry(kDeltaStatsEntryName, &filestats_pb_buf)) {
+    return Status::Corruption("missing delta stats from the delta file metadata");
+  }
+
+  DeltaStatsPB deltastats_pb;
+  if (!deltastats_pb.ParseFromString(filestats_pb_buf)) {
+    return Status::Corruption("unable to parse the delta stats protobuf");
+  }
+  gscoped_ptr<DeltaStats>stats(new DeltaStats(schema_.num_columns()));
+  RETURN_NOT_OK(DeltaStatsFromPB(deltastats_pb, stats.get()));
+  delta_stats_.swap(stats);
+  return Status::OK();
 }
 
 DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema &projection,

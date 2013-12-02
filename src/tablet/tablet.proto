@@ -67,3 +67,12 @@ message TxResultPB {
   // all the mutations in this transaction
   repeated TxOperationPB mutations = 3;
 }
+
+// Delta statistics for a flushed deltastore
+message DeltaStatsPB {
+  // Number of deletes (deletes result in deletion of an entire row)
+  required int64 delete_count = 1;
+  // Repeated update count for each column or zero if no updates are
+  // available for the column
+  repeated int64 per_column_update_count = 2;
+}

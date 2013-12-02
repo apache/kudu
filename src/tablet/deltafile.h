@@ -17,6 +17,7 @@
 #include "gutil/macros.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/delta_key.h"
+#include "tablet/tablet.pb.h"
 
 namespace kudu {
 
@@ -54,6 +55,8 @@ class DeltaFileWriter {
   // of (key, txid).
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
+  Status WriteDeltaStats(const DeltaStats& stats);
+
   const Schema& schema() const { return schema_; }
 
  private:
@@ -83,6 +86,7 @@ class DeltaFileWriter {
 class DeltaFileReader : public DeltaStore {
  public:
   static const char * const kSchemaMetaEntryName;
+  static const char * const kDeltaStatsEntryName;
 
   // Open the Delta File at the given path.
   static Status Open(Env *env,
@@ -103,13 +107,15 @@ class DeltaFileReader : public DeltaStore {
   // See DeltaStore::CheckRowDeleted
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
-  const Schema &schema() const {
+  virtual const Schema &schema() const {
     return schema_;
   }
 
   const string& path() const { return path_; }
 
   const int64_t id() const { return id_; }
+
+  virtual const DeltaStats& delta_stats() const { return *delta_stats_; }
 
  private:
   friend class DeltaFileIterator;
@@ -129,8 +135,11 @@ class DeltaFileReader : public DeltaStore {
 
   Status ReadSchema();
 
+  Status ReadDeltaStats();
+
   const int64_t id_;
   shared_ptr<cfile::CFileReader> reader_;
+  gscoped_ptr<DeltaStats> delta_stats_;
   Schema schema_;
 
   // The path of the file being read (should be used only for debugging)
