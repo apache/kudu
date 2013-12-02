@@ -104,8 +104,8 @@ static void UpdateThread(Demo *demo) {
     rb.AddUint32(l_ordernumber);
     rb.AddUint32(l_linenumber);
     faststring mutations;
-    RowChangeListEncoder encoder(query_schema, &mutations);
-    encoder.AddColumnUpdate(2, &new_l_quantity);
+    RowChangeListEncoder encoder(full_schema, &mutations);
+    encoder.AddColumnUpdate(4, &new_l_quantity);
     dao->MutateLine(rb.row(), mutations);
   }
 }

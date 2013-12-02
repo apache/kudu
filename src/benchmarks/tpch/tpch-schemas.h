@@ -47,10 +47,6 @@ inline Schema CreateMS3DemoQuerySchema() {
                 (ColumnSchema("l_orderkey", UINT32))
                 (ColumnSchema("l_linenumber", UINT32))
                 (ColumnSchema("l_quantity", UINT32))
-                // Without this line we get old results back
-                // TODO remove once it is fixed on the server-side
-                //  JD 11/22/13
-                ,boost::assign::list_of(0)(1)(4)
                 , 0);
 }
 
