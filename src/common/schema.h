@@ -139,22 +139,26 @@ class ColumnSchema {
            type_info().type() == other.type_info().type();
   }
 
-  bool Equals(const ColumnSchema &other) const {
+  bool Equals(const ColumnSchema &other, bool check_defaults) const {
     if (!EqualsType(other) || this->name_ != other.name_)
       return false;
 
-    if (read_default_ == NULL && other.read_default_ != NULL)
-      return false;
+    // For Key comparison checking the defauls doesn't make sense,
+    // since we don't support them, for server vs user schema this comparison
+    // will always fail, since the user does not specify the defaults.
+    if (check_defaults) {
+      if (read_default_ == NULL && other.read_default_ != NULL)
+        return false;
 
-    if (write_default_ == NULL && other.write_default_ != NULL)
-      return false;
+      if (write_default_ == NULL && other.write_default_ != NULL)
+        return false;
 
-    if (read_default_ != NULL && !read_default_->Equals(other.read_default_.get()))
-      return false;
+      if (read_default_ != NULL && !read_default_->Equals(other.read_default_.get()))
+        return false;
 
-    if (write_default_ != NULL && !write_default_->Equals(other.write_default_.get()))
-      return false;
-
+      if (write_default_ != NULL && !write_default_->Equals(other.write_default_.get()))
+        return false;
+    }
     return true;
   }
 
@@ -462,8 +466,9 @@ class Schema {
     if (this->num_key_columns_ != other.num_key_columns_) return false;
     if (this->cols_.size() != other.cols_.size()) return false;
 
+    const bool have_column_ids = other.has_column_ids() && has_column_ids();
     for (size_t i = 0; i < other.cols_.size(); i++) {
-      if (!this->cols_[i].Equals(other.cols_[i])) return false;
+      if (!this->cols_[i].Equals(other.cols_[i], have_column_ids)) return false;
     }
 
     return true;
@@ -474,7 +479,7 @@ class Schema {
   bool KeyEquals(const Schema& other) const {
     if (this->num_key_columns_ != other.num_key_columns_) return false;
     for (size_t i = 0; i < this->num_key_columns_; i++) {
-      if (!this->cols_[i].Equals(other.cols_[i])) return false;
+      if (!this->cols_[i].Equals(other.cols_[i], false)) return false;
     }
     return true;
   }

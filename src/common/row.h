@@ -132,6 +132,7 @@ class RowProjector {
     base_cols_mapping_.clear();
     adapter_cols_mapping_.clear();
     projection_defaults_.clear();
+    is_identity_ = base_schema.Equals(projection);
     return projection_.GetProjectionMapping(base_schema_, this);
   }
 
@@ -155,6 +156,7 @@ class RowProjector {
     return ProjectRow<RowType1, RowType2, ArenaType, false>(src_row, dst_row, dst_arena);
   }
 
+  bool is_identity() const { return is_identity_; }
   const Schema& projection() const { return projection_; }
   const Schema& base_schema() const { return base_schema_; }
 
@@ -228,6 +230,7 @@ class RowProjector {
 
   Schema base_schema_;
   Schema projection_;
+  bool is_identity_;
 };
 
 // Projection mapping from the schema used to encode a RowChangeList
