@@ -18,6 +18,7 @@
 #include "tablet/lock_manager.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/write_transaction.h"
+#include "tablet/transactions/write_util.h"
 #include "util/locks.h"
 
 using boost::shared_lock;
@@ -783,6 +784,12 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                                     &row_block),
                         Substitute("Could not decode block: $0", rows->ShortDebugString()));
 
+  RowProjector row_projector(inserts_schema, tablet_->schema());
+  if (!row_projector.is_identity()) {
+    RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(inserts_schema));
+    RETURN_NOT_OK(row_projector.Init());
+  }
+
   int32_t insert_idx = 0;
   BOOST_FOREACH(const uint8_t* row_ptr, row_block) {
     TxOperationPB op_result = result.inserts(insert_idx++);
@@ -818,10 +825,8 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
         new shared_lock<rw_spinlock>(tablet_->component_lock()->get_lock()));
     tx_ctx->set_component_lock(component_lock.Pass());
 
-    ConstContiguousRow* row = new ConstContiguousRow(inserts_schema,
-                                                     row_ptr);
+    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx, tablet_->schema(), row_projector, row_ptr);
 
-    row = tx_ctx->AddToAutoReleasePool(row);
     gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
     gscoped_ptr<PreparedRowWrite> prepared_row;
     // TODO maybe we shouldn't acquire the row lock on replay?
@@ -855,6 +860,13 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
                             &mutates_schema,
                             &row_key_block));
 
+
+  DeltaProjector delta_projector(mutates_schema, tablet_->schema());
+  if (!delta_projector.is_identity()) {
+    RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(mutates_schema));
+    RETURN_NOT_OK(mutates_schema.GetProjectionMapping(tablet_->schema(), &delta_projector));
+  }
+
   Schema mutates_key_schema = mutates_schema.CreateKeyProjection();
   vector<const RowChangeList *> mutations;
   ElementDeleter deleter(&mutations);
@@ -878,13 +890,15 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
       tx_ctx->AddFailedMutation(Status::RuntimeError("Row mutate failed previously."));
       continue;
     }
+    const RowChangeList* mutation = ProjectMutation(tx_ctx, delta_projector,
+                                                    mutations[mutate_op_idx -1]);
     MutationInput mutation_input(tx_ctx,
                                  committed_op_id,
                                  mutate_op_idx - 1,
                                  mutates_key_schema,
                                  mutates_schema,
                                  row_key_ptr,
-                                 mutations[mutate_op_idx -1]);
+                                 mutation);
     bool applied_mutation = false;
     RETURN_NOT_OK(PlayMutation(mutation_input, op_result, &applied_mutation));
   }
@@ -1040,7 +1054,6 @@ Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
   RETURN_NOT_OK(tablet_->CreatePreparedMutate(mutation_input.tx_ctx, row_key.get(),
-                                              &mutation_input.changelist_schema,
                                               mutation_input.changelist,
                                               &prepared_row));
 

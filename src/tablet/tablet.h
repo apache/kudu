@@ -105,7 +105,6 @@ class Tablet {
   // as there are cases where row is passed as a reference (old API).
   Status CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                               const ConstContiguousRow* row_key,
-                              const Schema* changelist_schema,
                               const RowChangeList* changelist,
                               gscoped_ptr<PreparedRowWrite>* row_write);
 
@@ -191,7 +190,7 @@ class Tablet {
 
   // Return the current schema of the metadata. Note that this returns
   // a copy so should not be used in a tight loop.
-  Schema schema() const;
+  const Schema& schema() const { return schema_; }
 
   // Returns a reference to the key projection of the tablet schema.
   // The schema keys are immutable.

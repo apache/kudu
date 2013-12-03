@@ -1,8 +1,11 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
 
 #include "common/wire_protocol.h"
+#include "common/row_changelist.h"
+#include "common/row.h"
 #include "common/schema.h"
 #include "consensus/consensus.pb.h"
 
@@ -74,6 +77,41 @@ MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result) {
   }
   DCHECK_EQ(result->mutations_size(), 2);
   return MutationResultPB::DUPLICATED_MUTATION;
+}
+
+const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
+                                              const Schema& tablet_schema,
+                                              const RowProjector& row_projector,
+                                              const uint8_t *user_row_ptr) {
+  const ConstContiguousRow* row;
+  if (row_projector.is_identity()) {
+    row = new ConstContiguousRow(tablet_schema, user_row_ptr);
+  } else {
+    uint8_t *rowbuf = new uint8_t[ContiguousRowHelper::row_size(tablet_schema)];
+    tx_ctx->AddArrayToAutoReleasePool(rowbuf);
+    ConstContiguousRow src_row(row_projector.base_schema(), user_row_ptr);
+    ContiguousRow proj_row(tablet_schema, rowbuf);
+    row_projector.ProjectRowForWrite(src_row, &proj_row, static_cast<Arena*>(NULL));
+    row = new ConstContiguousRow(proj_row);
+  }
+  DCHECK(row->schema().has_column_ids());
+  return tx_ctx->AddToAutoReleasePool(row);
+}
+
+const RowChangeList* ProjectMutation(WriteTransactionContext *tx_ctx,
+                                     const DeltaProjector& delta_projector,
+                                     const RowChangeList *user_mutation) {
+  const RowChangeList* mutation;
+  if (delta_projector.is_identity()) {
+    mutation = user_mutation;
+  } else {
+    faststring rclbuf;
+    RowChangeListDecoder::ProjectUpdate(delta_projector, *user_mutation, &rclbuf);
+    mutation = new RowChangeList(rclbuf);
+    tx_ctx->AddToAutoReleasePool(rclbuf.release());
+    tx_ctx->AddToAutoReleasePool(mutation);
+  }
+  return mutation;
 }
 
 }  // namespace tablet

@@ -67,6 +67,12 @@ class TransactionContext {
     return pool_.Add(t);
   }
 
+  // Sets an array heap object to be managed by this transaction's AutoReleasePool.
+  template <class T>
+  T* AddArrayToAutoReleasePool(T* t) {
+    return pool_.AddArray(t);
+  }
+
   string ToString() {
     return "TODO transaction toString";
   }

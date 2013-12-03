@@ -332,10 +332,6 @@ class LeaderWriteTransaction : public LeaderTransaction {
 // of this class.
 class PreparedRowWrite {
  public:
-  const Schema *schema() const {
-    return schema_;
-  }
-
   const ConstContiguousRow* row() const {
     return row_;
   }
@@ -371,12 +367,10 @@ class PreparedRowWrite {
 
   // ctor for mutations
   PreparedRowWrite(const ConstContiguousRow* row_key,
-                   const Schema* mutations_schema,
                    const RowChangeList* mutations,
                    const gscoped_ptr<RowSetKeyProbe> probe,
                    const gscoped_ptr<tablet::ScopedRowLock> lock);
 
-  const Schema* schema_;
   const ConstContiguousRow *row_;
   const ConstContiguousRow *row_key_;
   const RowChangeList *changelist_;

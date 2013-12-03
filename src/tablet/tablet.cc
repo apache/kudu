@@ -28,6 +28,7 @@
 #include "tablet/diskrowset.h"
 #include "tablet/delta_compaction.h"
 #include "tablet/transactions/write_transaction.h"
+#include "tablet/transactions/write_util.h"
 #include "util/bloom_filter.h"
 #include "util/env.h"
 #include "util/metrics.h"
@@ -175,15 +176,6 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
   return Status::OK();
 }
 
-static Status ProjectRowForInsert(const Schema& tablet_schema,
-                                  const ConstContiguousRow& src_row,
-                                  ContiguousRow *dst_row) {
-  // TODO: Add fast path if the schemas are the same
-  RowProjector projector(src_row.schema(), tablet_schema);
-  RETURN_NOT_OK(projector.Init());
-  return projector.ProjectRowForWrite(src_row, dst_row, static_cast<Arena*>(NULL));
-}
-
 Status Tablet::Insert(WriteTransactionContext *tx_ctx,
                       const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
@@ -194,13 +186,24 @@ Status Tablet::Insert(WriteTransactionContext *tx_ctx,
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
 
-  gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedInsert(tx_ctx, &row, &row_write));
-  tx_ctx->add_prepared_row(row_write.Pass());
-
   gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
       new boost::shared_lock<rw_spinlock>(component_lock_.get_lock()));
   tx_ctx->set_component_lock(lock.Pass());
+
+  // Convert the client row to a server row (with IDs)
+  // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
+  //       One is the RPC side, the other is this method that should be renamed InsertForTesting()
+  DCHECK(!row.schema().has_column_ids());
+  RowProjector row_projector(row.schema(), schema_);
+  if (!row_projector.is_identity()) {
+    RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(row.schema()));
+    RETURN_NOT_OK(row_projector.Init());
+  }
+  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, schema_, row_projector, row.row_data());
+
+  gscoped_ptr<PreparedRowWrite> row_write;
+  RETURN_NOT_OK(CreatePreparedInsert(tx_ctx, proj_row, &row_write));
+  tx_ctx->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
   tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
@@ -217,17 +220,7 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
   // there the PreparedRowWrite has the row lock.
   DCHECK(tx_ctx->component_lock()) << "WriteTransactionContext must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
-
-  CHECK(!insert->row()->schema().has_column_ids());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
-
-  // TODO: Move this in the decode step, since the schema is the same for the batch
-  // TODO: Add a "identity" case without projection
-  RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(insert->row()->schema()));
-  uint8_t rowbuf[ContiguousRowHelper::row_size(schema_)];
-  ContiguousRow proj_row(schema_, rowbuf);
-  ProjectRowForInsert(schema_, *insert->row(), &proj_row);
-  ConstContiguousRow cproj_row(proj_row);
 
   ProbeStats stats;
 
@@ -259,7 +252,7 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(tx_ctx->mvcc_txid(), cproj_row);
+  Status s = memrowset_->Insert(tx_ctx->mvcc_txid(), *insert->row());
   if (PREDICT_TRUE(s.ok())) {
     RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_txid(), memrowset_->mrs_id()));
   } else {
@@ -270,7 +263,6 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
 
 Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                                     const ConstContiguousRow* row_key,
-                                    const Schema* changelist_schema,
                                     const RowChangeList* changelist,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
@@ -278,8 +270,7 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                                                         tx_ctx,
                                                         probe->encoded_key_slice(),
                                                         LockManager::LOCK_EXCLUSIVE));
-  row_write->reset(new PreparedRowWrite(row_key, changelist_schema, changelist,
-                                        probe.Pass(), row_lock.Pass()));
+  row_write->reset(new PreparedRowWrite(row_key, changelist, probe.Pass(), row_lock.Pass()));
 
   // when we have a more advanced lock manager, acquiring the row lock might fail
   // but for now always return OK.
@@ -340,13 +331,26 @@ Status Tablet::MutateRow(WriteTransactionContext *tx_ctx,
   // It is critical, however, that we're consistent with this choice between here
   // and Insert() or else there's a possibility of deadlock.
 
-  gscoped_ptr<PreparedRowWrite> row_write;
-  RETURN_NOT_OK(CreatePreparedMutate(tx_ctx, &row_key, &update_schema, &update, &row_write));
-  tx_ctx->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
       new boost::shared_lock<rw_spinlock>(component_lock_.get_lock()));
   tx_ctx->set_component_lock(lock.Pass());
+
+  // Convert the client RowChangeList to a server RowChangeList (with IDs)
+  // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
+  //       One is the RPC side, the other is this method that should be renamed MutateForTesting()
+  DCHECK(!update_schema.has_column_ids());
+  DeltaProjector delta_projector(update_schema, schema_);
+  if (!delta_projector.is_identity()) {
+    RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(update_schema));
+    RETURN_NOT_OK(update_schema.GetProjectionMapping(schema_, &delta_projector));
+  }
+
+  const RowChangeList *changelist = ProjectMutation(tx_ctx, delta_projector, &update);
+
+  gscoped_ptr<PreparedRowWrite> row_write;
+  RETURN_NOT_OK(CreatePreparedMutate(tx_ctx, &row_key, changelist, &row_write));
+  tx_ctx->add_prepared_row(row_write.Pass());
 
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
   tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
@@ -358,32 +362,15 @@ Status Tablet::MutateRow(WriteTransactionContext *tx_ctx,
 
 Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
                                  const PreparedRowWrite* mutate) {
-  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *mutate->schema());
-  CHECK(!mutate->schema()->has_column_ids());
-
   gscoped_ptr<MutationResultPB> result(new MutationResultPB());
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(*mutate->schema(), *mutate->changelist());
+  RowChangeListDecoder rcl_decoder(schema_, *mutate->changelist());
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
     // row, not something the user is allowed to specify on their own.
     s = Status::InvalidArgument("User may not specify REINSERT mutations");
   }
-  if (!s.ok()) {
-    tx_ctx->AddFailedMutation(s);
-    return s;
-  }
-
-  // Convert the client RowChangeList to a server RowChangeList (with IDs)
-  // TODO: This should be on the request parsing side...
-  // TODO: Add fast path if the schemas are the same
-  faststring rclbuf;
-  RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(*mutate->schema()));
-  DeltaProjector projector(*mutate->schema(), schema_);
-  RETURN_NOT_OK(mutate->schema()->GetProjectionMapping(schema_, &projector));
-  RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector, *mutate->changelist(), &rclbuf));
-  RowChangeList changelist(rclbuf);
   if (!s.ok()) {
     tx_ctx->AddFailedMutation(s);
     return s;
@@ -396,7 +383,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   // First try to update in memrowset.
   s = memrowset_->MutateRow(tx_ctx->mvcc_txid(),
                             *mutate->probe(),
-                            changelist,
+                            *mutate->changelist(),
                             &stats,
                             result.get());
   if (s.ok()) {
@@ -414,7 +401,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), changelist, &stats, result.get());
+    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->changelist(), &stats, result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
       return s;
@@ -1123,11 +1110,6 @@ Status Tablet::MinorCompactWorstDeltas() {
 size_t Tablet::num_rowsets() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return rowsets_->all_rowsets().size();
-}
-
-Schema Tablet::schema() const {
-  boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-  return schema_;
 }
 
 Tablet::Iterator::Iterator(const Tablet *tablet,

@@ -120,49 +120,54 @@ Status LeaderWriteTransaction::Prepare() {
       to_insert.size(), to_mutate.size());
   }
 
+  if (tx_ctx_->rpc_context()) {
+    tx_ctx_->rpc_context()->trace()->Message("PREPARE: Acquiring component lock");
+  }
+
+  // acquire the component lock. this is more like "tablet lock" and is used
+  // to prevent AlterSchema and other operations that requires exclusive access
+  // to the tablet.
+  gscoped_ptr<shared_lock<rw_spinlock> > component_lock_(
+      new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
+  tx_ctx_->set_component_lock(component_lock_.Pass());
+
+  RowProjector row_projector(*inserts_client_schema, tablet->schema());
+  if (to_insert.size() > 0 && !row_projector.is_identity()) {
+    RETURN_NOT_OK(tablet->schema().VerifyProjectionCompatibility(*inserts_client_schema));
+    RETURN_NOT_OK(row_projector.Init());
+  }
+
+  DeltaProjector delta_projector(*mutates_client_schema, tablet->schema());
+  if (to_mutate.size() > 0 && !delta_projector.is_identity()) {
+    RETURN_NOT_OK(tablet->schema().VerifyProjectionCompatibility(*mutates_client_schema));
+    RETURN_NOT_OK(mutates_client_schema->GetProjectionMapping(tablet->schema(), &delta_projector));
+  }
+
   // Now acquire row locks and prepare everything for apply
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
-    ConstContiguousRow* row = new ConstContiguousRow(*inserts_client_schema,
-                                                     row_ptr);
-    row = tx_ctx_->AddToAutoReleasePool(row);
-
+    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx_.get(), tablet->schema(), row_projector, row_ptr);
     gscoped_ptr<PreparedRowWrite> row_write;
     RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx(), row, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());
   }
 
-  gscoped_ptr<Schema> mutates_key_projection_ptr(
-      new Schema(mutates_client_schema->CreateKeyProjection()));
-
   int i = 0;
   BOOST_FOREACH(const uint8_t* row_key_ptr, to_mutate) {
     // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
-    ConstContiguousRow* row_key = new ConstContiguousRow(*mutates_key_projection_ptr,
-                                                         row_key_ptr);
+    ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
     row_key = tx_ctx_->AddToAutoReleasePool(row_key);
-    const RowChangeList* mutation = tx_ctx_->AddToAutoReleasePool(mutations[i]);
+
+    const RowChangeList* mutation = ProjectMutation(tx_ctx_.get(), delta_projector,
+                                                    tx_ctx_->AddToAutoReleasePool(mutations[i]));
 
     gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx(), row_key,
-        mutates_client_schema.get(), mutation, &row_write));
+    RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx(), row_key, mutation, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());
     ++i;
   }
-
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("PREPARE: Acquiring component lock");
-  }
-  // acquire the component lock just before finishing prepare
-  gscoped_ptr<shared_lock<rw_spinlock> > component_lock_(
-      new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
-  tx_ctx_->set_component_lock(component_lock_.Pass());
-
-  tx_ctx_->AddToAutoReleasePool(inserts_client_schema.release());
-  tx_ctx_->AddToAutoReleasePool(mutates_client_schema.release());
-  tx_ctx_->AddToAutoReleasePool(mutates_key_projection_ptr.release());
 
   if (tx_ctx_->rpc_context()) {
     tx_ctx_->rpc_context()->trace()->Message("PREPARE: finished");
@@ -359,8 +364,7 @@ void WriteTransactionContext::Reset() {
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
                                    gscoped_ptr<RowSetKeyProbe> probe,
                                    gscoped_ptr<ScopedRowLock> lock)
-    : schema_(&row->schema()),
-      row_(row),
+    : row_(row),
       row_key_(NULL),
       changelist_(NULL),
       probe_(probe.Pass()),
@@ -369,12 +373,10 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
-                                   const Schema* changelist_schema,
                                    const RowChangeList* changelist,
                                    gscoped_ptr<RowSetKeyProbe> probe,
                                    gscoped_ptr<tablet::ScopedRowLock> lock)
-    : schema_(changelist_schema),
-      row_(NULL),
+    : row_(NULL),
       row_key_(row_key),
       changelist_(changelist),
       probe_(probe.Pass()),

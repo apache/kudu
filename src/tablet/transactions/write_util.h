@@ -10,6 +10,10 @@
 #include "tserver/tserver.pb.h"
 
 namespace kudu {
+class ConstContiguousRow;
+class DeltaProjector;
+class RowChangeList;
+class RowProjector;
 class Schema;
 
 namespace rpc {
@@ -21,6 +25,8 @@ class WriteResponsePB;
 }
 
 namespace tablet {
+
+class WriteTransactionContext;
 
 // Sets up the client visible PB error based on a Status.
 void SetupClientError(tserver::TabletServerErrorPB* error,
@@ -38,6 +44,21 @@ Status DecodeRowBlockAndSetupClientErrors(RowwiseRowBlockPB* block_pb,
 
 // Calculates type of the mutation based on the set fields and number of targets.
 MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
+
+// Return a row that is the Projection of the 'user_row_ptr' on the 'tablet_schema'.
+// The returned ConstContiguousRow is added to the AutoReleasePool of the 'tx_ctx'.
+// No projection is performed if the two schemas are the same.
+const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
+                                              const Schema& tablet_schema,
+                                              const RowProjector& row_projector,
+                                              const uint8_t *user_row_ptr);
+
+// Return a mutation that is the Projection of the 'user_mutation' on the 'tablet_schema'.
+// The returned RowChangeList is added to the AutoReleasePool of the 'tx_ctx'.
+// No projection is performed if the two schemas are the same.
+const RowChangeList* ProjectMutation(WriteTransactionContext *tx_ctx,
+                                     const DeltaProjector& delta_projector,
+                                     const RowChangeList *user_mutation);
 
 }  // namespace tablet
 }  // namespace kudu
