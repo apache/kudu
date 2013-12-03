@@ -122,18 +122,24 @@ class RowProjector {
  public:
   typedef std::pair<size_t, size_t> ProjectionIdxMapping;
 
-  RowProjector() {
+  RowProjector(const Schema& base_schema, const Schema& projection)
+    : base_schema_(base_schema), projection_(projection),
+      is_identity_(base_schema.Equals(projection)) {
   }
 
   // Initialize the projection mapping with the specified base_schema and projection
-  Status Init(const Schema& base_schema, const Schema& projection) {
+  Status Init() {
+    return projection_.GetProjectionMapping(base_schema_, this);
+  }
+
+  Status Reset(const Schema& base_schema, const Schema& projection) {
     base_schema_ = base_schema;
     projection_ = projection;
     base_cols_mapping_.clear();
     adapter_cols_mapping_.clear();
     projection_defaults_.clear();
     is_identity_ = base_schema.Equals(projection);
-    return projection_.GetProjectionMapping(base_schema_, this);
+    return Init();
   }
 
   // Project a row from one schema into another, using the projection mapping.

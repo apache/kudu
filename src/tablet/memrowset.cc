@@ -270,7 +270,7 @@ Status MemRowSet::GetBounds(Slice *min_encoded_key,
 Status MemRowSet::Iterator::Init(ScanSpec *spec) {
   DCHECK_EQ(state_, kUninitialized);
 
-  RETURN_NOT_OK(projector_.Init(memrowset_->schema(), projection_));
+  RETURN_NOT_OK(projector_.Init());
   RETURN_NOT_OK(delta_projector_.Init());
 
   if (spec != NULL && spec->has_encoded_ranges()) {

@@ -179,8 +179,8 @@ static Status ProjectRowForInsert(const Schema& tablet_schema,
                                   const ConstContiguousRow& src_row,
                                   ContiguousRow *dst_row) {
   // TODO: Add fast path if the schemas are the same
-  RowProjector projector;
-  RETURN_NOT_OK(projector.Init(src_row.schema(), tablet_schema));
+  RowProjector projector(src_row.schema(), tablet_schema);
+  RETURN_NOT_OK(projector.Init());
   return projector.ProjectRowForWrite(src_row, dst_row, static_cast<Arena*>(NULL));
 }
 

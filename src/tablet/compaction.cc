@@ -560,8 +560,8 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
   // Arena and projector to store/project row keys for missed delta updates
   Arena arena(1024, 1024*1024);
-  RowProjector key_projector;
-  RETURN_NOT_OK(key_projector.Init(schema, key_schema));
+  RowProjector key_projector(schema, key_schema);
+  RETURN_NOT_OK(key_projector.Init());
   faststring buf;
 
   rowid_t row_idx = 0;

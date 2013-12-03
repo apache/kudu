@@ -421,7 +421,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   }
 
   const Schema &schema() const {
-    return projection_;
+    return projector_.projection();
   }
 
  private:
@@ -446,8 +446,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
            const MvccSnapshot &mvcc_snap)
     : memrowset_(mrs),
       iter_(iter),
-      projection_(projection),
       mvcc_snap_(mvcc_snap),
+      projector_(mrs->schema(), projection),
       delta_projector_(mrs->schema(), projection),
       prepared_count_(0),
       prepared_idx_in_leaf_(0),
@@ -521,10 +521,6 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   const shared_ptr<const MemRowSet> memrowset_;
   gscoped_ptr<MemRowSet::MSBTIter> iter_;
-
-  // The schema for the output of this iterator.
-  // This may be a reordered subset of the schema of the memrowset.
-  const Schema projection_;
 
   // The MVCC snapshot which determines which rows and mutations are visible to
   // this iterator.

@@ -107,8 +107,8 @@ TEST(TestSchema, TestProjectSubset) {
                  (ColumnSchema("col2", STRING)),
                  0);
 
-  RowProjector row_projector;
-  ASSERT_STATUS_OK(row_projector.Init(schema1, schema2));
+  RowProjector row_projector(schema1, schema2);
+  ASSERT_STATUS_OK(row_projector.Init());
 
   // Verify the mapping
   ASSERT_EQ(2, row_projector.base_cols_mapping().size());
@@ -133,8 +133,8 @@ TEST(TestSchema, TestProjectTypeMismatch) {
                  (ColumnSchema("val", STRING)),
                  0);
 
-  RowProjector row_projector;
-  Status s = row_projector.Init(schema1, schema2);
+  RowProjector row_projector(schema1, schema2);
+  Status s = row_projector.Init();
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.message().ToString(), "must have type");
 }
@@ -160,14 +160,14 @@ TEST(TestSchema, TestProjectMissingColumn) {
                  (ColumnSchema("non_present", UINT32, false, &default_value)),
                  0);
 
-  RowProjector row_projector;
-  Status s = row_projector.Init(schema1, schema2);
+  RowProjector row_projector(schema1, schema2);
+  Status s = row_projector.Init();
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.message().ToString(),
     "does not exists in the projection, and it does not have a default value or a nullable type");
 
   // Verify Default nullable column with no default value
-  ASSERT_STATUS_OK(row_projector.Init(schema1, schema3));
+  ASSERT_STATUS_OK(row_projector.Reset(schema1, schema3));
 
   ASSERT_EQ(1, row_projector.base_cols_mapping().size());
   ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
@@ -178,7 +178,7 @@ TEST(TestSchema, TestProjectMissingColumn) {
   ASSERT_EQ(row_projector.projection_defaults()[0], 1);      // non_present schema3
 
   // Verify Default non nullable column with default value
-  ASSERT_STATUS_OK(row_projector.Init(schema1, schema4));
+  ASSERT_STATUS_OK(row_projector.Reset(schema1, schema4));
 
   ASSERT_EQ(1, row_projector.base_cols_mapping().size());
   ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
@@ -203,8 +203,8 @@ TEST(TestSchema, TestProjectRename) {
   ASSERT_STATUS_OK(builder.RenameColumn("val", "val_renamed"));
   Schema schema2 = builder.Build();
 
-  RowProjector row_projector;
-  ASSERT_STATUS_OK(row_projector.Init(schema1, schema2));
+  RowProjector row_projector(schema1, schema2);
+  ASSERT_STATUS_OK(row_projector.Init());
 
   ASSERT_EQ(2, row_projector.base_cols_mapping().size());
   ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
