@@ -3,6 +3,7 @@
 SET(CLIENT_SRCS
   client.cc
   meta_cache.cc
+  partial_row.cc
 )
 
 add_library(client ${CLIENT_SRCS})
@@ -12,3 +13,4 @@ ADD_DEPENDENCIES(client ${CLIENT_DEPS})
 # Tests
 SET(KUDU_TEST_LINK_LIBS client ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(client-test)
+ADD_KUDU_TEST(partial_row-test)

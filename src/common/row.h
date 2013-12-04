@@ -362,6 +362,10 @@ class ContiguousRowHelper {
     return schema.has_nullables() ? BitmapSize(schema.num_columns()) : 0;
   }
 
+  static uint8_t* null_bitmap_ptr(const Schema& schema, uint8_t* row_data) {
+    return row_data + schema.byte_size();
+  }
+
   static size_t row_size(const Schema& schema) {
     return schema.byte_size() + null_bitmap_size(schema);
   }

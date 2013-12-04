@@ -13,6 +13,14 @@
     } \
   } while (0);
 
+#define EXPECT_STATUS_OK(status) do { \
+    Status _s = status; \
+    if (_s.ok()) { \
+      SUCCEED(); \
+    } else { \
+      ADD_FAILURE() << "Bad status: " << _s.ToString();  \
+    } \
+  } while (0);
 
 // Like the above, but doesn't record successful
 // tests.

@@ -936,7 +936,7 @@ static inline void PutTwoDigits(int i, char* p) {
 // ----------------------------------------------------------------------
 
 char* FastUInt32ToBufferLeft(uint32 u, char* buffer) {
-  int digits;
+  uint digits;
   const char *ASCII_digits = NULL;
   // The idea of this implementation is to trim the number of divides to as few
   // as possible by using multiplication and subtraction rather than mod (%),
@@ -1030,7 +1030,7 @@ char* FastInt32ToBufferLeft(int32 i, char* buffer) {
 }
 
 char* FastUInt64ToBufferLeft(uint64 u64, char* buffer) {
-  int digits;
+  uint digits;
   const char *ASCII_digits = NULL;
 
   uint32 u = static_cast<uint32>(u64);

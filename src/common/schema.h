@@ -166,11 +166,27 @@ class ColumnSchema {
     return type_info_->Compare(lhs, rhs);
   }
 
-  // Stringify the given cell.
+  // Stringify the given cell. This just stringifies the cell contents,
+  // and doesn't include the column name or type.
   string Stringify(const void *cell) const {
     string ret;
     type_info_->AppendDebugStringForValue(cell, &ret);
     return ret;
+  }
+
+  // Append a debug string for this cell. This differs from Stringify above
+  // in that it also includes the column info, for example 'STRING foo=bar'.
+  template<class CellType>
+  void DebugCellAppend(const CellType& cell, std::string* ret) const {
+    ret->append(type_info_->name());
+    ret->append(" ");
+    ret->append(name_);
+    ret->append("=");
+    if (is_nullable_ && cell.is_null()) {
+      ret->append("NULL");
+    } else {
+      type_info_->AppendDebugStringForValue(cell.ptr(), ret);
+    }
   }
 
  private:
@@ -373,22 +389,12 @@ class Schema {
     string ret;
     ret.append("(");
 
-    for (size_t col = 0; col < num_columns(); col++) {
-      const ColumnSchema& col_schema = cols_[col];
-      const TypeInfo &ti = col_schema.type_info();
-
-      if (col > 0) {
+    for (size_t col_idx = 0; col_idx < num_columns(); col_idx++) {
+      if (col_idx > 0) {
         ret.append(", ");
       }
-      ret.append(ti.name());
-      ret.append(" ");
-      ret.append(cols_[col].name());
-      ret.append("=");
-      if (col_schema.is_nullable() && row.is_null(col)) {
-        ret.append("NULL");
-      } else {
-        ti.AppendDebugStringForValue(row.cell_ptr(col), &ret);
-      }
+      const ColumnSchema& col = cols_[col_idx];
+      col.DebugCellAppend(row.cell(col_idx), &ret);
     }
     ret.append(")");
     return ret;
