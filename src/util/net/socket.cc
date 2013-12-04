@@ -337,7 +337,7 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
 Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten,
     const MonoTime& deadline) {
   DCHECK_LE(buflen, std::numeric_limits<int32_t>::max()) << "Writes > INT32_MAX not supported";
-  DCHECK_NOTNULL(nwritten);
+  DCHECK(nwritten);
 
   size_t tot_written = 0;
   while (tot_written < buflen) {
@@ -396,7 +396,7 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
 // One place where we deviate: we consider EOF a failure if < amt bytes are read.
 Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoTime& deadline) {
   DCHECK_LE(amt, std::numeric_limits<int32_t>::max()) << "Reads > INT32_MAX not supported";
-  DCHECK_NOTNULL(nread);
+  DCHECK(nread);
 
   size_t tot_read = 0;
   while (tot_read < amt) {

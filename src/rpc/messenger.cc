@@ -102,7 +102,7 @@ void Messenger::Shutdown() {
   service_queue_.Shutdown();
 
   // Drain any remaining calls that haven't been responded to.
-  InboundCall *call;
+  InboundCall *call = NULL;
   while (service_queue_.BlockingGet(&call)) {
     call->RespondFailure(Status::ServiceUnavailable("Server shutting down"));
   }

@@ -179,7 +179,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
 
     // Find the sub-iterator which is currently smallest
     MergeIterState *smallest = NULL;
-    size_t smallest_idx;
+    ssize_t smallest_idx = -1;
 
     for (size_t i = 0; i < iters_.size(); i++) {
       shared_ptr<MergeIterState> &state = iters_[i];
