@@ -46,10 +46,12 @@ Status DecodeRowBlockAndSetupClientErrors(RowwiseRowBlockPB* block_pb,
 MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
 
 // Return a row that is the Projection of the 'user_row_ptr' on the 'tablet_schema'.
+// The 'tablet_schema' pointer will be referenced by the returned row, so must
+// remain valid as long as the row.
 // The returned ConstContiguousRow is added to the AutoReleasePool of the 'tx_ctx'.
 // No projection is performed if the two schemas are the same.
 const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
-                                              const Schema& tablet_schema,
+                                              const Schema* tablet_schema,
                                               const RowProjector& row_projector,
                                               const uint8_t *user_row_ptr);
 

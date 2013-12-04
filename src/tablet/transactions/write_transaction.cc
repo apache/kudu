@@ -131,7 +131,7 @@ Status LeaderWriteTransaction::Prepare() {
       new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
   tx_ctx_->set_component_lock(component_lock_.Pass());
 
-  RowProjector row_projector(*inserts_client_schema, tablet->schema());
+  RowProjector row_projector(inserts_client_schema.get(), tablet->schema_ptr());
   if (to_insert.size() > 0 && !row_projector.is_identity()) {
     RETURN_NOT_OK(tablet->schema().VerifyProjectionCompatibility(*inserts_client_schema));
     RETURN_NOT_OK(row_projector.Init());
@@ -147,7 +147,7 @@ Status LeaderWriteTransaction::Prepare() {
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx_.get(), tablet->schema(), row_projector, row_ptr);
+    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx_.get(), tablet->schema_ptr(), row_projector, row_ptr);
     gscoped_ptr<PreparedRowWrite> row_write;
     RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx(), row, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());

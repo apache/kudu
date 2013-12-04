@@ -194,12 +194,12 @@ Status Tablet::Insert(WriteTransactionContext *tx_ctx,
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
   //       One is the RPC side, the other is this method that should be renamed InsertForTesting()
   DCHECK(!row.schema().has_column_ids());
-  RowProjector row_projector(row.schema(), schema_);
+  RowProjector row_projector(&row.schema(), &schema_);
   if (!row_projector.is_identity()) {
     RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(row.schema()));
     RETURN_NOT_OK(row_projector.Init());
   }
-  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, schema_, row_projector, row.row_data());
+  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, &schema_, row_projector, row.row_data());
 
   gscoped_ptr<PreparedRowWrite> row_write;
   RETURN_NOT_OK(CreatePreparedInsert(tx_ctx, proj_row, &row_write));

@@ -122,23 +122,25 @@ class RowProjector {
  public:
   typedef std::pair<size_t, size_t> ProjectionIdxMapping;
 
-  RowProjector(const Schema& base_schema, const Schema& projection)
+  // Construct a projector.
+  // The two Schema pointers must remain valid for the lifetime of this object.
+  RowProjector(const Schema* base_schema, const Schema* projection)
     : base_schema_(base_schema), projection_(projection),
-      is_identity_(base_schema.Equals(projection)) {
+      is_identity_(base_schema->Equals(*projection)) {
   }
 
   // Initialize the projection mapping with the specified base_schema and projection
   Status Init() {
-    return projection_.GetProjectionMapping(base_schema_, this);
+    return projection_->GetProjectionMapping(*base_schema_, this);
   }
 
-  Status Reset(const Schema& base_schema, const Schema& projection) {
+  Status Reset(const Schema* base_schema, const Schema* projection) {
     base_schema_ = base_schema;
     projection_ = projection;
     base_cols_mapping_.clear();
     adapter_cols_mapping_.clear();
     projection_defaults_.clear();
-    is_identity_ = base_schema.Equals(projection);
+    is_identity_ = base_schema->Equals(*projection);
     return Init();
   }
 
@@ -163,8 +165,8 @@ class RowProjector {
   }
 
   bool is_identity() const { return is_identity_; }
-  const Schema& projection() const { return projection_; }
-  const Schema& base_schema() const { return base_schema_; }
+  const Schema& projection() const { return *projection_; }
+  const Schema& base_schema() const { return *base_schema_; }
 
   // Returns the mapping between base schema and projection schema columns
   // first: is the projection column index, second: is the base_schema  index
@@ -202,8 +204,8 @@ class RowProjector {
   // Indirected data is copied into the provided dst arena.
   template<class RowType1, class RowType2, class ArenaType, bool FOR_READ>
   Status ProjectRow(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) const {
-    DCHECK_SCHEMA_EQ(base_schema_, src_row.schema());
-    DCHECK_SCHEMA_EQ(projection_, dst_row->schema());
+    DCHECK_SCHEMA_EQ(*base_schema_, src_row.schema());
+    DCHECK_SCHEMA_EQ(*projection_, dst_row->schema());
 
     // Copy directly from base Data
     BOOST_FOREACH(const ProjectionIdxMapping& base_mapping, base_cols_mapping_) {
@@ -217,7 +219,7 @@ class RowProjector {
 
     // Fill with Defaults
     BOOST_FOREACH(size_t proj_idx, projection_defaults_) {
-      const ColumnSchema& col_proj = projection_.column(proj_idx);
+      const ColumnSchema& col_proj = projection_->column(proj_idx);
       const void *vdefault = FOR_READ ? col_proj.read_default_value() : col_proj.write_default_value();
       SimpleConstCell src_cell(col_proj, vdefault);
       typename RowType2::Cell dst_cell = dst_row->cell(proj_idx);
@@ -234,8 +236,8 @@ class RowProjector {
   vector<ProjectionIdxMapping> adapter_cols_mapping_;
   vector<size_t> projection_defaults_;
 
-  Schema base_schema_;
-  Schema projection_;
+  const Schema* base_schema_;
+  const Schema* projection_;
   bool is_identity_;
 };
 
@@ -251,6 +253,8 @@ class RowProjector {
 //    These columns are not considered since they cannot be in the delta.
 class DeltaProjector {
  public:
+  // TODO: take and store pointers here, since schemas rarely change and the
+  // copy is expensive.
   DeltaProjector(const Schema& delta_schema, const Schema& projection)
     : delta_schema_(delta_schema), projection_(projection),
       is_identity_(delta_schema.Equals(projection)) {

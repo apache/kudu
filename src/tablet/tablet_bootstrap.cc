@@ -784,7 +784,11 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                                     &row_block),
                         Substitute("Could not decode block: $0", rows->ShortDebugString()));
 
-  RowProjector row_projector(inserts_schema, tablet_->schema());
+  // TODO: this makes a needless copy here, even though we know that we won't
+  // have concurrent schema change. However, we can't use schema_ptr since we don't
+  // hold component_lock yet here.
+  Schema tablet_schema(tablet_->schema());
+  RowProjector row_projector(&inserts_schema, &tablet_schema);
   if (!row_projector.is_identity()) {
     RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(inserts_schema));
     RETURN_NOT_OK(row_projector.Init());
@@ -825,7 +829,7 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
         new shared_lock<rw_spinlock>(tablet_->component_lock()->get_lock()));
     tx_ctx->set_component_lock(component_lock.Pass());
 
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx, tablet_->schema(), row_projector, row_ptr);
+    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx, tablet_->schema_ptr(), row_projector, row_ptr);
 
     gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
     gscoped_ptr<PreparedRowWrite> prepared_row;

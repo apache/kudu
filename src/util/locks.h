@@ -126,6 +126,14 @@ class rw_spinlock {
     return NoBarrier_Load(&state_) & kWriteFlag;
   }
 
+  // Return true if the lock is currently held, either for read or write
+  // by any thread.
+  // This state can change at any instant, so this is only really useful
+  // for debug-mode assertions.
+  bool is_locked() const {
+    return NoBarrier_Load(&state_);
+  }
+
  private:
   static const uint32_t kNumReadersMask = 0x7fffffff;
   static const uint32_t kWriteFlag = 1 << 31;
@@ -196,6 +204,16 @@ class percpu_rwlock {
       }
     }
     return true;
+  }
+
+  // Return true if this lock is held on any CPU.
+  // This state may change at any point, so is only useful for debug-mode
+  // assertions.
+  bool is_locked() const {
+    for (int i = 0; i < n_cpus_; i++) {
+      if (locks_[i].lock.is_locked()) return true;
+    }
+    return false;
   }
 
   void lock() {

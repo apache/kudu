@@ -60,7 +60,7 @@ class TestCompaction : public KuduRowSetTest {
     row_builder_.AddUint32(val);
     if (!mrs->schema().Equals(row_builder_.schema())) {
       // The MemRowSet is not projecting the row, so must be done by the caller
-      RowProjector projector(row_builder_.schema(), mrs->schema());
+      RowProjector projector(&row_builder_.schema(), &mrs->schema());
       uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
       ContiguousRow dst_row(mrs->schema(), rowbuf);
       ASSERT_STATUS_OK_FAST(projector.Init());

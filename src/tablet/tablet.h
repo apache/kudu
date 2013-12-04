@@ -189,8 +189,16 @@ class Tablet {
   Status DebugDump(vector<string> *lines = NULL);
 
   // Return the current schema of the metadata. Note that this returns
-  // a copy so should not be used in a tight loop.
-  const Schema& schema() const { return schema_; }
+  // a copy, so should not be used in a performance-critical section.
+  Schema schema() const { return schema_; }
+
+  // Return a pointer to the current Schema. Callers must only use this
+  // while protected by the component lock to prevent concurrent schema change,
+  // which could invalidate the Schema object.
+  const Schema* schema_ptr() const {
+    DCHECK(component_lock_.is_locked());
+    return &schema_;
+  }
 
   // Returns a reference to the key projection of the tablet schema.
   // The schema keys are immutable.

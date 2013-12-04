@@ -447,7 +447,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     : memrowset_(mrs),
       iter_(iter),
       mvcc_snap_(mvcc_snap),
-      projector_(mrs->schema(), projection),
+      projector_(&mrs->schema(), &projection),
       delta_projector_(mrs->schema(), projection),
       prepared_count_(0),
       prepared_idx_in_leaf_(0),
