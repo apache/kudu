@@ -138,9 +138,9 @@ TEST_F(TabletServerTest, TestInsert) {
   }
 
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(boost::assign::list_of(KeyValue(1, 1))
-                                   (KeyValue(2, 1))
-                                   (KeyValue(1234, 5678)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
+                                            (KeyValue(2, 1))
+                                            (KeyValue(1234, 5678)));
 }
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
@@ -270,8 +270,8 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   ASSERT_EQ(4, rows_updated->value());
 
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(boost::assign::list_of(KeyValue(2, 3))
-                                   (KeyValue(3, 4)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(2, 3))
+                                            (KeyValue(3, 4)));
 }
 
 // Test various invalid calls for mutations
@@ -352,7 +352,7 @@ TEST_F(TabletServerTest, TestInvalidMutations) {
 
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   // expect no rows since all mutations failed
-  VerifyRows(vector<KeyValue>());
+  VerifyRows(schema_, vector<KeyValue>());
 
   // TODO: add test for UPDATE with a column which doesn't exist,
   // or otherwise malformed.
@@ -432,26 +432,26 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(boost::assign::list_of(KeyValue(1, 10))
-                                   (KeyValue(2, 20))
-                                   (KeyValue(3, 30))
-                                   (KeyValue(4, 40))
-                                   (KeyValue(5, 50))
-                                   (KeyValue(6, 60))
-                                   // the last hook only fires on compaction
-                                   // so this isn't mutated
-                                   (KeyValue(7, 7)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 10))
+                                            (KeyValue(2, 20))
+                                            (KeyValue(3, 30))
+                                            (KeyValue(4, 40))
+                                            (KeyValue(5, 50))
+                                            (KeyValue(6, 60))
+                                            // the last hook only fires on compaction
+                                            // so this isn't mutated
+                                            (KeyValue(7, 7)));
 
   // Shutdown and rebuild again to test that the log generated during
   // the previous recovery allows to perform recovery again.
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(boost::assign::list_of(KeyValue(1, 10))
-                                   (KeyValue(2, 20))
-                                   (KeyValue(3, 30))
-                                   (KeyValue(4, 40))
-                                   (KeyValue(5, 50))
-                                   (KeyValue(6, 60))
-                                   (KeyValue(7, 7)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 10))
+                                            (KeyValue(2, 20))
+                                            (KeyValue(3, 30))
+                                            (KeyValue(4, 40))
+                                            (KeyValue(5, 50))
+                                            (KeyValue(6, 60))
+                                            (KeyValue(7, 7)));
 }
 
 // Tests performing mutations that are going to a DMS or to the following
@@ -470,13 +470,13 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
 
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(boost::assign::list_of(KeyValue(1, 10))
-                                   (KeyValue(2, 20))
-                                   (KeyValue(3, 30))
-                                   (KeyValue(4, 40))
-                                   (KeyValue(5, 50))
-                                   (KeyValue(6, 60))
-                                   (KeyValue(7, 7)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 10))
+                                            (KeyValue(2, 20))
+                                            (KeyValue(3, 30))
+                                            (KeyValue(4, 40))
+                                            (KeyValue(5, 50))
+                                            (KeyValue(6, 60))
+                                            (KeyValue(7, 7)));
   hooks->increment_iteration();
 
   // set the hooks on the new tablet
@@ -491,14 +491,14 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // them making sure that mutations executed mid compaction are replayed as
   // expected
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
-  VerifyRows(boost::assign::list_of(KeyValue(1, 11))
-                                   (KeyValue(2, 21))
-                                   (KeyValue(3, 31))
-                                   (KeyValue(4, 41))
-                                   (KeyValue(5, 51))
-                                   (KeyValue(6, 61))
-                                   (KeyValue(7, 7))
-                                   (KeyValue(8, 8)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 11))
+                                            (KeyValue(2, 21))
+                                            (KeyValue(3, 31))
+                                            (KeyValue(4, 41))
+                                            (KeyValue(5, 51))
+                                            (KeyValue(6, 61))
+                                            (KeyValue(7, 7))
+                                            (KeyValue(8, 8)));
 
   hooks->increment_iteration();
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
@@ -507,20 +507,20 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(boost::assign::list_of(KeyValue(1, 11))
-                                   (KeyValue(2, 22))
-                                   (KeyValue(3, 32))
-                                   (KeyValue(4, 42))
-                                   (KeyValue(5, 52))
-                                   (KeyValue(6, 62))
-                                   (KeyValue(7, 72))
-                                   (KeyValue(8, 8)));
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 11))
+                                            (KeyValue(2, 22))
+                                            (KeyValue(3, 32))
+                                            (KeyValue(4, 42))
+                                            (KeyValue(5, 52))
+                                            (KeyValue(6, 62))
+                                            (KeyValue(7, 72))
+                                            (KeyValue(8, 8)));
 
 }
 
 TEST_F(TabletServerTest, TestScan) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
-  InsertTestRowsDirect(num_rows);
+  InsertTestRowsDirect(0, num_rows);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -571,7 +571,7 @@ TEST_F(TabletServerTest, TestScan) {
 }
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {
-  InsertTestRowsDirect(100);
+  InsertTestRowsDirect(0, 100);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -611,7 +611,7 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
   // but should do so.
 
   int num_rows = AllowSlowTests() ? 10000 : 1000;
-  InsertTestRowsDirect(num_rows);
+  InsertTestRowsDirect(0, num_rows);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -763,6 +763,51 @@ TEST_F(TabletServerTest, TestScan_NoResults) {
     ASSERT_FALSE(resp.has_more_results());
     ASSERT_FALSE(resp.has_scanner_id());
   }
+}
+
+TEST_F(TabletServerTest, TestAlterSchema) {
+  AlterSchemaRequestPB req;
+  AlterSchemaResponsePB resp;
+  RpcController rpc;
+
+  InsertTestRowsDirect(0, 2);
+
+  // Add one column with a default value
+  const uint32_t c2_write_default = 5;
+  const uint32_t c2_read_default = 7;
+  SchemaBuilder builder(schema_);
+  ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
+  Schema s2 = builder.Build();
+
+  req.set_tablet_id(kTabletId);
+  ASSERT_STATUS_OK(SchemaToPB(s2, req.mutable_schema()));
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->AlterSchema(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_EQ(false, resp.has_error());
+  }
+
+  {
+    InsertTestRowsDirect(2, 2);
+    shared_ptr<TabletPeer> tablet;
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+    tablet->tablet()->Flush();
+  }
+
+  const Schema projection(boost::assign::list_of
+                          (ColumnSchema("key", UINT32))
+                          (ColumnSchema("c2", UINT32)),
+                          1);
+
+  // Try the recovery
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
+                                               (KeyValue(1, 7))
+                                               (KeyValue(2, 5))
+                                               (KeyValue(3, 5)));
 }
 
 } // namespace tserver

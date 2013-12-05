@@ -11,6 +11,7 @@
 
 #include "common/schema.h"
 #include "gutil/strings/substitute.h"
+#include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-test-base.h"
 #include "util/test_macros.h"
@@ -131,7 +132,7 @@ TEST_F(TestTabletSchema, TestWrite) {
 
   SchemaBuilder builder(tablet_->metadata()->schema());
   ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
-  ASSERT_STATUS_OK(tablet_->AlterSchema(builder.Build()));
+  AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
   // Insert with base/old schema
@@ -169,7 +170,7 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   // Switch schema to s2
   SchemaBuilder builder(tablet_->metadata()->schema());
   ASSERT_STATUS_OK(builder.RenameColumn("c1", "c1_renamed"));
-  ASSERT_STATUS_OK(tablet_->AlterSchema(builder.Build()));
+  AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
   // Insert with the s2 schema after AlterSchema(s2)
@@ -212,7 +213,7 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   // NOTE this new 'c1' will have a different id from the previous one
   //      so the data added to the previous 'c1' will not be visible.
   ASSERT_STATUS_OK(builder.AddNullableColumn("c1", UINT32));
-  ASSERT_STATUS_OK(tablet_->AlterSchema(builder.Build()));
+  AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
   // Verify that the new 'c1' have the default value

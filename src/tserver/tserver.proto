@@ -56,6 +56,21 @@ message PingRequestPB {
 message PingResponsePB {
 }
 
+// TODO: This AlterSchemaRequest should be moved to consensus once
+// we have the master implementation.
+// This message is used to pass the new schema to replicas.
+message AlterSchemaRequestPB {
+  required bytes tablet_id = 1;
+
+  // TODO: Replace with the table descriptor
+  // (Schema, Column IDs, Column Attributes)
+  required SchemaPB schema = 2;
+}
+
+message AlterSchemaResponsePB {
+  optional TabletServerErrorPB error = 1;
+}
+
 // A batched set of insert/mutate requests.
 // TODO currently we're sending the client schema multiple times in each
 // row block.

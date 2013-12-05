@@ -167,10 +167,10 @@ class TabletServerTest : public KuduTest {
   static const char* kTabletId;
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-  void InsertTestRowsDirect(uint64_t num_rows) {
+  void InsertTestRowsDirect(uint64_t start_row, uint64_t num_rows) {
     tablet::WriteTransactionContext tx_ctx;
     for (uint64_t i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(i)));
+      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(start_row + i)));
       tx_ctx.Reset();
     }
   }
@@ -293,17 +293,17 @@ class TabletServerTest : public KuduTest {
   }
 
   // Verifies that a set of expected rows (key, value) is present in the tablet.
-  void VerifyRows(const vector<KeyValue>& expected) {
+  void VerifyRows(const Schema& schema, const vector<KeyValue>& expected) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_peer_->tablet()->NewRowIterator(schema_, &iter));
+    ASSERT_STATUS_OK(tablet_peer_->tablet()->NewRowIterator(schema, &iter));
     ASSERT_STATUS_OK(iter->Init(NULL));
 
     int batch_size = std::max(
         (size_t)1, std::min((size_t)(expected.size() / 10),
-                            4*1024*1024 / schema_.byte_size()));
+                            4*1024*1024 / schema.byte_size()));
 
     Arena arena(32*1024, 256*1024);
-    RowBlock block(schema_, batch_size, &arena);
+    RowBlock block(schema, batch_size, &arena);
 
     int count = 0;
     while (iter->HasNext()) {
@@ -313,8 +313,8 @@ class TabletServerTest : public KuduTest {
         if (block.selection_vector()->IsRowSelected(i)) {
           rb_row.Reset(&block, i);
           ASSERT_LT(count, expected.size());
-          ASSERT_EQ(expected[count].first, *schema_.ExtractColumnFromRow<UINT32>(rb_row, 0));
-          ASSERT_EQ(expected[count].second, *schema_.ExtractColumnFromRow<UINT32>(rb_row, 1));
+          ASSERT_EQ(expected[count].first, *schema.ExtractColumnFromRow<UINT32>(rb_row, 0));
+          ASSERT_EQ(expected[count].second, *schema.ExtractColumnFromRow<UINT32>(rb_row, 1));
           count++;
         }
       }

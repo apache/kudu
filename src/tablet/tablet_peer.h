@@ -40,6 +40,19 @@ class TabletPeer {
   // MvccManager.
   Status SubmitWrite(WriteTransactionContext *tx_ctx);
 
+  // Called by the tablet service to start an alter schema transaction.
+  //
+  // The transaction contains all the information required to execute the
+  // AlterSchema operation and send the response back.
+  //
+  // If the returned Status is OK, the response to the client will be sent
+  // asynchronously. Otherwise the tablet service will have to send the response directly.
+  //
+  // The AlterSchema operation is taking the tablet component lock in exclusive mode
+  // meaning that no other operation on the tablet can be executed while the
+  // AlterSchema is in progress.
+  Status SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx);
+
   consensus::Consensus* consensus() { return consensus_.get(); }
 
   Tablet* tablet() {

@@ -14,6 +14,7 @@
 #include "gutil/stl_util.h"
 #include "rpc/rpc_context.h"
 #include "tablet/tablet_peer.h"
+#include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
@@ -24,6 +25,7 @@
 #include "util/trace.h"
 
 using kudu::tablet::TabletPeer;
+using kudu::tablet::AlterSchemaTransactionContext;
 using kudu::tablet::WriteTransactionContext;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -70,6 +72,32 @@ void TabletServiceImpl::RespondGenericError(const string& doing_what,
                << context->request_pb()->ShortDebugString()
                << ": " << s.ToString();
   SetupErrorAndRespond(error, s, TabletServerErrorPB::UNKNOWN_ERROR, context);
+}
+
+void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
+                                    AlterSchemaResponsePB* resp,
+                                    rpc::RpcContext* context) {
+  DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
+
+  shared_ptr<TabletPeer> tablet_peer;
+  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet not found"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return;
+  }
+  DCHECK(tablet_peer) << "Null tablet peer";
+
+  AlterSchemaTransactionContext *tx_ctx =
+    new AlterSchemaTransactionContext(tablet_peer.get(), context, req, resp);
+
+  // Submit the write. The RPC will be responded to asynchronously.
+  Status s = tablet_peer->SubmitAlterSchema(tx_ctx);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+  }
 }
 
 void TabletServiceImpl::Write(const WriteRequestPB* req,
@@ -210,6 +238,14 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   Schema projection;
   Status s = ColumnPBsToSchema(scan_pb.projected_columns(), &projection);
   if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::INVALID_SCHEMA,
+                         context);
+    return;
+  }
+
+  if (projection.has_column_ids()) {
+    s = Status::InvalidArgument("User requests should not have Column IDs");
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::INVALID_SCHEMA,
                          context);

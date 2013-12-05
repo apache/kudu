@@ -9,6 +9,7 @@
 #include "gutil/strings/join.h"
 #include "gutil/casts.h"
 #include "tablet/tablet.h"
+#include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "util/test_util.h"
 
@@ -55,6 +56,13 @@ class KuduTabletTest : public KuduTest {
 
   const Schema &schema() const {
     return schema_;
+  }
+
+  void AlterSchema(const Schema& schema) {
+    AlterSchemaTransactionContext tx_ctx;
+    ASSERT_STATUS_OK(tablet_->CreatePreparedAlterSchema(&tx_ctx, &schema));
+    ASSERT_STATUS_OK(tablet_->AlterSchema(&tx_ctx));
+    tx_ctx.commit();
   }
 
  protected:

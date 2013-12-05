@@ -6,6 +6,7 @@ SET(TABLET_SRCS
   tablet_metrics.cc
   tablet_peer.cc
   transactions/transaction.cc
+  transactions/alter_schema_transaction.cc
   transactions/write_transaction.cc
   transactions/write_util.cc
   cfile_set.cc

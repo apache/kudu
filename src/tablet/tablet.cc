@@ -28,6 +28,7 @@
 #include "tablet/tablet_metrics.h"
 #include "tablet/diskrowset.h"
 #include "tablet/delta_compaction.h"
+#include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
 #include "util/bloom_filter.h"
@@ -615,54 +616,67 @@ Status Tablet::Flush(const RowSetsInCompaction& input, const shared_ptr<MemRowSe
   return Status::OK();
 }
 
-Status Tablet::AlterSchema(const Schema& schema) {
-  if (!key_schema_.KeyEquals(schema)) {
+Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
+                                         const Schema* schema) {
+  if (!key_schema_.KeyEquals(*schema)) {
     return Status::InvalidArgument("Schema keys cannot be altered",
-                                   schema.CreateKeyProjection().ToString());
+                                   schema->CreateKeyProjection().ToString());
   }
+
+  if (!schema->has_column_ids()) {
+    // this probably means that the request is not from the Master
+    return Status::InvalidArgument("Missing Column IDs");
+  }
+
+  // TODO: Take a "global tablet lock", We should probably add the RW sched.
+  //
+  // User Operation Sched:
+  //  SHARED_LOCK: read and writes can happen concurrently
+  //  EXCLUSIVE_LOCK: alter schema must run when no reads/writes are in progress
+  //                  but we can keep compaction running, since is not a big deal
+  //                  if we compact something with the old schema, we have already
+  //                  plenty of files with the old schema.
+  tx_ctx->acquire_tablet_lock(component_lock_);
+
+  tx_ctx->set_schema(schema);
+  return Status::OK();
+}
+
+Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
+  DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_ctx->schema()))) << "Schema keys cannot be altered";
 
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_ms;
   {
-    // TODO: Take a "global tablet lock"
-    // (We should probably add the RW sched)
-    //
-    // User Operation Sched:
-    //  SHARED_LOCK: read and writes can happen concurrently
-    //  EXCLUSIVE_LOCK: alter schema must run when no reads/writes are in progress
-    //                  but we can keep compaction running, since is not a big deal
-    //                  if we compact something with the old schema, we have already
-    //                  plenty of files with the old schema.
-    boost::lock_guard<percpu_rwlock> tablet_big_lock(component_lock_);
+    boost::lock_guard<percpu_rwlock> schema_lock(schema_lock_);
 
-    {
-      boost::lock_guard<percpu_rwlock> schema_lock(schema_lock_);
-
-      // If the current schema and the new one are equal, there is nothing to do.
-      if (schema_.Equals(schema)) {
-        return Status::OK();
-      }
-
-      LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " << schema.ToString();
-      schema_ = schema;
-      metadata_->SetSchema(schema);
-
-      // Update the DiskRowSet/DeltaTracker
-      // TODO: This triggers a flush of the DeltaMemStores...
-      //       The flush should be just a message (async)...
-      //       with the current code the only way we can do a flush ouside this big lock
-      //       is to get the list of DeltaMemStores out from the AlterSchema method...
-      BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
-        RETURN_NOT_OK(rs->AlterSchema(schema));
-      }
+    // If the current schema and the new one are equal, there is nothing to do.
+    if (schema_.Equals(*tx_ctx->schema())) {
+      return Status::OK();
     }
 
-    // Replace the MemRowSet
-    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema, &input, &old_ms));
+    LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " << tx_ctx->schema()->ToString();
+    schema_ = *tx_ctx->schema();
+    metadata_->SetSchema(schema_);
+
+    // Update the DiskRowSet/DeltaTracker
+    // TODO: This triggers a flush of the DeltaMemStores...
+    //       The flush should be just a message (async)...
+    //       with the current code the only way we can do a flush ouside this big lock
+    //       is to get the list of DeltaMemStores out from the AlterSchema method...
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
+      RETURN_NOT_OK(rs->AlterSchema(schema_));
+    }
   }
 
+  // Replace the MemRowSet
+  RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema_, &input, &old_ms));
+
+  // The "global tablet lock" is acquired in CreatePreparedAlterSchema()
+  tx_ctx->release_tablet_lock();
+
   // Flush the old MemRowSet
-  return Flush(input, old_ms, schema);
+  return Flush(input, old_ms, *tx_ctx->schema());
 }
 
 void Tablet::SetCompactionHooksForTests(

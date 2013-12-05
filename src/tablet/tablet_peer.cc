@@ -4,6 +4,7 @@
 
 #include "consensus/local_consensus.h"
 #include "gutil/strings/substitute.h"
+#include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/tablet_metrics.h"
 #include "util/metrics.h"
@@ -12,18 +13,9 @@
 namespace kudu {
 namespace tablet {
 
-using base::subtle::Barrier_AtomicIncrement;
-using consensus::CommitMsg;
 using consensus::ConsensusOptions;
-using consensus::ConsensusContext;
 using consensus::LocalConsensus;
-using consensus::OpId;
-using consensus::ReplicateMsg;
-using consensus::OP_ABORT;
-using consensus::WRITE_OP;
 using log::Log;
-using log::LogOptions;
-using tserver::TabletServerErrorPB;
 
 // ============================================================================
 //  Tablet Peer
@@ -84,6 +76,18 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
                                                                    prepare_executor_.get(),
                                                                    apply_executor_.get(),
                                                                    prepare_replicate_lock_);
+  // transaction deletes itself on delete/abort
+  return transaction->Execute();
+}
+
+Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
+  // TODO keep track of the transaction somewhere so that we can cancel transactions
+  // when we change leaders and/or want to quiesce a tablet.
+  LeaderAlterSchemaTransaction* transaction = new LeaderAlterSchemaTransaction(tx_ctx,
+                                                                               consensus_.get(),
+                                                                               prepare_executor_.get(),
+                                                                               apply_executor_.get(),
+                                                                               prepare_replicate_lock_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
 }

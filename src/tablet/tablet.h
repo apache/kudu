@@ -35,6 +35,7 @@ namespace tablet {
 using std::string;
 using std::tr1::shared_ptr;
 
+class AlterSchemaTransactionContext;
 class RowSetsInCompaction;
 class CompactionPolicy;
 class PreparedRowWrite;
@@ -139,10 +140,19 @@ class Tablet {
   Status Flush();
   Status Flush(const Schema& schema);
 
-  // Alter the schema of the tablet.
-  // This operation will trigger a flush on the current MemRowSet
-  // and on all the DeltaMemStores.
-  Status AlterSchema(const Schema& schema);
+  // Prepares the transaction context for the alter schema operation.
+  // An error will be returned if the specified schema is invalid (e.g. key mismatch, or missing IDs)
+  // The "tablet lock" (component_lock_) will be taken in exclusive mode to
+  // prevent concurrent operations (e.g. Insert, MutateRow, ...)
+  Status CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
+                                   const Schema* schema);
+
+  // Apply the Schema of the specified transaction.
+  // This operation will trigger a flush on the current MemRowSet and on all the DeltaMemStores.
+  //
+  // The component lock acquired in exclusive mode by CreatePreparedAlterSchema()
+  // will be released when the schema is replaced in every RowSet.
+  Status AlterSchema(AlterSchemaTransactionContext* tx_ctx);
 
   // Flags to change the behavior of compaction.
   enum CompactFlag {

@@ -17,6 +17,7 @@
 #include "server/fsmanager.h"
 #include "tablet/lock_manager.h"
 #include "tablet/tablet.h"
+#include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
 #include "util/locks.h"
@@ -25,6 +26,7 @@ using boost::shared_lock;
 using kudu::consensus::OpId;
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ReplicateMsg;
+using kudu::consensus::ALTER_SCHEMA_OP;
 using kudu::consensus::MISSED_DELTA;
 using kudu::consensus::OP_ABORT;
 using kudu::consensus::WRITE_OP;
@@ -40,6 +42,7 @@ using kudu::metadata::RowSetMetadata;
 using kudu::tablet::MutationResultPB;
 using kudu::tablet::PreparedRowWrite;
 using kudu::tablet::Tablet;
+using kudu::tserver::AlterSchemaRequestPB;
 using kudu::tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
@@ -109,6 +112,9 @@ class TabletBootstrap {
 
   Status PlayWriteRequest(ReplicateMsg* replicate_msg,
                           const consensus::CommitMsg& commit_msg);
+
+  Status PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
+                                const consensus::CommitMsg& commit_msg);
 
   // Plays missed deltas mutations, skipping those that have already been flushed.
   // Missed delta mutations are appended to the new log as the original mutations
@@ -569,6 +575,13 @@ Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* com
                                        commit_entry->commit().DebugString()));
       break;
 
+    case ALTER_SCHEMA_OP:
+      RETURN_NOT_OK_PREPEND(PlayAlterSchemaRequest(replicate_entry->mutable_msg(), commit_entry->commit()),
+                            Substitute("Failed to play alter schema request. ReplicateMsg: $0 CommitMsg: $1\n",
+                                       replicate_entry->msg().DebugString(),
+                                       commit_entry->commit().DebugString()));
+      break;
+
     default:
       return Status::IllegalState(Substitute("Unsupported commit entry type: $0",
                                              commit_entry->commit().op_type()));
@@ -668,6 +681,36 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   commit->mutable_result()->CopyFrom(tx_ctx.Result());
   RETURN_NOT_OK(log_->Append(commit_entry));
 
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
+                                               const consensus::CommitMsg& commit_msg) {
+  AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
+
+  // Append the replicate message to the log as is
+  LogEntry replicate_entry;
+  replicate_entry.set_type(REPLICATE);
+  replicate_entry.mutable_msg()->CopyFrom(*replicate_msg);
+  RETURN_NOT_OK(log_->Append(replicate_entry));
+
+  // Decode schema
+  Schema schema;
+  RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));
+
+  AlterSchemaTransactionContext tx_ctx;
+
+  // TODO maybe we shouldn't acquire the tablet lock on replay?
+  RETURN_NOT_OK(tablet_->CreatePreparedAlterSchema(&tx_ctx, &schema));
+
+  // apply the alter schema to the tablet
+  RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_ctx), "Failed to AlterSchema:");
+
+  LogEntry commit_entry;
+  commit_entry.set_type(COMMIT);
+  CommitMsg* commit = commit_entry.mutable_commit();
+  commit->CopyFrom(commit_msg);
+  RETURN_NOT_OK(log_->Append(commit_entry));
   return Status::OK();
 }
 

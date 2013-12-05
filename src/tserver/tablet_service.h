@@ -23,6 +23,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     PingResponsePB* resp,
                     rpc::RpcContext* context);
 
+  // TODO: this is temporary used for testing the AlterSchema request with consensus
+  virtual void AlterSchema(const AlterSchemaRequestPB* req, AlterSchemaResponsePB* resp,
+                           rpc::RpcContext* context);
+
   virtual void Write(const WriteRequestPB* req, WriteResponsePB* resp,
                    rpc::RpcContext* context);
 
