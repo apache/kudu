@@ -39,28 +39,28 @@ class RecordedValuesIterator;
 
 // This implementation allows you to specify a range and accuracy (significant
 // digits) to support in an instance of a histogram. The class takes care of
-// the rest.  At this time, only uint64_t values are supported.
+// the rest. At this time, only uint64_t values are supported.
 //
 // An HdrHistogram consists of a set of buckets, which bucket the magnitude of
 // a value stored, and a set of sub-buckets, which implement the tunable
 // precision of the storage. So if you specify 3 significant digits of
 // precision, then you will get about 10^3 sub-buckets (as a power of 2) for
 // each level of magnitude. Magnitude buckets are tracked in powers of 2.
+//
+// This class is thread-safe.
 class HdrHistogram {
  public:
-  HdrHistogram();
+  // Specify the highest trackable value so that the class has a bound on the
+  // number of buckets, and # of significant digits (in decimal) so that the
+  // class can determine the granularity of those buckets.
+  HdrHistogram(uint64_t highest_trackable_value, int num_significant_digits);
+
+  // Copy-construct a (non-consistent) snapshot of other.
+  explicit HdrHistogram(const HdrHistogram& other);
 
   // Validate your params before trying to construct the object.
   static bool IsValidHighestTrackableValue(uint64_t highest_trackable_value);
   static bool IsValidNumSignificantDigits(int num_significant_digits);
-
-  // Specify the highest trackable value so that the class has a bound on the
-  // number of buckets, and # of significant digits (in decimal) so that the
-  // class can determine the granularity of those buckets.
-  Status Init(uint64_t highest_trackable_value, int num_significant_digits);
-
-  // Create a (non-consistent) snapshot of this object and store it into other.
-  Status CopyTo(HdrHistogram* other) const;
 
   // Record new data.
   void Increment(uint64_t value);
@@ -137,9 +137,14 @@ class HdrHistogram {
 
  private:
   friend class AbstractHistogramIterator;
+
+  static const uint64_t kMinHighestTrackableValue = 2;
+  static const int kMinValidNumSignificantDigits = 1;
+  static const int kMaxValidNumSignificantDigits = 5;
+
+  void Init();
   int CountsArrayIndex(int bucket_index, int sub_bucket_index) const;
 
-  bool initialized_;
   uint64_t highest_trackable_value_;
   int num_significant_digits_;
   int counts_array_length_;
@@ -157,20 +162,20 @@ class HdrHistogram {
   base::subtle::Atomic64 max_value_;
   gscoped_array<base::subtle::Atomic64> counts_;
 
-  DISALLOW_COPY_AND_ASSIGN(HdrHistogram);
+  HdrHistogram& operator=(const HdrHistogram& other); // Disable assignment operator.
 };
 
 // Value returned from iterators.
 struct HistogramIterationValue {
   HistogramIterationValue()
-    : value_iterated_to(),
-      value_iterated_from(),
-      count_at_value_iterated_to(),
-      count_added_in_this_iteration_step(),
-      total_count_to_this_value(),
-      total_value_to_this_value(),
-      percentile(),
-      percentile_level_iterated_to() {
+    : value_iterated_to(0),
+      value_iterated_from(0),
+      count_at_value_iterated_to(0),
+      count_added_in_this_iteration_step(0),
+      total_count_to_this_value(0),
+      total_value_to_this_value(0),
+      percentile(0.0),
+      percentile_level_iterated_to(0.0) {
   }
 
   void Reset() {
@@ -195,13 +200,18 @@ struct HistogramIterationValue {
 };
 
 // Base class for iterating through histogram values.
+//
+// The underlying histogram must not be modified or destroyed while this class
+// is iterating over it.
+//
+// This class is not thread-safe.
 class AbstractHistogramIterator {
  public:
-  AbstractHistogramIterator();
+  // Create iterator with new histogram.
+  // The histogram must not be mutated while the iterator is in use.
+  explicit AbstractHistogramIterator(const HdrHistogram* histogram);
   virtual ~AbstractHistogramIterator() {
   }
-
-  virtual void ResetIterator(const HdrHistogram* histogram);
 
   // Returns true if the iteration has more elements.
   virtual bool HasNext() const;
@@ -221,7 +231,7 @@ class AbstractHistogramIterator {
   const HdrHistogram* histogram_;
   HistogramIterationValue cur_iter_val_;
 
-  uint64_t saved_histogram_total_raw_count_;
+  uint64_t histogram_total_count_;
 
   int current_bucket_index_;
   int current_sub_bucket_index_;
@@ -237,7 +247,6 @@ class AbstractHistogramIterator {
   uint64_t total_count_to_current_index_;
   uint64_t total_value_to_current_index_;
 
-  uint64_t array_total_count_;
   uint64_t count_at_this_value_;
 
  private:
@@ -253,20 +262,20 @@ class AbstractHistogramIterator {
 // granularity steps supported by the underlying representation. The iteration
 // steps through all non-zero recorded value counts, and terminates when all
 // recorded histogram values are exhausted.
+//
+// The underlying histogram must not be modified or destroyed while this class
+// is iterating over it.
+//
+// This class is not thread-safe.
 class RecordedValuesIterator : public AbstractHistogramIterator {
  public:
   explicit RecordedValuesIterator(const HdrHistogram* histogram);
 
-  // Reset iterator for re-use in a fresh iteration over the same histogram.
-  void Reset();
-
  protected:
-  void IncrementIterationLevel();
-  bool ReachedIterationLevel() const;
+  virtual void IncrementIterationLevel();
+  virtual bool ReachedIterationLevel() const;
 
  private:
-  void Reset(const HdrHistogram* histogram);
-
   int visited_sub_bucket_index_;
   int visited_bucket_index_;
 
@@ -277,25 +286,25 @@ class RecordedValuesIterator : public AbstractHistogramIterator {
 // The iteration is performed in steps that start at 0% and reduce their
 // distance to 100% according to the percentileTicksPerHalfDistance parameter,
 // ultimately reaching 100% when all recorded histogram values are exhausted.
+//
+// The underlying histogram must not be modified or destroyed while this class
+// is iterating over it.
+//
+// This class is not thread-safe.
 class PercentileIterator : public AbstractHistogramIterator {
  public:
-  PercentileIterator(const HdrHistogram* histogram, int percentile_ticks_per_half_distance);
-
-  // Reset iterator for re-use in a fresh iteration over the same histogram.
-  // TODO: explain this parameter better.
-  void Reset(int percentile_ticks_per_half_distance);
-
-  bool HasNext() const;
-  double PercentileIteratedTo() const;
-  double PercentileIteratedFrom() const;
+  // TODO: Explain percentile_ticks_per_half_distance.
+  PercentileIterator(const HdrHistogram* histogram,
+                     int percentile_ticks_per_half_distance);
+  virtual bool HasNext() const;
+  virtual double PercentileIteratedTo() const;
+  virtual double PercentileIteratedFrom() const;
 
  protected:
-  void IncrementIterationLevel();
-  bool ReachedIterationLevel() const;
+  virtual void IncrementIterationLevel();
+  virtual bool ReachedIterationLevel() const;
 
  private:
-  void Reset(const HdrHistogram* histogram, int percentile_ticks_per_half_distance);
-
   int percentile_ticks_per_half_distance_;
   double percentile_level_to_iterate_to_;
   double percentile_level_to_iterate_from_;

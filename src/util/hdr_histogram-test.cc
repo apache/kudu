@@ -7,15 +7,15 @@
 
 namespace kudu {
 
+static const int kSigDigits = 2;
+
 class HdrHistogramTest : public KuduTest {
 };
 
 TEST_F(HdrHistogramTest, SimpleTest) {
   uint64_t highest_val = 10000LU;
-  int sig_digits = 2;
 
-  HdrHistogram hist;
-  ASSERT_STATUS_OK(hist.Init(highest_val, sig_digits));
+  HdrHistogram hist(highest_val, kSigDigits);
   ASSERT_EQ(0, hist.CountInBucketForValue(1));
   hist.Increment(1);
   ASSERT_EQ(1, hist.CountInBucketForValue(1));
@@ -31,8 +31,7 @@ TEST_F(HdrHistogramTest, SimpleTest) {
   ASSERT_EQ(2, hist.CountInBucketForValue(1000));
 }
 
-static void load_percentiles(HdrHistogram* hist, uint64_t specified_max, uint64_t real_max) {
-  CHECK_OK(hist->Init(specified_max, 2));
+static void load_percentiles(HdrHistogram* hist, uint64_t real_max) {
   hist->IncrementBy(10, 80);
   hist->IncrementBy(100, 10);
   hist->IncrementBy(1000, 5);
@@ -55,14 +54,13 @@ static void validate_percentiles(HdrHistogram* hist, uint64_t specified_max, uin
 }
 
 TEST_F(HdrHistogramTest, PercentileAndCopyTest) {
-  HdrHistogram hist;
   uint64_t specified_max = 10000;
   uint64_t real_max = 1000000; // higher than allowed
-  load_percentiles(&hist, specified_max, real_max);
+  HdrHistogram hist(specified_max, kSigDigits);
+  load_percentiles(&hist, real_max);
   validate_percentiles(&hist, specified_max, real_max);
 
-  HdrHistogram copy;
-  ASSERT_STATUS_OK(hist.CopyTo(&copy));
+  HdrHistogram copy(hist);
   validate_percentiles(&copy, specified_max, real_max);
 }
 

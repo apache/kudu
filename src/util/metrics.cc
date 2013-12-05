@@ -386,10 +386,9 @@ Histogram* HistogramPrototype::Instantiate(const MetricContext& context) {
 /////////////////////////////////////////////////
 
 Histogram::Histogram(const HistogramPrototype& proto)
-  : histogram_(new HdrHistogram()),
+  : histogram_(new HdrHistogram(proto.max_trackable_value(), proto.num_sig_digits())),
     unit_(proto.unit()),
     description_(proto.description()) {
-  CHECK_OK(histogram_->Init(proto.max_trackable_value(), proto.num_sig_digits()));
 }
 
 void Histogram::Increment(uint64_t value) {
@@ -401,8 +400,7 @@ void Histogram::IncrementBy(uint64_t value, uint64_t amount) {
 }
 
 Status Histogram::WriteAsJson(const std::string& name, JsonWriter* writer) const {
-  HdrHistogram snapshot;
-  RETURN_NOT_OK(histogram_->CopyTo(&snapshot));
+  HdrHistogram snapshot(*histogram_);
 
   writer->StartObject();
 
