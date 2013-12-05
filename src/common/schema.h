@@ -221,16 +221,12 @@ class Schema {
     : num_key_columns_(0) {
   }
 
-  void swap(Schema& other) { // NOLINT(build/include_what_you_use)
-    int tmp = other.num_key_columns_;
-    other.num_key_columns_ = num_key_columns_;
-    num_key_columns_ = tmp;
-    cols_.swap(other.cols_);
-    col_ids_.swap(other.col_ids_);
-    col_offsets_.swap(other.col_offsets_);
-    name_to_index_.swap(other.name_to_index_);
-    id_to_index_.swap(other.id_to_index_);
-  }
+  Schema(const Schema& other);
+  Schema& operator=(const Schema& other);
+
+  void swap(Schema& other); // NOLINT(build/include_what_you_use)
+
+  void CopyFrom(const Schema& other);
 
   // Construct a schema with the given information.
   //
@@ -330,7 +326,7 @@ class Schema {
 
   // Return the column index corresponding to the given column,
   // or -1 if the column is not in this schema.
-  int find_column(const string &col_name) const {
+  int find_column(const StringPiece col_name) const {
     NameToIndexMap::const_iterator iter = name_to_index_.find(col_name);
     if (PREDICT_FALSE(iter == name_to_index_.end())) {
       return -1;
@@ -572,14 +568,18 @@ class Schema {
   vector<size_t> col_ids_;
   vector<size_t> col_offsets_;
 
-  typedef unordered_map<string, size_t> NameToIndexMap;
+  // The keys of this map are StringPiece references to the actual name members of the
+  // ColumnSchema objects inside cols_. This avoids an extra copy of those strings,
+  // and also allows us to do lookups on the map using StringPiece keys, sometimes
+  // avoiding copies.
+  typedef unordered_map<StringPiece, size_t, __gnu_cxx::hash<StringPiece> > NameToIndexMap;
   NameToIndexMap name_to_index_;
 
   typedef unordered_map<size_t, size_t> IdToIndexMap;
   IdToIndexMap id_to_index_;
 
   // NOTE: if you add more members, make sure to add the appropriate
-  // code to swap() as well to prevent subtle bugs.
+  // code to swap() and CopyFrom() as well to prevent subtle bugs.
 };
 
 // Helper used for schema creation/editing.

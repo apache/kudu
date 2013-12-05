@@ -29,6 +29,45 @@ string ColumnSchema::TypeToString() const {
                              is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
 
+Schema::Schema(const Schema& other) {
+  CopyFrom(other);
+}
+
+Schema& Schema::operator=(const Schema& other) {
+  if (&other != this) {
+    CopyFrom(other);
+  }
+  return *this;
+}
+
+void Schema::CopyFrom(const Schema& other) {
+  num_key_columns_ = other.num_key_columns_;
+  cols_ = other.cols_;
+  col_ids_ = other.col_ids_;
+  col_offsets_ = other.col_offsets_;
+  id_to_index_ = other.id_to_index_;
+
+  // We can't simply copy name_to_index_ since the StringPiece keys
+  // reference the other Schema's ColumnSchema objects.
+  name_to_index_.clear();
+  int i = 0;
+  BOOST_FOREACH(const ColumnSchema &col, cols_) {
+    // The map uses the 'name' string from within the ColumnSchema object.
+    name_to_index_[col.name()] = i++;
+  }
+}
+
+void Schema::swap(Schema& other) { // NOLINT(build/include_what_you_use)
+  int tmp = other.num_key_columns_;
+  other.num_key_columns_ = num_key_columns_;
+  num_key_columns_ = tmp;
+  cols_.swap(other.cols_);
+  col_ids_.swap(other.col_ids_);
+  col_offsets_.swap(other.col_offsets_);
+  name_to_index_.swap(other.name_to_index_);
+  id_to_index_.swap(other.id_to_index_);
+}
+
 Status Schema::Reset(const vector<ColumnSchema>& cols,
                      const vector<size_t>& ids,
                      int key_columns) {
@@ -57,7 +96,8 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   col_offsets_.reserve(cols_.size() + 1);  // Include space for total byte size at the end.
   size_t off = 0;
   size_t i = 0;
-  BOOST_FOREACH(const ColumnSchema &col, cols) {
+  BOOST_FOREACH(const ColumnSchema &col, cols_) {
+    // The map uses the 'name' string from within the ColumnSchema object.
     name_to_index_[col.name()] = i++;
     col_offsets_.push_back(off);
     off += col.type_info().size();

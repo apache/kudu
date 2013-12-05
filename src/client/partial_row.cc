@@ -19,10 +19,8 @@ namespace client {
 
 namespace {
 inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
-  // TODO(perf): find_column forces us to allocate a string here --
-  // should make some version which can do the hash lookup from a Slice
-  // instead.
-  *idx = schema.find_column(col_name.ToString());
+  StringPiece sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+  *idx = schema.find_column(sp);
   if (PREDICT_FALSE(*idx == -1)) {
     return Status::NotFound("No such column", col_name);
   }
