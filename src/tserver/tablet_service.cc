@@ -216,6 +216,14 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
     return;
   }
 
+  if (projection.has_column_ids()) {
+    s = Status::InvalidArgument("User requests should not have Column IDs");
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::INVALID_SCHEMA,
+                         context);
+    return;
+  }
+
   AutoReleasePool pool;
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
   s = SetupScanSpec(scan_pb, &spec, &pool);
