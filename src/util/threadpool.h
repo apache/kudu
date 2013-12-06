@@ -3,9 +3,10 @@
 #ifndef KUDU_UTIL_THREAD_POOL_H
 #define KUDU_UTIL_THREAD_POOL_H
 
+#include <boost/function.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <tr1/memory>
 #include <list>
 #include <vector>

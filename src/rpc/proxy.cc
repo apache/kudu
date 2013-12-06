@@ -3,7 +3,7 @@
 #include "rpc/proxy.h"
 
 #include <boost/bind.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <inttypes.h>
 #include <stdint.h>

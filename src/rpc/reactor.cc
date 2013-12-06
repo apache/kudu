@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <boost/intrusive/list.hpp>
 #include <boost/foreach.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <ev++.h>
 #include <glog/logging.h>
 #include <netinet/in.h>

@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <sasl/sasl.h>
 

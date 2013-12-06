@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #include <boost/foreach.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <list>
 #include <set>

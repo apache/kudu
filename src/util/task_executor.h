@@ -4,6 +4,7 @@
 #define KUDU_UTIL_TASK_EXECUTOR_H
 
 #include <boost/foreach.hpp>
+#include <boost/function.hpp>
 #include <tr1/memory>
 #include <vector>
 

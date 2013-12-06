@@ -6,7 +6,7 @@
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <rapidjson/prettywriter.h>

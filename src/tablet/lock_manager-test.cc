@@ -3,7 +3,7 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>

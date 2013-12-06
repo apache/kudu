@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <sasl/sasl.h>
 
 #include "gutil/gscoped_ptr.h"

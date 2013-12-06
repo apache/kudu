@@ -2,7 +2,7 @@
 #ifndef KUDU_RPC_REACTOR_H
 #define KUDU_RPC_REACTOR_H
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/utility.hpp>
 #include <ev++.h>

@@ -3,7 +3,7 @@
 #ifndef KUDU_RPC_ACCEPTOR_POOL_H
 #define KUDU_RPC_ACCEPTOR_POOL_H
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <tr1/memory>
 #include <vector>
 

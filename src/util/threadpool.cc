@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
+#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 

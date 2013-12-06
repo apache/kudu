@@ -4,7 +4,7 @@
 #ifndef KUDU_RPC_SASL_SERVER_H
 #define KUDU_RPC_SASL_SERVER_H
 
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <string>
 #include <tr1/memory>
 #include <set>
