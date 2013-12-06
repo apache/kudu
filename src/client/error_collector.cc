@@ -1,0 +1,41 @@
+// Copyright (c) 2013, Cloudera, inc.
+
+#include "client/client.h"
+#include "client/error_collector.h"
+
+#include <boost/thread/locks.hpp>
+#include <vector>
+
+#include "gutil/stl_util.h"
+
+namespace kudu {
+namespace client {
+namespace internal {
+
+ErrorCollector::ErrorCollector() {
+}
+
+ErrorCollector::~ErrorCollector() {
+  STLDeleteElements(&errors_);
+}
+
+void ErrorCollector::AddError(gscoped_ptr<Error> error) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  errors_.push_back(error.release());
+}
+
+int ErrorCollector::CountErrors() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return errors_.size();
+}
+
+void ErrorCollector::GetErrors(std::vector<Error*>* errors, bool* overflowed) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  errors->swap(errors_);
+  *overflowed = false;
+}
+
+
+} // namespace internal
+} // namespace client
+} // namespace kudu

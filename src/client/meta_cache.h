@@ -34,6 +34,8 @@ class TSInfoPB;
 namespace client {
 
 class KuduClient;
+class KuduTable;
+class PartialRow;
 
 //typedef boost::function<void(const Status& status, const std::vector<Sockaddr>& addr)>
 //        ResolveAddressCallback;
@@ -60,6 +62,8 @@ class RemoteTabletServer {
   // Return the current proxy to this tablet server. Requires that RefreshProxy
   // be called prior to this.
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy() const;
+
+  std::string ToString() const;
 
  private:
   // Internal callback for DNS resolution.
@@ -155,15 +159,27 @@ class MetaCache {
   explicit MetaCache(KuduClient* client);
   ~MetaCache();
 
-  typedef boost::function<void(
-    const Status& /*status*/,
-    const std::tr1::shared_ptr<RemoteTablet>& /*locations*/)> TabletCallback;
+  // Look up which tablet hosts the given row of the given table.
+  // When it is available, the tablet is stored in *remote_tablet
+  // and the callback is fired.
+  // NOTE: the callback may be called from an IO thread or inline with
+  // this call if the cached data is already available.
+  //
+  // The returned RemoteTablet has not been Refresh()ed upon the callback
+  // firing.
+  //
+  // TODO: we probably need some kind of struct here for things
+  // like timeout/trace/etc.
+  void LookupTabletByRow(const KuduTable* table,
+                         const PartialRow& row,
+                         std::tr1::shared_ptr<RemoteTablet>* remote_tablet,
+                         const StatusCallback& callback);
 
   // Look up or create the RemoteTablet object for the given tablet ID.
   //
   // This is always a local operation (no network round trips or DNS resolution, etc).
-  void LookupTablet(const std::string& tablet_id,
-                    std::tr1::shared_ptr<RemoteTablet>* remote_tablet);
+  void LookupTabletByID(const std::string& tablet_id,
+                        std::tr1::shared_ptr<RemoteTablet>* remote_tablet);
 
 
   // TODO: make private

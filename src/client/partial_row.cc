@@ -170,12 +170,11 @@ Status PartialRow::Unset(const Slice& col_name) {
 }
 
 bool PartialRow::IsKeySet() const {
-  for (int i = 0; i < schema_->num_key_columns(); i++) {
-    if (!IsColumnSet(i)) {
-      return false;
-    }
-  }
-  return true;
+  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns());
+}
+
+bool PartialRow::AllColumnsSet() const {
+  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_columns());
 }
 
 bool PartialRow::IsColumnSet(int col_idx) const {

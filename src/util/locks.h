@@ -36,6 +36,13 @@ class simple_spinlock {
     return l_.TryLock();
   }
 
+  // Return whether the lock is currently held.
+  //
+  // This state can change at any instant, so this is only really useful
+  // for assertions where you expect to hold the lock. The success of
+  // such an assertion isn't a guarantee that the current thread is the
+  // holder, but the failure of such an assertion _is_ a guarantee that
+  // the current thread is _not_ holding the lock!
   bool is_locked() {
     return l_.IsHeld();
   }
@@ -137,16 +144,14 @@ class rw_spinlock {
   }
 
   // Return true if the lock is currently held for write by any thread.
-  // This state can change at any instant, so this is only really useful
-  // for debug-mode assertions.
+  // See simple_spinlock::is_locked() for details about where this is useful.
   bool is_write_locked() const {
     return NoBarrier_Load(&state_) & kWriteFlag;
   }
 
   // Return true if the lock is currently held, either for read or write
   // by any thread.
-  // This state can change at any instant, so this is only really useful
-  // for debug-mode assertions.
+  // See simple_spinlock::is_locked() for details about where this is useful.
   bool is_locked() const {
     return NoBarrier_Load(&state_);
   }
@@ -224,8 +229,7 @@ class percpu_rwlock {
   }
 
   // Return true if this lock is held on any CPU.
-  // This state may change at any point, so is only useful for debug-mode
-  // assertions.
+  // See simple_spinlock::is_locked() for details about where this is useful.
   bool is_locked() const {
     for (int i = 0; i < n_cpus_; i++) {
       if (locks_[i].lock.is_locked()) return true;

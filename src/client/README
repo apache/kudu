@@ -17,12 +17,12 @@ void ExplicitBatchingExample() {
   // Note that this may be done without a session, either before or
   // after creating a session, since a session isn't tied to any
   // particular table or set of tables.
-  shared_ptr<KuduTable> t;
+  scoped_refptr<KuduTable> t;
   CHECK_OK(client_->OpenTable("my_table", &t));
 
   // Create a new session. All data-access operations must happen through
   // a session.
-  gscoped_ptr<KuduSession> session(client->NewSession());
+  shared_ptr<KuduSession> session(client->NewSession());
 
   // Setting flush mode to MANUAL_FLUSH makes the session accumulate
   // all operations until the next Flush() call. This is sort of like
@@ -31,13 +31,13 @@ void ExplicitBatchingExample() {
 
   // Insert 100 rows.
   for (int i = 0; i < 100; i++) {
-    gscoped_ptr<Insertion> ins = t->NewInsertion();
-    ins->SetInt64("key", i);
-    ins->SetInt64("val", i * 2);
+    gscoped_ptr<Insert> ins = t->NewInsert();
+    ins->row()->SetInt64("key", i);
+    ins->row()->SetInt64("val", i * 2);
     // The insert should return immediately after moving the insert
     // into the appropriate buffers. This always returns OK unless the
     // Insert itself is invalid (eg missing a key column).
-    CHECK_OK(session->Apply(ins.release()));
+    CHECK_OK(session->Apply(&ins));
   }
 
   // Setting a timeout on the session applies to the next Flush call.
@@ -66,9 +66,9 @@ void ExplicitBatchingExample() {
 // which the client just wants to shove a bunch of data in, and perhaps
 // fail if it ever gets an error.
 void BulkIngestExample() {
-  shared_ptr<KuduTable> t;
+  scoped_refptr<KuduTable> t;
   CHECK_OK(client_->OpenTable("my_table", &t));
-  gscoped_ptr<KuduSession> session(client->NewSession());
+  shared_ptr<KuduSession> session(client->NewSession());
 
   // If the amount of buffered data in RAM is larger than this amount,
   // blocks the writer from performing more inserts until memory has
@@ -92,7 +92,7 @@ void BulkIngestExample() {
     // If there are any pending errors, it will return a bad Status,
     // and the user should call GetPendingErrors()
     // This may block if the buffer is full.
-    CHECK_OK(session->Apply(ins.release()));
+    CHECK_OK(session->Apply(&ins));
     if (session->HasErrors())) {
       LOG(FATAL) << "Failed to insert some rows: " << DumpErrors(session);
     }

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "common/types.h"
+#include "common/row.h"
 #include "gutil/macros.h"
 #include "util/slice.h"
 
@@ -58,6 +59,9 @@ class PartialRow {
   // Return true if the given column has been specified.
   bool IsColumnSet(int col_idx) const;
 
+  // Return true if all columns have been specified.
+  bool AllColumnsSet() const;
+
   std::string ToString() const;
 
   // Append this partial row to the given protobuf.
@@ -82,6 +86,16 @@ class PartialRow {
                                  Arena* dst_arena);
 
   const Schema* schema() const { return schema_; }
+
+  // Return this row as a contiguous row. This will crash unless all columns
+  // are set.
+  // TODO: this is only so that the existing insert RPC can be used with
+  // PartialRow on the client side. We have to switch over the WriteRequestPB
+  // to use PartialRowsPB instead, and then kill off this method.
+  ConstContiguousRow as_contiguous_row() const {
+    DCHECK(AllColumnsSet());
+    return ConstContiguousRow(*schema_, row_data_);
+  }
 
  private:
   template<DataType TYPE>
@@ -110,6 +124,8 @@ class PartialRow {
   // or when the instance is destructed.
   uint8_t* owned_strings_bitmap_;
 
+  // The normal "contiguous row" format row data. Any column whose data is unset
+  // or NULL can have undefined bytes.
   uint8_t* row_data_;
 
   DISALLOW_COPY_AND_ASSIGN(PartialRow);

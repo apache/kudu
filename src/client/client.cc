@@ -1,7 +1,11 @@
 // Copyright (c) 2013, Cloudera,inc.
 
 #include <boost/bind.hpp>
+#include <boost/thread/locks.hpp>
+
+#include "client/batcher.h"
 #include "client/client.h"
+#include "client/error_collector.h"
 #include "client/meta_cache.h"
 #include "common/row.h"
 #include "common/wire_protocol.h"
@@ -38,6 +42,9 @@ MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
 
 namespace kudu {
 namespace client {
+
+using internal::Batcher;
+using internal::ErrorCollector;
 
 KuduClientOptions::KuduClientOptions() {
 }
@@ -83,26 +90,28 @@ Status KuduClient::Init() {
 
 Status KuduClient::OpenTable(const std::string& table_name,
                              const Schema& schema,
-                             shared_ptr<KuduTable>* table) {
+                             scoped_refptr<KuduTable>* table) {
   CHECK(initted_) << "Must Init()";
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
-  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
+  scoped_refptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
   RETURN_NOT_OK(ret->Open());
   table->swap(ret);
 
   return Status::OK();
 }
 
-gscoped_ptr<KuduSession> KuduClient::NewSession() {
-  return gscoped_ptr<KuduSession>(new KuduSession(shared_from_this()));
+shared_ptr<KuduSession> KuduClient::NewSession() {
+  shared_ptr<KuduSession> ret(new KuduSession(shared_from_this()));
+  ret->Init();
+  return ret;
 }
 
 Status KuduClient::GetTabletProxy(const std::string& tablet_id,
                                   shared_ptr<TabletServerServiceProxy>* proxy) {
   // TODO: write a proper async version of this for async client.
   shared_ptr<RemoteTablet> remote_tablet;
-  meta_cache_->LookupTablet(tablet_id, &remote_tablet);
+  meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
   Synchronizer s;
   remote_tablet->Refresh(this, s.callback(), false);
@@ -133,14 +142,39 @@ KuduTable::KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
     schema_(schema) {
 }
 
+KuduTable::~KuduTable() {
+}
+
 Status KuduTable::Open() {
-  // For now, use the table name as the tablet ID.
-  RETURN_NOT_OK(client_->GetTabletProxy(name_, &proxy_));
+  // TODO: fetch the schema from the master here once catalog is available.
   return Status::OK();
 }
 
+std::tr1::shared_ptr<tserver::TabletServerServiceProxy> KuduTable::proxy() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (proxy_) {
+    return proxy_;
+  }
+  // CHECK is wrong here, but this whole method is going away sooner or later...
+  CHECK_OK(client_->GetTabletProxy(name_, &proxy_));
+  return proxy_;
+}
+
+
 gscoped_ptr<Insert> KuduTable::NewInsert() {
   return gscoped_ptr<Insert>(new Insert(this));
+}
+
+////////////////////////////////////////////////////////////
+// Error
+////////////////////////////////////////////////////////////
+Error::Error(gscoped_ptr<Insert> failed_op,
+             const Status& status) :
+  failed_op_(failed_op.Pass()),
+  status_(status) {
+}
+
+Error::~Error() {
 }
 
 ////////////////////////////////////////////////////////////
@@ -149,15 +183,39 @@ gscoped_ptr<Insert> KuduTable::NewInsert() {
 
 KuduSession::KuduSession(const std::tr1::shared_ptr<KuduClient>& client)
   : client_(client),
-    flush_mode_(AUTO_FLUSH_SYNC) {
+    error_collector_(new ErrorCollector()),
+    flush_mode_(AUTO_FLUSH_SYNC),
+    timeout_ms_(0) {
 }
 
 KuduSession::~KuduSession() {
-  STLDeleteElements(&write_buffer_);
+  if (batcher_->HasPendingOperations()) {
+    LOG(WARNING) << "Closing Session with pending operations.";
+  }
+  batcher_->Abort();
+}
+
+void KuduSession::Init() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  CHECK(!batcher_);
+  NewBatcher(NULL);
+}
+
+void KuduSession::NewBatcher(scoped_refptr<Batcher>* old_batcher) {
+  DCHECK(lock_.is_locked());
+
+  scoped_refptr<Batcher> batcher(
+    new Batcher(client_.get(), error_collector_.get(), shared_from_this()));
+  batcher->SetTimeoutMillis(timeout_ms_);
+  batcher.swap(batcher_);
+
+  if (old_batcher) {
+    old_batcher->swap(batcher);
+  }
 }
 
 Status KuduSession::SetFlushMode(FlushMode m) {
-  if (!write_buffer_.empty()) {
+  if (batcher_->HasPendingOperations()) {
     // TODO: there may be a more reasonable behavior here.
     return Status::IllegalState("Cannot change flush mode when writes are buffered");
   }
@@ -170,22 +228,27 @@ Status KuduSession::SetFlushMode(FlushMode m) {
   return Status::OK();
 }
 
+void KuduSession::SetTimeoutMillis(int millis) {
+  CHECK_GE(millis, 0);
+  timeout_ms_ = millis;
+  batcher_->SetTimeoutMillis(millis);
+}
+
 Status KuduSession::Apply(gscoped_ptr<Insert>* insert_scoped) {
   Insert* insert = insert_scoped->get();
-  if (!insert->IsKeySet()) {
+  if (!insert->row().IsKeySet()) {
     return Status::IllegalState("Key not specified", insert->ToString());
   }
 
   // TODO: for now, our RPC layer requires that all columns are set.
   // We have to switch the RPC to use PartialRowsPB instead of a row block,
   // but as a place-holder just ensure that all the columns are set.
-  for (int i = 0; i < insert->table()->schema().num_columns(); i++) {
-    if (!insert->IsColumnSet(i)) {
-      return Status::NotSupported("TODO: have to support partial row inserts");
-    }
+  // NB: when this is fixed, also remove PartialRow::as_contiguous_row
+  if (!insert->row().AllColumnsSet()) {
+    return Status::NotSupported("TODO: have to support partial row inserts");
   }
 
-  write_buffer_.push_back(insert_scoped->release());
+  batcher_->Add(insert_scoped->Pass());
 
   if (flush_mode_ == AUTO_FLUSH_SYNC) {
     RETURN_NOT_OK(Flush());
@@ -195,15 +258,60 @@ Status KuduSession::Apply(gscoped_ptr<Insert>* insert_scoped) {
 }
 
 Status KuduSession::Flush() {
-  // TODO: actually implement Flush sending the RPCs to the server.
-  // For now just clear the buffer.
-  STLDeleteElements(&write_buffer_);
-  return Status::OK();
+  Synchronizer s;
+  FlushAsync(s.callback());
+  return s.Wait();
+}
+
+void KuduSession::FlushAsync(const StatusCallback& user_callback) {
+  CHECK_EQ(flush_mode_, MANUAL_FLUSH) << "TODO: handle other flush modes";
+
+  // Swap in a new batcher to start building the next batch.
+  // Save off the old batcher.
+  scoped_refptr<Batcher> old_batcher;
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    NewBatcher(&old_batcher);
+    InsertOrDie(&flushed_batchers_, old_batcher.get());
+  }
+
+  // Send off any buffered data. Important to do this outside of the lock
+  // since the callback may itself try to take the lock, in the case that
+  // the batch fails "inline" on the same thread.
+  old_batcher->FlushAsync(user_callback);
+}
+
+void KuduSession::FlushFinished(Batcher* batcher) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  CHECK_EQ(flushed_batchers_.erase(batcher), 1);
+}
+
+bool KuduSession::HasPendingOperations() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (batcher_->HasPendingOperations()) {
+    return true;
+  }
+  BOOST_FOREACH(Batcher* b, flushed_batchers_) {
+    if (b->HasPendingOperations()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int KuduSession::CountBufferedOperations() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  CHECK_EQ(flush_mode_, MANUAL_FLUSH);
+
+  return batcher_->CountBufferedOperations();
+}
+
+int KuduSession::CountPendingErrors() const {
+  return error_collector_->CountErrors();
 }
 
 void KuduSession::GetPendingErrors(std::vector<Error*>* errors, bool* overflowed) {
-  *overflowed = false;
-  // TODO: need to implement error collection, etc.
+  error_collector_->GetErrors(errors, overflowed);
 }
 
 ////////////////////////////////////////////////////////////
@@ -211,8 +319,8 @@ void KuduSession::GetPendingErrors(std::vector<Error*>* errors, bool* overflowed
 ////////////////////////////////////////////////////////////
 
 Insert::Insert(KuduTable* table)
-  : PartialRow(&table->schema()),
-    table_(table) {
+  : table_(table),
+    row_(&table->schema()) {
 }
 
 Insert::~Insert() {}
@@ -225,7 +333,6 @@ KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
     data_in_open_(false),
     table_(DCHECK_NOTNULL(table)) {
-  CHECK(table->is_open()) << "Table not open";
 }
 
 KuduScanner::~KuduScanner() {
@@ -262,7 +369,7 @@ Status KuduScanner::Open() {
   const int kOpenTimeoutMs = 5000;
   controller_.set_timeout(MonoDelta::FromMilliseconds(kOpenTimeoutMs));
 
-  RETURN_NOT_OK(table_->proxy_->Scan(next_req_, &last_response_, &controller_));
+  RETURN_NOT_OK(table_->proxy()->Scan(next_req_, &last_response_, &controller_));
   RETURN_NOT_OK(CheckForErrors());
   data_in_open_ = last_response_.has_data();
 
@@ -313,7 +420,7 @@ void KuduScanner::Close() {
   next_req_.set_batch_size_bytes(0);
   next_req_.set_close_scanner(true);
   closer->controller.set_timeout(MonoDelta::FromMilliseconds(5000));
-  table_->proxy_->ScanAsync(next_req_, &closer->response, &closer->controller,
+  table_->proxy()->ScanAsync(next_req_, &closer->response, &closer->controller,
                             boost::bind(&CloseCallback::Callback, closer));
   next_req_.Clear();
   open_ = false;

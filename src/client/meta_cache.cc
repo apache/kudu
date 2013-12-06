@@ -105,6 +105,10 @@ shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {
   return proxy_;
 }
 
+string RemoteTabletServer::ToString() const {
+  return uuid_;
+}
+
 ////////////////////////////////////////////////////////////
 
 // State information for RemoteTablet::Refresh's async path.
@@ -119,6 +123,9 @@ void RemoteTablet::Refresh(KuduClient* client, const StatusCallback& cb,
   {
     boost::unique_lock<simple_spinlock> l(lock_);
     if (state_ == kValid) {
+      // Must unlock here, in case the user callback calls back into a
+      // RemoteTablet call.
+      l.unlock();
       cb(Status::OK());
       return;
     }
@@ -232,8 +239,23 @@ RemoteTabletServer* MetaCache::UpdateTabletServer(const master::TSInfoPB& pb) {
   return NULL;
 }
 
-void MetaCache::LookupTablet(const string& tablet_id,
-                             shared_ptr<RemoteTablet>* remote_tablet) {
+void MetaCache::LookupTabletByRow(const KuduTable* table,
+                                  const PartialRow& row,
+                                  shared_ptr<RemoteTablet>* remote_tablet,
+                                  const StatusCallback& callback) {
+  // TODO: this is where we'd look at some sorted map of row keys for
+  // the tablet. Efficiency wise, we probably want some way we can end up
+  // caching the encoded row key with the PartialRow in case we have to look it up
+  // again, etc.
+  // For now, since we have one tablet per table, the tablet ID is just the table
+  // name.
+  LookupTabletByID(table->name(), remote_tablet);
+  callback(Status::OK());
+}
+
+
+void MetaCache::LookupTabletByID(const string& tablet_id,
+                                 shared_ptr<RemoteTablet>* remote_tablet) {
   // Most of the time, we'll already have an object for this tablet in the
   // cache, so we can just use a read-lock.
   {

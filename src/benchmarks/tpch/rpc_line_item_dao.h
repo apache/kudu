@@ -56,7 +56,7 @@ class RpcLineItemDAO : public LineItemDAO {
   bool request_pending_;
   simple_spinlock lock_;
   shared_ptr<client::KuduClient> client_;
-  shared_ptr<client::KuduTable> client_table_;
+  scoped_refptr<client::KuduTable> client_table_;
   gscoped_ptr<client::KuduScanner> current_scanner_;
   // Keeps track of all the orders batched for writing
   std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;

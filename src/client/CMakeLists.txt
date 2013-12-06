@@ -1,7 +1,9 @@
 # Copyright (c) 2013, Cloudera, inc.
 
 set(CLIENT_SRCS
+  batcher.cc
   client.cc
+  error_collector.cc
   meta_cache.cc
   partial_row.cc
 )
