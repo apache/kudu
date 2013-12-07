@@ -1,5 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
-#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include <vector>
