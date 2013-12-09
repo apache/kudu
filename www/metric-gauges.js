@@ -43,7 +43,7 @@ function createGauge(name, label, min, max) {
 
   var label_elem = div.append('div');
   label_elem.attr('class', 'metric-label');
-  label_elem.text(label);
+  label_elem.html(label);
 
   gauges[name] = new Gauge(span_id, config);
   gauges[name].render();
@@ -78,6 +78,7 @@ function updateGauges(json, error) {
   json['metrics'].forEach(function(m) {
     var name = m['name'];
     var type = m['type'];
+    var unit = m['unit'];
     var label = m['description'];
 
     var display_value = 0;
@@ -85,15 +86,13 @@ function updateGauges(json, error) {
     var first_run = false;
     if (!(name in gauges)) {
       first_run = true;
-      createGauge(name, label, 0, 0);
       last_value[name] = 0;
       max_value[name] = 0;
     }
 
-    var g = gauges[name];
-
     // For counters, we display a rate
     if (type == "counter") {
+      label += "<br>(shown: rate in " + unit + " / second)";
       var cur_value = m['value'];
       if (first_run) {
         last_value[name] = cur_value;
@@ -109,11 +108,20 @@ function updateGauges(json, error) {
     } else if (type == "gauge") {
       display_value = m['value'];
 
+    // For histograms, we display the 99th percentile (and max).
+    } else if (type == "histogram") {
+      label += "<br>(shown: 99th percentile)";
+      display_value = m['percentile_99'];
+
     // For non-special-cased stuff just print the value field as well, if available.
     } else {
       if ("value" in m) {
         display_value = m['value'];
       }
+    }
+
+    if (first_run) {
+      createGauge(name, label, 0, 0);
     }
 
     // Did max increase? If so, reconfigure.
@@ -122,7 +130,7 @@ function updateGauges(json, error) {
       reconfigureGauge(name, label, 0, Math.floor(max_value[name] * MAX_SCALE_FACTOR));
     }
 
-    g.redraw(display_value);
+    gauges[name].redraw(display_value);
   });
 
   last_update = now;

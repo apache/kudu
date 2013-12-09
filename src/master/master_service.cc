@@ -19,7 +19,8 @@ namespace kudu {
 namespace master {
 
 MasterServiceImpl::MasterServiceImpl(Master* server)
-  : server_(server) {
+  : MasterServiceIf(server->metric_context()),
+    server_(server) {
 }
 
 void MasterServiceImpl::Ping(const PingRequestPB* req,

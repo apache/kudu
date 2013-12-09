@@ -13,6 +13,7 @@
 
 namespace kudu {
 
+class Histogram;
 class Socket;
 
 namespace rpc {
@@ -33,6 +34,7 @@ class ServicePool {
   std::tr1::shared_ptr<Messenger> messenger_;
   gscoped_ptr<ServiceIf> service_;
   std::vector<std::tr1::shared_ptr<boost::thread> > threads_;
+  Histogram* incoming_queue_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ServicePool);
 };

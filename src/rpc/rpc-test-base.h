@@ -47,6 +47,14 @@ class GenericCalculatorService : public ServiceIf {
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
 
+  GenericCalculatorService() {
+  }
+
+  // To match the argument list of the generated CalculatorService.
+  explicit GenericCalculatorService(const MetricContext& ctx) {
+    // TODO: use the metrics context if needed later...
+  }
+
   virtual void Handle(InboundCall *incoming) {
     if (incoming->method_name() == kAddMethodName) {
       DoAdd(incoming);
@@ -93,6 +101,10 @@ class GenericCalculatorService : public ServiceIf {
 
 class CalculatorService : public CalculatorServiceIf {
  public:
+  explicit CalculatorService(const MetricContext& ctx)
+    : CalculatorServiceIf(ctx) {
+  }
+
   virtual void Add(const AddRequestPB *req,
                    AddResponsePB *resp,
                    RpcContext *context) {
@@ -151,11 +163,12 @@ const char *GenericCalculatorService::kSleepMethodName = "Sleep";
 
 class RpcTestBase : public KuduTest {
  public:
-  RpcTestBase() :
-    n_worker_threads_(3),
-    n_server_reactor_threads_(3),
-    keepalive_time_ms_(1000)
-  {}
+  RpcTestBase()
+    : n_worker_threads_(3),
+      n_server_reactor_threads_(3),
+      keepalive_time_ms_(1000),
+      metric_ctx_(&metric_registry_, "test.rpc_test") {
+  }
 
   virtual void SetUp() {
     KuduTest::SetUp();
@@ -179,6 +192,7 @@ class RpcTestBase : public KuduTest {
       MonoDelta::FromMilliseconds(keepalive_time_ms_));
     bld.set_coarse_timer_granularity(MonoDelta::FromMilliseconds(
                                        std::min(keepalive_time_ms_, 100)));
+    bld.set_metric_context(metric_ctx_);
     shared_ptr<Messenger> messenger;
     CHECK_OK(bld.Build(&messenger));
     return messenger;
@@ -243,7 +257,7 @@ class RpcTestBase : public KuduTest {
     ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
     *server_addr = pool->bind_address();
 
-    gscoped_ptr<ServiceIf> impl(new ServiceClass());
+    gscoped_ptr<ServiceIf> impl(new ServiceClass(metric_ctx_));
     worker_pool_.reset(new ServicePool(server_messenger_, impl.Pass()));
     ASSERT_STATUS_OK(worker_pool_->Init(n_worker_threads_));
   }
@@ -255,6 +269,8 @@ class RpcTestBase : public KuduTest {
   int n_server_reactor_threads_;
   int keepalive_time_ms_;
 
+  MetricRegistry metric_registry_;
+  MetricContext metric_ctx_;
 };
 
 

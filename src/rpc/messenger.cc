@@ -23,6 +23,7 @@
 #include "rpc/sasl_common.h"
 #include "rpc/transfer.h"
 #include "util/errno.h"
+#include "util/metrics.h"
 #include "util/monotime.h"
 #include "util/net/socket.h"
 #include "util/status.h"
@@ -72,6 +73,11 @@ MessengerBuilder& MessengerBuilder::set_coarse_timer_granularity(const MonoDelta
 MessengerBuilder &MessengerBuilder::set_service_queue_length(
                                 int service_queue_length) {
   service_queue_length_ = service_queue_length;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_metric_context(const MetricContext& metric_ctx) {
+  metric_ctx_.reset(new MetricContext(metric_ctx, "rpc"));
   return *this;
 }
 
@@ -168,6 +174,9 @@ Messenger::Messenger(const MessengerBuilder &bld)
   : closing_(false),
     service_queue_(bld.service_queue_length_),
     name_(bld.name_) {
+  if (bld.metric_ctx_) {
+    metric_ctx_.reset(new MetricContext(*bld.metric_ctx_));
+  }
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(this, i, bld));
   }

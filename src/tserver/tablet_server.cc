@@ -29,11 +29,10 @@ namespace kudu {
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
-  : ServerBase(opts.env, opts.base_dir, opts.rpc_opts, opts.webserver_opts),
+  : ServerBase(opts.env, opts.base_dir, opts.rpc_opts, opts.webserver_opts, "kudu.tabletserver"),
     initted_(false),
     opts_(opts),
-    metric_ctx_(metric_registry_.get(), "kudu.tabletserver"),
-    tablet_manager_(new TSTabletManager(fs_manager_.get(), metric_ctx_)),
+    tablet_manager_(new TSTabletManager(fs_manager_.get(), metric_context())),
     scanner_manager_(new ScannerManager()),
     path_handlers_(new TabletServerPathHandlers(this)) {
 }

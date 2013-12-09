@@ -26,12 +26,19 @@ class Message;
 
 namespace kudu {
 
+class Histogram;
 class Trace;
 
 namespace rpc {
 
 class Connection;
 class UserCredentials;
+
+struct InboundCallTiming {
+  MonoTime time_received;   // Time the call was first accepted.
+  MonoTime time_handled;    // Time the call handler was kicked off.
+  MonoTime time_completed;  // Time the call handler completed.
+};
 
 // Inbound call on server
 class InboundCall {
@@ -88,6 +95,23 @@ class InboundCall {
 
   Trace* trace();
 
+  // When this InboundCall was received (instantiated).
+  // Should only be called once on a given instance.
+  // Not thread-safe. Should only be called by the current "owner" thread.
+  void RecordCallReceived();
+
+  // When RPC call Handle() was called on the server side.
+  // Updates the Histogram with time elapsed since the call was received,
+  // and should only be called once on a given instance.
+  // Not thread-safe. Should only be called by the current "owner" thread.
+  void RecordHandlingStarted(Histogram* incoming_queue_time);
+
+  // When RPC call Handle() completed execution on the server side.
+  // Updates the Histogram with time elapsed since the call was started,
+  // and should only be called once on a given instance.
+  // Not thread-safe. Should only be called by the current "owner" thread.
+  void RecordHandlingCompleted(Histogram* handler_run_time);
+
  private:
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a
@@ -102,9 +126,6 @@ class InboundCall {
 
   // The connection on which this inbound call arrived.
   std::tr1::shared_ptr<Connection> conn_;
-
-  // The time at which the call was received off the wire.
-  MonoTime receive_timestamp_;
 
   // The header of the incoming call. Set by ParseFrom()
   RequestHeader header_;
@@ -122,8 +143,11 @@ class InboundCall {
   faststring response_hdr_buf_;
   faststring response_msg_buf_;
 
-  // The trace buffer
+  // The trace buffer.
   gscoped_ptr<Trace> trace_;
+
+  // Timing information related to this RPC call.
+  InboundCallTiming timing_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

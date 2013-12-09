@@ -11,6 +11,7 @@
 #include "gutil/macros.h"
 #include "master/master_options.h"
 #include "server/server_base.h"
+#include "util/metrics.h"
 #include "util/status.h"
 
 namespace kudu {

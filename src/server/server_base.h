@@ -16,6 +16,7 @@ namespace kudu {
 
 class Env;
 class FsManager;
+class MetricContext;
 class MetricRegistry;
 class NodeInstancePB;
 class Sockaddr;
@@ -51,10 +52,13 @@ class ServerBase {
   // This may not be called until after the server is Initted.
   const NodeInstancePB& instance_pb() const;
 
+  const MetricContext& metric_context() const;
+
  protected:
   ServerBase(Env* env, const std::string& base_dir,
              const RpcServerOptions& rpc_opts,
-             const WebserverOptions& web_opts);
+             const WebserverOptions& web_opts,
+             const std::string& metrics_namespace);
   virtual ~ServerBase();
 
   Status Init();
@@ -62,6 +66,7 @@ class ServerBase {
   Status Shutdown();
 
   gscoped_ptr<MetricRegistry> metric_registry_;
+  gscoped_ptr<MetricContext> metric_ctx_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;

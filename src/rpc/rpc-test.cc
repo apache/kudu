@@ -3,16 +3,20 @@
 #include "rpc/rpc-test-base.h"
 
 #include <string>
+#include <tr1/unordered_map>
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <gtest/gtest.h>
 
+#include "gutil/map-util.h"
+#include "gutil/strings/join.h"
 #include "rpc/serialization.h"
 #include "util/countdown_latch.h"
 #include "util/test_util.h"
 
 using std::string;
+using std::tr1::unordered_map;
 
 namespace kudu {
 namespace rpc {
@@ -274,6 +278,51 @@ TEST_F(TestRpc, TestServerShutsDown) {
                 s.posix_code() == ECONNREFUSED);
   }
 }
+
+// Test handler latency metric.
+TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
+
+  const uint64_t sleep_micros = 20 * 1000;
+
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServerWithGeneratedCode(&server_addr);
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+
+  RpcController controller;
+  SleepRequestPB req;
+  req.set_sleep_micros(sleep_micros);
+  req.set_deferred(true);
+  SleepResponsePB resp;
+  ASSERT_STATUS_OK(p.SyncRequest("Sleep", req, &resp, &controller));
+
+  const unordered_map<string, Metric*> metric_map =
+      server_messenger_->metric_context()->metrics()->UnsafeMetricsMapForTests();
+  vector<string> keys;
+  AppendKeysFromMap(metric_map, &keys);
+  LOG(INFO) << "Metrics: " << JoinStrings(keys, ", ");
+
+  Histogram* latency_histogram =
+      down_cast<Histogram *>(CHECK_NOTNULL(FindOrDie(metric_map,
+          "test.rpc_test.handler_latency_kudu_rpc_test_CalculatorService_Sleep")));
+
+  LOG(INFO) << "Sleep() min lat: " << latency_histogram->MinValueForTests();
+  LOG(INFO) << "Sleep() mean lat: " << latency_histogram->MeanValueForTests();
+  LOG(INFO) << "Sleep() max lat: " << latency_histogram->MaxValueForTests();
+  LOG(INFO) << "Sleep() #calls: " << latency_histogram->TotalCountForTests();
+
+  ASSERT_EQ(1, latency_histogram->TotalCountForTests());
+  ASSERT_GE(latency_histogram->MaxValueForTests(), sleep_micros);
+  ASSERT_TRUE(latency_histogram->MinValueForTests() == latency_histogram->MaxValueForTests());
+
+  // TODO: Implement an incoming queue latency test.
+  // For now we just assert that the metric exists.
+  ASSERT_TRUE(FindOrDie(metric_map, "test.rpc_test.rpc.incoming_queue_time") != NULL);
+}
+
 
 } // namespace rpc
 } // namespace kudu

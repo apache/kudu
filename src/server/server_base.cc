@@ -27,8 +27,10 @@ namespace server {
 
 ServerBase::ServerBase(Env* env, const string& base_dir,
                        const RpcServerOptions& rpc_opts,
-                       const WebserverOptions& web_opts)
+                       const WebserverOptions& web_opts,
+                       const string& metric_namespace)
   : metric_registry_(new MetricRegistry()),
+    metric_ctx_(new MetricContext(metric_registry_.get(), metric_namespace)),
     fs_manager_(new FsManager(env, base_dir)),
     rpc_server_(new RpcServer(rpc_opts)),
     web_server_(new Webserver(web_opts)),
@@ -55,6 +57,10 @@ Sockaddr ServerBase::first_http_address() const {
 
 const NodeInstancePB& ServerBase::instance_pb() const {
   return *DCHECK_NOTNULL(instance_pb_.get());
+}
+
+const MetricContext& ServerBase::metric_context() const {
+  return *metric_ctx_;
 }
 
 Status ServerBase::GenerateInstanceID() {
@@ -84,6 +90,7 @@ Status ServerBase::Init() {
   rpc::MessengerBuilder builder("TODO: add a ToString for ServerBase");
 
   builder.set_num_reactors(FLAGS_num_reactor_threads);
+  builder.set_metric_context(metric_context());
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init());

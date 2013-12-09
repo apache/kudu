@@ -24,8 +24,11 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/join.h"
+#include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
 #include "gutil/strings/stringpiece.h"
+#include "gutil/strings/substitute.h"
+#include "gutil/strings/util.h"
 #include "util/status.h"
 #include "util/string_case.h"
 
@@ -147,28 +150,30 @@ const std::string FileSubstitutions::PROTO_EXTENSION(".proto");
 class MethodSubstitutions : public Substituter {
  public:
   explicit MethodSubstitutions(const MethodDescriptor *method)
-    : rpc_name_(method->name()),
-      request_(ReplaceNamespaceDelimiters(
-          StripNamespaceIfPossible(method->service()->full_name(),
-                                   method->input_type()->full_name()))),
-      response_(ReplaceNamespaceDelimiters(
-          StripNamespaceIfPossible(method->service()->full_name(),
-                                   method->output_type()->full_name()))) {
-
+    : method_(method) {
   }
 
   virtual void InitSubstitutionMap(map<string, string> *map) const {
-    (*map)["rpc_name"] = rpc_name_;
-    (*map)["request"] = request_;
-    (*map)["response"] = response_;
-
+    (*map)["rpc_name"] = method_->name();
+    (*map)["rpc_full_name"] = method_->full_name();
+    (*map)["rpc_full_name_plainchars"] =
+        StringReplace(method_->full_name(), ".", "_", true);
+    (*map)["request"] =
+        ReplaceNamespaceDelimiters(
+            StripNamespaceIfPossible(method_->service()->full_name(),
+                                     method_->input_type()->full_name()));
+    (*map)["response"] =
+        ReplaceNamespaceDelimiters(
+            StripNamespaceIfPossible(method_->service()->full_name(),
+                                     method_->output_type()->full_name()));
+    (*map)["metric_enum_key"] = strings::Substitute("kMetricIndex$0", method_->name());
   }
 
   // Strips the package from method arguments if they are in the same package as
   // the service, otherwise leaves them so that we can have fully qualified
   // namespaces for method arguments.
-  std::string StripNamespaceIfPossible(const std::string& service_full_name,
-                                       const std::string& arg_full_name) {
+  static std::string StripNamespaceIfPossible(const std::string& service_full_name,
+                                              const std::string& arg_full_name) {
     StringPiece service_package(service_full_name);
     if (!service_package.contains(".")) {
       return arg_full_name;
@@ -185,14 +190,12 @@ class MethodSubstitutions : public Substituter {
     return argfqn.ToString();
   }
 
-  std::string ReplaceNamespaceDelimiters(const std::string& arg_full_name) {
+  static std::string ReplaceNamespaceDelimiters(const std::string& arg_full_name) {
     return JoinStrings(strings::Split(arg_full_name, "."), "::");
   }
 
  private:
-  std::string rpc_name_;
-  std::string request_;
-  std::string response_;
+  const MethodDescriptor *method_;
 };
 
 class ServiceSubstitutions : public Substituter {
@@ -204,6 +207,8 @@ class ServiceSubstitutions : public Substituter {
   virtual void InitSubstitutionMap(map<string, string> *map) const {
     (*map)["service_name"] = service_->name();
     (*map)["full_service_name"] = service_->full_name();
+    (*map)["service_method_count"] = SimpleItoa(service_->method_count());
+
     // TODO: upgrade to protobuf 2.5.x and attach service comments
     // to the generated service classes using the SourceLocation API.
   }
@@ -315,11 +320,13 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include \"rpc/service_if.h\"\n"
       "\n"
       "namespace kudu {\n"
+      "class MetricContext;\n"
       "namespace rpc {\n"
       "class Messenger;\n"
       "class RpcContext;\n"
       "} // namespace rpc\n"
       "} // namespace kudu\n"
+      "\n"
       "$open_namespace$"
       "\n"
       );
@@ -335,10 +342,12 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "\n"
         "class $service_name$If : public ::kudu::rpc::ServiceIf {\n"
         " public:\n"
+        "  explicit $service_name$If(const MetricContext& ctx);\n"
         "  virtual ~$service_name$If();\n"
         "  virtual void Handle(::kudu::rpc::InboundCall *call);\n"
         "  virtual std::string service_name() const;\n"
         "  static std::string static_service_name();\n"
+        "\n"
         );
 
       for (int method_idx = 0; method_idx < service->method_count();
@@ -349,13 +358,47 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         Print(printer, *subs,
         "  virtual void $rpc_name$(const $request$ *req,\n"
         "     $response$ *resp, ::kudu::rpc::RpcContext *context) = 0;\n"
-            );
+        );
+
+        subs->Pop();
+      }
+
+      Print(printer, *subs,
+        "\n"
+        " private:\n"
+      );
+
+
+      Print(printer, *subs,
+        "  enum RpcMetricIndexes {\n"
+      );
+      for (int method_idx = 0; method_idx < service->method_count();
+           ++method_idx) {
+        const MethodDescriptor *method = service->method(method_idx);
+        subs->PushMethod(method);
+
+        Print(printer, *subs,
+          "    $metric_enum_key$,\n"
+        );
 
         subs->Pop();
       }
       Print(printer, *subs,
-        "};\n");
-      subs->Pop();
+        "  };\n" // enum
+      );
+
+      Print(printer, *subs,
+        "  static const int kMethodCount = $service_method_count$;\n"
+        "\n"
+        "  // Pre-initialize metrics because calling METRIC_foo.Instantiate() is expensive.\n"
+        "  void InitMetrics(const MetricContext& ctx);\n"
+        "\n"
+        "  ::kudu::rpc::RpcMethodMetrics metrics_[kMethodCount];\n"
+        "\n"
+        "};\n"
+      );
+
+      subs->Pop(); // Service
     }
 
     Print(printer, *subs,
@@ -378,7 +421,33 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "\n"
       "#include \"rpc/inbound_call.h\"\n"
       "#include \"rpc/rpc_context.h\"\n"
-      "\n"
+      "#include \"rpc/service_if.h\"\n"
+      "#include \"util/metrics.h\"\n"
+      "\n");
+
+    // Define metric prototypes for each method in the service.
+    for (int service_idx = 0; service_idx < file->service_count();
+        ++service_idx) {
+      const ServiceDescriptor *service = file->service(service_idx);
+      subs->PushService(service);
+
+      for (int method_idx = 0; method_idx < service->method_count();
+          ++method_idx) {
+        const MethodDescriptor *method = service->method(method_idx);
+        subs->PushMethod(method);
+        Print(printer, *subs,
+          "METRIC_DEFINE_histogram(handler_latency_$rpc_full_name_plainchars$,\n"
+          "  kudu::MetricUnit::kMicroseconds,\n"
+          "  \"Microseconds spent handling $rpc_full_name$() RPC requests\",\n"
+          "  60000000LU, 2);\n"
+          "\n");
+        subs->Pop();
+      }
+
+      subs->Pop();
+    }
+
+    Print(printer, *subs,
       "$open_namespace$"
       "\n");
 
@@ -388,6 +457,10 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
 
       Print(printer, *subs,
+        "$service_name$If::$service_name$If(const MetricContext& ctx) {\n"
+        "  InitMetrics(ctx);\n"
+        "}\n"
+        "\n"
         "$service_name$If::~$service_name$If() {\n"
         "}\n"
         "\n"
@@ -407,7 +480,9 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "        return;\n"
         "      }\n"
         "      $response$ *resp = new $response$;\n"
-        "      $rpc_name$(req, resp, new ::kudu::rpc::RpcContext(call, req, resp));\n"
+        "      $rpc_name$(req, resp,\n"
+        "          new ::kudu::rpc::RpcContext(call, req, resp,\n"
+        "                                      metrics_[$metric_enum_key$]));\n"
         "      return;\n"
         "    }\n"
         "\n");
@@ -424,11 +499,34 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "std::string $service_name$If::static_service_name() {\n"
         "  return \"$full_service_name$\";\n"
         "}\n"
+        "\n"
+      );
+
+      Print(printer, *subs,
+        "void $service_name$If::InitMetrics(const MetricContext& ctx) {\n"
+      );
+      // Expose per-RPC metrics.
+      for (int method_idx = 0; method_idx < service->method_count();
+           ++method_idx) {
+        const MethodDescriptor *method = service->method(method_idx);
+        subs->PushMethod(method);
+
+        Print(printer, *subs,
+          "  metrics_[$metric_enum_key$].handler_latency = \n"
+          "      METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(ctx);\n"
         );
+
+        subs->Pop();
+      }
+      Print(printer, *subs,
+        "}\n"
+        "\n"
+      );
+
       subs->Pop();
     }
+
     Print(printer, *subs,
-      "\n"
       "$close_namespace$"
       );
   }

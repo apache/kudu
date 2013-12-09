@@ -86,9 +86,10 @@ T* MetricRegistry::FindMetricUnlocked(const std::string& name,
                                       MetricType::Type metric_type) {
   Metric* metric = FindPtrOrNull(metrics_, name);
   if (metric != NULL) {
-    CHECK_EQ(MetricType::kCounter, metric->type())
-      << "Downcast expects " << MetricType::Name(MetricType::kCounter)
-      << " but found " << MetricType::Name(metric->type());
+    CHECK_EQ(metric_type, metric->type())
+      << "Downcast expects " << MetricType::Name(metric_type)
+      << " but found " << MetricType::Name(metric->type()) << " for "
+      << name;
     return down_cast<T*>(metric);
   }
   return NULL;
@@ -451,6 +452,25 @@ Status Histogram::WriteAsJson(const std::string& name, JsonWriter* writer) const
 
   writer->EndObject();
   return Status::OK();
+}
+
+uint64_t Histogram::CountInBucketForValueForTests(uint64_t value) const {
+  return histogram_->CountInBucketForValue(value);
+}
+
+uint64_t Histogram::TotalCountForTests() const {
+  return histogram_->TotalCount();
+}
+
+uint64_t Histogram::MinValueForTests() const {
+  return histogram_->MinValue();
+}
+
+uint64_t Histogram::MaxValueForTests() const {
+  return histogram_->MaxValue();
+}
+double Histogram::MeanValueForTests() const {
+  return histogram_->MeanValue();
 }
 
 } // namespace kudu

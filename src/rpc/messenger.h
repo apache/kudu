@@ -17,6 +17,7 @@
 #include "rpc/inbound_call.h"
 #include "rpc/transfer.h"
 #include "util/blocking_queue.h"
+#include "util/metrics.h"
 #include "util/monotime.h"
 #include "util/net/socket.h"
 #include "util/status.h"
@@ -74,6 +75,9 @@ class MessengerBuilder {
   // start rejecting them.
   MessengerBuilder &set_service_queue_length(int service_queue_length);
 
+  // Set metric context for use by RPC systems.
+  MessengerBuilder &set_metric_context(const MetricContext& metric_ctx);
+
   Status Build(Messenger **msgr);
   Status Build(std::tr1::shared_ptr<Messenger> *msgr);
  private:
@@ -83,6 +87,7 @@ class MessengerBuilder {
   int num_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
   size_t service_queue_length_;
+  gscoped_ptr<MetricContext> metric_ctx_;
 };
 
 // A Messenger is a container for the reactor threads which run event loops
@@ -142,6 +147,8 @@ class Messenger {
     return closing_;
   }
 
+  MetricContext* metric_context() const { return metric_ctx_.get(); }
+
  private:
   FRIEND_TEST(TestRpc, TestConnectionKeepalive);
 
@@ -170,6 +177,8 @@ class Messenger {
   std::vector<Reactor*> reactors_;
 
   gscoped_ptr<TaskExecutor> negotiation_executor_;
+
+  gscoped_ptr<MetricContext> metric_ctx_;
 
   DISALLOW_COPY_AND_ASSIGN(Messenger);
 };

@@ -4,27 +4,34 @@
 
 #include "rpc/outbound_call.h"
 #include "rpc/inbound_call.h"
+#include "rpc/service_if.h"
+#include "util/hdr_histogram.h"
+#include "util/metrics.h"
 
 namespace kudu {
 namespace rpc {
 
 RpcContext::RpcContext(InboundCall *call,
                        const google::protobuf::Message *request_pb,
-                       google::protobuf::Message *response_pb)
-  : call_(call),
+                       google::protobuf::Message *response_pb,
+                       RpcMethodMetrics metrics)
+  : call_(CHECK_NOTNULL(call)),
     request_pb_(request_pb),
-    response_pb_(response_pb) {
+    response_pb_(response_pb),
+    metrics_(metrics) {
 }
 
 RpcContext::~RpcContext() {
 }
 
 void RpcContext::RespondSuccess() {
+  call_->RecordHandlingCompleted(metrics_.handler_latency);
   call_->RespondSuccess(*response_pb_);
   delete this;
 }
 
 void RpcContext::RespondFailure(const Status &status) {
+  call_->RecordHandlingCompleted(metrics_.handler_latency);
   call_->RespondFailure(status);
   delete this;
 }

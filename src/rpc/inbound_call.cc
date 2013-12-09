@@ -8,6 +8,7 @@
 
 #include "rpc/connection.h"
 #include "rpc/serialization.h"
+#include "util/metrics.h"
 #include "util/trace.h"
 
 using google::protobuf::Message;
@@ -16,12 +17,13 @@ using google::protobuf::io::CodedOutputStream;
 using std::tr1::shared_ptr;
 using std::vector;
 
-namespace kudu { namespace rpc {
+namespace kudu {
+namespace rpc {
 
 InboundCall::InboundCall(const shared_ptr<Connection> &conn)
   : conn_(conn),
-    receive_timestamp_(MonoTime::Now(MonoTime::FINE)),
     trace_(new Trace) {
+  RecordCallReceived();
 }
 
 InboundCall::~InboundCall() {}
@@ -95,7 +97,7 @@ void InboundCall::LogIfSlow() const {
   double log_threshold = header_.timeout_millis() * 0.75f;
 
   MonoTime now = MonoTime::Now(MonoTime::FINE);
-  int total_time = now.GetDeltaSince(receive_timestamp_).ToMilliseconds();
+  int total_time = now.GetDeltaSince(timing_.time_received).ToMilliseconds();
 
   if (total_time > log_threshold) {
     // TODO: consider pushing this onto another thread since it may be slow.
@@ -121,6 +123,27 @@ const Sockaddr& InboundCall::remote_address() const {
 
 Trace* InboundCall::trace() {
   return trace_.get();
+}
+
+void InboundCall::RecordCallReceived() {
+  DCHECK(!timing_.time_received.Initialized());  // Protect against multiple calls.
+  timing_.time_received = MonoTime::Now(MonoTime::FINE);
+}
+
+void InboundCall::RecordHandlingStarted(Histogram* incoming_queue_time) {
+  DCHECK(incoming_queue_time != NULL);
+  DCHECK(!timing_.time_handled.Initialized());  // Protect against multiple calls.
+  timing_.time_handled = MonoTime::Now(MonoTime::FINE);
+  incoming_queue_time->Increment(
+      timing_.time_handled.GetDeltaSince(timing_.time_received).ToMicroseconds());
+}
+
+void InboundCall::RecordHandlingCompleted(Histogram* handler_run_time) {
+  DCHECK(handler_run_time != NULL);
+  DCHECK(!timing_.time_completed.Initialized());  // Protect against multiple calls.
+  timing_.time_completed = MonoTime::Now(MonoTime::FINE);
+  handler_run_time->Increment(
+      timing_.time_completed.GetDeltaSince(timing_.time_handled).ToMicroseconds());
 }
 
 } // namespace rpc

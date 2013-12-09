@@ -190,6 +190,8 @@ class Metric {
 // Registry of all the metrics for a given subsystem.
 class MetricRegistry {
  public:
+  typedef std::tr1::unordered_map<string, Metric*> UnorderedMetricMap;
+
   MetricRegistry();
   ~MetricRegistry();
   Status WriteAsJson(JsonWriter* writer) const;
@@ -210,12 +212,12 @@ class MetricRegistry {
   Histogram* FindOrCreateHistogram(const std::string& name,
                                    const HistogramPrototype& proto);
 
+  // Not thread-safe, used for tests.
+  const UnorderedMetricMap& UnsafeMetricsMapForTests() const { return metrics_; }
+
  private:
   friend class MultiThreadedMetricsTest;  // For unit testing.
   FRIEND_TEST(MetricsTest, JsonPrintTest);
-  FRIEND_TEST(MultiThreadedMetricsTest, AddCounterToRegistryTest);
-
-  typedef std::tr1::unordered_map<string, Metric*> UnorderedMetricMap;
 
   // Attempt to find metric in map and downcast it to specified template type.
   // Returns NULL if the named metric is not found.
@@ -233,9 +235,6 @@ class MetricRegistry {
   Gauge* CreateFunctionGauge(const std::string& name,
                              const GaugePrototype<T>& proto,
                              const boost::function<T()>& function);
-
-  // Not thread-safe, used for tests.
-  const UnorderedMetricMap& metrics() const { return metrics_; }
 
   UnorderedMetricMap metrics_;
   mutable simple_spinlock lock_;
@@ -457,6 +456,12 @@ class Histogram : public Metric {
   const std::string& description() const { return description_; }
   virtual MetricType::Type type() const { return MetricType::kHistogram; }
   virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const;
+
+  uint64_t CountInBucketForValueForTests(uint64_t value) const;
+  uint64_t TotalCountForTests() const;
+  uint64_t MinValueForTests() const;
+  uint64_t MaxValueForTests() const;
+  double MeanValueForTests() const;
 
  private:
   friend class MetricRegistry;

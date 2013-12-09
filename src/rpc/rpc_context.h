@@ -5,6 +5,7 @@
 #include <string>
 
 #include "gutil/gscoped_ptr.h"
+#include "rpc/service_if.h"
 #include "util/status.h"
 
 namespace google {
@@ -35,7 +36,8 @@ class RpcContext {
   // and is not a public API.
   RpcContext(InboundCall *call,
              const google::protobuf::Message *request_pb,
-             google::protobuf::Message *response_pb);
+             google::protobuf::Message *response_pb,
+             RpcMethodMetrics metrics);
 
   ~RpcContext();
 
@@ -78,6 +80,7 @@ class RpcContext {
   InboundCall *call_;
   const gscoped_ptr<const google::protobuf::Message> request_pb_;
   const gscoped_ptr<google::protobuf::Message> response_pb_;
+  RpcMethodMetrics metrics_;
 };
 
 } // namespace rpc

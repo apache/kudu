@@ -113,6 +113,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   MessengerBuilder bld("messenger1");
   bld.set_num_reactors(2);
   bld.set_service_queue_length(2);
+  bld.set_metric_context(metric_ctx_);
   CHECK_OK(bld.Build(&server_messenger_));
 
   shared_ptr<AcceptorPool> pool;

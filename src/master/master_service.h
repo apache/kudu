@@ -5,8 +5,8 @@
 #include <tr1/memory>
 
 #include "gutil/macros.h"
-
 #include "master/master.service.h"
+#include "util/metrics.h"
 
 namespace kudu {
 
@@ -34,6 +34,7 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void GetTabletLocations(const GetTabletLocationsRequestPB* req,
                                   GetTabletLocationsResponsePB* resp,
                                   rpc::RpcContext* rpc);
+
  private:
   Master* server_;
 

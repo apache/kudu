@@ -12,7 +12,6 @@
 #include "server/server_base.h"
 #include "tserver/tablet_server_options.h"
 #include "tserver/tserver.pb.h"
-#include "util/metrics.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
@@ -56,9 +55,6 @@ class TabletServer : public server::ServerBase {
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
 
-  // Returns tablet server metric context. Primarily for use by unit tests.
-  const MetricContext& GetMetricContextForTests() const { return metric_ctx_; }
-
  private:
   friend class TabletServerTest;
 
@@ -68,8 +64,6 @@ class TabletServer : public server::ServerBase {
 
   // The options passed at construction time.
   const TabletServerOptions opts_;
-
-  const MetricContext metric_ctx_;
 
   // Manager for tablets which are available on this server.
   gscoped_ptr<TSTabletManager> tablet_manager_;

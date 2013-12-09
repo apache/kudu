@@ -105,7 +105,8 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
 };
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
-  : server_(server) {
+  : TabletServerServiceIf(server->metric_context()),
+    server_(server) {
 }
 
 void TabletServiceImpl::Ping(const PingRequestPB* req,

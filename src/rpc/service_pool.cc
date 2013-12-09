@@ -12,25 +12,32 @@
 #include "gutil/gscoped_ptr.h"
 #include "rpc/messenger.h"
 #include "rpc/service_if.h"
+#include "util/metrics.h"
 #include "util/status.h"
 #include "util/thread_util.h"
 #include "util/trace.h"
 
 using std::tr1::shared_ptr;
 
+METRIC_DEFINE_histogram(incoming_queue_time, kudu::MetricUnit::kMicroseconds,
+    "Number of microseconds incoming RPC requests spend in the worker queue",
+    60000000LU, 3);
+
 namespace kudu {
 namespace rpc {
 
 ServicePool::ServicePool(const std::tr1::shared_ptr<Messenger> &messenger,
                          gscoped_ptr<ServiceIf> service)
- : messenger_(messenger),
-   service_(service.Pass()) {
+  : messenger_(messenger),
+    service_(service.Pass()),
+    incoming_queue_time_(METRIC_incoming_queue_time.Instantiate(
+        *(CHECK_NOTNULL(messenger_->metric_context())))) {
 }
 
 ServicePool::~ServicePool() {
   // We can't join all of our threads unless the Messenger is closing.
   CHECK(messenger_->closing());
-  BOOST_FOREACH(shared_ptr<boost::thread> &thread, threads_) {
+  BOOST_FOREACH(shared_ptr<boost::thread>& thread, threads_) {
     CHECK_OK(ThreadJoiner(thread.get(), "service thread").Join());
   }
 }
@@ -55,6 +62,7 @@ void ServicePool::RunThread() {
       return;
     }
 
+    incoming->RecordHandlingStarted(incoming_queue_time_);
     incoming->trace()->Message("Handling call");
 
     // Release the InboundCall pointer -- when the call is responded to,
