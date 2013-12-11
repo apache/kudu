@@ -40,7 +40,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablet?id=$1", addr, kTabletId),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "<th>key</th>");
-  ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NOT NULL</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NULLABLE</td>");
 }
 
 TEST_F(TabletServerTest, TestInsert) {
@@ -682,53 +682,60 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
 // Test that passing a projection with fields not present in the tablet schema
 // throws an exception.
 TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjection) {
-  ScanRequestPB req;
-  ScanResponsePB resp;
-  RpcController rpc;
-
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
   const Schema projection(boost::assign::list_of
                           (ColumnSchema("col_doesnt_exist", UINT32)),
-                          1);
-  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
-  req.set_call_seq_id(0);
+                          0);
+  VerifyScanRequestFailure(projection,
+                           TabletServerErrorPB::MISMATCHED_SCHEMA,
+                           "Some columns are not present in the current schema: col_doesnt_exist");
+}
 
-  // Send the call
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
-    ASSERT_STR_CONTAINS(resp.error().status().message(), "Some columns are not present in the current schema: col_doesnt_exist");
-  }
+// Test that passing a projection with mismatched type/nullability throws an exception.
+TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
+  Schema projection;
+
+  // Verify mismatched nullability for the not-null int field
+  projection.Reset(boost::assign::list_of
+                   (ColumnSchema("int_val", UINT32, true)),     // should be NOT NULL
+                   0);
+  VerifyScanRequestFailure(projection,
+                           TabletServerErrorPB::MISMATCHED_SCHEMA,
+                           "The column 'int_val' must have type uint32 NOT NULL found uint32 NULLABLE");
+
+  // Verify mismatched nullability for the nullable string field
+  projection.Reset(boost::assign::list_of
+                   (ColumnSchema("string_val", STRING, false)), // should be NULLABLE
+                   0);
+  VerifyScanRequestFailure(projection,
+                           TabletServerErrorPB::MISMATCHED_SCHEMA,
+                           "The column 'string_val' must have type string NULLABLE found string NOT NULL");
+
+  // Verify mismatched type for the not-null int field
+  projection.Reset(boost::assign::list_of
+                   (ColumnSchema("int_val", UINT16, false)),     // should be UINT32 NOT NULL
+                   0);
+  VerifyScanRequestFailure(projection,
+                           TabletServerErrorPB::MISMATCHED_SCHEMA,
+                           "The column 'int_val' must have type uint32 NOT NULL found uint16 NOT NULL");
+
+  // Verify mismatched type for the nullable string field
+  projection.Reset(boost::assign::list_of
+                   (ColumnSchema("string_val", UINT32, true)), // should be STRING NULLABLE
+                   0);
+  VerifyScanRequestFailure(projection,
+                           TabletServerErrorPB::MISMATCHED_SCHEMA,
+                             "The column 'string_val' must have type string NULLABLE found uint32 NULLABLE");
 }
 
 // Test that passing a projection with Column IDs throws an exception.
 // Column IDs are assigned to the user request schema on the tablet server
 // based on the latest schema.
 TEST_F(TabletServerTest, TestInvalidScanRequest_WithIds) {
-  ScanRequestPB req;
-  ScanResponsePB resp;
-  RpcController rpc;
-
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
   const Schema& projection = tablet_peer_->tablet()->schema();
   ASSERT_TRUE(projection.has_column_ids());
-  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
-  req.set_call_seq_id(0);
-
-  // Send the call
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::INVALID_SCHEMA, resp.error().code());
-    ASSERT_STR_CONTAINS(resp.error().status().message(), "User requests should not have Column IDs");
-  }
+  VerifyScanRequestFailure(projection,
+                           TabletServerErrorPB::INVALID_SCHEMA,
+                           "User requests should not have Column IDs");
 }
 
 // Test scanning a tablet that has no entries.

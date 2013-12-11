@@ -17,7 +17,7 @@ void CreateTestSchema(Schema* schema) {
   schema->Reset(boost::assign::list_of
                (ColumnSchema("key", UINT32))
                (ColumnSchema("int_val", UINT32))
-               (ColumnSchema("string_val", STRING)), 1);
+               (ColumnSchema("string_val", STRING, true)), 1);
 }
 
 void AddTestRowToBlockPB(const Schema& schema,

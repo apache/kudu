@@ -322,6 +322,30 @@ class TabletServerTest : public KuduTest {
     ASSERT_EQ(count, expected.size());
   }
 
+  // Verifies that a simple scan request fails with the specified error code/message.
+  void VerifyScanRequestFailure(const Schema& projection,
+                                TabletServerErrorPB::Code expected_code,
+                                const char *expected_message) {
+    ScanRequestPB req;
+    ScanResponsePB resp;
+    RpcController rpc;
+
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    req.set_call_seq_id(0);
+
+    // Send the call
+    {
+      SCOPED_TRACE(req.DebugString());
+      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+      SCOPED_TRACE(resp.DebugString());
+      ASSERT_TRUE(resp.has_error());
+      ASSERT_EQ(expected_code, resp.error().code());
+      ASSERT_STR_CONTAINS(resp.error().status().message(), expected_message);
+    }
+  }
+
   Schema schema_;
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
