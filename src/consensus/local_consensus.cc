@@ -1,6 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include "consensus/local_consensus.h"
+
+#include <boost/thread/locks.hpp>
+
 #include "consensus/tasks/tasks.h"
 
 namespace kudu {

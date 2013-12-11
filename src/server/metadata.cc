@@ -5,6 +5,7 @@
 #include <glog/logging.h>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <algorithm>
 #include <utility>

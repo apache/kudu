@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <boost/functional/hash.hpp>
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
 #include "gutil/stringprintf.h"

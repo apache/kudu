@@ -1,6 +1,7 @@
 // Copyright (c) 2012, Cloudera, inc.
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>

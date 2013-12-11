@@ -3,6 +3,7 @@
 #include "util/trace.h"
 
 #include <boost/foreach.hpp>
+#include <boost/thread/locks.hpp>
 #include <iomanip>
 #include <ios>
 #include <ostream>

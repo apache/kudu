@@ -3,6 +3,7 @@
 
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/thread/locks.hpp>
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 

@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <sched.h>
 #include <unistd.h>

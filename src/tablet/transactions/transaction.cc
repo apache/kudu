@@ -2,6 +2,8 @@
 
 #include "tablet/transactions/transaction.h"
 
+#include <boost/thread/locks.hpp>
+
 #include "consensus/consensus.h"
 #include "rpc/rpc_context.h"
 #include "util/task_executor.h"

@@ -2,6 +2,7 @@
 
 #include "master/ts_manager.h"
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <vector>
 

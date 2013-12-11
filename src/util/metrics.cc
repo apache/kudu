@@ -4,7 +4,7 @@
 #include <map>
 
 #include <boost/foreach.hpp>
-#include <boost/thread/mutex.hpp>
+#include <boost/thread/locks.hpp>
 
 #include "gutil/atomicops.h"
 #include "gutil/casts.h"

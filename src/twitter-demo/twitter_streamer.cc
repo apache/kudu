@@ -2,6 +2,7 @@
 
 #include "twitter-demo/twitter_streamer.h"
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/thread.hpp>
 #include <curl/curl.h>
 #include <gflags/gflags.h>

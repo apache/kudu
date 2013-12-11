@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <boost/thread/mutex.hpp>
+#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <gutil/hash/city.h>
 

@@ -4,6 +4,7 @@
 
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
+#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <time.h>

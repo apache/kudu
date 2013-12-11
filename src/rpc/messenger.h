@@ -2,6 +2,7 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
+#include <boost/thread/locks.hpp>
 #include <gtest/gtest.h>
 #include <gutil/gscoped_ptr.h>
 #include <stdint.h>

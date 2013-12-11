@@ -4,6 +4,7 @@
 #include "master/ts_descriptor.h"
 #include "master/master.pb.h"
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
 namespace kudu {

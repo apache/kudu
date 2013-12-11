@@ -13,6 +13,7 @@
 // limitations under the License.
 //
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <algorithm>
 

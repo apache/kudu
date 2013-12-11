@@ -1,7 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
-#include <boost/thread/mutex.hpp>
+#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 
 #include "rpc/rpc_controller.h"

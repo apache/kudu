@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/bind.hpp>
+#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <vector>
 #include <tr1/memory>

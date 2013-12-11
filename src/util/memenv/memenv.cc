@@ -6,6 +6,7 @@
 // - use boost mutexes instead of port mutexes
 
 #include <string.h>
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <map>

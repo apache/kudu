@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera,inc.
 // All rights reserved.
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <string>

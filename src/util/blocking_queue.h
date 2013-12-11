@@ -3,6 +3,7 @@
 #define KUDU_UTIL_BLOCKING_QUEUE_H
 
 #include <boost/thread/condition_variable.hpp>
+#include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
 #include <unistd.h>

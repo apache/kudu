@@ -2,10 +2,12 @@
 // All rights reserved.
 #include "tserver/scanners.h"
 
-#include "common/iterator.h"
-#include "gutil/map-util.h"
+#include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <tr1/memory>
+
+#include "common/iterator.h"
+#include "gutil/map-util.h"
 
 DEFINE_int32(tablet_server_scanner_ttl_seconds, 60,
              "Number of seconds of inactivity allowed for a scanner"

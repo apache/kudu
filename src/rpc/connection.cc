@@ -23,6 +23,7 @@
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_server.h"
 #include "rpc/transfer.h"
+#include "util/debug-util.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 #include "util/trace.h"

@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved.
 
+#include <boost/thread/locks.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
 #include <string>
