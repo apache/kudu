@@ -122,10 +122,9 @@ void LeaderTransaction::HandlePrepareFailure() {
   prepare_finished_calls_ = 2;
   // If there is no consensus context nothing got done so just reply to the client.
   if (tx_ctx()->consensus_ctx() == NULL) {
-    if (tx_ctx()->rpc_context() != NULL) {
-      tx_ctx()->rpc_context()->RespondFailure(prepare_status_);
-      delete this;
-    }
+    tx_ctx()->completion_callback()->set_error(prepare_status_);
+    tx_ctx()->completion_callback()->TransactionCompleted();
+    delete this;
     return;
   }
 
@@ -138,10 +137,7 @@ void LeaderTransaction::HandlePrepareFailure() {
 }
 
 void LeaderTransaction::ApplySucceeded() {
-  // Respond to the RPC.
-  if (PREDICT_TRUE(tx_ctx()->rpc_context() != NULL)) {
-    tx_ctx()->rpc_context()->RespondSuccess();
-  }
+  tx_ctx()->completion_callback()->TransactionCompleted();
 
   UpdateMetrics();
   delete this;
@@ -149,9 +145,8 @@ void LeaderTransaction::ApplySucceeded() {
 
 void LeaderTransaction::ApplyFailed(const Status& abort_reason) {
   //TODO use an application level error status here with better error details.
-  if (PREDICT_TRUE(tx_ctx()->rpc_context() != NULL)) {
-    tx_ctx()->rpc_context()->RespondFailure(abort_reason);
-  }
+  tx_ctx()->completion_callback()->set_error(abort_reason);
+  tx_ctx()->completion_callback()->TransactionCompleted();
   delete this;
 }
 

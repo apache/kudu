@@ -43,16 +43,15 @@ void LeaderAlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* re
 }
 
 Status LeaderAlterSchemaTransaction::Prepare() {
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("PREPARE ALTER-SCHEMA: Starting");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("PREPARE ALTER-SCHEMA: Starting");
   }
 
   // Decode schema
   gscoped_ptr<Schema> schema(new Schema);
   Status s = SchemaFromPB(tx_ctx_->request()->schema(), schema.get());
   if (!s.ok()) {
-    SetupClientError(tx_ctx()->response()->mutable_error(), s,
-                     TabletServerErrorPB::INVALID_SCHEMA);
+    tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
 
@@ -61,8 +60,8 @@ Status LeaderAlterSchemaTransaction::Prepare() {
 
   tx_ctx_->AddToAutoReleasePool(schema.release());
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("PREPARE ALTER-SCHEMA: finished");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("PREPARE ALTER-SCHEMA: finished");
   }
   return s;
 }
@@ -71,21 +70,14 @@ void LeaderAlterSchemaTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<Commi
   // Release the tablet lock (no effect if no locks were acquired).
   tx_ctx_->release_tablet_lock();
 
-  // if there is no error in the alter schema response, set it.
-  if (!tx_ctx_->response()->has_error()) {
-    SetupClientError(tx_ctx_->response()->mutable_error(),
-                     prepare_status_, TabletServerErrorPB::UNKNOWN_ERROR);
-    return;
-  }
-
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*tx_ctx_->response());
 }
 
 Status LeaderAlterSchemaTransaction::Apply() {
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("APPLY ALTER-SCHEMA: Starting");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("APPLY ALTER-SCHEMA: Starting");
   }
 
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
@@ -94,8 +86,8 @@ Status LeaderAlterSchemaTransaction::Apply() {
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(ALTER_SCHEMA_OP);
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
   }
 
   tx_ctx_->consensus_ctx()->Commit(commit.Pass());
@@ -107,8 +99,8 @@ Status LeaderAlterSchemaTransaction::Apply() {
 void LeaderAlterSchemaTransaction::ApplySucceeded() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
-  if (tx_ctx()->rpc_context()) {
-    tx_ctx()->rpc_context()->trace()->Message("AlterSchemaCommitCallback: making edits visible");
+  if (tx_ctx()->trace()) {
+    tx_ctx()->trace()->Message("AlterSchemaCommitCallback: making edits visible");
   }
   tx_ctx()->commit();
   LeaderTransaction::ApplySucceeded();

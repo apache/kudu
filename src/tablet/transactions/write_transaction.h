@@ -51,7 +51,7 @@ class WriteTransactionContext : public TransactionContext {
 
  public:
   WriteTransactionContext()
-      : TransactionContext(NULL, NULL),
+      : TransactionContext(NULL),
         failed_operations_(0),
         request_(NULL),
         response_(NULL),
@@ -61,10 +61,9 @@ class WriteTransactionContext : public TransactionContext {
   }
 
   WriteTransactionContext(TabletPeer* tablet_peer,
-                          rpc::RpcContext *rpc_ctx,
                           const tserver::WriteRequestPB *request,
                           tserver::WriteResponsePB *response)
-      : TransactionContext(tablet_peer, rpc_ctx),
+      : TransactionContext(tablet_peer),
         failed_operations_(0),
         request_(request),
         response_(response),

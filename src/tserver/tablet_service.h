@@ -35,21 +35,6 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     rpc::RpcContext* context);
 
  private:
-  void SetupErrorAndRespond(TabletServerErrorPB* error,
-                            const Status &s,
-                            TabletServerErrorPB::Code code,
-                            rpc::RpcContext* context) const;
-
-  // Respond to an error where we don't have a more specific
-  // error code in TabletServerErrorPB. This will use the
-  // generic UNKNOWN_ERROR code, but also generate a WARNING
-  // log on the server so that we can notice and assign a more
-  // specific code to this situation.
-  void RespondGenericError(const std::string& doing_what,
-                           TabletServerErrorPB* error,
-                           const Status& s,
-                           rpc::RpcContext* context) const;
-
   void HandleNewScanRequest(const ScanRequestPB* req,
                             ScanResponsePB* resp,
                             rpc::RpcContext* context);

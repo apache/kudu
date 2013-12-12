@@ -27,6 +27,7 @@
 using kudu::tablet::TabletPeer;
 using kudu::tablet::AlterSchemaTransactionContext;
 using kudu::tablet::WriteTransactionContext;
+using kudu::tablet::TransactionCompletionCallback;
 using std::tr1::shared_ptr;
 using std::vector;
 using google::protobuf::RepeatedPtrField;
@@ -42,20 +43,10 @@ DEFINE_int32(tablet_server_scan_batch_size_rows, 100,
 namespace kudu {
 namespace tserver {
 
-TabletServiceImpl::TabletServiceImpl(TabletServer* server)
-  : server_(server) {
-}
-
-void TabletServiceImpl::Ping(const PingRequestPB* req,
-                             PingResponsePB* resp,
-                             rpc::RpcContext* context) {
-  context->RespondSuccess();
-}
-
-void TabletServiceImpl::SetupErrorAndRespond(TabletServerErrorPB* error,
-                                             const Status& s,
-                                             TabletServerErrorPB::Code code,
-                                             rpc::RpcContext* context) const {
+static void SetupErrorAndRespond(TabletServerErrorPB* error,
+                                 const Status& s,
+                                 TabletServerErrorPB::Code code,
+                                 rpc::RpcContext* context) {
   StatusToPB(s, error->mutable_status());
   error->set_code(code);
   // TODO: rename RespondSuccess() to just "Respond" or
@@ -64,14 +55,63 @@ void TabletServiceImpl::SetupErrorAndRespond(TabletServerErrorPB* error,
   context->RespondSuccess();
 }
 
-void TabletServiceImpl::RespondGenericError(const string& doing_what,
-                                            TabletServerErrorPB* error,
-                                            const Status& s,
-                                            rpc::RpcContext* context) const {
+static void RespondGenericError(const string& doing_what,
+                                TabletServerErrorPB* error,
+                                const Status& s,
+                                rpc::RpcContext* context) {
   LOG(WARNING) << "Generic error " << doing_what << " for request "
                << context->request_pb()->ShortDebugString()
                << ": " << s.ToString();
   SetupErrorAndRespond(error, s, TabletServerErrorPB::UNKNOWN_ERROR, context);
+}
+
+// A transaction completion callback that responds to the client when transactions
+// complete and sets the client error if there is one to set.
+// TODO find a way to avoid passing specific responses (templating is worse as
+// is pb reflection)
+class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
+ public:
+  RpcTransactionCompletionCallback(rpc::RpcContext* context,
+                                   WriteResponsePB* w_resp)
+ : context_(context),
+   w_resp_(w_resp),
+   as_resp_(NULL) {}
+
+  RpcTransactionCompletionCallback(rpc::RpcContext* context,
+                                   AlterSchemaResponsePB* as_resp)
+  : context_(context),
+    w_resp_(NULL),
+    as_resp_(as_resp) {}
+
+  virtual void TransactionCompleted() {
+    if (!status_.ok()) {
+      SetupErrorAndRespond(get_error(), status_, code_, context_);
+    } else {
+      context_->RespondSuccess();
+    }
+  };
+
+ private:
+
+  TabletServerErrorPB* get_error() {
+    if (w_resp_)
+      return w_resp_->mutable_error();
+    return as_resp_->mutable_error();
+  }
+
+  rpc::RpcContext* context_;
+  WriteResponsePB* w_resp_;
+  AlterSchemaResponsePB* as_resp_;
+};
+
+TabletServiceImpl::TabletServiceImpl(TabletServer* server)
+  : server_(server) {
+}
+
+void TabletServiceImpl::Ping(const PingRequestPB* req,
+                             PingResponsePB* resp,
+                             rpc::RpcContext* context) {
+  context->RespondSuccess();
 }
 
 void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
@@ -89,7 +129,10 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
   DCHECK(tablet_peer) << "Null tablet peer";
 
   AlterSchemaTransactionContext *tx_ctx =
-    new AlterSchemaTransactionContext(tablet_peer.get(), context, req, resp);
+    new AlterSchemaTransactionContext(tablet_peer.get(), req, resp);
+
+  tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+      new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitAlterSchema(tx_ctx);
@@ -115,7 +158,10 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   DCHECK(tablet_peer) << "Null tablet peer";
 
   WriteTransactionContext *tx_ctx =
-    new WriteTransactionContext(tablet_peer.get(), context, req, resp);
+    new WriteTransactionContext(tablet_peer.get(), req, resp);
+
+  tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+      new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitWrite(tx_ctx);

@@ -15,14 +15,11 @@ namespace kudu {
 class FutureCallback;
 class Task;
 class TaskExecutor;
+class Trace;
 
 namespace consensus {
 class CommitMsg;
 class ReplicateMsg;
-}
-
-namespace rpc {
-class RpcContext;
 }
 
 namespace tablet {
@@ -34,6 +31,47 @@ struct TransactionMetrics {
   void Reset();
   int successful_inserts;
   int successful_updates;
+};
+
+// A parent class for the callback that gets called when transactions
+// complete.
+//
+// This must be set in the TransactionContext if the transaction initiator is to
+// be notified of when a transaction completes. The callback belongs to the
+// transaction context and is deleted along with it.
+//
+// NOTE: this is a concrete class so that we can use it as a default implementation
+// which avoids callers having to keep checking for NULL.
+class TransactionCompletionCallback {
+ public:
+
+  TransactionCompletionCallback()
+      : code_(tserver::TabletServerErrorPB::UNKNOWN_ERROR) {
+  }
+
+  // Allows to set an error for this transaction and a mapping to a server level code.
+  // Calling this method does not mean the transaction is completed.
+  void set_error(const Status& status, tserver::TabletServerErrorPB::Code code) {
+    status_ = status;
+    code_ = code;
+  }
+
+  void set_error(const Status& status) {
+    status_ = status;
+  }
+
+  const Status& status() const { return status_; }
+
+  const tserver::TabletServerErrorPB::Code error_code() const { return code_; }
+
+  // Subclasses should override this.
+  virtual void TransactionCompleted() {}
+
+  virtual ~TransactionCompletionCallback() {}
+
+ protected:
+  Status status_;
+  tserver::TabletServerErrorPB::Code code_;
 };
 
 class TransactionContext {
@@ -55,11 +93,17 @@ class TransactionContext {
   // Return metrics related to this transaction.
   const TransactionMetrics& metrics() const { return tx_metrics_; }
 
-  // Returns the RPCContext that triggered this transaction, if this
-  // transaction was triggered by a client.
-  rpc::RpcContext *rpc_context() {
-    return rpc_ctx_;
+  void set_completion_callback(gscoped_ptr<TransactionCompletionCallback> completion_clbk) {
+    completion_clbk_.reset(completion_clbk.release());
   }
+
+  // Returns the completion callback is there is one. or NULL otherwise
+  TransactionCompletionCallback* completion_callback() { return completion_clbk_.get(); }
+
+  void set_trace(Trace* trace) { trace_ = trace; }
+
+  // Returns the trace environment if there is one, or NULL otherwise.
+  Trace* trace() { return trace_; }
 
   // Sets a heap object to be managed by this transaction's AutoReleasePool.
   template <class T>
@@ -78,9 +122,10 @@ class TransactionContext {
   }
 
  protected:
-  TransactionContext(TabletPeer* tablet_peer, rpc::RpcContext* rpc_ctx)
+  explicit TransactionContext(TabletPeer* tablet_peer)
       : tablet_peer_(tablet_peer),
-        rpc_ctx_(rpc_ctx) {
+        completion_clbk_(new TransactionCompletionCallback()),
+        trace_(NULL) {
   }
 
   TransactionMetrics tx_metrics_;
@@ -88,10 +133,11 @@ class TransactionContext {
   // The tablet peer that is coordinating this transaction.
   TabletPeer* tablet_peer_;
 
-  // pointers to the rpc context, request and response, lifecyle
-  // is managed by the rpc subsystem. These pointers maybe NULL if the
-  // transaction was not initiated by an RPC call.
-  rpc::RpcContext* rpc_ctx_;
+  // Optional callback to be called once the transaction completes.
+  gscoped_ptr<TransactionCompletionCallback> completion_clbk_;
+
+  // Optional trace associated with this transaction.
+  Trace* trace_;
 
   AutoReleasePool pool_;
 

@@ -22,7 +22,7 @@ namespace tablet {
 class AlterSchemaTransactionContext : public TransactionContext {
  public:
   AlterSchemaTransactionContext()
-    : TransactionContext(NULL, NULL),
+    : TransactionContext(NULL),
       schema_(NULL),
       request_(NULL),
       response_(NULL) {
@@ -33,10 +33,9 @@ class AlterSchemaTransactionContext : public TransactionContext {
   }
 
   AlterSchemaTransactionContext(TabletPeer* tablet_peer,
-                                rpc::RpcContext *rpc_ctx,
                                 const tserver::AlterSchemaRequestPB* request,
                                 tserver::AlterSchemaResponsePB* response)
-      : TransactionContext(tablet_peer, rpc_ctx),
+      : TransactionContext(tablet_peer),
         schema_(NULL),
         request_(request),
         response_(response) {
@@ -76,10 +75,10 @@ class AlterSchemaTransactionContext : public TransactionContext {
 class LeaderAlterSchemaTransaction : public LeaderTransaction {
  public:
   LeaderAlterSchemaTransaction(AlterSchemaTransactionContext* tx_ctx,
-                         consensus::Consensus* consensus,
-                         TaskExecutor* prepare_executor,
-                         TaskExecutor* apply_executor,
-                         simple_spinlock& prepare_replicate_lock);
+                               consensus::Consensus* consensus,
+                               TaskExecutor* prepare_executor,
+                               TaskExecutor* apply_executor,
+                               simple_spinlock& prepare_replicate_lock);
  protected:
 
   void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);

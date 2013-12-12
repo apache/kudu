@@ -46,8 +46,8 @@ void LeaderWriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicat
 }
 
 Status LeaderWriteTransaction::Prepare() {
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("PREPARE: Starting");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("PREPARE: Starting");
   }
 
   // In order to avoid a copy, we mutate the row blocks for insert and
@@ -66,33 +66,23 @@ Status LeaderWriteTransaction::Prepare() {
 
   gscoped_ptr<Schema> inserts_client_schema(new Schema);
   if (mutable_request->has_to_insert_rows()) {
-    s = DecodeRowBlockAndSetupClientErrors(
-        mutable_request->mutable_to_insert_rows(),
-        tx_ctx_->response(),
-        tx_ctx_->rpc_context(),
-        tablet->key_schema(),
-        true,
-        inserts_client_schema.get(),
-        &to_insert);
-    if (PREDICT_FALSE(!s.ok())) {
-      return s;
-    }
+    RETURN_NOT_OK(DecodeRowBlock(tx_ctx_.get(),
+                                 mutable_request->mutable_to_insert_rows(),
+                                 tablet->key_schema(),
+                                 true,
+                                 inserts_client_schema.get(),
+                                 &to_insert));
   }
 
   gscoped_ptr<Schema> mutates_client_schema(new Schema);
   vector<const uint8_t *> to_mutate;
   if (mutable_request->has_to_mutate_row_keys()) {
-    s = DecodeRowBlockAndSetupClientErrors(
-        mutable_request->mutable_to_mutate_row_keys(),
-        tx_ctx_->response(),
-        tx_ctx_->rpc_context(),
-        tablet->key_schema(),
-        false,
-        mutates_client_schema.get(),
-        &to_mutate);
-    if (PREDICT_FALSE(!s.ok())) {
-      return s;
-    }
+    RETURN_NOT_OK(DecodeRowBlock(tx_ctx_.get(),
+                                 mutable_request->mutable_to_mutate_row_keys(),
+                                 tablet->key_schema(),
+                                 false,
+                                 mutates_client_schema.get(),
+                                 &to_mutate));
   }
 
   vector<const RowChangeList *> mutations;
@@ -109,19 +99,18 @@ Status LeaderWriteTransaction::Prepare() {
   }
 
   if (PREDICT_FALSE(!s.ok())) {
-    SetupClientError(tx_ctx_->response()->mutable_error(), s,
-                     TabletServerErrorPB::INVALID_MUTATION);
+    tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_MUTATION);
     return s;
   }
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->SubstituteAndTrace(
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->SubstituteAndTrace(
       "PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
       to_insert.size(), to_mutate.size());
   }
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("PREPARE: Acquiring component lock");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("PREPARE: Acquiring component lock");
   }
 
   // acquire the component lock. this is more like "tablet lock" and is used
@@ -169,8 +158,8 @@ Status LeaderWriteTransaction::Prepare() {
     ++i;
   }
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("PREPARE: finished");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("PREPARE: finished");
   }
   return s;
 }
@@ -179,13 +168,6 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
   // Release all row locks (no effect if no locks were acquired).
   tx_ctx_->release_row_locks();
 
-  // if there is no error in the write response, set it.
-  if (!tx_ctx_->response()->has_error()) {
-    TabletServerErrorPB* error = tx_ctx_->response()->mutable_error();
-    StatusToPB(prepare_status_, error->mutable_status());
-    error->set_code(TabletServerErrorPB::UNKNOWN_ERROR);
-  }
-
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_write_response()->CopyFrom(*tx_ctx_->response());
@@ -193,8 +175,8 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
 }
 
 Status LeaderWriteTransaction::Apply() {
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("APPLY: Starting");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("APPLY: Starting");
   }
 
   tx_ctx_->start_mvcc_tx();
@@ -222,8 +204,8 @@ Status LeaderWriteTransaction::Apply() {
     i++;
   }
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("APPLY: Releasing row locks");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("APPLY: Releasing row locks");
   }
 
   // Perform early lock release after we've applied all changes
@@ -233,8 +215,8 @@ Status LeaderWriteTransaction::Apply() {
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());
   commit->set_op_type(WRITE_OP);
 
-  if (tx_ctx_->rpc_context()) {
-    tx_ctx_->rpc_context()->trace()->Message("APPLY: finished, triggering COMMIT");
+  if (tx_ctx_->trace()) {
+    tx_ctx_->trace()->Message("APPLY: finished, triggering COMMIT");
   }
 
   tx_ctx_->consensus_ctx()->Commit(commit.Pass());
@@ -246,8 +228,8 @@ Status LeaderWriteTransaction::Apply() {
 void LeaderWriteTransaction::ApplySucceeded() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
-  if (tx_ctx()->rpc_context()) {
-    tx_ctx()->rpc_context()->trace()->Message("WriteCommitCallback: making edits visible");
+  if (tx_ctx()->trace()) {
+    tx_ctx()->trace()->Message("WriteCommitCallback: making edits visible");
   }
   tx_ctx()->commit();
   LeaderTransaction::ApplySucceeded();
