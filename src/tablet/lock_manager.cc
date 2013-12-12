@@ -247,24 +247,23 @@ ScopedRowLock::ScopedRowLock(LockManager *manager,
                              LockManager::LockMode mode)
   : manager_(DCHECK_NOTNULL(manager)),
     acquired_(false) {
-  LockManager::LockStatus ls = manager_->Lock(key, tx, mode, &entry_);
+  ls_ = manager_->Lock(key, tx, mode, &entry_);
 
-  // We currently only support single-row mutations in this super-simple
-  // lock manager, so we should always be able to acquire a lock -- no
-  // deadlocks possible.
-  CHECK_EQ(ls, LockManager::LOCK_ACQUIRED);
-  acquired_ = true;
-}
-
-ScopedRowLock::~ScopedRowLock() {
-  if (acquired_) {
-    Release();
+  if (ls_ == LockManager::LOCK_ACQUIRED) {
+    acquired_ = true;
+  } else {
+    // the lock might already have been acquired by this transaction so
+    // simply check that we didn't get a LOCK_BUSY status (we should have waited)
+    CHECK_NE(ls_, LockManager::LOCK_BUSY);
   }
 }
 
+ScopedRowLock::~ScopedRowLock() {
+  Release();
+}
+
 void ScopedRowLock::Release() {
-  CHECK(acquired_) << "already released";
-  manager_->Release(entry_);
+  manager_->Release(entry_, ls_);
   acquired_ = false;
   entry_ = NULL;
 }
@@ -284,15 +283,25 @@ LockManager::~LockManager() {
 LockManager::LockStatus LockManager::Lock(const Slice& key,
                                           const TransactionContext* tx,
                                           LockManager::LockMode mode,
-                                          LockEntry **entry) {
+                                          LockEntry** entry) {
   *entry = locks_->GetLockEntry(key);
 
   // We expect low contention, so just try to try_lock first. This is faster
   // than a timed_lock, since we don't have to do a syscall to get the current
   // time.
   if (!(*entry)->mutex.try_lock()) {
-    CHECK_NE((*entry)->holder_, tx) << "Same transaction trying to lock row "
-                                    << key.ToDebugString();
+    // If the current holder of this lock is the same transaction just return
+    // a LOCK_ALREADY_ACQUIRED status without actually acquiring the mutex.
+    //
+    //
+    // NOTE: This is not a problem for the current way locks are managed since
+    // they are obtained and released in bulk (all locks for a transaction are
+    // obtained and released at the same time). If at any time in the future
+    // we opt to perform more fine grained locking, possibly letting transactions
+    // release a portion of the locks they no longer need, this no longer is OK.
+    if ((*entry)->holder_== tx) {
+      return LOCK_ALREADY_ACQUIRED;
+    }
 
     // If we couldn't immediately acquire the lock, do a timed lock so we can
     // warn if it takes a long time.
@@ -328,9 +337,11 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
   return LOCK_ACQUIRED;
 }
 
-void LockManager::Release(LockEntry *lock) {
+void LockManager::Release(LockEntry *lock, LockStatus ls) {
   DCHECK_NOTNULL(lock)->holder_ = NULL;
-  lock->mutex.unlock();
+  if (ls == LOCK_ACQUIRED) {
+    lock->mutex.unlock();
+  }
   locks_->ReleaseLockEntry(lock);
 }
 

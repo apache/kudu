@@ -27,7 +27,8 @@ class LockManager {
 
   enum LockStatus {
     LOCK_ACQUIRED = 0,
-    LOCK_BUSY = 1,
+    LOCK_ALREADY_ACQUIRED = 1,
+    LOCK_BUSY = 2,
   };
 
   enum LockMode {
@@ -42,7 +43,7 @@ class LockManager {
                   LockMode mode, LockEntry **entry);
   LockStatus TryLock(const Slice& key, const TransactionContext* tx,
                      LockMode mode, LockEntry **entry);
-  void Release(LockEntry *lock);
+  void Release(LockEntry *lock, LockStatus ls);
 
   LockTable *locks_;
 
@@ -66,6 +67,8 @@ class ScopedRowLock {
 
   void Release();
 
+  LockManager::LockStatus GetLockStatusForTests() { return ls_; }
+
   ~ScopedRowLock();
 
  private:
@@ -75,6 +78,7 @@ class ScopedRowLock {
 
   bool acquired_;
   LockEntry *entry_;
+  LockManager::LockStatus ls_;
 };
 
 } // namespace tablet

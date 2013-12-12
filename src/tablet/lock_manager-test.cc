@@ -47,13 +47,12 @@ TEST_F(LockManagerTest, TestLockUnlockSingleRow) {
 }
 
 // Test if the same transaction locks the same row multiple times.
-// This should FATAL rather than deadlock.
-TEST_F(LockManagerTest, TestMultiplyLockSameRow) {
-  ASSERT_DEATH({
-      Slice key_a("a");
-      ScopedRowLock first_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-      ScopedRowLock second_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-    }, "Check failed.*Same transaction trying to lock row a");
+TEST_F(LockManagerTest, TestMultipleLockSameRow) {
+  Slice key_a("a");
+  ScopedRowLock first_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  ASSERT_EQ(LockManager::LOCK_ACQUIRED, first_lock.GetLockStatusForTests());
+  ScopedRowLock second_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  ASSERT_EQ(LockManager::LOCK_ALREADY_ACQUIRED, second_lock.GetLockStatusForTests());
 }
 
 TEST_F(LockManagerTest, TestLockUnlockMultipleRows) {
