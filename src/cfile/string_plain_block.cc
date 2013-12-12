@@ -27,11 +27,11 @@ StringPlainBlockBuilder::StringPlainBlockBuilder(const WriterOptions *options)
 void StringPlainBlockBuilder::Reset() {
   offsets_.clear();
   buffer_.clear();
-  buffer_.resize(kHeaderSize);
+  buffer_.resize(kMaxHeaderSize);
   buffer_.reserve(options_->block_size);
 
-  size_estimate_ = kHeaderSize;
-  end_of_data_offset_ = kHeaderSize;
+  size_estimate_ = kMaxHeaderSize;
+  end_of_data_offset_ = kMaxHeaderSize;
   finished_ = false;
 }
 
@@ -100,10 +100,10 @@ Status StringPlainBlockBuilder::GetFirstKey(void *key_void) const {
   }
 
   if (PREDICT_FALSE(offsets_.size() == 1)) {
-    *slice = Slice(&buffer_[kHeaderSize],
-                   end_of_data_offset_ - kHeaderSize);
+    *slice = Slice(&buffer_[kMaxHeaderSize],
+                   end_of_data_offset_ - kMaxHeaderSize);
   } else {
-    *slice = Slice(&buffer_[kHeaderSize],
+    *slice = Slice(&buffer_[kMaxHeaderSize],
                    offsets_[1] - offsets_[0]);
   }
   return Status::OK();
@@ -124,8 +124,11 @@ StringPlainBlockDecoder::StringPlainBlockDecoder(const Slice &slice)
 Status StringPlainBlockDecoder::ParseHeader() {
   CHECK(!parsed_);
 
-  if (data_.size() < StringPlainBlockBuilder::kHeaderSize) {
-    return Status::Corruption("not enough bytes for header in StringPlainBlockDecoder");
+  if (data_.size() < kMinHeaderSize) {
+    return Status::Corruption(
+      strings::Substitute("not enough bytes for header: string block header "
+        "size ($0) less than minimum possible header length ($1)",
+        data_.size(), kMinHeaderSize));
   }
 
   // Decode header.

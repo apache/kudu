@@ -7,6 +7,7 @@
 #include "cfile/cfile.h"
 #include "cfile/string_prefix_block.h"
 #include "common/columnblock.h"
+#include "gutil/strings/substitute.h"
 #include "util/coding.h"
 #include "util/coding-inl.h"
 #include "util/group_varint-inl.h"
@@ -17,7 +18,7 @@ namespace kudu {
 namespace cfile {
 
 using kudu::coding::AppendGroupVarInt32;
-
+using strings::Substitute;
 
 ////////////////////////////////////////////////////////////
 // Utility code used by both encoding and decoding
@@ -188,15 +189,34 @@ StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice)
 Status StringPrefixBlockDecoder::ParseHeader() {
   // First parse the actual header.
   uint32_t unused;
+
+  // Make sure the Slice we are referring to is at least the size of the
+  // minimum possible header
+  if (PREDICT_FALSE(data_.size() < kMinHeaderSize)) {
+    return Status::Corruption(
+      strings::Substitute("not enough bytes for header: string block header "
+        "size ($0) less than minimum possible header length ($1)",
+        data_.size(), kMinHeaderSize));
+    // TODO include hexdump
+  }
+
+  // Make sure the actual size of the group varints in the Slice we are
+  // referring to is as big as it claims to be
+  size_t header_size = coding::DecodeGroupVarInt32_GetGroupSize(data_.data());
+  if (PREDICT_FALSE(data_.size() < header_size)) {
+    return Status::Corruption(
+      strings::Substitute("string block header size ($0) less than length "
+        "from in header ($1)", data_.size(), header_size));
+    // TODO include hexdump
+  }
+
+  // We should have enough space in the Slice to decode the group varints
+  // safely now
   data_start_ =
     coding::DecodeGroupVarInt32_SlowButSafe(
       data_.data(),
       &num_elems_, &ordinal_pos_base_,
       &restart_interval_, &unused);
-  if (data_start_ == NULL) {
-    return Status::Corruption("couldnt parse string block header");
-    // TODO include hexdump
-  }
 
   // Then the footer, which points us to the restarts array
   num_restarts_ = DecodeFixed32(

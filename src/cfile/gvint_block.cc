@@ -116,7 +116,7 @@ GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice)
 
 Status GVIntBlockDecoder::ParseHeader() {
   // TODO: better range check
-  CHECK_GE(data_.size(), GVIntBlockBuilder::kMinHeaderSize);
+  CHECK_GE(data_.size(), kMinHeaderSize);
 
   uint32_t unused;
   ints_start_ = DecodeGroupVarInt32_SlowButSafe(

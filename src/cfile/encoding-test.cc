@@ -16,6 +16,7 @@
 #include "common/columnblock.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stringprintf.h"
+#include "util/group_varint-inl.h"
 #include "util/hexdump.h"
 #include "util/memory/arena.h"
 #include "util/test_macros.h"
@@ -384,6 +385,36 @@ class TestEncoding : public ::testing::Test {
     }
   }
 
+  // Test truncation of blocks
+  template<class BuilderType, class DecoderType>
+  void TestStringBlockTruncation() {
+    WriterOptions opts;
+    BuilderType sbb(&opts);
+    const uint kCount = 10;
+    size_t sbsize;
+
+    Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+    do {
+      sbsize = s.size();
+
+      LOG(INFO) << "Block: " << HexDump(s);
+
+      DecoderType sbd(s);
+      Status st = sbd.ParseHeader();
+
+      if (sbsize < DecoderType::kMinHeaderSize) {
+        ASSERT_TRUE(st.IsCorruption());
+        ASSERT_STR_CONTAINS(st.ToString(), "not enough bytes for header");
+      } else if (sbsize < coding::DecodeGroupVarInt32_GetGroupSize(s.data())) {
+        ASSERT_TRUE(st.IsCorruption());
+        ASSERT_STR_CONTAINS(st.ToString(), "less than length");
+      }
+      if (sbsize > 0) {
+        s.truncate(sbsize - 1);
+      }
+    } while (sbsize > 0);
+  }
+
   Arena arena_;
 };
 
@@ -523,6 +554,15 @@ TEST_F(TestEncoding, TestStringPlainEmptyBlockEncodeDecode) {
 
 TEST_F(TestEncoding, TestStringPrefixEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+}
+
+// Test encode/decode of a string block with various-sized truncations.
+TEST_F(TestEncoding, TestStringPlainBlockBuilderTruncation) {
+  TestStringBlockTruncation<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+}
+
+TEST_F(TestEncoding, TestStringPrefixBlockBuilderTruncation) {
+  TestStringBlockTruncation<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
 #ifdef NDEBUG

@@ -57,6 +57,12 @@ inline const uint8_t *DecodeGroupVarInt32(
   return src;
 }
 
+// Decode total length of the encoded integers from the given pointer,
+// include the tag byte.
+inline size_t DecodeGroupVarInt32_GetGroupSize(const uint8_t *src) {
+  return VARINT_SELECTOR_LENGTHS[*src] + 1;
+}
+
 // Decode a set of 4 group-varint encoded integers from the given pointer.
 //
 // Returns a pointer following the last decoded integer.
@@ -64,7 +70,10 @@ inline const uint8_t *DecodeGroupVarInt32_SlowButSafe(
   const uint8_t *src,
   uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
 
-  uint8_t total_len = VARINT_SELECTOR_LENGTHS[*src] + 1;
+  // VARINT_SELECTOR_LENGTHS[] isn't initialized until SSE_TABLE_INITTED is true
+  DCHECK(SSE_TABLE_INITTED);
+
+  const size_t total_len = DecodeGroupVarInt32_GetGroupSize(src);
 
   uint8_t safe_buf[17];
   memcpy(safe_buf, src, total_len);

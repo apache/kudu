@@ -48,7 +48,7 @@ class StringPlainBlockBuilder : public BlockBuilder {
   Status GetFirstKey(void *key) const;
 
   // Length of a header.
-  static const size_t kHeaderSize = sizeof(uint32_t) * 3;
+  static const size_t kMaxHeaderSize = sizeof(uint32_t) * 3;
 
  private:
   faststring buffer_;
@@ -96,6 +96,9 @@ class StringPlainBlockDecoder : public BlockDecoder {
   }
 
   Slice string_at_index(size_t indx) const;
+
+  // Minimum length of a header.
+  static const size_t kMinHeaderSize = sizeof(uint32_t) * 3;
 
  private:
   Slice data_;

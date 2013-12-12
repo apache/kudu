@@ -44,9 +44,6 @@ class GVIntBlockBuilder : public BlockBuilder {
   // key should be a uint32_t *
   Status GetFirstKey(void *key) const;
 
-  // Min Length of a header. (prefix + 4 tags)
-  static const size_t kMinHeaderSize = 5;
-
  private:
   friend class TestEncoding;
   FRIEND_TEST(TestEncoding, TestGroupVarInt);
@@ -121,6 +118,9 @@ class GVIntBlockDecoder : public BlockDecoder {
   // to the user. The next one to be yielded is at the
   // *end* of the vector!
   std::vector<uint32_t> pending_;
+
+  // Min Length of a header. (prefix + 4 tags)
+  static const size_t kMinHeaderSize = 5;
 };
 
 } // namespace cfile

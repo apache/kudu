@@ -16,6 +16,7 @@
 #define KUDU_UTIL_SLICE_H_
 
 #include <assert.h>
+#include <glog/logging.h>
 #include <stddef.h>
 #include <string.h>
 #include <string>
@@ -85,6 +86,12 @@ class Slice {
     assert(n <= size());
     data_ += n;
     size_ -= n;
+  }
+
+  // Truncate the slice to "n" bytes
+  void truncate(size_t n) {
+    DCHECK_LE(n, size());
+    size_ = n;
   }
 
   // Checks that this slice has size() = 'expected_size' and returns

@@ -54,8 +54,8 @@ class StringPrefixBlockBuilder : public BlockBuilder {
   // We leave this much space at the start of the buffer before
   // accumulating any data, so we can later fill in the variable-length
   // header.
-  // Currently two varints, so max 10 bytes
-  static const size_t kHeaderReservedLength = 10;
+  // Currently four varints, so maximum is 20 bytes
+  static const size_t kHeaderReservedLength = 20;
 };
 
 
@@ -87,8 +87,13 @@ class StringPrefixBlockDecoder : public BlockDecoder {
   }
 
   virtual rowid_t GetFirstRowId() const {
+    DCHECK(parsed_);
     return ordinal_pos_base_;
   }
+
+  // Minimum length of a header.
+  // Currently one group of varints for an empty block, so minimum is 5 bytes
+  static const size_t kMinHeaderSize = 5;
 
  private:
   Status SkipForward(int n);
