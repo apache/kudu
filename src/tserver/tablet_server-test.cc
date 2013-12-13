@@ -787,7 +787,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->AlterSchema(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
-    ASSERT_EQ(false, resp.has_error());
+    ASSERT_FALSE(resp.has_error());
   }
 
   {
