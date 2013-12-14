@@ -41,7 +41,7 @@ namespace kudu {
 namespace rpc {
 
 const Status Reactor::SHUTDOWN_ERROR(
-      Status::NetworkError("reactor is shutting down", "", ESHUTDOWN));
+      Status::ServiceUnavailable("reactor is shutting down", "", ESHUTDOWN));
 
 ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
   : loop_(0),
@@ -437,6 +437,11 @@ const std::string &Reactor::name() const {
   return name_;
 }
 
+bool Reactor::closing() const {
+  boost::lock_guard<LockType> lock_guard(lock_);
+  return closing_;
+}
+
 // Task to call GetMetricsInternal within the thread.
 class GetMetricsTask : public ReactorTask {
  public:
@@ -532,6 +537,8 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
   {
     boost::lock_guard<LockType> lock_guard(lock_);
     if (closing_) {
+      // We guarantee the reactor lock is not taken when calling Abort().
+      lock_.unlock();
       task->Abort(SHUTDOWN_ERROR);
       return;
     }

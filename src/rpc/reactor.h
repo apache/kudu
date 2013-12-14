@@ -48,6 +48,9 @@ class ReactorTask : public boost::intrusive::list_base_hook<> {
   // Abort the task, in the case that the reactor shut down before the
   // task could be processed. This may or may not run on the reactor thread
   // itself.
+  //
+  // The Reactor guarantees that the Reactor lock is free when this
+  // method is called.
   virtual void Abort(const Status &abort_status) {}
 
   virtual ~ReactorTask();
@@ -84,7 +87,7 @@ class ReactorThread {
   // This must be called from another thread.
   void Shutdown();
 
-  // This must be called from another thread.
+  // This method is thread-safe.
   void WakeThread();
 
   // libev callback for handling async notifications in our epoll thread.
@@ -245,20 +248,26 @@ class Reactor {
     return messenger_;
   }
 
-  bool closing() const { return closing_; }
+  // Indicates whether the reactor is shutting down.
+  //
+  // This method is thread-safe.
+  bool closing() const;
 
  private:
   typedef simple_spinlock LockType;
-  LockType lock_;
+  mutable LockType lock_;
 
   // parent messenger
   Messenger *messenger_;
 
   const std::string name_;
 
+  // Whether the reactor is shutting down.
+  // Guarded by lock_.
   bool closing_;
 
   // Tasks to be run within the reactor thread.
+  // Guarded by lock_.
   boost::intrusive::list<ReactorTask> pending_tasks_; // NOLINT(build/include_what_you_use)
 
   ReactorThread thread_;

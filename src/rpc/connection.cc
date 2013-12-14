@@ -540,7 +540,9 @@ class NegotiationCompletedTask : public ReactorTask {
   }
 
   virtual void Abort(const Status &status) {
-    conn_->Shutdown(status);
+    DCHECK(conn_->reactor_thread()->reactor()->closing());
+    VLOG(1) << "Failed connection negotiation due to shut down reactor thread: " <<
+        status.ToString();
     delete this;
   }
 
