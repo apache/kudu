@@ -31,7 +31,8 @@ ServerBase::ServerBase(Env* env, const string& base_dir,
   : metric_registry_(new MetricRegistry()),
     fs_manager_(new FsManager(env, base_dir)),
     rpc_server_(new RpcServer(rpc_opts)),
-    web_server_(new Webserver(web_opts)) {
+    web_server_(new Webserver(web_opts)),
+    is_first_run_(false) {
 }
 
 ServerBase::~ServerBase() {
@@ -70,6 +71,7 @@ Status ServerBase::Init() {
 
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {
+    is_first_run_ = true;
     RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
                           "Could not create new FS layout");
     s = fs_manager_->Open();

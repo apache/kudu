@@ -20,6 +20,7 @@ SET(MASTER_SRCS
   master-path-handlers.cc
   mini_master.cc
   m_tablet_manager.cc
+  sys_tables.cc
   ts_descriptor.cc
   ts_manager.cc
 )

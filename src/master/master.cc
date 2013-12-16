@@ -14,6 +14,7 @@
 #include "master/master_service.h"
 #include "master/master-path-handlers.h"
 #include "master/m_tablet_manager.h"
+#include "master/sys_tables.h"
 #include "master/ts_manager.h"
 #include "util/net/net_util.h"
 #include "util/net/sockaddr.h"
@@ -30,7 +31,9 @@ Master::Master(const MasterOptions& opts)
     initted_(false),
     ts_manager_(new TSManager()),
     tablet_manager_(new MTabletManager()),
-    path_handlers_(new MasterPathHandlers(this)) {
+    path_handlers_(new MasterPathHandlers(this)),
+    sys_tables_(new SysTablesTable(metric_registry_.get())),
+    sys_tablets_(new SysTabletsTable(metric_registry_.get())) {
 }
 
 Master::~Master() {
@@ -48,6 +51,15 @@ Status Master::Init() {
   RETURN_NOT_OK(ServerBase::Init());
 
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+
+  // Bootstrap sys tables
+  if (is_first_run_) {
+    RETURN_NOT_OK_PREPEND(sys_tablets_->CreateNew(fs_manager()), "Locations Table");
+    RETURN_NOT_OK_PREPEND(sys_tables_->CreateNew(fs_manager()), "Descriptors Table");
+  } else {
+    RETURN_NOT_OK_PREPEND(sys_tablets_->Load(fs_manager()), "Locations Table");
+    RETURN_NOT_OK_PREPEND(sys_tables_->Load(fs_manager()), "Descriptors Table");
+  }
 
   initted_ = true;
   return Status::OK();

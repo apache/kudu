@@ -66,6 +66,7 @@ class ServerBase {
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  bool is_first_run_;
 
   // The instance identifier of this server.
   gscoped_ptr<NodeInstancePB> instance_pb_;

@@ -51,7 +51,8 @@ Status FsManager::Open() {
   gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
   RETURN_NOT_OK(pb_util::ReadPBFromPath(env_, GetInstanceMetadataPath(), pb.get()));
   metadata_.reset(pb.release());
-  LOG(INFO) << "Opened local filesystem:\n" << metadata_->DebugString();
+  LOG(INFO) << "Opened local filesystem: " << root_path_
+            << std::endl << metadata_->DebugString();
   return Status::OK();
 }
 
