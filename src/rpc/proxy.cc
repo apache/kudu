@@ -13,7 +13,7 @@
 #include <sstream>
 #include <vector>
 
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 #include "rpc/messenger.h"
 #include "rpc/response_callback.h"
 #include "rpc/rpc_header.pb.h"

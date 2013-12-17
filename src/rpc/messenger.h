@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 #include "rpc/response_callback.h"
 #include "rpc/inbound_call.h"
 #include "rpc/transfer.h"

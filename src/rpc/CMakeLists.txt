@@ -13,7 +13,7 @@ ADD_LIBRARY(krpc
     acceptor_pool.cc
     auth_store.cc
     blocking_ops.cc
-    client_call.cc
+    outbound_call.cc
     connection.cc
     constants.cc
     inbound_call.cc

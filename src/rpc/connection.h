@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_server.h"
 #include "rpc/inbound_call.h"

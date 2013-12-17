@@ -7,7 +7,7 @@
 #include <string>
 
 #include "gutil/atomicops.h"
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 #include "rpc/response_callback.h"
 #include "rpc/rpc_controller.h"
 #include "rpc/rpc_header.pb.h"

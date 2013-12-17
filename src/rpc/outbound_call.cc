@@ -8,7 +8,7 @@
 #include <boost/thread/mutex.hpp>
 
 #include "gutil/stringprintf.h"
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 #include "rpc/constants.h"
 #include "rpc/rpc_controller.h"
 #include "rpc/serialization.h"

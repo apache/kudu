@@ -5,7 +5,7 @@
 #include <glog/logging.h>
 
 #include "rpc/rpc_controller.h"
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 
 namespace kudu { namespace rpc {
 

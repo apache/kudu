@@ -514,7 +514,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "\n"
       "#include \"$path_no_extension$.proxy.h\"\n"
       "\n"
-      "#include \"rpc/client_call.h\"\n"
+      "#include \"rpc/outbound_call.h\"\n"
       "#include \"rpc/messenger.h\"\n"
       "#include \"util/net/sockaddr.h\"\n"
       "\n"

@@ -2,7 +2,7 @@
 
 #include "rpc/rpc_context.h"
 
-#include "rpc/client_call.h"
+#include "rpc/outbound_call.h"
 #include "rpc/inbound_call.h"
 
 namespace kudu {
