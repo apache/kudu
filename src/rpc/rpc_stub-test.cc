@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc
 
 #include <gtest/gtest.h>
+#include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 
@@ -135,7 +136,8 @@ TEST_F(RpcStubTest, TestRemoteAddress) {
 // Tests for error cases
 ////////////////////////////////////////////////////////////
 
-// Test sending a PB parameter with a missing field
+// Test sending a PB parameter with a missing field, where the client
+// thinks it has sent a full PB. (eg due to version mismatch)
 TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   Proxy p(client_messenger_, server_addr_, CalculatorService::static_service_name());
 
@@ -148,6 +150,34 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Invalid argument: Invalid parameter for call Add: y");
+}
+
+// Wrapper around AtomicIncrement, since AtomicIncrement returns the 'old'
+// value, and our callback needs to be a void function.
+static void DoIncrement(Atomic32* count) {
+  base::subtle::Barrier_AtomicIncrement(count, 1);
+}
+
+// Test sending a PB parameter with a missing field on the client side.
+// This also ensures that the async callback is only called once
+// (regression test for a previously-encountered bug).
+TEST_F(RpcStubTest, TestCallWithMissingPBFieldClientSide) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  RpcController controller;
+  AddRequestPB req;
+  req.set_x(10);
+  // Request is missing the 'y' field.
+  AddResponsePB resp;
+  Atomic32 callback_count = 0;
+  p.AddAsync(req, &resp, &controller, boost::bind(&DoIncrement, &callback_count));
+  while (NoBarrier_Load(&callback_count) == 0) {
+    usleep(10);
+  }
+  usleep(100);
+  ASSERT_EQ(1, NoBarrier_Load(&callback_count));
+  ASSERT_STR_CONTAINS(controller.status().ToString(),
+                      "Invalid argument: RPC argument missing required fields: y");
 }
 
 // Test sending a call which isn't implemented by the server.

@@ -66,8 +66,7 @@ void Proxy::AsyncRequest(const string& method,
   if (PREDICT_FALSE(!s.ok())) {
     // Failed to serialize request: likely the request is missing a required
     // field.
-    call->SetFailed(s);
-    callback();
+    call->SetFailed(s); // calls callback internally
     return;
   }
 
