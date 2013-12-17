@@ -14,9 +14,9 @@
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 
+using kudu::HostPortPB;
 using kudu::master::GetTabletLocationsRequestPB;
 using kudu::master::GetTabletLocationsResponsePB;;
-using kudu::master::HostPortPB;
 using kudu::master::MasterServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
 using kudu::rpc::RpcController;

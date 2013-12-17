@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.master;
 
+import "common/common.proto";
 import "common/wire_protocol.proto";
 
 ////////////////////////////////////////////////////////////
@@ -22,12 +23,6 @@ message PingRequestPB {
 }
 
 message PingResponsePB {
-}
-
-// TODO: move to somewhere common
-message HostPortPB {
-  required string host = 1;
-  required uint32 port = 2;
 }
 
 // Sent by the TS when it first heartbeats with a master. This sends the

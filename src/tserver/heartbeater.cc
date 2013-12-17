@@ -34,7 +34,7 @@ enum {
 };
 
 using google::protobuf::RepeatedPtrField;
-using kudu::master::HostPortPB;
+using kudu::HostPortPB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
 using kudu::rpc::RpcController;

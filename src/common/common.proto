@@ -38,3 +38,8 @@ message ColumnSchemaPB {
 message SchemaPB {
   repeated ColumnSchemaPB columns = 1;
 }
+
+message HostPortPB {
+  required string host = 1;
+  required uint32 port = 2;
+}
