@@ -310,10 +310,10 @@ class Gauge : public Metric {
       description_(description) {
   }
   virtual ~Gauge() {}
-  virtual MetricType::Type type() const { return MetricType::kGauge; }
+  virtual MetricType::Type type() const OVERRIDE { return MetricType::kGauge; }
   virtual const MetricUnit::Type& unit() const { return unit_; }
   virtual const std::string& description() const { return description_; }
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const;
+  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
  protected:
   virtual void WriteValue(JsonWriter* writer) const = 0;
   const MetricUnit::Type unit_;
@@ -329,7 +329,7 @@ class StringGauge : public Gauge {
   std::string value() const;
   void set_value(const std::string& value);
  protected:
-  virtual void WriteValue(JsonWriter* writer) const;
+  virtual void WriteValue(JsonWriter* writer) const OVERRIDE;
  private:
   std::string value_;
   mutable simple_spinlock lock_;  // Guards value_
@@ -351,7 +351,7 @@ class AtomicGauge : public Gauge {
     base::subtle::NoBarrier_Store(&value_, static_cast<base::subtle::Atomic64>(value));
   }
  protected:
-  virtual void WriteValue(JsonWriter* writer) const {
+  virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
   }
  private:
@@ -371,7 +371,7 @@ class FunctionGauge : public Gauge {
   T value() const {
     return function_();
   }
-  virtual void WriteValue(JsonWriter* writer) const {
+  virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
   }
  private:
@@ -411,8 +411,8 @@ class Counter : public Metric {
   void Decrement();
   void DecrementBy(int64_t amount);
   const std::string& description() const { return description_; }
-  virtual MetricType::Type type() const { return MetricType::kCounter; }
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const;
+  virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
+  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
 
  private:
   friend class MetricRegistry;
@@ -454,8 +454,8 @@ class Histogram : public Metric {
   void IncrementBy(uint64_t value, uint64_t amount);
 
   const std::string& description() const { return description_; }
-  virtual MetricType::Type type() const { return MetricType::kHistogram; }
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const;
+  virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
+  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
 
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
   uint64_t TotalCountForTests() const;

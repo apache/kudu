@@ -72,6 +72,11 @@ SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
 if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
   set(IS_CLANG 1)
+  # Clang helpfully provides a few extensions from C++11 such as the 'override'
+  # keyword on methods. This doesn't change behavior, and we selectively enable
+  # it in src/gutil/port.h only on clang. So, we can safely use it, and don't want
+  # to trigger warnings when we do so.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-extensions")
 else()
   set(IS_CLANG 0)
 endif()
