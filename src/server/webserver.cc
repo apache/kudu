@@ -30,6 +30,8 @@
 
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
+#include "gutil/strings/split.h"
+#include "gutil/strings/stringpiece.h"
 #include "util/env.h"
 #include "util/net/net_util.h"
 #include "util/url-coding.h"
@@ -65,18 +67,16 @@ void Webserver::RootHandler(const Webserver::ArgumentMap& args, stringstream* ou
 }
 
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
-  vector<string> arg_pairs;
-  boost::split(arg_pairs, args, boost::is_any_of("&"));
+  vector<StringPiece> arg_pairs = strings::Split(args, "&");
 
-  BOOST_FOREACH(const string& arg_pair, arg_pairs) {
-    vector<string> key_value;
-    boost::split(key_value, arg_pair, boost::is_any_of("="));
+  BOOST_FOREACH(const StringPiece& arg_pair, arg_pairs) {
+    vector<StringPiece> key_value = strings::Split(arg_pair, "=");
     if (key_value.empty()) continue;
 
     string key;
-    if (!UrlDecode(key_value[0], &key)) continue;
+    if (!UrlDecode(key_value[0].ToString(), &key)) continue;
     string value;
-    if (!UrlDecode((key_value.size() >= 2 ? key_value[1] : ""), &value)) continue;
+    if (!UrlDecode((key_value.size() >= 2 ? key_value[1].ToString() : ""), &value)) continue;
     boost::to_lower(key);
     (*output)[key] = value;
   }
