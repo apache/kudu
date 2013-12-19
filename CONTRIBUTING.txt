@@ -29,15 +29,81 @@ The google guide says 80 characters, but that's a little short. Try to
 keep under 80 where possible, but if you spill over to ~100 or so, not
 a big deal.
 
-- Smart pointers:
+- Smart pointers and singly-owned pointers:
 
-For shared_ptrs, use std::tr1::shared_ptr
+Generally, most objects should have clear "single-owner" semantics.
+Most of the time, singly-owned objects can be wrapped in a gscoped_ptr<>
+which ensures deletion on scope exit and prevents accidental copying.
+gscoped_ptr is similar to C++11's unique_ptr in that it has a release()
+method and also provides emulated move semantics (see gscoped_ptr.h for
+example usage).
 
-For scoped pointers, use gscoped_ptr from gutil/gscoped_ptr.h. This is
-more or less equivalent to C++11's unique_ptr, minus the move
-semantics, which aren't supported by old enough compilers for us to
-use.  auto_ptr is disallowed.
+Sometimes objects are singly owned, but referenced from multiple places --
+for example, when the pointed-toobject is known to be valid at least as long
+as the pointer itself. In these cases, you should have a comment associated
+with the constructor which takes and stores the raw pointer, eg:
 
+  // 'blah' must remain valid for the lifetime of this class
+  MyClass(const Blah* blah) :
+    blah_(blah) {
+  }
+
+Another case where raw pointers are necessary is within STL collections.
+You may use raw pointers inside of vectors and other containers. The
+containers should have an associated comment explaining the ownership
+semantics (owned or un-owned). Use utility code from gutil/stl_util.h (eg
+STLDeleteElements or ElementDeleter) to easily handle deletion of the
+contained elements.
+
+Note that std::auto_ptr is strictly disallowed -- its semantics are hard
+to reason about and bug-prone.
+
+- Smart pointers for multiply-owned pointers:
+
+Although you should always strive for single ownership, sometimes it is
+not possible -- particularly when multiple threads are in play and the
+lifetimes of the pointers aren't clear. In these cases, you can use either
+std::tr1::shared_ptr or our own scoped_refptr from gutil/ref_counted.hpp.
+Both of these mechanisms rely on reference counting to automatically delete
+the referrent once no more pointers remain. The key difference between
+these two types of pointers is that scoped_refptr requires that the object
+extend a RefCounted base class, and stores its reference count inside the
+object storage itself. shared_ptr on the other hand maintains a separate
+reference count on the heap.
+
+The pros and cons are:
+
+shared_ptr:
+  pro: can be used with any type of object, without the object deriving from
+       a special base class
+  pro: part of the standard library and familiar to most C++ developers
+  con: creating a new object requires two allocations instead of one
+       (one to create the ref count, and one to create the object)
+  con: the ref count may not be near the object on the heap, so extra cache
+       misses may be incurred on access
+  con: the shared_ptr instance itself requires 16 bytes (pointer to the ref
+       count and pointer to the object)
+  con: if you convert from the shared_ptr to a raw pointer, you can't get
+       back the shared_ptr
+
+scoped_refptr:
+  pro: only requires a single allocation, and ref count is on the same cache
+       line as the object
+  pro: pointer only requires 8 bytes (since the ref count is with the object)
+  pro: may manually increase/decrease reference counts when more control is
+       required
+  pro: may convert from a raw pointer back to a scoped_refptr safely without
+       worrying about double freeing
+  pro: since we control the implementation we could easily implement features
+       like debug builds that capture the stack trace of every referrent
+       to help debug leaks, etc.
+  con: referred-to object must inherit from RefCounted
+  con: does not support weak_ptr<> use cases
+
+Given that scoped_refptrs are generally faster and smaller, prefer using them
+over shared_ptr in new code. Existing code (as of 12/20/2013) uses shared_ptrs
+in many places -- when interfacing with that code, continued use of shared_ptr
+is fine.
 
 Testing guidelines
 -----------------------

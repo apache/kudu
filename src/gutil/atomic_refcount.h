@@ -100,7 +100,16 @@ inline bool RefCountIsOne(const volatile Atomic32 *ptr) {
   return res;
 }
 
-
+// Return whether the reference count is zero.  With conventional object
+// referencing counting, the object will be destroyed, so the reference count
+// should never be zero.  Hence this is generally used for a debug check.
+inline bool RefCountIsZero(const volatile Atomic32 *ptr) {
+  bool res = (subtle::Acquire_Load(ptr) == 0);
+  if (res) {
+    ANNOTATE_HAPPENS_AFTER(ptr);
+  }
+  return res;
+}
 
 #if BASE_HAS_ATOMIC64
 // Implementations for Atomic64, if available.
@@ -132,6 +141,13 @@ inline bool RefCountIsOne(const volatile base::subtle::Atomic64 *ptr) {
   }
   return res;
 }
+inline bool RefCountIsZero(const volatile base::subtle::Atomic64 *ptr) {
+  bool res = (base::subtle::Acquire_Load(ptr) == 0);
+  if (res) {
+    ANNOTATE_HAPPENS_AFTER(ptr);
+  }
+  return res;
+}
 #endif
 
 #ifdef AtomicWordCastType
@@ -158,6 +174,14 @@ inline bool RefCountDec(volatile AtomicWord *ptr) {
 inline bool RefCountIsOne(const volatile AtomicWord *ptr) {
   bool res = base::subtle::Acquire_Load(
       reinterpret_cast<const volatile AtomicWordCastType *>(ptr)) == 1;
+  if (res) {
+    ANNOTATE_HAPPENS_AFTER(ptr);
+  }
+  return res;
+}
+inline bool RefCountIsZero(const volatile AtomicWord *ptr) {
+  bool res = base::subtle::Acquire_Load(
+      reinterpret_cast<const volatile AtomicWordCastType *>(ptr)) == 0;
   if (res) {
     ANNOTATE_HAPPENS_AFTER(ptr);
   }

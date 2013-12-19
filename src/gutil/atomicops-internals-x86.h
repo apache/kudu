@@ -25,7 +25,6 @@
 #include <glog/logging.h>
 #include <stdint.h>
 
-typedef int32_t Atomic32;
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
 
 
@@ -51,9 +50,14 @@ extern struct AtomicOps_x86CPUFeatureStruct AtomicOps_Internalx86CPUFeatures;
 // AtomicOps initialisation for open source use.
 void AtomicOps_x86CPUFeaturesInit();
 
+typedef int32_t Atomic32;
+typedef int64_t Atomic64;
 
 namespace base {
 namespace subtle {
+
+typedef int32_t Atomic32;
+typedef int64_t Atomic64;
 
 // These atomic primitives don't work atomically, and can cause really nasty
 // hard-to-track-down bugs, if the pointer isn't naturally aligned. Check alignment
@@ -63,8 +67,6 @@ inline void CheckNaturalAlignment(const T *ptr) {
   DCHECK_EQ(0, reinterpret_cast<const uintptr_t>(ptr) & (sizeof(T) - 1))
     << "unaligned pointer not allowed for atomics";
 }
-
-typedef int64_t Atomic64;
 
 // 32-bit low-level operations on any platform.
 

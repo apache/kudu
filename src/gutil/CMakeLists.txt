@@ -15,6 +15,7 @@ SET(GUTIL_SRCS ${GUTIL_SRCS} ${PROTO_SRCS})
 ADD_LIBRARY(gutil
   ${GUTIL_SRCS}
 ./bits.cc
+./ref_counted.cc
 ./stringprintf.cc
 ./strings/memutil.cc
 ./strings/charset.cc
@@ -30,6 +31,7 @@ ADD_LIBRARY(gutil
 ./strings/substitute.cc
 ./strings/strcat.cc
 ./strings/serialize.cc
+./threading/thread_collision_warner.cc
 ./mathlimits.cc
 ./int128.cc
 ./strtoint.cc
