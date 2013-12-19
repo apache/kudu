@@ -688,12 +688,6 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
                                                const consensus::CommitMsg& commit_msg) {
   AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
 
-  // Append the replicate message to the log as is
-  LogEntry replicate_entry;
-  replicate_entry.set_type(REPLICATE);
-  replicate_entry.mutable_msg()->CopyFrom(*replicate_msg);
-  RETURN_NOT_OK(log_->Append(replicate_entry));
-
   // Decode schema
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));

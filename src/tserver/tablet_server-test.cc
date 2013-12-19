@@ -802,7 +802,14 @@ TEST_F(TabletServerTest, TestAlterSchema) {
                           (ColumnSchema("c2", UINT32)),
                           1);
 
-  // Try the recovery
+  // Try recovering from the original log
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
+                                               (KeyValue(1, 7))
+                                               (KeyValue(2, 5))
+                                               (KeyValue(3, 5)));
+
+  // Try recovering from the log generated on recovery
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
                                                (KeyValue(1, 7))
