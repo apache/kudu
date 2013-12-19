@@ -18,26 +18,6 @@ message OpId {
   required uint64 index = 2;
 }
 
-// The possible statuses for quorum peers.
-enum QuorumPeerStatus {
-  FOLLOWER = 0;
-  CANDIDATE = 1;
-  LEADER = 2;
-  LISTENER = 4;
-};
-
-// A peer in a quorum.
-message QuorumPeerPB {
-  required bytes server_uuid = 1;
-  required QuorumPeerStatus status = 2;
-}
-
-// A set of quorum peers, serving a single tablet.
-message QuorumPB {
-  required string tablet_id = 1;
-  repeated QuorumPeerPB peers = 2;
-}
-
 // ===========================================================================
 //  Quorum Messages
 // ===========================================================================

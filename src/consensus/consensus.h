@@ -9,6 +9,12 @@
 #include "util/task_executor.h"
 
 namespace kudu {
+
+namespace metadata {
+class QuorumPB;
+class QuorumPeerPB;
+}
+
 namespace consensus {
 
 // forward declarations
@@ -112,7 +118,7 @@ class Consensus {
   virtual bool is_leader() const = 0;
 
   // Returns the current leader of the quorum.
-  virtual const QuorumPeerPB &current_leader() const = 0;
+  virtual const metadata::QuorumPeerPB &current_leader() const = 0;
 
   virtual ~Consensus() {}
 

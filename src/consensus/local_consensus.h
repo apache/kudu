@@ -52,13 +52,13 @@ class LocalConsensus : public Consensus {
     return true;
   }
 
-  const QuorumPeerPB &current_leader() const {
+  const metadata::QuorumPeerPB &current_leader() const {
     return peer_;
   }
 
  private:
   log::Log* log_;
-  QuorumPeerPB peer_;
+  metadata::QuorumPeerPB peer_;
   gscoped_ptr<TaskExecutor> log_executor_;
   gscoped_ptr<TaskExecutor> commit_executor_;
   int64 next_op_id_;

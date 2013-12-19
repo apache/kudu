@@ -115,6 +115,10 @@ message TabletSuperBlockPB {
   // TODO: maybe this should be TableSchemaPB? Need to actually put those attributes
   // into use throughout the code. Using the simpler one for now.
   required SchemaPB schema = 7;
+
+  // The latest QuorumPB this tablet was part of.
+  // TODO make this required once dist consensus is fully integrated.
+  optional QuorumPB quorum = 8;
 }
 
 // The master-block contains the two block-ids required to load the
@@ -125,4 +129,51 @@ message TabletMasterBlockPB {
   required bytes tablet_id = 1;
   required bytes block_a = 2;
   required bytes block_b = 3;
+}
+
+// ===========================================================================
+//  Consensus Metadata
+// ===========================================================================
+
+// A peer in a quorum.
+message QuorumPeerPB {
+  // The possible roles for quorum peers.
+  enum Role {
+    // Indicates this node is a follower in the quorum, i.e. that it participates
+    // in majorities and accepts Consensus::Update() calls.
+    FOLLOWER = 0;
+    // Indicates this node is a leader candidate in the quorum, i.e. that it
+    // that it behaves as FOLLOWER and can be elected LEADER.
+    CANDIDATE = 1;
+    // Indicates this node is the current leader of the quorum, i.e. that it
+    // participates in majorities and accepts Consensus::Append() calls.
+    LEADER = 2;
+    // Indicates that this node participates in the quorum in a passive role,
+    // i.e. that it accepts Consensus::Update() calls but does not participate
+    // in elections or majorities.
+    LEARNER = 4;
+    // Indicates that this node is not a participant of the quorum, i.e. does
+    // not accept Consensus::Update() or Consensus::Update() and cannot
+    // participate in elections or majorities. This is usually the role of a node
+    // that leaves the quorum.
+    NON_PARTICIPANT = 5;
+    // Indicates that this peer does not know its role in this particular quorum.
+    UNKNOWN = 6;
+  };
+  required bytes permanent_uuid = 1;
+  optional Role role = 2;
+  optional HostPortPB last_known_addr = 3;
+}
+
+// A set of quorum peers, serving a single tablet.
+message QuorumPB {
+  // the id of the tablet this quorum is serving
+  required string tablet_id = 1;
+  // the sequence number of the quorum configuration.
+  required int64 seqno = 2;
+  // whether this is a local or distributed quorum (i.e. whether to use a local or dist
+  // implementation of consensus).
+  optional bool local = 3 [default = true];
+  // the set of peers in the quorum.
+  repeated QuorumPeerPB peers = 4;
 }
