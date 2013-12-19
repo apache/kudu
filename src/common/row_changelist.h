@@ -138,11 +138,12 @@ class RowChangeListEncoder {
 
     // Copy the new value itself
     if (ti.type() == STRING) {
-      const Slice *src = reinterpret_cast<const Slice *>(new_val);
+      Slice src;
+      memcpy(&src, new_val, sizeof(Slice));
 
       // If it's a Slice column, copy the length followed by the data.
-      InlinePutVarint32(dst_, src->size());
-      dst_->append(src->data(), src->size());
+      InlinePutVarint32(dst_, src.size());
+      dst_->append(src.data(), src.size());
     } else {
       // Otherwise, just copy the data itself.
       dst_->append(new_val, ti.size());

@@ -278,11 +278,9 @@ inline Status GVIntBlockDecoder::DoGetNextValues(size_t *n_param, IntSink *sink)
   // Only fetch up to remaining amount
   n = std::min(rem, n);
 
+  float min_elem_f = bit_cast<float>(min_elem_);
   __m128i min_elem_xmm = (__m128i)_mm_set_ps(
-    *reinterpret_cast<float *>(&min_elem_),
-    *reinterpret_cast<float *>(&min_elem_),
-    *reinterpret_cast<float *>(&min_elem_),
-    *reinterpret_cast<float *>(&min_elem_));
+    min_elem_f, min_elem_f, min_elem_f, min_elem_f);
 
   // First drain pending_
   while (n > 0 && !pending_.empty()) {
