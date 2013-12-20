@@ -84,7 +84,7 @@ class MultiThreadTest {
 
   void RemoverThread() {
     for (int i = 0; i < iterations_; i++) {
-      int32_t arg;
+      int32_t arg = 0;
       bool got = queue_.BlockingGet(&arg);
       if (!got) {
         arg = -1;
