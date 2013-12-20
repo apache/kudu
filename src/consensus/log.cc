@@ -121,14 +121,17 @@ Status Log::Append(const LogEntry& entry) {
     LOG(INFO) << "Max segment size reached. Rolled over to new segment: "
               << current_->path();
   }
-
-  RETURN_NOT_OK(current_->writable_file()->Append(Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
+  LOG_SLOW_EXECUTION(WARNING, 25, "Append to log took a long time") {
+    RETURN_NOT_OK(current_->writable_file()->Append(Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
+  }
   if (!pb_util::SerializeToWritableFile(entry, current_->writable_file().get())) {
-    return Status::Corruption("Unable  to serialize entry to file");
+    return Status::Corruption("Unable to serialize entry to file");
   }
 
   if (options_.force_fsync_all) {
-    RETURN_NOT_OK(current_->writable_file()->Sync());
+    LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
+      RETURN_NOT_OK(current_->writable_file()->Sync());
+    }
   }
   return Status::OK();
 }

@@ -23,7 +23,20 @@ namespace kudu {
        !_l.has_printed();                                               \
        _l.Print())
 
+// Macro for logging timing of a block. Usage:
+//   LOG_SLOW_EXECUTION(INFO, 5, "doing some task") {
+//     ... some task which takes some time
+//   }
+// when slower than 5 milliseconds, yields a log like:
+// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task: real 3.729s user 3.570s sys 0.150s
+#define LOG_SLOW_EXECUTION(severity, max_expected_millis, description) \
+  for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description); \
+       !_l.has_printed();                                               \
+       _l.Print(max_expected_millis))
+
+
 #define NANOS_PER_SECOND 1000000000.0
+#define NANOS_PER_MILLISECOND 1000000.0
 
 class Stopwatch;
 
@@ -42,6 +55,10 @@ struct CpuTimes {
     return StringPrintf(
       "real %.3fs\tuser %.3fs\tsys %.3fs",
       wall_seconds(), user_cpu_seconds(), system_cpu_seconds());
+  }
+
+  double wall_millis() const {
+    return static_cast<double>(wall) / NANOS_PER_MILLISECOND;
   }
 
   double wall_seconds() const {
@@ -177,10 +194,17 @@ class LogTiming {
   }
 
   void Print() {
+    Print(-1);
+  }
+
+  void Print(int64 max_expected_millis) {
     stopwatch_.stop();
-    google::LogMessage(file_, line_, severity_).stream()
-      << "Times for " << description_ << ": "
-      << stopwatch_.elapsed().ToString();
+    CpuTimes times = stopwatch_.elapsed();
+    if (times.wall_millis() > max_expected_millis) {
+      google::LogMessage(file_, line_, severity_).stream()
+        << "Times for " << description_ << ": "
+        << times.ToString();
+    }
     has_printed_ = true;
   }
 
