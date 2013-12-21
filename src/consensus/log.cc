@@ -97,11 +97,14 @@ Status Log::Append(const LogEntry& entry) {
   // update the current header
   switch (entry.type()) {
     case REPLICATE: {
+      DCHECK(entry.msg().has_id()) << "Replicate messages must have an id.";
       next_segment_header_->mutable_initial_id()->CopyFrom(entry.msg().id());
       break;
     }
     case COMMIT: {
-      next_segment_header_->mutable_initial_id()->CopyFrom(entry.commit().id());
+      if (PREDICT_TRUE(entry.commit().has_id())) {
+        next_segment_header_->mutable_initial_id()->CopyFrom(entry.commit().id());
+      }
       break;
     }
     case TABLET_METADATA: {
