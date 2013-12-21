@@ -37,6 +37,36 @@ class FutureCallback {
   }
 };
 
+// FutureCallback implementation that can be waited on.
+// Helper to make async methods with callback args, sync.
+class LatchCallback : public FutureCallback {
+ public:
+  LatchCallback() : latch_(1) {}
+
+  virtual void OnSuccess() {
+    latch_.CountDown();
+  }
+
+  virtual void OnFailure(const Status& status) {
+    status_ = status;
+    latch_.CountDown();
+  }
+
+  Status Wait() {
+    latch_.Wait();
+    return status_;
+  }
+
+  Status status() const {
+    return status_;
+  }
+
+ private:
+  Status status_;
+  CountDownLatch latch_;
+
+};
+
 class BoundFunctionCallback : public FutureCallback {
  public:
   explicit BoundFunctionCallback(const boost::function<void()>& on_success)
