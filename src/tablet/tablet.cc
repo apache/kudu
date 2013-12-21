@@ -903,7 +903,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                                      snap2,
                                      new_rowsets));
 
-  if (PREDICT_TRUE(consensus_)) {
+  if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
     Barrier_AtomicIncrement(&total_missed_deltas_mutations_, compaction_tx.Result().mutations_size());
     CommitMsg commit;
     commit.mutable_result()->CopyFrom(compaction_tx.Result());
