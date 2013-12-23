@@ -10,6 +10,7 @@ CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
 TAGS
+tags
 cscope.*
 Testing
 nbproject/
@@ -22,3 +23,6 @@ oprofile_data
 *.proxy.cc
 *.proxy.h
 build/
+.project
+.cproject
+.settings/
