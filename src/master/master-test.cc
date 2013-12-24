@@ -65,8 +65,10 @@ static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
 }
 
 TEST_F(MasterTest, TestRegisterAndHeartbeat) {
+  const char *kTsUUID = "my-ts-uuid";
+
   TSToMasterCommonPB common;
-  common.mutable_ts_instance()->set_permanent_uuid("my-ts-uuid");
+  common.mutable_ts_instance()->set_permanent_uuid(kTsUUID);
   common.mutable_ts_instance()->set_instance_seqno(1);
 
   // Try a heartbeat. The server hasn't heard of us, so should ask us
@@ -85,6 +87,10 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   vector<shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(0, descs.size()) << "Should not have registered anything";
+
+  shared_ptr<TSDescriptor> ts_desc;
+  Status s = master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc);
+  ASSERT_TRUE(s.IsNotFound());
 
   // Register the fake TS, without sending any tablet report.
   TSRegistrationPB fake_reg;
@@ -110,6 +116,9 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   descs[0]->GetRegistration(&reg);
   ASSERT_EQ(fake_reg.DebugString(), reg.DebugString()) << "Master got different registration";
 
+  ASSERT_STATUS_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_EQ(ts_desc, descs[0]);
+
   // Now send a tablet report
   {
     TSHeartbeatRequestPB req;
@@ -128,6 +137,9 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   descs.clear();
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should still only have one TS registered";
+
+  ASSERT_STATUS_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_EQ(ts_desc, descs[0]);
 }
 
 TEST_F(MasterTest, TestTabletLocations) {

@@ -40,6 +40,18 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
   return Status::OK();
 }
 
+Status TSManager::LookupTSByUUID(const string& uuid,
+                                 std::tr1::shared_ptr<TSDescriptor>* ts_desc) {
+  boost::shared_lock<rw_spinlock> l(lock_);
+  const shared_ptr<TSDescriptor>* found_ptr = FindOrNull(servers_by_id_, uuid);
+  if (!found_ptr) {
+    return Status::NotFound("unknown tablet server ID", uuid);
+  }
+
+  *ts_desc = *found_ptr;
+  return Status::OK();
+}
+
 Status TSManager::RegisterTS(const NodeInstancePB& instance,
                              const TSRegistrationPB& registration,
                              std::tr1::shared_ptr<TSDescriptor>* desc) {
