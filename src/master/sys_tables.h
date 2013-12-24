@@ -14,6 +14,11 @@ namespace kudu {
 class Schema;
 class FsManager;
 
+namespace tserver {
+class WriteRequestPB;
+class WriteResponsePB;
+}
+
 namespace master {
 
 // Abstract class for a sys-table.
@@ -39,6 +44,9 @@ class SysTable {
   // Setup the 'master_block' with the IDs of the super-blocks for
   // the tablet of the sys-table.
   virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) = 0;
+
+  // Returns 'Status::OK()' if the WriteTranasction completed
+  Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
 
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;

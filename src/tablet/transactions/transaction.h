@@ -8,6 +8,7 @@
 
 #include "consensus/consensus.h"
 #include "util/auto_release_pool.h"
+#include "util/countdown_latch.h"
 #include "util/status.h"
 #include "util/locks.h"
 
@@ -73,6 +74,21 @@ class TransactionCompletionCallback {
   Status status_;
   tserver::TabletServerErrorPB::Code code_;
 };
+
+// TransactionCompletionCallback implementation that can be waited on.
+// Helper to make async transaction, sync.
+class LatchTransactionCompletionCallback : public TransactionCompletionCallback {
+ public:
+  explicit LatchTransactionCompletionCallback(CountDownLatch *latch) : latch_(latch) {}
+
+  virtual void TransactionCompleted() {
+    latch_->CountDown();
+  }
+
+ private:
+  CountDownLatch *latch_;
+};
+
 
 class TransactionContext {
  public:

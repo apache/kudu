@@ -16,8 +16,11 @@
 #include "util/pb_util.h"
 
 using kudu::log::Log;
+using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
+using kudu::tserver::WriteRequestPB;
+using kudu::tserver::WriteResponsePB;
 
 namespace kudu {
 namespace master {
@@ -71,6 +74,18 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(), "Failed to Start() TabletPeer");
 
   schema_ = SchemaBuilder(tablet->schema()).BuildWithoutIds();
+  return Status::OK();
+}
+
+Status SysTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
+  CountDownLatch latch(1);
+  gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
+    new LatchTransactionCompletionCallback(&latch));
+  tablet::WriteTransactionContext *tx_ctx =
+    new tablet::WriteTransactionContext(tablet_peer_.get(), req, resp);
+  tx_ctx->set_completion_callback(txn_callback.Pass());
+  RETURN_NOT_OK(tablet_peer_->SubmitWrite(tx_ctx));
+  latch.Wait();
   return Status::OK();
 }
 
