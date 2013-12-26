@@ -10,7 +10,7 @@
 namespace kudu {
 
 TEST(TestThreadPool, TestNoTaskOpenClose) {
-  ThreadPool thread_pool;
+  ThreadPool thread_pool("test");
   thread_pool.Init(4);
   thread_pool.Shutdown();
 }
@@ -38,7 +38,7 @@ class SimpleTask : public Runnable {
 };
 
 TEST(TestThreadPool, TestSimpleTasks) {
-  ThreadPool thread_pool;
+  ThreadPool thread_pool("test");
   ASSERT_STATUS_OK(thread_pool.Init(4));
 
   Atomic32 counter(0);

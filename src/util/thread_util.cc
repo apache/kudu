@@ -4,11 +4,16 @@
 
 #include <algorithm>
 #include <boost/system/system_error.hpp>
+#include <glog/logging.h>
 #include <string>
+#include <sys/prctl.h>
 
 #include "gutil/mathlimits.h"
+#include "gutil/linux_syscall_support.h"
 #include "gutil/strings/substitute.h"
 #include "util/status.h"
+
+using std::string;
 
 namespace kudu {
 
@@ -75,6 +80,27 @@ Status ThreadJoiner::Join() {
   }
   return Status::Aborted(strings::Substitute("Timed out after $0ms joining on $1",
                                              waited_ms, thread_name_));
+}
+
+void SetThreadName(const string& name) {
+  // On linux we can get the thread names to show up in the debugger by setting
+  // the process name for the LWP.  We don't want to do this for the main
+  // thread because that would rename the process, causing tools like killall
+  // to stop working.
+  if (sys_gettid() == getpid()) {
+    return;
+  }
+
+  // http://0pointer.de/blog/projects/name-your-threads.html
+  // Set the name for the LWP (which gets truncated to 15 characters).
+  // Note that glibc also has a 'pthread_setname_np' api, but it may not be
+  // available everywhere and it's only benefit over using prctl directly is
+  // that it can set the name of threads other than the current thread.
+  int err = prctl(PR_SET_NAME, name.c_str());
+  // We expect EPERM failures in sandboxed processes, just ignore those.
+  if (err < 0 && errno != EPERM) {
+    PLOG(ERROR) << "prctl(PR_SET_NAME)";
+  }
 }
 
 } // namespace kudu

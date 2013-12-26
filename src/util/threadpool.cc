@@ -5,8 +5,10 @@
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <string>
 
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
 #include "util/threadpool.h"
 #include "util/thread_util.h"
 
@@ -26,8 +28,8 @@ class FunctionRunnable : public Runnable {
   boost::function<void()> func_;
 };
 
-ThreadPool::ThreadPool()
-  : closing_(true), active_threads_(0) {
+ThreadPool::ThreadPool(const string& name)
+  : name_(name), closing_(true), active_threads_(0) {
 }
 
 ThreadPool::~ThreadPool() {
@@ -67,7 +69,8 @@ void ThreadPool::Shutdown() {
   }
 
   BOOST_FOREACH(boost::thread *thread, threads_) {
-    CHECK_OK(ThreadJoiner(thread, "threadpool worker").Join());
+    const string msg = strings::Substitute("worker in threadpool '$0'", name_);
+    CHECK_OK(ThreadJoiner(thread, msg).Join());
   }
 
   STLDeleteElements(&threads_);
@@ -106,6 +109,8 @@ bool ThreadPool::TimedWait(const boost::system_time& time_until) {
 }
 
 void ThreadPool::DispatchThread() {
+  SetThreadName(name_ + " [worker]");
+
   bool has_processed_task = false;
   while (true) {
     std::tr1::shared_ptr<Runnable> task;

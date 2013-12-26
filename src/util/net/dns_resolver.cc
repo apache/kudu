@@ -18,7 +18,7 @@ using std::vector;
 namespace kudu {
 
 DnsResolver::DnsResolver()
-  : pool_(new ThreadPool()) {
+  : pool_(new ThreadPool("DNS resolver")) {
   CHECK_OK(pool_->Init(FLAGS_num_dns_threads));
 }
 

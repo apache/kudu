@@ -55,6 +55,7 @@ Status ServicePool::Init(int num_threads) {
 }
 
 void ServicePool::RunThread() {
+  SetThreadName("rpc worker");
   while (true) {
     gscoped_ptr<InboundCall> incoming;
     if (!messenger_->service_queue().BlockingGet(&incoming)) {

@@ -16,8 +16,8 @@ using base::subtle::Barrier_AtomicIncrement;
 LocalConsensus::LocalConsensus(const ConsensusOptions& options,
                                log::Log* log)
     : log_(log),
-      log_executor_(TaskExecutor::CreateNew(1)),
-      commit_executor_(TaskExecutor::CreateNew(1)),
+      log_executor_(TaskExecutor::CreateNew("log exec", 1)),
+      commit_executor_(TaskExecutor::CreateNew("commit exec", 1)),
       next_op_id_(log->last_entry_id().index() + 1) {
 }
 

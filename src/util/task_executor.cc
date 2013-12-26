@@ -4,6 +4,7 @@
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <string>
 
 #include "gutil/stl_util.h"
 #include "util/countdown_latch.h"
@@ -147,12 +148,14 @@ void TaskExecutor::Shutdown() {
   thread_pool_->Shutdown();
 }
 
-TaskExecutor *TaskExecutor::CreateNew(size_t num_threads) {
-  std::tr1::shared_ptr<ThreadPool> thread_pool(new ThreadPool);
+TaskExecutor *TaskExecutor::CreateNew(const string& name,
+                                      size_t num_threads) {
+  std::tr1::shared_ptr<ThreadPool> thread_pool(new ThreadPool(name));
 
   Status s = thread_pool->Init(num_threads);
   if (!s.ok()) {
-    LOG(ERROR)<< "Unable to initialize the TaskExecutor ThreadPool: " << s.ToString();
+    LOG(ERROR)<< "Unable to initialize the TaskExecutor ThreadPool for "
+              << name << ": " << s.ToString();
     return(NULL);
   }
 

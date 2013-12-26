@@ -180,7 +180,8 @@ Messenger::Messenger(const MessengerBuilder &bld)
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(this, i, bld));
   }
-  negotiation_executor_.reset(TaskExecutor::CreateNew(bld.num_negotiation_threads_));
+  negotiation_executor_.reset(TaskExecutor::CreateNew("rpc negotiation",
+                                                      bld.num_negotiation_threads_));
 }
 
 Messenger::~Messenger() {

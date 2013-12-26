@@ -6,6 +6,7 @@
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <tr1/memory>
+#include <string>
 #include <vector>
 
 #include "gutil/macros.h"
@@ -290,7 +291,8 @@ class TaskExecutor {
   ~TaskExecutor();
 
   // Create a new Executor with its own ThreadPool.
-  static TaskExecutor *CreateNew(size_t num_threads);
+  static TaskExecutor *CreateNew(const std::string& name,
+                                 size_t num_threads);
 
   // Wait for the running tasks to complete and then shutdown the threads.
   // All the other pending tasks in the queue will be removed.

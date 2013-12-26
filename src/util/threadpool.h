@@ -9,6 +9,7 @@
 #include <boost/thread/thread.hpp>
 #include <tr1/memory>
 #include <list>
+#include <string>
 #include <vector>
 
 #include "gutil/macros.h"
@@ -36,7 +37,11 @@ class Runnable {
 //    thread_pool.Submit(boost::bind(&Func, 10));
 class ThreadPool {
  public:
-  ThreadPool();
+  // Create a new thread pool. The 'name' is only used for debugging
+  // output and default names of the worker threads. Since thread names
+  // are limited to 16 characters on Linux, it's good to choose a short
+  // name here.
+  explicit ThreadPool(const std::string& name);
   ~ThreadPool();
 
   // Initialize the thread pool with the specified number of threads
@@ -85,6 +90,8 @@ class ThreadPool {
   }
 
  private:
+  const std::string name_;
+
   boost::mutex lock_;
 
   boost::condition_variable queue_changed_;

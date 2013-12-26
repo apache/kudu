@@ -23,6 +23,11 @@ namespace kudu {
 template<typename F>
 Status StartThread(F function, gscoped_ptr<boost::thread>* thread);
 
+// Sets the thread name visible to debuggers/tools. This has no effect
+// otherwise. This may have no effect on older kernels and versions of
+// gdb (e.g RHEL6 prior to 6.5 does not expose this in gdb).
+void SetThreadName(const std::string& name);
+
 namespace thread_util_internal {
 
 enum {

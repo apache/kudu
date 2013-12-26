@@ -26,7 +26,7 @@ TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
       log_(log.Pass()),
       // prepare executor has a single thread as prepare must be done in order
       // of submission
-      prepare_executor_(TaskExecutor::CreateNew(1)) {
+      prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)) {
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
 
@@ -34,7 +34,7 @@ TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
   int n_cpus = sysconf(_SC_NPROCESSORS_CONF);
   CHECK_EQ(errno, 0) << ErrnoToString(errno);
   CHECK_GT(n_cpus, 0);
-  apply_executor_.reset(TaskExecutor::CreateNew(n_cpus));
+  apply_executor_.reset(TaskExecutor::CreateNew("apply exec", n_cpus));
 }
 
 // TODO a distributed implementation of consensus will need to receive the

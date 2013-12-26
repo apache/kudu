@@ -256,6 +256,7 @@ bool ReactorThread::IsCurrentThread() const {
 }
 
 void ReactorThread::RunThread() {
+  SetThreadName("rpc reactor");
   DVLOG(6) << "Calling ReactorThread::RunThread()...";
   loop_.run(0);
   VLOG(1) << name() << " thread exiting.";

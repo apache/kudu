@@ -15,7 +15,7 @@ namespace kudu {
 using std::tr1::shared_ptr;
 
 TEST(TestTaskExecutor, TestNoTaskOpenClose) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(4));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 4));
   executor->Shutdown();
 }
 
@@ -72,7 +72,7 @@ class SimpleCallback : public FutureCallback {
 };
 
 TEST(TestTaskExecutor, TestFutures) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
 
   // caller manages the task out parameter (on the stack, here)
   int result1 = 1;
@@ -100,7 +100,7 @@ TEST(TestTaskExecutor, TestFutures) {
 }
 
 TEST(TestTaskExecutor, TestFutureListeners) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
 
   ThreadPool *thread_pool = executor->thread_pool().get();
 
@@ -240,7 +240,7 @@ class IndicatorCallback : public FutureCallback {
 
 // Run Task to completion, then attach IndicatorCallback listener.
 static void RunWithPostCompletionIndicator(Task* t, TaskResult* result) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
 
   shared_ptr<Task> task(t);
   shared_ptr<Future> future;
@@ -320,7 +320,7 @@ class FalselyNonAbortableHangingTask : public AbortableHangingTask {
 // Ensure FutureTask::Abort() returns true when a Task is able to Abort().
 // Ensure FutureTask::Abort() returns false when a Task indicates that it is unable to Abort().
 TEST(TestTaskExecutor, TestAbortSuccessAndFailure) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
 
   // Able to abort.
   shared_ptr<AbortableHangingTask> task(new AbortableHangingTask());
@@ -354,7 +354,7 @@ TEST(TestTaskExecutor, TestAbortSuccessAndFailure) {
 }
 
 TEST(TestTaskExecutor, TestRunAndAbortBindMethods) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
   std::tr1::shared_ptr<Future> future;
   // test bind with a function that returns OK
   ASSERT_STATUS_OK(executor->Submit(boost::bind(&SimpleRunFunc, Status::OK()), &future));
@@ -383,7 +383,7 @@ TEST(TestTaskExecutor, TestRunAndAbortBindMethods) {
 // That shouldn't really be done by API clients but we need to test the backlogged Abort() case.
 // Add listener to FutureTask, call Abort(), then Submit the FutureTask.
 TEST(TestTaskExecutor, TestAbortBeforeSubmitFutureTask) {
-  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew(1));
+  gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
 
   shared_ptr<AbortableHangingTask> task(new AbortableHangingTask());
   shared_ptr<FutureTask> future(new FutureTask(task));
