@@ -20,6 +20,7 @@ struct WebserverOptions {
   std::string certificate_file;
   std::string authentication_domain;
   std::string password_file;
+  uint32_t num_worker_threads;
 };
 
 } // namespace kudu

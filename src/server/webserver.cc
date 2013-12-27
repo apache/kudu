@@ -30,6 +30,7 @@
 
 #include "gutil/stringprintf.h"
 #include "gutil/strings/join.h"
+#include "gutil/strings/numbers.h"
 #include "gutil/strings/split.h"
 #include "gutil/strings/stringpiece.h"
 #include "util/env.h"
@@ -141,6 +142,11 @@ Status Webserver::Start() {
   string listening_str;
   RETURN_NOT_OK(BuildListenSpec(&listening_str));
   options.push_back(listening_str.c_str());
+
+  // Num threads
+  options.push_back("num_threads");
+  string num_threads_str = SimpleItoa(opts_.num_worker_threads);
+  options.push_back(num_threads_str.c_str());
 
   // Options must be a NULL-terminated list
   options.push_back(NULL);

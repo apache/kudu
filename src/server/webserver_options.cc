@@ -12,6 +12,8 @@ namespace kudu {
 
 static const char* GetDefaultDocumentRoot();
 
+} // namespace kudu
+
 // Flags defining web server behavior. The class implementation should
 // not use these directly, but rather access them via WebserverOptions.
 // This makes it easier to instantiate web servers with different options
@@ -19,7 +21,7 @@ static const char* GetDefaultDocumentRoot();
 DEFINE_int32(webserver_port, 25000, "Port to start debug webserver on");
 DEFINE_string(webserver_interface, "",
     "Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0");
-DEFINE_string(webserver_doc_root, GetDefaultDocumentRoot(),
+DEFINE_string(webserver_doc_root, kudu::GetDefaultDocumentRoot(),
     "Files under <webserver_doc_root>/www are accessible via the debug webserver. "
     "Defaults to KUDU_HOME, or if KUDU_HOME is not set, disables the document "
     "root");
@@ -34,6 +36,10 @@ DEFINE_string(webserver_authentication_domain, "",
 DEFINE_string(webserver_password_file, "",
     "(Optional) Location of .htpasswd file containing user names and hashed passwords for"
     " debug webserver authentication");
+DEFINE_int32(webserver_num_worker_threads, 50,
+             "Number of threads to start for handling web server requests");
+
+namespace kudu {
 
 // Returns KUDU_HOME if set, otherwise we won't serve any static files.
 static const char* GetDefaultDocumentRoot() {
@@ -54,7 +60,8 @@ WebserverOptions::WebserverOptions()
     enable_doc_root(FLAGS_enable_webserver_doc_root),
     certificate_file(FLAGS_webserver_certificate_file),
     authentication_domain(FLAGS_webserver_authentication_domain),
-    password_file(FLAGS_webserver_password_file) {
+    password_file(FLAGS_webserver_password_file),
+    num_worker_threads(FLAGS_webserver_num_worker_threads) {
 }
 
 } // namespace kudu
