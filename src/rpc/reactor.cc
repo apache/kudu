@@ -74,7 +74,7 @@ Status ReactorThread::Init() {
 
 void ReactorThread::Shutdown() {
   CHECK(reactor_->closing()) << "Should be called after setting closing_ flag";
-  DCHECK(!IsCurrentThread());
+  CHECK(!IsCurrentThread()) << "Cannot shutdown Reactor from a Reactor thread";
 
   VLOG(1) << name() << ": joining Reactor thread.";
   WakeThread();
