@@ -1,0 +1,33 @@
+Overview
+===============
+kudu-lint is a Clang-based tool for looking for kudu-specific coding errors.
+
+Currently, it only looks for cases where a function returning Status is called,
+and then that Status is ignored.
+
+Over time we can add more AST matchers for other Kudu-specific lint checks we'd
+like to implement.
+
+
+Requirements
+===============
+
+This has currently only been tested against clang 3.4. Clang APIs tend to change
+between versions, so this is unlikely to work on earlier versions of clang.
+
+Building
+=========
+
+Set the CLANG_ROOT environment variable to point to the path at which clang/llvm
+have been installed. This is the directory which contains bin/, lib/, etc.
+
+Run 'cmake .', followed by 'make', in this directory.
+
+Running
+=========
+
+In the top-level kudu source directory, run:
+
+$ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
+$ find src -name \*.cc | xargs -n1 -P8 ./build-support/tools/clang-test/clang-test \
+    -p . -extra-arg=-I$CLANG_ROOT/lib/clang/3.4/include
