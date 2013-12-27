@@ -8,6 +8,7 @@
 #include <tr1/memory>
 
 #include "common/schema.h"
+#include "gutil/ref_counted.h"
 #include "rpc/rpc_controller.h"
 #include "tserver/tserver_service.proxy.h"
 #include "twitter-demo/parser.h"
@@ -15,6 +16,12 @@
 #include "util/slice.h"
 
 namespace kudu {
+namespace client {
+class KuduClient;
+class KuduTable;
+class KuduSession;
+} // namespace client
+
 namespace twitter_demo {
 
 // Consumer of tweet data which parses the JSON and inserts
@@ -22,13 +29,17 @@ namespace twitter_demo {
 class InsertConsumer : public TwitterConsumer {
  public:
   explicit InsertConsumer(
-    const std::tr1::shared_ptr<tserver::TabletServerServiceProxy> &proxy);
+    const std::tr1::shared_ptr<kudu::client::KuduClient> &client);
   ~InsertConsumer();
+
+  Status Init();
 
   virtual void ConsumeJSON(const Slice& json);
 
  private:
-  void BatchFinished();
+  void BatchFinished(const Status& s);
+
+  bool initted_;
 
   Schema schema_;
 
@@ -37,13 +48,12 @@ class InsertConsumer : public TwitterConsumer {
   // Reusable object for latest event.
   TwitterEvent event_;
 
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  std::tr1::shared_ptr<client::KuduClient> client_;
+  std::tr1::shared_ptr<client::KuduSession> session_;
+  scoped_refptr<client::KuduTable> table_;
 
   simple_spinlock lock_;
   bool request_pending_;
-  tserver::WriteRequestPB request_;
-  tserver::WriteResponsePB response_;
-  rpc::RpcController rpc_;
 };
 
 } // namespace twitter_demo

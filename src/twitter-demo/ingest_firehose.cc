@@ -56,9 +56,9 @@ gscoped_ptr<TwitterConsumer> CreateInsertConsumer() {
   shared_ptr<client::KuduClient> client;
   CHECK_OK(client::KuduClient::Create(opts, &client));
 
-  shared_ptr<TabletServerServiceProxy> proxy;
-  CHECK_OK(client->GetTabletProxy("twitter", &proxy));
-  return gscoped_ptr<TwitterConsumer>(new InsertConsumer(proxy));
+  gscoped_ptr<InsertConsumer> ret(new InsertConsumer(client));
+  CHECK_OK(ret->Init());
+  return gscoped_ptr<TwitterConsumer>(ret.Pass()); // up-cast
 }
 
 static void IngestFromFile(const string& file, gscoped_ptr<TwitterConsumer> consumer) {

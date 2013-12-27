@@ -9,10 +9,13 @@
 #include <string>
 #include <time.h>
 #include <tr1/memory>
+#include <vector>
 
 #include "common/wire_protocol.h"
 #include "common/row.h"
 #include "common/schema.h"
+#include "client/client.h"
+#include "gutil/stl_util.h"
 #include "tserver/tserver_service.proxy.h"
 #include "tserver/tserver.pb.h"
 #include "twitter-demo/parser.h"
@@ -26,14 +29,26 @@ using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 using rpc::RpcController;
+using kudu::client::Insert;
+using kudu::client::KuduClient;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
 
-InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<TabletServerServiceProxy> &proxy)
-  : schema_(CreateTwitterSchema()),
-    proxy_(proxy),
+InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<KuduClient> &client)
+  : initted_(false),
+    schema_(CreateTwitterSchema()),
+    client_(client),
     request_pending_(false) {
-  request_.set_tablet_id("twitter");
-  CHECK_OK(SchemaToColumnPBs(schema_, request_.mutable_to_insert_rows()->mutable_schema()));
-  request_.mutable_to_insert_rows()->set_num_key_columns(schema_.num_key_columns());
+}
+
+Status InsertConsumer::Init() {
+  RETURN_NOT_OK_PREPEND(client_->OpenTable("twitter", schema_, &table_),
+                        "Couldn't open twitter table");
+  session_ = client_->NewSession();
+  session_->SetTimeoutMillis(1000);
+  CHECK_OK(session_->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  initted_ = true;
+  return Status::OK();
 }
 
 InsertConsumer::~InsertConsumer() {
@@ -43,32 +58,23 @@ InsertConsumer::~InsertConsumer() {
   CHECK(!request_pending_);
 }
 
-void InsertConsumer::BatchFinished() {
+void InsertConsumer::BatchFinished(const Status& s) {
   boost::lock_guard<simple_spinlock> l(lock_);
   request_pending_ = false;
-
-  Status s = rpc_.status();
   if (!s.ok()) {
-    LOG(WARNING) << "RPC error inserting row: " << s.ToString();
-    return;
-  }
-
-  if (response_.has_error()) {
-    LOG(WARNING) << "Unable to insert rows: " << response_.error().DebugString();
-    return;
-  }
-
-  if (response_.per_row_errors().size() > 0) {
-    BOOST_FOREACH(const WriteResponsePB::PerRowErrorPB& err, response_.per_row_errors()) {
-      if (err.error().code() != AppStatusPB::ALREADY_PRESENT) {
-        LOG(WARNING) << "Per-row errors for row " << err.row_index() << ": " << err.DebugString();
-      }
+    bool overflow;
+    vector<client::Error*> errors;
+    ElementDeleter d(&errors);
+    session_->GetPendingErrors(&errors, &overflow);
+    BOOST_FOREACH(const client::Error* error, errors) {
+      LOG(WARNING) << "Failed to insert row " << error->failed_op().ToString()
+                   << ": " << error->status().ToString();
     }
   }
-
 }
 
 void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
+  CHECK(initted_);
   string json = json_slice.ToString();
   Status s = parser_.Parse(json, &event_);
   if (!s.ok()) {
@@ -81,38 +87,36 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
     return;
   }
 
-  // Build the row to insert
-  RowBuilder rb(schema_);
-  rb.AddUint64(event_.tweet_event.tweet_id);
-  rb.AddString(event_.tweet_event.text);
-  rb.AddString(event_.tweet_event.source);
-  rb.AddString(TwitterEventParser::ReformatTime(event_.tweet_event.created_at));
-  rb.AddUint64(event_.tweet_event.user_id);
-  rb.AddString(event_.tweet_event.user_name);
-  rb.AddString(event_.tweet_event.user_description);
-  rb.AddString(event_.tweet_event.user_location);
-  rb.AddUint32(event_.tweet_event.user_followers_count);
-  rb.AddUint32(event_.tweet_event.user_friends_count);
-  rb.AddString(event_.tweet_event.user_image_url);
+  string created_at = TwitterEventParser::ReformatTime(event_.tweet_event.created_at);
 
-  // Append the row to the next insert to be sent
-  RowwiseRowBlockPB* data = request_.mutable_to_insert_rows();
-  AddRowToRowBlockPB(rb.row(), data);
+  gscoped_ptr<Insert> ins = table_->NewInsert();
+  client::PartialRow* r = ins->mutable_row();
+  CHECK_OK(r->SetUInt64("tweet_id", event_.tweet_event.tweet_id));
+  CHECK_OK(r->SetStringCopy("text", event_.tweet_event.text));
+  CHECK_OK(r->SetStringCopy("source", event_.tweet_event.source));
+  CHECK_OK(r->SetStringCopy("created_at", created_at));
+  CHECK_OK(r->SetUInt64("user_id", event_.tweet_event.user_id));
+  CHECK_OK(r->SetStringCopy("user_name", event_.tweet_event.user_name));
+  CHECK_OK(r->SetStringCopy("user_description", event_.tweet_event.user_description));
+  CHECK_OK(r->SetStringCopy("user_location", event_.tweet_event.user_location));
+  CHECK_OK(r->SetUInt32("user_followers_count", event_.tweet_event.user_followers_count));
+  CHECK_OK(r->SetUInt32("user_friends_count", event_.tweet_event.user_friends_count));
+  CHECK_OK(r->SetStringCopy("user_image_url", event_.tweet_event.user_image_url));
+  CHECK_OK(session_->Apply(&ins));
 
-  boost::lock_guard<simple_spinlock> l(lock_);
-  if (!request_pending_) {
-    request_pending_ = true;
-
-    rpc_.Reset();
-    rpc_.set_timeout(MonoDelta::FromMilliseconds(1000));
-    VLOG(1) << "Sending batch of " << data->num_rows();
-    proxy_->WriteAsync(request_, &response_, &rpc_,
-                       boost::bind(&InsertConsumer::BatchFinished, this));
-
-    // TODO: add method to clear the data portions of a RowwiseRowBlockPB
-    data->set_num_rows(0);
-    data->clear_rows();
-    data->clear_indirect_data();
+  // TODO: once the auto-flush mode is implemented, switch to using that
+  // instead of the manual batching here
+  bool do_flush = false;
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    if (!request_pending_) {
+      request_pending_ = true;
+      do_flush = true;
+    }
+  }
+  if (do_flush) {
+    VLOG(1) << "Sending batch of " << session_->CountBufferedOperations();
+    session_->FlushAsync(boost::bind(&InsertConsumer::BatchFinished, this, _1));
   }
 }
 
