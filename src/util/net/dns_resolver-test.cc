@@ -20,14 +20,12 @@ class DnsResolverTest : public KuduTest {
 
 TEST_F(DnsResolverTest, TestResolution) {
   vector<Sockaddr> addrs;
-  Status s;
-  CountDownLatch l(1);
+  Synchronizer s;
   {
     HostPort hp("localhost", 12345);
-    resolver_.ResolveAddresses(hp, &addrs, AssignStatusAndTriggerLatch(&s, &l));
+    resolver_.ResolveAddresses(hp, &addrs, s.callback());
   }
-  l.Wait();
-  ASSERT_STATUS_OK(s);
+  ASSERT_STATUS_OK(s.Wait());
   ASSERT_TRUE(!addrs.empty());
   BOOST_FOREACH(const Sockaddr& addr, addrs) {
     LOG(INFO) << "Address: " << addr.ToString();

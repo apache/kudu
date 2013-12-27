@@ -104,21 +104,18 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
   shared_ptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTablet(tablet_id, &remote_tablet);
 
-  CountDownLatch latch(1);
-  Status s;
-  remote_tablet->Refresh(this, AssignStatusAndTriggerLatch(&s, &latch), false);
-  latch.Wait();
-  RETURN_NOT_OK(s);
+  Synchronizer s;
+  remote_tablet->Refresh(this, s.callback(), false);
+  RETURN_NOT_OK(s.Wait());
 
   RemoteTabletServer* ts = remote_tablet->replica_tserver(0);
   if (ts == NULL) {
     return Status::NotFound(Substitute("No replicas for tablet $0", tablet_id));
   }
 
-  latch.Reset(1);
-  ts->RefreshProxy(this, AssignStatusAndTriggerLatch(&s, &latch), false);
-  latch.Wait();
-  RETURN_NOT_OK(s);
+  s.Reset();
+  ts->RefreshProxy(this, s.callback(), false);
+  RETURN_NOT_OK(s.Wait());
 
   *proxy = ts->proxy();
   return Status::OK();

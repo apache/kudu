@@ -36,5 +36,29 @@ class AssignStatusAndTriggerLatch {
   CountDownLatch* latch_;
 };
 
+// Simple class which can be used to make async methods synchronous.
+// For example:
+//   Synchronizer s;
+//   SomeAsyncMethod(s.callback());
+//   CHECK_OK(s.Wait());
+class Synchronizer {
+ public:
+  Synchronizer() : l(1) {}
+  inline StatusCallback callback() {
+    return AssignStatusAndTriggerLatch(&s, &l);
+  }
+  Status Wait() {
+    l.Wait();
+    return s;
+  }
+  void Reset() {
+    l.Reset(1);
+  }
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Synchronizer);
+  Status s;
+  CountDownLatch l;
+};
+
 } // namespace kudu
 #endif /* KUDU_UTIL_ASYNC_UTIL_H */
