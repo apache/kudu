@@ -128,6 +128,10 @@ void LeaderTransaction::HandlePrepareFailure() {
     return;
   }
 
+  // TODO: Should we set a default error?
+  DCHECK(tx_ctx()->completion_callback()->has_error())
+         << "No error is set, but we have a prepare failure: " << prepare_status_.ToString();
+
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   PrepareFailedPreCommitHooks(&commit);
 

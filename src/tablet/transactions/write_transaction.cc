@@ -91,6 +91,9 @@ Status LeaderWriteTransaction::Prepare() {
                                      mutable_request->encoded_mutations().data()),
                                      mutable_request->encoded_mutations().size(),
                                      &mutations);
+  BOOST_FOREACH(const RowChangeList *mutation, mutations) {
+    tx_ctx_->AddToAutoReleasePool(mutation);
+  }
 
   if (PREDICT_FALSE(to_mutate.size() != mutations.size())) {
     s = Status::InvalidArgument(strings::Substitute("Different number of row keys: $0 and mutations: $1",
@@ -122,14 +125,32 @@ Status LeaderWriteTransaction::Prepare() {
 
   RowProjector row_projector(inserts_client_schema.get(), tablet->schema_ptr());
   if (to_insert.size() > 0 && !row_projector.is_identity()) {
-    RETURN_NOT_OK(tablet->schema().VerifyProjectionCompatibility(*inserts_client_schema));
-    RETURN_NOT_OK(row_projector.Init());
+    Status s = tablet->schema().VerifyProjectionCompatibility(*inserts_client_schema);
+    if (!s.ok()) {
+      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+      return s;
+    }
+
+    s = row_projector.Init();
+    if (!s.ok()) {
+      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+      return s;
+    }
   }
 
   DeltaProjector delta_projector(*mutates_client_schema, tablet->schema());
   if (to_mutate.size() > 0 && !delta_projector.is_identity()) {
-    RETURN_NOT_OK(tablet->schema().VerifyProjectionCompatibility(*mutates_client_schema));
-    RETURN_NOT_OK(mutates_client_schema->GetProjectionMapping(tablet->schema(), &delta_projector));
+    Status s = tablet->schema().VerifyProjectionCompatibility(*mutates_client_schema);
+    if (!s.ok()) {
+      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+      return s;
+    }
+
+    s = mutates_client_schema->GetProjectionMapping(tablet->schema(), &delta_projector);
+    if (!s.ok()) {
+      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+      return s;
+    }
   }
 
   // Now acquire row locks and prepare everything for apply
@@ -149,8 +170,7 @@ Status LeaderWriteTransaction::Prepare() {
     ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
     row_key = tx_ctx_->AddToAutoReleasePool(row_key);
 
-    const RowChangeList* mutation = ProjectMutation(tx_ctx_.get(), delta_projector,
-                                                    tx_ctx_->AddToAutoReleasePool(mutations[i]));
+    const RowChangeList* mutation = ProjectMutation(tx_ctx_.get(), delta_projector, mutations[i]);
 
     gscoped_ptr<PreparedRowWrite> row_write;
     RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx(), row_key, mutation, &row_write));

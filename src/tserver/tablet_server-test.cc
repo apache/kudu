@@ -358,6 +358,63 @@ TEST_F(TabletServerTest, TestInvalidMutations) {
   // or otherwise malformed.
 }
 
+// Test that passing a schema with fields not present in the tablet schema
+// throws an exception.
+TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
+  SchemaBuilder schema_builder(schema_);
+  ASSERT_STATUS_OK(schema_builder.AddColumn("col_doesnt_exist", UINT32));
+  Schema bad_schema_with_ids = schema_builder.Build();
+  Schema bad_schema = schema_builder.BuildWithoutIds();
+
+  // Send a row insert with an extra column
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    RpcController controller;
+
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(bad_schema, data->mutable_schema()));
+    data->set_num_key_columns(bad_schema.num_key_columns());
+
+    RowBuilder rb(bad_schema);
+    rb.AddUint32(1234);
+    rb.AddUint32(5678);
+    rb.AddString(Slice("hello world via RPC"));
+    rb.AddUint32(91011);
+    AddRowToRowBlockPB(rb.row(), data);
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_SCHEMA, resp.error().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(),
+                        "Some columns are not present in the current schema: col_doesnt_exist");
+  }
+
+  // Send a row mutation with an extra column and IDs
+  {
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    RpcController controller;
+
+    req.set_tablet_id(kTabletId);
+    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
+    ASSERT_STATUS_OK(SchemaToColumnPBs(bad_schema_with_ids, data->mutable_schema()));
+    data->set_num_key_columns(bad_schema_with_ids.num_key_columns());
+    faststring mutations;
+    AddTestDeletionToRowBlockAndBuffer(bad_schema_with_ids, 1, data, &mutations);
+    req.set_encoded_mutations(mutations.data(), mutations.size());
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_SCHEMA, resp.error().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(),
+                        "User requests should not have Column IDs");
+  }
+}
+
 // Executes mutations each time a Tablet goes through a compaction/flush
 // lifecycle hook. This allows to create mutations of all possible types
 // deterministically. The purpose is to make sure such mutations are replayed

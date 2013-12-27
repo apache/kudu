@@ -150,7 +150,10 @@ Status Schema::CreatePartialSchema(const vector<size_t>& col_indexes,
 
 Status Schema::VerifyProjectionCompatibility(const Schema& projection) const {
   DCHECK(has_column_ids()) "The server schema must have IDs";
-  DCHECK(!projection.has_column_ids()) << "The client schema shouldn't have IDs";
+
+  if (projection.has_column_ids()) {
+    return Status::InvalidArgument("User requests should not have Column IDs");
+  }
 
   vector<string> missing_columns;
   BOOST_FOREACH(const ColumnSchema& pcol, projection.columns()) {

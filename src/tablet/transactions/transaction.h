@@ -61,6 +61,10 @@ class TransactionCompletionCallback {
     status_ = status;
   }
 
+  bool has_error() const {
+    return !status_.ok();
+  }
+
   const Status& status() const { return status_; }
 
   const tserver::TabletServerErrorPB::Code error_code() const { return code_; }
