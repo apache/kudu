@@ -350,10 +350,10 @@ struct is_convertible
 // these types are PODs, for human use.  They may be made more contentful
 // later.  The typedef is just to make it legal to put a semicolon after
 // these macros.
-#define DECLARE_POD(TypeName) typedef int Dummy_Type_For_DECLARE_POD
+#define DECLARE_POD(TypeName) typedef int Dummy_Type_For_DECLARE_POD ATTRIBUTE_UNUSED
 #define DECLARE_NESTED_POD(TypeName) DECLARE_POD(TypeName)
 #define PROPAGATE_POD_FROM_TEMPLATE_ARGUMENT(TemplateName)             \
-    typedef int Dummy_Type_For_PROPAGATE_POD_FROM_TEMPLATE_ARGUMENT
-#define ENFORCE_POD(TypeName) typedef int Dummy_Type_For_ENFORCE_POD
+    typedef int Dummy_Type_For_PROPAGATE_POD_FROM_TEMPLATE_ARGUMENT ATTRIBUTE_UNUSED
+#define ENFORCE_POD(TypeName) typedef int Dummy_Type_For_ENFORCE_POD ATTRIBUTE_UNUSED
 
 #endif  // BASE_TYPE_TRAITS_H_
