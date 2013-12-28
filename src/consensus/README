@@ -89,37 +89,48 @@ changes and/or peer timeout/death.
 Assembling/Rebooting a Quorum and Quorum States
 ============================================================
 
-Prior to starting/rebooting a peer the state in WAL must have been replayed
+Prior to starting/rebooting a peer, the state in WAL must have been replayed
 in a bootstrap phase. This process will yield an up-to-date Log and Tablet.
 The new/rebooting peer is then Init()'ed with this Log. The Log is queried
 for the last committed configuration entry (A quorum configuration consists of
 a set of peers (uuid and last known address) and hinted* roles). If there is
-none it means this is a new quorum.
+none, it means this is a new quorum.
 
 After the peer has been Init()'ed, Start(Configuration) is called. The provided
-configuration is a hint is only taken into account if there was no previous
+configuration is a hint which is only taken into account if there was no previous
 configuration*.
 
 Independently of whether the configuration is a new one (new quorum)
-or an old one (rebooting quorum), the quorum cannot start until it replicates
-it though consensus. This ensures that a majority of nodes agree that this is
-the most recent configuration. Replicating this initial configuration entry
-happens in the exact same way as any other quorum entry, i.e. the LEADER
-will try and replicate it to FOLLOWERS. As usual if the LEADER fails, leader
-election is triggered and the new LEADER will try and replicate a new
-configuration.
+or an old one (rebooting quorum), the quorum cannot start until a
+leader has been elected and replicates the configuration through
+consensus. This ensures that a majority of nodes agree that this is
+the most recent configuration.
+
+The provided configuration will always specify a leader -- in the case
+of a new quorum, it is chosen by the master, and in the case of a
+rebooted one, it is the configuration that was active before the node
+crashed. In either case, replicating this initial configuration
+entry happens in the exact same way as any other quorum entry,
+i.e. the LEADER will try and replicate it to FOLLOWERS. As usual if
+the LEADER fails, leader election is triggered and the new LEADER will
+try to replicate a new configuration.
 
 Only after the quorum has successfully replicated the initial configuration
 entry is the quorum ready to accept writes.
 
-Tablets/Quorums can therefore be in the following states:
 
-BOOTSTRAPING - The phase prior to initialization where the Log is being
-replayed. In this phase the quorum doesn't exist yet.
+Peers in the quorum can therefore be in the following states:
 
-CONFIGURING: Until the current configuration was pushed though consensus. This
-is true for both new quorum and rebooting quorums. The quorum does not accept
-client requests in this state.
+BOOTSTRAPPING - The phase prior to initialization where the Log is being
+replayed. If a majority of peers are still BOOTSTRAPPING, the quorum doesn't
+exist yet.
+
+CONFIGURING: Until the current configuration is pushed though consensus. This
+is true for both new quorums and rebooting quorums. The peers do not accept
+client requests in this state. In this state, the Leader tries to replicate
+the configuration. Followers run failure detection and trigger leader election
+if the hinted leader doesn't successfully replicate within the configured
+timeout period.
 
 RUNNING: The LEADER peer accepts writes and replicates them through consensus.
 FOLLOWER replicas accepts writes from the leader and ACK.
