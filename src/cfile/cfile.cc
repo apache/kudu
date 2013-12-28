@@ -104,7 +104,7 @@ Status Writer::Start() {
     return Status::Corruption("unable to encode header");
   }
 
-  file_->Append(Slice(buf));
+  RETURN_NOT_OK_PREPEND(file_->Append(Slice(buf)), "Couldn't write header");
   off_ += buf.size();
 
   BlockBuilder *bb;
@@ -141,13 +141,14 @@ Status Writer::Finish() {
   // Write out any pending positional index blocks.
   if (options_.write_posidx) {
     BTreeInfoPB posidx_info;
-    posidx_builder_->Finish(&posidx_info);
+    RETURN_NOT_OK_PREPEND(posidx_builder_->Finish(&posidx_info),
+                          "Couldn't write positional index");
     footer.mutable_posidx_info()->CopyFrom(posidx_info);
   }
 
   if (options_.write_validx) {
     BTreeInfoPB validx_info;
-    validx_builder_->Finish(&validx_info);
+    RETURN_NOT_OK_PREPEND(validx_builder_->Finish(&validx_info), "Couldn't write value index");
     footer.mutable_validx_info()->CopyFrom(validx_info);
   }
 

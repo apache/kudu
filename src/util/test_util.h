@@ -36,7 +36,7 @@ class KuduTest : public ::testing::Test {
     const ::testing::TestInfo* const test_info =
       ::testing::UnitTest::GetInstance()->current_test_info();
 
-    env_->GetTestDirectory(&test_dir_);
+    CHECK_OK(env_->GetTestDirectory(&test_dir_));
 
     test_dir_ += strings::Substitute(
       "/$0.$1.$2",
@@ -55,7 +55,8 @@ class KuduTest : public ::testing::Test {
       LOG(INFO) << "-----------------------------------------------";
       LOG(INFO) << "Had fatal failures, leaving test files at " << test_dir_;
     } else {
-      env_->DeleteRecursively(test_dir_);
+      WARN_NOT_OK(env_->DeleteRecursively(test_dir_),
+                  "Couldn't remove test files");
     }
   }
 

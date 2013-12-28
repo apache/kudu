@@ -104,7 +104,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
 TEST_F(TestMajorDeltaCompaction, TestCompact) {
   const int kNumRows = 100;
   ASSERT_NO_FATAL_FAILURE(WriteTestTablet(kNumRows));
-  tablet_->Flush();
+  ASSERT_STATUS_OK(tablet_->Flush());
 
   vector<shared_ptr<RowSet> > all_rowsets;
   tablet_->GetRowSetsForTests(&all_rowsets);
@@ -178,7 +178,7 @@ TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
     BOOST_FOREACH(size_t col_idx, cols) {
       size_t new_idx = old_to_new[col_idx];
       ColumnBlock col_block(block.column_block(col_idx));
-      iter->MaterializeColumn(new_idx, &col_block);
+      ASSERT_STATUS_OK_FAST(iter->MaterializeColumn(new_idx, &col_block));
       for (size_t row_idx = 0; row_idx < col_block.nrows(); row_idx++) {
         // Modify each cell with a deterministic marker: sets the first
         // character to ASCII representation of 'col_idx'. This is used

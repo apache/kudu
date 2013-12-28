@@ -752,36 +752,36 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
   Schema projection;
 
   // Verify mismatched nullability for the not-null int field
-  projection.Reset(boost::assign::list_of
-                   (ColumnSchema("int_val", UINT32, true)),     // should be NOT NULL
-                   0);
+  ASSERT_STATUS_OK(projection.Reset(boost::assign::list_of
+                                    (ColumnSchema("int_val", UINT32, true)),     // should be NOT NULL
+                                    0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'int_val' must have type uint32 NOT NULL found uint32 NULLABLE");
 
   // Verify mismatched nullability for the nullable string field
-  projection.Reset(boost::assign::list_of
-                   (ColumnSchema("string_val", STRING, false)), // should be NULLABLE
-                   0);
+  ASSERT_STATUS_OK(projection.Reset(boost::assign::list_of
+                                    (ColumnSchema("string_val", STRING, false)), // should be NULLABLE
+                                    0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'string_val' must have type string NULLABLE found string NOT NULL");
 
   // Verify mismatched type for the not-null int field
-  projection.Reset(boost::assign::list_of
-                   (ColumnSchema("int_val", UINT16, false)),     // should be UINT32 NOT NULL
-                   0);
+  ASSERT_STATUS_OK(projection.Reset(boost::assign::list_of
+                                    (ColumnSchema("int_val", UINT16, false)),     // should be UINT32 NOT NULL
+                                    0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'int_val' must have type uint32 NOT NULL found uint16 NOT NULL");
 
   // Verify mismatched type for the nullable string field
-  projection.Reset(boost::assign::list_of
-                   (ColumnSchema("string_val", UINT32, true)), // should be STRING NULLABLE
-                   0);
+  ASSERT_STATUS_OK(projection.Reset(boost::assign::list_of
+                                    (ColumnSchema("string_val", UINT32, true)), // should be STRING NULLABLE
+                                    0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                             "The column 'string_val' must have type string NULLABLE found uint32 NULLABLE");
+                           "The column 'string_val' must have type string NULLABLE found uint32 NULLABLE");
 }
 
 // Test that passing a projection with Column IDs throws an exception.
@@ -851,7 +851,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
     InsertTestRowsDirect(2, 2);
     shared_ptr<TabletPeer> tablet;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-    tablet->tablet()->Flush();
+    ASSERT_STATUS_OK(tablet->tablet()->Flush());
   }
 
   const Schema projection(boost::assign::list_of

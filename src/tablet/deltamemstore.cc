@@ -62,7 +62,8 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
     DCHECK_EQ(0, key_slice.size()) <<
       "After decoding delta key, should be empty";
 
-    dfw->AppendDelta(key, RowChangeList(val));
+    RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key, RowChangeList(val)),
+                          "Failed to append delta");
     iter->Next();
   }
   RETURN_NOT_OK(dfw->WriteDeltaStats(delta_stats_));

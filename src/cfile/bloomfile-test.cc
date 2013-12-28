@@ -34,7 +34,7 @@ static void AppendBlooms(BloomFileWriter *bfw) {
     // get a good mix of hits and misses while still staying within
     // the real key range.
     key_buf = BigEndian::FromHost64(i << kKeyShift);
-    bfw->AppendKeys(&key_slice, 1);
+    ASSERT_STATUS_OK_FAST(bfw->AppendKeys(&key_slice, 1));
   }
 }
 

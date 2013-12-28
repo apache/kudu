@@ -121,7 +121,7 @@ Status Tablet::Open() {
     rowsets_opened.push_back(rowset);
   }
 
-  rowsets_->Reset(rowsets_opened);
+  CHECK_OK(rowsets_->Reset(rowsets_opened));
 
   // now that the current state is loaded create the new MemRowSet with the next id
   memrowset_.reset(new MemRowSet(next_mrs_id_, schema_));
@@ -456,7 +456,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &old_rowsets,
   // Then push the new rowsets on the end.
   std::copy(new_rowsets.begin(), new_rowsets.end(), std::back_inserter(post_swap));
   shared_ptr<RowSetTree> new_tree(new RowSetTree());
-  new_tree->Reset(post_swap);
+  CHECK_OK(new_tree->Reset(post_swap));
   rowsets_.swap(new_tree);
 
   if (snap_under_lock != NULL) {
@@ -816,7 +816,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     AtomicSwapRowSets(input.rowsets(), RowSetVector());
 
     // Remove old rowsets
-    DeleteCompactionInputs(input);
+    WARN_NOT_OK(DeleteCompactionInputs(input),
+                "Unable to remove compaction inputs. Will GC later.");
 
     // Write out the new Tablet Metadata
     return FlushMetadata(input.rowsets(), RowSetMetadataVector(), mrs_being_flushed);
@@ -927,7 +928,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowsets);
 
   // Remove old rowsets
-  DeleteCompactionInputs(input);
+  WARN_NOT_OK(DeleteCompactionInputs(input),
+              "Unable to remove compaction inputs. Will GC later.");
 
   // Write out the new Tablet Metadata
   RETURN_NOT_OK(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed));

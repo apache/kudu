@@ -236,7 +236,8 @@ class PosixMmapFile : public WritableFile {
 
   ~PosixMmapFile() {
     if (fd_ >= 0) {
-      PosixMmapFile::Close();
+      WARN_NOT_OK(PosixMmapFile::Close(),
+                  "Failed to close mmapped file");
     }
   }
 
@@ -588,7 +589,7 @@ class PosixEnv : public Env {
       *result = buf;
     }
     // Directory may already exist
-    CreateDir(*result);
+    ignore_result(CreateDir(*result));
     return Status::OK();
   }
 

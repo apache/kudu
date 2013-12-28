@@ -77,12 +77,11 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
   return Status::OK();
 }
 
-Status InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
+void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
   CHECK_GT(response_hdr_buf_.size(), 0);
   CHECK_GT(response_msg_buf_.size(), 0);
   slices->push_back(Slice(response_hdr_buf_));
   slices->push_back(Slice(response_msg_buf_));
-  return Status::OK();
 }
 
 string InboundCall::ToString() const {

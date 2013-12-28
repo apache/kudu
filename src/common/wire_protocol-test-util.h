@@ -14,10 +14,10 @@ namespace kudu {
 
 void CreateTestSchema(Schema* schema) {
   CHECK(schema) << "Schema cannot be null.";
-  schema->Reset(boost::assign::list_of
-               (ColumnSchema("key", UINT32))
-               (ColumnSchema("int_val", UINT32))
-               (ColumnSchema("string_val", STRING, true)), 1);
+  CHECK_OK(schema->Reset(boost::assign::list_of
+                         (ColumnSchema("key", UINT32))
+                         (ColumnSchema("int_val", UINT32))
+                         (ColumnSchema("string_val", STRING, true)), 1));
 }
 
 void AddTestRowToBlockPB(const Schema& schema,

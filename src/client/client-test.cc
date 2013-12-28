@@ -235,7 +235,7 @@ TEST_F(ClientTest, TestCloseScanner) {
     SCOPED_TRACE("Explicit close");
     KuduScanner scanner(client_table_.get());
     ASSERT_STATUS_OK(scanner.SetProjection(schema_));
-    scanner.Open();
+    ASSERT_STATUS_OK(scanner.Open());
     ASSERT_EQ(1, manager->CountActiveScanners());
     scanner.Close();
     AssertScannersDisappear(manager);
@@ -246,7 +246,7 @@ TEST_F(ClientTest, TestCloseScanner) {
     {
       KuduScanner scanner(client_table_.get());
       ASSERT_STATUS_OK(scanner.SetProjection(schema_));
-      scanner.Open();
+      ASSERT_STATUS_OK(scanner.Open());
       ASSERT_EQ(1, manager->CountActiveScanners());
     }
     // Above scanner went out of scope, so the destructor should close asynchronously.

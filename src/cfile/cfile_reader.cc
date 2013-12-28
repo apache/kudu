@@ -153,8 +153,8 @@ Status CFileReader::ReadAndParseFooter() {
   // First read and parse the "post-footer", which has magic
   // and the length of the actual protobuf footer
   uint32_t footer_size;
-  ReadMagicAndLength(file_size_ - kMagicAndLengthSize,
-                     &footer_size);
+  RETURN_NOT_OK_PREPEND(ReadMagicAndLength(file_size_ - kMagicAndLengthSize, &footer_size),
+                        "Failed to read magic and length from end of file");
 
   // Now read the protobuf footer.
   footer_.reset(new CFileFooterPB());

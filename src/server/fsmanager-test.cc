@@ -28,8 +28,8 @@ class FsManagerTestBase : public KuduTest {
     BlockId block_id;
     shared_ptr<WritableFile> writer;
     ASSERT_STATUS_OK(fs_manager()->CreateNewBlock(&writer, &block_id));
-    writer->Append(data);
-    writer->Close();
+    ASSERT_STATUS_OK(writer->Append(data));
+    ASSERT_STATUS_OK(writer->Close());
 
     // Test Read
     Slice result;

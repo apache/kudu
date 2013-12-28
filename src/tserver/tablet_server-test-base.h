@@ -279,7 +279,7 @@ class TabletServerTest : public KuduTest {
 
   void ShutdownAndRebuildTablet() {
     if (mini_server_.get()) {
-      mini_server_->Shutdown();
+      ASSERT_STATUS_OK(mini_server_->Shutdown());
     }
 
     // Start server.

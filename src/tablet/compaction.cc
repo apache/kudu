@@ -662,18 +662,18 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           // On the other hand using a row block for a single row key
           // seems wasteful...
           gscoped_ptr<RowwiseRowBlockPB> row_block(new RowwiseRowBlockPB);
-          SchemaToColumnPBsWithoutIds(schema, row_block->mutable_schema());
+          CHECK_OK(SchemaToColumnPBsWithoutIds(schema, row_block->mutable_schema()));
 
           buf.clear();
           ContiguousRow row_key(key_schema, buf.data());
-          key_projector.ProjectRowForWrite(row.row, &row_key, &arena);
+          CHECK_OK(key_projector.ProjectRowForWrite(row.row, &row_key, &arena));
           ConstContiguousRow const_row_key(row_key);
           AddRowToRowBlockPB(const_row_key, row_block.get());
 
-          tx_ctx->AddMissedMutation(mut->txid(),
-                                    row_block.Pass(),
-                                    mut->changelist(),
-                                    result.Pass());
+          CHECK_OK(tx_ctx->AddMissedMutation(mut->txid(),
+                                             row_block.Pass(),
+                                             mut->changelist(),
+                                             result.Pass()));
         } else {
           tx_ctx->AddFailedMutation(s);
         }

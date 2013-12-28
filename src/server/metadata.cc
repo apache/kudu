@@ -219,10 +219,14 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   BlockId b_blk(master_block_.block_b());
   if (sblk_sequence_ & 1) {
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, *(pb.get())));
-    fs_manager_->DeleteBlock(b_blk);
+    WARN_NOT_OK(fs_manager_->DeleteBlock(b_blk),
+                "Unable to delete old metadata block " + b_blk.ToString()
+                + " for tablet " + oid());
   } else {
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, *(pb.get())));
-    fs_manager_->DeleteBlock(a_blk);
+    WARN_NOT_OK(fs_manager_->DeleteBlock(a_blk),
+                "Unable to delete old metadata block " + a_blk.ToString()
+                + " for tablet " + oid());
   }
 
   sblk_sequence_++;
@@ -376,7 +380,7 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   return Status::OK();
 }
 
-Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
+void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   pb->set_id(id_);
 
   // Write Column Files
@@ -413,8 +417,6 @@ Status RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   if (!adhoc_index_block_.IsNull()) {
     BlockIdToPB(adhoc_index_block_, pb->mutable_adhoc_index_block());
   }
-
-  return Status::OK();
 }
 
 const string RowSetMetadata::ToString() const {

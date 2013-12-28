@@ -222,7 +222,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
     ASSERT_EQ(static_cast<int>(n_rows_ * FLAGS_update_fraction),
               rs->delta_tracker_->dms_->Count());
 
-    rs->FlushDeltas();
+    ASSERT_STATUS_OK(rs->FlushDeltas());
 
     // Check that the DiskRowSet's DMS has now been emptied.
     ASSERT_EQ(0, rs->delta_tracker_->dms_->Count());
@@ -348,7 +348,7 @@ TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates in DMS)",
                    n_rows_, FLAGS_update_fraction * 100.0f,
                    FLAGS_n_read_passes));
-    rs->FlushDeltas();
+    ASSERT_STATUS_OK(rs->FlushDeltas());
 
     BenchmarkIterationPerformance(*rs.get(),
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates on disk)",

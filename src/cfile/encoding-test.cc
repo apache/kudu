@@ -277,7 +277,7 @@ class TestEncoding : public ::testing::Test {
 
     Slice s = ibb.Finish(0);
     GVIntBlockDecoder ibd(s);
-    ibd.ParseHeader();
+    ASSERT_STATUS_OK(ibd.ParseHeader());
 
     // Benchmark seeking
     LOG_TIMING(INFO, "Seeking in gvint block") {
@@ -467,7 +467,7 @@ TEST_F(TestEncoding, TestIntBlockRoundTrip) {
   Slice s = ibb.Finish(kOrdinalPosBase);
 
   GVIntBlockDecoder ibd(s);
-  ibd.ParseHeader();
+  ASSERT_STATUS_OK(ibd.ParseHeader());
 
   ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
 

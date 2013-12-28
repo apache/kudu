@@ -195,7 +195,8 @@ Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
     //       Add a (length, checksum) block at the end of the PB.
     LOG(WARNING) << "Unable to read '" << block_id.ToString() << "' metadata block"
                  << " (" << s.ToString() << "): marking as corrupted";
-    env_->RenameFile(path, path + kCorruptedSuffix);
+    WARN_NOT_OK(env_->RenameFile(path, path + kCorruptedSuffix),
+                "Unable to rename aside corrupted file " + path);
     return s.CloneAndPrepend("Unable to read '" + block_id.ToString() + "' metadata block");
   }
   return Status::OK();

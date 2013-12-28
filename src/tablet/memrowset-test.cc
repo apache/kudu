@@ -41,7 +41,7 @@ class TestMemRowSet : public ::testing::Test {
   void CheckValue(const shared_ptr<MemRowSet> &mrs, string key,
                   const string &expected_row) {
     gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-    iter->Init(NULL);
+    ASSERT_STATUS_OK(iter->Init(NULL));
 
     Slice keystr_slice(key);
     Slice key_slice(reinterpret_cast<const char *>(&keystr_slice), sizeof(Slice));
@@ -251,7 +251,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
 
   // Update a key which exists.
   MutationResultPB result;
-  UpdateRow(mrs.get(), "hello world", 2, &result);
+  ASSERT_STATUS_OK(UpdateRow(mrs.get(), "hello world", 2, &result));
   ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
   ASSERT_EQ(0L, result.mutations(0).mrs_id());
 
@@ -270,7 +270,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
 TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
-  InsertRows(mrs.get(), 100);
+  ASSERT_STATUS_OK(InsertRows(mrs.get(), 100));
   // Validate insertion
   char keybuf[256];
   for (uint32_t i = 0; i < 100; i++) {
@@ -330,7 +330,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   // at mutating the deleted row above -- each of them grabs a txid even
   // though it doesn't actually make any successful mutations.
   vector<string> rows;
-  mrs->DebugDump(&rows);
+  ASSERT_STATUS_OK(mrs->DebugDump(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ("@0: row (string key=hello world, uint32 val=1) mutations="
             "[@1(DELETE), "
@@ -357,7 +357,7 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
 
   LOG_TIMING(INFO, "Inserting rows") {
-    InsertRows(mrs.get(), FLAGS_roundtrip_num_rows);
+    ASSERT_STATUS_OK(InsertRows(mrs.get(), FLAGS_roundtrip_num_rows));
   }
 
   LOG_TIMING(INFO, "Counting rows") {
@@ -389,7 +389,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
     snapshots.push_back(MvccSnapshot(mvcc_));
   }
   LOG(INFO) << "MemRowSet after inserts:";
-  mrs->DebugDump();
+  ASSERT_STATUS_OK(mrs->DebugDump());
 
   ASSERT_EQ(5, snapshots.size());
   for (int i = 0; i < 5; i++) {
@@ -427,7 +427,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
   }
 
   LOG(INFO) << "MemRowSet after updates:";
-  mrs->DebugDump();
+  ASSERT_STATUS_OK(mrs->DebugDump());
 
   // Validate that each snapshot returns the expected value
   ASSERT_EQ(6, snapshots.size());

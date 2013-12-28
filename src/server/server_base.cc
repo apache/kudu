@@ -38,7 +38,7 @@ ServerBase::ServerBase(Env* env, const string& base_dir,
 }
 
 ServerBase::~ServerBase() {
-  Shutdown();
+  WARN_NOT_OK(Shutdown(), "Failed to shut down ServerBase");
 }
 
 Sockaddr ServerBase::first_rpc_address() const {
@@ -50,7 +50,8 @@ Sockaddr ServerBase::first_rpc_address() const {
 
 Sockaddr ServerBase::first_http_address() const {
   vector<Sockaddr> addrs;
-  web_server_->GetBoundAddresses(&addrs);
+  WARN_NOT_OK(web_server_->GetBoundAddresses(&addrs),
+              "Couldn't get bound webserver addresses");
   CHECK(!addrs.empty()) << "Not bound";
   return addrs[0];
 }

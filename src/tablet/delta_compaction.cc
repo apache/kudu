@@ -594,8 +594,10 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
     RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(rsu_->column_indexes(), &out, &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
       RowChangeList update(key_and_update.cell);
-      dfw->AppendDelta(key_and_update.key, update);
-      stats.UpdateStats<false>(base_schema, update);
+      RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key_and_update.key, update),
+                            "Failed to append a delta");
+      WARN_NOT_OK(stats.UpdateStats<false>(base_schema, update),
+                  "Failed to update stats");
     }
     *deltas_written += out.size();
     RETURN_NOT_OK(cfileset_iter->FinishBatch());
@@ -694,12 +696,13 @@ Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *o
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&cells));
     BOOST_FOREACH(const DeltaKeyAndUpdate &cell, cells) {
-      out->AppendDelta(cell.key, RowChangeList(cell.cell));
+      RETURN_NOT_OK_PREPEND(out->AppendDelta(cell.key, RowChangeList(cell.cell)),
+                            "Failed to append delta");
     }
     RETURN_NOT_OK(input->FinishBlock());
   }
 
-  out->WriteDeltaStats(input->stats());
+  RETURN_NOT_OK(out->WriteDeltaStats(input->stats()));
   return Status::OK();
 }
 

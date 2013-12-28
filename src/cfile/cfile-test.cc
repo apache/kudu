@@ -258,7 +258,7 @@ class TestCFile : public CFileTestBase {
     unsigned int seed = time(NULL);
     LOG(INFO) << "Using random seed: " << seed;
     srand(seed);
-    iter->SeekToOrdinal(0);
+    ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
     size_t fetched = 0;
     while (fetched < 10000) {
       ColumnBlock advancing_block(out.type_info(), NULL,
@@ -605,7 +605,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   uint32_t int_value = 15;
   DefaultColumnValueIterator iter(UINT32, &int_value);
   ColumnBlock int_col(GetTypeInfo(UINT32), NULL, data, kNumItems, NULL);
-  iter.Scan(&int_col);
+  ASSERT_STATUS_OK(iter.Scan(&int_col));
   for (size_t i = 0; i < int_col.nrows(); ++i) {
     ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(int_col.cell_ptr(i)));
   }
@@ -614,7 +614,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   int_value = 321;
   DefaultColumnValueIterator nullable_iter(UINT32, &int_value);
   ColumnBlock nullable_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
-  nullable_iter.Scan(&nullable_col);
+  ASSERT_STATUS_OK(nullable_iter.Scan(&nullable_col));
   for (size_t i = 0; i < nullable_col.nrows(); ++i) {
     ASSERT_FALSE(nullable_col.is_null(i));
     ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(nullable_col.cell_ptr(i)));
@@ -623,7 +623,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   // Test NULL Default Value
   DefaultColumnValueIterator null_iter(UINT32,  NULL);
   ColumnBlock null_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
-  null_iter.Scan(&null_col);
+  ASSERT_STATUS_OK(null_iter.Scan(&null_col));
   for (size_t i = 0; i < null_col.nrows(); ++i) {
     ASSERT_TRUE(null_col.is_null(i));
   }
@@ -634,7 +634,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   Arena arena(32*1024, 256*1024);
   DefaultColumnValueIterator str_iter(STRING, &str_value);
   ColumnBlock str_col(GetTypeInfo(STRING), NULL, str_data, kNumItems, &arena);
-  str_iter.Scan(&str_col);
+  ASSERT_STATUS_OK(str_iter.Scan(&str_col));
   for (size_t i = 0; i < str_col.nrows(); ++i) {
     ASSERT_EQ(str_value, *reinterpret_cast<const Slice *>(str_col.cell_ptr(i)));
   }

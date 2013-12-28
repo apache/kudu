@@ -45,7 +45,8 @@ Status MiniCluster::Start() {
   mini_master_.reset(mini_master.release());
 
   for (int i = 0; i < num_tablet_servers_; i++) {
-    AddTabletServer();
+    RETURN_NOT_OK_PREPEND(AddTabletServer(),
+                          Substitute("Error adding TS $0", i));
   }
   started_ = true;
   return Status::OK();

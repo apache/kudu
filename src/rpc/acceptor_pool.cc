@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "gutil/strings/substitute.h"
 #include "rpc/messenger.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
@@ -61,7 +62,9 @@ void AcceptorPool::Shutdown() {
 
   // Closing the socket will break us out of accept() if we're in it, and
   // prevent future accepts.
-  socket_.Shutdown(true, true);
+  WARN_NOT_OK(socket_.Shutdown(true, true),
+              strings::Substitute("Could not shut down acceptor socket on $0",
+                                  bind_address_.ToString()));
 
   BOOST_FOREACH(const shared_ptr<boost::thread>& thread, threads_) {
     CHECK_OK(ThreadJoiner(thread.get(), "acceptor thread").Join());

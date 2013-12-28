@@ -308,7 +308,7 @@ class AbortableHangingTask : public Task {
 class FalselyNonAbortableHangingTask : public AbortableHangingTask {
  public:
   virtual Status Run() {
-    AbortableHangingTask::Run();
+    ignore_result(AbortableHangingTask::Run());
     return Status::OK();
   }
   virtual bool Abort() {

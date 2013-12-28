@@ -149,7 +149,7 @@ static void WriteTestFile(Env* env, const string& path, size_t size) {
     data[i] = (i * 31) & 0xff;
   }
   ASSERT_STATUS_OK(wf->Append(Slice(data)));
-  wf->Close();
+  ASSERT_STATUS_OK(wf->Close());
 }
 
 static void VerifyTestData(const Slice& read_data, size_t offset) {

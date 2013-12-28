@@ -213,7 +213,8 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer) const {
   writer->String("metrics");
   writer->StartArray();
   BOOST_FOREACH(OrderedMetricMap::value_type& val, metrics) {
-    val.second->WriteAsJson(val.first, writer);
+    WARN_NOT_OK(val.second->WriteAsJson(val.first, writer),
+                strings::Substitute("Failed to write $0 as JSON", val.first));
   }
   writer->EndArray();
 

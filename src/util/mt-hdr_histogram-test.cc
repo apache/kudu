@@ -50,7 +50,7 @@ TEST_F(MtHdrHistogramTest, ConcurrentWriteTest) {
                          &threads[i]));
   }
   for (int i = 0; i < num_threads_; i++) {
-    ThreadJoiner(threads[i].get(), strings::Substitute("thread-%s", i)).Join();
+    CHECK_OK(ThreadJoiner(threads[i].get(), strings::Substitute("thread-%s", i)).Join());
   }
 
   HdrHistogram snapshot(hist);
@@ -87,7 +87,7 @@ TEST_F(MtHdrHistogramTest, ConcurrentCopyWhileWritingTest) {
   }
 
   for (int i = 0; i < num_threads_; i++) {
-    ThreadJoiner(threads[i].get(), strings::Substitute("thread-%s", i)).Join();
+    CHECK_OK(ThreadJoiner(threads[i].get(), strings::Substitute("thread-%s", i)).Join());
   }
 
   delete[] threads;

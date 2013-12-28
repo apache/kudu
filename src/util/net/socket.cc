@@ -30,7 +30,7 @@ Socket::Socket(int fd)
 }
 
 void Socket::Reset(int fd) {
-  Close();
+  ignore_result(Close());
   fd_ = fd;
 }
 
@@ -41,7 +41,7 @@ int Socket::Release() {
 }
 
 Socket::~Socket() {
-  Close();
+  ignore_result(Close());
 }
 
 Status Socket::Close() {

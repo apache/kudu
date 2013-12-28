@@ -85,7 +85,7 @@ class InboundCall {
 
   // Serialize the response packet for the finished call.
   // The resulting slices refer to memory in this object.
-  Status SerializeResponseTo(std::vector<Slice>* slices) const;
+  void SerializeResponseTo(std::vector<Slice>* slices) const;
 
   std::string ToString() const;
 

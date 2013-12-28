@@ -88,7 +88,7 @@ const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
     tx_ctx->AddArrayToAutoReleasePool(rowbuf);
     ConstContiguousRow src_row(row_projector.base_schema(), user_row_ptr);
     ContiguousRow proj_row(*tablet_schema, rowbuf);
-    row_projector.ProjectRowForWrite(src_row, &proj_row, static_cast<Arena*>(NULL));
+    CHECK_OK(row_projector.ProjectRowForWrite(src_row, &proj_row, static_cast<Arena*>(NULL)));
     row = new ConstContiguousRow(proj_row);
   }
   DCHECK(row->schema().has_column_ids());
@@ -103,7 +103,7 @@ const RowChangeList* ProjectMutation(WriteTransactionContext *tx_ctx,
     mutation = user_mutation;
   } else {
     faststring rclbuf;
-    RowChangeListDecoder::ProjectUpdate(delta_projector, *user_mutation, &rclbuf);
+    CHECK_OK(RowChangeListDecoder::ProjectUpdate(delta_projector, *user_mutation, &rclbuf));
     mutation = new RowChangeList(rclbuf);
     tx_ctx->AddToAutoReleasePool(rclbuf.release());
     tx_ctx->AddToAutoReleasePool(mutation);

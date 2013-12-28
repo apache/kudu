@@ -132,7 +132,8 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     const Webserver::ArgumentMap& args, std::stringstream* output) {
   JsonWriter writer(output);
-  metrics->WriteAsJson(&writer);
+  WARN_NOT_OK(metrics->WriteAsJson(&writer),
+              "Couldn't write JSON metrics over HTTP");
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {

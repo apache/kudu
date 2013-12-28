@@ -45,7 +45,7 @@ class TestDeltaMemStore : public KuduTest {
       uint32_t new_val = idx_to_update * 10;
       update.AddColumnUpdate(kIntColumn, &new_val);
 
-      dms_->Update(tx.txid(), idx_to_update, RowChangeList(buf));
+      CHECK_OK(dms_->Update(tx.txid(), idx_to_update, RowChangeList(buf)));
     }
   }
 
@@ -104,7 +104,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
       ScopedTransaction tx(&mvcc_);
       uint32_t new_val = idx * 10;
       update.AddColumnUpdate(kIntColumn, &new_val);
-      dms_->Update(tx.txid(), idx, RowChangeList(update_buf));
+      ASSERT_STATUS_OK_FAST(dms_->Update(tx.txid(), idx, RowChangeList(update_buf)));
     }
   }
   ASSERT_EQ(n_rows / 2, dms_->delta_stats().update_count(kIntColumn));
@@ -159,7 +159,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     char buf[256] = "update 1";
     Slice s(buf);
     update.AddColumnUpdate(0, &s);
-    dms_->Update(tx.txid(), 123, RowChangeList(update_buf));
+    ASSERT_STATUS_OK_FAST(dms_->Update(tx.txid(), 123, RowChangeList(update_buf)));
     memset(buf, 0xff, sizeof(buf));
   }
   MvccSnapshot snapshot_after_first_update(mvcc_);
@@ -171,7 +171,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     Slice s(buf);
     update.Reset();
     update.AddColumnUpdate(0, &s);
-    dms_->Update(tx.txid(), 123, RowChangeList(update_buf));
+    ASSERT_STATUS_OK_FAST(dms_->Update(tx.txid(), 123, RowChangeList(update_buf)));
     memset(buf, 0xff, sizeof(buf));
   }
   MvccSnapshot snapshot_after_second_update(mvcc_);
@@ -205,12 +205,12 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
     Slice s("update 2");
     update.AddColumnUpdate(kStringColumn, &s);
-    dms_->Update(tx2.txid(), 123, RowChangeList(update_buf));
+    ASSERT_STATUS_OK(dms_->Update(tx2.txid(), 123, RowChangeList(update_buf)));
 
     update.Reset();
     s = Slice("update 1");
     update.AddColumnUpdate(kStringColumn, &s);
-    dms_->Update(tx1.txid(), 123, RowChangeList(update_buf));
+    ASSERT_STATUS_OK(dms_->Update(tx1.txid(), 123, RowChangeList(update_buf)));
   }
 
   // Ensure we end up two entries for the cell.
@@ -239,7 +239,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     Slice s(buf);
     update.AddColumnUpdate(kStringColumn, &s);
 
-    dms_->Update(tx.txid(), i, RowChangeList(update_buf));
+    ASSERT_STATUS_OK_FAST(dms_->Update(tx.txid(), i, RowChangeList(update_buf)));
   }
 
   ASSERT_EQ(1000, dms_->Count());
@@ -274,7 +274,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
 
     uint32_t val = i * 20;
     update.AddColumnUpdate(kIntColumn, &val);
-    dms_->Update(tx.txid(), i, RowChangeList(update_buf));
+    ASSERT_STATUS_OK_FAST(dms_->Update(tx.txid(), i, RowChangeList(update_buf)));
   }
 
   ASSERT_EQ(2000, dms_->Count());

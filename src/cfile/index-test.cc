@@ -282,11 +282,11 @@ TEST(TestIndexBlock, TestIterator) {
   IndexBlockReader reader;
   ASSERT_STATUS_OK(reader.Parse(s));
   gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
-  iter->SeekToIndex(0);
+  ASSERT_STATUS_OK(iter->SeekToIndex(0));
   ASSERT_EQ(0U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
 
-  iter->SeekToIndex(50);
+  ASSERT_STATUS_OK(iter->SeekToIndex(50));
   ASSERT_EQ(500U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100050U, iter->GetCurrentBlockPointer().offset());
 
@@ -295,13 +295,13 @@ TEST(TestIndexBlock, TestIterator) {
   ASSERT_EQ(510U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100051U, iter->GetCurrentBlockPointer().offset());
 
-  iter->SeekToIndex(999);
+  ASSERT_STATUS_OK(iter->SeekToIndex(999));
   ASSERT_EQ(9990U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100999U, iter->GetCurrentBlockPointer().offset());
   ASSERT_FALSE(iter->HasNext());
   ASSERT_TRUE(iter->Next().IsNotFound());
 
-  iter->SeekToIndex(0);
+  ASSERT_STATUS_OK(iter->SeekToIndex(0));
   ASSERT_EQ(0U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
   ASSERT_TRUE(iter->HasNext());

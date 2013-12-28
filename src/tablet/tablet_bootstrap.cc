@@ -303,7 +303,7 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
   if (!fetched_blocks && !fetched_segments) {
     LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_name
         << " creating new one.";
-    OpenNewLog();
+    RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     rebuilt_tablet->reset(tablet_.release());
     rebuilt_log->reset(log_.release());
     return Status::OK();
@@ -372,7 +372,8 @@ Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
                                                                 recovery_ts_);
 
   if (!fs_manager->Exists(log_dir)) {
-    fs_manager->CreateDirIfMissing(log_dir);
+    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                          "Failed to create log dir");
     return Status::OK();
   }
 

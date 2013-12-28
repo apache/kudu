@@ -11,7 +11,7 @@ namespace kudu {
 
 TEST(TestThreadPool, TestNoTaskOpenClose) {
   ThreadPool thread_pool("test");
-  thread_pool.Init(4);
+  ASSERT_STATUS_OK(thread_pool.Init(4));
   thread_pool.Shutdown();
 }
 

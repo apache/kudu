@@ -145,10 +145,10 @@ class LmTestThread {
   }
 
   void Join() {
-    ThreadJoiner(thread_.get(), "LmTestThread").
-      warn_after_ms(1000).
-      warn_every_ms(5000).
-      Join();
+    CHECK_OK(ThreadJoiner(thread_.get(), "LmTestThread").
+             warn_after_ms(1000).
+             warn_every_ms(5000).
+             Join());
     thread_.reset(NULL);
   }
 

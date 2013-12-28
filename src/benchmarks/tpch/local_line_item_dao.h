@@ -21,8 +21,8 @@ class LocalLineItemDAO : public LineItemDAO {
       : fs_manager_(kudu::Env::Default(), path) {
     Status s = fs_manager_.Open();
     if (s.IsNotFound()) {
-      fs_manager_.CreateInitialFileSystemLayout();
-      fs_manager_.Open();
+      CHECK_OK(fs_manager_.CreateInitialFileSystemLayout());
+      CHECK_OK(fs_manager_.Open());
     }
   }
   virtual void WriteLine(const ConstContiguousRow &row);

@@ -289,7 +289,7 @@ void StringPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
 
   next_ptr_ = GetRestartPoint(idx);
   cur_idx_ = idx * restart_interval_;
-  ParseNextValue();
+  CHECK_OK(ParseNextValue()); // TODO: handle corrupted blocks
 }
 
 Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,

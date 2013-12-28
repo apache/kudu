@@ -310,7 +310,7 @@ class RowSetMetadata {
 
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
 
-  Status ToProtobuf(RowSetDataPB *pb);
+  void ToProtobuf(RowSetDataPB *pb);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadata);

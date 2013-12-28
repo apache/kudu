@@ -38,7 +38,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
 }
 
 TabletServer::~TabletServer() {
-  Shutdown();
+  WARN_NOT_OK(Shutdown(), "Error shutting down tablet server");
 }
 
 string TabletServer::ToString() const {

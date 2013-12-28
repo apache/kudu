@@ -56,7 +56,7 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
   header.set_method_name(method());
   header.set_timeout_millis(controller_->timeout().ToMilliseconds());
 
-  serialization::SerializeHeader(header, param_len, &header_buf_);
+  CHECK_OK(serialization::SerializeHeader(header, param_len, &header_buf_));
 
   // Return the concatenated packet.
   slices->push_back(Slice(header_buf_));

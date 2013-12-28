@@ -23,7 +23,7 @@ class TestMultiThreadedRowSet : public TestRowSet {
 
   void FlushThread(DiskRowSet *rs) {
     for (int i = 0; i < 10; i++) {
-      rs->FlushDeltas();
+      CHECK_OK(rs->FlushDeltas());
     }
   }
 

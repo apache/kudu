@@ -39,7 +39,8 @@ static Status DoWriteStringToFile(Env* env, const Slice& data,
   }
   delete file;  // Will auto-close if we did not close above
   if (!s.ok()) {
-    env->DeleteFile(fname);
+    WARN_NOT_OK(env->DeleteFile(fname),
+                "Failed to delete partially-written file " + fname);
   }
   return s;
 }

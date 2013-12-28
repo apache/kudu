@@ -199,7 +199,7 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
     mapped_ids.push_back(col_ids_[index]);
   }
 
-  mapped_projection->Reset(mapped_cols, mapped_ids, projection.num_key_columns());
+  CHECK_OK(mapped_projection->Reset(mapped_cols, mapped_ids, projection.num_key_columns()));
   return Status::OK();
 }
 

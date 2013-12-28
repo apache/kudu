@@ -54,14 +54,14 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   void RowSetFlushThread(DiskRowSet *rs) {
     WallTime start_time = WallTime_Now();
     while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
-      rs->FlushDeltas();
+      CHECK_OK(rs->FlushDeltas());
     }
   }
 
   void RowSetDeltaCompactionThread(DiskRowSet *rs) {
     WallTime start_time = WallTime_Now();
     while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
-      ASSERT_STATUS_OK(rs->MinorCompactDeltaStores());
+      CHECK_OK(rs->MinorCompactDeltaStores());
     }
   }
 
@@ -72,9 +72,9 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     size_t count = 0;
     WallTime start_time = WallTime_Now();
     while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
-      builder.AddColumn(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
-                        false, &default_value, &default_value);
-      ASSERT_STATUS_OK(rs->AlterSchema(builder.Build()));
+      CHECK_OK(builder.AddColumn(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
+                                 false, &default_value, &default_value));
+      CHECK_OK(rs->AlterSchema(builder.Build()));
       boost::this_thread::sleep(boost::posix_time::milliseconds(200));
       count++;
     }
