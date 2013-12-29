@@ -120,7 +120,9 @@ Status Log::Append(const LogEntry& entry) {
 
   // if the size of this entry overflows the current segment, get a new one
   if ((current_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
-    RETURN_NOT_OK(RollOver());
+    LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
+      RETURN_NOT_OK(RollOver());
+    }
     LOG(INFO) << "Max segment size reached. Rolled over to new segment: "
               << current_->path();
   }
