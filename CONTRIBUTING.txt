@@ -13,7 +13,7 @@ do. So, they prohibit a lot of pieces of boost. Feel free to use boost
 libraries rather than re-implementing the same functionality, but heed
 the warning in the Google guide:
 
-  "Some Boost libraries encourage coding practices which can hamper 
+  "Some Boost libraries encourage coding practices which can hamper
    readability, such as metaprogramming and other advanced template
    techniques, and an excessively "functional" style of programming."
 
@@ -104,6 +104,21 @@ Given that scoped_refptrs are generally faster and smaller, prefer using them
 over shared_ptr in new code. Existing code (as of 12/20/2013) uses shared_ptrs
 in many places -- when interfacing with that code, continued use of shared_ptr
 is fine.
+
+-CMake Style Guide
+
+CMake allows commands in lower, upper, or mixed case. Therefore to keep
+the CMake files consistent, please use the following guidelines:
+
+-built-in commands in lowercase
+add_subdirectory(some/path)
+
+-built-in arguments in uppercase
+message(STATUS "message goes here")
+
+-custom commands/macros in uppercase
+ADD_KUDU_TEST(some-test)
+
 
 Testing guidelines
 -----------------------

@@ -14,7 +14,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 #  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
 #  - pthread: enable multithreaded malloc
 #  - -D__STDC_FORMAT_MACROS: for PRI* print format macros
-SET(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
+set(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
@@ -33,42 +33,42 @@ SET(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread 
 #   2. Run the benchmarks (generates *.gcda profiling data).
 #   3. Build again with CMAKE_BUILD_TYPE_PROFILE_BUILD
 #     -fprofile-use: Compiler will use the profile outputs for optimizations
-SET(CXX_FLAGS_DEBUG "-ggdb")
-SET(CXX_FLAGS_FASTDEBUG "-ggdb -O1 -fno-omit-frame-pointer")
-SET(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -Wno-strict-aliasing")
+set(CXX_FLAGS_DEBUG "-ggdb")
+set(CXX_FLAGS_FASTDEBUG "-ggdb -O1 -fno-omit-frame-pointer")
+set(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -Wno-strict-aliasing")
 
 if (NOT "${KUDU_USE_LTO}" STREQUAL "")
-  SET(CXX_FLAGS_RELEASE "${CXX_FLAGS_RELEASE} flto -fno-use-linker-plugin")
+  set(CXX_FLAGS_RELEASE "${CXX_FLAGS_RELEASE} flto -fno-use-linker-plugin")
 endif()
 
-SET(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")
-SET(CXX_FLAGS_PROFILE_BUILD "${CXX_FLAGS_RELEASE} -fprofile-use")
+set(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")
+set(CXX_FLAGS_PROFILE_BUILD "${CXX_FLAGS_RELEASE} -fprofile-use")
 
 # if no build build type is specified, default to debug builds
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif(NOT CMAKE_BUILD_TYPE)
 
-STRING (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
+string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 
 # Set compile flags based on the build type.
 message("Configured for ${CMAKE_BUILD_TYPE} build (set with cmake -DCMAKE_BUILD_TYPE={release,debug,...})")
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG")
-  SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_DEBUG})
+  set(CMAKE_CXX_FLAGS ${CXX_FLAGS_DEBUG})
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "FASTDEBUG")
-  SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_FASTDEBUG})
+  set(CMAKE_CXX_FLAGS ${CXX_FLAGS_FASTDEBUG})
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
-  SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_RELEASE})
+  set(CMAKE_CXX_FLAGS ${CXX_FLAGS_RELEASE})
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "PROFILE_GEN")
-  SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_PROFILE_GEN})
+  set(CMAKE_CXX_FLAGS ${CXX_FLAGS_PROFILE_GEN})
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "PROFILE_BUILD")
-  SET(CMAKE_CXX_FLAGS ${CXX_FLAGS_PROFILE_BUILD})
+  set(CMAKE_CXX_FLAGS ${CXX_FLAGS_PROFILE_BUILD})
 else()
   message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif ()
 
 # Add common flags
-SET(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
 if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
   set(IS_CLANG 1)
@@ -124,7 +124,7 @@ if ("${KUDU_GENERATE_COVERAGE}")
 endif()
 
 # set compile output directory
-STRING (TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWERCASE)
+string (TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWERCASE)
 set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE_LOWERCASE}/")
 
 # Link build/latest to the current build directory, to avoid developers
@@ -142,7 +142,7 @@ set(ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 
-INCLUDE_DIRECTORIES(src)
+include_directories(src)
 
 ############################################################
 # Testing
@@ -151,24 +151,24 @@ INCLUDE_DIRECTORIES(src)
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
 # a deadlock or anything.
-SET(KUDU_TEST_TIMEOUT 900)
+set(KUDU_TEST_TIMEOUT 900)
 
 # Add a new test case. Additional arguments after the
 # name of the test will be passed to SET_TESTS_PROPERTIES
-FUNCTION(ADD_KUDU_TEST REL_TEST_BINARY)
-  SET(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${REL_TEST_BINARY}")
-  GET_FILENAME_COMPONENT(SRC_DIR ${TEST_PATH} PATH)
-  GET_FILENAME_COMPONENT(TEST_BINARY ${TEST_PATH} NAME)
-  ADD_EXECUTABLE(${TEST_BINARY} "${REL_TEST_BINARY}.cc")
-  ADD_TEST(${TEST_BINARY} ${CMAKE_SOURCE_DIR}/build-support/run-test.sh
+function(ADD_KUDU_TEST REL_TEST_BINARY)
+  set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${REL_TEST_BINARY}")
+  get_filename_component(SRC_DIR ${TEST_PATH} PATH)
+  get_filename_component(TEST_BINARY ${TEST_PATH} NAME)
+  add_executable(${TEST_BINARY} "${REL_TEST_BINARY}.cc")
+  add_test(${TEST_BINARY} ${CMAKE_SOURCE_DIR}/build-support/run-test.sh
     "${BUILD_OUTPUT_ROOT_DIRECTORY}/${TEST_BINARY}")
-  SET_TESTS_PROPERTIES(${TEST_BINARY} PROPERTIES
+  set_tests_properties(${TEST_BINARY} PROPERTIES
     TIMEOUT ${KUDU_TEST_TIMEOUT}
     ${ARGN})
-  TARGET_LINK_LIBRARIES(${TEST_BINARY} ${KUDU_TEST_LINK_LIBS})
-ENDFUNCTION()
+  target_link_libraries(${TEST_BINARY} ${KUDU_TEST_LINK_LIBS})
+endfunction()
 
-ENABLE_TESTING()
+enable_testing()
 
 ############################################################
 # Dependencies
@@ -207,11 +207,11 @@ else()
   add_library(glog SHARED IMPORTED)
   set_target_properties(glog PROPERTIES IMPORTED_LOCATION "${GLOG_LIBS}/libglog.so")
 endif()
-SET(LIBS ${LIBS} glog)
+set(LIBS ${LIBS} glog)
 
 ## GFlags
 find_package(GFlags REQUIRED)
-INCLUDE_DIRECTORIES(SYSTEM ${GFLAGS_INCLUDE_DIR})
+include_directories(SYSTEM ${GFLAGS_INCLUDE_DIR})
 if ("${KUDU_STATIC_LINK}")
   add_library(gflags STATIC IMPORTED)
   set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
@@ -219,7 +219,7 @@ else()
   add_library(gflags SHARED IMPORTED)
   set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_LIBS}/libgflags.so")
 endif()
-SET(LIBS ${LIBS} gflags)
+set(LIBS ${LIBS} gflags)
 
 ## GTest
 find_package(GTest REQUIRED)
@@ -227,11 +227,11 @@ include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
 add_library(gtest STATIC IMPORTED)
 set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
 set(LIBS ${LIBS} ${GTEST_LIBRARY})
-SET(KUDU_MIN_TEST_LIBS ${GTEST_LIBRARY} kudu_test_main glog gflags  )
+set(KUDU_MIN_TEST_LIBS ${GTEST_LIBRARY} kudu_test_main glog gflags  )
 
 ## Protobuf
-SET(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
-SET(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
+set(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
 find_package( Protobuf REQUIRED )
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
 if ("${KUDU_STATIC_LINK}")
@@ -283,54 +283,54 @@ if (NOT "${KUDU_USE_ASAN}")
 endif()
 
 ## curl
-FIND_PACKAGE(CURL REQUIRED)
+find_package(CURL REQUIRED)
 set(TEST_ONLY_LIBS ${TEST_ONLY_LIBS} ${CURL_LIBRARIES})
 
 
 ############################################################
 # Linker setup
 ############################################################
-SET(KUDU_DEP_LIBS ${LIBS})
-SET(KUDU_LINK_LIBS client master master_proto tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
-SET(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
+set(KUDU_DEP_LIBS ${LIBS})
+set(KUDU_LINK_LIBS client master master_proto tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
+set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
 # "make ctags" target
 ############################################################
-IF (UNIX)
-  ADD_CUSTOM_TARGET(ctags ctags -R --languages=c++,c --exclude=thirdparty/installed)
-ENDIF (UNIX)
+if (UNIX)
+  add_custom_target(ctags ctags -R --languages=c++,c --exclude=thirdparty/installed)
+endif (UNIX)
 
 ############################################################
 # "make etags" target
 ############################################################
-IF (UNIX)
-  ADD_CUSTOM_TARGET(tags etags --members --declarations
+if (UNIX)
+  add_custom_target(tags etags --members --declarations
   `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name
 *.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or
 -name *.f`)
-  ADD_CUSTOM_TARGET(etags DEPENDS tags)
-ENDIF (UNIX)
+  add_custom_target(etags DEPENDS tags)
+endif (UNIX)
 
 ############################################################
 # "make cscope" target
 ############################################################
-IF (UNIX)
-  ADD_CUSTOM_TARGET(cscope find ${CMAKE_CURRENT_SOURCE_DIR}/src
+if (UNIX)
+  add_custom_target(cscope find ${CMAKE_CURRENT_SOURCE_DIR}/src
 -name *.cc -or -name *.hh -or -name *.cpp -or -name *.h -or
 -name *.c -or -name *.f > cscope.files && cscope -q -b)
-ENDIF (UNIX)
+endif (UNIX)
 
 ############################################################
 # "make lint" target
 ############################################################
-IF (UNIX)
+if (UNIX)
   # Full lint
-  ADD_CUSTOM_TARGET(lint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh)
+  add_custom_target(lint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh)
   # Incremental lint - only checks files changed since the last
   # merged upstream commit
-  ADD_CUSTOM_TARGET(ilint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh -c)
-ENDIF (UNIX)
+  add_custom_target(ilint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh -c)
+endif (UNIX)
 
 ############################################################
 # Subdirectories

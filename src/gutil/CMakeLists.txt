@@ -2,17 +2,17 @@ PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../
   )
-SET(GUTIL_SRCS ${PROTO_SRCS})
+set(GUTIL_SRCS ${PROTO_SRCS})
 
 PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../
-  PROTO_FILES proto/types.proto 
+  PROTO_FILES proto/types.proto
   )
-SET(GUTIL_SRCS ${GUTIL_SRCS} ${PROTO_SRCS})
+set(GUTIL_SRCS ${GUTIL_SRCS} ${PROTO_SRCS})
 
 
-ADD_LIBRARY(gutil
+add_library(gutil
   ${GUTIL_SRCS}
 ./bits.cc
 ./ref_counted.cc
@@ -45,7 +45,7 @@ ADD_LIBRARY(gutil
 ./utf/rune.c
 )
 # Disable warnings which trigger a lot in the Google code:
-SET_TARGET_PROPERTIES(gutil PROPERTIES
+set_target_properties(gutil PROPERTIES
   COMPILE_FLAGS "-funsigned-char -Wno-deprecated -Wno-char-subscripts")
 
-SET(GUTIL_LIBS gutil)
+set(GUTIL_LIBS gutil)

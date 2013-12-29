@@ -9,7 +9,7 @@ add_library(rpc_header_proto ${RPC_HEADER_PROTO_SRCS} ${RPC_HEADER_PROTO_HDFS})
 target_link_libraries(rpc_header_proto protobuf)
 
 ### RPC library
-ADD_LIBRARY(krpc
+add_library(krpc
     acceptor_pool.cc
     auth_store.cc
     blocking_ops.cc
@@ -33,14 +33,14 @@ ADD_LIBRARY(krpc
     transfer.cc
 )
 
-TARGET_LINK_LIBRARIES(krpc
+target_link_libraries(krpc
   rpc_header_proto
   kudu_util
   gutil
   ${LIBEV_STATIC_LIB}
   ${CYRUS_SASL_LIBS}
 )
-SET(RPC_LIBS krpc)
+set(RPC_LIBS krpc)
 
 ### RPC generator tool
 add_executable(protoc-gen-krpc protoc-gen-krpc.cc)
@@ -66,16 +66,16 @@ add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
 target_link_libraries(rtest_krpc rtest_diff_package_proto)
 
 ADD_KUDU_TEST(rpc-test)
-TARGET_LINK_LIBRARIES(rpc-test rtest_krpc  krpc)
+target_link_libraries(rpc-test rtest_krpc  krpc)
 
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
-TARGET_LINK_LIBRARIES(rpc-bench rtest_krpc krpc)
+target_link_libraries(rpc-bench rtest_krpc krpc)
 
 ADD_KUDU_TEST(rpc_stub-test)
-TARGET_LINK_LIBRARIES(rpc_stub-test rtest_krpc krpc)
+target_link_libraries(rpc_stub-test rtest_krpc krpc)
 
 ADD_KUDU_TEST(sasl_rpc-test)
-TARGET_LINK_LIBRARIES(sasl_rpc-test rtest_krpc krpc)
+target_link_libraries(sasl_rpc-test rtest_krpc krpc)
 
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
-TARGET_LINK_LIBRARIES(mt-rpc-test rtest_krpc krpc)
+target_link_libraries(mt-rpc-test rtest_krpc krpc)

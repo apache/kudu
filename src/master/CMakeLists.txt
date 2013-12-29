@@ -10,10 +10,10 @@ KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
   PROTO_FILES master.proto)
 
 add_library(master_proto ${MASTER_PROTO_SRCS} ${MASTER_PROTO_HDRS} ${MASTER_KRPC_SRCS})
-ADD_DEPENDENCIES(master_proto kudu_common)
-TARGET_LINK_LIBRARIES(master_proto krpc)
+add_dependencies(master_proto kudu_common)
+target_link_libraries(master_proto krpc)
 
-SET(MASTER_SRCS
+set(MASTER_SRCS
   master.cc
   master_options.cc
   master_service.cc
@@ -26,15 +26,15 @@ SET(MASTER_SRCS
 )
 
 add_library(master ${MASTER_SRCS} ${MASTER_PROTO_SRCS} ${MASTER_KRPC_SRCS})
-ADD_DEPENDENCIES(master kudu_common)
-ADD_DEPENDENCIES(master tablet)
-ADD_DEPENDENCIES(master server)
-ADD_DEPENDENCIES(master master_proto)
-ADD_DEPENDENCIES(master krpc)
+add_dependencies(master kudu_common)
+add_dependencies(master tablet)
+add_dependencies(master server)
+add_dependencies(master master_proto)
+add_dependencies(master krpc)
 
 # Tests
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
-TARGET_LINK_LIBRARIES(master-test master master_proto ${KUDU_LINK_LIBS})
+target_link_libraries(master-test master master_proto ${KUDU_LINK_LIBS})
 
-ADD_EXECUTABLE(kudu-master master_main.cc)
-TARGET_LINK_LIBRARIES(kudu-master master master_proto ${KUDU_LINK_LIBS})
+add_executable(kudu-master master_main.cc)
+target_link_libraries(kudu-master master master_proto ${KUDU_LINK_LIBS})

@@ -1,6 +1,6 @@
 # Copyright (c) 2012, Cloudera, inc.
 
-SET(TABLET_SRCS
+set(TABLET_SRCS
   tablet.cc
   tablet_bootstrap.cc
   tablet_metrics.cc
@@ -29,16 +29,16 @@ PROTOBUF_GENERATE_CPP(TABLET_PROTO_SRCS TABLET_PROTO_HDRS
   PROTO_FILES tablet.proto)
 
 add_library(tablet_proto ${TABLET_PROTO_SRCS} ${TABLET_PROTO_HDRS})
-ADD_DEPENDENCIES(tablet_proto kudu_common)
+add_dependencies(tablet_proto kudu_common)
 
-SET(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
-ADD_LIBRARY(tablet ${TABLET_SRCS})
-ADD_DEPENDENCIES(tablet kudu_common)
-ADD_DEPENDENCIES(tablet gutil)
-ADD_DEPENDENCIES(tablet cfile_proto)
-ADD_DEPENDENCIES(tablet server)
-ADD_DEPENDENCIES(tablet consensus_proto)
-ADD_DEPENDENCIES(tablet log_proto)
+set(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
+add_library(tablet ${TABLET_SRCS})
+add_dependencies(tablet kudu_common)
+add_dependencies(tablet gutil)
+add_dependencies(tablet cfile_proto)
+add_dependencies(tablet server)
+add_dependencies(tablet consensus_proto)
+add_dependencies(tablet log_proto)
 
 # tablet-test
 ADD_KUDU_TEST(tablet-test)
@@ -62,5 +62,5 @@ ADD_KUDU_TEST(mt-rowset_delta_compaction-test)
 ADD_KUDU_TEST(major_delta_compaction-test)
 
 # Some tests don't have dependencies on other tablet stuff
-SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
+set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(cbtree-test RUN_SERIAL true)

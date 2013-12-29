@@ -6,11 +6,11 @@ PROTOBUF_GENERATE_CPP(CONSENSUS_PROTO_SRCS CONSENSUS_PROTO_HDRS
   PROTO_FILES consensus.proto)
 
 add_library(consensus_proto ${CONSENSUS_PROTO_SRCS} ${CONSENSUS_PROTO_HDRS})
-ADD_DEPENDENCIES(consensus_proto kudu_common)
-ADD_DEPENDENCIES(consensus_proto cfile_proto)
-ADD_DEPENDENCIES(consensus_proto metadata_proto)
-ADD_DEPENDENCIES(consensus_proto tserver_proto)
-ADD_DEPENDENCIES(consensus_proto tablet_proto)
+add_dependencies(consensus_proto kudu_common)
+add_dependencies(consensus_proto cfile_proto)
+add_dependencies(consensus_proto metadata_proto)
+add_dependencies(consensus_proto tserver_proto)
+add_dependencies(consensus_proto tablet_proto)
 
 PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -18,9 +18,9 @@ PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
   PROTO_FILES log.proto)
 
 add_library(log_proto ${LOG_PROTO_SRCS} ${LOG_PROTO_HDRS})
-ADD_DEPENDENCIES(log_proto consensus_proto)
+add_dependencies(log_proto consensus_proto)
 
-SET(LOG_SRCS
+set(LOG_SRCS
   log_util.cc
   log.cc
   log_reader.cc
@@ -29,11 +29,11 @@ SET(LOG_SRCS
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
 target_link_libraries(log gutil)
 target_link_libraries(log kudu_common)
-ADD_DEPENDENCIES(log kudu_common)
-ADD_DEPENDENCIES(log log_proto)
-ADD_DEPENDENCIES(log server)
+add_dependencies(log kudu_common)
+add_dependencies(log log_proto)
+add_dependencies(log server)
 
-SET(CONSENSUS_SRCS
+set(CONSENSUS_SRCS
   consensus.cc
   local_consensus.cc
   tasks/tasks.cc
@@ -42,11 +42,11 @@ SET(CONSENSUS_SRCS
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})
 target_link_libraries(consensus krpc)
 target_link_libraries(consensus tserver_proto)
-ADD_DEPENDENCIES(consensus kudu_common)
-ADD_DEPENDENCIES(consensus consensus_proto)
-ADD_DEPENDENCIES(consensus log)
+add_dependencies(consensus kudu_common)
+add_dependencies(consensus consensus_proto)
+add_dependencies(consensus log)
 
-SET(KUDU_TEST_LINK_LIBS
+set(KUDU_TEST_LINK_LIBS
   log
   server
   consensus
@@ -63,7 +63,7 @@ ADD_KUDU_TEST(log_util-test)
 ADD_KUDU_TEST(log-test)
 
 #Tools
-SET(KUDU_LINK_LIBS
+set(KUDU_LINK_LIBS
   log
   server
   consensus
@@ -76,5 +76,5 @@ SET(KUDU_LINK_LIBS
   ${KUDU_LINK_LIBS}
 )
 
-ADD_EXECUTABLE(log-dump log-dump.cc)
-TARGET_LINK_LIBRARIES(log-dump ${KUDU_LINK_LIBS})
+add_executable(log-dump log-dump.cc)
+target_link_libraries(log-dump ${KUDU_LINK_LIBS})

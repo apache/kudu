@@ -6,9 +6,9 @@ PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
   PROTO_FILES cfile.proto)
 
 add_library(cfile_proto ${CFILE_PROTO_SRCS} ${CFILE_PROTO_HDRS})
-ADD_DEPENDENCIES(cfile_proto kudu_common)
+add_dependencies(cfile_proto kudu_common)
 
-SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
+set(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 
   block_cache.cc
   bloomfile.cc
@@ -23,8 +23,8 @@ SET(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 )
 
 add_library(cfile ${CFILE_SRCS} ${CFILE_PROTO_SRCS})
-ADD_DEPENDENCIES(cfile kudu_common)
-ADD_DEPENDENCIES(cfile cfile_proto)
+add_dependencies(cfile kudu_common)
+add_dependencies(cfile cfile_proto)
 
 # Tests
 ADD_KUDU_TEST(index-test)
@@ -35,5 +35,5 @@ ADD_KUDU_TEST(block_cache-test)
 ADD_KUDU_TEST(compression-test)
 
 # Tools
-ADD_EXECUTABLE(cfile-dump cfile-dump.cc)
-TARGET_LINK_LIBRARIES(cfile-dump ${KUDU_LINK_LIBS})
+add_executable(cfile-dump cfile-dump.cc)
+target_link_libraries(cfile-dump ${KUDU_LINK_LIBS})

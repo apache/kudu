@@ -6,10 +6,10 @@ PROTOBUF_GENERATE_CPP(METADATA_PROTO_SRCS METADATA_PROTO_HDRS
   PROTO_FILES metadata.proto)
 
 add_library(metadata_proto ${METADATA_PROTO_SRCS} ${METADATA_PROTO_HDRS})
-ADD_DEPENDENCIES(metadata_proto kudu_common)
-ADD_DEPENDENCIES(metadata_proto cfile_proto)
+add_dependencies(metadata_proto kudu_common)
+add_dependencies(metadata_proto cfile_proto)
 
-SET(SERVER_SRCS
+set(SERVER_SRCS
   default-path-handlers.cc
   fsmanager.cc
   global-flags.cc
@@ -25,10 +25,10 @@ SET(SERVER_SRCS
 )
 
 add_library(server ${SERVER_SRCS} ${METADATA_PROTO_SRCS})
-ADD_DEPENDENCIES(server kudu_common)
-ADD_DEPENDENCIES(server cfile_proto)
-ADD_DEPENDENCIES(server metadata_proto)
-ADD_DEPENDENCIES(server krpc)
+add_dependencies(server kudu_common)
+add_dependencies(server cfile_proto)
+add_dependencies(server metadata_proto)
+add_dependencies(server krpc)
 
 # Tests
 ADD_KUDU_TEST(fsmanager-test)

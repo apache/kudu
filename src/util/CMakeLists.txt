@@ -1,4 +1,4 @@
-ADD_LIBRARY(kudu_util
+add_library(kudu_util
   env.cc env_posix.cc env_util.cc
   bitmap.cc
   bloom_filter.cc
@@ -34,14 +34,14 @@ ADD_LIBRARY(kudu_util
   monotime.cc
   url-coding.cc
 )
-SET(KUDU_UTIL_LIBS kudu_util)
+set(KUDU_UTIL_LIBS kudu_util)
 
 # NOTE: we don't explicitly link against libcurl, since curl_util is only
 # used in tests, and we don't want to pull it in everywhere.
 
-ADD_LIBRARY(kudu_test_main test_main.cc)
+add_library(kudu_test_main test_main.cc)
 
-SET(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
+set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(bitmap-test)
 ADD_KUDU_TEST(blocking_queue-test)
 ADD_KUDU_TEST(cache-test)
