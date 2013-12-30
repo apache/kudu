@@ -16,13 +16,18 @@ namespace tablet {
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
 using log::Log;
+using metadata::QuorumPB;
+using metadata::QuorumPeerPB;
+using metadata::TabletMetadata;
 
 // ============================================================================
 //  Tablet Peer
 // ============================================================================
 TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
+                       const QuorumPeerPB& quorum_peer,
                        gscoped_ptr<Log> log)
     : tablet_(tablet),
+      quorum_peer_(quorum_peer),
       log_(log.Pass()),
       // prepare executor has a single thread as prepare must be done in order
       // of submission
@@ -37,13 +42,12 @@ TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
   apply_executor_.reset(TaskExecutor::CreateNew("apply exec", n_cpus));
 }
 
-// TODO a distributed implementation of consensus will need to receive the
-// configuration before Init().
 Status TabletPeer::Init() {
 
   // TODO support different consensus implementations (possibly by adding
   // a TabletPeerOptions).
-  consensus_.reset(new LocalConsensus(ConsensusOptions(), log_.get()));
+  consensus_.reset(new LocalConsensus(ConsensusOptions()));
+  RETURN_NOT_OK(consensus_->Init(quorum_peer_, log_.get()));
 
   // set consensus on the tablet to that it can store local state changes
   // in the log.
@@ -51,8 +55,24 @@ Status TabletPeer::Init() {
   return Status::OK();
 }
 
-Status TabletPeer::Start() {
-  // just return OK since we're only using LocalConsensus.
+Status TabletPeer::Start(const QuorumPB& quorum) {
+
+  // Check the tablet metadata for an existing quorum.
+  // If there is one we use that one, if not we use the provided
+  // one (the quorum can later be changed though a configuration
+  // round, but the configuration cannot be changed on initialization).
+  TabletMetadata* meta = tablet_->metadata();
+  QuorumPB initial_config = meta->Quorum();
+  if (initial_config.seqno() != -1) {
+    // if we already have a config, copy and increment the seq_no
+    initial_config.set_seqno(initial_config.seqno() + 1);
+  } else {
+    initial_config = quorum;
+  }
+  tablet_->metadata()->SetQuorum(initial_config);
+  RETURN_NOT_OK(tablet_->metadata()->Flush());
+
+  RETURN_NOT_OK(consensus_->Start(initial_config));
   return Status::OK();
 }
 

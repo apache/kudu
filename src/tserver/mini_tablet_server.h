@@ -15,6 +15,10 @@ namespace kudu {
 
 class FsManager;
 
+namespace metadata {
+class QuorumPB;
+}
+
 namespace tserver {
 
 class TabletServer;
@@ -36,11 +40,17 @@ class MiniTabletServer {
   Status Start();
   Status Shutdown();
 
-  // Add a new tablet to the test server.
+  // Add a new tablet to the test server, use the default quorum.
   //
   // Requires that the server has already been started with Start().
   Status AddTestTablet(const std::string& tablet_id,
                        const Schema& schema);
+
+  // Add a new tablet to the test server and specify the quorum
+  // for the tablet.
+  Status AddTestTablet(const std::string& tablet_id,
+                       const Schema& schema,
+                       const metadata::QuorumPB& quorum);
 
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;

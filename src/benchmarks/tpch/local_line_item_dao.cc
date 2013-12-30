@@ -8,6 +8,7 @@
 
 namespace kudu {
 
+using metadata::QuorumPB;
 using metadata::TabletMasterBlockPB;
 using metadata::TabletMetadata;
 
@@ -21,8 +22,15 @@ void LocalLineItemDAO::Init() {
   // Try to load it. If it was not found, create a new one.
   Schema s = SchemaBuilder(tpch::CreateLineItemSchema()).Build();
   gscoped_ptr<kudu::metadata::TabletMetadata> metadata;
-  CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_, master_block, s,
-                                        "", "", &metadata));
+
+  QuorumPB quorum;
+  CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_,
+                                        master_block,
+                                        s,
+                                        quorum,
+                                        "",
+                                        "",
+                                        &metadata));
 
   tablet_.reset(new tablet::Tablet(metadata.Pass()));
   CHECK_OK(tablet_->Open());

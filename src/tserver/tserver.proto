@@ -3,6 +3,7 @@ package kudu.tserver;
 
 import "common/common.proto";
 import "common/wire_protocol.proto";
+import "server/metadata.proto";
 
 // Tablet-server specific errors use this protobuf.
 message TabletServerErrorPB {
@@ -38,6 +39,13 @@ message TabletServerErrorPB {
     // An invalid scan was specified -- e.g the values passed for
     // predicates were incorrect sizes.
     INVALID_SCAN_SPEC = 8;
+
+    // The provided configuration was not well-formed and/or
+    // had a sequence number that was below the current config.
+    INVALID_CONFIG = 9;
+
+    // On a create tablet request, signals that the tablet already exists.
+    TABLET_ALREADY_EXISTS = 10;
   }
 
   // The error code.
@@ -106,6 +114,21 @@ message WriteResponsePB {
     required AppStatusPB error = 3;
   }
   repeated PerRowErrorPB per_row_errors = 2;
+}
+
+// A create tablet request.
+message CreateTabletRequestPB {
+  required bytes tablet_id = 1;
+  required bytes start_key = 2;
+  required bytes end_key = 3;
+  required SchemaPB schema = 4;
+  // Optional quorum for the tablet. If one is not provided a local quorum
+  // is chosen.
+  optional metadata.QuorumPB quorum = 5;
+}
+
+message CreateTabletResponsePB {
+  optional TabletServerErrorPB error = 1;
 }
 
 // A range predicate on one of the columns in the underlying

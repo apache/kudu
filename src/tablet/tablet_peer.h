@@ -20,6 +20,7 @@ class TabletPeer {
  public:
 
   TabletPeer(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
+             const metadata::QuorumPeerPB& quorum_peer,
              gscoped_ptr<log::Log> log);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
@@ -29,7 +30,7 @@ class TabletPeer {
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
   // in the quorum.
-  Status Start();
+  Status Start(const metadata::QuorumPB& quorum);
 
   // Shutdown this tablet peer.
   Status Shutdown();
@@ -65,6 +66,7 @@ class TabletPeer {
 
  private:
   std::tr1::shared_ptr<Tablet> tablet_;
+  metadata::QuorumPeerPB quorum_peer_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<consensus::Consensus> consensus_;
   simple_spinlock prepare_replicate_lock_;

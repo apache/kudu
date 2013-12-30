@@ -66,6 +66,7 @@ class LatchCallback : public FutureCallback {
   Status status_;
   CountDownLatch latch_;
 
+  DISALLOW_COPY_AND_ASSIGN(LatchCallback);
 };
 
 class BoundFunctionCallback : public FutureCallback {

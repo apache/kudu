@@ -32,10 +32,15 @@ const int64 kNoDurableMemStore = -1;
 Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const TabletMasterBlockPB& master_block,
                                  const Schema& schema,
+                                 const QuorumPB& quorum,
                                  const string& start_key, const string& end_key,
                                  gscoped_ptr<TabletMetadata>* metadata) {
-  gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block,
-                                                     schema, start_key, end_key));
+  gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
+                                                     master_block,
+                                                     schema,
+                                                     quorum,
+                                                     start_key,
+                                                     end_key));
   RETURN_NOT_OK(ret->Flush());
   metadata->reset(ret.release());
   // TODO: should we verify that neither of the blocks referenced in the master block
@@ -43,7 +48,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
   return Status::OK();
 }
 
-Status TabletMetadata::Load(FsManager* fs_manager, const TabletMasterBlockPB& master_block,
+Status TabletMetadata::Load(FsManager* fs_manager,
+                            const TabletMasterBlockPB& master_block,
                             gscoped_ptr<TabletMetadata>* metadata) {
   gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block));
   RETURN_NOT_OK(ret->LoadFromDisk());
@@ -54,6 +60,7 @@ Status TabletMetadata::Load(FsManager* fs_manager, const TabletMasterBlockPB& ma
 Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const TabletMasterBlockPB& master_block,
                                     const Schema& schema,
+                                    const QuorumPB& quorum,
                                     const string& start_key, const string& end_key,
                                     gscoped_ptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, master_block, metadata);
@@ -64,14 +71,18 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     }
     return Status::OK();
   } else if (s.IsNotFound()) {
-    return CreateNew(fs_manager, master_block, schema, start_key, end_key, metadata);
+    return CreateNew(fs_manager, master_block, schema, quorum, start_key, end_key, metadata);
   } else {
     return s;
   }
 }
 
-TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block,
-                               const Schema& schema, const string& start_key, const string& end_key)
+TabletMetadata::TabletMetadata(FsManager *fs_manager,
+                               const TabletMasterBlockPB& master_block,
+                               const Schema& schema,
+                               const QuorumPB& quorum,
+                               const string& start_key,
+                               const string& end_key)
   : state_(kNotWrittenYet),
     start_key_(start_key), end_key_(end_key),
     fs_manager_(fs_manager),
@@ -79,7 +90,8 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
     sblk_sequence_(0),
     next_rowset_idx_(0),
     last_durable_mrs_id_(kNoDurableMemStore),
-    schema_(schema) {
+    schema_(schema),
+    quorum_(quorum) {
   CHECK(schema_.has_column_ids());
 }
 
@@ -110,6 +122,8 @@ Status TabletMetadata::LoadFromDisk() {
                         "Failed to parse Schema from superblock " +
                         superblock.ShortDebugString());
   DCHECK(schema_.has_column_ids());
+
+  quorum_ = superblock.quorum();
 
   BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
     gscoped_ptr<RowSetMetadata> rowset_meta;
@@ -262,6 +276,8 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
   RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb->mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
+  pb->mutable_quorum()->CopyFrom(quorum_);
+
   super_block->reset(pb.release());
   return Status::OK();
 }
@@ -320,6 +336,16 @@ void TabletMetadata::SetSchema(const Schema& schema) {
 Schema TabletMetadata::schema() const {
   boost::lock_guard<LockType> l(lock_);
   return schema_;
+}
+
+void TabletMetadata::SetQuorum(const QuorumPB& quorum) {
+  boost::lock_guard<LockType> l(lock_);
+  quorum_ = quorum;
+}
+
+QuorumPB TabletMetadata::Quorum() const {
+  boost::lock_guard<LockType> l(lock_);
+  return quorum_;
 }
 
 // ============================================================================

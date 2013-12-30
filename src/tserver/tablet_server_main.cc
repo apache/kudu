@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "common/schema.h"
+#include "gutil/strings/split.h"
 #include "server/fsmanager.h"
 #include "server/metadata.h"
 #include "server/rpc_server.h"
@@ -21,16 +22,30 @@
 #include "util/env.h"
 #include "util/logging.h"
 
+
+using kudu::metadata::QuorumPB;
+using kudu::metadata::QuorumPeerPB;
+using kudu::metadata::TabletMetadata;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;
 
 static const char* const kTwitterTabletId = "twitter";
 static const char* const kTPCH1TabletId = "tpch1";
+static const char* const kQuorumFlagFormat = "Malformed \"tablet_quorum_for_demo\" flag. "
+                                             "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
+                                             "Note the first host is assumed to be the LEADER."
+                                             "Number of hosts may be 2 or 3.";
 
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
 DEFINE_string(tablet_server_tablet_id, kTwitterTabletId,
               "Which tablet to use: twitter (default) or tpch1");
+
+DEFINE_string(tablet_quorum_for_demo, "",
+              "The locations of other tablet servers in the quorum, for demo purposes.\n"
+              "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
+              "Note the first host is assumed to be the LEADER and 'name' should"
+              " correspond to the overriden uuid in each server (set with '')");
 
 namespace kudu {
 namespace tserver {
@@ -49,8 +64,11 @@ class TemporaryTabletsForDemos {
         peer->tablet()->schema().ToString();
       LOG(INFO) << "Using previously-created tablet";
     } else {
+
+      BuildQuorumFromFlagIfProvided();
+
       CHECK_OK(server->tablet_manager()->CreateNewTablet(
-                 tablet_id, "", "", SchemaBuilder(schema_).Build(), &peer));
+                 tablet_id, "", "", SchemaBuilder(schema_).Build(), quorum_, &peer));
     }
     tablet_ = peer->shared_tablet();
   }
@@ -60,7 +78,34 @@ class TemporaryTabletsForDemos {
   }
 
  private:
+
+  void BuildQuorumFromFlagIfProvided() {
+    // If the 'tablet_quorum_for_demo' flag was specified, build the quorum
+    if (FLAGS_tablet_quorum_for_demo != "") {
+
+      vector<string> hostport_pairs;
+      SplitStringUsing(FLAGS_tablet_quorum_for_demo, ",", &hostport_pairs);
+      CHECK(!hostport_pairs.empty() && hostport_pairs.size() >= 2 && hostport_pairs.size() <= 3)
+      << kQuorumFlagFormat << "\nwas: " << FLAGS_tablet_quorum_for_demo;
+
+      int count = 0;
+      BOOST_FOREACH(const string& hostport_triple, hostport_pairs) {
+        vector<string> name_host_and_port;
+        SplitStringUsing(hostport_triple, ":", &name_host_and_port);
+        CHECK(name_host_and_port.size() == 3) << kQuorumFlagFormat;
+        QuorumPeerPB* peer = quorum_.add_peers();
+        peer->set_permanent_uuid(name_host_and_port[0]);
+        HostPortPB* hostport = peer->mutable_last_known_addr();
+        hostport->set_host(name_host_and_port[1]);
+        hostport->set_port(atoi(name_host_and_port[2].c_str()));
+        peer->set_role(count++ == 0 ? QuorumPeerPB::LEADER : QuorumPeerPB::FOLLOWER);
+      }
+      quorum_.set_local(false);
+    }
+  }
+
   Schema schema_;
+  QuorumPB quorum_;
 
   shared_ptr<Tablet> tablet_;
 

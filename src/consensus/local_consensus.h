@@ -24,9 +24,12 @@ namespace consensus {
 // This class is not thread safe.
 class LocalConsensus : public Consensus {
  public:
-  LocalConsensus(const ConsensusOptions& options, log::Log* log);
+  explicit LocalConsensus(const ConsensusOptions& options);
 
-  Status Start();
+  virtual Status Init(const metadata::QuorumPeerPB& peer,
+                      log::Log* log);
+
+  virtual Status Start(const metadata::QuorumPB& quorum);
 
   Status Append(gscoped_ptr<ReplicateMsg> entry,
                 const std::tr1::shared_ptr<FutureCallback>& repl_callback,
@@ -52,13 +55,18 @@ class LocalConsensus : public Consensus {
     return true;
   }
 
-  const metadata::QuorumPeerPB &current_leader() const {
+  metadata::QuorumPeerPB CurrentLeader() const {
     return peer_;
+  }
+
+  metadata::QuorumPB CurrentQuorum() const {
+    return quorum_;
   }
 
  private:
   log::Log* log_;
   metadata::QuorumPeerPB peer_;
+  metadata::QuorumPB quorum_;
   gscoped_ptr<TaskExecutor> log_executor_;
   gscoped_ptr<TaskExecutor> commit_executor_;
   int64 next_op_id_;

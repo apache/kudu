@@ -20,6 +20,7 @@ class WriteResponsePB;
 }
 
 namespace master {
+class Master;
 
 // Abstract class for a sys-table.
 // - The sys-table has only one tablet.
@@ -27,7 +28,10 @@ namespace master {
 //   as a "normal table", instead we have Master APIs to query the table.
 class SysTable {
  public:
-  SysTable(MetricRegistry* metrics, const string& name);
+  SysTable(Master* master,
+           MetricRegistry* metrics,
+           const string& name);
+
   virtual ~SysTable() {}
 
   // Load the Metadata from disk, and initialize the TabletPeer for the sys-table
@@ -56,13 +60,15 @@ class SysTable {
 
  private:
   Status SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata);
+
+  Master* master_;
 };
 
 // The "sys.tablets" table is the table used to keep tracks of the tables tablets.
 class SysTabletsTable : public SysTable {
  public:
-  explicit SysTabletsTable(MetricRegistry* metrics)
-    : SysTable(metrics, "sys.tablets") {
+  SysTabletsTable(Master* master, MetricRegistry* metrics)
+    : SysTable(master, metrics, "sys.tablets") {
   }
 
  protected:
@@ -79,8 +85,8 @@ class SysTabletsTable : public SysTable {
 // table metadata information (like the name or settings)
 class SysTablesTable : public SysTable {
  public:
-  explicit SysTablesTable(MetricRegistry* metrics)
-    : SysTable(metrics, "sys.tables") {
+  SysTablesTable(Master* master, MetricRegistry* metrics)
+    : SysTable(master, metrics, "sys.tables") {
   }
 
   Status AddTable(const string& name,

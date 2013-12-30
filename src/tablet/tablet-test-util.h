@@ -16,6 +16,7 @@
 namespace kudu {
 namespace tablet {
 
+using metadata::QuorumPB;
 using std::string;
 using std::vector;
 
@@ -40,12 +41,17 @@ class KuduTabletTest : public KuduTest {
     // Build a schema with IDs
     Schema server_schema = SchemaBuilder(schema_).Build();
 
+    quorum_.set_seqno(0);
+
     // Build the Tablet
     fs_manager_.reset(new FsManager(env_.get(), root_dir.empty() ? test_dir_ : root_dir));
     gscoped_ptr<metadata::TabletMetadata> metadata;
-    ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(
-                      fs_manager_.get(), master_block, server_schema, "", "",
-                      &metadata));
+    ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
+                                                            master_block,
+                                                            server_schema,
+                                                            quorum_,
+                                                            "", "",
+                                                            &metadata));
     tablet_.reset(new Tablet(metadata.Pass()));
     ASSERT_STATUS_OK(tablet_->Open());
   }
@@ -67,6 +73,7 @@ class KuduTabletTest : public KuduTest {
 
  protected:
   const Schema schema_;
+  QuorumPB quorum_;
   gscoped_ptr<Tablet> tablet_;
   gscoped_ptr<FsManager> fs_manager_;
 };

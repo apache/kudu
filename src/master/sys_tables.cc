@@ -1,12 +1,14 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "master/sys_tables.h"
+
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "common/schema.h"
 #include "common/wire_protocol.h"
-#include "master/sys_tables.h"
+#include "master/master.h"
 #include "rpc/rpc_context.h"
 #include "server/fsmanager.h"
 #include "tablet/tablet_bootstrap.h"
@@ -16,6 +18,8 @@
 #include "util/pb_util.h"
 
 using kudu::log::Log;
+using kudu::metadata::QuorumPB;
+using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
@@ -28,8 +32,11 @@ namespace master {
 // ===========================================================================
 //  Abstract SysTable
 // ===========================================================================
-SysTable::SysTable(MetricRegistry* metrics, const string& name)
-  : metric_ctx_(metrics, name) {
+SysTable::SysTable(Master* master,
+                   MetricRegistry* metrics,
+                   const string& name)
+  : metric_ctx_(metrics, name),
+    master_(master) {
 }
 
 Status SysTable::Load(FsManager *fs_manager) {
@@ -53,10 +60,21 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   metadata::TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);
 
+  QuorumPeerPB quorum_peer;
+  quorum_peer.set_permanent_uuid(master_->instance_pb().permanent_uuid());
+
+  // TODO For dist consensus get the quorum with other peers.
+  QuorumPB quorum;
+  quorum.set_local(true);
+  quorum.set_seqno(0);
+  quorum.add_peers()->CopyFrom(quorum_peer);
+
   // Create the new Metadata
   gscoped_ptr<metadata::TabletMetadata> metadata;
-  RETURN_NOT_OK(metadata::TabletMetadata::CreateNew(fs_manager, master_block,
+  RETURN_NOT_OK(metadata::TabletMetadata::CreateNew(fs_manager,
+                                                    master_block,
                                                     BuildTableSchema(),
+                                                    quorum,
                                                     "", "", &metadata));
   return SetupTablet(metadata.Pass());
 }
@@ -69,9 +87,10 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   RETURN_NOT_OK(BootstrapTablet(metadata.Pass(), &metric_ctx_, &tablet, &log));
 
   // TODO: Do we have a setSplittable(false) or something from the ouside is handling split in the TS?
-  tablet_peer_.reset(new TabletPeer(tablet, log.Pass()));
+  tablet_peer_.reset(new TabletPeer(tablet, tablet->metadata()->Quorum().peers(0), log.Pass()));
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(), "Failed to Init() TabletPeer");
-  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(), "Failed to Start() TabletPeer");
+
+  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()), "Failed to Start() TabletPeer");
 
   schema_ = SchemaBuilder(tablet->schema()).BuildWithoutIds();
   return Status::OK();

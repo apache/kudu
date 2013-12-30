@@ -12,6 +12,8 @@
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
 #include "tablet/tablet_peer.h"
+#include "tserver/mini_tablet_server.h"
+#include "tserver/tablet_server.h"
 #include "util/metrics.h"
 #include "util/test_util.h"
 
@@ -19,6 +21,7 @@ namespace kudu {
 namespace tserver {
 
 using master::TabletReportPB;
+using metadata::QuorumPB;
 using metadata::TabletMasterBlockPB;
 using tablet::TabletPeer;
 using std::tr1::shared_ptr;
@@ -37,19 +40,23 @@ class TsTabletManagerTest : public KuduTest {
   virtual void SetUp() {
     KuduTest::SetUp();
 
-    fs_manager_.reset(new FsManager(env_.get(), GetTestPath("fs-root")));
-    ASSERT_STATUS_OK(fs_manager_->CreateInitialFileSystemLayout());
+    quorum_.set_seqno(0);
 
-    tablet_manager_.reset(new TSTabletManager(fs_manager_.get(), metric_ctx_));
-    ASSERT_STATUS_OK(tablet_manager_->Init());
+    mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot")));
+    ASSERT_STATUS_OK(mini_server_->Start());
+
+    tablet_manager_ = mini_server_->server()->tablet_manager();
+    fs_manager_ = mini_server_->fs_manager();
   }
 
   Status CreateNewTablet(const std::string& tablet_id,
-                         const std::string& start_key, const std::string& end_key,
+                         const std::string& start_key,
+                         const std::string& end_key,
                          const Schema& schema,
                          std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) {
     return tablet_manager_->CreateNewTablet(tablet_id, start_key, end_key,
                                             SchemaBuilder(schema).Build(),
+                                            quorum_,
                                             tablet_peer);
   }
 
@@ -60,10 +67,12 @@ class TsTabletManagerTest : public KuduTest {
     pb->set_block_b("block-b");
   }
 
-  gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<TSTabletManager> tablet_manager_;
+  gscoped_ptr<MiniTabletServer> mini_server_;
+  FsManager* fs_manager_;
+  TSTabletManager* tablet_manager_;
 
   Schema schema_;
+  QuorumPB quorum_;
   MetricRegistry metric_registry_;
   MetricContext metric_ctx_;
 
@@ -92,16 +101,17 @@ TEST_F(TsTabletManagerTest, TestPersistBlocks) {
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
   shared_ptr<TabletPeer> peer;
-  ASSERT_STATUS_OK(CreateNewTablet(kTabletId, "", "", schema_, &peer));
+  ASSERT_STATUS_OK(CreateNewTablet(kTabletId, "", "",schema_, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
   peer.reset();
 
   // Re-load the tablet manager from the filesystem.
   LOG(INFO) << "Shutting down tablet manager";
-  tablet_manager_->Shutdown();
+  ASSERT_STATUS_OK(mini_server_->Shutdown());
   LOG(INFO) << "Restarting tablet manager";
-  tablet_manager_.reset(new TSTabletManager(fs_manager_.get(), metric_ctx_));
-  ASSERT_STATUS_OK(tablet_manager_->Init());
+  mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot")));
+  ASSERT_STATUS_OK(mini_server_->Start());
+  tablet_manager_ = mini_server_->server()->tablet_manager();
 
   // Ensure that the tablet got re-loaded and re-opened off disk.
   ASSERT_TRUE(tablet_manager_->LookupTablet(kTabletId, &peer));

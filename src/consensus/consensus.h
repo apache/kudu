@@ -10,6 +10,10 @@
 
 namespace kudu {
 
+namespace log {
+class Log;
+}
+
 namespace metadata {
 class QuorumPB;
 class QuorumPeerPB;
@@ -22,14 +26,24 @@ class ConsensusContext;
 
 struct ConsensusOptions {};
 
-// The external interface for consensus.
+// The external interface for a consensus peer.
 class Consensus {
  public:
+  Consensus() : state_(kNotInitialized) {}
 
-  Consensus() {}
+  // Initializes the peer with the provided Log.
+  // Consensus does not own the Log and is provided a fully
+  // built one on startup.
+  virtual Status Init(const metadata::QuorumPeerPB& peer,
+                      log::Log* log) = 0;
 
   // Starts running the consensus algorithm.
-  virtual Status Start() = 0;
+  // The provided configuration is taken as a hint and may not be the
+  // final configuration of the quorum. Specifically peer roles may
+  // vary (e.g. if leader election was triggered) and even membership
+  // may vary if the last known quorum configuration had different
+  // members from the provided one.
+  virtual Status Start(const metadata::QuorumPB& quorum) = 0;
 
   // Stops running the consensus algorithm.
   virtual Status Shutdown() = 0;
@@ -118,18 +132,33 @@ class Consensus {
   virtual bool is_leader() const = 0;
 
   // Returns the current leader of the quorum.
-  virtual const metadata::QuorumPeerPB &current_leader() const = 0;
+  // NOTE: Returns a copy, thus should not be used in a tight loop.
+  virtual metadata::QuorumPeerPB CurrentLeader() const = 0;
+
+  // Returns the current configuration of the quorum.
+  // NOTE: Returns a copy, thus should not be used in a tight loop.
+  virtual metadata::QuorumPB CurrentQuorum() const = 0;
 
   virtual ~Consensus() {}
 
  protected:
-  DISALLOW_COPY_AND_ASSIGN(Consensus);
 
   friend class ConsensusContext;
 
   // Called by Consensus context to complete the commit of a consensus
   // round. CommitMsg pointer ownership will remain with ConsensusContext.
   virtual Status Commit(ConsensusContext* ctx, CommitMsg *msg) = 0;
+
+  enum State {
+    kNotInitialized,
+    kInitializing,
+    kConfiguring,
+    kRunning,
+  };
+  State state_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Consensus);
 };
 
 // Context for a consensus round, typically created as an out-parameter of

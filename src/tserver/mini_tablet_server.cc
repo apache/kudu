@@ -22,6 +22,15 @@
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
+using kudu::consensus::Consensus;
+using kudu::consensus::ConsensusOptions;
+using kudu::consensus::OpId;
+using kudu::log::Log;
+using kudu::log::LogOptions;
+using kudu::metadata::QuorumPeerPB;
+using kudu::metadata::QuorumPB;
+using kudu::metadata::TabletMetadata;
+
 namespace kudu {
 namespace tserver {
 
@@ -67,9 +76,17 @@ Status MiniTabletServer::Shutdown() {
 
 Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
                                        const Schema& schema) {
+  QuorumPB quorum;
+  quorum.set_seqno(0);
+  return AddTestTablet(tablet_id, schema, quorum);
+}
+
+Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
+                                       const Schema& schema,
+                                       const QuorumPB& quorum) {
   CHECK(started_) << "Must Start()";
   return server_->tablet_manager()->CreateNewTablet(
-    tablet_id, "", "", SchemaBuilder(schema).Build(), NULL);
+    tablet_id, "", "", SchemaBuilder(schema).Build(), quorum, NULL);
 }
 
 const Sockaddr MiniTabletServer::bound_rpc_addr() const {

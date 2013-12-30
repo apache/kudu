@@ -6,7 +6,8 @@ PROTOBUF_GENERATE_CPP(TSERVER_PROTO_SRCS TSERVER_PROTO_HDRS
   PROTO_FILES tserver.proto)
 
 add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
-add_dependencies(tserver_proto kudu_common)
+ADD_DEPENDENCIES(tserver_proto kudu_common)
+ADD_DEPENDENCIES(tserver_proto metadata_proto)
 
 KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..

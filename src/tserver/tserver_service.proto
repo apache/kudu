@@ -19,6 +19,8 @@ service TabletServerService {
   // TODO enforce this through ACLS or something...
   // ===========================================================================
 
+  rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
+
   // TODO: this is temporary used for testing the AlterSchema request with consensus.
   //       It will be replaced by messages on the master side/tablet report.
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);

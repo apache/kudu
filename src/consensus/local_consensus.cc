@@ -9,35 +9,46 @@
 namespace kudu {
 namespace consensus {
 
-using std::tr1::shared_ptr;
-using log::LogEntry;
 using base::subtle::Barrier_AtomicIncrement;
+using log::Log;
+using log::LogEntry;
+using metadata::QuorumPB;
+using metadata::QuorumPeerPB;
+using std::tr1::shared_ptr;
 
-LocalConsensus::LocalConsensus(const ConsensusOptions& options,
-                               log::Log* log)
-    : log_(log),
+LocalConsensus::LocalConsensus(const ConsensusOptions& options)
+    : log_(NULL),
       log_executor_(TaskExecutor::CreateNew("log exec", 1)),
       commit_executor_(TaskExecutor::CreateNew("commit exec", 1)),
-      next_op_id_(log->last_entry_id().index() + 1) {
+      next_op_id_(-1) {
 }
 
-Status LocalConsensus::Start() {
+Status LocalConsensus::Init(const QuorumPeerPB& peer,
+                            Log* log) {
+  CHECK_EQ(state_, kNotInitialized);
+  peer_ = peer;
+  log_ = log;
+  state_ = kInitializing;
+  next_op_id_ = log->last_entry_id().index() + 1;
   return Status::OK();
 }
 
-Status LocalConsensus::Shutdown() {
-  log_executor_->Shutdown();
-  commit_executor_->Shutdown();
-  RETURN_NOT_OK(log_->Close());
-  VLOG(1) << "LocalConsensus Shutdown!";
+Status LocalConsensus::Start(const metadata::QuorumPB& quorum) {
+  CHECK_EQ(state_, kInitializing);
+
+  CHECK(quorum.local()) << "Local consensus must be passed a local quorum";
+  CHECK_LE(quorum.peers_size(), 1);
+
+  state_ = kRunning;
   return Status::OK();
 }
 
 Status LocalConsensus::Append(
     gscoped_ptr<ReplicateMsg> entry,
-    const std::tr1::shared_ptr<FutureCallback>& repl_callback,
-    const std::tr1::shared_ptr<FutureCallback>& commit_callback,
+    const shared_ptr<FutureCallback>& repl_callback,
+    const shared_ptr<FutureCallback>& commit_callback,
     gscoped_ptr<ConsensusContext>* context) {
+  DCHECK_GE(state_, kConfiguring);
 
   // TODO add a test for this once we get delayed executors (KUDU-52)
   boost::lock_guard<simple_spinlock> lock(lock_);
@@ -96,6 +107,14 @@ Status LocalConsensus::LocalCommit(CommitMsg* commit_msg,
   // Initiate the commit task.
   shared_ptr<Task> commit_task(new CommitTask(log_, commit_msg));
   RETURN_NOT_OK(log_executor_->Submit(commit_task, commit_future));
+  return Status::OK();
+}
+
+Status LocalConsensus::Shutdown() {
+  log_executor_->Shutdown();
+  commit_executor_->Shutdown();
+  RETURN_NOT_OK(log_->Close());
+  VLOG(1) << "LocalConsensus Shutdown!";
   return Status::OK();
 }
 

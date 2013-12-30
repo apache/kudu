@@ -6,6 +6,7 @@
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "gutil/macros.h"
@@ -23,6 +24,7 @@ class TabletReportPB;
 } // namespace master
 
 namespace metadata {
+class QuorumPB;
 class TabletMasterBlockPB;
 class TabletMetadata;
 } // namespace metadata
@@ -32,6 +34,9 @@ class TabletPeer;
 }
 
 namespace tserver {
+class TabletServer;
+
+typedef std::tr1::unordered_set<std::string> CreatesInProgressSet;
 
 // Keeps track of the tablets hosted on the tablet server side.
 //
@@ -42,7 +47,10 @@ class TSTabletManager {
  public:
   // Construct the tablet manager.
   // 'fs_manager' must remain valid until this object is destructed.
-  TSTabletManager(FsManager* fs_manager, const MetricContext& metric_ctx);
+  TSTabletManager(FsManager* fs_manager,
+                  TabletServer* server,
+                  const MetricContext& metric_ctx);
+
   ~TSTabletManager();
 
   // Load all master blocks from disk, and open their respective tablets.
@@ -61,12 +69,17 @@ class TSTabletManager {
   Status CreateNewTablet(const std::string& tablet_id,
                          const std::string& start_key, const std::string& end_key,
                          const Schema& schema,
+                         metadata::QuorumPB quorum,
                          std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer);
 
   // Lookup the given tablet peer by its ID.
   // Returns true if the tablet is found successfully.
   bool LookupTablet(const std::string& tablet_id,
                     std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
+
+  // Same as LookupTablet but doesn't acquired the shared lock.
+  bool LookupTabletUnlocked(const string& tablet_id,
+                            std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) const;
 
   // Generate an incremental tablet report.
   //
@@ -120,13 +133,18 @@ class TSTabletManager {
 
   FsManager* fs_manager_;
 
+  TabletServer* server_;
+
   typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<tablet::TabletPeer> > TabletMap;
 
-  // Lock protecting tablet_map_ and dirty_tablets_
+  // Lock protecting tablet_map_, dirty_tablets_ and creates_in_progress_.
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
+
+  // Set of tablet ids whose creation is in-progress
+  CreatesInProgressSet creates_in_progress_;
 
   // When a tablet is added/removed/added locally and needs to be
   // reported to the master, an entry is added to this map. Each

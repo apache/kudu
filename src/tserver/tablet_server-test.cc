@@ -5,6 +5,7 @@
 
 using std::string;
 using std::tr1::shared_ptr;
+using kudu::metadata::QuorumPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -872,6 +873,70 @@ TEST_F(TabletServerTest, TestAlterSchema) {
                                                (KeyValue(1, 7))
                                                (KeyValue(2, 5))
                                                (KeyValue(3, 5)));
+}
+
+// TODO add a test for a quorum create tablet when the dist stuff is in
+TEST_F(TabletServerTest, TestCreateTablet_NoQuorum) {
+  CreateTabletRequestPB req;
+  CreateTabletResponsePB resp;
+  RpcController rpc;
+
+  string tablet_id = "new_tablet";
+  req.set_tablet_id(tablet_id);
+  req.set_start_key("");
+  req.set_end_key("");
+  ASSERT_STATUS_OK(SchemaToPB(SchemaBuilder(schema_).Build(),
+                              req.mutable_schema()));
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->CreateTablet(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Now try and insert some rows, and shutdown and rebuild
+  // the TS so that we know that the tablet survives.
+  InsertTestRowsRemote(0, 1, 7);
+
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
+                                            (KeyValue(2, 2))
+                                            (KeyValue(3, 3))
+                                            (KeyValue(4, 4))
+                                            (KeyValue(5, 5))
+                                            (KeyValue(6, 6))
+                                            (KeyValue(7, 7)));
+
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
+                                            (KeyValue(2, 2))
+                                            (KeyValue(3, 3))
+                                            (KeyValue(4, 4))
+                                            (KeyValue(5, 5))
+                                            (KeyValue(6, 6))
+                                            (KeyValue(7, 7)));
+}
+
+TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
+  CreateTabletRequestPB req;
+  CreateTabletResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(kTabletId);
+  req.set_start_key(" ");
+  req.set_end_key(" ");
+  ASSERT_STATUS_OK(SchemaToPB(SchemaBuilder(schema_).Build(),
+                              req.mutable_schema()));
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->CreateTablet(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::TABLET_ALREADY_EXISTS, resp.error().code());
+  }
 }
 
 } // namespace tserver

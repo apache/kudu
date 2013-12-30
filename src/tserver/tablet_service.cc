@@ -24,6 +24,8 @@
 #include "util/status.h"
 #include "util/trace.h"
 
+using kudu::metadata::QuorumPB;
+using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::AlterSchemaTransactionContext;
 using kudu::tablet::WriteTransactionContext;
@@ -135,13 +137,46 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
   tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback(context, resp)).Pass());
 
-  // Submit the write. The RPC will be responded to asynchronously.
+  // Submit the alter schema op. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitAlterSchema(tx_ctx);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
   }
+}
+
+void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
+                                     CreateTabletResponsePB* resp,
+                                     rpc::RpcContext* context) {
+  LOG(INFO) << "Received Create Tablet RPC: " << req->DebugString();
+
+  Schema schema;
+  Status s = SchemaFromPB(req->schema(), &schema);
+  DCHECK(schema.has_column_ids());
+  if (!s.ok()) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::IllegalState("Invalid Schema."),
+                         TabletServerErrorPB::INVALID_SCHEMA, context);
+  }
+
+  s = server_->tablet_manager()->CreateNewTablet(req->tablet_id(),
+                                                 req->start_key(),
+                                                 req->end_key(),
+                                                 schema,
+                                                 req->quorum(),
+                                                 NULL);
+  if (PREDICT_FALSE(!s.ok())) {
+    TabletServerErrorPB::Code code;
+    if (s.IsAlreadyPresent()) {
+      code = TabletServerErrorPB::TABLET_ALREADY_EXISTS;
+    } else {
+      code = TabletServerErrorPB::UNKNOWN_ERROR;
+    }
+    SetupErrorAndRespond(resp->mutable_error(), s, code, context);
+    return;
+  }
+  context->RespondSuccess();
 }
 
 void TabletServiceImpl::Write(const WriteRequestPB* req,

@@ -167,13 +167,11 @@ message QuorumPeerPB {
 
 // A set of quorum peers, serving a single tablet.
 message QuorumPB {
-  // the id of the tablet this quorum is serving
-  required string tablet_id = 1;
   // the sequence number of the quorum configuration.
-  required int64 seqno = 2;
+  required int64 seqno = 1;
   // whether this is a local or distributed quorum (i.e. whether to use a local or dist
   // implementation of consensus).
-  optional bool local = 3 [default = true];
+  optional bool local = 2 [default = true];
   // the set of peers in the quorum.
-  repeated QuorumPeerPB peers = 4;
+  repeated QuorumPeerPB peers = 3;
 }

@@ -32,7 +32,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
   : ServerBase(opts.env, opts.base_dir, opts.rpc_opts, opts.webserver_opts, "kudu.tabletserver"),
     initted_(false),
     opts_(opts),
-    tablet_manager_(new TSTabletManager(fs_manager_.get(), metric_context())),
+    tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_context())),
     scanner_manager_(new ScannerManager()),
     path_handlers_(new TabletServerPathHandlers(this)) {
 }

@@ -111,10 +111,10 @@ class TabletBootstrap {
   Status PlaySegments();
 
   Status PlayWriteRequest(ReplicateMsg* replicate_msg,
-                          const consensus::CommitMsg& commit_msg);
+                          const CommitMsg& commit_msg);
 
   Status PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
-                                const consensus::CommitMsg& commit_msg);
+                                const CommitMsg& commit_msg);
 
   // Plays missed deltas mutations, skipping those that have already been flushed.
   // Missed delta mutations are appended to the new log as the original mutations
@@ -686,7 +686,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
 }
 
 Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
-                                               const consensus::CommitMsg& commit_msg) {
+                                               const CommitMsg& commit_msg) {
   AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
 
   // Decode schema

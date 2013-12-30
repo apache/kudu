@@ -50,11 +50,13 @@ class TabletMetadata {
   static Status CreateNew(FsManager* fs_manager,
                           const TabletMasterBlockPB& master_block,
                           const Schema& schema,
+                          const QuorumPB& quorum,
                           const string& start_key, const string& end_key,
                           gscoped_ptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk given a master block.
-  static Status Load(FsManager* fs_manager, const TabletMasterBlockPB& master_block,
+  static Status Load(FsManager* fs_manager,
+                     const TabletMasterBlockPB& master_block,
                      gscoped_ptr<TabletMetadata>* metadata);
 
   // Try to load an existing tablet. If it does not exist, create it.
@@ -62,8 +64,10 @@ class TabletMetadata {
   // provided 'schema'.
   //
   // This is mostly useful for tests which instantiate tablets directly.
-  static Status LoadOrCreate(FsManager* fs_manager, const TabletMasterBlockPB& master_block,
+  static Status LoadOrCreate(FsManager* fs_manager,
+                             const TabletMasterBlockPB& master_block,
                              const Schema& schema,
+                             const QuorumPB& quorum,
                              const string& start_key, const string& end_key,
                              gscoped_ptr<TabletMetadata>* metadata);
 
@@ -85,6 +89,12 @@ class TabletMetadata {
   // Return the current schema of the metadata. Note that this returns
   // a copy so should not be used in a tight loop.
   Schema schema() const;
+
+  void SetQuorum(const QuorumPB& quorum);
+
+  // Return the current quorum config.
+  // Note that this returns a copy so should not be used in a tight loop.
+  QuorumPB Quorum() const;
 
   Status Flush();
 
@@ -137,8 +147,12 @@ class TabletMetadata {
   // which are themselves already stored in the superblock as well.
 
   // Constructor for creating a new tablet.
-  TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block,
-                 const Schema& schema, const string& start_key, const string& end_key);
+  TabletMetadata(FsManager *fs_manager,
+                 const TabletMasterBlockPB& master_block,
+                 const Schema& schema,
+                 const QuorumPB& quorum,
+                 const string& start_key,
+                 const string& end_key);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block);
@@ -178,6 +192,8 @@ class TabletMetadata {
   int64_t last_durable_mrs_id_;
 
   Schema schema_;
+
+  metadata::QuorumPB quorum_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };

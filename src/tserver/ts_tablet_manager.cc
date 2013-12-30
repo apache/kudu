@@ -18,6 +18,7 @@
 #include "tablet/tablet.h"
 #include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet_peer.h"
+#include "tserver/tablet_server.h"
 #include "util/env.h"
 #include "util/env_util.h"
 #include "util/metrics.h"
@@ -29,6 +30,8 @@ using std::vector;
 using kudu::log::Log;
 using kudu::tablet::TabletPeer;
 using kudu::master::TabletReportPB;
+using kudu::metadata::QuorumPB;
+using kudu::metadata::QuorumPeerPB;
 using kudu::metadata::TabletMasterBlockPB;
 using kudu::metadata::TabletMetadata;
 using kudu::tablet::Tablet;
@@ -38,8 +41,32 @@ static const char* const kTmpSuffix = ".tmp";
 namespace kudu {
 namespace tserver {
 
-TSTabletManager::TSTabletManager(FsManager* fs_manager, const MetricContext& metric_ctx)
+// helper to delete the creation-in-progress entry from the corresponding
+// set when the CreateNewTablet method completes.
+struct CreatesInProgressDeleter {
+  CreatesInProgressDeleter(CreatesInProgressSet* set,
+                           rw_spinlock& lock,
+                           const string& entry)
+      : set_(set),
+        lock_(lock),
+        entry_(entry) {
+  }
+
+  ~CreatesInProgressDeleter() {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    CHECK(set_->erase(entry_));
+  }
+
+  CreatesInProgressSet* set_;
+  rw_spinlock& lock_;
+  string entry_;
+};
+
+TSTabletManager::TSTabletManager(FsManager* fs_manager,
+                                 TabletServer* server,
+                                 const MetricContext& metric_ctx)
   : fs_manager_(fs_manager),
+    server_(server),
     next_report_seq_(0),
     metric_ctx_(metric_ctx) {
 }
@@ -77,17 +104,38 @@ Status TSTabletManager::Init() {
 Status TSTabletManager::CreateNewTablet(const string& tablet_id,
                                         const string& start_key, const string& end_key,
                                         const Schema& schema,
+                                        QuorumPB quorum,
                                         shared_ptr<TabletPeer>* tablet_peer) {
+
+  // If the quorum is local, set the local peer and the seqno to 0.
+  if (quorum.local()) {
+    QuorumPeerPB quorum_peer;
+    quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
+    quorum.set_seqno(0);
+    quorum.clear_peers();
+    quorum.add_peers()->CopyFrom(quorum_peer);
+  }
+
+
   {
+    // acquire the lock in exclusive mode as we'll add a entry to the
+    // creates_in_progress_ set if the lookup fails.
+    boost::lock_guard<rw_spinlock> lock(lock_);
+
     // Sanity check that the tablet isn't already registered.
-    // This fires a FATAL in debug mode, so callers should not depend on the
-    // AlreadyPresent result here to check if a tablet needs to be created.
     shared_ptr<TabletPeer> junk;
-    if (LookupTablet(tablet_id, &junk)) {
-      LOG(DFATAL) << "Trying to create an already-existing tablet " << tablet_id;
+    if (LookupTabletUnlocked(tablet_id, &junk)) {
       return Status::AlreadyPresent("Tablet already registered", tablet_id);
     }
+
+    // Sanity check that the tablet's creation isn't already in progress
+    if (!InsertIfNotPresent(&creates_in_progress_, tablet_id)) {
+      return Status::AlreadyPresent("Creation of tablet already in progress",
+                                    tablet_id);
+    }
   }
+
+  CreatesInProgressDeleter deleter(&creates_in_progress_, lock_, tablet_id);
 
   // Create a new master block
   TabletMasterBlockPB master_block;
@@ -97,7 +145,13 @@ Status TSTabletManager::CreateNewTablet(const string& tablet_id,
 
   gscoped_ptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(
-    TabletMetadata::CreateNew(fs_manager_, master_block, schema, start_key, end_key, &meta),
+    TabletMetadata::CreateNew(fs_manager_,
+                              master_block,
+                              schema,
+                              quorum,
+                              start_key,
+                              end_key,
+                              &meta),
     "Couldn't create tablet metadata");
 
   RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
@@ -129,9 +183,16 @@ Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
   // TODO: handle crash mid-creation of tablet? do we ever end up with a partially created tablet here?
   RETURN_NOT_OK(BootstrapTablet(meta.Pass(), &metric_ctx_, &tablet, &log));
 
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet, log.Pass()));
+  QuorumPeerPB quorum_peer;
+  quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
+
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet,
+                                                    quorum_peer,
+                                                    log.Pass()));
+
   RETURN_NOT_OK_PREPEND(tablet_peer->Init(), "Failed to Init() TabletPeer");
-  RETURN_NOT_OK_PREPEND(tablet_peer->Start(), "Failed to Start() TabletPeer");
+
+  RETURN_NOT_OK_PREPEND(tablet_peer->Start(tablet->metadata()->Quorum()), "Failed to Start() TabletPeer");
 
   RegisterTablet(tablet_peer);
 
@@ -183,6 +244,11 @@ void TSTabletManager::RegisterTablet(const std::tr1::shared_ptr<TabletPeer>& tab
 bool TSTabletManager::LookupTablet(const string& tablet_id,
                                    std::tr1::shared_ptr<TabletPeer>* tablet_peer) const {
   boost::shared_lock<rw_spinlock> lock(lock_);
+  return LookupTabletUnlocked(tablet_id, tablet_peer);
+}
+
+bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
+                                           std::tr1::shared_ptr<TabletPeer>* tablet_peer) const {
   const std::tr1::shared_ptr<TabletPeer>* found = FindOrNull(tablet_map_, tablet_id);
   if (!found) {
     return false;

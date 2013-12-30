@@ -31,9 +31,7 @@ Master::Master(const MasterOptions& opts)
     initted_(false),
     ts_manager_(new TSManager()),
     tablet_manager_(new MTabletManager()),
-    path_handlers_(new MasterPathHandlers(this)),
-    sys_tables_(new SysTablesTable(metric_registry_.get())),
-    sys_tablets_(new SysTabletsTable(metric_registry_.get())) {
+    path_handlers_(new MasterPathHandlers(this)) {
 }
 
 Master::~Master() {
@@ -48,6 +46,9 @@ string Master::ToString() const {
 
 Status Master::Init() {
   CHECK(!initted_);
+  sys_tables_.reset(new SysTablesTable(this, metric_registry_.get()));
+  sys_tablets_.reset(new SysTabletsTable(this, metric_registry_.get()));
+
   RETURN_NOT_OK(ServerBase::Init());
 
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
