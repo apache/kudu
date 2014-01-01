@@ -39,7 +39,7 @@ void InboundCall::RespondSuccess(const MessageLite& response) {
   Status s = SerializeResponseBuffer(response, true);
   if (PREDICT_FALSE(!s.ok())) {
     // TODO: test error case, serialize error response instead
-    LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
+    LOG(DFATAL) << "Unable to serialize " << response.GetTypeName() << " response: " << s.ToString();
   }
 
   trace_->Message("Queueing success response");
