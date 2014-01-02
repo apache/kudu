@@ -323,6 +323,30 @@ TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
   ASSERT_TRUE(FindOrDie(metric_map, "test.rpc_test.rpc.incoming_queue_time") != NULL);
 }
 
+static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,
+                                     CountDownLatch* latch) {
+  messenger->reset();
+  latch->CountDown();
+}
+
+TEST_F(TestRpc, TestRpcCallbackDestroysMessenger) {
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Sockaddr bad_addr;
+  CountDownLatch latch(1);
+
+  AddRequestPB req;
+  req.set_x(rand());
+  req.set_y(rand());
+  AddResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(MonoDelta::FromMilliseconds(1));
+  {
+    Proxy p(client_messenger, bad_addr, "xxx");
+    p.AsyncRequest("my-fake-method", req, &resp, &controller,
+                   boost::bind(&DestroyMessengerCallback, &client_messenger, &latch));
+  }
+  latch.Wait();
+}
 
 } // namespace rpc
 } // namespace kudu

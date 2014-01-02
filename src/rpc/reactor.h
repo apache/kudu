@@ -210,7 +210,9 @@ class Reactor {
  public:
   static const Status SHUTDOWN_ERROR;
 
-  Reactor(Messenger *messenger, int index, const MessengerBuilder &bld);
+  Reactor(const std::tr1::shared_ptr<Messenger>& messenger,
+          int index,
+          const MessengerBuilder &bld);
   Status Init();
 
   // Block until the Reactor is shut down
@@ -245,7 +247,7 @@ class Reactor {
   bool DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks);
 
   Messenger *messenger() const {
-    return messenger_;
+    return messenger_.get();
   }
 
   // Indicates whether the reactor is shutting down.
@@ -254,11 +256,12 @@ class Reactor {
   bool closing() const;
 
  private:
+  friend class ReactorThread;
   typedef simple_spinlock LockType;
   mutable LockType lock_;
 
   // parent messenger
-  Messenger *messenger_;
+  std::tr1::shared_ptr<Messenger> messenger_;
 
   const std::string name_;
 

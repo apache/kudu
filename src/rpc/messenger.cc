@@ -92,8 +92,22 @@ Status MessengerBuilder::Build(Messenger **msgr) {
 Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
   Messenger *ptr;
   RETURN_NOT_OK(Build(&ptr));
-  msgr->reset(ptr);
+
+  // See docs on Messenger::retain_self_ for info about this odd hack.
+  *msgr = shared_ptr<Messenger>(
+    ptr, std::mem_fun(&Messenger::AllExternalReferencesDropped));
   return Status::OK();
+}
+
+// See comment on Messenger::retain_self_ member.
+void Messenger::AllExternalReferencesDropped() {
+  Shutdown();
+  CHECK(retain_self_.get());
+  // If we have no more external references, then we no longer
+  // need to retain ourself. We'll destruct as soon as all our
+  // internal-facing references are dropped (ie those from reactor
+  // threads).
+  retain_self_.reset();
 }
 
 void Messenger::Shutdown() {
@@ -176,19 +190,20 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 Messenger::Messenger(const MessengerBuilder &bld)
   : closing_(false),
     service_queue_(bld.service_queue_length_),
-    name_(bld.name_) {
+    name_(bld.name_),
+    retain_self_(this) {
   if (bld.metric_ctx_) {
     metric_ctx_.reset(new MetricContext(*bld.metric_ctx_));
   }
   for (int i = 0; i < bld.num_reactors_; i++) {
-    reactors_.push_back(new Reactor(this, i, bld));
+    reactors_.push_back(new Reactor(retain_self_, i, bld));
   }
   negotiation_executor_.reset(TaskExecutor::CreateNew("rpc negotiation",
                                                       bld.num_negotiation_threads_));
 }
 
 Messenger::~Messenger() {
-  Shutdown();
+  CHECK(closing_) << "Should have already shut down";
   BOOST_FOREACH(Reactor* r, reactors_) {
     delete r;
   }

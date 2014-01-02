@@ -74,13 +74,9 @@ Status ReactorThread::Init() {
 
 void ReactorThread::Shutdown() {
   CHECK(reactor_->closing()) << "Should be called after setting closing_ flag";
-  CHECK(!IsCurrentThread()) << "Cannot shutdown Reactor from a Reactor thread";
 
-  VLOG(1) << name() << ": joining Reactor thread.";
+  VLOG(1) << name() << ": shutting down Reactor thread.";
   WakeThread();
-  CHECK_OK(ThreadJoiner(thread_.get(), "reactor thread").Join());
-
-  // TODO: what about pending calls? need to abort them?
 }
 
 void ReactorThread::ShutdownInternal() {
@@ -260,6 +256,10 @@ void ReactorThread::RunThread() {
   DVLOG(6) << "Calling ReactorThread::RunThread()...";
   loop_.run(0);
   VLOG(1) << name() << " thread exiting.";
+
+  // No longer need the messenger. This causes the messenger to
+  // get deleted when all the reactors exit.
+  reactor_->messenger_.reset();
 }
 
 Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
@@ -398,7 +398,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
   }
 }
 
-Reactor::Reactor(Messenger *messenger,
+Reactor::Reactor(const shared_ptr<Messenger>& messenger,
                  int index, const MessengerBuilder &bld)
   : messenger_(messenger),
     name_(StringPrintf("%s_R%03d", messenger->name().c_str(), index)),
