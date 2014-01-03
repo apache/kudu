@@ -41,11 +41,12 @@ static const char* const kTmpSuffix = ".tmp";
 namespace kudu {
 namespace tserver {
 
+namespace {
 // helper to delete the creation-in-progress entry from the corresponding
 // set when the CreateNewTablet method completes.
 struct CreatesInProgressDeleter {
   CreatesInProgressDeleter(CreatesInProgressSet* set,
-                           rw_spinlock& lock,
+                           rw_spinlock* lock,
                            const string& entry)
       : set_(set),
         lock_(lock),
@@ -53,14 +54,15 @@ struct CreatesInProgressDeleter {
   }
 
   ~CreatesInProgressDeleter() {
-    boost::lock_guard<rw_spinlock> lock(lock_);
+    boost::lock_guard<rw_spinlock> lock(*lock_);
     CHECK(set_->erase(entry_));
   }
 
   CreatesInProgressSet* set_;
-  rw_spinlock& lock_;
+  rw_spinlock* lock_;
   string entry_;
 };
+} // anonymous namespace
 
 TSTabletManager::TSTabletManager(FsManager* fs_manager,
                                  TabletServer* server,
@@ -135,7 +137,7 @@ Status TSTabletManager::CreateNewTablet(const string& tablet_id,
     }
   }
 
-  CreatesInProgressDeleter deleter(&creates_in_progress_, lock_, tablet_id);
+  CreatesInProgressDeleter deleter(&creates_in_progress_, &lock_, tablet_id);
 
   // Create a new master block
   TabletMasterBlockPB master_block;
