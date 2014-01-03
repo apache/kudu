@@ -38,6 +38,10 @@ fi
 
 ################################################################################
 
+# Determine how many parallel jobs to use for make based on the number of cores
+PARALLEL=$(grep -c processor /proc/cpuinfo)
+
+
 mkdir -p "$PREFIX/include"
 mkdir -p "$PREFIX/lib"
 
@@ -53,7 +57,7 @@ export PATH=$PREFIX/bin:$PATH
 if [ -n "$F_ALL" -o -n "$F_CMAKE" ]; then
   cd $CMAKE_DIR
   ./bootstrap --prefix=$PREFIX --parallel=8
-  make -j
+  make -j$PARALLEL
   make install
 fi
 
@@ -61,63 +65,63 @@ fi
 if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
   cd $GFLAGS_DIR
   ./configure --with-pic --prefix=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 # build glog
 if [ -n "$F_ALL" -o -n "$F_GLOG" ]; then
   cd $GLOG_DIR
   ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 # build gperftools
 if [ -n "$F_ALL" -o -n "$F_GPERFTOOLS" ]; then
   cd $GPERFTOOLS_DIR
   ./configure --enable-frame-pointers --with-pic --prefix=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 # build gtest
 if [ -n "$F_ALL" -o -n "$F_GTEST" ]; then
   cd $GTEST_DIR
   cmake .
-  make -j4
+  make -j$PARALLEL
 fi
 
 # build protobuf
 if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
   cd $PROTOBUF_DIR
   ./configure --with-pic --disable-shared --prefix=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 # build snappy
 if [ -n "$F_ALL" -o -n "$F_SNAPPY" ]; then
   cd $SNAPPY_DIR
   ./configure --with-pic --prefix=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 # build zlib
 if [ -n "$F_ALL" -o -n "$F_ZLIB" ]; then
   cd $ZLIB_DIR
   ./configure --prefix=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 # build lz4
 if [ -n "$F_ALL" -o -n "$F_LZ4" ]; then
   cd $LZ4_DIR
   $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 ## build libev
 if [ -n "$F_ALL" -o -n "$F_LIBEV" ]; then
   cd $LIBEV_DIR
   ./configure --with-pic --disable-shared --prefix=$PREFIX
-  make -j4 install
+  make -j$PARALLEL install
 fi
 
 ## build cyrus-sasl
@@ -137,7 +141,7 @@ if [ -n "$F_ALL" -o -n "$F_CYRUS_SASL" ]; then
     --enable-static --enable-staticdlopen --with-dblib=none --without-des \
     --prefix=$PREFIX
   make clean
-  make # no -j4 ... concurrent build probs on RHEL?
+  make # no -j$PARALLEL ... concurrent build probs on RHEL?
   make install
 fi
 
@@ -183,7 +187,7 @@ if [ -n "$F_ALL" -o -n "$F_CURL" ]; then
     --disable-manual \
     --without-rtmp \
     --disable-ipv6
-  make -j4
+  make -j$PARALLEL
   make install
 fi
 
