@@ -12,6 +12,7 @@
 #include "common/row_changelist.h"
 #include "util/status.h"
 #include "util/test_util.h"
+#include "master/master-test-util.h"
 #include "master/mini_master.h"
 #include "tserver/mini_tablet_server.h"
 #include "integration-tests/mini_cluster.h"
@@ -33,19 +34,22 @@ class RpcLineItemDAOTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
+    // Create the tablet that we are going to register
+    CreateTabletForTesting(cluster_->mini_master(), "tpch1", &tablet_id_);
+
     // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(kTabletId, schema_));
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(tablet_id_, schema_));
 
     // Wait for the tablet to be reported to the master.
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(kTabletId, 1));
+    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_, 1));
 
     string master_address(cluster_->mini_master()->bound_rpc_addr().ToString());
-    dao_.reset(new kudu::RpcLineItemDAO(master_address, 5));
+    dao_.reset(new kudu::RpcLineItemDAO(master_address, tablet_id_, 5));
     dao_->Init();
   }
 
  protected:
-  static const char* const kTabletId;
+  string tablet_id_;
   gscoped_ptr<MiniCluster> cluster_;
   gscoped_ptr<RpcLineItemDAO> dao_;
   Schema schema_;
@@ -85,8 +89,6 @@ class RpcLineItemDAOTest : public KuduTest {
     return count;
   }
 }; // class RpcLineItemDAOTest
-
-const char* const RpcLineItemDAOTest::kTabletId = "tpch1";
 
 TEST_F(RpcLineItemDAOTest, TestInsert) {
   ConstContiguousRow row(BuildTestRow(1, 1));

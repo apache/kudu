@@ -12,7 +12,6 @@
 #include "rpc/service_pool.h"
 #include "server/rpc_server.h"
 #include "master/catalog_manager.h"
-#include "master/m_tablet_manager.h"
 #include "master/master_service.h"
 #include "master/master-path-handlers.h"
 #include "master/sys_tables.h"
@@ -31,7 +30,6 @@ Master::Master(const MasterOptions& opts)
   : ServerBase(opts.env, opts.base_dir, opts.rpc_opts, opts.webserver_opts, "kudu.master"),
     initted_(false),
     ts_manager_(new TSManager()),
-    tablet_manager_(new MTabletManager()),
     catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)) {
 }

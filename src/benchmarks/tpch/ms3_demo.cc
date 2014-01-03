@@ -27,6 +27,8 @@ DEFINE_string(master_address, "localhost",
 DEFINE_int32(tpch_max_batch_size, 1000,
              "Maximum number of inserts/updates to batch at once");
 
+const char * const kTabletId = "tpch1";
+
 // This program is used to drive both inserts and read+mutates on the tpch
 // data set.
 // First, use the tpch1 insert test configured to talk to your cluster in order
@@ -70,7 +72,7 @@ static void UpdateThread(Demo *demo) {
   Schema full_schema = tpch::CreateLineItemSchema();
   Schema query_schema = tpch::CreateMS3DemoQuerySchema();
   gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(FLAGS_master_address,
-                                         FLAGS_tpch_max_batch_size));
+                                        kTabletId, FLAGS_tpch_max_batch_size));
   dao->Init();
 
   while (true) {
@@ -117,7 +119,7 @@ static void UpdateThread(Demo *demo) {
 // moving the window forward
 static void InsertThread(Demo *demo, const string &path) {
   gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(FLAGS_master_address,
-                                         FLAGS_tpch_max_batch_size));
+                                        kTabletId, FLAGS_tpch_max_batch_size));
   dao->Init();
   LineItemTsvImporter importer(path);
 

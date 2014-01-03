@@ -12,6 +12,7 @@
 #include "common/row.h"
 #include "common/wire_protocol.h"
 #include "integration-tests/mini_cluster.h"
+#include "master/master-test-util.h"
 #include "master/mini_master.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/transactions/write_transaction.h"
@@ -56,24 +57,27 @@ class ClientTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
+    // Create the tablet that we are going to register
+    CreateTabletForTesting(cluster_->mini_master(), "fake-table", &tablet_id_);
+
     // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(kTabletId, schema_));
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(tablet_id_, schema_));
     ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-                  kTabletId, &tablet_peer_));
+                tablet_id_, &tablet_peer_));
 
     // Wait for the tablet to be reported to the master.
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(kTabletId, 1));
+    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_, 1));
 
     // Connect to it.
     KuduClientOptions opts;
     opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
-    ASSERT_STATUS_OK(client_->OpenTable(kTabletId, schema_, &client_table_));
+    ASSERT_STATUS_OK(client_->OpenTable(tablet_id_, schema_, &client_table_));
   }
 
  protected:
 
-  static const char* const kTabletId;
+  string tablet_id_;
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRows(int num_rows) {
@@ -156,8 +160,6 @@ class ClientTest : public KuduTest {
   shared_ptr<KuduTable> client_table_;
   shared_ptr<TabletPeer> tablet_peer_;
 };
-
-const char* const ClientTest::kTabletId = "TestTablet";
 
 TEST_F(ClientTest, TestBadTable) {
   shared_ptr<KuduTable> t;

@@ -3,6 +3,7 @@
 #define KUDU_MASTER_TS_DESCRIPTOR_H
 
 #include <string>
+#include <tr1/memory>
 
 #include "util/locks.h"
 #include "util/monotime.h"
@@ -11,6 +12,14 @@
 namespace kudu {
 
 class NodeInstancePB;
+
+namespace rpc {
+class Messenger;
+}
+
+namespace tserver {
+class TabletServerServiceProxy;
+}
 
 namespace master {
 

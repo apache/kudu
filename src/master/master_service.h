@@ -35,6 +35,16 @@ class MasterServiceImpl : public MasterServiceIf {
                                   GetTabletLocationsResponsePB* resp,
                                   rpc::RpcContext* rpc);
 
+  virtual void CreateTable(const CreateTableRequestPB* req,
+                           CreateTableResponsePB* resp,
+                           rpc::RpcContext* rpc);
+  virtual void DeleteTable(const DeleteTableRequestPB* req,
+                           DeleteTableResponsePB* resp,
+                           rpc::RpcContext* rpc);
+  virtual void ListTables(const ListTablesRequestPB* req,
+                          ListTablesResponsePB* resp,
+                          rpc::RpcContext* rpc);
+
  private:
   Master* server_;
 

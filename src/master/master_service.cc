@@ -7,8 +7,9 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "common/wire_protocol.h"
+#include "master/catalog_manager.h"
 #include "master/master.h"
-#include "master/m_tablet_manager.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
 #include "rpc/rpc_context.h"
@@ -73,7 +74,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   ts_desc->UpdateHeartbeatTime();
 
   if (req->has_tablet_report()) {
-    s = server_->tablet_manager()->ProcessTabletReport(
+    s = server_->catalog_manager()->ProcessTabletReport(
       ts_desc.get(), req->tablet_report(), rpc);
     if (!s.ok()) {
       rpc->RespondFailure(s.CloneAndPrepend("Failed to process tablet report"));
@@ -98,7 +99,7 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     // TODO: Add some kind of verification that the tablet is actually valid
     // (i.e that it is present in the 'tablets' system table)
     // TODO: once we have catalog data. ACL checks would also go here, probably.
-    server_->tablet_manager()->GetTabletLocations(tablet_id, &locs);
+    server_->catalog_manager()->GetTabletLocations(tablet_id, &locs);
 
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
     locs_pb->set_tablet_id(tablet_id);
@@ -113,6 +114,36 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     }
   }
 
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
+                                    CreateTableResponsePB* resp,
+                                    rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->CreateTable(req, resp, rpc);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
+                                    DeleteTableResponsePB* resp,
+                                    rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->DeleteTable(req, resp, rpc);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
+                                   ListTablesResponsePB* resp,
+                                   rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->ListTables(req, resp);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
   rpc->RespondSuccess();
 }
 

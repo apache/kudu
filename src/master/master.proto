@@ -9,11 +9,48 @@ import "server/metadata.proto";
 // Common data structures
 ////////////////////////////////////////////////////////////
 
+// Master specific errors use this protobuf.
+message MasterErrorPB {
+  enum Code {
+    // An error which has no more specific error code.
+    // The code and message in 'status' may reveal more details.
+    //
+    // RPCs should avoid returning this, since callers will not be
+    // able to easily parse the error.
+    UNKNOWN_ERROR = 1;
+
+    // The schema provided for a request was not well-formed.
+    INVALID_SCHEMA = 2;
+
+    // The requested table does not exist
+    TABLE_NOT_FOUND = 3;
+
+    // The name requested for the table is already in use
+    TABLE_ALREADY_PRESENT = 4;
+  }
+
+  // The error code.
+  required Code code = 1 [ default = UNKNOWN_ERROR ];
+
+  // The Status object for the error. This will include a textual
+  // message that may be more useful to present in log messages, etc,
+  // though its error code is less specific.
+  required AppStatusPB status = 2;
+}
+
 // Common information sent with every request from the tablet server
 // to the master.
 message TSToMasterCommonPB {
   // The instance of the tablet server sending the heartbeat.
   required NodeInstancePB ts_instance = 1;
+}
+
+message TableIdentifierPB {
+  // The table ID to fetch info.
+  optional bytes table_id = 1;
+
+  // The table name to fetch info.
+  optional string table_name = 2;
 }
 
 ////////////////////////////////////////////////////////////
@@ -191,6 +228,50 @@ message GetTabletLocationsResponsePB {
   repeated Error errors = 2;
 }
 
+// ============================================================================
+//  Catalog
+// ============================================================================
+message CreateTableRequestPB {
+  required string name = 1;
+  required SchemaPB schema = 2;
+  repeated bytes pre_split_keys = 3;
+}
+
+message CreateTableResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  optional bytes table_id = 2;
+
+  // TODO: REMOVE ME: This is just for testing until we have the assignment
+  repeated bytes tablet_ids = 3;
+}
+
+message DeleteTableRequestPB {
+  required TableIdentifierPB table = 1;
+}
+
+message DeleteTableResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+}
+
+message ListTablesRequestPB {
+  //optional string name_filter = 1;
+}
+
+message ListTablesResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  message TableInfo {
+    required bytes id = 1;
+    required string name = 2;
+  }
+
+  repeated TableInfo tables = 2;
+}
+
 service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
@@ -199,4 +280,8 @@ service MasterService {
 
   // Client->Master RPCs
   rpc GetTabletLocations(GetTabletLocationsRequestPB) returns (GetTabletLocationsResponsePB);
+
+  rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB);
+  rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB);
+  rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB);
 }

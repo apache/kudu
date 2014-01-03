@@ -7,11 +7,13 @@
 #include <tr1/memory>
 
 #include "common/schema.h"
+#include "common/wire_protocol-test-util.h"
 #include "gutil/gscoped_ptr.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/mini_master.h"
 #include "master/master.h"
 #include "master/master.pb.h"
+#include "master/master-test-util.h"
 #include "master/ts_descriptor.h"
 #include "server/fsmanager.h"
 #include "tserver/mini_tablet_server.h"
@@ -112,30 +114,37 @@ TEST_F(RegistrationTest, TestMultipleTS) {
 // to something more appropriate - doesn't seem worth having separate
 // whole test suites for registration, tablet reports, etc.
 TEST_F(RegistrationTest, TestTabletReports) {
+  string tablet_id_1;
+  string tablet_id_2;
+
+  // Create the tablets that we are going to register
+  CreateTabletForTesting(cluster_->mini_master(), "fake-table", &tablet_id_1);
+  CreateTabletForTesting(cluster_->mini_master(), "fake-table2", &tablet_id_2);
+
   ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string ts_root = cluster_->GetTabletServerFsRoot(0);
 
   // Add a tablet, make sure it reports itself.
-  ASSERT_STATUS_OK(ts->AddTestTablet("tablet-1", schema_));
+  ASSERT_STATUS_OK(ts->AddTestTablet(tablet_id_1, schema_));
 
   vector<TSDescriptor*> locs;
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-1", 1, &locs));
+  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_EQ(1, locs.size());
   LOG(INFO) << "Tablet successfully reported on " << locs[0]->permanent_uuid();
 
   // Add another tablet, make sure it is reported via incremental.
-  ASSERT_STATUS_OK(ts->AddTestTablet("tablet-2", schema_));
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-2", 1, &locs));
+  ASSERT_STATUS_OK(ts->AddTestTablet(tablet_id_2, schema_));
+  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Shut down the whole system, bring it back up, and make sure the tablets
   // are reported.
   ASSERT_STATUS_OK(ts->Shutdown());
   ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
   ASSERT_STATUS_OK(ts->Start());
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-1", 1, &locs));
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-2", 1, &locs));
+  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
+  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Restart the TS after clearing its master blocks. On restart, it will send
   // a full tablet report, without any of the tablets. This causes the
@@ -146,8 +155,8 @@ TEST_F(RegistrationTest, TestTabletReports) {
   ASSERT_STATUS_OK(env_->DeleteRecursively(master_block_dir));
   ASSERT_STATUS_OK(env_->CreateDir(master_block_dir));
   ASSERT_STATUS_OK(ts->Start());
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-1", 0, &locs));
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount("tablet-2", 0, &locs));
+  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 0, &locs));
+  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 0, &locs));
 }
 
 } // namespace kudu

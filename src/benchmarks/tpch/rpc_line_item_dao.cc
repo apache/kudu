@@ -20,8 +20,6 @@
 #include "util/locks.h"
 #include "util/coding.h"
 
-const char * const kTabletId = "tpch1";
-
 using std::tr1::shared_ptr;
 
 namespace kudu {
@@ -35,10 +33,10 @@ void RpcLineItemDAO::Init() {
   client::KuduClientOptions opts;
   opts.master_server_addr = master_address_;
   CHECK_OK(client::KuduClient::Create(opts, &client_));
-  CHECK_OK(client_->GetTabletProxy(kTabletId, &proxy_));
-  CHECK_OK(client_->OpenTable(kTabletId, s, &client_table_));
+  CHECK_OK(client_->GetTabletProxy(tablet_id_, &proxy_));
+  CHECK_OK(client_->OpenTable(tablet_id_, s, &client_table_));
 
-  request_.set_tablet_id(kTabletId);
+  request_.set_tablet_id(tablet_id_);
   CHECK_OK(SchemaToColumnPBs(s, request_.mutable_to_insert_rows()->mutable_schema()));
   CHECK_OK(SchemaToColumnPBs(s, request_.mutable_to_mutate_row_keys()->mutable_schema()));
 }

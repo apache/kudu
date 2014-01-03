@@ -18,6 +18,8 @@
 
 namespace kudu {
 
+class Schema;
+
 namespace rpc {
 class RpcContext;
 } // namespace rpc
@@ -189,14 +191,95 @@ class CatalogManager {
 
   Status Init(bool is_first_run);
 
+  // Create a new Table with the specified attributes
+  //
+  // The RPC context is provided for logging/tracing purposes,
+  // but this function does not itself respond to the RPC.
+  Status CreateTable(const CreateTableRequestPB* req,
+                     CreateTableResponsePB* resp,
+                     rpc::RpcContext* rpc);
+
+  // Delete the specified table
+  //
+  // The RPC context is provided for logging/tracing purposes,
+  // but this function does not itself respond to the RPC.
+  Status DeleteTable(const DeleteTableRequestPB* req,
+                     DeleteTableResponsePB* resp,
+                     rpc::RpcContext* rpc);
+
+  // List all the running tables
+  Status ListTables(const ListTablesRequestPB* req,
+                    ListTablesResponsePB* resp);
+
+  // Look up the locations of the given tablet. The locations
+  // vector is overwritten (not appended to).
+  // If the tablet is not found, clears the result vector.
+  void GetTabletLocations(const std::string& tablet_id,
+                          std::vector<TSDescriptor*>* locations);
+
+  // Handle a tablet report from the given tablet server.
+  //
+  // The RPC context is provided for logging/tracing purposes,
+  // but this function does not itself respond to the RPC.
+  Status ProcessTabletReport(TSDescriptor* ts_desc,
+                             const TabletReportPB& report,
+                             rpc::RpcContext* rpc);
+
   SysTablesTable *sys_tables() { return sys_tables_.get(); }
   SysTabletsTable *sys_tablets() { return sys_tablets_.get(); }
 
  private:
+  friend class TableLoader;
+  friend class TabletLoader;
+
+  // Helper for creating the inital Tablets of the table
+  // based on the split-keys field in the request.
+  void CreateTablets(const CreateTableRequestPB* req,
+                     TableInfo *table,
+                     vector<TabletInfo *> *tablets);
+
+  // Helper for creating the initial TableInfo state
+  TableInfo *CreateTableInfo(const string& name,
+                             const Schema& schema);
+
+  // Helper for creating the initial TabletInfo state
+  TabletInfo *CreateTabletInfo(TableInfo *table,
+                               const string& start_key,
+                               const string& end_key);
+
+  Status FindTable(const TableIdentifierPB& table_identifier,
+                   TableInfo **table_info);
+
+  // Handle one of the tablets in a tablet reported.
+  // Requires that the lock is already held.
+  Status HandleReportedTablet(TSDescriptor* ts_desc,
+                              const ReportedTabletPB& report);
+
+  void ClearAllReplicasOnTS(TSDescriptor* ts_desc);
+
+
+  string GenerateId() { return oid_generator_.Next(); }
+
   typedef rw_spinlock LockType;
   LockType lock_;
 
+  // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
+  // objects have a copy of the string key. But STL doesn't make it
+  // easy to make a "gettable set".
+
+  // Table maps: table-id -> TableInfo and table-name -> TableInfo
+  // The CatalogManager owns all the TableInfo objects
+  typedef std::tr1::unordered_map<std::string, TableInfo *> TableInfoMap;
+  TableInfoMap table_ids_map_;
+  TableInfoMap table_names_map_;
+
+  // Tablet maps: tablet-id -> TabletInfo
+  // The CatalogManager owns all the TabletInfo objects
+  typedef std::tr1::unordered_map<std::string, TabletInfo*> TabletInfoMap;
+  TabletInfoMap tablet_map_;
+
   Master *master_;
+  ObjectIdGenerator oid_generator_;
   gscoped_ptr<SysTablesTable> sys_tables_;
   gscoped_ptr<SysTabletsTable> sys_tablets_;
 

@@ -28,7 +28,6 @@ namespace master {
 
 class CatalogManager;
 class TSManager;
-class MTabletManager;
 class MasterPathHandlers;
 
 class Master : public server::ServerBase {
@@ -47,8 +46,6 @@ class Master : public server::ServerBase {
 
   TSManager* ts_manager() { return ts_manager_.get(); }
 
-  MTabletManager* tablet_manager() { return tablet_manager_.get(); }
-
   CatalogManager* catalog_manager() { return catalog_manager_.get(); }
 
  private:
@@ -59,7 +56,6 @@ class Master : public server::ServerBase {
   bool initted_;
 
   gscoped_ptr<TSManager> ts_manager_;
-  gscoped_ptr<MTabletManager> tablet_manager_;
   gscoped_ptr<CatalogManager> catalog_manager_;
   gscoped_ptr<MasterPathHandlers> path_handlers_;
 

@@ -6,8 +6,8 @@
 
 #include "gutil/strings/substitute.h"
 #include "master/mini_master.h"
+#include "master/catalog_manager.h"
 #include "master/master.h"
-#include "master/m_tablet_manager.h"
 #include "master/ts_manager.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
@@ -104,7 +104,7 @@ Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
-    mini_master_->master()->tablet_manager()->GetTabletLocations(tablet_id, locations);
+    mini_master_->master()->catalog_manager()->GetTabletLocations(tablet_id, locations);
     if (locations->size() == expected_count) return Status::OK();
 
     usleep(1 * 1000); // 1ms

@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
@@ -10,6 +11,7 @@
 #include "gutil/strings/join.h"
 #include "master/master.h"
 #include "master/master.proxy.h"
+#include "master/master-test-util.h"
 #include "master/mini_master.h"
 #include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
@@ -143,11 +145,15 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 }
 
 TEST_F(MasterTest, TestTabletLocations) {
-  const string kTabletId = "fake-tablet-id";
   const string kTabletServerId = "my-ts-uuid";
+
   TSToMasterCommonPB common;
   common.mutable_ts_instance()->set_permanent_uuid(kTabletServerId);
   common.mutable_ts_instance()->set_instance_seqno(1);
+
+  // Create the tablet that we are going to register
+  string tablet_id;
+  CreateTabletForTesting(mini_master_.get(), "fake-table", &tablet_id);
 
   // Register the fake TS, including a single tablet.
   TSRegistrationPB fake_reg;
@@ -162,7 +168,7 @@ TEST_F(MasterTest, TestTabletLocations) {
     TabletReportPB* tr = req.mutable_tablet_report();
     tr->set_is_incremental(false);
     tr->set_sequence_number(0);
-    tr->add_updated_tablets()->set_tablet_id(kTabletId);
+    tr->add_updated_tablets()->set_tablet_id(tablet_id);
 
     ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
   }
@@ -173,14 +179,14 @@ TEST_F(MasterTest, TestTabletLocations) {
     GetTabletLocationsRequestPB req;
     GetTabletLocationsResponsePB resp;
     RpcController rpc;
-    req.add_tablet_ids(kTabletId);
+    req.add_tablet_ids(tablet_id);
 
     ASSERT_STATUS_OK(proxy_->GetTabletLocations(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
 
     // Verify the tablet location.
     ASSERT_EQ(1, resp.tablet_locations().size());
-    EXPECT_EQ("tablet_id: \"fake-tablet-id\"\n"
+    EXPECT_EQ("tablet_id: \"" + tablet_id + "\"\n"
               "replicas {\n"
               "  ts_info {\n"
               "    permanent_uuid: \"my-ts-uuid\"\n"
@@ -191,6 +197,64 @@ TEST_F(MasterTest, TestTabletLocations) {
               "  }\n"
               "}\n",
               resp.tablet_locations(0).DebugString());
+  }
+}
+
+TEST_F(MasterTest, TestCatalog) {
+  const char *kTableName = "testtb";
+  const Schema kTableSchema(boost::assign::list_of
+                            (ColumnSchema("key", UINT32))
+                            (ColumnSchema("v1", UINT64))
+                            (ColumnSchema("v2", STRING)),
+                            1);
+  // Create a table
+  {
+    CreateTableRequestPB req;
+    CreateTableResponsePB resp;
+    RpcController controller;
+
+    req.set_name(kTableName);
+    req.add_pre_split_keys("k1");
+    req.add_pre_split_keys("k2");
+
+    ASSERT_STATUS_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
+    ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // List tables, should show just the created one
+  {
+    ListTablesRequestPB req;
+    ListTablesResponsePB resp;
+    RpcController controller;
+    ASSERT_STATUS_OK(proxy_->ListTables(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(1, resp.tables_size());
+    ASSERT_EQ(kTableName, resp.tables(0).name());
+  }
+
+  // Delete the table
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    ASSERT_STATUS_OK(proxy_->DeleteTable(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // List tables, show show no table
+  {
+    ListTablesRequestPB req;
+    ListTablesResponsePB resp;
+    RpcController controller;
+    ASSERT_STATUS_OK(proxy_->ListTables(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(0, resp.tables_size());
   }
 }
 

@@ -230,7 +230,8 @@ int main(int argc, char **argv) {
   if (FLAGS_tpch_query_mode == "local") {
     dao.reset(new kudu::LocalLineItemDAO(FLAGS_tpch_path_to_tablet));
   } else {
-    dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address,
+    const char * const kTabletId = "tpch1";
+    dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address, kTabletId,
                                          FLAGS_tpch_max_batch_size));
   }
 
