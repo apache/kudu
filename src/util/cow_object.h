@@ -146,6 +146,17 @@ class CowLock {
     mode_ = RELEASED;
   }
 
+  void Unlock() {
+    if (mode_ == READ) {
+      cow_->ReadUnlock();
+    } else if (mode_ == WRITE) {
+      cow_->AbortMutation();
+    } else {
+      DCHECK_EQ(RELEASED, mode_);
+    }
+    mode_ = RELEASED;
+  }
+
   // Obtain the underlying data. In WRITE mode, this returns the
   // same data as mutable_data() (not the safe unchanging copy).
   const State& data() const {
@@ -173,13 +184,7 @@ class CowLock {
   // lock has not yet been released, aborts the mutation, restoring
   // the underlying object to its original data.
   ~CowLock() {
-    if (mode_ == READ) {
-      cow_->ReadUnlock();
-    } else if (mode_ == WRITE) {
-      cow_->AbortMutation();
-    } else {
-      DCHECK_EQ(RELEASED, mode_);
-    }
+    Unlock();
   }
 
  private:

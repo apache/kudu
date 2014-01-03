@@ -34,22 +34,20 @@ class RpcLineItemDAOTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
-    // Create the tablet that we are going to register
-    CreateTabletForTesting(cluster_->mini_master(), "tpch1", &tablet_id_);
+    string tablet_id;
 
-    // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(tablet_id_, schema_));
+    // Create the tablet that we are going to register
+    CreateTabletForTesting(cluster_->mini_master(), "tpch1", schema_, &tablet_id);
 
     // Wait for the tablet to be reported to the master.
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_, 1));
+    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id, 1));
 
     string master_address(cluster_->mini_master()->bound_rpc_addr().ToString());
-    dao_.reset(new kudu::RpcLineItemDAO(master_address, tablet_id_, 5));
+    dao_.reset(new kudu::RpcLineItemDAO(master_address, tablet_id, 5));
     dao_->Init();
   }
 
  protected:
-  string tablet_id_;
   gscoped_ptr<MiniCluster> cluster_;
   gscoped_ptr<RpcLineItemDAO> dao_;
   Schema schema_;

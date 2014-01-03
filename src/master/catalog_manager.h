@@ -13,6 +13,7 @@
 #include "gutil/ref_counted.h"
 #include "util/monotime.h"
 #include "master/master.pb.h"
+#include "master/ts_manager.h"
 #include "server/oid_generator.h"
 #include "util/cow_object.h"
 #include "util/locks.h"
@@ -28,11 +29,14 @@ class RpcContext;
 
 namespace master {
 
+class CatalogManagerBgTasks;
 class Master;
 class SysTablesTable;
 class SysTabletsTable;
 class TableInfo;
 class TSDescriptor;
+
+struct DeferredAssignmentActions;
 
 // The data related to a tablet which is persisted on disk.
 // This portion of TableInfo is managed via CowObject.
@@ -46,12 +50,22 @@ struct PersistentTabletInfo {
     return pb.state() == SysTabletsEntryPB::kTabletStateReplaced;
   }
 
+  // Returns true if the specified 'ts_desc' is the leader of the quorum
+  bool IsQuorumLeader(const TSDescriptor* ts_desc) const;
+
   // Helper to set the state of the tablet with a custom message.
   // Requires that the caller has prepared this object for write.
   // The change will only be visible after Commit().
   void set_state(SysTabletsEntryPB::State state, const string& msg);
 
   SysTabletsEntryPB pb;
+};
+
+// Information on a current replica of a tablet.
+// This is copyable so that no locking is needed.
+struct TabletReplica {
+  TSDescriptor* ts_desc;
+  metadata::TabletStatePB state;
 };
 
 // The information about a single tablet which exists in the cluster,
@@ -78,11 +92,12 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   TabletInfo(TableInfo *table, const std::string& tablet_id);
 
   // Add a replica reported on the given server
-  // TODO: figure out locking for this.
-  void AddReplica(TSDescriptor* ts_desc);
+  void AddReplica(TSDescriptor* ts_desc, metadata::TabletStatePB state);
 
   // Remove any replicas which were on this server.
   void ClearReplicasOnTS(const TSDescriptor* ts_desc);
+
+  std::string ToString() const;
 
   TableInfo *table() { return table_; }
   const TableInfo *table() const { return table_; }
@@ -90,7 +105,15 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   // Does not require synchronization.
   const std::string& tablet_id() const { return tablet_id_; }
 
-  void GetLocations(std::vector<TSDescriptor*>* locations) const;
+  void GetLocations(std::vector<TabletReplica>* locations) const;
+
+  MonoDelta TimeSinceLastUpdate(const MonoTime& now) const {
+    return now.GetDeltaSince(last_update_ts_);
+  }
+
+  void set_last_update_ts(const MonoTime& ts) {
+    last_update_ts_ = ts;
+  }
 
   // Access the persistent metadata. Typically you should use
   // TabletMetadataLock to gain access to this data.
@@ -108,7 +131,7 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   // The locations where this tablet has been reported.
   // TODO: this probably will turn into a struct which also includes
   // some state information at some point.
-  std::vector<TSDescriptor*> locations_;
+  std::vector<TabletReplica> locations_;
 
   // Lock protecting locations_ and last_update_ts_.
   // This doesn't protect metadata_ (the on-disk portion).
@@ -155,6 +178,8 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
 
   explicit TableInfo(const std::string& table_id);
 
+  std::string ToString() const;
+
   // Return the table's ID. Does not require synchronization.
   const std::string& id() const { return table_id_; }
 
@@ -162,6 +187,10 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   void AddTablet(TabletInfo *tablet);
   // Add multiple tablets to this table.
   void AddTablets(const vector<TabletInfo*>& tablets);
+
+  // This only returns tablets which are in RUNNING state.
+  void GetTabletsInRange(const GetTableLocationsRequestPB* req,
+                         vector<scoped_refptr<TabletInfo> > *ret) const;
 
   // Access the persistent metadata. Typically you should use
   // TableMetadataLock to gain access to this data.
@@ -215,6 +244,7 @@ class CatalogManager {
   ~CatalogManager();
 
   Status Init(bool is_first_run);
+  void Shutdown();
 
   // Create a new Table with the specified attributes
   //
@@ -235,10 +265,13 @@ class CatalogManager {
   // List all the running tables
   Status ListTables(const ListTablesRequestPB* req,
                     ListTablesResponsePB* resp);
+  Status GetTableLocations(const GetTableLocationsRequestPB* req,
+                           GetTableLocationsResponsePB* resp);
 
   // Look up the locations of the given tablet. The locations
   // vector is overwritten (not appended to).
   // If the tablet is not found, clears the result vector.
+  // This only returns tablets which are in RUNNING state.
   void GetTabletLocations(const std::string& tablet_id,
                           std::vector<TSDescriptor*>* locations);
 
@@ -248,6 +281,7 @@ class CatalogManager {
   // but this function does not itself respond to the RPC.
   Status ProcessTabletReport(TSDescriptor* ts_desc,
                              const TabletReportPB& report,
+                             TabletReportUpdatesPB *report_update,
                              rpc::RpcContext* rpc);
 
   SysTablesTable *sys_tables() { return sys_tables_.get(); }
@@ -261,10 +295,10 @@ class CatalogManager {
   // based on the split-keys field in the request.
   void CreateTablets(const CreateTableRequestPB* req,
                      TableInfo *table,
-                     vector<TabletInfo *> *tablets);
+                     vector<TabletInfo*> *tablets);
 
   // Helper for creating the initial TableInfo state
-  TableInfo *CreateTableInfo(const string& name,
+  TableInfo *CreateTableInfo(const CreateTableRequestPB* req,
                              const Schema& schema);
 
   // Helper for creating the initial TabletInfo state
@@ -278,10 +312,47 @@ class CatalogManager {
   // Handle one of the tablets in a tablet reported.
   // Requires that the lock is already held.
   Status HandleReportedTablet(TSDescriptor* ts_desc,
-                              const ReportedTabletPB& report);
+                              const ReportedTabletPB& report,
+                              ReportedTabletUpdatesPB *report_updates);
 
   void ClearAllReplicasOnTS(TSDescriptor* ts_desc);
 
+  // Extract the set of tablets that can be deleted and the set of tablets
+  // that must be processed because not running yet.
+  void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo> > *tablets_to_delete,
+                               std::vector<scoped_refptr<TabletInfo> > *tablets_to_process);
+
+  // Task that takes care of the tablet assignments/creations.
+  // loops through the "not created" tablets and send a create request.
+  void ProcessPendingAssignments(
+    const std::vector<scoped_refptr<TabletInfo> >& tablets,
+    int *next_timeout_ms);
+
+  void SelectReplicasForTablets(const vector<TabletInfo*>& tablets,
+                                const TSDescriptorVector& ts_descs);
+
+  // Select N Replicas from the online tablet servers
+  // and populate the quorum object.
+  //
+  // This method is part of the "ProcessPendingAssignments()"
+  void SelectReplicas(metadata::QuorumPB *quorum,
+                      const TSDescriptorVector& ts_descs,
+                      int nreplicas);
+
+  void HandleAssignPreparingTablet(TabletInfo* tablet,
+                                   DeferredAssignmentActions* deferred);
+  void HandleAssignCreatingTablet(TabletInfo* tablet,
+                                  DeferredAssignmentActions* deferred);
+
+
+  // Send the create tablet requests to the selected peers of the quorums.
+  // The creation is async, and at the moment there is no error checking on the
+  // caller side. We rely on the assignment timeout. If we don't see the tablet
+  // after the timeout, we regenerate a new one and proceed with a new
+  // assignment/creation.
+  //
+  // This method is part of the "ProcessPendingAssignments()"
+  void SendCreateTabletRequests(const vector<TabletInfo*>& tablets);
 
   string GenerateId() { return oid_generator_.Next(); }
 
@@ -304,9 +375,15 @@ class CatalogManager {
   LockType lock_;
 
   Master *master_;
+  Atomic32 closing_;
   ObjectIdGenerator oid_generator_;
   gscoped_ptr<SysTablesTable> sys_tables_;
   gscoped_ptr<SysTabletsTable> sys_tablets_;
+
+  // Background thread, used to execute the catalog manager tasks
+  // like the assignment and cleaner
+  friend class CatalogManagerBgTasks;
+  gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(CatalogManager);
 };

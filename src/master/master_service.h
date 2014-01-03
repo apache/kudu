@@ -44,6 +44,9 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void ListTables(const ListTablesRequestPB* req,
                           ListTablesResponsePB* resp,
                           rpc::RpcContext* rpc);
+  virtual void GetTableLocations(const GetTableLocationsRequestPB* req,
+                                 GetTableLocationsResponsePB* resp,
+                                 rpc::RpcContext* rpc);
 
  private:
   Master* server_;

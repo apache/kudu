@@ -117,17 +117,13 @@ TEST_F(RegistrationTest, TestTabletReports) {
   string tablet_id_1;
   string tablet_id_2;
 
-  // Create the tablets that we are going to register
-  CreateTabletForTesting(cluster_->mini_master(), "fake-table", &tablet_id_1);
-  CreateTabletForTesting(cluster_->mini_master(), "fake-table2", &tablet_id_2);
-
   ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string ts_root = cluster_->GetTabletServerFsRoot(0);
 
   // Add a tablet, make sure it reports itself.
-  ASSERT_STATUS_OK(ts->AddTestTablet(tablet_id_1, schema_));
+  CreateTabletForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
 
   vector<TSDescriptor*> locs;
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
@@ -135,7 +131,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   LOG(INFO) << "Tablet successfully reported on " << locs[0]->permanent_uuid();
 
   // Add another tablet, make sure it is reported via incremental.
-  ASSERT_STATUS_OK(ts->AddTestTablet(tablet_id_2, schema_));
+  CreateTabletForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Shut down the whole system, bring it back up, and make sure the tablets

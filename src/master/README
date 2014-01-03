@@ -1,0 +1,112 @@
+============================================================
+ Catalog Manager and Sys-Tables
+============================================================
+The Catalog Manager keeps track of the tables and tablets in the system.
+
+All the tables and tablets information are stored both in-memory and on-disk
+as a "sys-tables" table and a "sys-tablets" table.
+
+The two sys tables are loaded in-memory on startup.
+To add or modify a table/tablet the changes written to disk and if the operation
+succeeds the in-memory counterpart is updated.
+
+The catalog manager keeps 3 hash-maps:
+ - [Table Id] -> TableInfo
+ - [Table Name] -> TableInfo
+ - [Tablet Id] -> TabletInfo
+
+The TableInfo has a map [tablet-start-key] -> TabletInfo used to provide
+the tablets locations to the user based on a key-range request.
+
+============================================================
+ TableInfo/TabletInfo "state" field
+============================================================
+Tables and Tablets are "never" removed, instead we set a "deleted" flag.
+
+A cleaner will be reponsible to delete the "deleted" tables/tablets from
+both the in-memory state and the sys-tables/sys-tablets.
+
+============================================================
+ Table Creation
+============================================================
+
+- client -> master: Create "Table X" with N Tablet and Schema S
+- Catalog Manager Create Table
+    - Verify user request (e.g. valid schema)
+    - Verify that the table name is not already taken
+    - Add (in-memory) the new TableInfo in "preparing" state
+    - Add (in-memory) the TabletInfo based on the user pre-split-keys field ("preparing" state)
+    [if something fails here the table will not be created on master-restart]
+    [BEGIN-WRITE-TO-DISK]
+    - Write the tablets info to "sys-tablets" (kill master if the write failed)
+    [if something fails here the table will not be created on master-restart]
+    - Write the table info to "sys-tables" with the "running" state (kill master if the write failed)
+    [END-WRITE-TO-DISK]
+    - commit the "running" state to memory, which allows clients to see the table.
+
+- master -> client: The table was created with ID xyz... (or an error in case something went wrong)
+
+At this point the table is reported as created, what it means is that:
+"If the cluster is shut down, on restart the table will still be there"
+
+but.. tablets are not created yet.
+
+============================================================
+ Table Assignment (aka Tablets Creation)
+============================================================
+
+Once a table is created, the tablets must be created on a set of replicas.
+In order to do that, the master has to select the replicas and associate them to the tablet.
+
+For each tablet not created we select a set of replicas and a leader and we send the "create tablet"
+request. On the next TS-heartbeat from the leader we can mark the tablet as "running", if reported.
+If we don't receive a "tablet created" report after ASSIGNMENT-TIMEOUT-MSEC we replace the tablet
+with a new one, following these same steps for the new tablet.
+
+The Assignment is processed by the "CatalogManagerBgTasksThread".
+This thread is waiting for an event that can be:
+ - Create Table (need to process the new tablet for assignment)
+ - Assignment Timeout (some tablet request timeout expired, replace it)
+
+- CatalogManagerBgTasksThread
+  - Process Pending Assignments
+      ...for each tablet...
+      - If the tablet is new (just created by CreateTable "preparing" state)
+          - Add it to the "create tablet list"
+      - If the tablet creation was already requested
+          - If we did not received a response within ASSIGNMENT-TIMEOUT-MSEC
+              - Mark this tablet as "replaced", this means that even if a replica was able to
+                create the tablet.. now the tablet does not exist for the system.. and the replica
+                will delete it on the next report.
+              - Create a new tablet and add it to the "create tablet list"
+          - If we did not receive a response, but is too early (< ASSIGNMENT-TIMEOUT-MSEC)
+              - do nothing... on the next run we will see
+
+      ...now we have a list of tablets to create and a list of tablet created
+      ...for each tablet to create...
+        - Select a Quorum and a leader
+      [BEGIN-WRITE-TO-DISK]
+      - Flush the "to create" to sys-tablets with state "creating"
+      [if something fails here, the "Process Pending Assignments" will reprocess this tablets
+       as nothing was done, running tables will be replaced]
+      [END-WRITE-TO-DISK]
+      ...for each tablet to create...
+        - Send an async "create tablet" request to the peers
+          (on TS-heartbeat we will receive the notification of "tablet creation")
+      - Commit any changes in state to memory.
+        At this point the tablets marked as "running" are visible to the user
+
+  - Cleanup Deleted Tables/Tablets
+    - remove the tablets with "deleted" state from the "sys-tablets"
+    - remove the tables with "deleted" state from "sys-tables"
+    - remove the tablets with "deleted" state from the in-memory map
+    - remove the tables with "deleted" state from the in-memory map
+
+When the TS receives a CreateTablet RPC, it will attempt to create the tablet
+replica locally. Once it is successful, it will be added to the next tablet
+report. When the tablet is reported, the master-side ProcessTabletReport()
+function is called.
+
+If we find at this point that the reported tablet is in "creating" state, and the TS reporting the
+tablet is the leader selected during the assignment process (see CatalogManagerBgTasksThread)
+the tablet will be marked as running and committed to disk, completing the assignment process.

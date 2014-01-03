@@ -48,6 +48,10 @@ Status MiniCluster::Start() {
     RETURN_NOT_OK_PREPEND(AddTabletServer(),
                           Substitute("Error adding TS $0", i));
   }
+
+  RETURN_NOT_OK_PREPEND(WaitForTabletServerCount(num_tablet_servers_),
+                        "Waiting for tablet servers to start");
+
   started_ = true;
   return Status::OK();
 }

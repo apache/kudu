@@ -97,9 +97,12 @@ message SysTablesEntryPB {
   // Table schema
   required SchemaPB schema = 3;
 
+  // Number of TS replicas
+  optional int32 num_replicas = 4;
+
   // Debug state for the tablet
-  required State state = 4;
-  optional bytes state_msg = 5;
+  required State state = 5;
+  optional bytes state_msg = 6;
 }
 
 ////////////////////////////////////////////////////////////
@@ -153,6 +156,22 @@ message TabletReportPB {
   required int32 sequence_number = 4;
 }
 
+message ReportedTabletUpdatesPB {
+  required bytes tablet_id = 1;
+
+  // true if the tablet was deleted/replaced
+  optional bool is_deleted = 2 [default = false];
+  optional string state_msg = 3;
+
+  // current table metadata version
+  optional uint32 table_version = 4;
+}
+
+// Sent by the Master in response to the TS tablet report (part of the heartbeats)
+message TabletReportUpdatesPB {
+  repeated ReportedTabletUpdatesPB tablets = 1;
+}
+
 // Heartbeat sent from the tablet-server to the master
 // to establish liveness and report back any status changes.
 message TSHeartbeatRequestPB {
@@ -181,9 +200,9 @@ message TSHeartbeatResponsePB {
   optional bool needs_reregister = 2 [ default = false ];
 
   optional bool needs_full_tablet_report = 3 [ default = false ];
-}
 
-message TSTabletReportResponsePB {
+  // Sent when the master receives a TabletReport
+  optional TabletReportUpdatesPB tablet_report = 4;
 }
 
 //////////////////////////////
@@ -237,6 +256,7 @@ message CreateTableRequestPB {
   required string name = 1;
   required SchemaPB schema = 2;
   repeated bytes pre_split_keys = 3;
+  optional int32 num_replicas = 4;
 }
 
 message CreateTableResponsePB {
@@ -244,9 +264,6 @@ message CreateTableResponsePB {
   optional MasterErrorPB error = 1;
 
   optional bytes table_id = 2;
-
-  // TODO: REMOVE ME: This is just for testing until we have the assignment
-  repeated bytes tablet_ids = 3;
 }
 
 message DeleteTableRequestPB {
@@ -274,6 +291,21 @@ message ListTablesResponsePB {
   repeated TableInfo tables = 2;
 }
 
+message GetTableLocationsRequestPB {
+  required TableIdentifierPB table = 1;
+
+  // key-range
+  optional bytes start_key = 3;
+  optional bytes end_key = 4;
+}
+
+message GetTableLocationsResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  repeated TabletLocationsPB tablet_locations = 2;
+}
+
 service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
@@ -286,4 +318,5 @@ service MasterService {
   rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB);
   rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB);
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB);
+  rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB);
 }

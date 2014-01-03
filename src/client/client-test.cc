@@ -60,11 +60,9 @@ class ClientTest : public KuduTest {
 
     // Set up two test tablets inside the server.
     ASSERT_NO_FATAL_FAILURE(CreateTabletForTesting(
-                              cluster_->mini_master(), "fake-table", &tablet_id_));
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(tablet_id_, schema_));
+                              cluster_->mini_master(), "fake-table", schema_, &tablet_id_));
     ASSERT_NO_FATAL_FAILURE(CreateTabletForTesting(
-                              cluster_->mini_master(), "fake-table-2", &tablet2_id_));
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->AddTestTablet(tablet2_id_, schema_));
+                              cluster_->mini_master(), "fake-table-2", schema_, &tablet2_id_));
 
     // Grab a reference to the first of them, for more invasive testing.
     ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(

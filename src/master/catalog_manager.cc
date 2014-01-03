@@ -22,8 +22,11 @@
 #include "master/catalog_manager.h"
 
 #include <boost/foreach.hpp>
+#include <boost/assign/list_of.hpp>
+#include <boost/thread/condition_variable.hpp>
 #include <boost/thread/locks.hpp>
-#include <boost/thread/shared_mutex.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 
 #include <algorithm>
@@ -31,7 +34,9 @@
 #include <vector>
 
 #include "common/wire_protocol.h"
+#include "gutil/macros.h"
 #include "gutil/map-util.h"
+#include "gutil/mathlimits.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/walltime.h"
@@ -42,12 +47,23 @@
 #include "master/ts_manager.h"
 #include "tserver/tserver_service.proxy.h"
 #include "rpc/rpc_context.h"
+#include "util/thread_util.h"
+#include "util/trace.h"
 
 namespace kudu {
 namespace master {
 
 using strings::Substitute;
 using rpc::RpcContext;
+
+
+DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
+             "Timeout used for the Master->TS assignment timeout. "
+             "(Advanced option)");
+
+DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
+             "Default number of replicas for tables that do have the num_replicas set. "
+             "(Advanced option)");
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -75,7 +91,7 @@ class TableLoader : public SysTablesTable::Visitor {
       table_manager_->table_names_map_[l.data().name()] = table;
     }
 
-    LOG(INFO) << "Loaded table " << l.data().name() << " [id=" << table_id << "]";
+    LOG(INFO) << "Loaded table " << table->ToString();
     if (VLOG_IS_ON(1)) {
       VLOG(1) << "Metadata: " << metadata.DebugString();
     }
@@ -135,8 +151,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
 
     TableMetadataLock table_lock(table.get(), TableMetadataLock::READ);
 
-    LOG(INFO) << "Loaded tablet " << tablet_id << " for table "
-              << table_lock.data().pb.name() << " [id=" << table_id << "]";
+    LOG(INFO) << "Loaded tablet " << tablet_id << " for table " << table->ToString();
     if (VLOG_IS_ON(2)) {
       VLOG(2) << "Metadata: " << metadata.DebugString();
     }
@@ -152,14 +167,125 @@ class TabletLoader : public SysTabletsTable::Visitor {
 };
 
 ////////////////////////////////////////////////////////////
+// Background Tasks
+////////////////////////////////////////////////////////////
+
+class CatalogManagerBgTasks {
+ public:
+  explicit CatalogManagerBgTasks(CatalogManager *catalog_manager)
+    : closing_(false), pending_updates_(false),
+      thread_(NULL), catalog_manager_(catalog_manager) {
+  }
+
+  ~CatalogManagerBgTasks() {}
+
+  Status Init();
+  void Shutdown();
+
+  void Wake() {
+    boost::lock_guard<boost::mutex> lock(lock_);
+    cond_.notify_all();
+  }
+
+  void Wait(int msec) {
+    boost::unique_lock<boost::mutex> lock(lock_);
+    boost::system_time wtime = boost::get_system_time() + boost::posix_time::milliseconds(msec);
+    cond_.timed_wait(lock, wtime);
+    pending_updates_ = false;
+  }
+
+  void WakeIfHasPendingUpdates() {
+    boost::lock_guard<boost::mutex> lock(lock_);
+    if (pending_updates_) {
+      cond_.notify_all();
+    }
+  }
+
+  void NotifyForUpdate() {
+    boost::lock_guard<boost::mutex> lock(lock_);
+    pending_updates_ = true;
+  }
+
+ private:
+  void Run();
+
+ private:
+  Atomic32 closing_;
+  bool pending_updates_;
+  mutable boost::mutex lock_;
+  boost::condition_variable cond_;
+  gscoped_ptr<boost::thread> thread_;
+  CatalogManager *catalog_manager_;
+};
+
+Status CatalogManagerBgTasks::Init() {
+  RETURN_NOT_OK(StartThread(boost::bind(&CatalogManagerBgTasks::Run, this), &thread_));
+  return Status::OK();
+}
+
+void CatalogManagerBgTasks::Shutdown() {
+  if (Acquire_CompareAndSwap(&closing_, false, true) != false) {
+    VLOG(2) << "CatalogManagerBgTasks already shut down";
+    return;
+  }
+
+  Wake();
+  if (thread_ != NULL) {
+    CHECK_OK(ThreadJoiner(thread_.get(), "catalog manager thread").Join());
+  }
+}
+
+void CatalogManagerBgTasks::Run() {
+  SetThreadName("cat_mgr bgtasks");
+
+  const int kMaxWaitMs = 60000;
+  const int kMinWaitMs = 1000;
+  while (!NoBarrier_Load(&closing_)) {
+    std::vector<scoped_refptr<TabletInfo> > to_delete;
+    std::vector<scoped_refptr<TabletInfo> > to_process;
+    catalog_manager_->ExtractTabletsToProcess(&to_delete, &to_process);
+
+    // Process the pending assignments
+    int next_timeout_ms = kMaxWaitMs;
+    if (!to_process.empty()) {
+      catalog_manager_->ProcessPendingAssignments(to_process, &next_timeout_ms);
+    }
+
+    //if (!to_delete.empty()) {
+      // TODO: Run the cleaner
+    //}
+
+    // Wait for a notification or a timeout expiration.
+    //  - CreateTable will call Wake() to notify about the tablets to add
+    //  - HandleReportedTablet/ProcessPendingAssignments will call WakeIfHasPendingUpdates()
+    //    to notify about tablets creation.
+    Wait(std::max(next_timeout_ms, kMinWaitMs));
+  }
+  VLOG(1) << "Catalog manager background task thread shutting down";
+}
+
+////////////////////////////////////////////////////////////
 // CatalogManager
 ////////////////////////////////////////////////////////////
 
+namespace {
+
+string RequestorString(RpcContext* rpc) {
+  if (rpc) {
+    return rpc->requestor_string();
+  } else {
+    return "internal request";
+  }
+}
+
+} // anonymous namespace
+
 CatalogManager::CatalogManager(Master *master)
-  : master_(master) {
+  : master_(master), closing_(false) {
 }
 
 CatalogManager::~CatalogManager() {
+  Shutdown();
 }
 
 Status CatalogManager::Init(bool is_first_run) {
@@ -182,9 +308,20 @@ Status CatalogManager::Init(bool is_first_run) {
     RETURN_NOT_OK(sys_tablets_->VisitTablets(&tablet_loader));
   }
 
-  // TODO: Run the cleaner
+  background_tasks_.reset(new CatalogManagerBgTasks(this));
+  RETURN_NOT_OK(background_tasks_->Init());
 
   return Status::OK();
+}
+
+void CatalogManager::Shutdown() {
+  if (Acquire_CompareAndSwap(&closing_, false, true) != false) {
+    VLOG(2) << "CatalogManager already shut down";
+    return;
+  }
+
+  // Shutdown the Catalog Manager backgroud thread
+  background_tasks_->Shutdown();
 }
 
 static void SetupError(MasterErrorPB* error,
@@ -194,13 +331,8 @@ static void SetupError(MasterErrorPB* error,
   error->set_code(code);
 }
 
-// Create a new table
-// - Add the new table to the in-memory map in "preparing" state
-// - Create the tablets metadata, based on the split-keys
-// - Write the tablets metadata to sys-tablets
-// - Add the tablets to the "pending assignments" list
-// - Write the table metadata to the sys-tables as running (PONR)
-// - Update the table metadata to "running" state
+// Create a new table.
+// See 'README' in this directory for description of the design.
 Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
@@ -214,10 +346,14 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   schema = SchemaBuilder(schema).Build();
 
+  LOG(INFO) << "CreateTable from " << RequestorString(rpc)
+            << ":\n" << req->DebugString();
+
   scoped_refptr<TableInfo> table;
-  vector<TabletInfo *> tablets;
+  vector<TabletInfo*> tablets;
   {
     boost::lock_guard<LockType> l(lock_);
+    TRACE("Acquired catalog manager lock");
 
     // 1. Verify that the table does not exist
     table = FindPtrOrNull(table_names_map_, req->name());
@@ -228,29 +364,26 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     }
 
     // 2. Add the new table in "preparing" state
-    table = CreateTableInfo(req->name(), schema);
+    table = CreateTableInfo(req, schema);
     table_ids_map_[table->id()] = table;
     table_names_map_[req->name()] = table;
 
     // 3. Create the Tablet Infos (state is kTabletStatePreparing)
     CreateTablets(req, table.get(), &tablets);
 
-    // 4. Add the table/tablets to the in-memory map for the assignment
-    //    NOTE: even if we have the metadata table->is_running() will return
-    //          false until the syncing is completed.
+    // 4. Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
     table->AddTablets(tablets);
-    BOOST_FOREACH(TabletInfo *tablet, tablets) {
-      resp->add_tablet_ids(tablet->tablet_id());
+    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
       InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
     }
   }
+  TRACE("Inserted table and tablets into CM maps");
 
-  // Lock the table and tablets for write and COW its metadata.
+  // Lock the table and tablets for write. At this point, they should still be in the
+  // "preparing" state from when we created them above.
   table->metadata().StartMutation();
-  DCHECK_EQ(SysTablesEntryPB::kTableStatePreparing,
-            table->metadata().dirty().pb.state());
-  table->metadata().mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
+  CHECK_EQ(SysTablesEntryPB::kTableStatePreparing, table->metadata().dirty().pb.state());
 
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
     // Though we aren't actually going to mutate the Tablet, when we write it back
@@ -259,28 +392,30 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     // in this particular case no one else would touch the tablet, there are
     // assertions that would fire if we didn't lock for write.
     tablet->metadata().StartMutation();
-    DCHECK_EQ(SysTabletsEntryPB::kTabletStatePreparing,
-              tablet->metadata().dirty().pb.state());
+    CHECK_EQ(SysTabletsEntryPB::kTabletStatePreparing,
+             tablet->metadata().dirty().pb.state());
   }
+  TRACE("Acquired write locks on table and tablets");
 
-
-  // 5. Write Tablets to sys-tablets
+  // 5. Write Tablets to sys-tablets (in "preparing" state)
   Status s = sys_tablets_->AddTablets(tablets);
   if (!s.ok()) {
-    // panic-mode: abort the master
-    LOG(ERROR) << "requestor: " << rpc->requestor_string();
-    LOG(ERROR) << "request: " << req->DebugString();
-    LOG(FATAL) << "An error occurred while inserting to sys-tablets: " << s.ToString();
+    // TODO: we could potentially handle this error case by returning an error,
+    // since even if we mistakenly believe this failed, when it actually made it
+    // to disk, we'll end up removing the orphaned tablets later.
+    PANIC_RPC(rpc, Substitute("An error occurred while inserting to sys-tablets: $0",
+                              s.ToString()));
   }
+  TRACE("Wrote tablets to system table");
 
-  // 6. Update the on-disk table state (PONR)
+  // 6. Update the on-disk table state to "running" (PONR)
+  table->metadata().mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
   s = sys_tables_->AddTable(table.get());
   if (!s.ok()) {
-    // panic-mode: abort the master
-    LOG(ERROR) << "requestor: " << rpc->requestor_string();
-    LOG(ERROR) << "request: " << req->DebugString();
-    LOG(FATAL) << "An error occurred while inserting to sys-tables: " << s.ToString();
+    PANIC_RPC(rpc, Substitute("An error occurred while inserting to sys-tablets: $0",
+                              s.ToString()));
   }
+  TRACE("Wrote table to system table");
 
   // 7. Update the in-memory state
   table->metadata().CommitMutation();
@@ -288,12 +423,15 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
     tablet->metadata().CommitMutation();
   }
+
+  VLOG(1) << "Created table " << table->ToString();
+  background_tasks_->Wake();
   return Status::OK();
 }
 
 void CatalogManager::CreateTablets(const CreateTableRequestPB* req,
                                    TableInfo *table,
-                                   vector<TabletInfo *> *tablets) {
+                                   vector<TabletInfo* > *tablets) {
   const char *kTabletEmptyKey = "";
   if (req->pre_split_keys_size() > 0) {
     int i = 0;
@@ -317,13 +455,20 @@ void CatalogManager::CreateTablets(const CreateTableRequestPB* req,
   }
 }
 
-TableInfo *CatalogManager::CreateTableInfo(const string& name, const Schema& schema) {
+TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
+                                           const Schema& schema) {
+  DCHECK(schema.has_column_ids());
   TableInfo* table = new TableInfo(GenerateId());
   TableMetadataLock l(table, TableMetadataLock::WRITE);
   SysTablesEntryPB *metadata = &l.mutable_data()->pb;
   metadata->set_state(SysTablesEntryPB::kTableStatePreparing);
-  metadata->set_name(name);
+  metadata->set_name(req->name());
   metadata->set_version(0);
+  if (req->has_num_replicas()) {
+    metadata->set_num_replicas(req->num_replicas());
+  }
+  // Use the Schema object passed in, since it has the column IDs already assigned,
+  // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
   l.Commit();
   return table;
@@ -365,9 +510,13 @@ Status CatalogManager::FindTable(const TableIdentifierPB& table_identifier,
 Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
                                    DeleteTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  LOG(INFO) << "Servicing DeleteTable request from " << RequestorString(rpc)
+            << ": " << req->ShortDebugString();
+
   scoped_refptr<TableInfo> table;
 
   // 1. Lookup the table and verify if it exists
+  TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == NULL) {
     Status s = Status::NotFound("The table does not exist", req->table().DebugString());
@@ -375,6 +524,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     return s;
   }
 
+  TRACE("Locking table");
   TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
   if (l.data().is_deleted()) {
     Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
@@ -382,6 +532,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     return s;
   }
 
+  TRACE("Updating metadata on disk");
   // 2. Update the metadata for the on-disk state
   l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRemoved,
                               Substitute("Deleted at ts=$0", GetCurrentTimeMicros()));
@@ -389,13 +540,25 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   // 3. Update sys-tablets with the removed the table state (PONR)
   Status s = sys_tables_->UpdateTable(table.get());
   if (!s.ok()) {
-    LOG(ERROR) << "requestor: " << rpc->requestor_string();
-    LOG(ERROR) << "request: " << req->DebugString();
-    LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();
+    PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
+                              s.ToString()));
   }
 
-  // 4. Update the in-memory state
+  // 4. Remove it from the by-name map
+  {
+    TRACE("Removing from by-name map");
+    boost::lock_guard<LockType> l_map(lock_);
+    if (table_names_map_.erase(l.data().name()) != 1) {
+      PANIC_RPC(rpc, "Could not remove table from map, name=" + l.data().name());
+    }
+  }
+
+  // 5. Update the in-memory state
+  TRACE("Committing in-memory state");
   l.Commit();
+
+  VLOG(1) << "Deleted table " << table->ToString();
+  background_tasks_->Wake();
   return Status::OK();
 }
 
@@ -420,29 +583,36 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
 
 void CatalogManager::GetTabletLocations(const std::string& tablet_id,
                                         std::vector<TSDescriptor*>* locations) {
+  locations->clear();
   scoped_refptr<TabletInfo> info;
   {
     boost::shared_lock<LockType> l(lock_);
     info = FindPtrOrNull(tablet_map_, tablet_id);
     if (info == NULL) {
-      locations->clear();
       return;
     }
   }
 
-  info->GetLocations(locations);
+  vector<TabletReplica> replicas;
+  info->GetLocations(&replicas);
+  BOOST_FOREACH(const TabletReplica& replica, replicas) {
+    if (replica.state == metadata::RUNNING) {
+      locations->push_back(replica.ts_desc);
+    }
+  }
 }
 
 Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
                                            const TabletReportPB& report,
+                                           TabletReportUpdatesPB *report_update,
                                            RpcContext* rpc) {
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Received tablet report from " <<
-      rpc->requestor_string() << ": " << report.DebugString();
+  if (VLOG_IS_ON(2)) {
+    VLOG(2) << "Received tablet report from " <<
+      RequestorString(rpc) << ": " << report.DebugString();
   }
   if (!ts_desc->has_tablet_report() && report.is_incremental()) {
     string msg = "Received an incremental tablet report when a full one was needed";
-    LOG(WARNING) << "Invalid tablet report from " << rpc->requestor_string() << ": "
+    LOG(WARNING) << "Invalid tablet report from " << RequestorString(rpc) << ": "
                  << msg;
     return Status::IllegalState(msg);
   }
@@ -457,13 +627,21 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
   }
 
   BOOST_FOREACH(const ReportedTabletPB& reported, report.updated_tablets()) {
-    RETURN_NOT_OK_PREPEND(HandleReportedTablet(ts_desc, reported),
+    ReportedTabletUpdatesPB *tablet_report = report_update->add_tablets();
+    tablet_report->set_tablet_id(reported.tablet_id());
+    RETURN_NOT_OK_PREPEND(HandleReportedTablet(ts_desc, reported, tablet_report),
                           Substitute("Error handling $0", reported.ShortDebugString()));
   }
 
+  // TODO: Remove this, since we have the report-updates with the extra status-msg
   CHECK_EQ(report.removed_tablet_ids().size(), 0) << "TODO: implement tablet removal";
 
   ts_desc->set_has_tablet_report(true);
+
+  if (report.updated_tablets_size() > 0) {
+    background_tasks_->WakeIfHasPendingUpdates();
+  }
+
   return Status::OK();
 }
 
@@ -475,7 +653,8 @@ void CatalogManager::ClearAllReplicasOnTS(TSDescriptor* ts_desc) {
 }
 
 Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
-                                            const ReportedTabletPB& report) {
+                                            const ReportedTabletPB& report,
+                                            ReportedTabletUpdatesPB *report_updates) {
   scoped_refptr<TabletInfo> tablet;
   {
     boost::shared_lock<LockType> l(lock_);
@@ -483,38 +662,403 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
   if (tablet == NULL) {
     // TODO: The tablet server should trash the tablet
-    return Status::NotFound("Tablet " + report.tablet_id() + " does not exist");
+    report_updates->set_is_deleted(true);
+    VLOG(1) << "Got report from missing tablet " << report.tablet_id();
+    return Status::OK();
   }
 
   // TODO: we don't actually need to do the COW here until we see we're going
   // to change the state. Can we change CowedObject to lazily do the copy?
   TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
   TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
+
   if (tablet_lock.data().is_deleted()) {
-    return Status::NotFound("The tablet was removed",
-                            tablet_lock.data().pb.state_msg());
+    report_updates->set_is_deleted(true);
+    report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
+    VLOG(1) << "Got report from deleted tablet " << tablet->ToString()
+            << ": " << tablet_lock.data().pb.state_msg();
+    return Status::OK();
   }
 
   if (!table_lock.data().is_running()) {
-    return Status::NotFound(
-      Substitute("The tablet $0 of table $1 does not exist",
-                 report.tablet_id(),
-                 table_lock.data().name()),
-      table_lock.data().pb.state_msg());
+    VLOG(1) << "Got report for a non-running table. " << tablet->ToString()
+            << ": " << tablet_lock.data().pb.state_msg();
+    report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
+    return Status::OK();
   }
+  table_lock.Unlock();
 
-  // TODO: Check table state
-  tablet->AddReplica(ts_desc);
+  tablet->AddReplica(ts_desc, report.state());
 
-  // TODO if is the leader
-  if (!tablet_lock.data().is_running()) {
+  if (!tablet_lock.data().is_running() &&
+      tablet_lock.data().IsQuorumLeader(ts_desc)) {
+    DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
     // Mark the tablet as running
+    // TODO: we could batch the IO onto a background thread, or at least
+    // across multiple tablets in the same report.
     tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning,
-                                          "Tablet reported");
-    // TODO: the CommitMutation() will be done by the "assignment-loop"
+                                          "Tablet reported by leader");
+    Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
+    if (!s.ok()) {
+      LOG(ERROR) << "Unable to write tablet to system table: " << s.ToString();
+    }
+
     tablet_lock.Commit();
   }
 
+  return Status::OK();
+}
+
+class AsyncCreateTablet {
+ public:
+  explicit AsyncCreateTablet(Master *master)
+    : master_(master) {}
+
+  // Fire off the async create table.
+  // This requires that the new tablet info is locked for write, and the
+  // quorum information has been filled into the 'dirty' data.
+  Status Run(const metadata::QuorumPeerPB& peer,
+             const TabletInfo *tablet) {
+    std::tr1::shared_ptr<TSDescriptor> ts_desc;
+    RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc));
+    RETURN_NOT_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy_));
+
+    tserver::CreateTabletRequestPB req;
+    {
+      TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+
+      const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
+
+      req.set_tablet_id(tablet->tablet_id());
+      req.set_start_key(tablet_pb.start_key());
+      req.set_end_key(tablet_pb.end_key());
+      req.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
+      req.mutable_quorum()->CopyFrom(tablet_pb.quorum());
+    }
+
+    rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
+    ts_proxy_->CreateTabletAsync(req, &resp_, &rpc_,
+                                 boost::bind(&AsyncCreateTablet::Callback, this));
+    VLOG(1) << "Send create tablet request to " << peer.permanent_uuid() << ":\n"
+            << req.DebugString();
+    return Status::OK();
+  }
+
+  // Table specifier
+ private:
+  void Callback() {
+    if (!rpc_.status().ok()) {
+      LOG(WARNING) << "RPC failed: " << rpc_.status().ToString();
+    } else if (resp_.has_error()) {
+      Status status = StatusFromPB(resp_.error().status());
+      LOG(WARNING) << status.ToString();
+    }
+    delete this;
+  }
+
+ private:
+  Master *master_;
+  rpc::RpcController rpc_;
+  tserver::CreateTabletResponsePB resp_;
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+};
+
+void CatalogManager::ExtractTabletsToProcess(
+    std::vector<scoped_refptr<TabletInfo> > *tablets_to_delete,
+    std::vector<scoped_refptr<TabletInfo> > *tablets_to_process) {
+
+  boost::shared_lock<LockType> l(lock_);
+
+  // TODO: At the moment we loop through all the tablets
+  //       we can keep a set of tablets waiting for "assignment"
+  //       or just a counter to avoid to take the lock and loop through the tablets
+  //       if everything is "stable".
+
+  BOOST_FOREACH(TabletInfoMap::value_type& entry, tablet_map_) {
+    scoped_refptr<TabletInfo> tablet = entry.second;
+    TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::READ);
+    TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+
+    // if the table is deleted or the tablet was replaced
+    if (tablet_lock.data().is_deleted() || table_lock.data().is_deleted()) {
+      tablets_to_delete->push_back(tablet);
+      continue;
+    }
+
+    // Nothing to do with the running tablets
+    if (tablet_lock.data().is_running()) {
+      // TODO: handle last update > not responding timeout?
+      //tablets_not_reporting->push_back(tablet);
+      continue;
+    }
+
+    // Tablets not yet assigned or with a report just received
+    tablets_to_process->push_back(tablet);
+  }
+}
+
+struct DeferredAssignmentActions {
+  DeferredAssignmentActions()
+    : next_timeout_ms(MathLimits<int>::kMax) {}
+  vector<TabletInfo*> tablets_to_add;
+  vector<TabletInfo*> tablets_to_update;
+  vector<TabletInfo*> needs_create_rpc;
+  int next_timeout_ms;
+};
+
+void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
+                                                 DeferredAssignmentActions* deferred) {
+  // The tablet was just created (probably by a CreateTable)
+  // update the state to "creating" to be reading for the creation request.
+  tablet->metadata().mutable_dirty()->set_state(
+    SysTabletsEntryPB::kTabletStateCreating, "Sending initial creation of tablet");
+  deferred->tablets_to_update.push_back(tablet);
+  deferred->needs_create_rpc.push_back(tablet);
+  VLOG(1) << "Assign new tablet " << tablet->ToString();
+}
+
+void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
+                                                DeferredAssignmentActions* deferred) {
+  MicrosecondsInt64 current_time = GetCurrentTimeMicros();
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+
+  int remaining_timeout = FLAGS_assignment_timeout_ms -
+    tablet->TimeSinceLastUpdate(now).ToMilliseconds();
+
+  // Skip the tablet if the assignment timeout is not yet expired
+  if (remaining_timeout > 0) {
+    tablet->metadata().AbortMutation();
+    VLOG(2) << "Tablet " << tablet->ToString() << " still being created. "
+            << remaining_timeout << "ms remain until timeout.";
+
+    deferred->next_timeout_ms = std::min(deferred->next_timeout_ms, remaining_timeout);
+    return;
+  }
+
+  const PersistentTabletInfo& old_info = tablet->metadata().state();
+
+  // The "tablet creation" was already sent, but we didn't receive an answer
+  // within the timeout. so the tablet will be replaced by a new one.
+  TabletInfo *replacement = CreateTabletInfo(tablet->table(),
+                                             old_info.pb.start_key(),
+                                             old_info.pb.end_key());
+  LOG(WARNING) << "Tablet " << tablet->ToString() << " was not created within "
+               << "the allowed timeout. Replacing with a new tablet "
+               << replacement->tablet_id();
+
+  replacement->metadata().StartMutation();
+  tablet->table()->AddTablet(replacement);
+  {
+    boost::lock_guard<LockType> l_maps(lock_);
+    tablet_map_[replacement->tablet_id()] = replacement;
+  }
+
+  tablet->metadata().mutable_dirty()->set_state(
+    SysTabletsEntryPB::kTabletStateReplaced,
+    Substitute("Replaced by $0 at ts=$1",
+               replacement->tablet_id(), current_time));
+
+  replacement->metadata().mutable_dirty()->set_state(
+    SysTabletsEntryPB::kTabletStateCreating,
+    Substitute("Replacement for $0", tablet->tablet_id()));
+
+  deferred->tablets_to_update.push_back(tablet);
+  deferred->tablets_to_add.push_back(replacement);
+  deferred->needs_create_rpc.push_back(replacement);
+  VLOG(1) << "Replaced tablet " << tablet->tablet_id()
+          << " with " << replacement->tablet_id()
+          << " (Table " << tablet->table()->ToString() << ")";
+}
+
+void CatalogManager::ProcessPendingAssignments(
+    const std::vector<scoped_refptr<TabletInfo> >& tablets,
+    int *next_timeout_ms) {
+  VLOG(1) << "Processing pending assignments";
+
+  *next_timeout_ms = FLAGS_assignment_timeout_ms;
+
+  DeferredAssignmentActions deferred;
+
+  // Iterate over each of the tablets and handle it, whatever state
+  // it may be in. The actions required for the tablet are collected
+  // into 'deferred'.
+  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    tablet->metadata().StartMutation();
+    SysTabletsEntryPB::State t_state = tablet->metadata().state().pb.state();
+
+    switch (t_state) {
+      case SysTabletsEntryPB::kTabletStatePreparing:
+        HandleAssignPreparingTablet(tablet.get(), &deferred);
+        break;
+
+      case SysTabletsEntryPB::kTabletStateCreating:
+        HandleAssignCreatingTablet(tablet.get(), &deferred);
+        break;
+
+      default:
+        VLOG(2) << "Nothing to do for tablet " << tablet->tablet_id() << ": state = "
+                << SysTabletsEntryPB_State_Name(t_state);
+        break;
+    }
+  }
+
+  // Nothing to do
+  if (deferred.tablets_to_add.empty() &&
+      deferred.tablets_to_update.empty() &&
+      deferred.needs_create_rpc.empty()) {
+    return;
+  }
+
+  // For those tablets which need to be created in this round, assign replicas.
+  TSDescriptorVector ts_descs;
+  master_->ts_manager()->GetAllDescriptors(&ts_descs);
+  SelectReplicasForTablets(deferred.needs_create_rpc, ts_descs);
+
+  // Update the sys-tablets with the new set of tablets/metadata.
+  Status s = sys_tablets_->AddAndUpdateTablets(
+    deferred.tablets_to_add, deferred.tablets_to_update);
+  if (!s.ok()) {
+    // panic-mode: abort the master
+    LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
+  }
+
+  // Send the "create tablet" requests to the servers. This is asynchronous / non-blocking.
+  SendCreateTabletRequests(deferred.needs_create_rpc);
+
+  // Commit the changes in memory. This comes after the above sending of the RPCs,
+  // to ensure that no one else tries to mutate the TabletInfos while we're
+  // doing this.
+  BOOST_FOREACH(TabletInfo* t, deferred.tablets_to_add) {
+    t->metadata().CommitMutation();
+  }
+  BOOST_FOREACH(TabletInfo* t, deferred.tablets_to_update) {
+    t->metadata().CommitMutation();
+  }
+}
+
+void CatalogManager::SelectReplicasForTablets(const vector<TabletInfo*>& tablets,
+                                              const TSDescriptorVector& ts_descs) {
+  BOOST_FOREACH(TabletInfo *tablet, tablets) {
+    TableInfo *table = tablet->table();
+
+    TableMetadataLock l(table, TableMetadataLock::READ);
+
+    int nreplicas = FLAGS_default_num_replicas;
+    if (l.data().pb.has_num_replicas()) {
+      nreplicas = l.data().pb.num_replicas();
+    }
+
+    if (ts_descs.size() < nreplicas) {
+      LOG(WARNING) << "Not enough Tablet Servers are online for " << l.data().name()
+                   << " expected at least " << nreplicas
+                   << " but " << ts_descs.size() << " are available";
+      continue;
+    }
+
+    // Select the set of replicas
+    metadata::QuorumPB *quorum = tablet->metadata().mutable_dirty()->pb.mutable_quorum();
+    quorum->set_seqno(0);
+    SelectReplicas(quorum, ts_descs, nreplicas);
+  }
+}
+
+void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
+  BOOST_FOREACH(TabletInfo *tablet, tablets) {
+    const metadata::QuorumPB& quorum = tablet->metadata().dirty().pb.quorum();
+    tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
+    BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
+      WARN_NOT_OK((new AsyncCreateTablet(master_))->Run(peer, tablet),
+                  "Failed to send new tablet request");
+    }
+  }
+}
+
+void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
+                                    const TSDescriptorVector& ts_descs,
+                                    int nreplicas) {
+  // TODO: Select N Replicas
+  // at the moment we have to scan all the tablets to build a map TS -> tablets
+  // to know how many tablets a TS has... so, let's do a dumb assignment for now.
+  int index = rand();
+  for (int i = 0; i < nreplicas; ++i) {
+    const TSDescriptor *ts = ts_descs[index++ % ts_descs.size()].get();
+
+    TSRegistrationPB reg;
+    ts->GetRegistration(&reg);
+
+    metadata::QuorumPeerPB *peer = quorum->add_peers();
+    peer->set_role(metadata::QuorumPeerPB::CANDIDATE);
+    peer->set_permanent_uuid(ts->permanent_uuid());
+
+    // TODO: This is temporary, we will use only UUIDs
+    BOOST_FOREACH(const HostPortPB& addr, reg.rpc_addresses()) {
+      peer->mutable_last_known_addr()->CopyFrom(addr);
+    }
+  }
+
+  // TODO: Select the leader
+  metadata::QuorumPeerPB *leader = quorum->mutable_peers(rand() % nreplicas);
+  leader->set_role(metadata::QuorumPeerPB::LEADER);
+}
+
+
+Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
+                                         GetTableLocationsResponsePB* resp) {
+  // If start-key is > end-key report an error instead of swap the two
+  // since probably there is something wrong app-side.
+  if (req->has_start_key() && req->has_end_key() && req->start_key() > req->end_key()) {
+    return Status::InvalidArgument("start-key is greater than end_key");
+  }
+
+  scoped_refptr<TableInfo> table;
+  RETURN_NOT_OK(FindTable(req->table(), &table));
+
+  if (table == NULL) {
+    Status s = Status::NotFound("The table does not exist");
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  TableMetadataLock l(table.get(), TableMetadataLock::READ);
+  if (l.data().is_deleted()) {
+    Status s = Status::NotFound("The table was deleted",
+                                l.data().pb.state_msg());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  if (!l.data().is_running()) {
+    Status s = Status::ServiceUnavailable("The table is not running");
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  vector<scoped_refptr<TabletInfo> > tablets_in_range;
+  table->GetTabletsInRange(req, &tablets_in_range);
+
+  TSRegistrationPB reg;
+  vector<TabletReplica> locs;
+  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets_in_range) {
+    {
+      TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
+
+      if (!l_tablet.data().is_running()) continue;
+
+      locs.clear();
+      tablet->GetLocations(&locs);
+    }
+    TabletLocationsPB* locs_pb = resp->add_tablet_locations();
+    locs_pb->set_tablet_id(tablet->tablet_id());
+
+    BOOST_FOREACH(const TabletReplica& replica, locs) {
+      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+      TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
+      tsinfo_pb->set_permanent_uuid(replica.ts_desc->permanent_uuid());
+
+      replica.ts_desc->GetRegistration(&reg);
+      tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+    }
+  }
   return Status::OK();
 }
 
@@ -530,23 +1074,41 @@ TabletInfo::TabletInfo(TableInfo *table, const std::string& tablet_id)
 TabletInfo::~TabletInfo() {
 }
 
-void TabletInfo::AddReplica(TSDescriptor* ts_desc) {
+std::string TabletInfo::ToString() const {
+  return Substitute("$0 (Table $1)", tablet_id_,
+                    (table_ != NULL ? table_->ToString() : "MISSING"));
+}
+
+void TabletInfo::AddReplica(TSDescriptor* ts_desc, metadata::TabletStatePB state) {
   boost::lock_guard<simple_spinlock> l(lock_);
 
   last_update_ts_ = MonoTime::Now(MonoTime::FINE);
-  BOOST_FOREACH(const TSDescriptor* l, locations_) {
-    if (l == ts_desc) return;
+  BOOST_FOREACH(TabletReplica& replica, locations_) {
+    if (replica.ts_desc == ts_desc) {
+      // Just update the existing replica
+      VLOG(2) << tablet_id_ << " on " << ts_desc->permanent_uuid()
+              << " changed state from "
+              << TabletStatePB_Name(replica.state) << "->"
+              << TabletStatePB_Name(state);
+      replica.state = state;
+      return;
+    }
   }
-  VLOG(2) << tablet_id_ << " reported on " << ts_desc->permanent_uuid();
-  locations_.push_back(ts_desc);
+  VLOG(2) << tablet_id_ << " reported on " << ts_desc->permanent_uuid()
+          << " in state " << TabletStatePB_Name(state);
+
+  TabletReplica r;
+  r.ts_desc = ts_desc;
+  r.state = state;
+  locations_.push_back(r);
 }
 
 void TabletInfo::ClearReplicasOnTS(const TSDescriptor* ts) {
   boost::lock_guard<simple_spinlock> l(lock_);
 
-  std::vector<TSDescriptor*>::iterator it = locations_.begin();
+  std::vector<TabletReplica>::iterator it = locations_.begin();
   while (it != locations_.end()) {
-    if (*it == ts) {
+    if (it->ts_desc == ts) {
       it = locations_.erase(it);
     } else {
       ++it;
@@ -554,9 +1116,20 @@ void TabletInfo::ClearReplicasOnTS(const TSDescriptor* ts) {
   }
 }
 
-void TabletInfo::GetLocations(std::vector<TSDescriptor*>* locations) const {
+void TabletInfo::GetLocations(std::vector<TabletReplica>* locations) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   *locations = locations_;
+}
+
+
+bool PersistentTabletInfo::IsQuorumLeader(const TSDescriptor* ts_desc) const {
+  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, pb.quorum().peers()) {
+    if (peer.role() == metadata::QuorumPeerPB::LEADER &&
+        peer.permanent_uuid() == ts_desc->permanent_uuid()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void PersistentTabletInfo::set_state(SysTabletsEntryPB::State state, const string& msg) {
@@ -575,6 +1148,11 @@ TableInfo::TableInfo(const std::string& table_id)
 TableInfo::~TableInfo() {
 }
 
+std::string TableInfo::ToString() const {
+  TableMetadataLock l(this, TableMetadataLock::READ);
+  return Substitute("$0 [id=$1]", l.data().pb.name(), table_id_);
+}
+
 void TableInfo::AddTablet(TabletInfo *tablet) {
   boost::lock_guard<simple_spinlock> l(lock_);
   tablet_map_[tablet->metadata().state().pb.start_key()] = tablet;
@@ -584,6 +1162,29 @@ void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
     tablet_map_[tablet->metadata().state().pb.start_key()] = tablet;
+  }
+}
+
+void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
+                                  vector<scoped_refptr<TabletInfo> > *ret) const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+
+  TableInfo::TabletInfoMap::const_iterator it, it_end;
+  if (req->has_start_key()) {
+    it = tablet_map_.upper_bound(req->start_key());
+    --it;
+  } else {
+    it = tablet_map_.begin();
+  }
+
+  if (req->has_end_key()) {
+    it_end = tablet_map_.upper_bound(req->end_key());
+  } else {
+    it_end = tablet_map_.end();
+  }
+
+  for (; it != it_end; ++it) {
+    ret->push_back(make_scoped_refptr(it->second));
   }
 }
 

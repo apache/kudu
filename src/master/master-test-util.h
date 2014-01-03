@@ -20,23 +20,38 @@ namespace master {
 
 void CreateTabletForTesting(MiniMaster* mini_master,
                             const string& table_name,
+                            const Schema& schema,
                             string *tablet_id) {
-  CreateTableRequestPB req;
-  CreateTableResponsePB resp;
+  {
+    CreateTableRequestPB req;
+    CreateTableResponsePB resp;
 
-  req.set_name(table_name);
+    req.set_name(table_name);
+    ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
+    ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->CreateTable(&req, &resp, NULL));
+  }
 
-  Schema schema(boost::assign::list_of
-                (ColumnSchema("key", UINT32)),
-                1);
+  {
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
 
-  ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
+    int wait_time = 1000;
+    for (int i = 0; i < 80; ++i) {
+      req.mutable_table()->set_table_name(table_name);
+      ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, &resp));
+      if (resp.tablet_locations_size() > 0) {
+        *tablet_id = resp.tablet_locations(0).tablet_id();
+        LOG(INFO) << "Got tablet " << *tablet_id << " for table " << table_name;
+        return;
+      }
+      VLOG(1) << "WAITING FOR A TABLET";
 
-  ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->CreateTable(&req, &resp, NULL));
-  ASSERT_EQ(1, resp.tablet_ids_size());
-  *tablet_id = resp.tablet_ids(0);
+      usleep(wait_time);
+      wait_time = wait_time * 5 / 4;
+    };
+  }
 
-  LOG(INFO) << "Created tablet " << *tablet_id << " for table " << table_name;
+  FAIL() << "Unable to get a tablet for table " << table_name;
 }
 
 } // namespace master

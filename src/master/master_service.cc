@@ -52,6 +52,9 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     }
   }
 
+  // TODO: KUDU-86 if something fails after this point the TS will not be able
+  //       to register again.
+
   // Look up the TS -- if it just registered above, it will be found here.
   // This allows the TS to register and tablet-report in the same RPC.
   s = server_->ts_manager()->LookupTS(req->common().ts_instance(), &ts_desc);
@@ -75,7 +78,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 
   if (req->has_tablet_report()) {
     s = server_->catalog_manager()->ProcessTabletReport(
-      ts_desc.get(), req->tablet_report(), rpc);
+      ts_desc.get(), req->tablet_report(), resp->mutable_tablet_report(), rpc);
     if (!s.ok()) {
       rpc->RespondFailure(s.CloneAndPrepend("Failed to process tablet report"));
       return;
@@ -105,8 +108,8 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     locs_pb->set_tablet_id(tablet_id);
 
     BOOST_FOREACH(const TSDescriptor* ts_desc, locs) {
-      TabletLocationsPB_ReplicaPB* replica = locs_pb->add_replicas();
-      TSInfoPB* tsinfo_pb = replica->mutable_ts_info();
+      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+      TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
       tsinfo_pb->set_permanent_uuid(ts_desc->permanent_uuid());
 
       ts_desc->GetRegistration(&reg);
@@ -141,6 +144,16 @@ void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
                                    ListTablesResponsePB* resp,
                                    rpc::RpcContext* rpc) {
   Status s = server_->catalog_manager()->ListTables(req, resp);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
+                                          GetTableLocationsResponsePB* resp,
+                                          rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->GetTableLocations(req, resp);
   if (!s.ok() && !resp->has_error()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
   }

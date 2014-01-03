@@ -21,6 +21,8 @@ namespace master {
 class TSDescriptor;
 class TSRegistrationPB;
 
+typedef std::vector<std::tr1::shared_ptr<TSDescriptor> > TSDescriptorVector;
+
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
 //

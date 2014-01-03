@@ -244,6 +244,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
   VLOG(1) << "Received heartbeat response:\n" << resp.DebugString();
   last_hb_response_.Swap(&resp);
 
+  // TODO: Handle TSHeartbeatResponsePB (e.g. deleted tablets and schema changes)
   server_->tablet_manager()->AcknowledgeTabletReport(req.tablet_report());
 
   return Status::OK();

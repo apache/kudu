@@ -69,6 +69,7 @@ Status Master::Start() {
 Status Master::Shutdown() {
   string name = ToString();
   LOG(INFO) << name << " shutting down...";
+  catalog_manager_->Shutdown();
   WARN_NOT_OK(ServerBase::Shutdown(),
               "Unable to shutdown base server components");
   LOG(INFO) << name << " shutdown complete.";

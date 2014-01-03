@@ -12,6 +12,7 @@
 #include "consensus/consensus.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/escaping.h"
 #include "rpc/rpc_context.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/transactions/alter_schema_transaction.h"
@@ -149,7 +150,13 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
 void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
                                      CreateTabletResponsePB* resp,
                                      rpc::RpcContext* context) {
-  LOG(INFO) << "Received Create Tablet RPC: " << req->DebugString();
+  // TODO: would be nice if we knew the table name associated with the tablet
+  // when we create it.
+  LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
+            << " (table=<TODO>), range=[\""
+            << strings::CHexEscape(req->start_key()) << "\", \""
+            << strings::CHexEscape(req->end_key()) << "\"]";
+  VLOG(1) << "Full request: " << req->DebugString();
 
   Schema schema;
   Status s = SchemaFromPB(req->schema(), &schema);

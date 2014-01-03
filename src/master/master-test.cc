@@ -144,64 +144,6 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_EQ(ts_desc, descs[0]);
 }
 
-TEST_F(MasterTest, TestTabletLocations) {
-  const string kTabletServerId = "my-ts-uuid";
-
-  TSToMasterCommonPB common;
-  common.mutable_ts_instance()->set_permanent_uuid(kTabletServerId);
-  common.mutable_ts_instance()->set_instance_seqno(1);
-
-  // Create the tablet that we are going to register
-  string tablet_id;
-  CreateTabletForTesting(mini_master_.get(), "fake-table", &tablet_id);
-
-  // Register the fake TS, including a single tablet.
-  TSRegistrationPB fake_reg;
-  MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
-  MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
-  {
-    TSHeartbeatRequestPB req;
-    TSHeartbeatResponsePB resp;
-    RpcController rpc;
-    req.mutable_common()->CopyFrom(common);
-    req.mutable_registration()->CopyFrom(fake_reg);
-    TabletReportPB* tr = req.mutable_tablet_report();
-    tr->set_is_incremental(false);
-    tr->set_sequence_number(0);
-    ReportedTabletPB* reported_tablet = tr->add_updated_tablets();
-    reported_tablet->set_tablet_id(tablet_id);
-    reported_tablet->set_state(metadata::RUNNING);
-
-    ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
-  }
-
-  // Look up the tablet locations -- should return the server we just
-  // registered.
-  {
-    GetTabletLocationsRequestPB req;
-    GetTabletLocationsResponsePB resp;
-    RpcController rpc;
-    req.add_tablet_ids(tablet_id);
-
-    ASSERT_STATUS_OK(proxy_->GetTabletLocations(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-
-    // Verify the tablet location.
-    ASSERT_EQ(1, resp.tablet_locations().size());
-    EXPECT_EQ("tablet_id: \"" + tablet_id + "\"\n"
-              "replicas {\n"
-              "  ts_info {\n"
-              "    permanent_uuid: \"my-ts-uuid\"\n"
-              "    rpc_addresses {\n"
-              "      host: \"localhost\"\n"
-              "      port: 1000\n"
-              "    }\n"
-              "  }\n"
-              "}\n",
-              resp.tablet_locations(0).DebugString());
-  }
-}
-
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
   const Schema kTableSchema(boost::assign::list_of
@@ -257,6 +199,22 @@ TEST_F(MasterTest, TestCatalog) {
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
     ASSERT_EQ(0, resp.tables_size());
+  }
+
+  // Re-create the table
+  {
+    CreateTableRequestPB req;
+    CreateTableResponsePB resp;
+    RpcController controller;
+
+    req.set_name(kTableName);
+    req.add_pre_split_keys("k1");
+    req.add_pre_split_keys("k2");
+
+    ASSERT_STATUS_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
+    ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
   }
 }
 
