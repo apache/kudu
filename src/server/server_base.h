@@ -54,6 +54,8 @@ class ServerBase {
 
   const MetricContext& metric_context() const;
 
+  MetricRegistry* metric_registry() { return metric_registry_.get(); }
+
  protected:
   ServerBase(Env* env, const std::string& base_dir,
              const RpcServerOptions& rpc_opts,

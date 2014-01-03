@@ -3,6 +3,7 @@ package kudu.master;
 
 import "common/common.proto";
 import "common/wire_protocol.proto";
+import "server/metadata.proto";
 
 ////////////////////////////////////////////////////////////
 // Common data structures
@@ -13,6 +14,55 @@ import "common/wire_protocol.proto";
 message TSToMasterCommonPB {
   // The instance of the tablet server sending the heartbeat.
   required NodeInstancePB ts_instance = 1;
+}
+
+////////////////////////////////////////////////////////////
+// Sys Tables Metadata
+////////////////////////////////////////////////////////////
+
+// the on-disk entry in the sys.tablets table ("metadata" column)
+message SysTabletsEntryPB {
+  enum State {
+    kTabletStatePreparing = 0;
+    kTabletStateCreating  = 1;
+    kTabletStateRunning   = 2;
+    kTabletStateReplaced  = 3;
+  }
+
+  // tablet key range
+  required bytes start_key = 1;
+  required bytes end_key   = 2;
+
+  // the last quorum configuration, reported to the master.
+  // when the tablet is in "preparing" state (not assigned yet) the quorum is not set.
+  optional metadata.QuorumPB quorum = 3;
+
+  // Debug state for the tablet
+  required State state = 4;
+  optional bytes state_msg = 5;
+}
+
+// the on-disk entry in the sys.tables table ("metadata" column)
+message SysTablesEntryPB {
+  enum State {
+    kTableStatePreparing = 1;
+    kTableStateRunning   = 2;
+    kTableStateRemoved   = 3;
+  }
+
+  // Table name
+  required bytes name = 1;
+
+  // sequence-id for the table metadata.
+  // Used on tablet-report to avoid sending "alter-table" notifications.
+  required uint32 version = 2;
+
+  // Table schema
+  required SchemaPB schema = 3;
+
+  // Debug state for the tablet
+  required State state = 4;
+  optional bytes state_msg = 5;
 }
 
 ////////////////////////////////////////////////////////////

@@ -5,9 +5,11 @@
 #include <string>
 #include <vector>
 
+#include "master/master.pb.h"
 #include "server/metadata.h"
 #include "server/oid_generator.h"
 #include "tablet/tablet_peer.h"
+#include "util/status.h"
 
 namespace kudu {
 
@@ -21,6 +23,10 @@ class WriteResponsePB;
 
 namespace master {
 class Master;
+
+class Master;
+class TableInfo;
+class TabletInfo;
 
 // Abstract class for a sys-table.
 // - The sys-table has only one tablet.
@@ -54,8 +60,10 @@ class SysTable {
 
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;
+  Schema key_schema_;
 
   MetricContext metric_ctx_;
+
   gscoped_ptr<tablet::TabletPeer> tablet_peer_;
 
  private:
@@ -67,40 +75,65 @@ class SysTable {
 // The "sys.tablets" table is the table used to keep tracks of the tables tablets.
 class SysTabletsTable : public SysTable {
  public:
+  class Visitor {
+   public:
+    virtual Status VisitTablet(const std::string& table_id,
+                               const std::string& tablet_id,
+                               const SysTabletsEntryPB& metadata) = 0;
+  };
+
   SysTabletsTable(Master* master, MetricRegistry* metrics)
     : SysTable(master, metrics, "sys.tablets") {
   }
 
+  Status AddTablets(const vector<TabletInfo*>& tablets);
+  Status UpdateTablets(const vector<TabletInfo*>& tablets);
+  Status AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
+                             const vector<TabletInfo*>& tablets_to_update);
+  Status DeleteTablets(const vector<TabletInfo*>& tablets);
+
+  // full scan of the table
+  Status VisitTablets(Visitor *visitor);
+
  protected:
-  Schema BuildTableSchema();
-  void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block);
+  virtual Schema BuildTableSchema() OVERRIDE;
+  virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SysTabletsTable);
 
-  ObjectIdGenerator oid_generator_;
+  Status VisitTabletFromRow(const RowBlockRow& row, Visitor *visitor);
 };
 
 // The "sys.tables" table is the table that contains the table schema and other
 // table metadata information (like the name or settings)
 class SysTablesTable : public SysTable {
  public:
+  class Visitor {
+   public:
+    virtual Status VisitTable(const std::string& table_id,
+                              const SysTablesEntryPB& metadata) = 0;
+  };
+
   SysTablesTable(Master* master, MetricRegistry* metrics)
     : SysTable(master, metrics, "sys.tables") {
   }
 
-  Status AddTable(const string& name,
-                  const metadata::TableDescriptorPB& desc,
-                  const std::tr1::shared_ptr<FutureCallback>& callback);
+  Status AddTable(const TableInfo *table);
+  Status UpdateTable(const TableInfo *table);
+  Status DeleteTable(const TableInfo *table);
+
+  // full scan of the table
+  Status VisitTables(Visitor *visitor);
 
  protected:
-  Schema BuildTableSchema();
-  void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block);
+  virtual Schema BuildTableSchema() OVERRIDE;
+  virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SysTablesTable);
 
-  ObjectIdGenerator oid_generator_;
+  Status VisitTableFromRow(const RowBlockRow& row, Visitor *visitor);
 };
 
 } // namespace master

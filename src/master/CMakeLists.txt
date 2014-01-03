@@ -12,8 +12,10 @@ KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
 add_library(master_proto ${MASTER_PROTO_SRCS} ${MASTER_PROTO_HDRS} ${MASTER_KRPC_SRCS})
 add_dependencies(master_proto kudu_common)
 target_link_libraries(master_proto krpc)
+target_link_libraries(master_proto metadata_proto)
 
 set(MASTER_SRCS
+  catalog_manager.cc
   master.cc
   master_options.cc
   master_service.cc
@@ -35,6 +37,9 @@ add_dependencies(master krpc)
 # Tests
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
 target_link_libraries(master-test master master_proto ${KUDU_LINK_LIBS})
+
+ADD_KUDU_TEST(sys_tables-test RESOURCE_LOCK "master-web-port")
+target_link_libraries(sys_tables-test master master_proto ${KUDU_LINK_LIBS})
 
 add_executable(kudu-master master_main.cc)
 target_link_libraries(kudu-master master master_proto ${KUDU_LINK_LIBS})

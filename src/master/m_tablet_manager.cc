@@ -12,6 +12,7 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
+#include "master/catalog_manager.h"
 #include "master/master.pb.h"
 #include "master/ts_descriptor.h"
 #include "rpc/rpc_context.h"
@@ -93,40 +94,13 @@ Status MTabletManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             RpcContext* rpc) {
   DCHECK(lock_.is_write_locked());
 
-  TabletInfo* tinfo = LookupOrInsertNew(&tablet_map_, report.tablet_id(),
-                                        report.tablet_id());
+  TabletInfo* tinfo = FindPtrOrNull(tablet_map_, report.tablet_id());
+  if (tinfo == NULL) {
+    tinfo = new TabletInfo(NULL, report.tablet_id());
+    InsertOrDie(&tablet_map_, report.tablet_id(), tinfo);
+  }
   tinfo->AddReplica(ts_desc);
   return Status::OK();
-}
-
-////////////////////////////////////////////////////////////
-// TabletInfo
-////////////////////////////////////////////////////////////
-
-TabletInfo::TabletInfo(const std::string& tablet_id)
-  : tablet_id_(tablet_id) {
-}
-
-TabletInfo::~TabletInfo() {
-}
-
-void TabletInfo::AddReplica(TSDescriptor* ts_desc) {
-  BOOST_FOREACH(const TSDescriptor* l, locations_) {
-    if (l == ts_desc) return;
-  }
-  VLOG(2) << tablet_id_ << " reported on " << ts_desc->permanent_uuid();
-  locations_.push_back(ts_desc);
-}
-
-void TabletInfo::ClearReplicasOnTS(const TSDescriptor* ts) {
-  std::vector<TSDescriptor*>::iterator it = locations_.begin();
-  while (it != locations_.end()) {
-    if (*it == ts) {
-      it = locations_.erase(it);
-    } else {
-      ++it;
-    }
-  }
 }
 
 } // namespace master

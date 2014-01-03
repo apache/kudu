@@ -26,11 +26,10 @@ class ServicePool;
 
 namespace master {
 
-class MTabletManager;
+class CatalogManager;
 class TSManager;
+class MTabletManager;
 class MasterPathHandlers;
-class SysTablesTable;
-class SysTabletsTable;
 
 class Master : public server::ServerBase {
  public:
@@ -50,8 +49,7 @@ class Master : public server::ServerBase {
 
   MTabletManager* tablet_manager() { return tablet_manager_.get(); }
 
-  SysTabletsTable* sys_tablets() { return sys_tablets_.get(); }
-  SysTablesTable* sys_tables() { return sys_tables_.get(); }
+  CatalogManager* catalog_manager() { return catalog_manager_.get(); }
 
  private:
   friend class MasterTest;
@@ -62,10 +60,8 @@ class Master : public server::ServerBase {
 
   gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<MTabletManager> tablet_manager_;
+  gscoped_ptr<CatalogManager> catalog_manager_;
   gscoped_ptr<MasterPathHandlers> path_handlers_;
-
-  gscoped_ptr<SysTablesTable> sys_tables_;
-  gscoped_ptr<SysTabletsTable> sys_tablets_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

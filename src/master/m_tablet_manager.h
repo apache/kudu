@@ -75,35 +75,6 @@ class MTabletManager {
   DISALLOW_COPY_AND_ASSIGN(MTabletManager);
 };
 
-// The information about a single tablet which exists in the cluster,
-// including its state and locations.
-//
-// Requires external synchronization.
-class TabletInfo {
- public:
-  explicit TabletInfo(const std::string& tablet_id);
-  ~TabletInfo();
-
-  // Add a replica reported on the given server
-  void AddReplica(TSDescriptor* ts_desc);
-
-  // Remove any replicas which were on this server.
-  void ClearReplicasOnTS(const TSDescriptor* ts_desc);
-
-  const std::string& tablet_id() const { return tablet_id_; }
-  const std::vector<TSDescriptor*> locations() const { return locations_; }
-
- private:
-  const std::string tablet_id_;
-
-  // The locations where this tablet has been reported.
-  // TODO: this probably will turn into a struct which also includes
-  // some state information at some point.
-  std::vector<TSDescriptor*> locations_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabletInfo);
-};
-
 } // namespace master
 } // namespace kudu
 #endif /* KUDU_MASTER_M_TABLET_MANAGER_H */

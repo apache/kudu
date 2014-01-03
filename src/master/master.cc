@@ -11,9 +11,10 @@
 #include "rpc/service_if.h"
 #include "rpc/service_pool.h"
 #include "server/rpc_server.h"
+#include "master/catalog_manager.h"
+#include "master/m_tablet_manager.h"
 #include "master/master_service.h"
 #include "master/master-path-handlers.h"
-#include "master/m_tablet_manager.h"
 #include "master/sys_tables.h"
 #include "master/ts_manager.h"
 #include "util/net/net_util.h"
@@ -31,6 +32,7 @@ Master::Master(const MasterOptions& opts)
     initted_(false),
     ts_manager_(new TSManager()),
     tablet_manager_(new MTabletManager()),
+    catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)) {
 }
 
@@ -46,21 +48,12 @@ string Master::ToString() const {
 
 Status Master::Init() {
   CHECK(!initted_);
-  sys_tables_.reset(new SysTablesTable(this, metric_registry_.get()));
-  sys_tablets_.reset(new SysTabletsTable(this, metric_registry_.get()));
 
   RETURN_NOT_OK(ServerBase::Init());
 
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
 
-  // Bootstrap sys tables
-  if (is_first_run_) {
-    RETURN_NOT_OK_PREPEND(sys_tablets_->CreateNew(fs_manager()), "Locations Table");
-    RETURN_NOT_OK_PREPEND(sys_tables_->CreateNew(fs_manager()), "Descriptors Table");
-  } else {
-    RETURN_NOT_OK_PREPEND(sys_tablets_->Load(fs_manager()), "Locations Table");
-    RETURN_NOT_OK_PREPEND(sys_tables_->Load(fs_manager()), "Descriptors Table");
-  }
+  RETURN_NOT_OK(catalog_manager_->Init(is_first_run_));
 
   initted_ = true;
   return Status::OK();
