@@ -16,7 +16,6 @@ namespace kudu {
 class FutureCallback;
 class Task;
 class TaskExecutor;
-class Trace;
 
 namespace consensus {
 class CommitMsg;
@@ -120,11 +119,6 @@ class TransactionContext {
   // Returns the completion callback is there is one. or NULL otherwise
   TransactionCompletionCallback* completion_callback() { return completion_clbk_.get(); }
 
-  void set_trace(Trace* trace) { trace_ = trace; }
-
-  // Returns the trace environment if there is one, or NULL otherwise.
-  Trace* trace() { return trace_; }
-
   // Sets a heap object to be managed by this transaction's AutoReleasePool.
   template <class T>
   T* AddToAutoReleasePool(T* t) {
@@ -144,8 +138,7 @@ class TransactionContext {
  protected:
   explicit TransactionContext(TabletPeer* tablet_peer)
       : tablet_peer_(tablet_peer),
-        completion_clbk_(new TransactionCompletionCallback()),
-        trace_(NULL) {
+        completion_clbk_(new TransactionCompletionCallback()) {
   }
 
   TransactionMetrics tx_metrics_;
@@ -155,9 +148,6 @@ class TransactionContext {
 
   // Optional callback to be called once the transaction completes.
   gscoped_ptr<TransactionCompletionCallback> completion_clbk_;
-
-  // Optional trace associated with this transaction.
-  Trace* trace_;
 
   AutoReleasePool pool_;
 

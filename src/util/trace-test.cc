@@ -2,7 +2,6 @@
 
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
-#include <strstream>
 #include <string>
 
 #include "util/trace.h"
@@ -33,12 +32,31 @@ TEST_F(TraceTest, TestBasic) {
   t.SubstituteAndTrace("goodbye $0, $1", "cruel world", 54321);
   t.Message("simple string trace");
 
-  std::stringstream stream;
-  t.Dump(&stream);
-  string result = XOutDigits(stream.str());
+  string result = XOutDigits(t.DumpToString());
   ASSERT_EQ("XXXX XX:XX:XX.XXXXXX hello world, XXXXX\n"
             "XXXX XX:XX:XX.XXXXXX goodbye cruel world, XXXXX\n"
             "XXXX XX:XX:XX.XXXXXX simple string trace\n", result);
 }
 
+TEST_F(TraceTest, TestAttach) {
+  Trace traceA, traceB;
+  {
+    ADOPT_TRACE(&traceA);
+    EXPECT_EQ(&traceA, Trace::CurrentTrace());
+    {
+      ADOPT_TRACE(&traceB);
+      EXPECT_EQ(&traceB, Trace::CurrentTrace());
+      TRACE("hello from traceB");
+    }
+    EXPECT_EQ(&traceA, Trace::CurrentTrace());
+    TRACE("hello from traceA");
+  }
+  EXPECT_TRUE(Trace::CurrentTrace() == NULL);
+  TRACE("this goes nowhere");
+
+  EXPECT_EQ(XOutDigits(traceA.DumpToString()),
+            "XXXX XX:XX:XX.XXXXXX hello from traceA\n");
+  EXPECT_EQ(XOutDigits(traceB.DumpToString()),
+            "XXXX XX:XX:XX.XXXXXX hello from traceB\n");
+}
 } // namespace kudu

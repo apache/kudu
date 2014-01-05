@@ -6,6 +6,7 @@
 #include "gutil/atomicops.h"
 #include "util/threadpool.h"
 #include "util/test_macros.h"
+#include "util/trace.h"
 
 namespace kudu {
 
@@ -51,6 +52,25 @@ TEST(TestThreadPool, TestSimpleTasks) {
   thread_pool.Wait();
   ASSERT_EQ(10 + 15 + 20 + 15, base::subtle::NoBarrier_Load(&counter));
   thread_pool.Shutdown();
+}
+
+static void IssueTraceStatement() {
+  TRACE("hello from task");
+}
+
+// Test that the thread-local trace is propagated to tasks
+// submitted to the threadpool.
+TEST(TestThreadPool, TestTracePropagation) {
+  ThreadPool thread_pool("test");
+  ASSERT_STATUS_OK(thread_pool.Init(1));
+
+  Trace t;
+  {
+    ADOPT_TRACE(&t);
+    ASSERT_STATUS_OK(thread_pool.SubmitFunc(&IssueTraceStatement));
+  }
+  thread_pool.Wait();
+  ASSERT_STR_CONTAINS(t.DumpToString(), "hello from task");
 }
 
 } // namespace kudu

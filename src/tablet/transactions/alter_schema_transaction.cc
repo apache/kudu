@@ -43,9 +43,7 @@ void LeaderAlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* re
 }
 
 Status LeaderAlterSchemaTransaction::Prepare() {
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("PREPARE ALTER-SCHEMA: Starting");
-  }
+  TRACE("PREPARE ALTER-SCHEMA: Starting");
 
   // Decode schema
   gscoped_ptr<Schema> schema(new Schema);
@@ -60,9 +58,7 @@ Status LeaderAlterSchemaTransaction::Prepare() {
 
   tx_ctx_->AddToAutoReleasePool(schema.release());
 
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("PREPARE ALTER-SCHEMA: finished");
-  }
+  TRACE("PREPARE ALTER-SCHEMA: finished");
   return s;
 }
 
@@ -76,9 +72,7 @@ void LeaderAlterSchemaTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<Commi
 }
 
 Status LeaderAlterSchemaTransaction::Apply() {
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("APPLY ALTER-SCHEMA: Starting");
-  }
+  TRACE("APPLY ALTER-SCHEMA: Starting");
 
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(tx_ctx()));
@@ -86,9 +80,7 @@ Status LeaderAlterSchemaTransaction::Apply() {
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(ALTER_SCHEMA_OP);
 
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
-  }
+  TRACE("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
 
   tx_ctx_->consensus_ctx()->Commit(commit.Pass());
   // NB: do not use tx_ctx_ after this point, because the commit may have
@@ -99,9 +91,7 @@ Status LeaderAlterSchemaTransaction::Apply() {
 void LeaderAlterSchemaTransaction::ApplySucceeded() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
-  if (tx_ctx()->trace()) {
-    tx_ctx()->trace()->Message("AlterSchemaCommitCallback: making edits visible");
-  }
+  TRACE("AlterSchemaCommitCallback: making edits visible");
   tx_ctx()->commit();
   LeaderTransaction::ApplySucceeded();
 }

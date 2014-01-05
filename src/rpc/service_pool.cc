@@ -65,6 +65,7 @@ void ServicePool::RunThread() {
 
     incoming->RecordHandlingStarted(incoming_queue_time_);
     incoming->trace()->Message("Handling call");
+    ADOPT_TRACE(incoming->trace());
 
     // Release the InboundCall pointer -- when the call is responded to,
     // it will get deleted at that point.

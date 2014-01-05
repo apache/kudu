@@ -18,6 +18,8 @@
 
 namespace kudu {
 
+class Trace;
+
 class Runnable {
  public:
   virtual void Run() = 0;
@@ -90,12 +92,16 @@ class ThreadPool {
   }
 
  private:
+  struct QueueEntry {
+    std::tr1::shared_ptr<Runnable> runnable;
+    Trace* trace;
+  };
+
   const std::string name_;
 
   boost::mutex lock_;
-
   boost::condition_variable queue_changed_;
-  std::list<std::tr1::shared_ptr<Runnable> > queue_;
+  std::list<QueueEntry> queue_;
 
   bool closing_;
   size_t active_threads_;

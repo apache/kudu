@@ -46,9 +46,7 @@ void LeaderWriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicat
 }
 
 Status LeaderWriteTransaction::Prepare() {
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("PREPARE: Starting");
-  }
+  TRACE("PREPARE: Starting");
 
   // In order to avoid a copy, we mutate the row blocks for insert and
   // mutate in-place. Because the RPC framework gives us our request as a
@@ -107,16 +105,7 @@ Status LeaderWriteTransaction::Prepare() {
     return s;
   }
 
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->SubstituteAndTrace(
-      "PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
-      to_insert.size(), to_mutate.size());
-  }
-
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("PREPARE: Acquiring component lock");
-  }
-
+  TRACE("PREPARE: Acquiring component lock");
   // acquire the component lock. this is more like "tablet lock" and is used
   // to prevent AlterSchema and other operations that requires exclusive access
   // to the tablet.
@@ -155,6 +144,8 @@ Status LeaderWriteTransaction::Prepare() {
   }
 
   // Now acquire row locks and prepare everything for apply
+  TRACE("PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
+                   to_insert.size(), to_mutate.size());
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
@@ -181,9 +172,7 @@ Status LeaderWriteTransaction::Prepare() {
     ++i;
   }
 
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("PREPARE: finished");
-  }
+  TRACE("PREPARE: finished");
   return s;
 }
 
@@ -198,9 +187,7 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
 }
 
 Status LeaderWriteTransaction::Apply() {
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("APPLY: Starting");
-  }
+  TRACE("APPLY: Starting");
 
   tx_ctx_->start_mvcc_tx();
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
@@ -227,9 +214,7 @@ Status LeaderWriteTransaction::Apply() {
     i++;
   }
 
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("APPLY: Releasing row locks");
-  }
+  TRACE("APPLY: Releasing row locks");
 
   // Perform early lock release after we've applied all changes
   tx_ctx_->release_row_locks();
@@ -238,9 +223,7 @@ Status LeaderWriteTransaction::Apply() {
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());
   commit->set_op_type(WRITE_OP);
 
-  if (tx_ctx_->trace()) {
-    tx_ctx_->trace()->Message("APPLY: finished, triggering COMMIT");
-  }
+  TRACE("APPLY: finished, triggering COMMIT");
 
   tx_ctx_->consensus_ctx()->Commit(commit.Pass());
   // NB: do not use tx_ctx_ after this point, because the commit may have
@@ -251,9 +234,7 @@ Status LeaderWriteTransaction::Apply() {
 void LeaderWriteTransaction::ApplySucceeded() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
-  if (tx_ctx()->trace()) {
-    tx_ctx()->trace()->Message("WriteCommitCallback: making edits visible");
-  }
+  TRACE("WriteCommitCallback: making edits visible");
   tx_ctx()->commit();
   LeaderTransaction::ApplySucceeded();
 }

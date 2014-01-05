@@ -7,6 +7,9 @@
 #include <iomanip>
 #include <ios>
 #include <ostream>
+#include <strstream>
+#include <string>
+#include <vector>
 
 #include "gutil/strings/substitute.h"
 #include "gutil/walltime.h"
@@ -15,6 +18,8 @@
 namespace kudu {
 
 using strings::internal::SubstituteArg;
+
+__thread Trace* Trace::threadlocal_trace_;
 
 Trace::Trace()
   : arena_(new ThreadSafeArena(1024, 128*1024)),
@@ -124,6 +129,12 @@ void Trace::Dump(std::ostream* out) const {
 
   // Restore stream flags.
   out->flags(save_flags);
+}
+
+string Trace::DumpToString() const {
+  std::stringstream s;
+  Dump(&s);
+  return s.str();
 }
 
 } // namespace kudu

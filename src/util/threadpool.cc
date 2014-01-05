@@ -11,6 +11,7 @@
 #include "gutil/strings/substitute.h"
 #include "util/threadpool.h"
 #include "util/thread_util.h"
+#include "util/trace.h"
 
 namespace kudu {
 
@@ -86,7 +87,10 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   if (PREDICT_FALSE(closing_)) {
     return Status::IllegalState("ThreadPool is closing, unable to accept new Runnables");
   }
-  queue_.push_back(task);
+  QueueEntry e;
+  e.runnable = task;
+  e.trace = Trace::CurrentTrace();
+  queue_.push_back(e);
   queue_changed_.notify_one();
   return Status::OK();
 }
@@ -113,7 +117,7 @@ void ThreadPool::DispatchThread() {
 
   bool has_processed_task = false;
   while (true) {
-    std::tr1::shared_ptr<Runnable> task;
+    QueueEntry entry;
     {
       boost::unique_lock<boost::mutex> unique_lock(lock_);
 
@@ -136,14 +140,15 @@ void ThreadPool::DispatchThread() {
       }
 
       // Fetch a pending task
-      task = queue_.front();
+      entry = queue_.front();
       queue_.pop_front();
       active_threads_++;
       has_processed_task = true;
     }
 
+    ADOPT_TRACE(entry.trace);
     // Execute the task
-    task->Run();
+    entry.runnable->Run();
   }
 }
 

@@ -355,13 +355,13 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
     return;
   }
 
-  context->trace()->Message("Creating iterator");
+  TRACE("Creating iterator");
   gscoped_ptr<RowwiseIterator> iter;
   s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
   if (s.ok()) {
     s = iter->Init(spec.get());
   }
-  context->trace()->Message("Iterator initialized");
+  TRACE("Iterator initialized");
 
   if (PREDICT_FALSE(s.IsInvalidArgument())) {
     // An invalid projection returns InvalidArgument above.
@@ -432,7 +432,7 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << req->ShortDebugString();
-  context->trace()->SubstituteAndTrace("Found scanner $0", scanner->id());
+  TRACE("Found scanner $0", scanner->id());
 
   size_t batch_size_bytes = GetBatchSizeBytes(req);
 
@@ -482,11 +482,11 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     //
     // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
     size_t response_size = resp->data().rows().size() + resp->data().indirect_data().size();
-    context->trace()->SubstituteAndTrace("Copied block, new size=$0", response_size);
+    TRACE("Copied block, new size=$0", response_size);
 
     MonoTime now = MonoTime::Now(MonoTime::COARSE);
     if (!now.ComesBefore(deadline)) {
-      context->trace()->Message("Deadline expired - responding early");
+      TRACE("Deadline expired - responding early");
       break;
     }
 
