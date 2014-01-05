@@ -11,6 +11,7 @@
 #include <strings.h>
 #include "util/env.h"
 #include "util/test_macros.h"
+#include "util/spinlock_profiling.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
@@ -33,6 +34,8 @@ class KuduTest : public ::testing::Test {
   {}
 
   virtual void SetUp() {
+    kudu::InitSpinLockContentionProfiling();
+
     const ::testing::TestInfo* const test_info =
       ::testing::UnitTest::GetInstance()->current_test_info();
 

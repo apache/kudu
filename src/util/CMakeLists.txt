@@ -23,6 +23,7 @@ add_library(kudu_util
   net/socket.cc
   pb_util.cc
   slice.cc
+  spinlock_profiling.cc
   status.cc
   string_case.cc
   threadpool.cc
@@ -75,3 +76,4 @@ ADD_KUDU_TEST(bit-util-test)
 ADD_KUDU_TEST(thread_util-test)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(trace-test)
+ADD_KUDU_TEST(spinlock_profiling-test)

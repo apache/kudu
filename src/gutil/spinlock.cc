@@ -167,8 +167,8 @@ void SpinLock::SlowUnlock(uint64 wait_cycles) {
   // a little simpler.
   //
   if (wait_cycles > kSpinLockSleeper) {
-    base::SubmitSpinLockProfileData(this,
-                                    wait_cycles << PROFILE_TIMESTAMP_SHIFT);
+    gutil::SubmitSpinLockProfileData(this,
+                                     wait_cycles << PROFILE_TIMESTAMP_SHIFT);
   }
 }
 

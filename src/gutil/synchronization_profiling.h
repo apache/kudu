@@ -37,7 +37,7 @@
 
 #include "gutil/basictypes.h"
 
-namespace base {
+namespace gutil {
 
 // We can do contention-profiling of SpinLocks, but the code is in
 // mutex.cc, which is not always linked in with spinlock.  Hence we

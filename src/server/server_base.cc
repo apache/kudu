@@ -16,6 +16,7 @@
 #include "util/env.h"
 #include "util/metrics.h"
 #include "util/net/sockaddr.h"
+#include "util/spinlock_profiling.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
              " (Advanced option).");
@@ -75,6 +76,7 @@ Status ServerBase::GenerateInstanceID() {
 
 Status ServerBase::Init() {
   tcmalloc::RegisterMetrics(metric_registry_.get());
+  InitSpinLockContentionProfiling();
 
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {
