@@ -239,7 +239,7 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
       return 0;
     }
   }
-  boost::mutex::scoped_lock lock(path_handlers_lock_);
+  boost::shared_lock<boost::shared_mutex> lock(path_handlers_lock_);
   PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
   if (it == path_handlers_.end()) {
     sq_printf(connection, "HTTP/1.1 404 Not Found\r\n"
@@ -287,7 +287,7 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
 
 void Webserver::RegisterPathHandler(const string& path,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
-  boost::mutex::scoped_lock lock(path_handlers_lock_);
+  boost::lock_guard<boost::shared_mutex> lock(path_handlers_lock_);
   PathHandlerMap::iterator it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
