@@ -9,6 +9,7 @@
 #include "gutil/atomicops.h"
 #include "gutil/macros.h"
 #include "gutil/port.h"
+#include "gutil/spinlock.h"
 #include "util/errno.h"
 
 namespace kudu {
@@ -17,15 +18,31 @@ using base::subtle::Acquire_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
 using base::subtle::Release_Store;
 
-// Simple subclass of boost::detail::spinlock since the superclass doesn't
-// initialize its member to "unlocked" (for unknown reasons)
-class simple_spinlock : public boost::detail::spinlock {
+// Wrapper around the Google SpinLock class to adapt it to the method names
+// expected by Boost.
+class simple_spinlock {
  public:
-  simple_spinlock() {
-    v_ = 0;
+  simple_spinlock() {}
+
+  void lock() {
+    l_.Lock();
+  }
+
+  void unlock() {
+    l_.Unlock();
+  }
+
+  bool try_lock() {
+    return l_.TryLock();
+  }
+
+  bool is_locked() {
+    return l_.IsHeld();
   }
 
  private:
+  base::SpinLock l_;
+
   DISALLOW_COPY_AND_ASSIGN(simple_spinlock);
 };
 
