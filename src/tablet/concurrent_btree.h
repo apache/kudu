@@ -27,7 +27,6 @@
 #include "util/memory/arena.h"
 #include "util/status.h"
 #include "gutil/macros.h"
-#include "gutil/spinlock_wait.h"
 #include "gutil/stringprintf.h"
 #include "gutil/port.h"
 

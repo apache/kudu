@@ -4,7 +4,7 @@
 #include "gutil/logging-inl.h"
 #include "gutil/once.h"
 #include "gutil/dynamic_annotations.h"
-#include "gutil/spinlock_wait.h"
+#include "gutil/spinlock_internal.h"
 
 // All modifications to a GoogleOnceType occur inside GoogleOnceInternalInit.
 // The fast path reads the variable with an acquire-load..
@@ -24,7 +24,7 @@ void GoogleOnceInternalInit(Atomic32 *control, void (*func)(),
                     "or there's a memory corruption.";
     }
   }
-  static const base::subtle::SpinLockWaitTransition trans[] = {
+  static const base::internal::SpinLockWaitTransition trans[] = {
     { GOOGLE_ONCE_INTERNAL_INIT, GOOGLE_ONCE_INTERNAL_RUNNING, true },
     { GOOGLE_ONCE_INTERNAL_RUNNING, GOOGLE_ONCE_INTERNAL_WAITER, false },
     { GOOGLE_ONCE_INTERNAL_DONE, GOOGLE_ONCE_INTERNAL_DONE, true }
@@ -32,7 +32,7 @@ void GoogleOnceInternalInit(Atomic32 *control, void (*func)(),
   // Short circuit the simplest case to avoid procedure call overhead.
   if (base::subtle::Acquire_CompareAndSwap(control, GOOGLE_ONCE_INTERNAL_INIT,
           GOOGLE_ONCE_INTERNAL_RUNNING) == GOOGLE_ONCE_INTERNAL_INIT ||
-      base::subtle::SpinLockWait(control, ARRAYSIZE(trans), trans) ==
+      base::internal::SpinLockWait(control, ARRAYSIZE(trans), trans) ==
       GOOGLE_ONCE_INTERNAL_INIT) {
     if (func != 0) {
       (*func)();
@@ -43,7 +43,7 @@ void GoogleOnceInternalInit(Atomic32 *control, void (*func)(),
     int32 old_control = base::subtle::NoBarrier_Load(control);
     base::subtle::Release_Store(control, GOOGLE_ONCE_INTERNAL_DONE);
     if (old_control == GOOGLE_ONCE_INTERNAL_WAITER) {
-      base::subtle::SpinLockWake(control, true);
+      base::internal::SpinLockWake(control, true);
     }
   } // else *control is already GOOGLE_ONCE_INTERNAL_DONE
 }

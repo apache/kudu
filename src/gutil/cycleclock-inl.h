@@ -143,7 +143,7 @@ inline int64 CycleClock::Now() {
 
 // ----------------------------------------------------------------
 #elif defined(ARMV6)  // V6 is the earliest arm that has a standard cyclecount
-#include "base/sysinfo.h"
+#include "gutil/sysinfo.h"
 inline int64 CycleClock::Now() {
   uint32 pmccntr;
   uint32 pmuseren;
@@ -166,7 +166,7 @@ inline int64 CycleClock::Now() {
 
 // ----------------------------------------------------------------
 #elif defined(ARMV3)
-#include "base/sysinfo.h"   // for CyclesPerSecond()
+#include "gutil/sysinfo.h"   // for CyclesPerSecond()
 inline int64 CycleClock::Now() {
   struct timeval tv;
   gettimeofday(&tv, NULL);
@@ -176,7 +176,7 @@ inline int64 CycleClock::Now() {
 
 // ----------------------------------------------------------------
 #elif defined(__mips__)
-#include "base/sysinfo.h"
+#include "gutil/sysinfo.h"
 inline int64 CycleClock::Now() {
   // mips apparently only allows rdtsc for superusers, so we fall
   // back to gettimeofday.  It's possible clock_gettime would be better.
