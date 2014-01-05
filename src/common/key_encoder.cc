@@ -30,6 +30,7 @@ class EncoderResolver {
     AddMapping<UINT64>();
     AddMapping<INT64>();
     AddMapping<STRING>();
+    AddMapping<BOOL>();
   }
 
   template<DataType Type> void AddMapping() {

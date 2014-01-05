@@ -213,6 +213,21 @@ struct KeyEncoderTraits<STRING> {
   }
 };
 
+// Currently unsupported
+template<>
+struct KeyEncoderTraits<BOOL> {
+
+  static const DataType key_type = BOOL;
+
+  static void Encode(const void* key, faststring* dst) {
+    LOG(FATAL) << "BOOL keys are presently unsupported";
+  }
+
+  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
+    Encode(key, dst);
+  }
+};
+
 // The runtime version of the key encoder
 class KeyEncoder {
  public:

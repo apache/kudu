@@ -95,6 +95,15 @@ inline BitReader::BitReader(const uint8_t* buffer, int buffer_len)
   memcpy(&buffered_values_, buffer_ + byte_offset_, num_bytes);
 }
 
+inline void BitReader::BufferValues() {
+  int bytes_remaining = max_bytes_ - byte_offset_;
+  if (PREDICT_TRUE(bytes_remaining >= 8)) {
+    memcpy(&buffered_values_, buffer_ + byte_offset_, 8);
+  } else {
+    memcpy(&buffered_values_, buffer_ + byte_offset_, bytes_remaining);
+  }
+}
+
 template<typename T>
 inline bool BitReader::GetValue(int num_bits, T* v) {
   // TODO: revisit this limit if necessary
@@ -109,14 +118,7 @@ inline bool BitReader::GetValue(int num_bits, T* v) {
   if (bit_offset_ >= 64) {
     byte_offset_ += 8;
     bit_offset_ -= 64;
-
-    int bytes_remaining = max_bytes_ - byte_offset_;
-    if (PREDICT_TRUE(bytes_remaining >= 8)) {
-      memcpy(&buffered_values_, buffer_ + byte_offset_, 8);
-    } else {
-      memcpy(&buffered_values_, buffer_ + byte_offset_, bytes_remaining);
-    }
-
+    BufferValues();
     // Read bits of v that crossed into new buffered_values_
     *v |= BitUtil::TrailingBits(buffered_values_, bit_offset_)
           << (num_bits - bit_offset_);
@@ -126,16 +128,41 @@ inline bool BitReader::GetValue(int num_bits, T* v) {
 }
 
 inline void BitReader::Rewind(int num_bits) {
-  // TODO: revisit this limit if necessary
-  DCHECK_LE(num_bits, 32);
-
   bit_offset_ -= num_bits;
-  if (bit_offset_ < 0) {
-    byte_offset_ -= 8;
-    bit_offset_ += 64;
-    // Check for underflow
-    DCHECK_GE(byte_offset_, 0);
-    memcpy(&buffered_values_, buffer_ + byte_offset_, 8);
+  if (bit_offset_ >= 0) {
+    return;
+  }
+  while (bit_offset_ < 0) {
+    int seek_back = std::min(byte_offset_, 8);
+    byte_offset_ -= seek_back;
+    bit_offset_ += seek_back * 8;
+  }
+  // This should only be executed *if* rewinding by 'num_bits'
+  // make the existing buffered_values_ invalid
+  DCHECK_GE(byte_offset_, 0); // Check for underflow
+  memcpy(&buffered_values_, buffer_ + byte_offset_, 8);
+}
+
+inline void BitReader::SeekToBit(uint stream_position) {
+  DCHECK_LE(stream_position, max_bytes_ * 8);
+
+  int delta = stream_position - position();
+  if (delta == 0) {
+    return;
+  } else if (delta < 0) {
+    Rewind(position() - stream_position);
+  } else {
+    bit_offset_ += delta;
+    while (bit_offset_ >= 64) {
+      byte_offset_ +=8;
+      bit_offset_ -= 64;
+      if (bit_offset_ < 64) {
+        // This should only be executed if seeking to
+        // 'stream_position' makes the existing buffered_values_
+        // invalid.
+        BufferValues();
+      }
+    }
   }
 }
 

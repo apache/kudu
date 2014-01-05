@@ -113,8 +113,14 @@ class BitReader {
   // there may be an additional fraction of a byte).
   int bytes_left() { return max_bytes_ - (byte_offset_ + BitUtil::Ceil(bit_offset_, 8)); }
 
+  // Current position in the stream, by bit.
+  int position() const { return byte_offset_ * 8 + bit_offset_; }
+
   // Rewind the stream by 'num_bits' bits
   void Rewind(int num_bits);
+
+  // Seek to a specific bit in the buffer
+  void SeekToBit(uint stream_position);
 
   // Maximum byte length of a vlq encoded int
   static const int MAX_VLQ_BYTE_LEN = 5;
@@ -122,6 +128,10 @@ class BitReader {
   bool is_initialized() const { return buffer_ != NULL; }
 
  private:
+  // Used by SeekToBit() and GetValue() to fetch the
+  // the next word into buffer_.
+  void BufferValues();
+
   const uint8_t* buffer_;
   int max_bytes_;
 

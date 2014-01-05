@@ -49,6 +49,7 @@ class TypeInfoResolver {
     AddMapping<UINT64>();
     AddMapping<INT64>();
     AddMapping<STRING>();
+    AddMapping<BOOL>();
   }
 
   template<DataType type> void AddMapping() {

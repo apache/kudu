@@ -192,6 +192,22 @@ struct DataTypeTraits<STRING> {
 
 };
 
+template<>
+struct DataTypeTraits<BOOL> {
+  typedef bool cpp_type;
+  static const char* name() {
+    return "bool";
+  }
+  static void AppendDebugStringForValue(const void* val, string* str) {
+    str->append(*reinterpret_cast<const bool *>(val) ? "true" : "false");
+  }
+
+  static int Compare(const void *lhs, const void *rhs) {
+    return GenericCompare<BOOL>(lhs, rhs);
+  }
+
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -232,6 +248,9 @@ class Variant {
     Clear();
     type_ = type;
     switch (type_) {
+      case BOOL:
+        vint_.b1 = *static_cast<const bool *>(value);
+        break;
       case INT8:
         vint_.i8 = *static_cast<const int8_t *>(value);
         break;
@@ -257,11 +276,13 @@ class Variant {
         vint_.u64 = *static_cast<const uint64_t *>(value);
         break;
       case STRING:
-        const Slice *str = static_cast<const Slice *>(value);
-        if (str->size() > 0) {
-          uint8_t *blob = new uint8_t[str->size()];
-          memcpy(blob, str->data(), str->size());
-          vstr_ = Slice(blob, str->size());
+        {
+          const Slice *str = static_cast<const Slice *>(value);
+          if (str->size() > 0) {
+            uint8_t *blob = new uint8_t[str->size()];
+            memcpy(blob, str->data(), str->size());
+            vstr_ = Slice(blob, str->size());
+          }
         }
         break;
     }
@@ -297,6 +318,7 @@ class Variant {
   //    static_cast<const Slice *>(variant.value())
   const void *value() const {
     switch (type_) {
+      case BOOL:      return &(vint_.b1);
       case INT8:      return &(vint_.i8);
       case UINT8:     return &(vint_.u8);
       case INT16:     return &(vint_.i16);
@@ -328,6 +350,7 @@ class Variant {
   }
 
   union IntValue {
+    bool     b1;
     int8_t   i8;
     uint8_t  u8;
     int16_t  i16;

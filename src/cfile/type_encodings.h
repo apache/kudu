@@ -6,6 +6,7 @@
 #include "cfile/plain_block.h"
 #include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
+#include "cfile/plain_bitmap_block.h"
 #include "cfile/gvint_block.h"
 
 namespace kudu { namespace cfile {
@@ -83,6 +84,22 @@ struct DataTypeEncodingTraits<STRING, PLAIN> {
 
   static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice) {
     *bd = new StringPlainBlockDecoder(slice);
+    return Status::OK();
+  }
+};
+
+// Template specialization for packed bitmaps
+template<>
+struct DataTypeEncodingTraits<BOOL, PLAIN> {
+
+  static Status CreateBlockBuilder(BlockBuilder **bb,
+                                   const WriterOptions* /* unused: options */) {
+    *bb = new PlainBitMapBlockBuilder();
+    return Status::OK();
+  }
+
+  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice) {
+    *bd = new PlainBitMapBlockDecoder(slice);
     return Status::OK();
   }
 };
