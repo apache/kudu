@@ -114,7 +114,8 @@ class ClientTest : public KuduTest {
       }
       // The sum should be the sum of the arithmetic series from
       // 0..FLAGS_test_scan_num_rows-1
-      uint64_t expected = implicit_cast<uint64_t>(FLAGS_test_scan_num_rows) * (0 + (FLAGS_test_scan_num_rows - 1)) / 2;
+      uint64_t expected = implicit_cast<uint64_t>(FLAGS_test_scan_num_rows) *
+                            (0 + (FLAGS_test_scan_num_rows - 1)) / 2;
       ASSERT_EQ(expected, sum);
     }
   }
@@ -229,7 +230,8 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
 TEST_F(ClientTest, TestCloseScanner) {
   InsertTestRows(10);
 
-  const tserver::ScannerManager* manager = cluster_->mini_tablet_server(0)->server()->scanner_manager();
+  const tserver::ScannerManager* manager =
+    cluster_->mini_tablet_server(0)->server()->scanner_manager();
   // Open the scanner, make sure we see 1 registered scanner.
   {
     SCOPED_TRACE("Explicit close");

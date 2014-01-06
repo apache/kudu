@@ -97,7 +97,8 @@ class SnappyCodec : public CompressionCodec {
     return Status::OK();
   }
 
-  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length) {
+  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed,
+                  size_t *compressed_length) {
     SlicesSource source(input_slices);
     snappy::UncheckedByteArraySink sink(reinterpret_cast<char *>(compressed));
     if ((*compressed_length = snappy::Compress(&source, &sink)) <= 0) {
@@ -130,7 +131,8 @@ class Lz4Codec : public CompressionCodec {
     return Status::OK();
   }
 
-  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length) {
+  Status Compress(const vector<Slice>& input_slices,
+                  uint8_t *compressed, size_t *compressed_length) {
     if (input_slices.size() == 1) {
       return Compress(input_slices[0], compressed, compressed_length);
     }
@@ -173,7 +175,8 @@ class ZlibCodec : public CompressionCodec {
     return err == Z_OK ? Status::OK() : Status::IOError("unable to compress the buffer");
   }
 
-  Status Compress(const vector<Slice>& input_slices, uint8_t *compressed, size_t *compressed_length) {
+  Status Compress(const vector<Slice>& input_slices,
+                  uint8_t *compressed, size_t *compressed_length) {
     if (input_slices.size() == 1) {
       return Compress(input_slices[0], compressed, compressed_length);
     }
@@ -185,8 +188,10 @@ class ZlibCodec : public CompressionCodec {
     return Compress(Slice(buffer.data(), buffer.size()), compressed, compressed_length);
   }
 
-  Status Uncompress(const Slice& compressed, uint8_t *uncompressed, size_t uncompressed_length) {
-    int err = ::uncompress(uncompressed, &uncompressed_length, compressed.data(), compressed.size());
+  Status Uncompress(const Slice& compressed,
+                    uint8_t *uncompressed, size_t uncompressed_length) {
+    int err = ::uncompress(uncompressed, &uncompressed_length,
+                           compressed.data(), compressed.size());
     return err == Z_OK ? Status::OK() : Status::Corruption("unable to uncompress the buffer");
   }
 

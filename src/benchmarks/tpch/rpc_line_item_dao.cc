@@ -100,7 +100,8 @@ void RpcLineItemDAO::DoWriteAsync(RowwiseRowBlockPB *data) {
     rpc_.Reset();
     rpc_.set_timeout(MonoDelta::FromMilliseconds(2000));
     VLOG(1) << "Sending batch of " << data->num_rows();
-    proxy_->WriteAsync(request_, &response_, &rpc_, boost::bind(&RpcLineItemDAO::BatchFinished, this));
+    proxy_->WriteAsync(request_, &response_, &rpc_,
+                       boost::bind(&RpcLineItemDAO::BatchFinished, this));
 
     // TODO figure how to clean better
     data->set_num_rows(0);

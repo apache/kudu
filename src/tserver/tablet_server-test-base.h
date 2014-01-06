@@ -92,7 +92,9 @@ class TabletServerTest : public KuduTest {
 
   // create a shared region for the processes to be able to communicate
   virtual void CreateSharedRegion() {
-    shared_region_ = mmap(NULL, kSharedRegionSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    shared_region_ = mmap(NULL, kSharedRegionSize,
+                          PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
+                          -1, 0);
     CHECK(shared_region_) << "Could not mmap: " << ErrnoToString(errno);
     shared_data_ = reinterpret_cast<volatile SharedData*>(shared_region_);
   }

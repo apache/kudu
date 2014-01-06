@@ -21,7 +21,8 @@
 #include "util/env_util.h"
 #include "util/stopwatch.h"
 
-DEFINE_int32(num_batches, 10000, "Number of batches to write to/read from the Log in TestWriteManyBatches");
+DEFINE_int32(num_batches, 10000,
+             "Number of batches to write to/read from the Log in TestWriteManyBatches");
 
 namespace kudu {
 namespace log {

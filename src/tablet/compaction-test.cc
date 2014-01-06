@@ -64,7 +64,8 @@ class TestCompaction : public KuduRowSetTest {
       uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
       ContiguousRow dst_row(mrs->schema(), rowbuf);
       ASSERT_STATUS_OK_FAST(projector.Init());
-      ASSERT_STATUS_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(), &dst_row, static_cast<Arena*>(NULL)));
+      ASSERT_STATUS_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
+                            &dst_row, static_cast<Arena*>(NULL)));
       ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), ConstContiguousRow(dst_row)));
     } else {
       ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), row_builder_.row()));
@@ -131,7 +132,8 @@ class TestCompaction : public KuduRowSetTest {
     MvccSnapshot merge_snap(mvcc_);
     vector<shared_ptr<CompactionInput> > merge_inputs;
     BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
-      merge_inputs.push_back(shared_ptr<CompactionInput>(CompactionInput::Create(*rs, projection, merge_snap)));
+      merge_inputs.push_back(
+        shared_ptr<CompactionInput>(CompactionInput::Create(*rs, projection, merge_snap)));
     }
 
     gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, projection));
@@ -229,7 +231,8 @@ class TestCompaction : public KuduRowSetTest {
       CHECK(!rowsets.empty()) << "No rowsets found in " << FLAGS_merge_benchmark_input_dir;
     }
 
-    LOG_TIMING(INFO, "Compacting " + std::string((OVERLAP_INPUTS ? "with overlap" : "without overlap"))) {
+    LOG_TIMING(INFO, "Compacting " +
+               std::string((OVERLAP_INPUTS ? "with overlap" : "without overlap"))) {
       DoCompact(rowsets, schema_);
     }
   }
@@ -332,8 +335,8 @@ TEST_F(TestCompaction, TestOneToOne) {
   input.reset(CompactionInput::Create(*rs, schema_, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=1) mutations: [@2000(SET val=2), @3000(SET val=3)]",
-            out[0]);
+  ASSERT_EQ("(string key=hello 00000000, uint32 val=1) mutations: "
+            "[@2000(SET val=2), @3000(SET val=3)]", out[0]);
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);

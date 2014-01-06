@@ -238,7 +238,8 @@ class RowSetMetadata {
 
   const Schema& schema() const { return schema_; }
 
-  Status OpenDataBlock(const BlockId& block_id, shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
+  Status OpenDataBlock(const BlockId& block_id,
+                       shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
     RETURN_NOT_OK(fs_manager()->OpenBlock(block_id, reader));
     return (*reader)->Size(size);
   }

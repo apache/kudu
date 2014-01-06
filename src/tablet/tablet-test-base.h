@@ -537,7 +537,9 @@ struct NullableValueTestSetup {
     BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = CalcUpdateValue(row_idx);
-    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, IsNullRow(row_idx) ? new_val : NULL);
+    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1,
+                                                             IsNullRow(row_idx) ?
+                                                             new_val : NULL);
     return tablet->MutateRow(tx_ctx, rb.row(), test_schema_, RowChangeList(buf));
   }
 

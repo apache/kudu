@@ -606,14 +606,16 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
 template<class TestFixture>
 class MyFlushHooks : public Tablet::FlushFaultHooks, public MyCommonHooks<TestFixture> {
  public:
-  explicit MyFlushHooks(TestFixture *test, bool flushed) : MyCommonHooks<TestFixture>(test, flushed) {}
+  explicit MyFlushHooks(TestFixture *test, bool flushed) :
+           MyCommonHooks<TestFixture>(test, flushed) {}
   virtual Status PostSwapNewMemRowSet() { return this->DoHook(MutationResultPB::MRS_MUTATION); }
 };
 
 template<class TestFixture>
 class MyCompactHooks : public Tablet::CompactionFaultHooks, public MyCommonHooks<TestFixture> {
  public:
-  explicit MyCompactHooks(TestFixture *test, bool flushed) : MyCommonHooks<TestFixture>(test, flushed) {}
+  explicit MyCompactHooks(TestFixture *test, bool flushed) :
+           MyCommonHooks<TestFixture>(test, flushed) {}
   Status PostSelectIterators() { return this->DoHook(MutationResultPB::DELTA_MUTATION); }
 };
 

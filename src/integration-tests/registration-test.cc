@@ -63,7 +63,8 @@ class RegistrationTest : public KuduTest {
                                 &buf));
 
     // Should include the TS UUID
-    string expected_uuid = cluster_->mini_tablet_server(0)->server()->instance_pb().permanent_uuid();
+    string expected_uuid =
+      cluster_->mini_tablet_server(0)->server()->instance_pb().permanent_uuid();
     ASSERT_STR_CONTAINS(buf.ToString(), expected_uuid);
   }
 

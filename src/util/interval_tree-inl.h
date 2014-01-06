@@ -102,7 +102,8 @@ void IntervalTree<Traits>::Partition(const IntervalVector &in,
 }
 
 template<class Traits>
-typename IntervalTree<Traits>::node_type *IntervalTree<Traits>::CreateNode(const IntervalVector &intervals) {
+typename IntervalTree<Traits>::node_type *IntervalTree<Traits>::CreateNode(
+  const IntervalVector &intervals) {
   IntervalVector left, right, overlap;
   point_type split_point;
 
@@ -237,7 +238,8 @@ void ITNode<Traits>::FindContainingPoint(const point_type &query,
     DCHECK_EQ(cmp, 0);
     // The query is exactly our split point -- in this case we've already got
     // the computed list of overlapping intervals.
-    results->insert(results->end(), overlapping_by_asc_left_.begin(), overlapping_by_asc_left_.end());
+    results->insert(results->end(), overlapping_by_asc_left_.begin(),
+                    overlapping_by_asc_left_.end());
   }
 }
 
@@ -279,7 +281,8 @@ void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
   } else {
     // The query interval contains the split point. Therefore all other intervals
     // which also contain the split point are intersecting.
-    results->insert(results->end(), overlapping_by_asc_left_.begin(), overlapping_by_asc_left_.end());
+    results->insert(results->end(), overlapping_by_asc_left_.begin(),
+                    overlapping_by_asc_left_.end());
 
     // The query interval may _also_ intersect some in either child.
     if (left_ != NULL) {

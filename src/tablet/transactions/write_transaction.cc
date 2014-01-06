@@ -96,7 +96,8 @@ Status LeaderWriteTransaction::Prepare() {
   }
 
   if (PREDICT_FALSE(to_mutate.size() != mutations.size())) {
-    s = Status::InvalidArgument(strings::Substitute("Different number of row keys: $0 and mutations: $1",
+    s = Status::InvalidArgument(strings::Substitute("Different number of row "
+                                                    "keys: $0 and mutations: $1",
                                                     to_mutate.size(),
                                                     mutations.size()));
   }
@@ -157,7 +158,9 @@ Status LeaderWriteTransaction::Prepare() {
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx_.get(), tablet->schema_ptr(), row_projector, row_ptr);
+    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx_.get(),
+                                                        tablet->schema_ptr(),
+                                                        row_projector, row_ptr);
     gscoped_ptr<PreparedRowWrite> row_write;
     RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx(), row, &row_write));
     tx_ctx_->add_prepared_row(row_write.Pass());
@@ -284,7 +287,8 @@ void WriteTransactionContext::AddFailedInsert(const Status &status) {
   failed_operations_++;
 }
 
-Status WriteTransactionContext::AddMutation(const txid_t &tx_id, gscoped_ptr<MutationResultPB> result) {
+Status WriteTransactionContext::AddMutation(const txid_t &tx_id,
+                                            gscoped_ptr<MutationResultPB> result) {
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->txid(), tx_id) << "tx_id doesn't match the id of the ongoing transaction";
   }

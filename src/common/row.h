@@ -160,7 +160,8 @@ class RowProjector {
   // Use this method only on the write-path.
   // The col_schema.write_default_value() will be used.
   template<class RowType1, class RowType2, class ArenaType>
-  Status ProjectRowForWrite(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) const {
+  Status ProjectRowForWrite(const RowType1& src_row, RowType2 *dst_row,
+                            ArenaType *dst_arena) const {
     return ProjectRow<RowType1, RowType2, ArenaType, false>(src_row, dst_row, dst_arena);
   }
 
@@ -220,7 +221,8 @@ class RowProjector {
     // Fill with Defaults
     BOOST_FOREACH(size_t proj_idx, projection_defaults_) {
       const ColumnSchema& col_proj = projection_->column(proj_idx);
-      const void *vdefault = FOR_READ ? col_proj.read_default_value() : col_proj.write_default_value();
+      const void *vdefault = FOR_READ ? col_proj.read_default_value() :
+                                        col_proj.write_default_value();
       SimpleConstCell src_cell(col_proj, vdefault);
       typename RowType2::Cell dst_cell = dst_row->cell(proj_idx);
       RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
@@ -395,7 +397,9 @@ class ContiguousRowHelper {
     return row_data + schema.column_offset(col_idx);
   }
 
-  static const uint8_t *nullable_cell_ptr(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
+  static const uint8_t *nullable_cell_ptr(const Schema& schema,
+                                          const uint8_t *row_data,
+                                          size_t col_idx) {
     return is_null(schema, row_data, col_idx) ? NULL : cell_ptr(schema, row_data, col_idx);
   }
 };

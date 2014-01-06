@@ -428,7 +428,8 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
       break;
     }
   }
-  DVLOG(1) << dst->selection_vector()->CountSelected() << "/" << prepared_count_ << " passed predicate";
+  DVLOG(1) << dst->selection_vector()->CountSelected() << "/"
+           << prepared_count_ << " passed predicate";
   return Status::OK();
 }
 

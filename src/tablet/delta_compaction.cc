@@ -607,8 +607,11 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
   RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
   RETURN_NOT_OK(dfw->Finish());
 
-  DVLOG(1) << "Applied all outstanding deltas for columns " << partial_schema.ToString() <<
-      ", and flushed the resulting rowsets and a total of " << *deltas_written << " deltas to disk.";
+  DVLOG(1) << "Applied all outstanding deltas for columns "
+           << partial_schema.ToString()
+           << ", and flushed the resulting rowsets and a total of "
+           << *deltas_written
+           << " deltas to disk.";
 
   state_ = kFinished;
   return Status::OK();
@@ -657,8 +660,9 @@ Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
   return Status::OK();
 }
 
-DeltaCompactionInput *DeltaCompactionInput::Merge(const Schema& projection,
-                                                  const vector<shared_ptr<DeltaCompactionInput> > &inputs) {
+DeltaCompactionInput
+*DeltaCompactionInput::Merge(const Schema& projection,
+                             const vector<shared_ptr<DeltaCompactionInput> > &inputs) {
   CHECK(projection.has_column_ids());
   return new MergeDeltaCompactionInput(projection, inputs);
 }

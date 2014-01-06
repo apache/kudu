@@ -262,8 +262,9 @@ void ReactorThread::RunThread() {
   VLOG(1) << name() << " thread exiting.";
 }
 
-Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id, shared_ptr<Connection> *conn,
-    const MonoTime &deadline) {
+Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
+                                            shared_ptr<Connection> *conn,
+                                            const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
   conn_map_t::const_iterator c = client_conns_.find(conn_id);
   if (c != client_conns_.end()) {

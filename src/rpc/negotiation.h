@@ -35,7 +35,8 @@ class ClientNegotiationTask : public kudu::Task {
 // receiving / validating the ConnectionContextPB.
 class ServerNegotiationTask : public kudu::Task {
  public:
-  explicit ServerNegotiationTask(const std::tr1::shared_ptr<Connection>& conn, const MonoTime &deadline);
+  explicit ServerNegotiationTask(const std::tr1::shared_ptr<Connection>& conn,
+                                 const MonoTime &deadline);
   virtual kudu::Status Run();
   virtual bool Abort();
  private:

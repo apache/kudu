@@ -141,7 +141,8 @@ class Tablet {
   Status Flush(const Schema& schema);
 
   // Prepares the transaction context for the alter schema operation.
-  // An error will be returned if the specified schema is invalid (e.g. key mismatch, or missing IDs)
+  // An error will be returned if the specified schema is invalid (e.g.
+  // key mismatch, or missing IDs)
   // The "tablet lock" (component_lock_) will be taken in exclusive mode to
   // prevent concurrent operations (e.g. Insert, MutateRow, ...)
   Status CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,

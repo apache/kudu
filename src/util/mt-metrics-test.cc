@@ -29,7 +29,8 @@ using std::vector;
 
 class MultiThreadedMetricsTest : public KuduTest {
  public:
-  static void RegisterCounters(MetricRegistry* metrics, const string& name_prefix, int num_counters);
+  static void RegisterCounters(MetricRegistry* metrics,
+                               const string& name_prefix, int num_counters);
 };
 
 // Call increment on a Counter a bunch of times.

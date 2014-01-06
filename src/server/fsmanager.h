@@ -169,8 +169,7 @@ class FsManager {
   string GetTabletWalRecoveryDir(const std::string& tablet_id, uint64_t timestamp) const {
     string path = env_->JoinPathSegments(GetWalsRootDir(), tablet_id);
     path = env_->JoinPathSegments(path, strings::Substitute("$0-$1",
-                                                            kWalsRecoveryDirPrefix,
-                                                            boost::lexical_cast<string>(timestamp)));
+             kWalsRecoveryDirPrefix, boost::lexical_cast<string>(timestamp)));
     return path;
   }
 

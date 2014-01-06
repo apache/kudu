@@ -30,16 +30,26 @@ class Trace {
   //
   // See strings::Substitute for details.
   void SubstituteAndTrace(StringPiece format,
-                          const strings::internal::SubstituteArg& arg0 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg1 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg2 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg3 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg4 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg5 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg6 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg7 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg8 = strings::internal::SubstituteArg::NoArg,
-                          const strings::internal::SubstituteArg& arg9 = strings::internal::SubstituteArg::NoArg);
+                          const strings::internal::SubstituteArg& arg0 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg1 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg2 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg3 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg4 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg5 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg6 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg7 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg8 =
+                            strings::internal::SubstituteArg::NoArg,
+                          const strings::internal::SubstituteArg& arg9 =
+                            strings::internal::SubstituteArg::NoArg);
 
   void Message(StringPiece s);
 

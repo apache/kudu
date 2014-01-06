@@ -28,14 +28,14 @@ if $ONLY_CHANGED; then
     exit 0
   fi
 else
-  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v .pb. | grep -v gutil)
+  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v .pb. | grep -v .krpc. | grep -v gutil)
 fi
 
 cd $ROOT
 
 $ROOT/thirdparty/installed/bin/cpplint.py \
   --verbose=4 \
-  --filter=-whitespace/comments,-whitespace/line_length,-readability/todo,-build/header_guard,-build/include_order \
+  --filter=-whitespace/comments,-readability/todo,-build/header_guard,-build/include_order \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP
 
 NUM_ERRORS=$(grep "Total errors found" $TMP | awk '{print $4}')

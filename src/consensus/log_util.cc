@@ -110,8 +110,9 @@ bool HasNoCommonMemStores(const TabletSuperBlockPB &older,
   // at least one DeltaMemStore in common.
   BOOST_FOREACH(const RowSetDataPB &row_set, older.rowsets()) {
     if (row_set.deltas_size() > 0 &&
-        ContainsKey(newer_deltas, pair<int64, int64>(row_set.id(),
-                                                     row_set.deltas(row_set.deltas_size() - 1).id()))) {
+        ContainsKey(newer_deltas,
+                    pair<int64, int64>(row_set.id(),
+                                       row_set.deltas(row_set.deltas_size() - 1).id()))) {
       VLOG(2) << "Common MemStore. 'older' "
           << older.DebugString() << "\n 'newer': " << newer.DebugString();
       return false;

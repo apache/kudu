@@ -120,7 +120,8 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
     spec.AddPredicate(pred_year);
     spec.AddPredicate(pred_month);
     vector<string> results;
-    ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix match using 2/3 of a compound key"));
+    ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results,
+                                       "Prefix match using 2/3 of a compound key"));
     ASSERT_EQ(28, results.size());
     ASSERT_EQ("(uint16 year=2001, uint8 month=9, uint8 day=1, string data=2001/09/01)",
               results.front());
@@ -132,7 +133,8 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;
-    ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix match using 1/3 of a compound key"));
+    ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results,
+                                       "Prefix match using 1/3 of a compound key"));
     ASSERT_EQ(28 * 12, results.size());
     ASSERT_EQ("(uint16 year=2001, uint8 month=1, uint8 day=1, string data=2001/01/01)",
               results.front());

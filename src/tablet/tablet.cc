@@ -201,7 +201,8 @@ Status Tablet::Insert(WriteTransactionContext *tx_ctx,
     RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(row.schema()));
     RETURN_NOT_OK(row_projector.Init());
   }
-  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, &schema_, row_projector, row.row_data());
+  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, &schema_,
+                                                           row_projector, row.row_data());
 
   gscoped_ptr<PreparedRowWrite> row_write;
   RETURN_NOT_OK(CreatePreparedInsert(tx_ctx, proj_row, &row_write));
@@ -403,7 +404,8 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(), *mutate->changelist(), &stats, result.get());
+    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(),
+                      *mutate->changelist(), &stats, result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
       return s;
@@ -557,7 +559,9 @@ Status Tablet::Flush() {
   return Flush(input, old_ms, schema());
 }
 
-Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema, RowSetsInCompaction *compaction, shared_ptr<MemRowSet> *old_ms) {
+Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
+                                        RowSetsInCompaction *compaction,
+                                        shared_ptr<MemRowSet> *old_ms) {
   // swap in a new memrowset
   *old_ms = memrowset_;
   memrowset_.reset(new MemRowSet(next_mrs_id_, schema));
@@ -580,7 +584,9 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema, RowSetsInCompactio
   return Status::OK();
 }
 
-Status Tablet::Flush(const RowSetsInCompaction& input, const shared_ptr<MemRowSet>& old_ms, const Schema& schema) {
+Status Tablet::Flush(const RowSetsInCompaction& input,
+                     const shared_ptr<MemRowSet>& old_ms,
+                     const Schema& schema) {
   CHECK(open_);
 
   if (input.num_rowsets() == 1 && old_ms->empty()) {
@@ -643,7 +649,8 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
 }
 
 Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
-  DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_ctx->schema()))) << "Schema keys cannot be altered";
+  DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_ctx->schema()))) <<
+    "Schema keys cannot be altered";
 
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_ms;
@@ -655,7 +662,8 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
       return Status::OK();
     }
 
-    LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " << tx_ctx->schema()->ToString();
+    LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " <<
+                 tx_ctx->schema()->ToString();
     schema_ = *tx_ctx->schema();
     metadata_->SetSchema(schema_);
 
@@ -848,7 +856,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // mirror updates to both the input and the output data.
   //
   LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new rowsets)";
-  shared_ptr<DuplicatingRowSet> inprogress_rowset(new DuplicatingRowSet(input.rowsets(), new_rowsets));
+  shared_ptr<DuplicatingRowSet> inprogress_rowset(
+    new DuplicatingRowSet(input.rowsets(), new_rowsets));
   MvccSnapshot snap2;
   AtomicSwapRowSets(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
 
@@ -905,7 +914,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                                      new_rowsets));
 
   if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
-    Barrier_AtomicIncrement(&total_missed_deltas_mutations_, compaction_tx.Result().mutations_size());
+    Barrier_AtomicIncrement(&total_missed_deltas_mutations_,
+                            compaction_tx.Result().mutations_size());
     CommitMsg commit;
     commit.mutable_result()->CopyFrom(compaction_tx.Result());
     commit.set_op_type(MISSED_DELTA);

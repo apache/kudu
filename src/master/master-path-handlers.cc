@@ -25,7 +25,8 @@ namespace master {
 MasterPathHandlers::~MasterPathHandlers() {
 }
 
-void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args, std::stringstream* output) {
+void MasterPathHandlers::HandleTabletServers(const Webserver::ArgumentMap& args,
+                                             std::stringstream* output) {
   vector<std::tr1::shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
 

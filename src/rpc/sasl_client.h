@@ -98,7 +98,8 @@ class SaslClient {
   Status SendNegotiateMessage();
 
   // Send an INITIATE message to the server.
-  Status SendInitiateMessage(const SaslMessagePB_SaslAuth& auth, const char* init_msg, unsigned init_msg_len);
+  Status SendInitiateMessage(const SaslMessagePB_SaslAuth& auth,
+                             const char* init_msg, unsigned init_msg_len);
 
   // Send a RESPONSE message to the server.
   Status SendResponseMessage(const char* resp_msg, unsigned resp_msg_len);

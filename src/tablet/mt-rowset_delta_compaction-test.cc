@@ -20,7 +20,8 @@ DEFINE_int32(num_update_threads, 1, "Number of updater threads");
 DEFINE_int32(num_alter_schema_threads, 0, "Number of AlterSchema threads");
 DEFINE_int32(num_flush_threads, kDefaultNumFlushThreads, "Number of flusher threads");
 DEFINE_int32(num_compaction_threads, kDefaultNumCompactionThreads, "Number of compaction threads");
-DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread, "Minimum number of seconds each thread should work");
+DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread,
+             "Minimum number of seconds each thread should work");
 
 namespace kudu {
 namespace tablet {
@@ -84,7 +85,8 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     Arena arena(1024, 1024*1024);
     RowBlock dst(rs->schema(), 1000, &arena);
     gscoped_ptr<RowwiseIterator> iter;
-    iter.reset(rs->NewRowIterator(rs->schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+    iter.reset(rs->NewRowIterator(rs->schema(),
+               MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_STATUS_OK(iter->Init(NULL));
     while (iter->HasNext()) {

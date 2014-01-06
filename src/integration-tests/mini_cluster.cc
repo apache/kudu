@@ -58,7 +58,8 @@ Status MiniCluster::AddTabletServer() {
   }
   int new_idx = mini_tablet_servers_.size();
 
-  gscoped_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(env_, GetTabletServerFsRoot(new_idx)));
+  gscoped_ptr<MiniTabletServer> tablet_server(
+    new MiniTabletServer(env_, GetTabletServerFsRoot(new_idx)));
   // set the master port
   tablet_server->options()->master_hostport = HostPort(mini_master_.get()->bound_rpc_addr());
   RETURN_NOT_OK(tablet_server->Start())
@@ -124,7 +125,8 @@ Status MiniCluster::WaitForTabletServerCount(int count,
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
     mini_master_->master()->ts_manager()->GetAllDescriptors(descs);
     if (descs->size() == count) {
-      LOG(INFO) << count << " TS(s) registered with Master after " << sw.elapsed().wall_seconds() << "s";
+      LOG(INFO) << count << " TS(s) registered with Master after "
+                << sw.elapsed().wall_seconds() << "s";
       return Status::OK();
     }
     usleep(1 * 1000); // 1ms

@@ -86,7 +86,8 @@ class KuduRowSetTest : public KuduTabletTest {
 
   virtual void SetUp() {
     KuduTabletTest::SetUp();
-    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_, SchemaBuilder(schema_).Build()));
+    ASSERT_STATUS_OK(tablet_->metadata()->CreateRowSet(&rowset_meta_,
+                                                       SchemaBuilder(schema_).Build()));
   }
 
   Status FlushMetadata() {

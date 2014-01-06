@@ -215,7 +215,8 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
   return Status::OK();
 }
 
-int Webserver::LogMessageCallbackStatic(const struct sq_connection* connection, const char* message) {
+int Webserver::LogMessageCallbackStatic(const struct sq_connection* connection,
+                                        const char* message) {
   if (message != NULL) {
     LOG(INFO) << "Webserver: " << message;
     return 1;

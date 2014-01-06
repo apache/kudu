@@ -32,10 +32,11 @@ using kudu::tserver::TabletServer;
 
 static const char* const kTwitterTabletId = "twitter";
 static const char* const kTPCH1TabletId = "tpch1";
-static const char* const kQuorumFlagFormat = "Malformed \"tablet_quorum_for_demo\" flag. "
-                                             "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
-                                             "Note the first host is assumed to be the LEADER."
-                                             "Number of hosts may be 2 or 3.";
+static const char* const kQuorumFlagFormat =
+  "Malformed \"tablet_quorum_for_demo\" flag. "
+  "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
+  "Note the first host is assumed to be the LEADER."
+  "Number of hosts may be 2 or 3.";
 
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
 DEFINE_string(tablet_server_tablet_id, kTwitterTabletId,

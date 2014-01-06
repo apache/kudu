@@ -72,7 +72,8 @@ Status DiskRowSetWriter::Open() {
                                         opts,
                                         col.type_info().type(),
                                         col.is_nullable(),
-                                        cfile::TypeEncodingInfo::GetDefaultEncoding(col.type_info().type()),
+                                        cfile::TypeEncodingInfo::GetDefaultEncoding(
+                                          col.type_info().type()),
                                         data_writer));
 
     s = writer->Start();

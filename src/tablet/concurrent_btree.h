@@ -527,7 +527,8 @@ class PACKED InternalNode : public NodeBase<Traits> {
     }
     child_pointers_[idx + 1] = right_child;
 
-    base::subtle::Release_Store(reinterpret_cast<volatile Atomic32*>(&num_children_), new_num_children);
+    base::subtle::Release_Store(reinterpret_cast<volatile Atomic32*>(
+                                  &num_children_), new_num_children);
 
     ReassignParent(right_child);
 
@@ -615,7 +616,8 @@ class PACKED InternalNode : public NodeBase<Traits> {
                          + (sizeof(void *) * Traits::fanout)), // child_pointers_
     // Align the size down so that each InlineSlice is pointer-aligned,
     // necessary for atomic operation.
-    key_inline_size = KUDU_ALIGN_DOWN((Traits::internal_node_size - constant_overhead) / Traits::fanout,
+    key_inline_size = KUDU_ALIGN_DOWN((Traits::internal_node_size -
+                                       constant_overhead) / Traits::fanout,
                                       sizeof(void *))
   };
 

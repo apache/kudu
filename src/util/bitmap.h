@@ -47,15 +47,18 @@ inline void BitmapMergeOr(uint8_t *dst, const uint8_t *src, size_t n_bits) {
 void BitmapChangeBits(uint8_t *bitmap, size_t offset, size_t num_bits, bool value);
 
 // Find the first bit of the specified value, starting from the specified offset.
-bool BitmapFindFirst(const uint8_t *bitmap, size_t offset, size_t bitmap_size, bool value, size_t *idx);
+bool BitmapFindFirst(const uint8_t *bitmap, size_t offset, size_t bitmap_size,
+                     bool value, size_t *idx);
 
 // Find the first set bit in the bitmap, at the specified offset.
-inline bool BitmapFindFirstSet(const uint8_t *bitmap, size_t offset, size_t bitmap_size, size_t *idx) {
+inline bool BitmapFindFirstSet(const uint8_t *bitmap, size_t offset,
+                               size_t bitmap_size, size_t *idx) {
   return BitmapFindFirst(bitmap, offset, bitmap_size, true, idx);
 }
 
 // Find the first zero bit in the bitmap, at the specified offset.
-inline bool BitmapFindFirstZero(const uint8_t *bitmap, size_t offset, size_t bitmap_size, size_t *idx) {
+inline bool BitmapFindFirstZero(const uint8_t *bitmap, size_t offset,
+                                size_t bitmap_size, size_t *idx) {
   return BitmapFindFirst(bitmap, offset, bitmap_size, false, idx);
 }
 

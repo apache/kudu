@@ -390,7 +390,8 @@ TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<int64_t> compacted_ids;
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores, &compacted_ids, &dci));
+  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores,
+                                           &compacted_ids, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {
@@ -428,7 +429,8 @@ TEST_F(TestRowSet, TestCompactStores) {
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<int64_t> compacted_ids;
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores, &compacted_ids, &dci));
+  ASSERT_STATUS_OK(dt->MakeCompactionInput(0, num_stores - 1, &compacted_stores,
+                                           &compacted_ids, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {

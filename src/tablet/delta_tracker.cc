@@ -287,15 +287,18 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   // Merge and compact the stores and write and output to "data_writer"
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<int64_t> compacted_ids;
-  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, data_writer, &compacted_stores, &compacted_ids));
+  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, data_writer,
+                &compacted_stores, &compacted_ids));
   int64_t compacted_id = compacted_ids.back();
 
   // Open the new deltafile
   gscoped_ptr<DeltaFileReader> dfr;
   size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
-  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
-  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, compacted_id, &dfr));
+  RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader,
+                                                &data_size));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader,
+                                      data_size, compacted_id, &dfr));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
   RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr.Pass()));
@@ -313,11 +316,12 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
 }
 
 Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
-                                     const shared_ptr<WritableFile> &data_writer,
-                                     vector<shared_ptr<DeltaStore> > *compacted_stores,
-                                     vector<int64_t> *compacted_ids) {
+         const shared_ptr<WritableFile> &data_writer,
+         vector<shared_ptr<DeltaStore> > *compacted_stores,
+         vector<int64_t> *compacted_ids) {
   gscoped_ptr<DeltaCompactionInput> inputs_merge;
-  RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, compacted_stores, compacted_ids, &inputs_merge));
+  RETURN_NOT_OK(MakeCompactionInput(start_idx, end_idx, compacted_stores,
+                                    compacted_ids, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
   DeltaFileWriter dfw(inputs_merge->schema(), data_writer);
   RETURN_NOT_OK(dfw.Start());

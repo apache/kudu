@@ -22,12 +22,15 @@
 // they are not.
 #define DCHECK_SCHEMA_EQ(s1, s2) \
   do { \
-    DCHECK((s1).Equals((s2))) << "Schema " << (s1).ToString() << " does not match " << (s2).ToString(); \
+    DCHECK((s1).Equals((s2))) << "Schema " << (s1).ToString() \
+                              << " does not match " << (s2).ToString(); \
   } while (0);
 
 #define DCHECK_KEY_PROJECTION_SCHEMA_EQ(s1, s2) \
   do { \
-    DCHECK((s1).KeyEquals((s2))) << "Key-Projection Schema " << (s1).ToString() << " does not match " << (s2).ToString(); \
+    DCHECK((s1).KeyEquals((s2))) << "Key-Projection Schema " \
+                                 << (s1).ToString() << " does not match " \
+                                 << (s2).ToString(); \
   } while (0);
 
 namespace kudu {
@@ -528,8 +531,10 @@ class Schema {
         // Column present in the Base Schema...
         if (!col_schema.EqualsType(base_col_schema)) {
           // ...but with a different type, (TODO: try with an adaptor)
-          return Status::InvalidArgument("The column '" + col_schema.name() + "' must have type " +
-                                         base_col_schema.TypeToString() + " found " + col_schema.TypeToString());
+          return Status::InvalidArgument("The column '" + col_schema.name() +
+                                         "' must have type " +
+                                         base_col_schema.TypeToString() +
+                                         " found " + col_schema.TypeToString());
         } else {
           RETURN_NOT_OK(projector->ProjectBaseColumn(proj_idx, base_idx));
         }
@@ -537,7 +542,8 @@ class Schema {
         bool has_default = col_schema.has_read_default() || col_schema.has_write_default();
         if (!has_default && !col_schema.is_nullable()) {
           return Status::InvalidArgument("The column '" + col_schema.name() +
-                "' does not exists in the projection, and it does not have a default value or a nullable type");
+                "' does not exists in the projection, and it does not have a "
+                "default value or a nullable type");
         }
 
         // Column missing from the Base Schema, use the default value of the projection

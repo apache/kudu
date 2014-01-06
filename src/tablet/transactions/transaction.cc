@@ -22,10 +22,12 @@ using std::tr1::shared_ptr;
 
 Transaction::Transaction(TaskExecutor* prepare_executor,
                          TaskExecutor* apply_executor)
-: prepare_finished_callback_(new BoundFunctionCallback(boost::bind(&Transaction::PrepareSucceeded, this),
-                                                       boost::bind(&Transaction::PrepareFailed, this, _1))),
-  commit_finished_callback_(new BoundFunctionCallback(boost::bind(&Transaction::ApplySucceeded, this),
-                                                      boost::bind(&Transaction::ApplyFailed, this, _1))),
+: prepare_finished_callback_(
+    new BoundFunctionCallback(boost::bind(&Transaction::PrepareSucceeded, this),
+                              boost::bind(&Transaction::PrepareFailed, this, _1))),
+  commit_finished_callback_(
+    new BoundFunctionCallback(boost::bind(&Transaction::ApplySucceeded, this),
+                              boost::bind(&Transaction::ApplyFailed, this, _1))),
   prepare_executor_(prepare_executor),
   apply_executor_(apply_executor) {
 }

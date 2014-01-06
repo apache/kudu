@@ -284,7 +284,8 @@ static void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
   const double kTotalHeight = kRowHeight * svg_rows.size() + kHeaderHeight;
 
   out << "<?xml version=\"1.0\" standalone=\"no\"?>" << endl;
-  out << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">" << endl;
+  out << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" "
+         "\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">" << endl;
   out << "<svg version=\"1.1\" width=\"" << kTotalWidth << "\" height=\"" << kTotalHeight << "\""
       << " viewBox=\"0 0 " << kTotalWidth << " " << kTotalHeight << "\""
       << " xmlns=\"http://www.w3.org/2000/svg\" >" << endl;
@@ -307,9 +308,11 @@ static void DumpCompactionSVG(const vector<CompactionCandidate>& candidates,
 
       double x = cand->cdf_min_key() * kTotalWidth;
       double width = cand->width() * kTotalWidth;
-      out << StringPrintf("<rect x=\"%f\" y=\"%d\" width=\"%f\" height=\"%d\" stroke=\"#000\" fill=\"%s\"/>",
+      out << StringPrintf("<rect x=\"%f\" y=\"%d\" width=\"%f\" height=\"%d\" "
+                          "stroke=\"#000\" fill=\"%s\"/>",
                           x, y, width, kRowHeight, color) << endl;
-      out << StringPrintf("<text x=\"%f\" y=\"%d\" width=\"%f\" height=\"%d\" fill=\"rgb(0,0,0)\">%dMB</text>",
+      out << StringPrintf("<text x=\"%f\" y=\"%d\" width=\"%f\" height=\"%d\" "
+                          "fill=\"rgb(0,0,0)\">%dMB</text>",
                           x, y + kRowHeight, width, kRowHeight, cand->size_mb()) << endl;
     }
   }

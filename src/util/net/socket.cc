@@ -434,7 +434,8 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoT
 
 Status Socket::SetTimeout(int opt, std::string optname, const MonoDelta& timeout) {
   if (PREDICT_FALSE(timeout.ToNanoseconds() < 0)) {
-    return Status::InvalidArgument("Timeout specified as negative to SetTimeout", timeout.ToString());
+    return Status::InvalidArgument("Timeout specified as negative to SetTimeout",
+                                   timeout.ToString());
   }
   struct timeval tv;
   timeout.ToTimeVal(&tv);

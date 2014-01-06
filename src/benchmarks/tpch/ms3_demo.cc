@@ -81,8 +81,10 @@ static void UpdateThread(Demo *demo) {
     // 2. Fetch the order including the column we want to update
     ColumnRangePredicatePB pred;
     ColumnSchemaToPB(query_schema.column(0), pred.mutable_column());
-    pred.mutable_lower_bound()->assign(reinterpret_cast<const char*>(&current_order), sizeof(current_order));
-    pred.mutable_upper_bound()->assign(reinterpret_cast<const char*>(&current_order), sizeof(current_order));
+    pred.mutable_lower_bound()->assign(
+      reinterpret_cast<const char*>(&current_order), sizeof(current_order));
+    pred.mutable_upper_bound()->assign(
+      reinterpret_cast<const char*>(&current_order), sizeof(current_order));
 
     dao->OpenScanner(query_schema, pred);
     vector<const uint8_t*> rows;
@@ -99,7 +101,8 @@ static void UpdateThread(Demo *demo) {
     uint32_t new_l_quantity = l_quantity + 1;
 
     // 4. Do the update
-    VLOG(1) << "updating " << l_ordernumber << " " << l_linenumber << " " << l_quantity << " " << new_l_quantity;
+    VLOG(1) << "updating " << l_ordernumber << " " << l_linenumber << " "
+            << l_quantity << " " << new_l_quantity;
     RowBuilder rb(full_schema.CreateKeyProjection());
     rb.AddUint32(l_ordernumber);
     rb.AddUint32(l_linenumber);

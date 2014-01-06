@@ -88,7 +88,8 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   for (int i = 0; i < key_columns; ++i) {
     if (PREDICT_FALSE(cols_[i].is_nullable())) {
       return Status::InvalidArgument(
-        "Bad schema", strings::Substitute("Nullable key columns are not supported: $0", cols_[i].name()));
+        "Bad schema", strings::Substitute("Nullable key columns are not "
+                                          "supported: $0", cols_[i].name()));
     }
   }
 

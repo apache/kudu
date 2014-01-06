@@ -538,7 +538,8 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   Slice data_block = prep_block->dblk_data_.data();
   if (reader_->is_nullable()) {
     RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
-    prep_block->rle_decoder_ = RleDecoder<bool>(prep_block->rle_bitmap.data(), prep_block->rle_bitmap.size(), 1);
+    prep_block->rle_decoder_ = RleDecoder<bool>(prep_block->rle_bitmap.data(),
+                                                prep_block->rle_bitmap.size(), 1);
   }
 
   BlockDecoder *bd;
@@ -634,7 +635,8 @@ Status CFileIterator::FinishBatch() {
   CHECK(prepared_) << "no batch prepared";
   prepared_ = false;
 
-  DVLOG(1) << "Finishing batch " << last_prepare_idx_ << "-" << (last_prepare_idx_ + last_prepare_count_ - 1);
+  DVLOG(1) << "Finishing batch " << last_prepare_idx_ << "-"
+           << (last_prepare_idx_ + last_prepare_count_ - 1);
 
   // Release all blocks except for the last one, which may still contain
   // relevent data for the next batch.

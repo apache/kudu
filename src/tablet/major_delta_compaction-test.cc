@@ -137,7 +137,8 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
     const string& str = results[i];
     VLOG(1) << str;
     string expected = StringPrintf(
-        "(string key=hello %08d, uint32 val1=%d, string val2=a %08d, uint32 val3=%d, string val4=%s)",
+        "(string key=hello %08d, uint32 val1=%d, string val2=a %08d, "
+        "uint32 val3=%d, string val4=%s)",
         i, i * 3, i * 2, i * 11, "major delta compaction");
     ASSERT_EQ(expected, str);
   }
@@ -208,11 +209,13 @@ TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
   }
   ASSERT_TRUE(is_sorted(results.begin(), results.end()));
   string expected_first =
-      "(string key=hello 00000000, uint32 val1=0, string val2=2 00000000, uint32 val3=0, string val4=4 00000000)";
+      "(string key=hello 00000000, uint32 val1=0, string val2=2 00000000, "
+      "uint32 val3=0, string val4=4 00000000)";
   ASSERT_EQ(expected_first, results.front());
   int last_row = kNumRows - 1;
   string expected_last = StringPrintf(
-      "(string key=hello %08d, uint32 val1=%d, string val2=2 %08d, uint32 val3=%d, string val4=4 %08d)",
+      "(string key=hello %08d, uint32 val1=%d, string val2=2 %08d, "
+      "uint32 val3=%d, string val4=4 %08d)",
       last_row, last_row * 2, last_row * 2, last_row * 10, last_row * 10);
       ASSERT_EQ(expected_last, results.back());
 

@@ -200,7 +200,8 @@ Status IndexBlockReader::ReadEntry(size_t idx, Slice *key, BlockPointer *block_p
   return block_ptr->DecodeFrom(ptr, data_.data() + data_.size());
 }
 
-void IndexBlockReader::GetKeyPointer(int idx_in_block, const uint8_t **ptr, const uint8_t **limit) const {
+void IndexBlockReader::GetKeyPointer(int idx_in_block, const uint8_t **ptr,
+                                     const uint8_t **limit) const {
   size_t offset_in_block = DecodeFixed32(
     &key_offsets_[idx_in_block * sizeof(uint32_t)]);
   *ptr = data_.data() + offset_in_block;

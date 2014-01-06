@@ -106,7 +106,8 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
     rpc_.Reset();
     rpc_.set_timeout(MonoDelta::FromMilliseconds(1000));
     VLOG(1) << "Sending batch of " << data->num_rows();
-    proxy_->WriteAsync(request_, &response_, &rpc_, boost::bind(&InsertConsumer::BatchFinished, this));
+    proxy_->WriteAsync(request_, &response_, &rpc_,
+                       boost::bind(&InsertConsumer::BatchFinished, this));
 
     // TODO: add method to clear the data portions of a RowwiseRowBlockPB
     data->set_num_rows(0);

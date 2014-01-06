@@ -87,7 +87,8 @@ class ConnectionId {
   ConnectionId(const ConnectionId& other);
 
   // Convenience constructor.
-  ConnectionId(const Sockaddr& remote, const std::string& service_name, const UserCredentials& user_credentials);
+  ConnectionId(const Sockaddr& remote, const std::string& service_name,
+               const UserCredentials& user_credentials);
 
   // The remote address.
   void set_remote(const Sockaddr& remote);

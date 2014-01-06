@@ -17,7 +17,8 @@ namespace kudu {
 //     ... some task which takes some time
 //   }
 // yields a log like:
-// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task: real 3.729s user 3.570s sys 0.150s
+// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task:
+//   real 3.729s user 3.570s sys 0.150s
 #define LOG_TIMING(severity, description) \
   for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description); \
        !_l.has_printed();                                               \
@@ -28,7 +29,8 @@ namespace kudu {
 //     ... some task which takes some time
 //   }
 // when slower than 5 milliseconds, yields a log like:
-// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task: real 3.729s user 3.570s sys 0.150s
+// I1102 14:35:51.726186 23082 file.cc:167] Times for doing some task:
+//   real 3.729s user 3.570s sys 0.150s
 #define LOG_SLOW_EXECUTION(severity, max_expected_millis, description) \
   for (kudu::sw_internal::LogTiming _l(__FILE__, __LINE__, google::severity, description); \
        !_l.has_printed();                                               \

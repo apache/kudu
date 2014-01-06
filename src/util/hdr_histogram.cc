@@ -452,7 +452,8 @@ void PercentileIterator::IncrementIterationLevel() {
   // TODO: Can this expression be simplified?
   uint64_t percentile_reporting_ticks = percentile_ticks_per_half_distance_ *
     static_cast<uint64_t>(pow(2,
-          static_cast<uint64_t>(log(100.0 / (100.0 - (percentile_level_to_iterate_to_))) / log(2)) + 1));
+      static_cast<uint64_t>(
+        log(100.0 / (100.0 - (percentile_level_to_iterate_to_))) / log(2)) + 1));
   percentile_level_to_iterate_to_ += 100.0 / percentile_reporting_ticks;
 }
 

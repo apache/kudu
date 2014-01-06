@@ -316,7 +316,8 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
   // GC on shutdown there should be some segments available even if there is
   // no soft state to rebuild.
   if (fetched_blocks && !fetched_segments) {
-    return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log segments could be found.",
+    return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log "
+                                           "segments could be found.",
                                            tablet_name));
   }
 
@@ -570,15 +571,20 @@ Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* com
 
     case WRITE_OP:
       // successful write, play it into the tablet, filtering flushed entries
-      RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_msg(), commit_entry->commit()),
-                            Substitute("Failed to play write request. ReplicateMsg: $0 CommitMsg: $1\n",
+      RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_msg(),
+                                             commit_entry->commit()),
+                            Substitute("Failed to play write request. "
+                                       "ReplicateMsg: $0 CommitMsg: $1\n",
                                        replicate_entry->msg().DebugString(),
                                        commit_entry->commit().DebugString()));
       break;
 
     case ALTER_SCHEMA_OP:
-      RETURN_NOT_OK_PREPEND(PlayAlterSchemaRequest(replicate_entry->mutable_msg(), commit_entry->commit()),
-                            Substitute("Failed to play alter schema request. ReplicateMsg: $0 CommitMsg: $1\n",
+      RETURN_NOT_OK_PREPEND(PlayAlterSchemaRequest(
+                              replicate_entry->mutable_msg(),
+                              commit_entry->commit()),
+                            Substitute("Failed to play alter schema request. "
+                                       "ReplicateMsg: $0 CommitMsg: $1\n",
                                        replicate_entry->msg().DebugString(),
                                        commit_entry->commit().DebugString()));
       break;
@@ -625,9 +631,11 @@ Status TabletBootstrap::PlaySegments() {
                                            log_reader_->segments()[segment_idx]->path()));
     }
 
-    // TODO: could be more granular here and log during the segments as well, plus give info about
-    // number of MB processed, but this is better than nothing.
-    LOG(INFO) << Substitute("Replayed $0/$1 log segments for tablet $2", segment_idx + 1, log_reader_->size(),
+    // TODO: could be more granular here and log during the segments as well,
+    // plus give info about number of MB processed, but this is better than
+    // nothing.
+    LOG(INFO) << Substitute("Replayed $0/$1 log segments for tablet $2",
+                            segment_idx + 1, log_reader_->size(),
                             tablet_->tablet_id());
   }
 
@@ -735,7 +743,8 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
   int missed_delta_idx = 0;
   BOOST_FOREACH(const TxOperationPB& operation, commit_msg.result().mutations()) {
     if (PREDICT_FALSE(!operation.has_missed_delta_mutation())) {
-      return Status::Corruption(Substitute("Missed delta operation must have missed delta mutations: $0",
+      return Status::Corruption(Substitute("Missed delta operation must have "
+                                           "missed delta mutations: $0",
                                            operation.ShortDebugString()));
     }
     MissedDeltaMutationPB missed_delta = operation.missed_delta_mutation();
@@ -750,7 +759,8 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
     Schema mutation_key_schema = mutation_schema.CreateKeyProjection();
 
     if (PREDICT_FALSE(row_block.size() != 1)) {
-      return Status::Corruption(Substitute("A Missed Delta Update mutation should only have one key. "
+      return Status::Corruption(Substitute("A Missed Delta Update mutation "
+                                           "should only have one key. "
                                            "Mutation: $0", missed_delta.ShortDebugString()));
     }
 
@@ -778,26 +788,40 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
 
     // First do some sanity checks
     if (PREDICT_FALSE(new_commit->mutable_result()->mutations_size() < missed_delta_idx)) {
-      return Status::Corruption(Substitute("new MISSED_DELTA commit must have at least as many result as the original."
-          "\nApplied: $0\nOriginal: $1", new_commit->ShortDebugString(), operation.ShortDebugString()));
+      return Status::Corruption(Substitute("new MISSED_DELTA commit must have "
+                                           "at least as many results as the "
+                                           "original."
+                                           "\nApplied: $0\nOriginal: $1",
+                                           new_commit->ShortDebugString(),
+                                           operation.ShortDebugString()));
     }
 
-    TxOperationPB* new_operation = new_commit->mutable_result()->mutable_mutations(missed_delta_idx);
+    TxOperationPB* new_operation =
+      new_commit->mutable_result()->mutable_mutations(missed_delta_idx);
 
     if (applied_mutation) {
       // confirm that the result is the expected one
       if (PREDICT_FALSE(!result.mutations(missed_delta_idx).has_mutation_result())) {
-        return Status::Corruption(Substitute("MISSED_DELTA mutation was applied but the original mutation had no result."
-            "\nApplied: $0\nOriginal: $1", new_operation->ShortDebugString(), operation.ShortDebugString()));
+        return Status::Corruption(Substitute("MISSED_DELTA mutation was applied"
+                                             " but the original mutation had no result."
+                                             "\nApplied: $0\nOriginal: $1",
+                                             new_operation->ShortDebugString(),
+                                             operation.ShortDebugString()));
       }
-      new_operation->mutable_mutation_result()->CopyFrom(result.mutations(missed_delta_idx).mutation_result());
+      new_operation->mutable_mutation_result()->CopyFrom(
+        result.mutations(missed_delta_idx).mutation_result());
     } else {
       // confirm that the result is the expected one
       if (PREDICT_FALSE(!result.mutations(missed_delta_idx).has_failed_status())) {
-        return Status::Corruption(Substitute("MISSED_DELTA mutation failed to apply but the original mutation had no failed status."
-            "\nApplied: $0\nOriginal: $1", new_operation->ShortDebugString(), operation.ShortDebugString()));
+        return Status::Corruption(Substitute("MISSED_DELTA mutation failed to "
+                                             "apply but the original mutation "
+                                             "had no failed status."
+                                             "\nApplied: $0\nOriginal: $1",
+                                             new_operation->ShortDebugString(),
+                                             operation.ShortDebugString()));
       }
-      new_operation->mutable_failed_status()->CopyFrom(result.mutations(missed_delta_idx).failed_status());
+      new_operation->mutable_failed_status()->CopyFrom(
+        result.mutations(missed_delta_idx).failed_status());
     }
 
     missed_delta_idx++;
@@ -867,7 +891,9 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
         new shared_lock<rw_spinlock>(tablet_->component_lock()->get_lock()));
     tx_ctx->set_component_lock(component_lock.Pass());
 
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx, tablet_->schema_ptr(), row_projector, row_ptr);
+    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx,
+                                                        tablet_->schema_ptr(),
+                                                        row_projector, row_ptr);
 
     gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
     gscoped_ptr<PreparedRowWrite> prepared_row;
@@ -1015,7 +1041,8 @@ Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
       return Status::OK();
     }
     default:
-      return Status::IllegalState(Substitute("Unsupported mutation type: $0", op_result.ShortDebugString()));
+      return Status::IllegalState(Substitute("Unsupported mutation type: $0",
+                                             op_result.ShortDebugString()));
   }
   LOG(DFATAL);
   return Status::IllegalState("");
@@ -1034,7 +1061,9 @@ Status TabletBootstrap::HandleMRSMutation(const MutationInput& mutation_input,
           << " latest durable mrs id: " << mutation_target.mrs_id()
           << " mutation: " << mutation;
     }
-    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(Substitute("MRS mutation flushed: $0", mutation)));
+    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(
+                                               Substitute("MRS mutation "
+                                                          "flushed: $0", mutation)));
     *applied_mutation = false;
     return Status::OK();
   }
@@ -1064,7 +1093,9 @@ Status TabletBootstrap::HandleDMSMutation(const MutationInput& mutation_input,
           << " flushed to: " << mutation_target.rs_id()
           << " mutation: " <<mutation;
     }
-    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(Substitute("DMS mutation flushed and compacted: $0", mutation)));
+    mutation_input.tx_ctx->AddFailedMutation(
+      Status::AlreadyPresent(Substitute("DMS mutation flushed and compacted: $0",
+                                        mutation)));
     *applied_mutation = false;
     return Status::OK();
   }
@@ -1080,7 +1111,9 @@ Status TabletBootstrap::HandleDMSMutation(const MutationInput& mutation_input,
           << " latest durable dms id: " << row_set->last_durable_dms_id()
           << " mutation: " << mutation;
     }
-    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(Substitute("DMS mutation flushed: $0", mutation)));
+    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(
+                                               Substitute("DMS mutation "
+                                                          "flushed: $0", mutation)));
     *applied_mutation = false;
     return Status::OK();
   }

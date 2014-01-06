@@ -66,8 +66,9 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
   Status s = Load(fs_manager, master_block, metadata);
   if (s.ok()) {
     if (!(*metadata)->schema().Equals(schema)) {
-      return Status::Corruption(Substitute("Schema on disk ($0) does not match expected schema ($1)",
-                                           (*metadata)->schema().ToString(), schema.ToString()));
+      return Status::Corruption(Substitute("Schema on disk ($0) does not "
+        "match expected schema ($1)", (*metadata)->schema().ToString(),
+        schema.ToString()));
     }
     return Status::OK();
   } else if (s.IsNotFound()) {
@@ -109,7 +110,8 @@ Status TabletMetadata::LoadFromDisk() {
 
   // Verify that the tablet id matches with the one in the protobuf
   if (superblock.oid() != master_block_.tablet_id()) {
-    return Status::Corruption("Expected id=" + master_block_.tablet_id() + " found " + superblock.oid(),
+    return Status::Corruption("Expected id=" + master_block_.tablet_id() +
+                              " found " + superblock.oid(),
                               superblock.DebugString());
   }
 

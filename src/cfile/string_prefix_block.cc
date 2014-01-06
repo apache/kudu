@@ -441,7 +441,9 @@ Status StringPrefixBlockDecoder::CheckNextPtr() {
   return Status::OK();
 }
 
-inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val, Arena *dst, Slice *copied) {
+inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val,
+                                                           Arena *dst,
+                                                           Slice *copied) {
   RETURN_NOT_OK(CheckNextPtr());
   uint32_t shared, non_shared;
   const uint8_t *val_delta = DecodeEntryLengths(next_ptr_, &shared, &non_shared);

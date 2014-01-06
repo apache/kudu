@@ -46,7 +46,8 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
   faststring recv_buf(1024); // Should be plenty for a ConnectionContextPB message.
   RequestHeader header;
   Slice param_buf;
-  RETURN_NOT_OK(ReceiveFramedMessageBlocking(conn->socket(), &recv_buf, &header, &param_buf, deadline));
+  RETURN_NOT_OK(ReceiveFramedMessageBlocking(conn->socket(), &recv_buf,
+                                             &header, &param_buf, deadline));
   DCHECK(header.IsInitialized());
 
   if (header.call_id() != kConnectionContextCallId) {
@@ -77,7 +78,8 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
 
     // TODO: Validate effective user when we implement impersonation.
     if (conn_context.user_info().has_effective_user()) {
-      conn->mutable_user_credentials()->set_effective_user(conn_context.user_info().effective_user());
+      conn->mutable_user_credentials()->set_effective_user(
+        conn_context.user_info().effective_user());
     }
   }
   return Status::OK();
@@ -160,7 +162,8 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
 /// ClientNegotiationTask
 ///
 
-ClientNegotiationTask::ClientNegotiationTask(const shared_ptr<Connection>& conn, const MonoTime &deadline)
+ClientNegotiationTask::ClientNegotiationTask(const shared_ptr<Connection>& conn,
+                                             const MonoTime &deadline)
   : conn_(conn),
     deadline_(deadline) {
 }
@@ -183,7 +186,8 @@ bool ClientNegotiationTask::Abort() {
 /// ServerNegotiationTask
 ///
 
-ServerNegotiationTask::ServerNegotiationTask(const shared_ptr<Connection>& conn, const MonoTime &deadline)
+ServerNegotiationTask::ServerNegotiationTask(const shared_ptr<Connection>& conn,
+                                             const MonoTime &deadline)
   : conn_(conn),
     deadline_(deadline) {
 }

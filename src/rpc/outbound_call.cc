@@ -141,7 +141,8 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
     // which isn't great, since it would block processing of other RPCs in parallel.
     // Should look into a way to avoid this.
     if (!response_->ParseFromArray(r.data(), r.size())) {
-      SetFailed(Status::IOError("Invalid response, missing fields", response_->InitializationErrorString()));
+      SetFailed(Status::IOError("Invalid response, missing fields",
+                                response_->InitializationErrorString()));
       return;
     }
     set_state(FINISHED_SUCCESS);

@@ -103,11 +103,11 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
 Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
-  LeaderAlterSchemaTransaction* transaction = new LeaderAlterSchemaTransaction(tx_ctx,
-                                                                               consensus_.get(),
-                                                                               prepare_executor_.get(),
-                                                                               apply_executor_.get(),
-                                                                               prepare_replicate_lock_);
+  LeaderAlterSchemaTransaction* transaction =
+    new LeaderAlterSchemaTransaction(tx_ctx, consensus_.get(),
+                                     prepare_executor_.get(),
+                                     apply_executor_.get(),
+                                     prepare_replicate_lock_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
 }

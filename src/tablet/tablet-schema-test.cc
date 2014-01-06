@@ -115,7 +115,8 @@ TEST_F(TestTabletSchema, TestRead) {
 
   Status s = iter->Init(NULL);
   ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.message().ToString(), "Some columns are not present in the current schema: c2, c3");
+  ASSERT_STR_CONTAINS(s.message().ToString(),
+                      "Some columns are not present in the current schema: c2, c3");
 }
 
 // Write to the tablet using different schemas,
@@ -141,7 +142,8 @@ TEST_F(TestTabletSchema, TestWrite) {
 
   // Verify the default value
   std::vector<std::pair<string, string> > keys;
-  keys.push_back(std::pair<string, string>(Substitute("key=$0", s2Key), Substitute("c2=$0", c2_write_default)));
+  keys.push_back(std::pair<string, string>(Substitute("key=$0", s2Key),
+                                           Substitute("c2=$0", c2_write_default)));
   keys.push_back(std::pair<string, string>("", Substitute("c2=$0", c2_read_default)));
   VerifyTabletRows(s2, keys);
 
@@ -179,7 +181,8 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   // Read and verify using the s2 schema
   keys.clear();
   for (int i = 1; i <= 4; ++i) {
-    keys.push_back(std::pair<string, string>(Substitute("key=$0", i), Substitute("c1_renamed=$0", i)));
+    keys.push_back(std::pair<string, string>(Substitute("key=$0", i),
+                                             Substitute("c1_renamed=$0", i)));
   }
   VerifyTabletRows(s2, keys);
 

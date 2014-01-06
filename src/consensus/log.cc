@@ -127,7 +127,8 @@ Status Log::Append(const LogEntry& entry) {
               << current_->path();
   }
   LOG_SLOW_EXECUTION(WARNING, 25, "Append to log took a long time") {
-    RETURN_NOT_OK(current_->writable_file()->Append(Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
+    RETURN_NOT_OK(current_->writable_file()->Append(
+      Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
   }
   if (!pb_util::SerializeToWritableFile(entry, current_->writable_file().get())) {
     return Status::Corruption("Unable to serialize entry to file");

@@ -66,7 +66,8 @@ class MRSRow {
   }
 
   void set_null(size_t col_idx, bool is_null) const {
-    ContiguousRowHelper::SetCellIsNull(schema(), const_cast<uint8_t*>(row_slice_.data()), col_idx, is_null);
+    ContiguousRowHelper::SetCellIsNull(schema(),
+      const_cast<uint8_t*>(row_slice_.data()), col_idx, is_null);
   }
 
   const uint8_t *cell_ptr(size_t col_idx) const {
@@ -392,12 +393,16 @@ class MemRowSet::Iterator : public RowwiseIterator {
       Mutation *prev = NULL;
       *mutation_head = NULL;
       for (const Mutation *mut = src_row.mutation_head(); mut != NULL; mut = mut->next()) {
-        RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_, mut->changelist(), &delta_buf_));
+        RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
+                                                          mut->changelist(),
+                                                          &delta_buf_));
 
         // The projection resulted in an empty mutation (e.g. update of a removed column)
         if (delta_buf_.size() == 0) continue;
 
-        Mutation *mutation = Mutation::CreateInArena(mutation_arena, mut->txid(), RowChangeList(delta_buf_));
+        Mutation *mutation = Mutation::CreateInArena(mutation_arena,
+                                                     mut->txid(),
+                                                     RowChangeList(delta_buf_));
         if (prev != NULL) {
           prev->set_next(mutation);
         } else {
@@ -496,7 +501,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
         // TODO: this is slow, since it makes multiple passes through the rowchangelist.
         // Instead, we should keep the backwards mapping of columns.
-        BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping, projector_.base_cols_mapping()) {
+        BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping,
+                      projector_.base_cols_mapping()) {
           RowChangeListDecoder decoder(memrowset_->schema(), mut->changelist());
           RETURN_NOT_OK(decoder.Init());
           ColumnBlock dst_col = dst_row->column_block(mapping.first);
