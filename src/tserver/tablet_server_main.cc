@@ -165,9 +165,15 @@ static int TabletServerMain(int argc, char** argv) {
   CHECK_OK(server.Init());
 
   LOG(INFO) << "Setting up demo tablets...";
-  string id(FLAGS_tablet_server_tablet_id);
-  Schema schema = id == kTwitterTabletId ? twitter_demo::CreateTwitterSchema() :
-                                           tpch::CreateLineItemSchema();
+  const string& id = FLAGS_tablet_server_tablet_id;
+  Schema schema;
+  if (id == kTwitterTabletId) {
+    schema = twitter_demo::CreateTwitterSchema();
+  } else if (id == kTPCH1TabletId) {
+    schema = tpch::CreateLineItemSchema();
+  } else {
+    LOG(FATAL) << "Unknown tablet_server_tablet_id: " << id;
+  }
   TemporaryTabletsForDemos demo_setup(&server, schema, id);
 
   // Temporary hack for demos: start threads which compact/flush the tablet.
