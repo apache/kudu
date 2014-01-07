@@ -299,6 +299,17 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   return Status::OK();
 }
 
+// Return the batch size to use for a given request, after clamping
+// the user-requested request within the server-side allowable range.
+static size_t GetBatchSizeBytes(const ScanRequestPB* req) {
+  if (!req->has_batch_size_bytes()) {
+    return FLAGS_tablet_server_default_scan_batch_size_bytes;
+  }
+
+  return std::min(req->batch_size_bytes(),
+                  implicit_cast<uint32_t>(FLAGS_tablet_server_max_scan_batch_size_bytes));
+}
+
 // Start a new scan.
 void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
                                              ScanResponsePB* resp,
@@ -390,18 +401,17 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
     VLOG(1) << "Started scanner " << scanner->id() << ": " << scanner->iter()->ToString();
   }
 
-  context->RespondSuccess();
-}
+  size_t batch_size_bytes = GetBatchSizeBytes(req);
 
-// Return the batch size to use for a given request, after clamping
-// the user-requested request within the server-side allowable range.
-static size_t GetBatchSizeBytes(const ScanRequestPB* req) {
-  if (!req->has_batch_size_bytes()) {
-    return FLAGS_tablet_server_default_scan_batch_size_bytes;
+  if (batch_size_bytes > 0) {
+    // TODO: instead of copying the pb, instead split HandleContinueScanRequest
+    // and call the second half directly
+    ScanRequestPB continue_req(*req);
+    continue_req.set_scanner_id(scanner->id());
+    HandleContinueScanRequest(&continue_req, resp, context);
+  } else {
+    context->RespondSuccess();
   }
-
-  return std::min(req->batch_size_bytes(),
-                  implicit_cast<uint32_t>(FLAGS_tablet_server_max_scan_batch_size_bytes));
 }
 
 // Continue an existing scan request.
@@ -424,6 +434,17 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
           << req->ShortDebugString();
   context->trace()->SubstituteAndTrace("Found scanner $0", scanner->id());
 
+  size_t batch_size_bytes = GetBatchSizeBytes(req);
+
+  if (batch_size_bytes == 0 && req->close_scanner()) {
+    resp->set_has_more_results(false);
+    bool success = server_->scanner_manager()->UnregisterScanner(req->scanner_id());
+    LOG_IF(WARNING, !success) << "Scanner " << scanner->id() <<
+      " not removed successfully from scanner manager. May be a bug.";
+    context->RespondSuccess();
+    return;
+  }
+
   // TODO: check the call_seq_id!
 
   scanner->UpdateAccessTime();
@@ -437,7 +458,6 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   RowBlock block(scanner->iter()->schema(),
                  FLAGS_tablet_server_scan_batch_size_rows, &arena);
 
-  size_t batch_size_bytes = GetBatchSizeBytes(req);
   resp->mutable_data()->mutable_rows()->reserve(batch_size_bytes * 11 / 10);
 
   // TODO: in the future, use the client timeout to set a budget. For now,
@@ -476,7 +496,7 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
 
   scanner->UpdateAccessTime();
-  bool has_more = iter->HasNext();
+  bool has_more = !req->close_scanner() && iter->HasNext();
   resp->set_has_more_results(has_more);
   if (!has_more) {
     VLOG(2) << "Scanner " << scanner->id() << " complete: removing...";

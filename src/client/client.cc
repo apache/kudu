@@ -223,7 +223,8 @@ Insert::~Insert() {}
 
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
-    table_(DCHECK_NOTNULL(table)) {
+    table_(DCHECK_NOTNULL(table)),
+    data_in_open_(false) {
   CHECK(table->is_open()) << "Table not open";
 }
 
@@ -236,6 +237,11 @@ Status KuduScanner::SetProjection(const Schema& projection) {
   projection_ = projection;
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
   RETURN_NOT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  return Status::OK();
+}
+
+Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
+  next_req_.set_batch_size_bytes(batch_size);
   return Status::OK();
 }
 
@@ -258,7 +264,7 @@ Status KuduScanner::Open() {
 
   RETURN_NOT_OK(table_->proxy_->Scan(next_req_, &last_response_, &controller_));
   RETURN_NOT_OK(CheckForErrors());
-  CHECK(!last_response_.has_data()) << "TODO: handle data with initial response";
+  data_in_open_ = last_response_.has_data();
 
   next_req_.clear_new_scan_request();
   if (last_response_.has_more_results()) {
@@ -323,7 +329,7 @@ Status KuduScanner::CheckForErrors() {
 
 bool KuduScanner::HasMoreRows() const {
   CHECK(open_);
-  return last_response_.has_more_results();
+  return data_in_open_ || last_response_.has_more_results();
 }
 
 Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
@@ -331,10 +337,15 @@ Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid
   // stomping on the memory the user is looking at.
-  controller_.Reset();
-  rows->clear();
-  RETURN_NOT_OK(table_->proxy_->Scan(next_req_, &last_response_, &controller_));
-  RETURN_NOT_OK(CheckForErrors());
+  CHECK(open_);
+  if (!data_in_open_) {
+    controller_.Reset();
+    rows->clear();
+    RETURN_NOT_OK(table_->proxy_->Scan(next_req_, &last_response_, &controller_));
+    RETURN_NOT_OK(CheckForErrors());
+  } else {
+    data_in_open_ = false;
+  }
 
   RETURN_NOT_OK(ExtractRowsFromRowBlockPB(projection_, last_response_.mutable_data(), rows));
   return Status::OK();

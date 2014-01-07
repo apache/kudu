@@ -590,6 +590,7 @@ TEST_F(TabletServerTest, TestScan) {
   scan->set_tablet_id(kTabletId);
   ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
   req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0); // so it won't return data right away
 
   // Send the call
   {
@@ -637,6 +638,7 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
 
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
   ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
   // Set up a range predicate: "hello 50" < string_val <= "hello 59"
@@ -677,6 +679,7 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
 
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
   ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
   // Set up a range predicate: 51 <= key <= 100
@@ -729,6 +732,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
 
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
   req.set_scanner_id("x");
   SCOPED_TRACE(req.DebugString());
   Status s = proxy_->Scan(req, &resp, &rpc);
@@ -814,6 +818,7 @@ TEST_F(TabletServerTest, TestScan_NoResults) {
   const Schema& projection = schema_;
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
   ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
   req.set_call_seq_id(0);
 

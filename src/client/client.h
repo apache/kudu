@@ -424,10 +424,17 @@ class KuduScanner {
   // performance.
   Status NextBatch(std::vector<const uint8_t*>* rows);
 
+  // Set the hint for the size of the next batch in bytes.
+  // If setting to 0 before calling Open(), it means that the first call
+  // to the tablet server won't return data.
+  Status SetBatchSizeBytes(uint32_t batch_size);
+
  private:
   Status CheckForErrors();
 
   bool open_;
+
+  bool data_in_open_;
 
   Schema projection_;
 

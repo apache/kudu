@@ -232,11 +232,23 @@ TEST_F(ClientTest, TestCloseScanner) {
 
   const tserver::ScannerManager* manager =
     cluster_->mini_tablet_server(0)->server()->scanner_manager();
+  // Open the scanner, make sure it gets closed right away
+  {
+    SCOPED_TRACE("Implicit close");
+    KuduScanner scanner(client_table_.get());
+    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ASSERT_STATUS_OK(scanner.Open());
+    ASSERT_EQ(0, manager->CountActiveScanners());
+    scanner.Close();
+    AssertScannersDisappear(manager);
+  }
+
   // Open the scanner, make sure we see 1 registered scanner.
   {
     SCOPED_TRACE("Explicit close");
     KuduScanner scanner(client_table_.get());
     ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0)); // won't return data on open
     ASSERT_STATUS_OK(scanner.Open());
     ASSERT_EQ(1, manager->CountActiveScanners());
     scanner.Close();
@@ -248,6 +260,7 @@ TEST_F(ClientTest, TestCloseScanner) {
     {
       KuduScanner scanner(client_table_.get());
       ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+      ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0));
       ASSERT_STATUS_OK(scanner.Open());
       ASSERT_EQ(1, manager->CountActiveScanners());
     }
