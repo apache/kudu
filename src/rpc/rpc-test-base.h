@@ -62,7 +62,8 @@ class GenericCalculatorService : public ServiceIf {
     } else if (incoming->method_name() == kSleepMethodName) {
       DoSleep(incoming);
     } else {
-      incoming->RespondFailure(Status::InvalidArgument("bad method"));
+      incoming->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
+                               Status::InvalidArgument("bad method"));
     }
   }
 
@@ -87,7 +88,7 @@ class GenericCalculatorService : public ServiceIf {
     Slice param(incoming->serialized_request());
     SleepRequestPB req;
     if (!req.ParseFromArray(param.data(), param.size())) {
-      incoming->RespondFailure(
+      incoming->RespondFailure(ErrorStatusPB::ERROR_INVALID_REQUEST,
         Status::InvalidArgument("Couldn't parse pb",
                                 req.InitializationErrorString()));
       return;

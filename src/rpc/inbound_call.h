@@ -81,7 +81,8 @@ class InboundCall {
   //
   // This method deletes the InboundCall object, so no further calls may be
   // made after this one.
-  void RespondFailure(const Status &status);
+  void RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
+                      const Status &status);
 
   void RespondApplicationError(int error_ext_id, const std::string& message,
                                const google::protobuf::MessageLite& app_error_pb);

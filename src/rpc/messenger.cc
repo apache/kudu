@@ -110,7 +110,8 @@ void Messenger::Shutdown() {
   // Drain any remaining calls that haven't been responded to.
   InboundCall *call = NULL;
   while (service_queue_.BlockingGet(&call)) {
-    call->RespondFailure(Status::ServiceUnavailable("Server shutting down"));
+    call->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN,
+                         Status::ServiceUnavailable("Server shutting down"));
   }
 
 
@@ -156,12 +157,14 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
 
   if (s == QUEUE_FULL) {
     c->RespondFailure(
+      ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
       Status::ServiceUnavailable(StringPrintf(
                              "The service queue is full; it "
                              "has %zd items. Transfer dropped because of backpressure.",
                              service_queue_.max_elements())));
   } else if (s == QUEUE_SHUTDOWN) {
-    c->RespondFailure(Status::ServiceUnavailable("Service is shutting down"));
+    c->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN,
+                      Status::ServiceUnavailable("Service is shutting down"));
   }
 }
 

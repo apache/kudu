@@ -199,22 +199,38 @@ message ErrorStatusPB {
 
   // These codes have all been inherited from Hadoop's RPC mechanism.
   enum RpcErrorCodePB {
-   // Non-fatal RPC errors. Connection should be left open for future RPC calls.
-   ERROR_APPLICATION = 1;           // RPC Failed - application level error.
-   ERROR_NO_SUCH_METHOD = 2;        // RPC error - no such method.
-   ERROR_NO_SUCH_SERVICE = 3;       // RPC error - no such service.
-   ERROR_RPC_SERVER  = 4;           // RPC error on server side.
-   ERROR_SERIALIZING_RESPONSE = 5;  // Error serializing response.
-   ERROR_RPC_VERSION_MISMATCH = 6;  // RPC protocol version mismatch.
+    // Non-fatal RPC errors. Connection should be left open for future RPC calls.
+    //------------------------------------------------------------
+    // The application generated an error status. See the message field for
+    // more details.
+    ERROR_APPLICATION = 1;
 
+    // The specified method was not valid.
+    ERROR_NO_SUCH_METHOD = 2;
 
-   // Fatal Server side RPC error. Connection should be closed.
-   FATAL_UNKNOWN = 10;                      // Unknown Fatal error.
-   //FATAL_UNSUPPORTED_SERIALIZATION = 11;  // IPC layer serilization type invalid.
-   FATAL_INVALID_RPC_HEADER = 12;           // Fields of RpcHeader are invalid.
-   FATAL_DESERIALIZING_REQUEST = 13;        // Could not deserialize RPC request.
-   FATAL_VERSION_MISMATCH = 14;             // IPC Layer version mismatch.
-   FATAL_UNAUTHORIZED = 15;                 // Auth failed.
+    // The specified service was not valid.
+    ERROR_NO_SUCH_SERVICE = 3;
+
+    // The server is overloaded - the client should try again shortly.
+    ERROR_SERVER_TOO_BUSY = 4;
+
+    // The request parameter was not parseable or was missing required fields.
+    ERROR_INVALID_REQUEST = 5;
+
+    // FATAL_* errors indicate that the client should shut down the connection.
+    //------------------------------------------------------------
+    FATAL_UNKNOWN = 10;
+
+    // The RPC server is already shutting down.
+    FATAL_SERVER_SHUTTING_DOWN = 11;
+    // Fields of RpcHeader are invalid.
+    FATAL_INVALID_RPC_HEADER = 12;
+    // Could not deserialize RPC request.
+    FATAL_DESERIALIZING_REQUEST = 13;
+    // IPC Layer version mismatch.
+    FATAL_VERSION_MISMATCH = 14;
+    // Auth failed.
+    FATAL_UNAUTHORIZED = 15;
   }
 
   required string message = 1;

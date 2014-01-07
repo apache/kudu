@@ -5,6 +5,7 @@
 #include <string>
 
 #include "rpc/inbound_call.h"
+#include "rpc/rpc_header.pb.h"
 
 using std::string;
 
@@ -21,7 +22,8 @@ bool ServiceIf::ParseParam(InboundCall *call, google::protobuf::Message *message
                               call->method_name().c_str(),
                               message->InitializationErrorString().c_str());
     LOG(WARNING) << err;
-    call->RespondFailure(Status::InvalidArgument(err));
+    call->RespondFailure(ErrorStatusPB::ERROR_INVALID_REQUEST,
+                         Status::InvalidArgument(err));
     return false;
   }
   return true;
@@ -31,7 +33,8 @@ void ServiceIf::RespondBadMethod(InboundCall *call) {
   string err = StringPrintf("Invalid method: %s",
                             call->method_name().c_str());
   LOG(WARNING) << err;
-  call->RespondFailure(Status::InvalidArgument(err));
+  call->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
+                       Status::InvalidArgument(err));
 }
 
 } // namespace rpc

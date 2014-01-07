@@ -40,7 +40,8 @@ void InboundCall::RespondSuccess(const MessageLite& response) {
   Respond(response, true);
 }
 
-void InboundCall::RespondFailure(const Status& status) {
+void InboundCall::RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
+                                 const Status& status) {
   ErrorStatusPB err;
   err.set_message(status.ToString());
 

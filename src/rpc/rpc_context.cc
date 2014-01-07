@@ -34,7 +34,8 @@ void RpcContext::RespondSuccess() {
 
 void RpcContext::RespondFailure(const Status &status) {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
-  call_->RespondFailure(status);
+  call_->RespondFailure(ErrorStatusPB::ERROR_APPLICATION,
+                        status);
   delete this;
 }
 
