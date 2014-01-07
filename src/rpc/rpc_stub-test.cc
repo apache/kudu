@@ -189,5 +189,22 @@ TEST_F(RpcStubTest, TestCallMissingMethod) {
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid method: DoesNotExist");
 }
 
+TEST_F(RpcStubTest, TestApplicationError) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  RpcController controller;
+  SleepRequestPB req;
+  SleepResponsePB resp;
+  req.set_sleep_micros(1);
+  req.set_return_app_error(true);
+  Status s = p.Sleep(req, &resp, &controller);
+  ASSERT_TRUE(s.IsRemoteError());
+  EXPECT_EQ("Remote error: Got some error", s.ToString());
+  EXPECT_EQ("message: \"Got some error\"\n"
+            "[kudu.rpc_test.CalculatorError.app_error_ext] {\n"
+            "  extra_error_data: \"some application-specific error data\"\n"
+            "}\n", controller.error_response()->DebugString());
+}
+
 } // namespace rpc
 } // namespace kudu

@@ -28,6 +28,7 @@ using kudu::rpc_test::AddRequestPartialPB;
 using kudu::rpc_test::AddResponsePB;
 using kudu::rpc_test::EchoRequestPB;
 using kudu::rpc_test::EchoResponsePB;
+using kudu::rpc_test::CalculatorError;
 using kudu::rpc_test::CalculatorServiceIf;
 using kudu::rpc_test::CalculatorServiceProxy;
 using kudu::rpc_test::SleepRequestPB;
@@ -115,6 +116,14 @@ class CalculatorService : public CalculatorServiceIf {
   virtual void Sleep(const SleepRequestPB *req,
                      SleepResponsePB *resp,
                      RpcContext *context) {
+    if (req->return_app_error()) {
+      CalculatorError my_error;
+      my_error.set_extra_error_data("some application-specific error data");
+      context->RespondApplicationError(CalculatorError::app_error_ext.number(),
+                                       "Got some error", my_error);
+      return;
+    }
+
     if (req->deferred()) {
       // Spawn a new thread which does the sleep and responds later.
       boost::thread new_thr(&CalculatorService::DoSleep, this, req, context);

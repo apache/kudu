@@ -83,6 +83,9 @@ class InboundCall {
   // made after this one.
   void RespondFailure(const Status &status);
 
+  void RespondApplicationError(int error_ext_id, const std::string& message,
+                               const google::protobuf::MessageLite& app_error_pb);
+
   // Serialize the response packet for the finished call.
   // The resulting slices refer to memory in this object.
   void SerializeResponseTo(std::vector<Slice>* slices) const;
@@ -113,6 +116,10 @@ class InboundCall {
   void RecordHandlingCompleted(Histogram* handler_run_time);
 
  private:
+  // Serialize and queue the response.
+  void Respond(const google::protobuf::MessageLite& response,
+               bool is_success);
+
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a
   // failure, 'response' should be an ErrorStatusPB instance.

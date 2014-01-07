@@ -27,6 +27,9 @@ message SleepRequestPB {
   // Used in rpc_stub-test: if this is true, it will respond from a different
   // thread than the one that receives the request.
   optional bool deferred = 2 [ default = false ];
+
+  // If set, returns a CalculatorError response.
+  optional bool return_app_error = 3 [ default = false ];
 }
 
 message SleepResponsePB {
@@ -44,6 +47,14 @@ message WhoAmIRequestPB {
 message WhoAmIResponsePB {
   required kudu.rpc.UserInformationPB credentials = 1;
   required string address = 2;
+}
+
+message CalculatorError {
+  extend kudu.rpc.ErrorStatusPB {
+    optional CalculatorError app_error_ext = 101;
+  }
+
+  required string extra_error_data = 1;
 }
 
 service CalculatorService {

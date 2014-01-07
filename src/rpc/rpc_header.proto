@@ -200,7 +200,7 @@ message ErrorStatusPB {
   // These codes have all been inherited from Hadoop's RPC mechanism.
   enum RpcErrorCodePB {
    // Non-fatal RPC errors. Connection should be left open for future RPC calls.
-   //ERROR_APPLICATION = 1;         // RPC Failed - RPC app threw exception.
+   ERROR_APPLICATION = 1;           // RPC Failed - application level error.
    ERROR_NO_SUCH_METHOD = 2;        // RPC error - no such method.
    ERROR_NO_SUCH_SERVICE = 3;       // RPC error - no such service.
    ERROR_RPC_SERVER  = 4;           // RPC error on server side.
@@ -221,4 +221,9 @@ message ErrorStatusPB {
 
   // TODO: Make code required?
   optional RpcErrorCodePB code = 2;  // Specific error identifier.
+
+  // Allow extensions. When the RPC returns ERROR_APPLICATION, the server
+  // should also fill in exactly one of these extension fields, which contains
+  // more details on the service-specific error.
+  extensions 100 to max;
 }

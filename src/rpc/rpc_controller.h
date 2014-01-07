@@ -13,6 +13,7 @@
 
 namespace kudu { namespace rpc {
 
+class ErrorStatusPB;
 class OutboundCall;
 
 // Controller for managing properties of a single RPC call, on the client side.
@@ -52,6 +53,14 @@ class RpcController {
   //   down
   // * the call timed out
   Status status() const;
+
+  // If status() returns a RemoteError object, then this function returns
+  // the error response provided by the server. Service implementors may
+  // use protobuf Extensions to add application-specific data to this PB.
+  //
+  // If Status was not a RemoteError, this returns NULL.
+  // The returned pointer is only valid as long as the controller object.
+  const ErrorStatusPB* error_response() const;
 
   // Set the timeout for the call to be made with this RPC controller.
   //

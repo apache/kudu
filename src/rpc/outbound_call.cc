@@ -73,6 +73,12 @@ Status OutboundCall::status() const {
   return status_;
 }
 
+const ErrorStatusPB* OutboundCall::error_pb() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return error_pb_.get();
+}
+
+
 string OutboundCall::StateName(State state) {
   switch (state) {
     case READY:
@@ -149,14 +155,14 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
     CallCallback();
   } else {
     // Error
-    ErrorStatusPB err;
-    if (!err.ParseFromArray(r.data(), r.size())) {
+    gscoped_ptr<ErrorStatusPB> err(new ErrorStatusPB());
+    if (!err->ParseFromArray(r.data(), r.size())) {
       SetFailed(Status::IOError("Was an RPC error but could not parse error response",
-                                err.InitializationErrorString()));
+                                err->InitializationErrorString()));
       return;
     }
-
-    SetFailed(Status::RemoteError(err.message()));
+    ErrorStatusPB* err_raw = err.release();
+    SetFailed(Status::RemoteError(err_raw->message()), err_raw);
   }
 }
 
@@ -179,10 +185,17 @@ void OutboundCall::SetSent() {
   // deletes the RpcController.
 }
 
-void OutboundCall::SetFailed(const Status &status) {
+void OutboundCall::SetFailed(const Status &status,
+                             ErrorStatusPB* err_pb) {
   {
     boost::lock_guard<simple_spinlock> l(lock_);
     status_ = status;
+    if (status_.IsRemoteError()) {
+      CHECK(err_pb);
+      error_pb_.reset(err_pb);
+    } else {
+      CHECK(!err_pb);
+    }
     set_state_unlocked(FINISHED_ERROR);
   }
   CallCallback();

@@ -8,6 +8,8 @@
 #include "util/hdr_histogram.h"
 #include "util/metrics.h"
 
+using google::protobuf::MessageLite;
+
 namespace kudu {
 namespace rpc {
 
@@ -34,6 +36,12 @@ void RpcContext::RespondFailure(const Status &status) {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
   call_->RespondFailure(status);
   delete this;
+}
+
+void RpcContext::RespondApplicationError(int error_ext_id, const std::string& message,
+                                         const MessageLite& app_error_pb) {
+  call_->RecordHandlingCompleted(metrics_.handler_latency);
+  call_->RespondApplicationError(error_ext_id, message, app_error_pb);
 }
 
 const UserCredentials& RpcContext::user_credentials() const {

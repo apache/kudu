@@ -39,6 +39,13 @@ Status RpcController::status() const {
   return Status::OK();
 }
 
+const ErrorStatusPB* RpcController::error_response() const {
+  if (call_) {
+    return call_->error_pb();
+  }
+  return NULL;
+}
+
 void RpcController::set_timeout(const MonoDelta &timeout) {
   boost::lock_guard<simple_spinlock> l(lock_);
   DCHECK(!call_ || call_->state() == OutboundCall::READY);

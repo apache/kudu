@@ -11,6 +11,7 @@
 #include "util/metrics.h"
 #include "util/trace.h"
 
+using google::protobuf::FieldDescriptor;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::io::CodedOutputStream;
@@ -36,29 +37,47 @@ Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
 }
 
 void InboundCall::RespondSuccess(const MessageLite& response) {
-  Status s = SerializeResponseBuffer(response, true);
-  if (PREDICT_FALSE(!s.ok())) {
-    // TODO: test error case, serialize error response instead
-    LOG(DFATAL) << "Unable to serialize " << response.GetTypeName()
-                << " response: " << s.ToString();
-  }
-
-  trace_->Message("Queueing success response");
-  LogIfSlow();
-  conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
+  Respond(response, true);
 }
 
 void InboundCall::RespondFailure(const Status& status) {
   ErrorStatusPB err;
   err.set_message(status.ToString());
 
-  Status s = SerializeResponseBuffer(err, false);
+  Respond(err, false);
+}
+
+void InboundCall::RespondApplicationError(int error_ext_id, const std::string& message,
+                                          const MessageLite& app_error_pb) {
+  ErrorStatusPB err;
+  err.set_message(message);
+
+  const FieldDescriptor* app_error_field =
+    err.GetReflection()->FindKnownExtensionByNumber(error_ext_id);
+  if (app_error_field != NULL) {
+    err.GetReflection()->MutableMessage(&err, app_error_field)->CheckTypeAndMergeFrom(app_error_pb);
+  } else {
+    LOG(DFATAL) << "Unable to find application error extension ID " << error_ext_id
+                << " (message=" << message << ")";
+  }
+
+  Respond(err, false);
+}
+
+void InboundCall::Respond(const MessageLite& response,
+                          bool is_success) {
+  Status s = SerializeResponseBuffer(response, is_success);
   if (PREDICT_FALSE(!s.ok())) {
     // TODO: test error case, serialize error response instead
     LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
   }
 
-  trace_->Message("Queueing failure response");
+  if (is_success) {
+    trace_->Message("Queueing success response");
+  } else {
+    trace_->Message("Queueing failure response");
+  }
+
   LogIfSlow();
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
 }

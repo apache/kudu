@@ -11,6 +11,7 @@
 namespace google {
 namespace protobuf {
 class Message;
+class MessageLite;
 } // namespace protobuf
 } // namespace google
 
@@ -55,13 +56,51 @@ class RpcContext {
   // and response protobufs are also destroyed.
   void RespondSuccess();
 
-  // Respond with an error to the client. This should not be used for general
-  // application errors, but instead only for unexpected cases where the
-  // client code shouldn't be expected to interpret the error.
+  // Respond with an error to the client. This sends back an error with the code
+  // ERROR_APPLICATION. Because there is no more specific error code passed back
+  // to the client, most applications should create a custom error PB extension
+  // and use RespondApplicationError(...) below. This method should only be used
+  // for unexpected errors where the server doesn't expect the client to do any
+  // more advanced handling.
   //
   // After this method returns, this RpcContext object is destroyed. The request
   // and response protobufs are also destroyed.
   void RespondFailure(const Status &status);
+
+  // Respond with an application-level error. This causes the caller to get a
+  // RemoteError status with the provided string message. Additionally, a
+  // service-specific error extension is passed back to the client. The
+  // extension must be registered with the ErrorStatusPB protobuf. For
+  // example:
+  //
+  //   message MyServiceError {
+  //     extend kudu.rpc.ErrorStatusPB {
+  //       optional MyServiceError my_service_error_ext = 101;
+  //     }
+  //     // Add any extra fields or status codes you want to pass back to
+  //     // the client here.
+  //     required string extra_error_data = 1;
+  //   }
+  //
+  // NOTE: the numeric '101' above must be an integer greater than 101
+  // and must be unique across your code base.
+  //
+  // Given the above definition in your service protobuf file, you would
+  // use this method like:
+  //
+  //   MyServiceError err;
+  //   err.set_extra_error_data("foo bar");
+  //   ctx->RespondApplicationError(MyServiceError::my_service_error_ext.number(),
+  //                                "Some error occurred", err);
+  //
+  // The client side may then retreieve the error by calling:
+  //   const MyServiceError& err_details =
+  //     controller->error_response()->GetExtension(MyServiceError::my_service_error_ext);
+  //
+  // After this method returns, this RpcContext object is destroyed. The request
+  // and response protobufs are also destroyed.
+  void RespondApplicationError(int error_ext_id, const std::string& message,
+                               const google::protobuf::MessageLite& app_error_pb);
 
   // Return the credentials of the remote user who made this call.
   const UserCredentials& user_credentials() const;
