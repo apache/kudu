@@ -19,6 +19,7 @@
 #include "tserver/ts_tablet_manager.h"
 #include "twitter-demo/twitter-schema.h"
 #include "benchmarks/tpch/tpch-schemas.h"
+#include "benchmarks/ycsb-schema.h"
 #include "util/env.h"
 #include "util/logging.h"
 
@@ -32,6 +33,7 @@ using kudu::tserver::TabletServer;
 
 static const char* const kTwitterTabletId = "twitter";
 static const char* const kTPCH1TabletId = "tpch1";
+static const char* const kYCSBTabletId = "ycsb";
 static const char* const kQuorumFlagFormat =
   "Malformed \"tablet_quorum_for_demo\" flag. "
   "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
@@ -171,6 +173,8 @@ static int TabletServerMain(int argc, char** argv) {
     schema = twitter_demo::CreateTwitterSchema();
   } else if (id == kTPCH1TabletId) {
     schema = tpch::CreateLineItemSchema();
+  } else if (id == kYCSBTabletId) {
+    schema = kudu::CreateYCSBSchema();
   } else {
     LOG(FATAL) << "Unknown tablet_server_tablet_id: " << id;
   }
