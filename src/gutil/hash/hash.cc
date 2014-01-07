@@ -36,10 +36,6 @@ static inline uint32 char2unsigned(char c) {
   return static_cast<uint32>(static_cast<unsigned char>(c));
 }
 
-static inline uint64 char2unsigned64(char c) {
-  return static_cast<uint64>(static_cast<unsigned char>(c));
-}
-
 uint64 FingerprintReferenceImplementation(const char *s, uint32 len) {
   uint32 hi = Hash32StringWithSeed(s, len, kFingerprintSeed0);
   uint32 lo = Hash32StringWithSeed(s, len, kFingerprintSeed1);

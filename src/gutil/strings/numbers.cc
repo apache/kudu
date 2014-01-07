@@ -866,10 +866,6 @@ char *FastInt64ToBuffer(int64 i, char* buffer) {
   return buffer;
 }
 
-// Offset into buffer where FastInt32ToBuffer places the end of string
-// null character.  Also used by FastInt32ToBufferLeft
-static const int kFastInt32ToBufferOffset = 11;
-
 char *FastInt32ToBuffer(int32 i, char* buffer) {
   FastInt32ToBufferLeft(i, buffer);
   return buffer;
@@ -911,13 +907,6 @@ char *FastHex32ToBuffer(uint32 value, char* buffer) {
 // Several converters use this table to reduce
 // division and modulo operations.
 extern const char two_ASCII_digits[100][2];  // from strutil.cc
-
-static inline void PutTwoDigits(int i, char* p) {
-  DCHECK_GE(i, 0);
-  DCHECK_LT(i, 100);
-  p[0] = two_ASCII_digits[i][0];
-  p[1] = two_ASCII_digits[i][1];
-}
 
 // ----------------------------------------------------------------------
 // FastInt32ToBufferLeft()
