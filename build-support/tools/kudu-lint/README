@@ -29,5 +29,5 @@ Running
 In the top-level kudu source directory, run:
 
 $ cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
-$ find src -name \*.cc | xargs -n1 -P8 ./build-support/tools/clang-test/clang-test \
+$ find src -name \*.cc | xargs -n1 -P8 ./build-support/tools/kudu-lint/kudu-lint \
     -p . -extra-arg=-I$CLANG_ROOT/lib/clang/3.4/include

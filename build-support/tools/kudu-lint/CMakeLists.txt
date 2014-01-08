@@ -50,4 +50,4 @@ target_link_libraries(kudu-lint
 # Disable RTTI since we have to inherit from Clang-provided classes,
 # and Clang does not enable RTTI.
 set_target_properties(kudu-lint PROPERTIES
-    COMPILE_FLAGS "${LLVM_CFLAGS} -fno-rtti")
+    COMPILE_FLAGS "${LLVM_CFLAGS} -fno-rtti -g")

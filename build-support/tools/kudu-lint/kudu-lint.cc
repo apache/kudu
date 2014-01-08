@@ -32,12 +32,13 @@ using clang::CharSourceRange;
 using clang::ClassTemplateSpecializationDecl;
 using clang::Decl;
 using clang::DiagnosticsEngine;
-using clang::Expr;
+using clang::Stmt;
 using clang::FixItHint;
 using clang::SourceLocation;
 using clang::SourceRange;
 using clang::Stmt;
 using clang::TextDiagnostic;
+using std::string;
 
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 static cl::extrahelp MoreHelp(
@@ -74,27 +75,41 @@ namespace {
 
 // Callback for unused statuses. Simply reports the error at the point where the
 // expression was found.
-class UnusedStatusMatcher : public MatchFinder::MatchCallback {
+template<class NODETYPE>
+class ErrorPrinter : public MatchFinder::MatchCallback {
  public:
+  ErrorPrinter(const std::string& error_msg,
+               const std::string& bound_name,
+               bool skip_system_headers)
+    : error_msg_(error_msg),
+      bound_name_(bound_name),
+      skip_system_headers_(skip_system_headers) {
+  }
+
   virtual void run(const MatchFinder::MatchResult& result) {
-    const Expr* expr;
-    if ((expr = result.Nodes.getNodeAs<Expr>("expr"))) {
-      if (gASTDump) {
-        expr->dump();
+    const NODETYPE* node;
+    if ((node = result.Nodes.getNodeAs<NODETYPE>(bound_name_))) {
+      SourceRange r = node->getSourceRange();
+
+      if (skip_system_headers_ && result.SourceManager->isInSystemHeader(r.getBegin())) {
+        return;
       }
 
-      SourceRange r = expr->getSourceRange();
+      if (gASTDump) {
+        node->dump();
+      }
+
       if (r.isValid()) {
         TextDiagnostic td(llvm::outs(), result.Context->getLangOpts(),
                           &result.Context->getDiagnostics().getDiagnosticOptions());
         td.emitDiagnostic(r.getBegin(), DiagnosticsEngine::Error,
-                          "Found unused Status",
+                          error_msg_,
                           ArrayRef<CharSourceRange>(CharSourceRange::getTokenRange(r)),
                           ArrayRef<FixItHint>(), result.SourceManager);
       }
 
       SourceLocation instantiation_point;
-      if (FindInstantiationPoint(result, expr, &instantiation_point)) {
+      if (FindInstantiationPoint(result, node, &instantiation_point)) {
         TextDiagnostic td(llvm::outs(), result.Context->getLangOpts(),
                           &result.Context->getDiagnostics().getDiagnosticOptions());
         td.emitDiagnostic(instantiation_point, DiagnosticsEngine::Note,
@@ -116,18 +131,19 @@ class UnusedStatusMatcher : public MatchFinder::MatchCallback {
     return true;
   }
 
-  // If the AST node 'expr' has an ancestor which is a template instantiation,
+  // If the AST node 'node' has an ancestor which is a template instantiation,
   // fill the source location of that instantiation into 'loc'. Unfortunately,
   // Clang doesn't retain enough information in the AST nodes to recurse here --
   // so in many cases this is useless, since the instantiation point will simply
   // be inside another instantiated template.
-  bool FindInstantiationPoint(const MatchFinder::MatchResult& result, const Expr* expr,
+  bool FindInstantiationPoint(const MatchFinder::MatchResult& result,
+                              const NODETYPE* node,
                               SourceLocation* loc) {
-    DynTypedNode node = DynTypedNode::create<Expr>(*expr);
+    DynTypedNode dyn_node = DynTypedNode::create<NODETYPE>(*node);
 
     // Recurse up the tree.
     while (true) {
-      if (const ClassTemplateSpecializationDecl* D = node.get<ClassTemplateSpecializationDecl>()) {
+      if (const ClassTemplateSpecializationDecl* D = dyn_node.get<ClassTemplateSpecializationDecl>()) {
         *loc = D->getPointOfInstantiation();
         return true;
       }
@@ -135,12 +151,16 @@ class UnusedStatusMatcher : public MatchFinder::MatchCallback {
       // one seen so far.
 
       DynTypedNode parent;
-      if (!GetParent(result.Context, node, &parent)) {
+      if (!GetParent(result.Context, dyn_node, &parent)) {
         return false;
       }
-      node = parent;
+      dyn_node = parent;
     }
   }
+
+  string error_msg_;
+  string bound_name_;
+  bool skip_system_headers_;
 };
 
 // Inserts arguments before or after the usual command line arguments.
@@ -197,11 +217,21 @@ int main(int argc, const char **argv) {
   //
   // For more information on AST matchers, refer to:
   // http://clang.llvm.org/docs/LibASTMatchersReference.html
-  StatementMatcher ignoredStatusMatcher =
+  StatementMatcher ignored_status_matcher =
     expr(hasType(recordDecl(hasName("Status"))),
          hasParent(compoundStmt())).bind("expr");
+  ErrorPrinter<Stmt> ignored_status_printer("Unused status result", "expr", false);
+
+  // Match class members which are reference-typed. This is confusing since they
+  // tend to "look like" copied values, but in fact often reference external
+  // entities passed in in the constructor.
+  DeclarationMatcher ref_member_matcher =
+    fieldDecl(hasType(referenceType()))
+    .bind("decl");
+  ErrorPrinter<Decl> ref_member_printer("Reference-typed member", "decl", true);
+
   MatchFinder finder;
-  UnusedStatusMatcher printer;
-  finder.addMatcher(ignoredStatusMatcher, &printer);
+  finder.addMatcher(ignored_status_matcher, &ignored_status_printer);
+  finder.addMatcher(ref_member_matcher, &ref_member_printer);
   return Tool.run(newFrontendActionFactory(&finder));
 }
