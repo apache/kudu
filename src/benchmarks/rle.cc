@@ -7,23 +7,25 @@
 //
 
 #include <glog/logging.h>
+#include <gflags/gflags.h>
 
 #include "gutil/mathlimits.h"
 #include "util/bit-stream-utils.h"
 #include "util/rle-encoding.h"
 #include "util/stopwatch.h"
 
+DEFINE_int32(bitstream_num_bytes, 1 * 1024 * 1024,
+             "Number of bytes worth of bits to write and read from the bitstream");
+
 namespace kudu {
 
 // Measure writing and reading single-bit streams
 void BooleanBitStream() {
-  const int num_iters = 1024 * 1024;
-
-  faststring buffer(1024 * 1024);
+  faststring buffer(FLAGS_bitstream_num_bytes);
   BitWriter writer(&buffer);
 
   // Write alternating strings of repeating 0's and 1's
-  for (int i = 0; i < num_iters; ++i) {
+  for (int i = 0; i < FLAGS_bitstream_num_bytes; ++i) {
     writer.PutValue(i % 2, 1);
     writer.PutValue(i % 2, 1);
     writer.PutValue(i % 2, 1);
@@ -38,7 +40,7 @@ void BooleanBitStream() {
   LOG(INFO) << "Wrote " << writer.bytes_written() << " bytes";
 
   BitReader reader(buffer.data(), writer.bytes_written());
-  for (int i = 0; i < num_iters; ++i) {
+  for (int i = 0; i < FLAGS_bitstream_num_bytes; ++i) {
     bool val;
     reader.GetValue(1, &val);
     reader.GetValue(1, &val);
