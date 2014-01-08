@@ -6,6 +6,7 @@ add_library(kudu_util
   cache.cc
   coding.cc
   curl_util.cc
+  faststring.cc
   group_varint.cc
   hdr_histogram.cc
   jsonwriter.cc

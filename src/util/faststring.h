@@ -77,33 +77,13 @@ class faststring {
   // larger than the newly requested capacity, this is a no-op (i.e. it does not ever free memory)
   void reserve(size_t newcapacity) {
     if (PREDICT_TRUE(newcapacity <= capacity_)) return;
-
-    gscoped_array<uint8_t> newdata(new uint8_t[newcapacity]);
-    if (len_ > 0) {
-      strings::memcpy_inlined(&newdata[0], &data_[0], len_);
-    }
-    capacity_ = newcapacity;
-    if (data_ != initial_data_) {
-      delete[] data_;
-    }
-    data_ = newdata.release();
+    GrowArray(newcapacity);
   }
 
   // Append the given data to the string, resizing capcaity as necessary.
   void append(const void *src_v, size_t count) {
     const uint8_t *src = reinterpret_cast<const uint8_t *>(src_v);
-    if (PREDICT_FALSE(len_ + count > capacity_)) {
-      // Not enough space, need to reserve more.
-      // Don't reserve exactly enough space for the new string -- that makes it
-      // too easy to write perf bugs where you get O(n^2) append.
-      // Instead, alwayhs expand by at least 50%.
-
-      size_t to_reserve = len_ + count;
-      if (len_ + count < len_ * 3 / 2) {
-        to_reserve = len_ *  3 / 2;
-      }
-      reserve(to_reserve);
-    }
+    EnsureRoomForAppend(count);
 
     // appending short values is common enough that this
     // actually helps, according to benchmarks. In theory
@@ -128,7 +108,7 @@ class faststring {
 
   // Append the given character to this string.
   void push_back(const char byte) {
-    reserve(len_ + 1);
+    EnsureRoomForAppend(1);
     data_[len_] = byte;
     len_++;
   }
@@ -180,6 +160,9 @@ class faststring {
 
   // Reset the contents of this string by copying 'len' bytes from 'src'.
   void assign_copy(const uint8_t *src, size_t len) {
+    // Reset length so that the first resize doesn't need to copy the current
+    // contents of the array.
+    len_ = 0;
     resize(len);
     memcpy(data(), src, len);
   }
@@ -223,6 +206,26 @@ class faststring {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(faststring);
+
+  // If necessary, expand the buffer to fit at least 'count' more bytes.
+  // If the array has to be grown, it is grown by at least 50%.
+  void EnsureRoomForAppend(size_t count) {
+    if (PREDICT_TRUE(len_ + count <= capacity_)) {
+      return;
+    }
+
+    // Call the non-inline slow path - this reduces the number of instructions
+    // on the hot path.
+    GrowByAtLeast(count);
+  }
+
+  // The slow path of MakeRoomFor. Grows the buffer by either
+  // 'count' bytes, or 50%, whichever is more.
+  void GrowByAtLeast(size_t count);
+
+  // Grow the array to the given capacity, which must be more than
+  // the current capacity.
+  void GrowArray(size_t newcapacity);
 
   enum {
     kInitialCapacity = 32
