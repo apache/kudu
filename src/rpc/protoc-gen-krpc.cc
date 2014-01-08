@@ -336,8 +336,6 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       const ServiceDescriptor *service = file->service(service_idx);
       subs->PushService(service);
 
-      // TODO: it seems like this is generating FooServiceIf from foo.proto even if
-      // the underlying pb "service" definition has some other name. That's wrong.
       Print(printer, *subs,
         "\n"
         "class $service_name$If : public ::kudu::rpc::ServiceIf {\n"
