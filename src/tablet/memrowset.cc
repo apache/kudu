@@ -241,23 +241,23 @@ void MemRowSet::SlowMutators() {
   }
 }
 
-MemRowSet::Iterator *MemRowSet::NewIterator(const Schema &projection,
-                                          const MvccSnapshot &snap) const {
+MemRowSet::Iterator *MemRowSet::NewIterator(const Schema *projection,
+                                            const MvccSnapshot &snap) const {
   return new MemRowSet::Iterator(shared_from_this(), tree_.NewIterator(),
                                 projection, snap);
 }
 
 MemRowSet::Iterator *MemRowSet::NewIterator() const {
   // TODO: can we kill this function? should be only used by tests?
-  return NewIterator(schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  return NewIterator(&schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 }
 
-RowwiseIterator *MemRowSet::NewRowIterator(const Schema &projection,
+RowwiseIterator *MemRowSet::NewRowIterator(const Schema *projection,
                                            const MvccSnapshot &snap) const {
   return NewIterator(projection, snap);
 }
 
-CompactionInput *MemRowSet::NewCompactionInput(const Schema& projection,
+CompactionInput *MemRowSet::NewCompactionInput(const Schema* projection,
                                                const MvccSnapshot &snap) const  {
   return CompactionInput::Create(*this, projection, snap);
 }

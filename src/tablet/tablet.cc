@@ -343,7 +343,7 @@ Status Tablet::MutateRow(WriteTransactionContext *tx_ctx,
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
   //       One is the RPC side, the other is this method that should be renamed MutateForTesting()
   DCHECK(!update_schema.has_column_ids());
-  DeltaProjector delta_projector(update_schema, schema_);
+  DeltaProjector delta_projector(&update_schema, &schema_);
   if (!delta_projector.is_identity()) {
     RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(update_schema));
     RETURN_NOT_OK(update_schema.GetProjectionMapping(schema_, &delta_projector));
@@ -805,7 +805,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostTakeMvccSnapshot());
 
   shared_ptr<CompactionInput> merge;
-  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema, &merge));
+  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, &schema, &merge));
 
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
                                compaction_policy_->target_rowset_size());
@@ -897,7 +897,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   {
     boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-    RETURN_NOT_OK(input.CreateCompactionInput(snap2, schema_, &merge));
+    RETURN_NOT_OK(input.CreateCompactionInput(snap2, &schema_, &merge));
   }
 
   // Updating rows in the compaction outputs needs to be tracked or else we
@@ -988,7 +988,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
 }
 
 Status Tablet::CaptureConsistentIterators(
-  const Schema &projection,
+  const Schema *projection,
   const MvccSnapshot &snap,
   const ScanSpec *spec,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
@@ -1158,7 +1158,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
     encoder_.EncodeRangePredicates(spec);
   }
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
-      projection_, snap_, spec, &iters));
+      &projection_, snap_, spec, &iters));
   iter_.reset(new UnionIterator(iters));
   RETURN_NOT_OK(iter_->Init(spec));
   return Status::OK();

@@ -101,8 +101,8 @@ class DeltaFileReader : public DeltaStore {
                      gscoped_ptr<DeltaFileReader> *reader_out);
 
   // See DeltaStore::NewDeltaIterator(...)
-  virtual DeltaIterator *NewDeltaIterator(const Schema &projection,
-                                          const MvccSnapshot &snap) const;
+  virtual DeltaIterator *NewDeltaIterator(const Schema *projection,
+                                          const MvccSnapshot &snap) const OVERRIDE;
 
   // See DeltaStore::CheckRowDeleted
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
@@ -210,7 +210,9 @@ class DeltaFileIterator : public DeltaIterator {
   };
 
 
-  DeltaFileIterator(const DeltaFileReader *dfr, const Schema &projection,
+  // The passed 'projection' and 'dfr' must remain valid for the lifetime
+  // of the iterator.
+  DeltaFileIterator(const DeltaFileReader *dfr, const Schema *projection,
                     const MvccSnapshot &snap);
 
 

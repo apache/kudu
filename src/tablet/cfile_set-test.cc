@@ -60,7 +60,7 @@ class TestCFileSet : public KuduRowSetTest {
                        boost::optional<uint32_t> lower,
                        boost::optional<uint32_t> upper) {
     // Create iterator.
-    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_));
+    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
     gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 
     // Create a scan with a range predicate on the key column.
@@ -103,7 +103,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
   ASSERT_STATUS_OK(fileset->Open());
 
-  gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_));
+  gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_));
   ASSERT_STATUS_OK(iter->Init(NULL));
 
   Arena arena(4096, 1024*1024);
@@ -188,7 +188,7 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
 
   Schema new_schema;
   ASSERT_STATUS_OK(schema_.CreatePartialSchema(sparse_cols, NULL, &new_schema));
-  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(new_schema));
+  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 
   ASSERT_STATUS_OK(iter->Init(NULL));
@@ -220,7 +220,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   ASSERT_STATUS_OK(fileset->Open());
 
   // Create iterator.
-  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_));
+  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
   RangePredicateEncoder encoder(schema_.CreateKeyProjection());
 

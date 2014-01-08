@@ -928,8 +928,12 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
                             &mutates_schema,
                             &row_key_block));
 
-
-  DeltaProjector delta_projector(mutates_schema, tablet_->schema());
+  // TODO(perf): we're copying the schema here for every update which is
+  // overkill. But schema_ptr() will throw an assertion since we don't
+  // hold the component lock here. Perhaps we should take the component lock
+  // even though we don't strictly need it for concurrency control.
+  Schema tablet_schema = tablet_->schema();
+  DeltaProjector delta_projector(&mutates_schema, &tablet_schema);
   if (!delta_projector.is_identity()) {
     RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(mutates_schema));
     RETURN_NOT_OK(mutates_schema.GetProjectionMapping(tablet_->schema(), &delta_projector));

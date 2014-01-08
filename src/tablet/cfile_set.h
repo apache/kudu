@@ -46,7 +46,10 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   Status Open();
 
-  virtual Iterator *NewIterator(const Schema &projection) const;
+  // Create an iterator with the given projection. 'projection' must remain valid
+  // for the lifetime of the returned iterator.
+  virtual Iterator *NewIterator(const Schema *projection) const;
+
   Status CountRows(rowid_t *count) const;
 
   // See RowSet::GetBounds
@@ -134,7 +137,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   }
 
   const Schema &schema() const {
-    return projection_;
+    return *projection_;
   }
 
   // Collect the IO statistics for each of the underlying columns.
@@ -145,8 +148,9 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   FRIEND_TEST(TestCFileSet, TestRangeScan);
   friend class CFileSet;
 
+  // 'projection' must remain valid for the lifetime of this object.
   Iterator(const shared_ptr<CFileSet const> &base_data,
-           const Schema &projection)
+           const Schema *projection)
     : base_data_(base_data),
       projection_(projection),
       initted_(false),
@@ -167,7 +171,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   Status PrepareColumn(size_t col_idx);
 
   const shared_ptr<CFileSet const> base_data_;
-  const Schema projection_;
+  const Schema* projection_;
 
   // Iterator for the key column in the underlying data.
   gscoped_ptr<CFileIterator> key_iter_;

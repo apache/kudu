@@ -61,8 +61,8 @@ class DeltaMemStore : public DeltaStore,
   // 'snapshot' determines which updates will be applied -- updates which come
   // from transactions which were not yet committed at the time the snapshot was
   // created will be ignored.
-  DeltaIterator *NewDeltaIterator(const Schema &projection,
-                                  const MvccSnapshot &snapshot) const;
+  virtual DeltaIterator *NewDeltaIterator(const Schema *projection,
+                                          const MvccSnapshot &snapshot) const OVERRIDE;
 
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 
@@ -141,7 +141,9 @@ class DMSIterator : public DeltaIterator {
   // Initialize the iterator.
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
-  DMSIterator(const shared_ptr<const DeltaMemStore> &dms, const Schema &projection,
+  // The pointer must also remain valid for the lifetime of the iterator.
+  DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
+              const Schema *projection,
               const MvccSnapshot &snapshot);
 
 

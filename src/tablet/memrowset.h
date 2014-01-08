@@ -231,16 +231,16 @@ class MemRowSet : public RowSet,
   //
   // TODO: clarify the consistency of this iterator in the method doc
   Iterator *NewIterator() const;
-  Iterator *NewIterator(const Schema &projection,
+  Iterator *NewIterator(const Schema *projection,
                         const MvccSnapshot &snap) const;
 
   // Alias to conform to DiskRowSet interface
-  RowwiseIterator *NewRowIterator(const Schema &projection,
-                                  const MvccSnapshot &snap) const;
+  virtual RowwiseIterator *NewRowIterator(const Schema *projection,
+                                          const MvccSnapshot &snap) const OVERRIDE;
 
   // Create compaction input.
-  CompactionInput *NewCompactionInput(const Schema& projection,
-                                      const MvccSnapshot &snap) const;
+  CompactionInput *NewCompactionInput(const Schema* projection,
+                                      const MvccSnapshot &snap) const OVERRIDE;
 
   // Return the Schema for the rows in this memrowset.
   const Schema &schema() const {
@@ -447,13 +447,13 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   Iterator(const shared_ptr<const MemRowSet> &mrs,
            MemRowSet::MSBTIter *iter,
-           const Schema &projection,
+           const Schema *projection,
            const MvccSnapshot &mvcc_snap)
     : memrowset_(mrs),
       iter_(iter),
       mvcc_snap_(mvcc_snap),
-      projector_(&mrs->schema(), &projection),
-      delta_projector_(mrs->schema(), projection),
+      projector_(&mrs->schema(), projection),
+      delta_projector_(&mrs->schema(), projection),
       prepared_count_(0),
       prepared_idx_in_leaf_(0),
       state_(kUninitialized) {

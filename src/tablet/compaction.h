@@ -28,19 +28,19 @@ class CompactionInput {
   //
   // TODO: can we make the above less messy?
   static CompactionInput *Create(const DiskRowSet &rowset,
-                                 const Schema& projection,
+                                 const Schema* projection,
                                  const MvccSnapshot &snap);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
   static CompactionInput *Create(const MemRowSet &memrowset,
-                                 const Schema& projection,
+                                 const Schema* projection,
                                  const MvccSnapshot &snap);
 
   // Create an input which merges several other compaction inputs. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.
   static CompactionInput *Merge(const vector<shared_ptr<CompactionInput> > &inputs,
-                                const Schema &schema);
+                                const Schema *schema);
 
   virtual Status Init() = 0;
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) = 0;
@@ -65,7 +65,11 @@ class RowSetsInCompaction {
 
   // Create the appropriate compaction input for this compaction -- either a merge
   // of all the inputs, or the single input if there was only one.
-  Status CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
+  //
+  // 'schema' is the schema for the output of the compaction, and must remain valid
+  // for the lifetime of the returned CompactionInput.
+  Status CreateCompactionInput(const MvccSnapshot &snap,
+                               const Schema* schema,
                                shared_ptr<CompactionInput> *out) const;
 
   // Dump a log message indicating the chosen rowsets.

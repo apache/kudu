@@ -23,11 +23,11 @@ class DeltaCompactionInput {
   // DeltaFileReader reference must be valid for the lifetime the
   // DeltaCompactionInput. The projection is the compaction output schema.
   static Status Open(const DeltaFileReader &reader,
-                     const Schema& projection,
+                     const Schema* projection,
                      gscoped_ptr<DeltaCompactionInput> *input);
 
   static Status Open(const DeltaMemStore &dms,
-                     const Schema& projection,
+                     const Schema* projection,
                      gscoped_ptr<DeltaCompactionInput> *input);
 
   // Create a merging iterator from multiple DeltaCompactionInputs

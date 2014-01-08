@@ -23,7 +23,7 @@ class MemRowSetCompactionInput : public CompactionInput {
  public:
   MemRowSetCompactionInput(const MemRowSet& memrowset,
                            const MvccSnapshot& snap,
-                           const Schema& projection)
+                           const Schema* projection)
     : iter_(memrowset.NewIterator(projection, snap)),
       arena_(32*1024, 128*1024) {
   }
@@ -200,7 +200,7 @@ class MergeCompactionInput : public CompactionInput {
 
  public:
   MergeCompactionInput(const vector<shared_ptr<CompactionInput> > &inputs,
-                       const Schema &schema)
+                       const Schema* schema)
     : schema_(schema) {
     BOOST_FOREACH(const shared_ptr<CompactionInput> &input, inputs) {
       gscoped_ptr<MergeState> state(new MergeState);
@@ -260,7 +260,7 @@ class MergeCompactionInput : public CompactionInput {
           return Status::OK();
         }
 
-        if (smallest_idx < 0 || schema_.Compare(state->next().row, smallest.row) < 0) {
+        if (smallest_idx < 0 || schema_->Compare(state->next().row, smallest.row) < 0) {
           smallest_idx = i;
           smallest = state->next();
         }
@@ -279,7 +279,7 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   virtual const Schema &schema() const {
-    return schema_;
+    return *schema_;
   }
 
  private:
@@ -326,7 +326,7 @@ class MergeCompactionInput : public CompactionInput {
            it != state->dominated.end();
            ++it) {
         MergeState *dominated = *it;
-        if (!state->Dominates(*dominated, schema_)) {
+        if (!state->Dominates(*dominated, *schema_)) {
           states_.push_back(dominated);
           it = state->dominated.erase(it);
           --it;
@@ -362,7 +362,7 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   bool TryInsertIntoDominanceList(MergeState *dominator, MergeState *candidate) {
-    if (dominator->Dominates(*candidate, schema_)) {
+    if (dominator->Dominates(*candidate, *schema_)) {
       dominator->dominated.push_back(candidate);
       return true;
     } else {
@@ -370,7 +370,7 @@ class MergeCompactionInput : public CompactionInput {
     }
   }
 
-  const Schema schema_;
+  const Schema* schema_;
   vector<MergeState *> states_;
 };
 
@@ -379,9 +379,9 @@ class MergeCompactionInput : public CompactionInput {
 ////////////////////////////////////////////////////////////
 
 CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
-                                         const Schema& projection,
+                                         const Schema* projection,
                                          const MvccSnapshot &snap) {
-  CHECK(projection.has_column_ids());
+  CHECK(projection->has_column_ids());
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
   shared_ptr<DeltaIterator> deltas(rowset.delta_tracker_->NewDeltaIterator(projection, snap));
@@ -390,22 +390,23 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
 }
 
 CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
-                                         const Schema& projection,
+                                         const Schema* projection,
                                          const MvccSnapshot &snap) {
-  CHECK(projection.has_column_ids());
+  CHECK(projection->has_column_ids());
   return new MemRowSetCompactionInput(memrowset, snap, projection);
 }
 
 CompactionInput *CompactionInput::Merge(const vector<shared_ptr<CompactionInput> > &inputs,
-                                        const Schema &schema) {
-  CHECK(schema.has_column_ids());
+                                        const Schema* schema) {
+  CHECK(schema->has_column_ids());
   return new MergeCompactionInput(inputs, schema);
 }
 
 
-Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap, const Schema &schema,
-                                                 shared_ptr<CompactionInput> *out) const {
-  CHECK(schema.has_column_ids());
+Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
+                                                  const Schema* schema,
+                                                  shared_ptr<CompactionInput> *out) const {
+  CHECK(schema->has_column_ids());
 
   vector<shared_ptr<CompactionInput> > inputs;
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {

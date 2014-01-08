@@ -226,11 +226,11 @@ class DiskRowSet : public RowSet {
   ////////////////////
   // Read functions.
   ////////////////////
-  RowwiseIterator *NewRowIterator(const Schema &projection,
-                                  const MvccSnapshot &snap) const;
+  RowwiseIterator *NewRowIterator(const Schema *projection,
+                                  const MvccSnapshot &snap) const OVERRIDE;
 
-  CompactionInput *NewCompactionInput(const Schema& projection,
-                                      const MvccSnapshot &snap) const;
+  virtual CompactionInput *NewCompactionInput(const Schema* projection,
+                                              const MvccSnapshot &snap) const OVERRIDE;
 
   // Count the number of rows in this rowset.
   Status CountRows(rowid_t *count) const;

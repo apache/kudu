@@ -368,7 +368,7 @@ MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(RowSetColumnUpdater* u
   CHECK(open_);
 
   shared_ptr<DeltaIterator> delta_iter = delta_tracker_->NewDeltaFileIterator(
-      schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions(), last_store_id);
+    &schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions(), last_store_id);
   return new MajorDeltaCompaction(delta_iter, updater);
 }
 
@@ -377,8 +377,8 @@ void DiskRowSet::SetDMSFrom(DiskRowSet* rs) {
   delta_tracker_->SetDMS(rs->delta_tracker()->dms_);
 }
 
-RowwiseIterator *DiskRowSet::NewRowIterator(const Schema &projection,
-                                       const MvccSnapshot &mvcc_snap) const {
+RowwiseIterator *DiskRowSet::NewRowIterator(const Schema *projection,
+                                            const MvccSnapshot &mvcc_snap) const {
   CHECK(open_);
   //boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   // TODO: need to add back some appropriate locking?
@@ -389,7 +389,7 @@ RowwiseIterator *DiskRowSet::NewRowIterator(const Schema &projection,
                                                                 mvcc_snap)));
 }
 
-CompactionInput *DiskRowSet::NewCompactionInput(const Schema& projection,
+CompactionInput *DiskRowSet::NewCompactionInput(const Schema* projection,
                                                 const MvccSnapshot &snap) const  {
   return CompactionInput::Create(*this, projection, snap);
 }
@@ -472,7 +472,7 @@ Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
   gscoped_ptr<CompactionInput> input(
-    NewCompactionInput(schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+    NewCompactionInput(&schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
   return DebugDumpCompactionInput(input.get(), lines);
 }
 

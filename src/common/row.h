@@ -255,21 +255,23 @@ class RowProjector {
 //    These columns are not considered since they cannot be in the delta.
 class DeltaProjector {
  public:
-  // TODO: take and store pointers here, since schemas rarely change and the
-  // copy is expensive.
-  DeltaProjector(const Schema& delta_schema, const Schema& projection)
+  // The delta_schema and projection must remain valid for the lifetime
+  // of the object.
+  DeltaProjector(const Schema* delta_schema, const Schema* projection)
     : delta_schema_(delta_schema), projection_(projection),
-      is_identity_(delta_schema.Equals(projection)) {
+      is_identity_(delta_schema->Equals(*projection)) {
   }
 
   Status Init() {
-    return projection_.GetProjectionMapping(delta_schema_, this);
+    // TODO: doesn't look like this uses the is_identity performance
+    // shortcut
+    return projection_->GetProjectionMapping(*delta_schema_, this);
   }
 
   bool is_identity() const { return is_identity_; }
 
-  const Schema& projection() const { return projection_; }
-  const Schema& delta_schema() const { return delta_schema_; }
+  const Schema& projection() const { return *projection_; }
+  const Schema& delta_schema() const { return *delta_schema_; }
 
   bool get_base_col_from_proj_idx(size_t proj_col_idx, size_t *base_col_idx) const {
     return FindCopy(base_cols_mapping_, proj_col_idx, base_col_idx);
@@ -293,8 +295,8 @@ class DeltaProjector {
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     base_cols_mapping_[proj_col_idx] = base_col_idx;
-    if (delta_schema_.has_column_ids()) {
-      rbase_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
+    if (delta_schema_->has_column_ids()) {
+      rbase_cols_mapping_[delta_schema_->column_id(base_col_idx)] = proj_col_idx;
     } else {
       rbase_cols_mapping_[proj_col_idx] = proj_col_idx;
     }
@@ -303,8 +305,8 @@ class DeltaProjector {
 
   Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
     adapter_cols_mapping_[proj_col_idx] = base_col_idx;
-    if (delta_schema_.has_column_ids()) {
-      radapter_cols_mapping_[delta_schema_.column_id(base_col_idx)] = proj_col_idx;
+    if (delta_schema_->has_column_ids()) {
+      radapter_cols_mapping_[delta_schema_->column_id(base_col_idx)] = proj_col_idx;
     } else {
       radapter_cols_mapping_[proj_col_idx] = proj_col_idx;
     }
@@ -326,8 +328,8 @@ class DeltaProjector {
   std::tr1::unordered_map<size_t, size_t> adapter_cols_mapping_;  // [proj_idx] = base_idx
   std::tr1::unordered_map<size_t, size_t> radapter_cols_mapping_; // [id] = proj_idx
 
-  Schema delta_schema_;
-  Schema projection_;
+  const Schema* delta_schema_;
+  const Schema* projection_;
   bool is_identity_;
 };
 

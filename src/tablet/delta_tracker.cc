@@ -35,7 +35,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   // iterator for greater efficiency.
   static shared_ptr<DeltaIterator> Create(
     const vector<shared_ptr<DeltaStore> > &stores,
-    const Schema &projection,
+    const Schema* projection,
     const MvccSnapshot &snapshot);
 
   ////////////////////////////////////////////////////////////
@@ -142,7 +142,7 @@ string DeltaIteratorMerger::ToString() const {
 
 shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
   const vector<shared_ptr<DeltaStore> > &stores,
-  const Schema &projection,
+  const Schema* projection,
   const MvccSnapshot &snapshot) {
   vector<shared_ptr<DeltaIterator> > delta_iters;
 
@@ -227,7 +227,7 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
     DeltaFileReader *dfr = down_cast<DeltaFileReader *>(delta_store.get());
     LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
     gscoped_ptr<DeltaCompactionInput> dci;
-    RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, schema_, &dci));
+    RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, &schema_, &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
     target_stores->push_back(delta_store);
     target_ids->push_back(delta_store->id());
@@ -337,14 +337,14 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const 
   deltas->push_back(dms_);
 }
 
-shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema &schema,
+shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema* schema,
                                                          const MvccSnapshot &snap) const {
   std::vector<shared_ptr<DeltaStore> > stores;
   CollectStores(&stores);
   return DeltaIteratorMerger::Create(stores, schema, snap);
 }
 
-shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(const Schema& schema,
+shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(const Schema* schema,
                                                              const MvccSnapshot& snap,
                                                              int64_t* last_store_id) const {
   std::vector<shared_ptr<DeltaStore> > stores;
@@ -360,7 +360,7 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(const Schema& schem
 
 ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                                const MvccSnapshot &mvcc_snap) const {
-  return new DeltaApplier(base, NewDeltaIterator(base->schema(), mvcc_snap));
+  return new DeltaApplier(base, NewDeltaIterator(&base->schema(), mvcc_snap));
 }
 
 

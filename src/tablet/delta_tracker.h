@@ -51,12 +51,15 @@ class DeltaTracker {
 
   // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
   // where this has bled around.
-  shared_ptr<DeltaIterator> NewDeltaIterator(const Schema &schema,
-                                                      const MvccSnapshot &snap) const;
+  //
+  // 'schema' is the schema of the rows that are being read by the client.
+  // It must remain valid for the lifetime of the returned iterator.
+  shared_ptr<DeltaIterator> NewDeltaIterator(const Schema *schema,
+                                             const MvccSnapshot &snap) const;
 
   // Like NewDeltaIterator() but only includes file based stores, does not include
   // the DMS.
-  shared_ptr<DeltaIterator> NewDeltaFileIterator(const Schema &schema,
+  shared_ptr<DeltaIterator> NewDeltaFileIterator(const Schema* schema,
                                                  const MvccSnapshot &snap,
                                                  int64_t* last_store_id) const;
 
@@ -148,6 +151,7 @@ class DeltaTracker {
 
   // Creates a merged compaction input and captures the delta stores and delta file ids
   // under compaction.
+  // The compaction input is only valid as long as this DeltaTracker.
   Status MakeCompactionInput(size_t start_idx, size_t end_idx,
                              vector<shared_ptr<DeltaStore > > *target_stores,
                              vector<int64_t> *target_ids,

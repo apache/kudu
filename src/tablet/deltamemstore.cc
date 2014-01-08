@@ -70,7 +70,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
   return Status::OK();
 }
 
-DeltaIterator *DeltaMemStore::NewDeltaIterator(const Schema &projection,
+DeltaIterator *DeltaMemStore::NewDeltaIterator(const Schema *projection,
                                                const MvccSnapshot &snapshot) const {
   return new DMSIterator(shared_from_this(), projection, snapshot);
 }
@@ -133,7 +133,7 @@ void DeltaMemStore::DebugPrint() const {
 ////////////////////////////////////////////////////////////
 
 DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
-                         const Schema &projection,
+                         const Schema *projection,
                          const MvccSnapshot &snapshot)
   : dms_(dms),
     mvcc_snapshot_(snapshot),
@@ -144,7 +144,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
     prepared_(false),
     seeked_(false),
     prepared_buf_(kPreparedBufInitialCapacity),
-    projector_(dms->schema(), projection) {
+    projector_(&dms->schema(), projection) {
 }
 
 Status DMSIterator::Init() {

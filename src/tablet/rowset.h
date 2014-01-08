@@ -58,16 +58,17 @@ class RowSet {
                            MutationResultPB* result) = 0;
 
   // Return a new RowIterator for this rowset, with the given projection.
+  // The projection schema must remain valid for the lifetime of the iterator.
   // The iterator will return rows/updates which were committed as of the time of
   // 'snap'.
   // The returned iterator is not Initted.
-  virtual RowwiseIterator *NewRowIterator(const Schema &projection,
+  virtual RowwiseIterator *NewRowIterator(const Schema *projection,
                                           const MvccSnapshot &snap) const = 0;
 
   // Create the input to be used for a compaction.
   // The provided 'projection' is for the compaction output. Each row
   // will be projected into this Schema.
-  virtual CompactionInput *NewCompactionInput(const Schema& projection,
+  virtual CompactionInput *NewCompactionInput(const Schema* projection,
                                               const MvccSnapshot &snap) const = 0;
 
   // Count the number of rows in this rowset.
@@ -237,11 +238,11 @@ class DuplicatingRowSet : public RowSet {
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                          ProbeStats* stats) const;
 
-  RowwiseIterator *NewRowIterator(const Schema &projection,
-                                  const MvccSnapshot &snap) const;
+  virtual RowwiseIterator *NewRowIterator(const Schema *projection,
+                                          const MvccSnapshot &snap) const OVERRIDE;
 
-  CompactionInput *NewCompactionInput(const Schema& projection,
-                                      const MvccSnapshot &snap) const;
+  virtual CompactionInput *NewCompactionInput(const Schema* projection,
+                                              const MvccSnapshot &snap) const OVERRIDE;
 
   Status CountRows(rowid_t *count) const;
 

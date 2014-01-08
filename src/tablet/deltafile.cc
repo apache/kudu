@@ -226,7 +226,7 @@ Status DeltaFileReader::ReadDeltaStats() {
   return Status::OK();
 }
 
-DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema &projection,
+DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                                  const MvccSnapshot &snap) const {
   return new DeltaFileIterator(this, projection, snap);
 }
@@ -236,7 +236,7 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
   // TODO: can use an empty schema here? also, would be nice to avoid the
   // allocations, but would probably require some refactoring.
-  gscoped_ptr<DeltaIterator> iter(NewDeltaIterator(schema_, snap_all));
+  gscoped_ptr<DeltaIterator> iter(NewDeltaIterator(&schema_, snap_all));
   RETURN_NOT_OK(iter->Init());
   RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));
   RETURN_NOT_OK(iter->PrepareBatch(1));
@@ -256,11 +256,11 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 ////////////////////////////////////////////////////////////
 
 DeltaFileIterator::DeltaFileIterator(const DeltaFileReader *dfr,
-                                     const Schema &projection,
+                                     const Schema *projection,
                                      const MvccSnapshot &snap) :
   dfr_(dfr),
   cfile_reader_(dfr->cfile_reader()),
-  projector_(dfr->schema(), projection),
+  projector_(&dfr->schema(), projection),
   mvcc_snap_(snap),
   prepared_idx_(0xdeadbeef),
   prepared_count_(0),

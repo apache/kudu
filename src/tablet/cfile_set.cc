@@ -145,7 +145,7 @@ Status CFileSet::NewAdHocIndexIterator(CFileIterator **iter) const {
 }
 
 
-CFileSet::Iterator *CFileSet::NewIterator(const Schema &projection) const {
+CFileSet::Iterator *CFileSet::NewIterator(const Schema *projection) const {
   return new CFileSet::Iterator(shared_from_this(), projection);
 }
 
@@ -234,20 +234,21 @@ Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
 class CFileSetIteratorProjector {
  public:
   // Used by CFileSet::Iterator::Init() to create the ColumnIterators
-  static Status Project(const CFileSet *base_data, const Schema& projection,
+  static Status Project(const CFileSet *base_data, const Schema* projection,
                         ptr_vector<ColumnIterator> *col_iters) {
     CFileSetIteratorProjector projector(base_data, projection, col_iters);
     return projector.Run();
   }
 
  private:
-  CFileSetIteratorProjector(const CFileSet *base_data, const Schema& projection,
+  CFileSetIteratorProjector(const CFileSet *base_data,
+                            const Schema* projection,
                             ptr_vector<ColumnIterator> *col_iters)
     : projection_(projection), base_data_(base_data), col_iters_(col_iters) {
   }
 
   Status Run() {
-    return projection_.GetProjectionMapping(base_data_->schema(), this);
+    return projection_->GetProjectionMapping(base_data_->schema(), this);
   }
 
  private:
@@ -267,7 +268,7 @@ class CFileSetIteratorProjector {
 
   Status ProjectDefaultColumn(size_t proj_col_idx) {
     // Create an iterator with the default column of the projection
-    const ColumnSchema& col_schema = projection_.column(proj_col_idx);
+    const ColumnSchema& col_schema = projection_->column(proj_col_idx);
     col_iters_->push_back(new DefaultColumnValueIterator(
         col_schema.type_info().type(), col_schema.read_default_value()));
     return Status::OK();
@@ -276,7 +277,7 @@ class CFileSetIteratorProjector {
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileSetIteratorProjector);
 
-  const Schema& projection_;
+  const Schema* projection_;
   const CFileSet *base_data_;
   ptr_vector<ColumnIterator> *col_iters_;
 };
@@ -434,7 +435,7 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
   if (n != prepared_count_) {
     return Status::Corruption(
       StringPrintf("Column %zd (%s) didn't yield enough rows at offset %zd: expected "
-                   "%zd but only got %zd", idx, projection_.column(idx).ToString().c_str(),
+                   "%zd but only got %zd", idx, projection_->column(idx).ToString().c_str(),
                    cur_idx_, prepared_count_, n));
   }
 

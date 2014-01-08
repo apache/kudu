@@ -33,12 +33,12 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual RowwiseIterator *NewRowIterator(const Schema &projection,
-                                          const MvccSnapshot &snap) const {
+  virtual RowwiseIterator *NewRowIterator(const Schema* projection,
+                                          const MvccSnapshot &snap) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual CompactionInput *NewCompactionInput(const Schema& projection,
+  virtual CompactionInput *NewCompactionInput(const Schema* projection,
                                               const MvccSnapshot &snap) const {
     LOG(FATAL) << "Unimplemented";
     return NULL;

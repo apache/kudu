@@ -54,8 +54,8 @@ string DuplicatingRowSet::ToString() const {
   return ret;
 }
 
-RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema &projection,
-                                                  const MvccSnapshot &snap) const {
+RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema *projection,
+                                                   const MvccSnapshot &snap) const {
   // Use the original rowset.
   if (old_rowsets_.size() == 1) {
     return old_rowsets_[0]->NewRowIterator(projection, snap);
@@ -72,7 +72,7 @@ RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema &projection,
   }
 }
 
-CompactionInput *DuplicatingRowSet::NewCompactionInput(const Schema& projection,
+CompactionInput *DuplicatingRowSet::NewCompactionInput(const Schema* projection,
                                                        const MvccSnapshot &snap) const  {
   LOG(FATAL) << "duplicating rowsets do not act as compaction input";
   return NULL;

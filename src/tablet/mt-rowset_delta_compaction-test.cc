@@ -85,7 +85,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     Arena arena(1024, 1024*1024);
     RowBlock dst(rs->schema(), 1000, &arena);
     gscoped_ptr<RowwiseIterator> iter;
-    iter.reset(rs->NewRowIterator(rs->schema(),
+    iter.reset(rs->NewRowIterator(&rs->schema(),
                MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_STATUS_OK(iter->Init(NULL));

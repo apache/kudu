@@ -165,7 +165,7 @@ TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
   Schema projection;
   unordered_map<size_t, size_t> old_to_new;
   ASSERT_STATUS_OK(schema_.CreatePartialSchema(cols, &old_to_new, &projection));
-  shared_ptr<CFileSet::Iterator> iter(fileset->NewIterator(projection));
+  shared_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&projection));
 
   ASSERT_STATUS_OK(iter->Init(NULL));
   Arena arena(1024, 1024);
@@ -197,7 +197,7 @@ TEST_F(TestMajorDeltaCompaction, TestRowSetColumnUpdater) {
   fileset.reset(new CFileSet(rowset_meta_out));
   ASSERT_STATUS_OK(fileset->Open());
 
-  iter.reset(fileset->NewIterator(schema_));
+  iter.reset(fileset->NewIterator(&schema_));
   gscoped_ptr<RowwiseIterator> row_iter(new MaterializingIterator(iter));
   ASSERT_STATUS_OK(row_iter->Init(NULL));
 

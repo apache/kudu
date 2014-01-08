@@ -84,7 +84,7 @@ class TestDeltaFile : public ::testing::Test {
     ASSERT_EQ(FLAGS_last_row_to_update / 2, reader->delta_stats().update_count(0));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));
+    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(&schema_, snap));
     ASSERT_STATUS_OK(it->Init());
 
     RowBlock block(schema_, 100, &arena_);
@@ -151,7 +151,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(schema_, snap));
+    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(&schema_, snap));
     ASSERT_STATUS_OK(it->Init());
     ASSERT_STATUS_OK(it->SeekToOrdinal(0));
 

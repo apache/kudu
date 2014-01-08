@@ -57,7 +57,7 @@ class TestDeltaMemStore : public KuduTest {
     Schema single_col_projection(boost::assign::list_of(col_schema), 0);
 
     gscoped_ptr<DeltaIterator> iter(
-      dms_->NewDeltaIterator(single_col_projection, snapshot));
+      dms_->NewDeltaIterator(&single_col_projection, snapshot));
     ASSERT_STATUS_OK(iter->Init());
     ASSERT_STATUS_OK(iter->SeekToOrdinal(row_idx));
     ASSERT_STATUS_OK(iter->PrepareBatch(cb->nrows()));
@@ -291,7 +291,8 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   // TODO: test snapshot reads from different points
   MvccSnapshot snap(mvcc_);
   ScopedColumnBlock<UINT32> block(100);
-  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(dms_->NewDeltaIterator(schema_, snap)));
+  gscoped_ptr<DMSIterator> iter(
+    down_cast<DMSIterator *>(dms_->NewDeltaIterator(&schema_, snap)));
   ASSERT_STATUS_OK(iter->Init());
 
   int block_start_row = 50;
@@ -333,7 +334,8 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   vector<Mutation *> mutations;
   mutations.resize(kBatchSize);
 
-  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(dms_->NewDeltaIterator(schema_, snap)));
+  gscoped_ptr<DMSIterator> iter(
+    down_cast<DMSIterator *>(dms_->NewDeltaIterator(&schema_, snap)));
   ASSERT_STATUS_OK(iter->Init());
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_STATUS_OK(iter->PrepareBatch(kBatchSize));

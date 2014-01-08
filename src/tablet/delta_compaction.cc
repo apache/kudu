@@ -40,8 +40,8 @@ const size_t kRowsPerBlock = 100; // Number of rows per block of columns
 class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
  public:
 
-  explicit DeltaMemStoreCompactionInput(const Schema& schema,
-                                        const Schema& projection,
+  explicit DeltaMemStoreCompactionInput(const Schema* schema,
+                                        const Schema* projection,
                                         const DeltaStats& stats,
                                         gscoped_ptr<DMSTreeIter> iter)
       : stats_(stats),
@@ -115,8 +115,8 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 class DeltaFileCompactionInput : public DeltaCompactionInput {
  public:
 
-  explicit DeltaFileCompactionInput(const Schema& schema,
-                                    const Schema& projection,           \
+  explicit DeltaFileCompactionInput(const Schema* schema,
+                                    const Schema* projection,
                                     const DeltaStats& stats,
                                     gscoped_ptr<CFileIterator> iter)
       : iter_(iter.Pass()),
@@ -546,8 +546,8 @@ MajorDeltaCompaction::MajorDeltaCompaction(const shared_ptr<DeltaIterator>& delt
 Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *deltas_written) {
   CHECK_EQ(state_, kInitialized);
 
-  const Schema& base_schema = rsu_->base_schema();
-  const Schema& partial_schema = rsu_->partial_schema();
+  const Schema* base_schema = &rsu_->base_schema();
+  const Schema* partial_schema = &rsu_->partial_schema();
 
   shared_ptr<CFileSet> cfileset(new CFileSet(rsu_->input_rowset_meta()));
   RETURN_NOT_OK(cfileset->Open());
@@ -555,19 +555,19 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
 
   RETURN_NOT_OK_PREPEND(
       cfileset_iter->Init(NULL),
-      "Unable to open iterator for specified columns (" + partial_schema.ToString() + ")");
+      "Unable to open iterator for specified columns (" + partial_schema->ToString() + ")");
 
   RETURN_NOT_OK(delta_iter_->Init());
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
   Arena arena(32 * 1024, 128 * 1024);
-  RowBlock block(base_schema, kRowsPerBlock, &arena);
+  RowBlock block(*base_schema, kRowsPerBlock, &arena);
 
-  DVLOG(1) << "Applying deltas and flushing for columns (" << partial_schema.ToString() << ")";
+  DVLOG(1) << "Applying deltas and flushing for columns (" << partial_schema->ToString() << ")";
 
   RETURN_NOT_OK(dfw->Start());
 
-  DeltaStats stats(base_schema.num_columns());
+  DeltaStats stats(base_schema->num_columns());
   // Iterate over the rows
   // For each iteration:
   // - apply the deltas for each column
@@ -596,7 +596,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(stats.UpdateStats<false>(base_schema, update),
+      WARN_NOT_OK(stats.UpdateStats<false>(*base_schema, update),
                   "Failed to update stats");
     }
     *deltas_written += out.size();
@@ -608,7 +608,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
   RETURN_NOT_OK(dfw->Finish());
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
-           << partial_schema.ToString()
+           << partial_schema->ToString()
            << ", and flushed the resulting rowsets and a total of "
            << *deltas_written
            << " deltas to disk.";
@@ -640,22 +640,23 @@ Status MajorDeltaCompaction::Compact(shared_ptr<RowSetMetadata>* output,
 }
 
 Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
-                                  const Schema& projection,
+                                  const Schema* projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
-  CHECK(projection.has_column_ids());
+  CHECK(projection->has_column_ids());
   gscoped_ptr<CFileIterator> iter;
   RETURN_NOT_OK(reader.cfile_reader()->NewIterator(&iter));
-  input->reset(new DeltaFileCompactionInput(reader.schema(), projection, reader.delta_stats(),
+  input->reset(new DeltaFileCompactionInput(&reader.schema(), projection,
+                                            reader.delta_stats(),
                                             iter.Pass()));
   return Status::OK();
 }
 
 Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
-                                  const Schema& projection,
+                                  const Schema* projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
-  CHECK(projection.has_column_ids());
+  CHECK(projection->has_column_ids());
   gscoped_ptr<DMSTreeIter> iter(dms.tree().NewIterator());
-  input->reset(new DeltaMemStoreCompactionInput(dms.schema(), projection, dms.delta_stats(),
+  input->reset(new DeltaMemStoreCompactionInput(&dms.schema(), projection, dms.delta_stats(),
                                                 iter.Pass()));
   return Status::OK();
 }

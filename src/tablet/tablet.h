@@ -271,8 +271,9 @@ class Tablet {
   // concurrent modification. They will include all data that was present at the time
   // of creation, and potentially newer data.
   //
-  // The returned iterators are not Init()ed
-  Status CaptureConsistentIterators(const Schema &projection,
+  // The returned iterators are not Init()ed.
+  // 'projection' must remain valid and unchanged for the lifetime of the returned iterators.
+  Status CaptureConsistentIterators(const Schema *projection,
                                     const MvccSnapshot &snap,
                                     const ScanSpec *spec,
                                     vector<shared_ptr<RowwiseIterator> > *iters) const;

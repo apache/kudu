@@ -128,7 +128,9 @@ Status LeaderWriteTransaction::Prepare() {
     }
   }
 
-  DeltaProjector delta_projector(*mutates_client_schema, tablet->schema());
+  // Taking schema_ptr here is safe because we know that the schema won't change,
+  // due to the lock above.
+  DeltaProjector delta_projector(mutates_client_schema.get(), tablet->schema_ptr());
   if (to_mutate.size() > 0 && !delta_projector.is_identity()) {
     Status s = tablet->schema().VerifyProjectionCompatibility(*mutates_client_schema);
     if (!s.ok()) {
