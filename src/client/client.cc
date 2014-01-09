@@ -223,8 +223,8 @@ Insert::~Insert() {}
 
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
-    table_(DCHECK_NOTNULL(table)),
-    data_in_open_(false) {
+    data_in_open_(false),
+    table_(DCHECK_NOTNULL(table)) {
   CHECK(table->is_open()) << "Table not open";
 }
 
