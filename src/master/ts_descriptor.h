@@ -59,6 +59,10 @@ class TSDescriptor {
   // may be mutated at any point if the tablet server re-registers.
   void GetRegistration(TSRegistrationPB* reg) const;
 
+  // Return an RPC proxy to the Tablet Server.
+  Status GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                  std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
+
  private:
   explicit TSDescriptor(const std::string& perm_id);
 
@@ -74,6 +78,8 @@ class TSDescriptor {
   bool has_tablet_report_;
 
   gscoped_ptr<TSRegistrationPB> registration_;
+
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };

@@ -1,11 +1,17 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "common/wire_protocol.h"
 #include "gutil/strings/substitute.h"
 #include "master/ts_descriptor.h"
 #include "master/master.pb.h"
+#include "tserver/tserver_service.proxy.h"
+#include "util/net/net_util.h"
 
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
+
+#include <vector>
 
 namespace kudu {
 namespace master {
@@ -81,6 +87,34 @@ void TSDescriptor::GetRegistration(TSRegistrationPB* reg) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   CHECK(registration_) << "No registration";
   CHECK_NOTNULL(reg)->CopyFrom(*registration_);
+}
+
+Status TSDescriptor::GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                              std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (proxy_ == NULL) {
+    HostPort hostport;
+    vector<Sockaddr> addrs;
+    BOOST_FOREACH(const HostPortPB& addr, registration_->rpc_addresses()) {
+      hostport = HostPort(addr.host(), addr.port());
+      RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
+      if (addrs.size() > 0) break;
+    }
+
+    if (addrs.size() == 0) {
+      return Status::NetworkError("Unable to find the TS address: ", registration_->DebugString());
+    }
+
+    if (addrs.size() > 1) {
+      LOG(WARNING) << "TS address " << hostport.ToString()
+                   << " resolves to " << addrs.size() << " different addresses. Using "
+                   << addrs[0].ToString();
+    }
+
+    proxy_.reset(new tserver::TabletServerServiceProxy(messenger, addrs[0]));
+  }
+  *proxy = proxy_;
+  return Status::OK();
 }
 
 } // namespace master
