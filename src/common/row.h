@@ -178,8 +178,10 @@ class RowProjector {
   // first: is the projection column index, second: is the base_schema  index
   const vector<ProjectionIdxMapping>& adapter_cols_mapping() const { return adapter_cols_mapping_; }
 
-  // Returns the projection indexes of the columns to add with a default value
-  // (columns not present in the base_schema)
+  // Returns the projection indexes of the columns to add with a default value.
+  //
+  // These are columns which are present in 'projection_' but not in 'base_schema',
+  // and for which 'projection' has a default.
   const vector<size_t> projection_defaults() const { return projection_defaults_; }
 
  private:

@@ -4,8 +4,10 @@
 #include <boost/assign/list_of.hpp>
 
 #include "client/partial_row.h"
+#include "common/row.h"
 #include "common/schema.h"
 #include "common/wire_protocol.pb.h"
+#include "util/memory/arena.h"
 #include "util/test_util.h"
 
 namespace kudu {
@@ -165,6 +167,187 @@ TEST_F(PartialRowTest, FuzzTest) {
   DoFuzzTest(row);
   EXPECT_STATUS_OK(row.SetNull("string_val"));
   DoFuzzTest(row);
+}
+
+namespace {
+
+// Project client_row into server_schema, and stringify the result.
+// If an error occurs, the result string is "error: <stringified Status>"
+string TestProjection(const PartialRow& client_row,
+                      const Schema& server_schema) {
+  Arena arena(1024, 1024*1024);
+  vector<uint8_t*> rows;
+  PartialRowsPB pb;
+  client_row.AppendToPB(&pb);
+
+  Status s = PartialRow::DecodeAndProject(pb, *client_row.schema(),
+                                          server_schema, &rows, &arena);
+  if (!s.ok()) {
+    return "error: " + s.ToString();
+  }
+  CHECK_EQ(1, rows.size());
+  return server_schema.DebugRow(ContiguousRow(server_schema, rows[0]));;
+}
+
+} // anonymous namespace
+
+// Test decoding partial rows from a client who has a schema which matches
+// the table schema.
+TEST_F(PartialRowTest, ProjectionTestWholeSchemaSpecified) {
+  Schema client_schema(boost::assign::list_of
+                       (ColumnSchema("key", UINT32))
+                       (ColumnSchema("int_val", UINT32))
+                       (ColumnSchema("string_val", STRING, true)),
+                       1);
+
+  // Test a row missing 'int_val', which is required.
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    EXPECT_EQ("error: Invalid argument: No value provided for required column: "
+              "int_val[uint32 NOT NULL]",
+              TestProjection(client_row, schema_));
+  }
+
+  // Test a row missing 'string_val', which is nullable
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+             CHECK_OK(client_row.SetUInt32("int_val", 54321));
+    // The NULL should get filled in.
+    EXPECT_EQ("(uint32 key=12345, uint32 int_val=54321, string string_val=NULL)",
+              TestProjection(client_row, schema_));
+  }
+
+  // Test a row with all of the fields specified, both with the nullable field
+  // specified to be NULL and non-NULL.
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetUInt32("int_val", 54321));
+    CHECK_OK(client_row.SetStringCopy("string_val", "hello world"));
+    EXPECT_EQ("(uint32 key=12345, uint32 int_val=54321, string string_val=hello world)",
+              TestProjection(client_row, schema_));
+
+    // The first result should have the field specified.
+    // The second result should have the field NULL, since it was explicitly set.
+    CHECK_OK(client_row.SetNull("string_val"));
+    EXPECT_EQ("(uint32 key=12345, uint32 int_val=54321, string string_val=NULL)",
+              TestProjection(client_row, schema_));
+
+  }
+}
+
+TEST_F(PartialRowTest, ProjectionTestWithDefaults) {
+  uint32_t nullable_default = 123;
+  uint32_t non_null_default = 456;
+  Schema server_schema(
+    boost::assign::list_of
+    (ColumnSchema("key", UINT32))
+    (ColumnSchema("nullable_with_default", UINT32, true,
+                  &nullable_default, &nullable_default))
+    (ColumnSchema("non_null_with_default", UINT32, false,
+                  &non_null_default, &non_null_default)),
+    1);
+
+  // Clients may not have the defaults specified.
+  // TODO: evaluate whether this should be true - how "dumb" should clients be?
+  Schema client_schema(
+    boost::assign::list_of
+    (ColumnSchema("key", UINT32))
+    (ColumnSchema("nullable_with_default", UINT32, true))
+    (ColumnSchema("non_null_with_default", UINT32, false)),
+    1);
+
+  // Specify just the key. The other two columns have defaults, so they'll get filled in.
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    EXPECT_EQ("(uint32 key=12345, uint32 nullable_with_default=123,"
+              " uint32 non_null_with_default=456)",
+              TestProjection(client_row, server_schema));
+  }
+
+  // Specify the key and override both defaults
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetUInt32("nullable_with_default", 12345));
+    CHECK_OK(client_row.SetUInt32("non_null_with_default", 54321));
+    EXPECT_EQ("(uint32 key=12345, uint32 nullable_with_default=12345,"
+              " uint32 non_null_with_default=54321)",
+              TestProjection(client_row, server_schema));
+  }
+
+  // Specify the key and override both defaults, overriding the nullable
+  // one to NULL.
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetNull("nullable_with_default"));
+    CHECK_OK(client_row.SetUInt32("non_null_with_default", 54321));
+    EXPECT_EQ("(uint32 key=12345, uint32 nullable_with_default=NULL,"
+              " uint32 non_null_with_default=54321)",
+              TestProjection(client_row, server_schema));
+  }
+}
+
+// Test cases where the client only has a subset of the fields
+// of the table, but where the missing columns have defaults
+// or are NULLable.
+TEST_F(PartialRowTest, ProjectionTestWithClientHavingValidSubset) {
+  uint32_t nullable_default = 123;
+  Schema server_schema(
+    boost::assign::list_of
+    (ColumnSchema("key", UINT32))
+    (ColumnSchema("int_val", UINT32))
+    (ColumnSchema("new_int_with_default", UINT32, false,
+                  &nullable_default, &nullable_default))
+    (ColumnSchema("new_nullable_int", UINT32, true)),
+    1);
+  Schema client_schema(boost::assign::list_of
+                       (ColumnSchema("key", UINT32))
+                       (ColumnSchema("int_val", UINT32)),
+                       1);
+
+  // Specify just the key. This is an error because we're missing int_val.
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    EXPECT_EQ("error: Invalid argument: No value provided for required column:"
+              " int_val[uint32 NOT NULL]",
+              TestProjection(client_row, server_schema));
+  }
+
+  // Specify both of the columns that the client is aware of.
+  // Defaults should be filled for the other two.
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetUInt32("int_val", 12345));
+    EXPECT_EQ("(uint32 key=12345, uint32 int_val=12345,"
+              " uint32 new_int_with_default=123, uint32 new_nullable_int=NULL)",
+              TestProjection(client_row, server_schema));
+  }
+}
+
+// Test cases where the client is missing a column which is non-null
+// and has no default. This is an incompatible client.
+TEST_F(PartialRowTest, ProjectionTestWithClientHavingInvalidSubset) {
+  Schema server_schema(boost::assign::list_of
+                       (ColumnSchema("key", UINT32))
+                       (ColumnSchema("int_val", UINT32)),
+                       1);
+  Schema client_schema(boost::assign::list_of
+                       (ColumnSchema("key", UINT32)),
+                       1);
+  {
+    PartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetUInt32("key", 12345));
+    EXPECT_EQ("error: Invalid argument: Client missing required column:"
+              " int_val[uint32 NOT NULL]",
+              TestProjection(client_row, server_schema));
+  }
 }
 
 } // namespace client

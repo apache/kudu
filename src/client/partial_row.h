@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 #include "common/types.h"
 #include "gutil/macros.h"
@@ -69,6 +70,18 @@ class PartialRow {
   // NOTE: any string fields in this PartialRow will continue to reference
   // the protobuf data, so the protobuf must remain valid.
   Status CopyFromPB(const PartialRowsPB& pb, int offset);
+
+  // Decode the given protobuf, which contains rows according to 'client_schema'.
+  // As they are decoded, they are projected into 'tablet_schema', filling in any
+  // default values, handling NULLs, etc. The resulting rows are pushed onto
+  // '*rows', with their storage allocated from 'dst_arena'.
+  static Status DecodeAndProject(const PartialRowsPB& pb,
+                                 const Schema& client_schema,
+                                 const Schema& tablet_schema,
+                                 std::vector<uint8_t*>* rows,
+                                 Arena* dst_arena);
+
+  const Schema* schema() const { return schema_; }
 
  private:
   template<DataType TYPE>

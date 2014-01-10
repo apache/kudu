@@ -499,13 +499,22 @@ class Schema {
   Status GetMappedReadProjection(const Schema& projection,
                                  Schema *mapped_projection) const;
 
-  // Loops through the projection schema and calls the projector methods:
+  // Loops through this schema (the projection) and calls the projector methods once for
+  // each column.
+  //
   // - Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx)
-  //   called if the column already exists in the base schema.
+  //
+  //     Called if the column in this schema matches one of the columns in 'base_schema'.
+  //     The column type must match exactly.
+  //
   // - Status ProjectDefaultColumn(size_t proj_idx)
-  //   called if the column does not exists in the base schema. In this case
-  //   the (projection) column must have a default or be nullable, otherwise
-  //   Status::InvalidArgument will be returned.
+  //
+  //     Called if the column in this schema does not match any column in 'base_schema',
+  //     but has a default or is nullable. If the column in this schema has no default or is
+  //     not nullable, InvalidArgument will be returned.
+  //
+  // If both schemas have column IDs, then the matching is done by ID. Otherwise, it is
+  // done by name.
   //
   // TODO(MAYBE): Pass the ColumnSchema and not only the column index?
   template <class Projector>
@@ -542,7 +551,7 @@ class Schema {
         bool has_default = col_schema.has_read_default() || col_schema.has_write_default();
         if (!has_default && !col_schema.is_nullable()) {
           return Status::InvalidArgument("The column '" + col_schema.name() +
-                "' does not exists in the projection, and it does not have a "
+                "' does not exist in the projection, and it does not have a "
                 "default value or a nullable type");
         }
 
