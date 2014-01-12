@@ -32,7 +32,7 @@ bool ServiceIf::ParseParam(InboundCall *call, google::protobuf::Message *message
 void ServiceIf::RespondBadMethod(InboundCall *call) {
   string err = StringPrintf("Invalid method: %s",
                             call->method_name().c_str());
-  LOG(WARNING) << err;
+  LOG(WARNING) << err << " from " << call->remote_address().ToString();
   call->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
                        Status::InvalidArgument(err));
 }
