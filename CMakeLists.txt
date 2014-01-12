@@ -380,3 +380,5 @@ add_subdirectory(src/experiments)
 add_subdirectory(src/benchmarks)
 
 add_subdirectory(src/twitter-demo)
+
+add_subdirectory(src/tools)
