@@ -10,8 +10,8 @@
 namespace kudu {
 namespace master {
 
-DEFINE_string(master_base_dir, "/tmp/demo-tablets",
-              "Base directory for single-tablet demo server");
+DEFINE_string(master_base_dir, "/tmp/kudu-master",
+              "Base directory for kudu master server");
 
 DEFINE_string(master_rpc_bind_addresses, "0.0.0.0:7051",
              "Comma-separated list of addresses for the Tablet Server"
