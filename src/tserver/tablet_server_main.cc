@@ -115,39 +115,70 @@ class TemporaryTabletsForDemos {
   DISALLOW_COPY_AND_ASSIGN(TemporaryTabletsForDemos);
 };
 
-static void FlushThread(Tablet* tablet) {
+// Pick the next tablet to perform some maintenance on. This simply round-robins
+// through all the tablets in the server. It may return NULL if there are no
+// tablets.
+static shared_ptr<Tablet> PickATablet(const TSTabletManager* tablet_mgr, int iteration) {
+  vector<shared_ptr<TabletPeer> > peers;
+  tablet_mgr->GetTabletPeers(&peers);
+
+  if (peers.empty()) {
+    return shared_ptr<Tablet>();
+  } else {
+    return peers[iteration % peers.size()]->shared_tablet();
+  }
+}
+
+static void FlushThread(const TSTabletManager* tablet_mgr) {
+  int iter = 0;
   while (true) {
-    if (tablet->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+    shared_ptr<Tablet> tablet = PickATablet(tablet_mgr, iter++);
+    if (!tablet) {
+      VLOG(1) << "Not flushing: no tablets to flush";
+    } else if (tablet->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
       CHECK_OK(tablet->Flush());
     } else {
-      VLOG(1) << "Not flushing, memrowset not very full";
+      VLOG(1) << "Not flushing " << tablet->tablet_id() << ": memrowset not very full";
     }
     usleep(250 * 1000);
   }
 }
 
-static void FlushDeltaMemStoresThread(Tablet* tablet) {
+static void FlushDeltaMemStoresThread(const TSTabletManager* tablet_mgr) {
+  int iter = 0;
   while (true) {
-    if (tablet->DeltaMemStoresSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+    shared_ptr<Tablet> tablet = PickATablet(tablet_mgr, iter++);
+    if (!tablet) {
+      VLOG(1) << "Not flushing deltas: no tablets";
+    } else if (tablet->DeltaMemStoresSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
       CHECK_OK(tablet->FlushBiggestDMS());
     } else {
-      VLOG(1) << "Not flushing, delta MemStores not very full";
+      VLOG(1) << "Not flushing deltas for " << tablet->tablet_id()
+              << ": DeltaMemStores not very full";
     }
     usleep(250 * 1000);
   }
 }
 
-static void CompactThread(Tablet* tablet) {
+static void CompactThread(const TSTabletManager* tablet_mgr) {
+  int iter = 0;
   while (true) {
-    CHECK_OK(tablet->Compact(Tablet::COMPACT_NO_FLAGS));
+    shared_ptr<Tablet> tablet = PickATablet(tablet_mgr, iter++);
+    if (tablet) {
+      CHECK_OK(tablet->Compact(Tablet::COMPACT_NO_FLAGS));
+    }
 
     usleep(3000 * 1000);
   }
 }
 
-static void CompactDeltasThread(Tablet* tablet) {
+static void CompactDeltasThread(const TSTabletManager* tablet_mgr) {
+  int iter = 0;
   while (true) {
-    CHECK_OK(tablet->MinorCompactWorstDeltas());
+    shared_ptr<Tablet> tablet = PickATablet(tablet_mgr, iter++);
+    if (tablet) {
+      CHECK_OK(tablet->MinorCompactWorstDeltas());
+    }
 
     usleep(3000 * 1000);
   }
@@ -185,10 +216,11 @@ static int TabletServerMain(int argc, char** argv) {
   // which tablet to perform operations on. But as a stop-gap, just start these
   // simple threads here from main.
   LOG(INFO) << "Starting flush/compact threads";
-  boost::thread compact_thread(CompactThread, demo_setup.tablet().get());
-  boost::thread compact_deltas_thread(CompactDeltasThread, demo_setup.tablet().get());
-  boost::thread flush_thread(FlushThread, demo_setup.tablet().get());
-  boost::thread flushdm_thread(FlushDeltaMemStoresThread, demo_setup.tablet().get());
+  const TSTabletManager* ts_tablet_manager = server.tablet_manager();
+  boost::thread compact_thread(CompactThread, ts_tablet_manager);
+  boost::thread compact_deltas_thread(CompactDeltasThread, ts_tablet_manager);
+  boost::thread flush_thread(FlushThread, ts_tablet_manager);
+  boost::thread flushdm_thread(FlushDeltaMemStoresThread, ts_tablet_manager);
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());
