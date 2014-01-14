@@ -43,6 +43,7 @@ void RpcContext::RespondApplicationError(int error_ext_id, const std::string& me
                                          const MessageLite& app_error_pb) {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
   call_->RespondApplicationError(error_ext_id, message, app_error_pb);
+  delete this;
 }
 
 const UserCredentials& RpcContext::user_credentials() const {
