@@ -68,6 +68,7 @@ class TypeEncodingResolver {
     AddMapping<INT64, PLAIN>();
     AddMapping<STRING, PREFIX>();
     AddMapping<STRING, PLAIN>();
+    AddMapping<BOOL, RLE>();
     AddMapping<BOOL, PLAIN>();
   }
 

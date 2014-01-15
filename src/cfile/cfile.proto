@@ -7,6 +7,7 @@ enum EncodingType {
   PLAIN = 0;
   PREFIX = 1;
   GROUP_VARINT = 2;
+  RLE = 3;
 }
 
 enum CompressionType {

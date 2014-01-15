@@ -415,6 +415,77 @@ class TestEncoding : public ::testing::Test {
     } while (sbsize > 0);
   }
 
+  // Test encoding and decoding BOOL datatypes
+  template <class BuilderType, class DecoderType>
+  void TestBoolBlockRoundTrip() {
+    const uint32_t kOrdinalPosBase = 12345;
+
+    srand(123);
+
+    std::vector<uint8_t> to_insert;
+    for (int i = 0; i < 10003; ) {
+      int run_size = random() % 100;
+      bool val = random() % 2;
+      for (int j = 0; j < run_size; j++) {
+        to_insert.push_back(val);
+      }
+      i += run_size;
+    }
+
+    BuilderType bb;
+    bb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
+           to_insert.size());
+    Slice s = bb.Finish(kOrdinalPosBase);
+
+    DecoderType bd(s);
+    ASSERT_STATUS_OK(bd.ParseHeader());
+
+    ASSERT_EQ(kOrdinalPosBase, bd.GetFirstRowId());
+
+    std::vector<uint8_t> decoded;
+    decoded.resize(to_insert.size());
+
+    ColumnBlock dst_block(GetTypeInfo(BOOL), NULL,
+                          &decoded[0],
+                          to_insert.size(),
+                          &arena_);
+
+    int dec_count = 0;
+    while (bd.HasNext()) {
+      ASSERT_EQ((uint32_t)(dec_count), bd.GetCurrentIndex());
+
+      size_t to_decode = std::min(to_insert.size() - dec_count,
+                                  static_cast<size_t>((random() % 30) + 1));
+      size_t n = to_decode;
+      ColumnDataView dst_data(&dst_block, dec_count);
+      DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
+      ASSERT_STATUS_OK_FAST(bd.CopyNextValues(&n, &dst_data));
+      ASSERT_GE(to_decode, n);
+      dec_count += n;
+    }
+
+    ASSERT_EQ(dec_count, dst_block.nrows())
+        << "Should have decoded all rows to fill the buffer";
+
+    for (uint i = 0; i < to_insert.size(); i++) {
+      if (to_insert[i] != decoded[i]) {
+        FAIL() << "Fail at index " << i <<
+            " inserted=" << to_insert[i] << " got=" << decoded[i];
+      }
+    }
+
+    // Test Seek within block by ordinal
+    for (int i = 0; i < 100; i++) {
+      int seek_off = random() % decoded.size();
+      bd.SeekToPositionInBlock(seek_off);
+
+      EXPECT_EQ((uint32_t)(seek_off), bd.GetCurrentIndex());
+      bool ret;
+      CopyOne<BOOL>(&bd, &ret);
+      EXPECT_EQ(static_cast<bool>(decoded[seek_off]), ret);
+    }
+  }
+
   Arena arena_;
 };
 
@@ -451,67 +522,11 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
 }
 
 TEST_F(TestEncoding, TestPlainBitMapRoundTrip) {
-  const uint32_t kOrdinalPosBase = 12345;
+  TestBoolBlockRoundTrip<PlainBitMapBlockBuilder, PlainBitMapBlockDecoder>();
+}
 
-  srand(123);
-
-  std::vector<uint8_t> to_insert;
-  for (int i = 0; i < 10003; i++) {
-    to_insert.push_back(random() % 2);
-  }
-
-  PlainBitMapBlockBuilder bb;
-  bb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
-         to_insert.size());
-  Slice s = bb.Finish(kOrdinalPosBase);
-
-  PlainBitMapBlockDecoder bd(s);
-  ASSERT_STATUS_OK(bd.ParseHeader());
-
-  ASSERT_EQ(kOrdinalPosBase, bd.GetFirstRowId());
-
-  std::vector<uint8_t> decoded;
-  decoded.resize(to_insert.size());
-
-  ColumnBlock dst_block(GetTypeInfo(BOOL), NULL,
-                        &decoded[0],
-                        to_insert.size(),
-                        &arena_);
-
-  int dec_count = 0;
-  while (bd.HasNext()) {
-    ASSERT_EQ((uint32_t)(dec_count), bd.GetCurrentIndex());
-
-    size_t to_decode = std::min(to_insert.size() - dec_count,
-                                static_cast<size_t>((random() % 30) + 1));
-    size_t n = to_decode;
-    ColumnDataView dst_data(&dst_block, dec_count);
-    DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
-    ASSERT_STATUS_OK_FAST(bd.CopyNextValues(&n, &dst_data));
-    ASSERT_GE(to_decode, n);
-    dec_count += n;
-  }
-
-   ASSERT_EQ(dec_count, dst_block.nrows())
-    << "Should have decoded all rows to fill the buffer";
-
-  for (uint i = 0; i < to_insert.size(); i++) {
-    if (to_insert[i] != decoded[i]) {
-      FAIL() << "Fail at index " << i <<
-        " inserted=" << to_insert[i] << " got=" << decoded[i];
-    }
-  }
-
-  // Test Seek within block by ordinal
-  for (int i = 0; i < 100; i++) {
-    int seek_off = random() % decoded.size();
-    bd.SeekToPositionInBlock(seek_off);
-
-    EXPECT_EQ((uint32_t)(seek_off), bd.GetCurrentIndex());
-    bool ret;
-    CopyOne<BOOL>(&bd, &ret);
-    EXPECT_EQ(static_cast<bool>(decoded[seek_off]), ret);
-  }
+TEST_F(TestEncoding, TestRleBitMapRoundTrip) {
+  TestBoolBlockRoundTrip<RleBitMapBlockBuilder, RleBitMapBlockDecoder>();
 }
 
 TEST_F(TestEncoding, TestIntBlockRoundTrip) {

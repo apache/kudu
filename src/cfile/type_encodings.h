@@ -4,6 +4,7 @@
 
 #include "cfile/cfile.pb.h"
 #include "cfile/plain_block.h"
+#include "cfile/rle_block.h"
 #include "cfile/string_plain_block.h"
 #include "cfile/string_prefix_block.h"
 #include "cfile/plain_bitmap_block.h"
@@ -100,6 +101,23 @@ struct DataTypeEncodingTraits<BOOL, PLAIN> {
 
   static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice) {
     *bd = new PlainBitMapBlockDecoder(slice);
+    return Status::OK();
+  }
+};
+
+
+// Template specialization for RLE encoded bitmaps
+template<>
+struct DataTypeEncodingTraits<BOOL, RLE> {
+
+  static Status CreateBlockBuilder(BlockBuilder** bb,
+                                   const WriterOptions* /* unused: options */) {
+    *bb = new RleBitMapBlockBuilder();
+    return Status::OK();
+  }
+
+  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice) {
+    *bd = new RleBitMapBlockDecoder(slice);
     return Status::OK();
   }
 };

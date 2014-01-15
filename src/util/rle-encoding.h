@@ -137,6 +137,13 @@ class RleEncoder {
     Clear();
   }
 
+  // Reserve 'num_bytes' bytes for a plain encoded header, set each
+  // byte with 'val': this is used for the RLE-encoded data blocks in
+  // order to be able to able to store the initial ordinal position
+  // and number of elements. This is a part of RleEncoder in order to
+  // maintain the correct offset in 'buffer'.
+  void Reserve(int num_bytes, uint8_t val);
+
   // Encode value. This value must be representable with bit_width_ bits.
   void Put(T value, size_t run_length = 1);
 
@@ -147,7 +154,7 @@ class RleEncoder {
   // Resets all the state in the encoder.
   void Clear();
 
-  int32_t len() { return bit_writer_.bytes_written(); }
+  int32_t len() const { return bit_writer_.bytes_written(); }
 
  private:
   // Flushes any buffered values.  If this is part of a repeated run, this is largely
@@ -431,6 +438,13 @@ inline void RleEncoder<T>::FlushBufferedValues(bool done) {
     FlushLiteralRun(done);
   }
   repeat_count_ = 0;
+}
+
+template<typename T>
+inline void RleEncoder<T>::Reserve(int num_bytes, uint8_t val) {
+  for (int i = 0; i < num_bytes; ++i) {
+    bit_writer_.PutValue(val, 8);
+  }
 }
 
 template<typename T>
