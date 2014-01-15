@@ -9,6 +9,7 @@
 #include "gutil/strings/stringpiece.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "gutil/threading/thread_collision_warner.h"
 #include "util/locks.h"
 
@@ -39,10 +40,9 @@ struct TraceEntry;
 // from a number of threads, and later dumping the results to a stream.
 //
 // This class is thread-safe.
-class Trace {
+class Trace : public base::RefCountedThreadSafe<Trace> {
  public:
   Trace();
-  ~Trace();
 
   // Logs a message into the trace buffer.
   //
@@ -84,7 +84,12 @@ class Trace {
 
  private:
   friend class ScopedAdoptTrace;
+  friend class base::RefCountedThreadSafe<Trace>;
+  ~Trace();
 
+  // The current trace for this thread. Threads should only set this using
+  // using ScopedAdoptTrace, which handles reference counting the underlying
+  // object.
   static __thread Trace* threadlocal_trace_;
 
   // Allocate a new entry from the arena, with enough space to hold a
@@ -115,10 +120,16 @@ class ScopedAdoptTrace {
   explicit ScopedAdoptTrace(Trace* t) :
     old_trace_(Trace::threadlocal_trace_) {
     Trace::threadlocal_trace_ = t;
+    if (t) {
+      t->AddRef();
+    }
     DFAKE_SCOPED_LOCK_THREAD_LOCKED(ctor_dtor_);
   }
 
   ~ScopedAdoptTrace() {
+    if (Trace::threadlocal_trace_) {
+      Trace::threadlocal_trace_->Release();
+    }
     Trace::threadlocal_trace_ = old_trace_;
     DFAKE_SCOPED_LOCK_THREAD_LOCKED(ctor_dtor_);
   }

@@ -64,13 +64,13 @@ TEST(TestThreadPool, TestTracePropagation) {
   ThreadPool thread_pool("test");
   ASSERT_STATUS_OK(thread_pool.Init(1));
 
-  Trace t;
+  scoped_refptr<Trace> t(new Trace);
   {
-    ADOPT_TRACE(&t);
+    ADOPT_TRACE(t.get());
     ASSERT_STATUS_OK(thread_pool.SubmitFunc(&IssueTraceStatement));
   }
   thread_pool.Wait();
-  ASSERT_STR_CONTAINS(t.DumpToString(), "hello from task");
+  ASSERT_STR_CONTAINS(t->DumpToString(), "hello from task");
 }
 
 } // namespace kudu

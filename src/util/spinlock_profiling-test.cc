@@ -13,14 +13,14 @@ namespace kudu {
 class SpinLockProfilingTest : public KuduTest {};
 
 TEST_F(SpinLockProfilingTest, TestSpinlockProfiling) {
-  Trace t;
+  scoped_refptr<Trace> t(new Trace);
   base::SpinLock lock;
   {
-    ADOPT_TRACE(&t);
+    ADOPT_TRACE(t.get());
     gutil::SubmitSpinLockProfileData(&lock, 4000000);
   }
   std::stringstream stream;
-  t.Dump(&stream);
+  t->Dump(&stream);
   string result = stream.str();
   LOG(INFO) << "trace: " << result;
   // We can't assert more specifically because the CyclesPerSecond

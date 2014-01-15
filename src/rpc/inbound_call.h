@@ -11,6 +11,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "rpc/rpc_header.pb.h"
 #include "rpc/transfer.h"
 #include "util/faststring.h"
@@ -152,7 +153,7 @@ class InboundCall {
   faststring response_msg_buf_;
 
   // The trace buffer.
-  gscoped_ptr<Trace> trace_;
+  scoped_refptr<Trace> trace_;
 
   // Timing information related to this RPC call.
   InboundCallTiming timing_;

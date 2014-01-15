@@ -27,36 +27,37 @@ static string XOutDigits(const string& s) {
 }
 
 TEST_F(TraceTest, TestBasic) {
-  Trace t;
-  t.SubstituteAndTrace("hello $0, $1", "world", 12345);
-  t.SubstituteAndTrace("goodbye $0, $1", "cruel world", 54321);
-  t.Message("simple string trace");
+  scoped_refptr<Trace> t(new Trace);
+  t->SubstituteAndTrace("hello $0, $1", "world", 12345);
+  t->SubstituteAndTrace("goodbye $0, $1", "cruel world", 54321);
+  t->Message("simple string trace");
 
-  string result = XOutDigits(t.DumpToString());
+  string result = XOutDigits(t->DumpToString());
   ASSERT_EQ("XXXX XX:XX:XX.XXXXXX hello world, XXXXX\n"
             "XXXX XX:XX:XX.XXXXXX goodbye cruel world, XXXXX\n"
             "XXXX XX:XX:XX.XXXXXX simple string trace\n", result);
 }
 
 TEST_F(TraceTest, TestAttach) {
-  Trace traceA, traceB;
+  scoped_refptr<Trace> traceA(new Trace);
+  scoped_refptr<Trace> traceB(new Trace);
   {
-    ADOPT_TRACE(&traceA);
-    EXPECT_EQ(&traceA, Trace::CurrentTrace());
+    ADOPT_TRACE(traceA.get());
+    EXPECT_EQ(traceA.get(), Trace::CurrentTrace());
     {
-      ADOPT_TRACE(&traceB);
-      EXPECT_EQ(&traceB, Trace::CurrentTrace());
+      ADOPT_TRACE(traceB.get());
+      EXPECT_EQ(traceB.get(), Trace::CurrentTrace());
       TRACE("hello from traceB");
     }
-    EXPECT_EQ(&traceA, Trace::CurrentTrace());
+    EXPECT_EQ(traceA.get(), Trace::CurrentTrace());
     TRACE("hello from traceA");
   }
   EXPECT_TRUE(Trace::CurrentTrace() == NULL);
   TRACE("this goes nowhere");
 
-  EXPECT_EQ(XOutDigits(traceA.DumpToString()),
+  EXPECT_EQ(XOutDigits(traceA->DumpToString()),
             "XXXX XX:XX:XX.XXXXXX hello from traceA\n");
-  EXPECT_EQ(XOutDigits(traceB.DumpToString()),
+  EXPECT_EQ(XOutDigits(traceB->DumpToString()),
             "XXXX XX:XX:XX.XXXXXX hello from traceB\n");
 }
 } // namespace kudu
