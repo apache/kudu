@@ -33,6 +33,11 @@ Trace::~Trace() {
 // Struct which precedes each entry in the trace.
 struct TraceEntry {
   MicrosecondsInt64 timestamp_micros;
+
+  // The source file and line number which generated the trace message.
+  const char* file_path;
+  int line_number;
+
   uint32_t message_len;
   TraceEntry* next;
 
@@ -42,7 +47,22 @@ struct TraceEntry {
   }
 };
 
-void Trace::SubstituteAndTrace(StringPiece format,
+// Get the part of filepath after the last path separator.
+// (Doesn't modify filepath, contrary to basename() in libgen.h.)
+// Borrowed from glog.
+static const char* const_basename(const char* filepath) {
+  const char* base = strrchr(filepath, '/');
+#ifdef OS_WINDOWS  // Look for either path separator in Windows
+  if (!base)
+    base = strrchr(filepath, '\\');
+#endif
+  return base ? (base+1) : filepath;
+}
+
+
+void Trace::SubstituteAndTrace(const char* file_path,
+                               int line_number,
+                               StringPiece format,
                                const SubstituteArg& arg0, const SubstituteArg& arg1,
                                const SubstituteArg& arg2, const SubstituteArg& arg3,
                                const SubstituteArg& arg4, const SubstituteArg& arg5,
@@ -53,25 +73,20 @@ void Trace::SubstituteAndTrace(StringPiece format,
   };
 
   int msg_len = strings::internal::SubstitutedSize(format, args_array);
-
-  TraceEntry* entry = NewEntry(msg_len);
+  TraceEntry* entry = NewEntry(msg_len, file_path, line_number);
   SubstituteToBuffer(format, args_array, entry->message());
   AddEntry(entry);
 }
 
-TraceEntry* Trace::NewEntry(int msg_len) {
+TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number) {
   int size = sizeof(TraceEntry) + msg_len;
   uint8_t* dst = reinterpret_cast<uint8_t*>(arena_->AllocateBytes(size));
   TraceEntry* entry = reinterpret_cast<TraceEntry*>(dst);
   entry->timestamp_micros = GetCurrentTimeMicros();
   entry->message_len = msg_len;
+  entry->file_path = file_path;
+  entry->line_number = line_number;
   return entry;
-}
-
-void Trace::Message(StringPiece s) {
-  TraceEntry* entry = NewEntry(s.length());
-  memcpy(entry->message(), s.data(), s.length());
-  AddEntry(entry);
 }
 
 void Trace::AddEntry(TraceEntry* entry) {
@@ -120,8 +135,11 @@ void Trace::Dump(std::ostream* out) const {
          << ' '
          << setw(2) << tm_time.tm_hour  << ':'
          << setw(2) << tm_time.tm_min   << ':'
-         << setw(2) << tm_time.tm_sec   << "."
-         << setw(6) << usecs << " ";
+         << setw(2) << tm_time.tm_sec   << '.'
+         << setw(6) << usecs
+         << ' '
+         << const_basename(e->file_path) << ':' << e->line_number
+         << "] ";
     out->write(reinterpret_cast<char*>(e) + sizeof(TraceEntry),
                e->message_len);
     *out << std::endl;

@@ -28,14 +28,13 @@ static string XOutDigits(const string& s) {
 
 TEST_F(TraceTest, TestBasic) {
   scoped_refptr<Trace> t(new Trace);
-  t->SubstituteAndTrace("hello $0, $1", "world", 12345);
-  t->SubstituteAndTrace("goodbye $0, $1", "cruel world", 54321);
-  t->Message("simple string trace");
+  TRACE_TO(t, "hello $0, $1", "world", 12345);
+  TRACE_TO(t, "goodbye $0, $1", "cruel world", 54321);
 
   string result = XOutDigits(t->DumpToString());
-  ASSERT_EQ("XXXX XX:XX:XX.XXXXXX hello world, XXXXX\n"
-            "XXXX XX:XX:XX.XXXXXX goodbye cruel world, XXXXX\n"
-            "XXXX XX:XX:XX.XXXXXX simple string trace\n", result);
+  ASSERT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello world, XXXXX\n"
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] goodbye cruel world, XXXXX\n",
+            result);
 }
 
 TEST_F(TraceTest, TestAttach) {
@@ -56,8 +55,8 @@ TEST_F(TraceTest, TestAttach) {
   TRACE("this goes nowhere");
 
   EXPECT_EQ(XOutDigits(traceA->DumpToString()),
-            "XXXX XX:XX:XX.XXXXXX hello from traceA\n");
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n");
   EXPECT_EQ(XOutDigits(traceB->DumpToString()),
-            "XXXX XX:XX:XX.XXXXXX hello from traceB\n");
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
 }
 } // namespace kudu

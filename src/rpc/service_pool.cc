@@ -64,7 +64,7 @@ void ServicePool::RunThread() {
     }
 
     incoming->RecordHandlingStarted(incoming_queue_time_);
-    incoming->trace()->Message("Handling call");
+    TRACE_TO(incoming->trace(), "Handling call");
     ADOPT_TRACE(incoming->trace());
 
     // Release the InboundCall pointer -- when the call is responded to,

@@ -27,9 +27,15 @@
   do { \
     kudu::Trace* _trace = Trace::CurrentTrace(); \
     if (_trace) { \
-      _trace->SubstituteAndTrace((format), ##substitutions);  \
+      _trace->SubstituteAndTrace(__FILE__, __LINE__, (format),  \
+        ##substitutions); \
     } \
   } while (0);
+
+// Like the above, but takes the trace pointer as an explicit argument.
+#define TRACE_TO(trace, format, substitutions...) \
+  (trace)->SubstituteAndTrace(__FILE__, __LINE__, (format), ##substitutions)
+
 
 namespace kudu {
 
@@ -39,6 +45,10 @@ struct TraceEntry;
 // A trace for a request or other process. This supports collecting trace entries
 // from a number of threads, and later dumping the results to a stream.
 //
+// Callers should generally not add trace messages directly using the public
+// methods of this class. Rather, the TRACE(...) macros defined above should
+// be used such that file/line numbers are automatically included, etc.
+//
 // This class is thread-safe.
 class Trace : public base::RefCountedThreadSafe<Trace> {
  public:
@@ -47,7 +57,11 @@ class Trace : public base::RefCountedThreadSafe<Trace> {
   // Logs a message into the trace buffer.
   //
   // See strings::Substitute for details.
-  void SubstituteAndTrace(StringPiece format,
+  //
+  // N.B.: the file path passed here is not copied, so should be a static
+  // constant (eg __FILE__).
+  void SubstituteAndTrace(const char* filepath, int line_number,
+                          StringPiece format,
                           const strings::internal::SubstituteArg& arg0 =
                             strings::internal::SubstituteArg::NoArg,
                           const strings::internal::SubstituteArg& arg1 =
@@ -68,8 +82,6 @@ class Trace : public base::RefCountedThreadSafe<Trace> {
                             strings::internal::SubstituteArg::NoArg,
                           const strings::internal::SubstituteArg& arg9 =
                             strings::internal::SubstituteArg::NoArg);
-
-  void Message(StringPiece s);
 
   // Dump the trace buffer to the given output stream.
   void Dump(std::ostream* out) const;
@@ -94,7 +106,7 @@ class Trace : public base::RefCountedThreadSafe<Trace> {
 
   // Allocate a new entry from the arena, with enough space to hold a
   // message of length 'len'.
-  TraceEntry* NewEntry(int len);
+  TraceEntry* NewEntry(int len, const char* file_path, int line_number);
 
   // Add the entry to the linked list of entries.
   void AddEntry(TraceEntry* entry);

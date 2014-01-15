@@ -165,7 +165,7 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   // Queue message on service queue
   QueueStatus s = service_queue_.Put(c);
   if (PREDICT_TRUE(s == QUEUE_SUCCESS)) {
-    c->trace()->Message("Inserted onto call queue");
+    TRACE_TO(c->trace(), "Inserted onto call queue");
     return;
   }
 

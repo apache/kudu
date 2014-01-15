@@ -73,11 +73,7 @@ void InboundCall::Respond(const MessageLite& response,
     LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
   }
 
-  if (is_success) {
-    trace_->Message("Queueing success response");
-  } else {
-    trace_->Message("Queueing failure response");
-  }
+  TRACE_TO(trace_, "Queueing $0 response", is_success ? "success" : "failure");
 
   LogIfSlow();
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());

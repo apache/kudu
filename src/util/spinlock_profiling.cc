@@ -31,9 +31,9 @@ void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
     if (t) {
       char backtrace_buffer[1024];
       HexStackTraceToString(backtrace_buffer, arraysize(backtrace_buffer));
-      t->SubstituteAndTrace("Waited $0ns on lock $1. stack: $2",
-                            nanos, contendedlock,
-                            backtrace_buffer);
+      TRACE_TO(t, "Waited $0ns on lock $1. stack: $2",
+               nanos, contendedlock,
+               backtrace_buffer);
     }
   }
 }
