@@ -47,6 +47,9 @@ namespace kudu {
 // mutation is only protected against other concurrent mutators, and readers
 // may continue to run with no contention.
 //
+// For the common pattern described above, the 'CowObject<>' template class defined
+// in cow_object.h is more convenient than manual locking.
+//
 // NOTE: this implementation currently does not implement any starvation protection
 // or fairness. If the read lock is being constantly acquired (i.e reader count
 // never drops to 0) then UpgradeToCommitLock() may block arbitrarily long.

@@ -2,6 +2,7 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
+#include <boost/thread/mutex.hpp>
 #include <map>
 #include <string>
 #include <tr1/unordered_map>
@@ -13,6 +14,7 @@
 #include "util/monotime.h"
 #include "master/master.pb.h"
 #include "server/oid_generator.h"
+#include "util/cow_object.h"
 #include "util/locks.h"
 #include "util/status.h"
 
@@ -32,17 +34,51 @@ class SysTabletsTable;
 class TableInfo;
 class TSDescriptor;
 
+// The data related to a tablet which is persisted on disk.
+// This portion of TableInfo is managed via CowObject.
+// It wraps the underlying protobuf to add useful accessors.
+struct PersistentTabletInfo {
+  bool is_running() const {
+    return pb.state() == SysTabletsEntryPB::kTabletStateRunning;
+  }
+
+  bool is_deleted() const {
+    return pb.state() == SysTabletsEntryPB::kTabletStateReplaced;
+  }
+
+  // Helper to set the state of the tablet with a custom message.
+  // Requires that the caller has prepared this object for write.
+  // The change will only be visible after Commit().
+  void set_state(SysTabletsEntryPB::State state, const string& msg);
+
+  SysTabletsEntryPB pb;
+};
+
 // The information about a single tablet which exists in the cluster,
 // including its state and locations.
 //
-// Requires external synchronization.
+// This object uses copy-on-write for the portions of data which are persisted
+// on disk. This allows the mutated data to be staged and written to disk
+// while readers continue to access the previous version. These portions
+// of data are in PersistentTableInfo above, and typically accessed using
+// TableMetadataLock. For example:
+//
+//   TableInfo* table = ...;
+//   TableMetadataLock l(table, TableMetadataLock::READ);
+//   if (l.data().is_running()) { ... }
+//
+// The non-persistent information about the table is protected by an internal
+// spin-lock.
+//
 // The object is owned/managed by the CatalogManager, and exposed for testing.
-class TabletInfo {
+class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
  public:
+  typedef PersistentTabletInfo cow_state;
+
   TabletInfo(TableInfo *table, const std::string& tablet_id);
-  ~TabletInfo();
 
   // Add a replica reported on the given server
+  // TODO: figure out locking for this.
   void AddReplica(TSDescriptor* ts_desc);
 
   // Remove any replicas which were on this server.
@@ -51,42 +87,19 @@ class TabletInfo {
   TableInfo *table() { return table_; }
   const TableInfo *table() const { return table_; }
 
+  // Does not require synchronization.
   const std::string& tablet_id() const { return tablet_id_; }
-  const std::vector<TSDescriptor*> locations() const { return locations_; }
 
-  bool is_running() const {
-    return current_metadata_->state() == SysTabletsEntryPB::kTabletStateRunning;
-  }
+  void GetLocations(std::vector<TSDescriptor*>* locations) const;
 
-  bool is_deleted() const {
-    return current_metadata_->state() == SysTabletsEntryPB::kTabletStateReplaced;
-  }
-
-  // Helper to set the state of the tablet with a custom message.
-  // This change will be visible only in staging_metadata() until Commit()
-  void set_state(SysTabletsEntryPB::State state, const string& msg);
-
-  // Returns the SysTabletsEntryPB for the current committed metadata
-  const SysTabletsEntryPB& metadata() const { return *current_metadata_; }
-
-  // Returns the SysTabletsEntryPB for the latest metadata, including pending mutations
-  const SysTabletsEntryPB& staging_metadata() const { return metadata_; }
-
-  // Returns a mutable pointer to the staging_metadata().
-  // A new SysTabletsEntryPB will be created with a copy of the current metadata.
-  // The new entry will be used as current metadata(), and it will be released on Commit().
-  // Multiple calls to mutable_metadata() will not trigger a new entry creation.
-  SysTabletsEntryPB *mutable_metadata();
-
-  // Returns true if there are no pending mutations.
-  bool is_committed() const;
-
-  // Makes the changes applied to the disk-metadata visible to the metadata() user.
-  // This operation will release the SysTabletsEntryPB allocated by mutable_metadata().
-  void Commit();
+  // Access the persistent metadata. Typically you should use
+  // TabletMetadataLock to gain access to this data.
+  const CowObject<PersistentTabletInfo>& metadata() const {return metadata_; }
+  CowObject<PersistentTabletInfo>& metadata() {return metadata_; }
 
  private:
-  friend class CatalogManager;
+  friend class base::RefCountedThreadSafe<TabletInfo>;
+  ~TabletInfo();
 
   const std::string tablet_id_;
   TableInfo *table_;
@@ -97,85 +110,97 @@ class TabletInfo {
   // some state information at some point.
   std::vector<TSDescriptor*> locations_;
 
-  // The current metadata:
-  //  - if there are no mutation pending (is_committed() == true)
-  //    current_metadata_ will be equals to &metadata_
-  //  - if there are mutations pending (is_committed() == false)
-  //    current_metadata_ will point to the SysTabletsEntryPB allocated on
-  //    mutate_metadata(). The entry will be released on Commit().
-  SysTabletsEntryPB *current_metadata_;
-  SysTabletsEntryPB metadata_;
+  // Lock protecting locations_ and last_update_ts_.
+  // This doesn't protect metadata_ (the on-disk portion).
+  mutable simple_spinlock lock_;
+
+  CowObject<PersistentTabletInfo> metadata_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletInfo);
 };
 
-// The information about a table, including its state and tablets.
-//
-// Requires external synchronization.
-// The object is owned/managed by the CatalogManager, and exposed for testing.
-class TableInfo {
- public:
-  explicit TableInfo(const std::string& table_id);
-  ~TableInfo();
-
-  const std::string& id() const { return table_id_; }
-  const std::string& name() const { return current_metadata_->name(); }
-
+// The data related to a table which is persisted on disk.
+// This portion of TableInfo is managed via CowObject.
+// It wraps the underlying protobuf to add useful accessors.
+struct PersistentTableInfo {
   bool is_deleted() const {
-    return current_metadata_->state() == SysTablesEntryPB::kTableStateRemoved;
+    return pb.state() == SysTablesEntryPB::kTableStateRemoved;
   }
 
   bool is_running() const {
-    return current_metadata_->state() == SysTablesEntryPB::kTableStateRunning;
+    return pb.state() == SysTablesEntryPB::kTableStateRunning;
   }
 
-  // Returns the SysTablesEntryPB for the current committed metadata
-  const SysTablesEntryPB& metadata() const { return *current_metadata_; }
-
-  // Returns the SysTablesEntryPB for the latest metadata, including pending mutations
-  const SysTablesEntryPB& staging_metadata() const { return metadata_; }
-
-  void AddTablet(TabletInfo *tablet);
-  void AddTablets(const vector<TabletInfo*>& tablets);
+  // Return the table's name.
+  const std::string& name() const {
+    return pb.name();
+  }
 
   // Helper to set the state of the tablet with a custom message.
-  // This change will be visible only in staging_metadata() until Commit()
   void set_state(SysTablesEntryPB::State state, const string& msg);
 
-  // Returns a mutable pointer to the staging_metadata().
-  // A new SysTablesEntryPB will be created with a copy of the current metadata.
-  // The new entry will be used as current metadata(), and it will be released on Commit().
-  // Multiple calls to mutable_metadata() will not trigger a new entry creation.
-  SysTablesEntryPB *mutable_metadata();
+  SysTablesEntryPB pb;
+};
 
-  // Returns true if there are no pending mutations.
-  bool is_committed() const;
+// The information about a table, including its state and tablets.
+//
+// This object uses copy-on-write techniques similarly to TabletInfo.
+// Please see the TabletInfo class doc above for more information.
+//
+// The non-persistent information about the table is protected by an internal
+// spin-lock.
+class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
+ public:
+  typedef PersistentTableInfo cow_state;
 
-  // Makes the changes applied to the disk-metadata visible to the metadata() user.
-  // This operation will release the SysTablesEntryPB allocated by mutable_metadata().
-  void Commit();
+  explicit TableInfo(const std::string& table_id);
+
+  // Return the table's ID. Does not require synchronization.
+  const std::string& id() const { return table_id_; }
+
+  // Add a tablet to this table.
+  void AddTablet(TabletInfo *tablet);
+  // Add multiple tablets to this table.
+  void AddTablets(const vector<TabletInfo*>& tablets);
+
+  // Access the persistent metadata. Typically you should use
+  // TableMetadataLock to gain access to this data.
+  const CowObject<PersistentTableInfo>& metadata() const { return metadata_; }
+  CowObject<PersistentTableInfo>& metadata() { return metadata_; }
 
  private:
-  friend class CatalogManager;
+  friend class base::RefCountedThreadSafe<TableInfo>;
+  ~TableInfo();
 
   const std::string table_id_;
-
-  // The current metadata:
-  //  - if there are no mutation pending (is_committed() == true)
-  //    current_metadata_ will be equals to &metadata_
-  //  - if there are mutations pending (is_committed() == false)
-  //    current_metadata_ will point to the SysTablesEntryPB allocated on
-  //    mutate_metadata(). The entry will be released on Commit().
-  SysTablesEntryPB *current_metadata_;
-  SysTablesEntryPB metadata_;
 
   // Tablet map start-key/info
   typedef std::map<std::string, TabletInfo *> TabletInfoMap;
   TabletInfoMap tablet_map_;
 
+  // Protects tablet_map_
+  mutable simple_spinlock lock_;
+
+  CowObject<PersistentTableInfo> metadata_;
+
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
 
+// Helper to manage locking on the persistent metadata of TabletInfo or TableInfo.
+template<class MetadataClass>
+class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
+ public:
+  typedef CowLock<typename MetadataClass::cow_state> super;
+  MetadataLock(MetadataClass* info,
+               typename super::LockMode mode)
+    : super(&info->metadata(), mode) {}
+  MetadataLock(const MetadataClass* info,
+               typename super::LockMode mode)
+    : super(&info->metadata(), mode) {}
+};
+
+typedef MetadataLock<TabletInfo> TabletMetadataLock;
+typedef MetadataLock<TableInfo> TableMetadataLock;
 
 // The component of the master which tracks the state and location
 // of tables/tablets in the cluster.
@@ -248,7 +273,7 @@ class CatalogManager {
                                const string& end_key);
 
   Status FindTable(const TableIdentifierPB& table_identifier,
-                   TableInfo **table_info);
+                   scoped_refptr<TableInfo>* table_info);
 
   // Handle one of the tablets in a tablet reported.
   // Requires that the lock is already held.
@@ -260,23 +285,23 @@ class CatalogManager {
 
   string GenerateId() { return oid_generator_.Next(); }
 
-  typedef rw_spinlock LockType;
-  LockType lock_;
 
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
 
   // Table maps: table-id -> TableInfo and table-name -> TableInfo
-  // The CatalogManager owns all the TableInfo objects
-  typedef std::tr1::unordered_map<std::string, TableInfo *> TableInfoMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
   TableInfoMap table_ids_map_;
   TableInfoMap table_names_map_;
 
   // Tablet maps: tablet-id -> TabletInfo
-  // The CatalogManager owns all the TabletInfo objects
-  typedef std::tr1::unordered_map<std::string, TabletInfo*> TabletInfoMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
+
+  // Lock protecting the various maps above.
+  typedef rw_spinlock LockType;
+  LockType lock_;
 
   Master *master_;
   ObjectIdGenerator oid_generator_;

@@ -212,7 +212,7 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
 
     RowBuilder rb(schema_);
     BOOST_FOREACH(const TabletInfo *tablet, tablets_to_add) {
-      if (!pb_util::SerializeToString(tablet->staging_metadata(), &metadata_buf)) {
+      if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
         return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
                                   tablet->tablet_id());
       }
@@ -236,7 +236,7 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
     RowBuilder rb(key_schema_);
     RowChangeListEncoder encoder(schema_, &buf);
     BOOST_FOREACH(const TabletInfo* tablet, tablets_to_update) {
-      if (!pb_util::SerializeToString(tablet->staging_metadata(), &metadata_buf)) {
+      if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
         return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
                                   tablet->tablet_id());
       }
@@ -348,8 +348,9 @@ Status SysTablesTable::VisitTableFromRow(const RowBlockRow& row, Visitor *visito
 
 Status SysTablesTable::AddTable(const TableInfo *table) {
   faststring metadata_buf;
-  if (!pb_util::SerializeToString(table->staging_metadata(), &metadata_buf)) {
-    return Status::Corruption("Unable to serialize SysTablesEntryPB for tablet", table->name());
+  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
+    return Status::Corruption("Unable to serialize SysTablesEntryPB for tablet",
+                              table->metadata().dirty().name());
   }
 
   WriteRequestPB req;
@@ -371,8 +372,9 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
 
 Status SysTablesTable::UpdateTable(const TableInfo *table) {
   faststring metadata_buf;
-  if (!pb_util::SerializeToString(table->staging_metadata(), &metadata_buf)) {
-    return Status::Corruption("Unable to serialize SysTablesEntryPB for tablet", table->id());
+  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
+    return Status::Corruption("Unable to serialize SysTablesEntryPB for tablet",
+                              table->id());
   }
 
   WriteRequestPB req;
