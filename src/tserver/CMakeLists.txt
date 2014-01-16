@@ -14,7 +14,7 @@ KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES tserver_service.proto)
 
-add_library(tserver_service_proto ${TSERVER_KRPC_SRCS})
+add_library(tserver_service_proto ${TSERVER_KRPC_SRCS} ${TSERVER_KRPC_HDRS})
 target_link_libraries(tserver_service_proto krpc)
 add_dependencies(tserver_service_proto kudu_common)
 
