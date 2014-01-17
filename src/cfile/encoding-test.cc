@@ -260,9 +260,9 @@ class TestEncoding : public ::testing::Test {
     }
   }
 
-  void DoSeekTest(int num_ints, int num_queries, bool verify) {
-    // Don't start the ints at 0, in order to check that we properly
-    // deal with the frame-of-reference.
+  template<class BlockBuilderType, class BlockDecoderType>
+  void DoSeekTest(BlockBuilderType* ibb, int num_ints, int num_queries, bool verify) {
+    // TODO : handle and verify seeking inside a run for testing RLE
     const uint32_t kBase = 6;
 
     uint32_t data[num_ints];
@@ -270,17 +270,15 @@ class TestEncoding : public ::testing::Test {
       data[i] = kBase + i * 2;
     }
 
-    gscoped_ptr<WriterOptions> opts(new WriterOptions());
-    GVIntBlockBuilder ibb(opts.get());
-    CHECK_EQ(num_ints, ibb.Add(reinterpret_cast<uint8_t *>(&data[0]),
+    CHECK_EQ(num_ints, ibb->Add(reinterpret_cast<uint8_t *>(&data[0]),
                                num_ints));
 
-    Slice s = ibb.Finish(0);
-    GVIntBlockDecoder ibd(s);
+    Slice s = ibb->Finish(0);
+    BlockDecoderType ibd(s);
     ASSERT_STATUS_OK(ibd.ParseHeader());
 
     // Benchmark seeking
-    LOG_TIMING(INFO, "Seeking in gvint block") {
+    LOG_TIMING(INFO, "Seeking in int block") {
       for (int i = 0; i < num_queries; i++) {
         bool exact;
         uint32_t target = random() % (num_ints * 2 + kBase);
@@ -415,6 +413,71 @@ class TestEncoding : public ::testing::Test {
     } while (sbsize > 0);
   }
 
+  // Test encoding and decoding UINT32 datatype
+  // TODO : make this take any other int type
+  template <class BuilderType, class DecoderType>
+  void TestIntBlockRoundTrip(BuilderType* ibb) {
+    const uint32_t kOrdinalPosBase = 12345;
+
+    srand(123);
+
+    std::vector<uint32_t> to_insert;
+    for (int i = 0; i < 10003; i++) {
+      to_insert.push_back(random());
+    }
+
+    ibb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
+             to_insert.size());
+    Slice s = ibb->Finish(kOrdinalPosBase);
+
+    DecoderType ibd(s);
+    ASSERT_STATUS_OK(ibd.ParseHeader());
+
+    ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
+
+    std::vector<uint32_t> decoded;
+    decoded.resize(to_insert.size());
+
+    ColumnBlock dst_block(GetTypeInfo(UINT32), NULL,
+                          &decoded[0],
+                          to_insert.size(),
+                          &arena_);
+    int dec_count = 0;
+    while (ibd.HasNext()) {
+      ASSERT_EQ((uint32_t)(dec_count), ibd.GetCurrentIndex());
+
+      size_t to_decode = std::min(to_insert.size() - dec_count,
+                                  static_cast<size_t>((random() % 30) + 1));
+      size_t n = to_decode;
+      ColumnDataView dst_data(&dst_block, dec_count);
+      DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
+      ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(&n, &dst_data));
+      ASSERT_GE(to_decode, n);
+      dec_count += n;
+    }
+
+    ASSERT_EQ(dec_count, dst_block.nrows())
+        << "Should have decoded all rows to fill the buffer";
+
+    for (uint i = 0; i < to_insert.size(); i++) {
+      if (to_insert[i] != decoded[i]) {
+        FAIL() << "Fail at index " << i <<
+            " inserted=" << to_insert[i] << " got=" << decoded[i];
+      }
+    }
+
+    // Test Seek within block by ordinal
+    for (int i = 0; i < 100; i++) {
+      int seek_off = random() % decoded.size();
+      ibd.SeekToPositionInBlock(seek_off);
+
+      EXPECT_EQ((uint32_t)(seek_off), ibd.GetCurrentIndex());
+      uint32_t ret;
+      CopyOne<UINT32>(&ibd, &ret);
+      EXPECT_EQ(decoded[seek_off], ret);
+    }
+  }
+
   // Test encoding and decoding BOOL datatypes
   template <class BuilderType, class DecoderType>
   void TestBoolBlockRoundTrip() {
@@ -521,6 +584,27 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
   ASSERT_EQ(5UL, s.size());
 }
 
+TEST_F(TestEncoding, TestRleIntBlockEncoder) {
+  RleIntBlockBuilder<UINT32> ibb;
+  gscoped_ptr<int[]> ints(new int[10000]);
+  for (int i = 0; i < 10000; i++) {
+    ints[i] = random();
+  }
+  ibb.Add(reinterpret_cast<const uint8_t *>(ints.get()), 10000);
+
+  Slice s = ibb.Finish(12345);
+  LOG(INFO) << "RLE Encoded size for 10k ints: " << s.size();
+
+  ibb.Reset();
+  ints.reset(new int[100]);
+  for (int i = 0; i < 100; i++) {
+    ints[i] = 0;
+  }
+  ibb.Add(reinterpret_cast<const uint8_t *>(ints.get()), 100);
+  s = ibb.Finish(12345);
+  ASSERT_EQ(14UL, s.size());
+}
+
 TEST_F(TestEncoding, TestPlainBitMapRoundTrip) {
   TestBoolBlockRoundTrip<PlainBitMapBlockBuilder, PlainBitMapBlockDecoder>();
 }
@@ -529,68 +613,17 @@ TEST_F(TestEncoding, TestRleBitMapRoundTrip) {
   TestBoolBlockRoundTrip<RleBitMapBlockBuilder, RleBitMapBlockDecoder>();
 }
 
-TEST_F(TestEncoding, TestIntBlockRoundTrip) {
+TEST_F(TestEncoding, TestGVIntBlockRoundTrip) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
-  const uint32_t kOrdinalPosBase = 12345;
-
-  srand(123);
-
-  std::vector<uint32_t> to_insert;
-  for (int i = 0; i < 10003; i++) {
-    to_insert.push_back(random());
-  }
-
-  GVIntBlockBuilder ibb(opts.get());
-  ibb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
-          to_insert.size());
-  Slice s = ibb.Finish(kOrdinalPosBase);
-
-  GVIntBlockDecoder ibd(s);
-  ASSERT_STATUS_OK(ibd.ParseHeader());
-
-  ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
-
-  std::vector<uint32_t> decoded;
-  decoded.resize(to_insert.size());
-
-  ColumnBlock dst_block(GetTypeInfo(UINT32), NULL,
-                        &decoded[0],
-                        to_insert.size(),
-                        &arena_);
-  int dec_count = 0;
-  while (ibd.HasNext()) {
-    ASSERT_EQ((uint32_t)(dec_count), ibd.GetCurrentIndex());
-
-    size_t to_decode = (random() % 30) + 1;
-    size_t n = to_decode;
-    ColumnDataView dst_data(&dst_block, dec_count);
-    DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
-    ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(&n, &dst_data));
-    ASSERT_GE(to_decode, n);
-    dec_count += n;
-  }
-
-  ASSERT_EQ(dec_count, dst_block.nrows())
-    << "Should have decoded all rows to fill the buffer";
-
-  for (uint i = 0; i < to_insert.size(); i++) {
-    if (to_insert[i] != decoded[i]) {
-      FAIL() << "Fail at index " << i <<
-        " inserted=" << to_insert[i] << " got=" << decoded[i];
-    }
-  }
-
-  // Test Seek within block by ordinal
-  for (int i = 0; i < 100; i++) {
-    int seek_off = random() % decoded.size();
-    ibd.SeekToPositionInBlock(seek_off);
-
-    EXPECT_EQ((uint32_t)(seek_off), ibd.GetCurrentIndex());
-    uint32_t ret;
-    CopyOne<UINT32>(&ibd, &ret);
-    EXPECT_EQ(decoded[seek_off], ret);
-  }
+  gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
+  TestIntBlockRoundTrip<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get());
 }
+
+TEST_F(TestEncoding, TestRleIntBlockRoundTrip) {
+  gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
+  TestIntBlockRoundTrip<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(ibb.get());
+}
+
 
 TEST_F(TestEncoding, TestIntEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode<GVIntBlockBuilder, GVIntBlockDecoder>();
@@ -646,18 +679,43 @@ TEST_F(TestEncoding, TestStringPrefixBlockBuilderTruncation) {
 
 #ifdef NDEBUG
 TEST_F(TestEncoding, GVIntSeekBenchmark) {
-  DoSeekTest(32768, 1000000, false);
+  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
+  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get(), 32768, 1000000, false);
+}
+
+TEST_F(TestEncoding, RleIntSeekBenchmark) {
+  gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
+  DoSeekTest<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(
+      ibb.get(), 32768, 1000000, false);
 }
 #endif
 
 TEST_F(TestEncoding, GVIntSeekTest) {
-  DoSeekTest(64, 1000, true);
+  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
+  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get(), 64, 1000, true);
 }
 
-
 TEST_F(TestEncoding, GVIntSeekTestTinyBlock) {
+  gscoped_ptr<WriterOptions> opts(new WriterOptions());
   for (int block_size = 1; block_size < 16; block_size++) {
-    DoSeekTest(block_size, 1000, true);
+    gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
+    DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get(), block_size, 1000, true);
+  }
+}
+
+TEST_F(TestEncoding, RleIntSeekTest) {
+  gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
+  DoSeekTest<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(
+      ibb.get(),  64, 1000, true);
+}
+
+TEST_F(TestEncoding, RleIntSeekTestTinyBlock) {
+  for (int block_size = 1; block_size < 16; block_size++) {
+    gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
+    DoSeekTest<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(
+        ibb.get(), block_size, 1000, true);
   }
 }
 

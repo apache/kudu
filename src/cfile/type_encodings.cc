@@ -62,6 +62,7 @@ class TypeEncodingResolver {
     AddMapping<UINT16, PLAIN>();
     AddMapping<INT16, PLAIN>();
     AddMapping<UINT32, GROUP_VARINT>();
+    AddMapping<UINT32, RLE>();
     AddMapping<UINT32, PLAIN>();
     AddMapping<INT32, PLAIN>();
     AddMapping<UINT64, PLAIN>();

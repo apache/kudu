@@ -86,7 +86,8 @@ class RleDecoder {
       bit_width_(bit_width),
       current_value_(0),
       repeat_count_(0),
-      literal_count_(0) {
+      literal_count_(0),
+      rewind_state_(CANT_REWIND) {
     DCHECK_GE(bit_width_, 1);
     DCHECK_LE(bit_width_, 64);
   }
@@ -99,6 +100,9 @@ class RleDecoder {
   // Gets the next value.  Returns false if there are no more.
   bool Get(T* val);
 
+  // Seek to the previous value.
+  void RewindOne();
+
   // Gets the next run of the same 'val'. Returns 0 if there is no
   // more data to be decoded. Will return a run of at most 'max_run'
   // values. If there are more values than this, the next call to
@@ -108,11 +112,18 @@ class RleDecoder {
  private:
   bool ReadHeader();
 
+  enum RewindState {
+    REWIND_LITERAL,
+    REWIND_RUN,
+    CANT_REWIND
+  };
+
   BitReader bit_reader_;
   int bit_width_;
   uint64_t current_value_;
   uint32_t repeat_count_;
   uint32_t literal_count_;
+  RewindState rewind_state_;
 };
 
 // Class to incrementally build the rle data.
@@ -246,14 +257,38 @@ inline bool RleDecoder<T>::Get(T* val) {
   if (PREDICT_TRUE(repeat_count_ > 0)) {
     *val = current_value_;
     --repeat_count_;
+    rewind_state_ = REWIND_RUN;
   } else {
     DCHECK(literal_count_ > 0);
     bool result = bit_reader_.GetValue(bit_width_, val);
     DCHECK(result);
     --literal_count_;
+    rewind_state_ = REWIND_LITERAL;
   }
 
   return true;
+}
+
+template<typename T>
+inline void RleDecoder<T>::RewindOne() {
+  DCHECK(bit_reader_.is_initialized());
+
+  switch (rewind_state_) {
+    case CANT_REWIND:
+      LOG(FATAL) << "Can't rewind more than once after each read!";
+      break;
+    case REWIND_RUN:
+      ++repeat_count_;
+      break;
+    case REWIND_LITERAL:
+      {
+        bit_reader_.Rewind(bit_width_);
+        ++literal_count_;
+        break;
+      }
+  }
+
+  rewind_state_ = CANT_REWIND;
 }
 
 template<typename T>
