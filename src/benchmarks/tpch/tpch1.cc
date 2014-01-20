@@ -230,6 +230,10 @@ int main(int argc, char **argv) {
   if (FLAGS_tpch_query_mode == "local") {
     dao.reset(new kudu::LocalLineItemDAO(FLAGS_tpch_path_to_tablet));
   } else {
+    if (FLAGS_tpch_num_query_iterations > 0) {
+      LOG(FATAL) << "Currently it's only possible to import data with 'remote'"
+                 << ", not to query";
+    }
     const char * const kTabletId = "tpch1";
     dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address, kTabletId,
                                          FLAGS_tpch_max_batch_size));

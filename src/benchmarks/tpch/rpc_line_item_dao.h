@@ -47,7 +47,7 @@ class RpcLineItemDAO : public LineItemDAO {
   // Sending the same key more than once in the same batch crashes the server
   // This method is used to know if it's safe to add the row in that regard
   bool ShouldAddKey(const ConstContiguousRow &row);
-  void DoWriteAsync(RowwiseRowBlockPB *data);
+  void DoWriteAsync();
 
   std::tr1::shared_ptr<TabletServerServiceProxy> proxy_;
   tserver::WriteRequestPB request_;

@@ -46,7 +46,7 @@ void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {
 
   RowwiseRowBlockPB* data = request_.mutable_to_insert_rows();
   AddRowToRowBlockPB(row, data);
-  DoWriteAsync(data);
+  DoWriteAsync();
   ApplyBackpressure();
 }
 
@@ -61,7 +61,7 @@ void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring 
   PutFixed32LengthPrefixedSlice(&tmp, Slice(mutations));
   request_.set_encoded_mutations(tmp.data(), tmp.size());
 
-  DoWriteAsync(keys);
+  DoWriteAsync();
   ApplyBackpressure();
 }
 
@@ -90,21 +90,26 @@ void RpcLineItemDAO::ApplyBackpressure() {
   }
 }
 
-void RpcLineItemDAO::DoWriteAsync(RowwiseRowBlockPB *data) {
+void RpcLineItemDAO::DoWriteAsync() {
   boost::lock_guard<simple_spinlock> l(lock_);
   if (!request_pending_) {
     request_pending_ = true;
 
     rpc_.Reset();
     rpc_.set_timeout(MonoDelta::FromMilliseconds(2000));
-    VLOG(1) << "Sending batch of " << data->num_rows();
+    int n_rows = request_.to_insert_rows().num_rows() +
+      request_.to_mutate_row_keys().num_rows();
+    VLOG(1) << "Sending batch of " << n_rows;
     proxy_->WriteAsync(request_, &response_, &rpc_,
                        boost::bind(&RpcLineItemDAO::BatchFinished, this));
 
     // TODO figure how to clean better
-    data->set_num_rows(0);
-    data->clear_rows();
-    data->clear_indirect_data();
+    request_.mutable_to_insert_rows()->set_num_rows(0);
+    request_.mutable_to_insert_rows()->clear_rows();
+    request_.mutable_to_insert_rows()->clear_indirect_data();
+    request_.mutable_to_mutate_row_keys()->set_num_rows(0);
+    request_.mutable_to_mutate_row_keys()->clear_rows();
+    request_.mutable_to_mutate_row_keys()->clear_indirect_data();
     request_.clear_encoded_mutations();
     orders_in_request_.clear();
   }
@@ -141,7 +146,14 @@ void RpcLineItemDAO::FinishWriting() {
   while (true) {
     {
       boost::lock_guard<simple_spinlock> l(lock_);
-      if (!request_pending_) return;
+      if (!request_pending_) {
+        if (request_.to_insert_rows().num_rows() > 0 ||
+           request_.to_mutate_row_keys().num_rows() > 0) {
+          DoWriteAsync();
+        } else {
+          return;
+        }
+      }
     }
     usleep(1000);
   }
