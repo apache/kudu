@@ -55,11 +55,20 @@ Status ThreadPool::Init(size_t num_threads) {
   return Status::OK();
 }
 
+void ThreadPool::ClearQueue() {
+  BOOST_FOREACH(QueueEntry& e, queue_) {
+    if (e.trace) {
+      e.trace->Release();
+    }
+  }
+  queue_.clear();
+}
+
 void ThreadPool::Shutdown() {
   {
     boost::unique_lock<boost::mutex> unique_lock(lock_);
     closing_ = true;
-    queue_.clear();
+    ClearQueue();
     queue_changed_.notify_all();
 
     // The Runnable doesn't have Abort() so we must wait
@@ -90,6 +99,11 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   QueueEntry e;
   e.runnable = task;
   e.trace = Trace::CurrentTrace();
+  // Need to AddRef, since the thread which submitted the task may go away,
+  // and we don't want the trace to be destructed while waiting in the queue.
+  if (e.trace) {
+    e.trace->AddRef();
+  }
   queue_.push_back(e);
   queue_changed_.notify_one();
   return Status::OK();
@@ -147,6 +161,10 @@ void ThreadPool::DispatchThread() {
     }
 
     ADOPT_TRACE(entry.trace);
+    // Release the reference which was held by the queued item.
+    if (entry.trace) {
+      entry.trace->Release();
+    }
     // Execute the task
     entry.runnable->Run();
   }

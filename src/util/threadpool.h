@@ -92,6 +92,9 @@ class ThreadPool {
   }
 
  private:
+  // Clear all entries from queue_. Requires lock_ is held.
+  void ClearQueue();
+
   struct QueueEntry {
     std::tr1::shared_ptr<Runnable> runnable;
     Trace* trace;
