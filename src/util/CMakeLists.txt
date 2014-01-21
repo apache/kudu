@@ -22,6 +22,7 @@ add_library(kudu_util
   net/sockaddr.cc
   net/socket.cc
   pb_util.cc
+  rwc_lock.cc
   slice.cc
   spinlock_profiling.cc
   status.cc
@@ -77,3 +78,4 @@ ADD_KUDU_TEST(thread_util-test)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(trace-test)
 ADD_KUDU_TEST(spinlock_profiling-test)
+ADD_KUDU_TEST(rwc_lock-test)
