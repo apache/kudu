@@ -13,6 +13,7 @@
 #include "util/locks.h"
 #include "util/metrics.h"
 #include "util/status.h"
+#include "util/threadpool.h"
 
 namespace kudu {
 
@@ -54,7 +55,15 @@ class TSTabletManager {
   ~TSTabletManager();
 
   // Load all master blocks from disk, and open their respective tablets.
+  // Upon return of this method all existing tablets are registered, but
+  // the bootstrap is performed asynchronously.
   Status Init();
+
+  // Waits for all the bootstraps to complete.
+  // Returns Status::OK if all tablets bootstrapped successfully. If
+  // the bootstrap of any tablet failed returns the failure reason for
+  // the first tablet whose bootstrap failed.
+  Status WaitForAllBootstrapsToFinish();
 
   // Shut down all of the tablets, gracefully flushing before shutdown.
   void Shutdown();
@@ -114,13 +123,19 @@ class TSTabletManager {
   // Load the given tablet's master block from the file system.
   Status LoadMasterBlock(const string& tablet_id, metadata::TabletMasterBlockPB* block);
 
-  // Open a tablet from the local file system, by first loading its master block,
-  // and then opening the tablet itself.
-  Status OpenTablet(const std::string& tablet_id);
+  // Open a tablet meta from the local file system by loading its master block.
+  Status OpenTabletMeta(const std::string& tablet_id,
+                        gscoped_ptr<metadata::TabletMetadata>* metadata);
 
-  // Open a tablet whose metadata has already been loaded.
-  Status OpenTablet(gscoped_ptr<metadata::TabletMetadata> meta,
-                    std::tr1::shared_ptr<tablet::TabletPeer>* peer);
+  // Open a tablet whose metadata has already been loaded/created.
+  // This method does not return anything as it can be run asynchronously.
+  // Upon completion of this method the tablet should be initialized and running.
+  // If something wrong happened on bootstrap/initialization the relevant error
+  // will be set on TabletPeer along with the state set to FAILED.
+  // NOTE I: The tablet must be registered prior to calling this method.
+  // NOTE II: This method expects to effectively own the passed TabletMetadata
+  // raw pointer (not using gcoped_ptr<> due to boost::bind issues)
+  void OpenTablet(metadata::TabletMetadata* meta);
 
   // Open a tablet whose metadata has already been loaded.
   void BootstrapAndInitTablet(gscoped_ptr<metadata::TabletMetadata> meta,
@@ -166,6 +181,9 @@ class TSTabletManager {
   int32_t next_report_seq_;
 
   MetricContext metric_ctx_;
+
+  // latch allowing to wait for the bootstraps to complete.
+  ThreadPool bootstrap_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

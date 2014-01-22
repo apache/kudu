@@ -77,6 +77,10 @@ Status TabletServer::Init() {
   return Status::OK();
 }
 
+Status TabletServer::WaitInited() {
+  return tablet_manager_->WaitForAllBootstrapsToFinish();
+}
+
 Status TabletServer::Start() {
   CHECK(initted_);
 

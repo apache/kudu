@@ -44,7 +44,16 @@ class TabletServer : public server::ServerBase {
   explicit TabletServer(const TabletServerOptions& opts);
   ~TabletServer();
 
+  // Initializes the tablet server, including the bootstrapping of all
+  // existing tablets.
+  // Some initialization tasks are asynchronous, such as the bootstrapping
+  // of tablets. Caller can block, waiting for the initialization to fully
+  // complete by calling WaitInited().
   Status Init();
+
+  // Waits for the tablet server to complete the initialization.
+  Status WaitInited();
+
   Status Start();
   Status Shutdown();
 

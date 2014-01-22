@@ -56,6 +56,18 @@ Status MiniCluster::Start() {
   return Status::OK();
 }
 
+Status MiniCluster::StartSync() {
+  RETURN_NOT_OK(Start());
+  int count = 0;
+  BOOST_FOREACH(const shared_ptr<MiniTabletServer>& tablet_server, mini_tablet_servers_) {
+    RETURN_NOT_OK_PREPEND(tablet_server->WaitStarted(),
+                          Substitute("TabletServer $0 based on dir: $1 failed to start.",
+                                     count, tablet_server->options()->base_dir));
+    count++;
+  }
+  return Status::OK();
+}
+
 Status MiniCluster::AddTabletServer() {
   if (!mini_master_) {
     return Status::IllegalState("Master not yet initialized");

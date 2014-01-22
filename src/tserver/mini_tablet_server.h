@@ -36,8 +36,14 @@ class MiniTabletServer {
 
   // Start a tablet server running on the loopback interface and
   // an ephemeral port. To determine the address that the server
-  // bound to, call MiniTabletServer::bound_addr()
+  // bound to, call MiniTabletServer::bound_addr().
+  // The TS will be initialized asynchronously and then started.
   Status Start();
+
+  // Waits for the tablet server to be fully initialized, including
+  // having all tablets bootstrapped.
+  Status WaitStarted();
+
   Status Shutdown();
 
   // Add a new tablet to the test server, use the default quorum.

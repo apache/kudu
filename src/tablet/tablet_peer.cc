@@ -40,18 +40,21 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const QuorumPeerPB& quorum_peer,
                         gscoped_ptr<Log> log) {
 
-  state_ = metadata::CONFIGURING;
 
-  tablet_ = tablet;
-  quorum_peer_ = quorum_peer;
-  log_.reset(log.release());
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    state_ = metadata::CONFIGURING;
+    tablet_ = tablet;
+    quorum_peer_ = quorum_peer;
+    log_.reset(log.release());
+    // TODO support different consensus implementations (possibly by adding
+    // a TabletPeerOptions).
+    consensus_.reset(new LocalConsensus(ConsensusOptions()));
+  }
 
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
 
-  // TODO support different consensus implementations (possibly by adding
-  // a TabletPeerOptions).
-  consensus_.reset(new LocalConsensus(ConsensusOptions()));
   RETURN_NOT_OK(consensus_->Init(quorum_peer_, log_.get()));
 
   // set consensus on the tablet to that it can store local state changes
@@ -79,7 +82,10 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
 
   RETURN_NOT_OK(consensus_->Start(initial_config));
 
-  state_ = metadata::RUNNING;
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    state_ = metadata::RUNNING;
+  }
   return Status::OK();
 }
 
@@ -95,8 +101,11 @@ Status TabletPeer::Shutdown() {
 }
 
 Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
-  if (PREDICT_FALSE(state_ != metadata::RUNNING))
-    return Status::IllegalState("Tablet not in RUNNING state.");
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    if (PREDICT_FALSE(state_ != metadata::RUNNING))
+      return Status::IllegalState("Tablet not in RUNNING state.");
+  }
 
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
@@ -110,8 +119,11 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
 }
 
 Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
-  if (PREDICT_FALSE(state_ != metadata::RUNNING))
-    return Status::IllegalState("Tablet not in RUNNING state.");
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    if (PREDICT_FALSE(state_ != metadata::RUNNING))
+      return Status::IllegalState("Tablet not in RUNNING state.");
+  }
 
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.

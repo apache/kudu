@@ -289,6 +289,7 @@ class TabletServerTest : public KuduTest {
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
     // this should open the tablet created on StartTabletServer()
     ASSERT_STATUS_OK(mini_server_->Start());
+    ASSERT_STATUS_OK(mini_server_->WaitStarted());
 
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
     // Connect to it.

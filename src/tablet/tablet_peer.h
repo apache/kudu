@@ -65,16 +65,35 @@ class TabletPeer {
   }
 
   const metadata::TabletStatePB state() const {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
     return state_;
+  }
+
+  // Sets the tablet state to FAILED additionally setting the error to the provided
+  // one.
+  void SetFailed(const Status& error) {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    state_ = metadata::FAILED;
+    error_ = error;
+  }
+
+  // Returns the error that occurred, when state is FAILED.
+  Status error() {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    return error_;
   }
 
  private:
   metadata::TabletStatePB state_;
+  Status error_;
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<consensus::Consensus> consensus_;
   simple_spinlock prepare_replicate_lock_;
+
+  // lock protecting internal (usually rare) state changes.
+  mutable simple_spinlock internal_state_lock_;
 
   // TODO move these executors to TabletServer when we support multiple tablets
   // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_executor_'

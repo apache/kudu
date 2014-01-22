@@ -112,6 +112,7 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   LOG(INFO) << "Restarting tablet manager";
   mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot")));
   ASSERT_STATUS_OK(mini_server_->Start());
+  ASSERT_STATUS_OK(mini_server_->WaitStarted());
   tablet_manager_ = mini_server_->server()->tablet_manager();
 
   // Ensure that the tablet got re-loaded and re-opened off disk.

@@ -67,6 +67,10 @@ Status MiniTabletServer::Start() {
   return Status::OK();
 }
 
+Status MiniTabletServer::WaitStarted() {
+  return server_->WaitInited();
+}
+
 Status MiniTabletServer::Shutdown() {
   RETURN_NOT_OK(server_->Shutdown());
   server_.reset();

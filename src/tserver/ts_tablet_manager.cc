@@ -23,10 +23,12 @@
 #include "util/env_util.h"
 #include "util/metrics.h"
 #include "util/pb_util.h"
+#include "util/stopwatch.h"
 
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 using kudu::log::Log;
 using kudu::master::ReportedTabletPB;
 using kudu::tablet::TabletPeer;
@@ -38,6 +40,7 @@ using kudu::metadata::TabletMetadata;
 using kudu::tablet::Tablet;
 
 static const char* const kTmpSuffix = ".tmp";
+static const int kNumTabletsToBoostrapSimultaneously = 4;
 
 namespace kudu {
 namespace tserver {
@@ -71,7 +74,8 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
   : fs_manager_(fs_manager),
     server_(server),
     next_report_seq_(0),
-    metric_ctx_(metric_ctx) {
+    metric_ctx_(metric_ctx),
+    bootstrap_pool_("tablet-bootstrap") {
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -81,6 +85,10 @@ Status TSTabletManager::Init() {
   vector<string> children;
   RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(fs_manager_->GetMasterBlockDir(), &children),
                         "Couldn't list master blocks");
+
+  vector<string> tablets;
+
+  // Search for tablets in the master block dir
   BOOST_FOREACH(const string& child, children) {
     if (HasSuffixString(child, kTmpSuffix)) {
       LOG(WARNING) << "Ignoring tmp file in master block dir: " << child;
@@ -93,15 +101,45 @@ Status TSTabletManager::Init() {
       continue;
     }
 
-    // TODO Opening a tablet might require fetching blocks, log segments and updates from
-    // other nodes so we should probably make opening the tablet an async thing so that we
-    // can do multiple ones at the same time.
-    RETURN_NOT_OK_PREPEND(OpenTablet(child), "Failed to open tablet " + child);
-    // TODO: should we still start up even if some fraction of the tablets are unavailable?
-    // perhaps create a TabletPeer in a corrupt state? Probably -- so we have a kind of
-    // quarantine and a single bad tablet doesn't block the whole server from starting.
+    tablets.push_back(child);
   }
+
+  // TODO base the number of parallel tablet bootstraps on something related
+  // to the number of physical devices.
+  RETURN_NOT_OK(bootstrap_pool_.Init(kNumTabletsToBoostrapSimultaneously));
+
+  // Register the tablets and trigger the asynchronous bootstrap
+  vector<shared_ptr<boost::thread> > tablet_initializers;
+  BOOST_FOREACH(const string& tablet, tablets) {
+    gscoped_ptr<TabletMetadata> meta;
+    RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),
+                          "Failed to open tablet metadata for tablet: " + tablet);
+
+    shared_ptr<TabletPeer> tablet_peer(new TabletPeer());
+    RegisterTablet(meta->oid(), tablet_peer);
+
+    RETURN_NOT_OK(bootstrap_pool_.SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
+                                                         this,
+                                                         meta.release())));
+  }
+
   return Status::OK();
+}
+
+Status TSTabletManager::WaitForAllBootstrapsToFinish() {
+  bootstrap_pool_.Wait();
+
+  Status s = Status::OK();
+
+  BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
+    if (entry.second->state() == metadata::FAILED) {
+      if (s.ok()) {
+        s = entry.second->error();
+      }
+    }
+  }
+
+  return s;
 }
 
 Status TSTabletManager::CreateNewTablet(const string& table_id,
@@ -162,10 +200,19 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
                         "Couldn't persist master block for new tablet");
 
-  return OpenTablet(meta.Pass(), tablet_peer);
+  shared_ptr<TabletPeer> new_peer(new TabletPeer());
+  RegisterTablet(meta->oid(), new_peer);
+  // We can run this synchronously since there is nothing to bootstrap.
+  OpenTablet(meta.release());
+
+  if (tablet_peer) {
+    *tablet_peer = new_peer;
+  }
+  return Status::OK();
 }
 
-Status TSTabletManager::OpenTablet(const string& tablet_id) {
+Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
+                                       gscoped_ptr<TabletMetadata>* metadata) {
   LOG(INFO) << "Loading master block " << tablet_id;
 
   TabletMasterBlockPB master_block;
@@ -176,50 +223,74 @@ Status TSTabletManager::OpenTablet(const string& tablet_id) {
   RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, master_block, &meta),
                         strings::Substitute("Failed to load tablet metadata. Master block: $0",
                                             master_block.ShortDebugString()));
-  return OpenTablet(meta.Pass(), NULL);
+  metadata->reset(meta.release());
+  return Status::OK();
 }
 
-Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
-                                   shared_ptr<TabletPeer>* peer) {
+void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
 
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer());
-  RegisterTablet(meta->oid(), tablet_peer);
+
+  gscoped_ptr<TabletMetadata> meta(metadata);
+
+  string tablet_id = meta->oid();
+
+  shared_ptr<TabletPeer> tablet_peer;
+  CHECK(LookupTablet(tablet_id, &tablet_peer))
+      << "Tablet not registered prior to OpenTabletAsync call: " << tablet_id;
 
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
 
-  // TODO: handle crash mid-creation of tablet? do we ever end up with a
-  // partially created tablet here?
-  RETURN_NOT_OK(BootstrapTablet(meta.Pass(), &metric_ctx_, &tablet, &log));
+  LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
+
+  Status s;
+  LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
+    // TODO: handle crash mid-creation of tablet? do we ever end up with a
+    // partially created tablet here?
+    s = BootstrapTablet(meta.Pass(), &metric_ctx_, &tablet, &log);
+    if (!s.ok()) {
+      LOG(ERROR) << "Tablet failed to bootstrap: "
+          << tablet_id << " Status: " << s.ToString();
+      tablet_peer->SetFailed(s);
+      return;
+    }
+  }
 
   QuorumPeerPB quorum_peer;
   quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
 
-  RETURN_NOT_OK_PREPEND(tablet_peer->Init(tablet,
-                                          quorum_peer,
-                                          log.Pass()), "Failed to Init() TabletPeer");
+  LOG_TIMING(INFO, Substitute("Tablet $0 Started.", tablet_id)) {
+    s =  tablet_peer->Init(tablet,
+                           quorum_peer,
+                           log.Pass());
+    if (!s.ok()) {
+      tablet_peer->SetFailed(s);
+      return;
+    }
 
-  // tablet_peer state changed to CONFIGURING, mark the tablet dirty
-  {
-    boost::lock_guard<rw_spinlock> lock(lock_);
-    MarkDirtyUnlocked(tablet->metadata()->oid());
+    // tablet_peer state changed to CONFIGURING, mark the tablet dirty
+    {
+      boost::lock_guard<rw_spinlock> lock(lock_);
+      MarkDirtyUnlocked(tablet_id);
+    }
+
+    s = tablet_peer->Start(tablet->metadata()->Quorum());
+    if (!s.ok()) {
+      tablet_peer->SetFailed(s);
+      return;
+    }
+
+    // tablet_peer state changed to RUNNING, mark the tablet dirty
+    {
+      boost::lock_guard<rw_spinlock> lock(lock_);
+      MarkDirtyUnlocked(tablet_id);
+    }
   }
-
-  RETURN_NOT_OK_PREPEND(tablet_peer->Start(tablet->metadata()->Quorum()),
-                                           "Failed to Start() TabletPeer");
-
-  // tablet_peer state changed to RUNNING, mark the tablet dirty
-  {
-    boost::lock_guard<rw_spinlock> lock(lock_);
-    MarkDirtyUnlocked(tablet->metadata()->oid());
-  }
-
-  if (peer) *peer = tablet_peer;
-  return Status::OK();
 }
 
 void TSTabletManager::Shutdown() {
   LOG(INFO) << "Shutting down tablet manager...";
+  bootstrap_pool_.Shutdown();
   boost::lock_guard<rw_spinlock> l(lock_);
   BOOST_FOREACH(const TabletMap::value_type &pair, tablet_map_) {
     const std::tr1::shared_ptr<TabletPeer>& peer = pair.second;

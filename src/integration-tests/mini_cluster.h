@@ -33,6 +33,12 @@ class MiniCluster {
    // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
    // All servers run on the loopback interface with ephemeral ports.
   Status Start();
+
+  // Like the previous method but performs initialization synchronously, i.e.
+  // this will wait for all TS's to be started and initialized. Tests should
+  // use this if they interact with tablets immediately after Start();
+  Status StartSync();
+
   Status Shutdown();
 
   // Add a new TS to the cluster. The new TS is started.

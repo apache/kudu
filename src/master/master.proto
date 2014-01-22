@@ -128,7 +128,7 @@ message TSRegistrationPB {
 message ReportedTabletPB {
   required bytes tablet_id = 1;
   required metadata.TabletStatePB state = 2;
-
+  optional AppStatusPB error = 3;
   // TODO: add configuration seqno, schema version, etc?
 }
 

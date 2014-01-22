@@ -145,6 +145,10 @@ enum TabletStatePB {
   // state Peers are available for client RPCs.
   RUNNING = 2;
 
+  // The tablet failed to for some reason. TabletPeer::error() will return
+  // the reason for the failure.
+  FAILED = 3;
+
   // TODO decide what to do on power down. Possibly add another QUIESCING
   // state, similar to CONFIGURING.
 }
