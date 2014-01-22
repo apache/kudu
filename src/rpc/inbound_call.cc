@@ -18,6 +18,9 @@ using google::protobuf::io::CodedOutputStream;
 using std::tr1::shared_ptr;
 using std::vector;
 
+DEFINE_bool(rpc_dump_all_traces, false,
+            "If true, dump all RPC traces at INFO level");
+
 namespace kudu {
 namespace rpc {
 
@@ -75,7 +78,7 @@ void InboundCall::Respond(const MessageLite& response,
 
   TRACE_TO(trace_, "Queueing $0 response", is_success ? "success" : "failure");
 
-  LogIfSlow();
+  LogTrace();
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
 }
 
@@ -107,25 +110,30 @@ string InboundCall::ToString() const {
                       header_.call_id());
 }
 
-void InboundCall::LogIfSlow() const {
-  if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) return;
-
-  double log_threshold = header_.timeout_millis() * 0.75f;
-
+void InboundCall::LogTrace() const {
   MonoTime now = MonoTime::Now(MonoTime::FINE);
   int total_time = now.GetDeltaSince(timing_.time_received).ToMilliseconds();
 
-  if (total_time > log_threshold) {
-    // TODO: consider pushing this onto another thread since it may be slow.
-    // The traces may also be too large to fit in a log message.
-    LOG(WARNING) << ToString() << " took " << total_time << "ms (client timeout "
-                 << header_.timeout_millis() << ").";
-    std::stringstream stream;
-    trace_->Dump(&stream);
-    std::string s = stream.str();
-    if (!s.empty()) {
-      LOG(WARNING) << "Trace:\n" << s;
+  if (header_.has_timeout_millis() && header_.timeout_millis() > 0) {
+    double log_threshold = header_.timeout_millis() * 0.75f;
+    if (total_time > log_threshold) {
+      // TODO: consider pushing this onto another thread since it may be slow.
+      // The traces may also be too large to fit in a log message.
+      LOG(WARNING) << ToString() << " took " << total_time << "ms (client timeout "
+                   << header_.timeout_millis() << ").";
+      std::stringstream stream;
+      trace_->Dump(&stream);
+      std::string s = stream.str();
+      if (!s.empty()) {
+        LOG(WARNING) << "Trace:\n" << s;
+      }
+      return;
     }
+  }
+
+  if (PREDICT_FALSE(FLAGS_rpc_dump_all_traces)) {
+    LOG(INFO) << ToString() << " took " << total_time << "ms. Trace:";
+    trace_->Dump(&LOG(INFO));
   }
 }
 

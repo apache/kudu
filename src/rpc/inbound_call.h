@@ -131,7 +131,8 @@ class InboundCall {
   // Log a WARNING message if the RPC response was slow enough that the
   // client likely timed out. This is based on the client-provided timeout
   // value.
-  void LogIfSlow() const;
+  // Also can be configured to log _all_ RPC traces for help debugging.
+  void LogTrace() const;
 
   // The connection on which this inbound call arrived.
   std::tr1::shared_ptr<Connection> conn_;
