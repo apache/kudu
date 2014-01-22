@@ -25,6 +25,15 @@ namespace rpc {
 class UserCredentials;
 class InboundCall;
 
+#define PANIC_RPC(rpc_context, message) \
+  do { \
+    if (rpc_context) {                              \
+      rpc_context->Panic(__FILE__, __LINE__, (message));  \
+    } else { \
+      LOG(FATAL) << message; \
+    } \
+  } while (0)
+
 // The context provided to a generated ServiceIf. This provides
 // methods to respond to the RPC. In the future, this will also
 // include methods to access information about the caller: e.g
@@ -114,6 +123,14 @@ class RpcContext {
 
   const google::protobuf::Message *request_pb() const { return request_pb_.get(); }
   google::protobuf::Message *response_pb() const { return response_pb_.get(); }
+
+  // Panic the server. This logs a fatal error with the given message, and
+  // also includes the current RPC request, requestor, trace information, etc,
+  // to make it easier to debug.
+  //
+  // Call this via the PANIC_RPC() macro.
+  void Panic(const char* filepath, int line_number, const string& message)
+    __attribute__((noreturn));
 
  private:
   InboundCall *call_;

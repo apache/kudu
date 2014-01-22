@@ -20,6 +20,7 @@
 #include "util/net/sockaddr.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
+#include "util/trace.h"
 
 namespace kudu { namespace rpc {
 
@@ -31,6 +32,8 @@ using kudu::rpc_test::EchoResponsePB;
 using kudu::rpc_test::CalculatorError;
 using kudu::rpc_test::CalculatorServiceIf;
 using kudu::rpc_test::CalculatorServiceProxy;
+using kudu::rpc_test::PanicRequestPB;
+using kudu::rpc_test::PanicResponsePB;
 using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
 using kudu::rpc_test::WhoAmIRequestPB;
@@ -156,6 +159,13 @@ class CalculatorService : public CalculatorServiceIf {
                                           RespDiffPackagePB *resp,
                                           ::kudu::rpc::RpcContext *context) {
     context->RespondSuccess();
+  }
+
+  virtual void Panic(const PanicRequestPB* req,
+                     PanicResponsePB* resp,
+                     RpcContext* context) {
+    TRACE("Got panic request");
+    PANIC_RPC(context, "Test method panicking!");
   }
 
  private:

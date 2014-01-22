@@ -12,6 +12,8 @@
 #include "util/test_util.h"
 #include "util/user.h"
 
+DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
+
 using boost::ptr_vector;
 
 namespace kudu {
@@ -204,6 +206,31 @@ TEST_F(RpcStubTest, TestApplicationError) {
             "[kudu.rpc_test.CalculatorError.app_error_ext] {\n"
             "  extra_error_data: \"some application-specific error data\"\n"
             "}\n", controller.error_response()->DebugString());
+}
+
+TEST_F(RpcStubTest, TestRpcPanic) {
+  if (!FLAGS_is_panic_test_child) {
+    // This is a poor man's death test. We call this same
+    // test case, but set the above flag, and verify that
+    // it aborted. gtest death tests don't work here because
+    // there are already threads started up.
+    string exe = strings::Substitute("/proc/$0/exe", getpid());
+    string cmdline = exe +
+      " --is_panic_test_child" +
+      " --gtest_filter=RpcStubTest.TestRpcPanic";
+
+    int ret = system(cmdline.c_str());
+    CHECK(WIFSIGNALED(ret));
+    CHECK_EQ(WTERMSIG(ret), SIGABRT);
+    return;
+  } else {
+    // Make an RPC which causes the server to abort.
+    CalculatorServiceProxy p(client_messenger_, server_addr_);
+    RpcController controller;
+    PanicRequestPB req;
+    PanicResponsePB resp;
+    p.Panic(req, &resp, &controller);
+  }
 }
 
 } // namespace rpc

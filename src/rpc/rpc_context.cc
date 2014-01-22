@@ -7,6 +7,7 @@
 #include "rpc/service_if.h"
 #include "util/hdr_histogram.h"
 #include "util/metrics.h"
+#include "util/trace.h"
 
 using google::protobuf::MessageLite;
 
@@ -62,6 +63,26 @@ std::string RpcContext::requestor_string() const {
 Trace* RpcContext::trace() {
   return call_->trace();
 }
+
+void RpcContext::Panic(const char* filepath, int line_number, const string& message) {
+  // Use the LogMessage class directly so that the log messages appear to come from
+  // the line of code which caused the panic, not this code.
+#define MY_ERROR google::LogMessage(filepath, line_number, google::GLOG_ERROR).stream()
+#define MY_FATAL google::LogMessageFatal(filepath, line_number).stream()
+
+  MY_ERROR << "Panic handling " << call_->ToString() << ":";
+  MY_ERROR << "Request:\n" << request_pb_->DebugString();
+  Trace* t = trace();
+  if (t) {
+    MY_ERROR << "RPC trace:";
+    t->Dump(&MY_ERROR);
+  }
+  MY_FATAL << "Exiting due to panic.";
+
+#undef MY_ERROR
+#undef MY_FATAL
+}
+
 
 } // namespace rpc
 } // namespace kudu

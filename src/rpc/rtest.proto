@@ -57,6 +57,9 @@ message CalculatorError {
   required string extra_error_data = 1;
 }
 
+message PanicRequestPB {}
+message PanicResponsePB {}
+
 service CalculatorService {
   rpc Add(AddRequestPB) returns(AddResponsePB);
   rpc Sleep(SleepRequestPB) returns(SleepResponsePB);
@@ -64,4 +67,5 @@ service CalculatorService {
   rpc WhoAmI(WhoAmIRequestPB) returns (WhoAmIResponsePB);
   rpc TestArgumentsInDiffPackage(kudu.rpc_test_diff_package.ReqDiffPackagePB)
     returns(kudu.rpc_test_diff_package.RespDiffPackagePB);
+  rpc Panic(PanicRequestPB) returns (PanicResponsePB);
 }
