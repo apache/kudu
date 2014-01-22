@@ -19,13 +19,13 @@ namespace tablet {
 class TabletPeer {
  public:
 
-  TabletPeer(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
-             const metadata::QuorumPeerPB& quorum_peer,
-             gscoped_ptr<log::Log> log);
+  TabletPeer();
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
-  Status Init();
+  Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
+              const metadata::QuorumPeerPB& quorum_peer,
+              gscoped_ptr<log::Log> log);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
@@ -64,7 +64,12 @@ class TabletPeer {
     return tablet_;
   }
 
+  const metadata::TabletStatePB state() const {
+    return state_;
+  }
+
  private:
+  metadata::TabletStatePB state_;
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
   gscoped_ptr<log::Log> log_;

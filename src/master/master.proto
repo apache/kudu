@@ -124,7 +124,9 @@ message TSRegistrationPB {
 
 message ReportedTabletPB {
   required bytes tablet_id = 1;
-  // TODO: add state information, configuration info, schema version, etc?
+  required metadata.TabletStatePB state = 2;
+
+  // TODO: add configuration seqno, schema version, etc?
 }
 
 // Sent by the tablet server to report the set of tablets hosted by that TS.

@@ -168,7 +168,9 @@ TEST_F(MasterTest, TestTabletLocations) {
     TabletReportPB* tr = req.mutable_tablet_report();
     tr->set_is_incremental(false);
     tr->set_sequence_number(0);
-    tr->add_updated_tablets()->set_tablet_id(tablet_id);
+    ReportedTabletPB* reported_tablet = tr->add_updated_tablets();
+    reported_tablet->set_tablet_id(tablet_id);
+    reported_tablet->set_state(metadata::RUNNING);
 
     ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
   }

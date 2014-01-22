@@ -94,8 +94,10 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
   // handling split in the TS?
-  tablet_peer_.reset(new TabletPeer(tablet, tablet->metadata()->Quorum().peers(0), log.Pass()));
-  RETURN_NOT_OK_PREPEND(tablet_peer_->Init(), "Failed to Init() TabletPeer");
+  tablet_peer_.reset(new TabletPeer());
+  RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
+                                           tablet->metadata()->Quorum().peers(0),
+                                           log.Pass()), "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()),
                                             "Failed to Start() TabletPeer");

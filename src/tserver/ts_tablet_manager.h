@@ -121,8 +121,13 @@ class TSTabletManager {
   Status OpenTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                     std::tr1::shared_ptr<tablet::TabletPeer>* peer);
 
+  // Open a tablet whose metadata has already been loaded.
+  void BootstrapAndInitTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+                              std::tr1::shared_ptr<tablet::TabletPeer>* peer);
+
   // Add the tablet to the tablet map.
-  void RegisterTablet(const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
+  void RegisterTablet(const std::string& tablet_id,
+                      const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
 
   // Mark that the given tablet ID is dirty and needs to be included in the next
   // tablet report. This can be used for tablets which are still live as well as

@@ -121,6 +121,33 @@ message TabletSuperBlockPB {
   optional QuorumPB quorum = 8;
 }
 
+// The enum of tablet states.
+// Tablet states are sent in TabletReports and kept in TabletPeer.
+enum TabletStatePB {
+
+  // Indicates the Tablet is bootstrapping, i.e. that the Tablet is not
+  // available for RPC.
+  BOOTSTRAPPING = 0;
+
+  // Indicates the Tablet is in the configuration phase. Tablet is available
+  // for internal RPC calls (i.e. from other Peers) but not available to
+  // clients.
+  // FOLLOWER Peers will remain in this state until a message containing the
+  // current configuration is received from the LEADER. Upon creating a new
+  // connection to a Peer, the LEADER always sends the current configuration
+  // first.
+  // LEADER Peers will remain in this state until they are able to replicate
+  // the configuration message where they are LEADER.
+  CONFIGURING = 1;
+
+  // Once the configuration phase is over Peers are in RUNNING state. In this
+  // state Peers are available for client RPCs.
+  RUNNING = 2;
+
+  // TODO decide what to do on power down. Possibly add another QUIESCING
+  // state, similar to CONFIGURING.
+}
+
 // The master-block contains the two block-ids required to load the
 // tablet super-block. The master-block is immutable and written to the
 // "bootstrap table", on tablet creation, and it is used by the master

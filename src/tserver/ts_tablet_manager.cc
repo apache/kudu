@@ -28,6 +28,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using kudu::log::Log;
+using kudu::master::ReportedTabletPB;
 using kudu::tablet::TabletPeer;
 using kudu::master::TabletReportPB;
 using kudu::metadata::QuorumPB;
@@ -179,6 +180,9 @@ Status TSTabletManager::OpenTablet(const string& tablet_id) {
 Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
                                    shared_ptr<TabletPeer>* peer) {
 
+  shared_ptr<TabletPeer> tablet_peer(new TabletPeer());
+  RegisterTablet(meta->oid(), tablet_peer);
+
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
 
@@ -189,16 +193,24 @@ Status TSTabletManager::OpenTablet(gscoped_ptr<TabletMetadata> meta,
   QuorumPeerPB quorum_peer;
   quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
 
-  shared_ptr<TabletPeer> tablet_peer(new TabletPeer(tablet,
-                                                    quorum_peer,
-                                                    log.Pass()));
+  RETURN_NOT_OK_PREPEND(tablet_peer->Init(tablet,
+                                          quorum_peer,
+                                          log.Pass()), "Failed to Init() TabletPeer");
 
-  RETURN_NOT_OK_PREPEND(tablet_peer->Init(), "Failed to Init() TabletPeer");
+  // tablet_peer state changed to CONFIGURING, mark the tablet dirty
+  {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    MarkDirtyUnlocked(tablet->metadata()->oid());
+  }
 
   RETURN_NOT_OK_PREPEND(tablet_peer->Start(tablet->metadata()->Quorum()),
                                            "Failed to Start() TabletPeer");
 
-  RegisterTablet(tablet_peer);
+  // tablet_peer state changed to RUNNING, mark the tablet dirty
+  {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    MarkDirtyUnlocked(tablet->metadata()->oid());
+  }
 
   if (peer) *peer = tablet_peer;
   return Status::OK();
@@ -233,16 +245,16 @@ Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlo
   return Status::OK();
 }
 
-void TSTabletManager::RegisterTablet(const std::tr1::shared_ptr<TabletPeer>& tablet_peer) {
-  const string& id = tablet_peer->tablet()->tablet_id();
+void TSTabletManager::RegisterTablet(const std::string& tablet_id,
+                                     const std::tr1::shared_ptr<TabletPeer>& tablet_peer) {
   boost::lock_guard<rw_spinlock> lock(lock_);
-  if (!InsertIfNotPresent(&tablet_map_, id, tablet_peer)) {
-    LOG(FATAL) << "Unable to register tablet peer " << id << ": already registered!";
+  if (!InsertIfNotPresent(&tablet_map_, tablet_id, tablet_peer)) {
+    LOG(FATAL) << "Unable to register tablet peer " << tablet_id << ": already registered!";
   }
 
-  MarkDirtyUnlocked(id);
+  MarkDirtyUnlocked(tablet_id);
 
-  LOG(INFO) << "Registered tablet " << id;
+  LOG(INFO) << "Registered tablet " << tablet_id;
 }
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
@@ -315,8 +327,11 @@ void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
     const string& tablet_id = (*it).first;
 
     // The entry is actually dirty, so report it.
-    if (ContainsKey(tablet_map_, tablet_id)) {
-      report->add_updated_tablets()->set_tablet_id(tablet_id);
+    shared_ptr<kudu::tablet::TabletPeer>* entry = FindOrNull(tablet_map_, tablet_id);
+    if (entry != NULL) {
+      ReportedTabletPB* reported_tablet = report->add_updated_tablets();
+      reported_tablet->set_tablet_id(tablet_id);
+      reported_tablet->set_state(entry->get()->state());
     } else {
       report->add_removed_tablet_ids(tablet_id);
     }
@@ -332,7 +347,9 @@ void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
   report->set_sequence_number(next_report_seq_++);
   BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
     const string& tablet_id = entry.first;
-    report->add_updated_tablets()->set_tablet_id(tablet_id);
+    ReportedTabletPB* reported_tablet = report->add_updated_tablets();
+    reported_tablet->set_tablet_id(tablet_id);
+    reported_tablet->set_state(entry.second->state());
   }
   dirty_tablets_.clear();
 }

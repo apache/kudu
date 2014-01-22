@@ -23,26 +23,31 @@ using metadata::TabletMetadata;
 // ============================================================================
 //  Tablet Peer
 // ============================================================================
-TabletPeer::TabletPeer(const shared_ptr<Tablet>& tablet,
-                       const QuorumPeerPB& quorum_peer,
-                       gscoped_ptr<Log> log)
-    : tablet_(tablet),
-      quorum_peer_(quorum_peer),
-      log_(log.Pass()),
-      // prepare executor has a single thread as prepare must be done in order
+TabletPeer::TabletPeer()
+    : // prepare executor has a single thread as prepare must be done in order
       // of submission
       prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)) {
-  DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
-  DCHECK(log_) << "A TabletPeer must be provided with a Log";
 
   errno = 0;
   int n_cpus = sysconf(_SC_NPROCESSORS_CONF);
   CHECK_EQ(errno, 0) << ErrnoToString(errno);
   CHECK_GT(n_cpus, 0);
   apply_executor_.reset(TaskExecutor::CreateNew("apply exec", n_cpus));
+  state_ = metadata::BOOTSTRAPPING;
 }
 
-Status TabletPeer::Init() {
+Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
+                        const QuorumPeerPB& quorum_peer,
+                        gscoped_ptr<Log> log) {
+
+  state_ = metadata::CONFIGURING;
+
+  tablet_ = tablet;
+  quorum_peer_ = quorum_peer;
+  log_.reset(log.release());
+
+  DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
+  DCHECK(log_) << "A TabletPeer must be provided with a Log";
 
   // TODO support different consensus implementations (possibly by adding
   // a TabletPeerOptions).
@@ -73,6 +78,8 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
   RETURN_NOT_OK(tablet_->metadata()->Flush());
 
   RETURN_NOT_OK(consensus_->Start(initial_config));
+
+  state_ = metadata::RUNNING;
   return Status::OK();
 }
 
@@ -88,6 +95,8 @@ Status TabletPeer::Shutdown() {
 }
 
 Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
+  if (PREDICT_FALSE(state_ != metadata::RUNNING))
+    return Status::IllegalState("Tablet not in RUNNING state.");
 
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
@@ -101,6 +110,9 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
 }
 
 Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
+  if (PREDICT_FALSE(state_ != metadata::RUNNING))
+    return Status::IllegalState("Tablet not in RUNNING state.");
+
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderAlterSchemaTransaction* transaction =
