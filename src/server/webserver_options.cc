@@ -44,13 +44,8 @@ namespace kudu {
 // Returns KUDU_HOME if set, otherwise we won't serve any static files.
 static const char* GetDefaultDocumentRoot() {
   char* kudu_home = getenv("KUDU_HOME");
-  if (kudu_home == NULL) {
-    return ""; // Empty document root means don't serve static files
-  } else {
-    // Deliberate memory leak, but this should be called exactly once.
-    string* str = new string(kudu_home);
-    return str->c_str();
-  }
+  // Empty document root means don't serve static files
+  return kudu_home ? kudu_home : "";
 }
 
 WebserverOptions::WebserverOptions()
