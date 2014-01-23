@@ -34,16 +34,11 @@ class RpcLineItemDAOTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
-    string tablet_id;
+    const char *kTableName = "tpch1";
 
-    // Create the tablet that we are going to register
-    CreateTabletForTesting(cluster_->mini_master(), "tpch1", schema_, &tablet_id);
-
-    // Wait for the tablet to be reported to the master.
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id, 1));
-
+    // Create the table and Connect to it.
     string master_address(cluster_->mini_master()->bound_rpc_addr().ToString());
-    dao_.reset(new kudu::RpcLineItemDAO(master_address, tablet_id, 5));
+    dao_.reset(new kudu::RpcLineItemDAO(master_address, kTableName, 5));
     dao_->Init();
   }
 

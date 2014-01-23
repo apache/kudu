@@ -249,7 +249,7 @@ void MetaCache::LookupTabletByRow(const KuduTable* table,
   // again, etc.
   // For now, since we have one tablet per table, the tablet ID is just the table
   // name.
-  LookupTabletByID(table->name(), remote_tablet);
+  LookupTabletByID(table->tablet_id(), remote_tablet);
   callback(Status::OK());
 }
 

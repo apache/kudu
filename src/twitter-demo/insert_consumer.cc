@@ -42,8 +42,15 @@ InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<KuduClient> &client)
 }
 
 Status InsertConsumer::Init() {
-  RETURN_NOT_OK_PREPEND(client_->OpenTable("twitter", schema_, &table_),
-                        "Couldn't open twitter table");
+  const char *kTableName = "twitter";
+  Status s = client_->OpenTable(kTableName, schema_, &table_);
+  if (s.IsNotFound()) {
+    RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_),
+                          "Couldn't create twitter table");
+    s = client_->OpenTable(kTableName, schema_, &table_);
+  }
+  RETURN_NOT_OK_PREPEND(s, "Couldn't open twitter table");
+
   session_ = client_->NewSession();
   session_->SetTimeoutMillis(1000);
   CHECK_OK(session_->SetFlushMode(KuduSession::MANUAL_FLUSH));

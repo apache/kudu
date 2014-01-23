@@ -234,9 +234,9 @@ int main(int argc, char **argv) {
       LOG(FATAL) << "Currently it's only possible to import data with 'remote'"
                  << ", not to query";
     }
-    const char * const kTabletId = "tpch1";
-    dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address, kTabletId,
-                                         FLAGS_tpch_max_batch_size));
+    const char * const kTableName = "tpch1";
+    dao.reset(new kudu::RpcLineItemDAO(FLAGS_master_address, kTableName,
+                                        FLAGS_tpch_max_batch_size));
   }
 
   dao->Init();

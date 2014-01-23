@@ -78,6 +78,10 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   static Status Create(const KuduClientOptions& options,
                        std::tr1::shared_ptr<KuduClient>* client);
 
+  Status CreateTable(const std::string& table_name,
+                     const Schema& schema);
+  Status DeleteTable(const std::string& table_name);
+
   // Open the table with the given name. If the table has not been opened before
   // in this client, this will do an RPC to ensure that the table exists and
   // look up its schema.
@@ -161,6 +165,11 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   // This is a temporary shim which will go away once tablets are splittable, etc.
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy();
 
+  // TODO: REMOVE ME (exposed because some code uses some direct stuff)
+  // --------------------------------------------------------------------------
+  const string& tablet_id() const { return tablet_id_; }
+  // --------------------------------------------------------------------------
+
  private:
   friend class KuduClient;
   friend class KuduScanner;
@@ -188,6 +197,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   mutable simple_spinlock lock_;
 
   std::string name_;
+  string tablet_id_;
 
   // TODO: figure out how we deal with a schema change from the client perspective.
   // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get

@@ -28,6 +28,13 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using kudu::master::MasterServiceProxy;
+using kudu::master::CreateTableRequestPB;
+using kudu::master::CreateTableResponsePB;
+using kudu::master::DeleteTableRequestPB;
+using kudu::master::DeleteTableResponsePB;
+using kudu::master::GetTableLocationsRequestPB;
+using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::MasterServiceProxy;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
 using kudu::tserver::ScanRequestPB;
@@ -84,6 +91,36 @@ Status KuduClient::Init() {
   dns_resolver_.reset(new DnsResolver());
 
   initted_ = true;
+
+  return Status::OK();
+}
+
+Status KuduClient::CreateTable(const std::string& table_name,
+                               const Schema& schema) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController rpc;
+
+  req.set_name(table_name);
+  CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
+  RETURN_NOT_OK(master_proxy_->CreateTable(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  return Status::OK();
+}
+
+Status KuduClient::DeleteTable(const std::string& table_name) {
+  DeleteTableRequestPB req;
+  DeleteTableResponsePB resp;
+  RpcController rpc;
+
+  req.mutable_table()->set_table_name(table_name);
+  RETURN_NOT_OK(master_proxy_->DeleteTable(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
 
   return Status::OK();
 }
@@ -147,6 +184,29 @@ KuduTable::~KuduTable() {
 
 Status KuduTable::Open() {
   // TODO: fetch the schema from the master here once catalog is available.
+  GetTableLocationsRequestPB req;
+  GetTableLocationsResponsePB resp;
+
+  req.mutable_table()->set_table_name(name_);
+  do {
+    rpc::RpcController rpc;
+    RETURN_NOT_OK(client_->master_proxy()->GetTableLocations(req, &resp, &rpc));
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+
+    if (resp.tablet_locations_size() > 0)
+      break;
+
+    /* TODO: Add a timeout or number of retries */
+    usleep(100000);
+  } while (1);
+
+  // TODO: we can use the info inside the resp...
+  // TODO: some code relies on table->name() as tablet id
+  DCHECK_EQ(1, resp.tablet_locations_size()) << "Only one tablet supported by the client";
+  tablet_id_ = resp.tablet_locations(0).tablet_id();
+  VLOG(1) << "Open Table " << name_ << ", found tablet=" << tablet_id_;
   return Status::OK();
 }
 
@@ -156,7 +216,7 @@ std::tr1::shared_ptr<tserver::TabletServerServiceProxy> KuduTable::proxy() {
     return proxy_;
   }
   // CHECK is wrong here, but this whole method is going away sooner or later...
-  CHECK_OK(client_->GetTabletProxy(name_, &proxy_));
+  CHECK_OK(client_->GetTabletProxy(tablet_id_, &proxy_));
   return proxy_;
 }
 
@@ -362,7 +422,8 @@ Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicatePB& pb) {
 Status KuduScanner::Open() {
   CHECK(!open_) << "Scanner already open";
 
-  next_req_.mutable_new_scan_request()->set_tablet_id(table_->name());
+  // TODO: Replace with a request to locations by start/end key
+  next_req_.mutable_new_scan_request()->set_tablet_id(table_->tablet_id_);
 
   controller_.Reset();
   // TODO: make configurable through API

@@ -14,6 +14,7 @@
 #include "gutil/stl_util.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/master-test-util.h"
+#include "master/master.proxy.h"
 #include "master/mini_master.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/transactions/write_transaction.h"
@@ -58,32 +59,34 @@ class ClientTest : public KuduTest {
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
 
-    // Set up two test tablets inside the server.
-    ASSERT_NO_FATAL_FAILURE(CreateTabletForTesting(
-                              cluster_->mini_master(), "fake-table", schema_, &tablet_id_));
-    ASSERT_NO_FATAL_FAILURE(CreateTabletForTesting(
-                              cluster_->mini_master(), "fake-table-2", schema_, &tablet2_id_));
-
-    // Grab a reference to the first of them, for more invasive testing.
-    ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-                tablet_id_, &tablet_peer_));
 
     // Wait for the tablets to be reported to the master.
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_, 1));
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet2_id_, 1));
+    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
     // Connect to the cluster.
     KuduClientOptions opts;
     opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
+
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
-    ASSERT_STATUS_OK(client_->OpenTable(tablet_id_, schema_, &client_table_));
-    ASSERT_STATUS_OK(client_->OpenTable(tablet2_id_, schema_, &client_table2_));
+
+    // Set up two test table/tablets inside the server.
+    // TODO: replace with 1 table with two tablets when we'll add the pre-splits to the client
+    ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_));
+    ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
+
+    ASSERT_STATUS_OK(client_->OpenTable(kTableName, schema_, &client_table_));
+    ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, schema_, &client_table2_));
+
+    // TODO: Can we use the client instead of the direct insert with tablet peer?
+    // Grab a reference to the first of them, for more invasive testing.
+    ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
+                client_table_->tablet_id(), &tablet_peer_));
   }
 
  protected:
 
-  string tablet_id_;
-  string tablet2_id_;
+  static const char *kTableName;
+  static const char *kTable2Name;
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRows(int num_rows) {
@@ -187,21 +190,19 @@ class ClientTest : public KuduTest {
   shared_ptr<TabletPeer> tablet_peer_;
 };
 
-// DISABLED: OpenTable doesn't currently do an RPC.
-// TODO: re-enable this once OpenTable is doing an RPC to get the Schema
-// info.
-TEST_F(ClientTest, DISABLED_TestBadTable) {
+const char *ClientTest::kTableName = "client-testtb";
+const char *ClientTest::kTable2Name = "client-testtb2";
+
+TEST_F(ClientTest, TestBadTable) {
   scoped_refptr<KuduTable> t;
   Status s = client_->OpenTable("xxx-does-not-exist", Schema(), &t);
-  ASSERT_EQ("Not found: No replicas for tablet xxx-does-not-exist", s.ToString());
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_EQ("Not found: The table does not exist", s.ToString());
 }
 
 // Test that, if the master is down, we get an appropriate error
 // message.
-// DISABLED: OpenTable doesn't currently do an RPC.
-// TODO: re-enable this once OpenTable is doing an RPC to get the Schema
-// info.
-TEST_F(ClientTest, DISABLED_TestMasterDown) {
+TEST_F(ClientTest, TestMasterDown) {
   ASSERT_STATUS_OK(cluster_->mini_master()->Shutdown());
   scoped_refptr<KuduTable> t;
   Status s = client_->OpenTable("other-tablet", Schema(), &t);
@@ -493,7 +494,7 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
                     1);
   // This succeeds since we don't actually verify the schema on Open, currently.
   scoped_refptr<KuduTable> table;
-  ASSERT_STATUS_OK(client_->OpenTable(tablet_id_, bad_schema, &table));
+  ASSERT_STATUS_OK(client_->OpenTable(kTableName, bad_schema, &table));
 
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();

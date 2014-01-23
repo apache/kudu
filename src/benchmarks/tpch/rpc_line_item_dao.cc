@@ -28,17 +28,24 @@ using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
 void RpcLineItemDAO::Init() {
-  const Schema s = tpch::CreateLineItemSchema();
+  const Schema schema = tpch::CreateLineItemSchema();
 
   client::KuduClientOptions opts;
   opts.master_server_addr = master_address_;
   CHECK_OK(client::KuduClient::Create(opts, &client_));
-  CHECK_OK(client_->GetTabletProxy(tablet_id_, &proxy_));
-  CHECK_OK(client_->OpenTable(tablet_id_, s, &client_table_));
+  Status s = client_->OpenTable(table_name_, schema, &client_table_);
+  if (s.IsNotFound()) {
+    CHECK_OK(client_->CreateTable(table_name_, schema));
+    CHECK_OK(client_->OpenTable(table_name_, schema, &client_table_));
+  } else {
+    CHECK_OK(s);
+  }
 
-  request_.set_tablet_id(tablet_id_);
-  CHECK_OK(SchemaToColumnPBs(s, request_.mutable_to_insert_rows()->mutable_schema()));
-  CHECK_OK(SchemaToColumnPBs(s, request_.mutable_to_mutate_row_keys()->mutable_schema()));
+  // TODO: Use the client api instead of the direct request
+  proxy_ = client_table_->proxy();
+  request_.set_tablet_id(client_table_->tablet_id());
+  CHECK_OK(SchemaToColumnPBs(schema, request_.mutable_to_insert_rows()->mutable_schema()));
+  CHECK_OK(SchemaToColumnPBs(schema, request_.mutable_to_mutate_row_keys()->mutable_schema()));
 }
 
 void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {
@@ -159,7 +166,9 @@ void RpcLineItemDAO::FinishWriting() {
   }
 }
 
-void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {}
+void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {
+  LOG(FATAL) << "NOT IMPLEMENTED!";
+}
 
 void RpcLineItemDAO::OpenScanner(Schema &query_schema, ColumnRangePredicatePB &pred) {
   client::KuduScanner *scanner = new client::KuduScanner(client_table_.get());

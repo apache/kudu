@@ -691,6 +691,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   tablet->AddReplica(ts_desc, report.state());
 
   if (!tablet_lock.data().is_running() &&
+      report.state() == metadata::RUNNING &&
       tablet_lock.data().IsQuorumLeader(ts_desc)) {
     DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
     // Mark the tablet as running

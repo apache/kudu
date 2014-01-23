@@ -26,9 +26,9 @@ using std::tr1::shared_ptr;
 
 class RpcLineItemDAO : public LineItemDAO {
  public:
-  RpcLineItemDAO(const string &master_address, const string& tablet_id, const int batch_size) :
+  RpcLineItemDAO(const string &master_address, const string& table_name, const int batch_size) :
     request_pending_(false), master_address_(master_address),
-    tablet_id_(tablet_id), batch_size_(batch_size) {}
+    table_name_(table_name), batch_size_(batch_size) {}
   virtual void WriteLine(const ConstContiguousRow &row);
   virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations);
   virtual void Init();
@@ -61,7 +61,7 @@ class RpcLineItemDAO : public LineItemDAO {
   // Keeps track of all the orders batched for writing
   std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;
   string master_address_;
-  string tablet_id_;
+  string table_name_;
   int batch_size_;
 };
 

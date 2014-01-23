@@ -17,8 +17,6 @@
 #include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
-#include "twitter-demo/twitter-schema.h"
-#include "benchmarks/tpch/tpch-schemas.h"
 #include "benchmarks/ycsb-schema.h"
 #include "util/env.h"
 #include "util/logging.h"
@@ -31,8 +29,6 @@ using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;
 
-static const char* const kTwitterTabletId = "twitter";
-static const char* const kTPCH1TabletId = "tpch1";
 static const char* const kYCSBTabletId = "ycsb";
 static const char* const kQuorumFlagFormat =
   "Malformed \"tablet_quorum_for_demo\" flag. "
@@ -41,8 +37,8 @@ static const char* const kQuorumFlagFormat =
   "Number of hosts may be 2 or 3.";
 
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
-DEFINE_string(tablet_server_tablet_id, kTwitterTabletId,
-              "Which tablet to use: twitter (default) or tpch1");
+DEFINE_string(tablet_server_tablet_id, kYCSBTabletId,
+              "Which tablet to use: ycsb (default)");
 
 DEFINE_string(tablet_quorum_for_demo, "",
               "The locations of other tablet servers in the quorum, for demo purposes.\n"
@@ -53,7 +49,7 @@ DEFINE_string(tablet_quorum_for_demo, "",
 namespace kudu {
 namespace tserver {
 
-// For demos, keep only a single tablet that can be either twitter or tpch1
+// For demos, keep only a single tablet that can be ycsb
 class TemporaryTabletsForDemos {
  public:
   explicit TemporaryTabletsForDemos(TabletServer* server, Schema schema,
@@ -197,19 +193,20 @@ static int TabletServerMain(int argc, char** argv) {
   LOG(INFO) << "Initializing tablet server...";
   CHECK_OK(server.Init());
 
+  // TODO: Twitter does not use the client and the java api for YCSB is in progress
+  //       so they both relies on a fixed tablet-id to be created.
+  //       Remove this stuff once everything is switched to the client create/open api.
   LOG(INFO) << "Setting up demo tablets...";
   const string& id = FLAGS_tablet_server_tablet_id;
   Schema schema;
-  if (id == kTwitterTabletId) {
-    schema = twitter_demo::CreateTwitterSchema();
-  } else if (id == kTPCH1TabletId) {
-    schema = tpch::CreateLineItemSchema();
-  } else if (id == kYCSBTabletId) {
+  if (id == kYCSBTabletId) {
     schema = kudu::CreateYCSBSchema();
   } else {
-    LOG(FATAL) << "Unknown tablet_server_tablet_id: " << id;
+    LOG(WARNING) << "Unknown tablet_server_tablet_id: " << id;
   }
-  TemporaryTabletsForDemos demo_setup(&server, schema, id);
+  if (schema.initialized()) {
+    TemporaryTabletsForDemos demo_setup(&server, schema, id);
+  }
 
   // Temporary hack for demos: start threads which compact/flush the tablet.
   // Eventually this will be part of TabletServer itself, and take care of deciding
