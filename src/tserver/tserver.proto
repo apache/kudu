@@ -73,6 +73,8 @@ message AlterSchemaRequestPB {
   // TODO: Replace with the table descriptor
   // (Schema, Column IDs, Column Attributes)
   required SchemaPB schema = 2;
+
+  required uint32 schema_version = 3;
 }
 
 message AlterSchemaResponsePB {
@@ -118,13 +120,14 @@ message WriteResponsePB {
 
 // A create tablet request.
 message CreateTabletRequestPB {
-  required bytes tablet_id = 1;
-  required bytes start_key = 2;
-  required bytes end_key = 3;
-  required SchemaPB schema = 4;
+  required bytes table_id = 1;
+  required bytes tablet_id = 2;
+  required bytes start_key = 3;
+  required bytes end_key = 4;
+  required SchemaPB schema = 5;
   // Optional quorum for the tablet. If one is not provided a local quorum
   // is chosen.
-  optional metadata.QuorumPB quorum = 5;
+  optional metadata.QuorumPB quorum = 6;
 }
 
 message CreateTabletResponsePB {

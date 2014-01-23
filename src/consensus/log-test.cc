@@ -100,6 +100,7 @@ class LogTest : public KuduTest {
     meta->set_start_key("");
     meta->set_end_key("");
     meta->set_sequence(0);
+    meta->set_schema_version(0);
     ASSERT_STATUS_OK(SchemaToPB(schema_, meta->mutable_schema()));
 
     meta->set_last_durable_mrs_id(last_durable_mrs);

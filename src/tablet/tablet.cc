@@ -665,7 +665,7 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
     LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " <<
                  tx_ctx->schema()->ToString();
     schema_ = *tx_ctx->schema();
-    metadata_->SetSchema(schema_);
+    metadata_->SetSchema(schema_, tx_ctx->schema_version());
 
     // Update the DiskRowSet/DeltaTracker
     // TODO: This triggers a flush of the DeltaMemStores...

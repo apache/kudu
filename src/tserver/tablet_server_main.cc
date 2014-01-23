@@ -67,7 +67,7 @@ class TemporaryTabletsForDemos {
       BuildQuorumFromFlagIfProvided();
 
       CHECK_OK(server->tablet_manager()->CreateNewTablet(
-                 tablet_id, "", "", SchemaBuilder(schema_).Build(), quorum_, &peer));
+                 tablet_id, tablet_id, "", "", SchemaBuilder(schema_).Build(), quorum_, &peer));
     }
     tablet_ = peer->shared_tablet();
   }

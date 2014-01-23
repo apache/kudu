@@ -167,7 +167,8 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
                          TabletServerErrorPB::INVALID_SCHEMA, context);
   }
 
-  s = server_->tablet_manager()->CreateNewTablet(req->tablet_id(),
+  s = server_->tablet_manager()->CreateNewTablet(req->table_id(),
+                                                 req->tablet_id(),
                                                  req->start_key(),
                                                  req->end_key(),
                                                  schema,

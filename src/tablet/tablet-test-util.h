@@ -34,6 +34,7 @@ class KuduTabletTest : public KuduTest {
 
   void SetUpTestTablet(const string& root_dir = "") {
     metadata::TabletMasterBlockPB master_block;
+    master_block.set_table_id("KuduTableTestId");
     master_block.set_tablet_id("KuduTabletTestId");
     master_block.set_block_a("00000000000000000000000000000000");
     master_block.set_block_b("11111111111111111111111111111111");

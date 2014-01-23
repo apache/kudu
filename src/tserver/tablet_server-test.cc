@@ -851,6 +851,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   Schema s2 = builder.Build();
 
   req.set_tablet_id(kTabletId);
+  req.set_schema_version(1);
   ASSERT_STATUS_OK(SchemaToPB(s2, req.mutable_schema()));
 
   // Send the call
@@ -895,6 +896,7 @@ TEST_F(TabletServerTest, TestCreateTablet_NoQuorum) {
   RpcController rpc;
 
   string tablet_id = "new_tablet";
+  req.set_table_id("testtb");
   req.set_tablet_id(tablet_id);
   req.set_start_key("");
   req.set_end_key("");
@@ -936,6 +938,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   CreateTabletResponsePB resp;
   RpcController rpc;
 
+  req.set_table_id("testtb");
   req.set_tablet_id(kTabletId);
   req.set_start_key(" ");
   req.set_end_key(" ");

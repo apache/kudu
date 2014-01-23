@@ -109,7 +109,7 @@ class TabletServerTest : public KuduTest {
     ASSERT_STATUS_OK(mini_server_->Start());
 
     // Set up a tablet inside the server.
-    ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTabletId, schema_));
+    ASSERT_STATUS_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
 
     // Connect to it.
@@ -166,6 +166,7 @@ class TabletServerTest : public KuduTest {
   }
 
  protected:
+  static const char* kTableId;
   static const char* kTabletId;
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
@@ -362,6 +363,7 @@ class TabletServerTest : public KuduTest {
   void* shared_region_;
 };
 
+const char* TabletServerTest::kTableId = "TestTable";
 const char* TabletServerTest::kTabletId = "TestTablet";
 
 } // namespace tserver

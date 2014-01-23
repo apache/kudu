@@ -54,7 +54,7 @@ class TsTabletManagerTest : public KuduTest {
                          const std::string& end_key,
                          const Schema& schema,
                          std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) {
-    return tablet_manager_->CreateNewTablet(tablet_id, start_key, end_key,
+    return tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
                                             SchemaBuilder(schema).Build(),
                                             quorum_,
                                             tablet_peer);
@@ -62,6 +62,7 @@ class TsTabletManagerTest : public KuduTest {
 
  protected:
   void CreateTestMasterBlock(const string& tid, TabletMasterBlockPB* pb) {
+    pb->set_table_id("table");
     pb->set_tablet_id(tid);
     pb->set_block_a("block-a");
     pb->set_block_b("block-b");

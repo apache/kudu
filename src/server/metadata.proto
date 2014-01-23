@@ -115,10 +115,11 @@ message TabletSuperBlockPB {
   // TODO: maybe this should be TableSchemaPB? Need to actually put those attributes
   // into use throughout the code. Using the simpler one for now.
   required SchemaPB schema = 7;
+  required uint32 schema_version = 8;
 
   // The latest QuorumPB this tablet was part of.
   // TODO make this required once dist consensus is fully integrated.
-  optional QuorumPB quorum = 8;
+  optional QuorumPB quorum = 9;
 }
 
 // The enum of tablet states.
@@ -153,9 +154,10 @@ enum TabletStatePB {
 // "bootstrap table", on tablet creation, and it is used by the master
 // to load all the tablets in the system at startup.
 message TabletMasterBlockPB {
-  required bytes tablet_id = 1;
-  required bytes block_a = 2;
-  required bytes block_b = 3;
+  required bytes table_id = 1;
+  required bytes tablet_id = 2;
+  required bytes block_a = 3;
+  required bytes block_b = 4;
 }
 
 // ===========================================================================

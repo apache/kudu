@@ -66,7 +66,8 @@ class TSTabletManager {
   //
   // If another tablet already exists with this ID, logs a DFATAL
   // and returns a bad Status.
-  Status CreateNewTablet(const std::string& tablet_id,
+  Status CreateNewTablet(const string& table_id,
+                         const std::string& tablet_id,
                          const std::string& start_key, const std::string& end_key,
                          const Schema& schema,
                          metadata::QuorumPB quorum,

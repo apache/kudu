@@ -92,6 +92,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     next_rowset_idx_(0),
     last_durable_mrs_id_(kNoDurableMemStore),
     schema_(schema),
+    schema_version_(0),
     quorum_(quorum) {
   CHECK(schema_.has_column_ids());
 }
@@ -269,6 +270,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
   pb->set_start_key(start_key_);
   pb->set_end_key(end_key_);
   pb->set_last_durable_mrs_id(last_durable_mrs_id_);
+  pb->set_schema_version(schema_version_);
 
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, rowsets) {
     meta->ToProtobuf(pb->add_rowsets());
@@ -329,10 +331,11 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
   return NULL;
 }
 
-void TabletMetadata::SetSchema(const Schema& schema) {
+void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   DCHECK(schema.has_column_ids());
   boost::lock_guard<LockType> l(lock_);
   schema_ = schema;
+  schema_version_ = version;
 }
 
 Schema TabletMetadata::schema() const {

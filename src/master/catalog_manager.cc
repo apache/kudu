@@ -730,6 +730,7 @@ class AsyncCreateTablet {
 
       const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
 
+      req.set_table_id(tablet->table()->id());
       req.set_tablet_id(tablet->tablet_id());
       req.set_start_key(tablet_pb.start_key());
       req.set_end_key(tablet_pb.end_key());

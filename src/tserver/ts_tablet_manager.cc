@@ -104,7 +104,8 @@ Status TSTabletManager::Init() {
   return Status::OK();
 }
 
-Status TSTabletManager::CreateNewTablet(const string& tablet_id,
+Status TSTabletManager::CreateNewTablet(const string& table_id,
+                                        const string& tablet_id,
                                         const string& start_key, const string& end_key,
                                         const Schema& schema,
                                         QuorumPB quorum,
@@ -142,6 +143,7 @@ Status TSTabletManager::CreateNewTablet(const string& tablet_id,
 
   // Create a new master block
   TabletMasterBlockPB master_block;
+  master_block.set_table_id(table_id);
   master_block.set_tablet_id(tablet_id);
   master_block.set_block_a(fs_manager_->GenerateName());
   master_block.set_block_b(fs_manager_->GenerateName());

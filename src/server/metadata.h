@@ -84,7 +84,17 @@ class TabletMetadata {
     return end_key_;
   }
 
-  void SetSchema(const Schema& schema);
+  const string& table_id() const {
+    DCHECK_NE(state_, kNotLoadedYet);
+    return master_block_.table_id();
+  }
+
+  uint32_t schema_version() const {
+    DCHECK_NE(state_, kNotLoadedYet);
+    return schema_version_;
+  }
+
+  void SetSchema(const Schema& schema, uint32_t version);
 
   // Return the current schema of the metadata. Note that this returns
   // a copy so should not be used in a tight loop.
@@ -192,6 +202,7 @@ class TabletMetadata {
   int64_t last_durable_mrs_id_;
 
   Schema schema_;
+  uint32_t schema_version_;
 
   metadata::QuorumPB quorum_;
 

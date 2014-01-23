@@ -74,19 +74,21 @@ Status MiniTabletServer::Shutdown() {
   return Status::OK();
 }
 
-Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
+Status MiniTabletServer::AddTestTablet(const std::string& table_id,
+                                       const std::string& tablet_id,
                                        const Schema& schema) {
   QuorumPB quorum;
   quorum.set_seqno(0);
-  return AddTestTablet(tablet_id, schema, quorum);
+  return AddTestTablet(table_id, tablet_id, schema, quorum);
 }
 
-Status MiniTabletServer::AddTestTablet(const std::string& tablet_id,
+Status MiniTabletServer::AddTestTablet(const std::string& table_id,
+                                       const std::string& tablet_id,
                                        const Schema& schema,
                                        const QuorumPB& quorum) {
   CHECK(started_) << "Must Start()";
   return server_->tablet_manager()->CreateNewTablet(
-    tablet_id, "", "", SchemaBuilder(schema).Build(), quorum, NULL);
+    table_id, tablet_id, "", "", SchemaBuilder(schema).Build(), quorum, NULL);
 }
 
 const Sockaddr MiniTabletServer::bound_rpc_addr() const {

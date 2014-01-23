@@ -47,6 +47,13 @@ class AlterSchemaTransactionContext : public TransactionContext {
   void set_schema(const Schema* schema) { schema_ = schema; }
   const Schema* schema() const { return schema_; }
 
+  uint32_t schema_version() const {
+    if (request_ == NULL) {
+      return 0;
+    }
+    return request_->schema_version();
+  }
+
   void acquire_tablet_lock(percpu_rwlock& component_lock) {
     component_lock_ = boost::unique_lock<percpu_rwlock>(component_lock);
     DCHECK(component_lock_.owns_lock());

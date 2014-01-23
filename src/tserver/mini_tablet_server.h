@@ -43,12 +43,14 @@ class MiniTabletServer {
   // Add a new tablet to the test server, use the default quorum.
   //
   // Requires that the server has already been started with Start().
-  Status AddTestTablet(const std::string& tablet_id,
+  Status AddTestTablet(const std::string& table_id,
+                       const std::string& tablet_id,
                        const Schema& schema);
 
   // Add a new tablet to the test server and specify the quorum
   // for the tablet.
-  Status AddTestTablet(const std::string& tablet_id,
+  Status AddTestTablet(const std::string& table_id,
+                       const std::string& tablet_id,
                        const Schema& schema,
                        const metadata::QuorumPB& quorum);
 
