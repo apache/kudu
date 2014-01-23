@@ -220,8 +220,13 @@ TEST_F(RpcStubTest, TestRpcPanic) {
       " --gtest_filter=RpcStubTest.TestRpcPanic";
 
     int ret = system(cmdline.c_str());
-    CHECK(WIFSIGNALED(ret));
-    CHECK_EQ(WTERMSIG(ret), SIGABRT);
+    if (WIFSIGNALED(ret)) {
+      CHECK_EQ(WTERMSIG(ret), SIGABRT);
+    } else {
+      // On some systems, we get exit status 134 from SIGABRT rather than
+      // WIFSIGNALED getting flagged.
+      CHECK_EQ(WEXITSTATUS(ret), 134);
+    }
     return;
   } else {
     // Make an RPC which causes the server to abort.
