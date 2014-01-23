@@ -5,10 +5,12 @@
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 
+#include "gutil/stl_util.h"
 #include "rpc/rtest.proxy.h"
 #include "rpc/rtest.service.h"
 #include "rpc/rpc-test-base.h"
 #include "util/countdown_latch.h"
+#include "util/metrics.h"
 #include "util/test_util.h"
 #include "util/user.h"
 
@@ -236,6 +238,49 @@ TEST_F(RpcStubTest, TestRpcPanic) {
     PanicResponsePB resp;
     p.Panic(req, &resp, &controller);
   }
+}
+
+struct AsyncSleep {
+  AsyncSleep() : latch(1) {}
+
+  RpcController rpc;
+  SleepRequestPB req;
+  SleepResponsePB resp;
+  CountDownLatch latch;
+};
+
+TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+  vector<AsyncSleep*> sleeps;
+  ElementDeleter d(&sleeps);
+
+  // Send enough sleep calls to occupy the worker threads.
+  for (int i = 0; i < n_worker_threads_; i++) {
+    gscoped_ptr<AsyncSleep> sleep(new AsyncSleep);
+    sleep->rpc.set_timeout(MonoDelta::FromSeconds(1));
+    sleep->req.set_sleep_micros(100*1000); // 100ms
+    p.SleepAsync(sleep->req, &sleep->resp, &sleep->rpc,
+                 boost::bind(&CountDownLatch::CountDown, &sleep->latch));
+    sleeps.push_back(sleep.release());
+  }
+
+  // Send another call with a short timeout. This shouldn't get processed, because
+  // it'll get stuck in the queue for longer than its timeout.
+  RpcController rpc;
+  SleepRequestPB req;
+  SleepResponsePB resp;
+  req.set_sleep_micros(1000);
+  rpc.set_timeout(MonoDelta::FromMilliseconds(1));
+  Status s = p.Sleep(req, &resp, &rpc);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+  BOOST_FOREACH(AsyncSleep* s, sleeps) {
+    s->latch.Wait();
+  }
+
+  // Verify that the timedout call got short circuited before being processed.
+  const Counter* timed_out_in_queue = worker_pool_->rpcs_timed_out_in_queue_metric();
+  ASSERT_EQ(1, timed_out_in_queue->value());
 }
 
 } // namespace rpc

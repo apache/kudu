@@ -23,6 +23,10 @@ METRIC_DEFINE_histogram(incoming_queue_time, kudu::MetricUnit::kMicroseconds,
     "Number of microseconds incoming RPC requests spend in the worker queue",
     60000000LU, 3);
 
+METRIC_DEFINE_counter(rpcs_timed_out_in_queue, kudu::MetricUnit::kRequests,
+                      "Number of RPCs whose timeout elapsed while waiting "
+                      "in the service queue, and thus were not processed.");
+
 namespace kudu {
 namespace rpc {
 
@@ -31,7 +35,9 @@ ServicePool::ServicePool(const std::tr1::shared_ptr<Messenger> &messenger,
   : messenger_(messenger),
     service_(service.Pass()),
     incoming_queue_time_(METRIC_incoming_queue_time.Instantiate(
-        *(CHECK_NOTNULL(messenger_->metric_context())))) {
+                           *(CHECK_NOTNULL(messenger_->metric_context())))),
+    rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(
+                               *(CHECK_NOTNULL(messenger_->metric_context())))) {
 }
 
 ServicePool::~ServicePool() {
@@ -64,8 +70,25 @@ void ServicePool::RunThread() {
     }
 
     incoming->RecordHandlingStarted(incoming_queue_time_);
-    TRACE_TO(incoming->trace(), "Handling call");
     ADOPT_TRACE(incoming->trace());
+
+    if (PREDICT_FALSE(incoming->ClientTimedOut())) {
+      TRACE_TO(incoming->trace(), "Skipping call since client already timed out");
+      rpcs_timed_out_in_queue_->Increment();
+
+      // Respond as a failure, even though the client will probably ignore
+      // the response anyway.
+      incoming->RespondFailure(
+        ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
+        Status::TimedOut("Call waited in the queue past client deadline"));
+
+      // Must release since RespondFailure above ends up taking ownership
+      // of the object.
+      ignore_result(incoming.release());
+      continue;
+    }
+
+    TRACE_TO(incoming->trace(), "Handling call");
 
     // Release the InboundCall pointer -- when the call is responded to,
     // it will get deleted at that point.

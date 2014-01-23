@@ -170,5 +170,15 @@ void InboundCall::RecordHandlingCompleted(Histogram* handler_run_time) {
       timing_.time_completed.GetDeltaSince(timing_.time_handled).ToMicroseconds());
 }
 
+bool InboundCall::ClientTimedOut() const {
+  if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) {
+    return false;
+  }
+
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  int total_time = now.GetDeltaSince(timing_.time_received).ToMilliseconds();
+  return total_time > header_.timeout_millis();
+}
+
 } // namespace rpc
 } // namespace kudu

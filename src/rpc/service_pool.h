@@ -13,6 +13,7 @@
 
 namespace kudu {
 
+class Counter;
 class Histogram;
 class Socket;
 
@@ -29,12 +30,17 @@ class ServicePool {
   virtual ~ServicePool();
   virtual Status Init(int num_threads);
 
+  const Counter* rpcs_timed_out_in_queue_metric() const {
+    return rpcs_timed_out_in_queue_;
+  }
+
  private:
   void RunThread();
   std::tr1::shared_ptr<Messenger> messenger_;
   gscoped_ptr<ServiceIf> service_;
   std::vector<std::tr1::shared_ptr<boost::thread> > threads_;
   Histogram* incoming_queue_time_;
+  Counter* rpcs_timed_out_in_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(ServicePool);
 };

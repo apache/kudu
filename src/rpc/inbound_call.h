@@ -117,6 +117,11 @@ class InboundCall {
   // Not thread-safe. Should only be called by the current "owner" thread.
   void RecordHandlingCompleted(Histogram* handler_run_time);
 
+  // Return true if the deadline set by the client has already elapsed.
+  // In this case, the server may stop processing the call, since the
+  // call response will be ignored anyway.
+  bool ClientTimedOut() const;
+
  private:
   // Serialize and queue the response.
   void Respond(const google::protobuf::MessageLite& response,
