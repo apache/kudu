@@ -184,7 +184,10 @@ Status Log::CreateNewSegment(const LogSegmentHeader& header) {
 
   LOG(INFO) << "Creating new segment: " << fqp;
   RETURN_NOT_OK(env_util::OpenFileForWrite(fs_manager_->env(), fqp, &sink));
-  RETURN_NOT_OK(sink->PreAllocate(max_segment_size_));
+
+  if (options_.preallocate_segments) {
+    RETURN_NOT_OK(sink->PreAllocate(max_segment_size_));
+  }
 
   // create a new segment
   gscoped_ptr<WritableLogSegment> new_segment(new WritableLogSegment(header, fqp, sink));

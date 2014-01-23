@@ -39,6 +39,9 @@ struct LogOptions {
   // Whether to call fsync on every call to Append().
   bool force_fsync_all;
 
+  // Whether to fallocate segments before writing to them.
+  bool preallocate_segments;
+
   LogOptions();
 };
 

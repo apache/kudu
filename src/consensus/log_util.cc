@@ -19,6 +19,9 @@ DEFINE_int32(log_segment_size_mb, 64,
 DEFINE_bool(log_force_fsync_all, false,
             "Whether the Log/WAL should explicitly call fsync() after each write.");
 
+DEFINE_bool(log_preallocate_segments, true,
+            "Whether the WAL should preallocate the entire segment before writing to it");
+
 namespace kudu {
 namespace log {
 
@@ -38,7 +41,8 @@ const int kLogMinorVersion = 0;
 
 LogOptions::LogOptions()
 : segment_size_mb(FLAGS_log_segment_size_mb),
-  force_fsync_all(FLAGS_log_force_fsync_all) {
+  force_fsync_all(FLAGS_log_force_fsync_all),
+  preallocate_segments(FLAGS_log_preallocate_segments) {
 }
 
 LogSegment::LogSegment(const LogSegmentHeader& header,
