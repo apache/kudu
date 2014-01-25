@@ -46,6 +46,10 @@ class MasterTest : public KuduTest {
     proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
   }
 
+  void DoListTables(ListTablesResponsePB* resp);
+  void CreateTable(const string& table_name,
+                   const Schema& schema);
+
 
   shared_ptr<Messenger> client_messenger_;
   gscoped_ptr<MiniMaster> mini_master_;
@@ -144,6 +148,32 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_EQ(ts_desc, descs[0]);
 }
 
+// Create a table
+void MasterTest::CreateTable(const string& table_name,
+                             const Schema& schema) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController controller;
+
+  req.set_name(table_name);
+  req.add_pre_split_keys("k1");
+  req.add_pre_split_keys("k2");
+
+  ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
+  ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_FALSE(resp.has_error());
+}
+
+
+void MasterTest::DoListTables(ListTablesResponsePB* resp) {
+  ListTablesRequestPB req;
+  RpcController controller;
+  ASSERT_STATUS_OK(proxy_->ListTables(req, resp, &controller));
+  SCOPED_TRACE(resp->DebugString());
+  ASSERT_FALSE(resp->has_error());
+}
+
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
   const Schema kTableSchema(boost::assign::list_of
@@ -151,33 +181,14 @@ TEST_F(MasterTest, TestCatalog) {
                             (ColumnSchema("v1", UINT64))
                             (ColumnSchema("v2", STRING)),
                             1);
-  // Create a table
-  {
-    CreateTableRequestPB req;
-    CreateTableResponsePB resp;
-    RpcController controller;
 
-    req.set_name(kTableName);
-    req.add_pre_split_keys("k1");
-    req.add_pre_split_keys("k2");
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));
 
-    ASSERT_STATUS_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
-    ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-  }
+  ListTablesResponsePB tables;
+  ASSERT_NO_FATAL_FAILURE(DoListTables(&tables));
+  ASSERT_EQ(1, tables.tables_size());
+  ASSERT_EQ(kTableName, tables.tables(0).name());
 
-  // List tables, should show just the created one
-  {
-    ListTablesRequestPB req;
-    ListTablesResponsePB resp;
-    RpcController controller;
-    ASSERT_STATUS_OK(proxy_->ListTables(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-    ASSERT_EQ(1, resp.tables_size());
-    ASSERT_EQ(kTableName, resp.tables(0).name());
-  }
 
   // Delete the table
   {
@@ -190,32 +201,19 @@ TEST_F(MasterTest, TestCatalog) {
     ASSERT_FALSE(resp.has_error());
   }
 
-  // List tables, show show no table
-  {
-    ListTablesRequestPB req;
-    ListTablesResponsePB resp;
-    RpcController controller;
-    ASSERT_STATUS_OK(proxy_->ListTables(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-    ASSERT_EQ(0, resp.tables_size());
-  }
+  // List tables, should show no table
+  ASSERT_NO_FATAL_FAILURE(DoListTables(&tables));
+  ASSERT_EQ(0, tables.tables_size());
 
   // Re-create the table
-  {
-    CreateTableRequestPB req;
-    CreateTableResponsePB resp;
-    RpcController controller;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));
 
-    req.set_name(kTableName);
-    req.add_pre_split_keys("k1");
-    req.add_pre_split_keys("k2");
+  // Restart the master, verify the table still shows up.
+  ASSERT_STATUS_OK(mini_master_->Restart());
 
-    ASSERT_STATUS_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
-    ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-  }
+  ASSERT_NO_FATAL_FAILURE(DoListTables(&tables));
+  ASSERT_EQ(1, tables.tables_size());
+  ASSERT_EQ(kTableName, tables.tables(0).name());
 }
 
 } // namespace master

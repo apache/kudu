@@ -5,6 +5,7 @@
 
 #include <boost/assign/list_of.hpp>
 
+#include <algorithm>
 #include <string>
 
 #include "common/schema.h"
@@ -17,6 +18,31 @@
 
 namespace kudu {
 namespace master {
+
+Status WaitForRunningTabletCount(MiniMaster* mini_master,
+                                 const string& table_name,
+                                 int expected_count,
+                                 GetTableLocationsResponsePB* resp) {
+  GetTableLocationsRequestPB req;
+
+  int wait_time = 1000;
+  for (int i = 0; i < 80; ++i) {
+    resp->Clear();
+    req.mutable_table()->set_table_name(table_name);
+    RETURN_NOT_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, resp));
+    if (resp->tablet_locations_size() >= expected_count) {
+      return Status::OK();
+    }
+    VLOG(1) << "Waiting for " << expected_count << " tablets for table \""
+            << table_name << "\". So far have "
+            << resp->tablet_locations_size();
+
+    usleep(wait_time);
+    wait_time = std::min(wait_time * 5 / 4, 1000000);
+  }
+
+  return Status::TimedOut("Timed out waiting for table", table_name);
+}
 
 void CreateTabletForTesting(MiniMaster* mini_master,
                             const string& table_name,
@@ -31,27 +57,10 @@ void CreateTabletForTesting(MiniMaster* mini_master,
     ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->CreateTable(&req, &resp, NULL));
   }
 
-  {
-    GetTableLocationsRequestPB req;
-    GetTableLocationsResponsePB resp;
-
-    int wait_time = 1000;
-    for (int i = 0; i < 80; ++i) {
-      req.mutable_table()->set_table_name(table_name);
-      ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, &resp));
-      if (resp.tablet_locations_size() > 0) {
-        *tablet_id = resp.tablet_locations(0).tablet_id();
-        LOG(INFO) << "Got tablet " << *tablet_id << " for table " << table_name;
-        return;
-      }
-      VLOG(1) << "WAITING FOR A TABLET";
-
-      usleep(wait_time);
-      wait_time = wait_time * 5 / 4;
-    };
-  }
-
-  FAIL() << "Unable to get a tablet for table " << table_name;
+  GetTableLocationsResponsePB resp;
+  ASSERT_STATUS_OK(WaitForRunningTabletCount(mini_master, table_name, 1, &resp));
+  *tablet_id = resp.tablet_locations(0).tablet_id();
+  LOG(INFO) << "Got tablet " << *tablet_id << " for table " << table_name;
 }
 
 } // namespace master

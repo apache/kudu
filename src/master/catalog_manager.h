@@ -192,6 +192,8 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,
                          vector<scoped_refptr<TabletInfo> > *ret) const;
 
+  void GetAllTablets(vector<scoped_refptr<TabletInfo> > *ret) const;
+
   // Access the persistent metadata. Typically you should use
   // TableMetadataLock to gain access to this data.
   const CowObject<PersistentTableInfo>& metadata() const { return metadata_; }
@@ -200,6 +202,8 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
  private:
   friend class base::RefCountedThreadSafe<TableInfo>;
   ~TableInfo();
+
+  void AddTabletUnlocked(TabletInfo* tablet);
 
   const std::string table_id_;
 
@@ -287,21 +291,31 @@ class CatalogManager {
   SysTablesTable *sys_tables() { return sys_tables_.get(); }
   SysTabletsTable *sys_tablets() { return sys_tablets_.get(); }
 
+  // Dump all of the current state about tables and tablets to the
+  // given output stream. This is verbose, meant for debugging.
+  void DumpState(std::ostream* out) const;
+
  private:
   friend class TableLoader;
   friend class TabletLoader;
 
   // Helper for creating the inital Tablets of the table
   // based on the split-keys field in the request.
+  // Leaves the tablets "write locked" with the new info in the
+  // "dirty" state field.
   void CreateTablets(const CreateTableRequestPB* req,
                      TableInfo *table,
                      vector<TabletInfo*> *tablets);
 
   // Helper for creating the initial TableInfo state
+  // Leaves the table "write locked" with the new info in the
+  // "dirty" state field.
   TableInfo *CreateTableInfo(const CreateTableRequestPB* req,
                              const Schema& schema);
 
-  // Helper for creating the initial TabletInfo state
+  // Helper for creating the initial TabletInfo state.
+  // Leaves the tablet "write locked" with the new info in the
+  // "dirty" state field.
   TabletInfo *CreateTabletInfo(TableInfo *table,
                                const string& start_key,
                                const string& end_key);
@@ -372,7 +386,7 @@ class CatalogManager {
 
   // Lock protecting the various maps above.
   typedef rw_spinlock LockType;
-  LockType lock_;
+  mutable LockType lock_;
 
   Master *master_;
   Atomic32 closing_;

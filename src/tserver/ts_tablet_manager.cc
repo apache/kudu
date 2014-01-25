@@ -24,6 +24,7 @@
 #include "util/metrics.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
+#include "util/trace.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -165,6 +166,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     // acquire the lock in exclusive mode as we'll add a entry to the
     // creates_in_progress_ set if the lookup fails.
     boost::lock_guard<rw_spinlock> lock(lock_);
+    TRACE("Acquired tablet manager lock");
 
     // Sanity check that the tablet isn't already registered.
     shared_ptr<TabletPeer> junk;
@@ -188,6 +190,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   master_block.set_block_a(fs_manager_->GenerateName());
   master_block.set_block_b(fs_manager_->GenerateName());
 
+  TRACE("Creating new master block...");
   gscoped_ptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(
     TabletMetadata::CreateNew(fs_manager_,
@@ -199,6 +202,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               &meta),
     "Couldn't create tablet metadata");
 
+  TRACE("Persisting new master block...");
   RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
                         "Couldn't persist master block for new tablet");
 
@@ -216,15 +220,19 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
                                        gscoped_ptr<TabletMetadata>* metadata) {
   LOG(INFO) << "Loading master block " << tablet_id;
+  TRACE("Loading master block");
 
   TabletMasterBlockPB master_block;
   RETURN_NOT_OK(LoadMasterBlock(tablet_id, &master_block));
   VLOG(1) << "Loaded master block: " << master_block.ShortDebugString();
 
+
+  TRACE("Loading metadata...");
   gscoped_ptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, master_block, &meta),
                         strings::Substitute("Failed to load tablet metadata. Master block: $0",
                                             master_block.ShortDebugString()));
+  TRACE("Metadata loaded");
   metadata->reset(meta.release());
   return Status::OK();
 }
@@ -244,6 +252,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   gscoped_ptr<Log> log;
 
   LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
+  TRACE("Bootstrapping tablet");
 
   Status s;
   LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
@@ -262,6 +271,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
 
   LOG_TIMING(INFO, Substitute("Tablet $0 Started.", tablet_id)) {
+    TRACE("Initializing tablet peer");
     s =  tablet_peer->Init(tablet,
                            quorum_peer,
                            log.Pass());
@@ -274,6 +284,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
     QuorumPB initial_config = tablet->metadata()->Quorum();
     initial_config.set_seqno(initial_config.seqno() + 1);
 
+    TRACE("Starting tablet peer");
     s = tablet_peer->Start(initial_config);
     if (!s.ok()) {
       tablet_peer->SetFailed(s);

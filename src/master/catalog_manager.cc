@@ -38,6 +38,7 @@
 #include "gutil/map-util.h"
 #include "gutil/mathlimits.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/escaping.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/walltime.h"
 #include "master/master.h"
@@ -50,13 +51,6 @@
 #include "util/thread_util.h"
 #include "util/trace.h"
 
-namespace kudu {
-namespace master {
-
-using strings::Substitute;
-using rpc::RpcContext;
-
-
 DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS assignment timeout. "
              "(Advanced option)");
@@ -64,6 +58,12 @@ DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
 DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
              "Default number of replicas for tables that do have the num_replicas set. "
              "(Advanced option)");
+
+namespace kudu {
+namespace master {
+
+using strings::Substitute;
+using rpc::RpcContext;
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -147,7 +147,10 @@ class TabletLoader : public SysTabletsTable::Visitor {
     }
 
     // Add the tablet to the Table
-    table->AddTablet(tablet);
+    if (!l.mutable_data()->is_deleted()) {
+      table->AddTablet(tablet);
+    }
+    l.Commit();
 
     TableMetadataLock table_lock(table.get(), TableMetadataLock::READ);
 
@@ -156,7 +159,6 @@ class TabletLoader : public SysTabletsTable::Visitor {
       VLOG(2) << "Metadata: " << metadata.DebugString();
     }
 
-    l.Commit();
     return Status::OK();
   }
 
@@ -189,6 +191,7 @@ class CatalogManagerBgTasks {
 
   void Wait(int msec) {
     boost::unique_lock<boost::mutex> lock(lock_);
+    if (closing_) return;
     boost::system_time wtime = boost::get_system_time() + boost::posix_time::milliseconds(msec);
     cond_.timed_wait(lock, wtime);
     pending_updates_ = false;
@@ -380,22 +383,15 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   TRACE("Inserted table and tablets into CM maps");
 
-  // Lock the table and tablets for write. At this point, they should still be in the
-  // "preparing" state from when we created them above.
-  table->metadata().StartMutation();
+  // NOTE: the table and tablets are already locked for write at this point,
+  // since the CreateTableInfo/CreateTabletInfo functions leave them in that state.
+  // They will get committed at the end of this function.
+  // Sanity check: the tables and tablets should all be in "preparing" state.
   CHECK_EQ(SysTablesEntryPB::kTableStatePreparing, table->metadata().dirty().pb.state());
-
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    // Though we aren't actually going to mutate the Tablet, when we write it back
-    // to disk, it requires that it be locked for write. Otherwise, someone else
-    // could come along and mutate it underneath the SysTable write. Even though
-    // in this particular case no one else would touch the tablet, there are
-    // assertions that would fire if we didn't lock for write.
-    tablet->metadata().StartMutation();
     CHECK_EQ(SysTabletsEntryPB::kTabletStatePreparing,
              tablet->metadata().dirty().pb.state());
   }
-  TRACE("Acquired write locks on table and tablets");
 
   // 5. Write Tablets to sys-tablets (in "preparing" state)
   Status s = sys_tablets_->AddTablets(tablets);
@@ -459,8 +455,8 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
                                            const Schema& schema) {
   DCHECK(schema.has_column_ids());
   TableInfo* table = new TableInfo(GenerateId());
-  TableMetadataLock l(table, TableMetadataLock::WRITE);
-  SysTablesEntryPB *metadata = &l.mutable_data()->pb;
+  table->metadata().StartMutation();
+  SysTablesEntryPB *metadata = &table->metadata().mutable_dirty()->pb;
   metadata->set_state(SysTablesEntryPB::kTableStatePreparing);
   metadata->set_name(req->name());
   metadata->set_version(0);
@@ -470,7 +466,6 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
-  l.Commit();
   return table;
 }
 
@@ -478,12 +473,11 @@ TabletInfo *CatalogManager::CreateTabletInfo(TableInfo *table,
                                              const string& start_key,
                                              const string& end_key) {
   TabletInfo* tablet = new TabletInfo(table, GenerateId());
-  TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
-  SysTabletsEntryPB *metadata = &l.mutable_data()->pb;
+  tablet->metadata().StartMutation();
+  SysTabletsEntryPB *metadata = &tablet->metadata().mutable_dirty()->pb;
   metadata->set_state(SysTabletsEntryPB::kTabletStatePreparing);
   metadata->set_start_key(start_key);
   metadata->set_end_key(end_key);
-  l.Commit();
   return tablet;
 }
 
@@ -848,7 +842,6 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                << "the allowed timeout. Replacing with a new tablet "
                << replacement->tablet_id();
 
-  replacement->metadata().StartMutation();
   tablet->table()->AddTablet(replacement);
   {
     boost::lock_guard<LockType> l_maps(lock_);
@@ -1064,6 +1057,69 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   return Status::OK();
 }
 
+void CatalogManager::DumpState(std::ostream* out) const {
+  TableInfoMap ids_copy, names_copy;
+  TabletInfoMap tablets_copy;
+
+  // Copy the internal state so that, if the output stream blocks,
+  // we don't end up holding the lock for a long time.
+  {
+    boost::shared_lock<LockType> l(lock_);
+    ids_copy = table_ids_map_;
+    names_copy = table_names_map_;
+    tablets_copy = tablet_map_;
+  }
+
+  *out << "Tables:\n";
+  BOOST_FOREACH(const TableInfoMap::value_type& e, ids_copy) {
+    TableInfo* t = e.second.get();
+    TableMetadataLock l(t, TableMetadataLock::READ);
+    const string& name = l.data().name();
+
+    *out << t->id() << ":\n";
+    *out << "  name: \"" << strings::CHexEscape(name) << "\"\n";
+    // Erase from the map, so later we can check that we don't have
+    // any orphaned tables in the by-name map that aren't in the
+    // by-id map.
+    if (names_copy.erase(name) != 1) {
+      *out << "  [not present in by-name map]\n";
+    }
+    *out << "  metadata: " << l.data().pb.ShortDebugString() << "\n";
+
+    *out << "  tablets:\n";
+
+    vector<scoped_refptr<TabletInfo> > table_tablets;
+    t->GetAllTablets(&table_tablets);
+    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, table_tablets) {
+      TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
+      *out << "    " << tablet->tablet_id() << ": "
+           << l_tablet.data().pb.ShortDebugString() << "\n";
+
+      if (tablets_copy.erase(tablet->tablet_id()) != 1) {
+        *out << "  [ERROR: not present in CM tablet map!]\n";
+      }
+    }
+  }
+
+  if (!tablets_copy.empty()) {
+    *out << "Orphaned tablets (not referenced by any table):\n";
+    BOOST_FOREACH(const TabletInfoMap::value_type& entry, tablets_copy) {
+      const scoped_refptr<TabletInfo>& tablet = entry.second;
+      TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
+      *out << "    " << tablet->tablet_id() << ": "
+           << l_tablet.data().pb.ShortDebugString() << "\n";
+    }
+  }
+
+  if (!names_copy.empty()) {
+    *out << "Orphaned tables (in by-name map, but not id map):\n";
+    BOOST_FOREACH(const TableInfoMap::value_type& e, names_copy) {
+      *out << e.second->id() << ":\n";
+      *out << "  name: \"" << CHexEscape(e.first) << "\"\n";
+    }
+  }
+}
+
 ////////////////////////////////////////////////////////////
 // TabletInfo
 ////////////////////////////////////////////////////////////
@@ -1157,13 +1213,23 @@ std::string TableInfo::ToString() const {
 
 void TableInfo::AddTablet(TabletInfo *tablet) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  tablet_map_[tablet->metadata().state().pb.start_key()] = tablet;
+  AddTabletUnlocked(tablet);
 }
 
 void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    tablet_map_[tablet->metadata().state().pb.start_key()] = tablet;
+    AddTabletUnlocked(tablet);
+  }
+}
+
+void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
+  TabletInfo* old = NULL;
+  if (UpdateReturnCopy(&tablet_map_, tablet->metadata().dirty().pb.start_key(), tablet, &old)) {
+    VLOG(1) << "Replaced tablet " << old->tablet_id() << " with " << tablet->tablet_id();
+    // TODO: can we assert that the replaced tablet is not in Running state?
+    // May be a little tricky since we don't know whether to look at its committed or
+    // uncommitted state.
   }
 }
 
@@ -1187,6 +1253,14 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
 
   for (; it != it_end; ++it) {
     ret->push_back(make_scoped_refptr(it->second));
+  }
+}
+
+void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo> > *ret) const {
+  ret->clear();
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+    ret->push_back(make_scoped_refptr(e.second));
   }
 }
 
