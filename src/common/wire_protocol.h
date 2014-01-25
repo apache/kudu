@@ -13,6 +13,7 @@ namespace kudu {
 
 class ConstContiguousRow;
 class ColumnSchema;
+class HostPort;
 class RowBlock;
 class RowBlockRow;
 class RowChangeList;
@@ -23,6 +24,12 @@ void StatusToPB(const Status& status, AppStatusPB* pb);
 
 // Convert the given protobuf into the equivalent C++ Status object.
 Status StatusFromPB(const AppStatusPB& pb);
+
+// Convert the specified HostPort to protobuf.
+Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
+
+// Returns the HostPort created from the specified protobuf.
+Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 
 // Convert the specified schema to protobuf.
 Status SchemaToPB(const Schema& schema, SchemaPB *pb);

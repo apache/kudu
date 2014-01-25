@@ -10,6 +10,7 @@
 #include "common/row_changelist.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/fastmem.h"
+#include "util/net/net_util.h"
 #include "util/safe_math.h"
 
 using google::protobuf::RepeatedPtrField;
@@ -88,6 +89,18 @@ Status StatusFromPB(const AppStatusPB& pb) {
       LOG(WARNING) << "Unknown error code in status: " << pb.ShortDebugString();
       return Status::RuntimeError("(unknown error code)", pb.message(), posix_code);
   }
+}
+
+Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb) {
+  host_port_pb->set_host(host_port.host());
+  host_port_pb->set_port(host_port.port());
+  return Status::OK();
+}
+
+Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port) {
+  host_port->set_host(host_port_pb.host());
+  host_port->set_port(host_port_pb.port());
+  return Status::OK();
 }
 
 Status SchemaToPB(const Schema& schema, SchemaPB *pb) {
