@@ -3,13 +3,14 @@
 #ifndef KUDU_TABLET_TABLET_PEER_H_
 #define KUDU_TABLET_TABLET_PEER_H_
 
-#include "tablet/tablet.h"
 #include "consensus/log.h"
 #include "consensus/consensus.h"
+#include "tablet/tablet.h"
 #include "util/metrics.h"
 
 namespace kudu {
 namespace tablet {
+class ChangeConfigTransactionContext;
 
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -53,6 +54,15 @@ class TabletPeer {
   // meaning that no other operation on the tablet can be executed while the
   // AlterSchema is in progress.
   Status SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx);
+
+  // Called by the tablet service to start a change config transaction.
+  //
+  // The transaction contains all the information required to execute the
+  // change config operation and send the response back.
+  //
+  // If the returned Status is OK, the response to the master will be sent
+  // asynchronously.
+  Status SubmitChangeConfig(ChangeConfigTransactionContext* tx_ctx);
 
   consensus::Consensus* consensus() { return consensus_.get(); }
 
@@ -102,6 +112,12 @@ class TabletPeer {
   // TabletPeer, PrepareTasks are executed *serially*.
   gscoped_ptr<TaskExecutor> prepare_executor_;
   gscoped_ptr<TaskExecutor> apply_executor_;
+
+  // Lock protecting updates to the configuration, stored in the tablet's
+  // metadata.
+  // ChangeConfigTransactions obtain this lock on prepare and release it on
+  // apply.
+  mutable boost::mutex config_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };

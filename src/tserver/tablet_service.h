@@ -31,6 +31,9 @@ class TabletServiceImpl : public TabletServerServiceIf {
   virtual void AlterSchema(const AlterSchemaRequestPB* req, AlterSchemaResponsePB* resp,
                            rpc::RpcContext* context);
 
+  virtual void ChangeConfig(const ChangeConfigRequestPB* req, ChangeConfigResponsePB* resp,
+                            rpc::RpcContext* context);
+
   virtual void Write(const WriteRequestPB* req, WriteResponsePB* resp,
                    rpc::RpcContext* context);
 

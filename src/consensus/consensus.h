@@ -43,7 +43,10 @@ class Consensus {
   // vary (e.g. if leader election was triggered) and even membership
   // may vary if the last known quorum configuration had different
   // members from the provided one.
-  virtual Status Start(const metadata::QuorumPB& quorum) = 0;
+  // The actual configuration used after Start() completes is returned
+  // in 'running_quorum'.
+  virtual Status Start(const metadata::QuorumPB& initial_quorum,
+                       gscoped_ptr<metadata::QuorumPB>* running_quorum) = 0;
 
   // Stops running the consensus algorithm.
   virtual Status Shutdown() = 0;

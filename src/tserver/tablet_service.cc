@@ -16,6 +16,7 @@
 #include "rpc/rpc_context.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/transactions/alter_schema_transaction.h"
+#include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
@@ -29,6 +30,7 @@ using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::AlterSchemaTransactionContext;
+using kudu::tablet::ChangeConfigTransactionContext;
 using kudu::tablet::WriteTransactionContext;
 using kudu::tablet::TransactionCompletionCallback;
 using std::tr1::shared_ptr;
@@ -78,13 +80,22 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
                                    WriteResponsePB* w_resp)
  : context_(context),
    w_resp_(w_resp),
-   as_resp_(NULL) {}
+   as_resp_(NULL),
+   cc_resp_(NULL) {}
 
   RpcTransactionCompletionCallback(rpc::RpcContext* context,
                                    AlterSchemaResponsePB* as_resp)
   : context_(context),
     w_resp_(NULL),
-    as_resp_(as_resp) {}
+    as_resp_(as_resp),
+    cc_resp_(NULL) {}
+
+  RpcTransactionCompletionCallback(rpc::RpcContext* context,
+                                   ChangeConfigResponsePB* cc_resp)
+  : context_(context),
+    w_resp_(NULL),
+    as_resp_(NULL),
+    cc_resp_(cc_resp) {}
 
   virtual void TransactionCompleted() {
     if (!status_.ok()) {
@@ -99,12 +110,15 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
   TabletServerErrorPB* get_error() {
     if (w_resp_)
       return w_resp_->mutable_error();
-    return as_resp_->mutable_error();
+    if (as_resp_)
+      return as_resp_->mutable_error();
+    return cc_resp_->mutable_error();
   }
 
   rpc::RpcContext* context_;
   WriteResponsePB* w_resp_;
   AlterSchemaResponsePB* as_resp_;
+  ChangeConfigResponsePB* cc_resp_;
 };
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
@@ -185,6 +199,35 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
     return;
   }
   context->RespondSuccess();
+}
+
+void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
+                                     ChangeConfigResponsePB* resp,
+                                     rpc::RpcContext* context) {
+  DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
+
+  shared_ptr<TabletPeer> tablet_peer;
+  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet not found"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return;
+  }
+  DCHECK(tablet_peer) << "Null tablet peer";
+
+  ChangeConfigTransactionContext *tx_ctx =
+    new ChangeConfigTransactionContext(tablet_peer.get(), req, resp);
+
+  tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+      new RpcTransactionCompletionCallback(context, resp)).Pass());
+
+  // Submit the change config op. The RPC will be responded to asynchronously.
+  Status s = tablet_peer->SubmitChangeConfig(tx_ctx);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+  }
 }
 
 void TabletServiceImpl::Write(const WriteRequestPB* req,

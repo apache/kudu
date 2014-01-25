@@ -10,11 +10,14 @@ namespace kudu {
 namespace consensus {
 
 using base::subtle::Barrier_AtomicIncrement;
+using consensus::CHANGE_CONFIG_OP;
 using log::Log;
 using log::LogEntry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
+using tserver::ChangeConfigRequestPB;
+using tserver::ChangeConfigResponsePB;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options)
     : log_(NULL),
@@ -33,12 +36,39 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
   return Status::OK();
 }
 
-Status LocalConsensus::Start(const metadata::QuorumPB& quorum) {
+Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
+                             gscoped_ptr<metadata::QuorumPB>* running_quorum) {
+
   CHECK_EQ(state_, kInitializing);
 
-  CHECK(quorum.local()) << "Local consensus must be passed a local quorum";
-  CHECK_LE(quorum.peers_size(), 1);
+  CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
+  CHECK_LE(initial_quorum.peers_size(), 1);
 
+  // Because this is the local consensus we always push the configuration,
+  // in the dist. impl. we only try and push if we're leader.
+  gscoped_ptr<ReplicateMsg> replicate_msg(new ReplicateMsg);
+  replicate_msg->set_op_type(CHANGE_CONFIG_OP);
+  ChangeConfigRequestPB* req = replicate_msg->mutable_change_config_request();
+  req->set_tablet_id(log_->current_header()->tablet_meta().oid());
+  req->mutable_new_config()->CopyFrom(initial_quorum);
+
+  shared_ptr<LatchCallback> replicate_clbk(new LatchCallback);
+  shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
+  state_ = kConfiguring;
+
+  gscoped_ptr<ConsensusContext> ctx;
+  RETURN_NOT_OK(Append(replicate_msg.Pass(), replicate_clbk, commit_clbk, &ctx));
+  RETURN_NOT_OK(replicate_clbk->Wait());
+
+  ChangeConfigResponsePB resp;
+  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
+  commit_msg->set_op_type(CHANGE_CONFIG_OP);
+  commit_msg->mutable_commited_op_id()->CopyFrom(ctx->replicate_msg()->id());
+  commit_msg->mutable_change_config_response()->CopyFrom(resp);
+  ctx->Commit(commit_msg.Pass());
+
+  RETURN_NOT_OK(commit_clbk->Wait());
+  running_quorum->reset(new QuorumPB(initial_quorum));
   state_ = kRunning;
   return Status::OK();
 }

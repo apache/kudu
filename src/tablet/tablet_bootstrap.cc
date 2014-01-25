@@ -18,6 +18,7 @@
 #include "tablet/lock_manager.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/alter_schema_transaction.h"
+#include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
 #include "util/locks.h"
@@ -27,6 +28,7 @@ using kudu::consensus::OpId;
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::ALTER_SCHEMA_OP;
+using kudu::consensus::CHANGE_CONFIG_OP;
 using kudu::consensus::MISSED_DELTA;
 using kudu::consensus::OP_ABORT;
 using kudu::consensus::WRITE_OP;
@@ -36,6 +38,7 @@ using kudu::log::LogEntry;
 using kudu::log::LogOptions;
 using kudu::log::LogReader;
 using kudu::log::REPLICATE;
+using kudu::metadata::QuorumPB;
 using kudu::metadata::TabletMetadata;
 using kudu::metadata::TabletSuperBlockPB;
 using kudu::metadata::RowSetMetadata;
@@ -43,6 +46,7 @@ using kudu::tablet::MutationResultPB;
 using kudu::tablet::PreparedRowWrite;
 using kudu::tablet::Tablet;
 using kudu::tserver::AlterSchemaRequestPB;
+using kudu::tserver::ChangeConfigRequestPB;
 using kudu::tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
@@ -115,6 +119,9 @@ class TabletBootstrap {
 
   Status PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
                                 const CommitMsg& commit_msg);
+
+  Status PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
+                                 const CommitMsg& commit_msg);
 
   // Plays missed deltas mutations, skipping those that have already been flushed.
   // Missed delta mutations are appended to the new log as the original mutations
@@ -589,6 +596,15 @@ Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* com
                                        commit_entry->commit().DebugString()));
       break;
 
+    case CHANGE_CONFIG_OP:
+      RETURN_NOT_OK_PREPEND(PlayChangeConfigRequest(replicate_entry->mutable_msg(),
+                                                    commit_entry->commit()),
+                            Substitute("Failed to play change config. request. "
+                                       "ReplicateMsg: $0 CommitMsg: $1\n",
+                                       replicate_entry->msg().DebugString(),
+                                       commit_entry->commit().DebugString()));
+      break;
+
     default:
       return Status::IllegalState(Substitute("Unsupported commit entry type: $0",
                                              commit_entry->commit().op_type()));
@@ -708,6 +724,31 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 
   // apply the alter schema to the tablet
   RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_ctx), "Failed to AlterSchema:");
+
+  LogEntry commit_entry;
+  commit_entry.set_type(COMMIT);
+  CommitMsg* commit = commit_entry.mutable_commit();
+  commit->CopyFrom(commit_msg);
+  RETURN_NOT_OK(log_->Append(commit_entry));
+  return Status::OK();
+}
+
+Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
+                                                const CommitMsg& commit_msg) {
+  ChangeConfigRequestPB* change_config = replicate_msg->mutable_change_config_request();
+
+  ChangeConfigTransactionContext tx_ctx(change_config);
+
+  QuorumPB quorum = replicate_msg->change_config_request().new_config();
+
+  // if the sequence number is higher than the current one change the configuration
+  // otherwise skip it.
+  if (quorum.seqno() > tablet_->metadata()->Quorum().seqno()) {
+    tablet_->metadata()->SetQuorum(quorum);
+  } else {
+    VLOG(1) << "Configuration sequence number lower than current sequence number. "
+        "Skipping config change";
+  }
 
   LogEntry commit_entry;
   commit_entry.set_type(COMMIT);

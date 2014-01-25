@@ -33,6 +33,7 @@ enum OperationType {
   WRITE_OP = 3;
   MISSED_DELTA = 4;
   ALTER_SCHEMA_OP = 5;
+  CHANGE_CONFIG_OP = 6;
 }
 
 // A Replicate message, sent to replicas by leader to indicate this operation must
@@ -44,6 +45,7 @@ message ReplicateMsg {
   optional NoOp no_op = 3;
   optional tserver.WriteRequestPB write_request = 4;
   optional tserver.AlterSchemaRequestPB alter_schema_request = 5;
+  optional tserver.ChangeConfigRequestPB change_config_request = 6;
 }
 
 // A commit message for a previous operation.
@@ -62,4 +64,5 @@ message CommitMsg {
   optional tserver.WriteResponsePB write_response = 5;
   // The response to the alter schema request
   optional tserver.AlterSchemaResponsePB alter_schema_response = 6;
+  optional tserver.ChangeConfigResponsePB change_config_response = 7;
 }

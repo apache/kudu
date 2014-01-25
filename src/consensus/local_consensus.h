@@ -29,7 +29,8 @@ class LocalConsensus : public Consensus {
   virtual Status Init(const metadata::QuorumPeerPB& peer,
                       log::Log* log);
 
-  virtual Status Start(const metadata::QuorumPB& quorum);
+  virtual Status Start(const metadata::QuorumPB& initial_quorum,
+                       gscoped_ptr<metadata::QuorumPB>* running_quorum);
 
   Status Append(gscoped_ptr<ReplicateMsg> entry,
                 const std::tr1::shared_ptr<FutureCallback>& repl_callback,

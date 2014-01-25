@@ -21,6 +21,8 @@ service TabletServerService {
 
   rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
 
+  rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
+
   // TODO: this is temporary used for testing the AlterSchema request with consensus.
   //       It will be replaced by messages on the master side/tablet report.
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);

@@ -149,15 +149,17 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         QuorumPB quorum,
                                         shared_ptr<TabletPeer>* tablet_peer) {
 
-  // If the quorum is local, set the local peer and the seqno to 0.
+  // If the quorum is local, set the local peer
   if (quorum.local()) {
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid(server_->instance_pb().permanent_uuid());
-    quorum.set_seqno(0);
     quorum.clear_peers();
     quorum.add_peers()->CopyFrom(quorum_peer);
   }
 
+  // Set the initial sequence number to -1, disregarding the passed sequence
+  // number, if any.
+  quorum.set_seqno(-1);
 
   {
     // acquire the lock in exclusive mode as we'll add a entry to the
@@ -268,13 +270,11 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
       return;
     }
 
-    // tablet_peer state changed to CONFIGURING, mark the tablet dirty
-    {
-      boost::lock_guard<rw_spinlock> lock(lock_);
-      MarkDirtyUnlocked(tablet_id);
-    }
+    // Check the tablet metadata for the quorum and increase the sequence number.
+    QuorumPB initial_config = tablet->metadata()->Quorum();
+    initial_config.set_seqno(initial_config.seqno() + 1);
 
-    s = tablet_peer->Start(tablet->metadata()->Quorum());
+    s = tablet_peer->Start(initial_config);
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
       return;

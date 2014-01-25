@@ -955,5 +955,101 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   }
 }
 
+TEST_F(TabletServerTest, TestChangeConfiguration) {
+  ChangeConfigRequestPB req;
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(kTabletId);
+
+  QuorumPB* new_quorum = req.mutable_new_config();
+  new_quorum->set_local(true);
+  new_quorum->set_seqno(1);
+
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    rpc.Reset();
+  }
+
+  // Now try and insert some rows, and shutdown and rebuild
+  // the TS so that we know that the tablet survives.
+  InsertTestRowsRemote(0, 1, 7);
+
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
+                                            (KeyValue(2, 2))
+                                            (KeyValue(3, 3))
+                                            (KeyValue(4, 4))
+                                            (KeyValue(5, 5))
+                                            (KeyValue(6, 6))
+                                            (KeyValue(7, 7)));
+
+  // On reboot the initial round of consensus should have pushed the
+  // configuration and incremented the sequence number so pushing
+  // a configuration with seqno = 2 (the sequence number right
+  // after the initial one) should fail
+  new_quorum->set_seqno(2);
+
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
+    rpc.Reset();
+  }
+}
+
+TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
+  ChangeConfigRequestPB req;
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(kTabletId);
+
+  QuorumPB* new_quorum = req.mutable_new_config();
+  new_quorum->set_local(true);
+  new_quorum->set_seqno(1);
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    rpc.Reset();
+  }
+
+  // Now pass a new quorum with the same seq no
+  new_quorum = req.mutable_new_config();
+  new_quorum->set_local(true);
+  new_quorum->set_seqno(1);
+
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
+    rpc.Reset();
+  }
+
+  // Now pass a new quorum with a lower seq no
+  new_quorum = req.mutable_new_config();
+  new_quorum->set_local(true);
+  new_quorum->set_seqno(0);
+
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->ChangeConfig(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
+  }
+}
+
 } // namespace tserver
 } // namespace kudu
