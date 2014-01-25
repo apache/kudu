@@ -229,7 +229,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
     server_->tablet_manager()->GenerateFullTabletReport(
       req.mutable_tablet_report());
   } else {
-    VLOG(1) << "Sending an incremental tablet report to master...";
+    VLOG(2) << "Sending an incremental tablet report to master...";
     server_->tablet_manager()->GenerateTabletReport(
       req.mutable_tablet_report());
   }
@@ -237,7 +237,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromSeconds(10));
 
-  VLOG(1) << "Sending heartbeat:\n" << req.DebugString();
+  VLOG(2) << "Sending heartbeat:\n" << req.DebugString();
   master::TSHeartbeatResponsePB resp;
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat");
