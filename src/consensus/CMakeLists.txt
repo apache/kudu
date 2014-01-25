@@ -40,8 +40,11 @@ set(CONSENSUS_SRCS
 )
 
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})
+target_link_libraries(consensus cfile)
 target_link_libraries(consensus krpc)
+target_link_libraries(consensus server)
 target_link_libraries(consensus tserver_proto)
+target_link_libraries(consensus tserver_service_proto)
 add_dependencies(consensus kudu_common)
 add_dependencies(consensus consensus_proto)
 add_dependencies(consensus log)
@@ -51,11 +54,9 @@ set(KUDU_TEST_LINK_LIBS
   server
   consensus
   tserver
-  kudu_common
-  kudu_util
-  gutil
   cfile
   tablet
+  kudu_util
   ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS}
 )
 

@@ -104,76 +104,13 @@ Status LeaderWriteTransaction::Prepare() {
     tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_MUTATION);
     return s;
   }
-
-  TRACE("PREPARE: Acquiring component lock");
-  // acquire the component lock. this is more like "tablet lock" and is used
-  // to prevent AlterSchema and other operations that requires exclusive access
-  // to the tablet.
-  gscoped_ptr<shared_lock<rw_spinlock> > component_lock_(
-      new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
-  tx_ctx_->set_component_lock(component_lock_.Pass());
-
-  RowProjector row_projector(inserts_client_schema.get(), tablet->schema_ptr());
-  if (to_insert.size() > 0 && !row_projector.is_identity()) {
-    Status s = tablet->schema().VerifyProjectionCompatibility(*inserts_client_schema);
-    if (!s.ok()) {
-      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
-
-    s = row_projector.Init();
-    if (!s.ok()) {
-      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
-  }
-
-  // Taking schema_ptr here is safe because we know that the schema won't change,
-  // due to the lock above.
-  DeltaProjector delta_projector(mutates_client_schema.get(), tablet->schema_ptr());
-  if (to_mutate.size() > 0 && !delta_projector.is_identity()) {
-    Status s = tablet->schema().VerifyProjectionCompatibility(*mutates_client_schema);
-    if (!s.ok()) {
-      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
-
-    s = mutates_client_schema->GetProjectionMapping(tablet->schema(), &delta_projector);
-    if (!s.ok()) {
-      tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
-  }
-
-  // Now acquire row locks and prepare everything for apply
-  TRACE("PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
-                   to_insert.size(), to_mutate.size());
-  BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
-    // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
-    // old API that has a Mutate method that receives the row as a reference.
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx_.get(),
-                                                        tablet->schema_ptr(),
-                                                        row_projector, row_ptr);
-    gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx(), row, &row_write));
-    tx_ctx_->add_prepared_row(row_write.Pass());
-  }
-
-  int i = 0;
-  BOOST_FOREACH(const uint8_t* row_key_ptr, to_mutate) {
-    // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
-    // old API that has a Mutate method that receives the row as a reference.
-    ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
-    row_key = tx_ctx_->AddToAutoReleasePool(row_key);
-
-    const RowChangeList* mutation = ProjectMutation(tx_ctx_.get(), delta_projector, mutations[i]);
-
-    gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx(), row_key, mutation, &row_write));
-    tx_ctx_->add_prepared_row(row_write.Pass());
-    ++i;
-  }
-
+  s = CreatePreparedInsertsAndMutates(tablet,
+                                      tx_ctx_.get(),
+                                      inserts_client_schema.Pass(),
+                                      mutates_client_schema.Pass(),
+                                      to_insert,
+                                      to_mutate,
+                                      mutations);
   TRACE("PREPARE: finished");
   return s;
 }
@@ -280,24 +217,6 @@ Status WriteTransactionContext::AddMutation(const txid_t &tx_id,
   mutation->set_type(TxOperationPB::MUTATE);
   mutation->mutable_mutation_result()->Swap(result.get());
   tx_metrics_.successful_updates++;
-  return Status::OK();
-}
-
-Status WriteTransactionContext::AddMissedMutation(
-    const txid_t &tx_id,
-    gscoped_ptr<RowwiseRowBlockPB> row_key,
-    const RowChangeList& changelist,
-    gscoped_ptr<MutationResultPB> result) {
-
-  result->set_type(MutationType(result.get()));
-  TxOperationPB* mutation = result_pb_.add_mutations();
-  mutation->set_type(TxOperationPB::MUTATE);
-  mutation->set_allocated_mutation_result(result.release());
-
-  MissedDeltaMutationPB* missed_delta_mutation = mutation->mutable_missed_delta_mutation();
-  missed_delta_mutation->set_allocated_row_key(row_key.release());
-  missed_delta_mutation->set_changelist(changelist.slice().data(),
-                                        changelist.slice().size());
   return Status::OK();
 }
 

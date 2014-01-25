@@ -6,16 +6,17 @@
 #include <vector>
 
 #include "common/schema.h"
+#include "common/row_changelist.h"
 #include "gutil/macros.h"
 #include "tablet/mvcc.h"
 #include "tablet/tablet.pb.h"
 #include "tablet/transactions/transaction.h"
+#include "tablet/transactions/write_util.h"
 #include "util/task_executor.h"
 
 namespace kudu {
 class ConstContiguousRow;
 class RowwiseRowBlockPB;
-class RowChangeList;
 
 namespace consensus {
 class Consensus;
@@ -60,6 +61,7 @@ class WriteTransactionContext : public TransactionContext {
     result_pb_.set_txid(txid_t::kInvalidTxId.v);
   }
 
+  // ctor used by the LEADER replica
   WriteTransactionContext(TabletPeer* tablet_peer,
                           const tserver::WriteRequestPB *request,
                           tserver::WriteResponsePB *response)
@@ -67,6 +69,18 @@ class WriteTransactionContext : public TransactionContext {
         failed_operations_(0),
         request_(request),
         response_(response),
+        component_lock_(NULL),
+        mvcc_tx_(NULL) {
+    result_pb_.set_txid(txid_t::kInvalidTxId.v);
+  }
+
+  // ctor used by FOLLOWER/LEARNER replicas
+  WriteTransactionContext(TabletPeer* tablet_peer,
+                          const tserver::WriteRequestPB *request)
+      : TransactionContext(tablet_peer),
+        failed_operations_(0),
+        request_(request),
+        response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
     result_pb_.set_txid(txid_t::kInvalidTxId.v);
@@ -93,10 +107,21 @@ class WriteTransactionContext : public TransactionContext {
   // in the new DeltaMemStore.
   // The passed 'changelist' is copied into a protobuf and does not need to
   // be alive after this method returns.
-  Status AddMissedMutation(const txid_t &tx_id,
+  Status AddMissedMutation(const txid_t& tx_id,
                            gscoped_ptr<RowwiseRowBlockPB> row_key,
                            const RowChangeList& changelist,
-                           gscoped_ptr<MutationResultPB> result);
+                           gscoped_ptr<MutationResultPB> result) {
+    result->set_type(MutationType(result.get()));
+    TxOperationPB* mutation = result_pb_.add_mutations();
+    mutation->set_type(TxOperationPB::MUTATE);
+    mutation->set_allocated_mutation_result(result.release());
+    MissedDeltaMutationPB* missed_delta_mutation = mutation
+        ->mutable_missed_delta_mutation();
+    missed_delta_mutation->set_allocated_row_key(row_key.release());
+    missed_delta_mutation->set_changelist(changelist.slice().data(),
+                                          changelist.slice().size());
+    return Status::OK();
+  }
 
   // Adds a failed mutation to this TransactionContext, including the status
   // explaining why it failed.

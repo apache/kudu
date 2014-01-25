@@ -25,6 +25,7 @@ class WriteResponsePB;
 }
 
 namespace tablet {
+class Tablet;
 
 class WriteTransactionContext;
 
@@ -35,6 +36,14 @@ Status DecodeRowBlock(WriteTransactionContext* tx_ctx,
                       bool is_inserts_block,
                       Schema* client_schema,
                       std::vector<const uint8_t*>* row_block);
+
+Status CreatePreparedInsertsAndMutates(Tablet* tablet,
+                                       WriteTransactionContext* tx_ctx,
+                                       gscoped_ptr<Schema> inserts_client_schema,
+                                       gscoped_ptr<Schema> mutates_client_schema,
+                                       const vector<const uint8_t *>& to_insert,
+                                       const vector<const uint8_t *>& to_mutate,
+                                       const vector<const RowChangeList *>& mutations);
 
 // Calculates type of the mutation based on the set fields and number of targets.
 MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
