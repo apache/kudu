@@ -35,6 +35,7 @@ class Insert;
 class KuduTable;
 class KuduSession;
 class MetaCache;
+class CreateTableOptions;
 
 namespace internal {
 class Batcher;
@@ -47,6 +48,9 @@ struct KuduClientOptions {
   // The RPC address of the master.
   // When we have a replicated master, this will switch to a vector of addresses.
   std::string master_server_addr;
+
+  // The messenger to use.
+  std::tr1::shared_ptr<rpc::Messenger> messenger;
 };
 
 // The KuduClient represents a connection to a cluster. From the user
@@ -80,6 +84,10 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 
   Status CreateTable(const std::string& table_name,
                      const Schema& schema);
+  Status CreateTable(const std::string& table_name,
+                     const Schema& schema,
+                     const CreateTableOptions& opts);
+
   Status DeleteTable(const std::string& table_name);
 
   // Open the table with the given name. If the table has not been opened before
@@ -142,6 +150,20 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
+};
+
+class CreateTableOptions {
+ public:
+  CreateTableOptions();
+  ~CreateTableOptions();
+
+  // Set keys on which to pre-split the table. The vector is
+  // copied.
+  CreateTableOptions& WithSplitKeys(std::vector<std::string>& keys);
+
+ private:
+  friend class KuduClient;
+  std::vector<std::string> split_keys_;
 };
 
 // A KuduTable represents a table on a particular cluster. It holds the current

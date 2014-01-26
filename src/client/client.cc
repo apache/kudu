@@ -71,8 +71,12 @@ KuduClient::KuduClient(const KuduClientOptions& options)
 
 Status KuduClient::Init() {
   // Init messenger.
-  MessengerBuilder builder("client");
-  RETURN_NOT_OK(builder.Build(&messenger_));
+  if (options_.messenger) {
+    messenger_ = options_.messenger;
+  } else {
+    MessengerBuilder builder("client");
+    RETURN_NOT_OK(builder.Build(&messenger_));
+  }
 
   // Init proxy.
   vector<Sockaddr> addrs;
@@ -97,12 +101,24 @@ Status KuduClient::Init() {
 
 Status KuduClient::CreateTable(const std::string& table_name,
                                const Schema& schema) {
+  return CreateTable(table_name, schema, CreateTableOptions());
+}
+
+Status KuduClient::CreateTable(const std::string& table_name,
+                               const Schema& schema,
+                               const CreateTableOptions& opts) {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController rpc;
 
   req.set_name(table_name);
-  CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
+  RETURN_NOT_OK_PREPEND(SchemaToPB(schema, req.mutable_schema()),
+                        "Invalid schema");
+
+  BOOST_FOREACH(const std::string& key, opts.split_keys_) {
+    req.add_pre_split_keys(key);
+  }
+
   RETURN_NOT_OK(master_proxy_->CreateTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -165,6 +181,22 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
 
   *proxy = ts->proxy();
   return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// CreateTableOptions
+////////////////////////////////////////////////////////////
+
+CreateTableOptions::CreateTableOptions() {
+}
+
+CreateTableOptions::~CreateTableOptions() {
+}
+
+CreateTableOptions& CreateTableOptions::WithSplitKeys(
+    std::vector<std::string>& keys) {
+  split_keys_ = keys;
+  return *this;
 }
 
 ////////////////////////////////////////////////////////////

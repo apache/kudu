@@ -8,6 +8,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "client/client.h"
 #include "gutil/strings/join.h"
 #include "master/master.h"
 #include "master/master.proxy.h"
@@ -26,6 +27,8 @@ using std::tr1::shared_ptr;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientOptions;
 
 namespace kudu {
 namespace master {
@@ -151,20 +154,20 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 // Create a table
 void MasterTest::CreateTable(const string& table_name,
                              const Schema& schema) {
-  CreateTableRequestPB req;
-  CreateTableResponsePB resp;
-  RpcController controller;
+  shared_ptr<KuduClient> client;
+  KuduClientOptions opts;
+  opts.master_server_addr = mini_master_->bound_rpc_addr().ToString();
+  opts.messenger = client_messenger_;
+  ASSERT_STATUS_OK(KuduClient::Create(opts, &client));
 
-  req.set_name(table_name);
-  req.add_pre_split_keys("k1");
-  req.add_pre_split_keys("k2");
+  vector<string> keys;
+  keys.push_back("k1");
+  keys.push_back("k2");
 
-  ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
-  ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_STATUS_OK(client->CreateTable(
+                     table_name, schema,
+                     kudu::client::CreateTableOptions().WithSplitKeys(keys)));
 }
-
 
 void MasterTest::DoListTables(ListTablesResponsePB* resp) {
   ListTablesRequestPB req;

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <tr1/memory>
 
+#include "client/client.h"
 #include "common/schema.h"
 #include "common/wire_protocol.h"
 #include "integration-tests/mini_cluster.h"
@@ -16,6 +17,9 @@
 #include "util/test_util.h"
 
 using std::tr1::shared_ptr;
+using kudu::client::CreateTableOptions;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientOptions;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -56,7 +60,10 @@ class CreateTableStressTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->Start());
 
     ASSERT_STATUS_OK(MessengerBuilder("Client").Build(&msgr_));
-
+    KuduClientOptions opts;
+    opts.master_server_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
+    opts.messenger = msgr_;
+    ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
   }
 
   virtual void TearDown() {
@@ -66,29 +73,22 @@ class CreateTableStressTest : public KuduTest {
   void CreateBigTable(const string& table_name);
 
  protected:
+  shared_ptr<KuduClient> client_;
   shared_ptr<Messenger> msgr_;
   gscoped_ptr<MiniCluster> cluster_;
   Schema schema_;
 };
 
 void CreateTableStressTest::CreateBigTable(const string& table_name) {
-  // TODO: use client API for this calls, not direct RPC, once the
-  // client API supports pre-split.
-  MasterServiceProxy proxy(msgr_, cluster_->mini_master()->bound_rpc_addr());
-  master::CreateTableRequestPB req;
-  master::CreateTableResponsePB resp;
-  RpcController controller;
-
+  vector<string> keys;
   int num_splits = kNumTablets - 1; // 1 split = 2 tablets
-  req.set_name(table_name);
   for (int i = num_splits; i >= 0; i--) {
-    req.add_pre_split_keys(StringPrintf("k_%05d", i));
+    keys.push_back(StringPrintf("k_%05d", i));
   }
 
-  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
-  ASSERT_STATUS_OK(proxy.CreateTable(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_STATUS_OK(client_->CreateTable(
+                     table_name, schema_,
+                     kudu::client::CreateTableOptions().WithSplitKeys(keys)));
 }
 
 
