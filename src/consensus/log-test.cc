@@ -32,6 +32,7 @@ using std::tr1::unordered_map;
 
 using consensus::OpId;
 using consensus::CommitMsg;
+using consensus::OperationPB;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
 
@@ -139,12 +140,13 @@ class LogTest : public KuduTest {
   // the ReplicateMsgs doesn't necessarily need to make sense.
   void AppendBatch(int index) {
     LogEntry log_entry;
-    log_entry.set_type(REPLICATE);
+    log_entry.set_type(OPERATION);
+    OperationPB* operation = log_entry.mutable_operation();
 
-    ReplicateMsg* replicate = log_entry.mutable_msg();
+    ReplicateMsg* replicate = operation->mutable_replicate();
     replicate->set_op_type(WRITE_OP);
 
-    OpId* op_id = replicate->mutable_id();
+    OpId* op_id = operation->mutable_id();
     op_id->set_term(0);
     op_id->set_index(index);
 
@@ -179,16 +181,17 @@ class LogTest : public KuduTest {
                     int target_rs_id = 0,
                     int target_delta_id = 0) {
     LogEntry log_entry;
-    log_entry.set_type(COMMIT);
+    log_entry.set_type(OPERATION);
+    OperationPB* operation = log_entry.mutable_operation();
 
-    CommitMsg* commit = log_entry.mutable_commit();
+    CommitMsg* commit = operation->mutable_commit();
     commit->set_op_type(WRITE_OP);
 
     OpId* original_op_id = commit->mutable_commited_op_id();
     original_op_id->set_term(0);
     original_op_id->set_index(original_op_index);
 
-    OpId* commit_id = commit->mutable_id();
+    OpId* commit_id = operation->mutable_id();
     commit_id->set_term(0);
     commit_id->set_index(index);
 

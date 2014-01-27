@@ -81,9 +81,11 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
 }
 
 Status TabletPeer::Shutdown() {
-  Status s = consensus_->Shutdown();
-  if (!s.ok()) {
-    LOG(WARNING) << "Consensus shutdown failed: " << s.ToString();
+  if (consensus_) {
+    Status s = consensus_->Shutdown();
+    if (!s.ok()) {
+      LOG(WARNING) << "Consensus shutdown failed: " << s.ToString();
+    }
   }
   prepare_executor_->Shutdown();
   apply_executor_->Shutdown();

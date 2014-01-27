@@ -43,7 +43,6 @@ using std::tr1::shared_ptr;
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using kudu::log::LogEntry;
-using kudu::log::COMMIT;
 using kudu::log::LogReader;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;

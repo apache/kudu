@@ -2,14 +2,16 @@
 #ifndef KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 #define KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 
-#include "consensus/log.h"
-#include "consensus/consensus.h"
-#include "consensus/consensus.pb.h"
+#include "consensus/consensus_base.h"
 
 namespace kudu {
 
 class TaskExecutor;
 class FutureCallback;
+
+namespace metadata {
+class TabletServerPB;
+}
 
 namespace consensus {
 
@@ -22,7 +24,7 @@ namespace consensus {
 // while a true consensus implementation will.
 //
 // This class is not thread safe.
-class LocalConsensus : public Consensus {
+class LocalConsensus : public ConsensusBase {
  public:
   explicit LocalConsensus(const ConsensusOptions& options);
 
@@ -37,10 +39,12 @@ class LocalConsensus : public Consensus {
                 const std::tr1::shared_ptr<FutureCallback>& commit_callback,
                 gscoped_ptr<ConsensusContext>* context);
 
-  Status LocalCommit(CommitMsg* commit_msg,
+  Status Update(ReplicaUpdateContext* context);
+
+  Status LocalCommit(OperationPB* commit_op,
                      std::tr1::shared_ptr<kudu::Future>* commit_future);
 
-  Status Commit(ConsensusContext* context, CommitMsg *commit);
+  Status Commit(ConsensusContext* context, OperationPB* commit_op);
 
   Status Shutdown();
 
@@ -65,7 +69,6 @@ class LocalConsensus : public Consensus {
   }
 
  private:
-  log::Log* log_;
   metadata::QuorumPeerPB peer_;
   metadata::QuorumPB quorum_;
   gscoped_ptr<TaskExecutor> log_executor_;

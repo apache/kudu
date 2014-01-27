@@ -9,19 +9,20 @@ namespace consensus {
 using std::tr1::shared_ptr;
 
 ConsensusContext::ConsensusContext(Consensus* consensus,
-                                   gscoped_ptr<ReplicateMsg> replicate_msg,
+                                   gscoped_ptr<OperationPB> replicate_op,
                                    const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
                                    const std::tr1::shared_ptr<FutureCallback>& commit_callback)
     : consensus_(consensus),
-      replicate_msg_(replicate_msg.Pass()),
+      replicate_op_(replicate_op.Pass()),
       replicate_callback_(replicate_callback),
       commit_callback_(commit_callback) {
 }
 
 Status ConsensusContext::Commit(gscoped_ptr<CommitMsg> commit) {
-  commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->id());
-  commit_msg_.reset(commit.release());
-  return consensus_->Commit(this, commit_msg_.get());
+  commit_op_.reset(new OperationPB());
+  commit_op_->set_allocated_commit(commit.release());
+  commit_op_->mutable_commit()->mutable_commited_op_id()->CopyFrom(replicate_op_->id());
+  return consensus_->Commit(this, commit_op_.get());
 }
 
 } // namespace consensus

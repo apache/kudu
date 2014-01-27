@@ -3,6 +3,7 @@ package kudu.consensus;
 
 import "common/common.proto";
 import "common/wire_protocol.proto";
+import "server/metadata.proto";
 import "tablet/tablet.proto";
 import "tserver/tserver.proto";
 
@@ -19,11 +20,8 @@ message OpId {
 }
 
 // ===========================================================================
-//  Quorum Messages
+//  External Consensus Messages
 // ===========================================================================
-
-// A no-op message to witness a term change.
-message NoOp {}
 
 // The types of operations that need a commit message, i.e. those that require
 // at least one round of the consensus algorithm.
@@ -36,11 +34,22 @@ enum OperationType {
   CHANGE_CONFIG_OP = 6;
 }
 
+// A wrapper around replicates and commits so that we can send to peers
+// in total order without having to rebuild order between replicates/commits.
+// Each operation must either have a replicate or a commit, but not both.
+// The OpId is optional as missed delta commits have no OpId, all other
+// operations must have an id.
+message OperationPB {
+  // Optional as local operations do not have ids.
+  optional OpId id = 2;
+  optional ReplicateMsg replicate = 3;
+  optional CommitMsg commit = 4;
+}
+
 // A Replicate message, sent to replicas by leader to indicate this operation must
 // be stored in the WAL/SM log, as part of the first phase of the two phase
 // commit.
 message ReplicateMsg {
-  optional OpId id = 1;
   required OperationType op_type = 2;
   optional NoOp no_op = 3;
   optional tserver.WriteRequestPB write_request = 4;
@@ -52,8 +61,6 @@ message ReplicateMsg {
 // This is a commit in the consensus sense and may abort/commit any operation
 // that required a consensus round.
 message CommitMsg {
-  // the id of the commit message itself
-  optional OpId id = 1;
   required OperationType op_type = 2;
   // the id of the message this commit pertains to
   optional OpId commited_op_id = 3;
@@ -65,4 +72,33 @@ message CommitMsg {
   // The response to the alter schema request
   optional tserver.AlterSchemaResponsePB alter_schema_response = 6;
   optional tserver.ChangeConfigResponsePB change_config_response = 7;
+}
+
+// ===========================================================================
+//  Internal Consensus Messages and State
+// ===========================================================================
+
+// A no-op message to send a heartbeat from leader to followers
+// can also be used to witness a term change.
+message NoOp {
+}
+
+// Status message received in the peer responses.
+message ConsensusStatusPB {
+  // The last message received and stored (not processed) by this peer.
+  optional OpId replicated_watermark = 1;
+  // The last commit applied by this peer.
+  optional OpId commit_watermark = 3;
+}
+
+// A consensus request message, the basic unit of a consensus round.
+message ConsensusRequestPB {
+  required string tablet_id = 1;
+  // sequence of operations to be replicated/executed by this peer
+  repeated OperationPB ops = 3;
+}
+
+message ConsensusResponsePB {
+  optional tserver.TabletServerErrorPB error = 1;
+  optional ConsensusStatusPB status = 3;
 }

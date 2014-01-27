@@ -4,7 +4,8 @@
 
 #include <boost/thread/locks.hpp>
 
-#include "consensus/tasks/tasks.h"
+#include "consensus/tasks/local_consensus_tasks.h"
+#include "server/metadata.h"
 
 namespace kudu {
 namespace consensus {
@@ -20,7 +21,7 @@ using tserver::ChangeConfigRequestPB;
 using tserver::ChangeConfigResponsePB;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options)
-    : log_(NULL),
+    : ConsensusBase(options),
       log_executor_(TaskExecutor::CreateNew("log exec", 1)),
       commit_executor_(TaskExecutor::CreateNew("commit exec", 1)),
       next_op_id_(-1) {
@@ -63,12 +64,14 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   ChangeConfigResponsePB resp;
   gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(CHANGE_CONFIG_OP);
-  commit_msg->mutable_commited_op_id()->CopyFrom(ctx->replicate_msg()->id());
+  commit_msg->mutable_commited_op_id()->CopyFrom(ctx->replicate_op()->id());
   commit_msg->mutable_change_config_response()->CopyFrom(resp);
   RETURN_NOT_OK(ctx->Commit(commit_msg.Pass()));
 
   RETURN_NOT_OK(commit_clbk->Wait());
   running_quorum->reset(new QuorumPB(initial_quorum));
+
+  quorum_ = initial_quorum;
   state_ = kRunning;
   return Status::OK();
 }
@@ -83,19 +86,22 @@ Status LocalConsensus::Append(
   // TODO add a test for this once we get delayed executors (KUDU-52)
   boost::lock_guard<simple_spinlock> lock(lock_);
 
+  gscoped_ptr<OperationPB> replicate_op(new OperationPB);
+  replicate_op->set_allocated_replicate(entry.release());
+
   // create the new op id for the entry.
-  OpId* op_id = entry->mutable_id();
+  OpId* op_id = replicate_op->mutable_id();
   op_id->set_term(0);
   op_id->set_index(next_op_id_++);
 
   // create the consensus context for this round
-  gscoped_ptr<ConsensusContext> new_context(new ConsensusContext(this, entry.Pass(),
+  gscoped_ptr<ConsensusContext> new_context(new ConsensusContext(this, replicate_op.Pass(),
                                                                  repl_callback,
                                                                  commit_callback));
 
   // initiate the log task that will log the entry and set the
   // replicate callback on it.
-  shared_ptr<Task> log_task(new LogTask(log_, new_context->replicate_msg()));
+  shared_ptr<Task> log_task(new LocalConsensusLogTask(log_, new_context->replicate_op()));
   shared_ptr<Future> future;
   RETURN_NOT_OK(log_executor_->Submit(log_task, &future));
   future->AddListener(repl_callback);
@@ -104,16 +110,21 @@ Status LocalConsensus::Append(
   return Status::OK();
 }
 
-Status LocalConsensus::Commit(ConsensusContext* context, CommitMsg *commit) {
+Status LocalConsensus::Update(ReplicaUpdateContext* context) {
+  return Status::NotSupported("LocalConsensus does not support Update() calls.");
+}
+
+Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op) {
+
+  DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
 
   // TODO add a test for this once we get delayed executors (KUDU-52)
   boost::lock_guard<simple_spinlock> lock(lock_);
 
   // entry for the CommitMsg
-  OpId commit_id;
-  commit_id.set_term(0);
-  commit_id.set_index(next_op_id_++);
-  commit->mutable_id()->CopyFrom(commit_id);
+  OpId* commit_id = commit_op->mutable_id();
+  commit_id->set_term(0);
+  commit_id->set_index(next_op_id_++);
 
   // the commit callback is the very last thing to execute in a transaction
   // so it needs to free all resources. We need release it from the
@@ -124,7 +135,7 @@ Status LocalConsensus::Commit(ConsensusContext* context, CommitMsg *commit) {
   context->release_commit_callback();
 
   // Initiate the commit task.
-  shared_ptr<Task> commit_task(new CommitTask(log_, commit));
+  shared_ptr<Task> commit_task(new LocalConsensusLogTask(log_, commit_op));
   shared_ptr<Future> commit_future;
   RETURN_NOT_OK(log_executor_->Submit(commit_task, &commit_future));
 
@@ -132,10 +143,10 @@ Status LocalConsensus::Commit(ConsensusContext* context, CommitMsg *commit) {
   return Status::OK();
 }
 
-Status LocalConsensus::LocalCommit(CommitMsg* commit_msg,
+Status LocalConsensus::LocalCommit(OperationPB* commit_op,
                                    std::tr1::shared_ptr<kudu::Future>* commit_future) {
   // Initiate the commit task.
-  shared_ptr<Task> commit_task(new CommitTask(log_, commit_msg));
+  shared_ptr<Task> commit_task(new LocalConsensusLogTask(log_, commit_op));
   RETURN_NOT_OK(log_executor_->Submit(commit_task, commit_future));
   return Status::OK();
 }

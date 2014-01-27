@@ -10,19 +10,19 @@ import "server/metadata.proto";
 
 // Types of log entries.
 enum LogEntryType {
-  REPLICATE = 1;
-  COMMIT = 2;
-  TABLET_METADATA = 3;
+  OPERATION = 1;
+  // TODO remove this (along with the parent enum) when we change the
+  // log GC not to depend on the tablet metadata. Moreover consider
+  // making the Log store OperationPB directly, as LogEntry might
+  // become obsolete.
+  TABLET_METADATA = 2;
 };
 
 // An entry in the wal/sm log.
 message LogEntry {
   required LogEntryType type = 1;
-  // TODO: rename 'msg' to 'replicate_msg' or something
-  // TODO: should move the OpId up to this PB?
-  optional kudu.consensus.ReplicateMsg msg = 2;
-  optional kudu.consensus.CommitMsg commit = 3;
-  optional metadata.TabletSuperBlockPB tablet_meta = 4;
+  optional consensus.OperationPB operation = 2;
+  optional metadata.TabletSuperBlockPB tablet_meta = 3;
 }
 
 // A header for a log segment

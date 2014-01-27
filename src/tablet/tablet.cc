@@ -50,6 +50,7 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
 namespace kudu { namespace tablet {
 
 using consensus::Consensus;
+using consensus::OperationPB;
 using consensus::CommitMsg;
 using consensus::MISSED_DELTA;
 using metadata::RowSetMetadata;
@@ -916,11 +917,13 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
     Barrier_AtomicIncrement(&total_missed_deltas_mutations_,
                             compaction_tx.Result().mutations_size());
-    CommitMsg commit;
-    commit.mutable_result()->CopyFrom(compaction_tx.Result());
-    commit.set_op_type(MISSED_DELTA);
+
+    OperationPB commit_op;
+    CommitMsg* commit = commit_op.mutable_commit();
+    commit->mutable_result()->CopyFrom(compaction_tx.Result());
+    commit->set_op_type(MISSED_DELTA);
     shared_ptr<Future> commit_future;
-    RETURN_NOT_OK(consensus_->LocalCommit(&commit, &commit_future));
+    RETURN_NOT_OK(consensus_->LocalCommit(&commit_op, &commit_future));
     commit_future->Wait();
   }
 

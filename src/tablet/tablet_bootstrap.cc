@@ -25,20 +25,20 @@
 #include "util/locks.h"
 
 using boost::shared_lock;
-using kudu::consensus::OpId;
 using kudu::consensus::CommitMsg;
+using kudu::consensus::OperationPB;
+using kudu::consensus::OpId;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::ALTER_SCHEMA_OP;
 using kudu::consensus::CHANGE_CONFIG_OP;
 using kudu::consensus::MISSED_DELTA;
 using kudu::consensus::OP_ABORT;
 using kudu::consensus::WRITE_OP;
-using kudu::log::COMMIT;
 using kudu::log::Log;
 using kudu::log::LogEntry;
 using kudu::log::LogOptions;
 using kudu::log::LogReader;
-using kudu::log::REPLICATE;
+using kudu::log::OPERATION;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::TabletMetadata;
 using kudu::metadata::TabletSuperBlockPB;
@@ -115,14 +115,14 @@ class TabletBootstrap {
   // later on when then tablet is rebuilt and starts accepting writes from clients.
   Status PlaySegments();
 
-  Status PlayWriteRequest(ReplicateMsg* replicate_msg,
-                          const CommitMsg& commit_msg);
+  Status PlayWriteRequest(OperationPB* replicate_op,
+                          const OperationPB& commit_op);
 
-  Status PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
-                                const CommitMsg& commit_msg);
+  Status PlayAlterSchemaRequest(OperationPB* replicate_op,
+                                const OperationPB& commit_op);
 
-  Status PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
-                                 const CommitMsg& commit_msg);
+  Status PlayChangeConfigRequest(OperationPB* replicate_op,
+                                 const OperationPB& commit_op);
 
   // Plays missed deltas mutations, skipping those that have already been flushed.
   // Missed delta mutations are appended to the new log as the original mutations
@@ -504,16 +504,14 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntry* entry) {
   }
 
   switch (entry->type()) {
-    case REPLICATE:
-      RETURN_NOT_OK(HandleReplicateMessage(state, entry));
+    case OPERATION:
+      if (entry->operation().has_replicate()) {
+        RETURN_NOT_OK(HandleReplicateMessage(state, entry));
+      } else if (entry->operation().has_commit()) {
+        // check the unpaired ops for the matching replicate msg, abort if not found
+        RETURN_NOT_OK(HandleCommitMessage(state, entry));
+      }
       break;
-
-    // check the unpaired ops for the matching replicate msg, abort if not found
-    case COMMIT:
-      // TODO: 'COMMIT' is sort of a misnomer since it can also be ABORT?
-      RETURN_NOT_OK(HandleCommitMessage(state, entry));
-      break;
-
     // TODO support other op types when we run distributedly
     default:
       return Status::Corruption(Substitute("Unexpected log entry type: $0", entry->type()));
@@ -522,13 +520,13 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntry* entry) {
 }
 
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntry* entry) {
-  RETURN_NOT_OK(state->CheckOpId(entry->msg().id()));
+  RETURN_NOT_OK(state->CheckOpId(entry->operation().id()));
 
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(*entry));
 
   LogEntry** existing_entry_ptr = InsertOrReturnExisting(
-    &state->pending_replicates, entry->msg().id(), entry);
+    &state->pending_replicates, entry->operation().id(), entry);
   if (existing_entry_ptr) {
     LogEntry* existing_entry = *existing_entry_ptr;
     // We already had an entry with the same ID.
@@ -543,12 +541,12 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
   // TODO: on a term switch, the first commit in any term should discard any
   // pending REPLICATEs from the previous term.
 
-  if (entry->commit().has_id()) {
-    RETURN_NOT_OK(state->CheckOpId(entry->commit().id()));
+  if (entry->operation().has_id()) {
+    RETURN_NOT_OK(state->CheckOpId(entry->operation().id()));
   }
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
-  const OpId& id = entry->commit().commited_op_id();
+  const OpId& id = entry->operation().commit().commited_op_id();
 
   gscoped_ptr<LogEntry> existing_entry(EraseKeyReturnValuePtr(&state->pending_replicates, id));
   if (existing_entry != NULL) {
@@ -556,12 +554,12 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
   } else {
     // A COMMIT entry which refers to an earlier op_id which has already been handled.
     // For now, MISSED_DELTA commits are the only ones with no corresponding ReplicateMsg
-    if (entry->commit().op_type() != MISSED_DELTA) {
+    if (entry->operation().commit().op_type() != MISSED_DELTA) {
       return Status::Corruption(Substitute("Found non- MISSED_DELTA orphaned commit: $0",
-                                             entry->commit().DebugString()));
+                                             entry->operation().commit().DebugString()));
     }
     // writes performed during flushes/compactions
-    RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->commit()),
+    RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->operation().commit()),
                           Substitute("Failed to play MISSED_DELTA updates"));
   }
 
@@ -572,47 +570,50 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
 // Never deletes 'replicate_entry'.
 // Deletes 'commit_entry' only on OK status.
 Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* commit_entry) {
-  switch (commit_entry->commit().op_type()) {
+
+  ReplicateMsg* replicate = replicate_entry->mutable_operation()->mutable_replicate();
+  const CommitMsg& commit = commit_entry->operation().commit();
+
+  switch (commit.op_type()) {
     case OP_ABORT:
       // aborted write, log and continue
       if (VLOG_IS_ON(1)) {
         VLOG(1) << "Skipping replicate message because it was originally aborted."
-                << " OpId: " << commit_entry->commit().commited_op_id().DebugString();
+                << " OpId: " << commit.commited_op_id().DebugString();
       }
       break;
 
     case WRITE_OP:
       // successful write, play it into the tablet, filtering flushed entries
-      RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_msg(),
-                                             commit_entry->commit()),
+      RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_operation(),
+                                             commit_entry->operation()),
                             Substitute("Failed to play write request. "
                                        "ReplicateMsg: $0 CommitMsg: $1\n",
-                                       replicate_entry->msg().DebugString(),
-                                       commit_entry->commit().DebugString()));
+                                       replicate->DebugString(),
+                                       commit.DebugString()));
       break;
 
     case ALTER_SCHEMA_OP:
-      RETURN_NOT_OK_PREPEND(PlayAlterSchemaRequest(
-                              replicate_entry->mutable_msg(),
-                              commit_entry->commit()),
+      RETURN_NOT_OK_PREPEND(PlayAlterSchemaRequest(replicate_entry->mutable_operation(),
+                                                   commit_entry->operation()),
                             Substitute("Failed to play alter schema request. "
-                                       "ReplicateMsg: $0 CommitMsg: $1\n",
-                                       replicate_entry->msg().DebugString(),
-                                       commit_entry->commit().DebugString()));
+                                "ReplicateMsg: $0 CommitMsg: $1\n",
+                                replicate->DebugString(),
+                                commit.DebugString()));
       break;
 
     case CHANGE_CONFIG_OP:
-      RETURN_NOT_OK_PREPEND(PlayChangeConfigRequest(replicate_entry->mutable_msg(),
-                                                    commit_entry->commit()),
+      RETURN_NOT_OK_PREPEND(PlayChangeConfigRequest(replicate_entry->mutable_operation(),
+                                                    commit_entry->operation()),
                             Substitute("Failed to play change config. request. "
                                        "ReplicateMsg: $0 CommitMsg: $1\n",
-                                       replicate_entry->msg().DebugString(),
-                                       commit_entry->commit().DebugString()));
+                                       replicate->DebugString(),
+                                       commit.DebugString()));
       break;
 
     default:
       return Status::IllegalState(Substitute("Unsupported commit entry type: $0",
-                                             commit_entry->commit().op_type()));
+                                             commit.op_type()));
   }
 
   return Status::OK();
@@ -673,9 +674,9 @@ Status TabletBootstrap::PlaySegments() {
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
-                                         const CommitMsg& commit_msg) {
-  WriteRequestPB* write = replicate_msg->mutable_write_request();
+Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
+                                         const OperationPB& commit_op) {
+  WriteRequestPB* write = replicate_op->mutable_replicate()->mutable_write_request();
 
   // TODO should we re-append to the new log when all operations were
   // skipped? On one hand appending allows this node to catch up other
@@ -687,37 +688,40 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
 
   int32_t last_insert_op_idx = 0;
-  if (replicate_msg->write_request().has_to_insert_rows()) {
+  if (write->has_to_insert_rows()) {
     RETURN_NOT_OK(PlayInsertions(&tx_ctx,
                                  write->schema(),
                                  write->to_insert_rows(),
-                                 commit_msg.result(),
-                                 replicate_msg->id(),
+                                 commit_op.commit().result(),
+                                 replicate_op->id(),
                                  &last_insert_op_idx));
   }
-  if (replicate_msg->write_request().has_to_mutate_row_keys()) {
+  if (write->has_to_mutate_row_keys()) {
     RETURN_NOT_OK(PlayMutations(&tx_ctx,
                                 write->mutable_to_mutate_row_keys(),
                                 write->encoded_mutations(),
-                                commit_msg.result(),
-                                replicate_msg->id(),
+                                commit_op.commit().result(),
+                                replicate_op->id(),
                                 last_insert_op_idx));
   }
 
   // Append the commit msg to the log but replace the result with the new one
   LogEntry commit_entry;
-  commit_entry.set_type(COMMIT);
-  CommitMsg* commit = commit_entry.mutable_commit();
-  commit->CopyFrom(commit_msg);
+  commit_entry.set_type(OPERATION);
+  OperationPB* new_commit_op = commit_entry.mutable_operation();
+  new_commit_op->mutable_id()->CopyFrom(commit_op.id());
+  CommitMsg* commit = new_commit_op->mutable_commit();
+  commit->CopyFrom(commit_op.commit());
   commit->mutable_result()->CopyFrom(tx_ctx.Result());
   RETURN_NOT_OK(log_->Append(commit_entry));
 
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
-                                               const CommitMsg& commit_msg) {
-  AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
+Status TabletBootstrap::PlayAlterSchemaRequest(OperationPB* replicate_op,
+                                               const OperationPB& commit_op) {
+  AlterSchemaRequestPB* alter_schema =
+      replicate_op->mutable_replicate()->mutable_alter_schema_request();
 
   // Decode schema
   Schema schema;
@@ -732,20 +736,23 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
   RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_ctx), "Failed to AlterSchema:");
 
   LogEntry commit_entry;
-  commit_entry.set_type(COMMIT);
-  CommitMsg* commit = commit_entry.mutable_commit();
-  commit->CopyFrom(commit_msg);
+  commit_entry.set_type(OPERATION);
+  OperationPB* new_commit_op = commit_entry.mutable_operation();
+  new_commit_op->mutable_id()->CopyFrom(commit_op.id());
+  CommitMsg* commit = new_commit_op->mutable_commit();
+  commit->CopyFrom(commit_op.commit());
   RETURN_NOT_OK(log_->Append(commit_entry));
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
-                                                const CommitMsg& commit_msg) {
-  ChangeConfigRequestPB* change_config = replicate_msg->mutable_change_config_request();
+Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
+                                                const OperationPB& commit_op) {
+  ChangeConfigRequestPB* change_config =
+      replicate_op->mutable_replicate()->mutable_change_config_request();
 
   ChangeConfigTransactionContext tx_ctx(change_config);
 
-  QuorumPB quorum = replicate_msg->change_config_request().new_config();
+  QuorumPB quorum = change_config->new_config();
 
   // if the sequence number is higher than the current one change the configuration
   // otherwise skip it.
@@ -757,9 +764,11 @@ Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
   }
 
   LogEntry commit_entry;
-  commit_entry.set_type(COMMIT);
-  CommitMsg* commit = commit_entry.mutable_commit();
-  commit->CopyFrom(commit_msg);
+  commit_entry.set_type(OPERATION);
+  OperationPB* new_commit_op = commit_entry.mutable_operation();
+  new_commit_op->mutable_id()->CopyFrom(commit_op.id());
+  CommitMsg* commit = new_commit_op->mutable_commit();
+  commit->CopyFrom(commit_op.commit());
   RETURN_NOT_OK(log_->Append(commit_entry));
   return Status::OK();
 }
@@ -779,8 +788,9 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
   // the store to which it was applied on replay, as it might not be the same store as the
   // original MISSED_DELTA.
   LogEntry commit_entry;
-  commit_entry.set_type(COMMIT);
-  CommitMsg* new_commit = commit_entry.mutable_commit();
+  commit_entry.set_type(OPERATION);
+  OperationPB* new_commit_op = commit_entry.mutable_operation();
+  CommitMsg* new_commit = new_commit_op->mutable_commit();
   new_commit->CopyFrom(commit_msg);
 
   WriteTransactionContext tx_ctx;

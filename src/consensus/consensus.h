@@ -2,7 +2,8 @@
 #ifndef KUDO_QUORUM_CONSENSUS_H_
 #define KUDO_QUORUM_CONSENSUS_H_
 
-#include "google/protobuf/message_lite.h"
+#include <string>
+#include <vector>
 
 #include "consensus/consensus.pb.h"
 #include "util/status.h"
@@ -23,17 +24,20 @@ namespace consensus {
 
 // forward declarations
 class ConsensusContext;
+class ReplicaUpdateContext;
 
-struct ConsensusOptions {};
+struct ConsensusOptions {
+  string tablet_id;
+};
 
 // The external interface for a consensus peer.
 class Consensus {
  public:
   Consensus() : state_(kNotInitialized) {}
 
-  // Initializes the peer with the provided Log.
-  // Consensus does not own the Log and is provided a fully
-  // built one on startup.
+  // Initializes Consensus.
+  // Note: Consensus does not own the Log and must be provided a fully built
+  // one on startup.
   virtual Status Init(const metadata::QuorumPeerPB& peer,
                       log::Log* log) = 0;
 
@@ -106,6 +110,11 @@ class Consensus {
       const std::tr1::shared_ptr<FutureCallback>& commit_callback,
       gscoped_ptr<ConsensusContext>* context) = 0;
 
+  // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
+  // state machines. This method can only be called on LEARNERs and
+  // FOLLOWERs, i.e. is_leader() returns false.
+  virtual Status Update(ReplicaUpdateContext* context) = 0;
+
   // Appends a local commit to the state machine.
   // This function is required as different nodes have independent physical
   // layers and therefore need to sometimes issue "local" commit messages that
@@ -113,8 +122,8 @@ class Consensus {
   //
   // A successful call will yield a Future which can be used to Wait() until
   // the commit is done or to add callbacks. This is important as LocalCommit()
-  // does not take ownership of the passed 'commit_msg'.
-  virtual Status LocalCommit(CommitMsg* commit_msg,
+  // does not take ownership of the passed 'commit_op'.
+  virtual Status LocalCommit(OperationPB* commit_op,
                              std::tr1::shared_ptr<kudu::Future>* commit_future) = 0;
 
   // Returns the number of participants that constitutes a majority for this
@@ -134,6 +143,9 @@ class Consensus {
   // quorum.
   virtual bool is_leader() const = 0;
 
+  // Returns the current quorum role of this instance.
+  virtual metadata::QuorumPeerPB::Role role() const = 0;
+
   // Returns the current leader of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
   virtual metadata::QuorumPeerPB CurrentLeader() const = 0;
@@ -150,7 +162,7 @@ class Consensus {
 
   // Called by Consensus context to complete the commit of a consensus
   // round. CommitMsg pointer ownership will remain with ConsensusContext.
-  virtual Status Commit(ConsensusContext* ctx, CommitMsg *msg) = 0;
+  virtual Status Commit(ConsensusContext* ctx, OperationPB* msg) = 0;
 
   enum State {
     kNotInitialized,
@@ -164,17 +176,17 @@ class Consensus {
   DISALLOW_COPY_AND_ASSIGN(Consensus);
 };
 
-// Context for a consensus round, typically created as an out-parameter of
-// Consensus::Append.
+// Context for a consensus round on the LEADER side, typically created as an
+// out-parameter of Consensus::Append.
 class ConsensusContext {
  public:
   ConsensusContext(Consensus* consensus,
-                   gscoped_ptr<ReplicateMsg> replicate_msg,
+                   gscoped_ptr<OperationPB> replicate_op,
                    const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
                    const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
-  ReplicateMsg* replicate_msg() {
-    return replicate_msg_.get();
+  OperationPB* replicate_op() {
+    return replicate_op_.get();
   }
 
   Status Commit(gscoped_ptr<CommitMsg> commit);
@@ -187,12 +199,79 @@ class ConsensusContext {
     commit_callback_.reset();
   }
 
+  OperationPB* release_commit_op() {
+    return commit_op_.release();
+  }
+
  private:
   Consensus* consensus_;
-  gscoped_ptr<ReplicateMsg> replicate_msg_;
-  gscoped_ptr<CommitMsg> commit_msg_;
+  gscoped_ptr<OperationPB> replicate_op_;
+  gscoped_ptr<OperationPB> commit_op_;
   std::tr1::shared_ptr<FutureCallback> replicate_callback_;
   std::tr1::shared_ptr<FutureCallback> commit_callback_;
+};
+
+// A context for a consensus update request, i.e. a batch of ReplicateMsg and
+// and CommitMsgs received from the LEADER. Usually wraps an RpcContext
+// that gets called by the Respond*() methods but not by default so that
+// consensus is not tied to RPC.
+//
+// Contrarily to a ConsensusContext, which refers to a single consensus round
+// and lives LEADER side, a ConsensusUpdateContext may refer a series of
+// of replicate/commit operations (as many as were batched together by the
+// LEADER) and lives FOLLOWER/LEARNER side.
+class ReplicaUpdateContext {
+ public:
+  ReplicaUpdateContext(const ConsensusRequestPB* request,
+                         ConsensusResponsePB* response)
+    : request_(request),
+      response_(response) {
+  }
+
+  const ConsensusRequestPB* request() { return request_; }
+
+  ConsensusResponsePB* response() { return response_; }
+
+  // Sets the future that was assigned to the replica log task.
+  void SetLogFuture(const std::tr1::shared_ptr<Future>& log_future) {
+    log_future_ = log_future;
+  }
+
+  void AddPrepareFuture(const std::tr1::shared_ptr<Future>& prepare_future) {
+    prepare_futures_.push_back(prepare_future);
+  }
+
+  void AddCommitFuture(const std::tr1::shared_ptr<Future>& commit_future) {
+    commit_futures_.push_back(commit_future);
+  }
+
+  const std::tr1::shared_ptr<Future>& log_future() {
+    return log_future_;
+  }
+
+  const vector<std::tr1::shared_ptr<Future> >& prepare_futures() {
+    return prepare_futures_;
+  }
+
+  const vector<std::tr1::shared_ptr<Future> >& commit_futures() {
+    return commit_futures_;
+  }
+
+  virtual void RespondSuccess() = 0;
+
+  virtual void RespondFailure(const Status &status) = 0;
+
+  virtual ~ReplicaUpdateContext() {}
+
+ private:
+  const ConsensusRequestPB* request_;
+  ConsensusResponsePB* response_;
+  std::tr1::shared_ptr<Future> log_future_;
+  vector<std::tr1::shared_ptr<Future> > prepare_futures_;
+  vector<std::tr1::shared_ptr<Future> > commit_futures_;
+
+
+  DISALLOW_COPY_AND_ASSIGN(ReplicaUpdateContext);
 };
 
 } // namespace consensus

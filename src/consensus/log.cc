@@ -15,6 +15,7 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
+using consensus::MISSED_DELTA;
 
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
@@ -96,14 +97,14 @@ Status Log::Append(const LogEntry& entry) {
 
   // update the current header
   switch (entry.type()) {
-    case REPLICATE: {
-      DCHECK(entry.msg().has_id()) << "Replicate messages must have an id.";
-      next_segment_header_->mutable_initial_id()->CopyFrom(entry.msg().id());
-      break;
-    }
-    case COMMIT: {
-      if (PREDICT_TRUE(entry.commit().has_id())) {
-        next_segment_header_->mutable_initial_id()->CopyFrom(entry.commit().id());
+    case OPERATION: {
+      if (PREDICT_TRUE(entry.operation().has_id())) {
+        next_segment_header_->mutable_initial_id()->CopyFrom(entry.operation().id());
+      } else {
+        DCHECK(entry.operation().has_commit()
+               && entry.operation().commit().op_type() == MISSED_DELTA)
+                   << "Operation did not have an id. Only COMMIT operations of"
+                      " MISSED_DELTA type are allowed not to have ids.";
       }
       break;
     }
