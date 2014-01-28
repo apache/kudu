@@ -18,6 +18,8 @@
 
 namespace kudu {
 
+class PartialRow;
+
 namespace rpc {
 class Messenger;
 } // namespace rpc
@@ -35,7 +37,6 @@ namespace client {
 
 class KuduClient;
 class KuduTable;
-class PartialRow;
 
 //typedef boost::function<void(const Status& status, const std::vector<Sockaddr>& addr)>
 //        ResolveAddressCallback;

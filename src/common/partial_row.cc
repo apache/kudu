@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "client/partial_row.h"
+#include "common/partial_row.h"
 
 #include <string>
 
@@ -15,7 +15,6 @@
 using strings::Substitute;
 
 namespace kudu {
-namespace client {
 
 namespace {
 inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
@@ -534,5 +533,4 @@ Status PartialRow::DecodeAndProject(const PartialRowsPB& pb,
   return Status::OK();
 }
 
-} // namespace client
 } // namespace kudu

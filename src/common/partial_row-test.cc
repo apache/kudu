@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <boost/assign/list_of.hpp>
 
-#include "client/partial_row.h"
+#include "common/partial_row.h"
 #include "common/row.h"
 #include "common/schema.h"
 #include "common/wire_protocol.pb.h"
@@ -11,7 +11,6 @@
 #include "util/test_util.h"
 
 namespace kudu {
-namespace client {
 
 class PartialRowTest : public KuduTest {
  public:
@@ -350,5 +349,4 @@ TEST_F(PartialRowTest, ProjectionTestWithClientHavingInvalidSubset) {
   }
 }
 
-} // namespace client
 } // namespace kudu

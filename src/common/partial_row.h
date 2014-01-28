@@ -1,6 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
-#ifndef KUDU_CLIENT_PARTIAL_ROW_H
-#define KUDU_CLIENT_PARTIAL_ROW_H
+#ifndef KUDU_COMMON_PARTIAL_ROW_H
+#define KUDU_COMMON_PARTIAL_ROW_H
 
 #include <gtest/gtest.h>
 #include <string>
@@ -13,12 +13,9 @@
 
 namespace kudu {
 
-class Schema;
 class Arena;
-
+class Schema;
 class PartialRowsPB;
-
-namespace client {
 
 // A row which may only contain values for a subset of the columns.
 // This type contains a normal contiguous row, plus a bitfield indicating
@@ -131,6 +128,5 @@ class PartialRow {
   DISALLOW_COPY_AND_ASSIGN(PartialRow);
 };
 
-} // namespace client
 } // namespace kudu
-#endif /* KUDU_CLIENT_PARTIAL_ROW_H */
+#endif /* KUDU_COMMON_PARTIAL_ROW_H */

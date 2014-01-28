@@ -2,7 +2,7 @@
 #ifndef KUDU_CLIENT_CLIENT_H
 #define KUDU_CLIENT_CLIENT_H
 
-#include "client/partial_row.h"
+#include "common/partial_row.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"

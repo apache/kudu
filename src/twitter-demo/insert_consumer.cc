@@ -97,7 +97,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   string created_at = TwitterEventParser::ReformatTime(event_.tweet_event.created_at);
 
   gscoped_ptr<Insert> ins = table_->NewInsert();
-  client::PartialRow* r = ins->mutable_row();
+  PartialRow* r = ins->mutable_row();
   CHECK_OK(r->SetUInt64("tweet_id", event_.tweet_event.tweet_id));
   CHECK_OK(r->SetStringCopy("text", event_.tweet_event.text));
   CHECK_OK(r->SetStringCopy("source", event_.tweet_event.source));

@@ -3,6 +3,7 @@
 set(COMMON_SRCS
   generic_iterators.cc
   key_encoder.cc
+  partial_row.cc
   rowblock.cc
   row_changelist.cc
   wire_protocol.cc
@@ -36,3 +37,4 @@ ADD_KUDU_TEST(row_changelist-test)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(wire_protocol-test)
 ADD_KUDU_TEST(predicate_encoder-test)
+ADD_KUDU_TEST(partial_row-test)
