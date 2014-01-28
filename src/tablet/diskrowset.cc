@@ -53,6 +53,9 @@ Status DiskRowSetWriter::Open() {
     // the corresponding rows.
     opts.write_posidx = true;
 
+    /// Set the column storage attributes.
+    opts.storage_attributes = col.attributes();
+
     // If the schema has a single PK and this is the PK col
     if (i == 0 && schema().num_key_columns() == 1) {
       opts.write_validx = true;
@@ -66,16 +69,12 @@ Status DiskRowSetWriter::Open() {
                    << s.ToString();
       return s;
     }
-
     // Create the CFile writer itself.
     gscoped_ptr<cfile::Writer> writer(new cfile::Writer(
                                         opts,
                                         col.type_info().type(),
                                         col.is_nullable(),
-                                        cfile::TypeEncodingInfo::GetDefaultEncoding(
-                                          col.type_info().type()),
                                         data_writer));
-
     s = writer->Start();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Start() writer for column " << col.ToString() << ": "
@@ -121,12 +120,13 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   // no need to index positions
   opts.write_posidx = false;
 
+  opts.storage_attributes = ColumnStorageAttributes(PREFIX_ENCODING);
+
   // Create the CFile writer for the ad-hoc index.
   ad_hoc_index_writer_.reset(new cfile::Writer(
       opts,
       STRING,
       false,
-      cfile::PREFIX,
       data_writer));
   return ad_hoc_index_writer_->Start();
 

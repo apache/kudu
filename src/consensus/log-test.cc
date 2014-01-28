@@ -346,11 +346,11 @@ TEST_F(LogTest, TestSegmentRollover) {
   // set a small segment size so that we have roll overs
   BuildLog();
   log_->SetMaxSegmentSizeForTests(1024);
-  // this adds to 21 segments
+  // this adds to 23 segments
   AppendBatchAndCommitEntryPairsToLog(100);
 
-  // expect 20 previous_ segments plus the current_ one
-  ASSERT_EQ(20, log_->previous_segments().size());
+  // expect 22 previous_ segments plus the current_ one
+  ASSERT_EQ(22, log_->previous_segments().size());
   ASSERT_STATUS_OK(log_->Close());
 
   BuildLogReader();

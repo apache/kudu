@@ -39,6 +39,35 @@ using std::vector;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 
+// Class for storing column attributes such as compression and
+// encoding.  Column attributes describe the physical storage and
+// representation of bytes, as opposed to a purely logical description
+// normally associated with the term Schema.
+//
+// Column attributes are presently specified in the ColumnSchema
+// protobuf message, but this should ideally be separate.
+class ColumnStorageAttributes {
+ public:
+  ColumnStorageAttributes(EncodingType encoding = AUTO_ENCODING,
+                          CompressionType compression = DEFAULT_COMPRESSION)
+  : encoding_(encoding),
+    compression_(compression) { }
+
+  const EncodingType encoding() const {
+    return encoding_;
+  }
+
+  const CompressionType compression() const {
+    return compression_;
+  }
+
+  string ToString() const;
+
+ private:
+  EncodingType encoding_;
+  CompressionType compression_;
+};
+
 // The schema for a given column.
 //
 // Currently a simple wrapper around a data type, but in the future
@@ -66,7 +95,8 @@ class ColumnSchema {
                DataType type,
                bool is_nullable = false,
                const void *read_default = NULL,
-               const void *write_default = NULL) :
+               const void *write_default = NULL,
+               ColumnStorageAttributes attributes = ColumnStorageAttributes()) :
       name_(name),
       type_info_(&GetTypeInfo(type)),
       is_nullable_(is_nullable),
@@ -165,6 +195,14 @@ class ColumnSchema {
     return true;
   }
 
+  // Returns extended attributes (such as encoding, compression, etc...)
+  // associated with the column schema. The reason they are kept in a separate
+  // struct is so that in the future, they may be moved out to a more
+  // appropriate location as opposed to parts of ColumnSchema.
+  const ColumnStorageAttributes& attributes() const {
+    return attributes_;
+  }
+
   int Compare(const void *lhs, const void *rhs) const {
     return type_info_->Compare(lhs, rhs);
   }
@@ -206,6 +244,7 @@ class ColumnSchema {
   // use shared_ptr since the ColumnSchema is always copied around.
   std::tr1::shared_ptr<Variant> read_default_;
   std::tr1::shared_ptr<Variant> write_default_;
+  ColumnStorageAttributes attributes_;
 };
 
 // The schema for a set of rows.

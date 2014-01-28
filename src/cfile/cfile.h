@@ -87,7 +87,6 @@ class Writer {
   explicit Writer(const WriterOptions &options,
                   DataType type,
                   bool is_nullable,
-                  EncodingType encoding,
                   shared_ptr<WritableFile> file);
   Status Start();
   Status Finish();
@@ -164,8 +163,9 @@ class Writer {
   bool is_nullable_;
   DataType datatype_;
   EncodingType encoding_type_;
+  CompressionType compression_;
   const TypeInfo &typeinfo_;
-  const TypeEncodingInfo &type_encoding_info_;
+  const TypeEncodingInfo* type_encoding_info_;
   const KeyEncoder& key_encoder_;
 
   // a temporary buffer for encoding

@@ -20,6 +20,7 @@
 using std::string;
 
 DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
+
 DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
 
@@ -42,7 +43,7 @@ WriterOptions::WriterOptions()
     block_restart_interval(16),
     write_posidx(false),
     write_validx(false),
-    compression(GetDefaultCompressionCodec()) {
+    storage_attributes(ColumnStorageAttributes(AUTO_ENCODING, GetDefaultCompressionCodec())) {
 }
 
 
@@ -54,7 +55,6 @@ WriterOptions::WriterOptions()
 Writer::Writer(const WriterOptions &options,
                DataType type,
                bool is_nullable,
-               EncodingType encoding,
                shared_ptr<WritableFile> file)
   : file_(file),
     off_(0),
@@ -62,11 +62,29 @@ Writer::Writer(const WriterOptions &options,
     options_(options),
     is_nullable_(is_nullable),
     datatype_(type),
-    encoding_type_(encoding),
     typeinfo_(GetTypeInfo(type)),
-    type_encoding_info_(TypeEncodingInfo::Get(type, encoding)),
     key_encoder_(GetKeyEncoder(type)),
     state_(kWriterInitialized) {
+  EncodingType encoding = options_.storage_attributes.encoding();
+  Status s = TypeEncodingInfo::Get(type, encoding, &type_encoding_info_);
+  if (!s.ok()) {
+    // TODO: we should somehow pass some contextual info about the
+    // tablet here.
+    WARN_NOT_OK(s, "Falling back to default encoding");
+    encoding_type_ = TypeEncodingInfo::GetDefaultEncoding(type);
+    s = TypeEncodingInfo::Get(type,
+                              encoding_type_,
+                              &type_encoding_info_);
+    CHECK_OK(s);
+  } else {
+    encoding_type_ = encoding;
+  }
+
+  compression_ = options_.storage_attributes.compression();
+  if (compression_ == DEFAULT_COMPRESSION) {
+    compression_ = GetDefaultCompressionCodec();
+  }
+
   if (options.write_posidx) {
     posidx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
@@ -82,9 +100,10 @@ Status Writer::Start() {
   CHECK(state_ == kWriterInitialized) <<
     "bad state for Start(): " << state_;
 
-  if (options_.compression != NO_COMPRESSION) {
+  if (compression_ != NO_COMPRESSION) {
     shared_ptr<CompressionCodec> compression_codec;
-    RETURN_NOT_OK(GetCompressionCodec(options_.compression, &compression_codec));
+    RETURN_NOT_OK(
+        GetCompressionCodec(compression_, &compression_codec));
     block_compressor_ .reset(new CompressedBlockBuilder(compression_codec, kBlockSizeLimit));
   }
 
@@ -108,7 +127,7 @@ Status Writer::Start() {
   off_ += buf.size();
 
   BlockBuilder *bb;
-  RETURN_NOT_OK(type_encoding_info_.CreateBlockBuilder(&bb, &options_) );
+  RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&bb, &options_) );
   data_block_.reset(bb);
 
   if (is_nullable_) {
@@ -134,9 +153,9 @@ Status Writer::Finish() {
   CFileFooterPB footer;
   footer.set_data_type(datatype_);
   footer.set_is_type_nullable(is_nullable_);
-  footer.set_encoding(encoding_type_);
+  footer.set_encoding(options_.storage_attributes.encoding());
   footer.set_num_values(value_count_);
-  footer.set_compression(options_.compression);
+  footer.set_compression(compression_);
 
   // Write out any pending positional index blocks.
   if (options_.write_posidx) {

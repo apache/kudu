@@ -145,8 +145,8 @@ class TestCFile : public CFileTestBase {
     opts.write_posidx = true;
     // Use a smaller block size to exercise multi-level indexing.
     opts.block_size = 128;
-    opts.compression = compression;
-    Writer w(opts, data_type, true, encoding, sink);
+    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
+    Writer w(opts, data_type, true, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -181,8 +181,8 @@ class TestCFile : public CFileTestBase {
     WriterOptions opts;
     opts.write_posidx = true;
     opts.block_size = 128;
-    opts.compression = compression;
-    Writer w(opts, data_type, false, encoding, sink);
+    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
+    Writer w(opts, data_type, false, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -356,8 +356,8 @@ class TestCFile : public CFileTestBase {
     opts.write_posidx = true;
     opts.write_validx = false;
     opts.block_size = FLAGS_cfile_test_block_size;
-    opts.compression = compression;
-    Writer w(opts, STRING, false, PLAIN, sink);
+    opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, compression);
+    Writer w(opts, STRING, false, sink);
     ASSERT_STATUS_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
@@ -432,7 +432,7 @@ TEST_F(TestCFile, TestWrite100MFileStrings) {
   const string path = GetTestPath("Test100MStrings");
   LOG_TIMING(INFO, "writing 100M strings") {
     LOG(INFO) << "Starting writefile";
-    WriteTestFileStrings(path, PREFIX, NO_COMPRESSION,
+    WriteTestFileStrings(path, PREFIX_ENCODING, NO_COMPRESSION,
                          100000000, "hello %d");
     LOG(INFO) << "Done writing";
   }
@@ -449,11 +449,11 @@ TEST_F(TestCFile, TestWrite100MFileStrings) {
 
 TEST_F(TestCFile, TestFixedSizeReadWriteUInt32) {
   TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(GROUP_VARINT);
-  TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(PLAIN);
+  TestReadWriteFixedSizeTypes<UInt32DataGenerator, UINT32>(PLAIN_ENCODING);
 }
 
 TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
-  TestReadWriteFixedSizeTypes<Int32DataGenerator, INT32>(PLAIN);
+  TestReadWriteFixedSizeTypes<Int32DataGenerator, INT32>(PLAIN_ENCODING);
 }
 
 void EncodeStringKey(const Schema &schema, const Slice& key,
@@ -472,7 +472,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
 
   const int nrows = 10000;
   const string path = GetTestPath("cfile");
-  WriteTestFileStrings(path, PREFIX, NO_COMPRESSION, nrows, "hello %04d");
+  WriteTestFileStrings(path, PREFIX_ENCODING, NO_COMPRESSION, nrows, "hello %04d");
 
   gscoped_ptr<CFileReader> reader;
   ASSERT_STATUS_OK(CFileReader::Open(env, path, ReaderOptions(), &reader));
@@ -571,7 +571,9 @@ TEST_F(TestCFile, TestMetadata) {
   {
     shared_ptr<WritableFile> sink;
     ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), path, &sink));
-    Writer w(WriterOptions(), UINT32, false, GROUP_VARINT, sink);
+    WriterOptions opts;
+    opts.storage_attributes = ColumnStorageAttributes(GROUP_VARINT);
+    Writer w(opts, UINT32, false, sink);
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_STATUS_OK(w.Start());
@@ -654,13 +656,13 @@ TEST_F(TestCFile, TestNullInts) {
 }
 
 TEST_F(TestCFile, TestNullPrefixStrings) {
-  TestNullTypes<StringDataGenerator, STRING>(PLAIN, NO_COMPRESSION);
-  TestNullTypes<StringDataGenerator, STRING>(PLAIN, LZ4);
+  TestNullTypes<StringDataGenerator, STRING>(PLAIN_ENCODING, NO_COMPRESSION);
+  TestNullTypes<StringDataGenerator, STRING>(PLAIN_ENCODING, LZ4);
 }
 
 TEST_F(TestCFile, TestNullPlainStrings) {
-  TestNullTypes<StringDataGenerator, STRING>(PREFIX, NO_COMPRESSION);
-  TestNullTypes<StringDataGenerator, STRING>(PREFIX, LZ4);
+  TestNullTypes<StringDataGenerator, STRING>(PREFIX_ENCODING, NO_COMPRESSION);
+  TestNullTypes<StringDataGenerator, STRING>(PREFIX_ENCODING, LZ4);
 }
 
 

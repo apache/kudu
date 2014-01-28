@@ -117,6 +117,8 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
   pb->set_name(col_schema.name());
   pb->set_type(col_schema.type_info().type());
   pb->set_is_nullable(col_schema.is_nullable());
+  pb->set_encoding(col_schema.attributes().encoding());
+  pb->set_compression(col_schema.attributes().compression());
   if (col_schema.has_read_default()) {
     if (col_schema.type_info().type() == STRING) {
       const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
@@ -158,8 +160,13 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
       write_default_ptr = write_default.data();
     }
   }
+  // TODO: decide if we want to store this elsewhere, or take another
+  // approach. We could also avoid storing compression and encoding
+  // info if they are (respectively) NO_COMPRESSION and AUTO_ENCODING.
+  ColumnStorageAttributes attributes(pb.encoding(), pb.compression());
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
-                      read_default_ptr, write_default_ptr);
+                      read_default_ptr, write_default_ptr,
+                      attributes);
 }
 
 Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,

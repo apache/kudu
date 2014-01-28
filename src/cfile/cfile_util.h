@@ -47,10 +47,11 @@ struct WriterOptions {
   // Whether the file needs a value index
   bool write_validx;
 
-  // Block compression codec type
+  // Column storage attributes.
   //
-  // Default: specified by --cfile_default_compression_codec
-  CompressionType compression;
+  // Default: all default values as specified in the constructor in
+  // schema.h
+  ColumnStorageAttributes storage_attributes;
 
   WriterOptions();
 };

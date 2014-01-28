@@ -27,6 +27,8 @@ static const char* const kShipInstructColName = "l_shipinstruct";
 static const char* const kShipModeColName = "l_shipmode";
 static const char* const kCommentColName = "l_comment";
 
+static const ColumnStorageAttributes kPlainEncoding = ColumnStorageAttributes(PLAIN_ENCODING);
+
 enum {
   kOrderKeyColIdx = 0,
   kLineNumberColIdx,
@@ -56,22 +58,22 @@ inline Schema CreateLineItemSchema() {
                 (ColumnSchema(kExtendedPriceColName, UINT32)) // storing * 100
                 (ColumnSchema(kDiscountColName, UINT32)) // storing * 100
                 (ColumnSchema(kTaxColName, UINT32)) // storing * 100
-                (ColumnSchema(kReturnFlagColName, STRING))
-                (ColumnSchema(kLineStatusColName, STRING))
-                (ColumnSchema(kShipDateColName, STRING))
-                (ColumnSchema(kCommitDateColName, STRING))
-                (ColumnSchema(kReceiptDateColName, STRING))
-                (ColumnSchema(kShipInstructColName, STRING))
-                (ColumnSchema(kShipModeColName, STRING))
-                (ColumnSchema(kCommentColName, STRING))
+                (ColumnSchema(kReturnFlagColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kLineStatusColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kShipDateColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kCommitDateColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kReceiptDateColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kShipInstructColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kShipModeColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kCommentColName, STRING, false, NULL, NULL, kPlainEncoding))
                 , 2);
 }
 
 inline Schema CreateTpch1QuerySchema() {
   return Schema(boost::assign::list_of
-                (ColumnSchema(kShipDateColName, STRING))
-                (ColumnSchema(kReturnFlagColName, STRING))
-                (ColumnSchema(kLineStatusColName, STRING))
+                (ColumnSchema(kShipDateColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kReturnFlagColName, STRING, false, NULL, NULL, kPlainEncoding))
+                (ColumnSchema(kLineStatusColName, STRING, false, NULL, NULL, kPlainEncoding))
                 (ColumnSchema(kQuantityColName, UINT32))
                 (ColumnSchema(kExtendedPriceColName, UINT32))
                 (ColumnSchema(kDiscountColName, UINT32))

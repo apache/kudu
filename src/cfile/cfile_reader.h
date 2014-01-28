@@ -118,7 +118,7 @@ class CFileReader {
   }
 
   bool is_compressed() const {
-    return footer().compression() != cfile::NO_COMPRESSION;
+    return footer().compression() != NO_COMPRESSION;
   }
 
   // Advanced access to the cfile. This is used by the

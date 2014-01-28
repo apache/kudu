@@ -60,7 +60,7 @@ class TestCompression : public CFileTestBase {
     string path = GetTestPath("TestReadWriteCompressed");
     size_t rdrows;
 
-    WriteTestFileStrings(path, PREFIX, compression, nrows, "hello %04d");
+    WriteTestFileStrings(path, PREFIX_ENCODING, compression, nrows, "hello %04d");
     TimeReadFile(path, &rdrows);
     ASSERT_EQ(nrows, rdrows);
 

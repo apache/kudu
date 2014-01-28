@@ -43,8 +43,8 @@ class CFileTestBase : public KuduTest {
     // Use a smaller block size to exercise multi-level
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
-    opts.compression = compression;
-    Writer w(opts, STRING, false, encoding, sink);
+    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
+    Writer w(opts, STRING, false, sink);
 
     ASSERT_STATUS_OK(w.Start());
 
@@ -76,8 +76,8 @@ class CFileTestBase : public KuduTest {
     // Use a smaller block size to exercise multi-level
     // indexing.
     opts.block_size = FLAGS_cfile_test_block_size;
-    opts.compression = compression;
-    Writer w(opts, UINT32, false, encoding, sink);
+    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
+    Writer w(opts, UINT32, false, sink);
 
     ASSERT_STATUS_OK(w.Start());
 

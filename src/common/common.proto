@@ -30,6 +30,26 @@ enum DataType {
   BOOL = 9;
 }
 
+enum EncodingType {
+  AUTO_ENCODING = 0;
+  PLAIN_ENCODING = 1;
+  PREFIX_ENCODING = 2;
+  GROUP_VARINT = 3;
+  RLE = 4;
+}
+
+enum CompressionType {
+  DEFAULT_COMPRESSION = 0;
+  NO_COMPRESSION = 1;
+  SNAPPY = 2;
+  LZ4 = 3;
+  ZLIB = 4;
+}
+
+// TODO: Differentiate between the schema attributes
+// that are only relevant to the server (e.g.,
+// encoding and compression) and those that also
+// matter to the client.
 message ColumnSchemaPB {
   optional uint32 id = 1;
   required string name = 2;
@@ -38,6 +58,8 @@ message ColumnSchemaPB {
   optional bool is_nullable = 5 [default = false];
   optional bytes read_default_value = 6;
   optional bytes write_default_value = 7;
+  optional EncodingType encoding = 8 [default=AUTO_ENCODING];
+  optional CompressionType compression = 9 [default=DEFAULT_COMPRESSION];
 }
 
 message SchemaPB {

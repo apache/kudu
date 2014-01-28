@@ -3,20 +3,6 @@ package kudu.cfile;
 
 import "common/common.proto";
 
-enum EncodingType {
-  PLAIN = 0;
-  PREFIX = 1;
-  GROUP_VARINT = 2;
-  RLE = 3;
-}
-
-enum CompressionType {
-  NO_COMPRESSION = 0;
-  SNAPPY = 1;
-  LZ4 = 2;
-  ZLIB = 3;
-}
-
 message FileMetadataPairPB {
   required string key = 1;
   required bytes value = 2;

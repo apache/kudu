@@ -6,6 +6,8 @@
 #include <tr1/unordered_map>
 #include <glog/logging.h>
 
+#include "gutil/strings/substitute.h"
+
 namespace kudu {
 namespace cfile {
 
@@ -41,11 +43,20 @@ struct EncodingMapHash {
 // becomes the default encoding for the type.
 class TypeEncodingResolver {
  public:
-  const TypeEncodingInfo &GetTypeEncodingInfo(DataType t, EncodingType e) {
+  Status GetTypeEncodingInfo(DataType t, EncodingType e,
+                             const TypeEncodingInfo** out) {
+    if (e == AUTO_ENCODING) {
+      e = GetDefaultEncoding(t);
+    }
     const TypeEncodingInfo *type_info = mapping_[make_pair(t, e)].get();
-    CHECK(type_info != NULL) << "Unsupported type/encoding pair: " << t << ", "
-                             << e;
-    return *type_info;
+    if (PREDICT_FALSE(type_info == NULL)) {
+      return Status::NotSupported(
+          strings::Substitute("Unsupported type/encoding pair: $0, $1",
+                              DataType_Name(t),
+                              EncodingType_Name(e)));
+    }
+    *out = type_info;
+    return Status::OK();
   }
 
   const EncodingType GetDefaultEncoding(DataType t) {
@@ -61,25 +72,25 @@ class TypeEncodingResolver {
   //       64-bit int types.
  private:
   TypeEncodingResolver() {
-    AddMapping<UINT8, PLAIN>();
+    AddMapping<UINT8, PLAIN_ENCODING>();
     AddMapping<UINT8, RLE>();
-    AddMapping<INT8, PLAIN>();
+    AddMapping<INT8, PLAIN_ENCODING>();
     AddMapping<INT8, RLE>();
-    AddMapping<UINT16, PLAIN>();
+    AddMapping<UINT16, PLAIN_ENCODING>();
     AddMapping<UINT16, RLE>();
-    AddMapping<INT16, PLAIN>();
+    AddMapping<INT16, PLAIN_ENCODING>();
     AddMapping<INT16, RLE>();
     AddMapping<UINT32, GROUP_VARINT>();
     AddMapping<UINT32, RLE>();
-    AddMapping<UINT32, PLAIN>();
-    AddMapping<INT32, PLAIN>();
+    AddMapping<UINT32, PLAIN_ENCODING>();
+    AddMapping<INT32, PLAIN_ENCODING>();
     AddMapping<INT32, RLE>();
-    AddMapping<UINT64, PLAIN>();
-    AddMapping<INT64, PLAIN>();
-    AddMapping<STRING, PREFIX>();
-    AddMapping<STRING, PLAIN>();
+    AddMapping<UINT64, PLAIN_ENCODING>();
+    AddMapping<INT64, PLAIN_ENCODING>();
+    AddMapping<STRING, PREFIX_ENCODING>();
+    AddMapping<STRING, PLAIN_ENCODING>();
     AddMapping<BOOL, RLE>();
-    AddMapping<BOOL, PLAIN>();
+    AddMapping<BOOL, PLAIN_ENCODING>();
   }
 
   template<DataType type, EncodingType encoding> void AddMapping() {
@@ -103,10 +114,12 @@ class TypeEncodingResolver {
   DISALLOW_COPY_AND_ASSIGN(TypeEncodingResolver);
 };
 
-const TypeEncodingInfo &TypeEncodingInfo::Get(DataType type,
-                                              EncodingType encoding) {
+Status TypeEncodingInfo::Get(DataType type,
+                             EncodingType encoding,
+                             const TypeEncodingInfo** out) {
   return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(type,
-                                                                     encoding);
+                                                                     encoding,
+                                                                     out);
 }
 
 const EncodingType TypeEncodingInfo::GetDefaultEncoding(DataType type) {

@@ -72,7 +72,8 @@ DeltaFileWriter::DeltaFileWriter(const Schema &schema,
   cfile::WriterOptions opts;
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
-  writer_.reset(new cfile::Writer(opts, STRING, false, cfile::PLAIN, file));
+  opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING);
+  writer_.reset(new cfile::Writer(opts, STRING, false, file));
 }
 
 

@@ -469,16 +469,16 @@ Status RowSetColumnUpdater::Open(shared_ptr<RowSetMetadata>* output_rowset_meta)
                                                              output_rowset_meta,
                                                              &data_writers));
   BOOST_FOREACH(size_t col_idx, column_indexes_) {
+    const ColumnSchema &col = input_rowset_meta_->schema().column(col_idx);
     cfile::WriterOptions opts;
     opts.write_posidx = true;
-    const ColumnSchema &col = input_rowset_meta_->schema().column(col_idx);
-    // TODO: we should probably preserve the encoding of the input
+    opts.storage_attributes = col.attributes();
+
     gscoped_ptr<cfile::Writer> writer(
         new cfile::Writer(
             opts,
             col.type_info().type(),
             col.is_nullable(),
-            cfile::TypeEncodingInfo::GetDefaultEncoding(col.type_info().type()),
             data_writers[col_idx]));
     Status s = writer->Start();
     if (!s.ok()) {

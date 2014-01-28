@@ -106,8 +106,11 @@ Status CFileReader::Init() {
   RETURN_NOT_OK(ReadAndParseFooter());
 
   type_info_ = &GetTypeInfo(footer_->data_type());
-  type_encoding_info_ = &TypeEncodingInfo::Get(footer_->data_type(),
-                                               footer_->encoding());
+
+  RETURN_NOT_OK(TypeEncodingInfo::Get(footer_->data_type(),
+                                      footer_->encoding(),
+                                      &type_encoding_info_));
+
   key_encoder_ = &GetKeyEncoder(footer_->data_type());
   VLOG(1) << "Initialized CFile reader. "
           << "Header: " << header_->DebugString()

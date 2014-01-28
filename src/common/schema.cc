@@ -17,6 +17,14 @@ using std::set;
 using std::tr1::unordered_set;
 using std::tr1::unordered_map;
 
+string ColumnStorageAttributes::ToString() const {
+  return strings::Substitute("encoding=$0,compression=$1",
+                             EncodingType_Name(encoding_),
+                             CompressionType_Name(compression_));
+}
+
+// TODO: include attributes_.ToString() -- need to fix unit tests
+// first
 string ColumnSchema::ToString() const {
   return strings::Substitute("$0[$1]",
                              name_,

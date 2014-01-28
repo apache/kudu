@@ -19,7 +19,8 @@ namespace kudu { namespace cfile {
 class TypeEncodingInfo {
  public:
 
-  static const TypeEncodingInfo &Get(DataType type, EncodingType encoding);
+  static Status Get(DataType type, EncodingType encoding, const TypeEncodingInfo** out);
+
   static const EncodingType GetDefaultEncoding(DataType type);
 
   DataType type() const { return type_; }
@@ -60,7 +61,7 @@ template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits
 // Generic, fallback, partial specialization that should work for all
 // fixed size types.
 template<DataType Type>
-struct DataTypeEncodingTraits<Type, PLAIN> {
+struct DataTypeEncodingTraits<Type, PLAIN_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
     *bb = new PlainBlockBuilder<Type>(options);
@@ -76,7 +77,7 @@ struct DataTypeEncodingTraits<Type, PLAIN> {
 // Template specialization for plain encoded string as they require a
 // specific encoder/decoder.
 template<>
-struct DataTypeEncodingTraits<STRING, PLAIN> {
+struct DataTypeEncodingTraits<STRING, PLAIN_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
     *bb = new StringPlainBlockBuilder(options);
@@ -91,7 +92,7 @@ struct DataTypeEncodingTraits<STRING, PLAIN> {
 
 // Template specialization for packed bitmaps
 template<>
-struct DataTypeEncodingTraits<BOOL, PLAIN> {
+struct DataTypeEncodingTraits<BOOL, PLAIN_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb,
                                    const WriterOptions* /* unused: options */) {
@@ -125,7 +126,7 @@ struct DataTypeEncodingTraits<BOOL, RLE> {
 // Template specialization for plain encoded string as they require a
 // specific encoder \/decoder.
 template<>
-struct DataTypeEncodingTraits<STRING, PREFIX> {
+struct DataTypeEncodingTraits<STRING, PREFIX_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
     *bb = new StringPrefixBlockBuilder(options);
