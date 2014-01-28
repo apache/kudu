@@ -79,6 +79,10 @@ TEST_F(PartialRowTest, UnitTest) {
 
   EXPECT_STATUS_OK(row.Unset("key"));
   EXPECT_EQ("uint32 int_val=54321", row.ToString());
+
+  // Set the column by index
+  EXPECT_STATUS_OK(row.SetUInt32(1, 99999));
+  EXPECT_EQ("uint32 int_val=99999", row.ToString());
 }
 
 void PartialRowTest::CheckPBRoundTrip(const PartialRow& row) {

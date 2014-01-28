@@ -38,16 +38,37 @@ class PartialRow {
   Status SetUInt32(const Slice& col_name, uint32_t val);
   Status SetUInt64(const Slice& col_name, uint64_t val);
 
+  // Same as above setters, but with numeric column indexes.
+  // These are faster since they avoid a hashmap lookup, so should
+  // be preferred in performance-sensitive code (eg bulk loaders).
+  Status SetInt8(int col_idx, int8_t val);
+  Status SetInt16(int col_idx, int16_t val);
+  Status SetInt32(int col_idx, int32_t val);
+  Status SetInt64(int col_idx, int64_t val);
+
+  Status SetUInt8(int col_idx, uint8_t val);
+  Status SetUInt16(int col_idx, uint16_t val);
+  Status SetUInt32(int col_idx, uint32_t val);
+  Status SetUInt64(int col_idx, uint64_t val);
+
+  // Sets the string but does not copy the value. The string
+  // must remain valid until the call to AppendToPB().
+  Status SetString(const Slice& col_name, const Slice& val);
+  Status SetString(int col_idx, const Slice& val);
+
   // Copies 'val' immediately.
   Status SetStringCopy(const Slice& col_name, const Slice& val);
+  Status SetStringCopy(int col_idx, const Slice& val);
 
   // Set the given column to NULL. This will only succeed on nullable
   // columns. Use Unset(...) to restore a column to its default.
   Status SetNull(const Slice& col_name);
+  Status SetNull(int col_idx);
 
   // Unsets the given column. Note that this is different from setting
   // it to NULL.
   Status Unset(const Slice& col_name);
+  Status Unset(int col_idx);
 
   // Return true if all of the key columns have been specified
   // for this mutation.
@@ -97,6 +118,11 @@ class PartialRow {
  private:
   template<DataType TYPE>
   Status Set(const Slice& col_name,
+             const typename DataTypeTraits<TYPE>::cpp_type& val,
+             bool owned = false);
+
+  template<DataType TYPE>
+  Status Set(int col_idx,
              const typename DataTypeTraits<TYPE>::cpp_type& val,
              bool owned = false);
 

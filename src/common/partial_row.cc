@@ -60,7 +60,13 @@ Status PartialRow::Set(const Slice& col_name,
                        bool owned) {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  return Set<TYPE>(col_idx, val, owned);
+}
 
+template<DataType TYPE>
+Status PartialRow::Set(int col_idx,
+                       const typename DataTypeTraits<TYPE>::cpp_type& val,
+                       bool owned) {
   const ColumnSchema& col = schema_->column(col_idx);
   if (PREDICT_FALSE(col.type_info().type() != TYPE)) {
     // TODO: at some point we could allow type coercion here.
@@ -130,6 +136,38 @@ Status PartialRow::SetUInt32(const Slice& col_name, uint32_t val) {
 Status PartialRow::SetUInt64(const Slice& col_name, uint64_t val) {
   return Set<UINT64>(col_name, val);
 }
+Status PartialRow::SetString(const Slice& col_name, const Slice& val) {
+  return Set<STRING>(col_name, val, false);
+}
+
+Status PartialRow::SetInt8(int col_idx, int8_t val) {
+  return Set<INT8>(col_idx, val);
+}
+Status PartialRow::SetInt16(int col_idx, int16_t val) {
+  return Set<INT16>(col_idx, val);
+}
+Status PartialRow::SetInt32(int col_idx, int32_t val) {
+  return Set<INT32>(col_idx, val);
+}
+Status PartialRow::SetInt64(int col_idx, int64_t val) {
+  return Set<INT64>(col_idx, val);
+}
+Status PartialRow::SetUInt8(int col_idx, uint8_t val) {
+  return Set<UINT8>(col_idx, val);
+}
+Status PartialRow::SetUInt16(int col_idx, uint16_t val) {
+  return Set<UINT16>(col_idx, val);
+}
+Status PartialRow::SetUInt32(int col_idx, uint32_t val) {
+  return Set<UINT32>(col_idx, val);
+}
+Status PartialRow::SetUInt64(int col_idx, uint64_t val) {
+  return Set<UINT64>(col_idx, val);
+}
+Status PartialRow::SetString(int col_idx, const Slice& val) {
+  return Set<STRING>(col_idx, val, false);
+}
+
 Status PartialRow::SetStringCopy(const Slice& col_name, const Slice& val) {
   uint8_t* relocated = new uint8_t[val.size()];
   memcpy(relocated, val.data(), val.size());
@@ -141,9 +179,24 @@ Status PartialRow::SetStringCopy(const Slice& col_name, const Slice& val) {
   return s;
 }
 
+Status PartialRow::SetStringCopy(int col_idx, const Slice& val) {
+  uint8_t* relocated = new uint8_t[val.size()];
+  memcpy(relocated, val.data(), val.size());
+  Slice relocated_val(relocated, val.size());
+  Status s = Set<STRING>(col_idx, relocated_val, true);
+  if (!s.ok()) {
+    delete [] relocated;
+  }
+  return s;
+}
+
 Status PartialRow::SetNull(const Slice& col_name) {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  return SetNull(col_idx);
+}
+
+Status PartialRow::SetNull(int col_idx) {
   const ColumnSchema& col = schema_->column(col_idx);
   if (PREDICT_FALSE(!col.is_nullable())) {
     return Status::InvalidArgument("column not nullable", col.ToString());
@@ -162,6 +215,10 @@ Status PartialRow::SetNull(const Slice& col_name) {
 Status PartialRow::Unset(const Slice& col_name) {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  return Unset(col_idx);
+}
+
+Status PartialRow::Unset(int col_idx) {
   const ColumnSchema& col = schema_->column(col_idx);
   if (col.type_info().type() == STRING) DeallocateStringIfSet(col_idx);
   BitmapClear(isset_bitmap_, col_idx);
