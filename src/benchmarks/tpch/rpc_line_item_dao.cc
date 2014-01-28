@@ -44,15 +44,16 @@ void RpcLineItemDAO::Init() {
   // TODO: Use the client api instead of the direct request
   proxy_ = client_table_->proxy();
   request_.set_tablet_id(client_table_->tablet_id());
-  CHECK_OK(SchemaToColumnPBs(schema, request_.mutable_to_insert_rows()->mutable_schema()));
+  CHECK_OK(SchemaToPB(schema, request_.mutable_schema()));
   CHECK_OK(SchemaToColumnPBs(schema, request_.mutable_to_mutate_row_keys()->mutable_schema()));
 }
 
-void RpcLineItemDAO::WriteLine(const ConstContiguousRow &row) {
-  if (!ShouldAddKey(row)) return;
+void RpcLineItemDAO::WriteLine(const PartialRow& row) {
+  if (!ShouldAddKey(row.as_contiguous_row())) return;
 
-  RowwiseRowBlockPB* data = request_.mutable_to_insert_rows();
-  AddRowToRowBlockPB(row, data);
+  PartialRowsPB* data = request_.mutable_to_insert_rows();
+  row.AppendToPB(data);
+  num_pending_rows_++;
   DoWriteAsync();
   ApplyBackpressure();
 }
@@ -62,6 +63,7 @@ void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring 
 
   RowwiseRowBlockPB* keys = request_.mutable_to_mutate_row_keys();
   AddRowToRowBlockPB(row, keys);
+  num_pending_rows_++;
 
   faststring tmp;
   tmp.append(request_.encoded_mutations().c_str(), request_.encoded_mutations().size());
@@ -86,10 +88,7 @@ void RpcLineItemDAO::ApplyBackpressure() {
     {
       boost::lock_guard<simple_spinlock> l(lock_);
       if (!request_pending_) return;
-
-      int row_count = request_.to_insert_rows().num_rows() +
-        request_.to_mutate_row_keys().num_rows();
-      if (row_count < batch_size_) {
+      if (num_pending_rows_ < batch_size_) {
         break;
       }
     }
@@ -104,16 +103,16 @@ void RpcLineItemDAO::DoWriteAsync() {
 
     rpc_.Reset();
     rpc_.set_timeout(MonoDelta::FromMilliseconds(2000));
-    int n_rows = request_.to_insert_rows().num_rows() +
-      request_.to_mutate_row_keys().num_rows();
-    VLOG(1) << "Sending batch of " << n_rows;
+
+    VLOG(1) << "Sending batch of " << num_pending_rows_;
     proxy_->WriteAsync(request_, &response_, &rpc_,
                        boost::bind(&RpcLineItemDAO::BatchFinished, this));
 
+    num_pending_rows_ = 0;
+
     // TODO figure how to clean better
-    request_.mutable_to_insert_rows()->set_num_rows(0);
-    request_.mutable_to_insert_rows()->clear_rows();
-    request_.mutable_to_insert_rows()->clear_indirect_data();
+    request_.mutable_to_insert_rows()->Clear();
+
     request_.mutable_to_mutate_row_keys()->set_num_rows(0);
     request_.mutable_to_mutate_row_keys()->clear_rows();
     request_.mutable_to_mutate_row_keys()->clear_indirect_data();
@@ -128,10 +127,9 @@ void RpcLineItemDAO::BatchFinished() {
 
   Status s = rpc_.status();
   if (!s.ok()) {
-    int n_rows = request_.to_insert_rows().num_rows() +
-      request_.to_mutate_row_keys().num_rows();
-    LOG(WARNING) << "RPC error inserting row: " << s.ToString()
-                 << " (" << n_rows << " rows, " << request_.ByteSize() << " bytes)";
+    // We can't log which rows failed, since we already cleared the Request
+    // object right after sending it.
+    LOG(WARNING) << "RPC error inserting rows: " << s.ToString();
     return;
   }
 
@@ -154,8 +152,7 @@ void RpcLineItemDAO::FinishWriting() {
     {
       boost::unique_lock<simple_spinlock> l(lock_);
       if (!request_pending_) {
-        if (request_.to_insert_rows().num_rows() > 0 ||
-           request_.to_mutate_row_keys().num_rows() > 0) {
+        if (num_pending_rows_ > 0) {
           l.unlock();
           DoWriteAsync();
         } else {

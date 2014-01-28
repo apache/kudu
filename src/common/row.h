@@ -202,6 +202,13 @@ class RowProjector {
     return Status::OK();
   }
 
+  Status ProjectExtraColumn(size_t proj_col_idx) {
+    return Status::InvalidArgument(
+      "The column '" + projection_->column(proj_col_idx).name() +
+      "' does not exist in the projection, and it does not have a "
+      "default value or a nullable type");
+  }
+
  private:
   // Project a row from one schema into another, using the projection mapping.
   // Indirected data is copied into the provided dst arena.
@@ -319,6 +326,13 @@ class DeltaProjector {
     // Not used, since deltas are update...
     // we don't have this column, so we don't have updates
     return Status::OK();
+  }
+
+  Status ProjectExtraColumn(size_t proj_col_idx) {
+    return Status::InvalidArgument(
+      "The column '" + delta_schema_->column(proj_col_idx).name() +
+      "' does not exist in the projection, and it does not have a "
+      "default value or a nullable type");
   }
 
  private:

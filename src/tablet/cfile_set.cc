@@ -274,6 +274,13 @@ class CFileSetIteratorProjector {
     return Status::OK();
   }
 
+  Status ProjectExtraColumn(size_t proj_col_idx) {
+    return Status::InvalidArgument(
+      "The column '" + projection_->column(proj_col_idx).name() +
+      "' does not exist in the projection, and it does not have a "
+      "default value or a nullable type");
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileSetIteratorProjector);
 

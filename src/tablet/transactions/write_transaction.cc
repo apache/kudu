@@ -59,17 +59,15 @@ Status LeaderWriteTransaction::Prepare() {
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
 
   // Decode everything first so that we give up if something major is wrong.
-  vector<const uint8_t *> to_insert;
   Status s = Status::OK();
 
-  gscoped_ptr<Schema> inserts_client_schema(new Schema);
-  if (mutable_request->has_to_insert_rows()) {
-    RETURN_NOT_OK(DecodeRowBlock(tx_ctx_.get(),
-                                 mutable_request->mutable_to_insert_rows(),
-                                 tablet->key_schema(),
-                                 true,
-                                 inserts_client_schema.get(),
-                                 &to_insert));
+  gscoped_ptr<Schema> client_schema(new Schema);
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(mutable_request->schema(), client_schema.get()),
+                        "Cannot decode client schema");
+  if (client_schema->has_column_ids()) {
+    // TODO: we have this kind of code a lot - add a new SchemaFromPB variant which
+    // does this check inline.
+    return Status::InvalidArgument("Client should not send column IDs");
   }
 
   gscoped_ptr<Schema> mutates_client_schema(new Schema);
@@ -106,9 +104,9 @@ Status LeaderWriteTransaction::Prepare() {
   }
   s = CreatePreparedInsertsAndMutates(tablet,
                                       tx_ctx_.get(),
-                                      inserts_client_schema.Pass(),
+                                      client_schema.Pass(),
+                                      mutable_request->to_insert_rows(),
                                       mutates_client_schema.Pass(),
-                                      to_insert,
                                       to_mutate,
                                       mutations);
   TRACE("PREPARE: finished");

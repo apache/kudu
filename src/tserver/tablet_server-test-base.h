@@ -197,11 +197,9 @@ class TabletServerTest : public KuduTest {
     WriteResponsePB resp;
     RpcController controller;
 
-    gscoped_ptr<RowwiseRowBlockPB> data(req.mutable_to_insert_rows());
-    req.release_to_insert_rows();
+    PartialRowsPB* data = req.mutable_to_insert_rows();
 
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
+    ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     uint64_t inserted_since_last_report = 0;
     for (int i = 0; i < num_batches; ++i) {
@@ -209,21 +207,15 @@ class TabletServerTest : public KuduTest {
       // reset the controller and the request
       controller.Reset();
       controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
-      req.clear_to_insert_rows();
-
-      // clear the data (keeping the schema)
-      data->clear_rows();
-      data->clear_indirect_data();
-      data->clear_num_rows();
+      data->Clear();
 
       uint64_t first_row_in_batch = first_row + (i * count/num_batches);
       uint64_t last_row_in_batch = first_row_in_batch + count/num_batches;
 
       for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
-        AddTestRowToBlockPB(schema_, j, j, strings::Substitute("original$0", j), data.get());
+        AddTestRowToPB(schema_, j, j, strings::Substitute("original$0", j), data);
       }
 
-      req.set_allocated_to_insert_rows(data.release());
       ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
@@ -235,10 +227,6 @@ class TabletServerTest : public KuduTest {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
         inserted_since_last_report = 0;
       }
-
-      // release the data so that we can reuse it
-      data.reset(req.release_to_insert_rows());
-
     }
 
     if (ts) {

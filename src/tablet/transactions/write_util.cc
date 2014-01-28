@@ -2,6 +2,7 @@
 
 #include "tablet/transactions/write_util.h"
 
+#include "common/partial_row.h"
 #include "common/wire_protocol.h"
 #include "common/row_changelist.h"
 #include "common/row.h"
@@ -70,9 +71,9 @@ Status DecodeRowBlock(WriteTransactionContext* tx_ctx,
 
 Status CreatePreparedInsertsAndMutates(Tablet* tablet,
                                        WriteTransactionContext* tx_ctx,
-                                       gscoped_ptr<Schema> inserts_client_schema,
+                                       gscoped_ptr<Schema> client_schema,
+                                       const PartialRowsPB& to_insert_rows,
                                        gscoped_ptr<Schema> mutates_client_schema,
-                                       const vector<const uint8_t *>& to_insert,
                                        const vector<const uint8_t *>& to_mutate,
                                        const vector<const RowChangeList *>& mutations) {
 
@@ -84,17 +85,18 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
       new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
   tx_ctx->set_component_lock(component_lock_.Pass());
 
-  RowProjector row_projector(inserts_client_schema.get(), tablet->schema_ptr());
-  if (to_insert.size() > 0 && !row_projector.is_identity()) {
-    Status s = tablet->schema().VerifyProjectionCompatibility(*inserts_client_schema);
-    if (!s.ok()) {
-      tx_ctx->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
 
-    s = row_projector.Init();
+  // Now that the schema is fixed, we can project the inserts into that schema.
+  vector<uint8_t *> to_insert;
+  if (to_insert_rows.rows().size() > 0) {
+    Status s = PartialRow::DecodeAndProject(to_insert_rows,
+                                            *client_schema,
+                                            *tablet->schema_ptr(),
+                                            &to_insert,
+                                            tx_ctx->arena());
     if (!s.ok()) {
-      tx_ctx->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+      tx_ctx->completion_callback()->set_error(s,
+                                               TabletServerErrorPB::MISMATCHED_SCHEMA);
       return s;
     }
   }
@@ -122,9 +124,10 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
   BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx,
-                                                        tablet->schema_ptr(),
-                                                        row_projector, row_ptr);
+    // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+    // a {schema, ptr} pair itself and probably cheaper to copy around.
+    ConstContiguousRow *row = tx_ctx->AddToAutoReleasePool(
+      new ConstContiguousRow(*tablet->schema_ptr(), row_ptr));
     gscoped_ptr<PreparedRowWrite> row_write;
     RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx, row, &row_write));
     tx_ctx->add_prepared_row(row_write.Pass());

@@ -510,8 +510,12 @@ class Schema {
   // - Status ProjectDefaultColumn(size_t proj_idx)
   //
   //     Called if the column in this schema does not match any column in 'base_schema',
-  //     but has a default or is nullable. If the column in this schema has no default or is
-  //     not nullable, InvalidArgument will be returned.
+  //     but has a default or is nullable.
+  //
+  // - Status ProjectExtraColumn(size_t proj_idx, const ColumnSchema& col)
+  //
+  //     Called if the column in this schema does not match any column in 'base_schema',
+  //     and does not have a default, and is not nullable.
   //
   // If both schemas have column IDs, then the matching is done by ID. Otherwise, it is
   // done by name.
@@ -550,9 +554,7 @@ class Schema {
       } else {
         bool has_default = col_schema.has_read_default() || col_schema.has_write_default();
         if (!has_default && !col_schema.is_nullable()) {
-          return Status::InvalidArgument("The column '" + col_schema.name() +
-                "' does not exist in the projection, and it does not have a "
-                "default value or a nullable type");
+          RETURN_NOT_OK(projector->ProjectExtraColumn(proj_idx));
         }
 
         // Column missing from the Base Schema, use the default value of the projection

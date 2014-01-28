@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 
 #include "common/schema.h"
+#include "common/partial_row.h"
 #include "common/wire_protocol.h"
 #include "gutil/strings/substitute.h"
 #include "master/catalog_manager.h"
@@ -208,22 +209,20 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
 
   // Insert new Tablets
   if (!tablets_to_add.empty()) {
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
-    RETURN_NOT_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
+    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-    RowBuilder rb(schema_);
+    PartialRow row(&schema_);
     BOOST_FOREACH(const TabletInfo *tablet, tablets_to_add) {
       if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
         return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
                                   tablet->tablet_id());
       }
 
-      rb.Reset();
-      rb.AddString(tablet->table()->id());
-      rb.AddString(tablet->tablet_id());
-      rb.AddString(metadata_buf);
-      AddRowToRowBlockPB(rb.row(), data);
+      row.SetString(kSysTabletsColTableId, tablet->table()->id());
+      row.SetString(kSysTabletsColTabletId, tablet->tablet_id());
+      row.SetString(kSysTabletsColMetadata, metadata_buf);
+      row.AppendToPB(data);
     }
   }
 
@@ -359,14 +358,13 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
   WriteResponsePB resp;
   req.set_tablet_id(kSysTablesTabletId);
 
-  RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
-  RETURN_NOT_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-  data->set_num_key_columns(schema_.num_key_columns());
+  PartialRowsPB* data = req.mutable_to_insert_rows();
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  RowBuilder rb(schema_);
-  rb.AddString(table->id());
-  rb.AddString(metadata_buf);
-  AddRowToRowBlockPB(rb.row(), data);
+  PartialRow row(&schema_);
+  row.SetString(kSysTablesColTableId, table->id());
+  row.SetString(kSysTablesColMetadata, metadata_buf);
+  row.AppendToPB(data);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();

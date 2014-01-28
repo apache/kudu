@@ -39,9 +39,9 @@ Status DecodeRowBlock(WriteTransactionContext* tx_ctx,
 
 Status CreatePreparedInsertsAndMutates(Tablet* tablet,
                                        WriteTransactionContext* tx_ctx,
-                                       gscoped_ptr<Schema> inserts_client_schema,
+                                       gscoped_ptr<Schema> client_schema,
+                                       const PartialRowsPB& to_insert_rows,
                                        gscoped_ptr<Schema> mutates_client_schema,
-                                       const vector<const uint8_t *>& to_insert,
                                        const vector<const uint8_t *>& to_mutate,
                                        const vector<const RowChangeList *>& mutations);
 
@@ -53,10 +53,14 @@ MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
 // remain valid as long as the row.
 // The returned ConstContiguousRow is added to the AutoReleasePool of the 'tx_ctx'.
 // No projection is performed if the two schemas are the same.
+//
+// TODO: this is now only used by the testing code path
 const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
                                               const Schema* tablet_schema,
                                               const RowProjector& row_projector,
                                               const uint8_t *user_row_ptr);
+
+
 
 // Return a mutation that is the Projection of the 'user_mutation' on the 'tablet_schema'.
 // The returned RowChangeList is added to the AutoReleasePool of the 'tx_ctx'.

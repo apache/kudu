@@ -515,7 +515,8 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   ASSERT_EQ(1, errors.size());
   ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
   ASSERT_EQ(errors[0]->status().ToString(),
-            "Invalid argument: Some columns are not present in the current schema: bad_col");
+            "Invalid argument: Client provided column bad_col[uint32 NOT NULL] "
+            "not present in tablet");
   ASSERT_EQ(errors[0]->failed_op().ToString(),
             "INSERT uint32 key=12345, uint32 bad_col=12345");
 }

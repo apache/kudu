@@ -61,11 +61,8 @@ TEST_F(TabletServerTest, TestInsert) {
   // Send a bad insert which has an empty schema. This should result
   // in an error.
   {
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
-    // Fill in an empty "rows" structure.
-    data->mutable_rows();
-    data->set_num_key_columns(0);
-    data->set_num_rows(0);
+    AddTestRowToPB(schema_, 1234, 5678, "hello world via RPC",
+                   req.mutable_to_insert_rows());
 
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
@@ -75,8 +72,7 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.error().status());
     EXPECT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Mismatched key projection schema, expected: Schema "
-                        "[key[uint32 NOT NULL]]");
+                        "Client missing required column: key[uint32 NOT NULL]");
     req.clear_to_insert_rows();
   }
 
@@ -84,13 +80,7 @@ TEST_F(TabletServerTest, TestInsert) {
   // This should succeed and do nothing.
   {
     controller.Reset();
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
-    data->Clear();
-    data->mutable_rows(); // Set empty rows data.
-    data->set_num_rows(0);
-
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
+    ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -101,12 +91,10 @@ TEST_F(TabletServerTest, TestInsert) {
   // Send an actual row insert.
   {
     controller.Reset();
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
+    PartialRowsPB* data = req.mutable_to_insert_rows();
     data->Clear();
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
 
-    AddTestRowToBlockPB(schema_, 1234, 5678, "hello world via RPC", data);
+    AddTestRowToPB(schema_, 1234, 5678, "hello world via RPC", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -119,14 +107,12 @@ TEST_F(TabletServerTest, TestInsert) {
   // the above insert. This should generate one error into per_row_errors.
   {
     controller.Reset();
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
+    PartialRowsPB* data = req.mutable_to_insert_rows();
     data->Clear();
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
 
-    AddTestRowToBlockPB(schema_, 1, 1, "ceci n'est pas une dupe", data);
-    AddTestRowToBlockPB(schema_, 2, 1, "also not a dupe key", data);
-    AddTestRowToBlockPB(schema_, 1234, 1, "I am a duplicate key", data);
+    AddTestRowToPB(schema_, 1, 1, "ceci n'est pas une dupe", data);
+    AddTestRowToPB(schema_, 2, 1, "also not a dupe key", data);
+    AddTestRowToPB(schema_, 1234, 1, "I am a duplicate key", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -161,13 +147,12 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     WriteRequestPB req;
     WriteResponsePB resp;
     req.set_tablet_id(kTabletId);
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
+    PartialRowsPB* data = req.mutable_to_insert_rows();
+    ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-    AddTestRowToBlockPB(schema_, 1, 1, "original1", data);
-    AddTestRowToBlockPB(schema_, 2, 2, "original2", data);
-    AddTestRowToBlockPB(schema_, 3, 3, "original3", data);
+    AddTestRowToPB(schema_, 1, 1, "original1", data);
+    AddTestRowToPB(schema_, 2, 2, "original2", data);
+    AddTestRowToPB(schema_, 3, 3, "original3", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -374,23 +359,24 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     RpcController controller;
 
     req.set_tablet_id(kTabletId);
-    RowwiseRowBlockPB* data = req.mutable_to_insert_rows();
-    ASSERT_STATUS_OK(SchemaToColumnPBs(bad_schema, data->mutable_schema()));
-    data->set_num_key_columns(bad_schema.num_key_columns());
+    PartialRowsPB* data = req.mutable_to_insert_rows();
+    ASSERT_STATUS_OK(SchemaToPB(bad_schema, req.mutable_schema()));
 
-    RowBuilder rb(bad_schema);
-    rb.AddUint32(1234);
-    rb.AddUint32(5678);
-    rb.AddString(Slice("hello world via RPC"));
-    rb.AddUint32(91011);
-    AddRowToRowBlockPB(rb.row(), data);
+    PartialRow row(&bad_schema);
+    row.SetUInt32("key", 1234);
+    row.SetUInt32("int_val", 5678);
+    row.SetStringCopy("string_val", "hello world via RPC");
+    row.SetUInt32("col_doesnt_exist", 91011);
+    row.AppendToPB(data);
+
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::INVALID_SCHEMA, resp.error().code());
+    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
     ASSERT_STR_CONTAINS(resp.error().status().message(),
-                        "Some columns are not present in the current schema: col_doesnt_exist");
+                        "Client provided column col_doesnt_exist[uint32 NOT NULL]"
+                        " not present in tablet");
   }
 
   // Send a row mutation with an extra column and IDs

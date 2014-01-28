@@ -21,6 +21,7 @@
 #include <string.h>
 #include <string>
 #include "gutil/strings/fastmem.h"
+#include "gutil/strings/stringpiece.h"
 #include "gutil/stringprintf.h"
 #include "util/faststring.h"
 
@@ -55,6 +56,11 @@ class Slice {
   // Create a slice that refers to the contents of the faststring.
   // Note that further appends to the faststring may invalidate this slice.
   Slice(const faststring &s) : data_(s.data()), size_(s.size()) { }  // NOLINT(runtime/explicit)
+
+  Slice(const StringPiece& s) // NOLINT(runtime/explicit)
+    : data_(reinterpret_cast<const uint8_t*>(s.data())),
+      size_(s.size()) {
+  }
 
   // Return a pointer to the beginning of the referenced data
   const uint8_t* data() const { return data_; }

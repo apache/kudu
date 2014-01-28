@@ -28,8 +28,8 @@ class RpcLineItemDAO : public LineItemDAO {
  public:
   RpcLineItemDAO(const string &master_address, const string& table_name, const int batch_size) :
     request_pending_(false), master_address_(master_address),
-    table_name_(table_name), batch_size_(batch_size) {}
-  virtual void WriteLine(const ConstContiguousRow &row);
+    table_name_(table_name), num_pending_rows_(0), batch_size_(batch_size) {}
+  virtual void WriteLine(const PartialRow& row);
   virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations);
   virtual void Init();
   virtual void FinishWriting();
@@ -62,6 +62,7 @@ class RpcLineItemDAO : public LineItemDAO {
   std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;
   string master_address_;
   string table_name_;
+  int num_pending_rows_;
   int batch_size_;
 };
 

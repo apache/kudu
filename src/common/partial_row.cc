@@ -471,9 +471,14 @@ class ClientServerMapping {
     saw_tablet_col_[tablet_col_idx] = 1;
     return Status::OK();
   }
+
   Status ProjectDefaultColumn(size_t client_col_idx) {
     // Even if the client provides a default (which it shouldn't), we don't
     // want to accept writes with an extra column.
+    return ProjectExtraColumn(client_col_idx);
+  }
+
+  Status ProjectExtraColumn(size_t client_col_idx) {
     return Status::InvalidArgument(
       Substitute("Client provided column $0 not present in tablet",
                  client_schema_->column(client_col_idx).ToString()));

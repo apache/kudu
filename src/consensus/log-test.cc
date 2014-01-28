@@ -149,11 +149,11 @@ class LogTest : public KuduTest {
     op_id->set_index(index);
 
     WriteRequestPB* batch_request = replicate->mutable_write_request();
-    AddTestRowToBlockPB(schema_,
-                        index,
-                        0,
-                        "this is a test insert",
-                        batch_request->mutable_to_insert_rows());
+    AddTestRowToPB(schema_,
+                   index,
+                   0,
+                   "this is a test insert",
+                   batch_request->mutable_to_insert_rows());
 
     faststring mutations;
     AddTestMutationToRowBlockAndBuffer(

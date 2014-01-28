@@ -48,25 +48,23 @@ class RpcLineItemDAOTest : public KuduTest {
   Schema schema_;
   RowBuilder rb_;
 
-  ConstContiguousRow BuildTestRow(int order, int line) {
-    rb_.Reset();
-    rb_.AddUint32(order);
-    rb_.AddUint32(line);
-    rb_.AddUint32(line);
-    rb_.AddUint32(line);
-    rb_.AddUint32(line);
-    rb_.AddUint32(line);
-    rb_.AddUint32(line);
-    rb_.AddUint32(line);
-    rb_.AddString(StringPrintf("hello %d", line));
-    rb_.AddString(StringPrintf("hello %d", line));
-    rb_.AddString(Slice("2013-11-13"));
-    rb_.AddString(Slice("2013-11-13"));
-    rb_.AddString(Slice("2013-11-13"));
-    rb_.AddString(StringPrintf("hello %d", line));
-    rb_.AddString(StringPrintf("hello %d", line));
-    rb_.AddString(StringPrintf("hello %d", line));
-    return rb_.row();
+  void BuildTestRow(int order, int line, PartialRow* row) {
+    CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
+    CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
+    CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));
+    CHECK_OK(row->SetUInt32(tpch::kSuppKeyColIdx, 12345));
+    CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, 12345));
+    CHECK_OK(row->SetUInt32(tpch::kExtendedPriceColIdx, 12345));
+    CHECK_OK(row->SetUInt32(tpch::kDiscountColIdx, 12345));
+    CHECK_OK(row->SetUInt32(tpch::kTaxColIdx, 12345));
+    CHECK_OK(row->SetStringCopy(tpch::kReturnFlagColIdx, StringPrintf("hello %d", line)));
+    CHECK_OK(row->SetStringCopy(tpch::kLineStatusColIdx, StringPrintf("hello %d", line)));
+    CHECK_OK(row->SetStringCopy(tpch::kShipDateColIdx, Slice("2013-11-13")));
+    CHECK_OK(row->SetStringCopy(tpch::kCommitDateColIdx, Slice("2013-11-13")));
+    CHECK_OK(row->SetStringCopy(tpch::kReceiptDateColIdx, Slice("2013-11-13")));
+    CHECK_OK(row->SetStringCopy(tpch::kShipInstructColIdx, StringPrintf("hello %d", line)));
+    CHECK_OK(row->SetStringCopy(tpch::kShipModeColIdx, StringPrintf("hello %d", line)));
+    CHECK_OK(row->SetStringCopy(tpch::kCommentColIdx, StringPrintf("hello %d", line)));
   }
 
   int CountRows() {
@@ -84,14 +82,15 @@ class RpcLineItemDAOTest : public KuduTest {
 }; // class RpcLineItemDAOTest
 
 TEST_F(RpcLineItemDAOTest, TestInsert) {
-  ConstContiguousRow row(BuildTestRow(1, 1));
+  PartialRow row(&schema_);
+  BuildTestRow(1, 1, &row);
   dao_->WriteLine(row);
   dao_->FinishWriting();
   ASSERT_EQ(1, CountRows());
   for (int i = 2; i < 7; i++) {
     for (int y = 0; y < 5; y++) {
-      ConstContiguousRow r(BuildTestRow(i, y));
-      dao_->WriteLine(r);
+      BuildTestRow(i, y, &row);
+      dao_->WriteLine(row);
     }
   }
   dao_->FinishWriting();
@@ -99,7 +98,8 @@ TEST_F(RpcLineItemDAOTest, TestInsert) {
 }
 
 TEST_F(RpcLineItemDAOTest, TestUpdate) {
-  ConstContiguousRow row(BuildTestRow(1, 1));
+  PartialRow row(&schema_);
+  BuildTestRow(1, 1, &row);
   dao_->WriteLine(row);
   dao_->FinishWriting();
 

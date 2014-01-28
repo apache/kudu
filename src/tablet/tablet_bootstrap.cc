@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/partial_row.h"
 #include "common/wire_protocol.h"
 #include "consensus/log.h"
 #include "consensus/log_reader.h"
@@ -130,7 +131,8 @@ class TabletBootstrap {
 
   // Plays inserts, skipping those that have already been flushed.
   Status PlayInsertions(WriteTransactionContext* tx_ctx,
-                        RowwiseRowBlockPB* rows,
+                        const SchemaPB& schema_pb,
+                        const PartialRowsPB& rows,
                         const TxResultPB& result,
                         const consensus::OpId& committed_op_id,
                         int32_t* last_insert_op_idx);
@@ -180,6 +182,8 @@ class TabletBootstrap {
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<log::LogReader> log_reader_;
   uint64_t recovery_ts_;
+
+  Arena arena_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
@@ -281,7 +285,8 @@ TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
                                  MetricContext* metric_context)
     : meta_(meta.Pass()),
       metric_context_(metric_context),
-      recovery_ts_(GetCurrentTimeMicros()) {
+      recovery_ts_(GetCurrentTimeMicros()),
+      arena_(256*1024, 4*1024*1024) {
 }
 
 Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
@@ -684,7 +689,8 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   int32_t last_insert_op_idx = 0;
   if (replicate_msg->write_request().has_to_insert_rows()) {
     RETURN_NOT_OK(PlayInsertions(&tx_ctx,
-                                 write->mutable_to_insert_rows(),
+                                 write->schema(),
+                                 write->to_insert_rows(),
                                  commit_msg.result(),
                                  replicate_msg->id(),
                                  &last_insert_op_idx));
@@ -874,28 +880,28 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
 }
 
 Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
-                                       RowwiseRowBlockPB* rows,
+                                       const SchemaPB& schema_pb,
+                                       const PartialRowsPB& rows,
                                        const TxResultPB& result,
                                        const OpId& committed_op_id,
                                        int32_t* last_insert_op_idx) {
 
   Schema inserts_schema;
-  vector<const uint8_t*> row_block;
-  RETURN_NOT_OK_PREPEND(DecodeBlock(rows,
-                                    true,
-                                    &inserts_schema,
-                                    &row_block),
-                        Substitute("Could not decode block: $0", rows->ShortDebugString()));
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(schema_pb, &inserts_schema),
+                        "Couldn't decode client schema");
+
+
+  vector<uint8_t*> row_block;
 
   // TODO: this makes a needless copy here, even though we know that we won't
   // have concurrent schema change. However, we can't use schema_ptr since we don't
   // hold component_lock yet here.
   Schema tablet_schema(tablet_->schema());
-  RowProjector row_projector(&inserts_schema, &tablet_schema);
-  if (!row_projector.is_identity()) {
-    RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(inserts_schema));
-    RETURN_NOT_OK(row_projector.Init());
-  }
+
+  arena_.Reset();
+  RETURN_NOT_OK_PREPEND(PartialRow::DecodeAndProject(
+                          rows, inserts_schema, tablet_schema, &row_block, &arena_),
+                        Substitute("Could not decode block: $0", rows.ShortDebugString()));
 
   int32_t insert_idx = 0;
   BOOST_FOREACH(const uint8_t* row_ptr, row_block) {
@@ -932,9 +938,8 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
         new shared_lock<rw_spinlock>(tablet_->component_lock()->get_lock()));
     tx_ctx->set_component_lock(component_lock.Pass());
 
-    const ConstContiguousRow* row = ProjectRowForInsert(tx_ctx,
-                                                        tablet_->schema_ptr(),
-                                                        row_projector, row_ptr);
+    const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(
+      new ConstContiguousRow(*tablet_->schema_ptr(), row_ptr));
 
     gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
     gscoped_ptr<PreparedRowWrite> prepared_row;

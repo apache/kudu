@@ -86,14 +86,18 @@ message AlterSchemaResponsePB {
 // row block.
 message WriteRequestPB {
   required bytes tablet_id = 1;
+
+  optional SchemaPB schema = 2;
+
   // Set of rows to insert.
-  optional RowwiseRowBlockPB to_insert_rows = 2;
+  optional PartialRowsPB to_insert_rows = 3;
+
   // Set of row keys to mutate.  This rowblock's schema should contain
   // only the key columns
-  optional RowwiseRowBlockPB to_mutate_row_keys = 3;
+  optional RowwiseRowBlockPB to_mutate_row_keys = 4;
   // Mutations to apply to the row keys in mutate_data.
   // Uses the encoded format from the RowChangeList class.
-  optional bytes encoded_mutations = 4;
+  optional bytes encoded_mutations = 5;
 }
 
 message WriteResponsePB {

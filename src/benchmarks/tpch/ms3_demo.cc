@@ -124,14 +124,14 @@ static void InsertThread(Demo *demo, const string &path) {
   LineItemTsvImporter importer(path);
 
   Schema schema(tpch::CreateLineItemSchema());
-  RowBuilder rb(schema);
+  PartialRow row(&schema);
 
-  int order_number = importer.GetNextLine(rb);
+  int order_number = importer.GetNextLine(&row);
   while (order_number != 0) {
-    dao->WriteLine(rb.row());
+    dao->WriteLine(row);
     // Move the window forward
     demo->SetLastInsertedOrder(order_number);
-    order_number = importer.GetNextLine(rb);
+    order_number = importer.GetNextLine(&row);
   }
   dao->FinishWriting();
 }

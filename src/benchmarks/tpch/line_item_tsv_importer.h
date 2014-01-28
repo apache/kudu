@@ -26,42 +26,49 @@ class LineItemTsvImporter {
 
   // Fills the row builder with a single line item from the file.
   // It returns 0 if it's done or the order number if it got a line
-  int GetNextLine(RowBuilder &rb) {
+  int GetNextLine(PartialRow* row) {
     if (!getline(in_, line_)) {
       return 0;
     }
     columns_.clear();
-    rb.Reset();
 
     // grab all the columns_ individually
     columns_ = strings::Split(line_, kPipeSeparator);
 
-    int order_number = ConvertToIntAndPopulate(columns_[0], &rb);
-    ConvertToIntAndPopulate(columns_[3], &rb);
-    ConvertToIntAndPopulate(columns_[1], &rb);
-    ConvertToIntAndPopulate(columns_[2], &rb);
-    ConvertToIntAndPopulate(columns_[4], &rb);
-    ConvertDoubleToIntAndPopulate(columns_[5], &rb);
-    ConvertDoubleToIntAndPopulate(columns_[6], &rb);
-    ConvertDoubleToIntAndPopulate(columns_[7], &rb);
-    for (int i = 8; i < 16; i++)  {
-      rb.AddString(Slice(columns_[i].data(), columns_[i].size()));
-    }
+    int i = 0;
+    int order_number = ConvertToIntAndPopulate(columns_[i++], row, tpch::kOrderKeyColIdx);
+    ConvertToIntAndPopulate(columns_[i++], row, tpch::kPartKeyColIdx);
+    ConvertToIntAndPopulate(columns_[i++], row, tpch::kSuppKeyColIdx);
+    ConvertToIntAndPopulate(columns_[i++], row, tpch::kLineNumberColIdx);
+    ConvertToIntAndPopulate(columns_[i++], row, tpch::kQuantityColIdx);
+    ConvertDoubleToIntAndPopulate(columns_[i++], row, tpch::kExtendedPriceColIdx);
+    ConvertDoubleToIntAndPopulate(columns_[i++], row, tpch::kDiscountColIdx);
+    ConvertDoubleToIntAndPopulate(columns_[i++], row, tpch::kTaxColIdx);
+    CHECK_OK(row->SetString(tpch::kReturnFlagColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kLineStatusColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kShipDateColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kCommitDateColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kReceiptDateColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kShipInstructColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kShipModeColIdx, columns_[i++]));
+    CHECK_OK(row->SetString(tpch::kCommentColIdx, columns_[i++]));
     return order_number;
   }
 
-  int ConvertToIntAndPopulate(const StringPiece &chars, RowBuilder *rb) {
+  int ConvertToIntAndPopulate(const StringPiece &chars, PartialRow* row,
+                              int col_idx) {
     // TODO: extra copy here, since we don't have a way to parse StringPiece
     // into ints.
     chars.CopyToString(&tmp_);
     int number;
     bool ok_parse = SimpleAtoi(tmp_.c_str(), &number);
     CHECK(ok_parse);
-    rb->AddUint32(number);
+    CHECK_OK(row->SetUInt32(col_idx, number));
     return number;
   }
 
-  void ConvertDoubleToIntAndPopulate(const StringPiece &chars, RowBuilder *rb) {
+  void ConvertDoubleToIntAndPopulate(const StringPiece &chars, PartialRow* row,
+                                     int col_idx) {
     // TODO: extra copy here, since we don't have a way to parse StringPiece
     // into ints.
     chars.CopyToString(&tmp_);
@@ -72,7 +79,7 @@ class LineItemTsvImporter {
     CHECK(errno == 0 &&  // overflow/underflow happened
         error != cstr);
     int new_num = number * 100;
-    rb->AddUint32(new_num);
+    CHECK_OK(row->SetUInt32(col_idx, new_num));
   }
 
  private:

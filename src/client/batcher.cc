@@ -563,13 +563,14 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     req.Clear();
     req.set_tablet_id(entry.first->tablet_id());
     // Set up schema
-    RowwiseRowBlockPB *to_insert = req.mutable_to_insert_rows();
-    CHECK_OK(SchemaToColumnPBs(schema, to_insert->mutable_schema()));
-    to_insert->set_num_key_columns(schema.num_key_columns());
+
+    CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
+
+    PartialRowsPB* to_insert = req.mutable_to_insert_rows();
 
     // Add the rows
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      AddRowToRowBlockPB(op->insert->row().as_contiguous_row(), to_insert);
+      op->insert->row().AppendToPB(to_insert);
 
       // Set the state now, even though we haven't yet sent it -- at this point
       // there is no return, and we're definitely going to send it. If we waited

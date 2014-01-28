@@ -11,6 +11,7 @@
 #include "util/countdown_latch.h"
 #include "util/status.h"
 #include "util/locks.h"
+#include "util/memory/arena.h"
 
 namespace kudu {
 class FutureCallback;
@@ -131,6 +132,10 @@ class TransactionContext {
     return pool_.AddArray(t);
   }
 
+  // Return the arena associated with this transaction.
+  // NOTE: this is not a thread-safe arena!
+  Arena* arena() { return &arena_; }
+
   string ToString() {
     return "TODO transaction toString";
   }
@@ -138,7 +143,8 @@ class TransactionContext {
  protected:
   explicit TransactionContext(TabletPeer* tablet_peer)
       : tablet_peer_(tablet_peer),
-        completion_clbk_(new TransactionCompletionCallback()) {
+        completion_clbk_(new TransactionCompletionCallback()),
+        arena_(32*1024, 4*1024*1024) {
   }
 
   TransactionMetrics tx_metrics_;
@@ -150,6 +156,8 @@ class TransactionContext {
   gscoped_ptr<TransactionCompletionCallback> completion_clbk_;
 
   AutoReleasePool pool_;
+
+  Arena arena_;
 
   gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
 };

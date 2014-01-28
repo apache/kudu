@@ -1,9 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
+
+#include "benchmarks/tpch/local_line_item_dao.h"
+
+#include "common/partial_row.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
 #include "tablet/tablet.h"
-#include "benchmarks/tpch/local_line_item_dao.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 
 namespace kudu {
@@ -36,8 +39,8 @@ void LocalLineItemDAO::Init() {
   CHECK_OK(tablet_->Open());
 }
 
-void LocalLineItemDAO::WriteLine(const ConstContiguousRow &row) {
-  CHECK_OK(tablet_->Insert(&tx_ctx_, row));
+void LocalLineItemDAO::WriteLine(const PartialRow& row) {
+  CHECK_OK(tablet_->Insert(&tx_ctx_, row.as_contiguous_row()));
   tx_ctx_.Reset();
 }
 

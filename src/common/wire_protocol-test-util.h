@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "common/partial_row.h"
 #include "common/row.h"
 #include "common/row_changelist.h"
 
@@ -20,16 +21,16 @@ void CreateTestSchema(Schema* schema) {
                          (ColumnSchema("string_val", STRING, true)), 1));
 }
 
-void AddTestRowToBlockPB(const Schema& schema,
-                         uint32_t key,
-                         uint32_t int_val,
-                         const string& string_val,
-                         RowwiseRowBlockPB* block) {
-  RowBuilder rb(schema);
-  rb.AddUint32(key);
-  rb.AddUint32(int_val);
-  rb.AddString(string_val);
-  AddRowToRowBlockPB(rb.row(), block);
+void AddTestRowToPB(const Schema& schema,
+                    uint32_t key,
+                    uint32_t int_val,
+                    const string& string_val,
+                    PartialRowsPB* block) {
+  PartialRow row(&schema);
+  row.SetUInt32("key", key);
+  row.SetUInt32("int_val", int_val);
+  row.SetStringCopy("string_val", string_val);
+  row.AppendToPB(block);
 }
 
 void AddTestKeyToBlock(const Schema& key_schema,

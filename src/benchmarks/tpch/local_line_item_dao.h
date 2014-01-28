@@ -25,7 +25,7 @@ class LocalLineItemDAO : public LineItemDAO {
       CHECK_OK(fs_manager_.Open());
     }
   }
-  virtual void WriteLine(const ConstContiguousRow &row);
+  virtual void WriteLine(const PartialRow& row);
   virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations);
   virtual void Init();
   virtual void FinishWriting();
