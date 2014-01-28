@@ -152,10 +152,11 @@ void RpcLineItemDAO::BatchFinished() {
 void RpcLineItemDAO::FinishWriting() {
   while (true) {
     {
-      boost::lock_guard<simple_spinlock> l(lock_);
+      boost::unique_lock<simple_spinlock> l(lock_);
       if (!request_pending_) {
         if (request_.to_insert_rows().num_rows() > 0 ||
            request_.to_mutate_row_keys().num_rows() > 0) {
+          l.unlock();
           DoWriteAsync();
         } else {
           return;
