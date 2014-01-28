@@ -332,14 +332,6 @@ Status KuduSession::Apply(gscoped_ptr<Insert>* insert_scoped) {
     return Status::IllegalState("Key not specified", insert->ToString());
   }
 
-  // TODO: for now, our RPC layer requires that all columns are set.
-  // We have to switch the RPC to use PartialRowsPB instead of a row block,
-  // but as a place-holder just ensure that all the columns are set.
-  // NB: when this is fixed, also remove PartialRow::as_contiguous_row
-  if (!insert->row().AllColumnsSet()) {
-    return Status::NotSupported("TODO: have to support partial row inserts");
-  }
-
   batcher_->Add(insert_scoped->Pass());
 
   if (flush_mode_ == AUTO_FLUSH_SYNC) {

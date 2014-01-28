@@ -39,13 +39,17 @@ using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 using tserver::ColumnRangePredicatePB;
 
+const uint32_t kNonNullDefault = 12345;
+
 class ClientTest : public KuduTest {
  public:
   ClientTest()
     : schema_(boost::assign::list_of
               (ColumnSchema("key", UINT32))
               (ColumnSchema("int_val", UINT32))
-              (ColumnSchema("string_val", STRING, true)),
+              (ColumnSchema("string_val", STRING, true))
+              (ColumnSchema("non_null_with_default", UINT32, false,
+                            &kNonNullDefault, &kNonNullDefault)),
               1),
       rb_(schema_) {
   }
@@ -103,6 +107,7 @@ class ClientTest : public KuduTest {
     rb_.AddUint32(index);
     rb_.AddUint32(index * 2);
     rb_.AddString(StringPrintf("hello %d", index));
+    rb_.AddUint32(index * 3);
     return rb_.row();
   }
 
@@ -163,7 +168,7 @@ class ClientTest : public KuduTest {
 
   int CountRowsFromClient(KuduTable* table) {
     KuduScanner scanner(table);
-    CHECK_OK(scanner.SetProjection(table->schema()));
+    CHECK_OK(scanner.SetProjection(Schema(vector<ColumnSchema>(), 0)));
     CHECK_OK(scanner.Open());
     int count = 0;
     vector<const uint8_t*> rows;
@@ -172,6 +177,21 @@ class ClientTest : public KuduTest {
       count += rows.size();
     }
     return count;
+  }
+
+  void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
+    row_strings->clear();
+    KuduScanner scanner(table);
+    scanner.SetProjection(schema_);
+    CHECK_OK(scanner.Open());
+    vector<const uint8_t*> rows;
+    while (scanner.HasMoreRows()) {
+      CHECK_OK(scanner.NextBatch(&rows));
+      BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+        ConstContiguousRow row(schema_, row_ptr);
+        row_strings->push_back(schema_.DebugRow(row));
+      }
+    }
   }
 
   enum WhichServerToKill {
@@ -392,6 +412,15 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
   const int kNumRowsPerTablet = kNumBatches * kRowsPerBatch / 2;
   ASSERT_EQ(kNumRowsPerTablet, CountRowsFromClient(client_table_.get()));
   ASSERT_EQ(kNumRowsPerTablet, CountRowsFromClient(client_table2_.get()));
+
+  // Verify the data looks right.
+  vector<string> rows;
+  ScanRowsToStrings(client_table_.get(), &rows);
+  std::sort(rows.begin(), rows.end());
+  ASSERT_EQ(kNumRowsPerTablet, rows.size());
+  ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=hello world, "
+            "uint32 non_null_with_default=12345)"
+            , rows[0]);
 }
 
 // Test a batch where one of the inserted rows succeeds while another
@@ -423,6 +452,16 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
   ASSERT_TRUE(errors[0]->status().IsAlreadyPresent());
   ASSERT_EQ(errors[0]->failed_op().ToString(),
             "INSERT uint32 key=1, uint32 int_val=1, string string_val=Attempted dup");
+
+  // Verify that the other row was successfully inserted
+  vector<string> rows;
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(2, rows.size());
+  std::sort(rows.begin(), rows.end());
+  ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=original row, "
+            "uint32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(uint32 key=2, uint32 int_val=1, string string_val=Should succeed, "
+            "uint32 non_null_with_default=12345)", rows[1]);
 }
 
 // Test flushing an empty batch (should be a no-op).
@@ -481,6 +520,11 @@ TEST_F(ClientTest, TestApplyToSessionWithoutFlushing) {
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
   session.reset(); // should not crash!
+
+  // Should have no rows.
+  vector<string> rows;
+  ScanRowsToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(0, rows.size());
 }
 
 // Do a write with a bad schema on the client side. This should make the Prepare

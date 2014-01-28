@@ -128,15 +128,11 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
   }
   if (col_schema.has_write_default()) {
     if (col_schema.type_info().type() == STRING) {
-      const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
       const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
-      if (write_slice != read_slice)
-        pb->set_write_default_value(write_slice->data(), write_slice->size());
+      pb->set_write_default_value(write_slice->data(), write_slice->size());
     } else {
-      const void *read_value = col_schema.read_default_value();
       const void *write_value = col_schema.write_default_value();
-      if (write_value != read_value)
-        pb->set_write_default_value(write_value, col_schema.type_info().size());
+      pb->set_write_default_value(write_value, col_schema.type_info().size());
     }
   }
 }
