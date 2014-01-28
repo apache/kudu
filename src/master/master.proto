@@ -130,7 +130,9 @@ message ReportedTabletPB {
   required metadata.TabletStatePB state = 2;
   required metadata.QuorumPeerPB.Role role = 3;
   optional AppStatusPB error = 4;
+
   // TODO: add configuration seqno, schema version, etc?
+  optional uint32 schema_version = 5;
 }
 
 // Sent by the tablet server to report the set of tablets hosted by that TS.
@@ -163,9 +165,6 @@ message ReportedTabletUpdatesPB {
   // true if the tablet was deleted/replaced
   optional bool is_deleted = 2 [default = false];
   optional string state_msg = 3;
-
-  // current table metadata version
-  optional uint32 table_version = 4;
 }
 
 // Sent by the Master in response to the TS tablet report (part of the heartbeats)
@@ -305,6 +304,63 @@ message GetTableLocationsResponsePB {
   repeated TabletLocationsPB tablet_locations = 2;
 }
 
+message AlterTableRequestPB {
+  enum StepType {
+    ADD_COLUMN = 1;
+    DROP_COLUMN = 2;
+    RENAME_COLUMN = 3;
+  }
+  message AddColumn {
+    // The schema to add.
+    // NOTE: the 'id' field of the schema should not be provided here --
+    // the server will assign an ID.
+    required ColumnSchemaPB schema = 1;
+  }
+  message DropColumn {
+    // Name of the column to drop.
+    required string name = 1;
+  }
+  message RenameColumn {
+    // Name of the column to rename;
+    required string old_name = 1;
+    required string new_name = 2;
+  }
+
+  message Step {
+    required StepType type = 1;
+
+    // Exactly one of the following must be set, based on 'type'
+    optional AddColumn add_column = 2;
+    optional DropColumn drop_column = 3;
+    optional RenameColumn rename_column = 4;
+  }
+
+  required TableIdentifierPB table = 1;
+  repeated Step alter_schema_steps = 2;
+}
+
+message AlterTableResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  optional uint32 schema_version = 2;
+}
+
+message IsAlterTableDoneRequestPB {
+  required TableIdentifierPB table = 1;
+}
+
+message IsAlterTableDoneResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  // this is the current schema, or the 'new' schema version if an alter is in progress
+  optional uint32 schema_version = 2;
+
+  // true if the alter operation is completed, false otherwise
+  optional bool done = 3;
+}
+
 service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
@@ -316,6 +372,10 @@ service MasterService {
 
   rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB);
   rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB);
+
+  rpc AlterTable(AlterTableRequestPB) returns (AlterTableResponsePB);
+  rpc IsAlterTableDone(IsAlterTableDoneRequestPB) returns (IsAlterTableDoneResponsePB);
+
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB);
   rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB);
 }

@@ -146,6 +146,48 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
   }
   DCHECK(tablet_peer) << "Null tablet peer";
 
+  uint32_t schema_version = tablet_peer->tablet()->metadata()->schema_version();
+
+  // If the schema was already applied, respond as succeded
+  if (schema_version == req->schema_version()) {
+    // Sanity check, to verify that the tablet should have the same schema
+    // specified in the request.
+    Schema req_schema;
+    Status s = SchemaFromPB(req->schema(), &req_schema);
+    if (!s.ok()) {
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::INVALID_SCHEMA, context);
+      return;
+    }
+
+    Schema tablet_schema = tablet_peer->tablet()->metadata()->schema();
+    if (req_schema.Equals(tablet_schema)) {
+      context->RespondSuccess();
+      return;
+    }
+
+    schema_version = tablet_peer->tablet()->metadata()->schema_version();
+    if (schema_version == req->schema_version()) {
+      LOG(ERROR) << "The current schema does not match the request schema."
+                 << " version=" << schema_version
+                 << " current-schema=" << tablet_schema.ToString()
+                 << " request-schema=" << req_schema.ToString()
+                 << " (corruption)";
+      SetupErrorAndRespond(resp->mutable_error(),
+                           Status::Corruption("got a different schema for the same version number"),
+                           TabletServerErrorPB::MISMATCHED_SCHEMA, context);
+      return;
+    }
+  }
+
+  // If the current schema is newer than the one in the request reject the request.
+  if (schema_version > req->schema_version()) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::InvalidArgument("Tablet has a newer schema"),
+                         TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA, context);
+    return;
+  }
+
   AlterSchemaTransactionContext *tx_ctx =
     new AlterSchemaTransactionContext(tablet_peer.get(), req, resp);
 

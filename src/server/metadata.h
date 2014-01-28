@@ -89,10 +89,7 @@ class TabletMetadata {
     return master_block_.table_id();
   }
 
-  uint32_t schema_version() const {
-    DCHECK_NE(state_, kNotLoadedYet);
-    return schema_version_;
-  }
+  uint32_t schema_version() const;
 
   void SetSchema(const Schema& schema, uint32_t version);
 

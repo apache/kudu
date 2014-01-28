@@ -131,6 +131,26 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
   rpc->RespondSuccess();
 }
 
+void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
+                                   AlterTableResponsePB* resp,
+                                   rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->AlterTable(req, resp, rpc);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
+                                         IsAlterTableDoneResponsePB* resp,
+                                         rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->IsAlterTableDone(req, resp, rpc);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
 void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
                                    ListTablesResponsePB* resp,
                                    rpc::RpcContext* rpc) {

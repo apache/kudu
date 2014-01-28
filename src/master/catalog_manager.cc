@@ -54,7 +54,9 @@
 DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS assignment timeout. "
              "(Advanced option)");
-
+DEFINE_int32(alter_timeout_ms, 10 * 1000, // 10 sec
+             "Timeout used for the Master->TS alter request timeout. "
+             "(Advanced option)");
 DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
              "Default number of replicas for tables that do have the num_replicas set. "
              "(Advanced option)");
@@ -64,6 +66,7 @@ namespace master {
 
 using strings::Substitute;
 using rpc::RpcContext;
+using tserver::TabletServerErrorPB;
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -547,12 +550,152 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     }
   }
 
+  table->AbortTasks();
+
   // 5. Update the in-memory state
   TRACE("Committing in-memory state");
   l.Commit();
 
   VLOG(1) << "Deleted table " << table->ToString();
   background_tasks_->Wake();
+  return Status::OK();
+}
+
+static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
+                              const AlterTableRequestPB* req,
+                              Schema* new_schema) {
+  Schema cur_schema;
+  RETURN_NOT_OK(SchemaFromPB(current_schema_pb, &cur_schema));
+
+  SchemaBuilder builder(cur_schema);
+  BOOST_FOREACH(const AlterTableRequestPB::Step& step, req->alter_schema_steps()) {
+    switch (step.type()) {
+      case AlterTableRequestPB::ADD_COLUMN: {
+        if (!step.has_add_column()) {
+          return Status::InvalidArgument("ADD_COLUMN missing column info");
+        }
+
+        ColumnSchema new_col = ColumnSchemaFromPB(step.add_column().schema());
+
+        // can't accept a NOT NULL column without read default
+        if (!new_col.is_nullable() && !new_col.has_read_default()) {
+          return Status::InvalidArgument(
+              Substitute("$0 is NOT NULL but does not have a default", new_col.name()));
+        }
+
+        RETURN_NOT_OK(builder.AddColumn(new_col, false));
+        break;
+      }
+
+      case AlterTableRequestPB::DROP_COLUMN: {
+        if (!step.has_drop_column()) {
+          return Status::InvalidArgument("DROP_COLUMN missing column info");
+        }
+        RETURN_NOT_OK(builder.RemoveColumn(step.drop_column().name()));
+        break;
+      }
+
+      case AlterTableRequestPB::RENAME_COLUMN: {
+        if (!step.has_rename_column()) {
+          return Status::InvalidArgument("RENAME_COLUMN missing column info");
+        }
+        RETURN_NOT_OK(builder.RenameColumn(
+                        step.rename_column().old_name(),
+                        step.rename_column().new_name()));
+        break;
+      }
+
+      default: {
+        return Status::InvalidArgument(
+          Substitute("Invalid alter step type: $0", step.type()));
+      }
+    }
+  }
+  *new_schema = builder.Build();
+  return Status::OK();
+}
+
+Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
+                                  AlterTableResponsePB* resp,
+                                  rpc::RpcContext* rpc) {
+  LOG(INFO) << "Servicing AlterTable request from " << RequestorString(rpc)
+            << ": " << req->ShortDebugString();
+
+  scoped_refptr<TableInfo> table;
+
+  // 1. Lookup the table and verify if it exists
+  TRACE("Looking up table");
+  RETURN_NOT_OK(FindTable(req->table(), &table));
+  if (table == NULL) {
+    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  TRACE("Locking table");
+  TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
+  if (l.data().is_deleted()) {
+    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  // 2. Update the metadata for the on-disk state
+  TRACE("Apply alter schema");
+  Schema new_schema;
+  Status s = ApplyAlterSteps(l.data().pb.schema(), req, &new_schema);
+  if (!s.ok()) {
+    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+    return s;
+  }
+
+  // 3. Update the schema and increment the version number
+  CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
+  l.mutable_data()->pb.set_version(l.mutable_data()->pb.version() + 1);
+
+  // 3. Update sys-tables with the new table schema (PONR)
+  TRACE("Updating metadata on disk");
+  s = sys_tables_->UpdateTable(table.get());
+  if (!s.ok()) {
+    PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
+                              s.ToString()));
+  }
+
+  // 4. Update the in-memory state
+  TRACE("Committing in-memory state");
+  l.Commit();
+
+  SendAlterTableRequest(table);
+  return Status::OK();
+}
+
+Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
+                                        IsAlterTableDoneResponsePB* resp,
+                                        rpc::RpcContext* rpc) {
+  scoped_refptr<TableInfo> table;
+
+  // 1. Lookup the table and verify if it exists
+  TRACE("Looking up table");
+  RETURN_NOT_OK(FindTable(req->table(), &table));
+  if (table == NULL) {
+    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  TRACE("Locking table");
+  TableMetadataLock l(table.get(), TableMetadataLock::READ);
+  if (l.data().is_deleted()) {
+    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  // 2. Verify if the alter is in-progress
+  TRACE("Verify if there is an alter operation in progress for $0", table->ToString());
+  resp->set_schema_version(l.data().pb.version());
+  resp->set_done(!table->IsAlterInProgress());
+
   return Status::OK();
 }
 
@@ -659,6 +802,26 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
     return Status::OK();
   }
+
+  // Check if the tablet requires an "alter table" call
+  if (report.has_schema_version() &&
+      table_lock.data().pb.version() != report.schema_version()) {
+    if (report.schema_version() > table_lock.data().pb.version()) {
+      LOG(ERROR) << "TS " << ts_desc->permanent_uuid()
+                 << " has reported a schema version greater than the current one "
+                 << " for tablet " << tablet->ToString()
+                 << ". Expected version " << table_lock.data().pb.version()
+                 << " got " << report.schema_version()
+                 << " (corruption)";
+    } else {
+      VLOG(1) << "TS " << ts_desc->permanent_uuid()
+            << " does not have the latest schema for tablet " << tablet->ToString()
+            << ". Expected version " << table_lock.data().pb.version()
+            << " got " << report.schema_version();
+    }
+    SendAlterTabletRequest(tablet, ts_desc);
+  }
+
   table_lock.Unlock();
 
   tablet->AddReplica(ts_desc, report.state(), report.role());
@@ -681,6 +844,120 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
 
   return Status::OK();
+}
+
+// Send the "Alter Table" with latest table schema
+// keeps retrying until we get an "ok" response.
+//  - Alter completed
+//  - TS has already a newer version
+//    (which may happen in case of 2 alter since we can't abort an in-progress operation)
+class AsyncAlterTable : public Task {
+ public:
+  AsyncAlterTable(const std::tr1::shared_ptr<tserver::TabletServerServiceProxy>& ts_proxy,
+                  const scoped_refptr<TabletInfo>& tablet,
+                  const std::string& permanent_uuid)
+    : abort_(false), permanent_uuid_(permanent_uuid), tablet_(tablet), ts_proxy_(ts_proxy) {}
+
+  virtual Status Run() {
+    SendRequest();
+    return Status::OK();
+  }
+
+  virtual bool Abort() {
+    abort_ = true;
+    return true;
+  }
+
+ private:
+  void Callback() {
+    bool retry = true;
+
+    if (!rpc_.status().ok()) {
+      LOG(WARNING) << permanent_uuid_ << " Alter RPC failed for tablet " << tablet_->ToString()
+                   << ": " << rpc_.status().ToString();
+    } else if (resp_.has_error()) {
+      Status status = StatusFromPB(resp_.error().status());
+
+      // Do not retry on a fatal error
+      switch (resp_.error().code()) {
+        case TabletServerErrorPB::TABLET_NOT_FOUND:
+        case TabletServerErrorPB::MISMATCHED_SCHEMA:
+        case TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA:
+          LOG(WARNING) << permanent_uuid_ << " alter failed for tablet " << tablet_->ToString()
+                       << " no further retry: " << status.ToString();
+          retry = false;
+          break;
+        default:
+          LOG(WARNING) << permanent_uuid_ << " alter failed for tablet " << tablet_->ToString()
+                       << ": " << status.ToString();
+          break;
+      }
+    } else {
+      retry = false;
+      VLOG(1) << permanent_uuid_ << " alter complete on tablet " << tablet_->ToString();
+    }
+
+    if (retry && !abort_) {
+      SendRequest();
+    } else {
+      tablet_->table()->RemoveTask(this);
+      delete this;
+    }
+  }
+
+  void SendRequest() {
+    TableMetadataLock l(tablet_->table(), TableMetadataLock::READ);
+    if (l.data().is_deleted()) {
+      return;
+    }
+
+    tserver::AlterSchemaRequestPB req;
+    req.set_tablet_id(tablet_->tablet_id());
+    req.set_schema_version(l.data().pb.version());
+    req.mutable_schema()->CopyFrom(l.data().pb.schema());
+
+    l.Unlock();
+
+    rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_alter_timeout_ms));
+    ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
+                                boost::bind(&AsyncAlterTable::Callback, this));
+    VLOG(1) << "Send alter table request to " << permanent_uuid_ << ":\n"
+            << req.DebugString();
+  }
+
+  volatile bool abort_;
+  rpc::RpcController rpc_;
+  std::string permanent_uuid_;
+  scoped_refptr<TabletInfo> tablet_;
+  tserver::AlterSchemaResponsePB resp_;
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+};
+
+void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table) {
+  vector<scoped_refptr<TabletInfo> > tablets;
+  table->GetAllTablets(&tablets);
+
+  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    SendAlterTabletRequest(tablet);
+  }
+}
+
+void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet) {
+  std::vector<TabletReplica> locations;
+  tablet->GetLocations(&locations);
+  BOOST_FOREACH(const TabletReplica& replica, locations) {
+    SendAlterTabletRequest(tablet, replica.ts_desc);
+  }
+}
+
+void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet,
+                                            TSDescriptor* ts_desc) {
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy;
+  CHECK_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy));
+
+  AsyncAlterTable *call = new AsyncAlterTable(ts_proxy, tablet, ts_desc->permanent_uuid());
+  tablet->table()->AddTask(call);
+  call->Run();
 }
 
 class AsyncCreateTablet {
@@ -1131,7 +1408,8 @@ void CatalogManager::DumpState(std::ostream* out) const {
 
 TabletInfo::TabletInfo(TableInfo *table, const std::string& tablet_id)
   : tablet_id_(tablet_id), table_(table),
-    last_update_ts_(MonoTime::Now(MonoTime::FINE)) {
+    last_update_ts_(MonoTime::Now(MonoTime::FINE)),
+    reported_schema_version_(0) {
 }
 
 TabletInfo::~TabletInfo() {
@@ -1186,7 +1464,6 @@ void TabletInfo::GetLocations(std::vector<TabletReplica>* locations) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   *locations = locations_;
 }
-
 
 bool PersistentTabletInfo::IsQuorumLeader(const TSDescriptor* ts_desc) const {
   BOOST_FOREACH(const metadata::QuorumPeerPB& peer, pb.quorum().peers()) {
@@ -1261,6 +1538,31 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
 
   for (; it != it_end; ++it) {
     ret->push_back(make_scoped_refptr(it->second));
+  }
+}
+
+bool TableInfo::IsAlterInProgress() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  // TODO: loops through tasks and check the type?
+  //       now the only task is alter..
+  //       so.. quick & dirty result is the pending_tasks_ size
+  return !pending_tasks_.empty();
+}
+
+void TableInfo::AddTask(Task* task) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  pending_tasks_.insert(task);
+}
+
+void TableInfo::RemoveTask(Task* task) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  pending_tasks_.erase(task);
+}
+
+void TableInfo::AbortTasks() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(Task* task, pending_tasks_) {
+    task->Abort();
   }
 }
 

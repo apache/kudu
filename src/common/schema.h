@@ -624,6 +624,8 @@ class SchemaBuilder {
 
   Status AddKeyColumn(const string& name, DataType type);
 
+  Status AddColumn(const ColumnSchema& column, bool is_key);
+
   Status AddColumn(const string& name, DataType type) {
     return AddColumn(name, type, false, NULL, NULL);
   }
@@ -640,9 +642,6 @@ class SchemaBuilder {
 
   Status RemoveColumn(const string& name);
   Status RenameColumn(const string& old_name, const string& new_name);
-
- private:
-  Status AddColumn(const ColumnSchema& column, bool is_key);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);

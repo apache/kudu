@@ -241,7 +241,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
   master::TSHeartbeatResponsePB resp;
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat");
-  VLOG(1) << "Received heartbeat response:\n" << resp.DebugString();
+  VLOG(2) << "Received heartbeat response:\n" << resp.DebugString();
   last_hb_response_.Swap(&resp);
 
   // TODO: Handle TSHeartbeatResponsePB (e.g. deleted tablets and schema changes)

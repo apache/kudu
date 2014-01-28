@@ -22,6 +22,7 @@
 namespace kudu {
 
 class Schema;
+class Task;
 
 namespace rpc {
 class RpcContext;
@@ -118,6 +119,15 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
     last_update_ts_ = ts;
   }
 
+  // Update the Reported schema version
+  void set_reported_schema_version(uint32_t version) {
+    reported_schema_version_ = version;
+  }
+
+  uint32_t reported_schema_version() const {
+    return reported_schema_version_;
+  }
+
   // Access the persistent metadata. Typically you should use
   // TabletMetadataLock to gain access to this data.
   const CowObject<PersistentTabletInfo>& metadata() const {return metadata_; }
@@ -135,6 +145,9 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   // TODO: this probably will turn into a struct which also includes
   // some state information at some point.
   std::vector<TabletReplica> locations_;
+
+  // Reported schema version (in-memory only)
+  uint32_t reported_schema_version_;
 
   // Lock protecting locations_ and last_update_ts_.
   // This doesn't protect metadata_ (the on-disk portion).
@@ -202,6 +215,13 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   const CowObject<PersistentTableInfo>& metadata() const { return metadata_; }
   CowObject<PersistentTableInfo>& metadata() { return metadata_; }
 
+  // Returns true if an "Alter" operation is in-progress
+  bool IsAlterInProgress() const;
+
+  void AddTask(Task *task);
+  void RemoveTask(Task *task);
+  void AbortTasks();
+
  private:
   friend class base::RefCountedThreadSafe<TableInfo>;
   ~TableInfo();
@@ -214,10 +234,14 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   typedef std::map<std::string, TabletInfo *> TabletInfoMap;
   TabletInfoMap tablet_map_;
 
-  // Protects tablet_map_
+  // Protects tablet_map_ and pending_tasks_
   mutable simple_spinlock lock_;
 
   CowObject<PersistentTableInfo> metadata_;
+
+  // List of pending tasks (e.g. create/alter tablet requests)
+  // TODO: switch to something like MonitoredTask to expose them in the UI?
+  std::tr1::unordered_set<Task*> pending_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
@@ -269,9 +293,26 @@ class CatalogManager {
                      DeleteTableResponsePB* resp,
                      rpc::RpcContext* rpc);
 
+  // Alter the specified table
+  //
+  // The RPC context is provided for logging/tracing purposes,
+  // but this function does not itself respond to the RPC.
+  Status AlterTable(const AlterTableRequestPB* req,
+                    AlterTableResponsePB* resp,
+                    rpc::RpcContext* rpc);
+
+  // Get the information about an in-progress alter operation
+  //
+  // The RPC context is provided for logging/tracing purposes,
+  // but this function does not itself respond to the RPC.
+  Status IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
+                          IsAlterTableDoneResponsePB* resp,
+                          rpc::RpcContext* rpc);
+
   // List all the running tables
   Status ListTables(const ListTablesRequestPB* req,
                     ListTablesResponsePB* resp);
+
   Status GetTableLocations(const GetTableLocationsRequestPB* req,
                            GetTableLocationsResponsePB* resp);
 
@@ -374,6 +415,16 @@ class CatalogManager {
   //
   // This method is part of the "ProcessPendingAssignments()"
   void SendCreateTabletRequests(const vector<TabletInfo*>& tablets);
+
+  // Send the "alter table request" to all TS that have tablet of the specified table
+  void SendAlterTableRequest(const scoped_refptr<TableInfo>& table);
+
+  // Send the "alter table request" to all the TS running the specified tablet
+  void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet);
+
+  // Send the "alter table request" to the specified TS/tablet
+  void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet,
+                              TSDescriptor* ts_desc);
 
   string GenerateId() { return oid_generator_.Next(); }
 

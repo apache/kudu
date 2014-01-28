@@ -110,3 +110,19 @@ function is called.
 If we find at this point that the reported tablet is in "creating" state, and the TS reporting the
 tablet is the leader selected during the assignment process (see CatalogManagerBgTasksThread)
 the tablet will be marked as running and committed to disk, completing the assignment process.
+
+============================================================
+ Alter Table
+============================================================
+When the user sends an alter request, which may contain changes to the schema,
+table name or attributes, the Master will send a set of "alter requests" to each
+TS handling the set of tablets currently running and it will keep retrying in
+case of error.
+
+If a TS is down or goes down during an "alter request", on restart it will report
+the "schema version" which it is using and the master will send the "alter request"
+to the TS.
+
+On Master restart the full tablet report will be requested, and the tablet
+"schema version" sent on the next heartbeat will be used to determine if the
+tablet requires an "alter request".
