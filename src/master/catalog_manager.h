@@ -66,6 +66,7 @@ struct PersistentTabletInfo {
 struct TabletReplica {
   TSDescriptor* ts_desc;
   metadata::TabletStatePB state;
+  metadata::QuorumPeerPB::Role role;
 };
 
 // The information about a single tablet which exists in the cluster,
@@ -92,7 +93,9 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   TabletInfo(TableInfo *table, const std::string& tablet_id);
 
   // Add a replica reported on the given server
-  void AddReplica(TSDescriptor* ts_desc, metadata::TabletStatePB state);
+  void AddReplica(TSDescriptor* ts_desc,
+                  metadata::TabletStatePB state,
+                  metadata::QuorumPeerPB::Role role);
 
   // Remove any replicas which were on this server.
   void ClearReplicasOnTS(const TSDescriptor* ts_desc);
@@ -274,10 +277,10 @@ class CatalogManager {
 
   // Look up the locations of the given tablet. The locations
   // vector is overwritten (not appended to).
-  // If the tablet is not found, clears the result vector.
+  // If the tablet is not found, return false and true otherwise.
   // This only returns tablets which are in RUNNING state.
-  void GetTabletLocations(const std::string& tablet_id,
-                          std::vector<TSDescriptor*>* locations);
+  bool GetTabletLocations(const std::string& tablet_id,
+                          TabletLocationsPB* locs_pb);
 
   // Handle a tablet report from the given tablet server.
   //
@@ -319,6 +322,10 @@ class CatalogManager {
   TabletInfo *CreateTabletInfo(TableInfo *table,
                                const string& start_key,
                                const string& end_key);
+
+  // Builds the TabletLocationsPB for based on the provided TabletInfo.
+  bool BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
+                               TabletLocationsPB* locs_pb);
 
   Status FindTable(const TableIdentifierPB& table_identifier,
                    scoped_refptr<TableInfo>* table_info);

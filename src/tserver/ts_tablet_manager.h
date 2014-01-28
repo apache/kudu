@@ -21,6 +21,7 @@ class FsManager;
 class Schema;
 
 namespace master {
+class ReportedTabletPB;
 class TabletReportPB;
 } // namespace master
 
@@ -144,6 +145,11 @@ class TSTabletManager {
   // Add the tablet to the tablet map.
   void RegisterTablet(const std::string& tablet_id,
                       const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
+
+  // Helper to generate the report for a single tablet.
+  void CreateReportedTabletPB(const string& tablet_id,
+                              const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer,
+                              master::ReportedTabletPB* reported_tablet);
 
   // Mark that the given tablet ID is dirty and needs to be included in the next
   // tablet report. This can be used for tablets which are still live as well as

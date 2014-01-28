@@ -102,18 +102,9 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     // TODO: Add some kind of verification that the tablet is actually valid
     // (i.e that it is present in the 'tablets' system table)
     // TODO: once we have catalog data. ACL checks would also go here, probably.
-    server_->catalog_manager()->GetTabletLocations(tablet_id, &locs);
-
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
-    locs_pb->set_tablet_id(tablet_id);
-
-    BOOST_FOREACH(const TSDescriptor* ts_desc, locs) {
-      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
-      TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
-      tsinfo_pb->set_permanent_uuid(ts_desc->permanent_uuid());
-
-      ts_desc->GetRegistration(&reg);
-      tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+    if (!server_->catalog_manager()->GetTabletLocations(tablet_id, locs_pb)) {
+      resp->mutable_tablet_locations()->RemoveLast();
     }
   }
 

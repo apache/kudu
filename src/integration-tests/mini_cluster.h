@@ -15,6 +15,7 @@ namespace kudu {
 namespace master {
 class MiniMaster;
 class TSDescriptor;
+class TabletLocationsPB;
 }
 
 namespace tserver {
@@ -70,7 +71,7 @@ class MiniCluster {
   // within kTabletReportWaitTimeSeconds.
   Status WaitForReplicaCount(const string& tablet_id,
                              int expected_count,
-                             vector<master::TSDescriptor*>* locations);
+                             master::TabletLocationsPB* locations);
 
   // Wait until the number of registered tablet servers reaches the given
   // count. Returns Status::TimedOut if the desired count is not achieved

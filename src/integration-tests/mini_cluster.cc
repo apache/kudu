@@ -20,6 +20,7 @@ namespace kudu {
 
 using master::MiniMaster;
 using master::TSDescriptor;
+using master::TabletLocationsPB;
 using std::tr1::shared_ptr;
 using tserver::MiniTabletServer;
 
@@ -109,19 +110,18 @@ string MiniCluster::GetTabletServerFsRoot(int idx) {
 
 Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
                                         int expected_count) {
-  vector<TSDescriptor*> locs;
-  return WaitForReplicaCount(tablet_id, expected_count, &locs);
+  TabletLocationsPB locations;
+  return WaitForReplicaCount(tablet_id, expected_count, &locations);
 }
 
 Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
                                         int expected_count,
-                                        vector<TSDescriptor*>* locations) {
-  locations->clear();
+                                        TabletLocationsPB* locations) {
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
     mini_master_->master()->catalog_manager()->GetTabletLocations(tablet_id, locations);
-    if (locations->size() == expected_count) return Status::OK();
+    if (locations->replicas_size() == expected_count) return Status::OK();
 
     usleep(1 * 1000); // 1ms
   }

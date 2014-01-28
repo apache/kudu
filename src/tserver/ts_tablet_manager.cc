@@ -400,6 +400,14 @@ void TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
   }
 }
 
+void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
+                                             const shared_ptr<TabletPeer>& tablet_peer,
+                                             ReportedTabletPB* reported_tablet) {
+  reported_tablet->set_tablet_id(tablet_id);
+  reported_tablet->set_state(tablet_peer->state());
+  reported_tablet->set_role(tablet_peer->role());
+}
+
 void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
   // Generate an incremental report
   boost::shared_lock<rw_spinlock> lock(lock_);
@@ -413,9 +421,7 @@ void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
     // The entry is actually dirty, so report it.
     shared_ptr<kudu::tablet::TabletPeer>* entry = FindOrNull(tablet_map_, tablet_id);
     if (entry != NULL) {
-      ReportedTabletPB* reported_tablet = report->add_updated_tablets();
-      reported_tablet->set_tablet_id(tablet_id);
-      reported_tablet->set_state(entry->get()->state());
+      CreateReportedTabletPB(tablet_id, *entry, report->add_updated_tablets());
     } else {
       report->add_removed_tablet_ids(tablet_id);
     }
@@ -430,10 +436,7 @@ void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
   report->set_is_incremental(false);
   report->set_sequence_number(next_report_seq_++);
   BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
-    const string& tablet_id = entry.first;
-    ReportedTabletPB* reported_tablet = report->add_updated_tablets();
-    reported_tablet->set_tablet_id(tablet_id);
-    reported_tablet->set_state(entry.second->state());
+    CreateReportedTabletPB(entry.first, entry.second, report->add_updated_tablets());
   }
   dirty_tablets_.clear();
 }

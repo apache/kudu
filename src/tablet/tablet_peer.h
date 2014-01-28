@@ -79,6 +79,11 @@ class TabletPeer {
     return state_;
   }
 
+  const metadata::QuorumPeerPB::Role role() const {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    return quorum_peer_.role();
+  }
+
   // Sets the tablet state to FAILED additionally setting the error to the provided
   // one.
   void SetFailed(const Status& error) {

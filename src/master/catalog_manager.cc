@@ -575,27 +575,6 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
   return Status::OK();
 }
 
-void CatalogManager::GetTabletLocations(const std::string& tablet_id,
-                                        std::vector<TSDescriptor*>* locations) {
-  locations->clear();
-  scoped_refptr<TabletInfo> info;
-  {
-    boost::shared_lock<LockType> l(lock_);
-    info = FindPtrOrNull(tablet_map_, tablet_id);
-    if (info == NULL) {
-      return;
-    }
-  }
-
-  vector<TabletReplica> replicas;
-  info->GetLocations(&replicas);
-  BOOST_FOREACH(const TabletReplica& replica, replicas) {
-    if (replica.state == metadata::RUNNING) {
-      locations->push_back(replica.ts_desc);
-    }
-  }
-}
-
 Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
                                            const TabletReportPB& report,
                                            TabletReportUpdatesPB *report_update,
@@ -682,7 +661,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
   table_lock.Unlock();
 
-  tablet->AddReplica(ts_desc, report.state());
+  tablet->AddReplica(ts_desc, report.state(), report.role());
 
   if (!tablet_lock.data().is_running() &&
       report.state() == metadata::RUNNING &&
@@ -996,6 +975,48 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
   leader->set_role(metadata::QuorumPeerPB::LEADER);
 }
 
+bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
+                                             TabletLocationsPB* locs_pb) {
+  TSRegistrationPB reg;
+  vector<TabletReplica> locs;
+  {
+    TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
+
+    if (!l_tablet.data().is_running()) return false;
+
+    locs.clear();
+    tablet->GetLocations(&locs);
+  }
+
+  locs_pb->set_tablet_id(tablet->tablet_id());
+
+  BOOST_FOREACH(const TabletReplica& replica, locs) {
+    TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+    replica_pb->set_role(replica.role);
+
+    TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
+    tsinfo_pb->set_permanent_uuid(replica.ts_desc->permanent_uuid());
+
+    replica.ts_desc->GetRegistration(&reg);
+    tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+  }
+  return true;
+}
+
+bool CatalogManager::GetTabletLocations(const std::string& tablet_id,
+                                        TabletLocationsPB* locs_pb) {
+  locs_pb->mutable_replicas()->Clear();
+  scoped_refptr<TabletInfo> info;
+  {
+    boost::shared_lock<LockType> l(lock_);
+    info = FindPtrOrNull(tablet_map_, tablet_id);
+    if (info == NULL) {
+      return false;
+    }
+  }
+
+  return BuildLocationsForTablet(info, locs_pb);
+}
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp) {
@@ -1034,24 +1055,8 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   TSRegistrationPB reg;
   vector<TabletReplica> locs;
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets_in_range) {
-    {
-      TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
-
-      if (!l_tablet.data().is_running()) continue;
-
-      locs.clear();
-      tablet->GetLocations(&locs);
-    }
-    TabletLocationsPB* locs_pb = resp->add_tablet_locations();
-    locs_pb->set_tablet_id(tablet->tablet_id());
-
-    BOOST_FOREACH(const TabletReplica& replica, locs) {
-      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
-      TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
-      tsinfo_pb->set_permanent_uuid(replica.ts_desc->permanent_uuid());
-
-      replica.ts_desc->GetRegistration(&reg);
-      tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+    if (!BuildLocationsForTablet(tablet, resp->add_tablet_locations())) {
+      resp->mutable_tablet_locations()->RemoveLast();
     }
   }
   return Status::OK();
@@ -1137,7 +1142,9 @@ std::string TabletInfo::ToString() const {
                     (table_ != NULL ? table_->ToString() : "MISSING"));
 }
 
-void TabletInfo::AddReplica(TSDescriptor* ts_desc, metadata::TabletStatePB state) {
+void TabletInfo::AddReplica(TSDescriptor* ts_desc,
+                            metadata::TabletStatePB state,
+                            metadata::QuorumPeerPB::Role role) {
   boost::lock_guard<simple_spinlock> l(lock_);
 
   last_update_ts_ = MonoTime::Now(MonoTime::FINE);
@@ -1158,6 +1165,7 @@ void TabletInfo::AddReplica(TSDescriptor* ts_desc, metadata::TabletStatePB state
   TabletReplica r;
   r.ts_desc = ts_desc;
   r.state = state;
+  r.role = role;
   locations_.push_back(r);
 }
 

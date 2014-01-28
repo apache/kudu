@@ -128,7 +128,8 @@ message TSRegistrationPB {
 message ReportedTabletPB {
   required bytes tablet_id = 1;
   required metadata.TabletStatePB state = 2;
-  optional AppStatusPB error = 3;
+  required metadata.QuorumPeerPB.Role role = 3;
+  optional AppStatusPB error = 4;
   // TODO: add configuration seqno, schema version, etc?
 }
 
@@ -214,9 +215,7 @@ message TabletLocationsPB {
 
   message ReplicaPB {
     required TSInfoPB ts_info = 1;
-
-    // TODO: will also include some flags like which one is the
-    // current leader for the tablet here, etc.
+    required metadata.QuorumPeerPB.Role role = 2;
   }
 
   repeated ReplicaPB replicas = 2;

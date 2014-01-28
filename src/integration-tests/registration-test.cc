@@ -31,6 +31,7 @@ using std::vector;
 using std::tr1::shared_ptr;
 using master::MiniMaster;
 using master::TSDescriptor;
+using master::TabletLocationsPB;
 using tserver::MiniTabletServer;
 
 // Tests for the Tablet Server registering with the Master,
@@ -125,10 +126,10 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // Add a tablet, make sure it reports itself.
   CreateTabletForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
 
-  vector<TSDescriptor*> locs;
+  TabletLocationsPB locs;
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
-  ASSERT_EQ(1, locs.size());
-  LOG(INFO) << "Tablet successfully reported on " << locs[0]->permanent_uuid();
+  ASSERT_EQ(1, locs.replicas_size());
+  LOG(INFO) << "Tablet successfully reported on " << locs.replicas(0).ts_info().permanent_uuid();
 
   // Add another tablet, make sure it is reported via incremental.
   CreateTabletForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
@@ -139,6 +140,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   ASSERT_STATUS_OK(ts->Shutdown());
   ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
   ASSERT_STATUS_OK(ts->Start());
+
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
