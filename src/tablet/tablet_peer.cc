@@ -4,6 +4,7 @@
 
 #include "consensus/local_consensus.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/sysinfo.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
@@ -28,12 +29,7 @@ TabletPeer::TabletPeer()
     : // prepare executor has a single thread as prepare must be done in order
       // of submission
       prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)) {
-
-  errno = 0;
-  int n_cpus = sysconf(_SC_NPROCESSORS_CONF);
-  CHECK_EQ(errno, 0) << ErrnoToString(errno);
-  CHECK_GT(n_cpus, 0);
-  apply_executor_.reset(TaskExecutor::CreateNew("apply exec", n_cpus));
+  apply_executor_.reset(TaskExecutor::CreateNew("apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
 }
 

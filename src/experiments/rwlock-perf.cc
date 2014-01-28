@@ -14,6 +14,7 @@
 
 #include "gutil/atomicops.h"
 #include "gutil/macros.h"
+#include "gutil/sysinfo.h"
 #include "gutil/walltime.h"
 #include "util/errno.h"
 #include "util/locks.h"
@@ -38,7 +39,7 @@ struct per_cpu_lock {
 
   per_cpu_lock() {
     errno = 0;
-    n_cpus_ = sysconf(_SC_NPROCESSORS_CONF);
+    n_cpus_ = base::NumCPUs();
     CHECK_EQ(errno, 0) << kudu::ErrnoToString(errno);
     CHECK_GT(n_cpus_, 0);
     locks_ = new padded_lock[n_cpus_];

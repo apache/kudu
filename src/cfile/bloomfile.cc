@@ -10,6 +10,7 @@
 #include "cfile/cfile.h"
 #include "cfile/bloomfile.h"
 #include "gutil/stringprintf.h"
+#include "gutil/sysinfo.h"
 #include "util/env.h"
 #include "util/env_util.h"
 #include "util/coding.h"
@@ -152,7 +153,7 @@ Status BloomFileReader::Init() {
   // Ugly hack: create a per-cpu iterator.
   // Instead this should be threadlocal, or allow us to just
   // stack-allocate these things more smartly!
-  int n_cpus = sysconf(_SC_NPROCESSORS_CONF);
+  int n_cpus = base::NumCPUs();
   for (int i = 0; i < n_cpus; i++) {
     index_iters_.push_back(
       IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
