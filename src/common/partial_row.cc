@@ -89,8 +89,7 @@ Status PartialRow::Set(int col_idx,
   }
 
   ContiguousRowCell<ContiguousRow> dst(&row, col_idx);
-  RETURN_NOT_OK(CopyCellData(SimpleConstCell(col, &val), &dst,
-                             reinterpret_cast<Arena*>(NULL)));
+  memcpy(dst.mutable_ptr(), &val, sizeof(val));
   if (owned) {
     BitmapSet(owned_strings_bitmap_, col_idx);
   }
@@ -259,11 +258,30 @@ std::string PartialRow::ToString() const {
 
 void PartialRow::AppendToPB(PartialRowsPB* pb) const {
   // See wire_protocol.pb for a description of the format.
-
   string* dst = pb->mutable_rows();
-  dst->append(CHARP(isset_bitmap_), BitmapSize(schema_->num_columns()));
-  dst->append(CHARP(ContiguousRowHelper::null_bitmap_ptr(*schema_, row_data_)),
-              ContiguousRowHelper::null_bitmap_size(*schema_));
+
+  // Compute a bound on much space we may need in the 'rows' field.
+  // Then, resize it to this much space. This allows us to use simple
+  // memcpy() calls to copy the data, rather than string->append(), which
+  // reduces branches significantly in this fairly hot code path.
+  // (std::string::append doesn't get inlined).
+  // At the end of the function, we'll resize() the string back down to the
+  // right size.
+  int isset_bitmap_size = BitmapSize(schema_->num_columns());
+  int null_bitmap_size = ContiguousRowHelper::null_bitmap_size(*schema_);
+  int max_size = schema_->byte_size() + isset_bitmap_size + null_bitmap_size;
+  int old_size = dst->size();
+  dst->resize(dst->size() + max_size);
+
+  uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(&(*dst)[old_size]);
+
+  memcpy(dst_ptr, isset_bitmap_, isset_bitmap_size);
+  dst_ptr += isset_bitmap_size;
+
+  memcpy(dst_ptr,
+         ContiguousRowHelper::null_bitmap_ptr(*schema_, row_data_),
+         null_bitmap_size);
+  dst_ptr += null_bitmap_size;
 
   ContiguousRow row(*schema_, row_data_);
   for (int i = 0; i < schema_->num_columns(); i++) {
@@ -278,11 +296,15 @@ void PartialRow::AppendToPB(PartialRowsPB* pb) const {
       pb->mutable_indirect_data()->append(CHARP(val->data()), val->size());
       Slice to_append(reinterpret_cast<const uint8_t*>(indirect_offset),
                       val->size());
-      dst->append(CHARP(&to_append), sizeof(Slice));
+      memcpy(dst_ptr, &to_append, sizeof(Slice));
+      dst_ptr += sizeof(Slice);
     } else {
-      dst->append(CHARP(row.cell_ptr(i)), col.type_info().size());
+      memcpy(dst_ptr, row.cell_ptr(i), col.type_info().size());
+      dst_ptr += col.type_info().size();
     }
   }
+
+  dst->resize(reinterpret_cast<char*>(dst_ptr) - &(*dst)[0]);
 }
 #undef CHARP
 
