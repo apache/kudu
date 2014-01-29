@@ -46,13 +46,12 @@ void RpcLineItemDAO::Init() {
   proxy_ = client_table_->proxy();
   request_.set_tablet_id(client_table_->tablet_id());
   CHECK_OK(SchemaToPB(schema, request_.mutable_schema()));
-  CHECK_OK(SchemaToColumnPBs(schema, request_.mutable_to_mutate_row_keys()->mutable_schema()));
 }
 
 void RpcLineItemDAO::WriteLine(const PartialRow& row) {
-  if (!ShouldAddKey(row.as_contiguous_row())) return;
+  if (!ShouldAddKey(row)) return;
 
-  RowOperationsPB* data = request_.mutable_to_insert_rows();
+  RowOperationsPB* data = request_.mutable_row_operations();
   RowOperationsPBEncoder enc(data);
   enc.Add(RowOperationsPB::INSERT, row);
   num_pending_rows_++;
@@ -60,25 +59,22 @@ void RpcLineItemDAO::WriteLine(const PartialRow& row) {
   ApplyBackpressure();
 }
 
-void RpcLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring &mutations) {
+void RpcLineItemDAO::MutateLine(const PartialRow& row) {
   if (!ShouldAddKey(row)) return;
 
-  RowwiseRowBlockPB* keys = request_.mutable_to_mutate_row_keys();
-  AddRowToRowBlockPB(row, keys);
+  RowOperationsPB* data = request_.mutable_row_operations();
+  RowOperationsPBEncoder enc(data);
+  enc.Add(RowOperationsPB::UPDATE, row);
   num_pending_rows_++;
-
-  faststring tmp;
-  tmp.append(request_.encoded_mutations().c_str(), request_.encoded_mutations().size());
-  PutFixed32LengthPrefixedSlice(&tmp, Slice(mutations));
-  request_.set_encoded_mutations(tmp.data(), tmp.size());
-
   DoWriteAsync();
   ApplyBackpressure();
 }
 
-bool RpcLineItemDAO::ShouldAddKey(const ConstContiguousRow &row) {
-  uint32_t l_ordernumber = *row.schema().ExtractColumnFromRow<UINT32>(row, 0);
-  uint32_t l_linenumber = *row.schema().ExtractColumnFromRow<UINT32>(row, 1);
+bool RpcLineItemDAO::ShouldAddKey(const PartialRow &row) {
+  uint32_t l_ordernumber;
+  CHECK_OK(row.GetUInt32(tpch::kOrderKeyColIdx, &l_ordernumber));
+  uint32_t l_linenumber;
+  CHECK_OK(row.GetUInt32(tpch::kLineNumberColIdx, &l_linenumber));
   std::pair<uint32_t, uint32_t> composite_k(l_ordernumber, l_linenumber);
 
   boost::lock_guard<simple_spinlock> l(lock_);
@@ -112,13 +108,8 @@ void RpcLineItemDAO::DoWriteAsync() {
 
     num_pending_rows_ = 0;
 
-    // TODO figure how to clean better
-    request_.mutable_to_insert_rows()->Clear();
-
-    request_.mutable_to_mutate_row_keys()->set_num_rows(0);
-    request_.mutable_to_mutate_row_keys()->clear_rows();
-    request_.mutable_to_mutate_row_keys()->clear_indirect_data();
-    request_.clear_encoded_mutations();
+    request_.mutable_row_operations()->Clear();
+    request_.mutable_row_operations()->Clear();
     orders_in_request_.clear();
   }
 }

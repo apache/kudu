@@ -102,16 +102,5 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  RowwiseRowBlockPB* rowblock_pb,
                                  std::vector<const uint8_t*>* rows);
 
-// Extracts n_rows mutations from the provided buffer into the provided
-// mutations vector. The resulting mutations continue to refer to data in
-// 'buffer'.
-//
-// NOTE: the mutations are not validated in any way by this function.
-// In order to validate, you need to instantiate a RowChangeListDecoder.
-Status ExtractMutationsFromBuffer(uint32_t n_mutations,
-                                  const uint8_t* buffer,
-                                  uint32_t buffer_size,
-                                  vector<const RowChangeList *> *mutations);
-
 } // namespace kudu
 #endif

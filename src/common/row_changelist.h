@@ -123,7 +123,9 @@ class RowChangeListEncoder {
     const ColumnSchema& col_schema = schema_.column(col_idx);
     const TypeInfo &ti = col_schema.type_info();
 
-    // TODO: This is shared between the server and the client :(
+    // TODO: Now that RowChangeList is only used on the server side,
+    // maybe it should always be using column IDs?
+    //
     // Encode the column index if is coming from the client (no IDs)
     // Encode the column ID if is coming from the server (with IDs)
     // The MutateRow Projection step will figure out the client to server mapping.

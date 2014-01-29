@@ -30,7 +30,7 @@ class RpcLineItemDAO : public LineItemDAO {
     request_pending_(false), master_address_(master_address),
     table_name_(table_name), num_pending_rows_(0), batch_size_(batch_size) {}
   virtual void WriteLine(const PartialRow& row);
-  virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations);
+  virtual void MutateLine(const PartialRow& row);
   virtual void Init();
   virtual void FinishWriting();
   void BatchFinished();
@@ -46,7 +46,7 @@ class RpcLineItemDAO : public LineItemDAO {
   void ApplyBackpressure();
   // Sending the same key more than once in the same batch crashes the server
   // This method is used to know if it's safe to add the row in that regard
-  bool ShouldAddKey(const ConstContiguousRow &row);
+  bool ShouldAddKey(const PartialRow& row);
   void DoWriteAsync();
 
   std::tr1::shared_ptr<TabletServerServiceProxy> proxy_;

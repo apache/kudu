@@ -403,13 +403,16 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
       const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
       if (BitmapTest(client_isset_map, client_col_idx)) {
-        bool client_set_to_null = BitmapTest(client_null_map, client_col_idx);
+        bool client_set_to_null = client_schema_->has_nullables() &&
+          BitmapTest(client_null_map, client_col_idx);
         uint8_t scratch[kLargestTypeSize];
         uint8_t* val_to_add;
         if (!client_set_to_null) {
           RETURN_NOT_OK(ReadColumn(col, scratch));
           val_to_add = scratch;
         } else {
+          // TODO: should check client trying to set NULL on a non-nullable field.
+          // this might fail.
           DCHECK(col.is_nullable());
           val_to_add = NULL;
         }

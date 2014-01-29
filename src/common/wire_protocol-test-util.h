@@ -22,7 +22,8 @@ void CreateTestSchema(Schema* schema) {
                          (ColumnSchema("string_val", STRING, true)), 1));
 }
 
-void AddTestRowToPB(const Schema& schema,
+void AddTestRowToPB(RowOperationsPB::Type op_type,
+                    const Schema& schema,
                     uint32_t key,
                     uint32_t int_val,
                     const string& string_val,
@@ -32,46 +33,17 @@ void AddTestRowToPB(const Schema& schema,
   row.SetUInt32("int_val", int_val);
   row.SetStringCopy("string_val", string_val);
   RowOperationsPBEncoder enc(ops);
-  enc.Add(RowOperationsPB::INSERT, row);
+  enc.Add(op_type, row);
 }
 
-void AddTestKeyToBlock(const Schema& key_schema,
-                       uint32_t key,
-                       RowwiseRowBlockPB* block) {
-  RowBuilder rb(key_schema);
-  rb.AddUint32(key);
-  AddRowToRowBlockPB(rb.row(), block);
-}
-
-void AddTestDeletionToRowBlockAndBuffer(const Schema& schema,
-                                        uint32_t key,
-                                        RowwiseRowBlockPB* block,
-                                        faststring* buf) {
-  // Write the key.
-  AddTestKeyToBlock(schema.CreateKeyProjection(), key, block);
-
-  // Write the mutation.
-  faststring tmp;
-  RowChangeListEncoder encoder(schema, &tmp);
-  encoder.SetToDelete();
-  PutFixed32LengthPrefixedSlice(buf, Slice(tmp));
-}
-
-void AddTestMutationToRowBlockAndBuffer(const Schema& schema,
-                                        uint32_t key,
-                                        uint32_t new_int_val,
-                                        const Slice& new_string_val,
-                                        RowwiseRowBlockPB* block,
-                                        faststring* buf) {
-  // Write the key.
-  AddTestKeyToBlock(schema.CreateKeyProjection(), key, block);
-
-  // Write the mutation.
-  faststring tmp;
-  RowChangeListEncoder encoder(schema, &tmp);
-  encoder.AddColumnUpdate(1, &new_int_val);
-  encoder.AddColumnUpdate(2, &new_string_val);
-  PutFixed32LengthPrefixedSlice(buf, Slice(tmp));
+void AddTestKeyToPB(RowOperationsPB::Type op_type,
+                    const Schema& schema,
+                    uint32_t key,
+                    RowOperationsPB* ops) {
+  PartialRow row(&schema);
+  CHECK_OK(row.SetUInt32(0, key));
+  RowOperationsPBEncoder enc(ops);
+  enc.Add(op_type, row);
 }
 
 } // namespace kudu

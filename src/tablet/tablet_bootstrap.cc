@@ -68,7 +68,6 @@ using log::OpIdHashFunctor;
 using log::OpIdEquals;
 using log::OpIdEqualsFunctor;
 
-struct MutationInput;
 struct ReplayState;
 
 // Bootstraps an existing tablet, fetching the initial state from other replicas
@@ -96,6 +95,7 @@ class TabletBootstrap {
                    scoped_refptr<log::OpIdAnchorRegistry>* opid_anchor_registry);
 
  private:
+
   // Fetches the latest blocks for a tablet and Open()s that tablet.
   //
   // TODO get blocks from other replicas
@@ -140,31 +140,27 @@ class TabletBootstrap {
   Status PlayChangeConfigRequest(OperationPB* replicate_op,
                                  const OperationPB& commit_op);
 
-  // Plays inserts, skipping those that have already been flushed.
-  Status PlayInsertions(WriteTransactionContext* tx_ctx,
-                        const SchemaPB& schema_pb,
-                        const RowOperationsPB& rows,
-                        const TxResultPB& result,
-                        const consensus::OpId& committed_op_id,
-                        int32_t* last_insert_op_idx);
+  // Plays operations, skipping those that have already been flushed.
+  Status PlayRowOperations(WriteTransactionContext* tx_ctx,
+                           const SchemaPB& schema_pb,
+                           const RowOperationsPB& ops_pb,
+                           const TxResultPB& result);
 
-  // Plays a mutations block, skipping those that have already been flushed.
-  Status PlayMutations(WriteTransactionContext* tx_ctx,
-                       RowwiseRowBlockPB* row_keys,
-                       const string& encoded_mutations,
-                       const TxResultPB& result,
-                       const consensus::OpId& committed_op_id,
-                       int32_t first_mutate_op_idx);
+  // Play a single insert operation.
+  Status PlayInsert(WriteTransactionContext* tx_ctx,
+                    const DecodedRowOperation& op,
+                    const OperationResultPB& op_result);
 
-  // Plays a single mutation. 'applied_mutation' indicates whether the mutation
-  // was actually applied or was skipped.
-  Status PlayMutation(const MutationInput& mutation_input,
+  // Plays a single mutation.
+  Status PlayMutation(WriteTransactionContext* tx_ctx,
+                      const DecodedRowOperation& op,
                       const OperationResultPB& op_result);
 
   bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target);
 
   // Applies a mutation
-  Status ApplyMutation(const MutationInput& mutation_input);
+  Status ApplyMutation(WriteTransactionContext* tx_ctx,
+                       const DecodedRowOperation& op);
 
   // Handlers for each type of message seen in the log during replay.
   Status HandleEntry(ReplayState* state, LogEntryPB* entry);
@@ -211,26 +207,6 @@ void TabletStatusListener::StatusMessage(const string& status) {
   last_status_ = status;
 }
 
-
-// helper to encapsulate the arguments required for a mutation
-struct MutationInput {
-  MutationInput(WriteTransactionContext* tx_ctx,
-                const consensus::OpId& committed_op_id,
-                int mutation_op_block_index,
-                const Schema& key_schema,
-                const Schema& changelist_schema,
-                const uint8_t* row_key_ptr,
-                const RowChangeList* changelist);
-
-  WriteTransactionContext* tx_ctx;
-  const consensus::OpId& committed_op_id;
-  int mutation_op_block_index;
-  const Schema& key_schema;
-  const Schema& changelist_schema;
-  const uint8_t* row_key_ptr;
-  const RowChangeList* changelist;
-};
-
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        const scoped_refptr<Clock>& clock,
                        MetricContext* metric_context,
@@ -242,39 +218,6 @@ Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, opid_anchor_registry));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
-  return Status::OK();
-}
-
-MutationInput::MutationInput(WriteTransactionContext* tx_ctx_,
-                             const consensus::OpId& committed_op_id_,
-                             int mutation_op_block_index_,
-                             const Schema& key_schema_,
-                             const Schema& changelist_schema_,
-                             const uint8_t* row_key_ptr_,
-                             const RowChangeList* changelist_)
-    : tx_ctx(tx_ctx_),
-      committed_op_id(committed_op_id_),
-      mutation_op_block_index(mutation_op_block_index_),
-      key_schema(key_schema_),
-      changelist_schema(changelist_schema_),
-      row_key_ptr(row_key_ptr_),
-      changelist(changelist_) {
-}
-
-static Status DecodeBlock(RowwiseRowBlockPB* block_pb,
-                          bool is_inserts,
-                          Schema* client_schema,
-                          vector<const uint8_t*>* row_block) {
-
-  RETURN_NOT_OK(ColumnPBsToSchema(block_pb->schema(), client_schema));
-  DCHECK(!client_schema->has_column_ids());
-  if (is_inserts) {
-    RETURN_NOT_OK(ExtractRowsFromRowBlockPB(*client_schema, block_pb, row_block));
-  } else {
-    RETURN_NOT_OK(ExtractRowsFromRowBlockPB(client_schema->CreateKeyProjection(),
-                                            block_pb,
-                                            row_block));
-  }
   return Status::OK();
 }
 
@@ -749,6 +692,8 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   // flushed state. On the other hand it just seems wasteful...
 
   WriteTransactionContext tx_ctx;
+  tx_ctx.mutable_op_id()->CopyFrom(replicate_op->id());
+
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
   tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
 
@@ -760,22 +705,12 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
     new shared_lock<rw_semaphore>(*tablet_->component_lock()));
   tx_ctx.set_component_lock(component_lock.Pass());
 
-  int32_t last_insert_op_idx = 0;
-  if (write->has_to_insert_rows()) {
-    RETURN_NOT_OK(PlayInsertions(&tx_ctx,
-                                 write->schema(),
-                                 write->to_insert_rows(),
-                                 commit_op.commit().result(),
-                                 replicate_op->id(),
-                                 &last_insert_op_idx));
-  }
-  if (write->has_to_mutate_row_keys()) {
-    RETURN_NOT_OK(PlayMutations(&tx_ctx,
-                                write->mutable_to_mutate_row_keys(),
-                                write->encoded_mutations(),
-                                commit_op.commit().result(),
-                                replicate_op->id(),
-                                last_insert_op_idx));
+  if (write->has_row_operations()) {
+    // TODO: is above always true at this point in the code?
+    RETURN_NOT_OK(PlayRowOperations(&tx_ctx,
+                                    write->schema(),
+                                    write->row_operations(),
+                                    commit_op.commit().result()));
   }
 
   // Append the commit msg to the log but replace the result with the new one
@@ -787,7 +722,6 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   commit->CopyFrom(commit_op.commit());
   commit->mutable_result()->CopyFrom(tx_ctx.Result());
   RETURN_NOT_OK(log_->Append(&commit_entry));
-
 
   return Status::OK();
 }
@@ -849,13 +783,10 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
-                                       const SchemaPB& schema_pb,
-                                       const RowOperationsPB& ops_pb,
-                                       const TxResultPB& result,
-                                       const OpId& committed_op_id,
-                                       int32_t* last_insert_op_idx) {
-
+Status TabletBootstrap::PlayRowOperations(WriteTransactionContext* tx_ctx,
+                                          const SchemaPB& schema_pb,
+                                          const RowOperationsPB& ops_pb,
+                                          const TxResultPB& result) {
   Schema inserts_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(schema_pb, &inserts_schema),
                         "Couldn't decode client schema");
@@ -867,128 +798,94 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                         Substitute("Could not decode row operations: $0",
                                    ops_pb.ShortDebugString()));
 
-  int32_t insert_idx = 0;
+  int32_t op_idx = 0;
   BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
-    OperationResultPB op_result = result.inserts(insert_idx++);
-    // check if the insert failed in the original transaction
+    const OperationResultPB& op_result = result.ops(op_idx++);
+    // check if the operation failed in the original transaction
     if (PREDICT_FALSE(op_result.has_failed_status())) {
       if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Skipping insert that resulted in error. OpId: "
-            << committed_op_id.DebugString() << " insert index: "
-            << insert_idx - 1 << " original error: "
-            << op_result.failed_status().DebugString();
+        VLOG(1) << "Skipping operation that originally resulted in error. OpId: "
+                << tx_ctx->op_id().DebugString() << " op index: "
+                << op_idx - 1 << " original error: "
+                << op_result.failed_status().DebugString();
       }
-      tx_ctx->AddFailedInsert(Status::RuntimeError("Row insert failed previously."));
+      tx_ctx->AddFailedOperation(Status::RuntimeError("Row operation failed previously."));
       continue;
     }
-    if (PREDICT_FALSE(op_result.mutated_stores_size() != 1 ||
-                      !op_result.mutated_stores(0).has_mrs_id())) {
-      return Status::Corruption(Substitute("Insert operation result must have an mrs_id: $0",
-                                           op_result.ShortDebugString()));
+
+    switch (op.type) {
+      case RowOperationsPB::INSERT:
+        RETURN_NOT_OK(PlayInsert(tx_ctx, op, op_result));
+        break;
+      case RowOperationsPB::UPDATE:
+      case RowOperationsPB::DELETE:
+        RETURN_NOT_OK(PlayMutation(tx_ctx, op, op_result));
+        break;
+      default:
+        LOG(FATAL) << "Bad op type: " << op.type;
+        break;
     }
-    // check if the insert is already flushed
-    if (WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
-      if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Skipping insert that was already flushed. OpId: "
-            << committed_op_id.DebugString() << " insert index: "
-            << insert_idx - 1 << " flushed to: " << op_result.mutated_stores(0).mrs_id()
-            << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
-      }
-      tx_ctx->AddFailedInsert(Status::AlreadyPresent("Row to insert was already flushed."));
-      continue;
-    }
-    // Note: Using InsertUnlocked as the old API will eventually disappear
+  }
+  return Status::OK();
+}
 
-    const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(
-      new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
+Status TabletBootstrap::PlayInsert(WriteTransactionContext* tx_ctx,
+                                   const DecodedRowOperation& op,
+                                   const OperationResultPB& op_result) {
+  DCHECK(op.type == RowOperationsPB::INSERT)
+    << RowOperationsPB::Type_Name(op.type);
 
-    gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
-    gscoped_ptr<PreparedRowWrite> prepared_row;
-    // TODO maybe we shouldn't acquire the row lock on replay?
-    RETURN_NOT_OK(tablet_->CreatePreparedInsert(tx_ctx, row, &prepared_row));
 
-    // Use committed OpId for mem store anchoring.
-    tx_ctx->mutable_op_id()->CopyFrom(committed_op_id);
-
-    // apply the insert to the tablet
-    RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_ctx, prepared_row.get()),
-                          Substitute("Failed to insert row $0. Reason",
-                                     inserts_schema.DebugRow(*row)));
-
+  if (PREDICT_FALSE(op_result.mutated_stores_size() != 1 ||
+                    !op_result.mutated_stores(0).has_mrs_id())) {
+    return Status::Corruption(Substitute("Insert operation result must have an mrs_id: $0",
+                                         op_result.ShortDebugString()));
+  }
+  // check if the insert is already flushed
+  if (WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
     if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Applied Insert. OpId: "
-          << committed_op_id.DebugString() << " insert index: "
-          << insert_idx - 1 << " row: " << inserts_schema.DebugRow(*row);
+      VLOG(1) << "Skipping insert that was already flushed. OpId: "
+              << tx_ctx->op_id().DebugString()
+              << " flushed to: " << op_result.mutated_stores(0).mrs_id()
+              << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
     }
-  }
-  *last_insert_op_idx = insert_idx;
-  return Status::OK();
-}
 
-Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
-                                      RowwiseRowBlockPB* row_keys,
-                                      const string& encoded_mutations,
-                                      const TxResultPB& result,
-                                      const OpId& committed_op_id,
-                                      int32_t first_mutate_op_idx) {
-  Schema mutates_schema;
-  vector<const uint8_t*> row_key_block;
-  RETURN_NOT_OK(DecodeBlock(row_keys,
-                            false,
-                            &mutates_schema,
-                            &row_key_block));
-
-  DeltaProjector delta_projector(&mutates_schema, tablet_->schema_ptr());
-  if (!delta_projector.is_identity()) {
-    RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(mutates_schema));
-    RETURN_NOT_OK(mutates_schema.GetProjectionMapping(*tablet_->schema_ptr(), &delta_projector));
+    tx_ctx->AddFailedOperation(Status::AlreadyPresent("Row to insert was already flushed."));
+    return Status::OK();
   }
 
-  Schema mutates_key_schema = mutates_schema.CreateKeyProjection();
-  vector<const RowChangeList *> mutations;
-  ElementDeleter deleter(&mutations);
-  RETURN_NOT_OK(ExtractMutationsFromBuffer(row_key_block.size(),
-                                 reinterpret_cast<const uint8_t*>(
-                                     encoded_mutations.data()),
-                                     encoded_mutations.size(),
-                                     &mutations));
+  const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(
+    new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
 
-  uint32_t mutate_op_idx = first_mutate_op_idx;
-  BOOST_FOREACH(const uint8_t* row_key_ptr, row_key_block) {
-    const OperationResultPB& op_result = result.mutations(mutate_op_idx++);
-    // check if the mutation failed in the original transaction
-    if (PREDICT_FALSE(op_result.has_failed_status())) {
-      if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Skipping mutation that resulted in error. OpId: "
-            << committed_op_id.DebugString() << " mutation index: "
-            << mutate_op_idx - 1 << " original error: "
-            << op_result.failed_status().DebugString();
-      }
-      tx_ctx->AddFailedMutation(Status::RuntimeError("Row mutate failed previously."));
-      continue;
-    }
-    const RowChangeList* mutation = ProjectMutation(tx_ctx, delta_projector,
-                                                    mutations[mutate_op_idx -1]);
-    MutationInput mutation_input(tx_ctx,
-                                 committed_op_id,
-                                 mutate_op_idx - 1,
-                                 mutates_key_schema,
-                                 mutates_schema,
-                                 row_key_ptr,
-                                 mutation);
-    RETURN_NOT_OK(PlayMutation(mutation_input, op_result));
+  gscoped_ptr<PreparedRowWrite> prepared_row;
+  // TODO maybe we shouldn't acquire the row lock on replay?
+  RETURN_NOT_OK(tablet_->CreatePreparedInsert(tx_ctx, row, &prepared_row));
+
+  // apply the insert to the tablet
+  RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_ctx, prepared_row.get()),
+                        Substitute("Failed to insert row $0. Reason",
+                                   row->schema().DebugRow(*row)));
+
+  if (VLOG_IS_ON(1)) {
+    VLOG(1) << "Applied Insert. OpId: "
+            << tx_ctx->op_id().DebugString()
+            << " row: " << row->schema().DebugRow(*row);
   }
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
+Status TabletBootstrap::PlayMutation(WriteTransactionContext* tx_ctx,
+                                     const DecodedRowOperation& op,
                                      const OperationResultPB& op_result) {
+  DCHECK(op.type == RowOperationsPB::UPDATE ||
+         op.type == RowOperationsPB::DELETE)
+    << RowOperationsPB::Type_Name(op.type);
+
   int num_mutated_stores = op_result.mutated_stores_size();
   if (PREDICT_FALSE(num_mutated_stores == 0 || num_mutated_stores > 2)) {
     return Status::Corruption(Substitute("Mutations must have one or two mutated_stores: $0",
                                          op_result.ShortDebugString()));
   }
-
 
   // The mutation may have been duplicated, so we'll check whether any of the
   // output targets was "unflushed".
@@ -998,17 +895,17 @@ Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
       num_unflushed_stores++;
     } else {
       if (VLOG_IS_ON(1)) {
-        string mutation = mutation_input.changelist->ToString(*tablet_->schema_ptr());
+        string mutation = op.changelist.ToString(*tablet_->schema_ptr());
         VLOG(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
                 << " that was already flushed. "
-                << "OpId: " << mutation_input.tx_ctx->op_id().DebugString();
+                << "OpId: " << tx_ctx->op_id().DebugString();
       }
     }
   }
 
   if (num_unflushed_stores == 0) {
     // The mutation was fully flushed.
-    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent("Update was already flushed."));
+    tx_ctx->AddFailedOperation(Status::AlreadyPresent("Update was already flushed."));
     return Status::OK();
   }
 
@@ -1023,7 +920,7 @@ Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
                 << "targets";
   }
 
-  RETURN_NOT_OK(ApplyMutation(mutation_input));
+  RETURN_NOT_OK(ApplyMutation(tx_ctx, op));
   return Status::OK();
 }
 
@@ -1062,23 +959,22 @@ bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
   }
 }
 
-Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
-  gscoped_ptr<ConstContiguousRow> row_key(new ConstContiguousRow(mutation_input.key_schema,
-                                                                 mutation_input.row_key_ptr));
-  gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
+Status TabletBootstrap::ApplyMutation(WriteTransactionContext* tx_ctx,
+                                      const DecodedRowOperation& op) {
+  gscoped_ptr<ConstContiguousRow> row_key(
+    new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
-  RETURN_NOT_OK(tablet_->CreatePreparedMutate(mutation_input.tx_ctx, row_key.get(),
-                                              mutation_input.changelist,
+  RETURN_NOT_OK(tablet_->CreatePreparedMutate(tx_ctx, row_key.get(),
+                                              op.changelist,
                                               &prepared_row));
 
-  RETURN_NOT_OK(tablet_->MutateRowUnlocked(mutation_input.tx_ctx, prepared_row.get()));
+  RETURN_NOT_OK(tablet_->MutateRowUnlocked(tx_ctx, prepared_row.get()));
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Applied Mutation. OpId: " << mutation_input.committed_op_id.DebugString()
-          << " mutation index: " << mutation_input.mutation_op_block_index
-          << " row key: " << mutation_input.key_schema.DebugRow(*row_key)
-          << " mutation: " << mutation_input.changelist->ToString(mutation_input.changelist_schema);
+    VLOG(1) << "Applied Mutation. OpId: " << tx_ctx->op_id().DebugString()
+            << " row key: " << tablet_->schema_ptr()->DebugRowKey(*row_key)
+            << " mutation: " << op.changelist.ToString(*tablet_->schema_ptr());
   }
   return Status::OK();
 }

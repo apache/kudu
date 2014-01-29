@@ -33,10 +33,8 @@ message OperationResultPB {
 // The final result of a transaction, including the result of each individual
 // operation.
 message TxResultPB {
-  // all the inserts in this transaction
-  repeated OperationResultPB inserts = 1;
-  // all the mutations in this transaction
-  repeated OperationResultPB mutations = 2;
+  // all the operations in this transaction
+  repeated OperationResultPB ops = 1;
 }
 
 // Delta statistics for a flushed deltastore

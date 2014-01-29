@@ -50,72 +50,30 @@ void LeaderWriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicat
 Status LeaderWriteTransaction::Prepare() {
   TRACE("PREPARE: Starting");
 
-  // In order to avoid a copy, we mutate the row blocks for insert and
-  // mutate in-place. Because the RPC framework gives us our request as a
-  // const argument, we have to const_cast it away here. It's a little hacky,
-  // but the alternative of making all RPCs get non-const requests doesn't
-  // seem that great either, since this is a rare circumstance.
-  WriteRequestPB* mutable_request =
-      const_cast<WriteRequestPB*>(tx_ctx_->request());
-
+  const WriteRequestPB* req = tx_ctx_->request();
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
 
   // Decode everything first so that we give up if something major is wrong.
-  Status s = Status::OK();
-
-  gscoped_ptr<Schema> client_schema(new Schema);
-  RETURN_NOT_OK_PREPEND(SchemaFromPB(mutable_request->schema(), client_schema.get()),
+  Schema client_schema;
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(req->schema(), &client_schema),
                         "Cannot decode client schema");
-  if (client_schema->has_column_ids()) {
+  if (client_schema.has_column_ids()) {
     // TODO: we have this kind of code a lot - add a new SchemaFromPB variant which
     // does this check inline.
-    return Status::InvalidArgument("Client should not send column IDs");
-  }
-
-  gscoped_ptr<Schema> mutates_client_schema(new Schema);
-  vector<const uint8_t *> to_mutate;
-  if (mutable_request->has_to_mutate_row_keys()) {
-    RETURN_NOT_OK(DecodeRowBlock(tx_ctx_.get(),
-                                 mutable_request->mutable_to_mutate_row_keys(),
-                                 tablet->key_schema(),
-                                 false,
-                                 mutates_client_schema.get(),
-                                 &to_mutate));
-  }
-
-  vector<const RowChangeList *> mutations;
-  s = ExtractMutationsFromBuffer(to_mutate.size(),
-                                 reinterpret_cast<const uint8_t*>(
-                                     mutable_request->encoded_mutations().data()),
-                                     mutable_request->encoded_mutations().size(),
-                                     &mutations);
-  BOOST_FOREACH(const RowChangeList *mutation, mutations) {
-    tx_ctx_->AddToAutoReleasePool(mutation);
-  }
-
-  if (PREDICT_FALSE(to_mutate.size() != mutations.size())) {
-    s = Status::InvalidArgument(strings::Substitute("Different number of row "
-                                                    "keys: $0 and mutations: $1",
-                                                    to_mutate.size(),
-                                                    mutations.size()));
-  }
-
-  if (PREDICT_FALSE(!s.ok())) {
-    tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_MUTATION);
+    Status s = Status::InvalidArgument("User requests should not have Column IDs");
+    tx_ctx_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
-  s = CreatePreparedInsertsAndMutates(tablet,
-                                      tx_ctx_.get(),
-                                      client_schema.Pass(),
-                                      mutable_request->to_insert_rows(),
-                                      mutates_client_schema.Pass(),
-                                      to_mutate,
-                                      mutations);
+  Status s = CreatePreparedInsertsAndMutates(tablet,
+                                             tx_ctx_.get(),
+                                             client_schema,
+                                             req->row_operations());
 
   // Now that we've prepared set the transaction timestamp (by initiating the
   // mvcc transaction). Doing this here allows us to wait the least possible
   // time if we're using commit wait.
   tx_ctx_->start_mvcc_tx();
+
   TRACE("PREPARE: finished");
   return s;
 }
@@ -154,7 +112,6 @@ Status LeaderWriteTransaction::Apply() {
     if (PREDICT_FALSE(!s.ok())) {
       WriteResponsePB::PerRowErrorPB* error = tx_ctx_->response()->add_per_row_errors();
       error->set_row_index(i);
-      error->set_is_insert(row->write_type() == PreparedRowWrite::INSERT);
       StatusToPB(s, error->mutable_error());
     }
     i++;
@@ -202,14 +159,14 @@ Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mr
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
         << "tx_id doesn't match the id of the ongoing transaction";
   }
-  OperationResultPB* insert = result_pb_.add_inserts();
+  OperationResultPB* insert = result_pb_.add_ops();
   insert->add_mutated_stores()->set_mrs_id(mrs_id);
   tx_metrics_.successful_inserts++;
   return Status::OK();
 }
 
-void WriteTransactionContext::AddFailedInsert(const Status &status) {
-  OperationResultPB* insert = result_pb_.add_inserts();
+void WriteTransactionContext::AddFailedOperation(const Status &status) {
+  OperationResultPB* insert = result_pb_.add_ops();
   StatusToPB(status, insert->mutable_failed_status());
   failed_operations_++;
 }
@@ -220,15 +177,9 @@ Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
         << "tx_id doesn't match the id of the ongoing transaction";
   }
-  result_pb_.mutable_mutations()->AddAllocated(result.release());
+  result_pb_.mutable_ops()->AddAllocated(result.release());
   tx_metrics_.successful_updates++;
   return Status::OK();
-}
-
-void WriteTransactionContext::AddFailedMutation(const Status &status) {
-  OperationResultPB* mutation = result_pb_.add_mutations();
-  StatusToPB(status, mutation->mutable_failed_status());
-  failed_operations_++;
 }
 
 Timestamp WriteTransactionContext::start_mvcc_tx() {
@@ -272,14 +223,13 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
                                    gscoped_ptr<ScopedRowLock> lock)
     : row_(row),
       row_key_(NULL),
-      changelist_(NULL),
       probe_(probe.Pass()),
       row_lock_(lock.Pass()),
       op_type_(INSERT) {
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
-                                   const RowChangeList* changelist,
+                                   const RowChangeList& changelist,
                                    gscoped_ptr<RowSetKeyProbe> probe,
                                    gscoped_ptr<tablet::ScopedRowLock> lock)
     : row_(NULL),

@@ -40,22 +40,17 @@ class LogTest : public LogTestBase {
     op_id->set_index(index);
 
     WriteRequestPB* batch_request = replicate->mutable_write_request();
-    AddTestRowToPB(schema_,
+    ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+    AddTestRowToPB(RowOperationsPB::INSERT, schema_,
                    index,
                    0,
                    "this is a test insert",
-                   batch_request->mutable_to_insert_rows());
-
-    faststring mutations;
-    AddTestMutationToRowBlockAndBuffer(
-        schema_,
-        index + 1,
-        0,
-        "this is a test mutate",
-        batch_request->mutable_to_mutate_row_keys(),
-        &mutations);
-
-    batch_request->set_encoded_mutations(mutations.data(), mutations.size());
+                   batch_request->mutable_row_operations());
+    AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
+                   index + 1,
+                   0,
+                   "this is a test mutate",
+                   batch_request->mutable_row_operations());
     batch_request->set_tablet_id(kTestTablet);
 
     ASSERT_STATUS_OK(log_->Append(&log_entry));
@@ -90,10 +85,10 @@ class LogTest : public LogTestBase {
 
     TxResultPB* result = commit->mutable_result();
 
-    OperationResultPB* insert = result->add_inserts();
+    OperationResultPB* insert = result->add_ops();
     insert->add_mutated_stores()->set_mrs_id(kTargetMrsId);
 
-    OperationResultPB* mutate = result->add_mutations();
+    OperationResultPB* mutate = result->add_ops();
     MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_delta_id(kTargetDeltaId);
     target->set_rs_id(kTargetRsId);

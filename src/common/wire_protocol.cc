@@ -305,27 +305,6 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   return Status::OK();
 }
 
-Status ExtractMutationsFromBuffer(uint32_t n_mutations,
-                                const uint8_t* buffer,
-                                uint32_t buffer_size,
-                                vector<const RowChangeList *> *mutations) {
-  Slice remaining(buffer, buffer_size);
-  for (int i = 0; i < n_mutations; i++) {
-    if (PREDICT_FALSE(remaining.size() < sizeof(uint32_t))) {
-      return Status::Corruption("Missing expected length prefix in mutation buffer");
-    }
-    uint32_t mutation_size = DecodeFixed32(remaining.data());
-    remaining.remove_prefix(sizeof(uint32_t));
-    if (PREDICT_FALSE(mutation_size > remaining.size())) {
-      return Status::Corruption("Mutation size overflows the mutations buffer");
-    }
-    Slice mutation_slice(remaining.data(), mutation_size);
-    mutations->push_back(new RowChangeList(mutation_slice));
-    remaining.remove_prefix(mutation_size);
-  }
-  return Status::OK();
-}
-
 template<class RowType>
 void AppendRowToString(const RowType& row, string* buf);
 

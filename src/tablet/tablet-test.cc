@@ -190,14 +190,14 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   WriteTransactionContext tx_ctx;
   ASSERT_STATUS_OK(this->tablet_->InsertForTesting(&tx_ctx, row));
-  ASSERT_EQ(1, tx_ctx.Result().inserts().size());
+  ASSERT_EQ(1, tx_ctx.Result().ops().size());
 
   // Insert again, should fail!
   tx_ctx.Reset();
   Status s = this->tablet_->InsertForTesting(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
-  ASSERT_EQ(1, tx_ctx.Result().inserts().size());
+  ASSERT_EQ(1, tx_ctx.Result().ops().size());
   ASSERT_FALSE(tx_ctx.is_all_success());
 
   ASSERT_EQ(1, this->TabletCount());
@@ -212,7 +212,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_TRUE(s.IsAlreadyPresent())
     << "expected AlreadyPresent, but got: " << s.ToString()
     << " Inserting: " << rb.data().ToDebugString();
-  ASSERT_EQ(1, tx_ctx.Result().inserts().size());
+  ASSERT_EQ(1, tx_ctx.Result().ops().size());
 
   ASSERT_EQ(1, this->TabletCount());
 }
@@ -748,7 +748,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   // Then do the flush with the hooks enabled.
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  // Now verify that the results saw all the mutations.
+  // Now verify that the results saw all the mutated_stores.
   vector<string> out_rows;
   ASSERT_STATUS_OK(this->IterateToStringList(&out_rows));
   std::sort(out_rows.begin(), out_rows.end());

@@ -222,63 +222,43 @@ Status SysTabletsTable::UpdateTablets(const vector<TabletInfo*>& tablets) {
   return AddAndUpdateTablets(empty_tablets, tablets);
 }
 
+Status SysTabletsTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
+                                       RowOperationsPB::Type op_type,
+                                       RowOperationsPB* ops) const {
+  faststring metadata_buf;
+  PartialRow row(&schema_);
+  RowOperationsPBEncoder enc(ops);
+  BOOST_FOREACH(const TabletInfo *tablet, tablets) {
+    if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
+      return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
+                                tablet->tablet_id());
+    }
+
+    CHECK_OK(row.SetString(kSysTabletsColTableId, tablet->table()->id()));
+    CHECK_OK(row.SetString(kSysTabletsColTabletId, tablet->tablet_id()));
+    CHECK_OK(row.SetString(kSysTabletsColMetadata, metadata_buf));
+    enc.Add(op_type, row);
+  }
+  return Status::OK();
+}
+
 Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
                                             const vector<TabletInfo*>& tablets_to_update) {
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysTabletsTabletId);
-
-  faststring metadata_buf;
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   // Insert new Tablets
   if (!tablets_to_add.empty()) {
-    RowOperationsPB* data = req.mutable_to_insert_rows();
-    RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
-
-    PartialRow row(&schema_);
-    BOOST_FOREACH(const TabletInfo *tablet, tablets_to_add) {
-      if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
-        return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
-                                  tablet->tablet_id());
-      }
-
-      row.SetString(kSysTabletsColTableId, tablet->table()->id());
-      row.SetString(kSysTabletsColTabletId, tablet->tablet_id());
-      row.SetString(kSysTabletsColMetadata, metadata_buf);
-      RowOperationsPBEncoder enc(data);
-      enc.Add(RowOperationsPB::INSERT, row);
-    }
+    RETURN_NOT_OK(AddTabletsToPB(tablets_to_add, RowOperationsPB::INSERT,
+                                 req.mutable_row_operations()));
   }
 
   // Update already existing Tablets
   if (!tablets_to_update.empty()) {
-    RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
-    RETURN_NOT_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-    data->set_num_key_columns(schema_.num_key_columns());
-
-    faststring buf;
-    faststring mutations;
-    RowBuilder rb(key_schema_);
-    RowChangeListEncoder encoder(schema_, &buf);
-    BOOST_FOREACH(const TabletInfo* tablet, tablets_to_update) {
-      if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
-        return Status::Corruption("Unable to serialize SysTabletsEntryPB for tablet",
-                                  tablet->tablet_id());
-      }
-
-      // Write the key
-      rb.Reset();
-      rb.AddString(tablet->table()->id());
-      rb.AddString(tablet->tablet_id());
-      AddRowToRowBlockPB(rb.row(), data);
-
-      // Write the mutation
-      encoder.Reset();
-      Slice metadata(metadata_buf);
-      encoder.AddColumnUpdate(schema_.find_column(kSysTabletsColMetadata), &metadata);
-      PutFixed32LengthPrefixedSlice(&mutations, Slice(buf));
-    }
-    req.set_encoded_mutations(mutations.data(), mutations.size());
+    RETURN_NOT_OK(AddTabletsToPB(tablets_to_update, RowOperationsPB::UPDATE,
+                                 req.mutable_row_operations()));
   }
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
@@ -289,29 +269,15 @@ Status SysTabletsTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysTabletsTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
-  RETURN_NOT_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-  data->set_num_key_columns(schema_.num_key_columns());
-
-  faststring buf;
-  faststring mutations;
-  RowBuilder rb(key_schema_);
-  RowChangeListEncoder encoder(schema_, &buf);
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  PartialRow row(&schema_);
   BOOST_FOREACH(const TabletInfo* tablet, tablets) {
-    // Write the key
-    rb.Reset();
-    rb.AddString(tablet->table()->id());
-    rb.AddString(tablet->tablet_id());
-    AddRowToRowBlockPB(rb.row(), data);
-
-    // Write the mutation
-    encoder.Reset();
-    encoder.SetToDelete();
-
-    PutFixed32LengthPrefixedSlice(&mutations, Slice(buf));
+    CHECK_OK(row.SetString(kSysTabletsColTableId, tablet->table()->id()));
+    CHECK_OK(row.SetString(kSysTabletsColTabletId, tablet->tablet_id()));
+    enc.Add(RowOperationsPB::DELETE, row);
   }
-  req.set_encoded_mutations(mutations.data(), mutations.size());
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();
@@ -381,14 +347,12 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysTablesTabletId);
-
-  RowOperationsPB* data = req.mutable_to_insert_rows();
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   PartialRow row(&schema_);
   row.SetString(kSysTablesColTableId, table->id());
   row.SetString(kSysTablesColMetadata, metadata_buf);
-  RowOperationsPBEncoder enc(data);
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
@@ -405,25 +369,13 @@ Status SysTablesTable::UpdateTable(const TableInfo *table) {
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysTablesTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
-  RETURN_NOT_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-  data->set_num_key_columns(schema_.num_key_columns());
-
-  // Write the key
-  RowBuilder rb(key_schema_);
-  rb.AddString(table->id());
-  AddRowToRowBlockPB(rb.row(), data);
-
-  // Write the mutation
-  faststring buf;
-  Slice metadata(metadata_buf);
-  RowChangeListEncoder encoder(schema_, &buf);
-  encoder.AddColumnUpdate(schema_.find_column(kSysTablesColMetadata), &metadata);
-
-  faststring mutation;
-  PutFixed32LengthPrefixedSlice(&mutation, Slice(buf));
-  req.set_encoded_mutations(mutation.data(), mutation.size());
+  PartialRow row(&schema_);
+  CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
+  CHECK_OK(row.SetString(kSysTablesColMetadata, metadata_buf));
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::UPDATE, row);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();
@@ -433,24 +385,13 @@ Status SysTablesTable::DeleteTable(const TableInfo *table) {
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysTablesTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  RowwiseRowBlockPB* data = req.mutable_to_mutate_row_keys();
-  RETURN_NOT_OK(SchemaToColumnPBs(schema_, data->mutable_schema()));
-  data->set_num_key_columns(schema_.num_key_columns());
+  PartialRow row(&schema_);
+  CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
 
-  // Write the key
-  RowBuilder rb(key_schema_);
-  rb.AddString(table->id());
-  AddRowToRowBlockPB(rb.row(), data);
-
-  // Write the mutation
-  faststring buf;
-  RowChangeListEncoder encoder(schema_, &buf);
-  encoder.SetToDelete();
-
-  faststring mutation;
-  PutFixed32LengthPrefixedSlice(&mutation, Slice(buf));
-  req.set_encoded_mutations(mutation.data(), mutation.size());
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::DELETE, row);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();

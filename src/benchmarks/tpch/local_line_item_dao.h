@@ -29,7 +29,7 @@ class LocalLineItemDAO : public LineItemDAO {
   virtual ~LocalLineItemDAO() OVERRIDE;
 
   virtual void WriteLine(const PartialRow& row) OVERRIDE;
-  virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations) OVERRIDE;
+  virtual void MutateLine(const PartialRow& row) OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void FinishWriting() OVERRIDE;
   virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) OVERRIDE;

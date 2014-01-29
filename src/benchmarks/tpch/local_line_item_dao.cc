@@ -50,7 +50,8 @@ void LocalLineItemDAO::WriteLine(const PartialRow& row) {
   tx_ctx_.Reset();
 }
 
-void LocalLineItemDAO::MutateLine(const ConstContiguousRow &row, const faststring &mutations) {
+void LocalLineItemDAO::MutateLine(const PartialRow& row) {
+  LOG(FATAL) << "Updates not implemented on local DAO";
   // Call MutateRow with context, rb, schema and a list of changes such as:
   // RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
   // CHECK_OK(tablet_->MutateRow(&dummy, rb.row(), schema_, RowChangeList(update_buf)));

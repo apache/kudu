@@ -118,7 +118,7 @@ class Tablet {
   // as there are cases where row is passed as a reference (old API).
   Status CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                               const ConstContiguousRow* row_key,
-                              const RowChangeList* changelist,
+                              const RowChangeList& changelist,
                               gscoped_ptr<PreparedRowWrite>* row_write);
 
   // Update a row in this tablet.

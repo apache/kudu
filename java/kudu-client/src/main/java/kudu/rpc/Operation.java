@@ -30,9 +30,20 @@ import java.util.List;
 public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
 
   enum ChangeType {
-    INSERT, // in C++ this is "uninitialized" but we'll never send it so overload
-    UPDATE,
-    DELETE
+    INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),
+    UPDATE((byte)RowOperationsPB.Type.UPDATE.getNumber()),
+    DELETE((byte)RowOperationsPB.Type.DELETE.getNumber());
+
+    ChangeType(byte encodedByte) {
+      this.encodedByte = encodedByte;
+    }
+
+    byte toEncodedByte() {
+      return encodedByte;
+    }
+
+    /** The byte used to encode this in a RowOperationsPB */
+    private byte encodedByte;
   }
 
   final static String METHOD = "Write";
@@ -297,197 +308,26 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPB(Operation... operations) {
     if (operations == null || operations.length == 0) return null;
 
-    int insertRowsSize = 0;
-    int insertIndirectSize = 0;
-    List<Operation> inserts = null;
-    int deleteCount = 0;
-    int updateCount = 0;
-    int updateIndirectSize = 0;
-    int updateEncodedDataSize = 0;
     Schema schema = operations[0].schema;
-    int columnBitSetSize = getSizeOfColumnBitSet(schema.getColumnCount());
-    // get the counts to right-size the buffers
+
+    // Pre-calculate the sizes for the buffers.
+    int rowSize = 0;
+    int indirectSize = 0;
+    final int columnBitSetSize = getSizeOfColumnBitSet(schema.getColumnCount());
     for (Operation operation : operations) {
-      switch (operation.getChangeType()) {
-        case INSERT:
-          if (inserts == null) {
-            inserts = new ArrayList<Operation>(operations.length / 3);
-          }
-          inserts.add(operation);
-          insertRowsSize += 1 + operation.partialRowSize + columnBitSetSize;
-          insertIndirectSize += operation.stringsSize;
-          break;
-        case UPDATE:
-          updateCount++;
-          updateEncodedDataSize += operation.encodedSize;
-          updateIndirectSize += operation.keyOnlyStringSize;
-          break;
-        case DELETE:
-          deleteCount++;
-          updateEncodedDataSize += operation.encodedSize;
-          updateIndirectSize += operation.keyOnlyStringSize;
-          break;
-        default:
-          throw new IllegalArgumentException("This operation has an unexpected type: "
-              + operation);
-      }
-    }
-    int updatePlusDeleteCount = updateCount + deleteCount;
-    boolean hasUpdateOrDelete = !(deleteCount == 0 && updateCount == 0);
-    Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
-
-    Schema keyProjection = schema.getRowKeyProjection();
-    int keySize = keyProjection.getRowSize();
-    ByteBuffer toUpdateRows = hasUpdateOrDelete ?
-        ByteBuffer.allocate(updatePlusDeleteCount * keySize).order(ByteOrder.LITTLE_ENDIAN) : null;
-    ByteBuffer encodedMutations = hasUpdateOrDelete ? ByteBuffer.allocate((updatePlusDeleteCount
-        * 4) + updateEncodedDataSize).order(ByteOrder.LITTLE_ENDIAN) : null;
-    ByteBuffer updateIndirectData = hasUpdateOrDelete ? ByteBuffer.allocate(updateIndirectSize)
-        .order(ByteOrder.LITTLE_ENDIAN) : null;
-    for (Operation operation : operations) {
-      if (operation.getChangeType().equals(ChangeType.INSERT)) {
-        continue;
-      }
-
-      // Set the size for this op in the encoded buffer plus the change type
-      encodedMutations.putInt(operation.encodedSize);
-      encodedMutations.put((byte) operation.getChangeType().ordinal());
-      int currentRowOffset = operation.offset;
-      byte[] rowData = operation.rowAlloc;
-      int stringsIndex = 0;
-      int colIdx = 0;
-      for (ColumnSchema col : operation.schema.getColumns()) {
-        // Keys should always be specified, maybe check?
-        if (!operation.isSet(colIdx)) {
-          // code also at the end of the for, just have a big if?
-          currentRowOffset += col.getType().getSize();
-          colIdx++;
-          continue;
-        }
-
-        ByteBuffer specificBuffer = col.isKey() ? toUpdateRows : encodedMutations;
-        if (!col.isKey()) {
-          Bytes.putVarInt32(specificBuffer, colIdx);
-        }
-
-        if (col.getType() == Type.STRING) {
-          Slice slice = operation.strings.get(stringsIndex);
-          if (col.isKey()) {
-            updateIndirectData.put(slice.getRawArray(), slice.getRawOffset(), slice.length());
-            specificBuffer.putLong(updateIndirectData.position() - slice.length());
-            specificBuffer.putLong(slice.length());
-          } else {
-            // for an non-key update we directly put the string in the data buffer
-            Bytes.putVarInt32(specificBuffer, slice.length());
-            specificBuffer.put(slice.getRawArray(), slice.getRawOffset(), slice.length());
-          }
-          stringsIndex++;
-        } else {
-          // This is for cols other than strings
-          specificBuffer.put(rowData, currentRowOffset, col.getType().getSize());
-        }
-        currentRowOffset += col.getType().getSize();
-        colIdx++;
-      }
+      rowSize += 1 /* for the op type */ + operation.partialRowSize + columnBitSetSize;
+      indirectSize += operation.stringsSize;
     }
 
-    if (inserts != null) {
-      requestBuilder.setToInsertRows(
-          createRowOperationsPB(inserts, RowOperationsPB.Type.INSERT,
-              insertRowsSize, insertIndirectSize));
-      requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
-    }
-    if (hasUpdateOrDelete) {
-      assert !toUpdateRows.hasRemaining();
-      assert !encodedMutations.hasRemaining();
-      assert !updateIndirectData.hasRemaining();
-      WireProtocol.RowwiseRowBlockPB.Builder updateRowsBuilder =
-          WireProtocol.RowwiseRowBlockPB.newBuilder();
-      updateRowsBuilder.setNumRows(updatePlusDeleteCount);
-      updateRowsBuilder.addAllSchema(ProtobufHelper.schemaToListPb(schema));
-      updateRowsBuilder.setNumKeyColumns(schema.getKeysCount());
-      updateRowsBuilder.setRows(ZeroCopyLiteralByteString.wrap(toUpdateRows.array()));
-      updateRowsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(updateIndirectData.array()));
-      requestBuilder.setToMutateRowKeys(updateRowsBuilder.build());
-      requestBuilder.setEncodedMutations(ZeroCopyLiteralByteString.wrap(encodedMutations.array()));
-    }
-    return requestBuilder;
-  }
-
-  // TODO replace the previous with this one once partial rows are in and remove the comments
-  static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPBPartialRows(Operation...
-                                                                                   operations) {
-    if (operations == null || operations.length == 0) return null;
-
-    Schema schema = operations[0].schema;
-    Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
-
-    List<Operation> inserts = null;
-    List<Operation> updates = null;
-    List<Operation> deletes = null;
-    int insertRowsSize = 0;
-    int updateRowsSize = 0;
-    int deleteRowsSize = 0;
-    int insertIndirectSize = 0;
-    int updateIndirectSize = 0;
-    int deleteIndirectSize = 0;
-    // get the counts to right-size the buffers
-    for (Operation operation : operations) {
-      switch (operation.getChangeType()) {
-        case INSERT:
-          if (inserts == null) {
-            inserts = new ArrayList<Operation>(operations.length / 3);
-          }
-          inserts.add(operation);
-          insertRowsSize += 1 + operation.partialRowSize;
-          insertIndirectSize += operation.stringsSize;
-          break;
-        case UPDATE:
-          if (updates == null) {
-            updates = new ArrayList<Operation>(operations.length / 3);
-          }
-          updates.add(operation);
-          updateRowsSize += 1 + operation.partialRowSize;
-          updateIndirectSize += operation.stringsSize;
-          break;
-        case DELETE:
-          if (deletes == null) {
-            deletes = new ArrayList<Operation>(operations.length / 3);
-          }
-          deletes.add(operation);
-          deleteRowsSize += 1 + operation.partialRowSize;
-          deleteIndirectSize += operation.stringsSize;
-          break;
-        default:
-          throw new IllegalArgumentException("This operation has an unexpected type: "
-              + operation);
-      }
-    }
-    // builder.setSchema(ProtobufHelper.schemaToPb(schema);
-    if (inserts != null) {
-      // builder.setToInsertRows(createRowOperationsPB(inserts, RowOperationsPB.Type.INSERT,
-      //                                             insertRowsSize, insertIndirectSize);
-    }
-    if (updates != null) {
-      // builder.setToUpdateRows(createRowOperationsPB(updates, RowOperationsPB.Type.UPDATE,
-      //                                             updateRowsSize, updateIndirectSize);
-    }
-    if (deletes != null) {
-      // builder.setToDeleteRows(createRowOperationsPB(delete, RowOperationsPB.Type.DELETE,
-      //                                             deleteRowsSize, deleteIndirectSize);
-}
-    return requestBuilder;
-  }
-
-  static RowOperationsPB createRowOperationsPB(List<Operation> operations,
-                                               RowOperationsPB.Type op_type,
-                                               int rowSize, int indirectSize) {
-    RowOperationsPB.Builder builder = RowOperationsPB.newBuilder();
+    // Set up the encoded data.
     ByteBuffer rows = ByteBuffer.allocate(rowSize).order(ByteOrder.LITTLE_ENDIAN);
     ByteBuffer indirectData = indirectSize == 0 ?
         null : ByteBuffer.allocate(indirectSize).order(ByteOrder.LITTLE_ENDIAN);
+
     for (Operation operation : operations) {
-      rows.put((byte)op_type.getNumber());
+      assert operation.schema == schema;
+
+      rows.put(operation.getChangeType().toEncodedByte());
       rows.put(toByteArray(operation.columnsBitSet));
       // TODO handle schemas with nulls
       int colIdx = 0;
@@ -513,12 +353,19 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
       }
     }
     assert !rows.hasRemaining();
-    builder.setRows(ZeroCopyLiteralByteString.wrap(rows.array()));
+
+    // Actually build the protobuf.
+    RowOperationsPB.Builder rowOpsBuilder = RowOperationsPB.newBuilder();
+    rowOpsBuilder.setRows(ZeroCopyLiteralByteString.wrap(rows.array()));
     if (indirectData != null) {
       assert !indirectData.hasRemaining();
-      builder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirectData.array()));
+      rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirectData.array()));
     }
-    return builder.build();
+
+    Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
+    requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
+    requestBuilder.setRowOperations(rowOpsBuilder);
+    return requestBuilder;
   }
 
   static int getSizeOfColumnBitSet(int count) {

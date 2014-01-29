@@ -579,7 +579,7 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
 
     CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
 
-    RowOperationsPB* to_insert = req.mutable_to_insert_rows();
+    RowOperationsPB* to_insert = req.mutable_row_operations();
 
     // Add the rows
     RowOperationsPBEncoder enc(to_insert);

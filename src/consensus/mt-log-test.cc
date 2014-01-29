@@ -73,11 +73,11 @@ class MultiThreadedLogTest : public LogTestBase {
         replicate->set_op_type(WRITE_OP);
 
         tserver::WriteRequestPB* request = replicate->mutable_write_request();
-        AddTestRowToPB(schema_,
+        AddTestRowToPB(RowOperationsPB::INSERT, schema_,
                        index,
                        0,
                        "this is a test insert",
-                       request->mutable_to_insert_rows());
+                       request->mutable_row_operations());
         request->set_tablet_id(kTestTablet);
         ASSERT_STATUS_OK(log_->Reserve(boost::assign::list_of(op.get()),
                                        &entry_batch));

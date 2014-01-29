@@ -88,22 +88,16 @@ message AlterSchemaResponsePB {
 }
 
 // A batched set of insert/mutate requests.
-// TODO currently we're sending the client schema multiple times in each
-// row block.
 message WriteRequestPB {
   required bytes tablet_id = 1;
 
+  // The schema as seen by the client. This may be out-of-date, in which case
+  // it will be projected to the current schema automatically, with defaults/NULLs
+  // being filled in.
   optional SchemaPB schema = 2;
 
-  // Set of rows to insert.
-  optional RowOperationsPB to_insert_rows = 3;
-
-  // Set of row keys to mutate.  This rowblock's schema should contain
-  // only the key columns
-  optional RowwiseRowBlockPB to_mutate_row_keys = 4;
-  // Mutations to apply to the row keys in mutate_data.
-  // Uses the encoded format from the RowChangeList class.
-  optional bytes encoded_mutations = 5;
+  // Operations to perform (insert/update/delete)
+  optional RowOperationsPB row_operations = 3;
 }
 
 message WriteResponsePB {
@@ -115,15 +109,13 @@ message WriteResponsePB {
   // even if all rows failed.
   optional TabletServerErrorPB error = 1;
 
-  // If errors occurred inserting particular rows, then the errors
-  // for those rows will be passed back in 'per_row_errors'.
+  // If errors occurred with particular row operations, then the errors
+  // for those operations will be passed back in 'per_row_errors'.
   message PerRowErrorPB {
-    // whether the error refers to an insertion or mutation.
-    required bool is_insert = 1;
     // The index of the row in the incoming batch.
-    required int32 row_index = 2;
+    required int32 row_index = 1;
     // The error that occurred.
-    required AppStatusPB error = 3;
+    required AppStatusPB error = 2;
   }
   repeated PerRowErrorPB per_row_errors = 2;
 }

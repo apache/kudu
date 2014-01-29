@@ -88,9 +88,9 @@ class WriteTransactionContext : public TransactionContext {
   Status AddInsert(const Timestamp &tx_id,
                    int64_t mrs_id);
 
-  // Adds a failed insert to this TransactionContext, including the status
-  // explaining why the insert failed.
-  void AddFailedInsert(const Status &status);
+  // Adds a failed operation to this TransactionContext, including the status
+  // explaining why the operation failed.
+  void AddFailedOperation(const Status &status);
 
   // Adds an applied mutation to this TransactionContext, including the
   // tablet id, the mvcc transaction id, the mutation that was applied
@@ -108,10 +108,6 @@ class WriteTransactionContext : public TransactionContext {
                            gscoped_ptr<RowwiseRowBlockPB> row_key,
                            const RowChangeList& changelist,
                            gscoped_ptr<OperationResultPB> result);
-
-  // Adds a failed mutation to this TransactionContext, including the status
-  // explaining why it failed.
-  void AddFailedMutation(const Status &status);
 
   bool is_all_success() const {
     return failed_operations_ == 0;
@@ -356,7 +352,7 @@ class PreparedRowWrite {
     return probe_.get();
   }
 
-  const RowChangeList* changelist() const {
+  const RowChangeList& changelist() const {
     return changelist_;
   }
 
@@ -379,13 +375,13 @@ class PreparedRowWrite {
 
   // ctor for mutations
   PreparedRowWrite(const ConstContiguousRow* row_key,
-                   const RowChangeList* mutations,
+                   const RowChangeList& mutations,
                    const gscoped_ptr<RowSetKeyProbe> probe,
                    const gscoped_ptr<tablet::ScopedRowLock> lock);
 
   const ConstContiguousRow *row_;
   const ConstContiguousRow *row_key_;
-  const RowChangeList *changelist_;
+  const RowChangeList changelist_;
 
   const gscoped_ptr<RowSetKeyProbe> probe_;
   const gscoped_ptr<ScopedRowLock> row_lock_;

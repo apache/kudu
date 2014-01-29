@@ -258,7 +258,7 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
         if (metrics_) {
           metrics_->insertions_failed_dup_key->Increment();
         }
-        tx_ctx->AddFailedInsert(s);
+        tx_ctx->AddFailedOperation(s);
         return s;
       }
     }
@@ -278,14 +278,14 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
     if (s.IsAlreadyPresent() && metrics_) {
       metrics_->insertions_failed_dup_key->Increment();
     }
-    tx_ctx->AddFailedInsert(s);
+    tx_ctx->AddFailedOperation(s);
   }
   return s;
 }
 
 Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                                     const ConstContiguousRow* row_key,
-                                    const RowChangeList* changelist,
+                                    const RowChangeList& changelist,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
@@ -369,7 +369,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
     RETURN_NOT_OK(update_schema.GetProjectionMapping(schema_, &delta_projector));
   }
 
-  const RowChangeList *changelist = ProjectMutation(tx_ctx, delta_projector, &update);
+  RowChangeList changelist = ProjectMutation(tx_ctx, delta_projector, update);
 
   gscoped_ptr<PreparedRowWrite> row_write;
   RETURN_NOT_OK(CreatePreparedMutate(tx_ctx, &row_key, changelist, &row_write));
@@ -394,7 +394,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(schema_, *mutate->changelist());
+  RowChangeListDecoder rcl_decoder(schema_, mutate->changelist());
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
@@ -402,7 +402,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     s = Status::InvalidArgument("User may not specify REINSERT mutations");
   }
   if (!s.ok()) {
-    tx_ctx->AddFailedMutation(s);
+    tx_ctx->AddFailedOperation(s);
     return s;
   }
 
@@ -416,7 +416,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   // First try to update in memrowset.
   s = memrowset_->MutateRow(ts,
                             *mutate->probe(),
-                            *mutate->changelist(),
+                            mutate->changelist(),
                             tx_ctx->op_id(),
                             &stats,
                             result.get());
@@ -425,7 +425,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     return s;
   }
   if (!s.IsNotFound()) {
-    tx_ctx->AddFailedMutation(s);
+    tx_ctx->AddFailedOperation(s);
     return s;
   }
 
@@ -437,20 +437,20 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(ts, *mutate->probe(), *mutate->changelist(), tx_ctx->op_id(),
+    s = rs->MutateRow(ts, *mutate->probe(), mutate->changelist(), tx_ctx->op_id(),
                       &stats, result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(ts, result.Pass()));
       return s;
     }
     if (!s.IsNotFound()) {
-      tx_ctx->AddFailedMutation(s);
+      tx_ctx->AddFailedOperation(s);
       return s;
     }
   }
 
   s = Status::NotFound("key not found");
-  tx_ctx->AddFailedMutation(s);
+  tx_ctx->AddFailedOperation(s);
   return s;
 }
 

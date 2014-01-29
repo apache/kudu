@@ -26,58 +26,11 @@ using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
-Status DecodeRowBlock(WriteTransactionContext* tx_ctx,
-                      RowwiseRowBlockPB* block_pb,
-                      const Schema& tablet_key_projection,
-                      bool is_inserts_block,
-                      Schema* client_schema,
-                      std::vector<const uint8_t*>* row_block) {
-  // Extract the schema of the row block
-  Status s = ColumnPBsToSchema(block_pb->schema(), client_schema);
-  if (!s.ok()) {
-    tx_ctx->completion_callback()->set_error(
-        s, TabletServerErrorPB::INVALID_SCHEMA);
-    return s;
-  }
-
-
-  // Check that the schema sent by the user matches the key projection of the tablet.
-  Schema client_key_projection = client_schema->CreateKeyProjection();
-  if (!client_key_projection.Equals(tablet_key_projection)) {
-    s = Status::InvalidArgument("Mismatched key projection schema, expected",
-                                          tablet_key_projection.ToString());
-    if (!s.ok()) {
-      tx_ctx->completion_callback()->set_error(
-          s, TabletServerErrorPB::MISMATCHED_SCHEMA);
-      return s;
-    }
-  }
-
-  // Extract the row block
-  if (is_inserts_block) {
-    s = ExtractRowsFromRowBlockPB(*client_schema, block_pb, row_block);
-  } else {
-    s = ExtractRowsFromRowBlockPB(client_key_projection, block_pb, row_block);
-  }
-
-
-  if (!s.ok()) {
-    tx_ctx->completion_callback()->set_error(
-        s, TabletServerErrorPB::INVALID_ROW_BLOCK);
-    return s;
-  }
-
-  return Status::OK();
-}
 
 Status CreatePreparedInsertsAndMutates(Tablet* tablet,
                                        WriteTransactionContext* tx_ctx,
-                                       gscoped_ptr<Schema> client_schema,
-                                       const RowOperationsPB& to_insert_rows,
-                                       gscoped_ptr<Schema> mutates_client_schema,
-                                       const vector<const uint8_t *>& to_mutate,
-                                       const vector<const RowChangeList *>& mutations) {
-
+                                       const Schema& client_schema,
+                                       const RowOperationsPB& ops_pb) {
   TRACE("PREPARE: Acquiring component lock");
   // acquire the component lock. this is more like "tablet lock" and is used
   // to prevent AlterSchema and other operations that requires exclusive access
@@ -86,72 +39,66 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
       new shared_lock<rw_semaphore>(*tablet->component_lock()));
   tx_ctx->set_component_lock(component_lock_.Pass());
 
-
-  // Now that the schema is fixed, we can project the inserts into that schema.
-  vector<DecodedRowOperation> to_insert;
-  if (to_insert_rows.rows().size() > 0) {
-    RowOperationsPBDecoder dec(&to_insert_rows,
-                               client_schema.get(),
+  TRACE("Projecting inserts");
+  // Now that the schema is fixed, we can project the operations into that schema.
+  vector<DecodedRowOperation> decoded_ops;
+  if (ops_pb.rows().size() > 0) {
+    RowOperationsPBDecoder dec(&ops_pb,
+                               &client_schema,
                                tablet->schema_ptr(),
                                tx_ctx->arena());
-    Status s = dec.DecodeOperations(&to_insert);
+    Status s = dec.DecodeOperations(&decoded_ops);
     if (!s.ok()) {
+      // TODO: is MISMATCHED_SCHEMA always right here? probably not.
       tx_ctx->completion_callback()->set_error(s,
                                                TabletServerErrorPB::MISMATCHED_SCHEMA);
       return s;
     }
   }
 
-  // Taking schema_ptr here is safe because we know that the schema won't change,
-  // due to the lock above.
-  DeltaProjector delta_projector(mutates_client_schema.get(), tablet->schema_ptr());
-  if (to_mutate.size() > 0 && !delta_projector.is_identity()) {
-    Status s = tablet->schema().VerifyProjectionCompatibility(*mutates_client_schema);
-    if (!s.ok()) {
-      tx_ctx->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
-
-    s = mutates_client_schema->GetProjectionMapping(tablet->schema(), &delta_projector);
-    if (!s.ok()) {
-      tx_ctx->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
-      return s;
-    }
-  }
-
   // Now acquire row locks and prepare everything for apply
-  TRACE("PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
-        to_insert.size(), to_mutate.size());
-  BOOST_FOREACH(const DecodedRowOperation& op, to_insert) {
-    // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
-    // old API that has a Mutate method that receives the row as a reference.
-    // TODO: allocating ConstContiguousRow is kind of a waste since it is just
-    // a {schema, ptr} pair itself and probably cheaper to copy around.
-    ConstContiguousRow *row = tx_ctx->AddToAutoReleasePool(
-      new ConstContiguousRow(*tablet->schema_ptr(), op.row_data));
+  TRACE("PREPARE: Running prepare for $0 operations", decoded_ops.size());
+  BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
     gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx, row, &row_write));
+
+    switch (op.type) {
+      case RowOperationsPB::INSERT:
+      {
+        // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
+        // old API that has a Mutate method that receives the row as a reference.
+        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+        // a {schema, ptr} pair itself and probably cheaper to copy around.
+        ConstContiguousRow *row = tx_ctx->AddToAutoReleasePool(
+          new ConstContiguousRow(*tablet->schema_ptr(), op.row_data));
+        RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx, row, &row_write));
+        break;
+      }
+      case RowOperationsPB::UPDATE:
+      case RowOperationsPB::DELETE:
+      {
+        const uint8_t* row_key_ptr = op.row_data;
+        const RowChangeList& mutation = op.changelist;
+
+        // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
+        // old API that has a Mutate method that receives the row as a reference.
+        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+        // a {schema, ptr} pair itself and probably cheaper to copy around.
+        ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
+        row_key = tx_ctx->AddToAutoReleasePool(row_key);
+        RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx, row_key, mutation, &row_write));
+        break;
+      }
+      default:
+        LOG(FATAL) << "Bad type: " << op.type;
+    }
+
     tx_ctx->add_prepared_row(row_write.Pass());
-  }
-
-  int i = 0;
-  BOOST_FOREACH(const uint8_t* row_key_ptr, to_mutate) {
-    // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
-    // old API that has a Mutate method that receives the row as a reference.
-    ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
-    row_key = tx_ctx->AddToAutoReleasePool(row_key);
-
-    const RowChangeList* mutation = ProjectMutation(tx_ctx, delta_projector, mutations[i]);
-
-    gscoped_ptr<PreparedRowWrite> row_write;
-    RETURN_NOT_OK(tablet->CreatePreparedMutate(tx_ctx, row_key, mutation, &row_write));
-    tx_ctx->add_prepared_row(row_write.Pass());
-    ++i;
   }
 
   return Status::OK();
 }
 
+// TODO: remove when the old Tablet::Insert(uint8_t*) is dead.
 const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
                                               const Schema* tablet_schema,
                                               const RowProjector& row_projector,
@@ -171,20 +118,19 @@ const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
   return tx_ctx->AddToAutoReleasePool(row);
 }
 
-const RowChangeList* ProjectMutation(WriteTransactionContext *tx_ctx,
-                                     const DeltaProjector& delta_projector,
-                                     const RowChangeList *user_mutation) {
-  const RowChangeList* mutation;
+// TODO: remove when the old Tablet::Mutate() is dead.
+RowChangeList ProjectMutation(WriteTransactionContext *tx_ctx,
+                              const DeltaProjector& delta_projector,
+                              const RowChangeList &user_mutation) {
   if (delta_projector.is_identity()) {
-    mutation = user_mutation;
+    return user_mutation;
   } else {
     faststring rclbuf;
-    CHECK_OK(RowChangeListDecoder::ProjectUpdate(delta_projector, *user_mutation, &rclbuf));
-    mutation = new RowChangeList(rclbuf);
+    CHECK_OK(RowChangeListDecoder::ProjectUpdate(delta_projector, user_mutation, &rclbuf));
+    RowChangeList mutation(rclbuf);
     tx_ctx->AddToAutoReleasePool(rclbuf.release());
-    tx_ctx->AddToAutoReleasePool(mutation);
+    return mutation;
   }
-  return mutation;
 }
 
 }  // namespace tablet

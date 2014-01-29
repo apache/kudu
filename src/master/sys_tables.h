@@ -110,6 +110,9 @@ class SysTabletsTable : public SysTable {
   DISALLOW_COPY_AND_ASSIGN(SysTabletsTable);
 
   Status VisitTabletFromRow(const RowBlockRow& row, Visitor *visitor);
+  Status AddTabletsToPB(const std::vector<TabletInfo*>& tablets,
+                        RowOperationsPB::Type op_type,
+                        RowOperationsPB* ops) const;
 };
 
 // The "sys.tables" table is the table that contains the table schema and other

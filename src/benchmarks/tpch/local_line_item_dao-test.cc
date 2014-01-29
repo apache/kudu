@@ -87,42 +87,4 @@ TEST_F(LocalLineItemDAOTest, TestInsert) {
   ASSERT_EQ(26, CountRows());
 }
 
-// FIXME: Something is wrong with this test.
-TEST_F(LocalLineItemDAOTest, DISABLED_TestUpdate) {
-  PartialRow row(&schema_);
-  BuildTestRow(1, 1, &row);
-  dao_->WriteLine(row);
-  dao_->FinishWriting();
-
-  RowBuilder rb(schema_.CreateKeyProjection());
-  rb.AddUint32(1);
-  rb.AddUint32(1);
-  faststring mutations;
-  RowChangeListEncoder encoder(schema_, &mutations);
-  int new_val = 2;
-  encoder.AddColumnUpdate(2, &new_val);
-  dao_->MutateLine(rb.row(), mutations);
-  dao_->FinishWriting();
-
-  const uint32_t rowid = 1;
-  SimpleConstCell c(schema_.column_by_id(1), &rowid);
-  ColumnRangePredicate pred(schema_.column_by_id(1),
-                            boost::optional<const void*>(&c),
-                            boost::optional<const void*>(&c));
-  ScanSpec spec;
-  spec.AddPredicate(pred);
-  dao_->OpenScanner(schema_, &spec);
-  while (dao_->HasMore()) {
-    LOG(INFO) << "Seen a row";
-    gscoped_ptr<Arena> arena(new Arena(256*1000, 256*1000*1000));
-    RowBlock rows(schema_, 1000, arena.get());
-    dao_->GetNext(&rows);
-    for (size_t i = 0; i < rows.nrows(); i++) {
-      RowBlockRow row = rows.row(i);
-      uint32_t l_quantity = *schema_.ExtractColumnFromRow<UINT32>(row, 2);
-      ASSERT_EQ(new_val, l_quantity);
-    }
-  }
-}
-
 } // namespace kudu

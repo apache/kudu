@@ -105,13 +105,11 @@ static void UpdateThread(Demo *demo) {
     // 4. Do the update
     VLOG(1) << "updating " << l_ordernumber << " " << l_linenumber << " "
             << l_quantity << " " << new_l_quantity;
-    RowBuilder rb(full_schema.CreateKeyProjection());
-    rb.AddUint32(l_ordernumber);
-    rb.AddUint32(l_linenumber);
-    faststring mutations;
-    RowChangeListEncoder encoder(full_schema, &mutations);
-    encoder.AddColumnUpdate(4, &new_l_quantity);
-    dao->MutateLine(rb.row(), mutations);
+    PartialRow update(&full_schema);
+    CHECK_OK(update.SetUInt32(tpch::kOrderKeyColIdx, l_ordernumber));
+    CHECK_OK(update.SetUInt32(tpch::kLineNumberColIdx, l_linenumber));
+    CHECK_OK(update.SetUInt32(tpch::kQuantityColIdx, new_l_quantity));
+    dao->MutateLine(update);
   }
 }
 

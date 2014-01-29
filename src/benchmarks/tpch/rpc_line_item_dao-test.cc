@@ -103,14 +103,11 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   dao_->WriteLine(row);
   dao_->FinishWriting();
 
-  RowBuilder rb(schema_.CreateKeyProjection());
-  rb.AddUint32(1);
-  rb.AddUint32(1);
-  faststring mutations;
-  RowChangeListEncoder encoder(schema_, &mutations);
-  int new_val = 2;
-  encoder.AddColumnUpdate(2, &new_val);
-  dao_->MutateLine(rb.row(), mutations);
+  PartialRow update(&schema_);
+  ASSERT_STATUS_OK(update.SetUInt32(tpch::kOrderKeyColIdx, 1));
+  ASSERT_STATUS_OK(update.SetUInt32(tpch::kLineNumberColIdx, 1));
+  ASSERT_STATUS_OK(update.SetUInt32(tpch::kQuantityColIdx, 12345));
+  dao_->MutateLine(update);
   dao_->FinishWriting();
 
   ColumnRangePredicatePB pred;
@@ -120,8 +117,8 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
     dao_->GetNext(&rows);
     BOOST_FOREACH(const uint8_t* row_ptr, rows) {
       ConstContiguousRow row(schema_, row_ptr);
-      uint32_t l_quantity = *schema_.ExtractColumnFromRow<UINT32>(row, 2);
-      ASSERT_EQ(new_val, l_quantity);
+      uint32_t l_quantity = *schema_.ExtractColumnFromRow<UINT32>(row, tpch::kQuantityColIdx);
+      ASSERT_EQ(12345, l_quantity);
     }
   }
 }
