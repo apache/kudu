@@ -9,6 +9,7 @@
 
 #include "common/partial_row.h"
 #include "common/row_changelist.h"
+#include "common/row_operations.h"
 #include "common/wire_protocol.h"
 #include "consensus/log.h"
 #include "consensus/log_reader.h"
@@ -857,7 +858,7 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
 
 Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                                        const SchemaPB& schema_pb,
-                                       const RowOperationsPB& rows,
+                                       const RowOperationsPB& ops_pb,
                                        const TxResultPB& result,
                                        const OpId& committed_op_id,
                                        int32_t* last_insert_op_idx) {
@@ -867,7 +868,7 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                         "Couldn't decode client schema");
 
 
-  vector<uint8_t*> row_block;
+
 
   // TODO: this makes a needless copy here, even though we know that we won't
   // have concurrent schema change. However, we can't use schema_ptr since we don't
@@ -875,12 +876,14 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
   Schema tablet_schema(tablet_->schema());
 
   arena_.Reset();
-  RETURN_NOT_OK_PREPEND(PartialRow::DecodeAndProject(
-                          rows, inserts_schema, tablet_schema, &row_block, &arena_),
-                        Substitute("Could not decode block: $0", rows.ShortDebugString()));
+  vector<DecodedRowOperation> decoded_ops;
+  RowOperationsPBDecoder dec(&ops_pb, &inserts_schema, &tablet_schema, &arena_);
+  RETURN_NOT_OK_PREPEND(dec.DecodeOperations(&decoded_ops),
+                        Substitute("Could not decode row operations: $0",
+                                   ops_pb.ShortDebugString()));
 
   int32_t insert_idx = 0;
-  BOOST_FOREACH(const uint8_t* row_ptr, row_block) {
+  BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
     TxOperationPB op_result = result.inserts(insert_idx++);
     // check if the insert failed in the original transaction
     if (PREDICT_FALSE(op_result.has_failed_status())) {
@@ -915,7 +918,7 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
     tx_ctx->set_component_lock(component_lock.Pass());
 
     const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(
-      new ConstContiguousRow(*tablet_->schema_ptr(), row_ptr));
+      new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
 
     gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
     gscoped_ptr<PreparedRowWrite> prepared_row;

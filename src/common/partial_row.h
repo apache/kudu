@@ -130,63 +130,6 @@ class PartialRow {
 
   std::string ToString() const;
 
-  //------------------------------------------------------------
-  // Serialization/deserialization support
-  //------------------------------------------------------------
-
-  // Append this partial row to the given protobuf.
-  void AppendToPB(RowOperationsPB::Type op_type, RowOperationsPB* pb) const;
-
-  // Parse this partial row out of the given protobuf.
-  // 'offset' is the offset within the 'rows' field at which
-  // to begin parsing.
-  //
-  // NOTE: any string fields in this PartialRow will continue to reference
-  // the protobuf data, so the protobuf must remain valid.
-  //
-  // TODO: instead of 'type' being an out-parameter, we should probably rename
-  // PartialRow entirely to RowOperation and set it as a member!
-  // TODO: in fact, this method seems to only be used from tests - kill it?
-  Status CopyFromPB(const RowOperationsPB& pb, int offset,
-                    RowOperationsPB::Type* type);
-
-  // Decode the given protobuf, which contains rows according to 'client_schema'.
-  // As they are decoded, they are projected into 'tablet_schema', filling in any
-  // default values, handling NULLs, etc. The resulting rows are pushed onto
-  // '*rows', with their storage allocated from 'dst_arena'.
-  static Status DecodeAndProject(const RowOperationsPB& pb,
-                                 const Schema& client_schema,
-                                 const Schema& tablet_schema,
-                                 std::vector<uint8_t*>* rows,
-                                 Arena* dst_arena);
-
-  // Decode the given protobuf, which contains rows according to 'client_schema'.
-  // The encoded rows represent updates -- they must each contain all of the key
-  // columns. Any further columns that they contain are decoded as updates,
-  // and a RowChangeList is allocated with the updated columns.
-  // The row keys are made contiguous and returned in row_keys.
-  // The resulting 'row_keys' and 'changelists' lists will be exactly the same length.
-  // All allocations are done out of 'dst_arena'.
-  // TODO: change the output vectors to be a vector of structs?
-  static Status DecodeAndProjectUpdates(const RowOperationsPB& pb,
-                                        const Schema& client_schema,
-                                        const Schema& tablet_schema,
-                                        std::vector<uint8_t*>* row_keys,
-                                        std::vector<RowChangeList>* changelists,
-                                        Arena* dst_arena);
-
-  // Similar to the above, but for deletes.
-  // Each row should have all of its key columns set, and none of its non-key-columns.
-  // 'row_keys' is appended to with the decoded keys, and changelists is appended
-  // to with "DELETE" changelists, one for each row. The keys are allocated out of
-  // 'dst_arena'.
-  static Status DecodeAndProjectDeletes(const RowOperationsPB& pb,
-                                        const Schema& client_schema,
-                                        const Schema& tablet_schema,
-                                        std::vector<uint8_t*>* row_keys,
-                                        std::vector<RowChangeList>* changelists,
-                                        Arena* dst_arena);
-
 
   const Schema* schema() const { return schema_; }
 
@@ -201,6 +144,8 @@ class PartialRow {
   }
 
  private:
+  friend class RowOperationsPBEncoder;
+
   template<DataType TYPE>
   Status Set(const Slice& col_name,
              const typename DataTypeTraits<TYPE>::cpp_type& val,

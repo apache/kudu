@@ -22,6 +22,7 @@ set(COMMON_SRCS
   partial_row.cc
   rowblock.cc
   row_changelist.cc
+  row_operations.cc
   wire_protocol.cc
   scan_predicate.cc
   predicate_encoder.cc
@@ -46,3 +47,4 @@ ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(wire_protocol-test)
 ADD_KUDU_TEST(predicate_encoder-test)
 ADD_KUDU_TEST(partial_row-test)
+ADD_KUDU_TEST(row_operations-test)

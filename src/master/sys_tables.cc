@@ -8,6 +8,7 @@
 
 #include "common/schema.h"
 #include "common/partial_row.h"
+#include "common/row_operations.h"
 #include "common/wire_protocol.h"
 #include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/substitute.h"
@@ -244,7 +245,8 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
       row.SetString(kSysTabletsColTableId, tablet->table()->id());
       row.SetString(kSysTabletsColTabletId, tablet->tablet_id());
       row.SetString(kSysTabletsColMetadata, metadata_buf);
-      row.AppendToPB(RowOperationsPB::INSERT, data);
+      RowOperationsPBEncoder enc(data);
+      enc.Add(RowOperationsPB::INSERT, row);
     }
   }
 
@@ -386,7 +388,8 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
   PartialRow row(&schema_);
   row.SetString(kSysTablesColTableId, table->id());
   row.SetString(kSysTablesColMetadata, metadata_buf);
-  row.AppendToPB(RowOperationsPB::INSERT, data);
+  RowOperationsPBEncoder enc(data);
+  enc.Add(RowOperationsPB::INSERT, row);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();

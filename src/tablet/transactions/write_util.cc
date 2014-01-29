@@ -5,6 +5,7 @@
 #include "common/partial_row.h"
 #include "common/wire_protocol.h"
 #include "common/row_changelist.h"
+#include "common/row_operations.h"
 #include "common/row.h"
 #include "common/schema.h"
 #include "consensus/consensus.pb.h"
@@ -87,13 +88,13 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
 
 
   // Now that the schema is fixed, we can project the inserts into that schema.
-  vector<uint8_t *> to_insert;
+  vector<DecodedRowOperation> to_insert;
   if (to_insert_rows.rows().size() > 0) {
-    Status s = PartialRow::DecodeAndProject(to_insert_rows,
-                                            *client_schema,
-                                            *tablet->schema_ptr(),
-                                            &to_insert,
-                                            tx_ctx->arena());
+    RowOperationsPBDecoder dec(&to_insert_rows,
+                               client_schema.get(),
+                               tablet->schema_ptr(),
+                               tx_ctx->arena());
+    Status s = dec.DecodeOperations(&to_insert);
     if (!s.ok()) {
       tx_ctx->completion_callback()->set_error(s,
                                                TabletServerErrorPB::MISMATCHED_SCHEMA);
@@ -121,13 +122,13 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
   // Now acquire row locks and prepare everything for apply
   TRACE("PREPARE: Acquiring row locks ($0 insertions, $1 mutations)",
         to_insert.size(), to_mutate.size());
-  BOOST_FOREACH(const uint8_t* row_ptr, to_insert) {
+  BOOST_FOREACH(const DecodedRowOperation& op, to_insert) {
     // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
     // old API that has a Mutate method that receives the row as a reference.
     // TODO: allocating ConstContiguousRow is kind of a waste since it is just
     // a {schema, ptr} pair itself and probably cheaper to copy around.
     ConstContiguousRow *row = tx_ctx->AddToAutoReleasePool(
-      new ConstContiguousRow(*tablet->schema_ptr(), row_ptr));
+      new ConstContiguousRow(*tablet->schema_ptr(), op.row_data));
     gscoped_ptr<PreparedRowWrite> row_write;
     RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx, row, &row_write));
     tx_ctx->add_prepared_row(row_write.Pass());

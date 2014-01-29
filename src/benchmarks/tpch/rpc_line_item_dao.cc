@@ -10,9 +10,10 @@
 #include "gutil/map-util.h"
 
 #include "client/client.h"
+#include "common/row.h"
+#include "common/row_operations.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
-#include "common/row.h"
 #include "common/wire_protocol.h"
 #include "tserver/tserver_service.proxy.h"
 #include "util/status.h"
@@ -52,7 +53,8 @@ void RpcLineItemDAO::WriteLine(const PartialRow& row) {
   if (!ShouldAddKey(row.as_contiguous_row())) return;
 
   RowOperationsPB* data = request_.mutable_to_insert_rows();
-  row.AppendToPB(RowOperationsPB::INSERT, data);
+  RowOperationsPBEncoder enc(data);
+  enc.Add(RowOperationsPB::INSERT, row);
   num_pending_rows_++;
   DoWriteAsync();
   ApplyBackpressure();

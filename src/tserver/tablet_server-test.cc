@@ -398,7 +398,8 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     row.SetUInt32("int_val", 5678);
     row.SetStringCopy("string_val", "hello world via RPC");
     row.SetUInt32("col_doesnt_exist", 91011);
-    row.AppendToPB(RowOperationsPB::INSERT, data);
+    RowOperationsPBEncoder enc(data);
+    enc.Add(RowOperationsPB::INSERT, row);
 
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));

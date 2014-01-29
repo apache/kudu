@@ -10,6 +10,7 @@
 #include "common/partial_row.h"
 #include "common/row.h"
 #include "common/row_changelist.h"
+#include "common/row_operations.h"
 
 namespace kudu {
 
@@ -25,12 +26,13 @@ void AddTestRowToPB(const Schema& schema,
                     uint32_t key,
                     uint32_t int_val,
                     const string& string_val,
-                    RowOperationsPB* block) {
+                    RowOperationsPB* ops) {
   PartialRow row(&schema);
   row.SetUInt32("key", key);
   row.SetUInt32("int_val", int_val);
   row.SetStringCopy("string_val", string_val);
-  row.AppendToPB(RowOperationsPB::INSERT, block);
+  RowOperationsPBEncoder enc(ops);
+  enc.Add(RowOperationsPB::INSERT, row);
 }
 
 void AddTestKeyToBlock(const Schema& key_schema,

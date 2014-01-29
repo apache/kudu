@@ -14,6 +14,7 @@
 #include "client/client.h"
 #include "client/error_collector.h"
 #include "client/meta_cache.h"
+#include "common/row_operations.h"
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
@@ -581,8 +582,9 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     RowOperationsPB* to_insert = req.mutable_to_insert_rows();
 
     // Add the rows
+    RowOperationsPBEncoder enc(to_insert);
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      op->insert->row().AppendToPB(RowOperationsPB::INSERT, to_insert);
+      enc.Add(RowOperationsPB::INSERT, op->insert->row());
 
       // Set the state now, even though we haven't yet sent it -- at this point
       // there is no return, and we're definitely going to send it. If we waited
