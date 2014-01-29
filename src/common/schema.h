@@ -384,19 +384,16 @@ class Schema {
   template<class RowType>
   string DebugRow(const RowType& row) const {
     DCHECK_SCHEMA_EQ(*this, row.schema());
+    return DebugRowColumns(row, num_columns());
+  }
 
-    string ret;
-    ret.append("(");
-
-    for (size_t col_idx = 0; col_idx < num_columns(); col_idx++) {
-      if (col_idx > 0) {
-        ret.append(", ");
-      }
-      const ColumnSchema& col = cols_[col_idx];
-      col.DebugCellAppend(row.cell(col_idx), &ret);
-    }
-    ret.append(")");
-    return ret;
+  // Stringify teh given row, which must have a schema which is
+  // key-compatible with this one. Per above, this is not for use in
+  // hot paths.
+  template<class RowType>
+  string DebugRowKey(const RowType& row) const {
+    DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, row.schema());
+    return DebugRowColumns(row, num_key_columns());
   }
 
   // Compare two rows of this schema.
@@ -578,6 +575,25 @@ class Schema {
   }
 
  private:
+
+  // Return a stringified version of the first 'num_columns' columns of the
+  // row.
+  template<class RowType>
+  std::string DebugRowColumns(const RowType& row, int num_columns) const {
+    string ret;
+    ret.append("(");
+
+    for (size_t col_idx = 0; col_idx < num_columns; col_idx++) {
+      if (col_idx > 0) {
+        ret.append(", ");
+      }
+      const ColumnSchema& col = cols_[col_idx];
+      col.DebugCellAppend(row.cell(col_idx), &ret);
+    }
+    ret.append(")");
+    return ret;
+  }
+
   friend class SchemaBuilder;
 
   vector<ColumnSchema> cols_;

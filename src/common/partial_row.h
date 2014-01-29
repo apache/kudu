@@ -14,8 +14,9 @@
 namespace kudu {
 
 class Arena;
-class Schema;
 class PartialRowsPB;
+class RowChangeList;
+class Schema;
 
 // A row which may only contain values for a subset of the columns.
 // This type contains a normal contiguous row, plus a bitfield indicating
@@ -153,6 +154,20 @@ class PartialRow {
                                  const Schema& tablet_schema,
                                  std::vector<uint8_t*>* rows,
                                  Arena* dst_arena);
+
+  // Decode the given protobuf, which contains rows according to 'client_schema'.
+  // The encoded rows represent updates -- they must each contain all of the key
+  // columns. Any further columns that they contain are decoded as updates,
+  // and a RowChangeList is allocated with the updated columns.
+  // The row keys are made contiguous and returned in row_keys.
+  // The resulting 'row_keys' and 'changelists' lists will be exactly the same length.
+  // All allocations are done out of 'dst_arena'.
+  static Status DecodeAndProjectUpdates(const PartialRowsPB& pb,
+                                        const Schema& client_schema,
+                                        const Schema& tablet_schema,
+                                        std::vector<uint8_t*>* row_keys,
+                                        std::vector<RowChangeList>* changelists,
+                                        Arena* dst_arena);
 
   const Schema* schema() const { return schema_; }
 

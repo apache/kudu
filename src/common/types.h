@@ -13,6 +13,10 @@
 
 namespace kudu {
 
+// The size of the in-memory format of the largest
+// type we support.
+const int kLargestTypeSize = sizeof(Slice);
+
 using std::string;
 class TypeInfo;
 
