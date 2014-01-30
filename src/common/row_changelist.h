@@ -43,6 +43,13 @@ class RowChangeList {
     : encoded_data_(s) {
   }
 
+  // Create a RowChangeList which represents a delete.
+  // This points to static (const) memory and should not be
+  // mutated or freed.
+  static RowChangeList CreateDelete() {
+    return RowChangeList(Slice("\x02"));
+  }
+
   const Slice &slice() const { return encoded_data_; }
 
   // Return a string form of this changelist.

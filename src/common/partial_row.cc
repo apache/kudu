@@ -860,4 +860,92 @@ Status PartialRow::DecodeAndProjectUpdates(
   return Status::OK();
 }
 
+// TODO: share more code with above two methods
+Status PartialRow::DecodeAndProjectDeletes(
+    const PartialRowsPB& pb,
+    const Schema& client_schema,
+    const Schema& tablet_schema,
+    std::vector<uint8_t*>* row_keys,
+    std::vector<RowChangeList>* changelists,
+    Arena* dst_arena) {
+  CHECK(!client_schema.has_column_ids());
+  DCHECK(tablet_schema.has_column_ids());
+
+  // TODO(perf): in the server, we do this for the updates and the inserts
+  // separately, but we could do it just once.
+  ClientServerMapping mapping(&client_schema, &tablet_schema);
+  RETURN_NOT_OK(client_schema.GetProjectionMapping(tablet_schema, &mapping));
+  DCHECK_EQ(mapping.num_mapped(), client_schema.num_columns());
+
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(client_schema, tablet_schema);
+  int rowkey_size = tablet_schema.key_byte_size();
+
+  PBDecoder decoder(&client_schema, &pb);
+  uint8_t client_isset_map[decoder.bitmap_size()];
+  uint8_t client_null_map[decoder.bitmap_size()];
+  memset(client_null_map, 0, decoder.bitmap_size());
+
+  while (decoder.has_next()) {
+    // Read the null and isset bitmaps for the client-provided row into
+    // our stack storage.
+    RETURN_NOT_OK(decoder.ReadIssetBitmap(client_isset_map));
+    if (client_schema.has_nullables()) {
+      RETURN_NOT_OK(decoder.ReadNullBitmap(client_null_map));
+    }
+
+    // Allocate space for the row key.
+    uint8_t* rowkey_storage = reinterpret_cast<uint8_t*>(
+      dst_arena->AllocateBytesAligned(rowkey_size, 8));
+    if (PREDICT_FALSE(!rowkey_storage)) {
+      return Status::RuntimeError("Out of memory");
+    }
+
+    // We're passing the full schema instead of the key schema here.
+    // That's OK because the keys come at the bottom. We lose some bounds
+    // checking in debug builds, but it avoids an extra copy of the key schema.
+    ContiguousRow rowkey(tablet_schema, rowkey_storage);
+
+    // First process the key columns.
+    int client_col_idx = 0;
+    for (; client_col_idx < client_schema.num_key_columns(); client_col_idx++) {
+      // Look up the corresponding column from the tablet. We use the server-side
+      // ColumnSchema object since it has the most up-to-date default, nullability,
+      // etc.
+      DCHECK_EQ(mapping.client_to_tablet_idx(client_col_idx),
+                client_col_idx) << "key columns should match";
+      int tablet_col_idx = client_col_idx;
+
+      const ColumnSchema& col = tablet_schema.column(tablet_col_idx);
+      if (PREDICT_FALSE(!BitmapTest(client_isset_map, client_col_idx))) {
+        return Status::InvalidArgument("No value provided for key column",
+                                       col.ToString());
+      }
+
+      bool client_set_to_null = BitmapTest(client_null_map, client_col_idx);
+      if (PREDICT_FALSE(client_set_to_null)) {
+        return Status::InvalidArgument("NULL values not allowed for key column",
+                                       col.ToString());
+      }
+
+      RETURN_NOT_OK(decoder.ReadColumn(col, rowkey.mutable_cell_ptr(tablet_col_idx)));
+    }
+
+    // Ensure that no other columns are set.
+    for (; client_col_idx < client_schema.num_columns(); client_col_idx++) {
+      if (BitmapTest(client_isset_map, client_col_idx)) {
+        int tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
+        DCHECK_GE(tablet_col_idx, 0);
+        const ColumnSchema& col = tablet_schema.column(tablet_col_idx);
+
+        return Status::InvalidArgument("DELETE should not have a value for column",
+                                       col.ToString());
+      }
+    }
+
+    changelists->push_back(RowChangeList::CreateDelete());
+    row_keys->push_back(rowkey_storage);
+  }
+  return Status::OK();
+}
+
 } // namespace kudu

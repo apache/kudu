@@ -207,17 +207,33 @@ string TestProjection(const PartialRow& client_row,
   return server_schema.DebugRow(ContiguousRow(server_schema, rows[0]));;
 }
 
-string TestUpdateProjection(const PartialRow& client_row,
-                            const Schema& server_schema) {
+enum OpType {
+  UPDATE,
+  DELETE
+};
+
+string TestMutateProjection(const PartialRow& client_row,
+                            const Schema& server_schema,
+                            OpType type) {
   Arena arena(1024, 1024*1024);
   vector<RowChangeList> rcls;
   vector<uint8_t*> row_keys;
   PartialRowsPB pb;
   client_row.AppendToPB(&pb);
 
-  Status s = PartialRow::DecodeAndProjectUpdates(pb, *client_row.schema(),
-                                                 server_schema, &row_keys, &rcls,
-                                                 &arena);
+  Status s;
+  if (type == UPDATE) {
+    s = PartialRow::DecodeAndProjectUpdates(pb, *client_row.schema(),
+                                            server_schema, &row_keys, &rcls,
+                                            &arena);
+  } else if (type == DELETE) {
+    s = PartialRow::DecodeAndProjectDeletes(pb, *client_row.schema(),
+                                            server_schema, &row_keys, &rcls,
+                                            &arena);
+  } else {
+    LOG(FATAL);
+  }
+
   if (!s.ok()) {
     return "error: " + s.ToString();
   }
@@ -402,28 +418,28 @@ TEST_F(PartialRowTest, TestProjectUpdates) {
   // Check without specifying any columns
   PartialRow client_row(&client_schema);
   EXPECT_EQ("error: Invalid argument: No value provided for key column: key[uint32 NOT NULL]",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 
   // Specify the key and no columns to update
   ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
   EXPECT_EQ("error: Invalid argument: No fields updated, key is: (uint32 key=12345)",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 
 
   // Specify the key and update one column.
   ASSERT_STATUS_OK(client_row.SetUInt32("int_val", 12345));
   EXPECT_EQ("key: (uint32 key=12345) update: SET int_val=12345",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 
   // Specify the key and update both columns
   ASSERT_STATUS_OK(client_row.SetString("string_val", "foo"));
   EXPECT_EQ("key: (uint32 key=12345) update: SET int_val=12345, string_val=foo",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 
   // Update the nullable column to null.
   ASSERT_STATUS_OK(client_row.SetNull("string_val"));
   EXPECT_EQ("key: (uint32 key=12345) update: SET int_val=12345, string_val=NULL",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 }
 
 // Client schema has the columns in a different order. Makes
@@ -445,7 +461,7 @@ TEST_F(PartialRowTest, TestProjectUpdatesReorderedColumns) {
   ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
   ASSERT_STATUS_OK(client_row.SetUInt32("int_val", 54321));
   EXPECT_EQ("key: (uint32 key=12345) update: SET int_val=54321",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 }
 
 // Client schema is missing one of the columns in the server schema.
@@ -466,7 +482,7 @@ TEST_F(PartialRowTest, TestProjectUpdatesSubsetOfColumns) {
   ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
   ASSERT_STATUS_OK(client_row.SetString("string_val", "foo"));
   EXPECT_EQ("key: (uint32 key=12345) update: SET string_val=foo",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
 }
 
 TEST_F(PartialRowTest, TestClientMismatchedType) {
@@ -485,7 +501,37 @@ TEST_F(PartialRowTest, TestClientMismatchedType) {
   ASSERT_STATUS_OK(client_row.SetUInt8("int_val", 1));
   EXPECT_EQ("error: Invalid argument: The column 'int_val' must have type "
             "uint32 NOT NULL found uint8 NOT NULL",
-            TestUpdateProjection(client_row, server_schema));
+            TestMutateProjection(client_row, server_schema, UPDATE));
+}
+
+TEST_F(PartialRowTest, TestProjectDeletes) {
+  Schema client_schema(boost::assign::list_of
+                       (ColumnSchema("key", UINT32))
+                       (ColumnSchema("key_2", UINT32))
+                       (ColumnSchema("string_val", STRING, true)),
+                       2);
+  Schema server_schema = SchemaBuilder(client_schema).Build();
+
+  PartialRow client_row(&client_schema);
+  // No columns set
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[uint32 NOT NULL]",
+            TestMutateProjection(client_row, server_schema, DELETE));
+
+  // Only half the key set
+  ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2[uint32 NOT NULL]",
+            TestMutateProjection(client_row, server_schema, DELETE));
+
+  // Whole key set (correct)
+  ASSERT_STATUS_OK(client_row.SetUInt32("key_2", 54321));
+  EXPECT_EQ("key: (uint32 key=12345, uint32 key_2=54321) update: DELETE",
+            TestMutateProjection(client_row, server_schema, DELETE));
+
+  // Extra column set (incorrect)
+  ASSERT_STATUS_OK(client_row.SetString("string_val", "hello"));
+  EXPECT_EQ("error: Invalid argument: DELETE should not have a value for column: "
+            "string_val[string NULLABLE]",
+            TestMutateProjection(client_row, server_schema, DELETE));
 }
 
 } // namespace kudu

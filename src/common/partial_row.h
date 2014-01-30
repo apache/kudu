@@ -162,12 +162,26 @@ class PartialRow {
   // The row keys are made contiguous and returned in row_keys.
   // The resulting 'row_keys' and 'changelists' lists will be exactly the same length.
   // All allocations are done out of 'dst_arena'.
+  // TODO: change the output vectors to be a vector of structs?
   static Status DecodeAndProjectUpdates(const PartialRowsPB& pb,
                                         const Schema& client_schema,
                                         const Schema& tablet_schema,
                                         std::vector<uint8_t*>* row_keys,
                                         std::vector<RowChangeList>* changelists,
                                         Arena* dst_arena);
+
+  // Similar to the above, but for deletes.
+  // Each row should have all of its key columns set, and none of its non-key-columns.
+  // 'row_keys' is appended to with the decoded keys, and changelists is appended
+  // to with "DELETE" changelists, one for each row. The keys are allocated out of
+  // 'dst_arena'.
+  static Status DecodeAndProjectDeletes(const PartialRowsPB& pb,
+                                        const Schema& client_schema,
+                                        const Schema& tablet_schema,
+                                        std::vector<uint8_t*>* row_keys,
+                                        std::vector<RowChangeList>* changelists,
+                                        Arena* dst_arena);
+
 
   const Schema* schema() const { return schema_; }
 
