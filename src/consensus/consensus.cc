@@ -18,11 +18,10 @@ ConsensusContext::ConsensusContext(Consensus* consensus,
       commit_callback_(commit_callback) {
 }
 
-void ConsensusContext::Commit(gscoped_ptr<CommitMsg> commit) {
+Status ConsensusContext::Commit(gscoped_ptr<CommitMsg> commit) {
   commit->mutable_commited_op_id()->CopyFrom(replicate_msg_->id());
   commit_msg_.reset(commit.release());
-  // TODO(dralves): should this method return Status? CHECK_OK seems wrong here:
-  CHECK_OK(consensus_->Commit(this, commit_msg_.get()))
+  return consensus_->Commit(this, commit_msg_.get());
 }
 
 } // namespace consensus

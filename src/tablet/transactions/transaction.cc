@@ -139,7 +139,10 @@ void LeaderTransaction::HandlePrepareFailure() {
 
   // ConsensusContext will own this pointer and dispose of it when it is no longer
   // required.
-  tx_ctx()->consensus_ctx()->Commit(commit.Pass());
+  Status s = tx_ctx()->consensus_ctx()->Commit(commit.Pass());
+  if (!s.ok()) {
+    LOG(ERROR) << "Could not commit transaction abort message. Status: " << s.ToString();
+  }
 }
 
 void LeaderTransaction::ApplySucceeded() {

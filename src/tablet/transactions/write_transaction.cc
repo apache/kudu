@@ -162,7 +162,7 @@ Status LeaderWriteTransaction::Apply() {
 
   TRACE("APPLY: finished, triggering COMMIT");
 
-  tx_ctx_->consensus_ctx()->Commit(commit.Pass());
+  RETURN_NOT_OK(tx_ctx_->consensus_ctx()->Commit(commit.Pass()));
   // NB: do not use tx_ctx_ after this point, because the commit may have
   // succeeded, in which case the context may have been torn down.
   return Status::OK();

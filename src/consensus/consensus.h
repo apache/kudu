@@ -177,7 +177,7 @@ class ConsensusContext {
     return replicate_msg_.get();
   }
 
-  void Commit(gscoped_ptr<CommitMsg> commit);
+  Status Commit(gscoped_ptr<CommitMsg> commit);
 
   const std::tr1::shared_ptr<FutureCallback>& commit_callback() {
     return commit_callback_;
