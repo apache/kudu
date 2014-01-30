@@ -28,6 +28,10 @@ class PartialRow {
   explicit PartialRow(const Schema* schema);
   virtual ~PartialRow();
 
+  //------------------------------------------------------------
+  // Setters
+  //------------------------------------------------------------
+
   Status SetInt8(const Slice& col_name, int8_t val);
   Status SetInt16(const Slice& col_name, int16_t val);
   Status SetInt32(const Slice& col_name, int32_t val);
@@ -70,17 +74,64 @@ class PartialRow {
   Status Unset(const Slice& col_name);
   Status Unset(int col_idx);
 
+  //------------------------------------------------------------
+  // Getters
+  //------------------------------------------------------------
+  // These getters return a bad Status if the type does not match,
+  // the value is unset, or the value is NULL. Otherwise they return
+  // the current set value in *val.
+
+  // Return true if the given column has been specified.
+  bool IsColumnSet(const Slice& col_name) const;
+  bool IsColumnSet(int col_idx) const;
+
+  bool IsNull(const Slice& col_name) const;
+  bool IsNull(int col_idx) const;
+
+  Status GetInt8(const Slice& col_name, int8_t* val) const;
+  Status GetInt16(const Slice& col_name, int16_t* val) const;
+  Status GetInt32(const Slice& col_name, int32_t* val) const;
+  Status GetInt64(const Slice& col_name, int64_t* val) const;
+
+  Status GetUInt8(const Slice& col_name, uint8_t* val) const;
+  Status GetUInt16(const Slice& col_name, uint16_t* val) const;
+  Status GetUInt32(const Slice& col_name, uint32_t* val) const;
+  Status GetUInt64(const Slice& col_name, uint64_t* val) const;
+
+  // Same as above getters, but with numeric column indexes.
+  // These are faster since they avoid a hashmap lookup, so should
+  // be preferred in performance-sensitive code.
+  Status GetInt8(int col_idx, int8_t* val) const;
+  Status GetInt16(int col_idx, int16_t* val) const;
+  Status GetInt32(int col_idx, int32_t* val) const;
+  Status GetInt64(int col_idx, int64_t* val) const;
+
+  Status GetUInt8(int col_idx, uint8_t* val) const;
+  Status GetUInt16(int col_idx, uint16_t* val) const;
+  Status GetUInt32(int col_idx, uint32_t* val) const;
+  Status GetUInt64(int col_idx, uint64_t* val) const;
+
+  // Gets the string but does not copy the value. Callers should
+  // copy the resulting Slice if necessary.
+  Status GetString(const Slice& col_name, Slice* val) const;
+  Status GetString(int col_idx, Slice* val) const;
+
+  //------------------------------------------------------------
+  // Utility code
+  //------------------------------------------------------------
+
   // Return true if all of the key columns have been specified
   // for this mutation.
   bool IsKeySet() const;
-
-  // Return true if the given column has been specified.
-  bool IsColumnSet(int col_idx) const;
 
   // Return true if all columns have been specified.
   bool AllColumnsSet() const;
 
   std::string ToString() const;
+
+  //------------------------------------------------------------
+  // Serialization/deserialization support
+  //------------------------------------------------------------
 
   // Append this partial row to the given protobuf.
   void AppendToPB(PartialRowsPB* pb) const;
@@ -125,6 +176,15 @@ class PartialRow {
   Status Set(int col_idx,
              const typename DataTypeTraits<TYPE>::cpp_type& val,
              bool owned = false);
+
+  template<DataType TYPE>
+  Status Get(const Slice& col_name,
+             typename DataTypeTraits<TYPE>::cpp_type* val) const;
+
+  template<DataType TYPE>
+  Status Get(int col_idx,
+             typename DataTypeTraits<TYPE>::cpp_type* val) const;
+
 
   // If the given column is a string whose memory is owned by this instance,
   // deallocates the value.

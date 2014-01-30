@@ -110,6 +110,9 @@ void PartialRow::DeallocateOwnedStrings() {
   }
 }
 
+//------------------------------------------------------------
+// Setters
+//------------------------------------------------------------
 
 Status PartialRow::SetInt8(const Slice& col_name, int8_t val) {
   return Set<INT8>(col_name, val);
@@ -224,19 +227,139 @@ Status PartialRow::Unset(int col_idx) {
   return Status::OK();
 }
 
-bool PartialRow::IsKeySet() const {
-  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns());
-}
-
-bool PartialRow::AllColumnsSet() const {
-  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_columns());
-}
-
+//------------------------------------------------------------
+// Getters
+//------------------------------------------------------------
 bool PartialRow::IsColumnSet(int col_idx) const {
   DCHECK_GE(col_idx, 0);
   DCHECK_LT(col_idx, schema_->num_columns());
   return BitmapTest(isset_bitmap_, col_idx);
 }
+
+bool PartialRow::IsColumnSet(const Slice& col_name) const {
+  int col_idx;
+  CHECK_OK(FindColumn(*schema_, col_name, &col_idx));
+  return IsColumnSet(col_idx);
+}
+
+bool PartialRow::IsNull(int col_idx) const {
+  const ColumnSchema& col = schema_->column(col_idx);
+  if (!col.is_nullable()) {
+    return false;
+  }
+
+  if (!IsColumnSet(col_idx)) return false;
+
+  ContiguousRow row(*schema_, row_data_);
+  return row.is_null(col_idx);
+}
+
+bool PartialRow::IsNull(const Slice& col_name) const {
+  int col_idx;
+  CHECK_OK(FindColumn(*schema_, col_name, &col_idx));
+  return IsNull(col_idx);
+}
+
+Status PartialRow::GetInt8(const Slice& col_name, int8_t* val) const {
+  return Get<INT8>(col_name, val);
+}
+Status PartialRow::GetInt16(const Slice& col_name, int16_t* val) const {
+  return Get<INT16>(col_name, val);
+}
+Status PartialRow::GetInt32(const Slice& col_name, int32_t* val) const {
+  return Get<INT32>(col_name, val);
+}
+Status PartialRow::GetInt64(const Slice& col_name, int64_t* val) const {
+  return Get<INT64>(col_name, val);
+}
+Status PartialRow::GetUInt8(const Slice& col_name, uint8_t* val) const {
+  return Get<UINT8>(col_name, val);
+}
+Status PartialRow::GetUInt16(const Slice& col_name, uint16_t* val) const {
+  return Get<UINT16>(col_name, val);
+}
+Status PartialRow::GetUInt32(const Slice& col_name, uint32_t* val) const {
+  return Get<UINT32>(col_name, val);
+}
+Status PartialRow::GetUInt64(const Slice& col_name, uint64_t* val) const {
+  return Get<UINT64>(col_name, val);
+}
+Status PartialRow::GetString(const Slice& col_name, Slice* val) const {
+  return Get<STRING>(col_name, val);
+}
+
+Status PartialRow::GetInt8(int col_idx, int8_t* val) const {
+  return Get<INT8>(col_idx, val);
+}
+Status PartialRow::GetInt16(int col_idx, int16_t* val) const {
+  return Get<INT16>(col_idx, val);
+}
+Status PartialRow::GetInt32(int col_idx, int32_t* val) const {
+  return Get<INT32>(col_idx, val);
+}
+Status PartialRow::GetInt64(int col_idx, int64_t* val) const {
+  return Get<INT64>(col_idx, val);
+}
+Status PartialRow::GetUInt8(int col_idx, uint8_t* val) const {
+  return Get<UINT8>(col_idx, val);
+}
+Status PartialRow::GetUInt16(int col_idx, uint16_t* val) const {
+  return Get<UINT16>(col_idx, val);
+}
+Status PartialRow::GetUInt32(int col_idx, uint32_t* val) const {
+  return Get<UINT32>(col_idx, val);
+}
+Status PartialRow::GetUInt64(int col_idx, uint64_t* val) const {
+  return Get<UINT64>(col_idx, val);
+}
+Status PartialRow::GetString(int col_idx, Slice* val) const {
+  return Get<STRING>(col_idx, val);
+}
+
+template<DataType TYPE>
+Status PartialRow::Get(const Slice& col_name,
+                       typename DataTypeTraits<TYPE>::cpp_type* val) const {
+  int col_idx;
+  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+return Get<TYPE>(col_idx, val);
+}
+
+template<DataType TYPE>
+Status PartialRow::Get(int col_idx,
+                       typename DataTypeTraits<TYPE>::cpp_type* val) const {
+  const ColumnSchema& col = schema_->column(col_idx);
+  if (PREDICT_FALSE(col.type_info().type() != TYPE)) {
+    // TODO: at some point we could allow type coercion here.
+    return Status::InvalidArgument(
+      Substitute("invalid type $0 provided for column '$1' (expected $2)",
+                 DataTypeTraits<TYPE>::name(),
+                 col.name(), col.type_info().name()));
+  }
+
+  if (PREDICT_FALSE(!IsColumnSet(col_idx))) {
+    return Status::NotFound("column not set");
+  }
+  if (col.is_nullable() && IsNull(col_idx)) {
+    return Status::NotFound("column is NULL");
+  }
+
+  ContiguousRow row(*schema_, row_data_);
+  memcpy(val, row.cell_ptr(col_idx), sizeof(*val));
+  return Status::OK();
+}
+
+//------------------------------------------------------------
+// Utility code
+//------------------------------------------------------------
+
+bool PartialRow::AllColumnsSet() const {
+  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_columns());
+}
+
+bool PartialRow::IsKeySet() const {
+  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns());
+}
+
 
 std::string PartialRow::ToString() const {
   ContiguousRow row(*schema_, row_data_);
@@ -253,6 +376,10 @@ std::string PartialRow::ToString() const {
   }
   return ret;
 }
+
+//------------------------------------------------------------
+// Serialization/deserialization
+//------------------------------------------------------------
 
 #define CHARP(x) reinterpret_cast<const char*>((x))
 

@@ -45,6 +45,10 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_FALSE(row.IsColumnSet(1));
   EXPECT_FALSE(row.IsColumnSet(2));
   EXPECT_EQ("uint32 key=12345", row.ToString());
+  uint32_t x;
+  EXPECT_STATUS_OK(row.GetUInt32("key", &x));
+  EXPECT_EQ(12345, x);
+  EXPECT_FALSE(row.IsNull("key"));
 
   // Fill in the other columns.
   EXPECT_STATUS_OK(row.SetUInt32("int_val", 54321));
@@ -53,14 +57,24 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_TRUE(row.IsColumnSet(2));
   EXPECT_EQ("uint32 key=12345, uint32 int_val=54321, string string_val=hello world",
             row.ToString());
+  Slice slice;
+  EXPECT_STATUS_OK(row.GetString("string_val", &slice));
+  EXPECT_EQ("hello world", slice.ToString());
+  EXPECT_FALSE(row.IsNull("key"));
 
   // Set a nullable entry to NULL
   EXPECT_STATUS_OK(row.SetNull("string_val"));
   EXPECT_EQ("uint32 key=12345, uint32 int_val=54321, string string_val=NULL",
             row.ToString());
+  EXPECT_TRUE(row.IsNull("string_val"));
 
   // Try to set an entry with the wrong type
   Status s = row.SetStringCopy("int_val", "foo");
+  EXPECT_EQ("Invalid argument: invalid type string provided for column 'int_val' (expected uint32)",
+            s.ToString());
+
+  // Try to get an entry with the wrong type
+  s = row.GetString("int_val", &slice);
   EXPECT_EQ("Invalid argument: invalid type string provided for column 'int_val' (expected uint32)",
             s.ToString());
 
