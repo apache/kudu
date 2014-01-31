@@ -25,40 +25,6 @@ message InstanceMetadataPB {
 }
 
 // ============================================================================
-//  Table Metadata
-// ============================================================================
-
-message ColumnAttributesPB {
-  required uint64 id = 1;
-  optional uint32 block_size = 2;
-  optional cfile.EncodingType encoding_type = 3;
-  optional cfile.CompressionType compression_type = 4;
-}
-
-message TableSchemaPB {
-  repeated ColumnSchemaPB columns = 1;
-  repeated ColumnAttributesPB attributes = 2;
-}
-
-message MetadataPairPB {
-  required string key = 1;
-  required bytes value = 2;
-}
-
-enum TableType {
-  BOOTSTRAP_TABLE = 1;
-  SYSTEM_TABLE = 2;
-  USER_TABLE = 3;
-}
-
-message TableDescriptorPB {
-  optional string oid = 1;
-  optional TableType type = 2 [default = USER_TABLE];
-  required TableSchemaPB schema = 3;
-  repeated MetadataPairPB user_attrs = 4;
-}
-
-// ============================================================================
 //  Tablet Metadata
 // ============================================================================
 
