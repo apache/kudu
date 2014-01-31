@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <stdlib.h>
+#include <limits>
 
 #include "cfile/block_encodings.h"
 #include "cfile/cfile.h"
@@ -260,13 +261,15 @@ class TestEncoding : public ::testing::Test {
     }
   }
 
-  template<class BlockBuilderType, class BlockDecoderType>
+  template<class BlockBuilderType, class BlockDecoderType, DataType IntType>
   void DoSeekTest(BlockBuilderType* ibb, int num_ints, int num_queries, bool verify) {
     // TODO : handle and verify seeking inside a run for testing RLE
-    const uint32_t kBase = 6;
+    typedef typename TypeTraits<IntType>::cpp_type CppType;
 
-    uint32_t data[num_ints];
-    for (uint32_t i = 0; i < num_ints; i++) {
+    const CppType kBase = 6;
+
+    CppType data[num_ints];
+    for (CppType i = 0; i < num_ints; i++) {
       data[i] = kBase + i * 2;
     }
 
@@ -278,10 +281,10 @@ class TestEncoding : public ::testing::Test {
     ASSERT_STATUS_OK(ibd.ParseHeader());
 
     // Benchmark seeking
-    LOG_TIMING(INFO, "Seeking in int block") {
+    LOG_TIMING(INFO, strings::Substitute("Seeking in $0 block", TypeTraits<IntType>::name())) {
       for (int i = 0; i < num_queries; i++) {
         bool exact;
-        uint32_t target = random() % (num_ints * 2 + kBase);
+        CppType target = random() % (num_ints * 2 + kBase);
         Status s = ibd.SeekAtOrAfterValue(&target, &exact);
         if (verify) {
           SCOPED_TRACE(target);
@@ -291,8 +294,8 @@ class TestEncoding : public ::testing::Test {
           }
           ASSERT_STATUS_OK_FAST(s);
 
-          uint32_t got;
-          CopyOne<UINT32>(&ibd, &got);
+          CppType got;
+          CopyOne<IntType>(&ibd, &got);
 
           if (target < kBase) {
             ASSERT_EQ(kBase, got);
@@ -307,6 +310,20 @@ class TestEncoding : public ::testing::Test {
           }
         }
       }
+    }
+  }
+
+  template <DataType IntType>
+  void DoRleIntSeekTest(int num_ints, int num_queries, bool verify) {
+     gscoped_ptr<RleIntBlockBuilder<IntType> > ibb(new RleIntBlockBuilder<IntType>());
+     DoSeekTest<RleIntBlockBuilder<IntType>, RleIntBlockDecoder<IntType>, IntType>(
+         ibb.get(),  num_ints, num_queries, verify);
+  }
+
+  template <DataType IntType>
+  void DoRleIntSeekTestTinyBlock() {
+    for (int block_size = 1; block_size < 16; block_size++) {
+      DoRleIntSeekTest<IntType>(block_size, 1000, true);
     }
   }
 
@@ -413,17 +430,20 @@ class TestEncoding : public ::testing::Test {
     } while (sbsize > 0);
   }
 
-  // Test encoding and decoding UINT32 datatype
-  // TODO : make this take any other int type
-  template <class BuilderType, class DecoderType>
+  // Test encoding and decoding of integer datatypes
+  template <class BuilderType, class DecoderType, DataType IntType>
   void TestIntBlockRoundTrip(BuilderType* ibb) {
+    typedef typename DataTypeTraits<IntType>::cpp_type CppType;
+
+    LOG(INFO) << "Testing with IntType = " << DataTypeTraits<IntType>::name();
+
     const uint32_t kOrdinalPosBase = 12345;
 
     srand(123);
 
-    std::vector<uint32_t> to_insert;
+    std::vector<CppType> to_insert;
     for (int i = 0; i < 10003; i++) {
-      to_insert.push_back(random());
+      to_insert.push_back(random() % std::numeric_limits<CppType>::max());
     }
 
     ibb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
@@ -435,10 +455,10 @@ class TestEncoding : public ::testing::Test {
 
     ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
 
-    std::vector<uint32_t> decoded;
+    std::vector<CppType> decoded;
     decoded.resize(to_insert.size());
 
-    ColumnBlock dst_block(GetTypeInfo(UINT32), NULL,
+    ColumnBlock dst_block(GetTypeInfo(IntType), NULL,
                           &decoded[0],
                           to_insert.size(),
                           &arena_);
@@ -472,10 +492,17 @@ class TestEncoding : public ::testing::Test {
       ibd.SeekToPositionInBlock(seek_off);
 
       EXPECT_EQ((uint32_t)(seek_off), ibd.GetCurrentIndex());
-      uint32_t ret;
-      CopyOne<UINT32>(&ibd, &ret);
+      CppType ret;
+      CopyOne<IntType>(&ibd, &ret);
       EXPECT_EQ(decoded[seek_off], ret);
     }
+  }
+
+  template <DataType IntType>
+  void TestRleIntBlockRoundTrip() {
+    gscoped_ptr<RleIntBlockBuilder<IntType> > ibb(new RleIntBlockBuilder<IntType>());
+    TestIntBlockRoundTrip<RleIntBlockBuilder<IntType>, RleIntBlockDecoder<IntType>, IntType>(
+        ibb.get());
   }
 
   // Test encoding and decoding BOOL datatypes
@@ -616,12 +643,18 @@ TEST_F(TestEncoding, TestRleBitMapRoundTrip) {
 TEST_F(TestEncoding, TestGVIntBlockRoundTrip) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  TestIntBlockRoundTrip<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get());
+  TestIntBlockRoundTrip<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get());
 }
 
-TEST_F(TestEncoding, TestRleIntBlockRoundTrip) {
-  gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
-  TestIntBlockRoundTrip<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(ibb.get());
+TEST_F(TestEncoding, TestRleIntBlockRoundTripAllTypes) {
+  LOG(INFO) << "Testing all integer types with RLE block encoding";
+
+  TestRleIntBlockRoundTrip<UINT8>();
+  TestRleIntBlockRoundTrip<INT8>();
+  TestRleIntBlockRoundTrip<UINT16>();
+  TestRleIntBlockRoundTrip<INT16>();
+  TestRleIntBlockRoundTrip<UINT32>();
+  TestRleIntBlockRoundTrip<INT32>();
 }
 
 
@@ -681,42 +714,44 @@ TEST_F(TestEncoding, TestStringPrefixBlockBuilderTruncation) {
 TEST_F(TestEncoding, GVIntSeekBenchmark) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get(), 32768, 1000000, false);
+  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 32768, 1000000, false);
 }
 
 TEST_F(TestEncoding, RleIntSeekBenchmark) {
-  gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
-  DoSeekTest<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(
-      ibb.get(), 32768, 1000000, false);
+  DoRleIntSeekTest<UINT32>(32768, 1000000, false);
 }
 #endif
 
 TEST_F(TestEncoding, GVIntSeekTest) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get(), 64, 1000, true);
+  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 64, 1000, true);
 }
 
 TEST_F(TestEncoding, GVIntSeekTestTinyBlock) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
   for (int block_size = 1; block_size < 16; block_size++) {
     gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-    DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder>(ibb.get(), block_size, 1000, true);
+    DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), block_size, 1000, true);
   }
 }
 
-TEST_F(TestEncoding, RleIntSeekTest) {
-  gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
-  DoSeekTest<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(
-      ibb.get(),  64, 1000, true);
+TEST_F(TestEncoding, RleIntSeekTestAllTypes) {
+  DoRleIntSeekTest<UINT8>(32, 1000, true);
+  DoRleIntSeekTest<INT8>(32, 1000, true);
+  DoRleIntSeekTest<UINT16>(64, 1000, true);
+  DoRleIntSeekTest<INT16>(64, 1000, true);
+  DoRleIntSeekTest<UINT32>(64, 1000, true);
+  DoRleIntSeekTest<INT32>(64, 1000, true);
 }
 
-TEST_F(TestEncoding, RleIntSeekTestTinyBlock) {
-  for (int block_size = 1; block_size < 16; block_size++) {
-    gscoped_ptr<RleIntBlockBuilder<UINT32> > ibb(new RleIntBlockBuilder<UINT32>());
-    DoSeekTest<RleIntBlockBuilder<UINT32>, RleIntBlockDecoder<UINT32> >(
-        ibb.get(), block_size, 1000, true);
-  }
+TEST_F(TestEncoding, RleIntSeekTestTinyBlockAllTypes) {
+  DoRleIntSeekTestTinyBlock<UINT8>();
+  DoRleIntSeekTestTinyBlock<INT8>();
+  DoRleIntSeekTestTinyBlock<UINT16>();
+  DoRleIntSeekTestTinyBlock<INT16>();
+  DoRleIntSeekTestTinyBlock<UINT32>();
+  DoRleIntSeekTestTinyBlock<INT32>();
 }
 
 } // namespace cfile

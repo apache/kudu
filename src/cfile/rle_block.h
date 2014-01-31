@@ -179,8 +179,6 @@ class RleBitMapBlockDecoder : public BlockDecoder {
 //
 // RLE builder for generic integer types. What is missing is some way
 // to enforce that this can only be instantiated for INT types.
-// TODO : add mappings for types other than UINT32 and make all unit
-//        tests involving integers generic
 // TODO : consider if this can also be used for BOOL with only minor
 //        alterations
 template <DataType IntType>

@@ -153,19 +153,20 @@ struct DataTypeEncodingTraits<UINT32, GROUP_VARINT> {
   }
 };
 
-template<>
-struct DataTypeEncodingTraits<UINT32, RLE> {
+template<DataType IntType>
+struct DataTypeEncodingTraits<IntType, RLE> {
 
   static Status CreateBlockBuilder(BlockBuilder** bb, const WriterOptions* /* unused */) {
-    *bb = new RleIntBlockBuilder<UINT32>();
+    *bb = new RleIntBlockBuilder<IntType>();
     return Status::OK();
   }
 
   static Status CreateBlockDecoder(BlockDecoder** bd, const Slice& slice) {
-    *bd = new RleIntBlockDecoder<UINT32>(slice);
+    *bd = new RleIntBlockDecoder<IntType>(slice);
     return Status::OK();
   }
 };
+
 
 } // namespace cfile
 } // namespace kudu
