@@ -44,8 +44,14 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
 void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
-  (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
-  (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
+  if (type() == Transaction::LEADER) {
+    (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
+    (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
+  } else {
+    consensus::OperationPB* leader_op = state()->consensus_round()->leader_commit_op();
+    (*commit_msg)->set_timestamp(leader_op->commit().timestamp());
+    (*commit_msg)->mutable_write_response()->CopyFrom(leader_op->commit().write_response());
+  }
 }
 
 Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_schema) {
@@ -187,6 +193,10 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   // quite inconsistent whether we do this or not in the other transaction types.
   if (type() == Transaction::LEADER) {
     state()->response()->set_write_timestamp(state()->timestamp().ToUint64());
+    (*commit_msg)->mutable_write_response()->CopyFrom(*state()->response());
+  } else {
+    (*commit_msg)->mutable_write_response()->CopyFrom(
+        state()->consensus_round()->leader_commit_op()->commit().write_response());
   }
   return Status::OK();
 }

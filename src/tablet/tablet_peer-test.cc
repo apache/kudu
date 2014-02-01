@@ -350,7 +350,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
         &tablet_peer_->txn_tracker_,
         tablet_peer_->consensus(),
         tablet_peer_->prepare_executor_.get(),
-        tablet_peer_->apply_executor_.get(),
+        tablet_peer_->leader_apply_executor_.get(),
         &tablet_peer_->prepare_replicate_lock_);
 
     DelayedApplyTransaction* transaction = new DelayedApplyTransaction(&apply_started,

@@ -25,9 +25,9 @@ class Messenger;
 }
 
 namespace tablet {
-
 class ChangeConfigTransactionState;
 class LeaderTransactionDriver;
+class ReplicaTransactionDriver;
 class TabletPeer;
 class TabletStatusPB;
 class TabletStatusListener;
@@ -105,7 +105,7 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
 
   // Used by consensus to create and start a new ReplicaTransaction.
   virtual Status StartReplicaTransaction(
-      gscoped_ptr<consensus::ConsensusRound> context) OVERRIDE;
+      gscoped_ptr<consensus::ConsensusRound> round) OVERRIDE;
 
   consensus::Consensus* consensus() { return consensus_.get(); }
 
@@ -126,8 +126,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
 
   // Returns the current role of this peer as accepted by the last configuration
   // round, that is the role which is set in the tablet metadata's quorum.
-  // If this peer hasn't yet finished the configuration round this will return
-  // NON_PARTICIPANT.
+  // If a configuration has not yet been committed or if this peer is no longer
+  // part of the quorum this will return NON_PARTICIPANT.
   const metadata::QuorumPeerPB::Role role() const;
 
   // Notifies the TabletPeer that the consensus state has changed.
@@ -179,6 +179,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
 
   LeaderTransactionDriver* NewLeaderTransactionDriver();
 
+  ReplicaTransactionDriver* NewReplicaTransactionDriver();
+
  private:
   friend class TabletPeerTest;
   FRIEND_TEST(TabletPeerTest, TestMRSAnchorPreventsLogGC);
@@ -215,7 +217,20 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // use the same 'prepare_executor_' needs to enforce that, for a single
   // TabletPeer, PrepareTasks are executed *serially*.
   gscoped_ptr<TaskExecutor> prepare_executor_;
-  gscoped_ptr<TaskExecutor> apply_executor_;
+
+  // Different executors for leader/replica transactions. The leader apply executor
+  // is multi-threaded while the replica one is single threaded.
+  // TODO There is no reason for the replica not being able to also have a
+  // multi-threaded executor. Even though that means that it's own logs will
+  // differ from the leader's in terms of the ordering of commit messages
+  // there is a guarantee that operations that touch the same rows will be
+  // in the same order. This said, and although consensus has been designed
+  // with multi-threaded replica applies in mind, this needs further testing
+  // so we leave the replica apply executor as single-threaded, for now.
+  gscoped_ptr<TaskExecutor> leader_apply_executor_;
+  gscoped_ptr<TaskExecutor> replica_apply_executor_;
+
+
   gscoped_ptr<TaskExecutor> log_gc_executor_;
   CountDownLatch log_gc_shutdown_latch_;
 

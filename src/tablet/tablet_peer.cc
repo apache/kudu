@@ -66,11 +66,12 @@ TabletPeer::TabletPeer(const TabletMetadata& meta,
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)),
+    leader_apply_executor_(TaskExecutor::CreateNew("leader apply exec", base::NumCPUs())),
+    replica_apply_executor_(TaskExecutor::CreateNew("replica apply exec", 1)),
     log_gc_executor_(TaskExecutor::CreateNew("log gc exec", 1)),
     log_gc_shutdown_latch_(1),
     mark_dirty_clbk_(mark_dirty_clbk),
     config_sem_(1) {
-  apply_executor_.reset(TaskExecutor::CreateNew("leader apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
 }
 
@@ -86,29 +87,36 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         gscoped_ptr<Log> log,
                         OpIdAnchorRegistry* opid_anchor_registry,
                         bool local_peer) {
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    CHECK_EQ(state_, metadata::BOOTSTRAPPING);
+    state_ = metadata::CONFIGURING;
+    tablet_ = tablet;
+    clock_ = clock;
+    quorum_peer_ = quorum_peer;
+    messenger_ = messenger;
+    log_.reset(log.release());
+    opid_anchor_registry_ = opid_anchor_registry;
+    // TODO support different consensus implementations (possibly by adding
+    // a TabletPeerOptions).
 
-  boost::lock_guard<simple_spinlock> lock(lock_);
+    ConsensusOptions options;
+    options.tablet_id = tablet_->metadata()->oid();
 
-  CHECK_EQ(state_, metadata::BOOTSTRAPPING);
-  state_ = metadata::CONFIGURING;
-  tablet_ = tablet;
-  clock_ = clock;
-  quorum_peer_ = quorum_peer;
-  messenger_ = messenger;
-  log_.reset(log.release());
-  opid_anchor_registry_ = opid_anchor_registry;
-  // TODO support different consensus implementations (possibly by adding
-  // a TabletPeerOptions).
-
-  ConsensusOptions options;
-  options.tablet_id = tablet_->metadata()->oid();
-  consensus_.reset(new LocalConsensus(options));
+    if (local_peer) {
+      consensus_.reset(new LocalConsensus(options));
+    } else {
+      gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
+          new consensus::RpcPeerProxyFactory(messenger_));
+      consensus_.reset(new RaftConsensus(options,  rpc_factory.Pass()));
+    }
+  }
 
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
   DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
-  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, NULL, log_.get()),
+  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, this, log_.get()),
                         "Could not initialize consensus");
 
   // set consensus on the tablet to that it can store local state changes
@@ -189,7 +197,7 @@ void TabletPeer::Shutdown() {
 
   consensus_->Shutdown();
   prepare_executor_->Shutdown();
-  apply_executor_->Shutdown();
+  leader_apply_executor_->Shutdown();
 
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "TabletPeer: tablet " << tablet_id() << " shut down!";
@@ -236,10 +244,6 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
                                                                      &config_sem_);
   LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
   return driver->Execute(transaction);
-}
-
-Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> ctx) {
-  return Status::NotSupported("Replica transactions are not supported with local consensus.");
 }
 
 void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
@@ -313,12 +317,58 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   }
 }
 
+Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
+  consensus::ReplicateMsg* replicate_msg = round->replicate_op()->mutable_replicate();
+  Transaction* transaction;
+  switch (replicate_msg->op_type()) {
+    case WRITE_OP:
+    {
+      DCHECK(replicate_msg->has_write_request()) << "WRITE_OP replica"
+          " transaction must receive a WriteRequestPB";
+      transaction = new WriteTransaction(
+          new WriteTransactionState(this, replicate_msg->mutable_write_request()),
+          Transaction::REPLICA);
+      break;
+    }
+    case CHANGE_CONFIG_OP:
+    {
+      DCHECK(replicate_msg->has_change_config_request()) << "CHANGE_CONFIG_OP"
+          " replica transaction must receive a ChangeConfigRequestPB";
+      transaction = new ChangeConfigTransaction(
+          new ChangeConfigTransactionState(this, replicate_msg->mutable_change_config_request()),
+          Transaction::REPLICA,
+          &config_sem_);
+       break;
+    }
+    default:
+      LOG(FATAL) << "Unsupported Operation Type";
+  }
+
+  // TODO(todd) Look at wiring the stuff below on the driver
+  TransactionState* state = transaction->state();
+  state->set_consensus_round(round.Pass());
+
+  ReplicaTransactionDriver* driver = NewReplicaTransactionDriver();
+  state->consensus_round()->SetReplicaCommitContinuation(driver);
+  state->consensus_round()->SetCommitCallback(driver->commit_finished_callback());
+
+  RETURN_NOT_OK(driver->Execute(transaction));
+  return Status::OK();
+}
+
 LeaderTransactionDriver* TabletPeer::NewLeaderTransactionDriver() {
   return new LeaderTransactionDriver(&txn_tracker_,
                                      consensus_.get(),
                                      prepare_executor_.get(),
-                                     apply_executor_.get(),
+                                     leader_apply_executor_.get(),
                                      &prepare_replicate_lock_);
+}
+
+ReplicaTransactionDriver* TabletPeer::NewReplicaTransactionDriver() {
+  return new ReplicaTransactionDriver(&txn_tracker_,
+                                      consensus_.get(),
+                                      prepare_executor_.get(),
+                                      replica_apply_executor_.get());
 }
 
 }  // namespace tablet

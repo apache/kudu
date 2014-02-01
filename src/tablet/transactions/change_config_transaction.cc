@@ -44,7 +44,7 @@ Status ChangeConfigTransaction::Prepare() {
 
   tx_state_->acquire_config_sem(config_sem_);
 
-  // now that we've acquired the semaphore set the transaction timestamp
+  // now that we've acquired the semaphore, set the transaction timestamp
   tx_state_->set_timestamp(tx_state_->tablet_peer()->clock()->Now());
 
   const QuorumPB& old_quorum = tx_state_->tablet_peer()->tablet()->metadata()->Quorum();

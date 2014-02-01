@@ -123,7 +123,7 @@ class LeaderTransactionDriver : public TransactionDriver {
                           TaskExecutor* apply_executor,
                           simple_spinlock* prepare_replicate_lock);
 
-  virtual Status Execute(Transaction* transaction);
+  virtual Status Execute(Transaction* transaction) OVERRIDE;
 
   virtual ~LeaderTransactionDriver();
 
@@ -154,6 +154,39 @@ class LeaderTransactionDriver : public TransactionDriver {
   simple_spinlock* prepare_replicate_lock_;
   DISALLOW_COPY_AND_ASSIGN(LeaderTransactionDriver);
 };
+
+// Replica version of the transaction driver.
+class ReplicaTransactionDriver : public TransactionDriver,
+                                 public consensus::ReplicaCommitContinuation {
+ public:
+  ReplicaTransactionDriver(TransactionTracker* txn_tracker,
+                           consensus::Consensus* consensus,
+                           TaskExecutor* prepare_executor,
+                           TaskExecutor* apply_executor);
+
+  virtual Status Execute(Transaction* transaction) OVERRIDE;
+
+ protected:
+  virtual Status LeaderCommitted(gscoped_ptr<consensus::OperationPB> leader_commit_op) OVERRIDE;
+
+  virtual void PrepareOrReplicateSucceeded() OVERRIDE;
+
+  virtual void PrepareOrReplicateFailed(const Status& status) OVERRIDE;
+
+  virtual Status ApplyAndCommit() OVERRIDE;
+
+  virtual void ApplyAndCommitSucceeded() OVERRIDE;
+
+  virtual void ApplyOrCommitFailed(const Status& status) OVERRIDE;
+
+  virtual ~ReplicaTransactionDriver() OVERRIDE;
+ private:
+  void HandlePrepareOrReplicateFailure();
+
+  std::tr1::shared_ptr<Future> apply_future_;
+  DISALLOW_COPY_AND_ASSIGN(ReplicaTransactionDriver);
+};
+
 
 }  // namespace tablet
 }  // namespace kudu
