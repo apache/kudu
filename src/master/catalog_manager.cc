@@ -126,7 +126,7 @@ class TabletLoader : public SysTabletsTable::Visitor {
                                      table_manager_->table_ids_map_, table_id));
 
     // Setup the tablet info
-    TabletInfo* tablet = new TabletInfo(table.get(), tablet_id);
+    TabletInfo* tablet = new TabletInfo(table, tablet_id);
     TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
     l.mutable_data()->pb.CopyFrom(metadata);
 
@@ -1406,7 +1406,8 @@ void CatalogManager::DumpState(std::ostream* out) const {
 // TabletInfo
 ////////////////////////////////////////////////////////////
 
-TabletInfo::TabletInfo(TableInfo *table, const std::string& tablet_id)
+TabletInfo::TabletInfo(const scoped_refptr<TableInfo>& table,
+                       const std::string& tablet_id)
   : tablet_id_(tablet_id), table_(table),
     last_update_ts_(MonoTime::Now(MonoTime::FINE)),
     reported_schema_version_(0) {

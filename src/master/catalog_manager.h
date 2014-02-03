@@ -91,7 +91,7 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
  public:
   typedef PersistentTabletInfo cow_state;
 
-  TabletInfo(TableInfo *table, const std::string& tablet_id);
+  TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
 
   // Add a replica reported on the given server
   void AddReplica(TSDescriptor* ts_desc,
@@ -103,8 +103,8 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
 
   std::string ToString() const;
 
-  TableInfo *table() { return table_; }
-  const TableInfo *table() const { return table_; }
+  TableInfo *table() { return table_.get(); }
+  const TableInfo *table() const { return table_.get(); }
 
   // Does not require synchronization.
   const std::string& tablet_id() const { return tablet_id_; }
@@ -138,7 +138,7 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   ~TabletInfo();
 
   const std::string tablet_id_;
-  TableInfo *table_;
+  scoped_refptr<TableInfo> table_;
   MonoTime last_update_ts_;
 
   // The locations where this tablet has been reported.
