@@ -72,7 +72,7 @@ class AlterTableTest : public KuduTest {
   }
 
   virtual void TearDown() {
-    ASSERT_STATUS_OK(cluster_->Shutdown());
+    cluster_->Shutdown();
   }
 
   Status AlterTable(const AlterTableRequestPB& alter_req) {
