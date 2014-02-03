@@ -32,11 +32,10 @@ Status MiniMaster::Start() {
   return StartOnPorts(0, 0);
 }
 
-Status MiniMaster::Shutdown() {
-  RETURN_NOT_OK(master_->Shutdown());
+void MiniMaster::Shutdown() {
+  master_->Shutdown();
   started_ = false;
   master_.reset();
-  return Status::OK();
 }
 
 Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
@@ -63,7 +62,7 @@ Status MiniMaster::Restart() {
 
   Sockaddr prev_rpc = bound_rpc_addr();
   Sockaddr prev_http = bound_http_addr();
-  RETURN_NOT_OK_PREPEND(Shutdown(), "Could not shut down prior master");
+  Shutdown();
 
   return StartOnPorts(prev_rpc.port(), prev_http.port());
 }

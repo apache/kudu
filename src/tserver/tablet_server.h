@@ -55,7 +55,7 @@ class TabletServer : public server::ServerBase {
   Status WaitInited();
 
   Status Start();
-  Status Shutdown();
+  void Shutdown();
 
   string ToString() const;
 

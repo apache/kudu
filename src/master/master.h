@@ -40,7 +40,7 @@ class Master : public server::ServerBase {
 
   Status Init();
   Status Start();
-  Status Shutdown();
+  void Shutdown();
 
   string ToString() const;
 

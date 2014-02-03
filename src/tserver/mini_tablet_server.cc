@@ -71,11 +71,10 @@ Status MiniTabletServer::WaitStarted() {
   return server_->WaitInited();
 }
 
-Status MiniTabletServer::Shutdown() {
-  RETURN_NOT_OK(server_->Shutdown());
+void MiniTabletServer::Shutdown() {
+  server_->Shutdown();
   server_.reset();
   started_ = false;
-  return Status::OK();
 }
 
 Status MiniTabletServer::AddTestTablet(const std::string& table_id,

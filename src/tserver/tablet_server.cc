@@ -38,7 +38,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
 }
 
 TabletServer::~TabletServer() {
-  WARN_NOT_OK(Shutdown(), "Error shutting down tablet server");
+  Shutdown();
 }
 
 string TabletServer::ToString() const {
@@ -89,18 +89,16 @@ Status TabletServer::Start() {
   return Status::OK();
 }
 
-Status TabletServer::Shutdown() {
+void TabletServer::Shutdown() {
   LOG(INFO) << "TabletServer shutting down...";
 
   if (initted_) {
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-    WARN_NOT_OK(ServerBase::Shutdown(), "Failed to shutdown server base components");
+    ServerBase::Shutdown();
     tablet_manager_->Shutdown();
   }
 
   LOG(INFO) << "TabletServer shut down complete. Bye!";
-
-  return Status::OK();
 }
 
 } // namespace tserver

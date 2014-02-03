@@ -65,7 +65,7 @@ class ServerBase {
 
   Status Init();
   Status Start(gscoped_ptr<rpc::ServiceIf> rpc_impl);
-  Status Shutdown();
+  void Shutdown();
 
   gscoped_ptr<MetricRegistry> metric_registry_;
   gscoped_ptr<MetricContext> metric_ctx_;

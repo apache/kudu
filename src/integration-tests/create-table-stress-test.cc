@@ -67,7 +67,7 @@ class CreateTableStressTest : public KuduTest {
   }
 
   virtual void TearDown() {
-    ASSERT_STATUS_OK(cluster_->Shutdown());
+    cluster_->Shutdown();
   }
 
   void CreateBigTable(const string& table_name);

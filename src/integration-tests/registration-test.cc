@@ -55,7 +55,7 @@ class RegistrationTest : public KuduTest {
   }
 
   virtual void TearDown() {
-    ASSERT_STATUS_OK(cluster_->Shutdown());
+    cluster_->Shutdown();
   }
 
   void CheckTabletServersPage() {
@@ -137,7 +137,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
 
   // Shut down the whole system, bring it back up, and make sure the tablets
   // are reported.
-  ASSERT_STATUS_OK(ts->Shutdown());
+  ts->Shutdown();
   ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
   ASSERT_STATUS_OK(ts->Start());
 
@@ -148,7 +148,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // a full tablet report, without any of the tablets. This causes the
   // master to remove the tablet locations.
   LOG(INFO) << "Shutting down TS, clearing data, and restarting it";
-  ASSERT_STATUS_OK(ts->Shutdown());
+  ts->Shutdown();
   string master_block_dir = ts->fs_manager()->GetMasterBlockDir();
   ASSERT_STATUS_OK(env_->DeleteRecursively(master_block_dir));
   ASSERT_STATUS_OK(env_->CreateDir(master_block_dir));

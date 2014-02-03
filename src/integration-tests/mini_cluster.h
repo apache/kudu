@@ -40,7 +40,7 @@ class MiniCluster {
   // use this if they interact with tablets immediately after Start();
   Status StartSync();
 
-  Status Shutdown();
+  void Shutdown();
 
   // Add a new TS to the cluster. The new TS is started.
   // Requires that the master is already running.

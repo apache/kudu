@@ -25,7 +25,7 @@ class MiniMaster {
   // an ephemeral port. To determine the address that the server
   // bound to, call MiniMaster::bound_addr()
   Status Start();
-  Status Shutdown();
+  void Shutdown();
 
   // Restart the master on the same ports as it was previously bound.
   // Requires that the master is currently started.

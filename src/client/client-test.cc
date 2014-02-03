@@ -223,7 +223,7 @@ TEST_F(ClientTest, TestBadTable) {
 // Test that, if the master is down, we get an appropriate error
 // message.
 TEST_F(ClientTest, TestMasterDown) {
-  ASSERT_STATUS_OK(cluster_->mini_master()->Shutdown());
+  cluster_->mini_master()->Shutdown();
   scoped_refptr<KuduTable> t;
   Status s = client_->OpenTable("other-tablet", Schema(), &t);
   ASSERT_TRUE(s.IsNetworkError());
@@ -478,10 +478,10 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   // Shut down the server.
   switch (which) {
     case DEAD_MASTER:
-      ASSERT_STATUS_OK(cluster_->mini_master()->Shutdown());
+      cluster_->mini_master()->Shutdown();
       break;
     case DEAD_TSERVER:
-      ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Shutdown());
+      cluster_->mini_tablet_server(0)->Shutdown();
       break;
   }
 

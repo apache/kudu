@@ -39,7 +39,7 @@ ServerBase::ServerBase(Env* env, const string& base_dir,
 }
 
 ServerBase::~ServerBase() {
-  WARN_NOT_OK(Shutdown(), "Failed to shut down ServerBase");
+  Shutdown();
 }
 
 Sockaddr ServerBase::first_rpc_address() const {
@@ -109,14 +109,13 @@ Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
   return Status::OK();
 }
 
-Status ServerBase::Shutdown() {
+void ServerBase::Shutdown() {
   if (messenger_) {
     messenger_->Shutdown();
     messenger_.reset();
   }
   web_server_->Stop();
   rpc_server_->Shutdown();
-  return Status::OK();
 }
 
 } // namespace server

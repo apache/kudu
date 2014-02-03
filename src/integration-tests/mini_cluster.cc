@@ -84,14 +84,11 @@ Status MiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
-Status MiniCluster::Shutdown() {
+void MiniCluster::Shutdown() {
   BOOST_FOREACH(const shared_ptr<MiniTabletServer>& tablet_server, mini_tablet_servers_) {
-    WARN_NOT_OK(tablet_server->Shutdown(),
-                Substitute("Could not shutdown TabletServer: $0",
-                           tablet_server->server()->ToString()));
+    tablet_server->Shutdown();
   }
-  WARN_NOT_OK(mini_master_->Shutdown(), "Could not shutdown master.");
-  return Status::OK();
+  mini_master_->Shutdown();
 }
 
 MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {

@@ -44,7 +44,7 @@ class MiniTabletServer {
   // having all tablets bootstrapped.
   Status WaitStarted();
 
-  Status Shutdown();
+  void Shutdown();
 
   // Add a new tablet to the test server, use the default quorum.
   //
