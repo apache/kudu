@@ -129,10 +129,13 @@ message CreateTabletRequestPB {
   required bytes tablet_id = 2;
   required bytes start_key = 3;
   required bytes end_key = 4;
-  required SchemaPB schema = 5;
+
+  required string table_name = 5;
+  required SchemaPB schema = 6;
+
   // Optional quorum for the tablet. If one is not provided a local quorum
   // is chosen.
-  optional metadata.QuorumPB quorum = 6;
+  optional metadata.QuorumPB quorum = 7;
 }
 
 message CreateTabletResponsePB {

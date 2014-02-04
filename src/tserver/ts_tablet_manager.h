@@ -79,6 +79,7 @@ class TSTabletManager {
   Status CreateNewTablet(const string& table_id,
                          const std::string& tablet_id,
                          const std::string& start_key, const std::string& end_key,
+                         const string& table_name,
                          const Schema& schema,
                          metadata::QuorumPB quorum,
                          std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer);

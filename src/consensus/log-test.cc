@@ -102,6 +102,7 @@ class LogTest : public KuduTest {
     meta->set_end_key("");
     meta->set_sequence(0);
     meta->set_schema_version(0);
+    meta->set_table_name("testtb");
     ASSERT_STATUS_OK(SchemaToPB(schema_, meta->mutable_schema()));
 
     meta->set_last_durable_mrs_id(last_durable_mrs);
@@ -349,11 +350,11 @@ TEST_F(LogTest, TestSegmentRollover) {
   // set a small segment size so that we have roll overs
   BuildLog();
   log_->SetMaxSegmentSizeForTests(1024);
-  // this adds to 23 segments
+  // this adds to 24 segments
   AppendBatchAndCommitEntryPairsToLog(100);
 
-  // expect 22 previous_ segments plus the current_ one
-  ASSERT_EQ(22, log_->previous_segments().size());
+  // expect 23 previous_ segments plus the current_ one
+  ASSERT_EQ(23, log_->previous_segments().size());
   ASSERT_STATUS_OK(log_->Close());
 
   BuildLogReader();

@@ -49,6 +49,7 @@ class KuduTabletTest : public KuduTest {
     gscoped_ptr<metadata::TabletMetadata> metadata;
     ASSERT_STATUS_OK(metadata::TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                             master_block,
+                                                            "KuduTableTest",
                                                             server_schema,
                                                             quorum_,
                                                             "", "",

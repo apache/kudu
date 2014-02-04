@@ -31,12 +31,14 @@ const int64 kNoDurableMemStore = -1;
 
 Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const TabletMasterBlockPB& master_block,
+                                 const string& table_name,
                                  const Schema& schema,
                                  const QuorumPB& quorum,
                                  const string& start_key, const string& end_key,
                                  gscoped_ptr<TabletMetadata>* metadata) {
   gscoped_ptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
                                                      master_block,
+                                                     table_name,
                                                      schema,
                                                      quorum,
                                                      start_key,
@@ -59,6 +61,7 @@ Status TabletMetadata::Load(FsManager* fs_manager,
 
 Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const TabletMasterBlockPB& master_block,
+                                    const string& table_name,
                                     const Schema& schema,
                                     const QuorumPB& quorum,
                                     const string& start_key, const string& end_key,
@@ -72,7 +75,8 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     }
     return Status::OK();
   } else if (s.IsNotFound()) {
-    return CreateNew(fs_manager, master_block, schema, quorum, start_key, end_key, metadata);
+    return CreateNew(fs_manager, master_block, table_name, schema,
+                     quorum, start_key, end_key, metadata);
   } else {
     return s;
   }
@@ -80,6 +84,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
 
 TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const TabletMasterBlockPB& master_block,
+                               const string& table_name,
                                const Schema& schema,
                                const QuorumPB& quorum,
                                const string& start_key,
@@ -93,6 +98,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     last_durable_mrs_id_(kNoDurableMemStore),
     schema_(schema),
     schema_version_(0),
+    table_name_(table_name),
     quorum_(quorum) {
   CHECK(schema_.has_column_ids());
 }
@@ -121,6 +127,8 @@ Status TabletMetadata::LoadFromDisk() {
   end_key_ = superblock.end_key();
   last_durable_mrs_id_ = superblock.last_durable_mrs_id();
 
+  table_name_ = superblock.table_name();
+  schema_version_ = superblock.schema_version();
   RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), &schema_),
                         "Failed to parse Schema from superblock " +
                         superblock.ShortDebugString());
@@ -271,6 +279,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(shared_ptr<TabletSuperBlockPB> *supe
   pb->set_end_key(end_key_);
   pb->set_last_durable_mrs_id(last_durable_mrs_id_);
   pb->set_schema_version(schema_version_);
+  pb->set_table_name(table_name_);
 
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, rowsets) {
     meta->ToProtobuf(pb->add_rowsets());
@@ -336,6 +345,12 @@ void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   boost::lock_guard<LockType> l(lock_);
   schema_ = schema;
   schema_version_ = version;
+}
+
+const string& TabletMetadata::table_name() const {
+  boost::lock_guard<LockType> l(lock_);
+  DCHECK_NE(state_, kNotLoadedYet);
+  return table_name_;
 }
 
 uint32_t TabletMetadata::schema_version() const {

@@ -29,6 +29,7 @@ void LocalLineItemDAO::Init() {
   QuorumPB quorum;
   CHECK_OK(TabletMetadata::LoadOrCreate(&fs_manager_,
                                         master_block,
+                                        "tpch1",
                                         s,
                                         quorum,
                                         "",

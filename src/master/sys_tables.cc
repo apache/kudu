@@ -79,6 +79,7 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
   gscoped_ptr<metadata::TabletMetadata> metadata;
   RETURN_NOT_OK(metadata::TabletMetadata::CreateNew(fs_manager,
                                                     master_block,
+                                                    table_name(),
                                                     BuildTableSchema(),
                                                     quorum,
                                                     "", "", &metadata));

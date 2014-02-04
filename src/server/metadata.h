@@ -49,9 +49,10 @@ class TabletMetadata {
   // than take as a parameter?
   static Status CreateNew(FsManager* fs_manager,
                           const TabletMasterBlockPB& master_block,
+                          const std::string& table_name,
                           const Schema& schema,
                           const QuorumPB& quorum,
-                          const string& start_key, const string& end_key,
+                          const std::string& start_key, const std::string& end_key,
                           gscoped_ptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk given a master block.
@@ -66,28 +67,31 @@ class TabletMetadata {
   // This is mostly useful for tests which instantiate tablets directly.
   static Status LoadOrCreate(FsManager* fs_manager,
                              const TabletMasterBlockPB& master_block,
+                             const std::string& table_name,
                              const Schema& schema,
                              const QuorumPB& quorum,
-                             const string& start_key, const string& end_key,
+                             const std::string& start_key, const std::string& end_key,
                              gscoped_ptr<TabletMetadata>* metadata);
 
-  const string& oid() const {
+  const std::string& oid() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return master_block_.tablet_id();
   }
-  const string& start_key() const {
+  const std::string& start_key() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return start_key_;
   }
-  const string& end_key() const {
+  const std::string& end_key() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return end_key_;
   }
 
-  const string& table_id() const {
+  const std::string& table_id() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return master_block_.table_id();
   }
+
+  const std::string& table_name() const;
 
   uint32_t schema_version() const;
 
@@ -156,10 +160,11 @@ class TabletMetadata {
   // Constructor for creating a new tablet.
   TabletMetadata(FsManager *fs_manager,
                  const TabletMasterBlockPB& master_block,
+                 const std::string& table_name,
                  const Schema& schema,
                  const QuorumPB& quorum,
-                 const string& start_key,
-                 const string& end_key);
+                 const std::string& start_key,
+                 const std::string& end_key);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block);
@@ -186,8 +191,8 @@ class TabletMetadata {
   typedef simple_spinlock LockType;
   mutable LockType lock_;
 
-  string start_key_;
-  string end_key_;
+  std::string start_key_;
+  std::string end_key_;
   FsManager *fs_manager_;
   RowSetMetadataVector rowsets_;
 
@@ -200,6 +205,7 @@ class TabletMetadata {
 
   Schema schema_;
   uint32_t schema_version_;
+  std::string table_name_;
 
   metadata::QuorumPB quorum_;
 
@@ -240,7 +246,7 @@ class RowSetMetadata {
 
   Status Flush() { return tablet_metadata_->Flush(); }
 
-  const string ToString() const;
+  const std::string ToString() const;
 
   int64_t id() const { return id_; }
 

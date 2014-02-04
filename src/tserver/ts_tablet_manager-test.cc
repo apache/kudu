@@ -55,6 +55,7 @@ class TsTabletManagerTest : public KuduTest {
                          const Schema& schema,
                          std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer) {
     return tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
+                                            tablet_id,
                                             SchemaBuilder(schema).Build(),
                                             quorum_,
                                             tablet_peer);

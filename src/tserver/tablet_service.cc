@@ -227,6 +227,7 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
                                                  req->tablet_id(),
                                                  req->start_key(),
                                                  req->end_key(),
+                                                 req->table_name(),
                                                  schema,
                                                  req->quorum(),
                                                  NULL);

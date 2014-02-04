@@ -984,6 +984,7 @@ class AsyncCreateTablet {
       req.set_tablet_id(tablet->tablet_id());
       req.set_start_key(tablet_pb.start_key());
       req.set_end_key(tablet_pb.end_key());
+      req.set_table_name(table_lock.data().pb.name());
       req.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
       req.mutable_quorum()->CopyFrom(tablet_pb.quorum());
     }

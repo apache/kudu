@@ -47,6 +47,8 @@ class SysTable {
   Status CreateNew(FsManager *fs_manager);
 
  protected:
+  virtual const char *table_name() const = 0;
+
   // Return the schema of the table.
   // NOTE: This is the "server-side" schema, so it must have the column IDs.
   virtual Schema BuildTableSchema() = 0;
@@ -83,7 +85,7 @@ class SysTabletsTable : public SysTable {
   };
 
   SysTabletsTable(Master* master, MetricRegistry* metrics)
-    : SysTable(master, metrics, "sys.tablets") {
+    : SysTable(master, metrics, table_name()) {
   }
 
   Status AddTablets(const vector<TabletInfo*>& tablets);
@@ -96,6 +98,8 @@ class SysTabletsTable : public SysTable {
   Status VisitTablets(Visitor *visitor);
 
  protected:
+  virtual const char *table_name() const { return "sys.tablets"; }
+
   virtual Schema BuildTableSchema() OVERRIDE;
   virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
 
@@ -116,7 +120,7 @@ class SysTablesTable : public SysTable {
   };
 
   SysTablesTable(Master* master, MetricRegistry* metrics)
-    : SysTable(master, metrics, "sys.tables") {
+    : SysTable(master, metrics, table_name()) {
   }
 
   Status AddTable(const TableInfo *table);
@@ -127,6 +131,8 @@ class SysTablesTable : public SysTable {
   Status VisitTables(Visitor *visitor);
 
  protected:
+  virtual const char *table_name() const { return "sys.tables"; }
+
   virtual Schema BuildTableSchema() OVERRIDE;
   virtual void SetupTabletMasterBlock(metadata::TabletMasterBlockPB *master_block) OVERRIDE;
 

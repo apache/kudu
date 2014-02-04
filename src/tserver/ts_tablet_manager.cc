@@ -146,6 +146,7 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const string& tablet_id,
                                         const string& start_key, const string& end_key,
+                                        const string& table_name,
                                         const Schema& schema,
                                         QuorumPB quorum,
                                         shared_ptr<TabletPeer>* tablet_peer) {
@@ -195,6 +196,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK_PREPEND(
     TabletMetadata::CreateNew(fs_manager_,
                               master_block,
+                              table_name,
                               schema,
                               quorum,
                               start_key,

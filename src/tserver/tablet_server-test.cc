@@ -886,6 +886,7 @@ TEST_F(TabletServerTest, TestCreateTablet_NoQuorum) {
   req.set_tablet_id(tablet_id);
   req.set_start_key("");
   req.set_end_key("");
+  req.set_table_name("testtb");
   ASSERT_STATUS_OK(SchemaToPB(SchemaBuilder(schema_).Build(),
                               req.mutable_schema()));
 
@@ -928,6 +929,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   req.set_tablet_id(kTabletId);
   req.set_start_key(" ");
   req.set_end_key(" ");
+  req.set_table_name("testtb");
   ASSERT_STATUS_OK(SchemaToPB(SchemaBuilder(schema_).Build(),
                               req.mutable_schema()));
 
