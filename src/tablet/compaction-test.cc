@@ -345,6 +345,50 @@ TEST_F(TestCompaction, TestOneToOne) {
   DoFlush(compact_input.get(), schema_, snap3, &rowset_compact_meta);
 }
 
+// Test merging two row sets and the second one has updates, KUDU-102
+// We re-create the conditions by providing two DRS that are both the input and the
+// output of a compaction, and trying to merge two MRS.
+TEST_F(TestCompaction, TestKUDU102) {
+  // Create 2 row sets, flush them
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  InsertRows(mrs.get(), 10, 0);
+  shared_ptr<DiskRowSet> rs;
+  FlushAndReopen(*mrs, &rs, schema_);
+  ASSERT_NO_FATAL_FAILURE();
+
+  shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_));
+  InsertRows(mrs_b.get(), 10, 100);
+  MvccSnapshot snap(mvcc_);
+  shared_ptr<DiskRowSet> rs_b;
+  FlushAndReopen(*mrs_b, &rs_b, schema_);
+  ASSERT_NO_FATAL_FAILURE();
+
+  // Update all the rows in the second row set
+  UpdateRows(mrs_b.get(), 10, 100, 2);
+
+  // Catch the updates that came in after the snapshot flush was made.
+  // Note that we are merging two MRS, it's a hack
+  MvccSnapshot snap2(mvcc_);
+  vector<shared_ptr<CompactionInput> > merge_inputs;
+  merge_inputs.push_back(
+        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs, &schema_, snap2)));
+  merge_inputs.push_back(
+        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap2)));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+
+  string dummy_name = "";
+  WriteTransactionContext tx_ctx;
+
+  // This would fail without KUDU-102
+  ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
+                                        &tx_ctx,
+                                        input.get(),
+                                        snap,
+                                        snap2,
+                                        boost::assign::list_of(rs) (rs_b)));
+}
+
+
 // Test compacting when all of the inputs and the output have the same schema
 TEST_F(TestCompaction, TestMerge) {
   vector<Schema> schemas;

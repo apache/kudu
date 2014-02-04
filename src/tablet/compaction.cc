@@ -650,7 +650,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         gscoped_ptr<MutationResultPB> result(new MutationResultPB);
         DCHECK_SCHEMA_EQ(schema, cur_tracker->schema());
         Status s = cur_tracker->Update(mut->txid(),
-                                       row_idx,
+                                       idx_in_delta_tracker,
                                        mut->changelist(),
                                        result.get());
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
