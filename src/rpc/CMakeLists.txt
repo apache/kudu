@@ -5,7 +5,7 @@ PROTOBUF_GENERATE_CPP(RPC_HEADER_PROTO_SRCS RPC_HEADER_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES rpc_header.proto)
-add_library(rpc_header_proto ${RPC_HEADER_PROTO_SRCS} ${RPC_HEADER_PROTO_HDFS})
+add_library(rpc_header_proto ${RPC_HEADER_PROTO_SRCS} ${RPC_HEADER_PROTO_HDRS})
 target_link_libraries(rpc_header_proto protobuf)
 
 ### RPC library
