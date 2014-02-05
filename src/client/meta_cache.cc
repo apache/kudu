@@ -68,10 +68,11 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
                                       bool force) {
   HostPort hp;
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    boost::unique_lock<simple_spinlock> l(lock_);
 
     if (proxy_ && !force) {
       // Already have a proxy created.
+      l.unlock();
       cb(Status::OK());
       return;
     }
