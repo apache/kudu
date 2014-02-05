@@ -260,6 +260,9 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
   if (PREDICT_TRUE(s.ok())) {
     RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_txid(), memrowset_->mrs_id()));
   } else {
+    if (s.IsAlreadyPresent() && metrics_) {
+      metrics_->insertions_failed_dup_key->Increment();
+    }
     tx_ctx->AddFailedInsert(s);
   }
   return s;
