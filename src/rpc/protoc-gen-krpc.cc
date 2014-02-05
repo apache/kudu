@@ -623,15 +623,17 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       const ServiceDescriptor *service = file->service(service_idx);
       subs->PushService(service);
       Print(printer, *subs,
-        "$service_name$Proxy::$service_name$Proxy(const std::tr1::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
-        "                                   const ::kudu::Sockaddr &remote)\n"
+        "$service_name$Proxy::$service_name$Proxy(\n"
+        "   const std::tr1::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
+        "   const ::kudu::Sockaddr &remote)\n"
         "  : proxy_(messenger, remote, \"$full_service_name$\") {\n"
         "}\n"
         "\n"
         "$service_name$Proxy::~$service_name$Proxy() {\n"
         "}\n"
         "\n"
-        "void $service_name$Proxy::set_user_credentials(const ::kudu::rpc::UserCredentials& user_credentials) {\n"
+        "void $service_name$Proxy::set_user_credentials(\n"
+        "  const ::kudu::rpc::UserCredentials& user_credentials) {\n"
         "  proxy_.set_user_credentials(user_credentials);\n"
         "}\n"
         "\n"

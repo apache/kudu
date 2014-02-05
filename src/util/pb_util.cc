@@ -165,7 +165,8 @@ void TruncateFields(Message* message, int max_len) {
       for (int i = 0; i < reflection->FieldSize(*message, field); i++) {
         switch (field->cpp_type()) {
           case FieldDescriptor::CPPTYPE_STRING: {
-            const string& s_const = reflection->GetRepeatedStringReference(*message, field, i, NULL);
+            const string& s_const = reflection->GetRepeatedStringReference(*message, field, i,
+                                                                           NULL);
             TruncateString(const_cast<string*>(&s_const), max_len);
             break;
           }

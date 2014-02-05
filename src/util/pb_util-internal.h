@@ -17,8 +17,7 @@ class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInput
   SequentialFileFileInputStream(SequentialFile *rfile, size_t buffer_size = kDefaultBufferSize)
     : buffer_used_(0), buffer_offset_(0),
       buffer_size_(buffer_size), buffer_(new uint8[buffer_size_]),
-      total_read_(0), rfile_(rfile)
-  {
+      total_read_(0), rfile_(rfile) {
     CHECK_GT(buffer_size, 0);
   }
 
@@ -35,7 +34,7 @@ class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInput
     total_read_ -= count;
   }
 
-  long ByteCount() const {
+  long ByteCount() const { // NOLINT(runtime/int)
     return total_read_;
   }
 
@@ -107,8 +106,7 @@ class WritableFileOutputStream : public google::protobuf::io::ZeroCopyOutputStre
  public:
   WritableFileOutputStream(WritableFile *wfile, size_t buffer_size = kDefaultBufferSize)
     : buffer_offset_(0), buffer_size_(buffer_size), buffer_(new uint8[buffer_size_]),
-      flushed_(0), wfile_(wfile)
-  {
+      flushed_(0), wfile_(wfile) {
     CHECK_GT(buffer_size, 0);
   }
 
@@ -133,7 +131,7 @@ class WritableFileOutputStream : public google::protobuf::io::ZeroCopyOutputStre
     buffer_offset_ -= count;
   }
 
-  long ByteCount() const {
+  long ByteCount() const { // NOLINT(runtime/int)
     return flushed_ + buffer_offset_;
   }
 
