@@ -4,8 +4,11 @@
 #include <string>
 #include <tr1/memory>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <boost/foreach.hpp>
 
+#include "util/stopwatch.h"
 #include "util/status.h"
 #include "util/test_util.h"
 #include "util/env.h"
@@ -18,6 +21,102 @@ using std::string;
 using std::tr1::shared_ptr;
 
 class TestEnv : public KuduTest {
+ protected:
+
+  void VerifyTestData(const Slice& read_data, size_t offset) {
+    for (int i = 0; i < read_data.size(); i++) {
+      size_t file_offset = offset + i;
+      ASSERT_EQ((file_offset * 31) & 0xff, read_data[i]) << "failed at " << i;
+    }
+  }
+
+  void MakeVectors(int num_slices, int slice_size, int num_iterations,
+                   gscoped_ptr<faststring[]>* data, vector<vector<Slice > >* vec) {
+    data->reset(new faststring[num_iterations * num_slices]);
+    vec->resize(num_iterations);
+
+    int data_idx = 0;
+    int byte_idx = 0;
+    for (int vec_idx = 0; vec_idx < num_iterations; vec_idx++) {
+      vector<Slice>& iter_vec = vec->at(vec_idx);
+      iter_vec.resize(num_slices);
+      for (int i = 0; i < num_slices; i++) {
+        (*data)[data_idx].resize(slice_size);
+        for (int j = 0; j < slice_size; j++) {
+          (*data)[data_idx][j] = (byte_idx * 31) & 0xff;
+          ++byte_idx;
+        }
+        iter_vec[i]= Slice((*data)[data_idx]);
+        ++data_idx;
+      }
+    }
+  }
+
+  void ReadAndVerifyTestData(RandomAccessFile* raf, size_t offset, size_t n) {
+    gscoped_ptr<uint8_t[]> scratch(new uint8_t[n]);
+    Slice s;
+    ASSERT_STATUS_OK(env_util::ReadFully(raf, offset, n, &s,
+                                         scratch.get()));
+    ASSERT_EQ(n, s.size());
+    ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
+  }
+
+  void TestAppendVector(size_t num_slices, size_t slice_size, size_t iterations,
+                        bool fast, bool pre_allocate) {
+    const string kTestPath = GetTestPath("test_env_appendvec_read_append");
+    shared_ptr<WritableFile> file;
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
+
+    if (pre_allocate) {
+      ASSERT_STATUS_OK(file->PreAllocate(num_slices * slice_size * iterations));
+      ASSERT_STATUS_OK(file->Sync());
+    }
+
+    gscoped_ptr<faststring[]> data;
+    vector<vector<Slice> > input;
+
+    MakeVectors(num_slices, slice_size, iterations, &data, &input);
+
+    shared_ptr<RandomAccessFile> raf;
+
+    if (!fast) {
+      ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
+    }
+
+    srand(123);
+
+    const string test_descr = strings::Substitute(
+        "appending a vector of slices(number of slices=$0,size of slice=$1 b) $2 times",
+        num_slices, slice_size, iterations);
+    LOG_TIMING(INFO, test_descr)  {
+      for (int i = 0; i < iterations; i++) {
+        if (fast || random() % 2) {
+          ASSERT_STATUS_OK(file->AppendVector(input[i]));
+        } else {
+          BOOST_FOREACH(const Slice& slice, input[i]) {
+            ASSERT_STATUS_OK(file->Append(slice));
+          }
+        }
+        if (!fast) {
+          // Verify as write. Note: this requires that file is pre-allocated, otherwise
+          // the ReadFully() fails with EINVAL.
+          ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
+                                                        num_slices * slice_size));
+        }
+      }
+    }
+
+    // Verify the entire file
+    ASSERT_STATUS_OK(file->Close());
+
+    if (fast) {
+      ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
+    }
+    for (int i = 0; i < iterations; i++) {
+      ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
+                                                    num_slices * slice_size));
+    }
+  }
 };
 
 const uint32_t one_mb = 1024 * 1024;
@@ -152,12 +251,7 @@ static void WriteTestFile(Env* env, const string& path, size_t size) {
   ASSERT_STATUS_OK(wf->Close());
 }
 
-static void VerifyTestData(const Slice& read_data, size_t offset) {
-  for (int i = 0; i < read_data.size(); i++) {
-    size_t file_offset = offset + i;
-    ASSERT_EQ((file_offset * 31) & 0xff, read_data[i]) << "failed at " << i;
-  }
-}
+
 
 TEST_F(TestEnv, TestReadFully) {
   SeedRandom();
@@ -191,6 +285,15 @@ TEST_F(TestEnv, TestReadFully) {
   ASSERT_FALSE(status.ok());
   ASSERT_TRUE(status.IsIOError());
   ASSERT_STR_CONTAINS(status.ToString(), "EOF");
+}
+
+TEST_F(TestEnv, TestAppendVector) {
+  LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
+  TestAppendVector(2000, 1024, 5, true, true);
+  LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
+  TestAppendVector(2000, 1024, 5, true, false);
+  LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
+  TestAppendVector(128, 4096, 5, false, true);
 }
 
 }  // namespace kudu

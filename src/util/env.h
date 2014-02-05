@@ -221,6 +221,13 @@ class WritableFile {
   // operation.
   virtual Status PreAllocate(uint64_t size) = 0;
   virtual Status Append(const Slice& data) = 0;
+
+  // If possible, uses scatter-gather I/O to efficiently append
+  // multiple buffers to a file. Otherwise, falls back to regular I/O.
+  //
+  // For implementation specific quirks and details, see comments in
+  // implementation source code (e.g., env_posix.cc)
+  virtual Status AppendVector(const vector<Slice>& data_vector) = 0;
   virtual Status Close() = 0;
   virtual Status Flush() = 0;
   virtual Status Sync() = 0;

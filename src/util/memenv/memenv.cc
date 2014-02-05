@@ -6,6 +6,7 @@
 // - use boost mutexes instead of port mutexes
 
 #include <string.h>
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
@@ -237,6 +238,15 @@ class WritableFileImpl : public WritableFile {
 
   virtual Status Append(const Slice& data) {
     return file_->Append(data);
+  }
+
+  // This is a dummy implementation that simply serially appends all
+  // slices using regular I/O.
+  virtual Status AppendVector(const vector<Slice>& data_vector) {
+    BOOST_FOREACH(const Slice& data, data_vector) {
+      RETURN_NOT_OK(file_->Append(data));
+    }
+    return Status::OK();
   }
 
   virtual Status Close() { return Status::OK(); }

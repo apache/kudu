@@ -15,12 +15,15 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include <deque>
 
 #include "gutil/atomicops.h"
+#include "gutil/strings/substitute.h"
 #include "util/env.h"
 #include "util/errno.h"
 #include "util/slice.h"
@@ -272,6 +275,75 @@ class PosixMmapFile : public WritableFile {
       src += n;
       left -= n;
     }
+    return Status::OK();
+  }
+
+  Status DoWritev(const vector<Slice>& data_vector,
+                  size_t offset, size_t n) {
+    DCHECK_LE(n, IOV_MAX);
+
+    struct iovec iov[n];
+    size_t j = 0;
+    size_t nbytes = 0;
+
+    for (size_t i = offset; i < offset + n; i++) {
+      const Slice& data = data_vector[i];
+      iov[j].iov_base = const_cast<uint8_t*>(data.data());
+      iov[j].iov_len = data.size();
+      nbytes += data.size();
+      ++j;
+    }
+
+    size_t mem_offset = dst_ - base_;
+    size_t actual_offset = file_offset_ + mem_offset;
+
+    size_t left = nbytes;
+    while (left > 0) {
+      DCHECK_LE(base_, dst_);
+      DCHECK_LE(dst_, limit_);
+      size_t avail = limit_ - dst_;
+      if (avail == 0) {
+        if (!UnmapCurrentRegion() ||
+            !MapNewRegion()) {
+          return IOError(filename_, errno);
+        }
+      }
+      size_t n = (left <= avail) ? left : avail;
+      dst_ += n;
+      left -= n;
+    }
+
+    ssize_t written = pwritev(fd_, iov, n, actual_offset);
+
+    if (PREDICT_FALSE(written == -1)) {
+      int err = errno;
+      return IOError("writev error", err);
+    }
+
+    if (PREDICT_FALSE(written != nbytes)) {
+      return Status::IOError(
+          strings::Substitute("writev error: expected to write $0 bytes, wrote $1 bytes instead",
+                              nbytes, written));
+    }
+
+    return Status::OK();
+  }
+
+  // Uses pwritev to perform scatter-gather I/O. Note that on systems
+  // other than Linux, it may be neccessary to call Sync() after each
+  // AppendVector() if we also plan to read from this file.
+  virtual Status AppendVector(const vector<Slice>& data_vector) {
+    // TODO (perf) : investigate what the optimal number of vectors to
+    //               pass to writev at one time is or if it matters.
+    static const size_t kIovMaxElements = IOV_MAX;
+
+    for (size_t i = 0; i < data_vector.size(); i += kIovMaxElements) {
+      size_t n = std::min(data_vector.size() - i, kIovMaxElements);
+      RETURN_NOT_OK(DoWritev(data_vector, i, n));
+    }
+
+    pending_sync_ = true;
+
     return Status::OK();
   }
 
