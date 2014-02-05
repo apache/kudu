@@ -565,5 +565,43 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
             "INSERT uint32 key=12345, uint32 bad_col=12345");
 }
 
+TEST_F(ClientTest, TestBasicAlterOperations) {
+  AlterTableBuilder alter;
+
+  // test that remove key should throws an error
+  {
+    alter.Reset();
+    alter.DropColumn("key");
+    Status s = client_->AlterTable(kTableName, alter);
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column");
+  }
+
+  // test that renaming a key should throws an error
+  {
+    alter.Reset();
+    alter.RenameColumn("key", "key2");
+    Status s = client_->AlterTable(kTableName, alter);
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "cannot rename a key column");
+  }
+
+  // test that renaming to an already-existing name throws an error
+  {
+    alter.Reset();
+    alter.RenameColumn("int_val", "string_val");
+    Status s = client_->AlterTable(kTableName, alter);
+    ASSERT_TRUE(s.IsAlreadyPresent());
+    ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
+  }
+
+  {
+    alter.Reset();
+    alter.DropColumn("int_val");
+    alter.AddNullableColumn("new_col", UINT32);
+    ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
+  }
+}
+
 } // namespace client
 } // namespace kudu

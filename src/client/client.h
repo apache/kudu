@@ -26,11 +26,13 @@ class Messenger;
 }
 
 namespace master {
+class AlterTableRequestPB;
 class MasterServiceProxy;
 }
 
 namespace client {
 
+class AlterTableBuilder;
 class Insert;
 class KuduTable;
 class KuduSession;
@@ -89,6 +91,13 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
                      const CreateTableOptions& opts);
 
   Status DeleteTable(const std::string& table_name);
+
+  Status AlterTable(const std::string& table_name,
+                    const AlterTableBuilder& alter);
+
+  // set 'alter_in_progress' to true if an AlterTable operation is in-progress
+  Status IsAlterTableInProgress(const std::string& table_name,
+                                bool *alter_in_progress);
 
   // Open the table with the given name. If the table has not been opened before
   // in this client, this will do an RPC to ensure that the table exists and
@@ -253,6 +262,39 @@ class Insert {
   DISALLOW_COPY_AND_ASSIGN(Insert);
 };
 
+// Alter Table helper
+//   AlterTableBuilder builder;
+//   builder.AddNullableColumn("col1", UINT32);
+//   client->AlterTable("table-name", builder);
+class AlterTableBuilder {
+ public:
+  AlterTableBuilder();
+  ~AlterTableBuilder();
+
+  void Reset();
+
+  Status AddColumn(const std::string& name,
+                   DataType type,
+                   const void *default_value,
+                   ColumnStorageAttributes attributes = ColumnStorageAttributes());
+
+  Status AddNullableColumn(const std::string& name,
+                           DataType type,
+                           ColumnStorageAttributes attributes = ColumnStorageAttributes());
+
+  Status DropColumn(const std::string& name);
+
+  Status RenameColumn(const std::string& old_name,
+                      const std::string& new_name);
+
+  // TODO: Add Edit column
+
+ private:
+  friend class KuduClient;
+  master::AlterTableRequestPB* alter_steps_;
+
+  DISALLOW_COPY_AND_ASSIGN(AlterTableBuilder);
+};
 
 // An error which occurred in a given operation. This tracks the operation
 // which caused the error, along with whatever the actual error was.

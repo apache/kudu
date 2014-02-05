@@ -28,12 +28,16 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using kudu::master::MasterServiceProxy;
+using kudu::master::AlterTableRequestPB;
+using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
 using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::IsAlterTableDoneRequestPB;
+using kudu::master::IsAlterTableDoneResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
@@ -138,6 +142,56 @@ Status KuduClient::DeleteTable(const std::string& table_name) {
     return StatusFromPB(resp.error().status());
   }
 
+  return Status::OK();
+}
+
+Status KuduClient::AlterTable(const std::string& table_name,
+                              const AlterTableBuilder& alter) {
+  AlterTableRequestPB req;
+  AlterTableResponsePB resp;
+  RpcController rpc;
+
+  if (alter.alter_steps_->alter_schema_steps_size() == 0) {
+    return Status::InvalidArgument("No alter steps provided");
+  }
+
+  req.mutable_table()->set_table_name(table_name);
+  req.mutable_alter_schema_steps()->CopyFrom(alter.alter_steps_->alter_schema_steps());
+  RETURN_NOT_OK(master_proxy_->AlterTable(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  {
+    // TODO: same fix as open table
+    while (1) {
+      bool alter_in_progress = false;
+      RETURN_NOT_OK(IsAlterTableInProgress(table_name, &alter_in_progress));
+      if (!alter_in_progress) {
+        break;
+      }
+
+      /* TODO: Add a timeout or number of retries */
+      usleep(100000);
+    }
+  }
+
+  return Status::OK();
+}
+
+Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
+                                          bool *alter_in_progress) {
+  IsAlterTableDoneRequestPB req;
+  IsAlterTableDoneResponsePB resp;
+  RpcController rpc;
+
+  req.mutable_table()->set_table_name(table_name);
+  RETURN_NOT_OK(master_proxy_->IsAlterTableDone(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  *alter_in_progress = !resp.done();
   return Status::OK();
 }
 
@@ -408,6 +462,63 @@ Insert::Insert(KuduTable* table)
 }
 
 Insert::~Insert() {}
+
+////////////////////////////////////////////////////////////
+// AlterTable
+////////////////////////////////////////////////////////////
+AlterTableBuilder::AlterTableBuilder()
+  : alter_steps_(new AlterTableRequestPB) {
+}
+
+AlterTableBuilder::~AlterTableBuilder() {
+  delete alter_steps_;
+}
+
+void AlterTableBuilder::Reset() {
+  alter_steps_->clear_alter_schema_steps();
+}
+
+Status AlterTableBuilder::AddColumn(const std::string& name,
+                                    DataType type,
+                                    const void *default_value,
+                                    ColumnStorageAttributes attributes) {
+  if (default_value == NULL) {
+    return Status::InvalidArgument("A new column must have a default value",
+                                   "Use AddNullableColumn() to add a NULLABLE column");
+  }
+
+  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+  step->set_type(AlterTableRequestPB::ADD_COLUMN);
+  ColumnSchemaToPB(ColumnSchema(name, type, false, default_value, default_value, attributes),
+                                step->mutable_add_column()->mutable_schema());
+  return Status::OK();
+}
+
+Status AlterTableBuilder::AddNullableColumn(const std::string& name,
+                                            DataType type,
+                                            ColumnStorageAttributes attributes) {
+  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+  step->set_type(AlterTableRequestPB::ADD_COLUMN);
+  ColumnSchemaToPB(ColumnSchema(name, type, true, NULL, NULL, attributes),
+                                step->mutable_add_column()->mutable_schema());
+  return Status::OK();
+}
+
+Status AlterTableBuilder::DropColumn(const std::string& name) {
+  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+  step->set_type(AlterTableRequestPB::DROP_COLUMN);
+  step->mutable_drop_column()->set_name(name);
+  return Status::OK();
+}
+
+Status AlterTableBuilder::RenameColumn(const std::string& old_name,
+                                       const std::string& new_name) {
+  AlterTableRequestPB::Step* step = alter_steps_->add_alter_schema_steps();
+  step->set_type(AlterTableRequestPB::RENAME_COLUMN);
+  step->mutable_rename_column()->set_old_name(old_name);
+  step->mutable_rename_column()->set_new_name(new_name);
+  return Status::OK();
+}
 
 ////////////////////////////////////////////////////////////
 // KuduScanner

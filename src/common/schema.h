@@ -387,6 +387,12 @@ class Schema {
     return false;
   }
 
+  // Returns true if the specified column is a key
+  bool is_key_column(const StringPiece col_name) const {
+    int index = find_column(col_name);
+    return index >= 0 && index < num_key_columns_;
+  }
+
   // Return true if this Schema is initialized and valid.
   bool initialized() const {
     return !col_offsets_.empty();

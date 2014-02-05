@@ -591,6 +591,11 @@ static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
         if (!step.has_drop_column()) {
           return Status::InvalidArgument("DROP_COLUMN missing column info");
         }
+
+        if (cur_schema.is_key_column(step.drop_column().name())) {
+          return Status::InvalidArgument("cannot remove a key column");
+        }
+
         RETURN_NOT_OK(builder.RemoveColumn(step.drop_column().name()));
         break;
       }
@@ -599,11 +604,19 @@ static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
         if (!step.has_rename_column()) {
           return Status::InvalidArgument("RENAME_COLUMN missing column info");
         }
+
+        // TODO: In theory we can rename a key
+        if (cur_schema.is_key_column(step.rename_column().old_name())) {
+          return Status::InvalidArgument("cannot rename a key column");
+        }
+
         RETURN_NOT_OK(builder.RenameColumn(
                         step.rename_column().old_name(),
                         step.rename_column().new_name()));
         break;
       }
+
+      // TODO: EDIT_COLUMN
 
       default: {
         return Status::InvalidArgument(
