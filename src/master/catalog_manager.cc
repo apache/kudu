@@ -640,7 +640,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return s;
   }
 
-  // 2. Update the metadata for the on-disk state
+  // 2. Calculate new schema for the on-disk state, not persisted yet
   TRACE("Apply alter schema");
   Schema new_schema;
   Status s = ApplyAlterSteps(l.data().pb.schema(), req, &new_schema);
@@ -649,11 +649,11 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return s;
   }
 
-  // 3. Update the schema and increment the version number
+  // 3. Serialize the schema and increment the version number
   CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
   l.mutable_data()->pb.set_version(l.mutable_data()->pb.version() + 1);
 
-  // 3. Update sys-tables with the new table schema (PONR)
+  // 4. Update sys-tables with the new table schema (point of no return!)
   TRACE("Updating metadata on disk");
   s = sys_tables_->UpdateTable(table.get());
   if (!s.ok()) {
@@ -661,7 +661,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                               s.ToString()));
   }
 
-  // 4. Update the in-memory state
+  // 5. Update the in-memory state
   TRACE("Committing in-memory state");
   l.Commit();
 
