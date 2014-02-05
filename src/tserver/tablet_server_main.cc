@@ -17,29 +17,14 @@
 #include "tserver/ts_tablet_manager.h"
 #include "util/logging.h"
 
-using kudu::metadata::QuorumPB;
-using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;
 
-static const char* const kQuorumFlagFormat =
-  "Malformed \"tablet_quorum_for_demo\" flag. "
-  "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
-  "Note the first host is assumed to be the LEADER."
-  "Number of hosts may be 2 or 3.";
-
 DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
-
-DEFINE_string(tablet_quorum_for_demo, "",
-              "The locations of other tablet servers in the quorum, for demo purposes.\n"
-              "Format: name:host0:port0,name:host1:port1,name:host2:port2\n"
-              "Note the first host is assumed to be the LEADER and 'name' should"
-              " correspond to the overriden uuid in each server (set with '')");
 
 namespace kudu {
 namespace tserver {
-
 
 // Pick the next tablet to perform some maintenance on. This simply round-robins
 // through all the tablets in the server. It may return NULL if there are no
