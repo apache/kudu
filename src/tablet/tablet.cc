@@ -611,7 +611,10 @@ Status Tablet::Flush(const RowSetsInCompaction& input,
 
   LOG(INFO) << "Flush: entering stage 1 (freezing old memrowset from inserts)";
 
-  if (flush_hooks_) RETURN_NOT_OK(flush_hooks_->PostSwapNewMemRowSet());
+  if (flush_hooks_) {
+    RETURN_NOT_OK_PREPEND(flush_hooks_->PostSwapNewMemRowSet(),
+                          "PostSwapNewMemRowSet hook failed");
+  }
 
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
@@ -806,18 +809,25 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
 
   VLOG(1) << "Flushing with MVCC snapshot: " << flush_snap.ToString();
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostTakeMvccSnapshot());
+  if (common_hooks_) {
+    RETURN_NOT_OK_PREPEND(common_hooks_->PostTakeMvccSnapshot(),
+                          "PostTakeMvccSnapshot hook failed");
+  }
 
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, &schema, &merge));
 
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
                                compaction_policy_->target_rowset_size());
-  RETURN_NOT_OK(drsw.Open());
-  RETURN_NOT_OK(kudu::tablet::Flush(merge.get(), flush_snap, &drsw));
-  RETURN_NOT_OK(drsw.Finish());
+  RETURN_NOT_OK_PREPEND(drsw.Open(), "Failed to open DiskRowSet for flush");
+  RETURN_NOT_OK_PREPEND(kudu::tablet::Flush(merge.get(), flush_snap, &drsw),
+                        "Flush to disk failed");
+  RETURN_NOT_OK_PREPEND(drsw.Finish(), "Failed to finish DRS writer");
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostWriteSnapshot());
+  if (common_hooks_) {
+    RETURN_NOT_OK_PREPEND(common_hooks_->PostWriteSnapshot(),
+                          "PostWriteSnapshot hook failed");
+  }
 
   // Though unlikely, it's possible that all of the input rows were actually
   // GCed in this compaction. In that case, we don't actually want to reopen.
@@ -869,11 +879,15 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     // Ensure that the latest schema is set to the new RowSets
     boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
     BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_rowsets) {
-      RETURN_NOT_OK(rs->AlterSchema(schema_));
+      RETURN_NOT_OK_PREPEND(rs->AlterSchema(schema_),
+                            "Failed to set current schema on latest RS");
     }
   }
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapInDuplicatingRowSet());
+  if (common_hooks_) {
+    RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapInDuplicatingRowSet(),
+                          "PostSwapInDuplicatingRowSet hook failed");
+  }
 
   // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
   // input rowsets, but not in the output rowsets. Here we re-scan the compaction input, copying
@@ -901,7 +915,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   {
     boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-    RETURN_NOT_OK(input.CreateCompactionInput(snap2, &schema_, &merge));
+    RETURN_NOT_OK_PREPEND(input.CreateCompactionInput(snap2, &schema_, &merge),
+                          "Failed to create compaction inputs");
   }
 
   // Updating rows in the compaction outputs needs to be tracked or else we
@@ -910,12 +925,13 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // only _and_ the commit must include the actual row data (vs. normally
   // only including the ids of the destination MemRowSets/DeltaRowStores).
   WriteTransactionContext compaction_tx;
-  RETURN_NOT_OK(ReupdateMissedDeltas(metadata_->oid(),
-                                     &compaction_tx,
-                                     merge.get(),
-                                     flush_snap,
-                                     snap2,
-                                     new_rowsets));
+  RETURN_NOT_OK_PREPEND(ReupdateMissedDeltas(metadata_->oid(),
+                                             &compaction_tx,
+                                             merge.get(),
+                                             flush_snap,
+                                             snap2,
+                                             new_rowsets),
+                        "Failed to re-update deltas missed during compaction phase 1");
 
   if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
     Barrier_AtomicIncrement(&total_missed_deltas_mutations_,
@@ -926,11 +942,15 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     commit->mutable_result()->CopyFrom(compaction_tx.Result());
     commit->set_op_type(MISSED_DELTA);
     shared_ptr<Future> commit_future;
-    RETURN_NOT_OK(consensus_->LocalCommit(&commit_op, &commit_future));
+    RETURN_NOT_OK_PREPEND(consensus_->LocalCommit(&commit_op, &commit_future),
+                          "Failed to commit the compensating transaction for missed deltas");
     commit_future->Wait();
   }
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostReupdateMissedDeltas());
+  if (common_hooks_) {
+    RETURN_NOT_OK_PREPEND(common_hooks_->PostReupdateMissedDeltas(),
+                          "PostReupdateMissedDeltas hook failed");
+  }
 
   // ------------------------------
   // Flush was successful.
@@ -948,11 +968,15 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
               "Unable to remove compaction inputs. Will GC later.");
 
   // Write out the new Tablet Metadata
-  RETURN_NOT_OK(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed));
+  RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed),
+                        "Failed to flush new tablet metadata");
 
   LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
 
-  if (common_hooks_) RETURN_NOT_OK(common_hooks_->PostSwapNewRowSet());
+  if (common_hooks_) {
+    RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),
+                          "PostSwapNewRowSet hook failed");
+  }
 
   return Status::OK();
 }
@@ -962,14 +986,18 @@ Status Tablet::Compact(CompactFlags flags) {
 
   RowSetsInCompaction input;
   // Step 1. Capture the rowsets to be merged
-  RETURN_NOT_OK(PickRowSetsToCompact(&input, flags));
+  RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
+                        "Failed to pick rowsets to compact");
   if (input.num_rowsets() < 2) {
     VLOG(1) << "Not enough rowsets to run compaction! Aborting...";
     return Status::OK();
   }
   LOG(INFO) << "Compaction: stage 1 complete, picked "
             << input.num_rowsets() << " rowsets to compact";
-  if (compaction_hooks_) RETURN_NOT_OK(compaction_hooks_->PostSelectIterators());
+  if (compaction_hooks_) {
+    RETURN_NOT_OK_PREPEND(compaction_hooks_->PostSelectIterators(),
+                          "PostSelectIterators hook failed");
+  }
 
   input.DumpToLog();
 
