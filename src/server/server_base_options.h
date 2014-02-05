@@ -24,6 +24,10 @@ struct ServerBaseOptions {
   WebserverOptions webserver_opts;
 
   std::string dump_info_path;
+  std::string dump_info_format;
+
+ protected:
+  ServerBaseOptions();
 };
 
 } // namespace server

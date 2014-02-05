@@ -8,8 +8,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "rpc/service_if.h"
-#include "server/rpc_server.h"
-#include "server/webserver_options.h"
+#include "server/server_base_options.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -19,6 +18,7 @@ class FsManager;
 class MetricContext;
 class MetricRegistry;
 class NodeInstancePB;
+class RpcServer;
 class Sockaddr;
 class Webserver;
 
@@ -80,6 +80,10 @@ class ServerBase {
 
  private:
   Status GenerateInstanceID();
+  Status DumpServerInfo(const std::string& path,
+                        const std::string& format) const;
+
+  ServerBaseOptions options_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerBase);
 };

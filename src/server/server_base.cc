@@ -1,7 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
-
 #include "server/server_base.h"
 
+#include <boost/foreach.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <string>
 #include <vector>
@@ -14,9 +15,11 @@
 #include "server/tcmalloc_metrics.h"
 #include "server/webserver.h"
 #include "server/server_base_options.h"
+#include "server/server_base.pb.h"
 #include "util/env.h"
 #include "util/metrics.h"
 #include "util/net/sockaddr.h"
+#include "util/pb_util.h"
 #include "util/spinlock_profiling.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
@@ -34,7 +37,8 @@ ServerBase::ServerBase(const ServerBaseOptions& options,
     fs_manager_(new FsManager(options.env, options.base_dir)),
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
-    is_first_run_(false) {
+    is_first_run_(false),
+    options_(options) {
 }
 
 ServerBase::~ServerBase() {
@@ -99,12 +103,57 @@ Status ServerBase::Init() {
   return Status::OK();
 }
 
+Status ServerBase::DumpServerInfo(const std::string& path,
+                                  const std::string& format) const {
+  ServerStatusPB status;
+
+  // RPC ports
+  {
+    vector<Sockaddr> addrs;
+    rpc_server_->GetBoundAddresses(&addrs);
+    BOOST_FOREACH(const Sockaddr& addr, addrs) {
+      HostPortPB* pb = status.add_bound_rpc_addresses();
+      pb->set_host(addr.host());
+      pb->set_port(addr.port());
+    }
+  }
+
+  // HTTP ports
+  {
+    vector<Sockaddr> addrs;
+    web_server_->GetBoundAddresses(&addrs);
+    BOOST_FOREACH(const Sockaddr& addr, addrs) {
+      HostPortPB* pb = status.add_bound_http_addresses();
+      pb->set_host(addr.host());
+      pb->set_port(addr.port());
+    }
+  }
+
+  if (boost::iequals(format, "json")) {
+    string json = JsonWriter::ToJson(status);
+    RETURN_NOT_OK(WriteStringToFile(options_.env, Slice(json), path));
+  } else if (boost::iequals(format, "pb")) {
+    RETURN_NOT_OK(pb_util::WritePBToPath(options_.env, path, status));
+  } else {
+    return Status::InvalidArgument("bad format", format);
+  }
+
+  LOG(INFO) << "Dumped server information to " << path;
+  return Status::OK();
+}
+
 Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
   RETURN_NOT_OK(rpc_server_->Start(messenger_, rpc_impl.Pass()));
 
   AddDefaultPathHandlers(web_server_.get());
   RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
   RETURN_NOT_OK(web_server_->Start());
+
+  if (!options_.dump_info_path.empty()) {
+    RETURN_NOT_OK_PREPEND(DumpServerInfo(options_.dump_info_path, options_.dump_info_format),
+                          "Failed to dump server info to " + options_.dump_info_path);
+  }
+
   return Status::OK();
 }
 

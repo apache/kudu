@@ -18,12 +18,18 @@ set(SERVER_SRCS
   pprof-path-handlers.cc
   rpc_server.cc
   server_base.cc
+  server_base_options.cc
   tcmalloc_metrics.cc
   webserver.cc
   webserver_options.cc
 )
 
-add_library(server ${SERVER_SRCS} ${METADATA_PROTO_SRCS})
+PROTOBUF_GENERATE_CPP(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES server_base.proto)
+
+add_library(server ${SERVER_SRCS} ${SERVER_BASE_PROTO_SRCS} ${SERVER_BASE_PROTO_HDRS})
 add_dependencies(server kudu_common)
 add_dependencies(server cfile_proto)
 add_dependencies(server metadata_proto)
