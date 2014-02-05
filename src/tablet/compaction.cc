@@ -25,15 +25,18 @@ class MemRowSetCompactionInput : public CompactionInput {
                            const MvccSnapshot& snap,
                            const Schema* projection)
     : iter_(memrowset.NewIterator(projection, snap)),
-      arena_(32*1024, 128*1024) {
+      arena_(32*1024, 128*1024),
+      has_more_blocks_(false) {
   }
 
   virtual Status Init() {
-    return iter_->Init(NULL);
+    RETURN_NOT_OK(iter_->Init(NULL));
+    has_more_blocks_ = iter_->HasNext();
+    return Status::OK();
   }
 
   virtual bool HasMoreBlocks() {
-    return iter_->HasNext();
+    return has_more_blocks_;
   }
 
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
@@ -48,22 +51,19 @@ class MemRowSetCompactionInput : public CompactionInput {
 
     arena_.Reset();
     for (int i = 0; i < num_in_block; i++) {
-      if (i > 0) {
-        iter_->Next();
-      }
-
       // TODO: A copy is performed to have all CompactionInputRow of the same type
       CompactionInputRow &input_row = block->at(i);
       input_row.row.Reset(row_block_.get(), i);
       RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row, reinterpret_cast<Arena*>(NULL),
                                          &input_row.mutation_head, &arena_));
+      iter_->Next();
     }
 
+    has_more_blocks_ = iter_->HasNext();
     return Status::OK();
   }
 
   virtual Status FinishBlock() {
-    iter_->Next();
     return Status::OK();
   }
 
@@ -79,6 +79,8 @@ class MemRowSetCompactionInput : public CompactionInput {
 
   // Arena used to store the projected mutations of the current block.
   Arena arena_;
+
+  bool has_more_blocks_;
 };
 
 ////////////////////////////////////////////////////////////

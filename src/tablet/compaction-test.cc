@@ -128,7 +128,8 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
-  void DoCompact(const vector<shared_ptr<DiskRowSet> >& rowsets, const Schema& projection) {
+  void DoCompact(const vector<shared_ptr<DiskRowSet> >& rowsets, const Schema& projection,
+                 shared_ptr<RowSetMetadata>* rowset_meta = NULL) {
     MvccSnapshot merge_snap(mvcc_);
     vector<shared_ptr<CompactionInput> > merge_inputs;
     BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
@@ -137,7 +138,7 @@ class TestCompaction : public KuduRowSetTest {
     }
 
     gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, &projection));
-    DoFlush(compact_input.get(), projection, merge_snap, NULL);
+    DoFlush(compact_input.get(), projection, merge_snap, rowset_meta);
   }
 
   void FlushAndReopen(const MemRowSet& mrs, shared_ptr<DiskRowSet> *rs, const Schema& projection) {
@@ -175,8 +176,17 @@ class TestCompaction : public KuduRowSetTest {
     }
 
     // Merge them.
-    DoCompact(rowsets, projection);
-    // TODO: Verify compaction results
+    shared_ptr<RowSetMetadata> meta;
+    ASSERT_NO_FATAL_FAILURE(DoCompact(rowsets, projection, &meta));
+
+    // Verify the resulting compaction output has the right number
+    // of rows.
+    shared_ptr<DiskRowSet> result_rs;
+    ASSERT_STATUS_OK(DiskRowSet::Open(meta, &result_rs));
+
+    rowid_t count = 0;
+    ASSERT_STATUS_OK(result_rs->CountRows(&count));
+    ASSERT_EQ(1000 * schemas.size(), count);
   }
 
   template<bool OVERLAP_INPUTS>
@@ -415,6 +425,31 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
   schemas.push_back(builder.Build());
 
   DoMerge(schemas.back(), schemas);
+}
+
+// Test MergeCompactionInput against MemRowSets. This behavior isn't currently
+// used (we never compact in-memory), but this is a regression test for a bug
+// encountered during development where the first row of each MRS got dropped.
+TEST_F(TestCompaction, TestMergeMRS) {
+  shared_ptr<MemRowSet> mrs_a(new MemRowSet(0, schema_));
+  InsertRows(mrs_a.get(), 10, 0);
+
+  shared_ptr<MemRowSet> mrs_b(new MemRowSet(0, schema_));
+  InsertRows(mrs_b.get(), 10, 1);
+
+  MvccSnapshot snap(mvcc_);
+  vector<shared_ptr<CompactionInput> > merge_inputs;
+  merge_inputs.push_back(
+        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)));
+  merge_inputs.push_back(
+        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap)));
+  gscoped_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+
+  vector<string> out;
+  IterateInput(input.get(), &out);
+  ASSERT_EQ(out.size(), 20);
+  EXPECT_EQ(out[0], "(string key=hello 00000000, uint32 val=0) mutations: []");
+  EXPECT_EQ(out[19], "(string key=hello 00000091, uint32 val=9) mutations: []");
 }
 
 #ifdef NDEBUG
