@@ -27,7 +27,7 @@ namespace kudu {
 namespace master {
 
 Master::Master(const MasterOptions& opts)
-  : ServerBase(opts.env, opts.base_dir, opts.rpc_opts, opts.webserver_opts, "kudu.master"),
+  : ServerBase(opts, "kudu.master"),
     initted_(false),
     ts_manager_(new TSManager()),
     catalog_manager_(new CatalogManager(this)),

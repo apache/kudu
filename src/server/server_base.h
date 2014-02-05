@@ -29,6 +29,8 @@ class ServiceIf;
 
 namespace server {
 
+class ServerBaseOptions;
+
 // Base class for tablet server and master.
 // Handles starting and stopping the RPC server and web server,
 // and provides a common interface for server-type-agnostic functions.
@@ -57,9 +59,7 @@ class ServerBase {
   MetricRegistry* metric_registry() { return metric_registry_.get(); }
 
  protected:
-  ServerBase(Env* env, const std::string& base_dir,
-             const RpcServerOptions& rpc_opts,
-             const WebserverOptions& web_opts,
+  ServerBase(const ServerBaseOptions& options,
              const std::string& metrics_namespace);
   virtual ~ServerBase();
 

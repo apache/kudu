@@ -13,6 +13,7 @@
 #include "server/rpc_server.h"
 #include "server/tcmalloc_metrics.h"
 #include "server/webserver.h"
+#include "server/server_base_options.h"
 #include "util/env.h"
 #include "util/metrics.h"
 #include "util/net/sockaddr.h"
@@ -26,15 +27,13 @@ using std::vector;
 namespace kudu {
 namespace server {
 
-ServerBase::ServerBase(Env* env, const string& base_dir,
-                       const RpcServerOptions& rpc_opts,
-                       const WebserverOptions& web_opts,
+ServerBase::ServerBase(const ServerBaseOptions& options,
                        const string& metric_namespace)
   : metric_registry_(new MetricRegistry()),
     metric_ctx_(new MetricContext(metric_registry_.get(), metric_namespace)),
-    fs_manager_(new FsManager(env, base_dir)),
-    rpc_server_(new RpcServer(rpc_opts)),
-    web_server_(new Webserver(web_opts)),
+    fs_manager_(new FsManager(options.env, options.base_dir)),
+    rpc_server_(new RpcServer(options.rpc_opts)),
+    web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false) {
 }
 
