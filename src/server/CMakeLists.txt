@@ -7,7 +7,6 @@ PROTOBUF_GENERATE_CPP(METADATA_PROTO_SRCS METADATA_PROTO_HDRS
 
 add_library(metadata_proto ${METADATA_PROTO_SRCS} ${METADATA_PROTO_HDRS})
 add_dependencies(metadata_proto kudu_common)
-add_dependencies(metadata_proto cfile_proto)
 
 set(SERVER_SRCS
   default-path-handlers.cc

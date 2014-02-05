@@ -3,7 +3,6 @@
 package kudu.metadata;
 
 import "common/common.proto";
-import "cfile/cfile.proto";
 
 // ============================================================================
 //  Local file system metadata
