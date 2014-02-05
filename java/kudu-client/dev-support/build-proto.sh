@@ -23,20 +23,22 @@
 # usage: ./build-proto.sh
 #
 
-which protoc
-if [ $? != 0 ] ; then
-  echo "Must have protoc compiler in your path to generate code"
-  exit 1
-fi
-
 KUDU_DIR=`dirname $0`/../../..
 SRC_DIR=$KUDU_DIR/src
-PROTO_DIR="$SRC_DIR/common $SRC_DIR/cfile $SRC_DIR/rpc $SRC_DIR/tserver $SRC_DIR/master $SRC_DIR/server"
 JAVA_DIR=$KUDU_DIR/java/kudu-client/src/main/java/
+PROTO_FILES=`find $SRC_DIR -type f -name "*.proto"`
+PROTOC_BIN=$KUDU_DIR/thirdparty/installed/bin/protoc
+if [ ! -f "$PROTOC_BIN" ] ; then
+  if which protoc > /dev/null; then
+    echo 'Warning: Using protoc from PATH instead of the 3rd party folder'
+    PROTOC_BIN=`which protoc`
+  else
+    echo 'Error: protoc is missing from the 3rd party folder and on the PATH'
+    exit 1
+  fi
+fi
 
 set -x
-for d in $PROTO_DIR ; do
-  for f in $d/*.proto ; do
-    protoc -I=$SRC_DIR --java_out=$JAVA_DIR $f
-  done
+for f in $PROTO_FILES ; do
+  $PROTOC_BIN -I=$SRC_DIR --java_out=$JAVA_DIR $f
 done
