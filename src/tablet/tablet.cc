@@ -105,7 +105,7 @@ Status Tablet::Open() {
   CHECK(schema_.has_column_ids());
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
-  next_mrs_id_ = metadata_->lastest_durable_mrs_id() + 1;
+  next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
 
   RowSetVector rowsets_opened;
 

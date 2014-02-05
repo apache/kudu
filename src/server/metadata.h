@@ -136,7 +136,7 @@ class TabletMetadata {
 
   FsManager *fs_manager() const { return fs_manager_; }
 
-  int64_t lastest_durable_mrs_id() { return last_durable_mrs_id_; }
+  int64_t last_durable_mrs_id() { return last_durable_mrs_id_; }
 
   // Creates a TabletSuperBlockPB that reflects the current tablet metadata
   // and sets 'super_block' to it.

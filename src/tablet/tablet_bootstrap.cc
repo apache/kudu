@@ -932,12 +932,12 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                                            op_result.ShortDebugString()));
     }
     // check if the insert is already flushed
-    if (op_result.mrs_id() <= tablet_->metadata()->lastest_durable_mrs_id()) {
+    if (op_result.mrs_id() <= tablet_->metadata()->last_durable_mrs_id()) {
       if (VLOG_IS_ON(1)) {
         VLOG(1) << "Skipping insert that was already flushed. OpId: "
             << committed_op_id.DebugString() << " insert index: "
             << insert_idx - 1 << " flushed to: " << op_result.mrs_id()
-            << " latest durable mrs id: " << tablet_->metadata()->lastest_durable_mrs_id();
+            << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
       }
       tx_ctx->AddFailedInsert(Status::AlreadyPresent("Row to insert was already flushed."));
       continue;
@@ -1111,7 +1111,7 @@ Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
 Status TabletBootstrap::HandleMRSMutation(const MutationInput& mutation_input,
                                           const MutationTargetPB& mutation_target,
                                           bool* applied_mutation) {
-  if (mutation_target.mrs_id() <= tablet_->metadata()->lastest_durable_mrs_id()) {
+  if (mutation_target.mrs_id() <= tablet_->metadata()->last_durable_mrs_id()) {
     string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
     if (VLOG_IS_ON(1)) {
       VLOG(1) << "Skipping MRS_MUTATION that was already flushed. OpId: "
