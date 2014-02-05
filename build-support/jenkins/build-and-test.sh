@@ -46,6 +46,8 @@ export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
+BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
+
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
   CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
@@ -62,16 +64,14 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   # Reset coverage info from previous runs
   find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
 elif [ "$BUILD_TYPE" = "LINT" ]; then
-  cmake .
-  make lint | tee build.log
-  RET=$?
-
   # Create empty test logs or else Jenkins fails to archive artifacts, which
   # results in the build failing.
   mkdir -p Testing/Temporary
   mkdir -p build/test-logs
-  touch build/test-logs/nothing-here
-  exit $RET
+
+  cmake .
+  make lint | tee build/test-logs/lint.log
+  exit $?
 fi
 
 cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
