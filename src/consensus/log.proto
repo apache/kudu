@@ -9,24 +9,24 @@ import "server/metadata.proto";
 // ===========================================================================
 
 // Types of log entries.
-enum LogEntryType {
+enum LogEntryTypePB {
   OPERATION = 1;
   // TODO remove this (along with the parent enum) when we change the
   // log GC not to depend on the tablet metadata. Moreover consider
-  // making the Log store OperationPB directly, as LogEntry might
+  // making the Log store OperationPB directly, as LogEntryPB might
   // become obsolete.
   TABLET_METADATA = 2;
 };
 
 // An entry in the wal/sm log.
-message LogEntry {
-  required LogEntryType type = 1;
+message LogEntryPB {
+  required LogEntryTypePB type = 1;
   optional consensus.OperationPB operation = 2;
   optional metadata.TabletSuperBlockPB tablet_meta = 3;
 }
 
 // A header for a log segment
-message LogSegmentHeader {
+message LogSegmentHeaderPB {
   // log major version.
   required uint32 major_version = 1;
   // log minor version.

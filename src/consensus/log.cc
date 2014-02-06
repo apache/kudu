@@ -17,13 +17,54 @@ namespace log {
 using consensus::OpId;
 using consensus::MISSED_DELTA;
 
+namespace {
+
+// Once group commit is fully implemented, this class will be the log
+// synchronizer class (and might be moved out of the anonymous
+// namespace). Presently it's there to allow the log_executor to be
+// moved inside the log class itself in order to implement the APIs
+// that will be compatible with group commit.
+class LogEntryAppendTask : public Task {
+ public:
+  LogEntryAppendTask(log::Log* log,
+                     gscoped_ptr<LogEntryPB[]> phys_entries,
+                     size_t count)
+      : log_(log), phys_entries_(phys_entries.Pass()), count_(count) {
+  }
+
+  Status Run() {
+    for (size_t i = 0; i < count_; i++) {
+      LogEntryPB& phys_entry = phys_entries_[i];
+      Status s = log_->Append(phys_entry);
+      // Reserve() sets the 'operation' field of LogEntryPB from the
+      // passed in operations using 'set_allocated_operation', but
+      // does not take ownership of the operations; this means we must
+      // release the operations so that they are not deleted when
+      // 'phys_entries' are.
+      phys_entry.release_operation();
+      RETURN_NOT_OK_PREPEND(
+          s, strings::Substitute("unable to append entry $0 out of $1", i, count_));
+    }
+    return Status::OK();
+  }
+
+  bool Abort() { return false; }
+
+ private:
+  Log* log_;
+  gscoped_ptr<LogEntryPB[]> phys_entries_;
+  size_t count_;
+};
+
+} // namespace
+
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const metadata::TabletSuperBlockPB& super_block,
                  const consensus::OpId& current_id,
                  gscoped_ptr<Log> *log) {
 
-  gscoped_ptr<LogSegmentHeader> header(new LogSegmentHeader);
+  gscoped_ptr<LogSegmentHeaderPB> header(new LogSegmentHeaderPB);
   header->set_major_version(kLogMajorVersion);
   header->set_minor_version(kLogMinorVersion);
   header->mutable_tablet_meta()->CopyFrom(super_block);
@@ -49,13 +90,14 @@ Status Log::Open(const LogOptions &options,
 Log::Log(const LogOptions &options,
          FsManager *fs_manager,
          const string& log_path,
-         gscoped_ptr<LogSegmentHeader> header)
+         gscoped_ptr<LogSegmentHeaderPB> header)
 : options_(options),
   fs_manager_(fs_manager),
   log_dir_(log_path),
   next_segment_header_(header.Pass()),
   header_size_(0),
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
+  log_executor_(TaskExecutor::CreateNew("log exec", 1)),
   state_(kLogInitialized) {
 }
 
@@ -92,7 +134,59 @@ Status Log::RollOver() {
   return Status::OK();
 }
 
-Status Log::Append(const LogEntry& entry) {
+Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
+                    Log::Entry** reserved_entry) {
+  DCHECK(reserved_entry != NULL);
+
+  gscoped_ptr<LogEntryPB[]> entries(new LogEntryPB[ops.size()]);
+  LogEntryPB* entry = entries.get();
+  BOOST_FOREACH(consensus::OperationPB* op, ops) {
+    entry->set_type(log::OPERATION);
+    entry->set_allocated_operation(op);
+    ++entry;
+  }
+  gscoped_ptr<Log::Entry> new_entry(new Log::Entry(entries.Pass(),
+                                                   ops.size()));
+
+  // --- BEGIN TEMPRORARY CODE (will be moved to AsyncAppend()) ---
+  //
+  // When group commit is implemented, this block of code will be part
+  // of AsyncAppend(). For now, however, this code is part of
+  // Reserve() as it must be called under a lock in order for the log
+  // entries to be correctly ordered.
+  //
+  // TODO add a test for this once we get delayed executors (KUDU-52)
+  shared_ptr<Task> append_task(
+      new LogEntryAppendTask(this, new_entry->phys_entries_.Pass(), new_entry->count()));
+  RETURN_NOT_OK(log_executor_->Submit(append_task, &new_entry->future_));
+  // --- END TEMPRORARY CODE --
+
+  // Release the memory back to the caller; this
+  // will be freed by a call to AsyncAppend().
+  //
+  // TODO The final implementation will most likely set
+  // 'reserved_entry' to a pre-allocated memory in a buffer.
+  *reserved_entry = new_entry.release();
+  return Status::OK();
+}
+
+Status Log::AsyncAppend(Log::Entry* entry, const shared_ptr<FutureCallback>& callback) {
+  // Until group commit is implemented, the actual work is being done
+  // in Reserve() method -- so this to make sure API contract (call
+  // Reserve() under a lock, call AsyncAppend() outside of the lock)
+  // is satisfied.
+
+  // Ensures the entry is deleted when we exit the scope.
+  // TODO The final implementation will most likely release 'entry'
+  // back into the buffer, without the need to free memory or call a
+  // destructor.
+  gscoped_ptr<Log::Entry> entry_deleter(entry);
+
+  entry->future_->AddListener(callback);
+  return Status::OK();
+}
+
+Status Log::Append(const LogEntryPB& entry) {
   CHECK_EQ(state_, kLogWriting);
 
   // update the current header
@@ -165,6 +259,7 @@ Status Log::GC() {
 }
 
 Status Log::Close() {
+  log_executor_->Shutdown();
   if (state_ == kLogWriting) {
     RETURN_NOT_OK(current_->writable_file()->Close());
     state_ = kLogClosed;
@@ -178,7 +273,7 @@ Status Log::Close() {
   return Status::IllegalState(strings::Substitute("Bad state for Close() $0", state_));
 }
 
-Status Log::CreateNewSegment(const LogSegmentHeader& header) {
+Status Log::CreateNewSegment(const LogSegmentHeaderPB& header) {
   // create a new segment file and pre-allocate the space
   shared_ptr<WritableFile> sink;
   string fqp = CreateSegmentFileName(header.initial_id());
@@ -237,6 +332,14 @@ string Log::CreateSegmentFileName(const OpId &id) {
 }
 
 Log::~Log() {
+}
+
+Log::Entry::Entry(gscoped_ptr<LogEntryPB[]> phys_entries,
+                  size_t count)
+    : phys_entries_(phys_entries.Pass()), count_(count) {
+}
+
+Log::Entry::~Entry() {
 }
 
 }  // namespace log

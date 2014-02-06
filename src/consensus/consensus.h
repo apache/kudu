@@ -115,16 +115,19 @@ class Consensus {
   // FOLLOWERs, i.e. is_leader() returns false.
   virtual Status Update(ReplicaUpdateContext* context) = 0;
 
-  // Appends a local commit to the state machine.
-  // This function is required as different nodes have independent physical
-  // layers and therefore need to sometimes issue "local" commit messages that
-  // change only the local state and not the coordinated state machine.
+  // Appends local commits to the state machine.  This function is
+  // required as different nodes have independent physical layers and
+  // therefore need to sometimes issue "local" commit messages that
+  // change only the local state and not the coordinated state
+  // machine.
   //
-  // A successful call will yield a Future which can be used to Wait() until
-  // the commit is done or to add callbacks. This is important as LocalCommit()
-  // does not take ownership of the passed 'commit_op'.
-  virtual Status LocalCommit(OperationPB* commit_op,
-                             std::tr1::shared_ptr<kudu::Future>* commit_future) = 0;
+  // 'commit_callback' will be invoked once the commit is done.
+  //
+  // LocalCommit() does not take ownership of the pointers in
+  // 'commit_ops'.
+  virtual Status LocalCommit(
+      const std::vector<OperationPB*>& commit_ops,
+      const std::tr1::shared_ptr<FutureCallback>& commit_callback) = 0;
 
   // Returns the number of participants that constitutes a majority for this
   // quorum, e.g. 1 for a quorum of 1 participant, 2 for a quorum of 2,3

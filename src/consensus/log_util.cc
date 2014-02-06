@@ -45,14 +45,14 @@ LogOptions::LogOptions()
   preallocate_segments(FLAGS_log_preallocate_segments) {
 }
 
-LogSegment::LogSegment(const LogSegmentHeader& header,
+LogSegment::LogSegment(const LogSegmentHeaderPB& header,
                        const string &path)
 : header_(header),
   path_(path) {
 }
 
 ReadableLogSegment::ReadableLogSegment(
-    const LogSegmentHeader& header,
+    const LogSegmentHeaderPB& header,
     const std::string &path,
     uint64_t first_entry_offset,
     uint64_t file_size,
@@ -64,7 +64,7 @@ ReadableLogSegment::ReadableLogSegment(
 }
 
 WritableLogSegment::WritableLogSegment(
-    const LogSegmentHeader& header,
+    const LogSegmentHeaderPB& header,
     const string &path,
     const shared_ptr<WritableFile>& writable_file)
 : LogSegment(header, path),
@@ -151,7 +151,7 @@ Status FindStaleSegmentsPrefixSize(
 
   // we need to remove a segment because if, for two subsequent segments, one
   // has no active stores in the header and the next one does, then the first
-  // segment has a high probability of having an ActiveMemStoreLogEntry with
+  // segment has a high probability of having an ActiveMemStoreLogEntryPB with
   // currently active stores somewhere after the header.
   *prefix_size = std::max(0, stale_prefix_size - 1);
   VLOG(1) << "Found " << *prefix_size << " stale segments out of "

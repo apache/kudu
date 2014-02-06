@@ -27,10 +27,10 @@ void PrintSegment(LogReader* reader,
   if (FLAGS_print_headers) {
     cout << "Header:\n" << segment->header().DebugString();
   }
-  vector<LogEntry*> entries;
+  vector<LogEntryPB*> entries;
   CHECK_OK(reader->ReadEntries(segment, &entries));
   if (FLAGS_print_entries) {
-    BOOST_FOREACH(LogEntry* entry, entries) {
+    BOOST_FOREACH(LogEntryPB* entry, entries) {
       if (FLAGS_truncate_data > 0) {
         pb_util::TruncateFields(entry, FLAGS_truncate_data);
       }
@@ -45,7 +45,7 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   FsManager fs_manager(env, tserver_root_path);
   CHECK_OK(LogReader::Open(&fs_manager, tablet_oid, &reader));
 
-  vector<LogEntry*> entries;
+  vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
   BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, reader->segments()) {
     PrintSegment(reader.get(), segment);

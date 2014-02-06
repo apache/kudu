@@ -37,7 +37,6 @@ set(CONSENSUS_SRCS
   consensus.cc
   consensus_base.cc
   local_consensus.cc
-  tasks/local_consensus_tasks.cc
 )
 
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})

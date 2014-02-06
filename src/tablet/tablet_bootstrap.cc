@@ -35,7 +35,7 @@ using kudu::consensus::MISSED_DELTA;
 using kudu::consensus::OP_ABORT;
 using kudu::consensus::WRITE_OP;
 using kudu::log::Log;
-using kudu::log::LogEntry;
+using kudu::log::LogEntryPB;
 using kudu::log::LogOptions;
 using kudu::log::LogReader;
 using kudu::log::OPERATION;
@@ -171,10 +171,10 @@ class TabletBootstrap {
   Status ApplyMutation(const MutationInput& mutation_input);
 
   // Handlers for each type of message seen in the log during replay.
-  Status HandleEntry(ReplayState* state, LogEntry* entry);
-  Status HandleReplicateMessage(ReplayState* state, LogEntry* entry);
-  Status HandleCommitMessage(ReplayState* state, LogEntry* entry);
-  Status HandleEntryPair(LogEntry* replicate_entry, LogEntry* commit_entry);
+  Status HandleEntry(ReplayState* state, LogEntryPB* entry);
+  Status HandleReplicateMessage(ReplayState* state, LogEntryPB* entry);
+  Status HandleCommitMessage(ReplayState* state, LogEntryPB* entry);
+  Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
 
   gscoped_ptr<metadata::TabletMetadata> meta_;
   MetricContext* metric_context_;
@@ -267,7 +267,7 @@ static string DebugInfo(const string& tablet_id,
                         int segment_idx,
                         int entry_idx,
                         const string& segment_path,
-                        const LogEntry& entry) {
+                        const LogEntryPB& entry) {
   // Truncate the debug string to a reasonable length for logging.
   // Otherwise, glog will truncate for us and we may miss important
   // information which came after this long string.
@@ -442,7 +442,7 @@ Status TabletBootstrap::OpenNewLog() {
   return Status::OK();
 }
 
-typedef unordered_map<OpId, LogEntry*, OpIdHashFunction, OpIdEqualsTo> OpToEntryMap;
+typedef unordered_map<OpId, LogEntryPB*, OpIdHashFunction, OpIdEqualsTo> OpToEntryMap;
 
 // State kept during replay.
 struct ReplayState {
@@ -498,7 +498,7 @@ struct ReplayState {
 
 // Handle the given log entry. If OK is returned, then takes ownership of 'entry'.
 // Otherwise, caller frees.
-Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntry* entry) {
+Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "Handling entry: " << entry->ShortDebugString();
   }
@@ -519,16 +519,16 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntry* entry) {
   return Status::OK();
 }
 
-Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntry* entry) {
+Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
   RETURN_NOT_OK(state->CheckOpId(entry->operation().id()));
 
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(*entry));
 
-  LogEntry** existing_entry_ptr = InsertOrReturnExisting(
+  LogEntryPB** existing_entry_ptr = InsertOrReturnExisting(
     &state->pending_replicates, entry->operation().id(), entry);
   if (existing_entry_ptr) {
-    LogEntry* existing_entry = *existing_entry_ptr;
+    LogEntryPB* existing_entry = *existing_entry_ptr;
     // We already had an entry with the same ID.
     return Status::Corruption("Found previous entry with the same id",
                               existing_entry->ShortDebugString());
@@ -537,7 +537,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntry* ent
 }
 
 // Deletes 'entry' only on OK status.
-Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry) {
+Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entry) {
   // TODO: on a term switch, the first commit in any term should discard any
   // pending REPLICATEs from the previous term.
 
@@ -548,7 +548,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
   const OpId& id = entry->operation().commit().commited_op_id();
 
-  gscoped_ptr<LogEntry> existing_entry(EraseKeyReturnValuePtr(&state->pending_replicates, id));
+  gscoped_ptr<LogEntryPB> existing_entry(EraseKeyReturnValuePtr(&state->pending_replicates, id));
   if (existing_entry != NULL) {
     RETURN_NOT_OK(HandleEntryPair(existing_entry.get(), entry));
   } else {
@@ -569,7 +569,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntry* entry)
 
 // Never deletes 'replicate_entry'.
 // Deletes 'commit_entry' only on OK status.
-Status TabletBootstrap::HandleEntryPair(LogEntry* replicate_entry, LogEntry* commit_entry) {
+Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry) {
 
   ReplicateMsg* replicate = replicate_entry->mutable_operation()->mutable_replicate();
   const CommitMsg& commit = commit_entry->operation().commit();
@@ -624,11 +624,11 @@ Status TabletBootstrap::PlaySegments() {
 
   ReplayState state;
   for (int segment_idx = 0; segment_idx < log_reader_->size(); ++segment_idx) {
-    vector<LogEntry*> entries;
+    vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
     Status read_status = log_reader_->ReadEntries(log_reader_->segments()[segment_idx], &entries);
     for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
-      LogEntry* entry = entries[entry_idx];
+      LogEntryPB* entry = entries[entry_idx];
       RETURN_NOT_OK_PREPEND(HandleEntry(&state, entry),
                             DebugInfo(tablet_->tablet_id(), segment_idx,
                                       entry_idx, log_reader_->segments()[segment_idx]->path(),
@@ -706,7 +706,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   }
 
   // Append the commit msg to the log but replace the result with the new one
-  LogEntry commit_entry;
+  LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
@@ -735,7 +735,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(OperationPB* replicate_op,
   // apply the alter schema to the tablet
   RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_ctx), "Failed to AlterSchema:");
 
-  LogEntry commit_entry;
+  LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
@@ -763,7 +763,7 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
         "Skipping config change";
   }
 
-  LogEntry commit_entry;
+  LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
@@ -787,7 +787,7 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
   // In order to solve this we can keep the original missed delta, but need to update it to
   // the store to which it was applied on replay, as it might not be the same store as the
   // original MISSED_DELTA.
-  LogEntry commit_entry;
+  LogEntryPB commit_entry;
   commit_entry.set_type(OPERATION);
   OperationPB* new_commit_op = commit_entry.mutable_operation();
   CommitMsg* new_commit = new_commit_op->mutable_commit();

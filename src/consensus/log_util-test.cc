@@ -113,14 +113,14 @@ TEST(TestLogUtil, TestFourStaleSegmentsWithNoCommonStoresWithCurrent) {
   AddDeltasToRowSet(current.add_rowsets(), 2, boost::assign::list_of(1));
   AddDeltasToRowSet(current.add_rowsets(), 3, boost::assign::list_of(0));
 
-  LogSegmentHeader seg1_header;
+  LogSegmentHeaderPB seg1_header;
   TabletSuperBlockPB* seg1_sb = seg1_header.mutable_tablet_meta();
   seg1_sb->set_last_durable_mrs_id(metadata::kNoDurableMemStore);
 
   shared_ptr<ReadableLogSegment> seg1(new ReadableLogSegment(seg1_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));
 
-  LogSegmentHeader seg2_header;
+  LogSegmentHeaderPB seg2_header;
   TabletSuperBlockPB* seg2_sb = seg2_header.mutable_tablet_meta();
   seg2_sb->set_last_durable_mrs_id(0);
   AddDeltasToRowSet(seg2_sb->add_rowsets(), 0, boost::assign::list_of(0));
@@ -128,7 +128,7 @@ TEST(TestLogUtil, TestFourStaleSegmentsWithNoCommonStoresWithCurrent) {
   shared_ptr<ReadableLogSegment> seg2(new ReadableLogSegment(seg2_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));
 
-  LogSegmentHeader seg3_header;
+  LogSegmentHeaderPB seg3_header;
   TabletSuperBlockPB* seg3_sb = seg3_header.mutable_tablet_meta();
   seg3_sb->set_last_durable_mrs_id(1);
   AddDeltasToRowSet(seg3_sb->add_rowsets(), 0, boost::assign::list_of(0));
@@ -137,7 +137,7 @@ TEST(TestLogUtil, TestFourStaleSegmentsWithNoCommonStoresWithCurrent) {
   shared_ptr<ReadableLogSegment> seg3(new ReadableLogSegment(seg3_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));
 
-  LogSegmentHeader seg4_header;
+  LogSegmentHeaderPB seg4_header;
   TabletSuperBlockPB* seg4_sb = seg4_header.mutable_tablet_meta();
   seg2_sb->set_last_durable_mrs_id(2);
   AddDeltasToRowSet(seg4_sb->add_rowsets(), 0, boost::assign::list_of(0));
@@ -167,14 +167,14 @@ TEST(TestLogUtil, TestThreeSegmentsTwoStaleOneCurrent) {
   AddDeltasToRowSet(current.add_rowsets(), 1, boost::assign::list_of(1));
   AddDeltasToRowSet(current.add_rowsets(), 2, boost::assign::list_of(0));
 
-  LogSegmentHeader seg1_header;
+  LogSegmentHeaderPB seg1_header;
   TabletSuperBlockPB* seg1_sb = seg1_header.mutable_tablet_meta();
   seg1_sb->set_last_durable_mrs_id(metadata::kNoDurableMemStore);
 
   shared_ptr<ReadableLogSegment> seg1(new ReadableLogSegment(seg1_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));
 
-  LogSegmentHeader seg2_header;
+  LogSegmentHeaderPB seg2_header;
   TabletSuperBlockPB* seg2_sb = seg2_header.mutable_tablet_meta();
   seg2_sb->set_last_durable_mrs_id(0);
   AddDeltasToRowSet(seg2_sb->add_rowsets(), 0, boost::assign::list_of(0));
@@ -182,7 +182,7 @@ TEST(TestLogUtil, TestThreeSegmentsTwoStaleOneCurrent) {
   shared_ptr<ReadableLogSegment> seg2(new ReadableLogSegment(seg2_header, "", 0, 0,
                                                              shared_ptr<RandomAccessFile>()));
 
-  LogSegmentHeader seg3_header;
+  LogSegmentHeaderPB seg3_header;
   seg3_header.mutable_tablet_meta()->CopyFrom(current);
 
   shared_ptr<ReadableLogSegment> seg3(new ReadableLogSegment(seg3_header, "", 0, 0,
@@ -205,7 +205,7 @@ TEST(TestLogUtil, TestNoStaleSegments) {
   AddDeltasToRowSet(current.add_rowsets(), 1, boost::assign::list_of(1));
   AddDeltasToRowSet(current.add_rowsets(), 2, boost::assign::list_of(0));
 
-  LogSegmentHeader seg1_header;
+  LogSegmentHeaderPB seg1_header;
   seg1_header.mutable_tablet_meta()->CopyFrom(current);
 
   shared_ptr<ReadableLogSegment> seg1(new ReadableLogSegment(seg1_header, "", 0, 0,

@@ -942,10 +942,10 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     CommitMsg* commit = commit_op.mutable_commit();
     commit->mutable_result()->CopyFrom(compaction_tx.Result());
     commit->set_op_type(MISSED_DELTA);
-    shared_ptr<Future> commit_future;
-    RETURN_NOT_OK_PREPEND(consensus_->LocalCommit(&commit_op, &commit_future),
-                          "Failed to commit the compensating transaction for missed deltas");
-    commit_future->Wait();
+    shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
+    RETURN_NOT_OK(consensus_->LocalCommit(
+        boost::assign::list_of(&commit_op), commit_clbk));
+    commit_clbk->Wait();
   }
 
   if (common_hooks_) {

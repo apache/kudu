@@ -115,13 +115,13 @@ Status LogReader::InitSegment(Env* env,
 }
 
 Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
-                              vector<LogEntry* >* entries) {
+                              vector<LogEntryPB* >* entries) {
   uint64_t offset = segment->first_entry_offset();
   VLOG(1) << "Reading segment entries offset: " << offset << " file size: "
           << segment->file_size();
   faststring tmp_buf;
   while (offset < segment->file_size()) {
-    gscoped_ptr<LogEntry> current;
+    gscoped_ptr<LogEntryPB> current;
 
     // Read the entry length first, if we get 0 back that just means that
     // the log hasn't been ftruncated().
@@ -187,7 +187,7 @@ Status LogReader::ParseHeaderAndBuildSegment(
 
   uint8_t header_space[header_size];
   Slice header_slice;
-  LogSegmentHeader header;
+  LogSegmentHeaderPB header;
 
   RETURN_NOT_OK(ReadFully(file.get(), kMagicAndHeaderLength, header_size,
                           &header_slice, header_space));
@@ -229,7 +229,7 @@ Status LogReader::ReadEntry(const shared_ptr<ReadableLogSegment> &segment,
                             faststring *tmp_buf,
                             uint64_t *offset,
                             uint32_t length,
-                            gscoped_ptr<LogEntry> *entry) {
+                            gscoped_ptr<LogEntryPB> *entry) {
 
   if (length == 0 || length > segment->file_size() - *offset) {
     return Status::Corruption(StringPrintf("Invalid entry length %d.", length));
@@ -243,7 +243,7 @@ Status LogReader::ReadEntry(const shared_ptr<ReadableLogSegment> &segment,
                                                &entry_slice,
                                                tmp_buf->data()));
 
-  gscoped_ptr<LogEntry> read_entry(new LogEntry());
+  gscoped_ptr<LogEntryPB> read_entry(new LogEntryPB());
   RETURN_NOT_OK(pb_util::ParseFromArray(read_entry.get(),
                                         entry_slice.data(),
                                         length));

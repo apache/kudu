@@ -140,7 +140,7 @@ class LogTest : public KuduTest {
   // Note that this test does not insert into tablet so the data contained in
   // the ReplicateMsgs doesn't necessarily need to make sense.
   void AppendBatch(int index) {
-    LogEntry log_entry;
+    LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
 
@@ -181,7 +181,7 @@ class LogTest : public KuduTest {
                     // the rs and delta ids for the mutate
                     int target_rs_id = 0,
                     int target_delta_id = 0) {
-    LogEntry log_entry;
+    LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
 
@@ -235,7 +235,7 @@ class LogTest : public KuduTest {
     AppendCommit(3, 2);
 
     // flush the MemRowSet, keeping the DeltaMemStore
-    LogEntry meta_entry;
+    LogEntryPB meta_entry;
     TabletSuperBlockPB* meta = meta_entry.mutable_tablet_meta();
     CreateTabletMetaForRowSets(meta, 1);
     meta_entry.set_type(TABLET_METADATA);
@@ -291,7 +291,7 @@ class LogTest : public KuduTest {
   uint32_t current_id_;
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
-  vector<LogEntry* > entries_;
+  vector<LogEntryPB* > entries_;
 };
 
 // Test that the reader can read from the log even if it hasn't been
@@ -299,7 +299,7 @@ class LogTest : public KuduTest {
 TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLog();
   BuildLogReader();
-  vector<LogEntry*> entries;
+  vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
   ASSERT_STATUS_OK(log_reader_->ReadEntries(log_reader_->segments()[0], &entries));
 }
@@ -361,7 +361,7 @@ TEST_F(LogTest, TestSegmentRollover) {
   for (int i = 0; i < log_reader_->size(); i++) {
     ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[i], &entries_));
   }
-  // expect 100 <op,commit> entries, i.e. 200 LogEntry's
+  // expect 100 <op,commit> entries, i.e. 200 LogEntryPB's
   ASSERT_EQ(200, entries_.size());
 
 }
@@ -387,7 +387,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   ASSERT_EQ(2, log_->previous_segments().size());
   ASSERT_STATUS_OK(log_->Close());
 
-  LogEntry meta_entry;
+  LogEntryPB meta_entry;
   TabletSuperBlockPB* meta = meta_entry.mutable_tablet_meta();
   vector<DeltaId> new_deltas = boost::assign::list_of(DeltaId(0, 0));
   CreateTabletMetaForRowSets(meta, 1, &new_deltas);

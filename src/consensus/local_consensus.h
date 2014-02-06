@@ -2,11 +2,12 @@
 #ifndef KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 #define KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 
+#include <vector>
+
 #include "consensus/consensus_base.h"
 
 namespace kudu {
 
-class TaskExecutor;
 class FutureCallback;
 
 namespace metadata {
@@ -41,8 +42,8 @@ class LocalConsensus : public ConsensusBase {
 
   Status Update(ReplicaUpdateContext* context);
 
-  Status LocalCommit(OperationPB* commit_op,
-                     std::tr1::shared_ptr<kudu::Future>* commit_future);
+  Status LocalCommit(const std::vector<OperationPB*>& commit_ops,
+                     const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
   Status Commit(ConsensusContext* context, OperationPB* commit_op);
 
@@ -71,8 +72,6 @@ class LocalConsensus : public ConsensusBase {
  private:
   metadata::QuorumPeerPB peer_;
   metadata::QuorumPB quorum_;
-  gscoped_ptr<TaskExecutor> log_executor_;
-  gscoped_ptr<TaskExecutor> commit_executor_;
   int64 next_op_id_;
 
   // lock serializes the commit id generation and subsequent

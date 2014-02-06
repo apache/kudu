@@ -40,7 +40,7 @@ class LogReader {
   // the log entries read up to the corrupted are returned in the 'entries' vector.
   static Status ReadEntries(
       const std::tr1::shared_ptr<ReadableLogSegment> &segment,
-      vector<LogEntry* >* entries);
+      vector<LogEntryPB* >* entries);
 
   // Returns the number of segments in path_, set only once on Init().
   const uint32_t size();
@@ -95,7 +95,7 @@ class LogReader {
       faststring *tmp_buf,
       uint64_t *offset,
       uint32_t length,
-      gscoped_ptr<LogEntry> *entry);
+      gscoped_ptr<LogEntryPB> *entry);
 
   FsManager *fs_manager_;
   const string tablet_oid_;

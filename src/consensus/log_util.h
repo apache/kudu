@@ -52,13 +52,13 @@ struct LogOptions {
 // segments are rolled over and the Log continues in a new segment.
 class LogSegment {
  protected:
-  LogSegment(const LogSegmentHeader& header,
+  LogSegment(const LogSegmentHeaderPB& header,
              const std::string &path);
 
  public:
   // Returns the header for this log segment, including initial index, term,
   // configuration and initial active MRSSet
-  const LogSegmentHeader &header() const {
+  const LogSegmentHeaderPB &header() const {
     return header_;
   }
 
@@ -72,7 +72,7 @@ class LogSegment {
  private:
   DISALLOW_COPY_AND_ASSIGN(LogSegment);
 
-  const LogSegmentHeader header_;
+  const LogSegmentHeaderPB header_;
   const std::string path_;
 };
 
@@ -82,7 +82,7 @@ class ReadableLogSegment : public LogSegment {
 
   // build a readable segment to read entries from the provided path.
   ReadableLogSegment(
-      const LogSegmentHeader& header,
+      const LogSegmentHeaderPB& header,
       const std::string &path,
       uint64_t first_entry_offset,
       uint64_t file_size,
@@ -117,7 +117,7 @@ class ReadableLogSegment : public LogSegment {
 class WritableLogSegment : public LogSegment {
  public:
 
-  WritableLogSegment(const LogSegmentHeader& header,
+  WritableLogSegment(const LogSegmentHeaderPB& header,
                      const std::string &path,
                      const std::tr1::shared_ptr<WritableFile>& writable_file);
 
