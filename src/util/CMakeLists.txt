@@ -25,6 +25,7 @@ add_library(kudu_util
   rwc_lock.cc
   slice.cc
   spinlock_profiling.cc
+  subprocess.cc
   status.cc
   string_case.cc
   threadpool.cc
@@ -79,6 +80,7 @@ ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(trace-test)
 ADD_KUDU_TEST(spinlock_profiling-test)
 ADD_KUDU_TEST(rwc_lock-test)
+ADD_KUDU_TEST(subprocess-test)
 
 PROTOBUF_GENERATE_CPP(JSONWRITER_TEST_PROTO_SRCS JSONWRITER_TEST_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
