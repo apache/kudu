@@ -850,6 +850,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   vector<shared_ptr<RowSet> > new_rowsets;
   RowSetMetadataVector out_metas;
   drsw.GetWrittenMetadata(&out_metas);
+  if (metrics_.get()) metrics_->bytes_flushed->IncrementBy(drsw.written_size());
   CHECK(!out_metas.empty());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, out_metas) {
     shared_ptr<DiskRowSet> new_rowset;
@@ -971,7 +972,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed),
                         "Failed to flush new tablet metadata");
 
-  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count() << " rows";
+  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count()
+            << " rows" << "(" << drsw.written_size() << " bytes)";
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),

@@ -134,6 +134,8 @@ class RollingDiskRowSetWriter {
   // This must only be called after Finish() returns an OK result.
   void GetWrittenMetadata(metadata::RowSetMetadataVector* metas) const;
 
+  uint64_t written_size() const { return written_size_; }
+
  private:
   Status RollWriter();
   Status FinishCurrentWriter();
@@ -161,6 +163,7 @@ class RollingDiskRowSetWriter {
   metadata::RowSetMetadataVector written_metas_;
 
   int64_t written_count_;
+  uint64_t written_size_;
 
   DISALLOW_COPY_AND_ASSIGN(RollingDiskRowSetWriter);
 };

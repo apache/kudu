@@ -30,6 +30,7 @@ struct TabletMetrics {
   Counter* keys_consulted;
   Counter* deltas_consulted;
   Counter* mrs_consulted;
+  Counter* bytes_flushed;
 };
 
 class ProbeStatsSubmitter {

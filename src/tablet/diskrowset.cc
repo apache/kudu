@@ -257,7 +257,8 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata
     bloom_sizing_(bloom_sizing),
     target_rowset_size_(target_rowset_size),
     output_index_(0),
-    written_count_(0) {
+    written_count_(0),
+    written_size_(0) {
   CHECK(schema.has_column_ids());
 }
 
@@ -298,6 +299,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   CHECK_EQ(state_, kStarted);
 
   RETURN_NOT_OK(cur_writer_->Finish());
+  written_size_ += cur_writer_->written_size();
   written_metas_.push_back(cur_metadata_);
   cur_writer_.reset(NULL);
   cur_metadata_.reset();

@@ -23,6 +23,8 @@ METRIC_DEFINE_counter(deltas_consulted, kudu::MetricUnit::kProbes,
                       "Number of times a delta file was consulted");
 METRIC_DEFINE_counter(mrs_consulted, kudu::MetricUnit::kProbes,
                       "Number of times a MemRowSet was consulted.");
+METRIC_DEFINE_counter(bytes_flushed, kudu::MetricUnit::kBytes,
+    "Number of bytes that have been flushed to disk by this tablet.");
 
 namespace kudu {
 namespace tablet {
@@ -36,7 +38,8 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     MINIT(blooms_consulted),
     MINIT(keys_consulted),
     MINIT(deltas_consulted),
-    MINIT(mrs_consulted) {
+    MINIT(mrs_consulted),
+    MINIT(bytes_flushed) {
 }
 #undef MINIT
 
