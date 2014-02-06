@@ -16,7 +16,7 @@ KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
 
 add_library(tserver_service_proto ${TSERVER_KRPC_SRCS} ${TSERVER_KRPC_HDRS})
 target_link_libraries(tserver_service_proto krpc)
-add_dependencies(tserver_service_proto kudu_common)
+add_dependencies(tserver_service_proto kudu_common tserver_proto)
 
 
 set(TSERVER_SRCS
