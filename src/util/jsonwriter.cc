@@ -2,13 +2,22 @@
 #include "util/jsonwriter.h"
 
 #include <string>
+#include <vector>
 
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/message.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/rapidjson.h>
 
+using google::protobuf::FieldDescriptor;
+using google::protobuf::Message;
+using google::protobuf::Reflection;
+
 using std::string;
 using std::stringstream;
+using std::vector;
 
 namespace kudu {
 
@@ -93,6 +102,110 @@ template<> void JsonWriter::Value(const double& val) {
 }
 template<> void JsonWriter::Value(const string& val) {
   String(val);
+}
+
+void JsonWriter::Protobuf(const Message& pb) {
+  const Reflection* reflection = pb.GetReflection();
+  vector<const FieldDescriptor*> fields;
+  reflection->ListFields(pb, &fields);
+
+  StartObject();
+  BOOST_FOREACH(const FieldDescriptor* field, fields) {
+    String(field->name());
+    if (field->is_repeated()) {
+      StartArray();
+      for (int i = 0; i < reflection->FieldSize(pb, field); i++) {
+        ProtobufRepeatedField(pb, field, i);
+      }
+      EndArray();
+    } else {
+      ProtobufField(pb, field);
+    }
+  }
+  EndObject();
+}
+
+void JsonWriter::ProtobufField(const Message& pb, const FieldDescriptor* field) {
+  const Reflection* reflection = pb.GetReflection();
+  switch (field->cpp_type()) {
+    case FieldDescriptor::CPPTYPE_INT32:
+      Int(reflection->GetInt32(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_INT64:
+      Int64(reflection->GetInt64(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_UINT32:
+      Uint(reflection->GetUInt32(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_UINT64:
+      Uint64(reflection->GetUInt64(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_DOUBLE:
+      Double(reflection->GetDouble(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_FLOAT:
+      Double(reflection->GetFloat(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_BOOL:
+      Bool(reflection->GetBool(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_ENUM:
+      String(reflection->GetEnum(pb, field)->name());
+      break;
+    case FieldDescriptor::CPPTYPE_STRING:
+      String(reflection->GetString(pb, field));
+      break;
+    case FieldDescriptor::CPPTYPE_MESSAGE:
+      Protobuf(reflection->GetMessage(pb, field));
+      break;
+    default:
+      LOG(FATAL) << "Unknown cpp_type: " << field->cpp_type();
+  }
+}
+
+void JsonWriter::ProtobufRepeatedField(const Message& pb, const FieldDescriptor* field, int index) {
+  const Reflection* reflection = pb.GetReflection();
+  switch (field->cpp_type()) {
+    case FieldDescriptor::CPPTYPE_INT32:
+      Int(reflection->GetRepeatedInt32(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_INT64:
+      Int64(reflection->GetRepeatedInt64(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_UINT32:
+      Uint(reflection->GetRepeatedUInt32(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_UINT64:
+      Uint64(reflection->GetRepeatedUInt64(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_DOUBLE:
+      Double(reflection->GetRepeatedDouble(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_FLOAT:
+      Double(reflection->GetRepeatedFloat(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_BOOL:
+      Bool(reflection->GetRepeatedBool(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_ENUM:
+      String(reflection->GetRepeatedEnum(pb, field, index)->name());
+      break;
+    case FieldDescriptor::CPPTYPE_STRING:
+      String(reflection->GetRepeatedString(pb, field, index));
+      break;
+    case FieldDescriptor::CPPTYPE_MESSAGE:
+      Protobuf(reflection->GetRepeatedMessage(pb, field, index));
+      break;
+    default:
+      LOG(FATAL) << "Unknown cpp_type: " << field->cpp_type();
+  }
+}
+
+string JsonWriter::ToJson(const Message& pb) {
+  stringstream stream;
+  JsonWriter writer(&stream);
+  writer.Protobuf(pb);
+  return stream.str();
 }
 
 //

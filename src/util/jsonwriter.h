@@ -9,6 +9,13 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 
+namespace google {
+namespace protobuf {
+class Message;
+class FieldDescriptor;
+} // namespace protobuf
+} // namespace google
+
 namespace kudu {
 
 class JsonWriterImpl;
@@ -18,7 +25,6 @@ class JsonWriterImpl;
 //
 // This class implements all the methods of rapidjson::JsonWriter, plus an
 // additional convenience method for String(std::string).
-// TODO: Add Protobuf(Message* proto) output to JSON.
 //
 // We take an instance of std::stringstream in the constructor because Mongoose / Squeasel
 // uses std::stringstream for output buffering.
@@ -38,6 +44,8 @@ class JsonWriter {
   void String(const char* str);
   void String(const std::string& str);
 
+  void Protobuf(const google::protobuf::Message& message);
+
   template<typename T>
   void Value(const T& val);
 
@@ -46,7 +54,16 @@ class JsonWriter {
   void StartArray();
   void EndArray();
 
+  // Convert the given protobuf to JSON format.
+  static std::string ToJson(const google::protobuf::Message& pb);
+
  private:
+  void ProtobufField(const google::protobuf::Message& pb,
+                     const google::protobuf::FieldDescriptor* field);
+  void ProtobufRepeatedField(const google::protobuf::Message& pb,
+                             const google::protobuf::FieldDescriptor* field,
+                             int index);
+
   gscoped_ptr<JsonWriterImpl> impl_;
   DISALLOW_COPY_AND_ASSIGN(JsonWriter);
 };
