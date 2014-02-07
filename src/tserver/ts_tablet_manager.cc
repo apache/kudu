@@ -10,6 +10,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "common/wire_protocol.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "master/master.pb.h"
@@ -407,6 +408,10 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
                                              ReportedTabletPB* reported_tablet) {
   reported_tablet->set_tablet_id(tablet_id);
   reported_tablet->set_state(tablet_peer->state());
+  if (tablet_peer->state() == metadata::FAILED) {
+    AppStatusPB* error_status = reported_tablet->mutable_error();
+    StatusToPB(tablet_peer->error(), error_status);
+  }
   reported_tablet->set_role(tablet_peer->role());
 }
 

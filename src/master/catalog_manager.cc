@@ -840,6 +840,15 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
   tablet->AddReplica(ts_desc, report.state(), report.role());
 
+  if (report.has_error()) {
+    Status s = StatusFromPB(report.error());
+    DCHECK(!s.ok());
+    DCHECK_EQ(report.state(), metadata::FAILED);
+    LOG(WARNING) << "Tablet " << tablet->ToString() << " has failed on TS "
+                 << ts_desc->permanent_uuid() << ": " << s.ToString();
+    return Status::OK();
+  }
+
   if (!tablet_lock.data().is_running() &&
       report.state() == metadata::RUNNING &&
       tablet_lock.data().IsQuorumLeader(ts_desc)) {

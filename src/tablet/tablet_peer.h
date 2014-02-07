@@ -93,7 +93,7 @@ class TabletPeer {
   }
 
   // Returns the error that occurred, when state is FAILED.
-  Status error() {
+  Status error() const {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
     return error_;
   }
