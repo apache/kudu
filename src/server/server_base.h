@@ -29,7 +29,7 @@ class ServiceIf;
 
 namespace server {
 
-class ServerBaseOptions;
+struct ServerBaseOptions;
 
 // Base class for tablet server and master.
 // Handles starting and stopping the RPC server and web server,
