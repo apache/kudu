@@ -206,10 +206,9 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
 void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
                                      CreateTabletResponsePB* resp,
                                      rpc::RpcContext* context) {
-  // TODO: would be nice if we knew the table name associated with the tablet
-  // when we create it.
   LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
-            << " (table=<TODO>), range=[\""
+            << " (table=" << req->table_name()
+            << " [id=" << req->table_id() << "]), range=[\""
             << strings::CHexEscape(req->start_key()) << "\", \""
             << strings::CHexEscape(req->end_key()) << "\"]";
   VLOG(1) << "Full request: " << req->DebugString();
