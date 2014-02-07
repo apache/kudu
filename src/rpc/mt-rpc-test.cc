@@ -27,9 +27,15 @@ class MultiThreadedRpcTest : public RpcTestBase {
 
   // Make RPC calls until we see a failure.
   void HammerServer(Sockaddr server_addr, const char* method_name, Status* last_result) {
-    LOG(INFO) << "Connecting to " << server_addr.ToString();
     shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-    Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+    HammerServerWithMessenger(server_addr, method_name, last_result, client_messenger);
+  }
+
+  void HammerServerWithMessenger(
+      Sockaddr server_addr, const char* method_name, Status* last_result,
+      const shared_ptr<Messenger>& messenger) {
+    LOG(INFO) << "Connecting to " << server_addr.ToString();
+    Proxy p(messenger, server_addr, GenericCalculatorService::static_service_name());
 
     int i = 0;
     while (true) {
@@ -81,6 +87,39 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   AssertShutdown(thread2.get(), "thread2", &status2);
   AssertShutdown(thread3.get(), "thread3", &status3);
   AssertShutdown(thread4.get(), "thread4", &status4);
+}
+
+// Test shutting down the client messenger exactly as a thread is about to start
+// a new connection. This is a regression test for KUDU-104.
+TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr);
+
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+
+  gscoped_ptr<boost::thread> thread;
+  Status status;
+  ASSERT_STATUS_OK(
+    StartThread(boost::bind(&MultiThreadedRpcTest::HammerServerWithMessenger, this, server_addr,
+                            GenericCalculatorService::kAddMethodName, &status, client_messenger),
+                &thread));
+
+
+  // Shut down the messenger after a very brief sleep. This often will race so that the
+  // call gets submitted to the messenger before shutdown, but the negotiation won't have
+  // started yet. In a debug build this fails about half the time without the bug fix.
+  // See KUDU-104.
+  usleep(10);
+  client_messenger->Shutdown();
+  client_messenger.reset();
+
+  ASSERT_STATUS_OK(ThreadJoiner(thread.get(), "client thread").warn_every_ms(500).Join());
+  ASSERT_TRUE(status.IsServiceUnavailable());
+  string msg = status.ToString();
+  SCOPED_TRACE(msg);
+  ASSERT_TRUE(msg.find("Client RPC Messenger shutting down") != string::npos ||
+              msg.find("reactor is shutting down") != string::npos);
 }
 
 // This bogus service pool leaves the service queue full.

@@ -44,6 +44,7 @@ Connection::Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
     remote_(remote),
     direction_(direction),
     last_activity_time_(reactor_thread_->cur_time()),
+    is_epoll_registered_(false),
     next_call_id_(1),
     sasl_client_(kSaslAppName, socket),
     sasl_server_(kSaslAppName, socket),
@@ -66,6 +67,7 @@ void Connection::EpollRegister(ev::loop_ref& loop) {
   read_io_.set(socket_.GetFd(), ev::READ);
   read_io_.set<Connection, &Connection::ReadHandler>(this);
   read_io_.start();
+  is_epoll_registered_ = true;
 }
 
 Connection::~Connection() {
@@ -76,7 +78,7 @@ Connection::~Connection() {
   // our destructor will end up calling read_io_.stop() and write_io_.stop()
   // from a possibly non-reactor thread context. This can then make all
   // hell break loose with libev.
-  CHECK(!shutdown_status_.ok()) << "destructing a connection which was not shutdown";
+  CHECK(!is_epoll_registered_);
 }
 
 bool Connection::Idle() const {
@@ -130,6 +132,7 @@ void Connection::Shutdown(const Status &status) {
 
   read_io_.stop();
   write_io_.stop();
+  is_epoll_registered_ = false;
 }
 
 void Connection::QueueOutbound(gscoped_ptr<OutboundTransfer> transfer) {

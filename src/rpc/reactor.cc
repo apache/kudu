@@ -288,7 +288,14 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   (*conn)->set_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
-  RETURN_NOT_OK(StartConnectionNegotiation(*conn, deadline));
+  Status s = StartConnectionNegotiation(*conn, deadline);
+  if (s.IsIllegalState()) {
+    // Return a nicer error message to the user indicating -- if we just
+    // forward the status we'd get something generic like "ThreadPool is closing".
+    return Status::ServiceUnavailable("Client RPC Messenger shutting down");
+  }
+  // Propagate any other errors as-is.
+  RETURN_NOT_OK_PREPEND(s, "Unable to start connection negotiation thread");
 
   // Insert into the client connection map to avoid duplicate connection requests.
   client_conns_.insert(conn_map_t::value_type(conn_id, *conn));

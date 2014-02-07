@@ -230,6 +230,11 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   // notifies us when our socket is readable.
   ev::io read_io_;
 
+  // Set to true when the connection is registered on a loop.
+  // This is used for a sanity check in the destructor that we are properly
+  // un-registered before shutting down.
+  bool is_epoll_registered_;
+
   // waiting to be sent
   boost::intrusive::list<OutboundTransfer> outbound_transfers_; // NOLINT(*)
 
