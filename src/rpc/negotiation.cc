@@ -112,7 +112,7 @@ static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
         // We were interrupted by a signal, let's go again.
         continue;
       } else {
-        return Status::IOError("Error from select() while waiting to connect",
+        return Status::NetworkError("Error from select() while waiting to connect",
             ErrnoToString(err), err);
       }
     } else if (ready == 0) {
@@ -123,6 +123,21 @@ static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
       break;
     }
   }
+
+  // Connect finished, but this doesn't mean that we connected successfully.
+  // Check the socket for an error.
+  int so_error = 0;
+  socklen_t socklen = sizeof(so_error);
+  int rc = getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &socklen);
+  if (rc != 0) {
+    return Status::NetworkError("Unable to check connected socket for errors",
+                                ErrnoToString(errno),
+                                errno);
+  }
+  if (so_error != 0) {
+    return Status::NetworkError("connect", ErrnoToString(so_error), so_error);
+  }
+
   return Status::OK();
 }
 
@@ -171,8 +186,8 @@ ClientNegotiationTask::ClientNegotiationTask(const shared_ptr<Connection>& conn,
 Status ClientNegotiationTask::Run() {
   Status s = DoClientNegotiation(conn_.get(), deadline_);
   if (PREDICT_FALSE(!s.ok())) {
-    s = s.CloneAndPrepend("Client connection negotiation failed. " + conn_->ToString());
-    LOG(WARNING) << s.ToString();
+    s = s.CloneAndPrepend("RPC connection to " + conn_->remote().ToString() + " failed");
+    VLOG(1) << s.ToString();
     return s;
   }
   return Status::OK();

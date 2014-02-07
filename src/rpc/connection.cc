@@ -206,10 +206,8 @@ struct CallTransferCallbacks : public TransferCallbacks {
   }
 
   virtual void NotifyTransferAborted(const Status &status) {
-    LOG(WARNING) << "Connection torn down before " <<
-      call_->ToString() << " could send its call";
-    // TODO: need to SetFailed? Probably not because it's also in the CallAwaitingResponse map.
-    // Check that we have code coverage for this.
+    VLOG(1) << "Connection torn down before " <<
+      call_->ToString() << " could send its call: " << status.ToString();
     delete this;
   }
 
