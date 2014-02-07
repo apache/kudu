@@ -67,6 +67,7 @@ namespace master {
 using strings::Substitute;
 using rpc::RpcContext;
 using tserver::TabletServerErrorPB;
+using metadata::QuorumPeerPB;
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -975,26 +976,30 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
 
 class AsyncCreateTablet {
  public:
-  explicit AsyncCreateTablet(Master *master)
-    : master_(master) {}
+  explicit AsyncCreateTablet(Master *master,
+                             const QuorumPeerPB& peer,
+                             TabletInfo* tablet)
+    : master_(master),
+      peer_(peer),
+      tablet_(tablet) {
+  }
 
   // Fire off the async create table.
   // This requires that the new tablet info is locked for write, and the
   // quorum information has been filled into the 'dirty' data.
-  Status Run(const metadata::QuorumPeerPB& peer,
-             const TabletInfo *tablet) {
+  Status Run() {
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
-    RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc));
+    RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(peer_.permanent_uuid(), &ts_desc));
     RETURN_NOT_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy_));
 
     tserver::CreateTabletRequestPB req;
     {
-      TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+      TableMetadataLock table_lock(tablet_->table(), TableMetadataLock::READ);
 
-      const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
+      const SysTabletsEntryPB& tablet_pb = tablet_->metadata().dirty().pb;
 
-      req.set_table_id(tablet->table()->id());
-      req.set_tablet_id(tablet->tablet_id());
+      req.set_table_id(tablet_->table()->id());
+      req.set_tablet_id(tablet_->tablet_id());
       req.set_start_key(tablet_pb.start_key());
       req.set_end_key(tablet_pb.end_key());
       req.set_table_name(table_lock.data().pb.name());
@@ -1005,7 +1010,7 @@ class AsyncCreateTablet {
     rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
     ts_proxy_->CreateTabletAsync(req, &resp_, &rpc_,
                                  boost::bind(&AsyncCreateTablet::Callback, this));
-    VLOG(1) << "Send create tablet request to " << peer.permanent_uuid() << ":\n"
+    VLOG(1) << "Send create tablet request to " << peer_.permanent_uuid() << ":\n"
             << req.DebugString();
     return Status::OK();
   }
@@ -1013,17 +1018,25 @@ class AsyncCreateTablet {
   // Table specifier
  private:
   void Callback() {
+    Status s;
     if (!rpc_.status().ok()) {
-      LOG(WARNING) << "RPC failed: " << rpc_.status().ToString();
+      s = rpc_.status();
     } else if (resp_.has_error()) {
-      Status status = StatusFromPB(resp_.error().status());
-      LOG(WARNING) << status.ToString();
+      s = StatusFromPB(resp_.error().status());
     }
+    if (!s.ok()) {
+      LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
+                   << " on TS " << peer_.permanent_uuid() << " failed: " << s.ToString();
+    }
+
     delete this;
   }
 
  private:
-  Master *master_;
+  Master * const master_;
+  const QuorumPeerPB peer_;
+  const scoped_refptr<TabletInfo> tablet_;
+
   rpc::RpcController rpc_;
   tserver::CreateTabletResponsePB resp_;
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
@@ -1231,8 +1244,8 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
     const metadata::QuorumPB& quorum = tablet->metadata().dirty().pb.quorum();
     tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
-    BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
-      WARN_NOT_OK((new AsyncCreateTablet(master_))->Run(peer, tablet),
+    BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+      WARN_NOT_OK((new AsyncCreateTablet(master_, peer, tablet))->Run(),
                   "Failed to send new tablet request");
     }
   }
@@ -1251,8 +1264,8 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
     TSRegistrationPB reg;
     ts->GetRegistration(&reg);
 
-    metadata::QuorumPeerPB *peer = quorum->add_peers();
-    peer->set_role(metadata::QuorumPeerPB::CANDIDATE);
+    QuorumPeerPB *peer = quorum->add_peers();
+    peer->set_role(QuorumPeerPB::CANDIDATE);
     peer->set_permanent_uuid(ts->permanent_uuid());
 
     // TODO: This is temporary, we will use only UUIDs
@@ -1262,8 +1275,8 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
   }
 
   // TODO: Select the leader
-  metadata::QuorumPeerPB *leader = quorum->mutable_peers(rand() % nreplicas);
-  leader->set_role(metadata::QuorumPeerPB::LEADER);
+  QuorumPeerPB *leader = quorum->mutable_peers(rand() % nreplicas);
+  leader->set_role(QuorumPeerPB::LEADER);
 }
 
 bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
@@ -1437,7 +1450,7 @@ std::string TabletInfo::ToString() const {
 
 void TabletInfo::AddReplica(TSDescriptor* ts_desc,
                             metadata::TabletStatePB state,
-                            metadata::QuorumPeerPB::Role role) {
+                            QuorumPeerPB::Role role) {
   boost::lock_guard<simple_spinlock> l(lock_);
 
   last_update_ts_ = MonoTime::Now(MonoTime::FINE);
@@ -1481,8 +1494,8 @@ void TabletInfo::GetLocations(std::vector<TabletReplica>* locations) const {
 }
 
 bool PersistentTabletInfo::IsQuorumLeader(const TSDescriptor* ts_desc) const {
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, pb.quorum().peers()) {
-    if (peer.role() == metadata::QuorumPeerPB::LEADER &&
+  BOOST_FOREACH(const QuorumPeerPB& peer, pb.quorum().peers()) {
+    if (peer.role() == QuorumPeerPB::LEADER &&
         peer.permanent_uuid() == ts_desc->permanent_uuid()) {
       return true;
     }
