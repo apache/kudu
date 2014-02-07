@@ -142,6 +142,15 @@ message CreateTabletResponsePB {
   optional TabletServerErrorPB error = 1;
 }
 
+// A delete tablet request.
+message DeleteTabletRequestPB {
+  required bytes tablet_id = 1;
+}
+
+message DeleteTabletResponsePB {
+  optional TabletServerErrorPB error = 1;
+}
+
 // A configuration change request for the tablet with 'tablet_id'.
 message ChangeConfigRequestPB {
   required bytes tablet_id = 1;

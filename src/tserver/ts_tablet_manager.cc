@@ -220,6 +220,16 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   return Status::OK();
 }
 
+Status TSTabletManager::DeleteTablet(const shared_ptr<TabletPeer>& tablet_peer) {
+  TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
+        tablet_peer->tablet()->metadata()->table_name(),
+        tablet_peer->tablet()->metadata()->table_id());
+  RETURN_NOT_OK(tablet_peer->Shutdown());
+  tablet_map_.erase(tablet_peer->tablet()->tablet_id());
+  // TODO: Trash the data
+  return Status::OK();
+}
+
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
                                        gscoped_ptr<TabletMetadata>* metadata) {
   LOG(INFO) << "Loading master block " << tablet_id;

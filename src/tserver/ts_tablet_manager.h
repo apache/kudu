@@ -84,6 +84,10 @@ class TSTabletManager {
                          metadata::QuorumPB quorum,
                          std::tr1::shared_ptr<tablet::TabletPeer>* tablet_peer);
 
+  // Delete the specified tablet.
+  // TODO: Remove it from disk
+  Status DeleteTablet(const std::tr1::shared_ptr<tablet::TabletPeer>& tablet_peer);
+
   // Lookup the given tablet peer by its ID.
   // Returns true if the tablet is found successfully.
   bool LookupTablet(const std::string& tablet_id,

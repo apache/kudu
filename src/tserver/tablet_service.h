@@ -27,6 +27,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                             CreateTabletResponsePB* resp,
                             rpc::RpcContext* context);
 
+  virtual void DeleteTablet(const DeleteTabletRequestPB* req,
+                            DeleteTabletResponsePB* resp,
+                            rpc::RpcContext* context);
+
   virtual void AlterSchema(const AlterSchemaRequestPB* req,
                            AlterSchemaResponsePB* resp,
                            rpc::RpcContext* context);

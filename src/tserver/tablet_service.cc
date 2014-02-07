@@ -243,6 +243,34 @@ void TabletServiceImpl::CreateTablet(const CreateTabletRequestPB* req,
   context->RespondSuccess();
 }
 
+void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
+                                     DeleteTabletResponsePB* resp,
+                                     rpc::RpcContext* context) {
+  DVLOG(3) << "Received Delete Tablet RPC: " << req->DebugString();
+
+  shared_ptr<TabletPeer> tablet_peer;
+  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet not found"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return;
+  }
+  DCHECK(tablet_peer) << "Null tablet peer";
+
+  Status s = server_->tablet_manager()->DeleteTablet(tablet_peer);
+  if (PREDICT_FALSE(!s.ok())) {
+    TabletServerErrorPB::Code code;
+    if (s.IsNotFound()) {
+      code = TabletServerErrorPB::TABLET_NOT_FOUND;
+    } else {
+      code = TabletServerErrorPB::UNKNOWN_ERROR;
+    }
+    SetupErrorAndRespond(resp->mutable_error(), s, code, context);
+    return;
+  }
+  context->RespondSuccess();
+}
+
 void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
                                      ChangeConfigResponsePB* resp,
                                      rpc::RpcContext* context) {

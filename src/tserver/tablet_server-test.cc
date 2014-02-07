@@ -943,6 +943,49 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   }
 }
 
+TEST_F(TabletServerTest, TestDeleteTablet) {
+  shared_ptr<TabletPeer> tablet;
+
+  // Verify that the tablet exists
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(kTabletId);
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->DeleteTablet(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Verify that the tablet is removed from the tablet map
+  ASSERT_FALSE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+
+  // TODO: Verify that the data was trashed
+}
+
+TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id("NotPresentTabletId");
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->DeleteTablet(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_FOUND, resp.error().code());
+  }
+}
+
 TEST_F(TabletServerTest, TestChangeConfiguration) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;

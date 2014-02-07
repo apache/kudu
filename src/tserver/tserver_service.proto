@@ -21,6 +21,8 @@ service TabletServerService {
 
   rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
 
+  rpc DeleteTablet(DeleteTabletRequestPB) returns (DeleteTabletResponsePB);
+
   rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
 
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
