@@ -56,6 +56,7 @@ Status Connection::SetNonBlocking(bool enabled) {
 }
 
 void Connection::EpollRegister(ev::loop_ref& loop) {
+  DCHECK(reactor_thread_->IsCurrentThread());
   DVLOG(4) << "Registering connection for epoll: " << ToString();
   write_io_.set(loop);
   write_io_.set(socket_.GetFd(), ev::WRITE);
