@@ -32,4 +32,4 @@ else
 fi
 
 echo Running $TEST_NAME, redirecting output into $OUT
-"$@"  2>&1 | $pipe_cmd > $OUT
+"$@"  2>&1 | $ROOT/thirdparty/asan_symbolize.py | c++filt | $pipe_cmd > $OUT
