@@ -73,4 +73,13 @@ TEST(TestThreadPool, TestTracePropagation) {
   ASSERT_STR_CONTAINS(t->DumpToString(), "hello from task");
 }
 
+TEST(TestThreadPool, TestSubmitAfterShutdown) {
+  ThreadPool thread_pool("test");
+  ASSERT_STATUS_OK(thread_pool.Init(1));
+  thread_pool.Shutdown();
+  Status s = thread_pool.SubmitFunc(&IssueTraceStatement);
+  ASSERT_EQ("Illegal state: ThreadPool 'test' shut down",
+            s.ToString());
+}
+
 } // namespace kudu

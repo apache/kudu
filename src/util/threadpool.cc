@@ -91,11 +91,13 @@ Status ThreadPool::SubmitFunc(const boost::function<void()>& func) {
 }
 
 Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
-  DCHECK_GT(threads_.size(), 0) << "No threads in the pool";
   boost::lock_guard<boost::mutex> guard(lock_);
   if (PREDICT_FALSE(closing_)) {
-    return Status::IllegalState("ThreadPool is closing, unable to accept new Runnables");
+    return Status::IllegalState(
+      strings::Substitute("ThreadPool '$0' shut down", name_));
   }
+  DCHECK_GT(threads_.size(), 0) << "No threads in the pool";
+
   QueueEntry e;
   e.runnable = task;
   e.trace = Trace::CurrentTrace();
