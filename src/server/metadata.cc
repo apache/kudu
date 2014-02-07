@@ -244,14 +244,18 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   BlockId b_blk(master_block_.block_b());
   if (sblk_sequence_ & 1) {
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, *(pb.get())));
-    WARN_NOT_OK(fs_manager_->DeleteBlock(b_blk),
-                "Unable to delete old metadata block " + b_blk.ToString()
-                + " for tablet " + oid());
+    Status s = fs_manager_->DeleteBlock(b_blk);
+    if (!s.ok() && !s.IsNotFound()) {
+      WARN_NOT_OK(s, "Unable to delete old metadata block " + b_blk.ToString()
+                  + " for tablet " + oid());
+    }
   } else {
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, *(pb.get())));
-    WARN_NOT_OK(fs_manager_->DeleteBlock(a_blk),
-                "Unable to delete old metadata block " + a_blk.ToString()
-                + " for tablet " + oid());
+    Status s = fs_manager_->DeleteBlock(a_blk);
+    if (!s.ok() && !s.IsNotFound()) {
+      WARN_NOT_OK(s, "Unable to delete old metadata block " + a_blk.ToString()
+                  + " for tablet " + oid());
+    }
   }
 
   sblk_sequence_++;
