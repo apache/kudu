@@ -957,7 +957,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
     RETURN_NOT_OK(consensus_->LocalCommit(
         boost::assign::list_of(&commit_op), commit_clbk));
-    commit_clbk->Wait();
+    RETURN_NOT_OK(commit_clbk->Wait());
   }
 
   if (common_hooks_) {

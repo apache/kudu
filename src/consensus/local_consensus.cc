@@ -13,6 +13,7 @@ namespace consensus {
 using base::subtle::Barrier_AtomicIncrement;
 using consensus::CHANGE_CONFIG_OP;
 using log::Log;
+using log::LogEntry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
@@ -80,7 +81,7 @@ Status LocalConsensus::Append(
     gscoped_ptr<ConsensusContext>* context) {
   DCHECK_GE(state_, kConfiguring);
 
-  Log::Entry* reserved_entry;
+  LogEntry* reserved_entry;
   gscoped_ptr<ConsensusContext> new_context;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -119,7 +120,7 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
 
   DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
 
-  Log::Entry* reserved_entry;
+  LogEntry* reserved_entry;
   shared_ptr<FutureCallback> commit_clbk;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -150,7 +151,7 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
 
 Status LocalConsensus::LocalCommit(const vector<OperationPB*>& commit_ops,
                                    const shared_ptr<FutureCallback>& commit_callback) {
-  Log::Entry* reserved_entry;
+  LogEntry* reserved_entry;
   RETURN_NOT_OK(log_->Reserve(commit_ops, &reserved_entry));
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry, commit_callback));
   return Status::OK();

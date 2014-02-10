@@ -5,11 +5,20 @@
 
 #include "consensus/log_reader.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/stl_util.h"
 #include "server/fsmanager.h"
 #include "util/coding.h"
 #include "util/env_util.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
+#include "util/countdown_latch.h"
+#include "util/thread_util.h"
+
+// TODO Size of the queue/buffer should be defined bytewise, rather
+// than by the element count.
+DEFINE_int32(group_commit_queue_size, 1024,
+             "Maxmimum size of the group commit queue. TODO: name does not account"
+             "for the fact that elements of the queue can contain multiple operations");
 
 namespace kudu {
 namespace log {
@@ -17,46 +26,119 @@ namespace log {
 using consensus::OpId;
 using consensus::MISSED_DELTA;
 
-namespace {
-
-// Once group commit is fully implemented, this class will be the log
-// synchronizer class (and might be moved out of the anonymous
-// namespace). Presently it's there to allow the log_executor to be
-// moved inside the log class itself in order to implement the APIs
-// that will be compatible with group commit.
-class LogEntryAppendTask : public Task {
+// This class is responsible for managing the thread that appends to
+// the log file.
+class Log::AppendThread {
  public:
-  LogEntryAppendTask(log::Log* log,
-                     gscoped_ptr<LogEntryPB[]> phys_entries,
-                     size_t count)
-      : log_(log), phys_entries_(phys_entries.Pass()), count_(count) {
-  }
+  explicit AppendThread(Log* log);
 
-  Status Run() {
-    for (size_t i = 0; i < count_; i++) {
-      LogEntryPB& phys_entry = phys_entries_[i];
-      Status s = log_->Append(&phys_entry);
-      // Reserve() sets the 'operation' field of LogEntryPB from the
-      // passed in operations using 'set_allocated_operation', but
-      // does not take ownership of the operations; this means we must
-      // release the operations so that they are not deleted when
-      // 'phys_entries' are.
-      phys_entry.release_operation();
-      RETURN_NOT_OK_PREPEND(
-          s, strings::Substitute("unable to append entry $0 out of $1", i, count_));
-    }
-    return Status::OK();
-  }
+  // Initializes the objects and starts the thread.
+  Status Init();
 
-  bool Abort() { return false; }
+  // Waits until the last enqueued elements are processed, sets the
+  // Appender thread to closing state. If any entries are added to the
+  // queue during the process, invoke their callbacks' 'OnFailure()'
+  // method.
+  void Shutdown();
+
+  bool closing() const {
+    boost::lock_guard<boost::mutex> lock_guard(lock_);
+    return closing_;
+  }
 
  private:
+  void RunThread();
+
+  mutable boost::mutex lock_;
   Log* log_;
-  gscoped_ptr<LogEntryPB[]> phys_entries_;
-  size_t count_;
+  bool closing_;
+  gscoped_ptr<boost::thread> thread_;
+  CountDownLatch finished_;
 };
 
-} // namespace
+
+Log::AppendThread::AppendThread(Log *log)
+    : log_(log),
+      closing_(false),
+      finished_(1) {
+}
+
+Status Log::AppendThread::Init() {
+  DCHECK(thread_.get() == NULL) << "Already initialized";
+  RETURN_NOT_OK(StartThread(boost::bind(
+      &AppendThread::RunThread, this), &thread_));
+  return Status::OK();
+}
+
+void Log::AppendThread::RunThread() {
+  BlockingQueue<LogEntry*>* queue = log_->entry_queue();
+  while (PREDICT_TRUE(!closing())) {
+    std::vector<LogEntry*> entries;
+    ElementDeleter d(&entries);
+
+    if (PREDICT_FALSE(!queue->BlockingDrainTo(&entries))) {
+      break;
+    }
+
+    BOOST_FOREACH(LogEntry* entry, entries) {
+      entry->WaitForReady();
+      Status s = log_->DoAppend(entry);
+      if (PREDICT_FALSE(!s.ok())) {
+        LOG(ERROR) << "Error appending to the log: " << s.ToString();
+        DLOG(FATAL) << "Aborting: " << s.ToString();
+        entry->set_failed_to_append();
+        // TODO If a single transaction fails to append, should we
+        // abort all subsequent transactions in this batch or allow
+        // them to be appended? What about transactions in future
+        // batches?
+        entry->callback()->OnFailure(s);
+      }
+    }
+
+    Status s = log_->Sync();
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(ERROR) << "Error syncing log" << s.ToString();
+      DLOG(FATAL) << "Aborting: " << s.ToString();
+      BOOST_FOREACH(LogEntry* entry, entries) {
+        entry->callback()->OnFailure(s);
+      }
+    } else {
+      VLOG(2) << "Synchronized " << entries.size() << " entries";
+      BOOST_FOREACH(LogEntry* entry, entries) {
+        if (PREDICT_TRUE(!entry->failed_to_append())) {
+          entry->callback()->OnSuccess();
+        }
+      }
+    }
+  }
+  finished_.CountDown();
+  VLOG(1) << "Finished AppendThread()";
+}
+
+void Log::AppendThread::Shutdown() {
+  if (closing()) {
+    return;
+  }
+
+  LOG(INFO) << "Shutting down Log append thread!";
+
+  BlockingQueue<LogEntry*>* queue = log_->entry_queue();
+  queue->Shutdown();
+
+  {
+    boost::lock_guard<boost::mutex> lock_guard(lock_);
+    closing_ = true;
+  }
+
+  finished_.Wait();
+
+  LOG(INFO) << "Log append thread shut down!";
+
+  CHECK_OK(ThreadJoiner(thread_.get(), "log appender thread").Join())
+}
+
+const Status Log::kLogShutdownStatus(
+    Status::ServiceUnavailable("WAL is shutting down", "", ESHUTDOWN));
 
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
@@ -97,7 +179,8 @@ Log::Log(const LogOptions &options,
   next_segment_header_(header.Pass()),
   header_size_(0),
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
-  log_executor_(TaskExecutor::CreateNew("log exec", 1)),
+  entry_queue_(FLAGS_group_commit_queue_size),
+  append_thread_(new AppendThread(this)),
   state_(kLogInitialized) {
 }
 
@@ -123,97 +206,93 @@ Status Log::Init() {
 
   // we always create a new segment when the log starts.
   RETURN_NOT_OK(CreateNewSegment(*next_segment_header_.get()));
+
+  RETURN_NOT_OK(append_thread_->Init());
   state_ = kLogWriting;
   return Status::OK();
 }
 
 Status Log::RollOver() {
   CHECK_EQ(state_, kLogWriting);
+  RETURN_NOT_OK(Sync());
   RETURN_NOT_OK(current_->writable_file()->Close());
   RETURN_NOT_OK(CreateNewSegment(*next_segment_header_.get()));
   return Status::OK();
 }
 
 Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
-                    Log::Entry** reserved_entry) {
+                    LogEntry** reserved_entry) {
   DCHECK(reserved_entry != NULL);
+  CHECK_EQ(state_, kLogWriting);
 
-  gscoped_ptr<LogEntryPB[]> entries(new LogEntryPB[ops.size()]);
-  LogEntryPB* entry = entries.get();
-  BOOST_FOREACH(consensus::OperationPB* op, ops) {
-    entry->set_type(log::OPERATION);
-    entry->set_allocated_operation(op);
-    ++entry;
+  size_t num_ops = ops.size();
+  gscoped_ptr<LogEntryPB[]> entries(new LogEntryPB[num_ops]);
+  for (size_t i = 0; i < num_ops; i++) {
+    consensus::OperationPB* op = ops[i];
+    LogEntryPB& entry = entries[i];
+    entry.set_type(log::OPERATION);
+    entry.set_allocated_operation(op);
   }
-  gscoped_ptr<Log::Entry> new_entry(new Log::Entry(entries.Pass(),
-                                                   ops.size()));
+  gscoped_ptr<LogEntry> new_entry(new LogEntry(entries.Pass(),
+                                                   num_ops));
+  new_entry->MarkReserved();
 
-  // --- BEGIN TEMPRORARY CODE (will be moved to AsyncAppend()) ---
-  //
-  // When group commit is implemented, this block of code will be part
-  // of AsyncAppend(). For now, however, this code is part of
-  // Reserve() as it must be called under a lock in order for the log
-  // entries to be correctly ordered.
-  //
-  // TODO add a test for this once we get delayed executors (KUDU-52)
-  shared_ptr<Task> append_task(
-      new LogEntryAppendTask(this, new_entry->phys_entries_.Pass(), new_entry->count()));
-  RETURN_NOT_OK(log_executor_->Submit(append_task, &new_entry->future_));
-  // --- END TEMPRORARY CODE --
+  if (PREDICT_FALSE(!entry_queue_.BlockingPut(new_entry.get()))) {
+    return kLogShutdownStatus;
+  }
 
-  // Release the memory back to the caller; this
-  // will be freed by a call to AsyncAppend().
+  // Release the memory back to the caller: this will be freed when
+  // the entry is removed from the queue.
   //
-  // TODO The final implementation will most likely set
-  // 'reserved_entry' to a pre-allocated memory in a buffer.
+  // TODO (perf) Use a ring buffer instead of a blocking queue and set
+  // 'reserved_entry' to a pre-allocated slot in the buffer.
   *reserved_entry = new_entry.release();
   return Status::OK();
 }
 
-Status Log::AsyncAppend(Log::Entry* entry, const shared_ptr<FutureCallback>& callback) {
-  // Until group commit is implemented, the actual work is being done
-  // in Reserve() method -- so this to make sure API contract (call
-  // Reserve() under a lock, call AsyncAppend() outside of the lock)
-  // is satisfied.
+Status Log::AsyncAppend(LogEntry* entry, const shared_ptr<FutureCallback>& callback) {
+  CHECK_EQ(state_, kLogWriting);
 
-  // Ensures the entry is deleted when we exit the scope.
-  // TODO The final implementation will most likely release 'entry'
-  // back into the buffer, without the need to free memory or call a
-  // destructor.
-  gscoped_ptr<Log::Entry> entry_deleter(entry);
+  RETURN_NOT_OK(entry->Serialize());
+  entry->set_callback(callback);
+  entry->MarkReady();
 
-  entry->future_->AddListener(callback);
   return Status::OK();
 }
 
-Status Log::Append(LogEntryPB* entry) {
-  CHECK_EQ(state_, kLogWriting);
-
-  // update the current header
-  switch (entry->type()) {
-    case OPERATION: {
-      if (PREDICT_TRUE(entry->operation().has_id())) {
-        next_segment_header_->mutable_initial_id()->CopyFrom(entry->operation().id());
-      } else {
-        DCHECK(entry->operation().has_commit()
-               && entry->operation().commit().op_type() == MISSED_DELTA)
-                   << "Operation did not have an id. Only COMMIT operations of"
-                      " MISSED_DELTA type are allowed not to have ids.";
+Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
+  // TODO (perf) make this more efficient, cache the highest id
+  // during LogEntry::Serialize()
+  for (size_t i = 0; i < entry->count(); i++) {
+    LogEntryPB& entry_pb = entry->phys_entries_[i];
+    switch (entry_pb.type()) {
+      case OPERATION: {
+        if (PREDICT_TRUE(entry_pb.operation().has_id())) {
+          next_segment_header_->mutable_initial_id()->CopyFrom(entry_pb.operation().id());
+        } else {
+          DCHECK(entry_pb.operation().has_commit()
+                 && entry_pb.operation().commit().op_type() == MISSED_DELTA)
+              << "Operation did not have an id. Only COMMIT operations of"
+              " MISSED_DELTA type are allowed not to have ids.";
+        }
+        if (caller_owns_operation) {
+          // If operation is allocated by another thread, so we must release it
+          // to avoid freeing the memory
+          entry_pb.release_operation();
+        }
+        break;
       }
-      break;
-    }
-    case TABLET_METADATA: {
-      next_segment_header_->mutable_tablet_meta()->CopyFrom(entry->tablet_meta());
-      break;
-    }
-    default: {
-      LOG(FATAL) << "Unexpected log entry type: " << entry->DebugString();
+      case TABLET_METADATA: {
+        next_segment_header_->mutable_tablet_meta()->CopyFrom(entry_pb.tablet_meta());
+        break;
+      }
+      default: {
+        LOG(FATAL) << "Unexpected log entry type: " << entry_pb.DebugString();
+      }
     }
   }
-
-  uint32_t entry_size = entry->ByteSize();
-
-  // if the size of this entry overflows the current segment, get a new one
+  Slice entry_data = entry->data();
+  uint32_t entry_size = entry_data.size();
   if ((current_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
       RETURN_NOT_OK(RollOver());
@@ -225,16 +304,33 @@ Status Log::Append(LogEntryPB* entry) {
     RETURN_NOT_OK(current_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
   }
-  if (!pb_util::SerializeToWritableFile(*entry, current_->writable_file().get())) {
-    return Status::Corruption("Unable to serialize entry to file");
-  }
+  RETURN_NOT_OK(current_->writable_file()->Append(entry_data));
+  return Status::OK();
+}
 
+Status Log::Sync() {
   if (options_.force_fsync_all) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
       RETURN_NOT_OK(current_->writable_file()->Sync());
     }
   }
   return Status::OK();
+}
+
+Status Log::Append(LogEntryPB* phys_entry) {
+  gscoped_ptr<LogEntryPB[]> phys_entries(phys_entry);
+  LogEntry entry(phys_entries.Pass(), 1);
+  entry.state_ = LogEntry::kEntryReserved;
+  Status s = entry.Serialize();
+  if (s.ok()) {
+    entry.state_ = LogEntry::kEntryReady;
+    s = DoAppend(&entry, false);
+    if (s.ok()) {
+      s = Sync();
+    }
+  }
+  ignore_result(entry.phys_entries_.release());
+  return s;
 }
 
 Status Log::GC() {
@@ -259,8 +355,12 @@ Status Log::GC() {
 }
 
 Status Log::Close() {
-  log_executor_->Shutdown();
+  if (append_thread_.get() != NULL) {
+    append_thread_->Shutdown();
+    VLOG(1) << "Append thread Shutdown()";
+  }
   if (state_ == kLogWriting) {
+    RETURN_NOT_OK(Sync());
     RETURN_NOT_OK(current_->writable_file()->Close());
     state_ = kLogClosed;
     VLOG(1) << "Log Closed()";
@@ -332,14 +432,57 @@ string Log::CreateSegmentFileName(const OpId &id) {
 }
 
 Log::~Log() {
+  if (state_ == kLogWriting) {
+    WARN_NOT_OK(Close(), "Error closing log");
+  }
 }
 
-Log::Entry::Entry(gscoped_ptr<LogEntryPB[]> phys_entries,
+LogEntry::LogEntry(gscoped_ptr<LogEntryPB[]> phys_entries,
                   size_t count)
-    : phys_entries_(phys_entries.Pass()), count_(count) {
+    : phys_entries_(phys_entries.Pass()),
+      count_(count),
+      state_(kEntryInitialized) {
 }
 
-Log::Entry::~Entry() {
+LogEntry::~LogEntry() {
+}
+
+void LogEntry::MarkReserved() {
+  DCHECK_EQ(state_, kEntryInitialized);
+  ready_lock_.Lock();
+  state_ = kEntryReserved;
+}
+
+Status LogEntry::Serialize() {
+  DCHECK_EQ(state_, kEntryReserved);
+  buffer_.clear();
+  uint32_t totalByteSize = 0;
+  for (int i = 0; i < count_; ++i) {
+    totalByteSize += phys_entries_[i].ByteSize();
+  }
+  buffer_.reserve(totalByteSize);
+  for (int i = 0; i < count_; ++i) {
+    LogEntryPB& entry = phys_entries_[i];
+    if (!pb_util::AppendToString(entry, &buffer_)) {
+      return Status::IOError(strings::Substitute(
+          "unable to serialize entry pb $0 out of $1; entry contents: $3",
+          i, count_, entry.DebugString()));
+    }
+  }
+  state_ = kEntrySerialized;
+  return Status::OK();
+}
+
+void LogEntry::MarkReady() {
+  DCHECK_EQ(state_, kEntrySerialized);
+  state_ = kEntryReady;
+  ready_lock_.Unlock();
+}
+
+void LogEntry::WaitForReady() {
+  ready_lock_.Lock();
+  DCHECK_EQ(state_, kEntryReady);
+  ready_lock_.Unlock();
 }
 
 }  // namespace log

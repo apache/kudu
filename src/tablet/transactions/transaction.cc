@@ -148,9 +148,9 @@ void LeaderTransaction::HandlePrepareFailure() {
 }
 
 void LeaderTransaction::ApplySucceeded() {
+  UpdateMetrics();
   tx_ctx()->completion_callback()->TransactionCompleted();
 
-  UpdateMetrics();
   delete this;
 }
 

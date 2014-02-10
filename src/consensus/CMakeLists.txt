@@ -64,6 +64,7 @@ set(KUDU_TEST_LINK_LIBS
 ADD_KUDU_TEST(log_util-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(consensus_queue-test)
+ADD_KUDU_TEST(mt-log-test)
 
 #Tools
 set(KUDU_LINK_LIBS

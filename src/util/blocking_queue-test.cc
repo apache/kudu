@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <tr1/memory>
 
+#include "util/countdown_latch.h"
 #include "util/blocking_queue.h"
 
 using std::tr1::shared_ptr;
@@ -31,6 +32,18 @@ TEST(BlockingQueueTest, Test1) {
   ASSERT_EQ(2, i);
   ASSERT_TRUE(test1_queue.BlockingGet(&i));
   ASSERT_EQ(3, i);
+}
+
+TEST(BlockingQueueTest, TestBlockingDrainTo) {
+  BlockingQueue<int32_t> test_queue(3);
+  ASSERT_EQ(test_queue.Put(1), QUEUE_SUCCESS);
+  ASSERT_EQ(test_queue.Put(2), QUEUE_SUCCESS);
+  ASSERT_EQ(test_queue.Put(3), QUEUE_SUCCESS);
+  std::vector<int32_t> out;
+  ASSERT_TRUE(test_queue.BlockingDrainTo(&out));
+  ASSERT_EQ(1, out[0]);
+  ASSERT_EQ(2, out[1]);
+  ASSERT_EQ(3, out[2]);
 }
 
 TEST(BlockingQueueTest, TestTooManyInsertions) {
@@ -66,15 +79,22 @@ class MultiThreadTest {
   typedef std::vector<std::tr1::shared_ptr<boost::thread> > thread_vec_t;
 
   MultiThreadTest()
-    : iterations_(4),
+   :  puts_(4),
+      blocking_puts_(4),
       nthreads_(5),
-      queue_(nthreads_ * iterations_),
-      num_inserters_(nthreads_) {
+      queue_(nthreads_ * puts_),
+      num_inserters_(nthreads_),
+      sync_latch_(nthreads_) {
   }
 
   void InserterThread(int arg) {
-    for (int i = 0; i < iterations_; i++) {
+    for (int i = 0; i < puts_; i++) {
       ASSERT_EQ(queue_.Put(arg), QUEUE_SUCCESS);
+    }
+    sync_latch_.CountDown();
+    sync_latch_.Wait();
+    for (int i = 0; i < blocking_puts_; i++) {
+      ASSERT_TRUE(queue_.BlockingPut(arg));
     }
     boost::lock_guard<boost::mutex> guard(lock_);
     if (--num_inserters_ == 0) {
@@ -83,7 +103,7 @@ class MultiThreadTest {
   }
 
   void RemoverThread() {
-    for (int i = 0; i < iterations_; i++) {
+    for (int i = 0; i < puts_ + blocking_puts_; i++) {
       int32_t arg = 0;
       bool got = queue_.BlockingGet(&arg);
       if (!got) {
@@ -115,21 +135,24 @@ class MultiThreadTest {
     // Let's check to make sure we got what we should have.
     boost::lock_guard<boost::mutex> guard(lock_);
     for (int i = 0; i < nthreads_; i++) {
-      ASSERT_EQ(iterations_, gotten_[i]);
+      ASSERT_EQ(puts_ + blocking_puts_, gotten_[i]);
     }
-    // And there were nthreads_ * (iterations_ + 1)  elements removed, but only
-    // nthreads_ * iterations_ elements added.  So some removers hit the shutdown
-    // case.
-    ASSERT_EQ(iterations_, gotten_[-1]);
+    // And there were nthreads_ * (puts_ + blocking_puts_)
+    // elements removed, but only nthreads_ * puts_ +
+    // blocking_puts_ elements added.  So some removers hit the
+    // shutdown case.
+    ASSERT_EQ(puts_ + blocking_puts_, gotten_[-1]);
   }
 
-  int iterations_;
+  int puts_;
+  int blocking_puts_;
   int nthreads_;
   BlockingQueue<int32_t> queue_;
   boost::mutex lock_;
   std::map<int32_t, int> gotten_;
   thread_vec_t threads_;
   int num_inserters_;
+  CountDownLatch sync_latch_;
 };
 
 TEST(BlockingQueueTest, TestMultipleThreads) {
