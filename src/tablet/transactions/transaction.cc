@@ -122,17 +122,16 @@ void LeaderTransaction::HandlePrepareFailure() {
   // once HandlePrepareFailure() has been called there is no need for additional
   // error handling on the dctor.
   prepare_finished_calls_ = 2;
+
+  // set the error on the completion callback
+  tx_ctx()->completion_callback()->set_error(prepare_status_);
+
   // If there is no consensus context nothing got done so just reply to the client.
   if (tx_ctx()->consensus_ctx() == NULL) {
-    tx_ctx()->completion_callback()->set_error(prepare_status_);
     tx_ctx()->completion_callback()->TransactionCompleted();
     delete this;
     return;
   }
-
-  // TODO: Should we set a default error?
-  DCHECK(tx_ctx()->completion_callback()->has_error())
-         << "No error is set, but we have a prepare failure: " << prepare_status_.ToString();
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   PrepareFailedPreCommitHooks(&commit);
@@ -142,6 +141,9 @@ void LeaderTransaction::HandlePrepareFailure() {
   Status s = tx_ctx()->consensus_ctx()->Commit(commit.Pass());
   if (!s.ok()) {
     LOG(ERROR) << "Could not commit transaction abort message. Status: " << s.ToString();
+    // we couldn't commit the prepare failure either, which means the commit callback
+    // will never be called, so we need to notify the caller here.
+    tx_ctx()->completion_callback()->TransactionCompleted();
   }
 }
 
