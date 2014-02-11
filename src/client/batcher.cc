@@ -251,6 +251,19 @@ void Batcher::Abort() {
   boost::unique_lock<simple_spinlock> l(lock_);
   state_ = kAborted;
 
+  vector<InFlightOp*> to_abort;
+  BOOST_FOREACH(InFlightOp* op, ops_) {
+    boost::lock_guard<simple_spinlock> l(op->lock_);
+    if (op->state == InFlightOp::kBufferedToTabletServer) {
+      to_abort.push_back(op);
+    }
+  }
+
+  BOOST_FOREACH(InFlightOp* op, to_abort) {
+    VLOG(1) << "Aborting op: " << op->ToString();
+    MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
+  }
+
   if (flush_callback_) {
     l.unlock();
 
@@ -379,13 +392,6 @@ void Batcher::AddInFlightOp(InFlightOp* op) {
   InsertOrDie(&ops_, op);
 }
 
-void Batcher::RemoveInFlightOp(InFlightOp* op) {
-  // TODO: get rid of this function
-  boost::lock_guard<simple_spinlock> l(lock_);
-  CHECK_EQ(1, ops_.erase(op))
-    << "Could not remove op " << op->ToString() << " from in-flight list";
-}
-
 bool Batcher::IsAborted() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   return state_ == kAborted;
@@ -397,11 +403,17 @@ void Batcher::MarkHadErrors() {
 }
 
 void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
-  gscoped_ptr<InFlightOp> op_deleter(op);
-  RemoveInFlightOp(op);
+  boost::lock_guard<simple_spinlock> l(lock_);
+  MarkInFlightOpFailedUnlocked(op, s);
+}
+
+void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
+  CHECK_EQ(1, ops_.erase(op))
+    << "Could not remove op " << op->ToString() << " from in-flight list";
   gscoped_ptr<Error> error(new Error(op->insert.Pass(), s));
   error_collector_->AddError(error.Pass());
-  MarkHadErrors();
+  had_errors_ = true;
+  delete op;
 }
 
 void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {

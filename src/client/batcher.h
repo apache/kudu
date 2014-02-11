@@ -89,10 +89,6 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // Add an op to the in-flight set and increment the ref-count.
   void AddInFlightOp(InFlightOp* op);
 
-  // Remove an op, decrementing the ref-count on this class.
-  // If this was the last op, this will also result in deleting
-  // the object. So, after calling it, the caller should no
-  // longer assume that 'this' is valid.
   void RemoveInFlightOp(InFlightOp* op);
 
   // Return true if the batch has been aborted, and any in-flight ops should stop
@@ -103,7 +99,11 @@ class Batcher : public base::RefCountedThreadSafe<Batcher> {
   // the flush callback will get a bad Status.
   void MarkHadErrors();
 
+  // Remove an op from the in-flight op list, and delete the op itself.
+  // The operation is reported to the ErrorReporter as having failed with the
+  // given status.
   void MarkInFlightOpFailed(InFlightOp* op, const Status& s);
+  void MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s);
   void CheckForFinishedFlush();
   void FlushBufferIfReady(RemoteTabletServer* ts, PerTSBuffer* buf);
   void FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf);

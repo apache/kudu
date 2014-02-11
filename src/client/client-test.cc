@@ -196,6 +196,8 @@ class ClientTest : public KuduTest {
     }
   }
 
+  void DoApplyWithoutFlushTest(int sleep_micros);
+
   enum WhichServerToKill {
     DEAD_MASTER,
     DEAD_TSERVER
@@ -514,19 +516,35 @@ TEST_F(ClientTest, TestWriteWithDeadTabletServer) {
   DoTestWriteWithDeadServer(DEAD_TSERVER);
 }
 
-// Applies some updates to the session, and then drops the reference to the
-// Session before flushing. Makes sure that the tablet resolution callbacks
-// properly deal with the session disappearing underneath.
-TEST_F(ClientTest, TestApplyToSessionWithoutFlushing) {
+void ClientTest::DoApplyWithoutFlushTest(int sleep_micros) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
+  usleep(sleep_micros);
   session.reset(); // should not crash!
 
   // Should have no rows.
   vector<string> rows;
   ScanRowsToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
+}
+
+
+// Applies some updates to the session, and then drops the reference to the
+// Session before flushing. Makes sure that the tablet resolution callbacks
+// properly deal with the session disappearing underneath.
+//
+// This test doesn't sleep between applying the operations and dropping the
+// reference, in hopes that the reference will be dropped while DNS is still
+// in-flight, etc.
+TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsInFlight) {
+  DoApplyWithoutFlushTest(0);
+}
+
+// Same as the above, but sleeps a little bit after applying the operations,
+// so that the operations are already in the per-TS-buffer.
+TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsBuffered) {
+  DoApplyWithoutFlushTest(10000);
 }
 
 // Do a write with a bad schema on the client side. This should make the Prepare
