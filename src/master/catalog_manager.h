@@ -339,6 +339,15 @@ class CatalogManager {
   // given output stream. This is verbose, meant for debugging.
   void DumpState(std::ostream* out) const;
 
+  // Return true if the table with the specified ID exists,
+  // and set the table pointer to the TableInfo object
+  // NOTE: This should only be used by tests or web-ui
+  bool GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table);
+
+  // Return all the available TableInfo, which also may include not running tables
+  // NOTE: This should only be used by tests or web-ui
+  void GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables);
+
  private:
   friend class TableLoader;
   friend class TabletLoader;

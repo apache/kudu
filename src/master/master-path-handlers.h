@@ -8,6 +8,9 @@
 #include <sstream>
 
 namespace kudu {
+
+class Schema;
+
 namespace master {
 
 class Master;
@@ -23,10 +26,14 @@ class MasterPathHandlers {
 
   Status Register(Webserver* server);
 
+ private:
   void HandleTabletServers(const Webserver::ArgumentMap& args,
                            std::stringstream* output);
+  void HandleCatalogManager(const Webserver::ArgumentMap& args,
+                            std::stringstream* output);
+  void HandleTablePage(const Webserver::ArgumentMap &args,
+                       std::stringstream *output);
 
- private:
   Master* master_;
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);
 };

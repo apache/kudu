@@ -732,6 +732,20 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
   return Status::OK();
 }
 
+bool CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
+  boost::shared_lock<LockType> l(lock_);
+  *table = FindPtrOrNull(table_ids_map_, table_id);
+  return *table != NULL;
+}
+
+void CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables) {
+  tables->clear();
+  boost::shared_lock<LockType> l(lock_);
+  BOOST_FOREACH(const TableInfoMap::value_type& e, table_ids_map_) {
+    tables->push_back(e.second);
+  }
+}
+
 Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
                                            const TabletReportPB& report,
                                            TabletReportUpdatesPB *report_update,
