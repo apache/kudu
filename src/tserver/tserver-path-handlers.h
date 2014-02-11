@@ -31,10 +31,6 @@ class TabletServerPathHandlers {
   void HandleTabletPage(const Webserver::ArgumentMap& args,
                         std::stringstream* output);
 
-  void OutputSchemaTable(const Schema& schema, std::stringstream* output);
-  void OutputImpalaSchema(const std::string& table_name,
-                          const Schema& schema, std::stringstream* output);
-
   TabletServer* tserver_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServerPathHandlers);

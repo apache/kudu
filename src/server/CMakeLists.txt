@@ -22,6 +22,7 @@ set(SERVER_SRCS
   tcmalloc_metrics.cc
   webserver.cc
   webserver_options.cc
+  webui_util.cc
 )
 
 PROTOBUF_GENERATE_CPP(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
