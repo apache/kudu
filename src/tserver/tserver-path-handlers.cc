@@ -45,17 +45,18 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
 
   *output << "<h1>Tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Tablet ID</th><th>On-disk Size</th></tr>\n";
+  *output << "  <tr><th>Table Name</th><th>Tablet ID</th><th>On-disk Size</th></tr>\n";
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
     string id = peer->tablet()->tablet_id();
+    string table_name = peer->tablet()->metadata()->table_name();
     string tablet_link = Substitute("<a href=\"/tablet?id=$0\">$1</a>",
                                     UrlEncodeToString(id),
                                     EscapeForHtmlToString(id));
     string n_bytes = HumanReadableNumBytes::ToString(peer->tablet()->EstimateOnDiskSize());
     // TODO: would be nice to include some other stuff like memory usage, table
     // name, key range, etc.
-    (*output) << Substitute("<tr><th>$0</th><th>$1</th></tr>\n",
-                            tablet_link, n_bytes);
+    (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th></tr>\n",
+                            EscapeForHtmlToString(table_name), tablet_link, n_bytes);
   }
   *output << "</table>\n";
 }
@@ -77,6 +78,8 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
     return;
   }
 
+  string table_name = peer->tablet()->metadata()->table_name();
+
   *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>\n";
 
   // Output schema in tabular format.
@@ -85,7 +88,7 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   HtmlOutputSchemaTable(schema, output);
 
   *output << "<h2>Impala CREATE TABLE statement</h2>\n";
-  HtmlOutputImpalaSchema(tablet_id, schema, output);
+  HtmlOutputImpalaSchema(table_name, schema, output);
 }
 
 } // namespace tserver
