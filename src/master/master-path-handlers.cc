@@ -134,7 +134,9 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
   }
   *output << "</table>\n";
 
-  // TODO: Show pending tasks
+  std::vector<scoped_refptr<MonitoredTask> > task_list;
+  table->GetTaskList(&task_list);
+  HtmlOutputTaskList(task_list, output);
 }
 
 Status MasterPathHandlers::Register(Webserver* server) {

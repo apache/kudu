@@ -8,6 +8,7 @@
 #include "gutil/map-util.h"
 #include "gutil/strings/human_readable.h"
 #include "gutil/strings/substitute.h"
+#include "server/monitored_task.h"
 #include "util/url-coding.h"
 
 using strings::Substitute;
@@ -89,6 +90,56 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
   *output << "   'kudu.table.name' = '" << table_name << "'\n";
   *output << ");\n";
   *output << "</pre></code>\n";
+}
+
+string HumanElapsedTime(int64_t msec) {
+  if (msec >= 60000000) {
+    StringPrintf("%.2fmin", msec / 60000000.0);
+  } else if (msec >= 1000000) {
+    StringPrintf("%.2fsec", msec / 1000000.0);
+  }
+  return StringPrintf("%.2fmsec", msec / 1000.0);
+}
+
+
+void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
+                        std::stringstream* output) {
+  *output << "<table class='table table-striped'>\n";
+  *output << "  <tr><th>Task Name</th><th>State</th><th>Time</th><th>Description</th></tr>\n";
+  BOOST_FOREACH(const scoped_refptr<MonitoredTask>& task, tasks) {
+    string state;
+    switch (task->state()) {
+      case MonitoredTask::kStatePreparing:
+        state = "Preparing";
+        break;
+      case MonitoredTask::kStateRunning:
+        state = "Running";
+        break;
+      case MonitoredTask::kStateComplete:
+        state = "Complete";
+        break;
+      case MonitoredTask::kStateAborted:
+        state = "Aborted";
+        break;
+    }
+
+    int64_t runningTime = 0;
+    if (task->completion_timestamp().Initialized()) {
+      runningTime = task->completion_timestamp().GetDeltaSince(
+        task->start_timestamp()).ToMilliseconds();
+    } else if (task->start_timestamp().Initialized()) {
+      runningTime = MonoTime::Now(MonoTime::FINE).GetDeltaSince(
+        task->start_timestamp()).ToMilliseconds();
+    }
+
+    *output << Substitute(
+        "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td></tr>\n",
+        EscapeForHtmlToString(task->type_name()),
+        EscapeForHtmlToString(state),
+        EscapeForHtmlToString(HumanElapsedTime(runningTime)),
+        EscapeForHtmlToString(task->description()));
+  }
+  *output << "</table>\n";
 }
 
 } // namespace kudu

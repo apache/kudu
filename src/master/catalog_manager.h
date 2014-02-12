@@ -15,6 +15,7 @@
 #include "master/master.pb.h"
 #include "master/ts_manager.h"
 #include "server/oid_generator.h"
+#include "server/monitored_task.h"
 #include "util/cow_object.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -22,7 +23,6 @@
 namespace kudu {
 
 class Schema;
-class Task;
 
 namespace rpc {
 class RpcContext;
@@ -218,9 +218,10 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   // Returns true if an "Alter" operation is in-progress
   bool IsAlterInProgress() const;
 
-  void AddTask(Task *task);
-  void RemoveTask(Task *task);
+  void AddTask(MonitoredTask *task);
+  void RemoveTask(MonitoredTask *task);
   void AbortTasks();
+  void GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *tasks);
 
  private:
   friend class base::RefCountedThreadSafe<TableInfo>;
@@ -240,8 +241,7 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   CowObject<PersistentTableInfo> metadata_;
 
   // List of pending tasks (e.g. create/alter tablet requests)
-  // TODO: switch to something like MonitoredTask to expose them in the UI?
-  std::tr1::unordered_set<Task*> pending_tasks_;
+  std::tr1::unordered_set<MonitoredTask*> pending_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };

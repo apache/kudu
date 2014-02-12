@@ -888,27 +888,42 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 //  - Alter completed
 //  - TS has already a newer version
 //    (which may happen in case of 2 alter since we can't abort an in-progress operation)
-class AsyncAlterTable : public Task {
+class AsyncAlterTable : public MonitoredTask {
  public:
   AsyncAlterTable(const std::tr1::shared_ptr<tserver::TabletServerServiceProxy>& ts_proxy,
                   const scoped_refptr<TabletInfo>& tablet,
                   const std::string& permanent_uuid)
-    : abort_(false), permanent_uuid_(permanent_uuid), tablet_(tablet), ts_proxy_(ts_proxy) {}
+    : state_(kStatePreparing),
+      permanent_uuid_(permanent_uuid),
+      tablet_(tablet),
+      ts_proxy_(ts_proxy) {
+    }
 
   virtual Status Run() {
+    state_ = kStateRunning;
     SendRequest();
     return Status::OK();
   }
 
   virtual bool Abort() {
-    abort_ = true;
+    state_ = kStateAborted;
     return true;
   }
 
+  virtual State state() const { return state_; }
+
+  virtual string type_name() const { return "Alter Table"; }
+
+  virtual string description() const {
+    return tablet_->ToString() + " Alter Table RPC for TS=" + permanent_uuid_;
+  }
+
+  virtual MonoTime start_timestamp() const { return start_ts_; }
+
+  virtual MonoTime completion_timestamp() const { return end_ts_; }
+
  private:
   void Callback() {
-    bool retry = true;
-
     if (!rpc_.status().ok()) {
       LOG(WARNING) << permanent_uuid_ << " Alter RPC failed for tablet " << tablet_->ToString()
                    << ": " << rpc_.status().ToString();
@@ -922,7 +937,7 @@ class AsyncAlterTable : public Task {
         case TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA:
           LOG(WARNING) << permanent_uuid_ << " alter failed for tablet " << tablet_->ToString()
                        << " no further retry: " << status.ToString();
-          retry = false;
+          state_ = kStateComplete;
           break;
         default:
           LOG(WARNING) << permanent_uuid_ << " alter failed for tablet " << tablet_->ToString()
@@ -930,15 +945,14 @@ class AsyncAlterTable : public Task {
           break;
       }
     } else {
-      retry = false;
+      state_ = kStateComplete;
       VLOG(1) << permanent_uuid_ << " alter complete on tablet " << tablet_->ToString();
     }
 
-    if (retry && !abort_) {
+    if (state_ != kStateComplete && state_ != kStateAborted) {
       SendRequest();
     } else {
       tablet_->table()->RemoveTask(this);
-      delete this;
     }
   }
 
@@ -962,7 +976,9 @@ class AsyncAlterTable : public Task {
             << req.DebugString();
   }
 
-  volatile bool abort_;
+  MonoTime start_ts_;
+  MonoTime end_ts_;
+  volatile State state_;
   rpc::RpcController rpc_;
   std::string permanent_uuid_;
   scoped_refptr<TabletInfo> tablet_;
@@ -997,20 +1013,23 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
   call->Run();
 }
 
-class AsyncCreateTablet {
+class AsyncCreateTablet : public MonitoredTask {
  public:
   explicit AsyncCreateTablet(Master *master,
                              const QuorumPeerPB& peer,
                              TabletInfo* tablet)
     : master_(master),
       peer_(peer),
-      tablet_(tablet) {
+      tablet_(tablet),
+      state_(kStatePreparing) {
   }
 
   // Fire off the async create table.
   // This requires that the new tablet info is locked for write, and the
   // quorum information has been filled into the 'dirty' data.
   Status Run() {
+    state_ = kStateRunning;
+
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
     RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(peer_.permanent_uuid(), &ts_desc));
     RETURN_NOT_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy_));
@@ -1038,7 +1057,23 @@ class AsyncCreateTablet {
     return Status::OK();
   }
 
-  // Table specifier
+  virtual bool Abort() {
+    state_ = kStateAborted;
+    return true;
+  }
+
+  virtual State state() const { return state_; }
+
+  virtual string type_name() const { return "Create Table"; }
+
+  virtual string description() const {
+    return tablet_->ToString() + " Create Tablet RPC for TS=" + peer_.permanent_uuid();
+  }
+
+  virtual MonoTime start_timestamp() const { return start_ts_; }
+
+  virtual MonoTime completion_timestamp() const { return end_ts_; }
+
  private:
   void Callback() {
     Status s;
@@ -1048,11 +1083,12 @@ class AsyncCreateTablet {
       s = StatusFromPB(resp_.error().status());
     }
     if (!s.ok()) {
+      state_ = kStateComplete;
       LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
                    << " on TS " << peer_.permanent_uuid() << " failed: " << s.ToString();
     }
 
-    delete this;
+    tablet_->table()->RemoveTask(this);
   }
 
  private:
@@ -1060,6 +1096,9 @@ class AsyncCreateTablet {
   const QuorumPeerPB peer_;
   const scoped_refptr<TabletInfo> tablet_;
 
+  MonoTime start_ts_;
+  MonoTime end_ts_;
+  volatile State state_;
   rpc::RpcController rpc_;
   tserver::CreateTabletResponsePB resp_;
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
@@ -1268,8 +1307,9 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
     const metadata::QuorumPB& quorum = tablet->metadata().dirty().pb.quorum();
     tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
     BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
-      WARN_NOT_OK((new AsyncCreateTablet(master_, peer, tablet))->Run(),
-                  "Failed to send new tablet request");
+      AsyncCreateTablet *task = new AsyncCreateTablet(master_, peer, tablet);
+      tablet->table()->AddTask(task);
+      WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
     }
   }
 }
@@ -1600,20 +1640,29 @@ bool TableInfo::IsAlterInProgress() const {
   return !pending_tasks_.empty();
 }
 
-void TableInfo::AddTask(Task* task) {
+void TableInfo::AddTask(MonitoredTask* task) {
   boost::lock_guard<simple_spinlock> l(lock_);
+  task->AddRef();
   pending_tasks_.insert(task);
 }
 
-void TableInfo::RemoveTask(Task* task) {
+void TableInfo::RemoveTask(MonitoredTask* task) {
   boost::lock_guard<simple_spinlock> l(lock_);
   pending_tasks_.erase(task);
+  task->Release();
 }
 
 void TableInfo::AbortTasks() {
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(Task* task, pending_tasks_) {
+  BOOST_FOREACH(MonitoredTask* task, pending_tasks_) {
     task->Abort();
+  }
+}
+
+void TableInfo::GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *ret) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(MonitoredTask* task, pending_tasks_) {
+    ret->push_back(make_scoped_refptr(task));
   }
 }
 
