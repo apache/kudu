@@ -861,6 +861,25 @@ class PosixEnv : public Env {
     usleep(micros);
   }
 
+  virtual Status GetExecutablePath(string* path) {
+    int size = 64;
+    while (true) {
+      gscoped_ptr<char[]> buf(new char[size]);
+      ssize_t rc = readlink("/proc/self/exe", buf.get(), size);
+      if (rc == -1) {
+        return Status::IOError("Unable to determine own executable path", "",
+                               errno);
+      }
+      if (rc < size) {
+        path->assign(&buf[0], rc);
+        break;
+      }
+      // Buffer wasn't large enough
+      size *= 2;
+    }
+    return Status::OK();
+  }
+
  private:
   void PthreadCall(const char* label, int result) {
     if (result != 0) {

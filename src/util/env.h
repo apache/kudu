@@ -170,6 +170,9 @@ class Env {
   // Get caller's thread id.
   virtual uint64_t gettid() = 0;
 
+  // Return the full path of the currently running executable.
+  virtual Status GetExecutablePath(std::string* path) = 0;
+
  private:
   // No copying allowed
   Env(const Env&);
@@ -336,6 +339,9 @@ class EnvWrapper : public Env {
   }
   uint64_t gettid() {
     return target_->gettid();
+  }
+  Status GetExecutablePath(std::string* path) {
+    return target_->GetExecutablePath(path);
   }
  private:
   Env* target_;

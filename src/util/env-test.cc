@@ -321,4 +321,10 @@ TEST_F(TestEnv, TestAppendVector) {
   ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(Env::WRITABLE_FILE_NO_MMAP));
 }
 
+TEST_F(TestEnv, TestGetExecutablePath) {
+  string p;
+  ASSERT_STATUS_OK(Env::Default()->GetExecutablePath(&p));
+  ASSERT_TRUE(HasSuffixString(p, "env-test")) << p;
+}
+
 }  // namespace kudu

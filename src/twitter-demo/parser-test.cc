@@ -5,42 +5,20 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <errno.h>
-#include <unistd.h>
 
+#include "gutil/strings/split.h"
 #include "util/env.h"
-#include "util/status.h"
 #include "util/path_util.h"
 #include "util/test_util.h"
-#include "gutil/strings/split.h"
+#include "util/status.h"
 
 namespace kudu {
 namespace twitter_demo {
 
-// Return the path of the currently-running executable.
-static Status GetExecutablePath(string* result) {
-  int size = 64;
-  while (true) {
-    gscoped_ptr<char[]> buf(new char[size]);
-    ssize_t rc = readlink("/proc/self/exe", buf.get(), size);
-    if (rc == -1) {
-      return Status::IOError("Unable to determine own executable path", "",
-                             errno);
-    }
-    if (rc < size) {
-      result->assign(&buf[0], rc);
-      break;
-    }
-    // Buffer wasn't large enough
-    size *= 2;
-  }
-  return Status::OK();
-}
-
 // Return the directory of the currently-running executable.
 static string GetExecutableDir() {
   string exec;
-  CHECK_OK(GetExecutablePath(&exec));
+  CHECK_OK(Env::Default()->GetExecutablePath(&exec));
   return DirName(exec);
 }
 
