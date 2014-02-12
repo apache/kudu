@@ -36,6 +36,7 @@ add_dependencies(log server)
 set(CONSENSUS_SRCS
   consensus.cc
   consensus_base.cc
+  consensus_queue.cc
   local_consensus.cc
 )
 
@@ -62,6 +63,7 @@ set(KUDU_TEST_LINK_LIBS
 
 ADD_KUDU_TEST(log_util-test)
 ADD_KUDU_TEST(log-test)
+ADD_KUDU_TEST(consensus_queue-test)
 
 #Tools
 set(KUDU_LINK_LIBS
