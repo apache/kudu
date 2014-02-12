@@ -170,7 +170,7 @@ class LogTest : public KuduTest {
     batch_request->set_encoded_mutations(mutations.data(), mutations.size());
     batch_request->set_tablet_id(kTestTablet);
 
-    ASSERT_STATUS_OK(log_->Append(log_entry));
+    ASSERT_STATUS_OK(log_->Append(&log_entry));
   }
 
   // Append a commit log entry containing one entry for the insert and one
@@ -214,7 +214,7 @@ class LogTest : public KuduTest {
 
     mutation_result->set_type(MutationType(mutation_result));
 
-    ASSERT_STATUS_OK(log_->Append(log_entry));
+    ASSERT_STATUS_OK(log_->Append(&log_entry));
   }
 
   // This is used to test log GC. It inserts data into three different segments
@@ -239,7 +239,7 @@ class LogTest : public KuduTest {
     TabletSuperBlockPB* meta = meta_entry.mutable_tablet_meta();
     CreateTabletMetaForRowSets(meta, 1);
     meta_entry.set_type(TABLET_METADATA);
-    ASSERT_STATUS_OK(log_->Append(meta_entry));
+    ASSERT_STATUS_OK(log_->Append(&meta_entry));
 
     // append a batch where the insert goes into the new MemRowStore
     // and the mutate goes into the old DeltaMemStore
@@ -252,7 +252,7 @@ class LogTest : public KuduTest {
     vector<DeltaId> new_deltas = boost::assign::list_of(DeltaId(0, 0));
     CreateTabletMetaForRowSets(meta, 1, &new_deltas);
     meta_entry.set_type(TABLET_METADATA);
-    ASSERT_STATUS_OK(log_->Append(meta_entry));
+    ASSERT_STATUS_OK(log_->Append(&meta_entry));
 
     // Roll over the log
     ASSERT_STATUS_OK(log_->RollOver());

@@ -35,7 +35,7 @@ class LogEntryAppendTask : public Task {
   Status Run() {
     for (size_t i = 0; i < count_; i++) {
       LogEntryPB& phys_entry = phys_entries_[i];
-      Status s = log_->Append(phys_entry);
+      Status s = log_->Append(&phys_entry);
       // Reserve() sets the 'operation' field of LogEntryPB from the
       // passed in operations using 'set_allocated_operation', but
       // does not take ownership of the operations; this means we must
@@ -186,32 +186,32 @@ Status Log::AsyncAppend(Log::Entry* entry, const shared_ptr<FutureCallback>& cal
   return Status::OK();
 }
 
-Status Log::Append(const LogEntryPB& entry) {
+Status Log::Append(LogEntryPB* entry) {
   CHECK_EQ(state_, kLogWriting);
 
   // update the current header
-  switch (entry.type()) {
+  switch (entry->type()) {
     case OPERATION: {
-      if (PREDICT_TRUE(entry.operation().has_id())) {
-        next_segment_header_->mutable_initial_id()->CopyFrom(entry.operation().id());
+      if (PREDICT_TRUE(entry->operation().has_id())) {
+        next_segment_header_->mutable_initial_id()->CopyFrom(entry->operation().id());
       } else {
-        DCHECK(entry.operation().has_commit()
-               && entry.operation().commit().op_type() == MISSED_DELTA)
+        DCHECK(entry->operation().has_commit()
+               && entry->operation().commit().op_type() == MISSED_DELTA)
                    << "Operation did not have an id. Only COMMIT operations of"
                       " MISSED_DELTA type are allowed not to have ids.";
       }
       break;
     }
     case TABLET_METADATA: {
-      next_segment_header_->mutable_tablet_meta()->CopyFrom(entry.tablet_meta());
+      next_segment_header_->mutable_tablet_meta()->CopyFrom(entry->tablet_meta());
       break;
     }
     default: {
-      LOG(FATAL) << "Unexpected log entry type: " << entry.DebugString();
+      LOG(FATAL) << "Unexpected log entry type: " << entry->DebugString();
     }
   }
 
-  uint32_t entry_size = entry.ByteSize();
+  uint32_t entry_size = entry->ByteSize();
 
   // if the size of this entry overflows the current segment, get a new one
   if ((current_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
@@ -225,7 +225,7 @@ Status Log::Append(const LogEntryPB& entry) {
     RETURN_NOT_OK(current_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
   }
-  if (!pb_util::SerializeToWritableFile(entry, current_->writable_file().get())) {
+  if (!pb_util::SerializeToWritableFile(*entry, current_->writable_file().get())) {
     return Status::Corruption("Unable to serialize entry to file");
   }
 

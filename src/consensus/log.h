@@ -100,7 +100,7 @@ class Log {
 
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
-  Status Append(const LogEntryPB& entry);
+  Status Append(LogEntryPB* entry);
 
   // Make segments roll over
   Status RollOver();

@@ -523,7 +523,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* e
   RETURN_NOT_OK(state->CheckOpId(entry->operation().id()));
 
   // Append the replicate message to the log as is
-  RETURN_NOT_OK(log_->Append(*entry));
+  RETURN_NOT_OK(log_->Append(entry));
 
   LogEntryPB** existing_entry_ptr = InsertOrReturnExisting(
     &state->pending_replicates, entry->operation().id(), entry);
@@ -713,7 +713,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
   commit->mutable_result()->CopyFrom(tx_ctx.Result());
-  RETURN_NOT_OK(log_->Append(commit_entry));
+  RETURN_NOT_OK(log_->Append(&commit_entry));
 
   return Status::OK();
 }
@@ -741,7 +741,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(OperationPB* replicate_op,
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
-  RETURN_NOT_OK(log_->Append(commit_entry));
+  RETURN_NOT_OK(log_->Append(&commit_entry));
   return Status::OK();
 }
 
@@ -769,7 +769,7 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
-  RETURN_NOT_OK(log_->Append(commit_entry));
+  RETURN_NOT_OK(log_->Append(&commit_entry));
   return Status::OK();
 }
 
@@ -884,7 +884,7 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
     missed_delta_idx++;
   }
 
-  RETURN_NOT_OK(log_->Append(commit_entry));
+  RETURN_NOT_OK(log_->Append(&commit_entry));
 
   return Status::OK();
 }
