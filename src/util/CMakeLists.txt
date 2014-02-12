@@ -21,6 +21,7 @@ add_library(kudu_util
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
+  path_util.cc
   pb_util.cc
   rwc_lock.cc
   slice.cc

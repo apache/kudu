@@ -12,6 +12,7 @@
 #include "server/metadata.pb.h"
 #include "util/env_util.h"
 #include "util/net/net_util.h"
+#include "util/path_util.h"
 #include "util/pb_util.h"
 
 using kudu::metadata::InstanceMetadataPB;
@@ -101,15 +102,15 @@ const string& FsManager::uuid() const {
 }
 
 string FsManager::GetMasterBlockDir() const {
-  return env_->JoinPathSegments(GetRootDir(), kMasterBlockDirName);
+  return JoinPathSegments(GetRootDir(), kMasterBlockDirName);
 }
 
 string FsManager::GetMasterBlockPath(const std::string& tablet_id) const {
-  return env_->JoinPathSegments(GetMasterBlockDir(), tablet_id);
+  return JoinPathSegments(GetMasterBlockDir(), tablet_id);
 }
 
 string FsManager::GetInstanceMetadataPath() const {
-  return env_->JoinPathSegments(GetRootDir(), kInstanceMetadataFileName);
+  return JoinPathSegments(GetRootDir(), kInstanceMetadataFileName);
 }
 
 // ==========================================================================
@@ -135,7 +136,7 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
     if (name == "." || name == "..") continue;
 
     std::vector<string> sub_objects;
-    string sub_path = env_->JoinPathSegments(path, name);
+    string sub_path = JoinPathSegments(path, name);
     Status s = env_->GetChildren(sub_path, &sub_objects);
     if (s.ok()) {
       out << prefix << name << "/" << std::endl;

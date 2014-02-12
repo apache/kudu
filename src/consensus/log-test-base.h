@@ -22,9 +22,10 @@
 #include "server/metadata.h"
 #include "tablet/transactions/write_util.h"
 #include "tserver/tserver.pb.h"
+#include "util/env_util.h"
+#include "util/path_util.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
-#include "util/env_util.h"
 #include "util/stopwatch.h"
 
 namespace kudu {
@@ -136,9 +137,9 @@ class LogTestBase : public KuduTest {
     // We should have n segments plus '.' and '..'
     vector<string> segments;
     ASSERT_STATUS_OK(env_->GetChildren(
-        env_->JoinPathSegments(fs_manager_->GetWalsRootDir(),
-                               kTestTablet),
-        &segments));
+                       JoinPathSegments(fs_manager_->GetWalsRootDir(),
+                                        kTestTablet),
+                       &segments));
     ASSERT_EQ(expected + 2, segments.size());
   }
 

@@ -8,6 +8,7 @@
 #include "server/fsmanager.h"
 #include "util/coding.h"
 #include "util/env_util.h"
+#include "util/path_util.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
 #include "util/countdown_latch.h"
@@ -161,7 +162,7 @@ Status Log::Open(const LogOptions &options,
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
 
-  string tablet_wal_path = fs_manager->env()->JoinPathSegments(
+  string tablet_wal_path = JoinPathSegments(
       fs_manager->GetWalsRootDir(),
       super_block.oid());
 
@@ -450,11 +451,10 @@ Status Log::CreateNewSegment() {
 }
 
 string Log::CreateSegmentFileName(uint64_t sequence_number) {
-  return fs_manager_->env()->
-      JoinPathSegments(log_dir_,
-                       strings::Substitute("$0-$1",
-                                           kLogPrefix,
-                                           StringPrintf("%09lu", sequence_number)));
+  return JoinPathSegments(log_dir_,
+                          strings::Substitute("$0-$1",
+                                              kLogPrefix,
+                                              StringPrintf("%09lu", sequence_number)));
 }
 
 Log::~Log() {

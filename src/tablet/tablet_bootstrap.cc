@@ -22,6 +22,7 @@
 #include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
+#include "util/path_util.h"
 #include "util/locks.h"
 
 using boost::shared_lock;
@@ -413,8 +414,8 @@ Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
       continue;
     }
 
-    string source_path = fs_manager->env()->JoinPathSegments(log_dir, child);
-    string dest_path = fs_manager->env()->JoinPathSegments(log_recovery_dir,
+    string source_path = JoinPathSegments(log_dir, child);
+    string dest_path = JoinPathSegments(log_recovery_dir,
                                                            child);
 
     RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(source_path,

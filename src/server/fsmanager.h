@@ -15,6 +15,7 @@
 #include "gutil/strtoint.h"
 #include "server/oid_generator.h"
 #include "util/env.h"
+#include "util/path_util.h"
 
 namespace kudu {
 
@@ -145,30 +146,30 @@ class FsManager {
   }
 
   string GetDataRootDir() const {
-    return env_->JoinPathSegments(GetRootDir(), kDataDirName);
+    return JoinPathSegments(GetRootDir(), kDataDirName);
   }
 
   string GetBlockPath(const BlockId& block_id) const {
     CHECK(!block_id.IsNull());
     string path = GetDataRootDir();
-    path = env_->JoinPathSegments(path, block_id.hash0());
-    path = env_->JoinPathSegments(path, block_id.hash1());
-    path = env_->JoinPathSegments(path, block_id.hash2());
-    path = env_->JoinPathSegments(path, block_id.ToString());
+    path = JoinPathSegments(path, block_id.hash0());
+    path = JoinPathSegments(path, block_id.hash1());
+    path = JoinPathSegments(path, block_id.hash2());
+    path = JoinPathSegments(path, block_id.ToString());
     return path;
   }
 
   string GetWalsRootDir() const {
-    return env_->JoinPathSegments(root_path_, kWalsDirName);
+    return JoinPathSegments(root_path_, kWalsDirName);
   }
 
   string GetTabletWalDir(const std::string& tablet_id) const {
-    return env_->JoinPathSegments(GetWalsRootDir(), tablet_id);
+    return JoinPathSegments(GetWalsRootDir(), tablet_id);
   }
 
   string GetTabletWalRecoveryDir(const std::string& tablet_id, uint64_t timestamp) const {
-    string path = env_->JoinPathSegments(GetWalsRootDir(), tablet_id);
-    path = env_->JoinPathSegments(path, strings::Substitute("$0-$1",
+    string path = JoinPathSegments(GetWalsRootDir(), tablet_id);
+    path = JoinPathSegments(path, strings::Substitute("$0-$1",
              kWalsRecoveryDirPrefix, boost::lexical_cast<string>(timestamp)));
     return path;
   }
@@ -221,13 +222,13 @@ class FsManager {
     string path = GetDataRootDir();
     RETURN_NOT_OK(CreateDirIfMissing(path));
 
-    path = env_->JoinPathSegments(path, block_id.hash0());
+    path = JoinPathSegments(path, block_id.hash0());
     RETURN_NOT_OK(CreateDirIfMissing(path));
 
-    path = env_->JoinPathSegments(path, block_id.hash1());
+    path = JoinPathSegments(path, block_id.hash1());
     RETURN_NOT_OK(CreateDirIfMissing(path));
 
-    path = env_->JoinPathSegments(path, block_id.hash2());
+    path = JoinPathSegments(path, block_id.hash2());
     return CreateDirIfMissing(path);
   }
 

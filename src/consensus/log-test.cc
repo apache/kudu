@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+
 #include "consensus/log-test-base.h"
 #include "tablet/mvcc.h"
 

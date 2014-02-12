@@ -11,6 +11,7 @@
 #include <strings.h>
 #include "util/env.h"
 #include "util/test_macros.h"
+#include "util/path_util.h"
 #include "util/spinlock_profiling.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/substitute.h"
@@ -66,7 +67,7 @@ class KuduTest : public ::testing::Test {
  protected:
   string GetTestPath(const string &relative_path) {
     CHECK(!test_dir_.empty()) << "Call SetUp() first";
-    return env_->JoinPathSegments(test_dir_, relative_path);
+    return JoinPathSegments(test_dir_, relative_path);
   }
 
   bool AllowSlowTests() {

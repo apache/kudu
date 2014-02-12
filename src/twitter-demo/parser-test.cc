@@ -10,6 +10,7 @@
 
 #include "util/env.h"
 #include "util/status.h"
+#include "util/path_util.h"
 #include "util/test_util.h"
 #include "gutil/strings/split.h"
 
@@ -40,12 +41,7 @@ static Status GetExecutablePath(string* result) {
 static string GetExecutableDir() {
   string exec;
   CHECK_OK(GetExecutablePath(&exec));
-  size_t last_slash = exec.rfind('/');
-  if (last_slash == string::npos) {
-    return ".";
-  } else {
-    return exec.substr(0, last_slash);
-  }
+  return DirName(exec);
 }
 
 static Status LoadFile(const string& name, vector<string>* lines) {

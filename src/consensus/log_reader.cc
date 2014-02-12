@@ -11,6 +11,7 @@
 #include "util/coding.h"
 #include "util/env_util.h"
 #include "util/hexdump.h"
+#include "util/path_util.h"
 #include "util/pb_util.h"
 
 namespace kudu {
@@ -84,7 +85,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
   // build a log segment from each file
   BOOST_FOREACH(const string &log_file, log_files) {
     if (HasPrefixString(log_file, kLogPrefix)) {
-      string fqp = env->JoinPathSegments(tablet_wal_path, log_file);
+      string fqp = JoinPathSegments(tablet_wal_path, log_file);
       shared_ptr<ReadableLogSegment> segment;
       RETURN_NOT_OK(InitSegment(env, fqp, &segment));
       DCHECK(segment);

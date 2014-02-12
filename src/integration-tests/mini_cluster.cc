@@ -11,6 +11,7 @@
 #include "master/ts_manager.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
+#include "util/path_util.h"
 #include "util/status.h"
 #include "util/stopwatch.h"
 
@@ -98,11 +99,11 @@ MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {
 }
 
 string MiniCluster::GetMasterFsRoot() {
-  return env_->JoinPathSegments(fs_root_, "master-root");
+  return JoinPathSegments(fs_root_, "master-root");
 }
 
 string MiniCluster::GetTabletServerFsRoot(int idx) {
-  return env_->JoinPathSegments(fs_root_, Substitute("ts-$0-root", idx));
+  return JoinPathSegments(fs_root_, Substitute("ts-$0-root", idx));
 }
 
 Status MiniCluster::WaitForReplicaCount(const string& tablet_id,

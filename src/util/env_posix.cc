@@ -795,19 +795,6 @@ class PosixEnv : public Env {
     return result;
   }
 
-  virtual std::string JoinPathSegments(const std::string &a,
-                                       const std::string &b) {
-    CHECK(!a.empty()) << "empty first component: " << a;
-    CHECK(!b.empty() && b[0] != '/')
-      << "second path component must be non-empty and relative: "
-      << b;
-    if (a[a.size() - 1] == '/') {
-      return a + b;
-    } else {
-      return a + "/" + b;
-    }
-  }
-
   virtual Status LockFile(const std::string& fname, FileLock** lock) {
     *lock = NULL;
     Status result;

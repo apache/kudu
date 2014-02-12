@@ -119,11 +119,6 @@ class Env {
   virtual Status RenameFile(const std::string& src,
                             const std::string& target) = 0;
 
-  // Join two path segments with the appropriate path separator,
-  // if necessary.
-  virtual std::string JoinPathSegments(const std::string &a,
-                                       const std::string &b) = 0;
-
   // Lock the specified file.  Used to prevent concurrent access to
   // the same db by multiple processes.  On failure, stores NULL in
   // *lock and returns non-OK.
@@ -319,10 +314,6 @@ class EnvWrapper : public Env {
   }
   Status RenameFile(const std::string& s, const std::string& t) {
     return target_->RenameFile(s, t);
-  }
-  std::string JoinPathSegments(const std::string &a,
-                                       const std::string &b) {
-    return target_->JoinPathSegments(a, b);
   }
   Status LockFile(const std::string& f, FileLock** l) {
     return target_->LockFile(f, l);
