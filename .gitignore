@@ -26,3 +26,10 @@ build/
 .project
 .cproject
 .settings/
+.ycm_extra_conf.py
+.ycm_extra_conf.pyc
+*.kdev4
+.kdev4/
+.metadata/
+*.iml
+.idea/
