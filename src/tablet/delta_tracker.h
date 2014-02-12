@@ -108,8 +108,8 @@ class DeltaTracker {
   // Get the delta MemStore's size in bytes
   size_t DeltaMemStoreSize() const;
 
-  // Return the number of delta stores, not including the DeltaMemStore.
-  size_t CountDeltaStores() const;
+  // Return the number of redo delta stores, not including the DeltaMemStore.
+  size_t CountRedoDeltaStores() const;
 
   const Schema& schema() const;
 
@@ -132,6 +132,7 @@ class DeltaTracker {
   Status FlushDMS(DeltaMemStore* dms,
                   shared_ptr<DeltaFileReader>* dfr);
 
+  // This collects all undo and redo stores.
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
 
   // If delta stores in delta_store_ at indexes "start_idx" to "end_idx" (inclusive) match
@@ -175,7 +176,10 @@ class DeltaTracker {
 
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;
-  vector<shared_ptr<DeltaStore> > delta_stores_;
+  // The set of tracked REDO delta stores
+  vector<shared_ptr<DeltaStore> > redo_delta_stores_;
+  // The set of tracked UNDO delta stores
+  vector<shared_ptr<DeltaStore> > undo_delta_stores_;
 
   // read-write lock protecting dms_ and delta_stores_.
   // - Readers and mutators take this lock in shared mode.

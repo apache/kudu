@@ -36,6 +36,10 @@ using std::tr1::shared_ptr;
 class DeltaFileIterator;
 class DeltaKey;
 class DeltaCompactionInput;
+template<DeltaType Type>
+struct ApplyingVisitor;
+template<DeltaType Type>
+struct DeletingVisitor;
 
 class DeltaFileWriter {
  public:
@@ -52,7 +56,9 @@ class DeltaFileWriter {
   Status Finish();
 
   // Append a given delta to the file. This must be called in ascending order
-  // of (key, timestamp).
+  // of (key, timestamp) for REDOS and ascending order of key, descending order
+  // of timestamp for UNDOS.
+  template<DeltaType Type>
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
   Status WriteDeltaStats(const DeltaStats& stats);
@@ -63,9 +69,9 @@ class DeltaFileWriter {
   int64_t id_;
   const Schema schema_;
 
-  DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);
-
   Status WriteSchema();
+
+  Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
   gscoped_ptr<cfile::Writer> writer_;
 
@@ -80,8 +86,9 @@ class DeltaFileWriter {
   DeltaKey last_key_;
   bool has_appended_;
   #endif
-};
 
+  DISALLOW_COPY_AND_ASSIGN(DeltaFileWriter);
+};
 
 class DeltaFileReader : public DeltaStore,
                         public std::tr1::enable_shared_from_this<DeltaFileReader> {
@@ -93,13 +100,15 @@ class DeltaFileReader : public DeltaStore,
   static Status Open(Env *env,
                      const string &path,
                      int64_t delta_id,
-                     std::tr1::shared_ptr<DeltaFileReader>* reader_out);
+                     std::tr1::shared_ptr<DeltaFileReader>* reader_out,
+                     DeltaType delta_type);
 
   static Status Open(const string& path,
                      const shared_ptr<RandomAccessFile> &file,
                      uint64_t file_size,
                      int64_t delta_id,
-                     std::tr1::shared_ptr<DeltaFileReader>* reader_out);
+                     std::tr1::shared_ptr<DeltaFileReader>* reader_out,
+                     DeltaType delta_type);
 
   // See DeltaStore::NewDeltaIterator(...)
   Status NewDeltaIterator(const Schema *projection,
@@ -131,7 +140,8 @@ class DeltaFileReader : public DeltaStore,
 
   DeltaFileReader(const int64_t id,
                   cfile::CFileReader *cf_reader,
-                  const string &path);
+                  const string &path,
+                  DeltaType delta_type);
 
   Status Init();
 
@@ -146,6 +156,9 @@ class DeltaFileReader : public DeltaStore,
 
   // The path of the file being read (should be used only for debugging)
   const string path_;
+
+  // The type of this delta, i.e. UNDO or REDO.
+  const DeltaType delta_type_;
 };
 
 // Iterator over the deltas contained in a delta file.
@@ -167,9 +180,11 @@ class DeltaFileIterator : public DeltaIterator {
 
  private:
   friend class DeltaFileReader;
-  friend struct ApplyingVisitor;
+  friend struct ApplyingVisitor<REDO>;
+  friend struct ApplyingVisitor<UNDO>;
   friend struct CollectingVisitor;
-  friend struct DeletingVisitor;
+  friend struct DeletingVisitor<REDO>;
+  friend struct DeletingVisitor<UNDO>;
   friend struct FilterAndAppendVisitor;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
@@ -216,7 +231,8 @@ class DeltaFileIterator : public DeltaIterator {
   // of the iterator.
   DeltaFileIterator(const std::tr1::shared_ptr<const DeltaFileReader>& dfr,
                     const Schema *projection,
-                    const MvccSnapshot &snap);
+                    const MvccSnapshot &snap,
+                    DeltaType delta_type);
 
 
   // Determine the row index of the first update in the block currently
@@ -265,7 +281,11 @@ class DeltaFileIterator : public DeltaIterator {
 
   // Temporary buffer used for RowChangeList projection.
   faststring delta_buf_;
+
+  // The type of this delta iterator, i.e. UNDO or REDO.
+  const DeltaType delta_type_;
 };
+
 
 } // namespace tablet
 } // namespace kudu

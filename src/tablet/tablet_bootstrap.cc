@@ -1204,7 +1204,8 @@ Status TabletBootstrap::HandleDMSMutation(const MutationInput& mutation_input,
   // metadata with regard to which row sets are alive at the time. By
   // doing this we decouple replaying from the current state of the tablet,
   // which allows us to do compactions/flushes on replay.
-  const RowSetMetadata* row_set = tablet_->metadata()->GetRowSetForTests(mutation_target.rs_id());
+  const RowSetMetadata* row_set = tablet_->metadata()->GetRowSetForTests(
+      mutation_target.rs_id());
 
   // if we can't find the row_set it was compacted
   if (row_set == NULL) {

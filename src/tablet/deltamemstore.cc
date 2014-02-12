@@ -62,7 +62,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
       "After decoding delta key, should be empty";
 
     RowChangeList rcl(val);
-    RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key, rcl), "Failed to append delta");
+    RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key, rcl), "Failed to append delta");
     delta_stats_.UpdateStats(key.timestamp(), schema_, rcl);
     iter->Next();
   }
@@ -102,6 +102,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
     DCHECK_GE(key.row_idx(), row_idx);
     if (key.row_idx() != row_idx) break;
 
+    RowChangeList val(v);
     // Mutation is for the target row, check deletion status.
     RowChangeListDecoder decoder(schema_, RowChangeList(v));
     RETURN_NOT_OK(decoder.Init());

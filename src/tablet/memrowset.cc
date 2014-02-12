@@ -26,7 +26,7 @@ static const int kMaxArenaBufferSize = 4*1024*1024;
 
 bool MRSRow::IsGhost() const {
   bool is_ghost = false;
-  for (const Mutation *mut = header_->mutation_head;
+  for (const Mutation *mut = header_->redo_head;
        mut != NULL;
        mut = mut->next()) {
     RowChangeListDecoder decoder(schema(), mut->changelist());
@@ -72,7 +72,7 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
     LOG_STRING(INFO, lines)
       << "@" << row.insertion_timestamp() << ": row "
       << schema_.DebugRow(row)
-      << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head)
+      << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->redo_head)
       << std::endl;
     iter->Next();
   }
@@ -114,7 +114,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
   // to mutate it when we relocate its Slices into our arena.
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
   mrsrow.header_->insertion_timestamp = timestamp;
-  mrsrow.header_->mutation_head = NULL;
+  mrsrow.header_->redo_head = NULL;
   RETURN_NOT_OK(mrsrow.CopyRow(row, &arena_));
 
   CHECK(mutation.Insert(mrsrow_slice))
@@ -150,7 +150,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
   // This function has "release" semantics which ensures that the memory writes
   // for the mutation are fully published before any concurrent reader sees
   // the appended mutation.
-  mut->AppendToListAtomic(&ms_row->header_->mutation_head);
+  mut->AppendToListAtomic(&ms_row->header_->redo_head);
   return Status::OK();
 }
 
@@ -182,7 +182,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
     // This function has "release" semantics which ensures that the memory writes
     // for the mutation are fully published before any concurrent reader sees
     // the appended mutation.
-    mut->AppendToListAtomic(&row.header_->mutation_head);
+    mut->AppendToListAtomic(&row.header_->redo_head);
 
     MutationTargetPB* target = result->add_mutations();
     target->set_mrs_id(id_);
@@ -393,7 +393,7 @@ Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
 
         // Roll-forward MVCC for committed updates.
         RETURN_NOT_OK(ApplyMutationsToProjectedRow(
-            row.header_->mutation_head, &dst_row, dst->arena()));
+            row.header_->redo_head, &dst_row, dst->arena()));
       }
     } else {
       // This row was not yet committed in the current MVCC snapshot or we have

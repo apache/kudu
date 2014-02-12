@@ -50,12 +50,24 @@ class MemRowSetCompactionInput : public CompactionInput {
     }
 
     arena_.Reset();
+    RowChangeListEncoder undo_encoder(iter_->schema(), &buffer_);
     for (int i = 0; i < num_in_block; i++) {
-      // TODO: A copy is performed to have all CompactionInputRow of the same type
+      // TODO: A copy is performed to make all CompactionInputRow have the same schema
       CompactionInputRow &input_row = block->at(i);
       input_row.row.Reset(row_block_.get(), i);
-      RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row, reinterpret_cast<Arena*>(NULL),
-                                         &input_row.mutation_head, &arena_));
+      Timestamp insertion_timestamp;
+      RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row,
+                                         reinterpret_cast<Arena*>(NULL),
+                                         &input_row.redo_head,
+                                         &arena_,
+                                         &insertion_timestamp));
+
+      // Materialize MRSRow undo insert (delete)
+      undo_encoder.SetToDelete();
+      input_row.undo_head = Mutation::CreateInArena(&arena_,
+                                                    insertion_timestamp,
+                                                    undo_encoder.as_changelist());
+      undo_encoder.Reset();
       iter_->Next();
     }
 
@@ -77,8 +89,10 @@ class MemRowSetCompactionInput : public CompactionInput {
 
   gscoped_ptr<MemRowSet::Iterator> iter_;
 
-  // Arena used to store the projected mutations of the current block.
+  // Arena used to store the projected undo/redo mutations of the current block.
   Arena arena_;
+
+  faststring buffer_;
 
   bool has_more_blocks_;
 };
@@ -89,19 +103,24 @@ class MemRowSetCompactionInput : public CompactionInput {
 class RowSetCompactionInput : public CompactionInput {
  public:
   RowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
-                       shared_ptr<DeltaIterator> delta_iter) :
+                        shared_ptr<DeltaIterator> redo_delta_iter,
+                        shared_ptr<DeltaIterator> undo_delta_iter) :
     base_iter_(base_iter.Pass()),
-    delta_iter_(delta_iter),
+    redo_delta_iter_(redo_delta_iter),
+    undo_delta_iter_(undo_delta_iter),
     arena_(32*1024, 128*1024),
     block_(base_iter_->schema(), kRowsPerBlock, &arena_),
-    mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
+    redo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
+    undo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
     first_rowid_in_block_(0)
   {}
 
   virtual Status Init() {
     RETURN_NOT_OK(base_iter_->Init(NULL));
-    RETURN_NOT_OK(delta_iter_->Init());
-    RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
+    RETURN_NOT_OK(redo_delta_iter_->Init());
+    RETURN_NOT_OK(redo_delta_iter_->SeekToOrdinal(0));
+    RETURN_NOT_OK(undo_delta_iter_->Init());
+    RETURN_NOT_OK(undo_delta_iter_->SeekToOrdinal(0));
     return Status::OK();
   }
 
@@ -111,16 +130,21 @@ class RowSetCompactionInput : public CompactionInput {
 
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) {
     RETURN_NOT_OK(RowwiseIterator::CopyBlock(base_iter_.get(), &block_));
-    std::fill(mutation_block_.begin(), mutation_block_.end(),
+    std::fill(redo_mutation_block_.begin(), redo_mutation_block_.end(),
               reinterpret_cast<Mutation *>(NULL));
-    RETURN_NOT_OK(delta_iter_->PrepareBatch(block_.nrows()));
-    RETURN_NOT_OK(delta_iter_->CollectMutations(&mutation_block_, block_.arena()));
+    std::fill(undo_mutation_block_.begin(), undo_mutation_block_.end(),
+                  reinterpret_cast<Mutation *>(NULL));
+    RETURN_NOT_OK(redo_delta_iter_->PrepareBatch(block_.nrows()));
+    RETURN_NOT_OK(redo_delta_iter_->CollectMutations(&redo_mutation_block_, block_.arena()));
+    RETURN_NOT_OK(undo_delta_iter_->PrepareBatch(block_.nrows()));
+    RETURN_NOT_OK(undo_delta_iter_->CollectMutations(&undo_mutation_block_, block_.arena()));
 
     block->resize(block_.nrows());
     for (int i = 0; i < block_.nrows(); i++) {
       CompactionInputRow &input_row = block->at(i);
       input_row.row.Reset(&block_, i);
-      input_row.mutation_head = mutation_block_[i];
+      input_row.redo_head = redo_mutation_block_[i];
+      input_row.undo_head = undo_mutation_block_[i];
     }
 
     first_rowid_in_block_ += block_.nrows();
@@ -134,16 +158,19 @@ class RowSetCompactionInput : public CompactionInput {
   virtual const Schema &schema() const {
     return base_iter_->schema();
   }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(RowSetCompactionInput);
   gscoped_ptr<RowwiseIterator> base_iter_;
-  shared_ptr<DeltaIterator> delta_iter_;
+  shared_ptr<DeltaIterator> redo_delta_iter_;
+  shared_ptr<DeltaIterator> undo_delta_iter_;
 
   Arena arena_;
 
   // The current block of data which has come from the input iterator
   RowBlock block_;
-  vector<Mutation *> mutation_block_;
+  vector<Mutation *> redo_mutation_block_;
+  vector<Mutation *> undo_mutation_block_;
 
   rowid_t first_rowid_in_block_;
 
@@ -386,9 +413,19 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
   CHECK(projection->has_column_ids());
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
-  shared_ptr<DeltaIterator> deltas(rowset.delta_tracker_->NewDeltaIterator(projection, snap));
+  // Creates a DeltaIteratorMerger that will only include part of the redo deltas,
+  // since 'snap' will be after the snapshot of the last flush/compaction,
+  // i.e. past all undo deltas's max transaction ID.
+  shared_ptr<DeltaIterator> redo_deltas(rowset.delta_tracker_->NewDeltaIterator(projection, snap));
+  // Creates a DeltaIteratorMerger that will only include undo deltas, since
+  // MvccSnapshot::CreateSnapshotIncludingNoTransactions() excludes all redo
+  // deltas's min transaction ID.
+  shared_ptr<DeltaIterator> undo_deltas(
+      rowset.delta_tracker_->NewDeltaIterator(
+          projection,
+          MvccSnapshot::CreateSnapshotIncludingNoTransactions()));
 
-  return new RowSetCompactionInput(base_iter.Pass(), deltas);
+  return new RowSetCompactionInput(base_iter.Pass(), redo_deltas, undo_deltas);
 }
 
 CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
@@ -433,68 +470,140 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot &snap,
-                                             const Mutation *mutation_head,
-                                             RowBlockRow *row,
-                                             bool *is_deleted) {
-  *is_deleted = false;
+static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
+                                             const CompactionInputRow& src_row,
+                                             Mutation** new_undo_head,
+                                             Mutation** new_redo_head,
+                                             Arena* arena,
+                                             RowBlockRow* dst_row,
+                                             bool* is_garbage_collected) {
 
-  const Schema& schema = row->schema();
+  // TODO actually perform garbage collection
+  // Right now we persist all mutations.
+  *is_garbage_collected = false;
+
+  const Schema& schema = dst_row->schema();
+  bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
-    "Row: " << schema.DebugRow(*row) << \
-    " Mutations: " << Mutation::StringifyMutationList(schema, mutation_head)
+    "Row: " << schema.DebugRow(*dst_row) << \
+    " Redo Mutations: " << Mutation::StringifyMutationList(schema, src_row.redo_head) << \
+    " Undo Mutations: " << Mutation::StringifyMutationList(schema, src_row.undo_head)
 
-  for (const Mutation *mut = mutation_head; mut != NULL; mut = mut->next()) {
-    RowChangeListDecoder decoder(schema, mut->changelist());
+  faststring dst;
+  RowChangeListEncoder undo_encoder(schema, &dst);
+
+  // Const cast this away here since we're ever only going to point to it
+  // which doesn't actually mutate it and having Mutation::set_next()
+  // take a non-const value is required in other places.
+  Mutation* undo_head = const_cast<Mutation*>(src_row.undo_head);
+  Mutation* redo_head = NULL;
+
+  for (const Mutation *redo_mut = src_row.redo_head;
+       redo_mut != NULL;
+       redo_mut = redo_mut->next()) {
 
     // Skip anything not committed.
-    if (!snap.IsCommitted(mut->timestamp())) {
+    if (!snap.IsCommitted(redo_mut->timestamp())) {
       continue;
     }
 
-    DVLOG(3) << "  @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
-    Status s = decoder.Init();
+    undo_encoder.Reset();
+
+    Mutation* current_undo;
+    DVLOG(3) << "  @" << redo_mut->timestamp() << ": " << redo_mut->changelist().ToString(schema);
+
+    RowChangeListDecoder redo_decoder(schema, redo_mut->changelist());
+    Status s = redo_decoder.Init();
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
       return s;
     }
 
-    if (decoder.is_update()) {
-      DCHECK(!*is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
-      s = decoder.ApplyRowUpdate(row, reinterpret_cast<Arena *>(NULL));
+    if (redo_decoder.is_update()) {
+      DCHECK(!is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
 
-    } else if (decoder.is_delete() || decoder.is_reinsert()) {
-      decoder.TwiddleDeleteStatus(is_deleted);
+      s = redo_decoder.ApplyRowUpdate(dst_row, reinterpret_cast<Arena *>(NULL), &undo_encoder);
+      if (PREDICT_FALSE(!s.ok())) {
+        LOG(ERROR) << "Unable to apply update/create undo. " << ERROR_LOG_CONTEXT;
+        return s;
+      }
 
-      if (decoder.is_reinsert()) {
-        // On reinsert, we have to copy the reinserted row over.
-        ConstContiguousRow reinserted(schema, decoder.reinserted_row_slice().data());
-        Arena* arena = NULL; // No need to copy into an arena -- can refer to the mutation's arena.
-        RETURN_NOT_OK(CopyRow(reinserted, row, arena));
+      // create the UNDO mutation in the provided arena.
+      current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
+                                             undo_encoder.as_changelist());
+
+      // In the case where the previous undo was NULL just make this one
+      // the head.
+      if (undo_head == NULL) {
+        undo_head = current_undo;
+      } else {
+        current_undo->set_next(undo_head);
+        undo_head = current_undo;
+      }
+
+
+    } else if (redo_decoder.is_delete() || redo_decoder.is_reinsert()) {
+      redo_decoder.TwiddleDeleteStatus(&is_deleted);
+
+      if (redo_decoder.is_reinsert()) {
+        // Right now when a REINSERT mutation is found it is treated as a new insert and it
+        // clears the whole row history before it.
+
+        // Copy the reinserted row over.
+        ConstContiguousRow reinserted(schema, redo_decoder.reinserted_row_slice().data());
+        // No need to copy into an arena -- can refer to the mutation's arena.
+        Arena* null_arena = NULL;
+        RETURN_NOT_OK(CopyRow(reinserted, dst_row, null_arena));
+
+        // Create an undo for the REINSERT
+        undo_encoder.SetToDelete();
+        // Reset the UNDO head, losing all previous undos.
+        undo_head = Mutation::CreateInArena(arena,
+                                            redo_mut->timestamp(),
+                                            undo_encoder.as_changelist());
+
+        // Also reset the previous redo head since it stored the delete which was nullified
+        // by this reinsert
+        redo_head = NULL;
+
+        LOG(WARNING) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
+            " under snap: " << snap.ToString() << ERROR_LOG_CONTEXT;
+      } else {
+        // Delete mutations are left as redos
+        undo_encoder.SetToDelete();
+        // Encode the DELETE as a redo
+        redo_head = Mutation::CreateInArena(arena,
+                                            redo_mut->timestamp(),
+                                            undo_encoder.as_changelist());
       }
     } else {
       LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
     }
-
-    // TODO: write UNDO
   }
+
+  *new_undo_head = undo_head;
+  *new_redo_head = redo_head;
 
   return Status::OK();
 
   #undef ERROR_LOG_CONTEXT
 }
 
-Status FlushCompactionInput(CompactionInput *input, const MvccSnapshot &snap,
-             RollingDiskRowSetWriter *out) {
+Status FlushCompactionInput(CompactionInput* input,
+                            const MvccSnapshot& snap,
+                            RollingDiskRowSetWriter* out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
 
   DCHECK(out->schema().has_column_ids());
   RowBlock block(out->schema(), 100, NULL);
 
+  Arena arena(1*1024*1024, 4*1024*1024);
+
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
+    arena.Reset();
 
     int n = 0;
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
@@ -504,18 +613,45 @@ Status FlushCompactionInput(CompactionInput *input, const MvccSnapshot &snap,
 
       RowBlockRow dst_row = block.row(n);
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
-      DVLOG(2) << "Row: " << dst_row.schema().DebugRow(dst_row) <<
-        " mutations: " << Mutation::StringifyMutationList(schema, input_row.mutation_head);
 
-      bool is_deleted;
-      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
-                      snap, input_row.mutation_head, &dst_row, &is_deleted));
+      DVLOG(2) << "Input Row: " << dst_row.schema().DebugRow(dst_row) <<
+        " RowId: " << input_row.row.row_index() <<
+        " Redo Mutations: " << Mutation::StringifyMutationList(schema, input_row.redo_head) <<
+        " Undo Mutations: " << Mutation::StringifyMutationList(schema, input_row.undo_head);
 
-      if (is_deleted) {
-        DVLOG(2) << "Deleted!";
+      // Collect the new UNDO/REDO mutations.
+      Mutation* new_undos_head;
+      Mutation* new_redos_head;
+
+      bool is_garbage_collected;
+      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
+                                                   input_row,
+                                                   &new_undos_head,
+                                                   &new_redos_head,
+                                                   &arena,
+                                                   &dst_row,
+                                                   &is_garbage_collected));
+
+      // Whether this row was garbage collected
+      if (is_garbage_collected) {
+        DVLOG(2) << "Garbage Collected!";
         // Don't flush the row.
         continue;
       }
+
+      rowid_t index_in_current_drs_;
+      if (new_undos_head != NULL) {
+        out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs_);
+      }
+
+      if (new_redos_head != NULL) {
+        out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs_);
+      }
+
+      DVLOG(2) << "Output Row: " << dst_row.schema().DebugRow(dst_row) <<
+          " RowId: " << index_in_current_drs_
+          << " Redo Mutations: " << Mutation::StringifyMutationList(schema, new_redos_head)
+          << " Undo Mutations: " << Mutation::StringifyMutationList(schema, new_undos_head);
 
       n++;
       if (n == block.nrows()) {
@@ -531,7 +667,6 @@ Status FlushCompactionInput(CompactionInput *input, const MvccSnapshot &snap,
 
     RETURN_NOT_OK(input->FinishBlock());
   }
-
   return Status::OK();
 }
 
@@ -573,11 +708,10 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
     BOOST_FOREACH(const CompactionInputRow &row, rows) {
       DVLOG(2) << "Revisiting row: " << schema.DebugRow(row.row) <<
-          " mutations: " << Mutation::StringifyMutationList(schema, row.mutation_head);
+          " Redo Mutations: " << Mutation::StringifyMutationList(schema, row.redo_head) <<
+          " Undo Mutations: " << Mutation::StringifyMutationList(schema, row.undo_head);
 
-      bool is_deleted_in_main_flush = false;
-
-      for (const Mutation *mut = row.mutation_head;
+      for (const Mutation *mut = row.redo_head;
            mut != NULL;
            mut = mut->next()) {
         RowChangeListDecoder decoder(schema, mut->changelist());
@@ -586,11 +720,6 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         if (snap_to_exclude.IsCommitted(mut->timestamp())) {
           // This update was already taken into account in the first phase of the
           // compaction.
-
-          // If it's a DELETE or REINSERT, though, we need to track the state of the
-          // row - this lets us account the current rowid on the output side of the
-          // compaction below.
-          decoder.TwiddleDeleteStatus(&is_deleted_in_main_flush);
           continue;
         }
 
@@ -613,7 +742,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           << "Shouldn't see REINSERT missed by first flush pass in compaction."
           << " snap_to_exclude=" << snap_to_exclude.ToString()
           << " row=" << schema.DebugRow(row.row)
-          << " mutations=" << Mutation::StringifyMutationList(schema, row.mutation_head);
+          << " mutations=" << Mutation::StringifyMutationList(schema, row.redo_head);
 
         if (!snap_to_include.IsCommitted(mut->timestamp())) {
           // The mutation was inserted after the DuplicatingRowSet was swapped in.
@@ -682,12 +811,9 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         }
       }
 
-      // If the first pass of the flush counted this row as deleted, then it isn't
-      // in the output at all, and therefore we shouldn't count it when determining
-      // the row id of the output rows.
-      if (!is_deleted_in_main_flush) {
-        row_idx++;
-      }
+      // TODO when garbage collection kicks in we need to take care that
+      // CGed rows do not increment this.
+      row_idx++;
     }
 
     RETURN_NOT_OK(input->FinishBlock());
@@ -707,7 +833,7 @@ Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
       const Schema& schema = input_row.row.schema();
       LOG_STRING(INFO, lines) << schema.DebugRow(input_row.row) <<
-        " mutations: " + Mutation::StringifyMutationList(schema, input_row.mutation_head);
+        " mutations: " + Mutation::StringifyMutationList(schema, input_row.redo_head);
     }
 
     RETURN_NOT_OK(input->FinishBlock());

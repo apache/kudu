@@ -123,7 +123,7 @@ class TestCompaction : public KuduRowSetTest {
     ASSERT_STATUS_OK(FlushCompactionInput(input, snap, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
     vector<shared_ptr<RowSetMetadata> > metas;
-    rsw.GetWrittenMetadata(&metas);
+    rsw.GetWrittenRowSetMetadata(&metas);
     ASSERT_EQ(1, metas.size());
     ASSERT_TRUE(metas[0]->HasBloomDataBlockForTests());
     if (rowset_meta) {

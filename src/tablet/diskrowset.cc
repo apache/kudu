@@ -256,6 +256,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata
     schema_(schema),
     bloom_sizing_(bloom_sizing),
     target_rowset_size_(target_rowset_size),
+    row_idx_in_cur_drs_(0),
     output_index_(0),
     written_count_(0),
     written_size_(0) {
@@ -274,9 +275,24 @@ Status RollingDiskRowSetWriter::RollWriter() {
   // Close current writer if it is open
   RETURN_NOT_OK(FinishCurrentWriter());
 
-  RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_metadata_, schema_));
-  cur_writer_.reset(new DiskRowSetWriter(cur_metadata_.get(), bloom_sizing_));
-  return cur_writer_->Open();
+  RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_drs_metadata_, schema_));
+
+  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), bloom_sizing_));
+  RETURN_NOT_OK(cur_writer_->Open());
+
+  shared_ptr<WritableFile> undo_data_file;
+  shared_ptr<WritableFile> redo_data_file;
+  RETURN_NOT_OK(cur_drs_metadata_->NewDeltaDataBlock(&undo_data_file, &cur_undo_ds_block_id_));
+  RETURN_NOT_OK(cur_drs_metadata_->NewDeltaDataBlock(&redo_data_file, &cur_redo_ds_block_id_));
+  cur_undo_writer_.reset(new DeltaFileWriter(schema_, undo_data_file));
+  cur_redo_writer_.reset(new DeltaFileWriter(schema_, redo_data_file));
+  cur_undo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
+  cur_redo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
+
+  row_idx_in_cur_drs_ = 0;
+
+  RETURN_NOT_OK(cur_undo_writer_->Start());
+  return cur_redo_writer_->Start();
 }
 
 Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block) {
@@ -289,6 +305,41 @@ Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
   written_count_ += block.nrows();
 
+  row_idx_in_cur_drs_ += block.nrows();
+
+  return Status::OK();
+}
+
+Status RollingDiskRowSetWriter::AppendUndoDeltas(rowid_t row_idx_in_block,
+                                                 Mutation* undo_delta_head,
+                                                 rowid_t* row_idx) {
+  return AppendDeltas<UNDO>(row_idx_in_block, undo_delta_head,
+                            row_idx,
+                            cur_undo_writer_.get(),
+                            cur_undo_delta_stats.get());
+}
+
+Status RollingDiskRowSetWriter::AppendRedoDeltas(rowid_t row_idx_in_block,
+                                                 Mutation* redo_delta_head,
+                                                 rowid_t* row_idx) {
+  return AppendDeltas<REDO>(row_idx_in_block, redo_delta_head,
+                            row_idx,
+                            cur_redo_writer_.get(),
+                            cur_redo_delta_stats.get());
+}
+
+template<DeltaType Type>
+Status RollingDiskRowSetWriter::AppendDeltas(rowid_t row_idx_in_block,
+                                             Mutation* delta_head,
+                                             rowid_t* row_idx,
+                                             DeltaFileWriter* writer,
+                                             DeltaStats* delta_stats) {
+  *row_idx = row_idx_in_cur_drs_ + row_idx_in_block;
+  for (const Mutation *mut = delta_head; mut != NULL; mut = mut->next()) {
+    DeltaKey undo_key(*row_idx, mut->timestamp());
+    RETURN_NOT_OK(writer->AppendDelta<Type>(undo_key, mut->changelist()));
+    delta_stats->UpdateStats(mut->timestamp(), schema_, mut->changelist());
+  }
   return Status::OK();
 }
 
@@ -298,11 +349,37 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   }
   CHECK_EQ(state_, kStarted);
 
+  cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats);
+  cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats);
+
   RETURN_NOT_OK(cur_writer_->Finish());
+  RETURN_NOT_OK(cur_undo_writer_->Finish());
+  RETURN_NOT_OK(cur_redo_writer_->Finish());
+
+  // If the writer is not null _AND_ we've written something to the undo
+  // delta store commit the undo delta block.
+  if (cur_undo_writer_.get() != NULL &&
+      cur_undo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
+    cur_drs_metadata_->CommitUndoDeltaDataBlock(0, cur_undo_ds_block_id_);
+  }
+
+  // If the writer is not null _AND_ we've written something to the redo
+  // delta store commit the redo delta block.
+  if (cur_redo_writer_.get() != NULL &&
+      cur_redo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
+    cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
+  }
+
   written_size_ += cur_writer_->written_size();
-  written_metas_.push_back(cur_metadata_);
+
+  written_drs_metas_.push_back(cur_drs_metadata_);
+
   cur_writer_.reset(NULL);
-  cur_metadata_.reset();
+  cur_undo_writer_.reset(NULL);
+  cur_redo_writer_.reset(NULL);
+
+  cur_drs_metadata_.reset();
+
   return Status::OK();
 }
 
@@ -314,9 +391,9 @@ Status RollingDiskRowSetWriter::Finish() {
   return Status::OK();
 }
 
-void RollingDiskRowSetWriter::GetWrittenMetadata(RowSetMetadataVector* metas) const {
+void RollingDiskRowSetWriter::GetWrittenRowSetMetadata(RowSetMetadataVector* metas) const {
   CHECK_EQ(state_, kFinished);
-  metas->assign(written_metas_.begin(), written_metas_.end());
+  metas->assign(written_drs_metas_.begin(), written_drs_metas_.end());
 }
 
 RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
@@ -463,7 +540,7 @@ size_t DiskRowSet::DeltaMemStoreSize() const {
 
 size_t DiskRowSet::CountDeltaStores() const {
   CHECK(open_);
-  return delta_tracker_->CountDeltaStores();
+  return delta_tracker_->CountRedoDeltaStores();
 }
 
 Status DiskRowSet::AlterSchema(const Schema& schema) {

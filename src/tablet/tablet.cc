@@ -162,6 +162,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
   if (metrics_) {
     metrics_->scans_started->Increment();
   }
+  VLOG(2) << "Created new Iterator under snap: " << snap.ToString();
   iter->reset(new Iterator(this, projection, snap));
   return Status::OK();
 }
@@ -870,12 +871,13 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
 
   // The RollingDiskRowSet writer wrote out one or more RowSets as the compaction
   // output. Open these into 'new_rowsets'.
-  vector<shared_ptr<RowSet> > new_rowsets;
-  RowSetMetadataVector out_metas;
-  drsw.GetWrittenMetadata(&out_metas);
+  vector<shared_ptr<RowSet> > new_disk_rowsets;
+  RowSetMetadataVector new_drs_metas;
+  drsw.GetWrittenRowSetMetadata(&new_drs_metas);
+
   if (metrics_.get()) metrics_->bytes_flushed->IncrementBy(drsw.written_size());
-  CHECK(!out_metas.empty());
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, out_metas) {
+  CHECK(!new_drs_metas.empty());
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, new_drs_metas) {
     shared_ptr<DiskRowSet> new_rowset;
     Status s = DiskRowSet::Open(meta, &new_rowset);
     if (!s.ok()) {
@@ -883,7 +885,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                    << s.ToString();
       return s;
     }
-    new_rowsets.push_back(new_rowset);
+    new_disk_rowsets.push_back(new_rowset);
   }
 
   // Finished Phase 1. Start duplicating any new updates into the new on-disk rowsets.
@@ -895,14 +897,14 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   //
   LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new rowsets)";
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
-    new DuplicatingRowSet(input.rowsets(), new_rowsets));
+    new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
   MvccSnapshot snap2;
   AtomicSwapRowSets(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
 
   // Ensure that the latest schema is set to the new RowSets
   {
     boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_rowsets) {
+    BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_disk_rowsets) {
       RETURN_NOT_OK_PREPEND(rs->AlterSchema(schema_),
                             "Failed to set current schema on latest RS");
     }
@@ -954,7 +956,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                                              merge.get(),
                                              flush_snap,
                                              snap2,
-                                             new_rowsets),
+                                             new_disk_rowsets),
                         "Failed to re-update deltas missed during compaction phase 1");
 
   if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
@@ -990,10 +992,10 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // be made atomic by Matteo's metadata branch.
 
   // Replace the compacted rowsets with the new on-disk rowsets.
-  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowsets);
+  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_disk_rowsets);
 
   // Write out the new Tablet Metadata
-  RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed),
+  RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), new_drs_metas, mrs_being_flushed),
                         "Failed to flush new tablet metadata");
 
   // Remove old rowsets

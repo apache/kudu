@@ -370,7 +370,7 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
 
   // Should have rolled 3 times.
   vector<shared_ptr<RowSetMetadata> > metas;
-  writer.GetWrittenMetadata(&metas);
+  writer.GetWrittenRowSetMetadata(&metas);
   EXPECT_EQ(3, metas.size());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
     ASSERT_TRUE(meta->HasColumnDataBlockForTests(0));
@@ -386,7 +386,7 @@ TEST_F(TestRowSet, TestMakeDeltaCompactionInput) {
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_STATUS_OK(rs->FlushDeltas());
   DeltaTracker *dt = rs->delta_tracker();
-  int num_stores = dt->delta_stores_.size();
+  int num_stores = dt->redo_delta_stores_.size();
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<int64_t> compacted_ids;
   gscoped_ptr<DeltaCompactionInput> dci;
@@ -417,11 +417,11 @@ TEST_F(TestRowSet, TestCompactStores) {
 
   // Compact the deltafiles
   DeltaTracker *dt = rs->delta_tracker();
-  int num_stores = dt->delta_stores_.size();
+  int num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores before compaction: " << num_stores;
   ASSERT_EQ(num_stores, 3);
   ASSERT_STATUS_OK(dt->CompactStores(0, num_stores - 1));
-  num_stores = dt->delta_stores_.size();
+  num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores after compaction: " << num_stores;
   ASSERT_EQ(1,  num_stores);
 

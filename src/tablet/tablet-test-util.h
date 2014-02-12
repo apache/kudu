@@ -132,6 +132,56 @@ static inline Status IterateToStringList(RowwiseIterator *iter,
   return Status::OK();
 }
 
+// Performs snapshot reads, under each of the snapshots in 'snaps', and stores
+// the results in 'collected_rows'.
+static inline void CollectRowsForSnapshots(Tablet* tablet,
+                                           const Schema& schema,
+                                           const vector<MvccSnapshot>& snaps,
+                                           vector<vector<string>* >* collected_rows) {
+  BOOST_FOREACH(const MvccSnapshot& snapshot, snaps) {
+    DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_STATUS_OK(tablet->NewRowIterator(schema,
+                                            snapshot,
+                                            &iter));
+    ASSERT_STATUS_OK(iter->Init(NULL));
+    vector<string>* collector = new vector<string>();
+    ASSERT_STATUS_OK(IterateToStringList(iter.get(), collector));
+    for (int i = 0; i < collector->size(); i++) {
+      DVLOG(1) << "Got from MRS: " << (*collector)[i];
+    }
+    collected_rows->push_back(collector);
+  }
+}
+
+// Performs snapshot reads, under each of the snapshots in 'snaps', and verifies that
+// the results match the ones in 'expected_rows'.
+static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
+                                                 const Schema& schema,
+                                                 const vector<MvccSnapshot>& snaps,
+                                                 const vector<vector<string>* >& expected_rows) {
+  int idx = 0;
+  // Now iterate again and make sure we get the same thing.
+  BOOST_FOREACH(const MvccSnapshot& snapshot, snaps) {
+    DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_STATUS_OK(tablet->NewRowIterator(schema,
+                                            snapshot,
+                                            &iter));
+    ASSERT_STATUS_OK(iter->Init(NULL));
+    vector<string> collector;
+    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &collector));
+    ASSERT_EQ(collector.size(), expected_rows[idx]->size());
+
+    for (int i = 0; i < expected_rows[idx]->size(); i++) {
+      DVLOG(1) << "Got from DRS: " << collector[i];
+      DVLOG(1) << "Expected: " << (*expected_rows[idx])[i];
+      ASSERT_EQ(collector[i], (*expected_rows[idx])[i]);
+    }
+    idx++;
+  }
+}
+
 // Construct a new iterator from the given rowset, and dump
 // all of its results into 'out'. The previous contents
 // of 'out' are cleared.

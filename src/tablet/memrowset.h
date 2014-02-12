@@ -56,8 +56,8 @@ class MRSRow {
 
   Timestamp insertion_timestamp() const { return header_->insertion_timestamp; }
 
-  Mutation *mutation_head() { return header_->mutation_head; }
-  const Mutation *mutation_head() const { return header_->mutation_head; }
+  Mutation* redo_head() { return header_->redo_head; }
+  const Mutation* redo_head() const { return header_->redo_head; }
 
   const Slice &row_slice() const { return row_slice_; }
 
@@ -116,7 +116,7 @@ class MRSRow {
     // Pointer to the first mutation which has been applied to this row. Each
     // mutation is an instance of the Mutation class, making up a singly-linked
     // list for any mutations applied to the row.
-    Mutation *mutation_head;
+    Mutation* redo_head;
   };
 
   Header *header_;
@@ -378,21 +378,27 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   // Copy the current MRSRow to the 'dst_row' provided using the iterator projection schema.
   template <class RowType, class RowArenaType, class MutationArenaType>
-  Status GetCurrentRow(RowType *dst_row, RowArenaType *row_arena,
-                       const Mutation **mutation_head, MutationArenaType *mutation_arena) {
-    DCHECK(mutation_head != NULL);
+  Status GetCurrentRow(RowType* dst_row,
+                       RowArenaType* row_arena,
+                       const Mutation** redo_head,
+                       MutationArenaType* mutation_arena,
+                       Timestamp* insertion_timestamp) {
+
+    DCHECK(redo_head != NULL);
 
     // Get the row from the MemRowSet. It may have a different schema from the iterator projection.
     const MRSRow src_row = GetCurrentRow();
 
+    *insertion_timestamp = src_row.insertion_timestamp();
+
     // Project the RowChangeList if required
-    *mutation_head = src_row.mutation_head();
+    *redo_head = src_row.redo_head();
     if (!delta_projector_.is_identity()) {
       DCHECK(mutation_arena != NULL);
 
-      Mutation *prev = NULL;
-      *mutation_head = NULL;
-      for (const Mutation *mut = src_row.mutation_head(); mut != NULL; mut = mut->next()) {
+      Mutation *prev_redo = NULL;
+      *redo_head = NULL;
+      for (const Mutation *mut = src_row.redo_head(); mut != NULL; mut = mut->next()) {
         RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
                                                           mut->changelist(),
                                                           &delta_buf_));
@@ -403,12 +409,12 @@ class MemRowSet::Iterator : public RowwiseIterator {
         Mutation *mutation = Mutation::CreateInArena(mutation_arena,
                                                      mut->timestamp(),
                                                      RowChangeList(delta_buf_));
-        if (prev != NULL) {
-          prev->set_next(mutation);
+        if (prev_redo != NULL) {
+          prev_redo->set_next(mutation);
         } else {
-          *mutation_head = mutation;
+          *redo_head = mutation;
         }
-        prev = mutation;
+        prev_redo = mutation;
       }
     }
 
@@ -464,7 +470,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     iter_->SeekToStart();
   }
 
-  Status ApplyMutationsToProjectedRow(Mutation *mutation_head,
+  Status ApplyMutationsToProjectedRow(const Mutation *mutation_head,
                                       RowBlockRow *dst_row,
                                       Arena *dst_arena) {
     // Fast short-circuit the likely case of a row which was inserted and never
@@ -475,7 +481,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
     bool is_deleted = false;
 
-    for (Mutation *mut = mutation_head;
+    for (const Mutation *mut = mutation_head;
          mut != NULL;
          mut = mut->next_) {
       if (!mvcc_snap_.IsCommitted(mut->timestamp_)) {

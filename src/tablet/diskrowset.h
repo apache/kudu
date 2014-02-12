@@ -124,6 +124,22 @@ class RollingDiskRowSetWriter {
   // Rows must be appended in ascending order.
   Status AppendBlock(const RowBlock &block);
 
+  // Appends a sequence of REDO deltas for the same row to the current
+  // redo delta file. 'row_idx_in_next_block' is the positional index after
+  // the last written block. The 'row_idx_in_drs' out parameter will be set
+  // with the row index from the start of the DiskRowSet currently being written.
+  Status AppendRedoDeltas(rowid_t row_idx_in_next_block,
+                          Mutation* redo_deltas,
+                          rowid_t* row_idx_in_drs);
+
+  // Appends a sequence of UNDO deltas for the same row to the current
+  // undo delta file. 'row_idx_in_next_block' is the positional index after
+  // the last written block. The 'row_idx_in_drs' out parameter will be set
+  // with the row index from the start of the DiskRowSet currently being written.
+  Status AppendUndoDeltas(rowid_t row_idx_in_next_block,
+                          Mutation* undo_deltas,
+                          rowid_t* row_idx_in_drs);
+
   Status Finish();
 
   int64_t written_count() const { return written_count_; }
@@ -132,13 +148,20 @@ class RollingDiskRowSetWriter {
 
   // Return the set of rowset paths that were written by this writer.
   // This must only be called after Finish() returns an OK result.
-  void GetWrittenMetadata(metadata::RowSetMetadataVector* metas) const;
+  void GetWrittenRowSetMetadata(metadata::RowSetMetadataVector* metas) const;
 
   uint64_t written_size() const { return written_size_; }
 
  private:
   Status RollWriter();
   Status FinishCurrentWriter();
+
+  template<DeltaType Type>
+  Status AppendDeltas(rowid_t row_idx_in_block,
+                      Mutation* delta_head,
+                      rowid_t* row_idx,
+                      DeltaFileWriter* writer,
+                      DeltaStats* delta_stats);
 
   enum State {
     kInitialized,
@@ -149,18 +172,29 @@ class RollingDiskRowSetWriter {
 
   metadata::TabletMetadata* tablet_metadata_;
   const Schema schema_;
-  shared_ptr<metadata::RowSetMetadata> cur_metadata_;
+  shared_ptr<metadata::RowSetMetadata> cur_drs_metadata_;
   const BloomFilterSizing bloom_sizing_;
   const size_t target_rowset_size_;
 
   gscoped_ptr<DiskRowSetWriter> cur_writer_;
 
+  // A delta writer to store the undos for each DRS
+  gscoped_ptr<DeltaFileWriter> cur_undo_writer_;
+  gscoped_ptr<DeltaStats> cur_undo_delta_stats;
+  // a delta writer to store the redos for each DRS
+  gscoped_ptr<DeltaFileWriter> cur_redo_writer_;
+  gscoped_ptr<DeltaStats> cur_redo_delta_stats;
+  BlockId cur_undo_ds_block_id_;
+  BlockId cur_redo_ds_block_id_;
+
+  uint64_t row_idx_in_cur_drs_;
+
   // The index for the next output.
   int output_index_;
 
-  // RowSetMetadata objects for rowsets which have been successfully
+  // RowSetMetadata objects for diskrowsets which have been successfully
   // written out.
-  metadata::RowSetMetadataVector written_metas_;
+  metadata::RowSetMetadataVector written_drs_metas_;
 
   int64_t written_count_;
   uint64_t written_size_;

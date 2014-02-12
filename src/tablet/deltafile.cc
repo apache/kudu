@@ -10,6 +10,7 @@
 #include "cfile/cfile_reader.h"
 #include "cfile/string_plain_block.h"
 #include "gutil/gscoped_ptr.h"
+#include "gutil/mathlimits.h"
 #include "tablet/deltafile.h"
 #include "tablet/mutation.h"
 #include "tablet/mvcc.h"
@@ -68,8 +69,6 @@ Status DeltaStatsFromPB(const DeltaStatsPB& pb,
 
 } // namespace
 
-
-
 DeltaFileWriter::DeltaFileWriter(const Schema &schema,
                                  const shared_ptr<WritableFile> &file) :
     schema_(schema)
@@ -94,26 +93,14 @@ Status DeltaFileWriter::Finish() {
   return writer_->Finish();
 }
 
-Status DeltaFileWriter::AppendDelta(
-  const DeltaKey &key, const RowChangeList &delta) {
+Status DeltaFileWriter::DoAppendDelta(const DeltaKey &key,
+                                      const RowChangeList &delta) {
   Slice delta_slice(delta.slice());
 
   // See TODO in RowChangeListEncoder::SetToReinsert
   CHECK(!delta.is_reinsert())
     << "TODO: REINSERT deltas cannot currently be written to disk "
     << "since they don't have a standalone encoded form.";
-
-#ifndef NDEBUG
-  // Sanity check insertion order in debug mode.
-  if (has_appended_) {
-    DCHECK(last_key_.CompareTo(key) < 0)
-      << "must insert deltas in sorted order: "
-      << "got key " << key.ToString() << " after "
-      << last_key_.ToString();
-  }
-  has_appended_ = true;
-  last_key_= key;
-#endif
 
   tmp_buf_.clear();
 
@@ -124,6 +111,44 @@ Status DeltaFileWriter::AppendDelta(
   Slice tmp_buf_slice(tmp_buf_);
 
   return writer_->AppendEntries(&tmp_buf_slice, 1);
+}
+
+template<>
+Status DeltaFileWriter::AppendDelta<REDO>(
+  const DeltaKey &key, const RowChangeList &delta) {
+
+#ifndef NDEBUG
+  // Sanity check insertion order in debug mode.
+  if (has_appended_) {
+    DCHECK(last_key_.CompareTo<REDO>(key) < 0)
+      << "must insert deltas in sorted order: "
+      << "got key " << key.ToString() << " after "
+      << last_key_.ToString();
+  }
+  has_appended_ = true;
+  last_key_= key;
+#endif
+
+  return DoAppendDelta(key, delta);
+}
+
+template<>
+Status DeltaFileWriter::AppendDelta<UNDO>(
+  const DeltaKey &key, const RowChangeList &delta) {
+
+#ifndef NDEBUG
+  // Sanity check insertion order in debug mode.
+  if (has_appended_) {
+    DCHECK(last_key_.CompareTo<UNDO>(key) < 0)
+      << "must insert deltas in sorted order: "
+      << "got key " << key.ToString() << " after "
+      << last_key_.ToString();
+  }
+  has_appended_ = true;
+  last_key_= key;
+#endif
+
+  return DoAppendDelta(key, delta);
 }
 
 Status DeltaFileWriter::WriteSchema() {
@@ -160,25 +185,28 @@ Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 Status DeltaFileReader::Open(Env *env,
                              const string &path,
                              int64_t delta_id,
-                             shared_ptr<DeltaFileReader>* reader_out) {
+                             shared_ptr<DeltaFileReader>* reader_out,
+                             DeltaType delta_type) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(path, &size));
-  return Open(path, file, size, delta_id, reader_out);
+  return Open(path, file, size, delta_id, reader_out, delta_type);
 }
 
 Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
                              uint64_t file_size,
                              int64_t delta_id,
-                             shared_ptr<DeltaFileReader>* reader_out) {
+                             shared_ptr<DeltaFileReader>* reader_out,
+                             DeltaType delta_type) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
 
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(delta_id,
                                                              cf_reader.release(),
-                                                             path));
+                                                             path,
+                                                             delta_type));
 
   RETURN_NOT_OK(df_reader->Init());
   reader_out->reset(df_reader.release());
@@ -188,10 +216,12 @@ Status DeltaFileReader::Open(const string& path,
 
 DeltaFileReader::DeltaFileReader(const int64_t id,
                                  CFileReader *cf_reader,
-                                 const string &path)
+                                 const string &path,
+                                 DeltaType delta_type)
   : id_(id),
     reader_(cf_reader),
-    path_(path) {
+    path_(path),
+    delta_type_(delta_type) {
 }
 
 Status DeltaFileReader::Init() {
@@ -239,8 +269,14 @@ Status DeltaFileReader::ReadDeltaStats() {
 Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          const MvccSnapshot &snap,
                                          DeltaIterator** iterator) const {
-  if (snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp())) {
-    *iterator = new DeltaFileIterator(shared_from_this(), projection, snap);
+  if (delta_type_ == REDO &&
+      snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp())) {
+    *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
+    return Status::OK();
+  }
+  if (delta_type_ == UNDO &&
+      snap.MayHaveUncommittedTransactionsAtOrBefore(delta_stats_->max_timestamp())) {
+    *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
     return Status::OK();
   }
   return Status::NotFound("MvccSnapshot outside the range of this delta.");
@@ -281,7 +317,8 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
 DeltaFileIterator::DeltaFileIterator(const shared_ptr<const DeltaFileReader>& dfr,
                                      const Schema *projection,
-                                     const MvccSnapshot &snap) :
+                                     const MvccSnapshot &snap,
+                                     DeltaType delta_type) :
   dfr_(dfr),
   cfile_reader_(dfr->cfile_reader()),
   projector_(&dfr->schema(), projection),
@@ -289,7 +326,8 @@ DeltaFileIterator::DeltaFileIterator(const shared_ptr<const DeltaFileReader>& df
   prepared_idx_(0xdeadbeef),
   prepared_count_(0),
   prepared_(false),
-  exhausted_(false)
+  exhausted_(false),
+  delta_type_(delta_type)
 {}
 
 Status DeltaFileIterator::Init() {
@@ -442,9 +480,6 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows) {
   return Status::OK();
 }
 
-
-
-
 template<class Visitor>
 Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
   DCHECK(prepared_) << "must Prepare";
@@ -466,6 +501,8 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
       continue;
     }
 
+    rowid_t previous_rowidx = MathLimits<rowid_t>::kMax;
+    bool continue_visit = true;
     for (int i = block.prepared_block_start_idx_; i < sbd.Count(); i++) {
       Slice slice = sbd.string_at_index(i);
 
@@ -473,6 +510,15 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
       DeltaKey key;
       RETURN_NOT_OK(key.DecodeFrom(&slice));
       rowid_t row_idx = key.row_idx();
+
+      // Check if the previous visitor notified us we don't need to apply more
+      // mutations to this row and skip if we don't.
+      if (row_idx == previous_rowidx && !continue_visit) {
+        continue;
+      } else {
+        previous_rowidx = row_idx;
+        continue_visit = true;
+      }
 
       // Check that the delta is within the block we're currently processing.
       if (row_idx >= start_row + prepared_count_) {
@@ -482,23 +528,19 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
         // Delta is for a row which comes before the block we're processing.
         continue;
       }
-
-      RETURN_NOT_OK(visitor->Visit(key, slice));
+      RETURN_NOT_OK(visitor->Visit(key, slice, &continue_visit));
     }
   }
 
   return Status::OK();
 }
 
-// Visitor which applies updates to a specific column.
+template<DeltaType Type>
 struct ApplyingVisitor {
-  Status Visit(const DeltaKey &key, const Slice &deltas) {
 
-    // Check that the delta is considered committed by the current reader's MVCC state.
-    if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
-      return Status::OK();
-    }
+  Status Visit(const DeltaKey &key, const Slice &deltas, bool* continue_visit);
 
+  inline Status ApplyMutation(const DeltaKey &key, const Slice &deltas) {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
@@ -523,13 +565,48 @@ struct ApplyingVisitor {
   ColumnBlock *dst;
 };
 
+template<>
+inline Status ApplyingVisitor<REDO>::Visit(const DeltaKey& key,
+                                           const Slice& deltas,
+                                           bool* continue_visit) {
+  *continue_visit = true;
+  if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
+    // If the mutation is not committed check if there might be some
+    // further ahead if not skip visits to all mutations after this one.
+    if (!dfi->mvcc_snap_.MayHaveCommittedTransactionsAtOrAfter(key.timestamp())) {
+      *continue_visit = false;
+    }
+    return Status::OK();
+  }
+  return ApplyMutation(key, deltas);
+}
+
+template<>
+inline Status ApplyingVisitor<UNDO>::Visit(const DeltaKey& key,
+                                           const Slice& deltas,
+                                           bool* continue_visit) {
+  *continue_visit = true;
+  if (dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
+    if (!dfi->mvcc_snap_.MayHaveUncommittedTransactionsAtOrBefore(key.timestamp())) {
+      *continue_visit = false;
+    }
+    return Status::OK();
+  }
+  return ApplyMutation(key, deltas);
+}
+
 Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
 
   size_t projected_col;
   if (projector_.get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
-    ApplyingVisitor visitor = {this, projected_col, dst};
-    return VisitMutations(&visitor);
+    if (delta_type_ == REDO) {
+      ApplyingVisitor<REDO> visitor = {this, projected_col, dst};
+      return VisitMutations(&visitor);
+    } else {
+      ApplyingVisitor<UNDO> visitor = {this, projected_col, dst};
+      return VisitMutations(&visitor);
+    }
   } else if (projector_.get_adapter_col_from_proj_idx(col_to_apply, &projected_col)) {
     // TODO: Handle the "different type" case (adapter_cols_mapping)
     LOG(DFATAL) << "Alter type is not implemented yet";
@@ -541,14 +618,12 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 }
 
 // Visitor which applies deletes to the selection vector.
+template<DeltaType Type>
 struct DeletingVisitor {
-  Status Visit(const DeltaKey &key, const Slice &deltas) {
 
-    // Check that the delta is considered committed by the current reader's MVCC state.
-    if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
-      return Status::OK();
-    }
+  Status Visit(const DeltaKey &key, const Slice &deltas, bool* continue_visit);
 
+  inline Status ApplyDelete(const DeltaKey &key, const Slice &deltas) {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
@@ -568,17 +643,58 @@ struct DeletingVisitor {
   SelectionVector *sel_vec;
 };
 
+template<>
+inline Status DeletingVisitor<REDO>::Visit(const DeltaKey& key,
+                                           const Slice& deltas,
+                                           bool* continue_visit) {
+  *continue_visit = true;
+  if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
+    // If the mutation is not committed check if there might be some
+    // further ahead if not skip visits to all mutations after this one.
+    if (!dfi->mvcc_snap_.MayHaveCommittedTransactionsAtOrAfter(key.timestamp())) {
+      *continue_visit = false;
+    }
+    return Status::OK();
+  }
+  return ApplyDelete(key, deltas);
+}
+
+template<>
+inline Status DeletingVisitor<UNDO>::Visit(const DeltaKey& key,
+                                           const Slice& deltas, bool*
+                                           continue_visit) {
+  *continue_visit = true;
+  if (dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
+    if (!dfi->mvcc_snap_.MayHaveUncommittedTransactionsAtOrBefore(key.timestamp())) {
+      *continue_visit = false;
+    } else {
+    }
+    return Status::OK();
+  }
+  return ApplyDelete(key, deltas);
+}
+
+
 Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
   DCHECK_LE(prepared_count_, sel_vec->nrows());
-  DeletingVisitor visitor = {this, sel_vec};
-  return VisitMutations(&visitor);
+  if (delta_type_ == REDO) {
+    DeletingVisitor<REDO> visitor = { this, sel_vec};
+    return VisitMutations(&visitor);
+  } else {
+    DeletingVisitor<UNDO> visitor = { this, sel_vec};
+    return VisitMutations(&visitor);
+  }
 }
 
 // Visitor which, for each mutation, appends it into a ColumnBlock of
 // Mutation *s. See CollectMutations()
 // Each mutation is projected into the iterator schema, if required.
 struct CollectingVisitor {
-  Status Visit(const DeltaKey &key, const Slice &deltas) {
+  Status Visit(const DeltaKey &key, const Slice &deltas, bool* continue_visit) {
+
+    // Collecting visitor visits all mutations.
+    *continue_visit = true;
+
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
@@ -615,7 +731,11 @@ string DeltaFileIterator::ToString() const {
 
 struct FilterAndAppendVisitor {
 
-  Status Visit(const DeltaKey& key, const Slice& deltas) {
+  Status Visit(const DeltaKey& key, const Slice& deltas, bool* continue_visit) {
+
+    // FilterAndAppendVisitor visitor visits all mutations.
+    *continue_visit = true;
+
     faststring buf;
     RowChangeListEncoder enc(dfi->dfr_->schema(), &buf);
     RETURN_NOT_OK(

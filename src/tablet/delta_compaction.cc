@@ -262,7 +262,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
       DCHECK(!empty());
       DCHECK(!other.empty());
 
-      return pending.back().key.CompareTo(other.next().key) < 0;
+      return pending.back().key.CompareTo<REDO>(other.next().key) < 0;
     }
 
     shared_ptr<DeltaCompactionInput> input;
@@ -355,7 +355,7 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
           return Status::OK();
         }
 
-        if (smallest_idx < 0 || state->next().key.CompareTo(smallest.key) < 0) {
+        if (smallest_idx < 0 || state->next().key.CompareTo<REDO>(smallest.key) < 0) {
           smallest_idx = i;
           smallest = state->next();
         }
@@ -630,7 +630,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
     RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(rsu_->column_indexes(), &out, &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
       RowChangeList update(key_and_update.cell);
-      RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key_and_update.key, update),
+      RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
       WARN_NOT_OK(stats.UpdateStats(key_and_update.key.timestamp(), *base_schema, update),
                   "Failed to update stats");
@@ -737,7 +737,7 @@ Status FlushDeltaCompactionInput(DeltaCompactionInput *input, DeltaFileWriter *o
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&cells));
     BOOST_FOREACH(const DeltaKeyAndUpdate &cell, cells) {
-      RETURN_NOT_OK_PREPEND(out->AppendDelta(cell.key, RowChangeList(cell.cell)),
+      RETURN_NOT_OK_PREPEND(out->AppendDelta<REDO>(cell.key, RowChangeList(cell.cell)),
                             "Failed to append delta");
     }
     RETURN_NOT_OK(input->FinishBlock());

@@ -61,7 +61,7 @@ class TestDeltaCompaction : public KuduTest {
                                const Schema* projection,
                                gscoped_ptr<DeltaCompactionInput> *dci) {
     shared_ptr<DeltaFileReader> reader;
-    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader));
+    RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader, REDO));
     CHECK_EQ(deltafile_idx_, reader->id());
     RETURN_NOT_OK(DeltaCompactionInput::Open(reader, projection, dci));
     deltafile_idx_++;
@@ -86,7 +86,7 @@ class TestDeltaCompaction : public KuduTest {
       int num_txns = random() % 3;
       for (int j = 0, curr_timestamp = timestamp_min; j < num_txns; j++) {
         DeltaKey key(i, Timestamp(curr_timestamp));
-        RETURN_NOT_OK(dfw->AppendDelta(key, RowChangeList(buf)));
+        RETURN_NOT_OK(dfw->AppendDelta<REDO>(key, RowChangeList(buf)));
         curr_timestamp++;
         num_updates++;
       }
@@ -227,7 +227,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       // of this new schema will always be on rows [0, 1, 2, ...] while the
       // others will be on new rows. (N is tunable by changing kNumMultipleUpdates)
       DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, Timestamp(curr_timestamp));
-      ASSERT_STATUS_OK(dfw->AppendDelta(key, update.as_changelist()));
+      ASSERT_STATUS_OK(dfw->AppendDelta<REDO>(key, update.as_changelist()));
       curr_timestamp++;
       row_id++;
     }

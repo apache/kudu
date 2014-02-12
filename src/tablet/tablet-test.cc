@@ -2,11 +2,13 @@
 
 #include <glog/logging.h>
 #include <time.h>
+#include <gutil/stl_util.h>
 #include <gutil/strings/join.h>
+
 #include "common/iterator.h"
 #include "common/row.h"
 #include "common/scan_spec.h"
-#include "tablet/memrowset.h"
+#include "tablet/deltafile.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet-test-base.h"
 #include "util/slice.h"
@@ -46,50 +48,106 @@ TYPED_TEST(TestTablet, TestFlush) {
 
   // Flush it.
   ASSERT_STATUS_OK(this->tablet_->Flush());
+  metadata::TabletMetadata* tablet_meta = this->tablet_->metadata();
 
   // Make sure the files were created as expected.
-  const metadata::RowSetMetadata *rowset_meta = this->tablet_->metadata()->GetRowSetForTests(0);
+  metadata::RowSetMetadata* rowset_meta = tablet_meta->GetRowSetForTests(0);
   CHECK(rowset_meta) << "No row set found";
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(1));
   ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(2));
   ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
+
+  // check that undo deltas are present
+  ASSERT_TRUE(rowset_meta->HasUndoDeltaBlockForTests(0));
+
+  // Read the undo delta, we should get one undo mutation (delete) for each row.
+  size_t dsize = 0;
+  shared_ptr<RandomAccessFile> dfile;
+  int64_t delta_id;
+  ASSERT_STATUS_OK(rowset_meta->OpenUndoDeltaDataBlock(0,
+                                                       &dfile,
+                                                       &dsize,
+                                                       &delta_id));
+
+  shared_ptr<DeltaFileReader> dfr;
+  ASSERT_STATUS_OK(DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr, UNDO));
+  // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
+  ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);
 }
 
 // Test that historical data for a row is maintained even after the row
 // is flushed from the memrowset.
-//
-// This test is disabled because the current implementation does not actually
-// Flush/Compact UNDO records or any other MVCC data. Instead, it just writes
-// the most up-to-date version. We should re-enable this once UNDO files are
-// implemented.
-TYPED_TEST(TestTablet, DISABLED_TestMVCCAfterFlush) {
+TYPED_TEST(TestTablet, TestInsertsAndMutationsAreUndoneWithMVCCAfterFlush) {
   // Insert 5 rows into the memrowset.
-  // These rows will be inserted with timestamp 0 through 4.
+  // After the first one, each time we insert a new row we mutate
+  // the previous one.
+
+  // Take snapshots after each operation
   vector<MvccSnapshot> snaps;
   snaps.push_back(MvccSnapshot(*this->tablet_->mvcc_manager()));
 
+  WriteTransactionContext tx_ctx;
   for (int i = 0; i < 5; i++) {
     this->InsertTestRows(i, 1, 0);
-    snaps.push_back(MvccSnapshot(*this->tablet_->mvcc_manager()));
+    DVLOG(1) << "Inserted row=" << i << ", val=" << i << ", update_count=0";
+    MvccSnapshot ins_snaphsot(*this->tablet_->mvcc_manager());
+    snaps.push_back(ins_snaphsot);
+    LOG(INFO) << "After Insert Snapshot: " <<  ins_snaphsot.ToString();
+    if (i > 0) {
+      tx_ctx.Reset();
+      ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, i - 1, i));
+      DVLOG(1) << "Mutated row=" << i - 1 << ", val=" << i - 1 << ", update_count=" << i;
+      MvccSnapshot mut_snaphsot(*this->tablet_->mvcc_manager());
+      snaps.push_back(mut_snaphsot);
+      DVLOG(1) << "After Mutate Snapshot: " <<  mut_snaphsot.ToString();
+    }
   }
 
-  // TODO: also update a row in a bunch of transactions and make sure
-  // that update history is maintained.
-  // TODO: when delete is supported, add delete/reinsert.
+  // Collect the expected rows from the MRS, where there are no
+  // undos
+  vector<vector<string>* > expected_rows;
+  CollectRowsForSnapshots(this->tablet_.get(), this->schema_, snaps, &expected_rows);
 
-  // Flush the tablet.
+  // Flush the tablet
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
-  // Verify that reading past snapshots shows the correct number of rows.
-  for (int i = 0; i < snaps.size(); i++) {
-    vector<string> rows;
-    gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(this->tablet_->NewRowIterator(this->schema_, snaps[i], &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
-    ASSERT_STATUS_OK(kudu::tablet::IterateToStringList(iter.get(), &rows));
-    ASSERT_EQ(i, rows.size()) << "Bad result: " << JoinStrings(rows, "\n");
+  // Now verify that with undos we get the same thing.
+  VerifySnapshotsHaveSameResult(this->tablet_.get(), this->schema_, snaps, expected_rows);
+
+  // Do some more work and flush/compact
+  // take a snapshot and mutate the rows so that we have undos and
+  // redos
+  snaps.push_back(MvccSnapshot(*this->tablet_->mvcc_manager()));
+//
+  for (int i = 0; i < 4; i++) {
+    tx_ctx.Reset();
+    ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, i, i + 10));
+    DVLOG(1) << "Mutated row=" << i << ", val=" << i << ", update_count=" << i + 10;
+    MvccSnapshot mut_snaphsot(*this->tablet_->mvcc_manager());
+    snaps.push_back(mut_snaphsot);
+    DVLOG(1) << "After Mutate Snapshot: " <<  mut_snaphsot.ToString();
   }
+
+  // also throw a delete in there.
+  tx_ctx.Reset();
+  ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 4));
+  MvccSnapshot delete_snaphsot(*this->tablet_->mvcc_manager());
+  snaps.push_back(delete_snaphsot);
+  DVLOG(1) << "After Delete Snapshot: " <<  delete_snaphsot.ToString();
+
+  // Collect the expected rows now that we have undos and redos
+  STLDeleteElements(&expected_rows);
+  CollectRowsForSnapshots(this->tablet_.get(), this->schema_, snaps, &expected_rows);
+
+  // now flush and the compact everything
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+  ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+
+  // Now verify that with undos and redos we get the same thing.
+  VerifySnapshotsHaveSameResult(this->tablet_.get(), this->schema_, snaps, expected_rows);
+
+  STLDeleteElements(&expected_rows);
 }
 
 // Test that inserting a row which already exists causes an AlreadyPresent
@@ -498,7 +556,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
 
     // first MemRowSet had id 0, current one should be 1
     ASSERT_EQ(1, this->tablet_->CurrentMrsIdForTests());
-    ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(0)->HasColumnDataBlockForTests(0));
+    ASSERT_TRUE(
+        this->tablet_->metadata()->GetRowSetForTests(0)->HasColumnDataBlockForTests(0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -510,7 +569,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
 
     // previous MemRowSet had id 1, current one should be 2
     ASSERT_EQ(2, this->tablet_->CurrentMrsIdForTests());
-    ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(1)->HasColumnDataBlockForTests(0));
+    ASSERT_TRUE(
+        this->tablet_->metadata()->GetRowSetForTests(1)->HasColumnDataBlockForTests(0));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -522,7 +582,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
 
     // previous MemRowSet had id 2, current one should be 3
     ASSERT_EQ(3, this->tablet_->CurrentMrsIdForTests());
-    ASSERT_TRUE(this->tablet_->metadata()->GetRowSetForTests(2)->HasColumnDataBlockForTests(0));
+    ASSERT_TRUE(
+        this->tablet_->metadata()->GetRowSetForTests(2)->HasColumnDataBlockForTests(0));
   }
 
   // Issue compaction

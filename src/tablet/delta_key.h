@@ -12,6 +12,19 @@
 namespace kudu {
 namespace tablet {
 
+// The type of the delta.
+enum DeltaType {
+  // REDO delta files contain the mutations that were applied
+  // since the base data was last flushed/compacted. REDO deltas
+  // are sorted by increasing transaction timestamp.
+  REDO,
+  // UNDO delta files contain the mutations that were applied
+  // prior to the time the base data was last/flushed compacted
+  // and allow to execute point-in-time snapshot scans. UNDO
+  // deltas are sorted by decreasing transaction timestamp.
+  UNDO
+};
+
 // Each entry in the delta memrowset or delta files is keyed by the rowid
 // which has been updated, as well as the timestamp which performed the update.
 class DeltaKey {
@@ -52,7 +65,6 @@ class DeltaKey {
     if (!PREDICT_TRUE(timestamp_.DecodeFrom(key))) {
       return Status::Corruption("Bad delta key: bad timestamp", orig.ToDebugString(20));
     }
-
     return Status::OK();
   }
 
@@ -61,16 +73,11 @@ class DeltaKey {
   }
 
   // Compare this key to another key. Delta keys are sorted by ascending rowid,
-  // then ascending timestamp.
-  int CompareTo(const DeltaKey &other) const {
-    if (row_idx_ < other.row_idx_) {
-      return -1;
-    } else if (row_idx_ > other.row_idx_) {
-      return 1;
-    }
-
-    return timestamp_.CompareTo(other.timestamp_);
-  }
+  // then ascending timestamp, except if this is an undo delta key, in which case the
+  // the keys are sorted by ascending rowid and then by _descending_ timestamp so that
+  // the transaction closer to the base data comes first.
+  template<DeltaType Type>
+  int CompareTo(const DeltaKey &other) const;
 
   rowid_t row_idx() const { return row_idx_; }
 
@@ -80,9 +87,31 @@ class DeltaKey {
   // The row which has been updated.
   rowid_t row_idx_;
 
-  // The transaction ID which applied the update.
+  // The timestamp of the transaction which applied the update.
   Timestamp timestamp_;
 };
+
+template<>
+inline int DeltaKey::CompareTo<REDO>(const DeltaKey &other) const {
+  if (row_idx_ < other.row_idx_) {
+    return -1;
+  } else if (row_idx_ > other.row_idx_) {
+    return 1;
+  }
+
+  return timestamp_.CompareTo(other.timestamp_);
+}
+
+template<>
+inline int DeltaKey::CompareTo<UNDO>(const DeltaKey &other) const {
+  if (row_idx_ < other.row_idx_) {
+    return -1;
+  } else if (row_idx_ > other.row_idx_) {
+    return 1;
+  }
+
+  return other.timestamp_.CompareTo(timestamp_);
+}
 
 } // namespace tablet
 } // namespace kudu

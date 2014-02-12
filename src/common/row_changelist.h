@@ -224,8 +224,10 @@ class RowChangeListDecoder {
     return Status::OK();
   }
 
+  // Applies this changes in this decoder to the specified row and saves the old
+  // state of the row into the undo_encoder.
   template<class RowType, class ArenaType>
-  Status ApplyRowUpdate(RowType *dst_row, ArenaType *arena) {
+  Status ApplyRowUpdate(RowType *dst_row, ArenaType *arena, RowChangeListEncoder* undo_encoder) {
     // TODO: Handle different schema
     DCHECK(schema_.Equals(dst_row->schema()));
 
@@ -236,6 +238,11 @@ class RowChangeListDecoder {
 
       SimpleConstCell src(schema_.column(updated_col), new_val);
       typename RowType::Cell dst_cell = dst_row->cell(updated_col);
+
+      // save the old cell on the undo encoder
+      undo_encoder->AddColumnUpdate(updated_col, dst_cell.ptr());
+
+      // copy the new cell to the row
       RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
     }
     return Status::OK();

@@ -91,8 +91,12 @@ class RowSetsInCompaction {
 
 // One row yielded by CompactionInput::PrepareBlock.
 struct CompactionInputRow {
+  // The compaction input base row.
   RowBlockRow row;
-  const Mutation *mutation_head;
+  // The current redo head for this row, may be null if the base row has no mutations.
+  const Mutation* redo_head;
+  // The current undo head for this row, may be null if all undos were garbage collected..
+  const Mutation* undo_head;
 };
 
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
@@ -100,9 +104,6 @@ struct CompactionInputRow {
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // no longer be useful.
-//
-// TODO: when we support actually flushing UNDO files, this will also have to take
-// a delta file writer.
 Status FlushCompactionInput(CompactionInput *input,
                             const MvccSnapshot &snap,
                             RollingDiskRowSetWriter *out);

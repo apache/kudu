@@ -108,7 +108,7 @@ Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *are
 
 struct DeltaKeyUpdateComparator {
   bool operator() (const DeltaKeyAndUpdate& a, const DeltaKeyAndUpdate &b) {
-    return a.key.CompareTo(b.key) < 0;
+    return a.key.CompareTo<REDO>(b.key) < 0;
   }
 };
 
@@ -182,7 +182,8 @@ DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
 
 // Open any previously flushed DeltaFiles in this rowset
 Status DeltaTracker::Open() {
-  CHECK(delta_stores_.empty()) << "should call before opening any readers";
+  CHECK(redo_delta_stores_.empty()) << "should call before opening any readers";
+  CHECK(undo_delta_stores_.empty()) << "should call before opening any readers";
   CHECK(!open_);
 
   int64_t max_id = -1;
@@ -195,22 +196,48 @@ Status DeltaTracker::Open() {
                                                         &dsize,
                                                         &delta_id);
     if (!s.ok()) {
-      LOG(ERROR) << "Failed to open delta file " << idx << ": "
+      LOG(ERROR) << "Failed to open redo delta file " << idx << ": "
                  << s.ToString();
       return s;
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr);
+    s = DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr, REDO);
     if (!s.ok()) {
-      LOG(ERROR) << "Failed to open delta file " << idx << ": "
+      LOG(ERROR) << "Failed to open redo delta file " << idx << ": "
                  << s.ToString();
       return s;
     }
 
     max_id = std::max(max_id, dfr->id());
     LOG(INFO) << "Successfully opened delta file " << idx;
-    delta_stores_.push_back(dfr);
+    redo_delta_stores_.push_back(dfr);
+  }
+
+  for (size_t idx = 0; idx < rowset_metadata_->undo_delta_blocks_count(); ++idx) {
+    size_t dsize = 0;
+    shared_ptr<RandomAccessFile> dfile;
+    int64_t delta_id;
+    Status s = rowset_metadata_->OpenUndoDeltaDataBlock(idx,
+                                                        &dfile,
+                                                        &dsize,
+                                                        &delta_id);
+    if (!s.ok()) {
+      LOG(ERROR) << "Failed to open undo delta file " << idx << ": "
+                 << s.ToString();
+      return s;
+    }
+
+    shared_ptr<DeltaFileReader> dfr;
+    s = DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr, UNDO);
+    if (!s.ok()) {
+      LOG(ERROR) << "Failed to open undo delta file " << idx << ": "
+                 << s.ToString();
+      return s;
+    }
+
+    LOG(INFO) << "Successfully opened undo delta file " << idx;
+    undo_delta_stores_.push_back(dfr);
   }
 
   // the id of the first DeltaMemStore is the max id of the current ones +1
@@ -227,10 +254,10 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
 
   CHECK(open_);
   CHECK_LE(start_idx, end_idx);
-  CHECK_LT(end_idx, delta_stores_.size());
+  CHECK_LT(end_idx, redo_delta_stores_.size());
   vector<shared_ptr<DeltaCompactionInput> > inputs;
   for (size_t idx = start_idx; idx <= end_idx; ++idx) {
-    shared_ptr<DeltaStore> &delta_store = delta_stores_[idx];
+    shared_ptr<DeltaStore> &delta_store = redo_delta_stores_[idx];
 
     // In DEBUG mode, the following asserts that the object is of the right type
     // (using RTTI)
@@ -256,22 +283,22 @@ Status DeltaTracker::AtomicUpdateStores(size_t start_idx, size_t end_idx,
   // First check that delta stores match the old stores
   vector<shared_ptr<DeltaStore > >::const_iterator it = expected_stores.begin();
   for (size_t idx = start_idx; idx <= end_idx; ++idx) {
-    CHECK_EQ(it->get(), delta_stores_[idx].get());
+    CHECK_EQ(it->get(), redo_delta_stores_[idx].get());
     ++it;
   }
 
   // Remove the old stores
-  vector<shared_ptr<DeltaStore> >::iterator erase_start = delta_stores_.begin() + start_idx;
-  vector<shared_ptr<DeltaStore> >::iterator erase_end = delta_stores_.begin() + end_idx + 1;
-  delta_stores_.erase(erase_start, erase_end);
+  vector<shared_ptr<DeltaStore> >::iterator erase_start = redo_delta_stores_.begin() + start_idx;
+  vector<shared_ptr<DeltaStore> >::iterator erase_end = redo_delta_stores_.begin() + end_idx + 1;
+  redo_delta_stores_.erase(erase_start, erase_end);
 
   // Insert the new store
-  delta_stores_.push_back(new_store);
+  redo_delta_stores_.push_back(new_store);
   return Status::OK();
 }
 
 Status DeltaTracker::Compact() {
-  if (CountDeltaStores() <= 1) {
+  if (CountRedoDeltaStores() <= 1) {
     return Status::OK();
   }
   return CompactStores(0, -1);
@@ -284,11 +311,11 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   boost::lock_guard<boost::mutex> l(compact_flush_lock_);
 
   if (end_idx == -1) {
-    end_idx = delta_stores_.size() - 1;
+    end_idx = redo_delta_stores_.size() - 1;
   }
 
   CHECK_LE(start_idx, end_idx);
-  CHECK_LT(end_idx, delta_stores_.size());
+  CHECK_LT(end_idx, redo_delta_stores_.size());
   CHECK(open_);
   BlockId block_id;
   shared_ptr<WritableFile> data_writer;
@@ -310,7 +337,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader,
                                                 &data_size));
   RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader,
-                                      data_size, compacted_id, &dfr));
+                                      data_size, compacted_id, &dfr, REDO));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
   RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr));
@@ -346,7 +373,8 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
 
 void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-  deltas->assign(delta_stores_.begin(), delta_stores_.end());
+  deltas->assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
+  deltas->insert(deltas->end(), redo_delta_stores_.begin(), redo_delta_stores_.end());
   deltas->push_back(dms_);
 }
 
@@ -365,7 +393,8 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(const Schema* schem
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
     // TODO perf: is this really needed? Will check
     // DeltaIteratorMerger::Create()
-    stores.assign(delta_stores_.begin(), delta_stores_.end());
+    stores.assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
+    stores.insert(stores.end(), redo_delta_stores_.begin(), redo_delta_stores_.end());
   }
   *last_store_id = stores.back()->id();
   return DeltaIteratorMerger::Create(stores, schema, snap);
@@ -408,7 +437,7 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
   }
 
   // Then check backwards through the list of trackers.
-  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore> &ds, delta_stores_) {
+  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore> &ds, redo_delta_stores_) {
     stats->deltas_consulted++;
     RETURN_NOT_OK(ds->CheckRowDeleted(row_idx, deleted));
     if (*deleted) {
@@ -448,7 +477,11 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
-  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms->id(), dfr));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(),
+                                      data_reader,
+                                      data_size, dms->id(),
+                                      dfr,
+                                      REDO));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
@@ -486,7 +519,7 @@ Status DeltaTracker::Flush() {
     old_dms = dms_;
     dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_));
 
-    delta_stores_.push_back(old_dms);
+    redo_delta_stores_.push_back(old_dms);
   }
 
   LOG(INFO) << "Flushing " << count << " deltas...";
@@ -507,11 +540,11 @@ Status DeltaTracker::Flush() {
   // of the DeltaMemStore
   {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-    size_t idx = delta_stores_.size() - 1;
+    size_t idx = redo_delta_stores_.size() - 1;
 
-    CHECK_EQ(delta_stores_[idx], old_dms)
+    CHECK_EQ(redo_delta_stores_[idx], old_dms)
       << "Another thread modified the delta store list during flush";
-    delta_stores_[idx] = dfr;
+    redo_delta_stores_[idx] = dfr;
   }
 
   return Status::OK();
@@ -543,9 +576,9 @@ size_t DeltaTracker::DeltaMemStoreSize() const {
   return dms_->memory_footprint();
 }
 
-size_t DeltaTracker::CountDeltaStores() const {
+size_t DeltaTracker::CountRedoDeltaStores() const {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
-  return delta_stores_.size();
+  return redo_delta_stores_.size();
 }
 
 const Schema& DeltaTracker::schema() const {
