@@ -161,10 +161,7 @@ message TabletReportPB {
 
 message ReportedTabletUpdatesPB {
   required bytes tablet_id = 1;
-
-  // true if the tablet was deleted/replaced
-  optional bool is_deleted = 2 [default = false];
-  optional string state_msg = 3;
+  optional string state_msg = 2;
 }
 
 // Sent by the Master in response to the TS tablet report (part of the heartbeats)

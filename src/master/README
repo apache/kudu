@@ -126,3 +126,20 @@ to the TS.
 On Master restart the full tablet report will be requested, and the tablet
 "schema version" sent on the next heartbeat will be used to determine if the
 tablet requires an "alter request".
+
+============================================================
+ Table Deletion
+============================================================
+When the user sends a delete request, the table is marked as deleted.
+The deleted state is written to the "sys.tables" and the table removed from
+the in-memory "table names map".
+
+At this point, the table is no longer visible on the master side,
+but the tablets are still up and running.
+New clients trying to open the table will get a NotFound error,
+while clients already running with the locations are still able to read and write
+to the tablets. (In theory this is not a problem, and is the same as the fs unlink)
+
+Each TS/tablet will receive a delete request from the master and the tablet will be removed.
+If the Master or TS crashes and the delete tablet request is not received,
+a new "delete tablet" request will be sent on the first heartbeat.

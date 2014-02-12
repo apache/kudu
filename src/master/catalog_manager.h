@@ -435,6 +435,14 @@ class CatalogManager {
   void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                               TSDescriptor* ts_desc);
 
+  // Send the "delete tablet request" to all TS that have tablet of the specified table
+  void SendDeleteTableRequest(const scoped_refptr<TableInfo>& table);
+
+  // Send the "delete tablet request" to the specified TS/tablet
+  void SendDeleteTabletRequest(const std::string& tablet_id,
+                               const scoped_refptr<TableInfo>& table,
+                               TSDescriptor* ts_desc);
+
   string GenerateId() { return oid_generator_.Next(); }
 
 

@@ -603,5 +603,31 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   }
 }
 
+TEST_F(ClientTest, TestDeleteTable) {
+  string tablet_id = tablet_peer_->tablet()->tablet_id();
+
+  // Remove the table
+  // NOTE that it returns when the operation is completed on the master side
+  ASSERT_STATUS_OK(client_->DeleteTable(kTableName));
+  CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
+  ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
+
+  // Wait until the table is removed from the TS
+  int wait_time = 1000;
+  bool tablet_found = true;
+  for (int i = 0; i < 80 && tablet_found; ++i) {
+    tablet_found = cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
+                      tablet_id, &tablet_peer_);
+    usleep(wait_time);
+    wait_time = std::min(wait_time * 5 / 4, 1000000);
+  }
+  ASSERT_FALSE(tablet_found);
+
+  // Try to open the deleted table
+  Status s = client_->OpenTable(kTableName, schema_, &client_table_);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
+}
+
 } // namespace client
 } // namespace kudu

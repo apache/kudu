@@ -557,6 +557,9 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   TRACE("Committing in-memory state");
   l.Commit();
 
+  // Send the 'delete tablet' request to all the TSs
+  SendDeleteTableRequest(table);
+
   VLOG(1) << "Deleted table " << table->ToString();
   background_tasks_->Wake();
   return Status::OK();
@@ -805,9 +808,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     tablet = FindPtrOrNull(tablet_map_, report.tablet_id());
   }
   if (tablet == NULL) {
-    // TODO: The tablet server should trash the tablet
-    report_updates->set_is_deleted(true);
     VLOG(1) << "Got report from missing tablet " << report.tablet_id();
+    SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc);
     return Status::OK();
   }
 
@@ -817,10 +819,10 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
 
   if (tablet_lock.data().is_deleted()) {
-    report_updates->set_is_deleted(true);
     report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
     VLOG(1) << "Got report from deleted tablet " << tablet->ToString()
             << ": " << tablet_lock.data().pb.state_msg();
+    SendDeleteTabletRequest(tablet->tablet_id(), tablet->table(), ts_desc);
     return Status::OK();
   }
 
@@ -901,6 +903,7 @@ class AsyncAlterTable : public MonitoredTask {
 
   virtual Status Run() {
     state_ = kStateRunning;
+    start_ts_ = MonoTime::Now(MonoTime::FINE);
     SendRequest();
     return Status::OK();
   }
@@ -952,6 +955,7 @@ class AsyncAlterTable : public MonitoredTask {
     if (state_ != kStateComplete && state_ != kStateAborted) {
       SendRequest();
     } else {
+      end_ts_ = MonoTime::Now(MonoTime::FINE);
       tablet_->table()->RemoveTask(this);
     }
   }
@@ -969,6 +973,7 @@ class AsyncAlterTable : public MonitoredTask {
 
     l.Unlock();
 
+    rpc_.Reset();
     rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_alter_timeout_ms));
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
                                 boost::bind(&AsyncAlterTable::Callback, this));
@@ -1029,6 +1034,7 @@ class AsyncCreateTablet : public MonitoredTask {
   // quorum information has been filled into the 'dirty' data.
   Status Run() {
     state_ = kStateRunning;
+    start_ts_ = MonoTime::Now(MonoTime::FINE);
 
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
     RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(peer_.permanent_uuid(), &ts_desc));
@@ -1088,6 +1094,7 @@ class AsyncCreateTablet : public MonitoredTask {
                    << " on TS " << peer_.permanent_uuid() << " failed: " << s.ToString();
     }
 
+    end_ts_ = MonoTime::Now(MonoTime::FINE);
     tablet_->table()->RemoveTask(this);
   }
 
@@ -1103,6 +1110,137 @@ class AsyncCreateTablet : public MonitoredTask {
   tserver::CreateTabletResponsePB resp_;
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
 };
+
+// Send the "Delete Tablet"
+// keeps retrying until we get an "ok" response.
+//  - Delete completed
+//  - TS has already deleted the tablet
+class AsyncDeleteTablet : public MonitoredTask {
+ public:
+  AsyncDeleteTablet(const std::tr1::shared_ptr<tserver::TabletServerServiceProxy>& ts_proxy,
+                    const scoped_refptr<TableInfo>& table,
+                    const std::string& tablet_id,
+                    const std::string& permanent_uuid)
+    : state_(kStatePreparing),
+      permanent_uuid_(permanent_uuid),
+      tablet_id_(tablet_id),
+      table_(table),
+      ts_proxy_(ts_proxy) {
+    }
+
+  virtual Status Run() {
+    state_ = kStateRunning;
+    start_ts_ = MonoTime::Now(MonoTime::FINE);
+    SendRequest();
+    return Status::OK();
+  }
+
+  virtual bool Abort() {
+    return false;
+  }
+
+  virtual State state() const { return state_; }
+
+  virtual string type_name() const { return "Delete Tablet"; }
+
+  virtual string description() const {
+    return tablet_id_ + " Delete Tablet RPC for TS=" + permanent_uuid_;
+  }
+
+  virtual MonoTime start_timestamp() const { return start_ts_; }
+
+  virtual MonoTime completion_timestamp() const { return end_ts_; }
+
+ private:
+  void Callback() {
+    if (!rpc_.status().ok()) {
+      LOG(WARNING) << permanent_uuid_ << " Delete RPC failed for tablet " << tablet_id_
+                   << ": " << rpc_.status().ToString();
+    } else if (resp_.has_error()) {
+      Status status = StatusFromPB(resp_.error().status());
+
+      // Do not retry on a fatal error
+      switch (resp_.error().code()) {
+        case TabletServerErrorPB::TABLET_NOT_FOUND:
+          LOG(WARNING) << permanent_uuid_ << " delete failed for tablet " << tablet_id_
+                       << " no further retry: " << status.ToString();
+          state_ = kStateComplete;
+          break;
+        default:
+          LOG(WARNING) << permanent_uuid_ << " delete failed for tablet " << tablet_id_
+                       << ": " << status.ToString();
+          break;
+      }
+    } else {
+      state_ = kStateComplete;
+      VLOG(1) << permanent_uuid_ << " delete complete on tablet " << tablet_id_;
+    }
+
+    if (state_ != kStateComplete) {
+      SendRequest();
+    } else if (table_ != NULL) {
+      end_ts_ = MonoTime::Now(MonoTime::FINE);
+      table_->RemoveTask(this);
+    } else {
+      // This is a floating task (since the tablet does not exist)
+      // created as response to a tablet report.
+      Release();
+    }
+  }
+
+  void SendRequest() {
+    tserver::DeleteTabletRequestPB req;
+    req.set_tablet_id(tablet_id_);
+
+    rpc_.Reset();
+    rpc_.set_timeout(MonoDelta::FromMilliseconds(FLAGS_alter_timeout_ms));
+    ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
+                                 boost::bind(&AsyncDeleteTablet::Callback, this));
+    VLOG(1) << "Send delete tablet request to " << permanent_uuid_ << ":\n"
+            << req.DebugString();
+  }
+
+  MonoTime start_ts_;
+  MonoTime end_ts_;
+  volatile State state_;
+  rpc::RpcController rpc_;
+  std::string permanent_uuid_;
+  const std::string tablet_id_;
+  const scoped_refptr<TableInfo> table_;
+  tserver::DeleteTabletResponsePB resp_;
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+};
+
+void CatalogManager::SendDeleteTableRequest(const scoped_refptr<TableInfo>& table) {
+  vector<scoped_refptr<TabletInfo> > tablets;
+  table->GetAllTablets(&tablets);
+
+  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    std::vector<TabletReplica> locations;
+    tablet->GetLocations(&locations);
+    BOOST_FOREACH(const TabletReplica& replica, locations) {
+      SendDeleteTabletRequest(tablet->tablet_id(), table, replica.ts_desc);
+    }
+  }
+}
+
+void CatalogManager::SendDeleteTabletRequest(const std::string& tablet_id,
+                                             const scoped_refptr<TableInfo>& table,
+                                             TSDescriptor* ts_desc) {
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy;
+  CHECK_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy));
+
+  AsyncDeleteTablet *call = new AsyncDeleteTablet(ts_proxy, table,
+                                                  tablet_id, ts_desc->permanent_uuid());
+  if (table != NULL) {
+    table->AddTask(call);
+  } else {
+    // This is a floating task (since the tablet does not exist)
+    // created as response to a tablet report.
+    call->AddRef();
+  }
+  call->Run();
+}
 
 void CatalogManager::ExtractTabletsToProcess(
     std::vector<scoped_refptr<TabletInfo> > *tablets_to_delete,
