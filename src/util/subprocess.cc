@@ -155,13 +155,25 @@ Status Subprocess::Start() {
 }
 
 Status Subprocess::Wait(int* ret) {
+  return DoWait(ret, 0);
+}
+
+Status Subprocess::WaitNoBlock(int* ret) {
+  return DoWait(ret, WNOHANG);
+}
+
+Status Subprocess::DoWait(int* ret, int options) {
   CHECK(started_);
-  int rc = waitpid(child_pid_, ret, 0);
+  int rc = waitpid(child_pid_, ret, options);
   if (rc == -1) {
     return Status::RuntimeError("Unable to wait on child",
                                 ErrnoToString(errno),
                                 errno);
   }
+  if ((options & WNOHANG) && rc == 0) {
+    return Status::TimedOut("");
+  }
+
   CHECK_EQ(rc, child_pid_);
   child_pid_ = -1;
   started_ = false;

@@ -36,6 +36,11 @@ class Subprocess {
   // that of the waitpid() syscall.
   Status Wait(int* ret);
 
+  // Like the above, but does not block. This returns Status::TimedOut
+  // immediately if the child has not exited. Otherwise returns Status::OK
+  // and sets *ret.
+  Status WaitNoBlock(int* ret);
+
   // Send a signal to the subprocess.
   // Note that this does not reap the process -- you must still Wait()
   // in order to reap it.
@@ -62,6 +67,8 @@ class Subprocess {
   int ReleaseChildStdoutFd();
 
  private:
+  Status DoWait(int* ret, int options);
+
   std::string exec_path_;
   std::vector<std::string> argv_;
 

@@ -31,4 +31,13 @@ std::string DirName(const std::string& path) {
   }
 }
 
+std::string BaseName(const std::string& path) {
+  size_t last_slash = path.rfind('/');
+  if (last_slash == string::npos) {
+    return path;
+  } else {
+    return path.substr(last_slash + 1);
+  }
+}
+
 } // namespace kudu
