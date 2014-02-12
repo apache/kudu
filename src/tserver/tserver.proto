@@ -76,6 +76,7 @@ message AlterSchemaRequestPB {
   required SchemaPB schema = 2;
 
   required uint32 schema_version = 3;
+  optional string new_table_name = 4;
 }
 
 message AlterSchemaResponsePB {

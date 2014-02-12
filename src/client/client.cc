@@ -151,22 +151,23 @@ Status KuduClient::AlterTable(const std::string& table_name,
   AlterTableResponsePB resp;
   RpcController rpc;
 
-  if (alter.alter_steps_->alter_schema_steps_size() == 0) {
+  if (!alter.has_changes()) {
     return Status::InvalidArgument("No alter steps provided");
   }
 
+  req.CopyFrom(*alter.alter_steps_);
   req.mutable_table()->set_table_name(table_name);
-  req.mutable_alter_schema_steps()->CopyFrom(alter.alter_steps_->alter_schema_steps());
   RETURN_NOT_OK(master_proxy_->AlterTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
 
+  string alter_name = req.has_new_table_name() ? req.new_table_name() : table_name;
   {
     // TODO: same fix as open table
     while (1) {
       bool alter_in_progress = false;
-      RETURN_NOT_OK(IsAlterTableInProgress(table_name, &alter_in_progress));
+      RETURN_NOT_OK(IsAlterTableInProgress(alter_name, &alter_in_progress));
       if (!alter_in_progress) {
         break;
       }
@@ -476,6 +477,16 @@ AlterTableBuilder::~AlterTableBuilder() {
 
 void AlterTableBuilder::Reset() {
   alter_steps_->clear_alter_schema_steps();
+}
+
+bool AlterTableBuilder::has_changes() const {
+  return alter_steps_->has_new_table_name() ||
+         alter_steps_->alter_schema_steps_size() > 0;
+}
+
+Status AlterTableBuilder::RenameTable(const string& new_name) {
+  alter_steps_->set_new_table_name(new_name);
+  return Status::OK();
 }
 
 Status AlterTableBuilder::AddColumn(const std::string& name,

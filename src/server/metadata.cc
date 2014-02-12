@@ -351,6 +351,11 @@ void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   schema_version_ = version;
 }
 
+void TabletMetadata::SetTableName(const string& table_name) {
+  boost::lock_guard<LockType> l(lock_);
+  table_name_ = table_name;
+}
+
 const string& TabletMetadata::table_name() const {
   boost::lock_guard<LockType> l(lock_);
   DCHECK_NE(state_, kNotLoadedYet);

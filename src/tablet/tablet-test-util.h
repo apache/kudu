@@ -67,7 +67,10 @@ class KuduTabletTest : public KuduTest {
   }
 
   void AlterSchema(const Schema& schema) {
-    AlterSchemaTransactionContext tx_ctx;
+    tserver::AlterSchemaRequestPB req;
+    req.set_schema_version(tablet_->metadata()->schema_version() + 1);
+
+    AlterSchemaTransactionContext tx_ctx(&req);
     ASSERT_STATUS_OK(tablet_->CreatePreparedAlterSchema(&tx_ctx, &schema));
     ASSERT_STATUS_OK(tablet_->AlterSchema(&tx_ctx));
     tx_ctx.commit();

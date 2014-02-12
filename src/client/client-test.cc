@@ -13,6 +13,7 @@
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"
 #include "integration-tests/mini_cluster.h"
+#include "master/catalog_manager.h"
 #include "master/master-test-util.h"
 #include "master/master.proxy.h"
 #include "master/mini_master.h"
@@ -35,6 +36,7 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace client {
 
+using master::CatalogManager;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 using tserver::ColumnRangePredicatePB;
@@ -600,6 +602,20 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     alter.DropColumn("int_val");
     alter.AddNullableColumn("new_col", UINT32);
     ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
+    ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
+  }
+
+  {
+    const char *kRenamedTableName = "RenamedTable";
+    alter.Reset();
+    alter.RenameTable(kRenamedTableName);
+    ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
+    ASSERT_EQ(2, tablet_peer_->tablet()->metadata()->schema_version());
+    ASSERT_EQ(kRenamedTableName, tablet_peer_->tablet()->metadata()->table_name());
+
+    CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
+    ASSERT_TRUE(catalog_manager->TableNameExists(kRenamedTableName));
+    ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
   }
 }
 

@@ -3,6 +3,8 @@
 #ifndef KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
 #define KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
 
+#include <string>
+
 #include "gutil/macros.h"
 #include "tablet/transactions/transaction.h"
 #include "util/task_executor.h"
@@ -21,10 +23,10 @@ namespace tablet {
 // Keeps track of the Transaction states (request, result, ...)
 class AlterSchemaTransactionContext : public TransactionContext {
  public:
-  AlterSchemaTransactionContext()
+  explicit AlterSchemaTransactionContext(const tserver::AlterSchemaRequestPB* request)
     : TransactionContext(NULL),
       schema_(NULL),
-      request_(NULL),
+      request_(request),
       response_(NULL) {
   }
 
@@ -47,10 +49,15 @@ class AlterSchemaTransactionContext : public TransactionContext {
   void set_schema(const Schema* schema) { schema_ = schema; }
   const Schema* schema() const { return schema_; }
 
+  std::string new_table_name() const {
+    return request_->new_table_name();
+  }
+
+  bool has_new_table_name() const {
+    return request_->has_new_table_name();
+  }
+
   uint32_t schema_version() const {
-    if (request_ == NULL) {
-      return 0;
-    }
     return request_->schema_version();
   }
 

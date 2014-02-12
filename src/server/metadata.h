@@ -97,6 +97,8 @@ class TabletMetadata {
 
   void SetSchema(const Schema& schema, uint32_t version);
 
+  void SetTableName(const std::string& table_name);
+
   // Return the current schema of the metadata. Note that this returns
   // a copy so should not be used in a tight loop.
   Schema schema() const;

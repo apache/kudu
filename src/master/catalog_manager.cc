@@ -657,28 +657,72 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return s;
   }
 
+  bool has_changes = false;
+  string table_name = l.data().name();
+
   // 2. Calculate new schema for the on-disk state, not persisted yet
-  TRACE("Apply alter schema");
   Schema new_schema;
-  Status s = ApplyAlterSteps(l.data().pb.schema(), req, &new_schema);
-  if (!s.ok()) {
-    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-    return s;
+  if (req->alter_schema_steps_size()) {
+    TRACE("Apply alter schema");
+    Status s = ApplyAlterSteps(l.data().pb.schema(), req, &new_schema);
+    if (!s.ok()) {
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
+    }
+
+    has_changes = true;
   }
 
-  // 3. Serialize the schema and increment the version number
-  CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
+  // 3. Try to acquire the new table name
+  if (req->has_new_table_name()) {
+    boost::lock_guard<LockType> catalog_lock(lock_);
+
+    TRACE("Acquired catalog manager lock");
+
+    // Verify that the table does not exist
+    scoped_refptr<TableInfo> other_table = FindPtrOrNull(table_names_map_, req->new_table_name());
+    if (other_table != NULL) {
+      Status s = Status::AlreadyPresent("Table already exists", other_table->id());
+      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
+      return s;
+    }
+
+    // Acquire the new table name (now we have 2 name for the same table)
+    table_names_map_[req->new_table_name()] = table;
+    l.mutable_data()->pb.set_name(req->new_table_name());
+
+    has_changes = true;
+  }
+
+  // Skip empty requests...
+  if (!has_changes) {
+    return Status::OK();
+  }
+
+  // 4. Serialize the schema Increment the version number
+  if (new_schema.initialized()) {
+    CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
+  }
   l.mutable_data()->pb.set_version(l.mutable_data()->pb.version() + 1);
 
-  // 4. Update sys-tables with the new table schema (point of no return!)
+  // 5. Update sys-tables with the new table schema (point of no return!)
   TRACE("Updating metadata on disk");
-  s = sys_tables_->UpdateTable(table.get());
+  Status s = sys_tables_->UpdateTable(table.get());
   if (!s.ok()) {
     PANIC_RPC(rpc, Substitute("An error occurred while updating sys tables: $0",
                               s.ToString()));
   }
 
-  // 5. Update the in-memory state
+  // 6. Remove the old name
+  if (req->has_new_table_name()) {
+    TRACE("Removing old-name $0 from by-name map", table_name);
+    boost::lock_guard<LockType> l_map(lock_);
+    if (table_names_map_.erase(table_name) != 1) {
+      PANIC_RPC(rpc, "Could not remove table from map, name=" + l.data().name());
+    }
+  }
+
+  // 7. Update the in-memory state
   TRACE("Committing in-memory state");
   l.Commit();
 
@@ -747,6 +791,11 @@ void CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables
   BOOST_FOREACH(const TableInfoMap::value_type& e, table_ids_map_) {
     tables->push_back(e.second);
   }
+}
+
+bool CatalogManager::TableNameExists(const string& table_name) {
+  boost::shared_lock<LockType> l(lock_);
+  return table_names_map_.find(table_name) != table_names_map_.end();
 }
 
 Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
@@ -968,6 +1017,7 @@ class AsyncAlterTable : public MonitoredTask {
 
     tserver::AlterSchemaRequestPB req;
     req.set_tablet_id(tablet_->tablet_id());
+    req.set_new_table_name(l.data().pb.name());
     req.set_schema_version(l.data().pb.version());
     req.mutable_schema()->CopyFrom(l.data().pb.schema());
 

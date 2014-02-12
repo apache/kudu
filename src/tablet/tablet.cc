@@ -662,10 +662,13 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_ms;
   {
-    boost::lock_guard<percpu_rwlock> schema_lock(schema_lock_);
+    boost::unique_lock<percpu_rwlock> schema_lock(schema_lock_);
 
-    // If the current schema and the new one are equal, there is nothing to do.
-    if (schema_.Equals(*tx_ctx->schema())) {
+    // If the current version >= new version, there is nothing to do.
+    bool same_schema = schema_.Equals(*tx_ctx->schema());
+    if (metadata_->schema_version() >= tx_ctx->schema_version()) {
+      LOG(INFO) << "Already running schema version " << metadata_->schema_version()
+                << " got alter request for version " << tx_ctx->schema_version();
       return Status::OK();
     }
 
@@ -673,6 +676,15 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
                  tx_ctx->schema()->ToString();
     schema_ = *tx_ctx->schema();
     metadata_->SetSchema(schema_, tx_ctx->schema_version());
+    if (tx_ctx->has_new_table_name()) {
+      metadata_->SetTableName(tx_ctx->new_table_name());
+    }
+
+    // If the current schema and the new one are equal, there is nothing to do.
+    if (same_schema) {
+      schema_lock.unlock();
+      return metadata_->Flush();
+    }
 
     // Update the DiskRowSet/DeltaTracker
     // TODO: This triggers a flush of the DeltaMemStores...

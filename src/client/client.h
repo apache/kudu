@@ -273,6 +273,10 @@ class AlterTableBuilder {
 
   void Reset();
 
+  bool has_changes() const;
+
+  Status RenameTable(const string& new_name);
+
   Status AddColumn(const std::string& name,
                    DataType type,
                    const void *default_value,

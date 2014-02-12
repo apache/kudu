@@ -348,6 +348,10 @@ class CatalogManager {
   // NOTE: This should only be used by tests or web-ui
   void GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables);
 
+  // Return true if the specified table name exists
+  // NOTE: This should only be used by tests
+  bool TableNameExists(const string& table_name);
+
  private:
   friend class TableLoader;
   friend class TabletLoader;

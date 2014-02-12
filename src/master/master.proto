@@ -334,6 +334,7 @@ message AlterTableRequestPB {
 
   required TableIdentifierPB table = 1;
   repeated Step alter_schema_steps = 2;
+  optional string new_table_name = 3;
 }
 
 message AlterTableResponsePB {
