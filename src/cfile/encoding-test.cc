@@ -283,7 +283,7 @@ class TestEncoding : public ::testing::Test {
     // Benchmark seeking
     LOG_TIMING(INFO, strings::Substitute("Seeking in $0 block", TypeTraits<IntType>::name())) {
       for (int i = 0; i < num_queries; i++) {
-        bool exact;
+        bool exact = false;
         CppType target = random() % (num_ints * 2 + kBase);
         Status s = ibd.SeekAtOrAfterValue(&target, &exact);
         if (verify) {
