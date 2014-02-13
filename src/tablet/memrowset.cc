@@ -170,7 +170,7 @@ Status MemRowSet::MutateRow(txid_t txid,
     MRSRow row(this, mutation.current_mutable_value());
 
     // If the row exists, it may still be a "ghost" row -- i.e a row
-    // that's been deleted. If that's the case, we should not treat it as
+    // that's been deleted. If that's the case, we should treat it as
     // NotFound.
     if (row.IsGhost()) {
       return Status::NotFound("not in memrowset (ghost)");
@@ -220,7 +220,7 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
   MRSRow row(this, mutation.current_mutable_value());
 
   // If the row exists, it may still be a "ghost" row -- i.e a row
-  // that's been deleted. If that's the case, we should not treat it as
+  // that's been deleted. If that's the case, we should treat it as
   // NotFound.
   *present = !row.IsGhost();
   return Status::OK();

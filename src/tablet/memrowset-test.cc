@@ -321,7 +321,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 2));
   MvccSnapshot snapshot_after_reinsert(mvcc_);
 
-  // CheckRowPresent should return now return true
+  // CheckRowPresent should now return true
   ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
   EXPECT_TRUE(present);
 
