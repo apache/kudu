@@ -522,7 +522,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 
     RETURN_NOT_OK(compaction->Compact(&meta, &delta_block, &ndeltas));
     if (ndeltas > 0) {
-      RETURN_NOT_OK(meta->CommitDeltaDataBlock(delta_store_id, delta_block));
+      RETURN_NOT_OK(meta->CommitRedoDeltaDataBlock(delta_store_id, delta_block));
     }
     RETURN_NOT_OK_PREPEND(meta->Flush(),
                           "Unable to commit rowset metadata " + meta->ToString());

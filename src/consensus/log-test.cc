@@ -114,7 +114,7 @@ class LogTest : public KuduTest {
       BOOST_FOREACH(const DeltaId delta, *deltas) {
         RowSetDataPB* row_set = meta->add_rowsets();
         row_set->set_id(delta.first);
-        DeltaDataPB* delta_data = row_set->add_deltas();
+        DeltaDataPB* delta_data = row_set->add_redo_deltas();
         delta_data->set_id(delta.second);
         delta_data->mutable_block()->CopyFrom(dummy);
         row_set->set_last_durable_dms_id(delta.second);

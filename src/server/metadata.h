@@ -153,6 +153,8 @@ class TabletMetadata {
   // ==========================================================================
   const RowSetMetadata *GetRowSetForTests(int64_t id) const;
 
+  RowSetMetadata *GetRowSetForTests(int64_t id);
+
  private:
   // TODO: get rid of this many-arg constructor in favor of a Load() and
   // New() factory functions -- it's sort of weird that when you're loading
@@ -235,6 +237,8 @@ class TabletMetadata {
 // There's a lock around the delta-blocks operations.
 class RowSetMetadata {
  public:
+  typedef std::vector<std::pair<int64_t, BlockId> > DeltaBlockVector;
+
   // Create a new RowSetMetadata
   static Status CreateNew(TabletMetadata* tablet_metadata,
                           int64_t id,
@@ -298,21 +302,33 @@ class RowSetMetadata {
   // If ids of delta data blocks between "start_idx" and "end_idx" match ids specified
   // in "ids", remove these delta delta blocks from the mapping; otherwise, crash with
   // a FATAL log messages.
-  Status AtomicRemoveDeltaDataBlocks(size_t start_idx, size_t end_idx,
-                                     const std::vector<int64_t>& ids);
+  Status AtomicRemoveRedoDeltaDataBlocks(size_t start_idx, size_t end_idx,
+                                         const std::vector<int64_t>& ids);
 
-  Status CommitDeltaDataBlock(int64_t id, const BlockId& block_id);
+  Status CommitRedoDeltaDataBlock(int64_t id, const BlockId& block_id);
 
-  Status OpenDeltaDataBlock(size_t index,
-                            shared_ptr<RandomAccessFile> *reader,
-                            uint64_t *size,
-                            int64_t *id);
+  Status OpenRedoDeltaDataBlock(size_t index,
+                                shared_ptr<RandomAccessFile> *reader,
+                                uint64_t *size,
+                                int64_t *id);
 
-  size_t delta_blocks_count() const;
+  size_t redo_delta_blocks_count() const;
+
+  Status AtomicRemoveUndoDeltaDataBlocks(size_t start_idx, size_t end_idx,
+                                         const std::vector<int64_t>& ids);
+
+  Status CommitUndoDeltaDataBlock(int64_t id, const BlockId& block_id);
+
+  Status OpenUndoDeltaDataBlock(size_t index,
+                                shared_ptr<RandomAccessFile> *reader,
+                                uint64_t *size,
+                                int64_t *id);
+
+  size_t undo_delta_blocks_count() const;
 
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
 
-  int64_t last_durable_dms_id() const { return last_durable_dms_id_; }
+  int64_t last_durable_redo_dms_id() const { return last_durable_redo_dms_id_; }
 
   bool HasColumnDataBlockForTests(size_t idx) const {
     return column_blocks_.size() > idx && fs_manager()->BlockExists(column_blocks_[idx]);
@@ -322,11 +338,16 @@ class RowSetMetadata {
     return !bloom_block_.IsNull() && fs_manager()->BlockExists(bloom_block_);
   }
 
+  bool HasUndoDeltaBlockForTests(size_t idx) const {
+    return undo_delta_blocks_.size() > idx &&
+        fs_manager()->BlockExists(undo_delta_blocks_[idx].second);
+  }
+
  private:
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
     : initted_(false),
       tablet_metadata_(tablet_metadata),
-      last_durable_dms_id_(kNoDurableMemStore) {
+      last_durable_redo_dms_id_(kNoDurableMemStore) {
   }
 
   RowSetMetadata(TabletMetadata *tablet_metadata,
@@ -335,9 +356,13 @@ class RowSetMetadata {
       id_(id),
       schema_(schema),
       tablet_metadata_(tablet_metadata),
-      last_durable_dms_id_(kNoDurableMemStore) {
+      last_durable_redo_dms_id_(kNoDurableMemStore) {
     CHECK(schema.has_column_ids());
   }
+
+  Status AtomicRemoveDeltaDataBlocksUnlocked(size_t start_idx, size_t end_idx,
+                                             const vector<int64_t>& ids,
+                                             DeltaBlockVector* delta_blocks);
 
   Status InitFromPB(const RowSetDataPB& pb);
 
@@ -359,10 +384,11 @@ class RowSetMetadata {
   BlockId bloom_block_;
   BlockId adhoc_index_block_;
   std::vector<BlockId> column_blocks_;
-  std::vector<std::pair<int64_t, BlockId> > delta_blocks_;
+  DeltaBlockVector redo_delta_blocks_;
+  DeltaBlockVector undo_delta_blocks_;
   TabletMetadata *tablet_metadata_;
 
-  int64_t last_durable_dms_id_;
+  int64_t last_durable_redo_dms_id_;
 
   friend class TabletMetadata;
 };

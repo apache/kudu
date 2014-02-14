@@ -179,14 +179,14 @@ Status DeltaTracker::Open() {
   CHECK(!open_);
 
   int64_t max_id = -1;
-  for (size_t idx = 0; idx < rowset_metadata_->delta_blocks_count(); ++idx) {
+  for (size_t idx = 0; idx < rowset_metadata_->redo_delta_blocks_count(); ++idx) {
     size_t dsize = 0;
     shared_ptr<RandomAccessFile> dfile;
     int64_t delta_id;
-    Status s = rowset_metadata_->OpenDeltaDataBlock(idx,
-                                                    &dfile,
-                                                    &dsize,
-                                                    &delta_id);
+    Status s = rowset_metadata_->OpenRedoDeltaDataBlock(idx,
+                                                        &dfile,
+                                                        &dsize,
+                                                        &delta_id);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open delta file " << idx << ": "
                  << s.ToString();
@@ -304,8 +304,9 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr.Pass()));
   LOG(INFO) << "Opened delta block for read: " << block_id.ToString();
 
-  RETURN_NOT_OK(rowset_metadata_->AtomicRemoveDeltaDataBlocks(start_idx, end_idx, compacted_ids));
-  RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(compacted_id, block_id));
+  RETURN_NOT_OK(rowset_metadata_->AtomicRemoveRedoDeltaDataBlocks(start_idx, end_idx,
+                                                                  compacted_ids));
+  RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(compacted_id, block_id));
   Status s = rowset_metadata_->Flush();
   if (!s.ok()) {
     LOG(ERROR) << "Unable to commit delta data block metadata for "
@@ -438,7 +439,7 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
   RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms.id(), dfr));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
-  RETURN_NOT_OK(rowset_metadata_->CommitDeltaDataBlock(dms.id(), block_id));
+  RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms.id(), block_id));
   s = rowset_metadata_->Flush();
   if (!s.ok()) {
     LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();

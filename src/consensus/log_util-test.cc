@@ -21,7 +21,7 @@ void AddDeltasToRowSet(RowSetDataPB* new_rs, int64_t rs_id,
                        vector<int64_t> deltas) {
   new_rs->set_id(rs_id);
   BOOST_FOREACH(const int64_t delta_id, deltas) {
-    DeltaDataPB* delta_data = new_rs->add_deltas();
+    DeltaDataPB* delta_data = new_rs->add_redo_deltas();
     delta_data->set_id(delta_id);
   }
 }

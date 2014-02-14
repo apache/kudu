@@ -344,6 +344,16 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
   return NULL;
 }
 
+RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
+  boost::lock_guard<LockType> l(lock_);
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, rowsets_) {
+    if (rowset_meta->id() == id) {
+      return rowset_meta.get();
+    }
+  }
+  return NULL;
+}
+
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   DCHECK(schema.has_column_ids());
   boost::lock_guard<LockType> l(lock_);
@@ -430,13 +440,20 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   }
   RETURN_NOT_OK(schema_.Reset(cols, cols_ids, key_columns));
 
-  // Load Delta Files
-  BOOST_FOREACH(const DeltaDataPB& delta_pb, pb.deltas()) {
-    delta_blocks_.push_back(
-      std::pair<int64_t, BlockId>(delta_pb.id(), BlockIdFromPB(delta_pb.block())));
+  // Load redo delta files
+  BOOST_FOREACH(const DeltaDataPB& redo_delta_pb, pb.redo_deltas()) {
+    redo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(redo_delta_pb.id(),
+                                                             BlockIdFromPB(redo_delta_pb.block())));
   }
 
-  last_durable_dms_id_ = pb.last_durable_dms_id();
+  last_durable_redo_dms_id_ = pb.last_durable_dms_id();
+
+  // Load undo delta files
+  BOOST_FOREACH(const DeltaDataPB& undo_delta_pb, pb.undo_deltas()) {
+    undo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(undo_delta_pb.id(),
+                                                             BlockIdFromPB(undo_delta_pb.block())));
+  }
+
   initted_ = true;
   return Status::OK();
 }
@@ -461,11 +478,18 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
     typedef std::pair<uint32_t, BlockId> DeltaDataBlock;
 
     boost::lock_guard<LockType> l(deltas_lock_);
-    pb->set_last_durable_dms_id(last_durable_dms_id_);
-    BOOST_FOREACH(const DeltaDataBlock& delta_block, delta_blocks_) {
-      DeltaDataPB *delta_pb = pb->add_deltas();
-      delta_pb->set_id(delta_block.first);
-      BlockIdToPB(delta_block.second, delta_pb->mutable_block());
+    pb->set_last_durable_dms_id(last_durable_redo_dms_id_);
+
+    BOOST_FOREACH(const DeltaDataBlock& redo_delta_block, redo_delta_blocks_) {
+      DeltaDataPB *redo_delta_pb = pb->add_redo_deltas();
+      redo_delta_pb->set_id(redo_delta_block.first);
+      BlockIdToPB(redo_delta_block.second, redo_delta_pb->mutable_block());
+    }
+
+    BOOST_FOREACH(const DeltaDataBlock& undo_delta_block, undo_delta_blocks_) {
+      DeltaDataPB *undo_delta_pb = pb->add_undo_deltas();
+      undo_delta_pb->set_id(undo_delta_block.first);
+      BlockIdToPB(undo_delta_block.second, undo_delta_pb->mutable_block());
     }
   }
 
@@ -484,47 +508,79 @@ const string RowSetMetadata::ToString() const {
   return "RowSet(" + boost::lexical_cast<string>(id_) + ")";
 }
 
-Status RowSetMetadata::AtomicRemoveDeltaDataBlocks(size_t start_idx, size_t end_idx,
-                                                   const vector<int64_t>& ids) {
+Status RowSetMetadata::AtomicRemoveRedoDeltaDataBlocks(size_t start_idx, size_t end_idx,
+                                                       const vector<int64_t>& ids) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  return AtomicRemoveDeltaDataBlocksUnlocked(start_idx, end_idx, ids, &redo_delta_blocks_);
+}
+
+Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t id, const BlockId& block_id) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  DCHECK_GE(id, last_durable_redo_dms_id_);
+  last_durable_redo_dms_id_ = id;
+  redo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
+  return Status::OK();
+}
+
+Status RowSetMetadata::OpenRedoDeltaDataBlock(size_t index,
+                                              shared_ptr<RandomAccessFile> *reader,
+                                              uint64_t *size,
+                                              int64_t *id) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  *id = redo_delta_blocks_[index].first;
+  return OpenDataBlock(redo_delta_blocks_[index].second, reader, size);
+}
+
+size_t RowSetMetadata::redo_delta_blocks_count() const {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  return redo_delta_blocks_.size();
+}
+
+Status RowSetMetadata::AtomicRemoveUndoDeltaDataBlocks(size_t start_idx, size_t end_idx,
+                                                       const vector<int64_t>& ids) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  return AtomicRemoveDeltaDataBlocksUnlocked(start_idx, end_idx, ids, &undo_delta_blocks_);
+}
+
+Status RowSetMetadata::CommitUndoDeltaDataBlock(int64_t id, const BlockId& block_id) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  undo_delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
+  return Status::OK();
+}
+
+Status RowSetMetadata::OpenUndoDeltaDataBlock(size_t index,
+                                              shared_ptr<RandomAccessFile> *reader,
+                                              uint64_t *size,
+                                              int64_t *id) {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  *id = undo_delta_blocks_[index].first;
+  return OpenDataBlock(undo_delta_blocks_[index].second, reader, size);
+}
+
+size_t RowSetMetadata::undo_delta_blocks_count() const {
+  boost::lock_guard<LockType> l(deltas_lock_);
+  return undo_delta_blocks_.size();
+}
+
+Status RowSetMetadata::AtomicRemoveDeltaDataBlocksUnlocked(size_t start_idx, size_t end_idx,
+                                                           const vector<int64_t>& ids,
+                                                           DeltaBlockVector* delta_blocks) {
   CHECK_EQ(end_idx - start_idx + 1, ids.size());
   CHECK_GE(end_idx, start_idx);
-  boost::lock_guard<LockType> l(deltas_lock_);
 
   // First check that we're indeed removing the delta blocks for the delta stores we've
   // compacted and no other thread has modified this in the mean time. This should always
   // be true, hence the use of CHECK_EQ().
-  vector<std::pair<int64_t, BlockId> >::iterator deltas_start = delta_blocks_.begin() + start_idx;
-  vector<std::pair<int64_t, BlockId> >::iterator deltas_end = delta_blocks_.begin() + end_idx;
+  vector<std::pair<int64_t, BlockId> >::iterator deltas_start = delta_blocks->begin() + start_idx;
+  vector<std::pair<int64_t, BlockId> >::iterator deltas_end = delta_blocks->begin() + end_idx;
   vector<std::pair<int64_t, BlockId> >::const_iterator deltas_it = deltas_start;
   for (int id_idx = 0; deltas_it != deltas_end; ++id_idx, ++deltas_it) {
     CHECK_EQ(deltas_it->first, ids[id_idx]);
   }
 
   // Now we can safely remove the old deltas
-  delta_blocks_.erase(deltas_start, deltas_end + 1);
+  delta_blocks->erase(deltas_start, deltas_end + 1);
   return Status::OK();
-}
-
-Status RowSetMetadata::CommitDeltaDataBlock(int64_t id, const BlockId& block_id) {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  DCHECK_GE(id, last_durable_dms_id_);
-  last_durable_dms_id_ = id;
-  delta_blocks_.push_back(std::pair<int64_t, BlockId>(id, block_id));
-  return Status::OK();
-}
-
-Status RowSetMetadata::OpenDeltaDataBlock(size_t index,
-                                          shared_ptr<RandomAccessFile> *reader,
-                                          uint64_t *size,
-                                          int64_t *id) {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  *id = delta_blocks_[index].first;
-  return OpenDataBlock(delta_blocks_[index].second, reader, size);
-}
-
-size_t RowSetMetadata::delta_blocks_count() const {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  return delta_blocks_.size();
 }
 
 } // namespace metadata

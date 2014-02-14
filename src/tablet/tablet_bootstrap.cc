@@ -1161,14 +1161,14 @@ Status TabletBootstrap::HandleDMSMutation(const MutationInput& mutation_input,
   }
 
   // if it exists we check if the mutation is already flushed
-  if (mutation_target.delta_id() <= row_set->last_durable_dms_id()) {
+  if (mutation_target.delta_id() <= row_set->last_durable_redo_dms_id()) {
     string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
     if (VLOG_IS_ON(1)) {
       VLOG(1) << "Skipping DELTA_MUTATION that was already flushed. OpId: "
           << mutation_input.committed_op_id.DebugString()
           << " mutation index: " << mutation_input.mutation_op_block_index
           << " flushed to: " << mutation_target.rs_id()
-          << " latest durable dms id: " << row_set->last_durable_dms_id()
+          << " latest durable dms id: " << row_set->last_durable_redo_dms_id()
           << " mutation: " << mutation;
     }
     mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(

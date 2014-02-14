@@ -103,9 +103,10 @@ bool HasNoCommonMemStores(const TabletSuperBlockPB &older,
   // start by creating a set with pair<row set id, last delta id> for 'newer'
   unordered_set<pair<int64, int64 >, DeltaIdHashFunction, DeltaIdEqualsTo> newer_deltas;
   BOOST_FOREACH(const RowSetDataPB &row_set, newer.rowsets()) {
-    if (row_set.deltas_size() > 0) {
-      newer_deltas.insert(pair<int64, int64>(row_set.id(),
-                                             row_set.deltas(row_set.deltas_size() - 1).id()));
+    if (row_set.redo_deltas_size() > 0) {
+      newer_deltas.insert(
+          pair<int64, int64>(row_set.id(),
+                             row_set.redo_deltas(row_set.redo_deltas_size() - 1).id()));
     }
   }
 
@@ -113,10 +114,11 @@ bool HasNoCommonMemStores(const TabletSuperBlockPB &older,
   // in 'newer' *and* its last delta id is the same then the two superblocks have
   // at least one DeltaMemStore in common.
   BOOST_FOREACH(const RowSetDataPB &row_set, older.rowsets()) {
-    if (row_set.deltas_size() > 0 &&
-        ContainsKey(newer_deltas,
-                    pair<int64, int64>(row_set.id(),
-                                       row_set.deltas(row_set.deltas_size() - 1).id()))) {
+    if (row_set.redo_deltas_size() > 0 &&
+        ContainsKey(
+            newer_deltas,
+            pair<int64, int64>(row_set.id(),
+                               row_set.redo_deltas(row_set.redo_deltas_size() - 1).id()))) {
       VLOG(2) << "Common MemStore. 'older' "
           << older.DebugString() << "\n 'newer': " << newer.DebugString();
       return false;
