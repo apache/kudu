@@ -13,6 +13,116 @@ processes, as machines and or application daemons will participate in multiple
 quorums.
 
 ============================================================
+The write ahead log (WAL)
+============================================================
+
+The WAL provides strict ordering and durability guarantees:
+
+1) If calls to Reserve() are externally synchronized, the order in
+which entries had been reserved will be the order in which they will
+be committed to disk.
+
+2) If fsync is enabled (via the 'log_force_fsync_all' flag -- see
+log_util.cc; note: this is _DISABLED_ by default), then every single
+transaction is guaranteed to be synchronized to disk before its
+execution is deemed successful.
+
+Log uses group commit to increase performance primarily by allowing
+throughput to scale with the number of writer threads while
+maintaining close to constant latency.
+
+============================================================
+Basic WAL usage
+============================================================
+
+To add operations to the log, the caller must obtain the lock, and
+call Reserve() with a collection of operations and pointer to the
+reserved entry (the latter being an out parameter). Then, the caller
+may release the lock and call the AsyncAppend() method with the
+reserved entry and a callback that will be invoked upon completion of
+the append. AsyncAppend method performs serialization and copying
+outside of the lock.
+
+For sample usage see local_consensus.cc and mt-log-test.cc.
+
+=============================================================
+Group commit implementation details
+=============================================================
+
+Currently, the group implementation uses a blocking queue (see
+Log::entry_queue_ in log.h) and a separate long-running thread (see
+Log::AppendThread in log.cc). Since access to the queue is
+synchronized via a lock and only a single thread removes the queue,
+the order in which the elements are added to the queue will be the
+same as the order in which the elements are removed from the queue.
+
+The size of the queue is currently based on the number of entries, but
+this will eventually be changed to be based on size of all queued
+entries in bytes.
+
+=============================================================
+Reserving a slot for the entry
+=============================================================
+
+Currently Reserve() allocates memory for a new entry on the heap each
+time, marks the entry internally as "reserved" via a state enum, and
+adds it to the above-mentioned queue. In the future, a ring-buffer or
+another similar data structure could be used that would take the place
+of the queue and make allocation unnecessary.
+
+============================================================
+Copying the entry contents to the reserved slot
+============================================================
+
+AsyncAppend() serializes the contents of the entry to a buffer field
+in the entry object (currently the buffer is allocated at the same
+time as the entry itself); this avoids contention that would occur if
+a shared buffer was to be used.
+
+============================================================
+Synchronizing the entry contents to disk
+============================================================
+
+A separate appender thread waits until entries are added to the
+queue. Once the queue is no longer empty, the thread grabs all
+elements on the queue. Then for each dequeued entry, the appender
+waits until the entry is marked ready (see "Copying the entry contents
+to the reserved slot" above) and then appends the entry to the current
+log segment without synchronizing the underlying file with filesystem
+(env::WritableFile::Append())
+
+Note: this could be further optimized by calling AppendVector() with a
+vector of buffers from all of the consumed entries.
+
+Once all entries are successfully appended, the appender thread syncs
+the file to disk (env::WritableFile::Sync()) and (again) waits until
+more entries are added to the queue, or until the queue or the
+appender thread are shut down.
+
+============================================================
+Log segment files and asynchronous preallocation
+============================================================
+
+Log uses PosixWritableFile() for underlying storage. If preallocation
+is enabled ('--log_preallocate_segments' flag, defined in log_util.cc,
+true by default), then whenever a new segment is created, the
+underlying file is preallocated to a certain size in megabytes
+('--log_segment_size_mb', defined in log_util.cc, default 64). While
+the offset in the segment file is below the preallocated length,
+the cheaper fdatasync() operation is used instead of fsync().
+
+When the size of the current segment exceeds the preallocated size, a
+task is launched in a separate thread that begins preallocating the
+underlying file for the new log segment; meanwhile, until the task
+finishes, appends still go to the existing file.  Once the new file is
+preallocated, it is renamed to the correct name for the next segment
+and is swapped in place of the current segment.
+
+When the current segment is closed without reaching the preallocated
+size, the underlying file is truncated to the last written offset
+(i.e., the actual size).
+
+============================================================
 Quorums and roles within quorums
 ============================================================
 
