@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include "gutil/atomicops.h"
+#include "gutil/strings/strcat.h"
 #include "tablet/mutation.h"
 #include <string>
 
@@ -19,7 +20,7 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
     }
     first = false;
 
-    StringAppendF(&ret, "@%"TXID_PRINT_FORMAT"(", head->txid().v);
+    StrAppend(&ret, "@", head->txid().ToString(), "(");
     ret.append(head->changelist().ToString(schema));
     ret.append(")");
 

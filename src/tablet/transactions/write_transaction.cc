@@ -228,14 +228,14 @@ void WriteTransactionContext::AddFailedMutation(const Status &status) {
 txid_t WriteTransactionContext::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
-  result_pb_.set_txid(mvcc_tx_->txid().v);
+  mvcc_tx_->txid().EncodeToString(result_pb_.mutable_txid());
   return mvcc_tx_->txid();
 }
 
 void WriteTransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(mvcc_tx.release());
-  result_pb_.set_txid(mvcc_tx_->txid().v);
+  mvcc_tx_->txid().EncodeToString(result_pb_.mutable_txid());
 }
 
 void WriteTransactionContext::commit() {

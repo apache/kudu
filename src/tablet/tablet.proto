@@ -61,7 +61,7 @@ message TxOperationPB {
 // operation.
 message TxResultPB {
   // the transaction id for the operation
-  required uint64 txid = 1;
+  required bytes txid = 1;
   // all the inserts in this transaction
   repeated TxOperationPB inserts = 2;
   // all the mutations in this transaction

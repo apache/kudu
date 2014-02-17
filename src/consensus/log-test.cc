@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include "consensus/log-test-base.h"
+#include "tablet/mvcc.h"
 
 DEFINE_int32(num_batches, 10000,
              "Number of batches to write to/read from the Log in TestWriteManyBatches");
@@ -128,7 +129,7 @@ class LogTest : public LogTestBase {
     commit_id->set_index(index);
 
     TxResultPB* result = commit->mutable_result();
-    result->set_txid(original_op_index);
+    tablet::txid_t(original_op_index).EncodeToString(result->mutable_txid());
 
     TxOperationPB* insert = result->add_inserts();
     insert->set_type(TxOperationPB::INSERT);

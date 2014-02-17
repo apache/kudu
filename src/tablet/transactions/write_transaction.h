@@ -58,7 +58,7 @@ class WriteTransactionContext : public TransactionContext {
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    result_pb_.set_txid(txid_t::kInvalidTxId.v);
+    txid_t::kInvalidTxId.EncodeToString(result_pb_.mutable_txid());
   }
 
   // ctor used by the LEADER replica
@@ -71,7 +71,7 @@ class WriteTransactionContext : public TransactionContext {
         response_(response),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    result_pb_.set_txid(txid_t::kInvalidTxId.v);
+    txid_t::kInvalidTxId.EncodeToString(result_pb_.mutable_txid());
   }
 
   // ctor used by FOLLOWER/LEARNER replicas
@@ -83,7 +83,7 @@ class WriteTransactionContext : public TransactionContext {
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    result_pb_.set_txid(txid_t::kInvalidTxId.v);
+    txid_t::kInvalidTxId.EncodeToString(result_pb_.mutable_txid());
   }
 
   // Adds an applied insert to this TransactionContext, including the

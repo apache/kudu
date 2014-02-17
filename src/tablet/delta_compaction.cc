@@ -10,6 +10,8 @@
 
 #include "gutil/stl_util.h"
 #include "gutil/strings/join.h"
+#include "gutil/strings/substitute.h"
+#include "gutil/strings/strcat.h"
 #include "common/columnblock.h"
 #include "cfile/cfile_reader.h"
 #include "tablet/cfile_set.h"
@@ -26,6 +28,7 @@ using metadata::RowSetMetadata;
 using metadata::TabletMetadata;
 using metadata::ColumnIndexes;
 using metadata::ColumnWriters;
+using strings::Substitute;
 
 namespace tablet {
 
@@ -669,10 +672,10 @@ DeltaCompactionInput
 }
 
 static string FormatDebugDeltaCell(const Schema &schema, const DeltaKeyAndUpdate &cell) {
-  string key_str = StringPrintf("(row %04u@tx%04"TXID_PRINT_FORMAT")", cell.key.row_idx(),
-                                cell.key.txid().v);
-  return StringPrintf("(delta key=%s, change_list=%s)", key_str.c_str(),
-                      RowChangeList(cell.cell).ToString(schema).c_str());
+  return StrCat(Substitute("(delta key=$0, change_list=$1)",
+                           StringPrintf("%04u@tx%04u", cell.key.row_idx(),
+                                        atoi(cell.key.txid().ToString().c_str())),
+                           RowChangeList(cell.cell).ToString(schema)));
 }
 
 Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string> *lines,

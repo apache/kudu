@@ -3,12 +3,14 @@
 #ifndef KUDU_TABLET_MVCC_H
 #define KUDU_TABLET_MVCC_H
 
+#include <gtest/gtest.h>
 #include <inttypes.h>
 #include <tr1/unordered_set>
 #include <string>
 
 #include "gutil/endian.h"
 #include "gutil/macros.h"
+#include "gutil/strings/substitute.h"
 #include "util/memcmpable_varint.h"
 #include "util/locks.h"
 
@@ -20,13 +22,10 @@ class MvccManager;
 using std::tr1::unordered_set;
 using std::string;
 
-
-// The printf format specifier for txid values
-#define TXID_PRINT_FORMAT PRIu64
-
 // Type-safe container for txids (to prevent inadvertently passing
 // other integers)
-struct txid_t {
+class txid_t {
+ public:
   typedef uint64_t val_type;
 
   txid_t() :
@@ -64,11 +63,29 @@ struct txid_t {
     return 0;
   }
 
+  string ToString() const {
+    return strings::Substitute("$0", v);
+  }
+
   // An invalid transaction ID -- txid_t types initialize to this variable.
   static const txid_t kInvalidTxId;
 
   // The maximum txid.
   static const txid_t kMax;
+
+  // Encodes this txid_t and appends it to the provided string.
+  void EncodeToString(string* encode_to) const {
+    faststring buf;
+    EncodeTo(&buf);
+    encode_to->append(reinterpret_cast<const char* >(buf.data()), buf.size());
+  }
+
+ private:
+  friend class MvccManager;
+  friend class MvccSnapshot;
+  FRIEND_TEST(TestMvcc, TestMvccBasic);
+  FRIEND_TEST(TestMvcc, TestMvccMultipleInFlight);
+  FRIEND_TEST(TestMvcc, TestScopedTransaction);
 
   val_type v;
 
@@ -76,7 +93,7 @@ struct txid_t {
 
 
 inline std::ostream &operator <<(std::ostream &o, const txid_t &txid) {
-  return o << txid.v;
+  return o << txid.ToString();
 }
 
 // A snapshot of the current MVCC state, which can determine whether

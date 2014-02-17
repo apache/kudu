@@ -6,6 +6,7 @@
 #include <string>
 #include "common/rowid.h"
 #include "gutil/endian.h"
+#include "gutil/strings/substitute.h"
 #include "tablet/mvcc.h"
 
 namespace kudu {
@@ -56,8 +57,7 @@ class DeltaKey {
   }
 
   string ToString() const {
-    return StringPrintf("(row %u@tx%"TXID_PRINT_FORMAT")",
-                        row_idx_, txid_.v);
+    return strings::Substitute("(row $0@tx$1)", row_idx_, txid_.ToString());
   }
 
   // Compare this key to another key. Delta keys are sorted by ascending rowid,

@@ -10,6 +10,7 @@
 #include "gutil/mathlimits.h"
 #include "gutil/port.h"
 #include "gutil/stringprintf.h"
+#include "gutil/strings/strcat.h"
 #include "tablet/mvcc.h"
 
 namespace kudu { namespace tablet {
@@ -24,13 +25,13 @@ txid_t MvccManager::StartTransaction() {
   boost::lock_guard<LockType> l(lock_);
   txid_t my_txid(cur_snap_.none_committed_after_txid_.v++);
   bool was_inserted = cur_snap_.txids_in_flight_.insert(my_txid.v).second;
-  DCHECK(was_inserted) << "Already had txid " << my_txid.v << " in in-flight list";
+  DCHECK(was_inserted) << "Already had txid " << my_txid.ToString() << " in in-flight list";
   return my_txid;
 }
 
 void MvccManager::CommitTransaction(txid_t txid) {
   boost::lock_guard<LockType> l(lock_);
-  DCHECK_LT(txid.v, cur_snap_.none_committed_after_txid_.v)
+  DCHECK(txid.CompareTo(cur_snap_.none_committed_after_txid_) <= 0)
     << "Trying to commit txid which isn't in the in-flight range yet";
   unordered_set<txid_t::val_type>::iterator it = cur_snap_.txids_in_flight_.find(txid.v);
   CHECK(it != cur_snap_.txids_in_flight_.end())
@@ -39,7 +40,7 @@ void MvccManager::CommitTransaction(txid_t txid) {
 
   // If the txid was the earliest in the in-flight range, we can now advance
   // the in-flight range
-  if (txid.v == cur_snap_.all_committed_before_txid_.v) {
+  if (txid == cur_snap_.all_committed_before_txid_) {
 
     if (!cur_snap_.txids_in_flight_.empty()) {
       txid_t new_min(*std::min_element(cur_snap_.txids_in_flight_.begin(),
@@ -76,11 +77,11 @@ MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
 }
 
 bool MvccSnapshot::IsCommitted(txid_t txid) const {
-  if (PREDICT_TRUE(txid.v < all_committed_before_txid_.v)) {
+  if (PREDICT_TRUE(txid.CompareTo(all_committed_before_txid_) < 0)) {
     return true;
   }
 
-  if (txid.v >= none_committed_after_txid_.v) {
+  if (txid.CompareTo(none_committed_after_txid_) >= 0) {
     return false;
   }
 
@@ -95,12 +96,11 @@ std::string MvccSnapshot::ToString() const {
   string ret("MvccSnapshot[committed={T|");
 
  if (txids_in_flight_.size() + all_committed_before_txid_.v == none_committed_after_txid_.v) {
-    StringAppendF(&ret, "T < %"TXID_PRINT_FORMAT"}]", all_committed_before_txid_.v);
+    StrAppend(&ret, "T < ", all_committed_before_txid_.ToString(),"}]");
     return ret;
   }
-  StringAppendF(&ret, "T < %"TXID_PRINT_FORMAT" or (T < %"TXID_PRINT_FORMAT" and T not in {",
-                all_committed_before_txid_.v,
-                none_committed_after_txid_.v);
+ StrAppend(&ret, "T < ", all_committed_before_txid_.ToString(),
+           " or (T < ", none_committed_after_txid_.ToString(), " and T not in {");
 
   bool first = true;
   BOOST_FOREACH(txid_t::val_type t, txids_in_flight_) {
@@ -108,7 +108,7 @@ std::string MvccSnapshot::ToString() const {
       ret.push_back(',');
     }
     first = false;
-    StringAppendF(&ret, "%"TXID_PRINT_FORMAT, t);
+    StrAppend(&ret, t);
   }
   ret.append("})}]");
   return ret;
