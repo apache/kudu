@@ -35,8 +35,16 @@ message LogSegmentHeaderPB {
 
   // The term/index when the segment was started.
   // TODO: rename to initial_opid.
+  // TODO: remove this if it's not needed.
   required kudu.consensus.OpId initial_id = 3;
 
   // The tablet metadata at the time the segment was created.
+  // TODO: delete this.
   required metadata.TabletSuperBlockPB tablet_meta = 4;
+
+  // The ID of the tablet this WAL segment stores entries for.
+  required bytes tablet_id = 5;
+
+  // The tablet-specific sequence number of this WAL segment.
+  required uint64 sequence_number = 6;
 }

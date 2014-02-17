@@ -42,6 +42,7 @@ class LogEntry;
 class Log {
  public:
   static const Status kLogShutdownStatus;
+  static const uint64_t kInitialLogSegmentSequenceNumber;
 
   // Opens or continues a log and sets 'log' to the newly built Log.
   // After Open() the Log is ready to receive entries.
@@ -50,6 +51,7 @@ class Log {
                      FsManager *fs_manager,
                      const metadata::TabletSuperBlockPB& super_block,
                      const consensus::OpId& current_id,
+                     const std::string& tablet_id,
                      gscoped_ptr<Log> *log);
 
   // Reserves a spot in the log for operations in 'ops';
@@ -113,6 +115,11 @@ class Log {
     return next_segment_header_->tablet_meta().oid();
   }
 
+  // Get the segment sequence number of the currently-active log segment.
+  uint64_t active_segment_sequence_number() const {
+    return active_segment_->header().sequence_number();
+  }
+
   ~Log();
 
  private:
@@ -128,8 +135,8 @@ class Log {
   // Initializes a new one or continues an existing log.
   Status Init();
 
-  // Creates the name for a new segment as log-<term>-<index>
-  string CreateSegmentFileName(const consensus::OpId& id);
+  // Creates the name for a new segment as log-<seqno>
+  string CreateSegmentFileName(uint64_t sequence_number);
 
   // Creates a new WAL segment on disk, writes the next_segment_header_ to
   // disk as the header, and sets active_segment_ to point to this new segment.
@@ -177,6 +184,9 @@ class Log {
 
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
+
+  // The tablet ID of the tablet this log corresponds to.
+  std::string tablet_id_;
 
   enum State {
     kLogInitialized,

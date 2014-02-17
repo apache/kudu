@@ -76,12 +76,14 @@ class LogTestBase : public KuduTest {
                                  fs_manager_.get(),
                                  default_meta,
                                  id,
+                                 kTestTablet,
                                  &log_));
     } else {
       ASSERT_STATUS_OK(Log::Open(options_,
                                  fs_manager_.get(),
                                  *meta,
                                  id,
+                                 kTestTablet,
                                  &log_));
     }
   }

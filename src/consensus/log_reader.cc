@@ -23,13 +23,12 @@ using strings::Substitute;
 // the maximum header size (8 MB)
 const uint32_t kMaxHeaderSize = 8 * 1024 * 1024;
 
+// Returns whether segment i comes before segment j.
 static bool CompareSegments(const shared_ptr<ReadableLogSegment>& i,
                             const shared_ptr<ReadableLogSegment>& j) {
-  const OpId& i_id = i->header().initial_id();
-  const OpId& j_id = j->header().initial_id();
-  return i_id.term() < j_id.term() ? true :
-         i_id.term() > j_id.term() ? false :
-         i_id.index() < j_id.index();
+  uint64_t i_seqno = i->header().sequence_number();
+  uint64_t j_seqno = j->header().sequence_number();
+  return i_seqno < j_seqno;
 }
 
 Status LogReader::Open(FsManager *fs_manager,

@@ -438,6 +438,7 @@ Status TabletBootstrap::OpenNewLog() {
                           tablet_->metadata()->fs_manager(),
                           *super_block.get(),
                           init,
+                          tablet_->tablet_id(),
                           &log_));
   return Status::OK();
 }

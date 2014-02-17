@@ -140,10 +140,13 @@ void Log::AppendThread::Shutdown() {
 const Status Log::kLogShutdownStatus(
     Status::ServiceUnavailable("WAL is shutting down", "", ESHUTDOWN));
 
+const uint64_t Log::kInitialLogSegmentSequenceNumber = 0L;
+
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const metadata::TabletSuperBlockPB& super_block,
                  const consensus::OpId& current_id,
+                 const std::string& tablet_id,
                  gscoped_ptr<Log> *log) {
 
   gscoped_ptr<LogSegmentHeaderPB> header(new LogSegmentHeaderPB);
@@ -151,6 +154,10 @@ Status Log::Open(const LogOptions &options,
   header->set_minor_version(kLogMinorVersion);
   header->mutable_tablet_meta()->CopyFrom(super_block);
   header->mutable_initial_id()->CopyFrom(current_id);
+  header->set_tablet_id(tablet_id);
+  // TODO: Would rather set this only once but API needs some cleanup.
+  // If there are existing log segments, we overwrite this seqno value later.
+  header->set_sequence_number(kInitialLogSegmentSequenceNumber);
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
 
@@ -188,14 +195,22 @@ Status Log::Init() {
   CHECK_EQ(state_, kLogInitialized);
 
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
-                                next_segment_header_->tablet_meta().oid(),
+                                next_segment_header_->tablet_id(),
                                 &previous_segments_reader_));
 
-  // the case where we are continuing an existing log
+  // The case where we are continuing an existing log.
+  // We must pick up where the previous WAL left off in terms of
+  // sequence numbers.
   if (previous_segments_reader_->size() != 0) {
     previous_segments_ = previous_segments_reader_->segments();
     VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
+
+    const shared_ptr<ReadableLogSegment>& segment = previous_segments_.back();
+    uint64_t seqno = segment->header().sequence_number();
+    // TODO: This is a bit hacky, clean up the Log construction API once we
+    // remove the initial_opid and metadata from the log segment headers.
+    next_segment_header_->set_sequence_number(seqno + 1);
   }
 
   if (options_.force_fsync_all) {
@@ -377,10 +392,15 @@ Status Log::Close() {
 
 Status Log::CreateNewSegment() {
 
-  const LogSegmentHeaderPB& header = *next_segment_header_.get();
+  LogSegmentHeaderPB header;
+  header.CopyFrom(*next_segment_header_.get());
+
+  // Increment "next" log segment seqno.
+  next_segment_header_->set_sequence_number(next_segment_header_->sequence_number() + 1);
+
   // create a new segment file and pre-allocate the space
   shared_ptr<WritableFile> sink;
-  string new_segment_path = CreateSegmentFileName(header.initial_id());
+  string new_segment_path = CreateSegmentFileName(header.sequence_number());
 
   VLOG(1) << "Creating new WAL segment: " << new_segment_path;
   RETURN_NOT_OK(env_util::OpenFileForWrite(fs_manager_->env(), new_segment_path, &sink));
@@ -428,12 +448,12 @@ Status Log::CreateNewSegment() {
   return Status::OK();
 }
 
-string Log::CreateSegmentFileName(const OpId &id) {
+string Log::CreateSegmentFileName(uint64_t sequence_number) {
   return fs_manager_->env()->
-      JoinPathSegments(log_dir_, strings::Substitute("$0-$1-$2",
-                                                     kLogPrefix,
-                                                     id.term(),
-                                                     id.index()));
+      JoinPathSegments(log_dir_,
+                       strings::Substitute("$0-$1",
+                                           kLogPrefix,
+                                           StringPrintf("%09lu", sequence_number)));
 }
 
 Log::~Log() {

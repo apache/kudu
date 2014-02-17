@@ -46,12 +46,14 @@ class LogTest : public LogTestBase {
                                  fs_manager_.get(),
                                  default_meta,
                                  id,
+                                 kTestTablet,
                                  &log_));
     } else {
       ASSERT_STATUS_OK(Log::Open(options_,
                                  fs_manager_.get(),
                                  *meta,
                                  id,
+                                 kTestTablet,
                                  &log_));
     }
   }
@@ -251,11 +253,14 @@ TEST_F(LogTest, TestSegmentRollover) {
   // set a small segment size so that we have roll overs
   BuildLog();
   log_->SetMaxSegmentSizeForTests(1024);
-  // this adds to 24 segments
+
+  // Write 100 replicate/commit pairs to the log.
   AppendBatchAndCommitEntryPairsToLog(100);
 
-  // expect 23 previous_ segments plus the current_ one
-  ASSERT_EQ(23, log_->PreviousSegmentsForTests().size());
+  // At the time of writing, we can fit 4 pairs per log segment.
+  // Therefore, we should have 24 "rolled" segments and one "full" but
+  // currently active one, for a total of 25 * 4 = 100 records.
+  ASSERT_EQ(24, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
 
   BuildLogReader();
