@@ -76,7 +76,7 @@ class DeltaIterator {
   virtual Status Init() = 0;
 
   // Seek to a particular ordinal position in the delta data. This cancels any prepared
-  // block, and must be called at least once prior to PrepareToApply.
+  // block, and must be called at least once prior to PrepareBatch().
   virtual Status SeekToOrdinal(rowid_t idx) = 0;
 
   // Prepare to apply deltas to a block of rows. This takes a consistent snapshot
@@ -88,7 +88,7 @@ class DeltaIterator {
   virtual Status PrepareBatch(size_t nrows) = 0;
 
   // Apply the snapshotted updates to one of the columns.
-  // 'dst' must be the same length as was previously passed to PrepareToApply()
+  // 'dst' must be the same length as was previously passed to PrepareBatch()
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
 
   // Apply any deletes to the given selection vector.

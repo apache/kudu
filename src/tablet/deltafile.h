@@ -172,7 +172,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
 
-  // PrepareToApply() will read forward all blocks from the deltafile
+  // PrepareBatch() will read forward all blocks from the deltafile
   // which overlap with the block being prepared, enqueueing them onto
   // the 'delta_blocks_' deque. The prepared blocks are then used to
   // actually apply deltas in ApplyUpdates().
@@ -253,7 +253,7 @@ class DeltaFileIterator : public DeltaIterator {
   bool prepared_;
   bool exhausted_;
 
-  // After PrepareToApply(), the set of delta blocks in the delta file
+  // After PrepareBatch(), the set of delta blocks in the delta file
   // which correspond to prepared_block_.
   boost::ptr_deque<PreparedDeltaBlock> delta_blocks_;
 

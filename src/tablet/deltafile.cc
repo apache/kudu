@@ -438,7 +438,7 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
       //  <-- delta block -->      <-- delta block -->
       //                      <-- block to update     -->
       // This can happen because we don't know the block's last entry until after
-      // we queued it in PrepareToApply(). We could potentially remove it at that
+      // we queued it in PrepareBatch(). We could potentially remove it at that
       // point during the prepare step, but for now just skip it here.
       continue;
     }

@@ -167,13 +167,13 @@ class DMSIterator : public DeltaIterator {
 
   bool initted_;
 
-  // The index at which the last Prepare call was made
+  // The index at which the last PrepareBatch() call was made
   rowid_t prepared_idx_;
 
-  // The number of rows for which the last Prepare call was made
+  // The number of rows for which the last PrepareBatch() call was made
   uint32_t prepared_count_;
 
-  // The last block that PrepareToApply(...) was called on.
+  // Whether there are prepared blocks built through PrepareBatch().
   bool prepared_;
 
   // True if SeekToOrdinal() been called at least once.
@@ -182,7 +182,7 @@ class DMSIterator : public DeltaIterator {
   faststring prepared_buf_;
 
   // Projection from the schema of the deltamemstore to the projection
-  // of the row blocks which will be passed to PrepareToApply, etc.
+  // of the row blocks which will be passed to PrepareBatch(), etc.
   DeltaProjector projector_;
 
   // Temporary buffer used for RowChangeList projection.
