@@ -51,5 +51,10 @@
     << "Expected file not to exist: " << _s; \
   } while (0);
 
+#define CURRENT_TEST_NAME() \
+  ::testing::UnitTest::GetInstance()->current_test_info()->name()
+
+#define CURRENT_TEST_CASE_NAME() \
+  ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()
 
 #endif
