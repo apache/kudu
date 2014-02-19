@@ -268,9 +268,9 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
     BOOST_FOREACH(const shared_ptr<DeltaCompactionInput> &input, inputs) {
       DCHECK_SCHEMA_EQ(schema_, input->schema());
       gscoped_ptr<MergeState> state(new MergeState);
-      stats_.IncrDeleteCount<false>(input->stats().delete_count());
+      stats_.IncrDeleteCount(input->stats().delete_count());
       for (size_t idx = 0; idx < input->stats().num_columns(); idx++) {
-        stats_.IncrUpdateCount<false>(idx, input->stats().update_count(idx));
+        stats_.IncrUpdateCount(idx, input->stats().update_count(idx));
       }
       state->input = input;
       states_.push_back(state.release());
@@ -596,7 +596,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(stats.UpdateStats<false>(*base_schema, update),
+      WARN_NOT_OK(stats.UpdateStats(*base_schema, update),
                   "Failed to update stats");
     }
     *deltas_written += out.size();

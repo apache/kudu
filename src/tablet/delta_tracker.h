@@ -129,7 +129,7 @@ class DeltaTracker {
   FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
 
   Status OpenDeltaFileReaders();
-  Status FlushDMS(const DeltaMemStore &dms,
+  Status FlushDMS(DeltaMemStore* dms,
                   gscoped_ptr<DeltaFileReader> *dfr);
 
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;

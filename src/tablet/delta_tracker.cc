@@ -407,7 +407,7 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
   return Status::OK();
 }
 
-Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
+Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                               gscoped_ptr<DeltaFileReader> *dfr) {
 
   // Open file for write.
@@ -420,26 +420,26 @@ Status DeltaTracker::FlushDMS(const DeltaMemStore &dms,
     return s;
   }
 
-  DeltaFileWriter dfw(dms.schema(), data_writer);
+  DeltaFileWriter dfw(dms->schema(), data_writer);
   s = dfw.Start();
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open delta output block " << block_id.ToString() << ": "
                  << s.ToString();
     return s;
   }
-  RETURN_NOT_OK(dms.FlushToFile(&dfw));
+  RETURN_NOT_OK(dms->FlushToFile(&dfw));
   RETURN_NOT_OK(dfw.Finish());
   LOG(INFO) << "Flushed delta block: " << block_id.ToString();
-  VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms.schema().ToString();
+  VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms->schema().ToString();
 
   // Now re-open for read
   size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader, &data_size));
-  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms.id(), dfr));
+  RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader, data_size, dms->id(), dfr));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
-  RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms.id(), block_id));
+  RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
   s = rowset_metadata_->Flush();
   if (!s.ok()) {
     LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();
@@ -483,7 +483,7 @@ Status DeltaTracker::Flush() {
   // TODO: need another lock to prevent concurrent flushers
   // at some point.
   gscoped_ptr<DeltaFileReader> dfr;
-  Status s = FlushDMS(*old_dms, &dfr);
+  Status s = FlushDMS(old_dms.get(), &dfr);
   CHECK(s.ok())
     << "Failed to flush DMS: " << s.ToString()
     << "\nTODO: need to figure out what to do with error handling "

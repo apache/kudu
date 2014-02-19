@@ -51,7 +51,7 @@ class DeltaMemStore : public DeltaStore,
   // is only really useful in unit tests.
   void DebugPrint() const;
 
-  Status FlushToFile(DeltaFileWriter *dfw) const;
+  Status FlushToFile(DeltaFileWriter *dfw);
 
   // Create an iterator for applying deltas from this DMS.
   //

@@ -19,27 +19,14 @@ void DeltaStats::Resize(size_t ncols) {
   update_counts_.resize(ncols, 0);
 }
 
-template <>
-void DeltaStats::IncrUpdateCount<false>(size_t col_idx, int64_t update_count) {
+void DeltaStats::IncrUpdateCount(size_t col_idx, int64_t update_count) {
   update_counts_[col_idx] += update_count;
 }
 
-template <>
-void DeltaStats::IncrUpdateCount<true>(size_t col_idx, int64_t update_count) {
-  base::subtle::NoBarrier_AtomicIncrement(&update_counts_[col_idx], update_count);
-}
-
-template <>
-void DeltaStats::IncrDeleteCount<false>(int64_t delete_count) {
+void DeltaStats::IncrDeleteCount(int64_t delete_count) {
   delete_count_ += delete_count;
 }
 
-template <>
-void DeltaStats::IncrDeleteCount<true>(int64_t delete_count) {
-  base::subtle::NoBarrier_AtomicIncrement(&delete_count_, delete_count);
-}
-
-template <bool ATOMIC>
 Status DeltaStats::UpdateStats(const Schema& schema, const RowChangeList& update) {
   // We'd like to maintain per column statistics of updates and deletes.
   // Problem is that with updates, the column ids are encoded in the RowChangeList
@@ -50,7 +37,7 @@ Status DeltaStats::UpdateStats(const Schema& schema, const RowChangeList& update
   RowChangeListDecoder update_decoder(schema, update);
   RETURN_NOT_OK(update_decoder.Init());
   if (PREDICT_FALSE(update_decoder.is_delete())) {
-    IncrDeleteCount<ATOMIC>(1);
+    IncrDeleteCount(1);
   } else if (PREDICT_TRUE(update_decoder.is_update())) {
     // VLAs aren't officially part of any C++ standard, but they're supported by
     // both gcc and clang.
@@ -62,15 +49,11 @@ Status DeltaStats::UpdateStats(const Schema& schema, const RowChangeList& update
          !iter.done();
          ++iter) {
       size_t col_idx = *iter;
-      IncrUpdateCount<ATOMIC>(col_idx, 1);
+      IncrUpdateCount(col_idx, 1);
     }
   } // Don't handle re-inserts
   return Status::OK();
 }
-
-template Status DeltaStats::UpdateStats<false>(const Schema& schema, const RowChangeList& update);
-template Status DeltaStats::UpdateStats<true>(const Schema& schema, const RowChangeList& update);
-
 
 } // namespace tablet
 } // namespace kudu

@@ -93,7 +93,7 @@ class TestDeltaCompaction : public KuduTest {
       }
     }
     DeltaStats stats(schema_.num_columns());
-    stats.IncrUpdateCount<false>(0, num_updates);
+    stats.IncrUpdateCount(0, num_updates);
     RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
     RETURN_NOT_OK(dfw->Finish());
     RETURN_NOT_OK(OpenAsCompactionInput(path, deltafile_idx_, &schema_, dci));
@@ -202,7 +202,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       buf.clear();
       RowChangeListEncoder update(schema, &buf);
       for (size_t col_idx = schema.num_key_columns(); col_idx < schema.num_columns(); ++col_idx) {
-        stats.IncrUpdateCount<false>(col_idx, 1);
+        stats.IncrUpdateCount(col_idx, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);
         int update_value = deltafile_idx * 100 + i;
         switch (col_schema.type_info().type()) {

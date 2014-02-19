@@ -51,9 +51,9 @@ Status DeltaStatsToPB(const DeltaStats& delta_stats,
 
 Status DeltaStatsFromPB(const DeltaStatsPB& pb,
                         DeltaStats* delta_stats) {
-  delta_stats->IncrDeleteCount<false>(pb.delete_count());
+  delta_stats->IncrDeleteCount(pb.delete_count());
   for (size_t idx = 0; idx < delta_stats->num_columns(); idx++) {
-    delta_stats->IncrUpdateCount<false>(idx, pb.per_column_update_count(idx));
+    delta_stats->IncrUpdateCount(idx, pb.per_column_update_count(idx));
   }
   return Status::OK();
 }

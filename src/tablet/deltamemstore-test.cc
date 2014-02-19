@@ -7,9 +7,11 @@
 #include <tr1/unordered_set>
 
 #include "common/schema.h"
+#include "util/env_util.h"
 #include "gutil/casts.h"
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltamemstore.h"
+#include "tablet/deltafile.h"
 #include "tablet/mutation.h"
 #include "util/test_macros.h"
 #include "util/test_util.h"
@@ -18,6 +20,8 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::unordered_set;
+
+const char kTestPath[] = "/tmp/test";
 
 class TestDeltaMemStore : public KuduTest {
  public:
@@ -107,6 +111,15 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
       ASSERT_STATUS_OK_FAST(dms_->Update(tx.txid(), idx, RowChangeList(update_buf)));
     }
   }
+
+
+  // Flush the delta file so that the stats get updated.
+  shared_ptr<WritableFile> file;
+  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
+  DeltaFileWriter dfw(schema_, file);
+  ASSERT_STATUS_OK(dfw.Start());
+  dms_->FlushToFile(&dfw);
+
   ASSERT_EQ(n_rows / 2, dms_->delta_stats().update_count(kIntColumn));
   ASSERT_EQ(n_rows / 4, dms_->delta_stats().update_count(kStringColumn));
 }
@@ -215,7 +228,6 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
   // Ensure we end up two entries for the cell.
   ASSERT_EQ(2, dms_->Count());
-  ASSERT_EQ(2, dms_->delta_stats().update_count(kStringColumn));
 
   // Ensure that we ended up with the right data.
   ScopedColumnBlock<STRING> read_back(1);

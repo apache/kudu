@@ -47,11 +47,10 @@ Status DeltaMemStore::Update(txid_t txid,
     return Status::IOError("Unable to insert into tree");
   }
 
-  RETURN_NOT_OK(delta_stats_.UpdateStats<true>(schema_, update));
   return Status::OK();
 }
 
-Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
+Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
   gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
   iter->SeekToStart();
   while (iter->IsValid()) {
@@ -62,8 +61,9 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) const {
     DCHECK_EQ(0, key_slice.size()) <<
       "After decoding delta key, should be empty";
 
-    RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key, RowChangeList(val)),
-                          "Failed to append delta");
+    RowChangeList rcl(val);
+    RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key, rcl), "Failed to append delta");
+    delta_stats_.UpdateStats(schema_, rcl);
     iter->Next();
   }
   RETURN_NOT_OK(dfw->WriteDeltaStats(delta_stats_));

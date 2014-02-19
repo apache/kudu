@@ -62,7 +62,7 @@ class TestDeltaFile : public ::testing::Test {
       ASSERT_STATUS_OK_FAST(dfw.AppendDelta(key, RowChangeList(buf)));
     }
     DeltaStats stats(schema_.num_columns());
-    stats.IncrUpdateCount<false>(0, FLAGS_last_row_to_update / 2);
+    stats.IncrUpdateCount(0, FLAGS_last_row_to_update / 2);
     ASSERT_STATUS_OK(dfw.WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw.Finish());
   }
