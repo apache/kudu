@@ -6,7 +6,7 @@ PROTOBUF_GENERATE_CPP(CONSENSUS_PROTO_SRCS CONSENSUS_PROTO_HDRS
   PROTO_FILES consensus.proto)
 
 add_library(consensus_proto ${CONSENSUS_PROTO_SRCS} ${CONSENSUS_PROTO_HDRS})
-add_dependencies(consensus_proto kudu_common)
+add_dependencies(consensus_proto kudu_common_proto)
 add_dependencies(consensus_proto cfile_proto)
 add_dependencies(consensus_proto metadata_proto)
 add_dependencies(consensus_proto tserver_proto)
@@ -29,9 +29,9 @@ set(LOG_SRCS
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
 target_link_libraries(log gutil)
 target_link_libraries(log kudu_common)
-add_dependencies(log kudu_common)
-add_dependencies(log log_proto)
-add_dependencies(log server)
+target_link_libraries(log consensus_proto)
+target_link_libraries(log log_proto)
+target_link_libraries(log server)
 
 set(CONSENSUS_SRCS
   consensus.cc
@@ -42,13 +42,13 @@ set(CONSENSUS_SRCS
 
 add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})
 target_link_libraries(consensus cfile)
+target_link_libraries(consensus consensus_proto)
 target_link_libraries(consensus krpc)
+target_link_libraries(consensus kudu_common)
+target_link_libraries(consensus log)
 target_link_libraries(consensus server)
 target_link_libraries(consensus tserver_proto)
 target_link_libraries(consensus tserver_service_proto)
-add_dependencies(consensus kudu_common)
-add_dependencies(consensus consensus_proto)
-add_dependencies(consensus log)
 
 set(KUDU_TEST_LINK_LIBS
   log

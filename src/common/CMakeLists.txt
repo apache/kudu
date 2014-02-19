@@ -1,5 +1,20 @@
 # Copyright (c) 2012, Cloudera, inc.
 
+PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES common.proto)
+
+add_library(kudu_common_proto ${COMMON_PROTO_SRCS} ${COMMON_PROTO_HDRS})
+
+PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES wire_protocol.proto)
+
+add_library(wire_protocol_proto ${WIRE_PROTOCOL_PROTO_SRCS} ${WIRE_PROTOCOL_PROTO_HDRS})
+add_dependencies(wire_protocol_proto kudu_common_proto)
+
 set(COMMON_SRCS
   generic_iterators.cc
   key_encoder.cc
@@ -15,19 +30,10 @@ set(COMMON_SRCS
   types.cc
 )
 
-PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
-  PROTO_FILES common.proto)
-set(COMMON_SRCS ${COMMON_SRCS} ${COMMON_PROTO_SRCS} ${COMMON_PROTO_HDRS})
-
-PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
-  PROTO_FILES wire_protocol.proto)
-set(COMMON_SRCS ${COMMON_SRCS} ${WIRE_PROTOCOL_PROTO_SRCS} ${WIRE_PROTOCOL_PROTO_HDRS})
-
 add_library(kudu_common ${COMMON_SRCS})
+target_link_libraries(kudu_common kudu_common_proto)
+target_link_libraries(kudu_common wire_protocol_proto)
+
 set(KUDU_COMMON_LIBS kudu_common)
 
 set(KUDU_TEST_LINK_LIBS kudu_common kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
