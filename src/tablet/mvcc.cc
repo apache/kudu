@@ -70,6 +70,11 @@ MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
   manager.TakeSnapshot(this);
 }
 
+MvccSnapshot::MvccSnapshot(const txid_t& txid)
+  : all_committed_before_txid_(txid),
+    none_committed_after_txid_(txid) {
+ }
+
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
   MvccSnapshot snap;
   snap.all_committed_before_txid_ = txid_t::kMax;

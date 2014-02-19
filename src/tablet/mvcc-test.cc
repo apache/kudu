@@ -124,6 +124,15 @@ TEST(TestMvcc, TestScopedTransaction) {
   ASSERT_TRUE(snap.IsCommitted(txid_t(1)));
 }
 
+TEST(TestMvcc, TestPointInTimeSnapshot) {
+  MvccSnapshot snap(txid_t(10));
+
+  ASSERT_TRUE(snap.IsCommitted(txid_t(0)));
+  ASSERT_TRUE(snap.IsCommitted(txid_t(9)));
+  ASSERT_FALSE(snap.IsCommitted(txid_t(10)));
+  ASSERT_FALSE(snap.IsCommitted(txid_t(11)));
+}
+
 
 } // namespace tablet
 } // namespace kudu
