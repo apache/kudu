@@ -268,6 +268,9 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
         const vector<shared_ptr<DeltaCompactionInput> > &inputs)
       : schema_(schema),
         stats_(schema.num_columns()) {
+
+    txid_t min = txid_t::kMax;
+    txid_t max = txid_t::kMin;
     BOOST_FOREACH(const shared_ptr<DeltaCompactionInput> &input, inputs) {
       DCHECK_SCHEMA_EQ(schema_, input->schema());
       gscoped_ptr<MergeState> state(new MergeState);
@@ -277,7 +280,16 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
       }
       state->input = input;
       states_.push_back(state.release());
+
+      if (min.CompareTo(stats_.min_txid()) > 0) {
+        min = stats_.min_txid();
+      }
+      if (max.CompareTo(stats_.max_txid()) < 0) {
+        max = stats_.max_txid();
+      }
     }
+    stats_.set_min_txid(min);
+    stats_.set_min_txid(max);
   }
 
   virtual ~MergeDeltaCompactionInput() {
@@ -599,7 +611,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(stats.UpdateStats(*base_schema, update),
+      WARN_NOT_OK(stats.UpdateStats(key_and_update.key.txid(), *base_schema, update),
                   "Failed to update stats");
     }
     *deltas_written += out.size();

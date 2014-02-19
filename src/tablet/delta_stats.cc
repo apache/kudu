@@ -11,7 +11,9 @@ using std::vector;
 namespace tablet {
 
 DeltaStats::DeltaStats(size_t ncols)
-    : delete_count_(0) {
+    : delete_count_(0),
+      max_txid_(txid_t::kMin),
+      min_txid_(txid_t::kMax) {
   Resize(ncols);
 }
 
@@ -27,7 +29,9 @@ void DeltaStats::IncrDeleteCount(int64_t delete_count) {
   delete_count_ += delete_count;
 }
 
-Status DeltaStats::UpdateStats(const Schema& schema, const RowChangeList& update) {
+Status DeltaStats::UpdateStats(const txid_t& txid,
+                               const Schema& schema,
+                               const RowChangeList& update) {
   // We'd like to maintain per column statistics of updates and deletes.
   // Problem is that with updates, the column ids are encoded in the RowChangeList
   // itself. In the long term, we should use bitmaps in RowChangeList to represent
@@ -52,6 +56,14 @@ Status DeltaStats::UpdateStats(const Schema& schema, const RowChangeList& update
       IncrUpdateCount(col_idx, 1);
     }
   } // Don't handle re-inserts
+
+  if (min_txid_.CompareTo(txid) > 0) {
+    min_txid_ = txid;
+  }
+  if (max_txid_.CompareTo(txid) < 0) {
+    max_txid_ = txid;
+  }
+
   return Status::OK();
 }
 

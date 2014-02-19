@@ -60,8 +60,13 @@ class TestDeltaMemStore : public KuduTest {
     ColumnSchema col_schema(dms_->schema().column(col_idx));
     Schema single_col_projection(boost::assign::list_of(col_schema), 0);
 
-    gscoped_ptr<DeltaIterator> iter(
-      dms_->NewDeltaIterator(&single_col_projection, snapshot));
+    DeltaIterator* raw_iter;
+    Status s = dms_->NewDeltaIterator(&single_col_projection, snapshot, &raw_iter);
+    if (s.IsNotFound()) {
+      return;
+    }
+    ASSERT_STATUS_OK(s);
+    gscoped_ptr<DeltaIterator> iter(raw_iter);
     ASSERT_STATUS_OK(iter->Init());
     ASSERT_STATUS_OK(iter->SeekToOrdinal(row_idx));
     ASSERT_STATUS_OK(iter->PrepareBatch(cb->nrows()));
@@ -303,8 +308,15 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   // TODO: test snapshot reads from different points
   MvccSnapshot snap(mvcc_);
   ScopedColumnBlock<UINT32> block(100);
-  gscoped_ptr<DMSIterator> iter(
-    down_cast<DMSIterator *>(dms_->NewDeltaIterator(&schema_, snap)));
+
+  DeltaIterator* raw_iter;
+  Status s = dms_->NewDeltaIterator(&schema_, snap, &raw_iter);
+  if (s.IsNotFound()) {
+    FAIL() << "Iterator fell outside of the range of the snapshot";
+  }
+  ASSERT_STATUS_OK(s);
+
+  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(raw_iter));
   ASSERT_STATUS_OK(iter->Init());
 
   int block_start_row = 50;
@@ -346,8 +358,15 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   vector<Mutation *> mutations;
   mutations.resize(kBatchSize);
 
-  gscoped_ptr<DMSIterator> iter(
-    down_cast<DMSIterator *>(dms_->NewDeltaIterator(&schema_, snap)));
+  DeltaIterator* raw_iter;
+  Status s =  dms_->NewDeltaIterator(&schema_, snap, &raw_iter);
+  if (s.IsNotFound()) {
+    FAIL() << "Iterator fell outside of the range of the snapshot";
+  }
+  ASSERT_STATUS_OK(s);
+
+  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(raw_iter));
+
   ASSERT_STATUS_OK(iter->Init());
   ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
   ASSERT_STATUS_OK(iter->PrepareBatch(kBatchSize));

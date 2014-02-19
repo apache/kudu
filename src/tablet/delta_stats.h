@@ -14,6 +14,7 @@
 #include "gutil/atomicops.h"
 #include "common/schema.h"
 #include "common/row_changelist.h"
+#include "tablet/mvcc.h"
 
 namespace kudu {
 
@@ -39,7 +40,9 @@ class DeltaStats {
 
   // Increment delete and update counts based on changes contained in
   // 'update'.
-  Status UpdateStats(const Schema& schema, const RowChangeList& update);
+  Status UpdateStats(const txid_t& txid,
+                     const Schema& schema,
+                     const RowChangeList& update);
 
   // Return the number of deletes in the current delta store.
   int64_t delete_count() const { return delete_count_; }
@@ -55,9 +58,31 @@ class DeltaStats {
     return update_counts_.size();
   }
 
+  // Returns the maximum transaction id of any mutation in a delta file.
+  txid_t max_txid() const {
+    return max_txid_;
+  }
+
+  // Returns the minimum transaction id of any mutation in a delta file.
+  txid_t min_txid() const {
+    return min_txid_;
+  }
+
+  // Set the maximum transaction id of any mutation in a delta file.
+  void set_max_txid(const txid_t& txid) {
+    max_txid_ = txid;
+  }
+
+  // Set the minimum transaction id in of any mutation in a delta file.
+  void set_min_txid(const txid_t& txid) {
+    min_txid_ = txid;
+  }
+
  private:
   std::vector<uint64_t> update_counts_;
   uint64_t delete_count_;
+  txid_t max_txid_;
+  txid_t min_txid_;
 };
 
 

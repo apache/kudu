@@ -147,7 +147,14 @@ shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
   vector<shared_ptr<DeltaIterator> > delta_iters;
 
   BOOST_FOREACH(const shared_ptr<DeltaStore> &store, stores) {
-    shared_ptr<DeltaIterator> iter(store->NewDeltaIterator(projection, snapshot));
+    DeltaIterator* raw_iter;
+    Status s = store->NewDeltaIterator(projection, snapshot, &raw_iter);
+    if (s.IsNotFound()) {
+      continue;
+    }
+    CHECK_OK(s);
+
+    shared_ptr<DeltaIterator> iter(raw_iter);
     delta_iters.push_back(iter);
   }
 

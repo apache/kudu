@@ -78,9 +78,7 @@ MvccSnapshot::MvccSnapshot(const txid_t& txid)
  }
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
-  MvccSnapshot snap;
-  snap.all_committed_before_txid_ = txid_t::kMax;
-  return snap;
+  return MvccSnapshot(txid_t::kMax);
 }
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingNoTransactions() {

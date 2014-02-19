@@ -75,4 +75,8 @@ message DeltaStatsPB {
   // Repeated update count for each column or zero if no updates are
   // available for the column
   repeated int64 per_column_update_count = 2;
+  // The min txid_t that was stored in this delta.
+  required bytes min_txid = 3;
+  // The max txid_t that was stored in this delta.
+  required bytes max_txid = 4;
 }

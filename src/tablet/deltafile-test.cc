@@ -41,7 +41,7 @@ class TestDeltaFile : public ::testing::Test {
     return builder.Build();
   }
 
-  void WriteTestFile() {
+  void WriteTestFile(int min_txid = 0, int max_txid = 0) {
     shared_ptr<WritableFile> file;
     ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
 
@@ -51,18 +51,19 @@ class TestDeltaFile : public ::testing::Test {
     // Update even numbered rows.
     faststring buf;
 
-    for (int i = FLAGS_first_row_to_update; i <= FLAGS_last_row_to_update; i += 2) {
-      buf.clear();
-      RowChangeListEncoder update(schema_, &buf);
-      uint32_t new_val = i;
-      update.AddColumnUpdate(0, &new_val);
-
-      DeltaKey key(i, txid_t(0));
-
-      ASSERT_STATUS_OK_FAST(dfw.AppendDelta(key, RowChangeList(buf)));
-    }
     DeltaStats stats(schema_.num_columns());
-    stats.IncrUpdateCount(0, FLAGS_last_row_to_update / 2);
+    for (int i = FLAGS_first_row_to_update; i <= FLAGS_last_row_to_update; i += 2) {
+      for (int txid = min_txid; txid <= max_txid; txid++) {
+        buf.clear();
+        RowChangeListEncoder update(schema_, &buf);
+        uint32_t new_val = txid + i;
+        update.AddColumnUpdate(0, &new_val);
+        DeltaKey key(i, txid_t(txid));
+        RowChangeList rcl(buf);
+        ASSERT_STATUS_OK_FAST(dfw.AppendDelta(key, rcl));
+        ASSERT_STATUS_OK_FAST(stats.UpdateStats(key.txid(), schema_, rcl));
+      }
+    }
     ASSERT_STATUS_OK(dfw.WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw.Finish());
   }
@@ -81,10 +82,18 @@ class TestDeltaFile : public ::testing::Test {
   void VerifyTestFile() {
     gscoped_ptr<DeltaFileReader> reader;
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
-    ASSERT_EQ(FLAGS_last_row_to_update / 2, reader->delta_stats().update_count(0));
+    ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
+              reader->delta_stats().update_count(0));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(&schema_, snap));
+
+    DeltaIterator* raw_iter;
+    Status s =  reader->NewDeltaIterator(&schema_, snap, &raw_iter);
+    if (s.IsNotFound()) {
+      FAIL() << "Iterator fell outside of the range of an include-all snapshot";
+    }
+    ASSERT_STATUS_OK(s);
+    gscoped_ptr<DeltaIterator> it(raw_iter);
     ASSERT_STATUS_OK(it->Init());
 
     RowBlock block(schema_, 100, &arena_);
@@ -151,7 +160,15 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    gscoped_ptr<DeltaIterator> it(reader->NewDeltaIterator(&schema_, snap));
+
+    DeltaIterator* raw_iter;
+    Status s =  reader->NewDeltaIterator(&schema_, snap, &raw_iter);
+    if (s.IsNotFound()) {
+      FAIL() << "Iterator fell outside of the range of an include-all snapshot";
+    }
+    ASSERT_STATUS_OK(s);
+    gscoped_ptr<DeltaIterator> it(raw_iter);
+
     ASSERT_STATUS_OK(it->Init());
     ASSERT_STATUS_OK(it->SeekToOrdinal(0));
 
@@ -179,6 +196,36 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     }
   }
 
+}
+
+TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
+  WriteTestFile(10, 20);
+  gscoped_ptr<DeltaFileReader> reader;
+  ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
+
+  gscoped_ptr<DeltaIterator> iter;
+
+  // should skip
+  MvccSnapshot snap1(txid_t(9));
+  ASSERT_FALSE(snap1.MayHaveCommittedTransactionsAtOrAfter(txid_t(10)));
+  DeltaIterator* raw_iter = NULL;
+  Status s = reader->NewDeltaIterator(&schema_, snap1, &raw_iter);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(raw_iter == NULL);
+
+  // should include
+  raw_iter = NULL;
+  MvccSnapshot snap2(txid_t(15));
+  ASSERT_STATUS_OK(reader->NewDeltaIterator(&schema_, snap2, &raw_iter));
+  ASSERT_TRUE(raw_iter != NULL);
+  iter.reset(raw_iter);
+
+  // should include
+  raw_iter = NULL;
+  MvccSnapshot snap3(txid_t(21));
+  ASSERT_STATUS_OK(reader->NewDeltaIterator(&schema_, snap3, &raw_iter));
+  ASSERT_TRUE(raw_iter != NULL);
+  iter.reset(raw_iter);
 }
 
 } // namespace tablet

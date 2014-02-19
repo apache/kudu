@@ -58,11 +58,15 @@ class DeltaMemStore : public DeltaStore,
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
   //
-  // 'snapshot' determines which updates will be applied -- updates which come
-  // from transactions which were not yet committed at the time the snapshot was
-  // created will be ignored.
-  virtual DeltaIterator *NewDeltaIterator(const Schema *projection,
-                                          const MvccSnapshot &snapshot) const OVERRIDE;
+  // 'snapshot' is the MVCC state which determines which transactions
+  // should be considered committed (and thus applied by the iterator).
+  //
+  // Returns Status::OK and sets 'iterator' to the new DeltaIterator, or
+  // returns Status::NotFound if the mutations within this delta store
+  // cannot include 'snap'.
+  virtual Status NewDeltaIterator(const Schema *projection,
+                                  const MvccSnapshot &snap,
+                                  DeltaIterator** iterator) const OVERRIDE;
 
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const;
 

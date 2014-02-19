@@ -63,16 +63,18 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
 
     RowChangeList rcl(val);
     RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key, rcl), "Failed to append delta");
-    delta_stats_.UpdateStats(schema_, rcl);
+    delta_stats_.UpdateStats(key.txid(), schema_, rcl);
     iter->Next();
   }
   RETURN_NOT_OK(dfw->WriteDeltaStats(delta_stats_));
   return Status::OK();
 }
 
-DeltaIterator *DeltaMemStore::NewDeltaIterator(const Schema *projection,
-                                               const MvccSnapshot &snapshot) const {
-  return new DMSIterator(shared_from_this(), projection, snapshot);
+Status DeltaMemStore::NewDeltaIterator(const Schema *projection,
+                                       const MvccSnapshot &snap,
+                                       DeltaIterator** iterator) const {
+  *iterator = new DMSIterator(shared_from_this(), projection, snap);
+  return Status::OK();
 }
 
 Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {

@@ -12,6 +12,7 @@
 #include "gutil/gscoped_ptr.h"
 #include "tablet/deltafile.h"
 #include "tablet/mutation.h"
+#include "tablet/mvcc.h"
 #include "util/coding-inl.h"
 #include "util/env.h"
 #include "util/env_util.h"
@@ -46,6 +47,8 @@ Status DeltaStatsToPB(const DeltaStats& delta_stats,
     int64_t update_count = delta_stats.update_count(idx);
     pb->add_per_column_update_count(update_count);
   }
+  delta_stats.max_txid().EncodeToString(pb->mutable_max_txid());
+  delta_stats.min_txid().EncodeToString(pb->mutable_min_txid());
   return Status::OK();
 }
 
@@ -55,6 +58,11 @@ Status DeltaStatsFromPB(const DeltaStatsPB& pb,
   for (size_t idx = 0; idx < delta_stats->num_columns(); idx++) {
     delta_stats->IncrUpdateCount(idx, pb.per_column_update_count(idx));
   }
+  txid_t txid;
+  RETURN_NOT_OK(txid.DecodeFromString(pb.max_txid()));
+  delta_stats->set_max_txid(txid);
+  RETURN_NOT_OK(txid.DecodeFromString(pb.min_txid()));
+  delta_stats->set_min_txid(txid);
   return Status::OK();
 }
 
@@ -114,6 +122,7 @@ Status DeltaFileWriter::AppendDelta(
 
   tmp_buf_.append(delta_slice.data(), delta_slice.size());
   Slice tmp_buf_slice(tmp_buf_);
+
   return writer_->AppendEntries(&tmp_buf_slice, 1);
 }
 
@@ -227,9 +236,14 @@ Status DeltaFileReader::ReadDeltaStats() {
   return Status::OK();
 }
 
-DeltaIterator *DeltaFileReader::NewDeltaIterator(const Schema *projection,
-                                                 const MvccSnapshot &snap) const {
-  return new DeltaFileIterator(this, projection, snap);
+Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
+                                         const MvccSnapshot &snap,
+                                         DeltaIterator** iterator) const {
+  if (snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_txid())) {
+    *iterator = new DeltaFileIterator(this, projection, snap);
+    return Status::OK();
+  }
+  return Status::NotFound("MvccSnapshot outside the range of this delta.");
 }
 
 Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
@@ -237,7 +251,16 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
   // TODO: can use an empty schema here? also, would be nice to avoid the
   // allocations, but would probably require some refactoring.
-  gscoped_ptr<DeltaIterator> iter(NewDeltaIterator(&schema_, snap_all));
+  DeltaIterator* raw_iter;
+  Status s = NewDeltaIterator(&schema_, snap_all, &raw_iter);
+  if (s.IsNotFound()) {
+    *deleted = false;
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
+
+  gscoped_ptr<DeltaIterator> iter(raw_iter);
+
   RETURN_NOT_OK(iter->Init());
   RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));
   RETURN_NOT_OK(iter->PrepareBatch(1));
