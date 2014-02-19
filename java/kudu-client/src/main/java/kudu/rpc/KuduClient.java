@@ -361,8 +361,8 @@ public class KuduClient {
           sendRpcToTablet(request);
         }
       };
-      // TODO backoffs? Currently sleep anywhere from 10 ms to 500ms times the number of retries
-      long sleepTime = request.attempt * 10 * sleepRandomizer.nextInt(50);
+      // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
+      long sleepTime = (request.attempt * 500) + sleepRandomizer.nextInt(50);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Going to sleep for " + sleepTime + " at retry " + request.attempt);
       }
