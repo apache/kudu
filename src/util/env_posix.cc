@@ -149,6 +149,10 @@ class PosixMmapReadableFile: public RandomAccessFile {
 // data to the file.  This is safe since we either properly close the
 // file before reading from it, or for log files, the reading code
 // knows enough to skip zero suffixes.
+//
+// TODO since PosixWritableFile brings significant performance
+// improvements, consider getting rid of this class and instead
+// (perhaps) adding optional buffering to PosixWritableFile.
 class PosixMmapFile : public WritableFile {
  private:
   std::string filename_;
@@ -405,6 +409,181 @@ class PosixMmapFile : public WritableFile {
   }
 };
 
+// Use non-memory mapped POSIX files to write data to a file.
+//
+// TODO (perf) investigate zeroing a pre-allocated allocated area in
+// order to further improve Sync() performance.
+class PosixWritableFile : public WritableFile {
+ public:
+  PosixWritableFile(const std::string& fname, int fd)
+      : filename_(fname),
+        fd_(fd),
+        filesize_(0),
+        pre_allocated_size_(0),
+        pending_sync_type_(NONE) {
+  }
+
+  ~PosixWritableFile() {
+    if (fd_ >= 0) {
+      WARN_NOT_OK(Close(), "Failed to close " + filename_);
+    }
+  }
+
+  virtual Status Append(const Slice& data) {
+    const uint8_t* src = data.data();
+    size_t left = data.size();
+
+    // If we're writing beyond the pre-allocated portion of the file,
+    // make sure fsync() is executed on the next Sync(). Otherwise,
+    // the next call to Sync() will invoke fdatasync().
+    if (PREDICT_FALSE(filesize_ + left > pre_allocated_size_)) {
+      pending_sync_type_ = FSYNC;
+    } else {
+      pending_sync_type_ = FDATASYNC;
+    }
+
+    while (left != 0) {
+      ssize_t done = write(fd_, src, left);
+      if (done < 0) {
+        return IOError(filename_, errno);
+      }
+
+      left -= done;
+      src += done;
+    }
+
+    filesize_ += data.size();
+
+    return Status::OK();
+  }
+
+  virtual Status AppendVector(const vector<Slice>& data_vector) {
+    static const size_t kIovMaxElements = IOV_MAX;
+
+    for (size_t i = 0; i < data_vector.size(); i += kIovMaxElements) {
+      size_t n = std::min(data_vector.size() - i, kIovMaxElements);
+      RETURN_NOT_OK(DoWritev(data_vector, i, n));
+    }
+
+    if (PREDICT_FALSE(filesize_ > pre_allocated_size_)) {
+      pending_sync_type_ = FSYNC;
+    } else {
+      pending_sync_type_ = FDATASYNC;
+    }
+
+    return Status::OK();
+  }
+
+  virtual Status PreAllocate(uint64_t size) {
+    uint64_t offset = std::max(filesize_, pre_allocated_size_);
+    if (fallocate(fd_, 0, offset, size)) {
+      return IOError(filename_, errno);
+    }
+    pre_allocated_size_ = filesize_ + size;
+    return Status::OK();
+  }
+
+  virtual Status Close() {
+    Status s;
+
+    // If we've allocated more space than we used, truncate to the
+    // actual size of the file and perform fsync().
+    if (filesize_ < pre_allocated_size_) {
+      if (ftruncate(fd_, filesize_) < 0) {
+        s = IOError(filename_, errno);
+        pending_sync_type_ = FSYNC;
+      }
+    }
+
+    Status sync_status = Sync();
+    if (!sync_status.ok()) {
+      LOG(ERROR) << "Unable to Sync " << filename_ << ": " << sync_status.ToString();
+      if (s.ok()) {
+        s = sync_status;
+      }
+    }
+
+    if (close(fd_) < 0) {
+      if (s.ok()) {
+        s = IOError(filename_, errno);
+      }
+    }
+
+    fd_ = -1;
+    return s;
+  }
+
+  virtual Status Flush() {
+    return Status::OK();
+  }
+
+  virtual Status Sync() {
+    if (pending_sync_type_ == FSYNC) {
+      if (fsync(fd_) < 0) {
+        return IOError(filename_, errno);
+      }
+    } else if (pending_sync_type_ == FDATASYNC) {
+      if (fdatasync(fd_) <  0) {
+        return IOError(filename_, errno);
+      }
+    }
+    pending_sync_type_ = NONE;
+    return Status::OK();
+  }
+
+  virtual uint64_t Size() const {
+    return filesize_;
+  }
+
+ private:
+
+  Status DoWritev(const vector<Slice>& data_vector,
+                  size_t offset, size_t n) {
+    DCHECK_LE(n, IOV_MAX);
+
+    struct iovec iov[n];
+    size_t j = 0;
+    size_t nbytes = 0;
+
+    for (size_t i = offset; i < offset + n; i++) {
+      const Slice& data = data_vector[i];
+      iov[j].iov_base = const_cast<uint8_t*>(data.data());
+      iov[j].iov_len = data.size();
+      nbytes += data.size();
+      ++j;
+    }
+
+    ssize_t written = writev(fd_, iov, n);
+
+    if (PREDICT_FALSE(written == -1)) {
+      int err = errno;
+      return IOError("writev error", err);
+    }
+
+    filesize_ += written;
+
+    if (PREDICT_FALSE(written != nbytes)) {
+      return Status::IOError(
+          strings::Substitute("writev error: expected to write $0 bytes, wrote $1 bytes instead",
+                              nbytes, written));
+    }
+
+    return Status::OK();
+  }
+
+  const std::string filename_;
+  int fd_;
+  uint64_t filesize_;
+  uint64_t pre_allocated_size_;
+
+  enum SyncType {
+    NONE,
+    FSYNC,
+    FDATASYNC
+  };
+  SyncType pending_sync_type_;
+};
+
 static int LockOrUnlock(int fd, bool lock) {
   errno = 0;
   struct flock f;
@@ -469,13 +648,23 @@ class PosixEnv : public Env {
 
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
+    return NewWritableFile(WRITABLE_FILE_MMAP, fname, result);
+  }
+
+  virtual Status NewWritableFile(WritableFileType type,
+                                 const std::string& fname,
+                                 WritableFile** result) {
     Status s;
     const int fd = open(fname.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
     if (fd < 0) {
       *result = NULL;
       s = IOError(fname, errno);
     } else {
-      *result = new PosixMmapFile(fname, fd, page_size_);
+      if (type == WRITABLE_FILE_MMAP) {
+        *result = new PosixMmapFile(fname, fd, page_size_);
+      } else {
+        *result = new PosixWritableFile(fname, fd);
+      }
     }
     return s;
   }

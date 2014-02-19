@@ -293,6 +293,12 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
+  virtual Status NewWritableFile(WritableFileType /* unused */,
+                                 const std::string& fname,
+                                 WritableFile** result) {
+    return NewWritableFile(fname, result);
+  }
+
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     lock_guard<mutex> lock(mutex_);

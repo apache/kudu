@@ -20,6 +20,8 @@ namespace kudu {
 using std::string;
 using std::tr1::shared_ptr;
 
+static const uint32_t kOneMb = 1024 * 1024;
+
 class TestEnv : public KuduTest {
  protected:
 
@@ -62,10 +64,10 @@ class TestEnv : public KuduTest {
   }
 
   void TestAppendVector(size_t num_slices, size_t slice_size, size_t iterations,
-                        bool fast, bool pre_allocate) {
+                        bool fast, bool pre_allocate, Env::WritableFileType type) {
     const string kTestPath = GetTestPath("test_env_appendvec_read_append");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(type, env_.get(), kTestPath, &file));
 
     if (pre_allocate) {
       ASSERT_STATUS_OK(file->PreAllocate(num_slices * slice_size * iterations));
@@ -117,96 +119,123 @@ class TestEnv : public KuduTest {
                                                     num_slices * slice_size));
     }
   }
+
+  void DoTestPreallocate(Env::WritableFileType type) {
+    LOG(INFO) << "Testing PreAllocate() with mmap "
+              << (type == Env::WRITABLE_FILE_MMAP ? "enabled" : "disabled");
+
+    string test_path = GetTestPath("test_env_wf");
+    shared_ptr<WritableFile> file;
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(type, env_.get(), test_path, &file));
+
+    // pre-allocate 1 MB
+    ASSERT_STATUS_OK(file->PreAllocate(kOneMb));
+    ASSERT_STATUS_OK(file->Sync());
+
+    // the writable file size should report 0
+    ASSERT_EQ(file->Size(), 0);
+    // but the real size of the file on disk should report 1MB
+    uint64_t size;
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(size, kOneMb);
+
+    // write 1 MB
+    uint8_t scratch[kOneMb];
+    Slice slice(scratch, kOneMb);
+    ASSERT_STATUS_OK(file->Append(slice));
+    ASSERT_STATUS_OK(file->Sync());
+
+    // the writable file size should now report 1 MB
+    ASSERT_EQ(file->Size(), kOneMb);
+    ASSERT_STATUS_OK(file->Close());
+    // and the real size for the file on disk should match ony the
+    // written size
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(kOneMb, size);
+  }
+
+  void DoTestConsecutivePreallocate(Env::WritableFileType type) {
+    LOG(INFO) << "Testing consecutive PreAllocate() with mmap "
+              << (type == Env::WRITABLE_FILE_MMAP ? "enabled" : "disabled");
+
+    string test_path = GetTestPath("test_env_wf");
+    shared_ptr<WritableFile> file;
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(type, env_.get(), test_path, &file));
+
+    // pre-allocate 64 MB
+    ASSERT_STATUS_OK(file->PreAllocate(64 * kOneMb));
+    ASSERT_STATUS_OK(file->Sync());
+
+    // the writable file size should report 0
+    ASSERT_EQ(file->Size(), 0);
+    // but the real size of the file on disk should report 64 MBs
+    uint64_t size;
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(size, 64 * kOneMb);
+
+    // write 1 MB
+    uint8_t scratch[kOneMb];
+    Slice slice(scratch, kOneMb);
+    ASSERT_STATUS_OK(file->Append(slice));
+    ASSERT_STATUS_OK(file->Sync());
+
+    // the writable file size should now report 1 MB
+    ASSERT_EQ(kOneMb, file->Size());
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(64 * kOneMb, size);
+
+    // pre-allocate 64 additional MBs
+    ASSERT_STATUS_OK(file->PreAllocate(64 * kOneMb));
+    ASSERT_STATUS_OK(file->Sync());
+
+    // the writable file size should now report 1 MB
+    ASSERT_EQ(kOneMb, file->Size());
+    // while the real file size should report 128 MB's
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(128 * kOneMb, size);
+
+    // write another MB
+    ASSERT_STATUS_OK(file->Append(slice));
+    ASSERT_STATUS_OK(file->Sync());
+
+    // the writable file size should now report 2 MB
+    ASSERT_EQ(file->Size(), 2 * kOneMb);
+    // while the real file size should reamin at 128 MBs
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(128 * kOneMb, size);
+
+    // close the file (which ftruncates it to the real size)
+    ASSERT_STATUS_OK(file->Close());
+    // and the real size for the file on disk should match only the written size
+    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_EQ(2* kOneMb, size);
+  }
+
+  void DoTestAppendVector(Env::WritableFileType type) {
+    LOG(INFO) << "Testing AppendVector() with mmap "
+              << (type == Env::WRITABLE_FILE_MMAP ? "enabled" : "disabled");
+
+    LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, type));
+    LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, type));
+    LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, type));
+  }
 };
 
-const uint32_t one_mb = 1024 * 1024;
 
 TEST_F(TestEnv, TestPreallocate) {
-  string test_path = GetTestPath("test_env_wf");
-  shared_ptr<WritableFile> file;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), test_path, &file));
-
-  // pre-allocate 1 MB
-  ASSERT_STATUS_OK(file->PreAllocate(one_mb));
-  ASSERT_STATUS_OK(file->Sync());
-
-  // the writable file size should report 0
-  ASSERT_EQ(file->Size(), 0);
-  // but the real size of the file on disk should report 1MB
-  uint64_t size;
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(size, one_mb);
-
-  // write 1 MB
-  uint8_t scratch[one_mb];
-  Slice slice(scratch, one_mb);
-  ASSERT_STATUS_OK(file->Append(slice));
-  ASSERT_STATUS_OK(file->Sync());
-
-  // the writable file size should now report 1 MB
-  ASSERT_EQ(file->Size(), one_mb);
-  ASSERT_STATUS_OK(file->Close());
-  // and the real size for the file on disk should match ony the
-  // written size
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(one_mb, size);
+  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(Env::WRITABLE_FILE_MMAP));
+  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(Env::WRITABLE_FILE_NO_MMAP));
 }
 
 // To test consecutive pre-allocations we need higher pre-allocations since the
 // mmapped regions grow in size until 2MBs (so smaller pre-allocations will easily
 // be smaller than the mmapped regions size).
 TEST_F(TestEnv, TestConsecutivePreallocate) {
-  string test_path = GetTestPath("test_env_wf");
-  shared_ptr<WritableFile> file;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), test_path, &file));
-
-  // pre-allocate 64 MB
-  ASSERT_STATUS_OK(file->PreAllocate(64 * one_mb));
-  ASSERT_STATUS_OK(file->Sync());
-
-  // the writable file size should report 0
-  ASSERT_EQ(file->Size(), 0);
-  // but the real size of the file on disk should report 64 MBs
-  uint64_t size;
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(size, 64 * one_mb);
-
-  // write 1 MB
-  uint8_t scratch[one_mb];
-  Slice slice(scratch, one_mb);
-  ASSERT_STATUS_OK(file->Append(slice));
-  ASSERT_STATUS_OK(file->Sync());
-
-  // the writable file size should now report 1 MB
-  ASSERT_EQ(one_mb, file->Size());
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(64 * one_mb, size);
-
-  // pre-allocate 64 additional MBs
-  ASSERT_STATUS_OK(file->PreAllocate(64 * one_mb));
-  ASSERT_STATUS_OK(file->Sync());
-
-  // the writable file size should now report 1 MB
-  ASSERT_EQ(one_mb, file->Size());
-  // while the real file size should report 128 MB's
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(128 * one_mb, size);
-
-  // write another MB
-  ASSERT_STATUS_OK(file->Append(slice));
-  ASSERT_STATUS_OK(file->Sync());
-
-  // the writable file size should now report 2 MB
-  ASSERT_EQ(file->Size(), 2 * one_mb);
-  // while the real file size should reamin at 128 MBs
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(128 * one_mb, size);
-
-  // close the file (which ftruncates it to the real size)
-  ASSERT_STATUS_OK(file->Close());
-  // and the real size for the file on disk should match only the written size
-  ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(2* one_mb, size);
+  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(Env::WRITABLE_FILE_MMAP));
+  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(Env::WRITABLE_FILE_NO_MMAP));
 }
 
 class ShortReadRandomAccessFile : public RandomAccessFile {
@@ -288,12 +317,8 @@ TEST_F(TestEnv, TestReadFully) {
 }
 
 TEST_F(TestEnv, TestAppendVector) {
-  LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
-  TestAppendVector(2000, 1024, 5, true, true);
-  LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
-  TestAppendVector(2000, 1024, 5, true, false);
-  LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
-  TestAppendVector(128, 4096, 5, false, true);
+  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(Env::WRITABLE_FILE_MMAP));
+  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(Env::WRITABLE_FILE_NO_MMAP));
 }
 
 }  // namespace kudu

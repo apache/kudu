@@ -17,10 +17,16 @@ using std::tr1::shared_ptr;
 namespace kudu {
 namespace env_util {
 
-Status OpenFileForWrite(Env *env, const string &path,
+Status OpenFileForWrite(Env* env, const string& path,
+                        shared_ptr<WritableFile>* file) {
+  return OpenFileForWrite(Env::WRITABLE_FILE_MMAP, env, path, file);
+}
+
+Status OpenFileForWrite(Env::WritableFileType type,
+                        Env *env, const string &path,
                         shared_ptr<WritableFile> *file) {
   WritableFile *w;
-  RETURN_NOT_OK(env->NewWritableFile(path, &w));
+  RETURN_NOT_OK(env->NewWritableFile(type, path, &w));
   file->reset(w);
   return Status::OK();
 }

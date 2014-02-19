@@ -403,7 +403,8 @@ Status Log::CreateNewSegment() {
   string new_segment_path = CreateSegmentFileName(header.sequence_number());
 
   VLOG(1) << "Creating new WAL segment: " << new_segment_path;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(fs_manager_->env(), new_segment_path, &sink));
+  RETURN_NOT_OK(env_util::OpenFileForWrite(
+      Env::WRITABLE_FILE_NO_MMAP, fs_manager_->env(), new_segment_path, &sink));
 
   if (options_.preallocate_segments) {
     RETURN_NOT_OK(sink->PreAllocate(max_segment_size_));
