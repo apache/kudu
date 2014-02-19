@@ -117,7 +117,7 @@ class TestCompaction : public KuduRowSetTest {
                                 BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                 kRollThreshold);
     ASSERT_STATUS_OK(rsw.Open());
-    ASSERT_STATUS_OK(Flush(input, snap, &rsw));
+    ASSERT_STATUS_OK(FlushCompactionInput(input, snap, &rsw));
     ASSERT_STATUS_OK(rsw.Finish());
     vector<shared_ptr<RowSetMetadata> > metas;
     rsw.GetWrittenMetadata(&metas);

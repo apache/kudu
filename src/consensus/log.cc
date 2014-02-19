@@ -2,7 +2,6 @@
 
 #include "consensus/log.h"
 
-
 #include "consensus/log_reader.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/stl_util.h"
@@ -25,6 +24,7 @@ namespace log {
 
 using consensus::OpId;
 using consensus::MISSED_DELTA;
+using env_util::OpenFileForRandom;
 
 // This class is responsible for managing the thread that appends to
 // the log file.
@@ -189,12 +189,12 @@ Status Log::Init() {
 
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
                                 next_segment_header_->tablet_meta().oid(),
-                                &reader_));
+                                &previous_segments_reader_));
 
   // the case where we are continuing an existing log
-  if (reader_->size() != 0) {
-    previous_ = reader_->segments();
-    VLOG(1) << "Using existing " << previous_.size()
+  if (previous_segments_reader_->size() != 0) {
+    previous_segments_ = previous_segments_reader_->segments();
+    VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
   }
 
@@ -205,8 +205,7 @@ Status Log::Init() {
   }
 
   // we always create a new segment when the log starts.
-  RETURN_NOT_OK(CreateNewSegment(*next_segment_header_.get()));
-
+  RETURN_NOT_OK(CreateNewSegment());
   RETURN_NOT_OK(append_thread_->Init());
   state_ = kLogWriting;
   return Status::OK();
@@ -215,8 +214,8 @@ Status Log::Init() {
 Status Log::RollOver() {
   CHECK_EQ(state_, kLogWriting);
   RETURN_NOT_OK(Sync());
-  RETURN_NOT_OK(current_->writable_file()->Close());
-  RETURN_NOT_OK(CreateNewSegment(*next_segment_header_.get()));
+  RETURN_NOT_OK(active_segment_->writable_file()->Close());
+  RETURN_NOT_OK(CreateNewSegment());
   return Status::OK();
 }
 
@@ -293,25 +292,28 @@ Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
   }
   Slice entry_data = entry->data();
   uint32_t entry_size = entry_data.size();
-  if ((current_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
+
+  // if the size of this entry overflows the current segment, get a new one
+  if ((active_segment_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
       RETURN_NOT_OK(RollOver());
     }
     LOG(INFO) << "Max segment size reached. Rolled over to new segment: "
-              << current_->path();
+              << active_segment_->path();
   }
   LOG_SLOW_EXECUTION(WARNING, 25, "Append to log took a long time") {
-    RETURN_NOT_OK(current_->writable_file()->Append(
+    RETURN_NOT_OK(active_segment_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
   }
-  RETURN_NOT_OK(current_->writable_file()->Append(entry_data));
+  RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_data));
+  // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
 }
 
 Status Log::Sync() {
   if (options_.force_fsync_all) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
-      RETURN_NOT_OK(current_->writable_file()->Sync());
+      RETURN_NOT_OK(active_segment_->writable_file()->Sync());
     }
   }
   return Status::OK();
@@ -337,18 +339,18 @@ Status Log::GC() {
   LOG(INFO) << "Running Log GC on " << log_dir_;
   LOG_TIMING(INFO, "Log GC") {
     uint32_t num_stale_segments = 0;
-    RETURN_NOT_OK(FindStaleSegmentsPrefixSize(previous_,
+    RETURN_NOT_OK(FindStaleSegmentsPrefixSize(previous_segments_,
                                               next_segment_header_->tablet_meta(),
                                               &num_stale_segments));
     if (num_stale_segments > 0) {
       LOG(INFO) << "Found " << num_stale_segments << " stale segments.";
       // delete the files and erase the segments from previous_
       for (int i = 0; i < num_stale_segments; i++) {
-        LOG(INFO) << "Deleting Log file in path: " << previous_[i]->path();
-        RETURN_NOT_OK(fs_manager_->env()->DeleteFile(previous_[i]->path()));
+        LOG(INFO) << "Deleting Log file in path: " << previous_segments_[i]->path();
+        RETURN_NOT_OK(fs_manager_->env()->DeleteFile(previous_segments_[i]->path()));
       }
-      previous_.erase(previous_.begin(),
-                      previous_.begin() + num_stale_segments);
+      previous_segments_.erase(previous_segments_.begin(),
+                               previous_segments_.begin() + num_stale_segments);
     }
   }
   return Status::OK();
@@ -361,7 +363,7 @@ Status Log::Close() {
   }
   if (state_ == kLogWriting) {
     RETURN_NOT_OK(Sync());
-    RETURN_NOT_OK(current_->writable_file()->Close());
+    RETURN_NOT_OK(active_segment_->writable_file()->Close());
     state_ = kLogClosed;
     VLOG(1) << "Log Closed()";
     return Status::OK();
@@ -373,21 +375,24 @@ Status Log::Close() {
   return Status::IllegalState(strings::Substitute("Bad state for Close() $0", state_));
 }
 
-Status Log::CreateNewSegment(const LogSegmentHeaderPB& header) {
+Status Log::CreateNewSegment() {
+
+  const LogSegmentHeaderPB& header = *next_segment_header_.get();
   // create a new segment file and pre-allocate the space
   shared_ptr<WritableFile> sink;
-  string fqp = CreateSegmentFileName(header.initial_id());
+  string new_segment_path = CreateSegmentFileName(header.initial_id());
 
-  LOG(INFO) << "Creating new segment: " << fqp;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(fs_manager_->env(), fqp, &sink));
+  VLOG(1) << "Creating new WAL segment: " << new_segment_path;
+  RETURN_NOT_OK(env_util::OpenFileForWrite(fs_manager_->env(), new_segment_path, &sink));
 
   if (options_.preallocate_segments) {
     RETURN_NOT_OK(sink->PreAllocate(max_segment_size_));
   }
 
-  // create a new segment
-  gscoped_ptr<WritableLogSegment> new_segment(new WritableLogSegment(header, fqp, sink));
-  // ... and write and sync the header
+  // Create a new segment.
+  gscoped_ptr<WritableLogSegment> new_segment(
+      new WritableLogSegment(header, new_segment_path, sink));
+  // Write and sync the header.
   uint32_t pb_size = new_segment->header().ByteSize();
   faststring buf;
   // First the magic.
@@ -399,26 +404,26 @@ Status Log::CreateNewSegment(const LogSegmentHeaderPB& header) {
   }
 
   RETURN_NOT_OK(new_segment->writable_file()->Append(Slice(buf)));
-  uint32_t new_header_size_ = kMagicAndHeaderLength + pb_size;
+  uint32_t new_header_size = kMagicAndHeaderLength + pb_size;
   RETURN_NOT_OK(new_segment->writable_file()->Sync());
 
   // transform the current segment into a readable one (we might need to replay
   // stuff for other peers)
-  if (current_.get() != NULL) {
+  if (active_segment_.get() != NULL) {
     shared_ptr<RandomAccessFile> source;
-    RETURN_NOT_OK(env_util::OpenFileForRandom(fs_manager_->env(), current_->path(), &source));
+    RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &source));
     shared_ptr<ReadableLogSegment> readable_segment(
-        new ReadableLogSegment(current_->header(),
-                               current_->path(),
+        new ReadableLogSegment(active_segment_->header(),
+                               active_segment_->path(),
                                header_size_,
-                               current_->writable_file()->Size(),
+                               active_segment_->writable_file()->Size(),
                                source));
-    previous_.push_back(readable_segment);
+    previous_segments_.push_back(readable_segment);
   }
 
-  // now set 'current_' to the new segment
-  header_size_ = new_header_size_;
-  current_.reset(new_segment.release());
+  // Now set 'active_segment_' to the new segment.
+  header_size_ = new_header_size;
+  active_segment_.reset(new_segment.release());
 
   return Status::OK();
 }

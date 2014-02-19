@@ -402,6 +402,8 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     return s;
   }
 
+  // Next, check the disk rowsets.
+
   // TODO: could iterate the rowsets in a smart order
   // based on recent statistics - eg if a rowset is getting
   // updated frequently, pick that one first.
@@ -832,7 +834,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
                                compaction_policy_->target_rowset_size());
   RETURN_NOT_OK_PREPEND(drsw.Open(), "Failed to open DiskRowSet for flush");
-  RETURN_NOT_OK_PREPEND(kudu::tablet::Flush(merge.get(), flush_snap, &drsw),
+  RETURN_NOT_OK_PREPEND(FlushCompactionInput(merge.get(), flush_snap, &drsw),
                         "Flush to disk failed");
   RETURN_NOT_OK_PREPEND(drsw.Finish(), "Failed to finish DRS writer");
 
@@ -849,7 +851,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     LOG(INFO) << "Removing all input rowsets.";
     AtomicSwapRowSets(input.rowsets(), RowSetVector());
 
-    // Remove old rowsets
+    // Remove old rowsets.
+    // TODO: Consensus catch-up may want to reserve the compaction inputs.
     WARN_NOT_OK(DeleteCompactionInputs(input),
                 "Unable to remove compaction inputs. Will GC later.");
 
@@ -888,8 +891,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   MvccSnapshot snap2;
   AtomicSwapRowSets(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
 
+  // Ensure that the latest schema is set to the new RowSets
   {
-    // Ensure that the latest schema is set to the new RowSets
     boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
     BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_rowsets) {
       RETURN_NOT_OK_PREPEND(rs->AlterSchema(schema_),
@@ -933,7 +936,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   }
 
   // Updating rows in the compaction outputs needs to be tracked or else we
-  // loose data on recovery. However because compactions run independently
+  // lose data on recovery. However because compactions run independently
   // of the replicated state machine this transaction is committed locally
   // only _and_ the commit must include the actual row data (vs. normally
   // only including the ids of the destination MemRowSets/DeltaRowStores).

@@ -63,6 +63,7 @@ message TabletSuperBlockPB {
   required uint64 sequence = 1;
 
   // Tablet Id
+  // TODO: rename to tablet_id
   required string oid = 2;
 
   // The latest durable MemRowSet id

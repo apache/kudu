@@ -89,6 +89,7 @@ class Log {
     return next_segment_header_.get();
   }
 
+  // Returns the last-used OpId.
   const consensus::OpId& last_entry_id() const {
     return next_segment_header_->initial_id();
   }
@@ -98,12 +99,18 @@ class Log {
   // garbage collection.
   Status GC();
 
-  const WritableLogSegment* current_segment() const {
-    return current_.get();
+  const std::string& ActiveSegmentPathForTests() const {
+    return active_segment_->path();
   }
 
-  const vector<std::tr1::shared_ptr<ReadableLogSegment> > &previous_segments() const {
-    return previous_;
+  const vector<std::tr1::shared_ptr<ReadableLogSegment> >& PreviousSegmentsForTests() const {
+    return previous_segments_;
+  }
+
+  // Get ID of tablet.
+  const std::string& tablet_id() const {
+    // TODO: Store this in the Log class itself.
+    return next_segment_header_->tablet_meta().oid();
   }
 
   ~Log();
@@ -124,8 +131,9 @@ class Log {
   // Creates the name for a new segment as log-<term>-<index>
   string CreateSegmentFileName(const consensus::OpId& id);
 
-  // Creates a new segment and sets current_ to the new one.
-  Status CreateNewSegment(const LogSegmentHeaderPB& header);
+  // Creates a new WAL segment on disk, writes the next_segment_header_ to
+  // disk as the header, and sets active_segment_ to point to this new segment.
+  Status CreateNewSegment();
 
   // Writes serialized contents of 'entry' to the log. Called inside
   // AppenderThread. If 'caller_owns_operation' is true, then the
@@ -145,20 +153,23 @@ class Log {
   FsManager *fs_manager_;
   string log_dir_;
 
-  // the next segment's header
+  // The next segment's header.
   gscoped_ptr<LogSegmentHeaderPB> next_segment_header_;
-  // the current segment being written
-  gscoped_ptr<WritableLogSegment> current_;
-  // all previous, un-GC'd, segments
-  vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_;
 
-  // the size of the header of the current segment
+  // The currently active segment being written.
+  gscoped_ptr<WritableLogSegment> active_segment_;
+
+  // All previous (inactive) un-GC'd segments.
+  vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_segments_;
+
+  // The size of the header of the current segment.
   uint64_t header_size_;
-  // the maximum segment size, in bytes
+
+  // The maximum segment size, in bytes.
   uint64_t max_segment_size_;
 
-  // Reader for previous segments
-  gscoped_ptr<LogReader> reader_;
+  // Reader for previous segments.
+  gscoped_ptr<LogReader> previous_segments_reader_;
 
   // The queue used to communicate between the thread calling
   // Reserve() and the Log Appender thread

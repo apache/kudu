@@ -149,11 +149,10 @@ typedef vector<shared_ptr<RowSet> > RowSetVector;
 // for probing against rowsets.
 class RowSetKeyProbe {
  public:
-  // schema: the schema containing the key
-  // raw_key: a pointer to the key portion of a row in memory
+  // row_key: a reference to the key portion of a row in memory
   // to probe for.
   //
-  // NOTE: raw_key is not copied and must be valid for the liftime
+  // NOTE: row_key is not copied and must be valid for the lifetime
   // of this object.
   explicit RowSetKeyProbe(const ConstContiguousRow& row_key)
       : row_key_(row_key) {
@@ -162,7 +161,10 @@ class RowSetKeyProbe {
   }
 
   // RowSetKeyProbes are usually allocated on the stack, which means that we
-  // must copy it if we require it later (e.g. Table::Mutate()), the ConstContiguou
+  // must copy it if we require it later (e.g. Table::Mutate()).
+  //
+  // Still, the ConstContiguousRow row_key_ remains a reference to the data
+  // underlying the original RowsetKeyProbe and is not copied.
   explicit RowSetKeyProbe(const RowSetKeyProbe& probe)
   : row_key_(probe.row_key_) {
     cfile::EncodeKey(row_key_, &encoded_key_);
@@ -178,6 +180,7 @@ class RowSetKeyProbe {
   // Return the cached structure used to query bloom filters.
   const BloomKeyProbe &bloom_probe() const { return bloom_probe_; }
 
+  // The schema containing the key.
   const Schema &schema() const { return row_key_.schema(); }
 
   const EncodedKey &encoded_key() const {

@@ -214,7 +214,7 @@ TEST_F(LogTest, TestCorruptLog) {
 
   // rewrite the file but truncate the last entry partially
   shared_ptr<RandomAccessFile> source;
-  const string log_path = log_->current_segment()->path();
+  const string log_path = log_->ActiveSegmentPathForTests();
   ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), log_path, &source));
   uint64_t file_size;
   ASSERT_STATUS_OK(env_.get()->GetFileSize(log_path, &file_size));
@@ -255,7 +255,7 @@ TEST_F(LogTest, TestSegmentRollover) {
   AppendBatchAndCommitEntryPairsToLog(100);
 
   // expect 23 previous_ segments plus the current_ one
-  ASSERT_EQ(23, log_->previous_segments().size());
+  ASSERT_EQ(23, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
 
   BuildLogReader();
@@ -272,10 +272,10 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   BuildLog();
   AppendMultiSegmentSequence();
 
-  ASSERT_EQ(2, log_->previous_segments().size());
+  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->GC());
 
-  ASSERT_EQ(1, log_->previous_segments().size());
+  ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
 
   CheckRightNumberOfSegmentFiles(2);
@@ -285,7 +285,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 TEST_F(LogTest, TestLogReopenAndGC) {
   BuildLog();
   AppendMultiSegmentSequence();
-  ASSERT_EQ(2, log_->previous_segments().size());
+  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
 
   LogEntryPB meta_entry;
@@ -298,11 +298,11 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   // that were in memory and do GC
   BuildLog(0, 10, meta);
   // log starts with 3 segments
-  ASSERT_EQ(3, log_->previous_segments().size());
+  ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
 
   ASSERT_STATUS_OK(log_->GC());
   // after GC there should be only two
-  ASSERT_EQ(2, log_->previous_segments().size());
+  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
 
   CheckRightNumberOfSegmentFiles(3);

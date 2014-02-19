@@ -18,21 +18,25 @@ enum LogEntryTypePB {
   TABLET_METADATA = 2;
 };
 
-// An entry in the wal/sm log.
+// An entry in the WAL/state machine log.
 message LogEntryPB {
   required LogEntryTypePB type = 1;
   optional consensus.OperationPB operation = 2;
   optional metadata.TabletSuperBlockPB tablet_meta = 3;
 }
 
-// A header for a log segment
+// A header for a log segment.
 message LogSegmentHeaderPB {
-  // log major version.
+  // Log format major version.
   required uint32 major_version = 1;
-  // log minor version.
+
+  // Log format minor version.
   required uint32 minor_version = 2;
-  // the the term/index when the segment was started.
-  required kudu.consensus.OpId  initial_id = 3;
-  // the tablet metadata at the time the segment was created.
+
+  // The term/index when the segment was started.
+  // TODO: rename to initial_opid.
+  required kudu.consensus.OpId initial_id = 3;
+
+  // The tablet metadata at the time the segment was created.
   required metadata.TabletSuperBlockPB tablet_meta = 4;
 }

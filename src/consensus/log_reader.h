@@ -30,6 +30,7 @@ class LogReader {
                      gscoped_ptr<LogReader> *reader);
 
   // Initializes a ReadableLogSegment based on a log file on the provided path.
+  // Parses the header.
   static Status InitSegment(Env* env,
                             const string &log_file,
                             shared_ptr<ReadableLogSegment>* segment);

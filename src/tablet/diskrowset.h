@@ -4,8 +4,8 @@
 // Each DiskRowSet contains data for a a disjoint set of keys.
 // See src/tablet/README for a detailed description.
 
-#ifndef KUDU_TABLET_LAYER_H
-#define KUDU_TABLET_LAYER_H
+#ifndef KUDU_TABLET_DISKROWSET_H_
+#define KUDU_TABLET_DISKROWSET_H_
 
 #include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
@@ -315,4 +315,4 @@ class DiskRowSet : public RowSet {
 } // namespace tablet
 } // namespace kudu
 
-#endif
+#endif // KUDU_TABLET_DISKROWSET_H_

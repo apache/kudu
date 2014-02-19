@@ -48,7 +48,9 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   gscoped_ptr<ReplicateMsg> replicate_msg(new ReplicateMsg);
   replicate_msg->set_op_type(CHANGE_CONFIG_OP);
   ChangeConfigRequestPB* req = replicate_msg->mutable_change_config_request();
-  req->set_tablet_id(log_->current_header()->tablet_meta().oid());
+
+  // FIXME: Seems like a hack to get the current tablet ID from the Log.
+  req->set_tablet_id(log_->tablet_id());
   req->mutable_new_config()->CopyFrom(initial_quorum);
 
   shared_ptr<LatchCallback> replicate_clbk(new LatchCallback);

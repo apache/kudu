@@ -189,6 +189,7 @@ Status LogReader::ParseHeaderAndBuildSegment(
   Slice header_slice;
   LogSegmentHeaderPB header;
 
+  // Read and parse the log segment header.
   RETURN_NOT_OK(ReadFully(file.get(), kMagicAndHeaderLength, header_size,
                           &header_slice, header_space));
 

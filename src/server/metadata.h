@@ -219,7 +219,7 @@ class TabletMetadata {
 
 // Keeps tracks of the RowSet data blocks.
 //
-// Each tablet MemRowSet flush a new RowSetMetadata is created,
+// On each tablet MemRowSet flush, a new RowSetMetadata is created,
 // and the DiskRowSetWriter will create and write the "immutable" blocks for
 // columns, bloom filter and adHoc-Index.
 //
@@ -231,7 +231,7 @@ class TabletMetadata {
 // The RowSet has also a mutable part, the Delta Blocks, which contains
 // the chain of updates applied to the "immutable" data in the RowSet.
 // The DeltaTracker is responsible for flushing the Delta-Memstore,
-// create a new delta block, and flush the RowSetMetadata.
+// creating a new delta block, and flushing the RowSetMetadata.
 //
 // Since the only mutable part of the RowSetMetadata is the Delta-Tracking,
 // There's a lock around the delta-blocks operations.

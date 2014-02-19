@@ -485,7 +485,7 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot &snap,
   #undef ERROR_LOG_CONTEXT
 }
 
-Status Flush(CompactionInput *input, const MvccSnapshot &snap,
+Status FlushCompactionInput(CompactionInput *input, const MvccSnapshot &snap,
              RollingDiskRowSetWriter *out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;

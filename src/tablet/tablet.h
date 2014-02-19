@@ -138,7 +138,6 @@ class Tablet {
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
   Status Flush();
-  Status Flush(const Schema& schema);
 
   // Prepares the transaction context for the alter schema operation.
   // An error will be returned if the specified schema is invalid (e.g.
@@ -312,6 +311,7 @@ class Tablet {
   Status ReplaceMemRowSetUnlocked(const Schema& schema,
                                   RowSetsInCompaction *compaction,
                                   shared_ptr<MemRowSet> *old_ms);
+
   Status Flush(const RowSetsInCompaction& input,
                const shared_ptr<MemRowSet>& old_ms,
                const Schema& schema);

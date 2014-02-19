@@ -292,9 +292,9 @@ TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
 Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
                                         gscoped_ptr<Log>* rebuilt_log) {
 
-  string tablet_name = meta_->oid();
+  string tablet_id = meta_->oid();
 
-  LOG(INFO) << "Bootstrapping tablet: " << tablet_name;
+  LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
 
   if (VLOG_IS_ON(1)) {
     shared_ptr<TabletSuperBlockPB> super_block;
@@ -313,7 +313,7 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
 
   // This is a new tablet just return OK()
   if (!fetched_blocks && !fetched_segments) {
-    LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_name
+    LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_id
         << " creating new one.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     rebuilt_tablet->reset(tablet_.release());
@@ -330,12 +330,12 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
   if (fetched_blocks && !fetched_segments) {
     return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log "
                                            "segments could be found.",
-                                           tablet_name));
+                                           tablet_id));
   }
 
   RETURN_NOT_OK_PREPEND(PlaySegments(), "Failed log replay. Reason");
 
-  LOG(INFO) << "Bootstrap of tablet: " << tablet_name << " Complete.";
+  LOG(INFO) << "Bootstrap of tablet: " << tablet_id << " Complete.";
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->reset(log_.release());
   return Status::OK();
@@ -626,6 +626,7 @@ Status TabletBootstrap::PlaySegments() {
   for (int segment_idx = 0; segment_idx < log_reader_->size(); ++segment_idx) {
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
+    // TODO: Optimize this to not read the whole thing into memory?
     Status read_status = log_reader_->ReadEntries(log_reader_->segments()[segment_idx], &entries);
     for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
       LogEntryPB* entry = entries[entry_idx];
@@ -635,15 +636,16 @@ Status TabletBootstrap::PlaySegments() {
                                       *entry));
 
       // If ReplayEntry returns OK, then it has taken ownership of the entry.
-      // So, we have to remove it from the entries vector to avoid it getting freed by
-      // ElementDeleter.
+      // So, we have to remove it from the entries vector to avoid it getting
+      // freed by ElementDeleter.
       entries[entry_idx] = NULL;
     }
 
-    // If the LogReader failed to read for some reason, we'll still try to replay as many entries
-    // as possible, and then fail with Corruption.
-    // TODO: this is sort of scary -- why doesn't LogReader expose an entry-by-entry iterator-like
-    // API instead? Seems better to avoid exposing the idea of segments to callers.
+    // If the LogReader failed to read for some reason, we'll still try to
+    // replay as many entries as possible, and then fail with Corruption.
+    // TODO: this is sort of scary -- why doesn't LogReader expose an
+    // entry-by-entry iterator-like API instead? Seems better to avoid
+    // exposing the idea of segments to callers.
     if (PREDICT_FALSE(!read_status.ok())) {
       return Status::Corruption(Substitute("Error reading Log Segment of tablet: $0. "
                                            "Read up to entry: $1 of segment: $2, in path: $3.",

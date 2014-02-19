@@ -202,7 +202,7 @@ Status DiskRowSetWriter::Finish() {
   }
 
   if (ad_hoc_index_writer_ != NULL) {
-    // Finish bloom.
+    // Finish ad hoc index.
     Status s = ad_hoc_index_writer_->Finish();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish ad hoc index writer: " << s.ToString();
