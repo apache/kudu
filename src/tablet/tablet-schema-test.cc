@@ -162,6 +162,40 @@ TEST_F(TestTabletSchema, TestWrite) {
   VerifyTabletRows(s2, keys);
 }
 
+// Verify that the RowChangeList projection works for reinsert mutation
+TEST_F(TestTabletSchema, TestReInsert) {
+  // Insert some rows with the base schema
+  size_t s1Key = 0;
+  InsertRow(schema_, s1Key);
+  DeleteRow(schema_, s1Key);
+  InsertRow(schema_, s1Key);
+
+  // Add one column with a default value
+  const uint32_t c2_write_default = 5;
+  const uint32_t c2_read_default = 7;
+
+  SchemaBuilder builder(tablet_->metadata()->schema());
+  ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
+  AlterSchema(builder.Build());
+  Schema s2 = builder.BuildWithoutIds();
+
+  // Insert with base/old schema
+  size_t s2Key = 1;
+  InsertRow(schema_, s2Key);
+
+  // Verify the default value
+  std::vector<std::pair<string, string> > keys;
+  keys.push_back(std::pair<string, string>(Substitute("key=$0", s1Key),
+                                           Substitute("c2=$0", c2_read_default)));
+  keys.push_back(std::pair<string, string>(Substitute("key=$0", s2Key),
+                                           Substitute("c2=$0", c2_write_default)));
+  VerifyTabletRows(s2, keys);
+
+  // Try compact all (different schemas)
+  ASSERT_STATUS_OK(tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+  VerifyTabletRows(s2, keys);
+}
+
 // Write to the table using a projection schema with a renamed field.
 TEST_F(TestTabletSchema, TestRenameProjection) {
   std::vector<std::pair<string, string> > keys;

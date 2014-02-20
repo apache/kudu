@@ -98,7 +98,16 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
   if (decoder.is_delete()) {
     encoder.SetToDelete();
   } else if (decoder.is_reinsert()) {
-    encoder.SetToReinsert(decoder.reinserted_row_slice());
+    // ReInsert = MemStore Insert -> Delete -> (Re)Insert
+    ConstContiguousRow src_row = ConstContiguousRow(projector.delta_schema(),
+                                                    decoder.reinserted_row_slice());
+    RowProjector row_projector(&projector.delta_schema(), &projector.projection());
+    size_t row_size = ContiguousRowHelper::row_size(projector.projection());
+    uint8_t buffer[row_size];
+    ContiguousRow row(projector.projection(), buffer);
+    RETURN_NOT_OK(row_projector.Init());
+    RETURN_NOT_OK(row_projector.ProjectRowForRead(src_row, &row, static_cast<Arena*>(NULL)));
+    encoder.SetToReinsert(Slice(buffer, row_size));
   } else if (decoder.is_update()) {
     while (decoder.HasNext()) {
       size_t col_id = 0xdeadbeef; // avoid un-initialized usage warning
