@@ -701,9 +701,16 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   // 4. Serialize the schema Increment the version number
   if (new_schema.initialized()) {
+    if (!l.data().pb.has_fully_applied_schema()) {
+      l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
+    }
     CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
   }
   l.mutable_data()->pb.set_version(l.mutable_data()->pb.version() + 1);
+  l.mutable_data()->set_state(SysTablesEntryPB::kTableStateAltering,
+                              Substitute("Alter Table version=$0 ts=$1",
+                              l.mutable_data()->pb.version(),
+                              GetCurrentTimeMicros()));
 
   // 5. Update sys-tables with the new table schema (point of no return!)
   TRACE("Updating metadata on disk");
@@ -755,7 +762,38 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   // 2. Verify if the alter is in-progress
   TRACE("Verify if there is an alter operation in progress for $0", table->ToString());
   resp->set_schema_version(l.data().pb.version());
-  resp->set_done(!table->IsAlterInProgress());
+  resp->set_done(l.data().pb.state() != SysTablesEntryPB::kTableStateAltering);
+
+  return Status::OK();
+}
+
+Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
+                                      GetTableSchemaResponsePB* resp) {
+  scoped_refptr<TableInfo> table;
+
+  // 1. Lookup the table and verify if it exists
+  TRACE("Looking up table");
+  RETURN_NOT_OK(FindTable(req->table(), &table));
+  if (table == NULL) {
+    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  TRACE("Locking table");
+  TableMetadataLock l(table.get(), TableMetadataLock::READ);
+  if (l.data().is_deleted()) {
+    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  if (l.data().pb.has_fully_applied_schema()) {
+    CHECK(l.data().pb.state() == SysTablesEntryPB::kTableStateAltering);
+    resp->mutable_schema()->CopyFrom(l.data().pb.fully_applied_schema());
+  } else {
+    resp->mutable_schema()->CopyFrom(l.data().pb.schema());
+  }
 
   return Status::OK();
 }
@@ -914,21 +952,25 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
-  if (!tablet_lock.data().is_running() &&
-      report.state() == metadata::RUNNING &&
-      tablet_lock.data().IsQuorumLeader(ts_desc)) {
-    DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
-    // Mark the tablet as running
-    // TODO: we could batch the IO onto a background thread, or at least
-    // across multiple tablets in the same report.
-    tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning,
-                                          "Tablet reported by leader");
-    Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
-    if (!s.ok()) {
-      LOG(ERROR) << "Unable to write tablet to system table: " << s.ToString();
+  if (tablet_lock.data().IsQuorumLeader(ts_desc)) {
+    if (report.has_schema_version()) {
+      tablet->set_reported_schema_version(report.schema_version());
     }
 
-    tablet_lock.Commit();
+    if (!tablet_lock.data().is_running() && report.state() == metadata::RUNNING) {
+      DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
+      // Mark the tablet as running
+      // TODO: we could batch the IO onto a background thread, or at least
+      // across multiple tablets in the same report.
+      tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning,
+                                            "Tablet reported by leader");
+      Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
+      if (!s.ok()) {
+        LOG(ERROR) << "Unable to write tablet to system table: " << s.ToString();
+      }
+
+      tablet_lock.Commit();
+    }
   }
 
   return Status::OK();
@@ -941,11 +983,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 //    (which may happen in case of 2 alter since we can't abort an in-progress operation)
 class AsyncAlterTable : public MonitoredTask {
  public:
-  AsyncAlterTable(const std::tr1::shared_ptr<tserver::TabletServerServiceProxy>& ts_proxy,
+  AsyncAlterTable(CatalogManager *catalog_manager,
+                  const std::tr1::shared_ptr<tserver::TabletServerServiceProxy>& ts_proxy,
                   const scoped_refptr<TabletInfo>& tablet,
                   const std::string& permanent_uuid)
     : state_(kStatePreparing),
       permanent_uuid_(permanent_uuid),
+      catalog_manager_(catalog_manager),
       tablet_(tablet),
       ts_proxy_(ts_proxy) {
     }
@@ -1005,6 +1049,13 @@ class AsyncAlterTable : public MonitoredTask {
       SendRequest();
     } else {
       end_ts_ = MonoTime::Now(MonoTime::FINE);
+
+      if (state_ != kStateAborted &&
+          tablet_->set_reported_schema_version(schema_version_) &&
+          !tablet_->table()->IsAlterInProgress(schema_version_)) {
+        MarkAlterTableAsComplete();
+      }
+
       tablet_->table()->RemoveTask(this);
     }
   }
@@ -1020,6 +1071,7 @@ class AsyncAlterTable : public MonitoredTask {
     req.set_new_table_name(l.data().pb.name());
     req.set_schema_version(l.data().pb.version());
     req.mutable_schema()->CopyFrom(l.data().pb.schema());
+    schema_version_ = l.data().pb.version();
 
     l.Unlock();
 
@@ -1031,11 +1083,44 @@ class AsyncAlterTable : public MonitoredTask {
             << req.DebugString();
   }
 
+  // Mark that every tablet has the latest schema.
+  // TODO: we could batch the IO onto a background thread.
+  //       but this is following the current HandleReportedTablet()
+  void MarkAlterTableAsComplete() {
+    TableInfo *table = tablet_->table();
+    TableMetadataLock l(table, TableMetadataLock::WRITE);
+    if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::kTableStateAltering) {
+      return;
+    }
+
+    uint32_t current_version = l.data().pb.version();
+    if (schema_version_ != current_version && !table->IsAlterInProgress(current_version)) {
+      return;
+    }
+
+    // Update the state from altering to running and remove the last schema
+    DCHECK(l.mutable_data()->pb.has_fully_applied_schema());
+    l.mutable_data()->pb.mutable_fully_applied_schema()->Clear();
+    l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
+                                Substitute("Current schema version=$0", current_version));
+
+    Status s = catalog_manager_->sys_tables()->UpdateTable(table);
+    if (!s.ok()) {
+      // panic-mode: abort the master
+      LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();
+    }
+
+    l.Commit();
+    LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
+  }
+
   MonoTime start_ts_;
   MonoTime end_ts_;
   volatile State state_;
   rpc::RpcController rpc_;
+  uint32_t schema_version_;
   std::string permanent_uuid_;
+  CatalogManager *catalog_manager_;
   scoped_refptr<TabletInfo> tablet_;
   tserver::AlterSchemaResponsePB resp_;
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
@@ -1063,7 +1148,7 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy;
   CHECK_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy));
 
-  AsyncAlterTable *call = new AsyncAlterTable(ts_proxy, tablet, ts_desc->permanent_uuid());
+  AsyncAlterTable *call = new AsyncAlterTable(this, ts_proxy, tablet, ts_desc->permanent_uuid());
   tablet->table()->AddTask(call);
   call->Run();
 }
@@ -1744,6 +1829,15 @@ void TabletInfo::GetLocations(std::vector<TabletReplica>* locations) const {
   *locations = locations_;
 }
 
+bool TabletInfo::set_reported_schema_version(uint32_t version) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (version > reported_schema_version_) {
+    reported_schema_version_ = version;
+    return true;
+  }
+  return false;
+}
+
 bool PersistentTabletInfo::IsQuorumLeader(const TSDescriptor* ts_desc) const {
   BOOST_FOREACH(const QuorumPeerPB& peer, pb.quorum().peers()) {
     if (peer.role() == QuorumPeerPB::LEADER &&
@@ -1820,12 +1914,14 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
   }
 }
 
-bool TableInfo::IsAlterInProgress() const {
+bool TableInfo::IsAlterInProgress(uint32_t version) const {
   boost::lock_guard<simple_spinlock> l(lock_);
-  // TODO: loops through tasks and check the type?
-  //       now the only task is alter..
-  //       so.. quick & dirty result is the pending_tasks_ size
-  return !pending_tasks_.empty();
+  BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+    if (e.second->reported_schema_version() < version) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void TableInfo::AddTask(MonitoredTask* task) {

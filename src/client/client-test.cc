@@ -663,5 +663,18 @@ TEST_F(ClientTest, TestDeleteTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
 }
 
+TEST_F(ClientTest, TestGetTableSchema) {
+  Schema schema;
+
+  // Verify the schema for the current table
+  ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &schema));
+  ASSERT_TRUE(schema_.Equals(schema));
+
+  // Verify that a get schema request for a missing table throws not found
+  Status s = client_->GetTableSchema("MissingTableName", &schema);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
+}
+
 } // namespace client
 } // namespace kudu

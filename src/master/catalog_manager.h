@@ -120,10 +120,7 @@ class TabletInfo : public base::RefCountedThreadSafe<TabletInfo> {
   }
 
   // Update the Reported schema version
-  void set_reported_schema_version(uint32_t version) {
-    reported_schema_version_ = version;
-  }
-
+  bool set_reported_schema_version(uint32_t version);
   uint32_t reported_schema_version() const {
     return reported_schema_version_;
   }
@@ -167,7 +164,8 @@ struct PersistentTableInfo {
   }
 
   bool is_running() const {
-    return pb.state() == SysTablesEntryPB::kTableStateRunning;
+    return pb.state() == SysTablesEntryPB::kTableStateRunning ||
+           pb.state() == SysTablesEntryPB::kTableStateAltering;
   }
 
   // Return the table's name.
@@ -216,7 +214,7 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   CowObject<PersistentTableInfo>& metadata() { return metadata_; }
 
   // Returns true if an "Alter" operation is in-progress
-  bool IsAlterInProgress() const;
+  bool IsAlterInProgress(uint32_t version) const;
 
   void AddTask(MonitoredTask *task);
   void RemoveTask(MonitoredTask *task);
@@ -308,6 +306,10 @@ class CatalogManager {
   Status IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                           IsAlterTableDoneResponsePB* resp,
                           rpc::RpcContext* rpc);
+
+  // Get the information about the specified table
+  Status GetTableSchema(const GetTableSchemaRequestPB* req,
+                        GetTableSchemaResponsePB* resp);
 
   // List all the running tables
   Status ListTables(const ListTablesRequestPB* req,

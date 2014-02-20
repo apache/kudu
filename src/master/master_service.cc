@@ -171,5 +171,16 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
   rpc->RespondSuccess();
 }
 
+void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
+                                       GetTableSchemaResponsePB* resp,
+                                       rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->GetTableSchema(req, resp);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
+
 } // namespace master
 } // namespace kudu

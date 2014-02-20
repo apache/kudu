@@ -34,6 +34,8 @@ using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
 using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
+using kudu::master::GetTableSchemaRequestPB;
+using kudu::master::GetTableSchemaResponsePB;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::IsAlterTableDoneRequestPB;
@@ -194,6 +196,21 @@ Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
 
   *alter_in_progress = !resp.done();
   return Status::OK();
+}
+
+Status KuduClient::GetTableSchema(const std::string& table_name,
+                                  Schema *schema) {
+  GetTableSchemaRequestPB req;
+  GetTableSchemaResponsePB resp;
+  RpcController rpc;
+
+  req.mutable_table()->set_table_name(table_name);
+  RETURN_NOT_OK(master_proxy_->GetTableSchema(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  return SchemaFromPB(resp.schema(), schema);
 }
 
 Status KuduClient::OpenTable(const std::string& table_name,

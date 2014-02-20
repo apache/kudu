@@ -84,7 +84,8 @@ message SysTablesEntryPB {
   enum State {
     kTableStatePreparing = 1;
     kTableStateRunning   = 2;
-    kTableStateRemoved   = 3;
+    kTableStateAltering  = 3;
+    kTableStateRemoved   = 4;
   }
 
   // Table name
@@ -94,15 +95,19 @@ message SysTablesEntryPB {
   // Used on tablet-report to avoid sending "alter-table" notifications.
   required uint32 version = 2;
 
-  // Table schema
+  // Table schema: Lastest schema (every TS should have it at some point)
   required SchemaPB schema = 3;
 
+  // Last schema that every TS had, before an alter operation.
+  // This is the schema provided to the user on client->GetSchema(tableName)
+  optional SchemaPB fully_applied_schema = 4;
+
   // Number of TS replicas
-  optional int32 num_replicas = 4;
+  optional int32 num_replicas = 5;
 
   // Debug state for the tablet
-  required State state = 5;
-  optional bytes state_msg = 6;
+  required State state = 6;
+  optional bytes state_msg = 7;
 }
 
 ////////////////////////////////////////////////////////////
@@ -359,6 +364,21 @@ message IsAlterTableDoneResponsePB {
   optional bool done = 3;
 }
 
+message GetTableSchemaRequestPB {
+  required TableIdentifierPB table = 1;
+}
+
+message GetTableSchemaResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  // This is the schema that every TS should be able to understand
+  // if your alter is keeping the schema compatible.
+  // In case of an alter table in progress, this is the previous schema;
+  // otherwise it is the latest schema.
+  optional SchemaPB schema = 2;
+}
+
 service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
@@ -376,4 +396,5 @@ service MasterService {
 
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB);
   rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB);
+  rpc GetTableSchema(GetTableSchemaRequestPB) returns (GetTableSchemaResponsePB);
 }

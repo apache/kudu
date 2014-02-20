@@ -99,6 +99,9 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   Status IsAlterTableInProgress(const std::string& table_name,
                                 bool *alter_in_progress);
 
+  Status GetTableSchema(const std::string& table_name,
+                        Schema *schema);
+
   // Open the table with the given name. If the table has not been opened before
   // in this client, this will do an RPC to ensure that the table exists and
   // look up its schema.
