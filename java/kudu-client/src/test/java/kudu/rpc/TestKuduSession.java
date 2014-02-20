@@ -6,6 +6,7 @@ import kudu.ColumnSchema;
 import kudu.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import kudu.Type;
 import kudu.tserver.Tserver;
 import org.junit.AfterClass;
 import org.junit.After;
@@ -29,7 +30,7 @@ import static org.junit.Assert.*;
  * The cluster's configuration flags is found at flagsPath as defined in the pom file.
  * Set startCluster to true in order have the test start the cluster for you.
  * All those properties are set via surefire's systemPropertyVariables, meaning this:
- * $ mvn test -Dstartcluster=false
+ * $ mvn test -DstartCluster=false
  * will use an existing cluster at default address found above.
  *
  * The test creates a table with a unique(ish) name which it deletes at the end.
@@ -42,6 +43,7 @@ public class TestKuduSession {
   private final static String MASTER_PORT = "masterPort";
   private final static String FLAGS_PATH = "flagsPath";
   private final static String START_CLUSTER = "startCluster";
+  public static final int DEFAULT_SLEEP = 10000;
   private static Process master;
   private static Process tabletServer;
   private static String masterAddress;
@@ -86,7 +88,7 @@ public class TestKuduSession {
       }
     });
     try {
-      d.join(10000);
+      d.join(DEFAULT_SLEEP);
     } catch (Exception e) {
       fail("Timed out");
     }
@@ -109,7 +111,7 @@ public class TestKuduSession {
           return null;
         }
       });
-      d.join(2000);
+      d.join(DEFAULT_SLEEP);
       if (gotError.get()) {
         fail("Couldn't delete a table");
       }
@@ -235,6 +237,55 @@ public class TestKuduSession {
     buffered.join(2000);
     assertEquals(10, countInRange(0, 40));
 
+    // Test Alter
+    // Add a col
+    AlterTableBuilder atb = new AlterTableBuilder();
+    atb.addColumn("testaddint", Type.INT32, 4);
+    submitAlterAndCheck(atb);
+
+    // rename that col
+    atb = new AlterTableBuilder();
+    atb.renameColumn("testaddint", "newtestaddint");
+    submitAlterAndCheck(atb);
+
+    // delete it
+    atb = new AlterTableBuilder();
+    atb.dropColumn("newtestaddint");
+    submitAlterAndCheck(atb);
+
+    String newTableName = tableName+"new";
+
+    // rename our table
+    atb = new AlterTableBuilder();
+    atb.renameTable(newTableName);
+    submitAlterAndCheck(atb, tableName, newTableName);
+
+    // rename it back
+    atb = new AlterTableBuilder();
+    atb.renameTable(tableName);
+    submitAlterAndCheck(atb, newTableName, tableName);
+
+    // try adding two columns, where one is nullable
+    atb = new AlterTableBuilder();
+    atb.addColumn("testaddmulticolnotnull", Type.INT32, 4);
+    atb.addNullableColumn("testaddmulticolnull", Type.STRING);
+    submitAlterAndCheck(atb);
+  }
+
+  /**
+   * Helper method to submit an Alter and wait for it to happen, using the default table name
+   */
+  public static void submitAlterAndCheck(AlterTableBuilder atb) throws Exception {
+    submitAlterAndCheck(atb, tableName, tableName);
+  }
+
+  public static void submitAlterAndCheck(AlterTableBuilder atb,
+                                         String tableToAlter, String tableToCheck) throws
+      Exception {
+    Deferred<Object> alterDeffered = client.alterTable(tableToAlter, atb);
+    alterDeffered.join(DEFAULT_SLEEP);
+    boolean done  = client.syncWaitOnAlterCompletion(tableToCheck, DEFAULT_SLEEP);
+    assertTrue(done);
   }
 
   public static Insert createInsert(int key) {

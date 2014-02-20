@@ -99,6 +99,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class KuduClient {
 
   public static final Logger LOG = LoggerFactory.getLogger(KuduClient.class);
+  public static final int SLEEP_TIME = 500;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -220,6 +221,73 @@ public class KuduClient {
   public Deferred<Object> deleteTable(String name) {
     DeleteTableRequest delete = new DeleteTableRequest(this.masterTableHack, name);
     return sendRpcToTablet(delete);
+  }
+
+  /**
+   * Alter a table on the cluster as specified by the builder.
+   * @param name Table's name, if this is a table rename then the old table name must be passed
+   * @param atb The information for the alter command
+   * @return Deferred object to track the progress of the alter command,
+   * but it's completion only means that the master received the request. Use
+   * syncWaitOnAlterCompletion() to know when the alter completes.
+   */
+  public Deferred<Object> alterTable(String name, AlterTableBuilder atb) {
+    AlterTableRequest alter = new AlterTableRequest(this.masterTableHack, name, atb);
+    return sendRpcToTablet(alter);
+  }
+
+  /**
+   * Helper method that checks and waits until the completion of an alter command.
+   * It will block until the alter command is done or the deadline is reached.
+   * @param name Table's name, if the table was renamed then that name must be checked against
+   * @param deadline For how many milliseconds this method can block
+   * @return
+   */
+  public boolean syncWaitOnAlterCompletion(String name, long deadline) throws Exception {
+    if (deadline < SLEEP_TIME) {
+      throw new IllegalArgumentException("deadline must be at least " + SLEEP_TIME + "ms");
+    }
+    long totalSleepTime = 0;
+    while (totalSleepTime < deadline) {
+      long start = System.currentTimeMillis();
+
+      // Send RPC, wait for reponse, process it
+      Deferred<Object> d = sendRpcToTablet(new IsAlterTableDoneRequest(this.masterTableHack,
+          name));
+      Object response;
+      try {
+        response = d.join(SLEEP_TIME);
+      } catch (Exception ex) {
+        throw ex;
+      }
+      if (response instanceof MasterErrorException) {
+        throw (MasterErrorException) response;
+      } else if (response instanceof Master.IsAlterTableDoneResponsePB) {
+        Master.IsAlterTableDoneResponsePB pb = (Master.IsAlterTableDoneResponsePB) response;
+        if (pb.getDone()) {
+          return true;
+        }
+      } else {
+        throw new NonRecoverableException("Cannot parse reponse " + response);
+      }
+
+      // Count time that was slept and see if we need to wait a little more
+      long elapsed = System.currentTimeMillis() - start;
+      // Don't oversleep the deadline
+      if (totalSleepTime + SLEEP_TIME > deadline) {
+        return false;
+      }
+      // elapsed can be bigger if we slept about 500ms
+      if (elapsed <= SLEEP_TIME) {
+        LOG.debug("Alter not done, sleep " + (SLEEP_TIME - elapsed) + " and slept " +
+            totalSleepTime);
+        Thread.sleep(SLEEP_TIME - elapsed);
+        totalSleepTime += SLEEP_TIME;
+      } else {
+        totalSleepTime += elapsed;
+      }
+    }
+    return false;
   }
 
   /**
@@ -362,7 +430,7 @@ public class KuduClient {
         }
       };
       // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
-      long sleepTime = (request.attempt * 500) + sleepRandomizer.nextInt(50);
+      long sleepTime = (request.attempt * SLEEP_TIME) + sleepRandomizer.nextInt(50);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Going to sleep for " + sleepTime + " at retry " + request.attempt);
       }

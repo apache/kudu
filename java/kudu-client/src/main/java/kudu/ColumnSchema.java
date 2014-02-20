@@ -9,9 +9,11 @@ public class ColumnSchema {
   private final String name;
   private final Type type;
   private final boolean key;
+  private final boolean isNullable;
+  private final Object defaultValue;
 
   /**
-   * Constructor for a non-key column, requires a name and a type
+   * Constructor for a non-key non-nullable column, requires a name and a type
    * @param name Column's name
    * @param type Column's type
    */
@@ -20,15 +22,31 @@ public class ColumnSchema {
   }
 
   /**
-   * Constructor for any column, specify the name, type, and if it's a key
+   * Constructor for a non-nullable column, specify the name, type, and if it's a key
    * @param name Column's name
    * @param type Column's type
    * @param key If this column is part of the key
    */
   public ColumnSchema(String name, Type type, boolean key) {
+    this(name, type, key, false, null);
+  }
+
+  /**
+   * Constructor for any column, specify the name, type, if it's a key, if it's nullable,
+   * and its default read and write values.
+   * @param name Column's name
+   * @param type Column's type
+   * @param key If this column is part of the key
+   * @param isNullable If this column can be null
+   * @param defaultValue The column's default value
+   */
+  public ColumnSchema(String name, Type type, boolean key, boolean isNullable,
+                      Object defaultValue) {
     this.name = name;
     this.type = type;
     this.key = key;
+    this.isNullable = isNullable;
+    this.defaultValue = defaultValue;
   }
 
   /**
@@ -53,6 +71,22 @@ public class ColumnSchema {
    */
   public boolean isKey() {
     return key;
+  }
+
+  /**
+   * Answers if the column can be set to null
+   * @return true if it can be set to null, else false
+   */
+  public boolean isNullable() {
+    return isNullable;
+  }
+
+  /**
+   * The Java object representation of the default value that's read
+   * @return the default read value
+   */
+  public Object getDefaultValue() {
+    return defaultValue;
   }
 
   @Override

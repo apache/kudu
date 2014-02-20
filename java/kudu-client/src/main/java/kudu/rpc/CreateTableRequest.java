@@ -16,8 +16,8 @@ class CreateTableRequest extends KuduRpc {
   private final Schema schema;
   private final String name;
 
-  CreateTableRequest(KuduTable table, String name, Schema schema) {
-    super(table);
+  CreateTableRequest(KuduTable masterTable, String name, Schema schema) {
+    super(masterTable);
     this.schema = schema;
     this.name = name;
   }
