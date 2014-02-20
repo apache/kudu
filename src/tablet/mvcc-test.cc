@@ -133,6 +133,36 @@ TEST(TestMvcc, TestPointInTimeSnapshot) {
   ASSERT_FALSE(snap.IsCommitted(txid_t(11)));
 }
 
+TEST(TestMvcc, TestMayHaveCommittedTransactionsAtOrAfter) {
+  MvccSnapshot snap;
+  snap.all_committed_before_txid_ = txid_t(10);
+  snap.txids_in_flight_.insert(11);
+  snap.txids_in_flight_.insert(13);
+  snap.none_committed_after_txid_ = txid_t(14);
+
+  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(txid_t(9)));
+  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(txid_t(10)));
+  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(txid_t(12)));
+  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(txid_t(13)));
+  ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(txid_t(14)));
+  ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(txid_t(15)));
+}
+
+TEST(TestMvcc, TestMayHaveUncommittedTransactionsBefore) {
+  MvccSnapshot snap;
+  snap.all_committed_before_txid_ = txid_t(10);
+  snap.txids_in_flight_.insert(11);
+  snap.txids_in_flight_.insert(13);
+  snap.none_committed_after_txid_ = txid_t(14);
+
+  ASSERT_FALSE(snap.MayHaveUncommittedTransactionsBefore(txid_t(9)));
+  ASSERT_FALSE(snap.MayHaveUncommittedTransactionsBefore(txid_t(10)));
+  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsBefore(txid_t(11)));
+  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsBefore(txid_t(13)));
+  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsBefore(txid_t(14)));
+  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsBefore(txid_t(15)));
+}
+
 
 } // namespace tablet
 } // namespace kudu

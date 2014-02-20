@@ -13,6 +13,7 @@
 #include "gutil/strings/substitute.h"
 #include "util/memcmpable_varint.h"
 #include "util/locks.h"
+#include "util/status.h"
 
 namespace kudu {
 namespace tablet {
@@ -67,18 +68,29 @@ class txid_t {
     return strings::Substitute("$0", v);
   }
 
-  // An invalid transaction ID -- txid_t types initialize to this variable.
-  static const txid_t kInvalidTxId;
-
-  // The maximum txid.
-  static const txid_t kMax;
-
   // Encodes this txid_t and appends it to the provided string.
   void EncodeToString(string* encode_to) const {
     faststring buf;
     EncodeTo(&buf);
     encode_to->append(reinterpret_cast<const char* >(buf.data()), buf.size());
   }
+
+  Status DecodeFromString(const string& decode_from) {
+    Slice slice(decode_from);
+    if (!DecodeFrom(&slice)) {
+      return Status::Corruption("Cannot decode txid.");
+    }
+    return Status::OK();
+  }
+
+  // An invalid transaction ID -- txid_t types initialize to this variable.
+  static const txid_t kInvalidTxId;
+
+  // The maximum txid.
+  static const txid_t kMax;
+
+  // The minimum txid.
+  static const txid_t kMin;
 
  private:
   friend class MvccManager;
@@ -88,7 +100,6 @@ class txid_t {
   FRIEND_TEST(TestMvcc, TestScopedTransaction);
 
   val_type v;
-
 };
 
 
@@ -114,7 +125,24 @@ class MvccSnapshot {
 
   // Return true if the given transaction ID should be considered committed
   // in this snapshot.
-  bool IsCommitted(txid_t txid) const;
+  bool IsCommitted(const txid_t& txid) const;
+
+  // Returns true if this snapshot may have any committed transactions with ID
+  // equal to or higher than the provided 'txid'.
+  // This is mostly useful to avoid scanning REDO deltas in certain cases.
+  // If MayHaveCommittedTransactionsAtOrAfter(delta_stats.min) returns true
+  // it means that there might be transactions that need to be applied in the
+  // context of this snapshot; otherwise no scanning is necessary.
+  bool MayHaveCommittedTransactionsAtOrAfter(const txid_t& txid) const;
+
+  // Returns true if this snapshot may have any uncommitted transactions with ID
+  // lower than the provided 'txid'.
+  // This is mostly useful to avoid scanning UNDO deltas in certain cases.
+  // If MayHaveUncommittedTransactionsBefore(delta_stats.max) returns false it
+  // means that all UNDO delta transactions are committed in the context of this
+  // snapshot and no scanning is necessary; otherwise there might be some
+  // transactions that need to be undone.
+  bool MayHaveUncommittedTransactionsBefore(const txid_t& txid) const;
 
   // Return a string representation of the set of committed transactions
   // in this snapshot, suitable for debug printouts.
@@ -125,6 +153,8 @@ class MvccSnapshot {
 
  private:
   friend class MvccManager;
+  FRIEND_TEST(TestMvcc, TestMayHaveCommittedTransactionsAtOrAfter);
+  FRIEND_TEST(TestMvcc, TestMayHaveUncommittedTransactionsBefore);
 
   // Summary rule:
   // A transaction T is committed if and only if:

@@ -15,6 +15,7 @@
 
 namespace kudu { namespace tablet {
 
+const txid_t txid_t::kMin(MathLimits<txid_t::val_type>::kMin);
 const txid_t txid_t::kMax(MathLimits<txid_t::val_type>::kMax);
 const txid_t txid_t::kInvalidTxId(MathLimits<txid_t::val_type>::kMax - 1);
 
@@ -81,7 +82,7 @@ MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
   return snap;
 }
 
-bool MvccSnapshot::IsCommitted(txid_t txid) const {
+bool MvccSnapshot::IsCommitted(const txid_t& txid) const {
   if (PREDICT_TRUE(txid.CompareTo(all_committed_before_txid_) < 0)) {
     return true;
   }
@@ -95,6 +96,14 @@ bool MvccSnapshot::IsCommitted(txid_t txid) const {
   }
 
   return true;
+}
+
+bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const txid_t& txid) const {
+  return txid.CompareTo(none_committed_after_txid_) < 0;
+}
+
+bool MvccSnapshot::MayHaveUncommittedTransactionsBefore(const txid_t& txid) const {
+  return txid.CompareTo(all_committed_before_txid_) > 0;
 }
 
 std::string MvccSnapshot::ToString() const {
