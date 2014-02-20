@@ -138,6 +138,24 @@ void Log::AppendThread::Shutdown() {
   CHECK_OK(ThreadJoiner(thread_.get(), "log appender thread").Join())
 }
 
+// This task is submitted to allocation_executor_ in order to
+// asynchronously pre-allocate new log segments.
+class Log::SegmentAllocationTask : public Task {
+ public:
+  explicit SegmentAllocationTask(Log* log)
+    : log_(log) {
+  }
+
+  Status Run() {
+    RETURN_NOT_OK(log_->PreAllocateNewSegment());
+    return Status::OK();
+  }
+
+  bool Abort() { return false; }
+ private:
+  Log* log_;
+};
+
 const Status Log::kLogShutdownStatus(
     Status::ServiceUnavailable("WAL is shutting down", "", ESHUTDOWN));
 
@@ -177,6 +195,11 @@ Status Log::Open(const LogOptions &options,
   return Status::OK();
 }
 
+// TODO It's inefficient to have an executor here with a fixed number
+// of threads: pre-allocations are relatively short lived and
+// infrequent. It makes sense to implement and use something like
+// Java's CachedThreadPool -- which has a min and max number of
+// threads, where min could be 0.
 Log::Log(const LogOptions &options,
          FsManager *fs_manager,
          const string& log_path,
@@ -189,7 +212,9 @@ Log::Log(const LogOptions &options,
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
   entry_queue_(FLAGS_group_commit_queue_size),
   append_thread_(new AppendThread(this)),
-  state_(kLogInitialized) {
+  allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
+  state_(kLogInitialized),
+  allocation_state_(kAllocationNotStarted) {
 }
 
 Status Log::Init() {
@@ -221,17 +246,39 @@ Status Log::Init() {
   }
 
   // we always create a new segment when the log starts.
-  RETURN_NOT_OK(CreateNewSegment());
+  RETURN_NOT_OK(AsyncAllocateSegment());
+  allocation_future_->Wait();
+  RETURN_NOT_OK(allocation_future_->status());
+  RETURN_NOT_OK(SwitchToAllocatedSegment());
+
   RETURN_NOT_OK(append_thread_->Init());
   state_ = kLogWriting;
   return Status::OK();
 }
 
+Status Log::AsyncAllocateSegment() {
+  boost::lock_guard<boost::shared_mutex> lock_guard(lock_);
+  CHECK_EQ(allocation_state_, kAllocationNotStarted);
+  allocation_future_.reset();
+  shared_ptr<Task> allocation_task(new SegmentAllocationTask(this));
+  allocation_state_ = kAllocationInProgress;
+  RETURN_NOT_OK(allocation_executor_->Submit(allocation_task, &allocation_future_));
+  return Status::OK();
+}
+
 Status Log::RollOver() {
-  CHECK_EQ(state_, kLogWriting);
+  // Check if any errors have occurred during allocation
+  allocation_future_->Wait();
+  RETURN_NOT_OK(allocation_future_->status());
+
+  DCHECK_EQ(allocation_state(), kAllocationFinished);
+
   RETURN_NOT_OK(Sync());
   RETURN_NOT_OK(active_segment_->writable_file()->Close());
-  RETURN_NOT_OK(CreateNewSegment());
+
+  RETURN_NOT_OK(SwitchToAllocatedSegment());
+
+  LOG(INFO) << "Rolled over to a new segment: " << active_segment_->path();
   return Status::OK();
 }
 
@@ -310,14 +357,25 @@ Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
   uint32_t entry_size = entry_data.size();
 
   // if the size of this entry overflows the current segment, get a new one
-  if ((active_segment_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
+  if (allocation_state() == kAllocationNotStarted) {
+    if ((active_segment_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
+      LOG(INFO) << "Max segment size reached. Starting new segment allocation. ";
+      RETURN_NOT_OK(AsyncAllocateSegment());
+      if (!options_.async_preallocate_segments) {
+        LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
+          RETURN_NOT_OK(RollOver());
+        }
+      }
+    }
+  } else if (allocation_state() == kAllocationFinished) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
       RETURN_NOT_OK(RollOver());
     }
-    LOG(INFO) << "Max segment size reached. Rolled over to new segment: "
-              << active_segment_->path();
+  } else {
+    VLOG(1) << "Segment allocation already in progress...";
   }
-  LOG_SLOW_EXECUTION(WARNING, 25, "Append to log took a long time") {
+
+  LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
     RETURN_NOT_OK(active_segment_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
   }
@@ -373,6 +431,7 @@ Status Log::GC() {
 }
 
 Status Log::Close() {
+  allocation_executor_->Shutdown();
   if (append_thread_.get() != NULL) {
     append_thread_->Shutdown();
     VLOG(1) << "Append thread Shutdown()";
@@ -391,7 +450,29 @@ Status Log::Close() {
   return Status::IllegalState(strings::Substitute("Bad state for Close() $0", state_));
 }
 
-Status Log::CreateNewSegment() {
+Status Log::PreAllocateNewSegment() {
+  CHECK_EQ(allocation_state(), kAllocationInProgress);
+
+  string placeholder_path = SegmentPlaceholderFileName();
+  VLOG(1) << "Creating next WAL segment, placeholder path: " << placeholder_path;
+  RETURN_NOT_OK(env_util::OpenFileForWrite(Env::WRITABLE_FILE_NO_MMAP,
+      fs_manager_->env(), placeholder_path, &next_segment_file_));
+
+  if (options_.preallocate_segments) {
+    // TODO (perf) zero the new segments -- this could result in
+    // additional performance improvements.
+    RETURN_NOT_OK(next_segment_file_->PreAllocate(max_segment_size_));
+  }
+
+  {
+    boost::lock_guard<boost::shared_mutex> lock_guard(lock_);
+    allocation_state_ = kAllocationFinished;
+  }
+  return Status::OK();
+}
+
+Status Log::SwitchToAllocatedSegment() {
+  CHECK_EQ(allocation_state(), kAllocationFinished);
 
   LogSegmentHeaderPB header;
   header.CopyFrom(*next_segment_header_.get());
@@ -399,21 +480,16 @@ Status Log::CreateNewSegment() {
   // Increment "next" log segment seqno.
   next_segment_header_->set_sequence_number(next_segment_header_->sequence_number() + 1);
 
-  // create a new segment file and pre-allocate the space
-  shared_ptr<WritableFile> sink;
+  string placeholder_path = SegmentPlaceholderFileName();
   string new_segment_path = CreateSegmentFileName(header.sequence_number());
 
-  VLOG(1) << "Creating new WAL segment: " << new_segment_path;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(
-      Env::WRITABLE_FILE_NO_MMAP, fs_manager_->env(), new_segment_path, &sink));
-
-  if (options_.preallocate_segments) {
-    RETURN_NOT_OK(sink->PreAllocate(max_segment_size_));
-  }
+  // TODO Technically, we need to fsync DirName(new_segment_path)
+  // after RenameFile().
+  RETURN_NOT_OK(fs_manager_->env()->RenameFile(placeholder_path, new_segment_path));
 
   // Create a new segment.
   gscoped_ptr<WritableLogSegment> new_segment(
-      new WritableLogSegment(header, new_segment_path, sink));
+      new WritableLogSegment(header, new_segment_path, next_segment_file_));
   // Write and sync the header.
   uint32_t pb_size = new_segment->header().ByteSize();
   faststring buf;
@@ -447,6 +523,8 @@ Status Log::CreateNewSegment() {
   header_size_ = new_header_size;
   active_segment_.reset(new_segment.release());
 
+  allocation_state_ = kAllocationNotStarted;
+
   return Status::OK();
 }
 
@@ -455,6 +533,11 @@ string Log::CreateSegmentFileName(uint64_t sequence_number) {
                           strings::Substitute("$0-$1",
                                               kLogPrefix,
                                               StringPrintf("%09lu", sequence_number)));
+}
+
+string Log::SegmentPlaceholderFileName() {
+  static const string kSegmentPlaceHolderSuffix = "___TMP___";
+  return JoinPathSegments(log_dir_, kSegmentPlaceHolderSuffix);
 }
 
 Log::~Log() {

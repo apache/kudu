@@ -42,6 +42,9 @@ struct LogOptions {
   // Whether to fallocate segments before writing to them.
   bool preallocate_segments;
 
+  // Whether the allocation should happen asynchronously.
+  bool async_preallocate_segments;
+
   LogOptions();
 };
 

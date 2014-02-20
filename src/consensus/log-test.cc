@@ -161,6 +161,7 @@ class LogTest : public LogTestBase {
     AppendCommit(1, 0);
 
     // rollover the log (the current MRS set will be in the new segment header)
+    ASSERT_STATUS_OK(log_->AsyncAllocateSegment());
     ASSERT_STATUS_OK(log_->RollOver());
 
     // append another batch to the initial memstores
@@ -188,6 +189,7 @@ class LogTest : public LogTestBase {
     ASSERT_STATUS_OK(log_->Append(&meta_entry));
 
     // Roll over the log
+    ASSERT_STATUS_OK(log_->AsyncAllocateSegment());
     ASSERT_STATUS_OK(log_->RollOver());
 
     // append a new batch of updates/inserts to the last memstores.
@@ -256,22 +258,21 @@ TEST_F(LogTest, TestSegmentRollover) {
   BuildLog();
   log_->SetMaxSegmentSizeForTests(1024);
 
-  // Write 100 replicate/commit pairs to the log.
-  AppendBatchAndCommitEntryPairsToLog(100);
+  int num_pairs = 0;
+  do {
+    // Write 100 replicate/commit pairs to the log.
+    AppendBatchAndCommitEntryPairsToLog(100);
+    num_pairs += 100;
+  } while (log_->PreviousSegmentsForTests().size() < 3);
 
-  // At the time of writing, we can fit 4 pairs per log segment.
-  // Therefore, we should have 24 "rolled" segments and one "full" but
-  // currently active one, for a total of 25 * 4 = 100 records.
-  ASSERT_EQ(24, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
-
   BuildLogReader();
   for (int i = 0; i < log_reader_->size(); i++) {
     ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[i], &entries_));
   }
-  // expect 100 <op,commit> entries, i.e. 200 LogEntryPB's
-  ASSERT_EQ(200, entries_.size());
 
+  // expect num_pairs <op,commit> entries, i.e., num_pairs * 2 LogEntryPB's
+  ASSERT_EQ(num_pairs * 2, entries_.size());
 }
 
 // Tests that segments that can be are GC'd, while the log is running.

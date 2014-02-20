@@ -75,6 +75,13 @@ class Log {
   // TODO get rid of this method, transition to the asynchronous API
   Status Append(LogEntryPB* entry);
 
+  // Kick off an asynchronous task that pre-allocates a new
+  // log-segment, initializing 'allocation_future_'. To check whether
+  // or not the task has finished, we can either use
+  // allocation_future_ or check if allocation_state() returns
+  // 'kAllocationFinished'.
+  Status AsyncAllocateSegment();
+
   // Make segments roll over
   Status RollOver();
 
@@ -85,9 +92,14 @@ class Log {
     max_segment_size_ = max_segment_size;
   }
 
+  void DisableAsyncAllocationForTests() {
+    options_.async_preallocate_segments = false;
+  }
+
   // Returns the current header so that the log can be queried for the most
   // current config/metadata/<term,index>.
   const LogSegmentHeaderPB* current_header() const {
+    boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
     return next_segment_header_.get();
   }
 
@@ -126,6 +138,7 @@ class Log {
   DISALLOW_COPY_AND_ASSIGN(Log);
 
   class AppendThread;
+  class SegmentAllocationTask;
 
   Log(const LogOptions &options,
       FsManager *fs_manager,
@@ -138,9 +151,16 @@ class Log {
   // Creates the name for a new segment as log-<seqno>
   string CreateSegmentFileName(uint64_t sequence_number);
 
+  // Returns a temprorary place holder path for a segment
+  // being asynchronously allocated.
+  string SegmentPlaceholderFileName();
+
   // Creates a new WAL segment on disk, writes the next_segment_header_ to
   // disk as the header, and sets active_segment_ to point to this new segment.
-  Status CreateNewSegment();
+  Status SwitchToAllocatedSegment();
+
+  // Preallocates the space for a new segment.
+  Status PreAllocateNewSegment();
 
   // Writes serialized contents of 'entry' to the log. Called inside
   // AppenderThread. If 'caller_owns_operation' is true, then the
@@ -156,6 +176,9 @@ class Log {
     return &entry_queue_;
   }
 
+  // Read-write lock to protect 'allocation_state_'.
+  mutable boost::shared_mutex lock_;
+
   LogOptions options_;
   FsManager *fs_manager_;
   string log_dir_;
@@ -165,6 +188,9 @@ class Log {
 
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;
+
+  // The writable file for the next allocated segment
+  std::tr1::shared_ptr<WritableFile> next_segment_file_;
 
   // All previous (inactive) un-GC'd segments.
   vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_segments_;
@@ -188,12 +214,31 @@ class Log {
   // The tablet ID of the tablet this log corresponds to.
   std::string tablet_id_;
 
+  gscoped_ptr<TaskExecutor> allocation_executor_;
+
+  // The future for an asynchronous log segment preallocation task.
+  std::tr1::shared_ptr<kudu::Future> allocation_future_;
+
   enum State {
     kLogInitialized,
     kLogWriting,
     kLogClosed
   };
   State state_;
+
+  // State of segment (pre-) allocation
+  enum SegmentAllocationState {
+    kAllocationNotStarted, // No segment allocation requested
+    kAllocationInProgress, // Next segment allocation started
+    kAllocationFinished // Next segment ready
+  };
+
+  const SegmentAllocationState allocation_state() {
+    boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
+    return allocation_state_;
+  }
+
+  SegmentAllocationState allocation_state_;
 };
 
 // This class represents a batch of operations to be written and
