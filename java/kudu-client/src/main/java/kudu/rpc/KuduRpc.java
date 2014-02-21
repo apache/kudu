@@ -54,6 +54,15 @@ import java.nio.charset.Charset;
  */
 public abstract class KuduRpc {
 
+  public interface HasKey {
+    /**
+     * Returns the row key this RPC is for.
+     * <p>
+     * <strong>DO NOT MODIFY THE CONTENTS OF THE ARRAY RETURNED.</strong>
+     */
+    public byte[] key();
+  }
+
   /**
    * The Deferred that will be invoked when this RPC completes or fails.
    * In case of a successful completion, this Deferred's first callback
