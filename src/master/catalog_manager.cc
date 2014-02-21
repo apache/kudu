@@ -966,7 +966,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             "Tablet reported by leader");
       Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
       if (!s.ok()) {
-        LOG(ERROR) << "Unable to write tablet to system table: " << s.ToString();
+        // panic-mode: abort the master
+        LOG(FATAL) << "An error occurred while updating sys-tablets: " << s.ToString();
       }
 
       tablet_lock.Commit();
