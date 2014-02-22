@@ -83,6 +83,10 @@ class txid_t {
     return Status::OK();
   }
 
+  // An initial transaction id. The manager initializes to this value,
+  // which is bigger than min.
+  static const txid_t kInitialTxId;
+
   // An invalid transaction ID -- txid_t types initialize to this variable.
   static const txid_t kInvalidTxId;
 
@@ -123,6 +127,9 @@ class MvccSnapshot {
   // This is mostly useful in test contexts.
   static MvccSnapshot CreateSnapshotIncludingAllTransactions();
 
+  // Creates a snapshot which considers no transactions committed.
+  static MvccSnapshot CreateSnapshotIncludingNoTransactions();
+
   // Return true if the given transaction ID should be considered committed
   // in this snapshot.
   bool IsCommitted(const txid_t& txid) const;
@@ -136,13 +143,13 @@ class MvccSnapshot {
   bool MayHaveCommittedTransactionsAtOrAfter(const txid_t& txid) const;
 
   // Returns true if this snapshot may have any uncommitted transactions with ID
-  // lower than the provided 'txid'.
+  // equal to or lower than the provided 'txid'.
   // This is mostly useful to avoid scanning UNDO deltas in certain cases.
-  // If MayHaveUncommittedTransactionsBefore(delta_stats.max) returns false it
+  // If MayHaveUncommittedTransactionsAtOrBefore(delta_stats.max) returns false it
   // means that all UNDO delta transactions are committed in the context of this
   // snapshot and no scanning is necessary; otherwise there might be some
   // transactions that need to be undone.
-  bool MayHaveUncommittedTransactionsBefore(const txid_t& txid) const;
+  bool MayHaveUncommittedTransactionsAtOrBefore(const txid_t& txid) const;
 
   // Return a string representation of the set of committed transactions
   // in this snapshot, suitable for debug printouts.

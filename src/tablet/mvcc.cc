@@ -17,6 +17,7 @@ namespace kudu { namespace tablet {
 
 const txid_t txid_t::kMin(MathLimits<txid_t::val_type>::kMin);
 const txid_t txid_t::kMax(MathLimits<txid_t::val_type>::kMax);
+const txid_t txid_t::kInitialTxId(MathLimits<txid_t::val_type>::kMin + 1);
 const txid_t txid_t::kInvalidTxId(MathLimits<txid_t::val_type>::kMax - 1);
 
 MvccManager::MvccManager()
@@ -63,8 +64,8 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
 ////////////////////////////////////////////////////////////
 
 MvccSnapshot::MvccSnapshot()
- : all_committed_before_txid_(0),
-   none_committed_after_txid_(0) {
+ : all_committed_before_txid_(txid_t::kInitialTxId),
+   none_committed_after_txid_(txid_t::kInitialTxId) {
 }
 
 MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
@@ -80,6 +81,10 @@ MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
   MvccSnapshot snap;
   snap.all_committed_before_txid_ = txid_t::kMax;
   return snap;
+}
+
+MvccSnapshot MvccSnapshot::CreateSnapshotIncludingNoTransactions() {
+  return MvccSnapshot(txid_t::kMin);
 }
 
 bool MvccSnapshot::IsCommitted(const txid_t& txid) const {
@@ -102,8 +107,8 @@ bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const txid_t& txid) con
   return txid.CompareTo(none_committed_after_txid_) < 0;
 }
 
-bool MvccSnapshot::MayHaveUncommittedTransactionsBefore(const txid_t& txid) const {
-  return txid.CompareTo(all_committed_before_txid_) > 0;
+bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const txid_t& txid) const {
+  return txid.CompareTo(all_committed_before_txid_) >= 0;
 }
 
 std::string MvccSnapshot::ToString() const {

@@ -268,9 +268,9 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, &schema_, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=0) mutations: [@10(SET val=1), @20(SET val=2)]",
+  ASSERT_EQ("(string key=hello 00000000, uint32 val=0) mutations: [@11(SET val=1), @21(SET val=2)]",
             out[0]);
-  ASSERT_EQ("(string key=hello 00000090, uint32 val=9) mutations: [@19(SET val=1), @29(SET val=2)]",
+  ASSERT_EQ("(string key=hello 00000090, uint32 val=9) mutations: [@20(SET val=1), @30(SET val=2)]",
             out[9]);
 }
 
@@ -298,10 +298,10 @@ TEST_F(TestCompaction, TestRowSetInput) {
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=0) "
-            "mutations: [@10(SET val=1), @20(SET val=2), @30(SET val=3), @40(SET val=4)]",
+            "mutations: [@11(SET val=1), @21(SET val=2), @31(SET val=3), @41(SET val=4)]",
             out[0]);
   ASSERT_EQ("(string key=hello 00000090, uint32 val=9) "
-            "mutations: [@19(SET val=1), @29(SET val=2), @39(SET val=3), @49(SET val=4)]",
+            "mutations: [@20(SET val=1), @30(SET val=2), @40(SET val=3), @50(SET val=4)]",
             out[9]);
 }
 
@@ -346,7 +346,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=1) mutations: "
-            "[@2000(SET val=2), @3000(SET val=3)]", out[0]);
+            "[@2001(SET val=2), @3001(SET val=3)]", out[0]);
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
