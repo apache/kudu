@@ -297,6 +297,8 @@ message GetTableLocationsRequestPB {
   // key-range
   optional bytes start_key = 3;
   optional bytes end_key = 4;
+
+  optional uint32 max_returned_locations = 5 [ default = 10 ];
 }
 
 message GetTableLocationsResponsePB {

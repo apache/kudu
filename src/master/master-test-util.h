@@ -29,6 +29,7 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
   for (int i = 0; i < 80; ++i) {
     resp->Clear();
     req.mutable_table()->set_table_name(table_name);
+    req.set_max_returned_locations(expected_count);
     RETURN_NOT_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, resp));
     if (resp->tablet_locations_size() >= expected_count) {
       return Status::OK();

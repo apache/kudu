@@ -133,4 +133,47 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   }
 }
 
+TEST_F(CreateTableStressTest, TestLimitGetTableLocations) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping slow test";
+    return;
+  }
+  string table_name = "test_table";
+  ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name));
+  master::GetTableLocationsResponsePB resp;
+
+  // Make sure the table is completely created before we start poking
+  CHECK_OK(WaitForRunningTabletCount(cluster_->mini_master(), table_name,
+                                       kNumTablets, &resp));
+
+  master::GetTableLocationsRequestPB req;
+  {
+    req.Clear();
+    resp.Clear();
+    req.mutable_table()->set_table_name(table_name);
+    req.set_max_returned_locations(0);
+    Status s = cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp);
+    ASSERT_STR_CONTAINS(s.ToString(), "must be greater than 0");
+  }
+
+  {
+    req.Clear();
+    resp.Clear();
+    req.mutable_table()->set_table_name(table_name);
+    req.set_max_returned_locations(1);
+    CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_EQ(resp.tablet_locations_size(), 1);
+  }
+
+  {
+    int half_tablets = kNumTablets / 2;
+    req.Clear();
+    resp.Clear();
+    req.mutable_table()->set_table_name(table_name);
+    req.set_max_returned_locations(half_tablets);
+    CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_EQ(resp.tablet_locations_size(), half_tablets);
+  }
+}
+
 } // namespace kudu

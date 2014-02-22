@@ -1667,6 +1667,10 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
     return Status::InvalidArgument("start-key is greater than end_key");
   }
 
+  if (req->max_returned_locations() <= 0) {
+    return Status::InvalidArgument("max_returned_locations must be greater than 0");
+  }
+
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
 
@@ -1895,6 +1899,7 @@ void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
 void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
                                   vector<scoped_refptr<TabletInfo> > *ret) const {
   boost::lock_guard<simple_spinlock> l(lock_);
+  int max_returned_locations = req->max_returned_locations();
 
   TableInfo::TabletInfoMap::const_iterator it, it_end;
   if (req->has_start_key()) {
@@ -1910,8 +1915,10 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
     it_end = tablet_map_.end();
   }
 
-  for (; it != it_end; ++it) {
+  int count = 0;
+  for (; it != it_end && count < max_returned_locations; ++it) {
     ret->push_back(make_scoped_refptr(it->second));
+    count++;
   }
 }
 
