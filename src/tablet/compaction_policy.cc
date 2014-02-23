@@ -5,6 +5,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <inttypes.h>
 #include <time.h>
 
 #include <algorithm>

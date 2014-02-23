@@ -4,112 +4,19 @@
 #define KUDU_TABLET_MVCC_H
 
 #include <gtest/gtest.h>
-#include <inttypes.h>
 #include <tr1/unordered_set>
 #include <string>
 
-#include "gutil/endian.h"
-#include "gutil/macros.h"
-#include "gutil/strings/substitute.h"
-#include "util/memcmpable_varint.h"
+#include "gutil/gscoped_ptr.h"
+#include "tablet/clock.h"
 #include "util/locks.h"
-#include "util/status.h"
 
 namespace kudu {
 namespace tablet {
-
 class MvccManager;
 
 using std::tr1::unordered_set;
 using std::string;
-
-// Type-safe container for txids (to prevent inadvertently passing
-// other integers)
-class txid_t {
- public:
-  typedef uint64_t val_type;
-
-  txid_t() :
-    v(kInvalidTxId.v)
-  {}
-
-  explicit txid_t(uint64_t val) :
-    v(val)
-  {}
-
-
-  bool operator ==(const txid_t &other) const {
-    return v == other.v;
-  }
-
-  // Decode a txid from the given input slice.
-  // Mutates the slice to point after the decoded txid.
-  // Returns true upon success.
-  bool DecodeFrom(Slice *input) {
-    return GetMemcmpableVarint64(input, &v);
-  }
-
-  // Encode the txid to the given buffer.
-  void EncodeTo(faststring *dst) const {
-    PutMemcmpableVarint64(dst, v);
-  }
-
-  int CompareTo(const txid_t &other) const {
-    if (v < other.v) {
-      return -1;
-    } else if (v > other.v) {
-      return 1;
-    }
-
-    return 0;
-  }
-
-  string ToString() const {
-    return strings::Substitute("$0", v);
-  }
-
-  // Encodes this txid_t and appends it to the provided string.
-  void EncodeToString(string* encode_to) const {
-    faststring buf;
-    EncodeTo(&buf);
-    encode_to->append(reinterpret_cast<const char* >(buf.data()), buf.size());
-  }
-
-  Status DecodeFromString(const string& decode_from) {
-    Slice slice(decode_from);
-    if (!DecodeFrom(&slice)) {
-      return Status::Corruption("Cannot decode txid.");
-    }
-    return Status::OK();
-  }
-
-  // An initial transaction id. The manager initializes to this value,
-  // which is bigger than min.
-  static const txid_t kInitialTxId;
-
-  // An invalid transaction ID -- txid_t types initialize to this variable.
-  static const txid_t kInvalidTxId;
-
-  // The maximum txid.
-  static const txid_t kMax;
-
-  // The minimum txid.
-  static const txid_t kMin;
-
- private:
-  friend class MvccManager;
-  friend class MvccSnapshot;
-  FRIEND_TEST(TestMvcc, TestMvccBasic);
-  FRIEND_TEST(TestMvcc, TestMvccMultipleInFlight);
-  FRIEND_TEST(TestMvcc, TestScopedTransaction);
-
-  val_type v;
-};
-
-
-inline std::ostream &operator <<(std::ostream &o, const txid_t &txid) {
-  return o << txid.ToString();
-}
 
 // A snapshot of the current MVCC state, which can determine whether
 // a transaction ID should be considered visible.
@@ -217,6 +124,7 @@ class MvccManager {
   typedef simple_spinlock LockType;
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
+  scoped_refptr<Clock> clock_;
 };
 
 // A scoped handle to a running transaction.

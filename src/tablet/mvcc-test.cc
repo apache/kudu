@@ -21,11 +21,11 @@ TEST(TestMvcc, TestMvccBasic) {
 
   // Start txid 1
   txid_t t = mgr.StartTransaction();
-  ASSERT_EQ(1, t.v);
+  ASSERT_EQ(1, t.value());
 
   // State should still have no committed transactions, since 1 is in-flight.
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 1 or (T < 2 and T not in {1})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(txid_t(1)));
   ASSERT_FALSE(snap.IsCommitted(txid_t(2)));
 
@@ -45,14 +45,14 @@ TEST(TestMvcc, TestMvccMultipleInFlight) {
 
   // Start txid 1, txid 2
   txid_t t1 = mgr.StartTransaction();
-  ASSERT_EQ(1, t1.v);
+  ASSERT_EQ(1, t1.value());
   txid_t t2 = mgr.StartTransaction();
-  ASSERT_EQ(2, t2.v);
+  ASSERT_EQ(2, t2.value());
 
   // State should still have no committed transactions, since both are in-flight.
 
   mgr.TakeSnapshot(&snap);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
+  ASSERT_EQ("MvccSnapshot[committed={T|T < 1 or (T < 3 and T not in {1,2})}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_FALSE(snap.IsCommitted(t2));
 
@@ -68,7 +68,7 @@ TEST(TestMvcc, TestMvccMultipleInFlight) {
 
   // Start txid 3
   txid_t t3 = mgr.StartTransaction();
-  ASSERT_EQ(3, t3.v);
+  ASSERT_EQ(3, t3.value());
 
   // State should show 2 as committed, 1 and 3 as uncommitted.
   mgr.TakeSnapshot(&snap);
@@ -108,8 +108,8 @@ TEST(TestMvcc, TestScopedTransaction) {
     ScopedTransaction t1(&mgr);
     ScopedTransaction t2(&mgr);
 
-    ASSERT_EQ(1, t1.txid().v);
-    ASSERT_EQ(2, t2.txid().v);
+    ASSERT_EQ(1, t1.txid().value());
+    ASSERT_EQ(2, t2.txid().value());
 
     t1.Commit();
 

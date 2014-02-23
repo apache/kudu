@@ -11,38 +11,38 @@
 #include "gutil/port.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/strcat.h"
+#include "tablet/logical_clock.h"
 #include "tablet/mvcc.h"
 
 namespace kudu { namespace tablet {
 
-const txid_t txid_t::kMin(MathLimits<txid_t::val_type>::kMin);
-const txid_t txid_t::kMax(MathLimits<txid_t::val_type>::kMax);
-const txid_t txid_t::kInitialTxId(MathLimits<txid_t::val_type>::kMin + 1);
-const txid_t txid_t::kInvalidTxId(MathLimits<txid_t::val_type>::kMax - 1);
-
 MvccManager::MvccManager()
-{}
+    : clock_(new LogicalClock(txid_t::kInitialTxId.value() - 1)) {
+  cur_snap_.none_committed_after_txid_ = txid_t::kInitialTxId;
+  cur_snap_.all_committed_before_txid_ = txid_t::kInitialTxId;
+}
 
 txid_t MvccManager::StartTransaction() {
   boost::lock_guard<LockType> l(lock_);
-  txid_t my_txid(cur_snap_.none_committed_after_txid_.v++);
-  bool was_inserted = cur_snap_.txids_in_flight_.insert(my_txid.v).second;
-  DCHECK(was_inserted) << "Already had txid " << my_txid.ToString() << " in in-flight list";
-  return my_txid;
+  txid_t now = clock_->Now();
+  cur_snap_.none_committed_after_txid_ = txid_t(now.value() + 1);
+  bool was_inserted = cur_snap_.txids_in_flight_.insert(now.value()).second;
+  DCHECK(was_inserted) << "Already had txid " << now.ToString() << " in in-flight list";
+  return now;
 }
 
 void MvccManager::CommitTransaction(txid_t txid) {
   boost::lock_guard<LockType> l(lock_);
   DCHECK(txid.CompareTo(cur_snap_.none_committed_after_txid_) <= 0)
     << "Trying to commit txid which isn't in the in-flight range yet";
-  unordered_set<txid_t::val_type>::iterator it = cur_snap_.txids_in_flight_.find(txid.v);
+  unordered_set<txid_t::val_type>::iterator it = cur_snap_.txids_in_flight_.find(txid.value());
   CHECK(it != cur_snap_.txids_in_flight_.end())
     << "Trying to commit txid which isn't in the in-flight set";
   cur_snap_.txids_in_flight_.erase(it);
 
   // If the txid was the earliest in the in-flight range, we can now advance
   // the in-flight range
-  if (txid == cur_snap_.all_committed_before_txid_) {
+  if (txid.CompareTo(cur_snap_.all_committed_before_txid_) == 0) {
 
     if (!cur_snap_.txids_in_flight_.empty()) {
       txid_t new_min(*std::min_element(cur_snap_.txids_in_flight_.begin(),
@@ -94,7 +94,7 @@ bool MvccSnapshot::IsCommitted(const txid_t& txid) const {
     return false;
   }
 
-  if (txids_in_flight_.count(txid.v)) {
+  if (txids_in_flight_.count(txid.value())) {
     return false;
   }
 
@@ -112,12 +112,14 @@ bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const txid_t& txid) 
 std::string MvccSnapshot::ToString() const {
   string ret("MvccSnapshot[committed={T|");
 
- if (txids_in_flight_.size() + all_committed_before_txid_.v == none_committed_after_txid_.v) {
-    StrAppend(&ret, "T < ", all_committed_before_txid_.ToString(),"}]");
+  if (txids_in_flight_.size() == 0) {
+    // if there are no transactions in flight these must be the same.
+    CHECK(all_committed_before_txid_ == none_committed_after_txid_);
+    StrAppend(&ret, "T < ", none_committed_after_txid_.ToString(),"}]");
     return ret;
   }
- StrAppend(&ret, "T < ", all_committed_before_txid_.ToString(),
-           " or (T < ", none_committed_after_txid_.ToString(), " and T not in {");
+  StrAppend(&ret, "T < ", all_committed_before_txid_.ToString(),
+            " or (T < ", none_committed_after_txid_.ToString(), " and T not in {");
 
   bool first = true;
   BOOST_FOREACH(txid_t::val_type t, txids_in_flight_) {
