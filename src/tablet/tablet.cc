@@ -179,8 +179,8 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status Tablet::Insert(WriteTransactionContext *tx_ctx,
-                      const ConstContiguousRow& row) {
+Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
+                                const ConstContiguousRow& row) {
   CHECK(open_) << "must Open() first!";
   DCHECK(tx_ctx) << "you must have a transaction context";
 
@@ -284,10 +284,10 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status Tablet::MutateRow(WriteTransactionContext *tx_ctx,
-                         const ConstContiguousRow& row_key,
-                         const Schema& update_schema,
-                         const RowChangeList& update) {
+Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
+                                   const ConstContiguousRow& row_key,
+                                   const Schema& update_schema,
+                                   const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);

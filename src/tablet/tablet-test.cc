@@ -100,11 +100,11 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ConstContiguousRow row(rb.schema(), rb.data());
 
   WriteTransactionContext tx_ctx;
-  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, row));
+  ASSERT_STATUS_OK(this->tablet_->InsertForTesting(&tx_ctx, row));
   ASSERT_EQ(1, tx_ctx.Result().inserts().size());
 
   // Insert again, should fail!
-  Status s = this->tablet_->Insert(&tx_ctx, row);
+  Status s = this->tablet_->InsertForTesting(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
   ASSERT_EQ(2, tx_ctx.Result().inserts().size());
@@ -117,7 +117,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   ASSERT_EQ(1, this->TabletCount());
 
-  s = this->tablet_->Insert(&tx_ctx, row);
+  s = this->tablet_->InsertForTesting(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent())
     << "expected AlreadyPresent, but got: " << s.ToString()
     << " Inserting: " << rb.data().ToDebugString();
@@ -281,21 +281,21 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, kInRowSet1);
   WriteTransactionContext tx_ctx;
-  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
+  ASSERT_STATUS_OK(this->tablet_->InsertForTesting(&tx_ctx, rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Put a row in disk rowset 2 (insert and flush)
   rb.Reset();
   tx_ctx.Reset();
   this->setup_.BuildRow(&rb, kInRowSet2);
-  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
+  ASSERT_STATUS_OK(this->tablet_->InsertForTesting(&tx_ctx, rb.row()));
   ASSERT_STATUS_OK(this->tablet_->Flush());
 
   // Put a row in memrowset
   rb.Reset();
   tx_ctx.Reset();
   this->setup_.BuildRow(&rb, kInMemRowSet);
-  ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
+  ASSERT_STATUS_OK(this->tablet_->InsertForTesting(&tx_ctx, rb.row()));
 
   // Now iterate the tablet and make sure the rows show up
   gscoped_ptr<RowwiseIterator> iter;
@@ -340,7 +340,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
     rb.Reset();
     tx_ctx.Reset();
     this->setup_.BuildRow(&rb, i);
-    ASSERT_STATUS_OK(this->tablet_->Insert(&tx_ctx, rb.row()));
+    ASSERT_STATUS_OK(this->tablet_->InsertForTesting(&tx_ctx, rb.row()));
     inserted.insert(i);
 
     if (i % 300 == 0) {

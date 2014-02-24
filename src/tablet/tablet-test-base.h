@@ -99,7 +99,7 @@ struct StringKeyTestSetup {
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(tx_ctx, rb.row(), test_schema_, RowChangeList(ubuf));
+    return tablet->MutateRowForTesting(tx_ctx, rb.row(), test_schema_, RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -197,7 +197,7 @@ struct CompositeKeyTestSetup {
 
     faststring ubuf;
     RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(2, new_val);
-    return tablet->MutateRow(tx_ctx, rb.row(), test_schema_, RowChangeList(ubuf));
+    return tablet->MutateRowForTesting(tx_ctx, rb.row(), test_schema_, RowChangeList(ubuf));
   }
 
   template <class RowType>
@@ -282,7 +282,7 @@ struct IntKeyTestSetup {
     faststring buf;
     *new_val = 10000 + row_idx;
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
-    return tablet->MutateRow(tx_ctx, rb.row(), test_schema_, RowChangeList(buf));
+    return tablet->MutateRowForTesting(tx_ctx, rb.row(), test_schema_, RowChangeList(buf));
   }
 
   template<class RowType>
@@ -540,7 +540,7 @@ struct NullableValueTestSetup {
     RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1,
                                                              IsNullRow(row_idx) ?
                                                              new_val : NULL);
-    return tablet->MutateRow(tx_ctx, rb.row(), test_schema_, RowChangeList(buf));
+    return tablet->MutateRowForTesting(tx_ctx, rb.row(), test_schema_, RowChangeList(buf));
   }
 
   template <class RowType>
@@ -635,7 +635,7 @@ class TabletTestBase : public KuduTabletTest {
       rb.Reset();
       tx_ctx.Reset();
       setup_.BuildRow(&rb, i, update_count_val);
-      CHECK_OK(tablet_->Insert(&tx_ctx, rb.row()));
+      CHECK_OK(tablet_->InsertForTesting(&tx_ctx, rb.row()));
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
@@ -655,7 +655,7 @@ class TabletTestBase : public KuduTabletTest {
     RowBuilder rb(schema_);
     rb.Reset();
     setup_.BuildRow(&rb, row, update_count_val);
-    CHECK_OK(tablet_->Insert(tx_ctx, rb.row()));
+    CHECK_OK(tablet_->InsertForTesting(tx_ctx, rb.row()));
   }
 
   Status UpdateTestRow(WriteTransactionContext *tx_ctx,
@@ -669,7 +669,7 @@ class TabletTestBase : public KuduTabletTest {
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
     RowChangeListEncoder(schema_, &buf).AddColumnUpdate(col_idx, &new_val);
-    return tablet_->MutateRow(tx_ctx, rb.row(), schema_, RowChangeList(buf));
+    return tablet_->MutateRowForTesting(tx_ctx, rb.row(), schema_, RowChangeList(buf));
   }
 
   Status DeleteTestRow(WriteTransactionContext *tx_ctx, uint64_t row_idx) {
@@ -677,7 +677,7 @@ class TabletTestBase : public KuduTabletTest {
     setup_.BuildRowKey(&rb, row_idx);
     faststring buf;
     RowChangeListEncoder(schema_, &buf).SetToDelete();
-    return tablet_->MutateRow(tx_ctx, rb.row(), schema_, RowChangeList(buf));
+    return tablet_->MutateRowForTesting(tx_ctx, rb.row(), schema_, RowChangeList(buf));
   }
 
   template <class RowType>

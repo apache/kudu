@@ -172,7 +172,7 @@ class TabletServerTest : public KuduTest {
   void InsertTestRowsDirect(uint64_t start_row, uint64_t num_rows) {
     tablet::WriteTransactionContext tx_ctx;
     for (uint64_t i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(start_row + i)));
+      CHECK_OK(tablet_peer_->tablet()->InsertForTesting(&tx_ctx, BuildTestRow(start_row + i)));
       tx_ctx.Reset();
     }
   }

@@ -55,7 +55,7 @@ class TabletPushdownTest : public KuduTabletTest,
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("%08ld", i));
 
-      ASSERT_STATUS_OK_FAST(tablet_->Insert(&tx_ctx, rb.row()));
+      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_ctx, rb.row()));
 
       if (i == 205 && GetParam() == SPLIT_MEMORY_DISK) {
         ASSERT_STATUS_OK(tablet_->Flush());

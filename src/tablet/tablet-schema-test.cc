@@ -45,7 +45,7 @@ class TestTabletSchema : public KuduTabletTest {
     rb.AddUint32(key);
     rb.AddUint32(key);
     WriteTransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->Insert(&tx_ctx, rb.row()));
+    ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_ctx, rb.row()));
   }
 
   void DeleteRow(const Schema& schema, size_t key) {
@@ -55,7 +55,8 @@ class TestTabletSchema : public KuduTabletTest {
     RowChangeListEncoder mutation(schema, &buf);
     mutation.SetToDelete();
     WriteTransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), schema, mutation.as_changelist()));
+    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_ctx, rb.row(), schema,
+                                                  mutation.as_changelist()));
   }
 
   void MutateRow(const Schema& schema, size_t key, size_t col_idx, size_t new_val) {
@@ -65,7 +66,8 @@ class TestTabletSchema : public KuduTabletTest {
     RowChangeListEncoder mutation(schema, &buf);
     mutation.AddColumnUpdate(col_idx, &new_val);
     WriteTransactionContext tx_ctx;
-    ASSERT_STATUS_OK(tablet_->MutateRow(&tx_ctx, rb.row(), schema, mutation.as_changelist()));
+    ASSERT_STATUS_OK(tablet_->MutateRowForTesting(&tx_ctx, rb.row(), schema,
+                                                  mutation.as_changelist()));
   }
 
   void VerifyTabletRows(const Schema& projection,

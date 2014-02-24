@@ -110,7 +110,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           update_buf.clear();
           RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
           WriteTransactionContext dummy;
-          CHECK_OK(tablet_->MutateRow(&dummy, rb.row(), schema_, RowChangeList(update_buf)));
+          CHECK_OK(tablet_->MutateRowForTesting(&dummy, rb.row(), schema_,
+                                                RowChangeList(update_buf)));
 
           if (++updates_since_last_report >= 10) {
             updates->AddValue(updates_since_last_report);

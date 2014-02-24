@@ -88,7 +88,7 @@ class Tablet {
   // Returns Status::AlreadyPresent() if an entry with the same key is already
   // present in the tablet.
   // Returns Status::OK unless allocation fails.
-  Status Insert(WriteTransactionContext *tx_ctx, const ConstContiguousRow& row);
+  Status InsertForTesting(WriteTransactionContext *tx_ctx, const ConstContiguousRow& row);
 
   // A version of Insert that does not acquire locks and instead assumes that
   // they were already acquired. Requires that handles for the relevant locks
@@ -115,10 +115,10 @@ class Tablet {
   //
   // If the row does not exist in this tablet, returns
   // Status::NotFound().
-  Status MutateRow(WriteTransactionContext *tx_ctx,
-                   const ConstContiguousRow& row_key,
-                   const Schema& update_schema,
-                   const RowChangeList& update);
+  Status MutateRowForTesting(WriteTransactionContext *tx_ctx,
+                             const ConstContiguousRow& row_key,
+                             const Schema& update_schema,
+                             const RowChangeList& update);
 
   // A version of MutateRow that does not acquire locks and instead assumes
   // they were already acquired. Requires that handles for the relevant locks

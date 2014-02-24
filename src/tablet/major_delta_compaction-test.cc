@@ -68,7 +68,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
       rb.AddString(StringPrintf("a %08d", i * 2));
       rb.AddUint32(i * 10);
       rb.AddString(StringPrintf("b %08d", i * 10));
-      ASSERT_STATUS_OK_FAST(tablet_->Insert(&tx_ctx, rb.row()));
+      ASSERT_STATUS_OK_FAST(tablet_->InsertForTesting(&tx_ctx, rb.row()));
     }
   }
 
@@ -89,7 +89,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
         update.AddColumnUpdate(1, &col1_val);
         update.AddColumnUpdate(3, &col3_val);
         update.AddColumnUpdate(4, &col4_val);
-        ASSERT_STATUS_OK(tablet_->MutateRow(
+        ASSERT_STATUS_OK(tablet_->MutateRowForTesting(
             &tx_ctx, rb.row(), schema_, RowChangeList(update_buf)));
       }
     }

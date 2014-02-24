@@ -98,7 +98,7 @@ class ClientTest : public KuduTest {
   void InsertTestRows(int num_rows) {
     tablet::WriteTransactionContext tx_ctx;
     for (int i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->Insert(&tx_ctx, BuildTestRow(i)));
+      CHECK_OK(tablet_peer_->tablet()->InsertForTesting(&tx_ctx, BuildTestRow(i)));
       tx_ctx.Reset();
     }
     CHECK_OK(tablet_peer_->tablet()->Flush());
