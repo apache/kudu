@@ -52,6 +52,10 @@ class DeltaCompactionInput {
 
   virtual const DeltaStats& stats() const = 0;
 
+  // Returns the projector from the schema used when the deltas were
+  // added to this input's underlying store to the current schema.
+  virtual const DeltaProjector* delta_projector() const = 0;
+
   virtual ~DeltaCompactionInput() {}
 };
 

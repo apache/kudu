@@ -99,6 +99,10 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
     return stats_;
   }
 
+  const DeltaProjector* delta_projector() const {
+    return &delta_projector_;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStoreCompactionInput);
 
@@ -191,6 +195,10 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
     return stats_;
   }
 
+  const DeltaProjector* delta_projector() const {
+    return &delta_projector_;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaFileCompactionInput);
 
@@ -275,8 +283,14 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
       DCHECK_SCHEMA_EQ(schema_, input->schema());
       gscoped_ptr<MergeState> state(new MergeState);
       stats_.IncrDeleteCount(input->stats().delete_count());
-      for (size_t idx = 0; idx < input->stats().num_columns(); idx++) {
-        stats_.IncrUpdateCount(idx, input->stats().update_count(idx));
+      size_t ncols = std::min(input->stats().num_columns(), schema_.num_columns());
+      for (size_t idx = 0; idx < ncols; idx++) {
+        size_t col_id = schema_.column_id(idx);
+        size_t proj_idx = 0xdeadbeef;
+        if (input->delta_projector()->get_proj_col_from_base_id(col_id, &proj_idx)) {
+          DCHECK_LT(proj_idx, ncols);
+          stats_.IncrUpdateCount(proj_idx, input->stats().update_count(idx));
+        }
       }
       state->input = input;
       states_.push_back(state.release());
@@ -364,6 +378,12 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
 
   const DeltaStats& stats() const {
     return stats_;
+  }
+
+  const DeltaProjector* delta_projector() const {
+    LOG(FATAL) <<
+        "MergeDeltaCompactionInput does not support delta_projector()";
+    return NULL;
   }
 
  private:
