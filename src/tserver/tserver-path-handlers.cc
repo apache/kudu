@@ -41,12 +41,16 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,
                                                  std::stringstream *output) {
   vector<shared_ptr<TabletPeer> > peers;
-  tserver_->tablet_manager()->GetTabletPeers(&peers);
+  // TODO (KUDU-137): expose more information on tablet peers
+  // undergoing bootstrapping.
+  tserver_->tablet_manager()->GetOnlineTabletPeers(&peers);
 
-  *output << "<h1>Tablets</h1>\n";
+  *output << "<h1>Online tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Table Name</th><th>Tablet ID</th><th>On-disk Size</th></tr>\n";
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
+    DCHECK(peer->tablet() != NULL)
+        << "if tablet peer is not bootstrapping, tablet should not be NULL";
     string id = peer->tablet()->tablet_id();
     string table_name = peer->tablet()->metadata()->table_name();
     string tablet_link = Substitute("<a href=\"/tablet?id=$0\">$1</a>",

@@ -375,6 +375,17 @@ void TSTabletManager::GetTabletPeers(vector<shared_ptr<TabletPeer> >* tablet_pee
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
 
+void TSTabletManager::GetOnlineTabletPeers(
+  vector<shared_ptr<TabletPeer> >* online_tablet_peers) const {
+  vector<shared_ptr<TabletPeer> > tablet_peers;
+  GetTabletPeers(&tablet_peers);
+  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, tablet_peers) {
+    if (peer->state() != metadata::BOOTSTRAPPING) {
+      online_tablet_peers->push_back(peer);
+    }
+  }
+}
+
 void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
   if (state != NULL) {
