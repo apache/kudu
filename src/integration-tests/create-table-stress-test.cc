@@ -133,7 +133,7 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   }
 }
 
-TEST_F(CreateTableStressTest, TestLimitGetTableLocations) {
+TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
@@ -147,6 +147,8 @@ TEST_F(CreateTableStressTest, TestLimitGetTableLocations) {
                                        kNumTablets, &resp));
 
   master::GetTableLocationsRequestPB req;
+
+  // Test asking for 0 tablets, should fail
   {
     req.Clear();
     resp.Clear();
@@ -156,6 +158,7 @@ TEST_F(CreateTableStressTest, TestLimitGetTableLocations) {
     ASSERT_STR_CONTAINS(s.ToString(), "must be greater than 0");
   }
 
+  // Ask for one, get one, verify
   {
     req.Clear();
     resp.Clear();
@@ -163,16 +166,33 @@ TEST_F(CreateTableStressTest, TestLimitGetTableLocations) {
     req.set_max_returned_locations(1);
     CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
     ASSERT_EQ(resp.tablet_locations_size(), 1);
+    // empty since it's the first
+    ASSERT_EQ(resp.tablet_locations(0).start_key(), "");
+    ASSERT_EQ(resp.tablet_locations(0).end_key(), "k_00000");
   }
 
+  int half_tablets = kNumTablets / 2;
+  string start_key_middle = StringPrintf("k_%05d", half_tablets);
+  // Ask for half of them, get that number back
   {
-    int half_tablets = kNumTablets / 2;
     req.Clear();
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(half_tablets);
     CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
     ASSERT_EQ(resp.tablet_locations_size(), half_tablets);
+  }
+
+  // Get a single tablet in the middle, make sure we get that one back
+  {
+    req.Clear();
+    resp.Clear();
+    req.mutable_table()->set_table_name(table_name);
+    req.set_max_returned_locations(1);
+    req.set_start_key(start_key_middle);
+    CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_EQ(resp.tablet_locations_size(), 1);
+    ASSERT_EQ(resp.tablet_locations(0).start_key(), start_key_middle);
   }
 }
 

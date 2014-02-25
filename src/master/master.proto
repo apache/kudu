@@ -220,6 +220,9 @@ message TabletLocationsPB {
   }
 
   repeated ReplicaPB replicas = 2;
+
+  required bytes start_key = 3;
+  required bytes end_key = 4;
 }
 
 // Info about a single tablet server, returned to the client as part

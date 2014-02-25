@@ -1630,6 +1630,8 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
   }
 
   locs_pb->set_tablet_id(tablet->tablet_id());
+  locs_pb->set_start_key(tablet->metadata().state().pb.start_key());
+  locs_pb->set_end_key(tablet->metadata().state().pb.end_key());
 
   BOOST_FOREACH(const TabletReplica& replica, locs) {
     TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
