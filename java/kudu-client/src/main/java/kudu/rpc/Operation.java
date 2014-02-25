@@ -243,7 +243,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   @Override
   ChannelBuffer serialize(Message header) {
     final Tserver.WriteRequestPB.Builder builder = createAndFillWriteRequestPB(this);
-    builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getBytes()));
+    builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
     return toChannelBuffer(header, builder.build());
   }
 
@@ -251,60 +251,29 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   Object deserialize(ChannelBuffer buf) {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(buf, builder);
+    Tserver.WriteResponsePB response = builder.build();
+    if (response.hasError()) {
+      return response.getError();
+    }
     return builder.build();
   }
 
   public byte[] key() {
-    // TODO we might want to cache the key
-    ByteArrayOutputStream buf = new ByteArrayOutputStream();
-    // we use this to find the key strings in this.strings
     int seenStrings = 0;
+    KeyEncoder keyEncoder = new KeyEncoder(this.schema);
     for (int i = 0; i < this.schema.getKeysCount(); i++) {
-      if (!this.columnsBitSet.get(i)) {
-        throw new IllegalArgumentException("Not all keys are set, " +
-            "missing at least: " + this.schema.getColumn(i));
-      }
-      ColumnSchema column = schema.getColumn(i);
-      switch (column.getType()) {
-        case INT8:
-        case UINT8:
-        case INT16:
-        case UINT16:
-        case INT32:
-        case UINT32:
-        case INT64:
-        case UINT64:
-          buf.write(rowAlloc, schema.getColumnOffset(i), column.getType().getSize());
-          break;
-        case STRING:
-          // find the string
-          Slice string = this.strings.get(seenStrings);
-          // if this is the last component, just add
-          if (i + 1 == this.schema.getKeysCount()) {
-            buf.write(string.getRawArray(), string.getRawOffset(), string.length());
-          } else {
-            // If we're a middle component of a composite key, we need to add a \x00
-            // at the end in order to separate this component from the next one. However,
-            // if we just did that, we'd have issues where a key that actually has
-            // \x00 in it would compare wrong, so we have to instead add \x00\x00, and
-            // encode \x00 as \x00\x01. -- key_encoder.h
-            for (int b = 0; b < string.length(); b++) {
-              buf.write(string.getByte(b));
-              if (string.getByte(b) == 0x00) {
-                buf.write(0x01);
-              }
-            }
-            buf.write(0x00);
-            buf.write(0x00);
-          }
-          seenStrings++;
-          break;
-        default:
-          throw new IllegalArgumentException("The column " + column.getName() + " is of type " +
-              column.getType() + " which is unknown");
+      ColumnSchema column = this.schema.getColumn(i);
+      if (column.getType() == Type.STRING) {
+        Slice string = this.strings.get(seenStrings);
+        seenStrings++;
+        keyEncoder.addKey(string.getRawArray(), string.getRawOffset(), string.length(), column, i);
+      } else {
+        keyEncoder.addKey(this.rowAlloc, this.schema.getColumnOffset(i), column.getType().getSize(),
+            column, i);
       }
     }
-    return buf.toByteArray();
+    // TODO we might want to cache the key
+    return keyEncoder.toByteArray();
   }
 
   /**

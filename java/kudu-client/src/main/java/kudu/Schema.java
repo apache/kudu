@@ -74,12 +74,21 @@ public class Schema {
   }
 
   /**
-   * Get the index at which this column can be found in the bacling byte array
+   * Get the index at which this column can be found in the backing byte array
    * @param idx column's index
    * @return column's offset
    */
   public int getColumnOffset(int idx) {
     return this.columnOffsets[idx];
+  }
+
+  /**
+   * Get the index for the provided column based
+   * @param column column to search for
+   * @return an index in the schema
+   */
+  public int getColumnIndex(ColumnSchema column) {
+    return this.columns.indexOf(column);
   }
 
   /**

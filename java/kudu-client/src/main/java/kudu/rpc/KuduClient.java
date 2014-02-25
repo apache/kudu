@@ -27,12 +27,14 @@
 
 package kudu.rpc;
 
+import com.google.common.primitives.UnsignedBytes;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
 import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import kudu.tserver.Tserver;
 import kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
@@ -51,11 +53,13 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -100,11 +104,37 @@ public class KuduClient {
 
   public static final Logger LOG = LoggerFactory.getLogger(KuduClient.class);
   public static final int SLEEP_TIME = 500;
+  public static final byte[] EMPTY_ARRAY = new byte[0];
 
   private final ClientSocketChannelFactory channelFactory;
 
+  /**
+   * This map and the next 2 maps contain the same data, but indexed
+   * differently. There is no consistency guarantee across the maps.
+   * They are not updated all at the same time atomically.  This map
+   * is always the first to be updated, because that's the map from
+   * which all the lookups are done in the fast-path of the requests
+   * that need to locate a tablet. The second map to be updated is
+   * tablet2client, because it comes second in the fast-path
+   * of every requests that need to locate a tablet. The third map
+   * is only used to handle TabletServer disconnections gracefully.
+   */
+  private final ConcurrentHashMap<String, ConcurrentSkipListMap<byte[],
+      RemoteTablet>> tabletsCache = new ConcurrentHashMap<String, ConcurrentSkipListMap<byte[],
+      RemoteTablet>>();
+
+  /**
+   * Maps a tablet ID to the to the RemoteTablet that knows where all the replicas are served
+   */
   private final ConcurrentHashMap<Slice, RemoteTablet> tablet2client =
       new ConcurrentHashMap<Slice, RemoteTablet>();
+
+  /**
+   * Maps a client connected to a TabletServer to the list of tablets we know
+   * it's serving so far.
+   */
+  private final ConcurrentHashMap<TabletClient, ArrayList<RemoteTablet>> client2tablets =
+      new ConcurrentHashMap<TabletClient, ArrayList<RemoteTablet>>();
 
   /**
    * Cache that maps a TabletServer address ("ip:port") to the clients
@@ -140,23 +170,24 @@ public class KuduClient {
   private final TabletClient master; // currently the master cannot move
   static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
   static final Slice MASTER_TABLE_HACK_SLICE = new Slice(MASTER_TABLE_HACK.getBytes());
+  final RemoteTablet masterTabletHack;
   final KuduTable masterTableHack;
+  // END OF HACK
 
   private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
 
   // A table is considered not served when we get an empty list of locations but know
-  // that a tablet exists. Eventually this will be a the tablet-level.
-  // TODO once we have multiple tablets per table, do more of what asynchbase does
+  // that a tablet exists. This is currently only used for new tables
   private final ConcurrentHashMap<String, Object> tablesNotServed
       = new ConcurrentHashMap<String, Object>();
 
   /**
    * Semaphore used to rate-limit master lookups
-   * Once we have more than this number of concurrent META lookups, we'll
+   * Once we have more than this number of concurrent master lookups, we'll
    * start to throttle ourselves slightly.
    * @see #acquireMasterLookupPermit
    */
-  private final Semaphore masterLookups = new Semaphore(100);
+  private final Semaphore masterLookups = new Semaphore(50);
 
   private final Random sleepRandomizer = new Random();
 
@@ -185,6 +216,8 @@ public class KuduClient {
     this.master = newClient(ip, port);
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
+    this.masterTabletHack = new RemoteTablet(MASTER_TABLE_HACK,
+        MASTER_TABLE_HACK_SLICE, EMPTY_ARRAY, EMPTY_ARRAY);
   }
 
   public Deferred<Object> ping() {
@@ -202,14 +235,30 @@ public class KuduClient {
     return new KuduTable(this, name, schema);
   }
 
-  /***
-   * Create a tablet on the cluster with the specified name and a schema
+  /**
+   * Create a table on the cluster with the specified name and schema. Default table
+   * configurations are used, mainly the tablet will have one tablet.
    * @param name Table's name
    * @param schema Table's schema
    * @return Deferred object to track the progress
    */
   public Deferred<Object> createTable(String name, Schema schema) {
-    CreateTableRequest create = new CreateTableRequest(this.masterTableHack, name, schema);
+    return this.createTable(name, schema, new CreateTableBuilder());
+  }
+
+  /**
+   * Create a table on the cluster with the specified name, schema, and table configurations
+   * @param name Table's name
+   * @param schema Table's schema
+   * @param builder Table's configurations
+   * @return Deferred object to track the progress
+   */
+  public Deferred<Object> createTable(String name, Schema schema, CreateTableBuilder builder) {
+    if (builder == null) {
+      builder = new CreateTableBuilder();
+    }
+    CreateTableRequest create = new CreateTableRequest(this.masterTableHack, name, schema,
+        builder);
     return sendRpcToTablet(create);
   }
 
@@ -296,8 +345,8 @@ public class KuduClient {
    * The string is assumed to use the platform's default charset.
    * @return A new scanner for this table.
    */
-  public KuduScanner newScanner(final KuduTable table) {
-    return new KuduScanner(this, table);
+  public KuduScanner newScanner(final KuduTable table, Schema schema) {
+    return new KuduScanner(this, table, schema);
   }
 
   /**
@@ -317,7 +366,7 @@ public class KuduClient {
             } else {
               LOG.warn(message + " because of " + error);
             }
-            // Don't let the scanner think it's opened on this region.
+            // Don't let the scanner think it's opened on this tablet.
             scanner.invalidate();
             return error;  // Let the error propagate.
           }
@@ -343,7 +392,7 @@ public class KuduClient {
    * @return A deferred row.
    */
   Deferred<Object> scanNextRows(final KuduScanner scanner) {
-    final Slice tablet = scanner.currentTablet();
+    final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
     if (client == null) {
       // Oops, we no longer know anything about this client or tabletSlice.  Our
@@ -369,7 +418,7 @@ public class KuduClient {
    * The {@link Object} has not special meaning and can be {@code null}.
    */
   Deferred<Object> closeScanner(final KuduScanner scanner) {
-    final Slice tablet = scanner.currentTablet();
+    final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
     if (client == null) {
       // Oops, we no longer know anything about this client or tabletSlice.  Our
@@ -407,7 +456,11 @@ public class KuduClient {
     }
     request.attempt++;
     final String tableName = request.getTable().getName();
-    Slice tablet = getTablet(tableName);
+    byte[] rowkey = null;
+    if (request instanceof KuduRpc.HasKey) {
+       rowkey = ((KuduRpc.HasKey)request).key();
+    }
+    final RemoteTablet tablet = getTablet(tableName, rowkey);
 
     final class RetryRpc implements Callback<Deferred<Object>, Object> {
       public Deferred<Object> call(final Object arg) {
@@ -419,23 +472,9 @@ public class KuduClient {
         return "retry RPC";
       }
     }
-    // We know that recently this RPC or another couldn't find a location for
-    // this table, sleep some time before retrying.
-    if (tablesNotServed.containsKey(tableName)) {
-      Deferred<Object> d = request.getDeferred();
-      final class NSRETimer implements TimerTask {
-        public void run(final Timeout timeout) {
-          tablesNotServed.remove(tableName);
-          sendRpcToTablet(request);
-        }
-      };
-      // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
-      long sleepTime = (request.attempt * SLEEP_TIME) + sleepRandomizer.nextInt(50);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Going to sleep for " + sleepTime + " at retry " + request.attempt);
-      }
-      newTimeout(new NSRETimer(), sleepTime);
-      return d;
+    Deferred<Object> delayedRpc = sleepIfTableNotAvailable(tableName, request);
+    if (delayedRpc != null) {
+      return delayedRpc;
     }
 
     if (tablet != null) {
@@ -447,19 +486,56 @@ public class KuduClient {
         return d;
       }
     }
-    // we'll just get all the tablets
-    return locateTablet(tableName).addBothDeferring(new RetryRpc());
+    return locateTablet(tableName, rowkey).addBothDeferring(new RetryRpc());
   }
 
-  TabletClient clientFor(Slice tablet) {
+  /**
+   * Utility method that checks if we're in the special case where the table has no tablets. We
+   * just need to wait it out. This method will schedule for the provided RPC to be resent later
+   * after some sleep.
+   * @param tableName Table to lookup
+   * @param rpc request to replay if the table isn't ready
+   * @return a deferred object if the table is unavailable, or null if the table is ready
+   */
+  Deferred<Object> sleepIfTableNotAvailable(final String tableName, final KuduRpc rpc) {
+    // We know that recently this RPC or another couldn't find a location for
+    // this table, sleep some time before retrying.
+    if (tablesNotServed.containsKey(tableName)) {
+      Deferred<Object> d = rpc.getDeferred();
+      final class TableNotServedTimer implements TimerTask {
+        public void run(final Timeout timeout) {
+          tablesNotServed.remove(tableName);
+          sendRpcToTablet(rpc);
+        }
+      };
+      long sleepTime = getSleepTimeForRcp(rpc);
+      newTimeout(new TableNotServedTimer(), sleepTime);
+      return d;
+    }
+    return null;
+  }
+
+  private long getSleepTimeForRcp(KuduRpc rpc) {
+    // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
+    long sleepTime = (rpc.attempt * SLEEP_TIME) + sleepRandomizer.nextInt(50);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Going to sleep for " + sleepTime + " at retry " + rpc.attempt);
+    }
+    return sleepTime;
+  }
+
+  TabletClient clientFor(RemoteTablet tablet) {
     if (tablet == null) {
       return null;
     }
-    if (MASTER_TABLE_HACK_SLICE.equals(tablet)) {
+    if (masterTabletHack == tablet) {
       return master;
     }
-    RemoteTablet rt = tablet2client.get(tablet);
-    return rt == null ? null : rt.tabletServers.get(0);
+
+    // TODO figure which replica to send back
+    synchronized (tablet.tabletServers) {
+      return tablet.tabletServers.get(0);
+    }
   }
 
   Deferred<Object> handleLookupExceptions(final KuduRpc request, Object arg) {
@@ -511,20 +587,21 @@ public class KuduClient {
   /**
    * Sends a getTableLocations RPC to the master to find the table's tablets
    * @param table table's name, in the future this will use a tablet id
+   * @param rowkey can be null, if not we'll find the exact tablet that contains it
    * @return Deferred to track the progress
    */
-  Deferred<Object> locateTablet(String table) {
+  Deferred<Object> locateTablet(String table, byte[] rowkey) {
     final boolean has_permit = acquireMasterLookupPermit();
     if (!has_permit) {
       // If we failed to acquire a permit, it's worth checking if someone
       // looked up the tabletSlice we're interested in.  Every once in a while
       // this will save us a Master lookup.
-      if (getTablet(table) != null) {
+      if (getTablet(table, rowkey) != null) {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
     final Deferred<Object> d =
-        master.getTableLocations(table).addCallback(new MasterLookupCB(table));
+        master.getTableLocations(table, rowkey).addCallback(new MasterLookupCB(table, rowkey));
     if (has_permit) {
       final class ReleaseMetaLookupPermit implements Callback<Object, Object> {
         public Object call(final Object arg) {
@@ -540,15 +617,53 @@ public class KuduClient {
     return d;
   }
 
+  /**
+   * We're handling a tablet server that's telling us it doesn't have the tablet we're asking for.
+   * We're in the context of decode() meaning we need to either callback or retry later.
+   */
+  void handleNSTE(final KuduRpc rpc, Tserver.TabletServerErrorPB error, TabletClient server) {
+    boolean cannotRetry = cannotRetryRequest(rpc);
+    invalidateTabletCache(rpc.getTablet(), server);
+    if (cannotRetry) {
+      // This is a callback
+      tooManyAttempts(rpc, new TabletServerErrorException(error.getStatus(),
+          error.getCode().getNumber()));
+    }
+
+    // Here we simply retry the RPC later. We might be doing this along with a lot of other RPCs
+    // in parallel. Asynchbase does some hacking with a "probe" RPC while putting the other ones
+    // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
+    // we're not expecting this in Kudu.
+    final class NSTETimer implements TimerTask {
+      public void run(final Timeout timeout) {
+        sendRpcToTablet(rpc);
+      }
+    };
+    long sleepTime = getSleepTimeForRcp(rpc);
+    newTimeout(new NSTETimer(), sleepTime);
+  }
+
+  /**
+   * Remove the tablet server from the RemoteTablet's locations. Right now nothing is removing
+   * the tablet itself from the caches.
+   */
+  private void invalidateTabletCache(RemoteTablet tablet, TabletClient server) {
+    LOG.info("Removing a tablet server location from " +
+        tablet.getTabletIdAsString());
+    tablet.removeTabletServer(server);
+  }
+
   /** Callback executed when a lookup in META completes.  */
   private final class MasterLookupCB implements Callback<Object,
       Master.GetTableLocationsResponsePB> {
     final String table;
-    MasterLookupCB(String table) {
+    final byte[] rowkey;
+    MasterLookupCB(String table, byte[] rowkey) {
       this.table = table;
+      this.rowkey = rowkey;
     }
     public Object call(final Master.GetTableLocationsResponsePB arg) {
-      return discoverTablet(table, arg);
+      return discoverTablet(table, rowkey, arg);
     }
     public String toString() {
       return "get tabletSlice locations from the master";
@@ -574,32 +689,60 @@ public class KuduClient {
     masterLookups.release();
   }
 
-  private Slice discoverTablet(String table, Master.GetTableLocationsResponsePB response) {
+  private RemoteTablet discoverTablet(String table, byte[] rowkey, Master.GetTableLocationsResponsePB
+      response) {
     if (response.hasError()) {
       throw new MasterErrorException(response.getError());
     }
     if (response.getTabletLocationsCount() == 0) {
-      // Keep a note that the tablet exists but it's not served yet
+      // Keep a note that the table exists but it's not served yet, we'll retry
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Table " + table + " doesn't have any tablets");
+      }
       tablesNotServed.putIfAbsent(table, new Object());
       return null;
     }
-    Master.TabletLocationsPB tabletLocations = response.getTabletLocations(0);
-    if (tabletLocations.getReplicasCount() == 0) {
-      throw new NonRecoverableException("Tablet does not exist: " +
-          tabletLocations.getTabletId().toStringUtf8());
-    }
-    Slice tabletId = new Slice(tabletLocations.getTabletId().toByteArray());
-    RemoteTablet rt = tablet2client.get(tabletId);
-    if (rt == null) {
-      rt = new RemoteTablet(table, tabletId);
+    for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
+      Slice tabletId = new Slice(tabletPb.getTabletId().toByteArray());
+      RemoteTablet rt = tablet2client.get(tabletId);
+      if (rt != null) {
+        rt.refreshServers(tabletPb);
+        continue;
+      }
+      byte[] startKey = tabletPb.getStartKey().toByteArray();
+      byte[] endKey = tabletPb.getEndKey().toByteArray();
+      rt = new RemoteTablet(table, tabletId, startKey, endKey);
+      // Putting it here first doesn't make it visible because tabletsCache is always looked up
+      // first.
       RemoteTablet oldRt = tablet2client.putIfAbsent(tabletId, rt);
       if (oldRt != null) {
         // someone beat us to it
-        return getTablet(table);
+        return getTablet(table, rowkey);
       }
+      LOG.info("Discovering tablet " + tabletId.toString(Charset.defaultCharset()) + " for " +
+          "table " + table + " for rowkey " + Bytes.pretty(rowkey) + " with start key " + Bytes
+          .pretty(startKey) + " and endkey " + Bytes.pretty(endKey));
+      // Doing a get first instead of putIfAbsent to avoid creating unnecessary CSLMs because in
+      // the most common case the table should already be present
+      ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(table);
+      if (tablets == null) {
+        // TODO this is wrong, we can have signed ints anywhere in the key so we need to compare
+        // TODO individual components with the proper comparator.
+        tablets = new ConcurrentSkipListMap<byte[], RemoteTablet>(UnsignedBytes
+            .lexicographicalComparator());
+        ConcurrentSkipListMap<byte[], RemoteTablet> oldTablets = tabletsCache.putIfAbsent
+            (table, tablets);
+        if (oldTablets != null) {
+          tablets = oldTablets;
+        }
+      }
+      rt.refreshServers(tabletPb);
+      // This is making this tablet available
+      // Even if two clients were racing in this method they are putting the same RemoteTablet
+      // with the same start key in the CSLM in the end
+      tablets.put(rt.getStartKey(), rt);
     }
-    rt.refreshServers(tabletLocations);
-    return getTablet(table);
+    return getTablet(table, rowkey);
   }
 
   /**
@@ -608,18 +751,35 @@ public class KuduClient {
    * @param tableName table to find the tablet
    * @return a tablet ID as a slice or null if not found
    */
-  Slice getTablet(String tableName) {
-    // TODO return tablets, not the table name back
+  RemoteTablet getTablet(String tableName, byte[] rowkey) {
+    // The hack for the master only has one tablet, we can just return it right away
     if (tableName.equals(MASTER_TABLE_HACK)) {
-      return MASTER_TABLE_HACK_SLICE;
+      return masterTabletHack;
     }
-    // TODO currently handle 1 tablet per table!
-    for (Map.Entry<Slice, RemoteTablet> entry : tablet2client.entrySet()) {
-      if (entry.getValue().table.equals(tableName)) {
-        return entry.getKey();
-      }
+
+    ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(tableName);
+
+    if (tablets == null) {
+      return null;
     }
-    return null;
+
+    Map.Entry<byte[], RemoteTablet> tabletPair = tablets.floorEntry(rowkey);
+
+    if (tabletPair == null) {
+      return null;
+    }
+
+    byte[] endKey = tabletPair.getValue().getEndKey();
+
+    if (endKey != EMPTY_ARRAY
+        // If the stop key is an empty byte array, it means this tablet is the
+        // last tablet for this table and this key ought to be in that tablet.
+        // TODO this comparison doesn't take into account signed key components
+        && Bytes.memcmp(rowkey, endKey) >= 0) {
+      return null;
+    }
+
+    return tabletPair.getValue();
   }
 
   private TabletClient newClient(final String host, final int port) {
@@ -637,6 +797,7 @@ public class KuduClient {
       chan = channelFactory.newChannel(pipeline);
       ip2client.put(hostport, client);  // This is guaranteed to return null.
     }
+    this.client2tablets.put(client, new ArrayList<RemoteTablet>());
     final SocketChannelConfig config = chan.getConfig();
     config.setConnectTimeoutMillis(5000);
     config.setTcpNoDelay(true);
@@ -724,7 +885,7 @@ public class KuduClient {
     ArrayList<Deferred<Object>> deferreds = new ArrayList<Deferred<Object>>(2);
     HashMap<String, TabletClient> ip2client_copy;
     synchronized (ip2client) {
-      // Make a local copy so we can shutdown every Region Server client
+      // Make a local copy so we can shutdown every Tablet Server clients
       // without hold the lock while we iterate over the data structure.
       ip2client_copy = new HashMap<String, TabletClient>(ip2client);
     }
@@ -739,7 +900,7 @@ public class KuduClient {
           public Object call(final ArrayList<Object> arg) {
             // Normally, now that we've shutdown() every client, all our caches should
             // be empty since each shutdown() generates a DISCONNECTED event, which
-            // causes RegionClientPipeline to call removeClientFromCache().
+            // causes TabletClientPipeline to call removeClientFromCache().
             HashMap<String, TabletClient> logme = null;
             synchronized (ip2client) {
               if (!ip2client.isEmpty()) {
@@ -749,7 +910,7 @@ public class KuduClient {
             if (logme != null) {
               // Putting this logging statement inside the synchronized block
               // can lead to a deadlock, since HashMap.toString() is going to
-              // call RegionClient.toString() on each entry, and this locks the
+              // call TabletClient.toString() on each entry, and this locks the
               // client briefly.  Other parts of the code lock clients first and
               // the ip2client HashMap second, so this can easily deadlock.
               LOG.error("Some clients are left in the client cache and haven't"
@@ -758,6 +919,7 @@ public class KuduClient {
             }
             return arg;
           }
+
           public String toString() {
             return "wait " + size + " TabletClient.shutdown()";
           }
@@ -812,7 +974,6 @@ public class KuduClient {
   }
 
   /**
-   * TODO
    * Removes all the cache entries referred to the given client.
    * @param client The client for which we must invalidate everything.
    * @param remote The address of the remote peer, if known, or null.
@@ -820,49 +981,20 @@ public class KuduClient {
   private void removeClientFromCache(final TabletClient client,
                                      final SocketAddress remote) {
 
-    /*ArrayList<RegionInfo> regions = client2regions.remove(client);
-    if (regions != null) {
+    ArrayList<RemoteTablet> tablets = client2tablets.remove(client);
+    if (tablets != null) {
       // Make a copy so we don't need to synchronize on it while iterating.
-      RegionInfo[] regions_copy;
-      synchronized (regions) {
-        regions_copy = regions.toArray(new RegionInfo[regions.size()]);
-        regions = null;
-        // If any other thread still has a reference to `regions', their
+      RemoteTablet[] tablets_copy;
+      synchronized (tablets) {
+        tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
+        tablets = null;
+        // If any other thread still has a reference to `tablets', their
         // updates will be lost (and we don't care).
       }
-      for (final RegionInfo region : regions_copy) {
-        final byte[] table = region.table();
-        final byte[] stop_key = region.stopKey();
-        // If stop_key is the empty array:
-        //   This region is the last region for this table.  In order to
-        //   find the start key of the last region, we append a '\0' byte
-        //   at the end of the table name and search for the entry with a
-        //   key right before it.
-        // Otherwise:
-        //   Search for the entry with a key right before the stop_key.
-        final byte[] search_key =
-            createRegionSearchKey(stop_key.length == 0
-                ? Arrays.copyOf(table, table.length + 1)
-                : table, stop_key);
-        final Map.Entry<byte[], RegionInfo> entry =
-            regions_cache.lowerEntry(search_key);
-        if (entry != null && entry.getValue() == region) {
-          // Invalidate the regions cache first, as it's the most damaging
-          // one if it contains stale data.
-          regions_cache.remove(entry.getKey());
-          LOG.debug("Removed from regions cache: {}", region);
-        }
-        final TabletClient oldclient = region2client.remove(region);
-        if (client == oldclient) {
-          LOG.debug("Association removed: {} -> {}", region, client);
-        } else if (oldclient != null) {  // Didn't remove what we expected?!
-          LOG.warn("When handling disconnection of " + client
-              + " and removing " + region + " from region2client"
-              + ", it was found that " + oldclient + " was in fact"
-              + " serving this region");
-        }
+      for (final RemoteTablet remoteTablet : tablets_copy) {
+        remoteTablet.removeTabletServer(client);
       }
-    }*/
+    }
 
     if (remote == null) {
       return;  // Can't continue without knowing the remote address.
@@ -918,8 +1050,6 @@ public class KuduClient {
 
     @Override
     public void sendDownstream(final ChannelEvent event) {
-      //LoggerFactory.getLogger(RegionClientPipeline.class)
-      //  .debug("hooked sendDownstream " + event);
       if (event instanceof ChannelStateEvent) {
         handleDisconnect((ChannelStateEvent) event);
       }
@@ -928,8 +1058,6 @@ public class KuduClient {
 
     @Override
     public void sendUpstream(final ChannelEvent event) {
-      //LoggerFactory.getLogger(RegionClientPipeline.class)
-      //  .debug("hooked sendUpstream " + event);
       if (event instanceof ChannelStateEvent) {
         handleDisconnect((ChannelStateEvent) event);
       }
@@ -1056,18 +1184,26 @@ public class KuduClient {
     }
   }
 
+  /**
+   * This class encapsulates the information regarding a tablet and its locations
+   */
   class RemoteTablet {
 
     private final String table;
     private final Slice tabletId;
     private final ArrayList<TabletClient> tabletServers = new ArrayList<TabletClient>();
+    private final byte[] startKey;
+    private final byte[] endKey;
 
-    public RemoteTablet(String table, Slice tabletId) {
+    RemoteTablet(String table, Slice tabletId, byte[] startKey, byte[] endKey) {
       this.tabletId = tabletId;
       this.table = table;
+      this.startKey = startKey;
+      // makes comparisons easier in getTablet, no need to
+      this.endKey = endKey.length == 0 ? EMPTY_ARRAY : endKey;
     }
 
-    public void refreshServers(Master.TabletLocationsPB tabletLocations) {
+    void refreshServers(Master.TabletLocationsPB tabletLocations) {
 
       synchronized (tabletServers) { // TODO not a fat lock with IP resolving in it
         tabletServers.clear();
@@ -1078,14 +1214,47 @@ public class KuduClient {
 
             TabletClient client = newClient(ip, hp.getPort());
             tabletServers.add(client);
-            /*if (client == oldClient) {
-              break;
+
+            synchronized (client) {
+              final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
+              synchronized (tablets) {
+                tablets.add(this);
+              }
             }
-            TODO more handling from discoverRegion */
-            break;
           }
         }
       }
+    }
+
+    boolean removeTabletServer(TabletClient ts) {
+      synchronized (tabletServers) {
+        return tabletServers.remove(ts);
+        // TODO if we reach 0 TS, maybe we should remove ourselves?
+      }
+    }
+
+    String getTable() {
+      return table;
+    }
+
+    Slice getTabletId() {
+      return tabletId;
+    }
+
+    byte[] getStartKey() {
+      return startKey;
+    }
+
+    byte[] getEndKey() {
+      return endKey;
+    }
+
+    byte[] getTabletIdAsBytes() {
+      return tabletId.getBytes();
+    }
+
+    String getTabletIdAsString() {
+      return tabletId.toString(Charset.defaultCharset());
     }
   }
 

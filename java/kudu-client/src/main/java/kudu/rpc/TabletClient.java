@@ -28,9 +28,11 @@
 package kudu.rpc;
 
 import com.google.protobuf.Message;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import kudu.tserver.Tserver;
 import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -328,7 +330,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     buf = secureRpcHelper.handleResponse(buf, chan);
     if (buf == null) {
-      LOG.debug("return null");
       return null;
     }
     final int size = buf.readInt();
@@ -361,7 +362,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       throw new NonRecoverableException(msg);
     }
 
-    final Object decoded;
+    Object decoded;
     if (header.hasIsError() && header.getIsError()) {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
       KuduRpc.readProtobuf(buf, errorBuilder);
@@ -385,10 +386,21 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       assert rpc == removed;
     }
 
+    // The TS services will send this error, make it pretty.
+    if (decoded instanceof Tserver.TabletServerErrorPB) {
+      Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded;
+      if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
+        kuduClient.handleNSTE(rpc, error, this);
+        // we're not calling rpc.callback() so we rely on the client to retry that RPC
+        return null;
+      }
+      decoded = new TabletServerErrorException(error.getStatus(), error.getCode().getNumber());
+    }
+
     try {
       rpc.callback(decoded);
     } catch (Exception e) {
-      LOG.error("Unexpected exception while handling RPC #" + rpcid
+      LOG.debug("Unexpected exception while handling RPC #" + rpcid
           + ", rpc=" + rpc + ", buf=" + Bytes.pretty(buf), e);
     }
   if (LOG.isDebugEnabled()) {
@@ -435,7 +447,17 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
   }
 
-  public Deferred<Master.GetTableLocationsResponsePB> getTableLocations(final String tableName) {
+  /**
+   * Only for the masters, right now since a master is considered a TabletClient then it needs to
+   * be able to contact the master services.
+   * @param tableName Table name to lookup
+   * @param rowkey If null it will retrieve all the tablet locations it can. If not then it will
+   *               only retrieve the tablet that contains the rowkey
+   * @return deferred action
+   */
+  public Deferred<Master.GetTableLocationsResponsePB> getTableLocations(final String tableName,
+                                                                        final byte[] rowkey) {
+
     final class GetTableLocations extends KuduRpc {
       GetTableLocations(KuduTable table) {
         super(table);
@@ -459,6 +481,10 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         final Master.GetTableLocationsRequestPB.Builder builder = Master
             .GetTableLocationsRequestPB.newBuilder();
         builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
+        if (rowkey != null) {
+          builder.setStartKey(ZeroCopyLiteralByteString.wrap(rowkey));
+          builder.setEndKey(ZeroCopyLiteralByteString.wrap(rowkey));
+        }
         return toChannelBuffer(header, builder.build());
       }
     };
@@ -596,7 +622,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private void failOrRetryRpcs(final Collection<KuduRpc> rpcs,
                                final ConnectionResetException exception) {
     for (final KuduRpc rpc : rpcs) {
-      final Slice tablet = rpc.getTablet();
+      final KuduClient.RemoteTablet tablet = rpc.getTablet();
       if (tablet == null  // Can't retry, dunno where this RPC should go.
           ) {
         rpc.callback(exception);
@@ -677,7 +703,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   public String toString() {
     final StringBuilder buf = new StringBuilder(13 + 10 + 6 + 64 + 16 + 1 + 17 + 2 + 1);
-    buf.append("RegionClient@")           // =13
+    buf.append("TabletClient@")           // =13
         .append(hashCode())                 // ~10
         .append("(chan=")                   // = 6
         .append(chan)                       // ~64 (up to 66 when using IPv4)

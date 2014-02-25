@@ -50,13 +50,26 @@ public class RowResult {
     this.offset = this.rowSize * this.index;
   }
 
+  void advancePointerTo(int rowIndex) {
+    this.index = rowIndex;
+    this.offset = this.rowSize * this.index;
+  }
+
+  byte[] getRowData() {
+    return this.rowData;
+  }
+
+  int getCurrentRowDataOffsetForColumn(int columnIndex) {
+    return this.offset + this.columnOffsets[columnIndex];
+  }
+
   /**
    * Get the specified column's positive integer
    * @param columnIndex Column index in the schema
    * @return A positive integer
    */
   public long getUnsignedInt(int columnIndex) {
-    return Bytes.getUnsignedInt(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getUnsignedInt(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -65,7 +78,7 @@ public class RowResult {
    * @return An integer
    */
   public int getInt(int columnIndex) {
-    return Bytes.getInt(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getInt(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -74,7 +87,7 @@ public class RowResult {
    * @return A positive short
    */
   public int getUnsignedShort(int columnIndex) {
-    return Bytes.getUnsignedShort(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getUnsignedShort(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -83,7 +96,7 @@ public class RowResult {
    * @return A short
    */
   public short getShort(int columnIndex) {
-    return Bytes.getShort(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getShort(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -92,7 +105,7 @@ public class RowResult {
    * @return A positive byte
    */
   public int getUnsignedByte(int columnIndex) {
-    return Bytes.getUnsignedByte(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getUnsignedByte(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -101,7 +114,7 @@ public class RowResult {
    * @return A byte
    */
   public byte getByte(int columnIndex) {
-    return Bytes.getByte(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getByte(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -110,7 +123,7 @@ public class RowResult {
    * @return A positive long
    */
   public long getLong(int columnIndex) {
-    return Bytes.getLong(this.rowData, this.offset + this.columnOffsets[columnIndex]);
+    return Bytes.getLong(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -121,7 +134,7 @@ public class RowResult {
   public String getString(int columnIndex) {
     // TODO figure the long/int mess
     int offset = (int)getLong(columnIndex);
-    int length = (int)Bytes.getLong(rowData, this.offset + this.columnOffsets[columnIndex] + 8);
+    int length = (int)Bytes.getLong(rowData, getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     return new String(indirectData, offset, length);
   }
 

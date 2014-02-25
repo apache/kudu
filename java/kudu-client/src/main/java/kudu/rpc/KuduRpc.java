@@ -73,7 +73,7 @@ public abstract class KuduRpc {
    */
   private Deferred<Object> deferred;
 
-  private Slice tablet;
+  private KuduClient.RemoteTablet tablet;
 
   final KuduTable table;
 
@@ -143,11 +143,11 @@ public abstract class KuduRpc {
     return deferred;
   }
 
-  Slice getTablet() {
+  KuduClient.RemoteTablet getTablet() {
     return this.tablet;
   }
 
-  void setTablet(Slice tablet) {
+  void setTablet(KuduClient.RemoteTablet tablet) {
     this.tablet = tablet;
   }
 
@@ -164,7 +164,7 @@ public abstract class KuduRpc {
     if (tablet == null) {
       buf.append("null");
     } else {
-      buf.append(tablet.toString(Charset.defaultCharset()));
+      buf.append(tablet.getTabletIdAsString());
     }
     buf.append(", attempt=").append(attempt);
     buf.append(')');

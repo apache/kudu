@@ -72,6 +72,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire.version}</version>
                 <configuration>
+                    <failIfNoTests>false</failIfNoTests>
+                    <reuseForks>false</reuseForks>
                     <systemPropertyVariables>
                         <masterAddress>localhost</masterAddress>
                         <masterPort>64000</masterPort>

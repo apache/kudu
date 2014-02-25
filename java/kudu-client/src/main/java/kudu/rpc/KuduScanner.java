@@ -29,20 +29,18 @@ package kudu.rpc;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import kudu.ColumnSchema;
 import kudu.Schema;
+import kudu.Type;
 import kudu.WireProtocol;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
-import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 
 import static kudu.tserver.Tserver.*;
 
@@ -78,11 +76,12 @@ public final class KuduScanner {
   private static final Logger LOG = LoggerFactory.getLogger(KuduScanner.class);
   private final KuduClient client;
   private final KuduTable table;
+  private final Schema schema;
+  private final ColumnRangePredicates columnRangePredicates;
   private Deferred<RowResultIterator> prefetcherDeferred;
-  private final List<ColumnRangePredicatePB> columnRangePredicates = new ArrayList<ColumnRangePredicatePB>();
 
   /**
-   * Maximum number of bytes to fetch at a time.\
+   * Maximum number of bytes to fetch at a time.
    * @see #setMaxNumBytes
    */
   private int max_num_bytes = 1024*1024; // TODO
@@ -93,13 +92,13 @@ public final class KuduScanner {
    * If == DONE, then we're done scanning.
    * Otherwise it contains a proper tabletSlice name, and we're currently scanning.
    */
-  private Slice tablet;
+  private KuduClient.RemoteTablet tablet;
 
   /**
-   * This is the scanner ID we got from the RegionServer.
+   * This is the scanner ID we got from the TabletServer.
    * It's generated randomly so any value is possible.
    */
-  private byte[] scanner_id;
+  private byte[] scannerId;
 
   /**
    * The sequence ID of this call. The sequence ID should start at 0
@@ -116,22 +115,36 @@ public final class KuduScanner {
    */
   private long limit = Long.MAX_VALUE;
 
-  private boolean closed = false;
+  /**
+   *
+   */
+  private byte[] startKey = KuduClient.EMPTY_ARRAY;
 
-  private Schema schema;
+  /**
+   *
+   */
+  private byte[] endKey = KuduClient.EMPTY_ARRAY;
+
+  private boolean closed = false;
 
   private boolean hasMore = true;
 
-  private boolean prefetching;
+  private boolean prefetching = false;
+
+  private boolean faultTolerantScan = false;
+
+  private boolean inFirstTablet = true;
 
   /**
    * Constructor.
    * <strong>This byte array will NOT be copied.</strong>
    * @param table The non-empty name of the table to use.
    */
-  KuduScanner(final KuduClient client, final KuduTable table) {
+  KuduScanner(final KuduClient client, final KuduTable table, Schema schema) {
     this.client = client;
     this.table = table;
+    this.schema = schema;
+    this.columnRangePredicates = new ColumnRangePredicates(schema);
   }
 
   /**
@@ -139,11 +152,7 @@ public final class KuduScanner {
    * <p>
    * HBase may actually return more than this many bytes because it will not
    * truncate a rowResult in the middle.
-   * <p>
-   * This value is only used when communicating with HBase 0.95 and newer.
-   * For older versions of HBase this value is silently ignored.
    * @param max_num_bytes A strictly positive number of bytes.
-   * @since 1.5
    * @throws IllegalStateException if scanning already started.
    * @throws IllegalArgumentException if {@code max_num_bytes <= 0}
    */
@@ -159,7 +168,6 @@ public final class KuduScanner {
   /**
    * Returns the maximum number of bytes returned at once by the scanner.
    * @see #setMaxNumBytes
-   * @since 1.5
    */
   public long getMaxNumBytes() {
     return max_num_bytes;
@@ -190,7 +198,9 @@ public final class KuduScanner {
   public Deferred<RowResultIterator> nextRows() {
     if (closed) {  // We're already done scanning.
       return Deferred.fromResult(null);
-    } else if (tablet == null) {  // We need to open the scanner first.
+    } else if (tablet == null) {
+
+      // We need to open the scanner first.
       return client.openScanner(this).addCallbackDeferring(
           new Callback<Deferred<RowResultIterator>, Object>() {
             public Deferred<RowResultIterator> call(final Object response) {
@@ -206,15 +216,14 @@ public final class KuduScanner {
                 throw new NonRecoverableException(resp.error.getStatus().getMessage());
               }
               if (!resp.more || resp.scanner_id == null) {
-                hasMore = false;
-                closed = true; // the scanner is closed on the other side at this point
+                scanFinished();
                 return Deferred.fromResult(resp.data); // there might be data to return
               }
-              scanner_id = resp.scanner_id;
+              scannerId = resp.scanner_id;
               sequenceId++;
               hasMore = resp.more;
               if (LOG.isDebugEnabled()) {
-                LOG.debug("Scanner " + Bytes.pretty(scanner_id) + " opened on " + tablet);
+                LOG.debug("Scanner " + Bytes.pretty(scannerId) + " opened on " + tablet);
               }
               //LOG.info("Scan.open is returning rows: " + resp.data.getNumRows());
               return Deferred.fromResult(resp.data);
@@ -268,12 +277,12 @@ public final class KuduScanner {
             LOG.error(resp.error.getStatus().getMessage());
             throw new NonRecoverableException(resp.error.getStatus().getMessage());
           }
+          if (!resp.more) {  // We're done scanning this tablet.
+            scanFinished();
+            return resp.data;
+          }
           sequenceId++;
           hasMore = resp.more;
-          if (!hasMore) {  // We're done scanning this tablet.
-            closed = true;
-            // TODO go to the next tabletSlice instead
-          }
           //LOG.info("Scan.next is returning rows: " + resp.data.getNumRows());
           return resp.data;
         }
@@ -288,7 +297,7 @@ public final class KuduScanner {
   private final Callback<Object, Object> nextRowErrback() {
     return new Callback<Object, Object>() {
       public Object call(final Object error) {
-        final Slice old_tablet = tablet;  // Save before invalidate().
+        final KuduClient.RemoteTablet old_tablet = tablet;  // Save before invalidate().
         String message = old_tablet + " pretends to not know " + KuduScanner.this;
         if (error instanceof Exception) {
           LOG.warn(message, (Exception)error);
@@ -302,6 +311,25 @@ public final class KuduScanner {
         return "NextRow errback";
       }
     };
+  }
+
+  void scanFinished() {
+    // We're done if 1) we finished scanning the last tablet, or 2) we're past a configured end
+    // row key
+    if (tablet.getEndKey() == KuduClient.EMPTY_ARRAY || (this.endKey != KuduClient.EMPTY_ARRAY
+        // TODO wrong comparison due to signs
+        && Bytes.memcmp(this.endKey , tablet.getEndKey()) <= 0)) {
+      hasMore = false;
+      closed = true; // the scanner is closed on the other side at this point
+      return;
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Done Scanning tablet " + tablet.getTabletIdAsString() + " with scanner id " +
+          Bytes.pretty(scannerId));
+    }
+    startKey = tablet.getEndKey();
+    scannerId = null;
+    invalidate();
   }
 
   /**
@@ -326,7 +354,7 @@ public final class KuduScanner {
     return d;
   }
 
-  /** Callback+Errback invoked when the RegionServer closed our scanner.  */
+  /** Callback+Errback invoked when the TabletServer closed our scanner.  */
   private Callback<Object, Object> closedCallback() {
     return new Callback<Object, Object>() {
       public Object call(Object response) {
@@ -338,11 +366,11 @@ public final class KuduScanner {
         }
         closed = true;
         if (LOG.isDebugEnabled()) {
-          LOG.debug("Scanner " + Bytes.pretty(scanner_id) + " closed on "
+          LOG.debug("Scanner " + Bytes.pretty(scannerId) + " closed on "
               + tablet);
         }
         tablet = null;
-        scanner_id = "client debug closed".getBytes();   // Make debugging easier.
+        scannerId = "client debug closed".getBytes();   // Make debugging easier.
         //LOG.info("Scan.close is returning rows: " + resp.data.getNumRows());
         return returnedObj;
       }
@@ -359,43 +387,9 @@ public final class KuduScanner {
     buf.append(table.getName());
     buf.append("}")
         .append(", tabletSlice=").append(tablet);
-    buf.append(", scanner_id=").append(Bytes.pretty(scanner_id))
+    buf.append(", scannerId=").append(Bytes.pretty(scannerId))
         .append(')');
     return buf.toString();
-  }
-
-  // ---------------------- //
-  // Package private stuff. //
-  // ---------------------- //
-
-  KuduTable table() {
-    return table;
-  }
-
-  /**
-   * Sets the name of the tabletSlice that's hosting {@code this.start_key}.
-   * @param tablet The tabletSlice we're currently supposed to be scanning.
-   */
-  void setTablet(final Slice tablet) {
-    this.tablet = tablet;
-  }
-
-  /**
-   * Invalidates this scanner and makes it assume it's no longer opened.
-   * When a RegionServer goes away while we're scanning it, or some other type
-   * of access problem happens, this method should be called so that the
-   * scanner will have to re-locate the RegionServer and re-open itself.
-   */
-  void invalidate() {
-    tablet = null;
-    hasMore = false;
-  }
-
-  /**
-   * Returns the tabletSlice currently being scanned, if any.
-   */
-  Slice currentTablet() {
-    return tablet;
   }
 
   /**
@@ -415,18 +409,6 @@ public final class KuduScanner {
   }
 
   /**
-   *
-   * @param schema
-   */
-  public void setSchema(Schema schema) {
-    this.schema = schema;
-  }
-
-  public void addColumnRangePredicate(ColumnRangePredicatePB crppb) {
-    this.columnRangePredicates.add(crppb);
-  }
-
-  /**
    * Tells if the last rpc returned that there might be more rows to scan
    * @return true if there might be more data to scan, else false
    */
@@ -439,9 +421,70 @@ public final class KuduScanner {
   }
 
   /**
+   * Add a predicate for a column
+   * Very important constraint: row key predicates must be added in order.
+   * @param predicate predicate for a column to add
+   */
+  public void addColumnRangePredicate(ColumnRangePredicate predicate) {
+    columnRangePredicates.addColumnRangePredicate(predicate);
+  }
+
+  /**
+   * This concept doesn't exist on the TabletServer at the moment, but the idea is to be able to
+   * scan the row keys in order so that if a TS dies, you can just continue on another node.
+   * TODO: this is barely implemented either way
+   * @param faultTolerantScan true if the scan tolerates server failures or fails as soon as it
+   *                          encounters such a situation
+   */
+  public void setFaultTolerantScan(boolean faultTolerantScan) {
+    this.faultTolerantScan = faultTolerantScan;
+  }
+
+  // ---------------------- //
+  // Package private stuff. //
+  // ---------------------- //
+
+  KuduTable table() {
+    return table;
+  }
+
+  /**
+   * Sets the name of the tabletSlice that's hosting {@code this.start_key}.
+   * @param tablet The tabletSlice we're currently supposed to be scanning.
+   */
+  void setTablet(final KuduClient.RemoteTablet tablet) {
+    this.tablet = tablet;
+  }
+
+  /**
+   * Invalidates this scanner and makes it assume it's no longer opened.
+   * When a TabletServer goes away while we're scanning it, or some other type
+   * of access problem happens, this method should be called so that the
+   * scanner will have to re-locate the TabletServer and re-open itself.
+   */
+  void invalidate() {
+    tablet = null;
+  }
+
+  /**
+   * Returns the tabletSlice currently being scanned, if any.
+   */
+  KuduClient.RemoteTablet currentTablet() {
+    return tablet;
+  }
+
+  /**
    * Returns an RPC to open this scanner.
    */
   KuduRpc getOpenRequest() {
+    checkScanningNotStarted();
+    // This is the only point where we know we haven't started scanning and where the scanner
+    // should be fully configured
+    if (this.inFirstTablet) {
+      this.inFirstTablet = false;
+      this.startKey = this.columnRangePredicates.getStartKey();
+      this.endKey = this.columnRangePredicates.getEndKey();
+    }
     return new ScanRequest(table, State.OPENING);
   }
 
@@ -471,7 +514,7 @@ public final class KuduScanner {
   }
 
   /**
-   *  TODO
+   *  Helper object that contains all the info sent by a TS afer a Scan request
    */
   final static class Response {
     /** The ID associated with the scanner that issued the request.  */
@@ -498,7 +541,7 @@ public final class KuduScanner {
     }
 
     public String toString() {
-      return "KuduScanner$Response(scanner_id=" + Bytes.pretty(scanner_id)
+      return "KuduScanner$Response(scannerId=" + Bytes.pretty(scanner_id)
           + ", data=" + data + ", more=" + more + ", error = " + error+  ") ";
     }
   }
@@ -510,9 +553,9 @@ public final class KuduScanner {
   }
 
   /**
-   * RPC sent out to fetch the next rows from the RegionServer.
+   * RPC sent out to fetch the next rows from the TabletServer.
    */
-  private final class ScanRequest extends KuduRpc {
+  private final class ScanRequest extends KuduRpc implements KuduRpc.HasKey {
 
     State state;
 
@@ -537,20 +580,20 @@ public final class KuduScanner {
           NewScanRequestPB.Builder newBuilder = NewScanRequestPB.newBuilder();
           newBuilder.setLimit(limit); // currently ignored
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
-          newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getBytes()));
-          if (!columnRangePredicates.isEmpty()) {
-            newBuilder.addAllRangePredicates(columnRangePredicates);
+          newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getTabletIdAsBytes()));
+          if (!columnRangePredicates.predicates.isEmpty()) {
+            newBuilder.addAllRangePredicates(columnRangePredicates.predicates);
           }
           builder.setNewScanRequest(newBuilder.build())
                  .setBatchSizeBytes(max_num_bytes);
           break;
         case NEXT:
-          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scanner_id))
+          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setCallSeqId(sequenceId)
                  .setBatchSizeBytes(max_num_bytes);
           break;
         case CLOSING:
-          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scanner_id))
+          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);
       }
@@ -558,20 +601,24 @@ public final class KuduScanner {
     }
 
     @Override
-    Response deserialize(final ChannelBuffer buf) {
+    Object deserialize(final ChannelBuffer buf) {
       ScanResponsePB.Builder builder = ScanResponsePB.newBuilder();
       readProtobuf(buf, builder);
       ScanResponsePB resp = builder.build();
       final byte[] id = resp.getScannerId().toByteArray();
       TabletServerErrorPB error = resp.getError();
-      //List<RowResult> rows = ProtobufHelper.extractRowsFromRowBlockPB(schema, resp.getData());
+      if (error.getCode().equals(TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
+        // TODO doing this makes it act like Write, the request will be redirected to a new
+        // TODO tablet. Likely not what we want.
+        return error;
+      }
       RowResultIterator iterator = new RowResultIterator(schema, resp.getData());
 
       boolean hasMore = resp.getHasMoreResults();
-      if (id.length  != 0 && scanner_id != null && !Bytes.equals(scanner_id, id)) {
+      if (id.length  != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
         throw new InvalidResponseException("Scan RPC response was for scanner"
             + " ID " + Bytes.pretty(id) + " but we expected "
-            + Bytes.pretty(scanner_id), resp);
+            + Bytes.pretty(scannerId), resp);
       }
       Response response = new Response(id, iterator, hasMore, error);
       if (LOG.isDebugEnabled()) {
@@ -581,15 +628,21 @@ public final class KuduScanner {
     }
 
     public String toString() {
-      return "ScanRequest(scanner_id=" + Bytes.pretty(scanner_id)
-          + (tablet != null? ", tabletSlice=" + tablet.toString(Charset.defaultCharset()) : "")
+      return "ScanRequest(scannerId=" + Bytes.pretty(scannerId)
+          + (tablet != null? ", tabletSlice=" + tablet.getTabletIdAsString() : "")
           + ", attempt=" + attempt + ')';
     }
 
+    @Override
+    public byte[] key() {
+      // This key is used to lookup where the request needs to go
+      return startKey;
+    }
   }
 
   /**
-   * TODO
+   * Class that contains the rows sent by a tablet server, exhausting this iterator only means
+   * that all the rows from the last server response were read.
    */
   public class RowResultIterator implements Iterator<RowResult> {
 
@@ -626,6 +679,40 @@ public final class KuduScanner {
             "but expected " + expectedSize + "  for " + numRows + " rows");
       }
       this.rowResult = new RowResult(this.schema, this.bs, this.indirectBs);
+
+      // TODO this is currently not even supported server-side
+      if (faultTolerantScan) {
+        setLastSeenKey(data.getNumRows());
+      }
+    }
+
+    /**
+     * Making a big assumption here, that we always get all the keys back!
+     */
+    private void setLastSeenKey(int numRows) {
+      // First go to the end of the results since we want to only keep track of the last row key
+      this.rowResult.advancePointerTo(numRows-1);
+      KeyEncoder encoder = new KeyEncoder(schema);
+      for (int i = 0; i < schema.getColumnCount(); i++) {
+        ColumnSchema column = schema.getColumn(i);
+        if (!column.isKey()) {
+          break;
+        }
+        if (column.getType().equals(Type.STRING)) {
+          // TODO It'd be better to just pass the string's original bytes but this is getting
+          // TODO hella messy
+          String key = this.rowResult.getString(i);
+          encoder.addKey(key.getBytes(), 0, key.length(), column, i);
+        } else {
+          encoder.addKey(this.rowResult.getRowData(),
+              this.rowResult.getCurrentRowDataOffsetForColumn(i), column.getType().getSize(),
+              column, i);
+        }
+      }
+      startKey = encoder.toByteArray();
+      assert startKey.length > 0;
+      // reset the row result for querying
+      this.rowResult.advancePointerTo(-1);
     }
 
     @Override
@@ -653,6 +740,11 @@ public final class KuduScanner {
      */
     public int getNumRows() {
       return this.numRows;
+    }
+
+    @Override
+    public String toString() {
+      return "RowResultIterator for " + this.numRows + " rows";
     }
   }
 }

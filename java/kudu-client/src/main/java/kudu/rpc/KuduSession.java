@@ -189,12 +189,13 @@ public class KuduSession {
       return client.sendRpcToTablet(operation);
     }
     String table = operation.getTable().getName();
-    Slice tablet = client.getTablet(table);
+    byte[] rowkey = operation.key();
+    KuduClient.RemoteTablet tablet = client.getTablet(table, rowkey);
     // We go straight to the buffer if we know the tabletSlice
     if (tablet != null) {
       operation.setTablet(tablet);
       // Handles the difference between manual and auto flush
-      Deferred<Object> d = addToBuffer(tablet, operation);
+      Deferred<Object> d = addToBuffer(tablet.getTabletId(), operation);
       return d;
     }
     final class RetryRpc implements Callback<Deferred<Object>, Object> {
@@ -208,7 +209,12 @@ public class KuduSession {
       }
     }
     operation.attempt++;
-    return client.locateTablet(table).addBothDeferring(new RetryRpc());
+    Deferred<Object> delayedRpc = client.sleepIfTableNotAvailable(table, operation);
+    if (delayedRpc != null) {
+      return delayedRpc;
+    }
+
+    return client.locateTablet(table, rowkey).addBothDeferring(new RetryRpc());
   }
 
   /**

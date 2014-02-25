@@ -36,94 +36,23 @@ import static org.junit.Assert.*;
  *
  * The test creates a table with a unique(ish) name which it deletes at the end.
  */
-public class TestKuduSession {
-
-  public static final Logger LOG = LoggerFactory.getLogger(TestKuduSession.class);
-
-  private final static String MASTER_ADDRESS = "masterAddress";
-  private final static String MASTER_PORT = "masterPort";
-  private final static String FLAGS_PATH = "flagsPath";
-  private final static String START_CLUSTER = "startCluster";
-  public static final int DEFAULT_SLEEP = 10000;
-  private static Process master;
-  private static Process tabletServer;
-  private static String masterAddress;
-  private static int masterPort;
-  private static boolean startCluster;
+public class TestKuduSession extends BaseKuduTest {
   // Generate a unique table name
   private final static String tableName =
       TestKuduSession.class.getName()+"-"+System.currentTimeMillis();
-  private static KuduClient client;
-  private static Schema schema = getSchema();
+
+  private static Schema schema = getBasicSchema();
   private static KuduTable table;
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
-    // the following props are set via kudu-client's pom
-    masterAddress = System.getProperty(MASTER_ADDRESS);
-    masterPort = Integer.parseInt(System.getProperty(MASTER_PORT));
-    String flagsPath = System.getProperty(FLAGS_PATH);
-    startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
+    BaseKuduTest.setUpBeforeClass();
+    createTable(tableName, schema, new CreateTableBuilder());
 
-    if (startCluster) {
-      String[] masterCmdLine = {"kudu-master", "--flagfile=" + flagsPath};
-      String[] tsCmdLine = {"kudu-tablet_server", masterCmdLine[1]};
-
-      master = Runtime.getRuntime().exec(masterCmdLine);
-      Thread.sleep(300);
-      tabletServer = Runtime.getRuntime().exec(tsCmdLine);
-      // TODO lower than 1000 and we burp a too many retries, fix
-      Thread.sleep(1000);
-    }
-
-    client = new KuduClient(masterAddress, masterPort);
     table = client.openTable(tableName, schema);
-
-    Deferred<Object> d = client.createTable(tableName, schema);
-    final AtomicBoolean gotError = new AtomicBoolean(false);
-    d.addErrback(new Callback<Object, Object>() {
-      @Override
-      public Object call(Object arg) throws Exception {
-        gotError.set(true);
-        return null;
-      }
-    });
-    try {
-      d.join(DEFAULT_SLEEP);
-    } catch (Exception e) {
-      fail("Timed out");
-    }
-    if (gotError.get()) {
-      fail("Got error during table creation, is the Kudu master running at " +
-          masterAddress + ":" + masterPort + "?");
-    }
   }
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    try {
-      final AtomicBoolean gotError = new AtomicBoolean(false);
-      Deferred<Object> d = client.deleteTable(tableName);
-      d.addErrback(new Callback<Object, Object>() {
-        @Override
-        public Object call(Object arg) throws Exception {
-          LOG.warn("tearDown errback " + arg);
-          gotError.set(true);
-          return null;
-        }
-      });
-      d.join(DEFAULT_SLEEP);
-      if (gotError.get()) {
-        fail("Couldn't delete a table");
-      }
-    } finally {
-      client.shutdown();
-      if (startCluster) {
-        master.destroy();
-        tabletServer.destroy();
-      }
-    }
-  }
+
 
   @Before
   public void setUp() throws Exception {
@@ -324,7 +253,6 @@ public class TestKuduSession {
         RowResult row;
         while (arg.hasNext()) {
           row = arg.next();
-          //System.out.println("Seeing " + row.toStringLongFormat());
           if (row.getInt(0) == key) {
             exists.set(true);
             break;
@@ -351,65 +279,15 @@ public class TestKuduSession {
   public static int countInRange(final int startOrder, final int endOrder) throws Exception {
 
     KuduScanner scanner = getScanner(startOrder, endOrder);
-    final AtomicInteger counter = new AtomicInteger();
-
-    Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {
-      @Override
-      public Object call(KuduScanner.RowResultIterator arg) throws Exception {
-        if (arg == null) return null;
-        RowResult row;
-        while (arg.hasNext()) {
-          row = arg.next();
-          //System.out.println("Seeing " + row.toStringLongFormat());
-          counter.incrementAndGet();
-        }
-        return null;
-      }
-    };
-
-    while (scanner.hasMoreRows()) {
-      Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
-      data.addCallbacks(cb, defaultErrorCB);
-      data.join();
-    }
-
-    Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
-    closer.addCallbacks(cb, defaultErrorCB);
-    closer.join();
-    return counter.get();
+    return countRowsInScan(scanner);
   }
 
   private static KuduScanner getScanner(int start, int end) {
-    KuduScanner scanner = client.newScanner(table);
-    scanner.setSchema(schema);
-    Tserver.ColumnRangePredicatePB.Builder builder = Tserver.ColumnRangePredicatePB.newBuilder();
-    builder.setColumn(ProtobufHelper.columnToPb(schema.getColumn(0)));
-
-    builder.setLowerBound(ZeroCopyLiteralByteString.wrap(Bytes.fromInt(start)));
-    builder.setUpperBound(ZeroCopyLiteralByteString.wrap(Bytes.fromInt(end)));
-    scanner.addColumnRangePredicate(builder.build());
+    KuduScanner scanner = client.newScanner(table, schema);
+    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(0));
+    predicate.setLowerBound(start);
+    predicate.setUpperBound(end);
+    scanner.addColumnRangePredicate(predicate);
     return scanner;
   }
-
-  public static Schema getSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
-    columns.add(new ColumnSchema("key", INT32, true));
-    columns.add(new ColumnSchema("column1_i", INT32));
-    columns.add(new ColumnSchema("column2_i", INT32));
-    columns.add(new ColumnSchema("column3_s", STRING));
-    return new Schema(columns);
-  }
-
-  static Callback<Object, Object> defaultErrorCB = new Callback<Object, Object>() {
-    @Override
-    public Object call(Object arg) throws Exception {
-      if (arg == null) return null;
-      if (arg instanceof Exception) {
-        LOG.warn("Got exception", (Exception) arg);
-      } else {
-        LOG.warn("Got an error response back " + arg);
-      }
-      return null;
-    }
-  };
 }
