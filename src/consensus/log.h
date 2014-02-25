@@ -96,6 +96,18 @@ class Log {
     options_.async_preallocate_segments = false;
   }
 
+  void DisableSync() {
+    force_sync_all_ = false;
+  }
+
+  // If we previous called DisableSync(), we should restore the
+  // default behavior and then call Sync() which will perform the
+  // actual syncing if required.
+  Status ReEnableSyncIfRequired() {
+    force_sync_all_ = options_.force_fsync_all;
+    return Sync();
+  }
+
   // Returns the current header so that the log can be queried for the most
   // current config/metadata/<term,index>.
   const LogSegmentHeaderPB* current_header() const {
@@ -215,6 +227,9 @@ class Log {
   std::string tablet_id_;
 
   gscoped_ptr<TaskExecutor> allocation_executor_;
+
+  // If true, sync on all appends.
+  bool force_sync_all_;
 
   // The future for an asynchronous log segment preallocation task.
   std::tr1::shared_ptr<kudu::Future> allocation_future_;

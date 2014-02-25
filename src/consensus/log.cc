@@ -213,6 +213,7 @@ Log::Log(const LogOptions &options,
   entry_queue_(FLAGS_group_commit_queue_size),
   append_thread_(new AppendThread(this)),
   allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
+  force_sync_all_(options_.force_fsync_all),
   state_(kLogInitialized),
   allocation_state_(kAllocationNotStarted) {
 }
@@ -239,7 +240,7 @@ Status Log::Init() {
     next_segment_header_->set_sequence_number(seqno + 1);
   }
 
-  if (options_.force_fsync_all) {
+  if (force_sync_all_) {
     LOG(INFO) << "Log is configured to fsync() on all Append() calls";
   } else {
     LOG(INFO) << "Log is configured to *not* fsync() on all Append() calls";
@@ -385,7 +386,7 @@ Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
 }
 
 Status Log::Sync() {
-  if (options_.force_fsync_all) {
+  if (force_sync_all_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
       RETURN_NOT_OK(active_segment_->writable_file()->Sync());
     }

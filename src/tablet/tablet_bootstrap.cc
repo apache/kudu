@@ -214,6 +214,8 @@ Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        gscoped_ptr<log::Log>* rebuilt_log) {
   TabletBootstrap bootstrap(meta.Pass(), metric_context);
   RETURN_NOT_OK(bootstrap.BootstrapTablet(rebuilt_tablet, rebuilt_log));
+  // This is necessary since OpenNewLog() initially disables sync.
+  RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
   return Status::OK();
 }
 
@@ -441,6 +443,9 @@ Status TabletBootstrap::OpenNewLog() {
                           init,
                           tablet_->tablet_id(),
                           &log_));
+  // Disable sync temprorarily in order to speed up appends during the
+  // bootstrap process.
+  log_->DisableSync();
   return Status::OK();
 }
 
