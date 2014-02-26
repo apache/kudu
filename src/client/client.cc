@@ -266,7 +266,7 @@ CreateTableOptions::~CreateTableOptions() {
 }
 
 CreateTableOptions& CreateTableOptions::WithSplitKeys(
-    std::vector<std::string>& keys) {
+    const std::vector<std::string>& keys) {
   split_keys_ = keys;
   return *this;
 }

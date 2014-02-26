@@ -171,7 +171,7 @@ class CreateTableOptions {
 
   // Set keys on which to pre-split the table. The vector is
   // copied.
-  CreateTableOptions& WithSplitKeys(std::vector<std::string>& keys);
+  CreateTableOptions& WithSplitKeys(const std::vector<std::string>& keys);
 
  private:
   friend class KuduClient;
