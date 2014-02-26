@@ -12,10 +12,10 @@ namespace tablet {
 
 // An implementation of Clock that behaves as a plain Lamport Clock.
 // In a single node, single tablet, setting this generates exactly the
-// same txid_t sequence as the original MvccManager did, but it can be
-// updated to make sure replicas generate new txids on becoming leader.
+// same Timestamp sequence as the original MvccManager did, but it can be
+// updated to make sure replicas generate new timestamps on becoming leader.
 //
-// This can be used as a deterministic txid generator that has the same
+// This can be used as a deterministic timestamp generator that has the same
 // consistency properties as a HybridTime clock.
 //
 // The Wait* methods are unavailable in this implementation and will
@@ -24,13 +24,13 @@ namespace tablet {
 // NOTE: this class is thread safe.
 class LogicalClock : public Clock {
  public:
-  explicit LogicalClock(txid_t::val_type initial_time) : now_(initial_time) {}
-  txid_t Now();
-  Status Update(const txid_t& to_update);
+  explicit LogicalClock(Timestamp::val_type initial_time) : now_(initial_time) {}
+  Timestamp Now();
+  Status Update(const Timestamp& to_update);
 
   // Below methods are unavailable for this clock.
-  Status WaitUntilAfter(const txid_t& then);
-  Status TimedWaitUntilAfter(const txid_t& then, const MonoDelta& max);
+  Status WaitUntilAfter(const Timestamp& then);
+  Status TimedWaitUntilAfter(const Timestamp& then, const MonoDelta& max);
  private:
   base::subtle::Atomic64 now_;
 };

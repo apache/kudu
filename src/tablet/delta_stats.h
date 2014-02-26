@@ -40,7 +40,7 @@ class DeltaStats {
 
   // Increment delete and update counts based on changes contained in
   // 'update'.
-  Status UpdateStats(const txid_t& txid,
+  Status UpdateStats(const Timestamp& timestamp,
                      const Schema& schema,
                      const RowChangeList& update);
 
@@ -59,30 +59,30 @@ class DeltaStats {
   }
 
   // Returns the maximum transaction id of any mutation in a delta file.
-  txid_t max_txid() const {
-    return max_txid_;
+  Timestamp max_timestamp() const {
+    return max_timestamp_;
   }
 
   // Returns the minimum transaction id of any mutation in a delta file.
-  txid_t min_txid() const {
-    return min_txid_;
+  Timestamp min_timestamp() const {
+    return min_timestamp_;
   }
 
   // Set the maximum transaction id of any mutation in a delta file.
-  void set_max_txid(const txid_t& txid) {
-    max_txid_ = txid;
+  void set_max_timestamp(const Timestamp& timestamp) {
+    max_timestamp_ = timestamp;
   }
 
   // Set the minimum transaction id in of any mutation in a delta file.
-  void set_min_txid(const txid_t& txid) {
-    min_txid_ = txid;
+  void set_min_timestamp(const Timestamp& timestamp) {
+    min_timestamp_ = timestamp;
   }
 
  private:
   std::vector<uint64_t> update_counts_;
   uint64_t delete_count_;
-  txid_t max_txid_;
-  txid_t min_txid_;
+  Timestamp max_timestamp_;
+  Timestamp min_timestamp_;
 };
 
 

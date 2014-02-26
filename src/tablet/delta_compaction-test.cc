@@ -69,7 +69,7 @@ class TestDeltaCompaction : public KuduTest {
     return Status::OK();
   }
 
-  Status FillDeltaFile(rowid_t first_row, int nrows, uint64_t txid_min,
+  Status FillDeltaFile(rowid_t first_row, int nrows, uint64_t timestamp_min,
                        gscoped_ptr<DeltaCompactionInput> *dci) {
     int limit = first_row + nrows;
     string path = GetDeltaFilePath(deltafile_idx_);
@@ -85,10 +85,10 @@ class TestDeltaCompaction : public KuduTest {
       uint32_t new_val = i;
       update.AddColumnUpdate(0, &new_val);
       int num_txns = random() % 3;
-      for (int j = 0, curr_txid = txid_min; j < num_txns; j++) {
-        DeltaKey key(i, txid_t(curr_txid));
+      for (int j = 0, curr_timestamp = timestamp_min; j < num_txns; j++) {
+        DeltaKey key(i, Timestamp(curr_timestamp));
         RETURN_NOT_OK(dfw->AppendDelta(key, RowChangeList(buf)));
-        curr_txid++;
+        curr_timestamp++;
         num_updates++;
       }
     }
@@ -102,12 +102,12 @@ class TestDeltaCompaction : public KuduTest {
 
   Status CreateMergedDeltaCompactionInput(gscoped_ptr<DeltaCompactionInput> *merged) {
     vector<shared_ptr<DeltaCompactionInput> > inputs;
-    int min_txid = 0;
+    int min_timestamp = 0;
     for (int i = 0; i < FLAGS_num_delta_files; i++) {
       gscoped_ptr<DeltaCompactionInput> input;
-      RETURN_NOT_OK(FillDeltaFile(0, FLAGS_num_rows, min_txid, &input));
+      RETURN_NOT_OK(FillDeltaFile(0, FLAGS_num_rows, min_timestamp, &input));
       inputs.push_back(shared_ptr<DeltaCompactionInput>(input.release()));
-      min_txid += 2;
+      min_timestamp += 2;
     }
     merged->reset(DeltaCompactionInput::Merge(schema_, inputs));
     return Status::OK();
@@ -183,7 +183,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
 
   faststring buf;
   int row_id = 0;
-  int curr_txid = 0;
+  int curr_timestamp = 0;
   int deltafile_idx = 0;
   BOOST_FOREACH(const Schema& schema, schemas) {
     // Write the Deltas
@@ -228,9 +228,9 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       // To simulate multiple updates on the same row, the first N updates
       // of this new schema will always be on rows [0, 1, 2, ...] while the
       // others will be on new rows. (N is tunable by changing kNumMultipleUpdates)
-      DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, txid_t(curr_txid));
+      DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, Timestamp(curr_timestamp));
       ASSERT_STATUS_OK(dfw->AppendDelta(key, update.as_changelist()));
-      curr_txid++;
+      curr_timestamp++;
       row_id++;
     }
 

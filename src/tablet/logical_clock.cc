@@ -12,11 +12,11 @@ using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using base::subtle::NoBarrier_CompareAndSwap;
 
-txid_t LogicalClock::Now() {
-  return txid_t(Barrier_AtomicIncrement(&now_, 1));
+Timestamp LogicalClock::Now() {
+  return Timestamp(Barrier_AtomicIncrement(&now_, 1));
 }
 
-Status LogicalClock::Update(const txid_t& to_update) {
+Status LogicalClock::Update(const Timestamp& to_update) {
   Atomic64 new_value = to_update.value();
   // if the incoming value is less than the current one there's nothing to do
   if (new_value <= now_) return Status::OK();
@@ -32,12 +32,12 @@ Status LogicalClock::Update(const txid_t& to_update) {
   }
   return Status::OK();
 }
-Status LogicalClock::WaitUntilAfter(const txid_t& then) {
+Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
 }
 
-Status LogicalClock::TimedWaitUntilAfter(const txid_t& then, const MonoDelta& max) {
+Status LogicalClock::TimedWaitUntilAfter(const Timestamp& then, const MonoDelta& max) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
 }

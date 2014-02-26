@@ -65,7 +65,7 @@ TYPED_TEST(TestTablet, TestFlush) {
 // implemented.
 TYPED_TEST(TestTablet, DISABLED_TestMVCCAfterFlush) {
   // Insert 5 rows into the memrowset.
-  // These rows will be inserted with txid 0 through 4.
+  // These rows will be inserted with timestamp 0 through 4.
   vector<MvccSnapshot> snaps;
   snaps.push_back(MvccSnapshot(*this->tablet_->mvcc_manager()));
 

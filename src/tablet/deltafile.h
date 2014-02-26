@@ -52,7 +52,7 @@ class DeltaFileWriter {
   Status Finish();
 
   // Append a given delta to the file. This must be called in ascending order
-  // of (key, txid).
+  // of (key, timestamp).
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
   Status WriteDeltaStats(const DeltaStats& stats);

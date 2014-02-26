@@ -51,7 +51,7 @@ class RowSet {
   //
   // If the row does not exist in this rowset, returns
   // Status::NotFound().
-  virtual Status MutateRow(txid_t txid,
+  virtual Status MutateRow(Timestamp timestamp,
                            const RowSetKeyProbe &probe,
                            const RowChangeList &update,
                            ProbeStats* stats,
@@ -232,7 +232,7 @@ class DuplicatingRowSet : public RowSet {
   DuplicatingRowSet(const RowSetVector &old_rowsets,
                     const RowSetVector &new_rowsets);
 
-  Status MutateRow(txid_t txid,
+  Status MutateRow(Timestamp timestamp,
                    const RowSetKeyProbe &probe,
                    const RowChangeList &update,
                    ProbeStats* stats,

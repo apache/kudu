@@ -27,8 +27,8 @@ class MvccSnapshot {
   // Create a snapshot with the current state of the given manager
   explicit MvccSnapshot(const MvccManager &manager);
 
-  // Create a snapshot at a specific txid_t
-  explicit MvccSnapshot(const txid_t& txid);
+  // Create a snapshot at a specific Timestamp
+  explicit MvccSnapshot(const Timestamp& timestamp);
 
   // Create a snapshot which considers all transactions as committed.
   // This is mostly useful in test contexts.
@@ -39,24 +39,24 @@ class MvccSnapshot {
 
   // Return true if the given transaction ID should be considered committed
   // in this snapshot.
-  bool IsCommitted(const txid_t& txid) const;
+  bool IsCommitted(const Timestamp& timestamp) const;
 
   // Returns true if this snapshot may have any committed transactions with ID
-  // equal to or higher than the provided 'txid'.
+  // equal to or higher than the provided 'timestamp'.
   // This is mostly useful to avoid scanning REDO deltas in certain cases.
   // If MayHaveCommittedTransactionsAtOrAfter(delta_stats.min) returns true
   // it means that there might be transactions that need to be applied in the
   // context of this snapshot; otherwise no scanning is necessary.
-  bool MayHaveCommittedTransactionsAtOrAfter(const txid_t& txid) const;
+  bool MayHaveCommittedTransactionsAtOrAfter(const Timestamp& timestamp) const;
 
   // Returns true if this snapshot may have any uncommitted transactions with ID
-  // equal to or lower than the provided 'txid'.
+  // equal to or lower than the provided 'timestamp'.
   // This is mostly useful to avoid scanning UNDO deltas in certain cases.
   // If MayHaveUncommittedTransactionsAtOrBefore(delta_stats.max) returns false it
   // means that all UNDO delta transactions are committed in the context of this
   // snapshot and no scanning is necessary; otherwise there might be some
   // transactions that need to be undone.
-  bool MayHaveUncommittedTransactionsAtOrBefore(const txid_t& txid) const;
+  bool MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& timestamp) const;
 
   // Return a string representation of the set of committed transactions
   // in this snapshot, suitable for debug printouts.
@@ -72,25 +72,25 @@ class MvccSnapshot {
 
   // Summary rule:
   // A transaction T is committed if and only if:
-  //    T < all_committed_before_txid_
-  // or (T < none_committed_after_txid && !txids_in_flight.contains(T))
+  //    T < all_committed_before_timestamp_
+  // or (T < none_committed_after_timestamp && !timestamps_in_flight.contains(T))
 
   // A transaction ID below which all transactions have been committed.
-  // For any txid X, if X < all_committed_txid_, then X is committed.
-  txid_t all_committed_before_txid_;
+  // For any timestamp X, if X < all_committed_timestamp_, then X is committed.
+  Timestamp all_committed_before_timestamp_;
 
   // A transaction ID above which no transactions have been committed.
-  // For any txid X, if X >= none_committed_after_txid_, then X is not committed.
-  txid_t none_committed_after_txid_;
+  // For any timestamp X, if X >= none_committed_after_timestamp_, then X is not committed.
+  Timestamp none_committed_after_timestamp_;
 
   // The current set of transactions which are in flight.
-  // For any txid X, if X is in txids_in_flight_, it is not yet committed.
-  unordered_set<txid_t::val_type> txids_in_flight_;
+  // For any timestamp X, if X is in timestamps_in_flight_, it is not yet committed.
+  unordered_set<Timestamp::val_type> timestamps_in_flight_;
 
 };
 
 // Coordinator of MVCC transactions. Threads wishing to make updates use
-// the MvccManager to obtain a unique txid, usually through the ScopedTransaction
+// the MvccManager to obtain a unique timestamp, usually through the ScopedTransaction
 // class defined below.
 //
 // NOTE: There is no support for transaction abort/rollback, since
@@ -105,14 +105,14 @@ class MvccManager {
   // Callers should generally prefer using the ScopedTransaction class defined
   // below, which will automatically finish the transaction when it goes out
   // of scope.
-  txid_t StartTransaction();
+  Timestamp StartTransaction();
 
   // Commit the given transaction.
   //
   // If the transaction is not currently in-flight, this will trigger an
   // assertion error. It is an error to commit the same transaction more
   // than once.
-  void CommitTransaction(txid_t txid);
+  void CommitTransaction(Timestamp timestamp);
 
   // Take a snapshot of the current MVCC state, which indicates which
   // transactions have been committed at the time of this call.
@@ -141,8 +141,8 @@ class ScopedTransaction {
   // already been committed.
   ~ScopedTransaction();
 
-  txid_t txid() const {
-    return txid_;
+  Timestamp timestamp() const {
+    return timestamp_;
   }
 
   // Commit the in-flight transaction.
@@ -153,7 +153,7 @@ class ScopedTransaction {
 
   bool committed_;
   MvccManager * const manager_;
-  const txid_t txid_;
+  const Timestamp timestamp_;
 };
 
 

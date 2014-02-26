@@ -102,7 +102,7 @@ Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *are
     RETURN_NOT_OK(iter->CollectMutations(dst, arena));
   }
   // TODO: do we need to do some kind of sorting here to deal with out-of-order
-  // txids?
+  // timestamps?
   return Status::OK();
 }
 
@@ -372,7 +372,7 @@ ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterat
 }
 
 
-Status DeltaTracker::Update(txid_t txid,
+Status DeltaTracker::Update(Timestamp timestamp,
                             rowid_t row_idx,
                             const RowChangeList &update,
                             MutationResultPB* result) {
@@ -380,7 +380,7 @@ Status DeltaTracker::Update(txid_t txid,
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   DCHECK_LT(row_idx, num_rows_);
 
-  Status s = dms_->Update(txid, row_idx, update);
+  Status s = dms_->Update(timestamp, row_idx, update);
   if (s.ok()) {
     MutationTargetPB* target = result->add_mutations();
     target->set_rs_id(rowset_metadata_->id());

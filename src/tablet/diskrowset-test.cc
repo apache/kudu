@@ -133,14 +133,14 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   RowChangeListEncoder enc(schema_, &buf);
   enc.SetToDelete();
 
-  txid_t txid(0);
+  Timestamp timestamp(0);
   RowBuilder rb(schema_.CreateKeyProjection());
   rb.AddString(Slice("hello 00000000000049x"));
   RowSetKeyProbe probe(rb.row());
 
   MutationResultPB result;
   ProbeStats stats;
-  Status s = rs->MutateRow(txid, probe, enc.as_changelist(), &stats, &result);
+  Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), &stats, &result);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_EQ(MutationResultPB::NO_MUTATION, result.type());
 
@@ -287,7 +287,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       RowSetKeyProbe probe(rb.row());
       MutationResultPB result;
       ProbeStats stats;
-      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.txid(),
+      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.timestamp(),
                                           probe,
                                           RowChangeList(update_buf),
                                           &stats,

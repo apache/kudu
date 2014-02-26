@@ -277,8 +277,8 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
       : schema_(schema),
         stats_(schema.num_columns()) {
 
-    txid_t min = txid_t::kMax;
-    txid_t max = txid_t::kMin;
+    Timestamp min = Timestamp::kMax;
+    Timestamp max = Timestamp::kMin;
     BOOST_FOREACH(const shared_ptr<DeltaCompactionInput> &input, inputs) {
       DCHECK_SCHEMA_EQ(schema_, input->schema());
       gscoped_ptr<MergeState> state(new MergeState);
@@ -295,15 +295,15 @@ class MergeDeltaCompactionInput : public DeltaCompactionInput {
       state->input = input;
       states_.push_back(state.release());
 
-      if (min.CompareTo(stats_.min_txid()) > 0) {
-        min = stats_.min_txid();
+      if (min.CompareTo(stats_.min_timestamp()) > 0) {
+        min = stats_.min_timestamp();
       }
-      if (max.CompareTo(stats_.max_txid()) < 0) {
-        max = stats_.max_txid();
+      if (max.CompareTo(stats_.max_timestamp()) < 0) {
+        max = stats_.max_timestamp();
       }
     }
-    stats_.set_min_txid(min);
-    stats_.set_min_txid(max);
+    stats_.set_min_timestamp(min);
+    stats_.set_min_timestamp(max);
   }
 
   virtual ~MergeDeltaCompactionInput() {
@@ -631,7 +631,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(DeltaFileWriter* dfw, size_t *
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(stats.UpdateStats(key_and_update.key.txid(), *base_schema, update),
+      WARN_NOT_OK(stats.UpdateStats(key_and_update.key.timestamp(), *base_schema, update),
                   "Failed to update stats");
     }
     *deltas_written += out.size();
@@ -706,7 +706,7 @@ DeltaCompactionInput
 static string FormatDebugDeltaCell(const Schema &schema, const DeltaKeyAndUpdate &cell) {
   return StrCat(Substitute("(delta key=$0, change_list=$1)",
                            StringPrintf("%04u@tx%04u", cell.key.row_idx(),
-                                        atoi(cell.key.txid().ToString().c_str())),
+                                        atoi(cell.key.timestamp().ToString().c_str())),
                            RowChangeList(cell.cell).ToString(schema)));
 }
 

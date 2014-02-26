@@ -25,10 +25,10 @@ DeltaMemStore::DeltaMemStore(int64_t id, const Schema &schema)
 }
 
 
-Status DeltaMemStore::Update(txid_t txid,
+Status DeltaMemStore::Update(Timestamp timestamp,
                              rowid_t row_idx,
                              const RowChangeList &update) {
-  DeltaKey key(row_idx, txid);
+  DeltaKey key(row_idx, timestamp);
 
   // TODO: this allocation isn't great. Make faststring
   // allocate its initial buffer on the stack?
@@ -41,8 +41,8 @@ Status DeltaMemStore::Update(txid_t txid,
   btree::PreparedMutation<btree::BTreeTraits> mutation(key_slice);
   mutation.Prepare(&tree_);
   CHECK(!mutation.exists())
-    << "Already have an entry for rowid " << row_idx << " at txid "
-    << txid;
+    << "Already have an entry for rowid " << row_idx << " at timestamp "
+    << timestamp;
   if (!mutation.Insert(update.slice())) {
     return Status::IOError("Unable to insert into tree");
   }
@@ -63,7 +63,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
 
     RowChangeList rcl(val);
     RETURN_NOT_OK_PREPEND(dfw->AppendDelta(key, rcl), "Failed to append delta");
-    delta_stats_.UpdateStats(key.txid(), schema_, rcl);
+    delta_stats_.UpdateStats(key.timestamp(), schema_, rcl);
     iter->Next();
   }
   RETURN_NOT_OK(dfw->WriteDeltaStats(delta_stats_));
@@ -80,7 +80,7 @@ Status DeltaMemStore::NewDeltaIterator(const Schema *projection,
 Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   *deleted = false;
 
-  DeltaKey key(row_idx, txid_t(0));
+  DeltaKey key(row_idx, Timestamp(0));
   faststring buf;
   key.EncodeTo(&buf);
   Slice key_slice(buf);
@@ -157,7 +157,7 @@ Status DMSIterator::Init() {
 
 Status DMSIterator::SeekToOrdinal(rowid_t row_idx) {
   faststring buf;
-  DeltaKey key(row_idx, txid_t(0));
+  DeltaKey key(row_idx, Timestamp(0));
   key.EncodeTo(&buf);
 
   bool exact; /* unused */
@@ -198,7 +198,7 @@ Status DMSIterator::PrepareBatch(size_t nrows) {
     DCHECK_GE(key.row_idx(), start_row);
     if (key.row_idx() > stop_row) break;
 
-    if (!mvcc_snapshot_.IsCommitted(key.txid())) {
+    if (!mvcc_snapshot_.IsCommitted(key.timestamp())) {
       // The transaction which applied this update is not yet committed
       // in this iterator's MVCC snapshot. Hence, skip it.
       iter_->Next();
@@ -328,7 +328,7 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
       changelist = RowChangeList(delta_buf_);
     }
 
-    Mutation *mutation = Mutation::CreateInArena(arena, key.txid(), changelist);
+    Mutation *mutation = Mutation::CreateInArena(arena, key.timestamp(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
   }
 

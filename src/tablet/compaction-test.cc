@@ -66,9 +66,9 @@ class TestCompaction : public KuduRowSetTest {
       ASSERT_STATUS_OK_FAST(projector.Init());
       ASSERT_STATUS_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
                             &dst_row, static_cast<Arena*>(NULL)));
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), ConstContiguousRow(dst_row)));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), ConstContiguousRow(dst_row)));
     } else {
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), row_builder_.row()));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), row_builder_.row()));
     }
   }
 
@@ -94,7 +94,7 @@ class TestCompaction : public KuduRowSetTest {
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;
       MutationResultPB result;
-      ASSERT_STATUS_OK(rowset->MutateRow(tx.txid(),
+      ASSERT_STATUS_OK(rowset->MutateRow(tx.timestamp(),
                                          probe,
                                          RowChangeList(update_buf),
                                          &stats,

@@ -20,7 +20,7 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
     }
     first = false;
 
-    StrAppend(&ret, "@", head->txid().ToString(), "(");
+    StrAppend(&ret, "@", head->timestamp().ToString(), "(");
     ret.append(head->changelist().ToString(schema));
     ret.append(")");
 

@@ -130,7 +130,7 @@ class LogTest : public LogTestBase {
     commit_id->set_index(index);
 
     TxResultPB* result = commit->mutable_result();
-    tablet::txid_t(original_op_index).EncodeToString(result->mutable_txid());
+    tablet::Timestamp(original_op_index).EncodeToString(result->mutable_timestamp());
 
     TxOperationPB* insert = result->add_inserts();
     insert->set_type(TxOperationPB::INSERT);

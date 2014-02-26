@@ -13,16 +13,16 @@ namespace kudu {
 namespace tablet {
 
 // Each entry in the delta memrowset or delta files is keyed by the rowid
-// which has been updated, as well as the txid which performed the update.
+// which has been updated, as well as the timestamp which performed the update.
 class DeltaKey {
  public:
   DeltaKey() :
     row_idx_(-1)
   {}
 
-  DeltaKey(rowid_t id, const txid_t &txid) :
+  DeltaKey(rowid_t id, const Timestamp &timestamp) :
     row_idx_(id),
-    txid_(txid) {
+    timestamp_(timestamp) {
   }
 
 
@@ -33,7 +33,7 @@ class DeltaKey {
   // be used as a string key in indexing structures, etc.
   void EncodeTo(faststring *dst) const {
     EncodeRowId(dst, row_idx_);
-    txid_.EncodeTo(dst);
+    timestamp_.EncodeTo(dst);
   }
 
 
@@ -49,19 +49,19 @@ class DeltaKey {
       return Status::Corruption("Bad delta key: bad rowid", orig.ToDebugString(20));
     }
 
-    if (!PREDICT_TRUE(txid_.DecodeFrom(key))) {
-      return Status::Corruption("Bad delta key: bad txid", orig.ToDebugString(20));
+    if (!PREDICT_TRUE(timestamp_.DecodeFrom(key))) {
+      return Status::Corruption("Bad delta key: bad timestamp", orig.ToDebugString(20));
     }
 
     return Status::OK();
   }
 
   string ToString() const {
-    return strings::Substitute("(row $0@tx$1)", row_idx_, txid_.ToString());
+    return strings::Substitute("(row $0@tx$1)", row_idx_, timestamp_.ToString());
   }
 
   // Compare this key to another key. Delta keys are sorted by ascending rowid,
-  // then ascending txid.
+  // then ascending timestamp.
   int CompareTo(const DeltaKey &other) const {
     if (row_idx_ < other.row_idx_) {
       return -1;
@@ -69,19 +69,19 @@ class DeltaKey {
       return 1;
     }
 
-    return txid_.CompareTo(other.txid_);
+    return timestamp_.CompareTo(other.timestamp_);
   }
 
   rowid_t row_idx() const { return row_idx_; }
 
-  const txid_t &txid() const { return txid_; }
+  const Timestamp &timestamp() const { return timestamp_; }
 
  private:
   // The row which has been updated.
   rowid_t row_idx_;
 
   // The transaction ID which applied the update.
-  txid_t txid_;
+  Timestamp timestamp_;
 };
 
 } // namespace tablet

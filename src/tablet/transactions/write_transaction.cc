@@ -187,9 +187,10 @@ void LeaderWriteTransaction::UpdateMetrics() {
   }
 }
 
-Status WriteTransactionContext::AddInsert(const txid_t &tx_id, int64_t mrs_id) {
+Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
-    DCHECK_EQ(mvcc_tx_->txid(), tx_id) << "tx_id doesn't match the id of the ongoing transaction";
+    DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
+        << "tx_id doesn't match the id of the ongoing transaction";
   }
   TxOperationPB* insert = result_pb_.add_inserts();
   insert->set_type(TxOperationPB::INSERT);
@@ -205,10 +206,11 @@ void WriteTransactionContext::AddFailedInsert(const Status &status) {
   failed_operations_++;
 }
 
-Status WriteTransactionContext::AddMutation(const txid_t &tx_id,
+Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
                                             gscoped_ptr<MutationResultPB> result) {
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
-    DCHECK_EQ(mvcc_tx_->txid(), tx_id) << "tx_id doesn't match the id of the ongoing transaction";
+    DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
+        << "tx_id doesn't match the id of the ongoing transaction";
   }
   result->set_type(MutationType(result.get()));
   TxOperationPB* mutation = result_pb_.add_mutations();
@@ -225,17 +227,17 @@ void WriteTransactionContext::AddFailedMutation(const Status &status) {
   failed_operations_++;
 }
 
-txid_t WriteTransactionContext::start_mvcc_tx() {
+Timestamp WriteTransactionContext::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
-  mvcc_tx_->txid().EncodeToString(result_pb_.mutable_txid());
-  return mvcc_tx_->txid();
+  mvcc_tx_->timestamp().EncodeToString(result_pb_.mutable_timestamp());
+  return mvcc_tx_->timestamp();
 }
 
 void WriteTransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(mvcc_tx.release());
-  mvcc_tx_->txid().EncodeToString(result_pb_.mutable_txid());
+  mvcc_tx_->timestamp().EncodeToString(result_pb_.mutable_timestamp());
 }
 
 void WriteTransactionContext::commit() {
@@ -253,11 +255,11 @@ void WriteTransactionContext::release_row_locks() {
   STLDeleteElements(&rows_);
 }
 
-txid_t WriteTransactionContext::mvcc_txid() {
+Timestamp WriteTransactionContext::mvcc_timestamp() {
   if (mvcc_tx_.get() == NULL) {
-    return txid_t::kInvalidTxId;
+    return Timestamp::kInvalidTimestamp;
   }
-  return mvcc_tx_->txid();
+  return mvcc_tx_->timestamp();
 }
 
 void WriteTransactionContext::Reset() {

@@ -12,8 +12,8 @@ namespace tablet {
 
 DeltaStats::DeltaStats(size_t ncols)
     : delete_count_(0),
-      max_txid_(txid_t::kMin),
-      min_txid_(txid_t::kMax) {
+      max_timestamp_(Timestamp::kMin),
+      min_timestamp_(Timestamp::kMax) {
   Resize(ncols);
 }
 
@@ -29,7 +29,7 @@ void DeltaStats::IncrDeleteCount(int64_t delete_count) {
   delete_count_ += delete_count;
 }
 
-Status DeltaStats::UpdateStats(const txid_t& txid,
+Status DeltaStats::UpdateStats(const Timestamp& timestamp,
                                const Schema& schema,
                                const RowChangeList& update) {
   // We'd like to maintain per column statistics of updates and deletes.
@@ -57,11 +57,11 @@ Status DeltaStats::UpdateStats(const txid_t& txid,
     }
   } // Don't handle re-inserts
 
-  if (min_txid_.CompareTo(txid) > 0) {
-    min_txid_ = txid;
+  if (min_timestamp_.CompareTo(timestamp) > 0) {
+    min_timestamp_ = timestamp;
   }
-  if (max_txid_.CompareTo(txid) < 0) {
-    max_txid_ = txid;
+  if (max_timestamp_.CompareTo(timestamp) < 0) {
+    max_timestamp_ = timestamp;
   }
 
   return Status::OK();

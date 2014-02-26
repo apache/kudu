@@ -47,8 +47,8 @@ Status DeltaStatsToPB(const DeltaStats& delta_stats,
     int64_t update_count = delta_stats.update_count(idx);
     pb->add_per_column_update_count(update_count);
   }
-  delta_stats.max_txid().EncodeToString(pb->mutable_max_txid());
-  delta_stats.min_txid().EncodeToString(pb->mutable_min_txid());
+  delta_stats.max_timestamp().EncodeToString(pb->mutable_max_timestamp());
+  delta_stats.min_timestamp().EncodeToString(pb->mutable_min_timestamp());
   return Status::OK();
 }
 
@@ -58,11 +58,11 @@ Status DeltaStatsFromPB(const DeltaStatsPB& pb,
   for (size_t idx = 0; idx < delta_stats->num_columns(); idx++) {
     delta_stats->IncrUpdateCount(idx, pb.per_column_update_count(idx));
   }
-  txid_t txid;
-  RETURN_NOT_OK(txid.DecodeFromString(pb.max_txid()));
-  delta_stats->set_max_txid(txid);
-  RETURN_NOT_OK(txid.DecodeFromString(pb.min_txid()));
-  delta_stats->set_min_txid(txid);
+  Timestamp timestamp;
+  RETURN_NOT_OK(timestamp.DecodeFromString(pb.max_timestamp()));
+  delta_stats->set_max_timestamp(timestamp);
+  RETURN_NOT_OK(timestamp.DecodeFromString(pb.min_timestamp()));
+  delta_stats->set_min_timestamp(timestamp);
   return Status::OK();
 }
 
@@ -239,7 +239,7 @@ Status DeltaFileReader::ReadDeltaStats() {
 Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          const MvccSnapshot &snap,
                                          DeltaIterator** iterator) const {
-  if (snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_txid())) {
+  if (snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp())) {
     *iterator = new DeltaFileIterator(this, projection, snap);
     return Status::OK();
   }
@@ -308,7 +308,7 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   CHECK(index_iter_.get() != NULL) << "Must call Init()";
 
   tmp_buf_.clear();
-  DeltaKey(idx, txid_t(0)).EncodeTo(&tmp_buf_);
+  DeltaKey(idx, Timestamp(0)).EncodeTo(&tmp_buf_);
   Slice key_slice(tmp_buf_);
 
   Status s = index_iter_->SeekAtOrBefore(key_slice);
@@ -495,7 +495,7 @@ struct ApplyingVisitor {
   Status Visit(const DeltaKey &key, const Slice &deltas) {
 
     // Check that the delta is considered committed by the current reader's MVCC state.
-    if (!dfi->mvcc_snap_.IsCommitted(key.txid())) {
+    if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
       return Status::OK();
     }
 
@@ -545,7 +545,7 @@ struct DeletingVisitor {
   Status Visit(const DeltaKey &key, const Slice &deltas) {
 
     // Check that the delta is considered committed by the current reader's MVCC state.
-    if (!dfi->mvcc_snap_.IsCommitted(key.txid())) {
+    if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
       return Status::OK();
     }
 
@@ -592,7 +592,7 @@ struct CollectingVisitor {
       changelist = RowChangeList(dfi->delta_buf_);
     }
 
-    Mutation *mutation = Mutation::CreateInArena(dst_arena, key.txid(), changelist);
+    Mutation *mutation = Mutation::CreateInArena(dst_arena, key.timestamp(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
 
     return Status::OK();

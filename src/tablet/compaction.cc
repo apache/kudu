@@ -449,11 +449,11 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot &snap,
     RowChangeListDecoder decoder(schema, mut->changelist());
 
     // Skip anything not committed.
-    if (!snap.IsCommitted(mut->txid())) {
+    if (!snap.IsCommitted(mut->timestamp())) {
       continue;
     }
 
-    DVLOG(3) << "  @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+    DVLOG(3) << "  @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
     Status s = decoder.Init();
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
@@ -583,7 +583,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         RowChangeListDecoder decoder(schema, mut->changelist());
         RETURN_NOT_OK(decoder.Init());
 
-        if (snap_to_exclude.IsCommitted(mut->txid())) {
+        if (snap_to_exclude.IsCommitted(mut->timestamp())) {
           // This update was already taken into account in the first phase of the
           // compaction.
 
@@ -615,13 +615,13 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           << " row=" << schema.DebugRow(row.row)
           << " mutations=" << Mutation::StringifyMutationList(schema, row.mutation_head);
 
-        if (!snap_to_include.IsCommitted(mut->txid())) {
+        if (!snap_to_include.IsCommitted(mut->timestamp())) {
           // The mutation was inserted after the DuplicatingRowSet was swapped in.
           // Therefore, it's already present in the output rowset, and we don't need
           // to copy it in.
 
           DVLOG(2) << "Skipping already-duplicated delta for row " << row_idx
-                   << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+                   << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
           continue;
         }
 
@@ -629,7 +629,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         // pass, but before the DuplicatingRowSet was swapped in. We need to transfer
         // this over to the output rowset.
         DVLOG(1) << "Flushing missed delta for row " << row_idx
-                  << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+                  << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
 
         DeltaTracker *cur_tracker = delta_trackers.front();
 
@@ -651,12 +651,12 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
         gscoped_ptr<MutationResultPB> result(new MutationResultPB);
         DCHECK_SCHEMA_EQ(schema, cur_tracker->schema());
-        Status s = cur_tracker->Update(mut->txid(),
+        Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,
                                        mut->changelist(),
                                        result.get());
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
-            << " @" << mut->txid() << ": " << mut->changelist().ToString(schema);
+            << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
         if (s.ok()) {
           // TODO Making missed deltas take the whole row key is a lot simpler
           // than just storing the row_idx (which would require a complex
@@ -673,7 +673,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           ConstContiguousRow const_row_key(row_key);
           AddRowToRowBlockPB(const_row_key, row_block.get());
 
-          CHECK_OK(tx_ctx->AddMissedMutation(mut->txid(),
+          CHECK_OK(tx_ctx->AddMissedMutation(mut->timestamp(),
                                              row_block.Pass(),
                                              mut->changelist(),
                                              result.Pass()));

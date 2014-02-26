@@ -75,7 +75,7 @@ class TestMemRowSet : public ::testing::Test {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      RETURN_NOT_OK(mrs->Insert(txid_t(0), rb.row()));
+      RETURN_NOT_OK(mrs->Insert(Timestamp(0), rb.row()));
     }
 
     return Status::OK();
@@ -86,7 +86,7 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(schema_);
     rb.AddString(key);
     rb.AddUint32(val);
-    return mrs->Insert(tx.txid(), rb.row());
+    return mrs->Insert(tx.timestamp(), rb.row());
   }
 
   Status UpdateRow(MemRowSet *mrs,
@@ -102,7 +102,7 @@ class TestMemRowSet : public ::testing::Test {
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
-    return mrs->MutateRow(tx.txid(),
+    return mrs->MutateRow(tx.timestamp(),
                           probe,
                           RowChangeList(mutation_buf_),
                           &stats,
@@ -119,7 +119,7 @@ class TestMemRowSet : public ::testing::Test {
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
-    return mrs->MutateRow(tx.txid(),
+    return mrs->MutateRow(tx.timestamp(),
                           probe,
                           RowChangeList(mutation_buf_),
                           &stats,
@@ -177,7 +177,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("hello world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
-    Status row1 = mrs->Insert(tx.txid(), rb.row());
+    Status row1 = mrs->Insert(tx.timestamp(), rb.row());
     ASSERT_STATUS_OK(row1);
   }
 
@@ -187,7 +187,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("goodbye world"));
     rb.AddInt32(2);
     rb.AddUint32(54321);
-    Status row2 = mrs->Insert(tx2.txid(), rb.row());
+    Status row2 = mrs->Insert(tx2.timestamp(), rb.row());
     ASSERT_STATUS_OK(row2);
   }
 
@@ -197,7 +197,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("goodbye world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
-    Status row3 = mrs->Insert(tx3.txid(), rb.row());
+    Status row3 = mrs->Insert(tx3.timestamp(), rb.row());
     ASSERT_STATUS_OK(row3);
   }
 
@@ -326,8 +326,8 @@ TEST_F(TestMemRowSet, TestDelete) {
   EXPECT_TRUE(present);
 
   // Verify the MVCC contents of the memrowset.
-  // NOTE: the REINSERT has txid 4 because of the two failed attempts
-  // at mutating the deleted row above -- each of them grabs a txid even
+  // NOTE: the REINSERT has timestamp 4 because of the two failed attempts
+  // at mutating the deleted row above -- each of them grabs a timestamp even
   // though it doesn't actually make any successful mutations.
   vector<string> rows;
   ASSERT_STATUS_OK(mrs->DebugDump(&rows));
@@ -382,7 +382,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
       snprintf(keybuf, sizeof(keybuf), "tx%d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.txid(), rb.row()));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), rb.row()));
     }
 
     // Transaction is committed. Save the snapshot after this commit.

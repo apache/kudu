@@ -256,9 +256,9 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(tx_ctx->mvcc_txid(), *insert->row());
+  Status s = memrowset_->Insert(tx_ctx->mvcc_timestamp(), *insert->row());
   if (PREDICT_TRUE(s.ok())) {
-    RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_txid(), memrowset_->mrs_id()));
+    RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_timestamp(), memrowset_->mrs_id()));
   } else {
     if (s.IsAlreadyPresent() && metrics_) {
       metrics_->insertions_failed_dup_key->Increment();
@@ -298,7 +298,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
   // Row-lock before ScopedTransaction:
   // -------------------------------------
   // We must take the row-lock before we assign a transaction ID in order to ensure
-  // that within each row, transaction IDs only move forward. If we took a txid before
+  // that within each row, transaction IDs only move forward. If we took a timestamp before
   // getting the row lock, we could have the following situation:
   //
   //   Thread 1         |  Thread 2
@@ -314,18 +314,18 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
   //
   // This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE
   // which is invalid, since we expect to be able to be able to replay mutations
-  // in increasing txid order on a given row.
+  // in increasing timestamp order on a given row.
   //
   // This requirement is basically two-phase-locking: the order in which row locks
   // are acquired for transactions determines their serialization order. If/when
   // we support multi-row serializable transactions, we'll have to acquire _all_
-  // row locks before obtaining a txid.
+  // row locks before obtaining a timestamp.
   //
   // component_lock_ before ScopedTransaction:
   // -------------------------------------
-  // Obtaining the txid inside of component_lock_ ensures that, in AtomicSwapRowSets,
+  // Obtaining the timestamp inside of component_lock_ ensures that, in AtomicSwapRowSets,
   // we can cleanly differentiate a set of transactions that saw the "old" rowsets
-  // vs the "new" rowsets. If we created the txid before taking the lock, then
+  // vs the "new" rowsets. If we created the timestamp before taking the lock, then
   // the in-flight transaction could either have mutated the old rowsets or the new.
   //
   // There may be a more "fuzzy" way of doing this barrier which would cause less of
@@ -388,13 +388,13 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   ProbeStatsSubmitter submitter(stats, metrics_.get());
 
   // First try to update in memrowset.
-  s = memrowset_->MutateRow(tx_ctx->mvcc_txid(),
+  s = memrowset_->MutateRow(tx_ctx->mvcc_timestamp(),
                             *mutate->probe(),
                             *mutate->changelist(),
                             &stats,
                             result.get());
   if (s.ok()) {
-    RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
+    RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_timestamp(), result.Pass()));
     return s;
   }
   if (!s.IsNotFound()) {
@@ -410,10 +410,10 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_txid(), *mutate->probe(),
+    s = rs->MutateRow(tx_ctx->mvcc_timestamp(), *mutate->probe(),
                       *mutate->changelist(), &stats, result.get());
     if (s.ok()) {
-      RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_txid(), result.Pass()));
+      RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_timestamp(), result.Pass()));
       return s;
     }
     if (!s.IsNotFound()) {
@@ -910,12 +910,12 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // those missed updates into the new rowset's DeltaTracker.
   //
   // TODO: is there some bug here? Here's a potentially bad scenario:
-  // - during flush, txid 1 updates a flushed row
-  // - At the beginning of step 4, txid 2 updates the same flushed row, followed by ~1000
+  // - during flush, timestamp 1 updates a flushed row
+  // - At the beginning of step 4, timestamp 2 updates the same flushed row, followed by ~1000
   //   more updates against the new rowset. This causes the new rowset to flush its deltas
-  //   before txid 1 is transferred to it.
-  // - Now the redos_0 deltafile in the new rowset includes txid 2-1000, and the DMS is empty.
-  // - This code proceeds, and pushes txid1 into the DMS.
+  //   before timestamp 1 is transferred to it.
+  // - Now the redos_0 deltafile in the new rowset includes timestamp 2-1000, and the DMS is empty.
+  // - This code proceeds, and pushes timestamp1 into the DMS.
   // - DMS eventually flushes again, and redos_1 includes an _earlier_ update than redos_0.
   // At read time, since we apply updates from the redo logs in order, we might end up reading
   // the earlier data instead of the later data.
@@ -924,7 +924,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // 1) don't apply the changes in step 4 directly into the new rowset's DMS. Instead, reserve
   //    redos_0 for these edits, and write them directly to that file, even though it will likely
   //    be very small.
-  // 2) at read time, as deltas are applied, keep track of the max txid for each of the columns
+  // 2) at read time, as deltas are applied, keep track of the max timestamp for each of the columns
   //    and don't let an earlier update overwrite a later one.
   // 3) don't allow DMS to flush in an in-progress rowset.
   LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";

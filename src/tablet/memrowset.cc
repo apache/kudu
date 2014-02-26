@@ -70,7 +70,7 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
     LOG_STRING(INFO, lines)
-      << "@" << row.insertion_txid() << ": row "
+      << "@" << row.insertion_timestamp() << ": row "
       << schema_.DebugRow(row)
       << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->mutation_head)
       << std::endl;
@@ -81,7 +81,7 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 }
 
 
-Status MemRowSet::Insert(txid_t txid,
+Status MemRowSet::Insert(Timestamp timestamp,
                          const ConstContiguousRow& row) {
   CHECK(row.schema().has_column_ids());
   DCHECK_SCHEMA_EQ(schema_, row.schema());
@@ -107,13 +107,13 @@ Status MemRowSet::Insert(txid_t txid,
     }
 
     // Insert a "reinsert" mutation.
-    return Reinsert(txid, row, &ms_row);
+    return Reinsert(timestamp, row, &ms_row);
   }
 
   // Copy the non-encoded key onto the stack since we need
   // to mutate it when we relocate its Slices into our arena.
   DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
-  mrsrow.header_->insertion_txid = txid;
+  mrsrow.header_->insertion_timestamp = timestamp;
   mrsrow.header_->mutation_head = NULL;
   RETURN_NOT_OK(mrsrow.CopyRow(row, &arena_));
 
@@ -126,7 +126,7 @@ Status MemRowSet::Insert(txid_t txid,
   return Status::OK();
 }
 
-Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *ms_row) {
+Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, MRSRow *ms_row) {
   DCHECK_SCHEMA_EQ(schema_, row.schema());
 
   // TODO(perf): This path makes some unnecessary copies that could be reduced,
@@ -144,7 +144,7 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
   encoder.SetToReinsert(row_copy.row_slice());
 
   // Move the REINSERT mutation itself into our Arena.
-  Mutation *mut = Mutation::CreateInArena(&arena_, txid, encoder.as_changelist());
+  Mutation *mut = Mutation::CreateInArena(&arena_, timestamp, encoder.as_changelist());
 
   // Append the mutation into the row's mutation list.
   // This function has "release" semantics which ensures that the memory writes
@@ -154,7 +154,7 @@ Status MemRowSet::Reinsert(txid_t txid, const ConstContiguousRow& row, MRSRow *m
   return Status::OK();
 }
 
-Status MemRowSet::MutateRow(txid_t txid,
+Status MemRowSet::MutateRow(Timestamp timestamp,
                             const RowSetKeyProbe &probe,
                             const RowChangeList &delta,
                             ProbeStats* stats,
@@ -177,7 +177,7 @@ Status MemRowSet::MutateRow(txid_t txid,
     }
 
     // Append to the linked list of mutations for this row.
-    Mutation *mut = Mutation::CreateInArena(&arena_, txid, delta);
+    Mutation *mut = Mutation::CreateInArena(&arena_, timestamp, delta);
 
     // This function has "release" semantics which ensures that the memory writes
     // for the mutation are fully published before any concurrent reader sees
@@ -384,7 +384,7 @@ Status MemRowSet::Iterator::MaterializeBlock(RowBlock *dst) {
     iter_->GetEntryInLeaf(i, &k, &v);
 
     MRSRow row(memrowset_.get(), v);
-    if (mvcc_snap_.IsCommitted(row.insertion_txid()) && state_ != kFinished) {
+    if (mvcc_snap_.IsCommitted(row.insertion_timestamp()) && state_ != kFinished) {
       if (state_ == kLastBatch && has_upper_bound() && out_of_bounds(k)) {
         state_ = kFinished;
         BitmapClear(dst->selection_vector()->mutable_bitmap(), fetched);

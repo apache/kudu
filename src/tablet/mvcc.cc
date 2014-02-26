@@ -17,39 +17,40 @@
 namespace kudu { namespace tablet {
 
 MvccManager::MvccManager()
-    : clock_(new LogicalClock(txid_t::kInitialTxId.value() - 1)) {
-  cur_snap_.none_committed_after_txid_ = txid_t::kInitialTxId;
-  cur_snap_.all_committed_before_txid_ = txid_t::kInitialTxId;
+    : clock_(new LogicalClock(Timestamp::kInitialTimestamp.value() - 1)) {
+  cur_snap_.none_committed_after_timestamp_ = Timestamp::kInitialTimestamp;
+  cur_snap_.all_committed_before_timestamp_ = Timestamp::kInitialTimestamp;
 }
 
-txid_t MvccManager::StartTransaction() {
+Timestamp MvccManager::StartTransaction() {
   boost::lock_guard<LockType> l(lock_);
-  txid_t now = clock_->Now();
-  cur_snap_.none_committed_after_txid_ = txid_t(now.value() + 1);
-  bool was_inserted = cur_snap_.txids_in_flight_.insert(now.value()).second;
-  DCHECK(was_inserted) << "Already had txid " << now.ToString() << " in in-flight list";
+  Timestamp now = clock_->Now();
+  cur_snap_.none_committed_after_timestamp_ = Timestamp(now.value() + 1);
+  bool was_inserted = cur_snap_.timestamps_in_flight_.insert(now.value()).second;
+  DCHECK(was_inserted) << "Already had timestamp " << now.ToString() << " in in-flight list";
   return now;
 }
 
-void MvccManager::CommitTransaction(txid_t txid) {
+void MvccManager::CommitTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
-  DCHECK(txid.CompareTo(cur_snap_.none_committed_after_txid_) <= 0)
-    << "Trying to commit txid which isn't in the in-flight range yet";
-  unordered_set<txid_t::val_type>::iterator it = cur_snap_.txids_in_flight_.find(txid.value());
-  CHECK(it != cur_snap_.txids_in_flight_.end())
-    << "Trying to commit txid which isn't in the in-flight set";
-  cur_snap_.txids_in_flight_.erase(it);
+  DCHECK(timestamp.CompareTo(cur_snap_.none_committed_after_timestamp_) <= 0)
+    << "Trying to commit timestamp which isn't in the in-flight range yet";
+  unordered_set<Timestamp::val_type>::iterator it =
+      cur_snap_.timestamps_in_flight_.find(timestamp.value());
+  CHECK(it != cur_snap_.timestamps_in_flight_.end())
+    << "Trying to commit timestamp which isn't in the in-flight set";
+  cur_snap_.timestamps_in_flight_.erase(it);
 
-  // If the txid was the earliest in the in-flight range, we can now advance
+  // If the timestamp was the earliest in the in-flight range, we can now advance
   // the in-flight range
-  if (txid.CompareTo(cur_snap_.all_committed_before_txid_) == 0) {
+  if (timestamp.CompareTo(cur_snap_.all_committed_before_timestamp_) == 0) {
 
-    if (!cur_snap_.txids_in_flight_.empty()) {
-      txid_t new_min(*std::min_element(cur_snap_.txids_in_flight_.begin(),
-                                       cur_snap_.txids_in_flight_.end()));
-      cur_snap_.all_committed_before_txid_ = new_min;
+    if (!cur_snap_.timestamps_in_flight_.empty()) {
+      Timestamp new_min(*std::min_element(cur_snap_.timestamps_in_flight_.begin(),
+                                       cur_snap_.timestamps_in_flight_.end()));
+      cur_snap_.all_committed_before_timestamp_ = new_min;
     } else {
-      cur_snap_.all_committed_before_txid_ = cur_snap_.none_committed_after_txid_;
+      cur_snap_.all_committed_before_timestamp_ = cur_snap_.none_committed_after_timestamp_;
     }
   }
 }
@@ -64,65 +65,65 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
 ////////////////////////////////////////////////////////////
 
 MvccSnapshot::MvccSnapshot()
- : all_committed_before_txid_(txid_t::kInitialTxId),
-   none_committed_after_txid_(txid_t::kInitialTxId) {
+ : all_committed_before_timestamp_(Timestamp::kInitialTimestamp),
+   none_committed_after_timestamp_(Timestamp::kInitialTimestamp) {
 }
 
 MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
   manager.TakeSnapshot(this);
 }
 
-MvccSnapshot::MvccSnapshot(const txid_t& txid)
-  : all_committed_before_txid_(txid),
-    none_committed_after_txid_(txid) {
+MvccSnapshot::MvccSnapshot(const Timestamp& timestamp)
+  : all_committed_before_timestamp_(timestamp),
+    none_committed_after_timestamp_(timestamp) {
  }
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllTransactions() {
-  return MvccSnapshot(txid_t::kMax);
+  return MvccSnapshot(Timestamp::kMax);
 }
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingNoTransactions() {
-  return MvccSnapshot(txid_t::kMin);
+  return MvccSnapshot(Timestamp::kMin);
 }
 
-bool MvccSnapshot::IsCommitted(const txid_t& txid) const {
-  if (PREDICT_TRUE(txid.CompareTo(all_committed_before_txid_) < 0)) {
+bool MvccSnapshot::IsCommitted(const Timestamp& timestamp) const {
+  if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_timestamp_) < 0)) {
     return true;
   }
 
-  if (txid.CompareTo(none_committed_after_txid_) >= 0) {
+  if (timestamp.CompareTo(none_committed_after_timestamp_) >= 0) {
     return false;
   }
 
-  if (txids_in_flight_.count(txid.value())) {
+  if (timestamps_in_flight_.count(timestamp.value())) {
     return false;
   }
 
   return true;
 }
 
-bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const txid_t& txid) const {
-  return txid.CompareTo(none_committed_after_txid_) < 0;
+bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const Timestamp& timestamp) const {
+  return timestamp.CompareTo(none_committed_after_timestamp_) < 0;
 }
 
-bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const txid_t& txid) const {
-  return txid.CompareTo(all_committed_before_txid_) >= 0;
+bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& timestamp) const {
+  return timestamp.CompareTo(all_committed_before_timestamp_) >= 0;
 }
 
 std::string MvccSnapshot::ToString() const {
   string ret("MvccSnapshot[committed={T|");
 
-  if (txids_in_flight_.size() == 0) {
+  if (timestamps_in_flight_.size() == 0) {
     // if there are no transactions in flight these must be the same.
-    CHECK(all_committed_before_txid_ == none_committed_after_txid_);
-    StrAppend(&ret, "T < ", none_committed_after_txid_.ToString(),"}]");
+    CHECK(all_committed_before_timestamp_ == none_committed_after_timestamp_);
+    StrAppend(&ret, "T < ", none_committed_after_timestamp_.ToString(),"}]");
     return ret;
   }
-  StrAppend(&ret, "T < ", all_committed_before_txid_.ToString(),
-            " or (T < ", none_committed_after_txid_.ToString(), " and T not in {");
+  StrAppend(&ret, "T < ", all_committed_before_timestamp_.ToString(),
+            " or (T < ", none_committed_after_timestamp_.ToString(), " and T not in {");
 
   bool first = true;
-  BOOST_FOREACH(txid_t::val_type t, txids_in_flight_) {
+  BOOST_FOREACH(Timestamp::val_type t, timestamps_in_flight_) {
     if (!first) {
       ret.push_back(',');
     }
@@ -134,7 +135,7 @@ std::string MvccSnapshot::ToString() const {
 }
 
 size_t MvccSnapshot::num_transactions_in_flight() const {
-  return txids_in_flight_.size();
+  return timestamps_in_flight_.size();
 }
 
 ////////////////////////////////////////////////////////////
@@ -143,7 +144,7 @@ size_t MvccSnapshot::num_transactions_in_flight() const {
 ScopedTransaction::ScopedTransaction(MvccManager *mgr)
   : committed_(false),
     manager_(DCHECK_NOTNULL(mgr)),
-    txid_(mgr->StartTransaction()) {
+    timestamp_(mgr->StartTransaction()) {
 }
 
 ScopedTransaction::~ScopedTransaction() {
@@ -153,7 +154,7 @@ ScopedTransaction::~ScopedTransaction() {
 }
 
 void ScopedTransaction::Commit() {
-  manager_->CommitTransaction(txid_);
+  manager_->CommitTransaction(timestamp_);
   committed_ = true;
 }
 

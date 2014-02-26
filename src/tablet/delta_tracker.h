@@ -70,7 +70,7 @@ class DeltaTracker {
   // Copies the data, as well as any referenced values into a local arena.
   // "result" tracks the status of the update as well as which data
   // structure(s) it ended up at.
-  Status Update(txid_t txid,
+  Status Update(Timestamp timestamp,
                 rowid_t row_idx,
                 const RowChangeList &update,
                 MutationResultPB* result);

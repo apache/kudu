@@ -218,7 +218,7 @@ class DiskRowSet : public RowSet {
   // Update the given row.
   // 'key' should be the key portion of the row -- i.e a contiguous
   // encoding of the key columns.
-  Status MutateRow(txid_t txid,
+  Status MutateRow(Timestamp timestamp,
                    const RowSetKeyProbe &probe,
                    const RowChangeList &update,
                    ProbeStats* stats,

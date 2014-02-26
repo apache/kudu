@@ -396,7 +396,7 @@ CompactionInput *DiskRowSet::NewCompactionInput(const Schema* projection,
   return CompactionInput::Create(*this, projection, snap);
 }
 
-Status DiskRowSet::MutateRow(txid_t txid,
+Status DiskRowSet::MutateRow(Timestamp timestamp,
                              const RowSetKeyProbe &probe,
                              const RowChangeList &update,
                              ProbeStats* stats,
@@ -414,7 +414,7 @@ Status DiskRowSet::MutateRow(txid_t txid,
     return Status::NotFound("row not found");
   }
 
-  RETURN_NOT_OK(delta_tracker_->Update(txid, row_idx, update, result));
+  RETURN_NOT_OK(delta_tracker_->Update(timestamp, row_idx, update, result));
 
   return Status::OK();
 }

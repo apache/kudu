@@ -58,7 +58,7 @@ class WriteTransactionContext : public TransactionContext {
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    txid_t::kInvalidTxId.EncodeToString(result_pb_.mutable_txid());
+    Timestamp::kInvalidTimestamp.EncodeToString(result_pb_.mutable_timestamp());
   }
 
   // ctor used by the LEADER replica
@@ -71,7 +71,7 @@ class WriteTransactionContext : public TransactionContext {
         response_(response),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    txid_t::kInvalidTxId.EncodeToString(result_pb_.mutable_txid());
+    Timestamp::kInvalidTimestamp.EncodeToString(result_pb_.mutable_timestamp());
   }
 
   // ctor used by FOLLOWER/LEARNER replicas
@@ -83,12 +83,12 @@ class WriteTransactionContext : public TransactionContext {
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    txid_t::kInvalidTxId.EncodeToString(result_pb_.mutable_txid());
+    Timestamp::kInvalidTimestamp.EncodeToString(result_pb_.mutable_timestamp());
   }
 
   // Adds an applied insert to this TransactionContext, including the
   // id of the MemRowSet to which it was applied.
-  Status AddInsert(const txid_t &tx_id,
+  Status AddInsert(const Timestamp &tx_id,
                    int64_t mrs_id);
 
   // Adds a failed insert to this TransactionContext, including the status
@@ -98,7 +98,7 @@ class WriteTransactionContext : public TransactionContext {
   // Adds an applied mutation to this TransactionContext, including the
   // tablet id, the mvcc transaction id, the mutation that was applied
   // and the delta stores that were mutated.
-  Status AddMutation(const txid_t &tx_id,
+  Status AddMutation(const Timestamp &tx_id,
                      gscoped_ptr<MutationResultPB> result);
 
   // Adds a missed mutation to this TransactionContext.
@@ -107,7 +107,7 @@ class WriteTransactionContext : public TransactionContext {
   // in the new DeltaMemStore.
   // The passed 'changelist' is copied into a protobuf and does not need to
   // be alive after this method returns.
-  Status AddMissedMutation(const txid_t& tx_id,
+  Status AddMissedMutation(const Timestamp& timestamp,
                            gscoped_ptr<RowwiseRowBlockPB> row_key,
                            const RowChangeList& changelist,
                            gscoped_ptr<MutationResultPB> result) {
@@ -153,12 +153,12 @@ class WriteTransactionContext : public TransactionContext {
 
   // Returns the Mvcc transaction id for the ongoing transaction or
   // kInvalidTxId if no Mvcc transaction is managed by this TransactionContext.
-  txid_t mvcc_txid();
+  Timestamp mvcc_timestamp();
 
   // Starts an Mvcc transaction, the ScopedTransaction will not commit until
   // commit_mvcc_tx is called. To be able to start an Mvcc transaction this
   // TransactionContext must have a hold on the MvccManager.
-  txid_t start_mvcc_tx();
+  Timestamp start_mvcc_tx();
 
   // Allows to set the current Mvcc transaction externally when
   // this TransactionContext doesn't have a handle to MvccManager.

@@ -29,13 +29,13 @@ class Mutation {
   // The object is allocated from the provided Arena.
   template<class ArenaType>
   static Mutation *CreateInArena(
-    ArenaType *arena, txid_t txid, const RowChangeList &rcl);
+    ArenaType *arena, Timestamp timestamp, const RowChangeList &rcl);
 
   RowChangeList changelist() const {
     return RowChangeList(Slice(changelist_data_, changelist_size_));
   }
 
-  txid_t txid() const { return txid_; }
+  Timestamp timestamp() const { return timestamp_; }
   const Mutation *next() const { return next_; }
   void set_next(Mutation *next) {
     next_ = next;
@@ -64,7 +64,7 @@ class Mutation {
 
   // The transaction ID which made this mutation. If this transaction is not
   // committed in the snapshot of the reader, this mutation should be ignored.
-  txid_t txid_;
+  Timestamp timestamp_;
 
   // Link to the next mutation on this row
   Mutation *next_;
@@ -77,14 +77,14 @@ class Mutation {
 
 template<class ArenaType>
 inline Mutation *Mutation::CreateInArena(
-  ArenaType *arena, txid_t txid, const RowChangeList &rcl) {
+  ArenaType *arena, Timestamp timestamp, const RowChangeList &rcl) {
   DCHECK(!rcl.is_null());
 
   size_t size = sizeof(Mutation) + rcl.slice().size();
   void *storage = arena->AllocateBytesAligned(size, BASE_PORT_H_ALIGN_OF(Mutation));
   CHECK(storage) << "failed to allocate storage from arena";
   Mutation *ret = new(storage) Mutation();
-  ret->txid_ = txid;
+  ret->timestamp_ = timestamp;
   ret->next_ = NULL;
   ret->changelist_size_ = rcl.slice().size();
   memcpy(ret->changelist_data_, rcl.slice().data(), rcl.slice().size());

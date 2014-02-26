@@ -22,7 +22,7 @@
 // Issue a trace message, if tracing is enabled in the current thread.
 // See Trace::SubstituteAndTrace for arguments.
 // Example:
-//  TRACE("Acquired txid $0", txid);
+//  TRACE("Acquired timestamp $0", timestamp);
 #define TRACE(format, substitutions...) \
   do { \
     kudu::Trace* _trace = Trace::CurrentTrace(); \

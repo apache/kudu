@@ -54,7 +54,7 @@ class MRSRow {
 
   const Schema& schema() const;
 
-  txid_t insertion_txid() const { return header_->insertion_txid; }
+  Timestamp insertion_timestamp() const { return header_->insertion_timestamp; }
 
   Mutation *mutation_head() { return header_->mutation_head; }
   const Mutation *mutation_head() const { return header_->mutation_head; }
@@ -109,9 +109,9 @@ class MRSRow {
   }
 
   struct Header {
-    // txid_t for the transaction which inserted this row. If a scanner with an
+    // Timestamp for the transaction which inserted this row. If a scanner with an
     // older snapshot sees this row, it will be ignored.
-    txid_t insertion_txid;
+    Timestamp insertion_timestamp;
 
     // Pointer to the first mutation which has been applied to this row. Each
     // mutation is an instance of the Mutation class, making up a singly-linked
@@ -163,14 +163,14 @@ class MemRowSet : public RowSet,
   // the provided memory buffer may safely be re-used or freed.
   //
   // Returns Status::OK unless allocation fails.
-  Status Insert(txid_t txid,
+  Status Insert(Timestamp timestamp,
                 const ConstContiguousRow& row);
 
 
   // Update or delete an existing row in the memrowset.
   //
   // Returns Status::NotFound if the row doesn't exist.
-  Status MutateRow(txid_t txid,
+  Status MutateRow(Timestamp timestamp,
                    const RowSetKeyProbe &probe,
                    const RowChangeList &delta,
                    ProbeStats* stats,
@@ -297,7 +297,7 @@ class MemRowSet : public RowSet,
 
   // Perform a "Reinsert" -- handle an insertion into a row which was previously
   // inserted and deleted, but still has an entry in the MemRowSet.
-  Status Reinsert(txid_t txid,
+  Status Reinsert(Timestamp timestamp,
                   const ConstContiguousRow& row_data,
                   MRSRow *row);
 
@@ -401,7 +401,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
         if (delta_buf_.size() == 0) continue;
 
         Mutation *mutation = Mutation::CreateInArena(mutation_arena,
-                                                     mut->txid(),
+                                                     mut->timestamp(),
                                                      RowChangeList(delta_buf_));
         if (prev != NULL) {
           prev->set_next(mutation);
@@ -478,7 +478,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     for (Mutation *mut = mutation_head;
          mut != NULL;
          mut = mut->next_) {
-      if (!mvcc_snap_.IsCommitted(mut->txid_)) {
+      if (!mvcc_snap_.IsCommitted(mut->timestamp_)) {
         // Transaction which wasn't committed yet in the reader's snapshot.
         continue;
       }
