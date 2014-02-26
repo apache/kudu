@@ -12,5 +12,5 @@ add_dependencies(integration-tests ${INTEGRATION_TESTS_DEPS})
 set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_TEST_LINK_LIBS})
 
 ADD_KUDU_TEST(alter_table-test)
-ADD_KUDU_TEST(registration-test)
+ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(create-table-stress-test)
