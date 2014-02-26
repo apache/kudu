@@ -31,6 +31,7 @@ namespace tserver {
 TabletServer::TabletServer(const TabletServerOptions& opts)
   : ServerBase(opts, "kudu.tabletserver"),
     initted_(false),
+    fail_heartbeats_for_tests_(false),
     opts_(opts),
     tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_context())),
     scanner_manager_(new ScannerManager()),

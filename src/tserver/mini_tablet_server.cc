@@ -94,6 +94,10 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
     table_id, tablet_id, "", "", table_id, SchemaBuilder(schema).Build(), quorum, NULL);
 }
 
+void MiniTabletServer::FailHeartbeats() {
+  server_->set_fail_heartbeats_for_tests(true);
+}
+
 const Sockaddr MiniTabletServer::bound_rpc_addr() const {
   CHECK(started_);
   return server_->first_rpc_address();

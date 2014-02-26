@@ -64,12 +64,23 @@ class TabletServer : public server::ServerBase {
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
 
+  void set_fail_heartbeats_for_tests(bool fail_heartbeats_for_tests) {
+    fail_heartbeats_for_tests_ = fail_heartbeats_for_tests;
+  }
+
+  bool fail_heartbeats_for_tests() const {
+    return fail_heartbeats_for_tests_;
+  }
+
  private:
   friend class TabletServerTest;
 
   Status ValidateMasterAddressResolution() const;
 
   bool initted_;
+
+  // If true, all heartbeats will be seen as failed.
+  bool fail_heartbeats_for_tests_;
 
   // The options passed at construction time.
   const TabletServerOptions opts_;

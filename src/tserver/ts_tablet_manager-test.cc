@@ -44,6 +44,7 @@ class TsTabletManagerTest : public KuduTest {
 
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TsTabletManagerTest-fsroot")));
     ASSERT_STATUS_OK(mini_server_->Start());
+    mini_server_->FailHeartbeats();
 
     tablet_manager_ = mini_server_->server()->tablet_manager();
     fs_manager_ = mini_server_->fs_manager();

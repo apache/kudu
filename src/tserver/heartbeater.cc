@@ -207,6 +207,10 @@ int Heartbeater::Thread::GetMillisUntilNextHeartbeat() const {
 }
 
 Status Heartbeater::Thread::DoHeartbeat() {
+  if (PREDICT_FALSE(server_->fail_heartbeats_for_tests())) {
+    return Status::IOError("failing all heartbeats for tests");
+  }
+
   CHECK(IsCurrentThread());
 
   if (!proxy_) {
