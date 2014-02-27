@@ -45,6 +45,7 @@ set(KUDU_UTIL_LIBS kudu_util)
 # used in tests, and we don't want to pull it in everywhere.
 
 add_library(kudu_test_main test_main.cc)
+target_link_libraries(kudu_test_main gflags glog gtest)
 
 set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(bitmap-test)

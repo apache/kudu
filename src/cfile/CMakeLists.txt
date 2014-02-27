@@ -25,6 +25,7 @@ set(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 add_library(cfile ${CFILE_SRCS})
 target_link_libraries(cfile kudu_common)
 target_link_libraries(cfile cfile_proto)
+target_link_libraries(cfile ${KUDU_DEP_LIBS})
 
 # Tests
 ADD_KUDU_TEST(index-test)

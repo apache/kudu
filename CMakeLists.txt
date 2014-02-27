@@ -229,8 +229,8 @@ find_package(GTest REQUIRED)
 include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
 add_library(gtest STATIC IMPORTED)
 set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
-set(LIBS ${LIBS} ${GTEST_LIBRARY})
-set(KUDU_MIN_TEST_LIBS ${GTEST_LIBRARY} kudu_test_main glog gflags  )
+#set(LIBS ${LIBS} gtest) # gtest not needed for non-tests.
+set(KUDU_MIN_TEST_LIBS kudu_test_main)
 
 ## Protobuf
 set(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
