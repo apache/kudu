@@ -28,6 +28,7 @@ DEFINE_bool(log_async_preallocate_segments, true,
 namespace kudu {
 namespace log {
 
+using consensus::OpId;
 using google::protobuf::RepeatedPtrField;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
@@ -73,6 +74,16 @@ WritableLogSegment::WritableLogSegment(
     const shared_ptr<WritableFile>& writable_file)
 : LogSegment(header, path),
   writable_file_(writable_file) {
+}
+
+bool OpIdLessThan(const OpId& left, const OpId& right) {
+  if (left.term() < right.term()) return true;
+  if (left.term() > right.term()) return false;
+  return left.index() < right.index();
+}
+
+bool OpIdComparator::operator() (const OpId& left, const OpId& right) const {
+  return OpIdLessThan(left, right);
 }
 
 // helper hash functor for delta store ids

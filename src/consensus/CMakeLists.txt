@@ -24,6 +24,7 @@ set(LOG_SRCS
   log_util.cc
   log.cc
   log_reader.cc
+  opid_anchor_registry.cc
 )
 
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
@@ -65,6 +66,7 @@ ADD_KUDU_TEST(log_util-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(consensus_queue-test)
 ADD_KUDU_TEST(mt-log-test)
+ADD_KUDU_TEST(opid_anchor_registry-test)
 
 #Tools
 set(KUDU_LINK_LIBS

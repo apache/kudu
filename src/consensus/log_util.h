@@ -135,6 +135,16 @@ class WritableLogSegment : public LogSegment {
   std::tr1::shared_ptr<WritableFile> writable_file_;
 };
 
+// Returns true iff left < right.
+bool OpIdLessThan(const consensus::OpId& left, const consensus::OpId& right);
+
+// OpId compare() functor for use with std::sort, std::map, etc.
+struct OpIdComparator {
+ public:
+  // Returns true iff left < right.
+  bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
+};
+
 // Checks if the two superblocks have no memstores in common.
 // This method assumes that for each durable store present in the superblock
 // there is successor memstore in memory and that this store has data.
