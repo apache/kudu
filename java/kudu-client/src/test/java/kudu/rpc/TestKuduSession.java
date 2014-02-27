@@ -2,6 +2,7 @@
 package kudu.rpc;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
 import kudu.Schema;
 import com.stumbleupon.async.Callback;
@@ -384,8 +385,8 @@ public class TestKuduSession {
     Tserver.ColumnRangePredicatePB.Builder builder = Tserver.ColumnRangePredicatePB.newBuilder();
     builder.setColumn(ProtobufHelper.columnToPb(schema.getColumn(0)));
 
-    builder.setLowerBound(ByteString.copyFrom(Bytes.fromInt(start)));
-    builder.setUpperBound(ByteString.copyFrom(Bytes.fromInt(end)));
+    builder.setLowerBound(ZeroCopyLiteralByteString.wrap(Bytes.fromInt(start)));
+    builder.setUpperBound(ZeroCopyLiteralByteString.wrap(Bytes.fromInt(end)));
     scanner.addColumnRangePredicate(builder.build());
     return scanner;
   }

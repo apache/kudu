@@ -3,6 +3,7 @@ package kudu.rpc;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.tserver.Tserver;
 import org.jboss.netty.buffer.ChannelBuffer;
 
@@ -29,7 +30,7 @@ class Batch extends KuduRpc {
   ChannelBuffer serialize(Message header) {
     final Tserver.WriteRequestPB.Builder builder =
         Operation.createAndFillWriteRequestPB(ops.toArray(new Operation[ops.size()]));
-    builder.setTabletId(ByteString.copyFrom(getTablet().getBytes()));
+    builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getBytes()));
     return toChannelBuffer(header, builder.build());
   }
 

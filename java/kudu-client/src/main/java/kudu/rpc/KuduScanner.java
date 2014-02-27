@@ -537,7 +537,7 @@ public final class KuduScanner {
           NewScanRequestPB.Builder newBuilder = NewScanRequestPB.newBuilder();
           newBuilder.setLimit(limit); // currently ignored
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
-          newBuilder.setTabletId(ByteString.copyFrom(tablet.getBytes()));
+          newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getBytes()));
           if (!columnRangePredicates.isEmpty()) {
             newBuilder.addAllRangePredicates(columnRangePredicates);
           }
@@ -545,12 +545,12 @@ public final class KuduScanner {
                  .setBatchSizeBytes(max_num_bytes);
           break;
         case NEXT:
-          builder.setScannerId(ByteString.copyFrom(scanner_id))
+          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scanner_id))
                  .setCallSeqId(sequenceId)
                  .setBatchSizeBytes(max_num_bytes);
           break;
         case CLOSING:
-          builder.setScannerId(ByteString.copyFrom(scanner_id))
+          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scanner_id))
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);
       }

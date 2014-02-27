@@ -243,7 +243,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   @Override
   ChannelBuffer serialize(Message header) {
     final Tserver.WriteRequestPB.Builder builder = createAndFillWriteRequestPB(this);
-    builder.setTabletId(ByteString.copyFrom(getTablet().getBytes()));
+    builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getBytes()));
     return toChannelBuffer(header, builder.build());
   }
 

@@ -27,6 +27,7 @@
 package kudu.rpc;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -192,7 +193,7 @@ public class SecureRpcHelper {
 
     RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
     if (saslToken != null) {
-      builder.setToken(ByteString.copyFrom(saslToken));
+      builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
     }
     builder.setState(RpcHeader.SaslMessagePB.SaslState.INITIATE);
     builder.addAuths(negotiatedAuth);
@@ -208,7 +209,7 @@ public class SecureRpcHelper {
       throw new IllegalStateException("Not expecting an empty token");
     }
     RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
-    builder.setToken(ByteString.copyFrom(saslToken));
+    builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
     builder.setState(RpcHeader.SaslMessagePB.SaslState.RESPONSE);
     sendSaslMessage(chan, builder.build());
   }
