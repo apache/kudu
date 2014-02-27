@@ -181,6 +181,19 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
   rpc->RespondSuccess();
 }
 
+void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
+                                          ListTabletServersResponsePB* resp,
+                                          rpc::RpcContext* rpc) {
+  vector<std::tr1::shared_ptr<TSDescriptor> > descs;
+  server_->ts_manager()->GetAllDescriptors(&descs);
+  BOOST_FOREACH(const std::tr1::shared_ptr<TSDescriptor>& desc, descs) {
+    ListTabletServersResponsePB::Entry* entry = resp->add_servers();
+    desc->GetNodeInstancePB(entry->mutable_instance_id());
+    desc->GetRegistration(entry->mutable_registration());
+    entry->set_millis_since_heartbeat(desc->TimeSinceHeartbeat().ToMilliseconds());
+  }
+  rpc->RespondSuccess();
+}
 
 } // namespace master
 } // namespace kudu

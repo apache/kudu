@@ -56,7 +56,9 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void GetTableSchema(const GetTableSchemaRequestPB* req,
                               GetTableSchemaResponsePB* resp,
                               rpc::RpcContext* rpc);
-
+  virtual void ListTabletServers(const ListTabletServersRequestPB* req,
+                                 ListTabletServersResponsePB* resp,
+                                 rpc::RpcContext* rpc);
  private:
   Master* server_;
 

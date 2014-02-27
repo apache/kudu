@@ -34,6 +34,7 @@ Proxy::Proxy(const std::tr1::shared_ptr<Messenger>& messenger,
              const string& service_name)
   : messenger_(messenger),
     is_started_(false) {
+  CHECK(messenger != NULL);
   DCHECK(!service_name.empty()) << "Proxy service name must not be blank";
 
   // By default, we set the real user to the currently logged-in user.

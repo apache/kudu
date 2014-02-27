@@ -5,20 +5,26 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
+#include <tr1/memory>
 
 #include "common/wire_protocol.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
+#include "master/master.proxy.h"
 #include "server/server_base.pb.h"
+#include "rpc/messenger.h"
 #include "util/env.h"
 #include "util/net/net_util.h"
+#include "util/net/sockaddr.h"
 #include "util/path_util.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
 #include "util/subprocess.h"
 
 using std::string;
+using std::tr1::shared_ptr;
 using strings::Substitute;
+using kudu::master::MasterServiceProxy;
 using kudu::server::ServerStatusPB;
 
 namespace kudu {
@@ -26,6 +32,7 @@ namespace kudu {
 static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tablet_server";
 static double kProcessStartTimeoutSeconds = 10.0;
+static double kTabletServerRegistrationTimeoutSeconds = 10.0;
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
   : num_tablet_servers(1) {
@@ -87,6 +94,12 @@ Status ExternalMiniCluster::Start() {
   CHECK(!started_);
   RETURN_NOT_OK(HandleOptions());
 
+  RETURN_NOT_OK_PREPEND(rpc::MessengerBuilder("minicluster-messenger")
+                        .set_num_reactors(1)
+                        .set_negotiation_threads(1)
+                        .Build(&messenger_),
+                        "Failed to start Messenger for minicluster");
+
   Status s = Env::Default()->CreateDir(data_root_);
   if (!s.ok() && !s.IsAlreadyPresent()) {
     RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + data_root_);
@@ -99,6 +112,10 @@ Status ExternalMiniCluster::Start() {
     RETURN_NOT_OK_PREPEND(AddTabletServer(),
                           Substitute("Failed starting tablet server $0", i));
   }
+
+  RETURN_NOT_OK(WaitForTabletServerCount(
+                  opts_.num_tablet_servers,
+                  MonoDelta::FromSeconds(kTabletServerRegistrationTimeoutSeconds)));
   return Status::OK();
 }
 
@@ -113,6 +130,13 @@ void ExternalMiniCluster::Shutdown() {
   }
 
   tablet_servers_.clear();
+
+  if (messenger_) {
+    messenger_->Shutdown();
+    messenger_.reset();
+  }
+
+  started_ = false;
 }
 
 string ExternalMiniCluster::GetBinaryPath(const string& binary) const {
@@ -143,6 +167,35 @@ Status ExternalMiniCluster::AddTabletServer() {
   RETURN_NOT_OK(ts->Start());
   tablet_servers_.push_back(ts);
   return Status::OK();
+}
+
+Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+
+  while (true) {
+    MonoDelta remaining = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    if (remaining.ToSeconds() < 0) {
+      return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
+    }
+
+    master::ListTabletServersRequestPB req;
+    master::ListTabletServersResponsePB resp;
+    rpc::RpcController rpc;
+    rpc.set_timeout(remaining);
+    RETURN_NOT_OK_PREPEND(master_proxy()->ListTabletServers(req, &resp, &rpc),
+                          "ListTabletServers RPC failed");
+    if (resp.servers_size() == count) {
+      LOG(INFO) << count << " TS(s) registered with Master";
+      return Status::OK();
+    }
+    usleep(1 * 1000); // 1ms
+  }
+}
+
+shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
+  return shared_ptr<MasterServiceProxy>(
+    new MasterServiceProxy(messenger_, master_->bound_rpc_addr()));
 }
 
 //------------------------------------------------------------
@@ -237,6 +290,14 @@ HostPort ExternalDaemon::bound_rpc_hostport() const {
   HostPort ret;
   CHECK_OK(HostPortFromPB(status_->bound_rpc_addresses(0), &ret));
   return ret;
+}
+
+Sockaddr ExternalDaemon::bound_rpc_addr() const {
+  HostPort hp = bound_rpc_hostport();
+  vector<Sockaddr> addrs;
+  CHECK_OK(hp.ResolveAddresses(&addrs));
+  CHECK(!addrs.empty());
+  return addrs[0];
 }
 
 HostPort ExternalDaemon::bound_http_hostport() const {

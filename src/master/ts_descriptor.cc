@@ -89,6 +89,12 @@ void TSDescriptor::GetRegistration(TSRegistrationPB* reg) const {
   CHECK_NOTNULL(reg)->CopyFrom(*registration_);
 }
 
+void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  instance_pb->set_permanent_uuid(permanent_uuid_);
+  instance_pb->set_instance_seqno(latest_seqno_);
+}
+
 Status TSDescriptor::GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                               std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy) {
   boost::lock_guard<simple_spinlock> l(lock_);

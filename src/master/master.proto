@@ -384,6 +384,22 @@ message GetTableSchemaResponsePB {
   optional SchemaPB schema = 2;
 }
 
+// ============================================================================
+//  Administration/monitoring
+// ============================================================================
+
+message ListTabletServersRequestPB {
+}
+
+message ListTabletServersResponsePB {
+  message Entry {
+    required NodeInstancePB instance_id = 1;
+    optional TSRegistrationPB registration = 2;
+    optional int32 millis_since_heartbeat = 3;
+  }
+  repeated Entry servers = 1;
+}
+
 service MasterService {
   rpc Ping(PingRequestPB) returns (PingResponsePB);
 
@@ -402,4 +418,7 @@ service MasterService {
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB);
   rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB);
   rpc GetTableSchema(GetTableSchemaRequestPB) returns (GetTableSchemaResponsePB);
+
+  // Administrative/monitoring RPCs
+  rpc ListTabletServers(ListTabletServersRequestPB) returns (ListTabletServersResponsePB);
 }

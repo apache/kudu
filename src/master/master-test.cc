@@ -149,6 +149,18 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
   ASSERT_STATUS_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
+
+  // Ensure that the ListTabletServers shows the faked server.
+  {
+    ListTabletServersRequestPB req;
+    ListTabletServersResponsePB resp;
+    RpcController rpc;
+    ASSERT_STATUS_OK(proxy_->ListTabletServers(req, &resp, &rpc));
+    LOG(INFO) << resp.DebugString();
+    ASSERT_EQ(1, resp.servers_size());
+    ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
+    ASSERT_EQ(1, resp.servers(0).instance_id().instance_seqno());
+  }
 }
 
 // Create a table
