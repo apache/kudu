@@ -10,24 +10,32 @@
 #include "util/status.h"
 #include "tablet/mvcc.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
+
+using log::OpIdAnchorRegistry;
+using log::OpIdLessThan;
+using strings::Substitute;
 
 ////////////////////////////////////////////////////////////
 // DeltaMemStore implementation
 ////////////////////////////////////////////////////////////
 
-DeltaMemStore::DeltaMemStore(int64_t id, const Schema &schema)
+DeltaMemStore::DeltaMemStore(int64_t id,
+                             const Schema &schema,
+                             OpIdAnchorRegistry* opid_anchor_registry)
   : id_(id),
     schema_(schema),
     arena_(8*1024, 1*1024*1024),
-    delta_stats_(schema_.num_columns()) {
+    delta_stats_(schema_.num_columns()),
+    anchorer_(opid_anchor_registry, Substitute("DeltaMemStore-$0", id_)) {
   CHECK(schema.has_column_ids());
 }
 
-
 Status DeltaMemStore::Update(Timestamp timestamp,
                              rowid_t row_idx,
-                             const RowChangeList &update) {
+                             const RowChangeList &update,
+                             const consensus::OpId& op_id) {
   DeltaKey key(row_idx, timestamp);
 
   // TODO: this allocation isn't great. Make faststring
@@ -46,6 +54,8 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   if (!mutation.Insert(update.slice())) {
     return Status::IOError("Unable to insert into tree");
   }
+
+  anchorer_.AnchorIfMinimum(op_id);
 
   return Status::OK();
 }

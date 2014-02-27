@@ -128,6 +128,10 @@ class Status {
                          int16_t posix_code = -1) {
     return Status(kTimedOut, msg, msg2, posix_code);
   }
+  static Status Uninitialized(const Slice& msg, const Slice& msg2 = Slice(),
+                              int16_t posix_code = -1) {
+    return Status(kUninitialized, msg, msg2, posix_code);
+  }
 
   // Returns true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
@@ -173,6 +177,9 @@ class Status {
 
   // Returns true iff the status indicates TimedOut.
   bool IsTimedOut() const { return code() == kTimedOut; }
+
+  // Returns true iff the status indicates Uninitialized.
+  bool IsUninitialized() const { return code() == kUninitialized; }
 
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
@@ -222,6 +229,7 @@ class Status {
     kRemoteError = 12,
     kServiceUnavailable = 13,
     kTimedOut = 14,
+    kUninitialized = 15,
     // NOTE: Remember to duplicate these constants into wire_protocol.proto!
     //
     // TODO: Move error codes into an error_code.proto or something similar.

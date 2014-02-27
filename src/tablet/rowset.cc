@@ -82,6 +82,7 @@ CompactionInput *DuplicatingRowSet::NewCompactionInput(const Schema* projection,
 Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
                                     const RowSetKeyProbe &probe,
                                     const RowChangeList &update,
+                                    const consensus::OpId& op_id,
                                     ProbeStats* stats,
                                     MutationResultPB* result) {
   // Duplicate the update to both the relevant input rowset and the output rowset.
@@ -95,7 +96,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
   // First mutate the relevant input rowset.
   bool updated = false;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
-    Status s = rowset->MutateRow(timestamp, probe, update, stats, result);
+    Status s = rowset->MutateRow(timestamp, probe, update, op_id, stats, result);
     if (s.ok()) {
       updated = true;
       break;
@@ -115,7 +116,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
   // If it succeeded there, we also need to mirror into the new rowset.
   int mirrored_count = 0;
   BOOST_FOREACH(const shared_ptr<RowSet> &new_rowset, new_rowsets_) {
-    Status s = new_rowset->MutateRow(timestamp, probe, update, stats, result);
+    Status s = new_rowset->MutateRow(timestamp, probe, update, op_id, stats, result);
     if (s.ok()) {
       mirrored_count++;
       #ifdef NDEBUG

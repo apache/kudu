@@ -90,6 +90,9 @@ std::string Status::CodeAsString() const {
     case kTimedOut:
       type = "Timed out";
       break;
+    case kUninitialized:
+      type = "Uninitialized";
+      break;
     default:
       snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
                static_cast<int>(code()));

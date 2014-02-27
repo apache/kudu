@@ -22,7 +22,6 @@ enum LogEntryTypePB {
 message LogEntryPB {
   required LogEntryTypePB type = 1;
   optional consensus.OperationPB operation = 2;
-  optional metadata.TabletSuperBlockPB tablet_meta = 3;
 }
 
 // A header for a log segment.
@@ -35,12 +34,7 @@ message LogSegmentHeaderPB {
 
   // The term/index when the segment was started.
   // TODO: rename to initial_opid.
-  // TODO: remove this if it's not needed.
-  required kudu.consensus.OpId initial_id = 3;
-
-  // The tablet metadata at the time the segment was created.
-  // TODO: delete this.
-  required metadata.TabletSuperBlockPB tablet_meta = 4;
+  required consensus.OpId initial_id = 3;
 
   // The ID of the tablet this WAL segment stores entries for.
   required bytes tablet_id = 5;

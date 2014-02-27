@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <vector>
 #include "consensus/log-test-base.h"
+#include "gutil/stl_util.h"
 #include "tablet/mvcc.h"
 
 DEFINE_int32(num_batches, 10000,
@@ -9,11 +11,10 @@ DEFINE_int32(num_batches, 10000,
 namespace kudu {
 namespace log {
 
+using consensus::NO_OP;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
-
 using tserver::WriteRequestPB;
-
 using tablet::TxResultPB;
 using tablet::TxOperationPB;
 using tablet::MutationResultPB;
@@ -24,55 +25,10 @@ extern const char* kTestTablet;
 class LogTest : public LogTestBase {
  public:
 
-  typedef pair<int, int> DeltaId;
-
-  virtual void SetUp() {
-    KuduTest::SetUp();
-    current_id_ = 0;
-    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
-    CreateTestSchema(&schema_);
-  }
-
-  void BuildLog(int term = 0,
-                int index = 0,
-                TabletSuperBlockPB* meta = NULL) {
-
-    OpId id;
-    id.set_term(term);
-    id.set_index(index);
-
-    if (meta == NULL) {
-      TabletSuperBlockPB default_meta;
-      CreateTabletMetaForRowSets(&default_meta);
-      ASSERT_STATUS_OK(Log::Open(options_,
-                                 fs_manager_.get(),
-                                 default_meta,
-                                 id,
-                                 kTestTablet,
-                                 &log_));
-    } else {
-      ASSERT_STATUS_OK(Log::Open(options_,
-                                 fs_manager_.get(),
-                                 *meta,
-                                 id,
-                                 kTestTablet,
-                                 &log_));
-    }
-  }
-
-  // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
-  void AppendBatchAndCommitEntryPairsToLog(int count) {
-    for (int i = 0; i < count; i++) {
-      AppendBatch(current_id_);
-      AppendCommit(current_id_ + 1, current_id_);
-      current_id_ += 2;
-    }
-  }
-
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
   // Note that this test does not insert into tablet so the data contained in
   // the ReplicateMsgs doesn't necessarily need to make sense.
-  void AppendBatch(int index) {
+  void AppendReplicateBatch(int index) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
@@ -108,12 +64,15 @@ class LogTest : public LogTestBase {
 
   // Append a commit log entry containing one entry for the insert and one
   // for the mutate.
-  void AppendCommit(int index, int original_op_index,
-                    // the mrs id for the insert
-                    int target_mrs_id = 1,
-                    // the rs and delta ids for the mutate
-                    int target_rs_id = 0,
-                    int target_delta_id = 0) {
+  void AppendCommit(int index, int original_op_index) {
+
+    // The mrs id for the insert.
+    const int kTargetMrsId = 1;
+
+    // The rs and delta ids for the mutate.
+    const int kTargetRsId = 0;
+    const int kTargetDeltaId = 0;
+
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
@@ -134,7 +93,7 @@ class LogTest : public LogTestBase {
 
     TxOperationPB* insert = result->add_inserts();
     insert->set_type(TxOperationPB::INSERT);
-    insert->set_mrs_id(target_mrs_id);
+    insert->set_mrs_id(kTargetMrsId);
 
     TxOperationPB* mutate = result->add_mutations();
     mutate->set_type(TxOperationPB::MUTATE);
@@ -142,66 +101,80 @@ class LogTest : public LogTestBase {
     MutationResultPB* mutation_result = mutate->mutable_mutation_result();
 
     MutationTargetPB* target = mutation_result->add_mutations();
-    target->set_delta_id(target_delta_id);
-    target->set_rs_id(target_rs_id);
+    target->set_delta_id(kTargetDeltaId);
+    target->set_rs_id(kTargetRsId);
 
     mutation_result->set_type(MutationType(mutation_result));
 
     ASSERT_STATUS_OK(log_->Append(&log_entry));
   }
 
-  // This is used to test log GC. It inserts data into three different segments
-  // where the first has only flushed entries, the second has flushed and
-  // unflushed entries and the last has only unflushed entries. The point being
-  // that the first segment is GC'able and the second and third aren't even if the
-  // second contains flushed entries.
-  void AppendMultiSegmentSequence() {
-    // append a batch/commit pair
-    AppendBatch(0);
-    AppendCommit(1, 0);
-
-    // rollover the log (the current MRS set will be in the new segment header)
-    ASSERT_STATUS_OK(log_->AsyncAllocateSegment());
-    ASSERT_STATUS_OK(log_->RollOver());
-
-    // append another batch to the initial memstores
-    AppendBatch(2);
-    AppendCommit(3, 2);
-
-    // flush the MemRowSet, keeping the DeltaMemStore
-    LogEntryPB meta_entry;
-    TabletSuperBlockPB* meta = meta_entry.mutable_tablet_meta();
-    CreateTabletMetaForRowSets(meta, 1);
-    meta_entry.set_type(TABLET_METADATA);
-    ASSERT_STATUS_OK(log_->Append(&meta_entry));
-
-    // append a batch where the insert goes into the new MemRowStore
-    // and the mutate goes into the old DeltaMemStore
-    AppendBatch(5);
-    AppendCommit(6, 5, 2);
-
-    // flush the remaining delta store
-    meta_entry.Clear();
-    meta = meta_entry.mutable_tablet_meta();
-    vector<DeltaId> new_deltas = boost::assign::list_of(DeltaId(0, 0));
-    CreateTabletMetaForRowSets(meta, 1, &new_deltas);
-    meta_entry.set_type(TABLET_METADATA);
-    ASSERT_STATUS_OK(log_->Append(&meta_entry));
-
-    // Roll over the log
-    ASSERT_STATUS_OK(log_->AsyncAllocateSegment());
-    ASSERT_STATUS_OK(log_->RollOver());
-
-    // append a new batch of updates/inserts to the last memstores.
-    AppendBatch(8);
-    AppendCommit(9, 8, 2, 0, 1);
+  // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
+  void AppendReplicateBatchAndCommitEntryPairsToLog(int count) {
+    for (int i = 0; i < count; i++) {
+      AppendReplicateBatch(current_id_);
+      AppendCommit(current_id_ + 1, current_id_);
+      current_id_ += 2;
+    }
   }
+
+  // Append a single NO_OP entry. Increments op_id by one.
+  Status AppendNoOp(OpId* op_id) {
+    LogEntryPB log_entry;
+    log_entry.set_type(OPERATION);
+    OperationPB* operation = log_entry.mutable_operation();
+    operation->mutable_id()->CopyFrom(*op_id);
+    operation->mutable_replicate()->set_op_type(NO_OP);
+    RETURN_NOT_OK(log_->Append(&log_entry));
+
+    // Increment op_id.
+    op_id->set_index(op_id->index() + 1);
+    return Status::OK();
+  }
+
+  // Append a number of no-op entries to the log.
+  // Increments op_id's index by the number of records written.
+  Status AppendNoOps(OpId* op_id, int num) {
+    for (int i = 0; i < num; i++) {
+      RETURN_NOT_OK(AppendNoOp(op_id));
+    }
+    return Status::OK();
+  }
+
+  Status RollLog() {
+    RETURN_NOT_OK(log_->AsyncAllocateSegment());
+    return log_->RollOver();
+  }
+
+  void CreateAndRegisterNewAnchor(const OpId& op_id, vector<OpIdAnchor*>* anchors) {
+    anchors->push_back(new OpIdAnchor());
+    opid_anchor_registry_.Register(op_id, CURRENT_TEST_NAME(), anchors->back());
+  }
+
+  // Create a series of NO_OP entries in the log.
+  // Anchor each segment on the first OpId of each log segment,
+  // and update op_id to point to the next valid OpId.
+  Status AppendMultiSegmentSequence(int num_total_segments, int num_ops_per_segment,
+                                    OpId* op_id, vector<OpIdAnchor*>* anchors) {
+    CHECK(op_id->IsInitialized());
+    for (int i = 0; i < num_total_segments - 1; i++) {
+      CreateAndRegisterNewAnchor(*op_id, anchors);
+      RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
+      RETURN_NOT_OK(RollLog());
+    }
+
+    CreateAndRegisterNewAnchor(*op_id, anchors);
+    RETURN_NOT_OK(AppendNoOps(op_id, num_ops_per_segment));
+    return Status::OK();
+  }
+
 };
 
 // Test that the reader can read from the log even if it hasn't been
 // properly closed.
 TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLog();
+  ASSERT_STATUS_OK(log_->WriteHeaderForTests());
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
@@ -211,14 +184,31 @@ TEST_F(LogTest, TestLogNotTrimmed) {
   ASSERT_STATUS_OK(log_->Close());
 }
 
-// Tests that the log reader reads up until some corrupt entry is found.
-// TODO test partially written/corrupt headers
-TEST_F(LogTest, TestCorruptLog) {
+// Test that the reader will not fail if a log file is completely blank.
+// This happens when it's opened but nothing has been written.
+// The reader should gracefully handle this situation, but somehow expose that
+// the segment is uninitialized. See KUDU-140.
+TEST_F(LogTest, DISABLED_TestBlankLogFile) {
   BuildLog();
-  AppendBatchAndCommitEntryPairsToLog(2);
+  Status s = LogReader::Open(fs_manager_.get(), kTestTablet, &log_reader_);
+  // The reader needs to be able to open the file, and we need to skip the
+  // segment somehow while reading.
+  ASSERT_TRUE(s.ok()) << s.ToString();
+  // TODO: Test that we handle the empty log segments properly so that bootstrap
+  // can move them aside or something like that.
+  FAIL() << "Ensure that we test when the ReadableLogSement is uninitialized";
+}
+
+// Tests that the log reader reads up until some corrupt entry is found.
+// TODO: Test partially written/corrupt headers.
+TEST_F(LogTest, TestCorruptLog) {
+  const int kNumEntries = 4;
+  BuildLog();
+  OpId op_id(MinimumOpId());
+  AppendNoOps(&op_id, kNumEntries);
   ASSERT_STATUS_OK(log_->Close());
 
-  // rewrite the file but truncate the last entry partially
+  // Rewrite the file but truncate the last entry partially.
   shared_ptr<RandomAccessFile> source;
   const string log_path = log_->ActiveSegmentPathForTests();
   ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), log_path, &source));
@@ -228,14 +218,15 @@ TEST_F(LogTest, TestCorruptLog) {
   uint8_t entry_space[file_size];
   Slice log_slice;
 
+  // Truncate by 10 bytes.
   ASSERT_STATUS_OK(source->Read(0, file_size - 10, &log_slice, entry_space));
 
-  // we need to actually copy the slice or we run into trouble
+  // We need to actually copy the slice or we run into trouble
   // because we're reading and writing to the same file.
   faststring copied;
   copied.append(log_slice.data(), log_slice.size());
 
-  // rewrite the file with the corrupt log
+  // Rewrite the file with the corrupt log.
   shared_ptr<WritableFile> sink;
   ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), log_path, &sink));
 
@@ -247,22 +238,24 @@ TEST_F(LogTest, TestCorruptLog) {
   ASSERT_EQ(1, log_reader_->size());
   Status status = LogReader::ReadEntries(log_reader_->segments()[0], &entries_);
   ASSERT_TRUE(status.IsCorruption());
-  // last entry is corrupted but we should still get 3
-  ASSERT_EQ(3, entries_.size());
+
+  // Last entry is corrupted but we should still see the previous ones.
+  ASSERT_EQ(kNumEntries - 1, entries_.size());
 }
 
 // Tests that segments roll over when max segment size is reached
-// and that the player plays all entries in the correct order
+// and that the player plays all entries in the correct order.
 TEST_F(LogTest, TestSegmentRollover) {
-  // set a small segment size so that we have roll overs
   BuildLog();
+  // Set a small segment size so that we have roll overs.
   log_->SetMaxSegmentSizeForTests(1024);
+  const int kNumEntriesPerBatch = 100;
 
-  int num_pairs = 0;
+  OpId op_id(MinimumOpId());
+  int num_entries = 0;
   do {
-    // Write 100 replicate/commit pairs to the log.
-    AppendBatchAndCommitEntryPairsToLog(100);
-    num_pairs += 100;
+    AppendNoOps(&op_id, kNumEntriesPerBatch);
+    num_entries += kNumEntriesPerBatch;
   } while (log_->PreviousSegmentsForTests().size() < 3);
 
   ASSERT_STATUS_OK(log_->Close());
@@ -271,52 +264,102 @@ TEST_F(LogTest, TestSegmentRollover) {
     ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[i], &entries_));
   }
 
-  // expect num_pairs <op,commit> entries, i.e., num_pairs * 2 LogEntryPB's
-  ASSERT_EQ(num_pairs * 2, entries_.size());
+  ASSERT_EQ(num_entries, entries_.size());
 }
 
-// Tests that segments that can be are GC'd, while the log is running.
+// Tests that segments can be GC'd while the log is running.
 TEST_F(LogTest, TestGCWithLogRunning) {
   BuildLog();
-  AppendMultiSegmentSequence();
 
-  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+  vector<OpIdAnchor*> anchors;
+  ElementDeleter deleter(&anchors);
+
+  const int kNumTotalSegments = 4;
+  const int kNumOpsPerSegment = 5;
+  OpId op_id(MinimumOpId());
+
+  ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
+                                              &op_id, &anchors));
+  // Anchors should prevent GC.
+  ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->GC());
+  ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
 
+  // Freeing the first 2 anchors should allow GC of the first.
+  // This is because we are anchoring on the earliest OpId in each log, and
+  // GC() preserved the first file it finds (searching backwards) with initial
+  // OpId strictly earlier than the earliest anchored OpId, plus all following
+  // log segments (by sequence number, ascending).
+  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[0]));
+  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[1]));
+  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+
+  // Release and GC another segment.
+  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[2]));
+  ASSERT_STATUS_OK(log_->GC());
   ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
-  ASSERT_STATUS_OK(log_->Close());
 
+  ASSERT_STATUS_OK(log_->Close());
   CheckRightNumberOfSegmentFiles(2);
+
+  // We skip the first three, since we unregistered them above.
+  for (int i = 3; i < kNumTotalSegments; i++) {
+    ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[i]));
+  }
 }
 
 // Tests log reopening and that GC'ing the old log's segments works.
 TEST_F(LogTest, TestLogReopenAndGC) {
   BuildLog();
-  AppendMultiSegmentSequence();
+
+  vector<OpIdAnchor*> anchors;
+  ElementDeleter deleter(&anchors);
+
+  const int kNumTotalSegments = 3;
+  const int kNumOpsPerSegment = 5;
+  OpId op_id(MinimumOpId());
+
+  ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
+                                              &op_id, &anchors));
+  // Anchors should prevent GC.
   ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+
   ASSERT_STATUS_OK(log_->Close());
 
-  LogEntryPB meta_entry;
-  TabletSuperBlockPB* meta = meta_entry.mutable_tablet_meta();
-  vector<DeltaId> new_deltas = boost::assign::list_of(DeltaId(0, 0));
-  CreateTabletMetaForRowSets(meta, 1, &new_deltas);
-  meta_entry.set_type(TABLET_METADATA);
+  // Now reopen the log as if we had replayed the state into the stores.
+  // that were in memory and do GC.
+  BuildLog();
 
-  // now reopen the log as if we had replayed the state into the stores
-  // that were in memory and do GC
-  BuildLog(0, 10, meta);
-  // log starts with 3 segments
+  // The "old" data consists of 3 segments. We still hold anchors.
   ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
 
+  // Write to a new log segment, as if we had taken new requests and the
+  // mem stores are holding anchors, but don't roll it.
+  CreateAndRegisterNewAnchor(op_id, &anchors);
+  ASSERT_STATUS_OK(AppendNoOps(&op_id, kNumOpsPerSegment));
+
+  // Now release the "old" anchors and GC them.
+  for (int i = 0; i < 3; i++) {
+    ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[i]));
+  }
   ASSERT_STATUS_OK(log_->GC());
-  // after GC there should be only two
-  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+
+  // After GC there should be only one left, because it's the first segment
+  // (counting in reverse order) that has an earlier initial OpId than the
+  // earliest one we are anchored on (which is in our active "new" segment).
+  ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
   ASSERT_STATUS_OK(log_->Close());
 
-  CheckRightNumberOfSegmentFiles(3);
+  CheckRightNumberOfSegmentFiles(2);
+
+  // Unregister the final anchor.
+  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[3]));
 }
 
-// Helper to measure the performance of the log, disabled by default.
+// Helper to measure the performance of the log.
 TEST_F(LogTest, TestWriteManyBatches) {
   uint64_t num_batches = 10;
   if (this->AllowSlowTests()) {
@@ -326,7 +369,7 @@ TEST_F(LogTest, TestWriteManyBatches) {
 
   LOG(INFO)<< "Starting to write " << num_batches << " to log";
   LOG_TIMING(INFO, "Wrote all batches to log") {
-    AppendBatchAndCommitEntryPairsToLog(num_batches);
+    AppendReplicateBatchAndCommitEntryPairsToLog(num_batches);
   }
   ASSERT_STATUS_OK(log_->Close());
   LOG(INFO) << "Done writing";

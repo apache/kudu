@@ -33,6 +33,10 @@ namespace cfile {
 class BloomFileWriter;
 }
 
+namespace log {
+class OpIdAnchorRegistry;
+}
+
 namespace tablet {
 
 using std::string;
@@ -217,6 +221,7 @@ class DiskRowSet : public RowSet {
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
   static Status Open(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
+                     log::OpIdAnchorRegistry* opid_anchor_registry,
                      shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
@@ -255,8 +260,9 @@ class DiskRowSet : public RowSet {
   Status MutateRow(Timestamp timestamp,
                    const RowSetKeyProbe &probe,
                    const RowChangeList &update,
+                   const consensus::OpId& op_id,
                    ProbeStats* stats,
-                   MutationResultPB* result);
+                   MutationResultPB* result) OVERRIDE;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present, ProbeStats* stats) const;
 
@@ -311,11 +317,12 @@ class DiskRowSet : public RowSet {
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestCompaction, TestOneToOne);
-  DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
+
   friend class CompactionInput;
   friend class Tablet;
 
-  explicit DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata);
+  DiskRowSet(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
+             log::OpIdAnchorRegistry* opid_anchor_registry);
 
   Status Open();
 
@@ -336,6 +343,8 @@ class DiskRowSet : public RowSet {
 
   bool open_;
 
+  log::OpIdAnchorRegistry* opid_anchor_registry_;
+
   // Base data for this rowset.
   // This vector contains one entry for each column.
   shared_ptr<CFileSet> base_data_;
@@ -344,6 +353,8 @@ class DiskRowSet : public RowSet {
   // Lock governing this rowset's inclusion in a compact/flush. If locked,
   // no other compactor will attempt to include this rowset.
   boost::mutex compact_flush_lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
 };
 
 } // namespace tablet

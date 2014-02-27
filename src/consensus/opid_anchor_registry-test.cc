@@ -15,11 +15,23 @@ namespace kudu {
 namespace log {
 
 // Tests for the current incarnation of the OpIdAnchorRegistry.
-// Since LogSequenceNumber is currently just typedef'ed to OpId, and since these
+// Since OpId is currently just typedef'ed to OpId, and since these
 // tests generate OpIds, we are just using OpId directly here instead of the
 // typedef to be transparent about the assumptions being made in these tests.
 class OpIdAnchorRegistryTest : public KuduTest {
 };
+
+TEST_F(OpIdAnchorRegistryTest, TestUpdateRegistration) {
+  const string test_name = CURRENT_TEST_NAME();
+  OpIdAnchorRegistry reg;
+  OpId op_id(MinimumOpId());
+  OpIdAnchor anchor;
+
+  reg.Register(op_id, test_name, &anchor);
+  op_id.set_index(1);
+  ASSERT_STATUS_OK(reg.UpdateRegistration(op_id, test_name, &anchor));
+  ASSERT_STATUS_OK(reg.Unregister(&anchor));
+}
 
 TEST_F(OpIdAnchorRegistryTest, TestDuplicateInserts) {
   const string test_name = CURRENT_TEST_NAME();

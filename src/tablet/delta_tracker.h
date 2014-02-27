@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "common/iterator.h"
+#include "common/rowid.h"
 #include "gutil/macros.h"
 #include "server/metadata.h"
 #include "tablet/delta_store.h"
@@ -18,6 +19,14 @@
 namespace kudu {
 
 class Env;
+
+namespace consensus {
+class OpId;
+}
+
+namespace log {
+class OpIdAnchorRegistry;
+}
 
 namespace metadata {
 class RowSetMetadata;
@@ -44,7 +53,8 @@ class DeltaTracker {
  public:
   DeltaTracker(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                const Schema &schema,
-               rowid_t num_rows);
+               rowid_t num_rows,
+               log::OpIdAnchorRegistry* opid_anchor_registry);
 
   ColumnwiseIterator *WrapIterator(const shared_ptr<ColumnwiseIterator> &base,
                                    const MvccSnapshot &mvcc_snap) const;
@@ -73,6 +83,7 @@ class DeltaTracker {
   Status Update(Timestamp timestamp,
                 rowid_t row_idx,
                 const RowChangeList &update,
+                const consensus::OpId& op_id,
                 MutationResultPB* result);
 
   // Check if the given row has been deleted -- i.e if the most recent
@@ -160,7 +171,7 @@ class DeltaTracker {
 
   // Set this delta tracker's DeltaMemStore to 'new_dms'.
   //
-  // NOTE: this is an internal API strictly for used during
+  // NOTE: this is an internal API strictly for use during
   // compactions.
   void SetDMS(const shared_ptr<DeltaMemStore> &new_dms);
 
@@ -173,6 +184,8 @@ class DeltaTracker {
   rowid_t num_rows_;
 
   bool open_;
+
+  log::OpIdAnchorRegistry* opid_anchor_registry_;
 
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;

@@ -30,6 +30,10 @@ namespace consensus {
 class Consensus;
 }
 
+namespace log {
+class OpIdAnchorRegistry;
+}
+
 namespace server {
 class Clock;
 }
@@ -59,7 +63,8 @@ class Tablet {
   // metrics in a sub-context of this context. Otherwise, no metrics are collected.
   Tablet(gscoped_ptr<metadata::TabletMetadata> metadata,
          const scoped_refptr<server::Clock>& clock,
-         const MetricContext* parent_metric_context = NULL);
+         const MetricContext* parent_metric_context,
+         log::OpIdAnchorRegistry* opid_anchor_registry);
 
   ~Tablet();
 
@@ -142,6 +147,9 @@ class Tablet {
                         const MvccSnapshot &snap,
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
+  // TODO: Document me.
+  // Apparently, this method only flushes the MemRowSet.
+  // To flush the DeltaMemStores, call something else.
   Status Flush();
 
   // Prepares the transaction context for the alter schema operation.
@@ -267,8 +275,6 @@ class Tablet {
  private:
   friend class Iterator;
 
-  DISALLOW_COPY_AND_ASSIGN(Tablet);
-
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
   // These iterators are not true snapshot iterators, but they are safe against
@@ -317,6 +323,7 @@ class Tablet {
                                   RowSetsInCompaction *compaction,
                                   shared_ptr<MemRowSet> *old_ms);
 
+  // TODO: Document me.
   Status Flush(const RowSetsInCompaction& input,
                const shared_ptr<MemRowSet>& old_ms,
                const Schema& schema);
@@ -338,6 +345,7 @@ class Tablet {
   gscoped_ptr<TabletMetrics> metrics_;
 
   consensus::Consensus* consensus_;
+  log::OpIdAnchorRegistry* opid_anchor_registry_;
 
   Atomic32 next_mrs_id_;
 
@@ -389,6 +397,8 @@ class Tablet {
   shared_ptr<CompactionFaultHooks> compaction_hooks_;
   shared_ptr<FlushFaultHooks> flush_hooks_;
   shared_ptr<FlushCompactCommonHooks> common_hooks_;
+
+  DISALLOW_COPY_AND_ASSIGN(Tablet);
 };
 
 

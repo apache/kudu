@@ -114,6 +114,7 @@ class Consensus {
       gscoped_ptr<ReplicateMsg> entry,
       const std::tr1::shared_ptr<FutureCallback>& repl_callback,
       const std::tr1::shared_ptr<FutureCallback>& commit_callback,
+      OpId* op_id, // TODO: Consider passing the whole TransactionContext.
       gscoped_ptr<ConsensusContext>* context) = 0;
 
   // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
@@ -121,19 +122,21 @@ class Consensus {
   // FOLLOWERs, i.e. is_leader() returns false.
   virtual Status Update(ReplicaUpdateContext* context) = 0;
 
-  // Appends local commits to the state machine.  This function is
-  // required as different nodes have independent physical layers and
-  // therefore need to sometimes issue "local" commit messages that
+  // Appends a local commit to the state machine.
+  //
+  // This function is required as different nodes have independent physical
+  // layers and therefore need to sometimes issue "local" commit messages that
   // change only the local state and not the coordinated state
   // machine.
   //
-  // 'commit_callback' will be invoked once the commit is done.
+  // Will assign the last-assigned OpId to the operation, write it to the local
+  // log, and leave the object mutated with the assigned OpId set. This ensures
+  // that OpIds stay monotonic in the log, even with local commits.
   //
-  // LocalCommit() does not take ownership of the pointers in
-  // 'commit_ops'.
-  virtual Status LocalCommit(
-      const std::vector<OperationPB*>& commit_ops,
-      const std::tr1::shared_ptr<FutureCallback>& commit_callback) = 0;
+  // local_commit_op: Operation to be committed. Its OpId must be uninitialized.
+  // commit_callback: Callback to invoke once the commit is done.
+  virtual Status LocalCommit(OperationPB* local_commit_op,
+                             const std::tr1::shared_ptr<FutureCallback>& commit_callback) = 0;
 
   // Returns the number of participants that constitutes a majority for this
   // quorum, e.g. 1 for a quorum of 1 participant, 2 for a quorum of 2,3
@@ -162,6 +165,9 @@ class Consensus {
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
   virtual metadata::QuorumPB CurrentQuorum() const = 0;
+
+  // Returns the last opid assigned.
+  virtual void GetLastOpId(consensus::OpId* op_id) const = 0;
 
   virtual ~Consensus() {}
 

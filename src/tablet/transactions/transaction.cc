@@ -60,6 +60,7 @@ Status LeaderTransaction::Execute() {
   Status s = consensus_->Append(replicate_msg.Pass(),
                                 prepare_finished_callback_,
                                 commit_finished_callback_,
+                                tx_ctx()->mutable_op_id(),
                                 &context);
   if (!s.ok()) {
     prepare_finished_callback_->OnFailure(s);

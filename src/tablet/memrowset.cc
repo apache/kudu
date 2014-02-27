@@ -9,6 +9,7 @@
 #include "common/common.pb.h"
 #include "common/generic_iterators.h"
 #include "common/row.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/atomicops.h"
 #include "tablet/memrowset.h"
 #include "tablet/compaction.h"
@@ -19,7 +20,11 @@ DEFINE_int32(memrowset_throttle_mb, 0,
 
 namespace kudu { namespace tablet {
 
+using consensus::OpId;
+using log::OpIdAnchorRegistry;
+using log::OpIdLessThan;
 using std::pair;
+using strings::Substitute;
 
 static const int kInitialArenaSize = 1*1024*1024;
 static const int kMaxArenaBufferSize = 4*1024*1024;
@@ -48,13 +53,15 @@ bool MRSRow::IsGhost() const {
 
 
 MemRowSet::MemRowSet(int64_t id,
-                     const Schema &schema)
+                     const Schema &schema,
+                     OpIdAnchorRegistry* opid_anchor_registry)
   : id_(id),
     schema_(schema),
     arena_(kInitialArenaSize, kMaxArenaBufferSize),
     debug_insert_count_(0),
     debug_update_count_(0),
-    has_logged_throttling_(0) {
+    has_logged_throttling_(false),
+    anchorer_(opid_anchor_registry, Substitute("MemRowSet-$0", id_)) {
   CHECK(schema.has_column_ids());
 }
 
@@ -82,7 +89,8 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 
 
 Status MemRowSet::Insert(Timestamp timestamp,
-                         const ConstContiguousRow& row) {
+                         const ConstContiguousRow& row,
+                         const OpId& op_id) {
   CHECK(row.schema().has_column_ids());
   DCHECK_SCHEMA_EQ(schema_, row.schema());
 
@@ -121,6 +129,8 @@ Status MemRowSet::Insert(Timestamp timestamp,
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
 
+  anchorer_.AnchorIfMinimum(op_id);
+
   debug_insert_count_++;
   SlowMutators();
   return Status::OK();
@@ -157,6 +167,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
 Status MemRowSet::MutateRow(Timestamp timestamp,
                             const RowSetKeyProbe &probe,
                             const RowChangeList &delta,
+                            const consensus::OpId& op_id,
                             ProbeStats* stats,
                             MutationResultPB *result) {
   {
@@ -189,6 +200,8 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
   }
 
   stats->mrs_consulted++;
+
+  anchorer_.AnchorIfMinimum(op_id);
 
   // Throttle the writer if we're low on memory, but do this outside of the lock
   // so we don't slow down readers.

@@ -152,6 +152,13 @@ class TransactionContext {
     return timestamp_;
   }
 
+  consensus::OpId* mutable_op_id() {
+    return &op_id_;
+  }
+
+  const consensus::OpId& op_id() const {
+    return op_id_;
+  }
 
  protected:
   explicit TransactionContext(TabletPeer* tablet_peer)
@@ -174,6 +181,9 @@ class TransactionContext {
   Timestamp timestamp_;
 
   Arena arena_;
+
+  // This OpId stores the canonical "anchor" OpId for this transaction.
+  consensus::OpId op_id_;
 
   gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
 };

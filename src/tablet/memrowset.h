@@ -9,6 +9,7 @@
 #include "common/scan_spec.h"
 #include "common/rowblock.h"
 #include "common/schema.h"
+#include "consensus/opid_anchor_registry.h"
 #include "tablet/concurrent_btree.h"
 #include "tablet/mutation.h"
 #include "tablet/rowset.h"
@@ -19,8 +20,6 @@
 
 namespace kudu {
 namespace tablet {
-
-using std::tr1::shared_ptr;
 
 //
 // Implementation notes:
@@ -146,12 +145,13 @@ class MRSRow {
 //
 // The data is kept sorted.
 class MemRowSet : public RowSet,
-                 public std::tr1::enable_shared_from_this<MemRowSet> {
+                  public std::tr1::enable_shared_from_this<MemRowSet> {
  public:
   class Iterator;
 
   MemRowSet(int64_t id,
-            const Schema &schema);
+            const Schema &schema,
+            log::OpIdAnchorRegistry* opid_anchor_registry);
 
   // Insert a new row into the memrowset.
   //
@@ -164,17 +164,19 @@ class MemRowSet : public RowSet,
   //
   // Returns Status::OK unless allocation fails.
   Status Insert(Timestamp timestamp,
-                const ConstContiguousRow& row);
+                const ConstContiguousRow& row,
+                const consensus::OpId& op_id);
 
 
   // Update or delete an existing row in the memrowset.
   //
   // Returns Status::NotFound if the row doesn't exist.
-  Status MutateRow(Timestamp timestamp,
-                   const RowSetKeyProbe &probe,
-                   const RowChangeList &delta,
-                   ProbeStats* stats,
-                   MutationResultPB *result);
+  virtual Status MutateRow(Timestamp timestamp,
+                           const RowSetKeyProbe &probe,
+                           const RowChangeList &delta,
+                           const consensus::OpId& op_id,
+                           ProbeStats* stats,
+                           MutationResultPB *result) OVERRIDE;
 
   // Return the number of entries in the memrowset.
   // NOTE: this requires iterating all data, and is thus
@@ -251,8 +253,9 @@ class MemRowSet : public RowSet,
     return id_;
   }
 
-  shared_ptr<metadata::RowSetMetadata> metadata() {
-    return shared_ptr<metadata::RowSetMetadata>(reinterpret_cast<metadata::RowSetMetadata *>(NULL));
+  std::tr1::shared_ptr<metadata::RowSetMetadata> metadata() {
+    return std::tr1::shared_ptr<metadata::RowSetMetadata>(
+        reinterpret_cast<metadata::RowSetMetadata *>(NULL));
   }
 
   Status AlterSchema(const Schema& schema);
@@ -290,8 +293,6 @@ class MemRowSet : public RowSet,
  private:
   friend class Iterator;
 
-  DISALLOW_COPY_AND_ASSIGN(MemRowSet);
-
   // Temporary hack to slow down mutators when the memrowset is over 1GB.
   void SlowMutators();
 
@@ -321,6 +322,10 @@ class MemRowSet : public RowSet,
   boost::mutex compact_flush_lock_;
 
   Atomic32 has_logged_throttling_;
+
+  log::OpIdMinAnchorer anchorer_;
+
+  DISALLOW_COPY_AND_ASSIGN(MemRowSet);
 };
 
 // An iterator through in-memory data stored in a MemRowSet.
@@ -451,7 +456,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
-  Iterator(const shared_ptr<const MemRowSet> &mrs,
+  Iterator(const std::tr1::shared_ptr<const MemRowSet> &mrs,
            MemRowSet::MSBTIter *iter,
            const Schema *projection,
            const MvccSnapshot &mvcc_snap)
@@ -531,7 +536,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   }
 
 
-  const shared_ptr<const MemRowSet> memrowset_;
+  const std::tr1::shared_ptr<const MemRowSet> memrowset_;
   gscoped_ptr<MemRowSet::MSBTIter> iter_;
 
   // The MVCC snapshot which determines which rows and mutations are visible to

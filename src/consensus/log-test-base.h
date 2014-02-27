@@ -15,6 +15,7 @@
 
 #include "common/wire_protocol-test-util.h"
 #include "consensus/log_reader.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stl_util.h"
 #include "gutil/stringprintf.h"
@@ -63,73 +64,16 @@ class LogTestBase : public KuduTest {
     STLDeleteElements(&entries_);
   }
 
-  void BuildLog(int term = 0,
-                int index = 0,
-                TabletSuperBlockPB* meta = NULL) {
-    OpId id;
-    id.set_term(term);
-    id.set_index(index);
-
-    if (meta == NULL) {
-      TabletSuperBlockPB default_meta;
-      CreateTabletMetaForRowSets(&default_meta);
-      ASSERT_STATUS_OK(Log::Open(options_,
-                                 fs_manager_.get(),
-                                 default_meta,
-                                 id,
-                                 kTestTablet,
-                                 &log_));
-    } else {
-      ASSERT_STATUS_OK(Log::Open(options_,
-                                 fs_manager_.get(),
-                                 *meta,
-                                 id,
-                                 kTestTablet,
-                                 &log_));
-    }
-  }
-
-  // Creates a TabletSuperBlock that has the provided 'last_durable_mrs' and
-  // the provided deltas as flushed entries.
-  // The default TabletSuperBlockPB has an MRS flushed (and turned into
-  // DiskRowSet 0) and no flushed deltas, i.e. MRS 1 is in memory as is
-  // DeltaMemStore 0 for row set 0.
-  void CreateTabletMetaForRowSets(TabletSuperBlockPB* meta,
-                                  int last_durable_mrs = 0,
-                                  vector<DeltaId >* deltas = NULL) {
-    meta->set_oid(kTestTablet);
-    meta->set_start_key("");
-    meta->set_end_key("");
-    meta->set_sequence(0);
-    meta->set_schema_version(0);
-    meta->set_table_name("testtb");
-    ASSERT_STATUS_OK(SchemaToPB(schema_, meta->mutable_schema()));
-
-    meta->set_last_durable_mrs_id(last_durable_mrs);
-
-    BlockIdPB dummy;
-    dummy.set_id("dummy-block");
-
-    if (deltas != NULL) {
-      BOOST_FOREACH(const DeltaId delta, *deltas) {
-        RowSetDataPB* row_set = meta->add_rowsets();
-        row_set->set_id(delta.first);
-        DeltaDataPB* delta_data = row_set->add_redo_deltas();
-        delta_data->set_id(delta.second);
-        delta_data->mutable_block()->CopyFrom(dummy);
-        row_set->set_last_durable_dms_id(delta.second);
-      }
-    // default DRS (rs 0, no delta, i.e. delta 0 is in memory)
-    } else {
-      RowSetDataPB* row_set = meta->add_rowsets();
-      row_set->set_id(0);
-      row_set->set_last_durable_dms_id(kNoDurableMemStore);
-    }
+  void BuildLog() {
+    CHECK_OK(Log::Open(options_,
+                       fs_manager_.get(),
+                       kTestTablet,
+                       &opid_anchor_registry_,
+                       &log_));
   }
 
   void BuildLogReader() {
-    ASSERT_STATUS_OK(
-        LogReader::Open(fs_manager_.get(), kTestTablet, &log_reader_));
+    CHECK_OK(LogReader::Open(fs_manager_.get(), kTestTablet, &log_reader_));
   }
 
   void CheckRightNumberOfSegmentFiles(int expected) {
@@ -163,6 +107,7 @@ class LogTestBase : public KuduTest {
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
   vector<LogEntryPB* > entries_;
+  OpIdAnchorRegistry opid_anchor_registry_;
 };
 
 

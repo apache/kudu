@@ -23,7 +23,7 @@ using tserver::ChangeConfigResponsePB;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options)
     : ConsensusBase(options),
-      next_op_id_(-1) {
+      next_op_id_index_(-1) {
 }
 
 Status LocalConsensus::Init(const QuorumPeerPB& peer,
@@ -34,7 +34,20 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
   clock_ = clock;
   log_ = log;
   state_ = kInitializing;
-  next_op_id_ = log->last_entry_id().index() + 1;
+  Status s = log->GetLastEntryOpId(&last_op_id_);
+  if (s.ok()) {
+    // We are continuing after previously running.
+  } else if (s.IsNotFound()) {
+    // This is our very first startup! Sally forth!
+    last_op_id_.set_term(0);
+    last_op_id_.set_index(0);
+  } else {
+    LOG(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): "
+               << s.ToString();
+  }
+  // This means that for term 0, only a MISSED_DELTA commit may have an index
+  // of 0. Any non-"physical only" operation will start at 1.
+  next_op_id_index_ = last_op_id_.index() + 1;
   return Status::OK();
 }
 
@@ -60,8 +73,9 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
   state_ = kConfiguring;
 
+  OpId op_id; // not currently used. May be needed for anchoring later. See KUDU-152.
   gscoped_ptr<ConsensusContext> ctx;
-  RETURN_NOT_OK(Append(replicate_msg.Pass(), replicate_clbk, commit_clbk, &ctx));
+  RETURN_NOT_OK(Append(replicate_msg.Pass(), replicate_clbk, commit_clbk, &op_id, &ctx));
   RETURN_NOT_OK(replicate_clbk->Wait());
 
   ChangeConfigResponsePB resp;
@@ -85,7 +99,9 @@ Status LocalConsensus::Append(
     gscoped_ptr<ReplicateMsg> entry,
     const shared_ptr<FutureCallback>& repl_callback,
     const shared_ptr<FutureCallback>& commit_callback,
+    OpId* op_id,
     gscoped_ptr<ConsensusContext>* context) {
+
   DCHECK_GE(state_, kConfiguring);
 
   LogEntryBatch* reserved_entry_batch;
@@ -97,9 +113,15 @@ Status LocalConsensus::Append(
     replicate_op->set_allocated_replicate(entry.release());
 
     // create the new op id for the entry.
-    OpId* op_id = replicate_op->mutable_id();
-    op_id->set_term(0);
-    op_id->set_index(next_op_id_++);
+    OpId* cur_op_id = replicate_op->mutable_id();
+    cur_op_id->set_term(0);
+    cur_op_id->set_index(next_op_id_index_++);
+
+    last_op_id_.CopyFrom(*cur_op_id);
+
+    DCHECK_NOTNULL(op_id)->CopyFrom(*cur_op_id);
+    // TODO: Register TransactionContext (not currently passed) to avoid Log GC
+    // race between Append() and Apply(). See KUDU-152.
 
     // create the consensus context for this round
     new_context.reset(new ConsensusContext(this, replicate_op.Pass(),
@@ -135,9 +157,11 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
     // entry for the CommitMsg
     OpId* commit_id = commit_op->mutable_id();
     commit_id->set_term(0);
-    commit_id->set_index(next_op_id_++);
+    commit_id->set_index(next_op_id_index_++);
 
-    // the commit callback is the very last thing to execute in a transaction
+    last_op_id_.CopyFrom(*commit_id);
+
+    // The commit callback is the very last thing to execute in a transaction
     // so it needs to free all resources. We need release it from the
     // ConsensusContext or we'd get a cycle. (callback would free the
     // TransactionContext which would free the ConsensusContext, which in turn
@@ -156,10 +180,28 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
   return Status::OK();
 }
 
-Status LocalConsensus::LocalCommit(const vector<OperationPB*>& commit_ops,
+Status LocalConsensus::LocalCommit(OperationPB* local_commit_op,
                                    const shared_ptr<FutureCallback>& commit_callback) {
+  DCHECK(local_commit_op);
+  DCHECK(!local_commit_op->id().IsInitialized())
+      << "Local commit OpId will be overwritten. Do not initialize it: "
+      << local_commit_op->DebugString();
+
+  CHECK(local_commit_op->has_commit())
+      << "Only a commit message may be written via LocalCommit(): "
+      << local_commit_op->DebugString();
+
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(log_->Reserve(commit_ops, &reserved_entry_batch));
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+
+    // Keep OpIds monotonic in the Log.
+    local_commit_op->mutable_id()->CopyFrom(last_op_id_);
+
+    // Reserve the next slot in the log for the MISSED_DELTA commit operation.
+    RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(local_commit_op),
+                                &reserved_entry_batch));
+  }
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, commit_callback));
   return Status::OK();
 }
@@ -168,6 +210,13 @@ Status LocalConsensus::Shutdown() {
   RETURN_NOT_OK(log_->Close());
   VLOG(1) << "LocalConsensus Shutdown!";
   return Status::OK();
+}
+
+void LocalConsensus::GetLastOpId(OpId* op_id) const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  DCHECK_EQ(state_, kRunning);
+  DCHECK(last_op_id_.IsInitialized());
+  op_id->CopyFrom(last_op_id_);
 }
 
 } // end namespace consensus

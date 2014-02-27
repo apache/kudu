@@ -3,12 +3,14 @@
 #ifndef KUDU_TABLET_TABLET_PEER_H_
 #define KUDU_TABLET_TABLET_PEER_H_
 
-#include "consensus/log.h"
 #include "consensus/consensus.h"
+#include "consensus/log.h"
+#include "consensus/opid_anchor_registry.h"
 #include "tablet/tablet.h"
 #include "util/metrics.h"
 
 namespace kudu {
+
 namespace tablet {
 class ChangeConfigTransactionContext;
 
@@ -27,7 +29,8 @@ class TabletPeer {
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const metadata::QuorumPeerPB& quorum_peer,
-              gscoped_ptr<log::Log> log);
+              gscoped_ptr<log::Log> log,
+              gscoped_ptr<log::OpIdAnchorRegistry> opid_anchor_registry);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
@@ -106,9 +109,10 @@ class TabletPeer {
  private:
   metadata::TabletStatePB state_;
   Status error_;
+  gscoped_ptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
+  gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
-  gscoped_ptr<log::Log> log_;
   gscoped_ptr<consensus::Consensus> consensus_;
   simple_spinlock prepare_replicate_lock_;
 

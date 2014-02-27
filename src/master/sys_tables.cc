@@ -9,6 +9,7 @@
 #include "common/schema.h"
 #include "common/partial_row.h"
 #include "common/wire_protocol.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/substitute.h"
 #include "master/catalog_manager.h"
 #include "master/master.h"
@@ -22,6 +23,7 @@
 #include "util/pb_util.h"
 
 using kudu::log::Log;
+using kudu::log::OpIdAnchorRegistry;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::LatchTransactionCompletionCallback;
@@ -89,6 +91,7 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
 Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
+  gscoped_ptr<OpIdAnchorRegistry> opid_anchor_registry;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
@@ -99,7 +102,9 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 &metric_ctx_,
                                 listener.Pass(),
-                                &tablet, &log));
+                                &tablet,
+                                &log,
+                                &opid_anchor_registry));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
   // handling split in the TS?
@@ -107,7 +112,9 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            tablet->metadata()->Quorum().peers(0),
-                                           log.Pass()), "Failed to Init() TabletPeer");
+                                           log.Pass(),
+                                           opid_anchor_registry.Pass()),
+                        "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()),
                                             "Failed to Start() TabletPeer");

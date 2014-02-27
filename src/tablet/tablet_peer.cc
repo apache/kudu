@@ -3,6 +3,8 @@
 #include "tablet/tablet_peer.h"
 
 #include "consensus/local_consensus.h"
+#include "consensus/log.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/sysinfo.h"
 #include "tablet/transactions/alter_schema_transaction.h"
@@ -18,6 +20,7 @@ namespace tablet {
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
 using log::Log;
+using log::OpIdAnchorRegistry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using metadata::TabletMetadata;
@@ -36,7 +39,8 @@ TabletPeer::TabletPeer()
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const QuorumPeerPB& quorum_peer,
-                        gscoped_ptr<Log> log) {
+                        gscoped_ptr<Log> log,
+                        gscoped_ptr<OpIdAnchorRegistry> opid_anchor_registry) {
 
 
   {
@@ -46,6 +50,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     clock_ = clock;
     quorum_peer_ = quorum_peer;
     log_.reset(log.release());
+    opid_anchor_registry_.reset(opid_anchor_registry.release());
     // TODO support different consensus implementations (possibly by adding
     // a TabletPeerOptions).
     consensus_.reset(new LocalConsensus(ConsensusOptions()));
@@ -53,6 +58,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
+  DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
   RETURN_NOT_OK(consensus_->Init(quorum_peer_, clock, log_.get()));
 

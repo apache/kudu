@@ -32,6 +32,7 @@ message AppStatusPB {
     REMOTE_ERROR = 12;
     SERVICE_UNAVAILABLE = 13;
     TIMED_OUT = 14;
+    UNINITIALIZED = 15;
     UNKNOWN_ERROR = 999;
   }
 

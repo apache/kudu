@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "common/wire_protocol.h"
+#include "consensus/log.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
 #include "master/master.pb.h"
@@ -32,6 +34,7 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using kudu::log::Log;
+using kudu::log::OpIdAnchorRegistry;
 using kudu::master::ReportedTabletPB;
 using kudu::tablet::TabletPeer;
 using kudu::master::TabletReportPB;
@@ -263,6 +266,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
 
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
+  gscoped_ptr<OpIdAnchorRegistry> opid_anchor_registry;
 
   LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
   TRACE("Bootstrapping tablet");
@@ -278,7 +282,9 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
                         scoped_refptr<server::Clock>(server_->clock()),
                         &metric_ctx_,
                         listener.Pass(),
-                        &tablet, &log);
+                        &tablet,
+                        &log,
+                        &opid_anchor_registry);
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to bootstrap: "
           << tablet_id << " Status: " << s.ToString();
@@ -295,7 +301,8 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            quorum_peer,
-                           log.Pass());
+                           log.Pass(),
+                           opid_anchor_registry.Pass());
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
       return;

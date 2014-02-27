@@ -62,9 +62,8 @@ set(KUDU_TEST_LINK_LIBS
   ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS}
 )
 
-ADD_KUDU_TEST(log_util-test)
-ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(consensus_queue-test)
+ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)
 

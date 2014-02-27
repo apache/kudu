@@ -14,6 +14,7 @@
 #include "common/rowblock.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
+#include "consensus/log_util.h"
 #include "gutil/stringprintf.h"
 #include "server/logical_clock.h"
 #include "tablet/diskrowset.h"
@@ -39,6 +40,7 @@ class TestRowSet : public KuduRowSetTest {
   TestRowSet()
     : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows),
+      op_id_(log::MaximumOpId()),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
     CHECK_GT(n_rows_, 0);
@@ -152,7 +154,7 @@ class TestRowSet : public KuduRowSetTest {
 
     ProbeStats stats;
     ScopedTransaction tx(&mvcc_);
-    return rs->MutateRow(tx.timestamp(), probe, mutation, &stats, result);
+    return rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, &stats, result);
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {
@@ -274,19 +276,18 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(rowset_meta_, rowset);
+    return DiskRowSet::Open(rowset_meta_, &opid_anchor_registry_, rowset);
   }
-
-
 
   void FormatKey(int i, char *buf, size_t buf_len) {
     snprintf(buf, buf_len, "hello %015d", i);
   }
 
   size_t n_rows_;
+  consensus::OpId op_id_; // Generally a "fake" OpId for these tests.
+  log::OpIdAnchorRegistry opid_anchor_registry_;
   MvccManager mvcc_;
 };
-
 
 } // namespace tablet
 } // namespace kudu

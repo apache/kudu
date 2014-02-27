@@ -36,15 +36,16 @@ class LocalConsensus : public ConsensusBase {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        gscoped_ptr<metadata::QuorumPB>* running_quorum);
 
-  Status Append(gscoped_ptr<ReplicateMsg> entry,
-                const std::tr1::shared_ptr<FutureCallback>& repl_callback,
-                const std::tr1::shared_ptr<FutureCallback>& commit_callback,
-                gscoped_ptr<ConsensusContext>* context);
+  virtual Status Append(gscoped_ptr<ReplicateMsg> entry,
+                        const std::tr1::shared_ptr<FutureCallback>& repl_callback,
+                        const std::tr1::shared_ptr<FutureCallback>& commit_callback,
+                        OpId* op_id,
+                        gscoped_ptr<ConsensusContext>* context) OVERRIDE;
 
   Status Update(ReplicaUpdateContext* context);
 
-  Status LocalCommit(const std::vector<OperationPB*>& commit_ops,
-                     const std::tr1::shared_ptr<FutureCallback>& commit_callback);
+  virtual Status LocalCommit(OperationPB* local_commit_op,
+                             const std::tr1::shared_ptr<FutureCallback>& commit_callback) OVERRIDE;
 
   Status Commit(ConsensusContext* context, OperationPB* commit_op);
 
@@ -70,17 +71,22 @@ class LocalConsensus : public ConsensusBase {
     return quorum_;
   }
 
+  virtual void GetLastOpId(consensus::OpId* op_id) const OVERRIDE;
+
  private:
   metadata::QuorumPeerPB peer_;
   metadata::QuorumPB quorum_;
-  int64 next_op_id_;
+  int64 next_op_id_index_;
+
+  // The last OpId is used for special handling of MISSED_DELTA operations.
+  OpId last_op_id_;
 
   scoped_refptr<server::Clock> clock_;
 
   // lock serializes the commit id generation and subsequent
   // task (log) submission as well as replicate id generation
   // and subsequent task submission.
-  simple_spinlock lock_;
+  mutable simple_spinlock lock_;
 
 };
 

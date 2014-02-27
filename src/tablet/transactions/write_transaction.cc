@@ -129,6 +129,8 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
   tx_ctx_->timestamp().EncodeToString((*commit_msg)->mutable_timestamp());
 }
 
+// FIXME: Since this is called as a void in a thread-pool callback,
+// it seems pointless to return a Status!
 Status LeaderWriteTransaction::Apply() {
   TRACE("APPLY: Starting");
 

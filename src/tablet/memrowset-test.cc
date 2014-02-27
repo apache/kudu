@@ -7,6 +7,7 @@
 
 #include "common/row.h"
 #include "common/scan_spec.h"
+#include "consensus/opid_anchor_registry.h"
 #include "server/logical_clock.h"
 #include "tablet/memrowset.h"
 #include "tablet/tablet-test-util.h"
@@ -21,16 +22,18 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::shared_ptr;
+using log::OpIdAnchorRegistry;
+using consensus::OpId;
 
 class TestMemRowSet : public ::testing::Test {
  public:
-  TestMemRowSet() :
-    ::testing::Test(),
-    schema_(CreateSchema()),
-    key_schema_(schema_.CreateKeyProjection()),
-    mvcc_(scoped_refptr<server::Clock>(
-        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)))
-  {}
+  TestMemRowSet()
+    : op_id_(log::MaximumOpId()),
+      schema_(CreateSchema()),
+      key_schema_(schema_.CreateKeyProjection()),
+      mvcc_(scoped_refptr<server::Clock>(
+          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+  }
 
   static Schema CreateSchema() {
     SchemaBuilder builder;
@@ -78,7 +81,7 @@ class TestMemRowSet : public ::testing::Test {
       snprintf(keybuf, sizeof(keybuf), "hello %d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      RETURN_NOT_OK(mrs->Insert(Timestamp(0), rb.row()));
+      RETURN_NOT_OK(mrs->Insert(Timestamp(0), rb.row(), op_id_));
     }
 
     return Status::OK();
@@ -89,7 +92,7 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(schema_);
     rb.AddString(key);
     rb.AddUint32(val);
-    return mrs->Insert(tx.timestamp(), rb.row());
+    return mrs->Insert(tx.timestamp(), rb.row(), op_id_);
   }
 
   Status UpdateRow(MemRowSet *mrs,
@@ -108,6 +111,7 @@ class TestMemRowSet : public ::testing::Test {
     return mrs->MutateRow(tx.timestamp(),
                           probe,
                           RowChangeList(mutation_buf_),
+                          op_id_,
                           &stats,
                           result);
   }
@@ -125,9 +129,13 @@ class TestMemRowSet : public ::testing::Test {
     return mrs->MutateRow(tx.timestamp(),
                           probe,
                           RowChangeList(mutation_buf_),
+                          op_id_,
                           &stats,
                           result);
   }
+
+  OpId op_id_;
+  OpIdAnchorRegistry opid_anchor_registry_;
 
   faststring mutation_buf_;
   const Schema schema_;
@@ -137,7 +145,7 @@ class TestMemRowSet : public ::testing::Test {
 
 
 TEST_F(TestMemRowSet, TestInsertAndIterate) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 12345));
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "goodbye world", 54321));
@@ -171,7 +179,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   ASSERT_STATUS_OK(builder.AddColumn("val", UINT32));
   Schema compound_key_schema = builder.Build();
 
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, compound_key_schema));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, compound_key_schema, &opid_anchor_registry_));
 
   RowBuilder rb(compound_key_schema);
   {
@@ -179,7 +187,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("hello world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
-    Status row1 = mrs->Insert(tx.timestamp(), rb.row());
+    Status row1 = mrs->Insert(tx.timestamp(), rb.row(), op_id_);
     ASSERT_STATUS_OK(row1);
   }
 
@@ -189,7 +197,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("goodbye world"));
     rb.AddInt32(2);
     rb.AddUint32(54321);
-    Status row2 = mrs->Insert(tx2.timestamp(), rb.row());
+    Status row2 = mrs->Insert(tx2.timestamp(), rb.row(), op_id_);
     ASSERT_STATUS_OK(row2);
   }
 
@@ -199,7 +207,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddString(string("goodbye world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
-    Status row3 = mrs->Insert(tx3.timestamp(), rb.row());
+    Status row3 = mrs->Insert(tx3.timestamp(), rb.row(), op_id_);
     ASSERT_STATUS_OK(row3);
   }
 
@@ -235,7 +243,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 
 // Test that inserting duplicate key data fails with Status::AlreadyPresent
 TEST_F(TestMemRowSet, TestInsertDuplicate) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 12345));
   Status s = InsertRow(mrs.get(), "hello world", 12345);
@@ -244,7 +252,7 @@ TEST_F(TestMemRowSet, TestInsertDuplicate) {
 
 // Test for updating rows in memrowset
 TEST_F(TestMemRowSet, TestUpdate) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 1));
 
@@ -270,7 +278,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
 // Test which inserts many rows into memrowset and checks for their
 // existence
 TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   ASSERT_STATUS_OK(InsertRows(mrs.get(), 100));
   // Validate insertion
@@ -286,7 +294,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   const char kRowKey[] = "hello world";
   bool present;
 
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   // Insert row.
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 1));
@@ -356,7 +364,7 @@ TEST_F(TestMemRowSet, TestDelete) {
 }
 
 TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   LOG_TIMING(INFO, "Inserting rows") {
     ASSERT_STATUS_OK(InsertRows(mrs.get(), FLAGS_roundtrip_num_rows));
@@ -371,7 +379,7 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertAndScan) {
 // Test that scanning at past MVCC snapshots will hide rows which are
 // not committed in that snapshot.
 TEST_F(TestMemRowSet, TestInsertionMVCC) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
   vector<MvccSnapshot> snapshots;
 
   // Insert 5 rows in tx 0 through 4
@@ -384,7 +392,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
       snprintf(keybuf, sizeof(keybuf), "tx%d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), rb.row()));
+      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), rb.row(), op_id_));
     }
 
     // Transaction is committed. Save the snapshot after this commit.
@@ -408,7 +416,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
 // Test that updates respect MVCC -- i.e. that scanning with a past MVCC snapshot
 // will yield old versions of a row which has been updated.
 TEST_F(TestMemRowSet, TestUpdateMVCC) {
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_));
+  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
 
   // Insert a row ("myrow", 0)
   ASSERT_STATUS_OK(InsertRow(mrs.get(), "my row", 0));

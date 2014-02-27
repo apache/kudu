@@ -11,6 +11,8 @@
 #include "common/wire_protocol.h"
 #include "consensus/log.h"
 #include "consensus/log_reader.h"
+#include "consensus/log_util.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/util.h"
 #include "gutil/walltime.h"
@@ -28,6 +30,7 @@
 
 using boost::shared_lock;
 using kudu::consensus::CommitMsg;
+using kudu::consensus::ConsensusContext;
 using kudu::consensus::OperationPB;
 using kudu::consensus::OpId;
 using kudu::consensus::ReplicateMsg;
@@ -40,6 +43,7 @@ using kudu::log::Log;
 using kudu::log::LogEntryPB;
 using kudu::log::LogOptions;
 using kudu::log::LogReader;
+using kudu::log::OpIdAnchorRegistry;
 using kudu::log::OPERATION;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::TabletMetadata;
@@ -55,9 +59,13 @@ using kudu::tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
-
 namespace kudu {
 namespace tablet {
+
+using log::OpIdHashFunctor;
+using log::OpIdEquals;
+using log::OpIdEqualsFunctor;
+
 struct MutationInput;
 struct ReplayState;
 
@@ -83,8 +91,9 @@ class TabletBootstrap {
   // state that is present in the log (additional soft state may be present
   // in other replicas).
   // A successful call will yield the rebuilt tablet and the rebuilt log.
-  Status BootstrapTablet(std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
-                         gscoped_ptr<log::Log>* rebuilt_log);
+  Status Bootstrap(std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
+                   gscoped_ptr<log::Log>* rebuilt_log,
+                   gscoped_ptr<log::OpIdAnchorRegistry>* opid_anchor_registry);
 
  private:
   // Fetches the latest blocks for a tablet and Open()s that tablet.
@@ -132,7 +141,7 @@ class TabletBootstrap {
   // Plays missed deltas mutations, skipping those that have already been flushed.
   // Missed delta mutations are appended to the new log as the original mutations
   // were logged as not applied.
-  Status PlayMissedDeltaUpdates(const consensus::CommitMsg& commit_msg);
+  Status PlayMissedDeltaUpdates(const OperationPB& commit_op);
 
   // Plays inserts, skipping those that have already been flushed.
   Status PlayInsertions(WriteTransactionContext* tx_ctx,
@@ -190,6 +199,7 @@ class TabletBootstrap {
   MetricContext* metric_context_;
   gscoped_ptr<TabletBootstrapListener> listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
+  gscoped_ptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<log::LogReader> log_reader_;
   uint64_t recovery_ts_;
@@ -250,27 +260,14 @@ Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        MetricContext* metric_context,
                        gscoped_ptr<TabletBootstrapListener> listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
-                       gscoped_ptr<log::Log>* rebuilt_log) {
+                       gscoped_ptr<log::Log>* rebuilt_log,
+                       gscoped_ptr<log::OpIdAnchorRegistry>* opid_anchor_registry) {
   TabletBootstrap bootstrap(meta.Pass(), clock, metric_context, listener.Pass());
-  RETURN_NOT_OK(bootstrap.BootstrapTablet(rebuilt_tablet, rebuilt_log));
+  RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, opid_anchor_registry));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
   return Status::OK();
 }
-
-// helper hash functor
-struct OpIdHashFunction {
-  size_t operator()(OpId id) const {
-    return (id.term() + 31) ^ id.index();
-  }
-};
-
-// helper equals functor
-struct OpIdEqualsTo {
-  bool operator()(const OpId &left, const OpId &right) const {
-    return left.term() == right.term() && left.index() == right.index();
-  }
-};
 
 MutationInput::MutationInput(WriteTransactionContext* tx_ctx_,
                              const consensus::OpId& committed_op_id_,
@@ -335,8 +332,9 @@ TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
       arena_(256*1024, 4*1024*1024) {
 }
 
-Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
-                                        gscoped_ptr<Log>* rebuilt_log) {
+Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
+                                  gscoped_ptr<Log>* rebuilt_log,
+                                  gscoped_ptr<OpIdAnchorRegistry>* opid_anchor_registry) {
 
   string tablet_id = meta_->oid();
 
@@ -347,6 +345,9 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
     RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
     VLOG(1) << "Tablet Metadata: " << super_block->DebugString();
   }
+
+  // Create new OpIdAnchorRegistry for use by the log and tablet.
+  opid_anchor_registry_.reset(new OpIdAnchorRegistry());
 
   // TODO these are done serially for now, but there is no reason why fetching
   // the tablet's blocks and log segments cannot be done in parallel, particularly
@@ -364,6 +365,7 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     rebuilt_tablet->reset(tablet_.release());
     rebuilt_log->reset(log_.release());
+    opid_anchor_registry->reset(opid_anchor_registry_.release());
     return Status::OK();
   }
 
@@ -384,11 +386,15 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
   listener_->StatusMessage("Complete.");
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->reset(log_.release());
+  opid_anchor_registry->reset(opid_anchor_registry_.release());
   return Status::OK();
 }
 
 Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
-  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass(), clock_, metric_context_));
+  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass(),
+                                        clock_,
+                                        metric_context_,
+                                        opid_anchor_registry_.get()));
   // doing nothing for now except opening a tablet locally.
   RETURN_NOT_OK(tablet->Open());
   // set 'fetched' to true if there were any local blocks present
@@ -482,9 +488,8 @@ Status TabletBootstrap::OpenNewLog() {
   RETURN_NOT_OK(tablet_->metadata()->ToSuperBlock(&super_block));
   RETURN_NOT_OK(Log::Open(LogOptions(),
                           tablet_->metadata()->fs_manager(),
-                          *super_block.get(),
-                          init,
                           tablet_->tablet_id(),
+                          opid_anchor_registry_.get(),
                           &log_));
   // Disable sync temprorarily in order to speed up appends during the
   // bootstrap process.
@@ -492,7 +497,7 @@ Status TabletBootstrap::OpenNewLog() {
   return Status::OK();
 }
 
-typedef unordered_map<OpId, LogEntryPB*, OpIdHashFunction, OpIdEqualsTo> OpToEntryMap;
+typedef unordered_map<OpId, LogEntryPB*, OpIdHashFunctor, OpIdEqualsFunctor> OpToEntryMap;
 
 // State kept during replay.
 struct ReplayState {
@@ -527,7 +532,7 @@ struct ReplayState {
   }
 
   // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
-  Status CheckOpId(const OpId& id) {
+  Status CheckSequentialOpId(const OpId& id) {
     if (!valid_sequence(prev_op_id, id)) {
       return Status::Corruption(
         Substitute("Unexpected opid $0 following opid $1",
@@ -536,6 +541,19 @@ struct ReplayState {
     }
 
     prev_op_id.CopyFrom(id);
+    return Status::OK();
+  }
+
+  // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
+  // This only applies to MISSED_DELTA commits, which reuse the previous OpId.
+  Status CheckEqualToPriorOpId(const OpId& id) {
+    if (!OpIdEquals(prev_op_id, id)) {
+      return Status::Corruption(
+        Substitute("Unexpected OpId $0 following opid $1, expected same OpId",
+                   id.ShortDebugString(),
+                   prev_op_id.ShortDebugString()));
+    }
+
     return Status::OK();
   }
 
@@ -570,7 +588,7 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
 }
 
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* entry) {
-  RETURN_NOT_OK(state->CheckOpId(entry->operation().id()));
+  RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
 
   // Append the replicate message to the log as is
   RETURN_NOT_OK(log_->Append(entry));
@@ -588,28 +606,48 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* e
 
 // Deletes 'entry' only on OK status.
 Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entry) {
+  DCHECK(entry->operation().has_commit()) << "Not a commit message: " << entry->DebugString();
+
   // TODO: on a term switch, the first commit in any term should discard any
   // pending REPLICATEs from the previous term.
 
-  if (entry->operation().has_id()) {
-    RETURN_NOT_OK(state->CheckOpId(entry->operation().id()));
-  }
+  // All log entries should have an OpId. The MISSED_DELTA entries simply reuse the
+  // last replicated OpId.
+  DCHECK(entry->operation().has_id()) << "Entry has no OpId: " << entry->DebugString();
+  consensus::OperationType op_type = entry->operation().commit().op_type();
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
-  const OpId& id = entry->operation().commit().commited_op_id();
+  const OpId& committed_op_id = entry->operation().commit().commited_op_id();
 
-  gscoped_ptr<LogEntryPB> existing_entry(EraseKeyReturnValuePtr(&state->pending_replicates, id));
+  gscoped_ptr<LogEntryPB> existing_entry;
+  if (op_type == MISSED_DELTA) {
+    // Ensure that the MISSED_DELTAs are monotonic ids (they must be equal to
+    // the prior OpId in the log).
+    RETURN_NOT_OK(state->CheckEqualToPriorOpId(entry->operation().id()));
+  } else {
+    // "Normal" consensus commits must be sequentially increasing.
+    RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
+    // They should also have an associated replicate OpId (it may have been in a
+    // deleted log segment though).
+    existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates, committed_op_id));
+  }
+
   if (existing_entry != NULL) {
+    // We found a match.
     RETURN_NOT_OK(HandleEntryPair(existing_entry.get(), entry));
   } else {
-    // A COMMIT entry which refers to an earlier op_id which has already been handled.
+    // FIXME: This is likely incorrect, we could have an orphaned commit on log roll.
+    // Needs test. See KUDU-141.
+    //
     // For now, MISSED_DELTA commits are the only ones with no corresponding ReplicateMsg
-    if (entry->operation().commit().op_type() != MISSED_DELTA) {
+    if (op_type != MISSED_DELTA) {
+      // A COMMIT entry which refers to an earlier op_id which has already been handled.
       return Status::Corruption(Substitute("Found non- MISSED_DELTA orphaned commit: $0",
                                              entry->operation().commit().DebugString()));
     }
-    // writes performed during flushes/compactions
-    RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->operation().commit()),
+
+    // Handle writes performed during flushes/compactions.
+    RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->operation()),
                           Substitute("Failed to play MISSED_DELTA updates"));
   }
 
@@ -689,7 +727,7 @@ Status TabletBootstrap::PlaySegments() {
                                       entry_idx, log_reader_->segments()[segment_idx]->path(),
                                       *entry));
 
-      // If ReplayEntry returns OK, then it has taken ownership of the entry.
+      // If HandleEntry returns OK, then it has taken ownership of the entry.
       // So, we have to remove it from the entries vector to avoid it getting
       // freed by ElementDeleter.
       entries[entry_idx] = NULL;
@@ -831,12 +869,10 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
-
-  // dummy id to pass to PlayMutation(), this will not be stored in the log.
-  OpId missed_delta_id;
-  missed_delta_id.set_term(-1);
-  missed_delta_id.set_index(-1);
+Status TabletBootstrap::PlayMissedDeltaUpdates(const OperationPB& commit_op) {
+  DCHECK(commit_op.has_id());
+  OpId missed_delta_id = commit_op.id();
+  const CommitMsg& commit_msg = commit_op.commit();
 
   // Missed delta mutations, even though they are applied as regular mutations on replay,
   // they need to keep their MISSED_DELTA status. This because on log replay, as with the original
@@ -850,6 +886,7 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
   OperationPB* new_commit_op = commit_entry.mutable_operation();
   CommitMsg* new_commit = new_commit_op->mutable_commit();
   new_commit->CopyFrom(commit_msg);
+  new_commit_op->mutable_id()->CopyFrom(missed_delta_id);
 
   WriteTransactionContext tx_ctx;
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
@@ -1019,6 +1056,9 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
     // TODO maybe we shouldn't acquire the row lock on replay?
     RETURN_NOT_OK(tablet_->CreatePreparedInsert(tx_ctx, row, &prepared_row));
 
+    // Use committed OpId for mem store anchoring.
+    tx_ctx->mutable_op_id()->CopyFrom(committed_op_id);
+
     // apply the insert to the tablet
     RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_ctx, prepared_row.get()),
                           Substitute("Failed to insert row $0. Reason",
@@ -1092,6 +1132,7 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
                                  mutation);
     bool applied_mutation = false;
     RETURN_NOT_OK(PlayMutation(mutation_input, op_result, &applied_mutation));
+    // FIXME: Not checking value of applied_mutation result. See KUDU-159.
   }
   return Status::OK();
 }
@@ -1146,8 +1187,6 @@ Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
       }
 
       if (*applied_mutation) return Status::OK();
-
-
 
       // If the first mutation was not applied we remove the result as duplicated
       // mutations turn into regular mutations on replay.
@@ -1256,7 +1295,9 @@ Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
                                               mutation_input.changelist,
                                               &prepared_row));
 
-  // apply the mutation to the tablet
+  // Use committed OpId for mem store anchoring.
+  mutation_input.tx_ctx->mutable_op_id()->CopyFrom(mutation_input.committed_op_id);
+
   RETURN_NOT_OK(tablet_->MutateRowUnlocked(mutation_input.tx_ctx, prepared_row.get()));
 
   if (VLOG_IS_ON(1)) {

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <limits>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 #include <utility>
@@ -12,6 +13,10 @@
 #include "glog/logging.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
+#include "util/coding.h"
+#include "util/env_util.h"
+#include "util/pb_util.h"
 
 DEFINE_int32(log_segment_size_mb, 64,
              "The default segment size for log roll-overs, in MB");
@@ -29,19 +34,34 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
+using env_util::ReadFully;
 using google::protobuf::RepeatedPtrField;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using metadata::TabletSuperBlockPB;
 using metadata::RowSetDataPB;
+using strings::Substitute;
 
-const char kMagicString[] = "kudulogf";
+const char kLogSegmentMagicString[] = "kudulogf";
+
+// Header is prefixed with the magic (8 bytes) and the header length (4 bytes).
+const size_t kLogSegmentMagicAndHeaderLength = 12;
+
+// Nulls the length of kLogSegmentMagicAndHeaderLength.
+// This is used to check the case where we have a nonzero-length empty log file.
+const char kLogSegmentNullHeader[] =
+           { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
+
 const char kLogPrefix[] = "log";
-const size_t kMagicAndHeaderLength = 12;
+
 const size_t kEntryLengthSize = 4;
+
 const int kLogMajorVersion = 1;
 const int kLogMinorVersion = 0;
+
+// Maximum log segment header size, in bytes (8 MB).
+const uint32_t kLogSegmentMaxHeaderSize = 8 * 1024 * 1024;
 
 LogOptions::LogOptions()
 : segment_size_mb(FLAGS_log_segment_size_mb),
@@ -50,30 +70,133 @@ LogOptions::LogOptions()
   async_preallocate_segments(FLAGS_log_async_preallocate_segments) {
 }
 
-LogSegment::LogSegment(const LogSegmentHeaderPB& header,
-                       const string &path)
-: header_(header),
-  path_(path) {
-}
-
 ReadableLogSegment::ReadableLogSegment(
-    const LogSegmentHeaderPB& header,
     const std::string &path,
-    uint64_t first_entry_offset,
     uint64_t file_size,
     const std::tr1::shared_ptr<RandomAccessFile>& readable_file)
-: LogSegment(header, path),
-  first_entry_offset_(first_entry_offset),
+: path_(path),
   file_size_(file_size),
-  readable_file_(readable_file) {
+  readable_file_(readable_file),
+  is_initialized_(false) {
 }
 
+void ReadableLogSegment::Init(const LogSegmentHeaderPB& header, uint64_t first_entry_offset) {
+  DCHECK(!IsInitialized()) << "Can only call Init() once";
+  DCHECK(header.IsInitialized()) << "Log segment header must be initialized";
+  header_.CopyFrom(header);
+  first_entry_offset_ = first_entry_offset;
+  is_initialized_ = true;
+}
+
+Status ReadableLogSegment::Init() {
+  DCHECK(!IsInitialized()) << "Can only call Init() once";
+
+  // Check the size of the file.
+  // If it is zero, return Status::Uninitialized().
+  uint64_t file_size = 0;
+  RETURN_NOT_OK(readable_file_->Size(&file_size));
+  if (file_size == 0) {
+    return Status::Uninitialized(Substitute("Log segment file $0 is zero-length", path()));
+  }
+
+  uint32_t header_size = 0;
+  RETURN_NOT_OK(ReadMagicAndHeaderLength(&header_size));
+  if (header_size == 0 || header_size > kLogSegmentMaxHeaderSize) {
+    return Status::Corruption(Substitute("File is corrupted. "
+        "Parsed header size: $0 is zero or bigger than max header size: $1",
+        header_size, kLogSegmentMaxHeaderSize));
+  }
+
+  uint8_t header_space[header_size];
+  Slice header_slice;
+  LogSegmentHeaderPB header;
+
+  // Read and parse the log segment header.
+  RETURN_NOT_OK(ReadFully(readable_file_.get(), kLogSegmentMagicAndHeaderLength,
+                          header_size, &header_slice, header_space));
+
+  RETURN_NOT_OK(pb_util::ParseFromArray(&header,
+                                        header_slice.data(),
+                                        header_size));
+
+  header_.CopyFrom(header);
+  first_entry_offset_ = header_size + kLogSegmentMagicAndHeaderLength;
+  is_initialized_ = true;
+
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadMagicAndHeaderLength(uint32_t *len) {
+  uint8_t scratch[kLogSegmentMagicAndHeaderLength];
+  Slice slice;
+  RETURN_NOT_OK(ReadFully(readable_file_.get(), 0, kLogSegmentMagicAndHeaderLength,
+                          &slice, scratch));
+  RETURN_NOT_OK(ParseMagicAndLength(slice, len));
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ParseMagicAndLength(const Slice &data, uint32_t *parsed_len) {
+  RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentMagicAndHeaderLength),
+                        "Log segment file is too small to contain initial magic number");
+
+  if (memcmp(kLogSegmentMagicString, data.data(), strlen(kLogSegmentMagicString)) != 0) {
+    // As a special case, we check whether the file was allocated but no header
+    // was written. We treat that case as an uninitialized file, much in the
+    // same way we treat zero-length files.
+    // Note: While the above comparison checks 8 bytes, this one checks the full 12
+    // to ensure we have a full 12 bytes of NULL data.
+    if (memcmp(kLogSegmentNullHeader, data.data(),
+               strlen(kLogSegmentNullHeader)) == 0) {
+      // 12 bytes of NULLs, good enough for us to consider this a file that
+      // was never written to (but apparently preallocated).
+      return Status::Uninitialized(
+          Substitute("Log segment file $0 has 12 initial NULL bytes instead of "
+                     "magic and header length: $1",
+                     path(), data.ToDebugString()));
+    }
+    // If no magic and not uninitialized, the file is considered corrupt.
+    return Status::Corruption(Substitute("Invalid log segment file $0: Bad magic. $1",
+                                         path(), data.ToDebugString()));
+  }
+
+  *parsed_len = DecodeFixed32(data.data() + strlen(kLogSegmentMagicString));
+  return Status::OK();
+}
+
+
 WritableLogSegment::WritableLogSegment(
-    const LogSegmentHeaderPB& header,
     const string &path,
     const shared_ptr<WritableFile>& writable_file)
-: LogSegment(header, path),
-  writable_file_(writable_file) {
+: path_(path),
+  writable_file_(writable_file),
+  is_header_written_(false) {
+}
+
+Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
+  DCHECK(!IsHeaderWritten()) << "Can only call WriteHeader() once";
+  DCHECK(new_header.IsInitialized())
+      << "Log segment header must be initialized" << new_header.InitializationErrorString();
+  faststring buf;
+
+  // First the magic.
+  buf.append(kLogSegmentMagicString);
+  // Then Length-prefixed header.
+  PutFixed32(&buf, new_header.ByteSize());
+  // Then Serialize the PB.
+  if (!pb_util::AppendToString(new_header, &buf)) {
+    return Status::Corruption("unable to encode header");
+  }
+  RETURN_NOT_OK(writable_file()->Append(Slice(buf)));
+
+  header_.CopyFrom(new_header);
+  first_entry_offset_ = buf.size();
+  is_header_written_ = true;
+
+  return Status::OK();
+}
+
+bool OpIdEquals(const OpId& left, const OpId& right) {
+  return left.term() == right.term() && left.index() == right.index();
 }
 
 bool OpIdLessThan(const OpId& left, const OpId& right) {
@@ -82,8 +205,30 @@ bool OpIdLessThan(const OpId& left, const OpId& right) {
   return left.index() < right.index();
 }
 
-bool OpIdComparator::operator() (const OpId& left, const OpId& right) const {
+size_t OpIdHashFunctor::operator() (const OpId& id) const {
+  return (id.term() + 31) ^ id.index();
+}
+
+bool OpIdEqualsFunctor::operator() (const OpId& left, const OpId& right) const {
+  return OpIdEquals(left, right);
+}
+
+bool OpIdCompareFunctor::operator() (const OpId& left, const OpId& right) const {
   return OpIdLessThan(left, right);
+}
+
+OpId MinimumOpId() {
+  OpId op_id;
+  op_id.set_term(0);
+  op_id.set_index(0);
+  return op_id;
+}
+
+OpId MaximumOpId() {
+  OpId op_id;
+  op_id.set_term(std::numeric_limits<uint64_t>::max());
+  op_id.set_index(std::numeric_limits<uint64_t>::max());
+  return op_id;
 }
 
 // helper hash functor for delta store ids
@@ -101,78 +246,37 @@ struct DeltaIdEqualsTo {
   }
 };
 
-bool HasNoCommonMemStores(const TabletSuperBlockPB &older,
-                          const TabletSuperBlockPB &newer) {
-  // if 'last_durable_mrs_id' in 'newer' is the same as 'older' then the current
-  // mrs is the same.
-  if (older.last_durable_mrs_id() == newer.last_durable_mrs_id()) {
-    VLOG(2) << "Different mrs_ids. 'older' "
-            << older.ShortDebugString() << " 'newer': " << newer.ShortDebugString();
-    return false;
-  }
-
-  // If 'last_durable_mrs_id' is different then we need to go through the
-  // 'newer' meta, and for each RowSetDataPB also present in 'older' check if
-  // the latest DeltaMemStore has the same id.
-
-  // start by creating a set with pair<row set id, last delta id> for 'newer'
-  unordered_set<pair<int64, int64 >, DeltaIdHashFunction, DeltaIdEqualsTo> newer_deltas;
-  BOOST_FOREACH(const RowSetDataPB &row_set, newer.rowsets()) {
-    if (row_set.redo_deltas_size() > 0) {
-      newer_deltas.insert(
-          pair<int64, int64>(row_set.id(),
-                             row_set.redo_deltas(row_set.redo_deltas_size() - 1).id()));
-    }
-  }
-
-  // now go through the row sets in 'older' if anyone of them is also present
-  // in 'newer' *and* its last delta id is the same then the two superblocks have
-  // at least one DeltaMemStore in common.
-  BOOST_FOREACH(const RowSetDataPB &row_set, older.rowsets()) {
-    if (row_set.redo_deltas_size() > 0 &&
-        ContainsKey(
-            newer_deltas,
-            pair<int64, int64>(row_set.id(),
-                               row_set.redo_deltas(row_set.redo_deltas_size() - 1).id()))) {
-      VLOG(2) << "Common MemStore. 'older' "
-          << older.DebugString() << "\n 'newer': " << newer.DebugString();
-      return false;
-    }
-  }
-  return true;
-}
-
 Status FindStaleSegmentsPrefixSize(
-    const vector<shared_ptr<ReadableLogSegment> > &segments,
-    const TabletSuperBlockPB &current,
+    const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
+    const consensus::OpId& earliest_needed_opid,
     uint32_t *prefix_size) {
 
-  // Go through the segments and find the first one (if any) that has
-  // a header with at least one memory store entry in common with current.
-  // If such a segment exists and is the first one then no GC can be performed.
-  // If such a segment exists (the nth segment) then n-2 segment can definitely
-  // be GC'd (since we're reading headers the first non-stale segment means
-  // that the prior one is the one where one of current mem stores was first
-  // introduced). It is unlikely that the n-1 segment can be GC'd since the
-  // metadata entry that introduced a currently active store would have
-  // to be the very last entry in the segment.
-
-  int32_t stale_prefix_size = 0;
-  BOOST_FOREACH(const shared_ptr<ReadableLogSegment> &segment, segments) {
-    if (HasNoCommonMemStores(segment->header().tablet_meta(), current)) {
-      stale_prefix_size++;
-      continue;
+  // We iterate in reverse order.
+  // Keep the 1st log segment with initial OpId strictly less than the
+  // earliest needed OpId, and delete all the log segments preceding it
+  // (preceding meaning in natural order).
+  uint32_t stale_prefix_size = 0;
+  bool seen_earlier_opid = false;
+  BOOST_REVERSE_FOREACH(const shared_ptr<ReadableLogSegment> &segment, segments) {
+    if (OpIdLessThan(segment->header().initial_id(), earliest_needed_opid)) {
+      if (!seen_earlier_opid) {
+        // This log will likely contain our data, do not delete it.
+        seen_earlier_opid = true;
+      } else {
+        // All the earlier logs can go.
+        stale_prefix_size++;
+      }
+    } else {
+      CHECK(!seen_earlier_opid)
+          << Substitute("Greater OpId found in previous log segment, segments"
+                        " out of order! current: %s in %s, earliest needed: %s",
+                        segment->header().initial_id().ShortDebugString(),
+                        segment->path(),
+                        earliest_needed_opid.ShortDebugString());
     }
-    break;
   }
 
-  // we need to remove a segment because if, for two subsequent segments, one
-  // has no active stores in the header and the next one does, then the first
-  // segment has a high probability of having an ActiveMemStoreLogEntryPB with
-  // currently active stores somewhere after the header.
-  *prefix_size = std::max(0, stale_prefix_size - 1);
-  VLOG(1) << "Found " << *prefix_size << " stale segments out of "
-      << segments.size();
+  *prefix_size = stale_prefix_size;
   return Status::OK();
 }
 

@@ -14,6 +14,7 @@
 #include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "consensus/opid_anchor_registry.h"
 #include "tablet/concurrent_btree.h"
 #include "tablet/delta_key.h"
 #include "tablet/delta_tracker.h"
@@ -35,13 +36,14 @@ class Mutation;
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  explicit DeltaMemStore(int64_t id, const Schema &schema);
+  DeltaMemStore(int64_t id, const Schema &schema, log::OpIdAnchorRegistry* opid_anchor_registry);
 
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into this DMS's local
   // arena.
   Status Update(Timestamp timestamp, rowid_t row_idx,
-                const RowChangeList &update);
+                const RowChangeList &update,
+                const consensus::OpId& op_id);
 
   size_t Count() const {
     return tree_.count();
@@ -91,9 +93,7 @@ class DeltaMemStore : public DeltaStore,
   friend class DMSIterator;
   friend class DeltaCompactionInput;
 
-  DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
-
-  const DMSTree &tree() const {
+  const DMSTree& tree() const {
     return tree_;
   }
 
@@ -106,6 +106,10 @@ class DeltaMemStore : public DeltaStore,
   ThreadSafeArena arena_;
 
   DeltaStats delta_stats_;
+
+  log::OpIdMinAnchorer anchorer_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 };
 
 // Iterator over the deltas currently in the delta memstore.

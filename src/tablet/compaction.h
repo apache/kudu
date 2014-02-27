@@ -125,7 +125,8 @@ Status ReupdateMissedDeltas(const string &tablet_name,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
-                            const RowSetVector &output_rowsets);
+                            const RowSetVector &output_rowsets,
+                            const consensus::OpId& op_id);
 
 
 // Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.

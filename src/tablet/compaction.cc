@@ -675,7 +675,8 @@ Status ReupdateMissedDeltas(const string &tablet_name,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
-                            const RowSetVector &output_rowsets) {
+                            const RowSetVector &output_rowsets,
+                            const consensus::OpId& op_id) {
   RETURN_NOT_OK(input->Init());
 
   VLOG(1) << "Re-updating missed deltas between snapshot " <<
@@ -783,6 +784,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,
                                        mut->changelist(),
+                                       op_id,
                                        result.get());
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
             << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);

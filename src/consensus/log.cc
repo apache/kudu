@@ -3,6 +3,7 @@
 #include "consensus/log.h"
 
 #include "consensus/log_reader.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/stl_util.h"
 #include "server/fsmanager.h"
@@ -163,33 +164,20 @@ const uint64_t Log::kInitialLogSegmentSequenceNumber = 0L;
 
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
-                 const metadata::TabletSuperBlockPB& super_block,
-                 const consensus::OpId& current_id,
                  const std::string& tablet_id,
+                 OpIdAnchorRegistry* opid_anchor_registry,
                  gscoped_ptr<Log> *log) {
-
-  gscoped_ptr<LogSegmentHeaderPB> header(new LogSegmentHeaderPB);
-  header->set_major_version(kLogMajorVersion);
-  header->set_minor_version(kLogMinorVersion);
-  header->mutable_tablet_meta()->CopyFrom(super_block);
-  header->mutable_initial_id()->CopyFrom(current_id);
-  header->set_tablet_id(tablet_id);
-  // TODO: Would rather set this only once but API needs some cleanup.
-  // If there are existing log segments, we overwrite this seqno value later.
-  header->set_sequence_number(kInitialLogSegmentSequenceNumber);
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
 
-  string tablet_wal_path = JoinPathSegments(
-      fs_manager->GetWalsRootDir(),
-      super_block.oid());
-
+  string tablet_wal_path = JoinPathSegments(fs_manager->GetWalsRootDir(), tablet_id);
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(tablet_wal_path));
 
   gscoped_ptr<Log> new_log(new Log(options,
                                    fs_manager,
                                    tablet_wal_path,
-                                   header.Pass()));
+                                   tablet_id,
+                                   opid_anchor_registry));
   RETURN_NOT_OK(new_log->Init());
   log->reset(new_log.release());
   return Status::OK();
@@ -203,41 +191,43 @@ Status Log::Open(const LogOptions &options,
 Log::Log(const LogOptions &options,
          FsManager *fs_manager,
          const string& log_path,
-         gscoped_ptr<LogSegmentHeaderPB> header)
+         const string& tablet_id,
+         OpIdAnchorRegistry* opid_anchor_registry)
 : options_(options),
   fs_manager_(fs_manager),
   log_dir_(log_path),
-  next_segment_header_(header.Pass()),
-  header_size_(0),
+  tablet_id_(tablet_id),
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
   entry_batch_queue(FLAGS_group_commit_queue_size),
   append_thread_(new AppendThread(this)),
   allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
   force_sync_all_(options_.force_fsync_all),
   state_(kLogInitialized),
-  allocation_state_(kAllocationNotStarted) {
+  allocation_state_(kAllocationNotStarted),
+  opid_anchor_registry_(opid_anchor_registry) {
 }
 
 Status Log::Init() {
   CHECK_EQ(state_, kLogInitialized);
 
+  // Reader for previous segments.
+  gscoped_ptr<LogReader> previous_segments_reader;
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
-                                next_segment_header_->tablet_id(),
-                                &previous_segments_reader_));
+                                tablet_id_,
+                                &previous_segments_reader));
 
   // The case where we are continuing an existing log.
   // We must pick up where the previous WAL left off in terms of
   // sequence numbers.
-  if (previous_segments_reader_->size() != 0) {
-    previous_segments_ = previous_segments_reader_->segments();
+  if (previous_segments_reader->size() != 0) {
+    boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
+    previous_segments_ = previous_segments_reader->segments();
     VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
 
     const shared_ptr<ReadableLogSegment>& segment = previous_segments_.back();
-    uint64_t seqno = segment->header().sequence_number();
-    // TODO: This is a bit hacky, clean up the Log construction API once we
-    // remove the initial_opid and metadata from the log segment headers.
-    next_segment_header_->set_sequence_number(seqno + 1);
+    uint64_t last_written_seqno = segment->header().sequence_number();
+    active_segment_sequence_number_ = last_written_seqno + 1;
   }
 
   if (force_sync_all_) {
@@ -246,7 +236,7 @@ Status Log::Init() {
     LOG(INFO) << "Log is configured to *not* fsync() on all Append() calls";
   }
 
-  // we always create a new segment when the log starts.
+  // We always create a new segment when the log starts.
   RETURN_NOT_OK(AsyncAllocateSegment());
   allocation_future_->Wait();
   RETURN_NOT_OK(allocation_future_->status());
@@ -325,34 +315,40 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const shared_ptr<FutureCallb
 Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   // TODO (perf) make this more efficient, cache the highest id
   // during LogEntryBatch::Serialize()
-  for (size_t i = 0; i < entry_batch->count(); i++) {
+
+  size_t num_entries = entry_batch->count();
+  DCHECK_GT(num_entries, 0) << "Cannot call DoAppend() with zero entries reserved";
+
+  // Keep track of the first OpId seen in this batch.
+  // This is needed for writing initial_opid into each log segment header.
+  OpId first_op_id;
+  first_op_id.CopyFrom(entry_batch->phys_entries_[0].operation().id());
+  DCHECK(first_op_id.IsInitialized());
+
+  // We keep track of the last-written OpId here.
+  // This is needed to initialize Consensus on startup.
+  last_entry_op_id_.CopyFrom(entry_batch->phys_entries_[num_entries - 1].operation().id());
+  DCHECK(last_entry_op_id_.IsInitialized());
+
+  for (size_t i = 0; i < num_entries; i++) {
     LogEntryPB& entry_pb = entry_batch->phys_entries_[i];
-    switch (entry_pb.type()) {
-      case OPERATION: {
-        if (PREDICT_TRUE(entry_pb.operation().has_id())) {
-          next_segment_header_->mutable_initial_id()->CopyFrom(entry_pb.operation().id());
-        } else {
-          DCHECK(entry_pb.operation().has_commit()
-                 && entry_pb.operation().commit().op_type() == MISSED_DELTA)
-              << "Operation did not have an id. Only COMMIT operations of"
-              " MISSED_DELTA type are allowed not to have ids.";
-        }
-        if (caller_owns_operation) {
-          // If the OperationPB was allocated by another thread, we must release
-          // it to avoid freeing the memory.
-          entry_pb.release_operation();
-        }
-        break;
-      }
-      case TABLET_METADATA: {
-        next_segment_header_->mutable_tablet_meta()->CopyFrom(entry_pb.tablet_meta());
-        break;
-      }
-      default: {
-        LOG(FATAL) << "Unexpected log entry type: " << entry_pb.DebugString();
-      }
+    CHECK_EQ(OPERATION, entry_pb.type()) << "Unexpected log entry type: " << entry_pb.DebugString();
+    DCHECK(entry_pb.operation().has_id());
+    DCHECK(entry_pb.operation().id().IsInitialized());
+
+    if (caller_owns_operation) {
+      // If the OperationPB was allocated by another thread, we must release
+      // it to avoid freeing the memory.
+      entry_pb.release_operation();
     }
   }
+
+  // Write the header, if we've never written it before.
+  // We always lazily write the header on the first batch.
+  if (!active_segment_->IsHeaderWritten()) {
+    WriteHeader(first_op_id);
+  }
+
   Slice entry_batch_data = entry_batch->data();
   uint32_t entry_batch_bytes = entry_batch_data.size();
 
@@ -365,12 +361,14 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
         LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
           RETURN_NOT_OK(RollOver());
         }
+        WriteHeader(first_op_id);
       }
     }
   } else if (allocation_state() == kAllocationFinished) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Log roll took a long time") {
       RETURN_NOT_OK(RollOver());
     }
+    WriteHeader(first_op_id);
   } else {
     VLOG(1) << "Segment allocation already in progress...";
   }
@@ -382,6 +380,27 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_batch_data));
   // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
+}
+
+Status Log::WriteHeader(const OpId& initial_op_id) {
+  CHECK(initial_op_id.IsInitialized())
+      << "Uninitialized OpId: " << initial_op_id.InitializationErrorString();
+  LogSegmentHeaderPB header;
+  DCHECK(!header.initial_id().IsInitialized())
+      << "Some OpId fields must be required, log invariant checks compromised";
+
+  header.set_major_version(kLogMajorVersion);
+  header.set_minor_version(kLogMinorVersion);
+  header.set_sequence_number(active_segment_sequence_number_);
+  header.set_tablet_id(tablet_id_);
+  header.mutable_initial_id()->CopyFrom(initial_op_id);
+
+  return active_segment_->WriteHeader(header);
+}
+
+Status Log::WriteHeaderForTests() {
+  OpId zero(MinimumOpId());
+  return WriteHeader(zero);
 }
 
 Status Log::Sync() {
@@ -409,22 +428,56 @@ Status Log::Append(LogEntryPB* phys_entry) {
   return s;
 }
 
+Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
+  boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
+  if (last_entry_op_id_.IsInitialized()) {
+    DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);
+    return Status::OK();
+  } else {
+    return Status::NotFound("No OpIds have ever been written to the log");
+  }
+}
+
 Status Log::GC() {
+  // TODO: When we add a GC thread, ensure that we stop the thread on Close()
+  // and synchronize on state_.
+  CHECK_EQ(state_, kLogWriting);
+
+  // Consult OpIdAnchorRegistry for OpIds of interest.
+  OpId earliest_needed_op_id;
+  Status s = opid_anchor_registry_->GetEarliestRegisteredOpId(&earliest_needed_op_id);
+  if (!s.ok()) {
+    if (s.IsNotFound()) {
+      return Status::OK();
+    } else {
+      return s.CloneAndPrepend("Unexpected error from "
+                               "OpIdAnchorRegistry::GetEarliestRegisteredOpId()");
+    }
+  }
+
   LOG(INFO) << "Running Log GC on " << log_dir_;
   LOG_TIMING(INFO, "Log GC") {
     uint32_t num_stale_segments = 0;
-    RETURN_NOT_OK(FindStaleSegmentsPrefixSize(previous_segments_,
-                                              next_segment_header_->tablet_meta(),
-                                              &num_stale_segments));
-    if (num_stale_segments > 0) {
-      LOG(INFO) << "Found " << num_stale_segments << " stale segments.";
-      // delete the files and erase the segments from previous_
-      for (int i = 0; i < num_stale_segments; i++) {
-        LOG(INFO) << "Deleting Log file in path: " << previous_segments_[i]->path();
-        RETURN_NOT_OK(fs_manager_->env()->DeleteFile(previous_segments_[i]->path()));
+    vector<string> stale_segment_paths;
+    {
+      boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
+      RETURN_NOT_OK(FindStaleSegmentsPrefixSize(previous_segments_,
+                                                earliest_needed_op_id,
+                                                &num_stale_segments));
+      if (num_stale_segments > 0) {
+        LOG(INFO) << "Found " << num_stale_segments << " stale segments.";
+        for (int i = 0; i < num_stale_segments; i++) {
+          stale_segment_paths.push_back(previous_segments_[i]->path());
+        }
+        previous_segments_.erase(previous_segments_.begin(),
+                                 previous_segments_.begin() + num_stale_segments);
       }
-      previous_segments_.erase(previous_segments_.begin(),
-                               previous_segments_.begin() + num_stale_segments);
+    }
+
+    // Now that they are no longer referenced by the Log, delete the files.
+    BOOST_FOREACH(const string& path, stale_segment_paths) {
+      LOG(INFO) << "Deleting Log file in path: " << path;
+      RETURN_NOT_OK(fs_manager_->env()->DeleteFile(path));
     }
   }
   return Status::OK();
@@ -477,14 +530,11 @@ Status Log::PreAllocateNewSegment() {
 Status Log::SwitchToAllocatedSegment() {
   CHECK_EQ(allocation_state(), kAllocationFinished);
 
-  LogSegmentHeaderPB header;
-  header.CopyFrom(*next_segment_header_.get());
-
   // Increment "next" log segment seqno.
-  next_segment_header_->set_sequence_number(next_segment_header_->sequence_number() + 1);
+  active_segment_sequence_number_++;
 
   string placeholder_path = SegmentPlaceholderFileName();
-  string new_segment_path = CreateSegmentFileName(header.sequence_number());
+  string new_segment_path = CreateSegmentFileName(active_segment_sequence_number_);
 
   // TODO Technically, we need to fsync DirName(new_segment_path)
   // after RenameFile().
@@ -492,38 +542,28 @@ Status Log::SwitchToAllocatedSegment() {
 
   // Create a new segment.
   gscoped_ptr<WritableLogSegment> new_segment(
-      new WritableLogSegment(header, new_segment_path, next_segment_file_));
-  // Write and sync the header.
-  uint32_t pb_size = new_segment->header().ByteSize();
-  faststring buf;
-  // First the magic.
-  buf.append(kMagicString);
-  // Then Length-prefixed header.
-  PutFixed32(&buf, pb_size);
-  if (!pb_util::AppendToString(new_segment->header(), &buf)) {
-    return Status::Corruption("unable to encode header");
-  }
+      new WritableLogSegment(new_segment_path, next_segment_file_));
 
-  RETURN_NOT_OK(new_segment->writable_file()->Append(Slice(buf)));
-  uint32_t new_header_size = kMagicAndHeaderLength + pb_size;
-  RETURN_NOT_OK(new_segment->writable_file()->Sync());
-
-  // transform the current segment into a readable one (we might need to replay
-  // stuff for other peers)
+  // Transform the currently-active segment into a readable one, since we
+  // need to be able to replay the segments for other peers.
   if (active_segment_.get() != NULL) {
-    shared_ptr<RandomAccessFile> source;
-    RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &source));
+    // We should never switch to a new segment if we wrote nothing to the old one.
+    CHECK(active_segment_->IsHeaderWritten());
+    shared_ptr<RandomAccessFile> readable_file;
+    RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &readable_file));
     shared_ptr<ReadableLogSegment> readable_segment(
-        new ReadableLogSegment(active_segment_->header(),
-                               active_segment_->path(),
-                               header_size_,
+        new ReadableLogSegment(active_segment_->path(),
                                active_segment_->writable_file()->Size(),
-                               source));
+                               readable_file));
+    // Note: active_segment_->header() will only contain an initialized PB if we
+    // wrote the header out.
+    readable_segment->Init(active_segment_->header(), active_segment_->first_entry_offset());
+
+    boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
     previous_segments_.push_back(readable_segment);
   }
 
   // Now set 'active_segment_' to the new segment.
-  header_size_ = new_header_size;
   active_segment_.reset(new_segment.release());
 
   allocation_state_ = kAllocationNotStarted;

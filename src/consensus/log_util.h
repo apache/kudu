@@ -7,23 +7,17 @@
 #include <vector>
 #include <tr1/memory>
 
-#include "gutil/macros.h"
-
 #include "consensus/log.pb.h"
+#include "gutil/macros.h"
 #include "util/env.h"
 
 namespace kudu {
 namespace log {
 
-extern const char kMagicString[];
-
-// logs start with "log-" prefix and end with the term and index of the initial
-// log entry.
+// Logs start with "log-" prefix.
 extern const char kLogPrefix[];
 
-// header is prefixed with the magic (8 bytes) and the header length (4 bytes).
-extern const size_t kMagicAndHeaderLength;
-// each log entry is prefixed by its length (4 bytes)
+// Each log entry is prefixed by its length (4 bytes).
 extern const size_t kEntryLengthSize;
 
 extern const int kLogMajorVersion;
@@ -53,16 +47,32 @@ struct LogOptions {
 // state). LogSegments have a maximum size defined in LogOptions (set from the
 // log_segment_size_mb flag, which defaults to 64). Upon reaching this size
 // segments are rolled over and the Log continues in a new segment.
-class LogSegment {
- protected:
-  LogSegment(const LogSegmentHeaderPB& header,
-             const std::string &path);
 
+
+// A readable log segment for recovery and follower catch-up.
+class ReadableLogSegment {
  public:
-  // Returns the header for this log segment, including initial index, term,
-  // configuration and initial active MRSSet
-  const LogSegmentHeaderPB &header() const {
-    return header_;
+  // Build a readable segment to read entries from the provided path.
+  ReadableLogSegment(
+      const std::string &path,
+      uint64_t file_size,
+      const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
+
+  // Initialize the ReadableLogSegment.
+  // This initializer provides methods for avoiding disk IO when creating a
+  // ReadableLogSegment from a WritableLogSegment (i.e. for log rolling).
+  // Note: This returns void, however will throw an assertion via DCHECK
+  // if the provided header PB is not initialized.
+  void Init(const LogSegmentHeaderPB& header,
+            uint64_t first_entry_offset);
+
+  // Initialize the ReadableLogSegment.
+  // This initializer will parse the log segment header.
+  // Note: This returns Status and may fail.
+  Status Init();
+
+  bool IsInitialized() const {
+    return is_initialized_;
   }
 
   // Returns the parent directory where log segments are stored.
@@ -70,26 +80,10 @@ class LogSegment {
     return path_;
   }
 
-  virtual ~LogSegment() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(LogSegment);
-
-  const LogSegmentHeaderPB header_;
-  const std::string path_;
-};
-
-// A readable log segment for recovery and follower catch-up.
-class ReadableLogSegment : public LogSegment {
- public:
-
-  // build a readable segment to read entries from the provided path.
-  ReadableLogSegment(
-      const LogSegmentHeaderPB& header,
-      const std::string &path,
-      uint64_t first_entry_offset,
-      uint64_t file_size,
-      const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
+  const LogSegmentHeaderPB& header() const {
+    DCHECK(IsInitialized());
+    return header_;
+  }
 
   const std::tr1::shared_ptr<RandomAccessFile> readable_file() const {
     return readable_file_;
@@ -104,65 +98,115 @@ class ReadableLogSegment : public LogSegment {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ReadableLogSegment);
+  // Helper functions called by Init().
+  Status ReadMagicAndHeaderLength(uint32_t *len);
+  Status ParseMagicAndLength(const Slice &data, uint32_t *parsed_len);
 
-  // the offset of the first entry in the log
-  const uint64_t first_entry_offset_;
+  const std::string path_;
 
   // the size of the readable file
   const uint64_t file_size_;
 
   // a readable file for a log segment (used on replay)
   const std::tr1::shared_ptr<RandomAccessFile> readable_file_;
+
+  bool is_initialized_;
+
+  LogSegmentHeaderPB header_;
+
+  // the offset of the first entry in the log
+  uint64_t first_entry_offset_;
+
+  DISALLOW_COPY_AND_ASSIGN(ReadableLogSegment);
 };
 
 // A writable log segment where state data is stored.
-class WritableLogSegment : public LogSegment {
+class WritableLogSegment {
  public:
-
-  WritableLogSegment(const LogSegmentHeaderPB& header,
-                     const std::string &path,
+  WritableLogSegment(const std::string &path,
                      const std::tr1::shared_ptr<WritableFile>& writable_file);
+
+  // Writes out the segment header. Stores bytes written into header_bytes.
+  // Does _not_ sync the bytes written to disk.
+  Status WriteHeader(const LogSegmentHeaderPB& new_header);
+
+  // Returns true if the segment header has already been written to disk.
+  bool IsHeaderWritten() const {
+    return is_header_written_;
+  }
+
+  const LogSegmentHeaderPB& header() const {
+    DCHECK(IsHeaderWritten());
+    return header_;
+  }
+
+  // Returns the parent directory where log segments are stored.
+  const std::string &path() const {
+    return path_;
+  }
+
+  const uint64_t first_entry_offset() const {
+    return first_entry_offset_;
+  }
 
   const std::tr1::shared_ptr<WritableFile>& writable_file() const {
     return writable_file_;
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
+  // The path to the log file.
+  const std::string path_;
 
-  // the writable file to which this LogSegment will be written
-  std::tr1::shared_ptr<WritableFile> writable_file_;
+  // The writable file to which this LogSegment will be written.
+  const std::tr1::shared_ptr<WritableFile> writable_file_;
+
+  bool is_header_written_;
+
+  LogSegmentHeaderPB header_;
+
+  // the offset of the first entry in the log
+  uint64_t first_entry_offset_;
+
+  DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };
+
+// Returns true iff left == right.
+bool OpIdEquals(const consensus::OpId& left, const consensus::OpId& right);
 
 // Returns true iff left < right.
 bool OpIdLessThan(const consensus::OpId& left, const consensus::OpId& right);
 
-// OpId compare() functor for use with std::sort, std::map, etc.
-struct OpIdComparator {
- public:
+// OpId hash functor. Suitable for use with std::unordered_map.
+struct OpIdHashFunctor {
+  size_t operator() (const consensus::OpId& id) const;
+};
+
+// OpId equals functor. Suitable for use with std::unordered_map.
+struct OpIdEqualsFunctor {
+  bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
+};
+
+// OpId compare() functor. Suitable for use with std::sort and std::map.
+struct OpIdCompareFunctor {
   // Returns true iff left < right.
   bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
 };
 
-// Checks if the two superblocks have no memstores in common.
-// This method assumes that for each durable store present in the superblock
-// there is successor memstore in memory and that this store has data.
-// For two superblocks to have no common stores the two superblocks must have
-// different 'last_durable_mrs_id' and for each rowset, must also have a higher
-// delta index. That is the 'newer' superblock must have a new MemRowSet and must
-// have flushed the DeltaMemStore for each of the row sets.
-//
-// Note the order of the superblocks (older, newer) is relevant
-bool HasNoCommonMemStores(const metadata::TabletSuperBlockPB &older,
-                          const metadata::TabletSuperBlockPB &newer);
+// Return the minimum possible OpId.
+consensus::OpId MinimumOpId();
 
-// Searches for the number of segments that have no entries that go into any
-// memory store in ActiveMemStores. Sets prefix_size to the size of the prefix
-// of segments that can be discarded safely.
+// Return the maximum possible OpId.
+consensus::OpId MaximumOpId();
+
+// Find WAL segments for GC whose highest initial OpId is less than
+// earliest_needed_opid. We can approximate this by taking all segments that
+// are at least 2 segments _before_ the segment with an initial_opid strictly
+// greater than the earliest needed OpId.
+// i.e. if we need 7, and segments start with 0, 5 & 10, then we must retain
+// the logs starting with 10 and 5, but we can GC the log starting with OpId 0.
 Status FindStaleSegmentsPrefixSize(
     const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
-    const metadata::TabletSuperBlockPB &metadata,
+    const consensus::OpId& earliest_needed_opid,
     uint32_t *prefix_size);
 
 }  // namespace log

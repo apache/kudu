@@ -39,7 +39,7 @@ void LocalLineItemDAO::Init() {
 
   scoped_refptr<server::Clock> clock(
       server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
-  tablet_.reset(new tablet::Tablet(metadata.Pass(), clock));
+  tablet_.reset(new tablet::Tablet(metadata.Pass(), clock, NULL, NULL));
   CHECK_OK(tablet_->Open());
 }
 

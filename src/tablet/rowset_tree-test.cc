@@ -28,8 +28,9 @@ class MockRowSet : public RowSet {
   virtual Status MutateRow(Timestamp timestamp,
                            const RowSetKeyProbe &probe,
                            const RowChangeList &update,
+                           const consensus::OpId& op_id_,
                            ProbeStats* stats,
-                           MutationResultPB *result) {
+                           MutationResultPB *result) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

@@ -22,6 +22,10 @@ namespace kudu {
 
 class RowChangeList;
 
+namespace consensus {
+class OpId;
+}
+
 namespace metadata {
 class RowSetMetadata;
 }
@@ -54,6 +58,7 @@ class RowSet {
   virtual Status MutateRow(Timestamp timestamp,
                            const RowSetKeyProbe &probe,
                            const RowChangeList &update,
+                           const consensus::OpId& op_id,
                            ProbeStats* stats,
                            MutationResultPB* result) = 0;
 
@@ -232,11 +237,12 @@ class DuplicatingRowSet : public RowSet {
   DuplicatingRowSet(const RowSetVector &old_rowsets,
                     const RowSetVector &new_rowsets);
 
-  Status MutateRow(Timestamp timestamp,
-                   const RowSetKeyProbe &probe,
-                   const RowChangeList &update,
-                   ProbeStats* stats,
-                   MutationResultPB* result);
+  virtual Status MutateRow(Timestamp timestamp,
+                           const RowSetKeyProbe &probe,
+                           const RowChangeList &update,
+                           const consensus::OpId& op_id,
+                           ProbeStats* stats,
+                           MutationResultPB* result) OVERRIDE;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                          ProbeStats* stats) const;

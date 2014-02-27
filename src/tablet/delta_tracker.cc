@@ -172,13 +172,14 @@ shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
 
 DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                            const Schema &schema,
-                           rowid_t num_rows) :
+                           rowid_t num_rows,
+                           log::OpIdAnchorRegistry* opid_anchor_registry) :
   rowset_metadata_(rowset_metadata),
   schema_(schema),
   num_rows_(num_rows),
-  open_(false)
-{}
-
+  open_(false),
+  opid_anchor_registry_(opid_anchor_registry) {
+}
 
 // Open any previously flushed DeltaFiles in this rowset
 Status DeltaTracker::Open() {
@@ -241,7 +242,7 @@ Status DeltaTracker::Open() {
   }
 
   // the id of the first DeltaMemStore is the max id of the current ones +1
-  dms_.reset(new DeltaMemStore(max_id + 1, schema_));
+  dms_.reset(new DeltaMemStore(max_id + 1, schema_, opid_anchor_registry_));
   open_ = true;
   return Status::OK();
 }
@@ -409,12 +410,13 @@ ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<ColumnwiseIterat
 Status DeltaTracker::Update(Timestamp timestamp,
                             rowid_t row_idx,
                             const RowChangeList &update,
+                            const consensus::OpId& op_id,
                             MutationResultPB* result) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   DCHECK_LT(row_idx, num_rows_);
 
-  Status s = dms_->Update(timestamp, row_idx, update);
+  Status s = dms_->Update(timestamp, row_idx, update, op_id);
   if (s.ok()) {
     MutationTargetPB* target = result->add_mutations();
     target->set_rs_id(rowset_metadata_->id());
@@ -517,7 +519,7 @@ Status DeltaTracker::Flush() {
 
     // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
-    dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_));
+    dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_, opid_anchor_registry_));
 
     redo_delta_stores_.push_back(old_dms);
   }

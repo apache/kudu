@@ -32,6 +32,14 @@ class OpIdAnchorRegistry {
   // anchor: Pointer to OpIdAnchor structure that will be populated on registration.
   void Register(const consensus::OpId& op_id, const std::string& owner, OpIdAnchor* anchor);
 
+  // Atomically update the registration of an anchor to a new OpId.
+  // Before: anchor must be registered with some OpId.
+  // After: anchor is now registered using OpId op_id.
+  // See Register().
+  Status UpdateRegistration(const consensus::OpId& op_id,
+                            const std::string& owner,
+                            OpIdAnchor* anchor);
+
   // Release the anchor on an OpId.
   // Note: anchor must be the original pointer passed to Register().
   Status Unregister(OpIdAnchor* anchor);
@@ -45,7 +53,13 @@ class OpIdAnchorRegistry {
   size_t GetAnchorCountForTests() const;
 
  private:
-  typedef std::multimap<consensus::OpId, OpIdAnchor*, OpIdComparator> OpIdMultiMap;
+  typedef std::multimap<consensus::OpId, OpIdAnchor*, OpIdCompareFunctor> OpIdMultiMap;
+
+  // Register a new anchor after taking the lock. See Register().
+  void RegisterUnlocked(const consensus::OpId& op_id, const std::string& owner, OpIdAnchor* anchor);
+
+  // Unregister an anchor after taking the lock. See Unregister().
+  Status UnregisterUnlocked(OpIdAnchor* anchor);
 
   OpIdMultiMap op_ids_;
   mutable simple_spinlock lock_;
@@ -67,6 +81,34 @@ class OpIdAnchor {
   bool is_registered;
 
   DISALLOW_COPY_AND_ASSIGN(OpIdAnchor);
+};
+
+// Helper class that will anchor the minimum OpId recorded.
+class OpIdMinAnchorer {
+ public:
+  // Construct anchorer for specified registry that will register anchors with
+  // the specified owner name.
+  OpIdMinAnchorer(OpIdAnchorRegistry* registry, const std::string& owner);
+
+  // The destructor will unregister the anchor if it is registered.
+  ~OpIdMinAnchorer();
+
+  // If op_id is less than the minimum OpId registered so far, or if no OpIds
+  // are currently registered, anchor on op_id.
+  void AnchorIfMinimum(const consensus::OpId& op_id);
+
+  // Un-anchors the earliest OpId (which is the only one tracked).
+  // If no minimum is known (no OpId registered), returns OK.
+  Status ReleaseAnchor();
+
+ private:
+  OpIdAnchorRegistry* const registry_;
+  const std::string owner_;
+  OpIdAnchor anchor_;
+  consensus::OpId minimum_op_id_;
+  mutable simple_spinlock lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(OpIdMinAnchorer);
 };
 
 } // namespace log

@@ -16,6 +16,7 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
+#include "consensus/opid_anchor_registry.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
 #include "tablet/delta_compaction.h"
@@ -25,6 +26,7 @@ namespace kudu { namespace tablet {
 
 using cfile::CFileReader;
 using cfile::ReaderOptions;
+using log::OpIdAnchorRegistry;
 using metadata::RowSetMetadata;
 using metadata::RowSetMetadataVector;
 using metadata::TabletMetadata;
@@ -404,8 +406,9 @@ RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
 ////////////////////////////////////////////////////////////
 
 Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
+                        log::OpIdAnchorRegistry* opid_anchor_registry,
                         shared_ptr<DiskRowSet> *rowset) {
-  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata));
+  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, opid_anchor_registry));
 
   RETURN_NOT_OK(rs->Open());
 
@@ -413,9 +416,11 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
   return Status::OK();
 }
 
-DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata)
+DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
+                       OpIdAnchorRegistry* opid_anchor_registry)
   : rowset_metadata_(rowset_metadata),
-    open_(false) {
+    open_(false),
+    opid_anchor_registry_(opid_anchor_registry) {
 }
 
 Status DiskRowSet::Open() {
@@ -426,7 +431,8 @@ Status DiskRowSet::Open() {
 
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema(), num_rows));
+  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema(), num_rows,
+                                        opid_anchor_registry_));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;
@@ -476,6 +482,7 @@ CompactionInput *DiskRowSet::NewCompactionInput(const Schema* projection,
 Status DiskRowSet::MutateRow(Timestamp timestamp,
                              const RowSetKeyProbe &probe,
                              const RowChangeList &update,
+                             const consensus::OpId& op_id,
                              ProbeStats* stats,
                              MutationResultPB* result) {
   CHECK(open_);
@@ -491,7 +498,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
     return Status::NotFound("row not found");
   }
 
-  RETURN_NOT_OK(delta_tracker_->Update(timestamp, row_idx, update, result));
+  RETURN_NOT_OK(delta_tracker_->Update(timestamp, row_idx, update, op_id, result));
 
   return Status::OK();
 }

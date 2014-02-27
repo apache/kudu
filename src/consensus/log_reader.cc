@@ -21,9 +21,6 @@ using consensus::OpId;
 using env_util::ReadFully;
 using strings::Substitute;
 
-// the maximum header size (8 MB)
-const uint32_t kMaxHeaderSize = 8 * 1024 * 1024;
-
 // Returns whether segment i comes before segment j.
 static bool CompareSegments(const shared_ptr<ReadableLogSegment>& i,
                             const shared_ptr<ReadableLogSegment>& j) {
@@ -36,7 +33,6 @@ Status LogReader::Open(FsManager *fs_manager,
                        const string& tablet_oid,
                        gscoped_ptr<LogReader> *reader) {
   gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, tablet_oid));
-
 
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_oid);
 
@@ -150,58 +146,16 @@ const uint32_t LogReader::size() {
   return segments_.size();
 }
 
-Status LogReader::ParseMagicAndLength(const Slice &data,
-                                      uint32_t *parsed_len) {
-  RETURN_NOT_OK(data.check_size(kMagicAndHeaderLength));
-
-  if (memcmp(kMagicString, data.data(), strlen(kMagicString)) != 0) {
-    return Status::Corruption("Bad magic. " + data.ToDebugString());
-  }
-
-  *parsed_len = DecodeFixed32(data.data() + strlen(kMagicString));
-  return Status::OK();
-}
-
-Status LogReader::ReadMagicAndHeaderLength(const shared_ptr<RandomAccessFile> &file,
-                                           uint32_t *len) {
-  uint8_t scratch[kMagicAndHeaderLength];
-  Slice slice;
-  RETURN_NOT_OK(ReadFully(file.get(), 0, kMagicAndHeaderLength, &slice, scratch));
-  RETURN_NOT_OK(ParseMagicAndLength(slice, len));
-  return Status::OK();
-}
-
 Status LogReader::ParseHeaderAndBuildSegment(
     const uint64_t file_size,
     const string &path,
     const shared_ptr<RandomAccessFile> &file,
     shared_ptr<ReadableLogSegment> *segment) {
 
-  uint32_t header_size = 0;
-  RETURN_NOT_OK(ReadMagicAndHeaderLength(file, &header_size));
-  if (header_size == 0 || header_size > kMaxHeaderSize) {
-    return Status::Corruption(strings::Substitute("File is corrupted. "
-        "Parsed header size: $0 is zero or bigger than max header size: $1",
-        header_size, kMaxHeaderSize));
-  }
-
-  uint8_t header_space[header_size];
-  Slice header_slice;
-  LogSegmentHeaderPB header;
-
-  // Read and parse the log segment header.
-  RETURN_NOT_OK(ReadFully(file.get(), kMagicAndHeaderLength, header_size,
-                          &header_slice, header_space));
-
-  RETURN_NOT_OK(pb_util::ParseFromArray(&header,
-                                        header_slice.data(),
-                                        header_size));
-
-  segment->reset(new ReadableLogSegment(header,
-                                        path,
-                                        header_size + kMagicAndHeaderLength,
+  segment->reset(new ReadableLogSegment(path,
                                         file_size,
                                         file));
+  RETURN_NOT_OK((*segment)->Init());
   return Status::OK();
 }
 

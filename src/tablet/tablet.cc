@@ -1,12 +1,13 @@
 // Copyright (c) 2012, Cloudera, inc.
+#include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
-#include <tr1/memory>
-#include <algorithm>
 #include <iterator>
+#include <limits>
+#include <tr1/memory>
 #include <vector>
 
 #include "cfile/cfile.h"
@@ -15,6 +16,7 @@
 #include "common/schema.h"
 #include "consensus/consensus.h"
 #include "consensus/consensus.pb.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/atomicops.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
@@ -47,12 +49,17 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "
              "algorithm is selected");
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 using consensus::Consensus;
 using consensus::OperationPB;
 using consensus::CommitMsg;
+using consensus::ConsensusContext;
 using consensus::MISSED_DELTA;
+using consensus::OpId;
+using log::MaximumOpId;
+using log::OpIdAnchorRegistry;
 using metadata::RowSetMetadata;
 using metadata::RowSetMetadataIds;
 using metadata::RowSetMetadataVector;
@@ -80,12 +87,14 @@ static CompactionPolicy *CreateCompactionPolicy() {
 
 Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
                const scoped_refptr<server::Clock>& clock,
-               const MetricContext* parent_metric_context)
+               const MetricContext* parent_metric_context,
+               OpIdAnchorRegistry* opid_anchor_registry)
   : schema_(metadata->schema()),
     key_schema_(schema_.CreateKeyProjection()),
     metadata_(metadata.Pass()),
     rowsets_(new RowSetTree()),
     consensus_(NULL),
+    opid_anchor_registry_(opid_anchor_registry),
     next_mrs_id_(0),
     mvcc_(clock),
     open_(false) {
@@ -114,7 +123,7 @@ Status Tablet::Open() {
   // open the tablet row-sets
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, metadata_->rowsets()) {
     shared_ptr<DiskRowSet> rowset;
-    Status s = DiskRowSet::Open(rowset_meta, &rowset);
+    Status s = DiskRowSet::Open(rowset_meta, opid_anchor_registry_, &rowset);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
                  << s.ToString();
@@ -127,7 +136,7 @@ Status Tablet::Open() {
   CHECK_OK(rowsets_->Reset(rowsets_opened));
 
   // now that the current state is loaded create the new MemRowSet with the next id
-  memrowset_.reset(new MemRowSet(next_mrs_id_, schema_));
+  memrowset_.reset(new MemRowSet(next_mrs_id_, schema_, opid_anchor_registry_));
   next_mrs_id_++;
 
   open_ = true;
@@ -215,6 +224,9 @@ Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
   tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
 
+  // Create a "fake" OpId and set it in the TransactionContext for anchoring.
+  tx_ctx->mutable_op_id()->CopyFrom(MaximumOpId());
+
   Status s = InsertUnlocked(tx_ctx, tx_ctx->rows()[0]);
   tx_ctx->commit();
   return s;
@@ -228,14 +240,14 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
   DCHECK(tx_ctx->component_lock()) << "WriteTransactionContext must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
+  DCHECK(tx_ctx->op_id().IsInitialized()) << "TransactionContext OpId needed for anchoring";
 
   ProbeStats stats;
 
   // Submit the stats before returning from this function
   ProbeStatsSubmitter submitter(stats, metrics_.get());
 
-  // First, ensure that it is a unique key by checking all the open
-  // RowSets
+  // First, ensure that it is a unique key by checking all the open RowSets.
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
     rowsets_->FindRowSetsWithKeyInRange(insert->probe()->encoded_key_slice(), &to_check);
@@ -261,7 +273,7 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(ts, *insert->row());
+  Status s = memrowset_->Insert(ts, *insert->row(), tx_ctx->op_id());
   if (PREDICT_TRUE(s.ok())) {
     RETURN_NOT_OK(tx_ctx->AddInsert(ts, memrowset_->mrs_id()));
   } else {
@@ -296,6 +308,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
   // TODO: use 'probe' when calling UpdateRow on each rowset.
   DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
+  DCHECK(tx_ctx) << "you must have a transaction context";
   CHECK(tx_ctx->rows().empty()) << "WriteTransactionContext must have no PreparedRowWrites.";
 
   // The order of the next three steps is critical!
@@ -367,6 +380,9 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(&mvcc_));
   tx_ctx->set_current_mvcc_tx(mvcc_tx.Pass());
 
+  // Create a "fake" OpId and set it in the TransactionContext for anchoring.
+  tx_ctx->mutable_op_id()->CopyFrom(MaximumOpId());
+
   Status s = MutateRowUnlocked(tx_ctx, tx_ctx->rows()[0]);
   tx_ctx->commit();
   return s;
@@ -374,6 +390,9 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
 
 Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
                                  const PreparedRowWrite* mutate) {
+  DCHECK(tx_ctx != NULL) << "you must have a WriteTransactionContext";
+  DCHECK(tx_ctx->op_id().IsInitialized()) << "TransactionContext OpId needed for anchoring";
+
   gscoped_ptr<MutationResultPB> result(new MutationResultPB());
   // Validate the update.
   RowChangeListDecoder rcl_decoder(schema_, *mutate->changelist());
@@ -399,6 +418,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   s = memrowset_->MutateRow(ts,
                             *mutate->probe(),
                             *mutate->changelist(),
+                            tx_ctx->op_id(),
                             &stats,
                             result.get());
   if (s.ok()) {
@@ -418,7 +438,8 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(ts, *mutate->probe(), *mutate->changelist(), &stats, result.get());
+    s = rs->MutateRow(ts, *mutate->probe(), *mutate->changelist(), tx_ctx->op_id(),
+                      &stats, result.get());
     if (s.ok()) {
       RETURN_NOT_OK(tx_ctx->AddMutation(ts, result.Pass()));
       return s;
@@ -535,7 +556,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
     }
     RETURN_NOT_OK_PREPEND(meta->Flush(),
                           "Unable to commit rowset metadata " + meta->ToString());
-    RETURN_NOT_OK_PREPEND(DiskRowSet::Open(meta, &new_rowset),
+    RETURN_NOT_OK_PREPEND(DiskRowSet::Open(meta, opid_anchor_registry_, &new_rowset),
                           "Unable to open compaction results " + meta->ToString());
 
     new_rowset->SetDMSFrom(input_drs);
@@ -577,7 +598,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
                                         shared_ptr<MemRowSet> *old_ms) {
   // swap in a new memrowset
   *old_ms = memrowset_;
-  memrowset_.reset(new MemRowSet(next_mrs_id_, schema));
+  memrowset_.reset(new MemRowSet(next_mrs_id_, schema, opid_anchor_registry_));
   // increment the next mrs_id
   next_mrs_id_++;
 
@@ -879,7 +900,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   CHECK(!new_drs_metas.empty());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, new_drs_metas) {
     shared_ptr<DiskRowSet> new_rowset;
-    Status s = DiskRowSet::Open(meta, &new_rowset);
+    Status s = DiskRowSet::Open(meta, opid_anchor_registry_, &new_rowset);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to open snapshot compaction results " << meta->ToString() << ": "
                    << s.ToString();
@@ -945,6 +966,17 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                           "Failed to create compaction inputs");
   }
 
+  OpId missed_delta_anchor_op_id;
+  if (PREDICT_TRUE(consensus_)) {
+    // For each MISSED_DELTA update, have the DMS anchor on the OpId of the
+    // last operation, even though it is likely that that OpId
+    // will not be the same one that is written in the MISSED_DELTA commit
+    // message in the Log (it may be earlier).
+    consensus_->GetLastOpId(&missed_delta_anchor_op_id);
+  } else {
+    missed_delta_anchor_op_id.CopyFrom(MaximumOpId());
+  }
+
   // Updating rows in the compaction outputs needs to be tracked or else we
   // lose data on recovery. However because compactions run independently
   // of the replicated state machine this transaction is committed locally
@@ -956,13 +988,21 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                                              merge.get(),
                                              flush_snap,
                                              snap2,
-                                             new_disk_rowsets),
+                                             new_disk_rowsets,
+                                             missed_delta_anchor_op_id),
                         "Failed to re-update deltas missed during compaction phase 1");
 
   if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
     Barrier_AtomicIncrement(&total_missed_deltas_mutations_,
                             compaction_tx.Result().mutations_size());
 
+    // Commit this locally. For more information, see LocalCommit().
+    // Do not assign an OpId. LocalCommit() will do that in order
+    // to ensure that the OpIds in the Log increase monotonically.
+    // Passing the above missed_delta_anchor_op_id to ReupdateMissedDeltas()
+    // serves as a conservative anchor (possibly prior to the OpId actually
+    // written to the Log) that allows us to avoid writing a pre-commit message
+    // to the Log before writing the missed deltas to the DMS.
     OperationPB commit_op;
     CommitMsg* commit = commit_op.mutable_commit();
     commit->mutable_result()->CopyFrom(compaction_tx.Result());
@@ -973,8 +1013,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     // error if this is used to update a clock.
     Timestamp::kInvalidTimestamp.EncodeToString(commit->mutable_timestamp());
     shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
-    RETURN_NOT_OK(consensus_->LocalCommit(
-        boost::assign::list_of(&commit_op), commit_clbk));
+    RETURN_NOT_OK(consensus_->LocalCommit(&commit_op, commit_clbk));
     RETURN_NOT_OK(commit_clbk->Wait());
   }
 

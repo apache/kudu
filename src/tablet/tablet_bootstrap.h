@@ -15,6 +15,7 @@ class MetricContext;
 
 namespace log {
 class Log;
+class OpIdAnchorRegistry;
 }
 
 namespace metadata {
@@ -56,7 +57,8 @@ Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        MetricContext* metric_context,
                        gscoped_ptr<TabletBootstrapListener> boostrap_listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
-                       gscoped_ptr<log::Log>* rebuilt_log);
+                       gscoped_ptr<log::Log>* rebuilt_log,
+                       gscoped_ptr<log::OpIdAnchorRegistry>* opid_anchor_registry);
 
 }  // namespace tablet
 }  // namespace kudu

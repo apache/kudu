@@ -19,6 +19,7 @@ namespace log {
 
 class LogReader;
 class LogEntryBatch;
+class OpIdAnchorRegistry;
 
 // Log interface, inspired by Raft's (logcabin) Log. Provides durability to
 // Kudu as a normal Write Ahead Log and also plays the role of persistent
@@ -39,20 +40,23 @@ class LogEntryBatch;
 // synchronized to disk.
 //
 // For sample usage see local_consensus.cc and mt-log-test.cc
+//
+// Methods on this class are _not_ thread-safe and must be externally
+// synchronized unless otherwise noted.
 class Log {
  public:
   static const Status kLogShutdownStatus;
   static const uint64_t kInitialLogSegmentSequenceNumber;
 
   // Opens or continues a log and sets 'log' to the newly built Log.
-  // After Open() the Log is ready to receive entries.
-  // The passed 'super_block' and 'current_id' are copied.
+  // After a successful Open() the Log is ready to receive entries.
   static Status Open(const LogOptions &options,
                      FsManager *fs_manager,
-                     const metadata::TabletSuperBlockPB& super_block,
-                     const consensus::OpId& current_id,
                      const std::string& tablet_id,
+                     OpIdAnchorRegistry* opid_anchor_registry,
                      gscoped_ptr<Log> *log);
+
+  ~Log();
 
   // Reserves a spot in the log for operations in 'ops';
   // 'reserved_entry' is initialized by this method and any resources
@@ -82,9 +86,6 @@ class Log {
   // 'kAllocationFinished'.
   Status AsyncAllocateSegment();
 
-  // Make segments roll over
-  Status RollOver();
-
   // Syncs all state and closes the log.
   Status Close();
 
@@ -108,57 +109,70 @@ class Log {
     return Sync();
   }
 
-  // Returns the current header so that the log can be queried for the most
-  // current config/metadata/<term,index>.
-  const LogSegmentHeaderPB* current_header() const {
-    boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
-    return next_segment_header_.get();
+  // Get ID of tablet.
+  const std::string& tablet_id() const {
+    return tablet_id_;
   }
 
   // Returns the last-used OpId.
-  const consensus::OpId& last_entry_id() const {
-    return next_segment_header_->initial_id();
-  }
+  // Will return Status::OK() iff there is any previous OpId in the log.
+  // Otherwise, will return Status::NotFound().
+  // This method will never return any other Status type.
+  Status GetLastEntryOpId(consensus::OpId* op_id) const;
 
   // Runs the garbage collector on the set of previous segments. Segments that
   // only refer to in-mem state that has been flushed are candidates for
   // garbage collection.
+  //
+  // This method is thread-safe.
   Status GC();
 
+  // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
     return active_segment_->path();
   }
 
+  // Forces the write of a header to the active segment.
+  // For testing recovery when only the header has been written, but no records.
+  Status WriteHeaderForTests();
+
+  // Note: accessing this internal structure is _not_ thread-safe while
+  // concurrently running GC().
   const vector<std::tr1::shared_ptr<ReadableLogSegment> >& PreviousSegmentsForTests() const {
     return previous_segments_;
   }
 
-  // Get ID of tablet.
-  const std::string& tablet_id() const {
-    // TODO: Store this in the Log class itself.
-    return next_segment_header_->tablet_meta().oid();
-  }
-
-  // Get the segment sequence number of the currently-active log segment.
-  uint64_t active_segment_sequence_number() const {
-    return active_segment_->header().sequence_number();
-  }
-
-  ~Log();
-
  private:
-  DISALLOW_COPY_AND_ASSIGN(Log);
+  friend class LogTest;
 
   class AppendThread;
   class SegmentAllocationTask;
 
+  // Log state.
+  enum State {
+    kLogInitialized,
+    kLogWriting,
+    kLogClosed
+  };
+
+  // State of segment (pre-) allocation.
+  enum SegmentAllocationState {
+    kAllocationNotStarted, // No segment allocation requested
+    kAllocationInProgress, // Next segment allocation started
+    kAllocationFinished // Next segment ready
+  };
+
   Log(const LogOptions &options,
       FsManager *fs_manager,
       const string& log_path,
-      gscoped_ptr<LogSegmentHeaderPB> header);
+      const string& tablet_id,
+      OpIdAnchorRegistry* opid_anchor_registry);
 
   // Initializes a new one or continues an existing log.
   Status Init();
+
+  // Make segments roll over.
+  Status RollOver();
 
   // Creates the name for a new segment as log-<seqno>
   string CreateSegmentFileName(uint64_t sequence_number);
@@ -182,10 +196,18 @@ class Log {
   // associated logic will no longer be needed.
   Status DoAppend(LogEntryBatch* entry, bool caller_owns_operation = true);
 
+  // Write the log header. Does not call Sync().
+  Status WriteHeader(const consensus::OpId& initial_op_id);
+
   Status Sync();
 
   BlockingQueue<LogEntryBatch*>* entry_queue() {
     return &entry_batch_queue;
+  }
+
+  const SegmentAllocationState allocation_state() {
+    boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
+    return allocation_state_;
   }
 
   // Read-write lock to protect 'allocation_state_'.
@@ -195,26 +217,29 @@ class Log {
   FsManager *fs_manager_;
   string log_dir_;
 
-  // The next segment's header.
-  gscoped_ptr<LogSegmentHeaderPB> next_segment_header_;
+  // The ID of the tablet this log is dedicated to.
+  std::string tablet_id_;
+
+  // The last known OpId written to this log (any segment).
+  consensus::OpId last_entry_op_id_;
 
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;
 
+  // The current (active) segment sequence number.
+  uint64_t active_segment_sequence_number_;
+
   // The writable file for the next allocated segment
   std::tr1::shared_ptr<WritableFile> next_segment_file_;
+
+  // Lock to protect modifications to previous_segments_.
+  mutable simple_spinlock previous_segments_lock_;
 
   // All previous (inactive) un-GC'd segments.
   vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_segments_;
 
-  // The size of the header of the current segment.
-  uint64_t header_size_;
-
   // The maximum segment size, in bytes.
   uint64_t max_segment_size_;
-
-  // Reader for previous segments.
-  gscoped_ptr<LogReader> previous_segments_reader_;
 
   // The queue used to communicate between the thread calling
   // Reserve() and the Log Appender thread
@@ -222,9 +247,6 @@ class Log {
 
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
-
-  // The tablet ID of the tablet this log corresponds to.
-  std::string tablet_id_;
 
   gscoped_ptr<TaskExecutor> allocation_executor_;
 
@@ -234,27 +256,11 @@ class Log {
   // The future for an asynchronous log segment preallocation task.
   std::tr1::shared_ptr<kudu::Future> allocation_future_;
 
-  enum State {
-    kLogInitialized,
-    kLogWriting,
-    kLogClosed
-  };
   State state_;
-
-
-  // State of segment (pre-) allocation
-  enum SegmentAllocationState {
-    kAllocationNotStarted, // No segment allocation requested
-    kAllocationInProgress, // Next segment allocation started
-    kAllocationFinished // Next segment ready
-  };
-
-  const SegmentAllocationState allocation_state() {
-    boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
-    return allocation_state_;
-  }
-
   SegmentAllocationState allocation_state_;
+  OpIdAnchorRegistry* opid_anchor_registry_;
+
+  DISALLOW_COPY_AND_ASSIGN(Log);
 };
 
 // This class represents a batch of operations to be written and

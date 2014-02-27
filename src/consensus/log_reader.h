@@ -61,17 +61,11 @@ class LogReader {
   // Reads the headers of all segments in 'path_'.
   Status Init(const string& path_);
 
-  // Parses the magic and header length and sets *parsed_len to the header size.
-  static Status ParseMagicAndLength(const Slice &data,
-                                    uint32_t *parsed_len);
-
-  // Reads the magic and header length from the log segment.
-  static Status ReadMagicAndHeaderLength(
-      const std::tr1::shared_ptr<RandomAccessFile> &file,
-      uint32_t *len);
-
-  // Parses the header of the log segment, build a readable segment with that
-  // header and sets segment to point to the new segment.
+  // Parses the log segment header.
+  // May return Status::Uninitialized if the log segment is totally empty.
+  // Otherwise, may return Status::Corruption in case of error or Status::OK
+  // on success.
+  // See ReadableLogSegment::Init() for more details.
   static Status ParseHeaderAndBuildSegment(
       const uint64_t file_size,
       const string &path,
