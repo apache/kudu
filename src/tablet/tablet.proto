@@ -60,12 +60,10 @@ message TxOperationPB {
 // The final result of a transaction, including the result of each individual
 // operation.
 message TxResultPB {
-  // the transaction id for the operation
-  required bytes timestamp = 1;
   // all the inserts in this transaction
-  repeated TxOperationPB inserts = 2;
+  repeated TxOperationPB inserts = 1;
   // all the mutations in this transaction
-  repeated TxOperationPB mutations = 3;
+  repeated TxOperationPB mutations = 2;
 }
 
 // Delta statistics for a flushed deltastore

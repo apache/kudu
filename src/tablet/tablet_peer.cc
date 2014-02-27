@@ -34,6 +34,7 @@ TabletPeer::TabletPeer()
 }
 
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
+                        const scoped_refptr<server::Clock>& clock,
                         const QuorumPeerPB& quorum_peer,
                         gscoped_ptr<Log> log) {
 
@@ -42,6 +43,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
     state_ = metadata::CONFIGURING;
     tablet_ = tablet;
+    clock_ = clock;
     quorum_peer_ = quorum_peer;
     log_.reset(log.release());
     // TODO support different consensus implementations (possibly by adding
@@ -52,7 +54,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
 
-  RETURN_NOT_OK(consensus_->Init(quorum_peer_, log_.get()));
+  RETURN_NOT_OK(consensus_->Init(quorum_peer_, clock, log_.get()));
 
   // set consensus on the tablet to that it can store local state changes
   // in the log.

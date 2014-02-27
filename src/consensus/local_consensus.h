@@ -30,6 +30,7 @@ class LocalConsensus : public ConsensusBase {
   explicit LocalConsensus(const ConsensusOptions& options);
 
   virtual Status Init(const metadata::QuorumPeerPB& peer,
+                      const scoped_refptr<server::Clock>& clock,
                       log::Log* log);
 
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
@@ -73,6 +74,8 @@ class LocalConsensus : public ConsensusBase {
   metadata::QuorumPeerPB peer_;
   metadata::QuorumPB quorum_;
   int64 next_op_id_;
+
+  scoped_refptr<server::Clock> clock_;
 
   // lock serializes the commit id generation and subsequent
   // task (log) submission as well as replicate id generation

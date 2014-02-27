@@ -92,12 +92,16 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
-  RETURN_NOT_OK(BootstrapTablet(metadata.Pass(), &metric_ctx_, &tablet, &log));
+  RETURN_NOT_OK(BootstrapTablet(metadata.Pass(),
+                                scoped_refptr<server::Clock>(master_->clock()),
+                                &metric_ctx_,
+                                &tablet, &log));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
   // handling split in the TS?
   tablet_peer_.reset(new TabletPeer());
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
+                                           scoped_refptr<server::Clock>(master_->clock()),
                                            tablet->metadata()->Quorum().peers(0),
                                            log.Pass()), "Failed to Init() TabletPeer");
 

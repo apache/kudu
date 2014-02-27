@@ -15,6 +15,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/stringprintf.h"
+#include "server/logical_clock.h"
 #include "tablet/diskrowset.h"
 #include "tablet/tablet-test-util.h"
 #include "tablet/transactions/write_util.h"
@@ -37,7 +38,9 @@ class TestRowSet : public KuduRowSetTest {
  public:
   TestRowSet()
     : KuduRowSetTest(CreateTestSchema()),
-      n_rows_(FLAGS_roundtrip_num_rows) {
+      n_rows_(FLAGS_roundtrip_num_rows),
+      mvcc_(scoped_refptr<server::Clock>(
+          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
     CHECK_GT(n_rows_, 0);
   }
 
@@ -281,7 +284,6 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   size_t n_rows_;
-
   MvccManager mvcc_;
 };
 

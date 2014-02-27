@@ -109,6 +109,11 @@ Status LeaderWriteTransaction::Prepare() {
                                       mutates_client_schema.Pass(),
                                       to_mutate,
                                       mutations);
+
+  // Now that we've prepared set the transaction timestamp (by initiating the
+  // mvcc transaction). Doing this here allows us to wait the least possible
+  // time if we're using commit wait.
+  tx_ctx_->start_mvcc_tx();
   TRACE("PREPARE: finished");
   return s;
 }
@@ -121,12 +126,12 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_write_response()->CopyFrom(*tx_ctx_->response());
   (*commit_msg)->mutable_result()->CopyFrom(tx_ctx_->Result());
+  tx_ctx_->timestamp().EncodeToString((*commit_msg)->mutable_timestamp());
 }
 
 Status LeaderWriteTransaction::Apply() {
   TRACE("APPLY: Starting");
 
-  tx_ctx_->start_mvcc_tx();
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
 
   int i = 0;
@@ -159,6 +164,7 @@ Status LeaderWriteTransaction::Apply() {
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());
   commit->set_op_type(WRITE_OP);
+  tx_ctx_->timestamp().EncodeToString(commit->mutable_timestamp());
 
   TRACE("APPLY: finished, triggering COMMIT");
 
@@ -188,7 +194,7 @@ void LeaderWriteTransaction::UpdateMetrics() {
 }
 
 Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mrs_id) {
-  if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
+  if (PREDICT_TRUE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
         << "tx_id doesn't match the id of the ongoing transaction";
   }
@@ -230,14 +236,14 @@ void WriteTransactionContext::AddFailedMutation(const Status &status) {
 Timestamp WriteTransactionContext::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
-  mvcc_tx_->timestamp().EncodeToString(result_pb_.mutable_timestamp());
+  set_timestamp(mvcc_tx_->timestamp());
   return mvcc_tx_->timestamp();
 }
 
 void WriteTransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
   mvcc_tx_.reset(mvcc_tx.release());
-  mvcc_tx_->timestamp().EncodeToString(result_pb_.mutable_timestamp());
+  set_timestamp(mvcc_tx_->timestamp());
 }
 
 void WriteTransactionContext::commit() {
@@ -255,18 +261,12 @@ void WriteTransactionContext::release_row_locks() {
   STLDeleteElements(&rows_);
 }
 
-Timestamp WriteTransactionContext::mvcc_timestamp() {
-  if (mvcc_tx_.get() == NULL) {
-    return Timestamp::kInvalidTimestamp;
-  }
-  return mvcc_tx_->timestamp();
-}
-
 void WriteTransactionContext::Reset() {
   commit();
   result_pb_.Clear();
   tx_metrics_.Reset();
   failed_operations_ = 0;
+  timestamp_ = Timestamp::kInvalidTimestamp;
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,

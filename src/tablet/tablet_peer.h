@@ -25,6 +25,7 @@ class TabletPeer {
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
+              const scoped_refptr<server::Clock>& clock,
               const metadata::QuorumPeerPB& quorum_peer,
               gscoped_ptr<log::Log> log);
 
@@ -98,6 +99,10 @@ class TabletPeer {
     return error_;
   }
 
+  server::Clock* clock() {
+    return clock_.get();
+  }
+
  private:
   metadata::TabletStatePB state_;
   Status error_;
@@ -117,6 +122,8 @@ class TabletPeer {
   // TabletPeer, PrepareTasks are executed *serially*.
   gscoped_ptr<TaskExecutor> prepare_executor_;
   gscoped_ptr<TaskExecutor> apply_executor_;
+
+  scoped_refptr<server::Clock> clock_;
 
   // Lock protecting updates to the configuration, stored in the tablet's
   // metadata.

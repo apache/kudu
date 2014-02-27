@@ -6,6 +6,7 @@
 #include <boost/assign/list_of.hpp>
 #include "consensus/log.h"
 #include "server/metadata.h"
+#include "server/clock.h"
 
 namespace kudu {
 namespace consensus {
@@ -26,9 +27,11 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options)
 }
 
 Status LocalConsensus::Init(const QuorumPeerPB& peer,
+                            const scoped_refptr<server::Clock>& clock,
                             Log* log) {
   CHECK_EQ(state_, kNotInitialized);
   peer_ = peer;
+  clock_ = clock;
   log_ = log;
   state_ = kInitializing;
   next_op_id_ = log->last_entry_id().index() + 1;
@@ -66,7 +69,9 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   commit_msg->set_op_type(CHANGE_CONFIG_OP);
   commit_msg->mutable_commited_op_id()->CopyFrom(ctx->replicate_op()->id());
   commit_msg->mutable_change_config_response()->CopyFrom(resp);
+  clock_->Now().EncodeToString(commit_msg->mutable_timestamp());
   RETURN_NOT_OK(ctx->Commit(commit_msg.Pass()));
+
 
   RETURN_NOT_OK(commit_clbk->Wait());
   running_quorum->reset(new QuorumPB(initial_quorum));

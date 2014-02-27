@@ -30,6 +30,10 @@ namespace consensus {
 class Consensus;
 }
 
+namespace server {
+class Clock;
+}
+
 namespace tablet {
 
 using std::string;
@@ -54,6 +58,7 @@ class Tablet {
   // If 'parent_metrics_context' is non-NULL, then this tablet will store
   // metrics in a sub-context of this context. Otherwise, no metrics are collected.
   Tablet(gscoped_ptr<metadata::TabletMetadata> metadata,
+         const scoped_refptr<server::Clock>& clock,
          const MetricContext* parent_metric_context = NULL);
 
   ~Tablet();
@@ -335,6 +340,9 @@ class Tablet {
   consensus::Consensus* consensus_;
 
   Atomic32 next_mrs_id_;
+
+  // A pointer to the server's clock.
+  scoped_refptr<server::Clock> clock_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;

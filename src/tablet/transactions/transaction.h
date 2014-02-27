@@ -6,6 +6,7 @@
 #include <string>
 #include <tr1/memory>
 
+#include "common/timestamp.h"
 #include "consensus/consensus.h"
 #include "util/auto_release_pool.h"
 #include "util/countdown_latch.h"
@@ -140,6 +141,18 @@ class TransactionContext {
     return "TODO transaction toString";
   }
 
+  // Sets the timestamp for the transaction
+  void set_timestamp(const Timestamp& timestamp) {
+    // make sure we set the timestamp only once
+    DCHECK(timestamp_ == Timestamp::kInvalidTimestamp);
+    timestamp_ = timestamp;
+  }
+
+  Timestamp timestamp() {
+    return timestamp_;
+  }
+
+
  protected:
   explicit TransactionContext(TabletPeer* tablet_peer)
       : tablet_peer_(tablet_peer),
@@ -156,6 +169,9 @@ class TransactionContext {
   gscoped_ptr<TransactionCompletionCallback> completion_clbk_;
 
   AutoReleasePool pool_;
+
+  // This transaction's timestamp
+  Timestamp timestamp_;
 
   Arena arena_;
 

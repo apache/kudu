@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/strings/util.h"
+#include "server/logical_clock.h"
 #include "tablet/cfile_set.h"
 #include "tablet/delta_compaction.h"
 #include "tablet/tablet-test-util.h"
@@ -29,7 +30,9 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
                             (ColumnSchema("val1", UINT32))
                             (ColumnSchema("val2", STRING))
                             (ColumnSchema("val3", UINT32))
-                            (ColumnSchema("val4", STRING)), 1)) {
+                            (ColumnSchema("val4", STRING)), 1)),
+      mvcc_(scoped_refptr<server::Clock>(
+          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
   }
 
   virtual void SetUp() {

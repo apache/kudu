@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/strings/util.h"
+#include "server/logical_clock.h"
 #include "tablet/compaction.h"
 #include "tablet/tablet-test-util.h"
 #include "util/stopwatch.h"
@@ -34,7 +35,9 @@ class TestCompaction : public KuduRowSetTest {
  public:
   TestCompaction() :
     KuduRowSetTest(CreateSchema()),
-    row_builder_(schema_)
+    row_builder_(schema_),
+    mvcc_(scoped_refptr<server::Clock>(
+        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)))
   {}
 
   static Schema CreateSchema() {
@@ -248,10 +251,9 @@ class TestCompaction : public KuduRowSetTest {
   }
 
  protected:
-  MvccManager mvcc_;
-
   RowBuilder row_builder_;
   char key_buf_[256];
+  MvccManager mvcc_;
 };
 
 TEST_F(TestCompaction, TestMemRowSetInput) {

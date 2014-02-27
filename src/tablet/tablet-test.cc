@@ -104,10 +104,11 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_EQ(1, tx_ctx.Result().inserts().size());
 
   // Insert again, should fail!
+  tx_ctx.Reset();
   Status s = this->tablet_->InsertForTesting(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent()) <<
     "expected AlreadyPresent, but got: " << s.ToString();
-  ASSERT_EQ(2, tx_ctx.Result().inserts().size());
+  ASSERT_EQ(1, tx_ctx.Result().inserts().size());
   ASSERT_FALSE(tx_ctx.is_all_success());
 
   ASSERT_EQ(1, this->TabletCount());
@@ -117,11 +118,12 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   ASSERT_EQ(1, this->TabletCount());
 
+  tx_ctx.Reset();
   s = this->tablet_->InsertForTesting(&tx_ctx, row);
   ASSERT_TRUE(s.IsAlreadyPresent())
     << "expected AlreadyPresent, but got: " << s.ToString()
     << " Inserting: " << rb.data().ToDebugString();
-  ASSERT_EQ(3, tx_ctx.Result().inserts().size());
+  ASSERT_EQ(1, tx_ctx.Result().inserts().size());
 
   ASSERT_EQ(1, this->TabletCount());
 }

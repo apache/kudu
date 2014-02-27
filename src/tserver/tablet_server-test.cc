@@ -124,10 +124,19 @@ TEST_F(TabletServerTest, TestInsert) {
     ASSERT_EQ(3, rows_inserted->value());  // This counter only counts successful inserts.
   }
 
+  // get the clock's current timestamp
+  Timestamp now_before = mini_server_->server()->clock()->Now();
+
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
                                             (KeyValue(2, 1))
                                             (KeyValue(1234, 5678)));
+
+  // get the clock's timestamp after replay
+  Timestamp now_after = mini_server_->server()->clock()->Now();
+
+  // make sure 'now_after' is greater than or equal to 'now_before'
+  ASSERT_GE(now_after.value(), now_before.value());
 }
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
@@ -255,9 +264,18 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   ASSERT_EQ(3, rows_inserted->value());
   ASSERT_EQ(4, rows_updated->value());
 
+  // get the clock's current timestamp
+  Timestamp now_before = mini_server_->server()->clock()->Now();
+
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, boost::assign::list_of(KeyValue(2, 3))
                                             (KeyValue(3, 4)));
+
+  // get the clock's timestamp after replay
+  Timestamp now_after = mini_server_->server()->clock()->Now();
+
+  // make sure 'now_after' is greater that or equal to 'now_before'
+  ASSERT_GE(now_after.value(), now_before.value());
 }
 
 // Test various invalid calls for mutations
@@ -547,6 +565,9 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   hooks->increment_iteration();
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
 
+  // get the clock's current timestamp
+  Timestamp now_before = mini_server_->server()->clock()->Now();
+
   // Shutdown the tserver and try and rebuild the tablet from the log
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
@@ -559,6 +580,12 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
                                             (KeyValue(6, 62))
                                             (KeyValue(7, 72))
                                             (KeyValue(8, 8)));
+
+  // get the clock's timestamp after replay
+  Timestamp now_after = mini_server_->server()->clock()->Now();
+
+  // make sure 'now_after' is greater than or equal to 'now_before'
+  ASSERT_GE(now_after.value(), now_before.value());
 
 }
 

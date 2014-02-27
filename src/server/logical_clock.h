@@ -23,14 +23,20 @@ namespace server {
 // NOTE: this class is thread safe.
 class LogicalClock : public Clock {
  public:
-  explicit LogicalClock(Timestamp::val_type initial_time) : now_(initial_time) {}
+
   Timestamp Now();
   Status Update(const Timestamp& to_update);
 
   // Below methods are unavailable for this clock.
   Status WaitUntilAfter(const Timestamp& then);
   Status TimedWaitUntilAfter(const Timestamp& then, const MonoDelta& max);
+
+  // Creates a logical clock whose first output value on a Now() call is 'timestamp'.
+  static LogicalClock* CreateStartingAt(const Timestamp& timestamp);
+
  private:
+  // Should use LogicalClock::CreatingStartingAt()
+  explicit LogicalClock(Timestamp::val_type initial_time) : now_(initial_time) {}
   base::subtle::Atomic64 now_;
 };
 

@@ -8,6 +8,7 @@
 #include "common/iterator.h"
 #include "gutil/strings/join.h"
 #include "gutil/casts.h"
+#include "server/logical_clock.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
@@ -54,7 +55,9 @@ class KuduTabletTest : public KuduTest {
                                                             quorum_,
                                                             "", "",
                                                             &metadata));
-    tablet_.reset(new Tablet(metadata.Pass()));
+    scoped_refptr<server::Clock> clock(
+        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
+    tablet_.reset(new Tablet(metadata.Pass(), clock));
     ASSERT_STATUS_OK(tablet_->Open());
   }
 

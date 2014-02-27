@@ -7,6 +7,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "rpc/service_if.h"
 #include "server/server_base_options.h"
 #include "util/status.h"
@@ -28,6 +29,7 @@ class ServiceIf;
 } // namespace rpc
 
 namespace server {
+class Clock;
 
 struct ServerBaseOptions;
 
@@ -58,6 +60,9 @@ class ServerBase {
 
   MetricRegistry* metric_registry() { return metric_registry_.get(); }
 
+  // Returns this server's clock.
+  Clock* clock() { return clock_.get(); }
+
  protected:
   ServerBase(const ServerBaseOptions& options,
              const std::string& metrics_namespace);
@@ -74,6 +79,8 @@ class ServerBase {
   gscoped_ptr<Webserver> web_server_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
   bool is_first_run_;
+
+  scoped_refptr<Clock> clock_;
 
   // The instance identifier of this server.
   gscoped_ptr<NodeInstancePB> instance_pb_;

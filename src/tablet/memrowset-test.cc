@@ -7,6 +7,7 @@
 
 #include "common/row.h"
 #include "common/scan_spec.h"
+#include "server/logical_clock.h"
 #include "tablet/memrowset.h"
 #include "tablet/tablet-test-util.h"
 #include "tablet/transactions/write_util.h"
@@ -26,7 +27,9 @@ class TestMemRowSet : public ::testing::Test {
   TestMemRowSet() :
     ::testing::Test(),
     schema_(CreateSchema()),
-    key_schema_(schema_.CreateKeyProjection())
+    key_schema_(schema_.CreateKeyProjection()),
+    mvcc_(scoped_refptr<server::Clock>(
+        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)))
   {}
 
   static Schema CreateSchema() {
@@ -126,11 +129,10 @@ class TestMemRowSet : public ::testing::Test {
                           result);
   }
 
-  MvccManager mvcc_;
-
   faststring mutation_buf_;
   const Schema schema_;
   const Schema key_schema_;
+  MvccManager mvcc_;
 };
 
 

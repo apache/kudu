@@ -56,6 +56,9 @@ Status LeaderAlterSchemaTransaction::Prepare() {
   Tablet* tablet = tx_ctx_->tablet_peer()->tablet();
   RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(tx_ctx(), schema.get()));
 
+  // now that we've acquired the locks set the transaction timestamp
+  tx_ctx_->set_timestamp(tx_ctx_->tablet_peer()->clock()->Now());
+
   tx_ctx_->AddToAutoReleasePool(schema.release());
 
   TRACE("PREPARE ALTER-SCHEMA: finished");
@@ -69,6 +72,7 @@ void LeaderAlterSchemaTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<Commi
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*tx_ctx_->response());
+  tx_ctx_->timestamp().EncodeToString((*commit_msg)->mutable_timestamp());
 }
 
 Status LeaderAlterSchemaTransaction::Apply() {
@@ -79,6 +83,7 @@ Status LeaderAlterSchemaTransaction::Apply() {
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(ALTER_SCHEMA_OP);
+  tx_ctx_->timestamp().EncodeToString(commit->mutable_timestamp());
 
   TRACE("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
 

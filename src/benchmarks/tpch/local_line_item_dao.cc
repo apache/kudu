@@ -6,6 +6,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
+#include "server/logical_clock.h"
 #include "tablet/tablet.h"
 #include "benchmarks/tpch/tpch-schemas.h"
 
@@ -36,7 +37,9 @@ void LocalLineItemDAO::Init() {
                                         "",
                                         &metadata));
 
-  tablet_.reset(new tablet::Tablet(metadata.Pass()));
+  scoped_refptr<server::Clock> clock(
+      server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
+  tablet_.reset(new tablet::Tablet(metadata.Pass(), clock));
   CHECK_OK(tablet_->Open());
 }
 

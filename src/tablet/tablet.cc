@@ -79,6 +79,7 @@ static CompactionPolicy *CreateCompactionPolicy() {
 }
 
 Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
+               const scoped_refptr<server::Clock>& clock,
                const MetricContext* parent_metric_context)
   : schema_(metadata->schema()),
     key_schema_(schema_.CreateKeyProjection()),
@@ -86,6 +87,7 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
     rowsets_(new RowSetTree()),
     consensus_(NULL),
     next_mrs_id_(0),
+    mvcc_(clock),
     open_(false) {
   CHECK(schema_.has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
@@ -251,14 +253,16 @@ Status Tablet::InsertUnlocked(WriteTransactionContext *tx_ctx,
     }
   }
 
+  Timestamp ts = tx_ctx->timestamp();
+
   // TODO: the Insert() call below will re-encode the key, which is a
   // waste. Should pass through the KeyProbe structure perhaps.
 
   // Now try to insert into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been inserted there.
-  Status s = memrowset_->Insert(tx_ctx->mvcc_timestamp(), *insert->row());
+  Status s = memrowset_->Insert(ts, *insert->row());
   if (PREDICT_TRUE(s.ok())) {
-    RETURN_NOT_OK(tx_ctx->AddInsert(tx_ctx->mvcc_timestamp(), memrowset_->mrs_id()));
+    RETURN_NOT_OK(tx_ctx->AddInsert(ts, memrowset_->mrs_id()));
   } else {
     if (s.IsAlreadyPresent() && metrics_) {
       metrics_->insertions_failed_dup_key->Increment();
@@ -383,18 +387,21 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
     return s;
   }
 
+
+  Timestamp ts = tx_ctx->timestamp();
+
   ProbeStats stats;
   // Submit the stats before returning from this function
   ProbeStatsSubmitter submitter(stats, metrics_.get());
 
   // First try to update in memrowset.
-  s = memrowset_->MutateRow(tx_ctx->mvcc_timestamp(),
+  s = memrowset_->MutateRow(ts,
                             *mutate->probe(),
                             *mutate->changelist(),
                             &stats,
                             result.get());
   if (s.ok()) {
-    RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_timestamp(), result.Pass()));
+    RETURN_NOT_OK(tx_ctx->AddMutation(ts, result.Pass()));
     return s;
   }
   if (!s.IsNotFound()) {
@@ -410,10 +417,9 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   vector<RowSet *> to_check;
   rowsets_->FindRowSetsWithKeyInRange(mutate->probe()->encoded_key_slice(), &to_check);
   BOOST_FOREACH(RowSet *rs, to_check) {
-    s = rs->MutateRow(tx_ctx->mvcc_timestamp(), *mutate->probe(),
-                      *mutate->changelist(), &stats, result.get());
+    s = rs->MutateRow(ts, *mutate->probe(), *mutate->changelist(), &stats, result.get());
     if (s.ok()) {
-      RETURN_NOT_OK(tx_ctx->AddMutation(tx_ctx->mvcc_timestamp(), result.Pass()));
+      RETURN_NOT_OK(tx_ctx->AddMutation(ts, result.Pass()));
       return s;
     }
     if (!s.IsNotFound()) {
@@ -957,6 +963,11 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     CommitMsg* commit = commit_op.mutable_commit();
     commit->mutable_result()->CopyFrom(compaction_tx.Result());
     commit->set_op_type(MISSED_DELTA);
+    // Missed delta mutations each carry their own timestamps and there is no
+    // timestamp for the whole write, as in normal writes. Thus we encode
+    // kInvalidTimestamp as the commit timestamp so that clocks spit out an
+    // error if this is used to update a clock.
+    Timestamp::kInvalidTimestamp.EncodeToString(commit->mutable_timestamp());
     shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
     RETURN_NOT_OK(consensus_->LocalCommit(
         boost::assign::list_of(&commit_op), commit_clbk));

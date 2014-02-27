@@ -4,13 +4,25 @@
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 
+#include "server/logical_clock.h"
 #include "tablet/mvcc.h"
+#include "util/test_util.h"
 
 namespace kudu { namespace tablet {
 
+class MvccTest : public KuduTest {
+ public:
+  MvccTest() :
+    clock_(scoped_refptr<server::Clock>(
+        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+  }
 
-TEST(TestMvcc, TestMvccBasic) {
-  MvccManager mgr;
+ protected:
+  scoped_refptr<server::Clock> clock_;
+};
+
+TEST_F(MvccTest, TestMvccBasic) {
+  MvccManager mgr(clock_.get());
   MvccSnapshot snap;
 
   // Initial state should not have any committed transactions.
@@ -39,8 +51,8 @@ TEST(TestMvcc, TestMvccBasic) {
   ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 }
 
-TEST(TestMvcc, TestMvccMultipleInFlight) {
-  MvccManager mgr;
+TEST_F(MvccTest, TestMvccMultipleInFlight) {
+  MvccManager mgr(clock_.get());
   MvccSnapshot snap;
 
   // Start timestamp 1, timestamp 2
@@ -100,8 +112,8 @@ TEST(TestMvcc, TestMvccMultipleInFlight) {
   ASSERT_TRUE(snap.IsCommitted(t3));
 }
 
-TEST(TestMvcc, TestScopedTransaction) {
-  MvccManager mgr;
+TEST_F(MvccTest, TestScopedTransaction) {
+  MvccManager mgr(clock_.get());
   MvccSnapshot snap;
 
   {
@@ -124,7 +136,7 @@ TEST(TestMvcc, TestScopedTransaction) {
   ASSERT_TRUE(snap.IsCommitted(Timestamp(2)));
 }
 
-TEST(TestMvcc, TestPointInTimeSnapshot) {
+TEST_F(MvccTest, TestPointInTimeSnapshot) {
   MvccSnapshot snap(Timestamp(10));
 
   ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
@@ -133,7 +145,7 @@ TEST(TestMvcc, TestPointInTimeSnapshot) {
   ASSERT_FALSE(snap.IsCommitted(Timestamp(11)));
 }
 
-TEST(TestMvcc, TestMayHaveCommittedTransactionsAtOrAfter) {
+TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
   MvccSnapshot snap;
   snap.all_committed_before_timestamp_ = Timestamp(10);
   snap.timestamps_in_flight_.insert(11);
@@ -148,7 +160,7 @@ TEST(TestMvcc, TestMayHaveCommittedTransactionsAtOrAfter) {
   ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(15)));
 }
 
-TEST(TestMvcc, TestMayHaveUncommittedTransactionsBefore) {
+TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
   MvccSnapshot snap;
   snap.all_committed_before_timestamp_ = Timestamp(10);
   snap.timestamps_in_flight_.insert(11);

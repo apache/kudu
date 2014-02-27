@@ -67,8 +67,8 @@ class MvccSnapshot {
 
  private:
   friend class MvccManager;
-  FRIEND_TEST(TestMvcc, TestMayHaveCommittedTransactionsAtOrAfter);
-  FRIEND_TEST(TestMvcc, TestMayHaveUncommittedTransactionsBefore);
+  FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);
+  FRIEND_TEST(MvccTest, TestMayHaveUncommittedTransactionsBefore);
 
   // Summary rule:
   // A transaction T is committed if and only if:
@@ -99,7 +99,7 @@ class MvccSnapshot {
 // operate on a snapshot which contains only committed transactions.
 class MvccManager {
  public:
-  MvccManager();
+  explicit MvccManager(const scoped_refptr<server::Clock>& clock);
 
   // Begin a new transaction, assigning it a transaction ID.
   // Callers should generally prefer using the ScopedTransaction class defined

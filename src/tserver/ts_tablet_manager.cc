@@ -271,7 +271,10 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
-    s = BootstrapTablet(meta.Pass(), &metric_ctx_, &tablet, &log);
+    s = BootstrapTablet(meta.Pass(),
+                        scoped_refptr<server::Clock>(server_->clock()),
+                        &metric_ctx_,
+                        &tablet, &log);
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to bootstrap: "
           << tablet_id << " Status: " << s.ToString();
@@ -286,6 +289,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   LOG_TIMING(INFO, Substitute("Tablet $0 Started.", tablet_id)) {
     TRACE("Initializing tablet peer");
     s =  tablet_peer->Init(tablet,
+                           scoped_refptr<server::Clock>(server_->clock()),
                            quorum_peer,
                            log.Pass());
     if (!s.ok()) {

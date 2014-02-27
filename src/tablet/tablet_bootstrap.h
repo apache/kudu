@@ -5,6 +5,7 @@
 #include <tr1/memory>
 
 #include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -19,6 +20,10 @@ namespace metadata {
 class TabletMetadata;
 }
 
+namespace server {
+class Clock;
+}
+
 namespace tablet {
 class Tablet;
 
@@ -31,6 +36,7 @@ extern const char* kLogRecoveryDir;
 // TODO make this async and allow the caller to check on the status of recovery
 // for monitoring purposes.
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+                       const scoped_refptr<server::Clock>& clock,
                        MetricContext* metric_context,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log);

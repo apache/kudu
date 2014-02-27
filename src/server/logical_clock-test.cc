@@ -13,7 +13,7 @@ namespace server {
 class LogicalClockTest : public KuduTest {
  public:
   LogicalClockTest()
-      : clock_(new LogicalClock(Timestamp::kInitialTimestamp.value())) {
+      : clock_(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
  protected:
@@ -39,8 +39,8 @@ TEST_F(LogicalClockTest, TestUpdate_LogicalValueIncreasesByAmount) {
 
 // Tests that the clock doesn't get updated if the incoming value is lower.
 TEST_F(LogicalClockTest, TestUpdate_LogicalValueDoesNotIncrease) {
-  Timestamp ts(0);
-  // update the clock to 0 should do nothing
+  Timestamp ts(1);
+  // update the clock to 1, the initial value, should do nothing
   clock_->Update(ts);
   Timestamp now = clock_->Now();
   ASSERT_EQ(now.value(), 2);

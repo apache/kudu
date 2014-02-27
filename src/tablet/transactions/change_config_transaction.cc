@@ -50,6 +50,9 @@ Status LeaderChangeConfigTransaction::Prepare() {
 
   tx_ctx_->acquire_config_lock(config_lock_);
 
+  // now that we've acquired the lock set the transaction timestamp
+  tx_ctx_->set_timestamp(tx_ctx_->tablet_peer()->clock()->Now());
+
   const QuorumPB& old_quorum = tx_ctx_->tablet_peer()->tablet()->metadata()->Quorum();
   const QuorumPB& new_quorum = tx_ctx_->request()->new_config();
 
@@ -76,6 +79,7 @@ void LeaderChangeConfigTransaction::PrepareFailedPreCommitHooks(
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_change_config_response()->CopyFrom(*tx_ctx_->response());
+  tx_ctx_->timestamp().EncodeToString((*commit_msg)->mutable_timestamp());
 }
 
 Status LeaderChangeConfigTransaction::Apply() {
@@ -86,6 +90,7 @@ Status LeaderChangeConfigTransaction::Apply() {
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(CHANGE_CONFIG_OP);
+  tx_ctx_->timestamp().EncodeToString(commit->mutable_timestamp());
 
   TRACE("APPLY CHANGE CONFIG: finished, triggering COMMIT");
 

@@ -16,8 +16,8 @@
 
 namespace kudu { namespace tablet {
 
-MvccManager::MvccManager()
-    : clock_(new server::LogicalClock(Timestamp::kInitialTimestamp.value() - 1)) {
+MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
+    : clock_(clock) {
   cur_snap_.none_committed_after_timestamp_ = Timestamp::kInitialTimestamp;
   cur_snap_.all_committed_before_timestamp_ = Timestamp::kInitialTimestamp;
 }
@@ -26,6 +26,9 @@ Timestamp MvccManager::StartTransaction() {
   boost::lock_guard<LockType> l(lock_);
   Timestamp now = clock_->Now();
   cur_snap_.none_committed_after_timestamp_ = Timestamp(now.value() + 1);
+  if (cur_snap_.timestamps_in_flight_.empty()) {
+    cur_snap_.all_committed_before_timestamp_ = now;
+  }
   bool was_inserted = cur_snap_.timestamps_in_flight_.insert(now.value()).second;
   DCHECK(was_inserted) << "Already had timestamp " << now.ToString() << " in in-flight list";
   return now;
@@ -47,7 +50,7 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
 
     if (!cur_snap_.timestamps_in_flight_.empty()) {
       Timestamp new_min(*std::min_element(cur_snap_.timestamps_in_flight_.begin(),
-                                       cur_snap_.timestamps_in_flight_.end()));
+                                          cur_snap_.timestamps_in_flight_.end()));
       cur_snap_.all_committed_before_timestamp_ = new_min;
     } else {
       cur_snap_.all_committed_before_timestamp_ = cur_snap_.none_committed_after_timestamp_;

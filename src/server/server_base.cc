@@ -11,6 +11,7 @@
 #include "rpc/messenger.h"
 #include "server/default-path-handlers.h"
 #include "server/fsmanager.h"
+#include "server/logical_clock.h"
 #include "server/rpc_server.h"
 #include "server/tcmalloc_metrics.h"
 #include "server/webserver.h"
@@ -38,6 +39,7 @@ ServerBase::ServerBase(const ServerBaseOptions& options,
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false),
+    clock_(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
     options_(options) {
 }
 

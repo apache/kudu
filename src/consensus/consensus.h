@@ -5,11 +5,16 @@
 #include <string>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "consensus/consensus.pb.h"
 #include "util/status.h"
 #include "util/task_executor.h"
 
 namespace kudu {
+
+namespace server {
+class Clock;
+}
 
 namespace log {
 class Log;
@@ -39,6 +44,7 @@ class Consensus {
   // Note: Consensus does not own the Log and must be provided a fully built
   // one on startup.
   virtual Status Init(const metadata::QuorumPeerPB& peer,
+                      const scoped_refptr<server::Clock>& clock,
                       log::Log* log) = 0;
 
   // Starts running the consensus algorithm.

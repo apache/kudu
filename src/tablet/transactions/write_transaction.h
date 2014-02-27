@@ -58,7 +58,6 @@ class WriteTransactionContext : public TransactionContext {
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    Timestamp::kInvalidTimestamp.EncodeToString(result_pb_.mutable_timestamp());
   }
 
   // ctor used by the LEADER replica
@@ -71,7 +70,6 @@ class WriteTransactionContext : public TransactionContext {
         response_(response),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    Timestamp::kInvalidTimestamp.EncodeToString(result_pb_.mutable_timestamp());
   }
 
   // ctor used by FOLLOWER/LEARNER replicas
@@ -83,7 +81,6 @@ class WriteTransactionContext : public TransactionContext {
         response_(NULL),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
-    Timestamp::kInvalidTimestamp.EncodeToString(result_pb_.mutable_timestamp());
   }
 
   // Adds an applied insert to this TransactionContext, including the
@@ -150,10 +147,6 @@ class WriteTransactionContext : public TransactionContext {
   tserver::WriteResponsePB *response() {
     return response_;
   }
-
-  // Returns the Mvcc transaction id for the ongoing transaction or
-  // kInvalidTxId if no Mvcc transaction is managed by this TransactionContext.
-  Timestamp mvcc_timestamp();
 
   // Starts an Mvcc transaction, the ScopedTransaction will not commit until
   // commit_mvcc_tx is called. To be able to start an Mvcc transaction this

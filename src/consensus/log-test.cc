@@ -120,6 +120,7 @@ class LogTest : public LogTestBase {
 
     CommitMsg* commit = operation->mutable_commit();
     commit->set_op_type(WRITE_OP);
+    Timestamp(original_op_index).EncodeToString(commit->mutable_timestamp());
 
     OpId* original_op_id = commit->mutable_commited_op_id();
     original_op_id->set_term(0);
@@ -130,7 +131,6 @@ class LogTest : public LogTestBase {
     commit_id->set_index(index);
 
     TxResultPB* result = commit->mutable_result();
-    Timestamp(original_op_index).EncodeToString(result->mutable_timestamp());
 
     TxOperationPB* insert = result->add_inserts();
     insert->set_type(TxOperationPB::INSERT);

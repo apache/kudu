@@ -17,6 +17,8 @@ Timestamp LogicalClock::Now() {
 }
 
 Status LogicalClock::Update(const Timestamp& to_update) {
+  DCHECK_NE(to_update.value(), Timestamp::kInvalidTimestamp.value())
+      << "Updating the clock with an invalid timestamp";
   Atomic64 new_value = to_update.value();
   // if the incoming value is less than the current one there's nothing to do
   if (new_value <= now_) return Status::OK();
@@ -40,6 +42,11 @@ Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
 Status LogicalClock::TimedWaitUntilAfter(const Timestamp& then, const MonoDelta& max) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
+}
+
+LogicalClock* LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
+  // initialize at 'timestamp' - 1 so that the  first output value is 'timestamp'.
+  return new LogicalClock(timestamp.value() - 1);
 }
 
 }  // namespace server

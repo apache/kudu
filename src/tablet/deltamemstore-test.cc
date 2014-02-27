@@ -10,6 +10,7 @@
 #include "util/env_util.h"
 #include "gutil/casts.h"
 #include "gutil/gscoped_ptr.h"
+#include "server/logical_clock.h"
 #include "tablet/deltamemstore.h"
 #include "tablet/deltafile.h"
 #include "tablet/mutation.h"
@@ -27,7 +28,9 @@ class TestDeltaMemStore : public KuduTest {
  public:
   TestDeltaMemStore() :
     schema_(CreateSchema()),
-    dms_(new DeltaMemStore(0, schema_))
+    dms_(new DeltaMemStore(0, schema_)),
+    mvcc_(scoped_refptr<server::Clock>(
+        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)))
   {}
 
   static Schema CreateSchema() {

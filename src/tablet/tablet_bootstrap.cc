@@ -14,6 +14,7 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/util.h"
 #include "gutil/walltime.h"
+#include "server/clock.h"
 #include "server/metadata.h"
 #include "server/fsmanager.h"
 #include "tablet/lock_manager.h"
@@ -44,6 +45,7 @@ using kudu::metadata::QuorumPB;
 using kudu::metadata::TabletMetadata;
 using kudu::metadata::TabletSuperBlockPB;
 using kudu::metadata::RowSetMetadata;
+using kudu::server::Clock;
 using kudu::tablet::MutationResultPB;
 using kudu::tablet::PreparedRowWrite;
 using kudu::tablet::Tablet;
@@ -73,6 +75,7 @@ static const char* const kTmpSuffix = ".tmp";
 class TabletBootstrap {
  public:
   TabletBootstrap(gscoped_ptr<metadata::TabletMetadata> meta,
+                  const scoped_refptr<Clock>& clock,
                   MetricContext* metric_context);
 
   // Plays the log segments, rebuilding the portion of the Tablet's soft
@@ -177,7 +180,12 @@ class TabletBootstrap {
   Status HandleCommitMessage(ReplayState* state, LogEntryPB* entry);
   Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
 
+  // Decodes a Timestamp from the provided string and updates the clock
+  // with it.
+  Status UpdateClock(const string& timestamp);
+
   gscoped_ptr<metadata::TabletMetadata> meta_;
+  scoped_refptr<Clock> clock_;
   MetricContext* metric_context_;
   gscoped_ptr<tablet::Tablet> tablet_;
   gscoped_ptr<log::Log> log_;
@@ -209,10 +217,11 @@ struct MutationInput {
 };
 
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
+                       const scoped_refptr<Clock>& clock,
                        MetricContext* metric_context,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log) {
-  TabletBootstrap bootstrap(meta.Pass(), metric_context);
+  TabletBootstrap bootstrap(meta.Pass(), clock, metric_context);
   RETURN_NOT_OK(bootstrap.BootstrapTablet(rebuilt_tablet, rebuilt_log));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -285,8 +294,10 @@ static string DebugInfo(const string& tablet_id,
 }
 
 TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
+                                 const scoped_refptr<Clock>& clock,
                                  MetricContext* metric_context)
     : meta_(meta.Pass()),
+      clock_(clock),
       metric_context_(metric_context),
       recovery_ts_(GetCurrentTimeMicros()),
       arena_(256*1024, 4*1024*1024) {
@@ -345,7 +356,7 @@ Status TabletBootstrap::BootstrapTablet(shared_ptr<Tablet>* rebuilt_tablet,
 }
 
 Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
-  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass(), metric_context_));
+  gscoped_ptr<Tablet> tablet(new Tablet(meta_.Pass(), clock_, metric_context_));
   // doing nothing for now except opening a tablet locally.
   RETURN_NOT_OK(tablet->Open());
   // set 'fetched' to true if there were any local blocks present
@@ -588,7 +599,8 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
         VLOG(1) << "Skipping replicate message because it was originally aborted."
                 << " OpId: " << commit.commited_op_id().DebugString();
       }
-      break;
+      // return here so we don't update the clock as OP_ABORT's have invalid timestamps.
+      return Status::OK();
 
     case WRITE_OP:
       // successful write, play it into the tablet, filtering flushed entries
@@ -622,6 +634,9 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
       return Status::IllegalState(Substitute("Unsupported commit entry type: $0",
                                              commit.op_type()));
   }
+
+  // update the clock with the commit timestamp
+  RETURN_NOT_OK(UpdateClock(commit.timestamp()));
 
   return Status::OK();
 }
@@ -724,6 +739,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   commit->mutable_result()->CopyFrom(tx_ctx.Result());
   RETURN_NOT_OK(log_->Append(&commit_entry));
 
+
   return Status::OK();
 }
 
@@ -751,6 +767,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(OperationPB* replicate_op,
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
   RETURN_NOT_OK(log_->Append(&commit_entry));
+
   return Status::OK();
 }
 
@@ -779,6 +796,7 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
   RETURN_NOT_OK(log_->Append(&commit_entry));
+
   return Status::OK();
 }
 
@@ -1210,6 +1228,13 @@ Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
           << " row key: " << mutation_input.key_schema.DebugRow(*row_key)
           << " mutation: " << mutation_input.changelist->ToString(mutation_input.changelist_schema);
   }
+  return Status::OK();
+}
+
+Status TabletBootstrap::UpdateClock(const string& timestamp) {
+  Timestamp ts;
+  RETURN_NOT_OK(ts.DecodeFromString(timestamp));
+  RETURN_NOT_OK(clock_->Update(ts));
   return Status::OK();
 }
 
