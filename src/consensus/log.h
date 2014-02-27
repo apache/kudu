@@ -18,7 +18,7 @@ class FsManager;
 namespace log {
 
 class LogReader;
-class LogEntry;
+class LogEntryBatch;
 
 // Log interface, inspired by Raft's (logcabin) Log. Provides durability to
 // Kudu as a normal Write Ahead Log and also plays the role of persistent
@@ -63,11 +63,11 @@ class Log {
   // WARNING: the caller _must_ call AsyncAppend() or else the log
   // will "stall" and will never be able to make forward progress.
   Status Reserve(const vector<consensus::OperationPB*>& ops,
-                 LogEntry** reserved_entry);
+                 LogEntryBatch** reserved_entry);
 
   // Asynchronously appends 'entry' to the log. Once the append
   // completes and is synced, 'callback' will be invoked.
-  Status AsyncAppend(LogEntry* entry,
+  Status AsyncAppend(LogEntryBatch* entry,
                      const std::tr1::shared_ptr<FutureCallback>& callback);
 
   // Synchronously append a new entry to the log.
@@ -180,12 +180,12 @@ class Log {
   // is appended.
   // TODO once Append() is removed, 'caller_owns_operation' and
   // associated logic will no longer be needed.
-  Status DoAppend(LogEntry* entry, bool caller_owns_operation = true);
+  Status DoAppend(LogEntryBatch* entry, bool caller_owns_operation = true);
 
   Status Sync();
 
-  BlockingQueue<LogEntry*>* entry_queue() {
-    return &entry_queue_;
+  BlockingQueue<LogEntryBatch*>* entry_queue() {
+    return &entry_batch_queue;
   }
 
   // Read-write lock to protect 'allocation_state_'.
@@ -218,7 +218,7 @@ class Log {
 
   // The queue used to communicate between the thread calling
   // Reserve() and the Log Appender thread
-  BlockingQueue<LogEntry*> entry_queue_;
+  BlockingQueue<LogEntryBatch*> entry_batch_queue;
 
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
@@ -241,6 +241,7 @@ class Log {
   };
   State state_;
 
+
   // State of segment (pre-) allocation
   enum SegmentAllocationState {
     kAllocationNotStarted, // No segment allocation requested
@@ -259,14 +260,14 @@ class Log {
 // This class represents a batch of operations to be written and
 // synced to the log. It is opaque to the user and is managed by the
 // Log class.
-class LogEntry {
+class LogEntryBatch {
  public:
-  ~LogEntry();
+  ~LogEntryBatch();
 
  private:
   friend class Log;
 
-  LogEntry(gscoped_ptr<LogEntryPB[]> phys_entries, size_t count);
+  LogEntryBatch(gscoped_ptr<LogEntryPB[]> phys_entries, size_t count);
 
   // Serializes contents of the entry to an internal buffer.
   Status Serialize();
@@ -339,7 +340,7 @@ class LogEntry {
   };
   State state_;
 
-  DISALLOW_COPY_AND_ASSIGN(LogEntry);
+  DISALLOW_COPY_AND_ASSIGN(LogEntryBatch);
 };
 
 }  // namespace log

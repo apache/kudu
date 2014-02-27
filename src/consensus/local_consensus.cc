@@ -13,7 +13,7 @@ namespace consensus {
 using base::subtle::Barrier_AtomicIncrement;
 using consensus::CHANGE_CONFIG_OP;
 using log::Log;
-using log::LogEntry;
+using log::LogEntryBatch;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
@@ -83,7 +83,7 @@ Status LocalConsensus::Append(
     gscoped_ptr<ConsensusContext>* context) {
   DCHECK_GE(state_, kConfiguring);
 
-  LogEntry* reserved_entry;
+  LogEntryBatch* reserved_entry_batch;
   gscoped_ptr<ConsensusContext> new_context;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -106,9 +106,9 @@ Status LocalConsensus::Append(
     // [Currently Reserve() submits a task to an execute inside Log
     // that appends and syncs the operation.]
     RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(new_context->replicate_op()),
-                                &reserved_entry));
+                                &reserved_entry_batch));
   }
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry, repl_callback));
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, repl_callback));
 
   context->reset(new_context.release());
   return Status::OK();
@@ -122,7 +122,7 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
 
   DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
 
-  LogEntry* reserved_entry;
+  LogEntryBatch* reserved_entry_batch;
   shared_ptr<FutureCallback> commit_clbk;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -145,17 +145,17 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
     // [Currently Reserve() submits a task to an execute inside Log
     // that appends and syncs the operation.]
     RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(commit_op),
-                                &reserved_entry));
+                                &reserved_entry_batch));
   }
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry, commit_clbk));
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, commit_clbk));
   return Status::OK();
 }
 
 Status LocalConsensus::LocalCommit(const vector<OperationPB*>& commit_ops,
                                    const shared_ptr<FutureCallback>& commit_callback) {
-  LogEntry* reserved_entry;
-  RETURN_NOT_OK(log_->Reserve(commit_ops, &reserved_entry));
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry, commit_callback));
+  LogEntryBatch* reserved_entry_batch;
+  RETURN_NOT_OK(log_->Reserve(commit_ops, &reserved_entry_batch));
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, commit_callback));
   return Status::OK();
 }
 

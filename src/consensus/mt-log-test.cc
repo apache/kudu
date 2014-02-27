@@ -60,7 +60,7 @@ class MultiThreadedLogTest : public LogTestBase {
     CountDownLatch latch(FLAGS_num_ops_per_thread);
     vector<Status> errors;
     for (int i = 0; i < FLAGS_num_ops_per_thread; i++) {
-      LogEntry* entry;
+      LogEntryBatch* entry_batch;
       {
         boost::lock_guard<simple_spinlock> lock_guard(lock_);
         gscoped_ptr<OperationPB> op(new OperationPB);
@@ -80,11 +80,11 @@ class MultiThreadedLogTest : public LogTestBase {
                        request->mutable_to_insert_rows());
         request->set_tablet_id(kTestTablet);
         ASSERT_STATUS_OK(log_->Reserve(boost::assign::list_of(op.get()),
-                                       &entry));
+                                       &entry_batch));
         ops.push_back(op.release());
       }
       shared_ptr<CustomLatchCallback> cb(new CustomLatchCallback(&latch, &errors));
-      ASSERT_STATUS_OK(log_->AsyncAppend(entry, cb));
+      ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb));
     }
     LOG_TIMING(INFO, strings::Substitute("thread $0 waiting to append and sync $1 entries",
                                         thread_id, FLAGS_num_ops_per_thread)) {

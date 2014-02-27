@@ -72,27 +72,27 @@ Status Log::AppendThread::Init() {
 }
 
 void Log::AppendThread::RunThread() {
-  BlockingQueue<LogEntry*>* queue = log_->entry_queue();
+  BlockingQueue<LogEntryBatch*>* queue = log_->entry_queue();
   while (PREDICT_TRUE(!closing())) {
-    std::vector<LogEntry*> entries;
-    ElementDeleter d(&entries);
+    std::vector<LogEntryBatch*> entry_batches;
+    ElementDeleter d(&entry_batches);
 
-    if (PREDICT_FALSE(!queue->BlockingDrainTo(&entries))) {
+    if (PREDICT_FALSE(!queue->BlockingDrainTo(&entry_batches))) {
       break;
     }
 
-    BOOST_FOREACH(LogEntry* entry, entries) {
-      entry->WaitForReady();
-      Status s = log_->DoAppend(entry);
+    BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
+      entry_batch->WaitForReady();
+      Status s = log_->DoAppend(entry_batch);
       if (PREDICT_FALSE(!s.ok())) {
         LOG(ERROR) << "Error appending to the log: " << s.ToString();
         DLOG(FATAL) << "Aborting: " << s.ToString();
-        entry->set_failed_to_append();
+        entry_batch->set_failed_to_append();
         // TODO If a single transaction fails to append, should we
         // abort all subsequent transactions in this batch or allow
         // them to be appended? What about transactions in future
         // batches?
-        entry->callback()->OnFailure(s);
+        entry_batch->callback()->OnFailure(s);
       }
     }
 
@@ -100,14 +100,14 @@ void Log::AppendThread::RunThread() {
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Error syncing log" << s.ToString();
       DLOG(FATAL) << "Aborting: " << s.ToString();
-      BOOST_FOREACH(LogEntry* entry, entries) {
-        entry->callback()->OnFailure(s);
+      BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
+        entry_batch->callback()->OnFailure(s);
       }
     } else {
-      VLOG(2) << "Synchronized " << entries.size() << " entries";
-      BOOST_FOREACH(LogEntry* entry, entries) {
-        if (PREDICT_TRUE(!entry->failed_to_append())) {
-          entry->callback()->OnSuccess();
+      VLOG(2) << "Synchronized " << entry_batches.size() << " entry batches";
+      BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
+        if (PREDICT_TRUE(!entry_batch->failed_to_append())) {
+          entry_batch->callback()->OnSuccess();
         }
       }
     }
@@ -123,7 +123,7 @@ void Log::AppendThread::Shutdown() {
 
   LOG(INFO) << "Shutting down Log append thread!";
 
-  BlockingQueue<LogEntry*>* queue = log_->entry_queue();
+  BlockingQueue<LogEntryBatch*>* queue = log_->entry_queue();
   queue->Shutdown();
 
   {
@@ -210,7 +210,7 @@ Log::Log(const LogOptions &options,
   next_segment_header_(header.Pass()),
   header_size_(0),
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
-  entry_queue_(FLAGS_group_commit_queue_size),
+  entry_batch_queue(FLAGS_group_commit_queue_size),
   append_thread_(new AppendThread(this)),
   allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
   force_sync_all_(options_.force_fsync_all),
@@ -284,23 +284,22 @@ Status Log::RollOver() {
 }
 
 Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
-                    LogEntry** reserved_entry) {
+                    LogEntryBatch** reserved_entry) {
   DCHECK(reserved_entry != NULL);
   CHECK_EQ(state_, kLogWriting);
 
   size_t num_ops = ops.size();
-  gscoped_ptr<LogEntryPB[]> entries(new LogEntryPB[num_ops]);
+  gscoped_ptr<LogEntryPB[]> entry_pbs(new LogEntryPB[num_ops]);
   for (size_t i = 0; i < num_ops; i++) {
     consensus::OperationPB* op = ops[i];
-    LogEntryPB& entry = entries[i];
-    entry.set_type(log::OPERATION);
-    entry.set_allocated_operation(op);
+    LogEntryPB* entry_pb = &entry_pbs[i];
+    entry_pb->set_type(log::OPERATION);
+    entry_pb->set_allocated_operation(op);
   }
-  gscoped_ptr<LogEntry> new_entry(new LogEntry(entries.Pass(),
-                                                   num_ops));
-  new_entry->MarkReserved();
+  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_pbs.Pass(), num_ops));
+  new_entry_batch->MarkReserved();
 
-  if (PREDICT_FALSE(!entry_queue_.BlockingPut(new_entry.get()))) {
+  if (PREDICT_FALSE(!entry_batch_queue.BlockingPut(new_entry_batch.get()))) {
     return kLogShutdownStatus;
   }
 
@@ -309,25 +308,25 @@ Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
   //
   // TODO (perf) Use a ring buffer instead of a blocking queue and set
   // 'reserved_entry' to a pre-allocated slot in the buffer.
-  *reserved_entry = new_entry.release();
+  *reserved_entry = new_entry_batch.release();
   return Status::OK();
 }
 
-Status Log::AsyncAppend(LogEntry* entry, const shared_ptr<FutureCallback>& callback) {
+Status Log::AsyncAppend(LogEntryBatch* entry_batch, const shared_ptr<FutureCallback>& callback) {
   CHECK_EQ(state_, kLogWriting);
 
-  RETURN_NOT_OK(entry->Serialize());
-  entry->set_callback(callback);
-  entry->MarkReady();
+  RETURN_NOT_OK(entry_batch->Serialize());
+  entry_batch->set_callback(callback);
+  entry_batch->MarkReady();
 
   return Status::OK();
 }
 
-Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
+Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   // TODO (perf) make this more efficient, cache the highest id
-  // during LogEntry::Serialize()
-  for (size_t i = 0; i < entry->count(); i++) {
-    LogEntryPB& entry_pb = entry->phys_entries_[i];
+  // during LogEntryBatch::Serialize()
+  for (size_t i = 0; i < entry_batch->count(); i++) {
+    LogEntryPB& entry_pb = entry_batch->phys_entries_[i];
     switch (entry_pb.type()) {
       case OPERATION: {
         if (PREDICT_TRUE(entry_pb.operation().has_id())) {
@@ -339,8 +338,8 @@ Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
               " MISSED_DELTA type are allowed not to have ids.";
         }
         if (caller_owns_operation) {
-          // If operation is allocated by another thread, so we must release it
-          // to avoid freeing the memory
+          // If the OperationPB was allocated by another thread, we must release
+          // it to avoid freeing the memory.
           entry_pb.release_operation();
         }
         break;
@@ -354,12 +353,12 @@ Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
       }
     }
   }
-  Slice entry_data = entry->data();
-  uint32_t entry_size = entry_data.size();
+  Slice entry_batch_data = entry_batch->data();
+  uint32_t entry_batch_bytes = entry_batch_data.size();
 
   // if the size of this entry overflows the current segment, get a new one
   if (allocation_state() == kAllocationNotStarted) {
-    if ((active_segment_->writable_file()->Size() + entry_size + 4) > max_segment_size_) {
+    if ((active_segment_->writable_file()->Size() + entry_batch_bytes + 4) > max_segment_size_) {
       LOG(INFO) << "Max segment size reached. Starting new segment allocation. ";
       RETURN_NOT_OK(AsyncAllocateSegment());
       if (!options_.async_preallocate_segments) {
@@ -378,9 +377,9 @@ Status Log::DoAppend(LogEntry* entry, bool caller_owns_operation) {
 
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
     RETURN_NOT_OK(active_segment_->writable_file()->Append(
-      Slice(reinterpret_cast<uint8_t *>(&entry_size), 4)));
+      Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));
   }
-  RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_data));
+  RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_batch_data));
   // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
 }
@@ -396,17 +395,17 @@ Status Log::Sync() {
 
 Status Log::Append(LogEntryPB* phys_entry) {
   gscoped_ptr<LogEntryPB[]> phys_entries(phys_entry);
-  LogEntry entry(phys_entries.Pass(), 1);
-  entry.state_ = LogEntry::kEntryReserved;
-  Status s = entry.Serialize();
+  LogEntryBatch entry_batch(phys_entries.Pass(), 1);
+  entry_batch.state_ = LogEntryBatch::kEntryReserved;
+  Status s = entry_batch.Serialize();
   if (s.ok()) {
-    entry.state_ = LogEntry::kEntryReady;
-    s = DoAppend(&entry, false);
+    entry_batch.state_ = LogEntryBatch::kEntryReady;
+    s = DoAppend(&entry_batch, false);
     if (s.ok()) {
       s = Sync();
     }
   }
-  ignore_result(entry.phys_entries_.release());
+  ignore_result(entry_batch.phys_entries_.release());
   return s;
 }
 
@@ -441,11 +440,11 @@ Status Log::Close() {
     RETURN_NOT_OK(Sync());
     RETURN_NOT_OK(active_segment_->writable_file()->Close());
     state_ = kLogClosed;
-    VLOG(1) << "Log Closed()";
+    VLOG(1) << "Log closed";
     return Status::OK();
   }
   if (state_ == kLogClosed) {
-    VLOG(1) << "Log already Closed()";
+    VLOG(1) << "Log already closed";
     return Status::OK();
   }
   return Status::IllegalState(strings::Substitute("Bad state for Close() $0", state_));
@@ -547,23 +546,23 @@ Log::~Log() {
   }
 }
 
-LogEntry::LogEntry(gscoped_ptr<LogEntryPB[]> phys_entries,
+LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryPB[]> phys_entries,
                   size_t count)
     : phys_entries_(phys_entries.Pass()),
       count_(count),
       state_(kEntryInitialized) {
 }
 
-LogEntry::~LogEntry() {
+LogEntryBatch::~LogEntryBatch() {
 }
 
-void LogEntry::MarkReserved() {
+void LogEntryBatch::MarkReserved() {
   DCHECK_EQ(state_, kEntryInitialized);
   ready_lock_.Lock();
   state_ = kEntryReserved;
 }
 
-Status LogEntry::Serialize() {
+Status LogEntryBatch::Serialize() {
   DCHECK_EQ(state_, kEntryReserved);
   buffer_.clear();
   uint32_t totalByteSize = 0;
@@ -572,24 +571,24 @@ Status LogEntry::Serialize() {
   }
   buffer_.reserve(totalByteSize);
   for (int i = 0; i < count_; ++i) {
-    LogEntryPB& entry = phys_entries_[i];
-    if (!pb_util::AppendToString(entry, &buffer_)) {
+    LogEntryPB& entry_batch = phys_entries_[i];
+    if (!pb_util::AppendToString(entry_batch, &buffer_)) {
       return Status::IOError(strings::Substitute(
           "unable to serialize entry pb $0 out of $1; entry contents: $3",
-          i, count_, entry.DebugString()));
+          i, count_, entry_batch.DebugString()));
     }
   }
   state_ = kEntrySerialized;
   return Status::OK();
 }
 
-void LogEntry::MarkReady() {
+void LogEntryBatch::MarkReady() {
   DCHECK_EQ(state_, kEntrySerialized);
   state_ = kEntryReady;
   ready_lock_.Unlock();
 }
 
-void LogEntry::WaitForReady() {
+void LogEntryBatch::WaitForReady() {
   ready_lock_.Lock();
   DCHECK_EQ(state_, kEntryReady);
   ready_lock_.Unlock();
