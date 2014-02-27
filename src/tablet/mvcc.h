@@ -8,7 +8,7 @@
 #include <string>
 
 #include "gutil/gscoped_ptr.h"
-#include "tablet/clock.h"
+#include "server/clock.h"
 #include "util/locks.h"
 
 namespace kudu {
@@ -124,7 +124,7 @@ class MvccManager {
   typedef simple_spinlock LockType;
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
-  scoped_refptr<Clock> clock_;
+  scoped_refptr<server::Clock> clock_;
 };
 
 // A scoped handle to a running transaction.

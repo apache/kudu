@@ -1,14 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#ifndef KUDU_TABLET_LOGICAL_CLOCK_H_
-#define KUDU_TABLET_LOGICAL_CLOCK_H_
+#ifndef KUDU_SERVER_LOGICAL_CLOCK_H_
+#define KUDU_SERVER_LOGICAL_CLOCK_H_
 
-#include "tablet/clock.h"
-#include "tablet/mvcc.h"
+#include "server/clock.h"
 
 namespace kudu {
 class MonoDelta;
-namespace tablet {
+namespace server {
 
 // An implementation of Clock that behaves as a plain Lamport Clock.
 // In a single node, single tablet, setting this generates exactly the
@@ -35,8 +34,8 @@ class LogicalClock : public Clock {
   base::subtle::Atomic64 now_;
 };
 
-}  // namespace tablet
+}  // namespace server
 }  // namespace kudu
 
-#endif /* KUDU_TABLET_LOGICAL_CLOCK_H_ */
+#endif /* KUDU_SERVER_LOGICAL_CLOCK_H_ */
 

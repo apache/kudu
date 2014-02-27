@@ -1,12 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "tablet/logical_clock.h"
+#include "server/logical_clock.h"
 
 #include "gutil/atomicops.h"
 #include "util/status.h"
 
 namespace kudu {
-namespace tablet {
+namespace server {
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
@@ -42,6 +42,6 @@ Status LogicalClock::TimedWaitUntilAfter(const Timestamp& then, const MonoDelta&
       "Logical clock does not support WaitUntilAfter()");
 }
 
-}  // namespace tablet
+}  // namespace server
 }  // namespace kudu
 

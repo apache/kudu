@@ -12,6 +12,7 @@ set(SERVER_SRCS
   default-path-handlers.cc
   fsmanager.cc
   global-flags.cc
+  logical_clock.cc
   metadata.cc
   metadata_util.cc
   oid_generator.cc
@@ -38,4 +39,5 @@ add_dependencies(server krpc)
 
 # Tests
 ADD_KUDU_TEST(fsmanager-test)
+ADD_KUDU_TEST(logical_clock-test)
 ADD_KUDU_TEST(webserver-test)

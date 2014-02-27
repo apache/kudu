@@ -11,13 +11,13 @@
 #include "gutil/port.h"
 #include "gutil/stringprintf.h"
 #include "gutil/strings/strcat.h"
-#include "tablet/logical_clock.h"
+#include "server/logical_clock.h"
 #include "tablet/mvcc.h"
 
 namespace kudu { namespace tablet {
 
 MvccManager::MvccManager()
-    : clock_(new LogicalClock(Timestamp::kInitialTimestamp.value() - 1)) {
+    : clock_(new server::LogicalClock(Timestamp::kInitialTimestamp.value() - 1)) {
   cur_snap_.none_committed_after_timestamp_ = Timestamp::kInitialTimestamp;
   cur_snap_.all_committed_before_timestamp_ = Timestamp::kInitialTimestamp;
 }

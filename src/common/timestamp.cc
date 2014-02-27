@@ -1,14 +1,15 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "tablet/clock.h"
+#include "common/timestamp.h"
 
+#include "util/faststring.h"
 #include "util/memcmpable_varint.h"
+#include "util/slice.h"
 #include "util/status.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/mathlimits.h"
 
 namespace kudu {
-namespace tablet {
 
 const Timestamp Timestamp::kMin(MathLimits<Timestamp::val_type>::kMin);
 const Timestamp Timestamp::kMax(MathLimits<Timestamp::val_type>::kMax);
@@ -50,6 +51,6 @@ Status Timestamp::DecodeFromString(const string& decode_from) {
   return Status::OK();
 }
 
-}  // namespace tablet
 }  // namespace kudu
+
 

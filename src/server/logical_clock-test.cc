@@ -3,12 +3,12 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "tablet/logical_clock.h"
+#include "server/logical_clock.h"
 #include "util/monotime.h"
 #include "util/test_util.h"
 
 namespace kudu {
-namespace tablet {
+namespace server {
 
 class LogicalClockTest : public KuduTest {
  public:
@@ -51,6 +51,6 @@ TEST_F(LogicalClockTest, TestWaitUntilAfterIsUnavailable) {
   ASSERT_TRUE(status.IsServiceUnavailable());
 }
 
-}  // namespace tablet
+}  // namespace server
 }  // namespace kudu
 

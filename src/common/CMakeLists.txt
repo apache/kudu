@@ -27,6 +27,7 @@ set(COMMON_SRCS
   encoded_key.cc
   scan_spec.cc
   schema.cc
+  timestamp.cc
   types.cc
 )
 

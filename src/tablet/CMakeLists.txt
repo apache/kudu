@@ -11,12 +11,10 @@ set(TABLET_SRCS
   transactions/write_transaction.cc
   transactions/write_util.cc
   cfile_set.cc
-  clock.cc
   compaction.cc
   compaction_policy.cc
   diskrowset.cc
   lock_manager.cc
-  logical_clock.cc
   memrowset.cc
   mutation.cc
   mvcc.cc
@@ -58,7 +56,6 @@ ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)
 ADD_KUDU_TEST(compaction_policy-test)
 ADD_KUDU_TEST(lock_manager-test)
-ADD_KUDU_TEST(logical_clock-test)
 ADD_KUDU_TEST(rowset_tree-test)
 ADD_KUDU_TEST(composite-pushdown-test)
 ADD_KUDU_TEST(delta_compaction-test)
