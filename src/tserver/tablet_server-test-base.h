@@ -37,6 +37,8 @@
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
+DECLARE_bool(use_hybrid_clock);
+DECLARE_int32(max_clock_sync_error_usec);
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -80,6 +82,13 @@ class TabletServerTest : public KuduTest {
   // Starts the tablet server, override to start it later.
   virtual void SetUp() {
     KuduTest::SetUp();
+
+    // Use the hybrid clock for TS tests
+    FLAGS_use_hybrid_clock = true;
+
+    // increase the max error tolerance.
+    FLAGS_max_clock_sync_error_usec = 5000000;
+
     CreateSharedRegion();
     StartTabletServer();
   }

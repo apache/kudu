@@ -4,6 +4,7 @@
 #define KUDU_SERVER_LOGICAL_CLOCK_H_
 
 #include "server/clock.h"
+#include "util/status.h"
 
 namespace kudu {
 class MonoDelta;
@@ -24,12 +25,17 @@ namespace server {
 class LogicalClock : public Clock {
  public:
 
-  Timestamp Now();
-  Status Update(const Timestamp& to_update);
+  virtual Status Init() OVERRIDE { return Status::OK(); }
 
-  // Below methods are unavailable for this clock.
-  Status WaitUntilAfter(const Timestamp& then);
-  Status TimedWaitUntilAfter(const Timestamp& then, const MonoDelta& max);
+  virtual Timestamp Now() OVERRIDE;
+
+  // In the logical clock this call is equivalent to Now();
+  virtual Timestamp NowLatest() OVERRIDE;
+
+  virtual Status Update(const Timestamp& to_update) OVERRIDE;
+
+  // WaitUntilAfter() is unavailable for this clock.
+  virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
 
   // Creates a logical clock whose first output value on a Now() call is 'timestamp'.
   static LogicalClock* CreateStartingAt(const Timestamp& timestamp);

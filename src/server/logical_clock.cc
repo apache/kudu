@@ -16,6 +16,10 @@ Timestamp LogicalClock::Now() {
   return Timestamp(Barrier_AtomicIncrement(&now_, 1));
 }
 
+Timestamp LogicalClock::NowLatest() {
+  return Now();
+}
+
 Status LogicalClock::Update(const Timestamp& to_update) {
   DCHECK_NE(to_update.value(), Timestamp::kInvalidTimestamp.value())
       << "Updating the clock with an invalid timestamp";
@@ -35,11 +39,6 @@ Status LogicalClock::Update(const Timestamp& to_update) {
   return Status::OK();
 }
 Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
-  return Status::ServiceUnavailable(
-      "Logical clock does not support WaitUntilAfter()");
-}
-
-Status LogicalClock::TimedWaitUntilAfter(const Timestamp& then, const MonoDelta& max) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
 }

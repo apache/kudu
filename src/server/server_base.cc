@@ -11,6 +11,7 @@
 #include "rpc/messenger.h"
 #include "server/default-path-handlers.h"
 #include "server/fsmanager.h"
+#include "server/hybrid_clock.h"
 #include "server/logical_clock.h"
 #include "server/rpc_server.h"
 #include "server/tcmalloc_metrics.h"
@@ -25,6 +26,7 @@
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
              " (Advanced option).");
+DECLARE_bool(use_hybrid_clock);
 
 using std::vector;
 
@@ -39,8 +41,12 @@ ServerBase::ServerBase(const ServerBaseOptions& options,
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false),
-    clock_(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
     options_(options) {
+  if (FLAGS_use_hybrid_clock) {
+    clock_ = new HybridClock();
+  } else {
+    clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
+  }
 }
 
 ServerBase::~ServerBase() {
@@ -102,6 +108,7 @@ Status ServerBase::Init() {
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init());
+  RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
   return Status::OK();
 }
 
