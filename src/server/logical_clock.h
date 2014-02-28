@@ -14,7 +14,6 @@ namespace server {
 // In a single node, single tablet, setting this generates exactly the
 // same Timestamp sequence as the original MvccManager did, but it can be
 // updated to make sure replicas generate new timestamps on becoming leader.
-//
 // This can be used as a deterministic timestamp generator that has the same
 // consistency properties as a HybridTime clock.
 //
@@ -38,6 +37,11 @@ class LogicalClock : public Clock {
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
 
   virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
+
+  // Logical clock doesn't support COMMIT_WAIT.
+  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE {
+    return mode != COMMIT_WAIT;
+  }
 
   // Creates a logical clock whose first output value on a Now() call is 'timestamp'.
   static LogicalClock* CreateStartingAt(const Timestamp& timestamp);

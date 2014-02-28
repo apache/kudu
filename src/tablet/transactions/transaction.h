@@ -174,11 +174,24 @@ class TransactionContext {
     return op_id_;
   }
 
+  ExternalConsistencyMode external_consistency_mode() const {
+    return external_consistency_mode_;
+  }
+
+  void set_client_propagated_timestamp(const Timestamp& timestamp) {
+    client_propagated_timestamp_ = timestamp;
+  }
+
+  Timestamp client_propagated_timestamp() const {
+    return client_propagated_timestamp_;
+  }
+
  protected:
   explicit TransactionContext(TabletPeer* tablet_peer)
       : tablet_peer_(tablet_peer),
         completion_clbk_(new TransactionCompletionCallback()),
-        arena_(32*1024, 4*1024*1024) {
+        arena_(32*1024, 4*1024*1024),
+        external_consistency_mode_(NO_CONSISTENCY) {
   }
 
   TransactionMetrics tx_metrics_;
@@ -194,12 +207,22 @@ class TransactionContext {
   // This transaction's timestamp
   Timestamp timestamp_;
 
+  // The clock error when timestamp_ was read.
+  uint64_t timestamp_error_;
+
   Arena arena_;
 
   // This OpId stores the canonical "anchor" OpId for this transaction.
   consensus::OpId op_id_;
 
   gscoped_ptr<consensus::ConsensusContext> consensus_ctx_;
+
+  // The defined consistency mode for this transaction.
+  ExternalConsistencyMode external_consistency_mode_;
+
+  // The timestamp that was propagated by the client in the request
+  // Only set if ExternalConsistencyMode = CLIENT_PROPAGATED
+  Timestamp client_propagated_timestamp_;
 };
 
 // Base class for transactions.
@@ -257,6 +280,9 @@ class Transaction : public base::RefCountedThreadSafe<Transaction> {
 
   // Makes the transaction update the relevant metrics.
   virtual void UpdateMetrics() {}
+
+  // Makes the caller thread wait until timestamp < now.earliest
+  Status CommitWait();
 
   std::tr1::shared_ptr<FutureCallback> prepare_finished_callback_;
   std::tr1::shared_ptr<FutureCallback> commit_finished_callback_;

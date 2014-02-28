@@ -18,6 +18,7 @@
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
+#include "server/hybrid_clock.h"
 #include "tserver/scanners.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
@@ -316,8 +317,42 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   shared_ptr<TabletPeer> tablet_peer;
   if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
+  if (req->external_consistency_mode() != NO_CONSISTENCY) {
+    if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
+      Status s = Status::ServiceUnavailable("The configured clock does not support the"
+          " required consistency mode.");
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                                 TabletServerErrorPB::UNKNOWN_ERROR,
+                                 context);
+      return;
+    }
+  }
+
   WriteTransactionContext *tx_ctx =
     new WriteTransactionContext(tablet_peer.get(), req, resp);
+
+  // if the consistency mode is set to CLIENT_PROPAGATED and the client
+  // sent us a timestamp, decode it and set it in the transaction context.
+  // Also update the clock so that all future timestamps are greater than
+  // the passed timestamp.
+  if (req->external_consistency_mode() == CLIENT_PROPAGATED) {
+    Status s;
+    if (req->has_propagated_timestamp()) {
+      Timestamp ts(req->propagated_timestamp());
+      if (PREDICT_TRUE(s.ok())) {
+        tx_ctx->set_client_propagated_timestamp(ts);
+        // update the clock with the client's timestamp
+        s = server_->clock()->Update(ts);
+      }
+    }
+    if (PREDICT_FALSE(!s.ok())) {
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::UNKNOWN_ERROR,
+                           context);
+      return;
+    }
+
+  }
 
   tx_ctx->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback(context, resp)).Pass());

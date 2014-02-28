@@ -7,6 +7,7 @@
 #include "consensus/consensus.h"
 #include "rpc/rpc_context.h"
 #include "tablet/transactions/transaction_tracker.h"
+#include "tablet/tablet_peer.h"
 #include "util/task_executor.h"
 #include "util/trace.h"
 
@@ -31,6 +32,12 @@ Transaction::Transaction(TaskExecutor* prepare_executor,
                               boost::bind(&Transaction::ApplyFailed, this, _1))),
   prepare_executor_(prepare_executor),
   apply_executor_(apply_executor) {
+}
+
+Status Transaction::CommitWait() {
+  DCHECK(tx_ctx()->external_consistency_mode() == COMMIT_WAIT);
+  RETURN_NOT_OK(tx_ctx()->tablet_peer()->clock()->WaitUntilAfter(tx_ctx()->timestamp()));
+  return Status::OK();
 }
 
 LeaderTransaction::LeaderTransaction(TransactionTracker *txn_tracker,

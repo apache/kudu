@@ -98,6 +98,15 @@ message WriteRequestPB {
 
   // Operations to perform (insert/update/delete)
   optional RowOperationsPB row_operations = 3;
+
+  // The required consistency mode for this write, defaults to NO_CONSISTENCY.
+  optional ExternalConsistencyMode external_consistency_mode = 4 [default = NO_CONSISTENCY];
+
+  // A timestamp obtained by the client from a previous request.
+  // This is ignored unless external_consistency_mode = CLIENT_PROPAGATED.
+  // TODO crypto sign this and propagate the signature along with
+  // the timestamp.
+  optional fixed64 propagated_timestamp = 5;
 }
 
 message WriteResponsePB {
@@ -118,6 +127,11 @@ message WriteResponsePB {
     required AppStatusPB error = 2;
   }
   repeated PerRowErrorPB per_row_errors = 2;
+
+  // The timestamp chosen by the server for this write.
+  // This is only set when the request specified external_consistency_mode = CLIENT_PROPAGATED.
+  // TODO propagate timestamps with server signature
+  optional fixed64 write_timestamp = 3;
 }
 
 // A list tablets request

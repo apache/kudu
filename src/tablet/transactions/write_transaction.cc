@@ -7,6 +7,7 @@
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"
 #include "rpc/rpc_context.h"
+#include "server/hybrid_clock.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/tablet_metrics.h"
@@ -117,6 +118,19 @@ Status LeaderWriteTransaction::Apply() {
     i++;
   }
 
+  // If the client requested COMMIT_WAIT as the external consistency mode
+  // calculate the latest that the prepare timestamp could be and wait
+  // until now.earliest > prepare_latest. Only after this are the locks
+  // released.
+  if (tx_ctx_->external_consistency_mode() == COMMIT_WAIT) {
+    TRACE("APPLY: Commit Wait.");
+    // If we can't commit wait and have already applied we might have consistency
+    // issues if we still reply to the client that the operation was a success.
+    // On the other hand we don't have rollbacks as of yet thus we can't undo the
+    // the apply either, so we just CHECK_OK for now.
+    CHECK_OK(CommitWait());
+  }
+
   TRACE("APPLY: Releasing row locks");
 
   // Perform early lock release after we've applied all changes
@@ -126,6 +140,7 @@ Status LeaderWriteTransaction::Apply() {
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());
   commit->set_op_type(WRITE_OP);
   commit->set_timestamp(tx_ctx_->timestamp().ToUint64());
+  tx_ctx_->response()->set_write_timestamp(tx_ctx_->timestamp().ToUint64());
 
   TRACE("APPLY: finished, triggering COMMIT");
 
@@ -184,13 +199,21 @@ Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
 
 Timestamp WriteTransactionContext::start_mvcc_tx() {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
-  mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
+  // if the consistency mode is set to COMMIT_WAIT instruct
+  // ScopedTransaction to obtain the latest possible clock value
+  // taking the error into consideration.
+  if (external_consistency_mode() == COMMIT_WAIT) {
+    mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager(), true));
+  } else {
+    mvcc_tx_.reset(new ScopedTransaction(tablet_peer_->tablet()->mvcc_manager()));
+  }
   set_timestamp(mvcc_tx_->timestamp());
   return mvcc_tx_->timestamp();
 }
 
 void WriteTransactionContext::set_current_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
+  DCHECK(external_consistency_mode() != COMMIT_WAIT);
   mvcc_tx_.reset(mvcc_tx.release());
   set_timestamp(mvcc_tx_->timestamp());
 }

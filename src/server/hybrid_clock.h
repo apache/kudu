@@ -34,6 +34,9 @@ class HybridClock : public Clock {
 
   virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
 
+  // HybridClock supports all external consistency modes.
+  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE;
+
   // Blocks the caller thread until the current time is after 'then'.
   //
   // The incoming time 'then' is assumed to be the latest time possible
@@ -56,6 +59,12 @@ class HybridClock : public Clock {
   // synchronized and therefore it couldn't wait out the error.
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
 
+  // Obtains the timestamp corresponding to the current time and the associated
+  // error in micros. This may fail if the clock is unsynchronized or synchronized
+  // but the error is too high and, since we can't do anything about it,
+  // LOG(FATAL)'s in that case.
+  void NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
+
   // Static encoding/decoding methods for timestamps. Public mostly
   // for testing/debugging purposes.
 
@@ -76,18 +85,7 @@ class HybridClock : public Clock {
   // 'micros_to_add' and which retains the same logical value.
   static Timestamp AddPhysicalTimeToTimestamp(const Timestamp& original,
                                               int64_t micros_to_add);
-
  private:
-  FRIEND_TEST(HybridClockTest, TestWaitUntilAfter_TestCase1);
-  FRIEND_TEST(HybridClockTest, TestWaitUntilAfter_TestCase2);
-  FRIEND_TEST(HybridClockTest, TestWaitUntilAfter_TestIncomingEventIsInTheFuture);
-
-  // Obtains the timestamp corresponding to the current time and the associated
-  // error in micros. This may fail if the clock is unsynchronized or synchronized
-  // but the error is too high and, since we can't do anything about it,
-  // LOG(FATAL)'s in that case.
-  void NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
-
   uint64_t GetTimeUsecs(ntptimeval* timeval);
 
   // Used to get the timestamp for metrics.

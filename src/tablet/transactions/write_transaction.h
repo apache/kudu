@@ -70,6 +70,7 @@ class WriteTransactionContext : public TransactionContext {
         response_(response),
         component_lock_(NULL),
         mvcc_tx_(NULL) {
+    external_consistency_mode_ = request->external_consistency_mode();
   }
 
   // ctor used by FOLLOWER/LEARNER replicas

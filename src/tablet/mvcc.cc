@@ -25,13 +25,35 @@ MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
 Timestamp MvccManager::StartTransaction() {
   boost::lock_guard<LockType> l(lock_);
   Timestamp now = clock_->Now();
-  cur_snap_.none_committed_after_timestamp_ = Timestamp(now.value() + 1);
-  if (cur_snap_.timestamps_in_flight_.empty()) {
-    cur_snap_.all_committed_before_timestamp_ = now;
-  }
-  bool was_inserted = cur_snap_.timestamps_in_flight_.insert(now.value()).second;
-  DCHECK(was_inserted) << "Already had timestamp " << now.ToString() << " in in-flight list";
+  InitTransactionUnlocked(now);
   return now;
+}
+
+Timestamp MvccManager::StartTransactionAtLatest() {
+  boost::lock_guard<LockType> l(lock_);
+  Timestamp now_latest = clock_->NowLatest();
+  InitTransactionUnlocked(now_latest);
+
+  // If in debug mode enforce that transactions have monotonically increasing
+  // timestamps at all times
+#ifndef NDEBUG
+  if (!cur_snap_.timestamps_in_flight_.empty()) {
+    Timestamp max(*std::max_element(cur_snap_.timestamps_in_flight_.begin(),
+                                    cur_snap_.timestamps_in_flight_.end()));
+    CHECK_EQ(max.value(), now_latest.value());
+  }
+#endif
+
+  return now_latest;
+}
+
+void MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
+  cur_snap_.none_committed_after_timestamp_ = Timestamp(timestamp.value() + 1);
+  if (cur_snap_.timestamps_in_flight_.empty()) {
+    cur_snap_.all_committed_before_timestamp_ = timestamp;
+  }
+  bool was_inserted = cur_snap_.timestamps_in_flight_.insert(timestamp.value()).second;
+  DCHECK(was_inserted) << "Already had timestamp " << timestamp.ToString() << " in in-flight list";
 }
 
 void MvccManager::CommitTransaction(Timestamp timestamp) {
@@ -144,10 +166,14 @@ size_t MvccSnapshot::num_transactions_in_flight() const {
 ////////////////////////////////////////////////////////////
 // ScopedTransaction
 ////////////////////////////////////////////////////////////
-ScopedTransaction::ScopedTransaction(MvccManager *mgr)
+ScopedTransaction::ScopedTransaction(MvccManager *mgr, bool start_at_latest)
   : committed_(false),
-    manager_(DCHECK_NOTNULL(mgr)),
-    timestamp_(mgr->StartTransaction()) {
+    manager_(DCHECK_NOTNULL(mgr)) {
+  if (PREDICT_TRUE(!start_at_latest)) {
+    timestamp_ = mgr->StartTransaction();
+  } else {
+    timestamp_ = mgr->StartTransactionAtLatest();
+  }
 }
 
 ScopedTransaction::~ScopedTransaction() {

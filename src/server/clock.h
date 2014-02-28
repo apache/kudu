@@ -35,6 +35,9 @@ class Clock : public base::RefCountedThreadSafe<Clock> {
   // plus the max_error.
   virtual Timestamp NowLatest() = 0;
 
+  // Indicates whether this clock supports the required external consistency mode.
+  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) = 0;
+
   // Update the clock with a transaction timestamp originating from
   // another server. For instance replicas can call this so that,
   // if elected leader, they are guaranteed to generate timestamps

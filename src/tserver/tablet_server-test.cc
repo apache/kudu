@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 #include "tserver/tablet_server-test-base.h"
 
+#include "gutil/strings/substitute.h"
+#include "server/hybrid_clock.h"
 #include "util/curl_util.h"
 
 using std::string;
@@ -9,8 +11,11 @@ using kudu::metadata::QuorumPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::server::Clock;
+using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
+using strings::Substitute;
 
 DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
              "Number of rows to insert in the warmup phase of the single threaded"
@@ -149,6 +154,126 @@ TEST_F(TabletServerTest, TestInsert) {
   // make sure 'now_after' is greater than or equal to 'now_before'
   ASSERT_GE(now_after.value(), now_before.value());
 }
+
+TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
+  WriteRequestPB req;
+  req.set_tablet_id(kTabletId);
+  WriteResponsePB resp;
+  RpcController controller;
+
+  shared_ptr<TabletPeer> tablet;
+  ASSERT_TRUE(
+      mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
+                                                             &tablet));
+  Counter* rows_inserted =
+      METRIC_rows_inserted.Instantiate(
+          *tablet->tablet()->GetMetricContextForTests());
+  ASSERT_EQ(0, rows_inserted->value());
+
+  // get the current time
+  Timestamp current = mini_server_->server()->clock()->Now();
+  // advance current to some time in the future. we do 5 secs to make
+  // sure this timestamp will still be in the future when it reaches the
+  // server.
+  current = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValue(current) + 500000);
+
+  // Send an actual row insert.
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678, "hello world via RPC",
+                 req.mutable_row_operations());
+
+  // set the external consistency mode and the timestamp
+  req.set_external_consistency_mode(CLIENT_PROPAGATED);
+
+  req.set_propagated_timestamp(current.ToUint64());
+  SCOPED_TRACE(req.DebugString());
+  ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_FALSE(resp.has_error());
+  req.clear_row_operations();
+  ASSERT_EQ(1, rows_inserted->value());
+
+  // make sure the server returned a write timestamp where only
+  // the logical value was increased since he should have updated
+  // its clock with the client's value.
+  Timestamp write_timestamp(resp.write_timestamp());
+
+  ASSERT_EQ(HybridClock::GetPhysicalValue(current),
+            HybridClock::GetPhysicalValue(write_timestamp));
+
+  ASSERT_EQ(HybridClock::GetLogicalValue(current) + 1,
+            HybridClock::GetLogicalValue(write_timestamp));
+}
+
+TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
+  WriteRequestPB req;
+  req.set_tablet_id(kTabletId);
+  WriteResponsePB resp;
+  RpcController controller;
+  HybridClock* hclock = down_cast<HybridClock*, Clock>(mini_server_->server()->clock());
+
+  shared_ptr<TabletPeer> tablet;
+  ASSERT_TRUE(
+      mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
+                                                             &tablet));
+  Counter* rows_inserted =
+      METRIC_rows_inserted.Instantiate(
+          *tablet->tablet()->GetMetricContextForTests());
+  ASSERT_EQ(0, rows_inserted->value());
+
+  // get current time, with and without error
+  Timestamp now_before;
+  uint64_t error_before;
+  hclock->NowWithError(&now_before, &error_before);
+
+  uint64_t now_before_usec = HybridClock::GetPhysicalValue(now_before);
+  LOG(INFO) << "Submitting write with commit wait at: " << now_before_usec << " us +- "
+      << error_before << " us";
+
+  // Send an actual row insert.
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678, "hello world via RPC",
+                 req.mutable_row_operations());
+
+  // set the external consistency mode to COMMIT_WAIT
+  req.set_external_consistency_mode(COMMIT_WAIT);
+
+  SCOPED_TRACE(req.DebugString());
+  ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_FALSE(resp.has_error());
+  req.clear_row_operations();
+  ASSERT_EQ(1, rows_inserted->value());
+
+  // Two things must have happened.
+  // 1 - The write timestamp must be greater than 'now_before'
+  // 2 - The write must have taken at least 'error_before' to complete (two
+  //     times more in average).
+
+  Timestamp now_after;
+  uint64_t error_after;
+  hclock->NowWithError(&now_after, &error_after);
+
+  Timestamp write_timestamp(resp.write_timestamp());
+
+  uint64_t write_took = HybridClock::GetPhysicalValue(now_after) -
+      HybridClock::GetPhysicalValue(now_before);
+
+  LOG(INFO) << "Write applied at: " << HybridClock::GetPhysicalValue(write_timestamp) << " us "
+      << " current time: " << HybridClock::GetPhysicalValue(now_after) << " write took: "
+      << write_took << " us";
+
+  ASSERT_GT(write_timestamp.value(), now_before.value());
+
+  // see HybridClockTest.TestWaitUntilAfter_TestCase2
+  if (error_after >= error_before) {
+    ASSERT_GE(write_took, 2 * error_before);
+  } else {
+    ASSERT_GE(write_took, error_before);
+  }
+}
+
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
 

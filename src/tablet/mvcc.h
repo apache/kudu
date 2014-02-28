@@ -107,6 +107,11 @@ class MvccManager {
   // of scope.
   Timestamp StartTransaction();
 
+  // The same as the above but but starts the transaction at the latest possible
+  // time, i.e. now + max_error. Returns Timestamp::kInvalidTimestamp if it was
+  // not possible to obtain the latest time.
+  Timestamp StartTransactionAtLatest();
+
   // Commit the given transaction.
   //
   // If the transaction is not currently in-flight, this will trigger an
@@ -119,12 +124,14 @@ class MvccManager {
   void TakeSnapshot(MvccSnapshot *snapshot) const;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MvccManager);
+  void InitTransactionUnlocked(const Timestamp& timestamp);
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
   scoped_refptr<server::Clock> clock_;
+
+  DISALLOW_COPY_AND_ASSIGN(MvccManager);
 };
 
 // A scoped handle to a running transaction.
@@ -133,9 +140,11 @@ class MvccManager {
 class ScopedTransaction {
  public:
   // Create a new transaction from the given MvccManager.
+  // If 'latest' is true this transaction will use MvccManager::StartTransactionAtLatest()
+  // instead of MvccManager::StartTransaction().
   //
   // The MvccManager must remain valid for the lifetime of this object.
-  explicit ScopedTransaction(MvccManager *manager);
+  explicit ScopedTransaction(MvccManager *manager, bool start_at_latest = false);
 
   // Commit the transaction referenced by this scoped object, if it hasn't
   // already been committed.
@@ -149,11 +158,11 @@ class ScopedTransaction {
   void Commit();
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ScopedTransaction);
-
   bool committed_;
   MvccManager * const manager_;
-  const Timestamp timestamp_;
+  Timestamp timestamp_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedTransaction);
 };
 
 

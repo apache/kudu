@@ -224,6 +224,10 @@ Status HybridClock::Update(const Timestamp& to_update) {
   return Status::OK();
 }
 
+bool HybridClock::SupportsExternalConsistencyMode(ExternalConsistencyMode mode) {
+  return true;
+}
+
 Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   Timestamp now;
   uint64_t error;
