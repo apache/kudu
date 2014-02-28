@@ -34,6 +34,7 @@ message MutationResultPB {
 message MissedDeltaMutationPB {
   required kudu.RowwiseRowBlockPB row_key = 1;
   required bytes changelist = 2;
+  required bytes timestamp = 3;
 }
 
 // Stores the result of an Insert or Mutate.

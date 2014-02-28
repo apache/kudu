@@ -866,6 +866,11 @@ Status TabletBootstrap::PlayMissedDeltaUpdates(const CommitMsg& commit_msg) {
                           Substitute("Failed to apply MISSED_DELTA mutation: $0\nReason",
                                      missed_delta.ShortDebugString()));
 
+    if (applied_mutation) {
+      // update the clock with the missed delta mutation timestamp
+      RETURN_NOT_OK(UpdateClock(missed_delta.timestamp()));
+    }
+
     // Here is where we update the original missed delta to set whichever stores
     // it was applied to on replay or set the status if it was skipped.
     const TxResultPB& result = tx_ctx.Result();

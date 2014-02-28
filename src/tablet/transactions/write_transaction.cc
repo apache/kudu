@@ -226,6 +226,23 @@ Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
   return Status::OK();
 }
 
+Status WriteTransactionContext::AddMissedMutation(const Timestamp& timestamp,
+                                                  gscoped_ptr<RowwiseRowBlockPB> row_key,
+                                                  const RowChangeList& changelist,
+                                                  gscoped_ptr<MutationResultPB> result) {
+  result->set_type(MutationType(result.get()));
+  TxOperationPB* mutation = result_pb_.add_mutations();
+  mutation->set_type(TxOperationPB::MUTATE);
+  mutation->set_allocated_mutation_result(result.release());
+  MissedDeltaMutationPB* missed_delta_mutation = mutation
+      ->mutable_missed_delta_mutation();
+  missed_delta_mutation->set_allocated_row_key(row_key.release());
+  missed_delta_mutation->set_changelist(changelist.slice().data(),
+                                        changelist.slice().size());
+  timestamp.EncodeToString(missed_delta_mutation->mutable_timestamp());
+  return Status::OK();
+}
+
 void WriteTransactionContext::AddFailedMutation(const Status &status) {
   TxOperationPB* mutation = result_pb_.add_mutations();
   mutation->set_type(TxOperationPB::MUTATE);
