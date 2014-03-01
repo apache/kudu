@@ -176,7 +176,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   // sure this timestamp will still be in the future when it reaches the
   // server.
   current = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValue(current) + 500000);
+      HybridClock::GetPhysicalValue(current) + 5000000);
 
   // Send an actual row insert.
   ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
@@ -730,7 +730,6 @@ TEST_F(TabletServerTest, TestScan) {
   }
 }
 
-
 TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {
   InsertTestRowsDirect(0, 1);
 
@@ -740,6 +739,245 @@ TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {
   // Scanner is now open. The test will now shut down the TS with the scanner still
   // out there. Due to KUDU-161 this used to fail, since the scanner (and thus the MRS)
   // stayed open longer than the anchor registry
+}
+
+TEST_F(TabletServerTest, TestSnapshotScan) {
+  int num_rows = AllowSlowTests() ? 1000 : 100;
+  int num_batches = AllowSlowTests() ? 100 : 10;
+  vector<uint64_t> write_timestamps_collector;
+
+  // perform a series of writes and collect the timestamps
+  InsertTestRowsRemote(0, 0, num_rows, num_batches, &write_timestamps_collector);
+
+  // now perform snapshot scans.
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  int batch_idx = 1;
+  BOOST_FOREACH(uint64_t write_timestamp, write_timestamps_collector) {
+    req.Clear();
+    resp.Clear();
+    rpc.Reset();
+    // Set up a new request with no predicates, all columns.
+    const Schema& projection = schema_;
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    scan->set_read_mode(READ_AT_SNAPSHOT);
+
+    // Decode and re-encode the timestamp. Note that a snapshot at 'write_timestamp'
+    // does not include the written rows, so we increment that timestamp by one
+    // to make sure we get those rows back
+    Timestamp read_timestamp(write_timestamp);
+    read_timestamp = Timestamp(read_timestamp.value() + 1);
+    scan->set_snap_timestamp(read_timestamp.ToUint64());
+
+    ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    req.set_call_seq_id(0);
+
+    // Send the call
+    {
+      SCOPED_TRACE(req.DebugString());
+      req.set_batch_size_bytes(0); // so it won't return data right away
+      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+      SCOPED_TRACE(resp.DebugString());
+      ASSERT_FALSE(resp.has_error());
+    }
+
+    ASSERT_TRUE(resp.has_more_results());
+    // Drain all the rows from the scanner.
+    vector<string> results;
+    ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+    // on each scan we should get (num_rows / num_batches) * batch_idx rows back
+    int expected_num_rows = (num_rows / num_batches) * batch_idx;
+    ASSERT_EQ(expected_num_rows, results.size());
+
+    if (VLOG_IS_ON(2)) {
+      VLOG(2) << "Scanner: " << resp.scanner_id() << " performing a snapshot read at: "
+              << read_timestamp.ToString() << " got back: ";
+      BOOST_FOREACH(const string& result, results) {
+        VLOG(2) << result;
+      }
+    }
+
+    // assert that the first and last rows were the expected ones
+    ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=original0)", results[0]);
+    ASSERT_EQ(Substitute("(uint32 key=$0, uint32 int_val=$0, string string_val=original$0)",
+                         (batch_idx * (num_rows / num_batches) - 1)), results[results.size() - 1]);
+    batch_idx++;
+  }
+}
+
+TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
+  vector<uint64_t> write_timestamps_collector;
+  // perform a write
+  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  scan->set_read_mode(READ_AT_SNAPSHOT);
+
+  Timestamp now = mini_server_->server()->clock()->Now();
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    req.set_batch_size_bytes(0); // so it won't return data right away
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // make sure that the snapshot timestamp that was selected is >= now
+  ASSERT_GE(resp.snap_timestamp(), now.ToUint64());
+}
+
+// Tests that a snapshot in the future (beyond what clock->Now() returns) fails as an
+// invalid snapshot.
+TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
+  vector<uint64_t> write_timestamps_collector;
+  // perform a write
+  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  scan->set_read_mode(READ_AT_SNAPSHOT);
+
+  Timestamp read_timestamp(write_timestamps_collector[0]);
+  // increment the write timestamp by 5 secs, the server will definitely consider
+  // this in the future.
+  read_timestamp = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValue(read_timestamp) + 5000000);
+  scan->set_snap_timestamp(read_timestamp.ToUint64());
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_SNAPSHOT, resp.error().code());
+  }
+}
+
+// Tests that a read in the future succeeds if a propagated_timestamp (that is even
+// further in the future) follows along. Also tests that the clock was updated so
+// that no writes will ever have a timestamp post this snapshot.
+TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimestamp) {
+  vector<uint64_t> write_timestamps_collector;
+  // perform a write
+  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  scan->set_read_mode(READ_AT_SNAPSHOT);
+
+  Timestamp read_timestamp(write_timestamps_collector[0]);
+  // increment the write timestamp by 5 secs, the server will definitely consider
+  // this in the future.
+  read_timestamp = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValue(read_timestamp) + 5000000);
+  scan->set_snap_timestamp(read_timestamp.ToUint64());
+
+  // send a propagated timestamp that is an additional 100 msecs into the future.
+  Timestamp propagated_timestamp = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValue(read_timestamp) + 100000);
+  scan->set_propagated_timestamp(propagated_timestamp.ToUint64());
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // make sure the server's current clock returns a value that is only
+  // +2 (logical) than the propagated timestamp (one value for the clock.Update()
+  // call and another for the subsequent Now() call).
+  Timestamp now = mini_server_->server()->clock()->Now();
+
+  ASSERT_EQ(HybridClock::GetPhysicalValue(propagated_timestamp),
+            HybridClock::GetPhysicalValue(now));
+
+  ASSERT_EQ(HybridClock::GetLogicalValue(propagated_timestamp) + 2,
+            HybridClock::GetLogicalValue(now));
+
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(1, results.size());
+  ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=original0)", results[0]);
+}
+
+
+// Test that a read in the future fails, even if a propagated_timestamp is sent along,
+// if the read_timestamp is beyond the propagated_timestamp.
+TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTimestampFails) {
+  vector<uint64_t> write_timestamps_collector;
+  // perform a write
+  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema& projection = schema_;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  scan->set_read_mode(READ_AT_SNAPSHOT);
+
+  Timestamp read_timestamp(write_timestamps_collector[0]);
+  // increment the write timestamp by 5 secs, the server will definitely consider
+  // this in the future.
+  read_timestamp = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValue(read_timestamp) + 5000000);
+  scan->set_snap_timestamp(read_timestamp.ToUint64());
+
+  // send a propagated timestamp that is an less than the read timestamp (but still
+  // in the future as far the server is concerned).
+  Timestamp propagated_timestamp = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValue(read_timestamp) - 100000);
+  scan->set_propagated_timestamp(propagated_timestamp.ToUint64());
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_SNAPSHOT, resp.error().code());
+  }
 }
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {

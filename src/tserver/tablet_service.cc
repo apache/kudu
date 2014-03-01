@@ -553,23 +553,42 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
   }
 
   TRACE("Creating iterator");
+  // preset the error code for when creating the iterator on the tablet fails
+  TabletServerErrorPB::Code error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
+
   gscoped_ptr<RowwiseIterator> iter;
-  s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
-  if (s.ok()) {
-    s = iter->Init(spec.get());
+  switch (scan_pb.read_mode()) {
+    case READ_LATEST: {
+      s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
+      break;
+    }
+    case READ_AT_SNAPSHOT: {
+      s = HandleScanAtSnapshot(&iter, resp, scan_pb, projection, tablet_peer);
+      if (!s.ok()) {
+        error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
+      }
+      break;
+    }
+    default: {
+      s = Status::IllegalState("Unsupported read mode");
+    }
   }
   TRACE("Iterator initialized");
+
+  if (PREDICT_TRUE(s.ok())) {
+    s = iter->Init(spec.get());
+  }
 
   if (PREDICT_FALSE(s.IsInvalidArgument())) {
     // An invalid projection returns InvalidArgument above.
     // TODO: would be nice if we threaded these more specific
     // error codes throughout Kudu.
     SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::MISMATCHED_SCHEMA,
+                         error_code,
                          context);
     return;
   } else if (PREDICT_FALSE(!s.ok())) {
-    RespondGenericError("setting up scanner", resp->mutable_error(), s, context);
+    RespondGenericError("Error setting up scanner", resp->mutable_error(), s, context);
     return;
   }
 
@@ -703,6 +722,55 @@ void TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
 
   context->RespondSuccess();
+}
+
+Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* iter,
+                                               ScanResponsePB* resp,
+                                               const NewScanRequestPB& scan_pb,
+                                               const Schema& projection,
+                                               shared_ptr<TabletPeer> tablet_peer) {
+
+  // TODO check against the earliest boundary (i.e. how early can we go) right
+  // now we're keeping all undos/redos forever!
+
+  // If the client sent a timestamp update our clock with it.
+  if (scan_pb.has_propagated_timestamp()) {
+    Timestamp propagated_timestamp(scan_pb.propagated_timestamp());
+
+    // Update the clock so that we never generate snapshots lower that
+    // 'propagated_timestamp'. If 'propagated_timestamp' is lower than
+    // 'now' this call has no effect. If 'propagated_timestamp' is too much
+    // into the future this will fail and we abort.
+    RETURN_NOT_OK(server_->clock()->Update(propagated_timestamp));
+  }
+
+  Timestamp now = server_->clock()->Now();
+  Timestamp snap_timestamp;
+
+  // If the client provided no snapshot timestamp we take the current clock
+  // time as the snapshot timestamp.
+  if (!scan_pb.has_snap_timestamp()) {
+    snap_timestamp = now;
+  // ... else we use the client provided one, but make sure it is less than
+  // or equal to the current clock read.
+  } else {
+    snap_timestamp.FromUint64(scan_pb.snap_timestamp());
+    if (snap_timestamp.CompareTo(now) > 0) {
+      return Status::InvalidArgument("Snapshot time in the future");
+    }
+  }
+
+  tablet::MvccSnapshot snap;
+  tablet_peer->tablet()->mvcc_manager()->TakeSnapshotAtTimestamp(&snap, snap_timestamp);
+
+  // Wait for the in-flights in the snapshot to be finished
+  TRACE("Waiting for operations in snapshot to commit");
+  tablet_peer->tablet()->mvcc_manager()->WaitUntilAllCommitted(snap);
+  TRACE("All operations in snapshot committed.");
+
+  RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap, iter));
+  resp->set_snap_timestamp(snap_timestamp.ToUint64());
+  return Status::OK();
 }
 
 } // namespace tserver

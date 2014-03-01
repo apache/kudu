@@ -210,17 +210,21 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
 Status HybridClock::Update(const Timestamp& to_update) {
   Timestamp now = Now();
   boost::lock_guard<simple_spinlock> lock(lock_);
-  if (PREDICT_TRUE(now.CompareTo(to_update) >= 0)) return Status::OK();
+  if (PREDICT_TRUE(now.CompareTo(to_update) > 0)) return Status::OK();
+
+  uint64_t to_update_physical = GetPhysicalValue(to_update);
+  uint64_t to_update_logical = GetLogicalValue(to_update);
+  uint64_t now_physical = GetPhysicalValue(now);
 
   // we won't update our clock if to_update is more than 'max_clock_sync_error_usec'
   // into the future as it might have been corrupted or originated from an out-of-sync
   // server.
-  if ((GetPhysicalValue(to_update) - GetPhysicalValue(now)) > FLAGS_max_clock_sync_error_usec) {
+  if ((to_update_physical - now_physical) > FLAGS_max_clock_sync_error_usec) {
     return Status::InvalidArgument("Tried to update clock beyond the max. error.");
   }
 
-  last_usec_ = GetPhysicalValue(to_update);
-  next_logical_ = GetLogicalValue(to_update) + 1;
+  last_usec_ = to_update_physical;
+  next_logical_ = to_update_logical + 1;
   return Status::OK();
 }
 

@@ -181,8 +181,9 @@ class TabletServerTest : public KuduTest {
   void InsertTestRowsRemote(int tid,
                             uint64_t first_row,
                             uint64_t count,
-                            TimeSeries *ts = NULL,
-                            uint64_t num_batches = -1) {
+                            uint64_t num_batches = -1,
+                            vector<uint64_t>* write_timestamps_collector = NULL,
+                            TimeSeries *ts = NULL) {
 
     if (num_batches == -1) {
       num_batches = count;
@@ -215,6 +216,9 @@ class TabletServerTest : public KuduTest {
       }
 
       ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+      if (write_timestamps_collector) {
+        write_timestamps_collector->push_back(resp.write_timestamp());
+      }
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
       ASSERT_EQ(0, resp.per_row_errors_size());

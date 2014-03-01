@@ -73,9 +73,8 @@ Status LeaderWriteTransaction::Prepare() {
   // Now that we've prepared set the transaction timestamp (by initiating the
   // mvcc transaction). Doing this here allows us to wait the least possible
   // time if we're using commit wait.
-  tx_ctx_->start_mvcc_tx();
-
-  TRACE("PREPARE: finished");
+  Timestamp timestamp = tx_ctx_->start_mvcc_tx();
+  TRACE("PREPARE: finished. Timestamp: $0", server::HybridClock::GetPhysicalValue(timestamp));
   return s;
 }
 

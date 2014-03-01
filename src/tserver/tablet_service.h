@@ -9,6 +9,9 @@
 #include "tserver/tserver_service.service.h"
 
 namespace kudu {
+class RowwiseIterator;
+class Schema;
+class Status;
 
 namespace tablet {
 class TabletPeer;
@@ -76,6 +79,12 @@ class TabletServiceImpl : public TabletServerServiceIf {
   void HandleContinueScanRequest(const ScanRequestPB* req,
                                  ScanResponsePB* resp,
                                  rpc::RpcContext* context);
+
+  Status HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* iter,
+                              ScanResponsePB* resp,
+                              const NewScanRequestPB& scan_pb,
+                              const Schema& projection,
+                              std::tr1::shared_ptr<tablet::TabletPeer> tablet_peer);
 
   TabletServer* server_;
 };

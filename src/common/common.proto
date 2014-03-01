@@ -137,3 +137,48 @@ enum ExternalConsistencyMode {
     // {}, {X}, {X Y}
     COMMIT_WAIT = 3;
 };
+
+// The possible read modes for clients.
+// Clients set these in Scan requests.
+// The server keeps 2 snapshot boundaries:
+// - The earliest snapshot: this corresponds to the earliest kept undo records
+//   in the tablet, meaning the current state (Base) can be undone up to
+//   this snapshot.
+// - The latest snapshot: This corresponds to the instant beyond which no
+//   no transaction will have an earlier timestamp. Usually this corresponds
+//   to whatever clock->Now() returns, but can be higher if the client propagates
+//   a timestamp (see below).
+enum ReadMode {
+
+  // When READ_LATEST is specified the server will execute the read independently
+  // of the clock and will always return all visible writes at the time the request
+  // was received. This type of read does not return a snapshot timestamp since
+  // it might not be repeatable, i.e. a later read executed at the same snapshot
+  // timestamp might yield rows that were committed by in-flight transactions.
+  //
+  // This is the default mode.
+  READ_LATEST = 1;
+
+  // When READ_AT_SNAPSHOT is specified the server will attempt to perform a read
+  // at the required snapshot. If no snapshot is defined the server will take the
+  // current time as the snapshot timestamp. Snapshot reads are repeatable, i.e.
+  // all future reads at the same timestamp will yield the same rows. This is
+  // performed at the expense of waiting for in-flight transactions whose timestamp
+  // is lower than the snapshot's timestamp to complete.
+  //
+  // When mixing reads and writes clients that specify COMMIT_WAIT as their
+  // external consistency mode and then use the returned write_timestamp to
+  // to perform snapshot reads are guaranteed that that snapshot time is
+  // considered in the past by all servers and no additional action is
+  // necessary. Clients using CLIENT_PROPAGATED however must forcibly propagate
+  // the timestamps even at read time, so that the server will not generate
+  // any more transactions before the snapshot requested by the client.
+  // The latter option is implemented by allowing the client to specify one or
+  // two timestamps, the first one obtained from the previous CLIENT_PROPAGATED
+  // write, directly or through back-channels, must be signed and will be
+  // checked by the server. The second one, if defined, is the actual snapshot
+  // read time. When selecting both the latter must be lower than or equal to
+  // the former.
+  // TODO implement actually signing the propagated timestamp.
+  READ_AT_SNAPSHOT = 2;
+}
