@@ -476,10 +476,23 @@ class PosixWritableFile : public WritableFile {
 
   virtual Status PreAllocate(uint64_t size) {
     uint64_t offset = std::max(filesize_, pre_allocated_size_);
-    if (fallocate(fd_, 0, offset, size)) {
-      return IOError(filename_, errno);
+    if (fallocate(fd_, 0, offset, size) < 0) {
+      if (errno == EOPNOTSUPP) {
+        if (!logged_fallocate_warning_) {
+          LOG(WARNING) << "The filesystem does not support fallocate().";
+          logged_fallocate_warning_ = true;
+        }
+      } else if (errno == ENOSYS) {
+        if (!logged_fallocate_warning_) {
+          LOG(WARNING) << "The kernel does not implement fallocate().";
+          logged_fallocate_warning_ = true;
+        }
+      } else {
+        return IOError(filename_, errno);
+      }
+    } else {
+      pre_allocated_size_ = filesize_ + size;
     }
-    pre_allocated_size_ = filesize_ + size;
     return Status::OK();
   }
 
@@ -576,6 +589,8 @@ class PosixWritableFile : public WritableFile {
   uint64_t filesize_;
   uint64_t pre_allocated_size_;
 
+  static bool logged_fallocate_warning_;
+
   enum SyncType {
     NONE,
     FSYNC,
@@ -583,6 +598,8 @@ class PosixWritableFile : public WritableFile {
   };
   SyncType pending_sync_type_;
 };
+
+bool PosixWritableFile::logged_fallocate_warning_(false);
 
 static int LockOrUnlock(int fd, bool lock) {
   errno = 0;
