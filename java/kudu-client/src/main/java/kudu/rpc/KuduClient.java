@@ -167,11 +167,12 @@ public class KuduClient {
 
   // TODO Below is an uber hack, the master is considered a tablet with
   // a table name.
-  private final TabletClient master; // currently the master cannot move
   static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
   static final Slice MASTER_TABLE_HACK_SLICE = new Slice(MASTER_TABLE_HACK.getBytes());
   final RemoteTablet masterTabletHack;
   final KuduTable masterTableHack;
+  private final String masterAddress;
+  private final int masterPort;
   // END OF HACK
 
   private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
@@ -211,9 +212,8 @@ public class KuduClient {
   public KuduClient(final String address, int port,
                     final ClientSocketChannelFactory channelFactory) {
     this.channelFactory = channelFactory;
-    // since we aren't going the normal path, we need to provide an IP here
-    String ip = getIP(address);
-    this.master = newClient(ip, port);
+    this.masterAddress = address;
+    this.masterPort = port;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
     this.masterTabletHack = new RemoteTablet(MASTER_TABLE_HACK,
@@ -529,11 +529,20 @@ public class KuduClient {
       return null;
     }
     if (masterTabletHack == tablet) {
-      return master;
+      synchronized (masterTabletHack.tabletServers) {
+        if (masterTabletHack.tabletServers.isEmpty()) {
+          // TODO We currently always reconnect to the same master, too bad if it dies
+          masterTabletHack.addTabletClient(masterAddress, masterPort);
+        }
+        return masterTabletHack.tabletServers.get(0);
+      }
     }
 
     // TODO figure which replica to send back
     synchronized (tablet.tabletServers) {
+      if (tablet.tabletServers.isEmpty()) {
+        return null;
+      }
       return tablet.tabletServers.get(0);
     }
   }
@@ -594,14 +603,16 @@ public class KuduClient {
     final boolean has_permit = acquireMasterLookupPermit();
     if (!has_permit) {
       // If we failed to acquire a permit, it's worth checking if someone
-      // looked up the tabletSlice we're interested in.  Every once in a while
+      // looked up the tablet we're interested in.  Every once in a while
       // this will save us a Master lookup.
-      if (getTablet(table, rowkey) != null) {
+      RemoteTablet tablet = getTablet(table, rowkey);
+      if (tablet != null && clientFor(tablet) != null) {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
     final Deferred<Object> d =
-        master.getTableLocations(table, rowkey).addCallback(new MasterLookupCB(table, rowkey));
+        clientFor(masterTabletHack).getTableLocations(table, rowkey).addCallback(new MasterLookupCB(table,
+            rowkey));
     if (has_permit) {
       final class ReleaseMetaLookupPermit implements Callback<Object, Object> {
         public Object call(final Object arg) {
@@ -621,13 +632,14 @@ public class KuduClient {
    * We're handling a tablet server that's telling us it doesn't have the tablet we're asking for.
    * We're in the context of decode() meaning we need to either callback or retry later.
    */
-  void handleNSTE(final KuduRpc rpc, Tserver.TabletServerErrorPB error, TabletClient server) {
+  void handleNSTE(final KuduRpc rpc, KuduException ex, TabletClient server) {
+    // TODO we don't always need to sleep, maybe another replica can serve this RPC
+
     boolean cannotRetry = cannotRetryRequest(rpc);
     invalidateTabletCache(rpc.getTablet(), server);
     if (cannotRetry) {
       // This is a callback
-      tooManyAttempts(rpc, new TabletServerErrorException(error.getStatus(),
-          error.getCode().getNumber()));
+      tooManyAttempts(rpc, ex);
     }
 
     // Here we simply retry the RPC later. We might be doing this along with a lot of other RPCs
@@ -784,7 +796,6 @@ public class KuduClient {
 
   private TabletClient newClient(final String host, final int port) {
     final String hostport = host + ':' + port;
-
     TabletClient client;
     SocketChannel chan;
     synchronized (ip2client) {
@@ -890,7 +901,6 @@ public class KuduClient {
       ip2client_copy = new HashMap<String, TabletClient>(ip2client);
     }
 
-    deferreds.add(master.shutdown());
     for (TabletClient ts : ip2client_copy.values()) {
       deferreds.add(ts.shutdown());
     }
@@ -1209,19 +1219,25 @@ public class KuduClient {
         tabletServers.clear();
         for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
           for (Common.HostPortPB hp : replica.getTsInfo().getRpcAddressesList()) {
-            String ip = getIP(hp.getHost());
-            if (ip == null) continue;
-
-            TabletClient client = newClient(ip, hp.getPort());
-            tabletServers.add(client);
-
-            synchronized (client) {
-              final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
-              synchronized (tablets) {
-                tablets.add(this);
-              }
-            }
+            addTabletClient(hp.getHost(), hp.getPort());
           }
+        }
+      }
+    }
+
+    // Must be called with tabletServers synchronized
+    void addTabletClient(String host, int port) {
+      String ip = getIP(host);
+      if (ip == null) {
+        return;
+      }
+      TabletClient client = newClient(ip, port);
+      tabletServers.add(client);
+
+      synchronized (client) {
+        final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
+        synchronized (tablets) {
+          tablets.add(this);
         }
       }
     }

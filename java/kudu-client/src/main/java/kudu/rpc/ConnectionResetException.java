@@ -33,22 +33,17 @@ import org.jboss.netty.channel.Channel;
  */
 public final class ConnectionResetException extends RecoverableException {
 
-  private final Channel chan;
+  ConnectionResetException(final String msg) {
+    super(msg);
+  }
 
   /**
    * Constructor.
    */
-  ConnectionResetException(final Channel chan) {
-    super(chan + " got disconnected");
-    this.chan = chan;
+  ConnectionResetException(final String msg, final Exception cause) {
+    super(msg, cause);
   }
 
-  /**
-   * Returns the name of the region that's offline.
-   */
-  public Channel getChannel() {
-    return chan;
-  }
 
   private static final long serialVersionUID = 1280644142;
 

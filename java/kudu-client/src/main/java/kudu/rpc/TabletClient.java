@@ -390,7 +390,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (decoded instanceof Tserver.TabletServerErrorPB) {
       Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded;
       if (error.getCode().equals(Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
-        kuduClient.handleNSTE(rpc, error, this);
+        kuduClient.handleNSTE(rpc, new TabletServerErrorException(error.getStatus(),
+            error.getCode().getNumber()), this);
         // we're not calling rpc.callback() so we rely on the client to retry that RPC
         return null;
       }
@@ -489,6 +490,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
     };
     final KuduRpc rpc = new GetTableLocations(kuduClient.masterTableHack);
+    rpc.setTablet(kuduClient.masterTabletHack);
     final Deferred<Master.GetTableLocationsResponsePB> d = rpc.getDeferred()
         .addCallback(getTableLocationsCB);
     sendRpc(rpc);
@@ -598,7 +600,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   private void cleanup(final Channel chan) {
     final ConnectionResetException exception =
-        new ConnectionResetException(chan);
+        new ConnectionResetException("Connection reset on " + chan);
     failOrRetryRpcs(rpcs_inflight.values(), exception);
     rpcs_inflight.clear();
 
@@ -627,9 +629,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           ) {
         rpc.callback(exception);
       } else {
-        // TODO support
-        LOG.error("Currently not supporting dying or unreachable hosts");
-        rpc.callback(exception);
+        kuduClient.handleNSTE(rpc, new ConnectionResetException(exception.getMessage(), exception),
+            this);
       }
     }
   }
