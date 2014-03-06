@@ -26,6 +26,7 @@ class RandomAccessFile;
 class SequentialFile;
 class Slice;
 class WritableFile;
+struct WritableFileOptions;
 
 class Env {
  public:
@@ -68,25 +69,10 @@ class Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) = 0;
 
-  // Type of writable file to create.
-  enum WritableFileType {
-    WRITABLE_FILE_MMAP,
-    WRITABLE_FILE_NO_MMAP,
-  };
 
-  // Like the previous NewWritableFile, but allows a type to be
-  // specified: if 'file_type' is WRITABLE_FILE_NO_MMAP is specified,
-  // then the file in stored in *resul' not be memory mapped.
-  //
-  // If the environment does not support specify whether or not I/O
-  // will be memory mapped, the result will be equivalent to to
-  // calling NewWritableFile()
-  //
-  // TODO if we decide to pass additional options for NewWritableFile
-  // (beyond whether or not we MMAP the file), consider creating a
-  // struct containing the options to replace the enum. The struct
-  // could also encapsulate 'fname'.
-  virtual Status NewWritableFile(WritableFileType file_type,
+  // Like the previous NewWritableFile, but allows options to be
+  // specified.
+  virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
                                  WritableFile** result) = 0;
 
@@ -227,6 +213,19 @@ class RandomAccessFile {
   virtual Status Size(uint64_t *size) const = 0;
 };
 
+// Creation-time options for WritableFile
+struct WritableFileOptions {
+  // Use memory-mapped I/O if supported.
+  bool mmap_file;
+
+  // Call Sync() during Close().
+  bool sync_on_close;
+
+  WritableFileOptions()
+    : mmap_file(true),
+      sync_on_close(false) { }
+};
+
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments
 // at a time to the file.
@@ -301,8 +300,8 @@ class EnvWrapper : public Env {
   Status NewWritableFile(const std::string& f, WritableFile** r) {
     return target_->NewWritableFile(f, r);
   }
-  Status NewWritableFile(WritableFileType t, const std::string& f, WritableFile** r) {
-    return target_->NewWritableFile(t, f, r);
+  Status NewWritableFile(const WritableFileOptions& o, const std::string& f, WritableFile** r) {
+    return target_->NewWritableFile(o, f, r);
   }
   bool FileExists(const std::string& f) { return target_->FileExists(f); }
   Status GetChildren(const std::string& dir, std::vector<std::string>* r) {

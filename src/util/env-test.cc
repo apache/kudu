@@ -64,10 +64,10 @@ class TestEnv : public KuduTest {
   }
 
   void TestAppendVector(size_t num_slices, size_t slice_size, size_t iterations,
-                        bool fast, bool pre_allocate, Env::WritableFileType type) {
+                        bool fast, bool pre_allocate, const WritableFileOptions& opts) {
     const string kTestPath = GetTestPath("test_env_appendvec_read_append");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(type, env_.get(), kTestPath, &file));
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), kTestPath, &file));
 
     if (pre_allocate) {
       ASSERT_STATUS_OK(file->PreAllocate(num_slices * slice_size * iterations));
@@ -120,13 +120,13 @@ class TestEnv : public KuduTest {
     }
   }
 
-  void DoTestPreallocate(Env::WritableFileType type) {
+  void DoTestPreallocate(const WritableFileOptions& opts) {
     LOG(INFO) << "Testing PreAllocate() with mmap "
-              << (type == Env::WRITABLE_FILE_MMAP ? "enabled" : "disabled");
+              << (opts.mmap_file ? "enabled" : "disabled");
 
     string test_path = GetTestPath("test_env_wf");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(type, env_.get(), test_path, &file));
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
 
     // pre-allocate 1 MB
     ASSERT_STATUS_OK(file->PreAllocate(kOneMb));
@@ -154,13 +154,13 @@ class TestEnv : public KuduTest {
     ASSERT_EQ(kOneMb, size);
   }
 
-  void DoTestConsecutivePreallocate(Env::WritableFileType type) {
+  void DoTestConsecutivePreallocate(const WritableFileOptions& opts) {
     LOG(INFO) << "Testing consecutive PreAllocate() with mmap "
-              << (type == Env::WRITABLE_FILE_MMAP ? "enabled" : "disabled");
+              << (opts.mmap_file ? "enabled" : "disabled");
 
     string test_path = GetTestPath("test_env_wf");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(type, env_.get(), test_path, &file));
+    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
 
     // pre-allocate 64 MB
     ASSERT_STATUS_OK(file->PreAllocate(64 * kOneMb));
@@ -211,31 +211,37 @@ class TestEnv : public KuduTest {
     ASSERT_EQ(2* kOneMb, size);
   }
 
-  void DoTestAppendVector(Env::WritableFileType type) {
+  void DoTestAppendVector(const WritableFileOptions& opts) {
     LOG(INFO) << "Testing AppendVector() with mmap "
-              << (type == Env::WRITABLE_FILE_MMAP ? "enabled" : "disabled");
+              << (opts.mmap_file ? "enabled" : "disabled");
 
     LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, type));
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, opts));
     LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, type));
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, opts));
     LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, type));
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, opts));
   }
 };
 
 
 TEST_F(TestEnv, TestPreallocate) {
-  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(Env::WRITABLE_FILE_MMAP));
-  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(Env::WRITABLE_FILE_NO_MMAP));
+  WritableFileOptions opts;
+  opts.mmap_file = true;
+  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(opts));
+  opts.mmap_file = false;
+  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(opts));
 }
 
 // To test consecutive pre-allocations we need higher pre-allocations since the
 // mmapped regions grow in size until 2MBs (so smaller pre-allocations will easily
 // be smaller than the mmapped regions size).
 TEST_F(TestEnv, TestConsecutivePreallocate) {
-  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(Env::WRITABLE_FILE_MMAP));
-  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(Env::WRITABLE_FILE_NO_MMAP));
+  WritableFileOptions opts;
+  opts.mmap_file = true;
+  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
+  opts.mmap_file = false;
+  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
 }
 
 class ShortReadRandomAccessFile : public RandomAccessFile {
@@ -317,8 +323,11 @@ TEST_F(TestEnv, TestReadFully) {
 }
 
 TEST_F(TestEnv, TestAppendVector) {
-  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(Env::WRITABLE_FILE_MMAP));
-  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(Env::WRITABLE_FILE_NO_MMAP));
+  WritableFileOptions opts;
+  opts.mmap_file = true;
+  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(opts));
+  opts.mmap_file = false;
+  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(opts));
 }
 
 TEST_F(TestEnv, TestGetExecutablePath) {

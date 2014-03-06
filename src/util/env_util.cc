@@ -19,14 +19,14 @@ namespace env_util {
 
 Status OpenFileForWrite(Env* env, const string& path,
                         shared_ptr<WritableFile>* file) {
-  return OpenFileForWrite(Env::WRITABLE_FILE_MMAP, env, path, file);
+  return OpenFileForWrite(WritableFileOptions(), env, path, file);
 }
 
-Status OpenFileForWrite(Env::WritableFileType type,
+Status OpenFileForWrite(const WritableFileOptions& opts,
                         Env *env, const string &path,
                         shared_ptr<WritableFile> *file) {
   WritableFile *w;
-  RETURN_NOT_OK(env->NewWritableFile(type, path, &w));
+  RETURN_NOT_OK(env->NewWritableFile(opts, path, &w));
   file->reset(w);
   return Status::OK();
 }

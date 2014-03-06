@@ -455,7 +455,10 @@ Status Log::PreAllocateNewSegment() {
 
   string placeholder_path = SegmentPlaceholderFileName();
   VLOG(1) << "Creating next WAL segment, placeholder path: " << placeholder_path;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(Env::WRITABLE_FILE_NO_MMAP,
+  WritableFileOptions opts;
+  opts.mmap_file = false;
+  opts.sync_on_close = force_sync_all_;
+  RETURN_NOT_OK(env_util::OpenFileForWrite(opts,
       fs_manager_->env(), placeholder_path, &next_segment_file_));
 
   if (options_.preallocate_segments) {

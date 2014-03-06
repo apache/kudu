@@ -158,6 +158,7 @@ class PosixMmapFile : public WritableFile {
   std::string filename_;
   int fd_;
   size_t page_size_;
+  bool sync_on_close_;
   size_t map_size_;       // How much extra memory to map at a time
   uint8_t *base_;            // The mapped region
   uint8_t *limit_;           // Limit of the mapped region
@@ -225,10 +226,11 @@ class PosixMmapFile : public WritableFile {
   }
 
  public:
-  PosixMmapFile(const std::string& fname, int fd, size_t page_size)
+  PosixMmapFile(const std::string& fname, int fd, size_t page_size, bool sync_on_close)
       : filename_(fname),
         fd_(fd),
         page_size_(page_size),
+        sync_on_close_(sync_on_close),
         map_size_(Roundup(65536, page_size)),
         base_(NULL),
         limit_(NULL),
@@ -361,7 +363,18 @@ class PosixMmapFile : public WritableFile {
       if (ftruncate(fd_, file_offset_ - unused) < 0) {
         s = IOError(filename_, errno);
       }
+      pending_sync_ = true;
     }
+
+     if (sync_on_close_) {
+      Status sync_status = Sync();
+      if (!sync_status.ok()) {
+        LOG(ERROR) << "Unable to Sync " << filename_ << ": " << sync_status.ToString();
+        if (s.ok()) {
+          s = sync_status;
+        }
+      }
+     }
 
     if (close(fd_) < 0) {
       if (s.ok()) {
@@ -415,9 +428,12 @@ class PosixMmapFile : public WritableFile {
 // order to further improve Sync() performance.
 class PosixWritableFile : public WritableFile {
  public:
-  PosixWritableFile(const std::string& fname, int fd)
+  PosixWritableFile(const std::string& fname,
+                    int fd,
+                    bool sync_on_close)
       : filename_(fname),
         fd_(fd),
+        sync_on_close_(sync_on_close),
         filesize_(0),
         pre_allocated_size_(0),
         pending_sync_type_(NONE) {
@@ -508,11 +524,13 @@ class PosixWritableFile : public WritableFile {
       }
     }
 
-    Status sync_status = Sync();
-    if (!sync_status.ok()) {
-      LOG(ERROR) << "Unable to Sync " << filename_ << ": " << sync_status.ToString();
-      if (s.ok()) {
-        s = sync_status;
+    if (sync_on_close_) {
+      Status sync_status = Sync();
+      if (!sync_status.ok()) {
+        LOG(ERROR) << "Unable to Sync " << filename_ << ": " << sync_status.ToString();
+        if (s.ok()) {
+          s = sync_status;
+        }
       }
     }
 
@@ -586,6 +604,7 @@ class PosixWritableFile : public WritableFile {
 
   const std::string filename_;
   int fd_;
+  bool sync_on_close_;
   uint64_t filesize_;
   uint64_t pre_allocated_size_;
 
@@ -665,10 +684,10 @@ class PosixEnv : public Env {
 
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
-    return NewWritableFile(WRITABLE_FILE_MMAP, fname, result);
+    return NewWritableFile(WritableFileOptions(), fname, result);
   }
 
-  virtual Status NewWritableFile(WritableFileType type,
+  virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
                                  WritableFile** result) {
     Status s;
@@ -677,10 +696,10 @@ class PosixEnv : public Env {
       *result = NULL;
       s = IOError(fname, errno);
     } else {
-      if (type == WRITABLE_FILE_MMAP) {
-        *result = new PosixMmapFile(fname, fd, page_size_);
+      if (opts.mmap_file) {
+        *result = new PosixMmapFile(fname, fd, page_size_, opts.sync_on_close);
       } else {
-        *result = new PosixWritableFile(fname, fd);
+        *result = new PosixWritableFile(fname, fd, opts.sync_on_close);
       }
     }
     return s;

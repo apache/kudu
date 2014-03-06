@@ -293,7 +293,7 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
-  virtual Status NewWritableFile(WritableFileType /* unused */,
+  virtual Status NewWritableFile(const WritableFileOptions& /* unused */,
                                  const std::string& fname,
                                  WritableFile** result) {
     return NewWritableFile(fname, result);
