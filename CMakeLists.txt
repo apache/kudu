@@ -341,44 +341,18 @@ endif (UNIX)
 
 # Google util libraries borrowed from supersonic
 add_subdirectory(src/gutil)
-set(LIBS ${LIBS} ${GUTIL_LIBS})
-
 add_subdirectory(src/util)
-set(LIBS ${LIBS} ${KUDU_UTIL_LIBS})
-
 add_subdirectory(src/common)
-set(LIBS ${LIBS} ${KUDU_COMMON_LIBS})
-
 add_subdirectory(src/cfile)
-set(LIBS ${LIBS} ${CFILE_LIBS})
-
 add_subdirectory(src/server)
-set(LIBS ${LIBS} ${SERVER_LIBS})
-
 add_subdirectory(src/tablet)
-set(LIBS ${LIBS} ${TABLET_LIBS})
-
 add_subdirectory(src/rpc)
-set(LIBS ${LIBS} ${RPC_LIBS})
-
 add_subdirectory(src/tserver)
-set(LIBS ${LIBS} ${TSERVER_LIBS})
-
 add_subdirectory(src/consensus)
-set(LIBS ${LIBS} ${CONSENSUS_LIBS})
-
 add_subdirectory(src/master)
-set(LIBS ${LIBS} ${MASTER_LIBS})
-
 add_subdirectory(src/client)
-set(LIBS ${LIBS} ${CLIENT_LIBS})
-
 add_subdirectory(src/integration-tests)
-
 add_subdirectory(src/experiments)
-
 add_subdirectory(src/benchmarks)
-
 add_subdirectory(src/twitter-demo)
-
 add_subdirectory(src/tools)
