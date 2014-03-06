@@ -3,6 +3,7 @@
 #define KUDU_TABLET_TABLET_BOOTSTRAP_H_
 
 #include <tr1/memory>
+#include <string>
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
@@ -27,6 +28,21 @@ class Clock;
 namespace tablet {
 class Tablet;
 
+// An API for monitoring the tablet bootstrap process.
+class TabletBootstrapListener {
+ public:
+  virtual ~TabletBootstrapListener() {
+  }
+
+  virtual void StatusMessage(const std::string& status) = 0;
+
+  // Creates an instance of the default implementation of
+  // TabletBootstrapListener for tablet described by 'meta'.
+  static void GetDefaultBootstrapListener(
+      const metadata::TabletMetadata* meta,
+      gscoped_ptr<TabletBootstrapListener>* listener);
+};
+
 extern const char* kLogRecoveryDir;
 
 // Bootstraps a tablet, initializing it with the provided metadata. If the tablet
@@ -38,6 +54,7 @@ extern const char* kLogRecoveryDir;
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        const scoped_refptr<server::Clock>& clock,
                        MetricContext* metric_context,
+                       gscoped_ptr<TabletBootstrapListener> boostrap_listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log);
 

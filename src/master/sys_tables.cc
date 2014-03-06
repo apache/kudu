@@ -92,9 +92,13 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
+  gscoped_ptr<tablet::TabletBootstrapListener> listener;
+  tablet::TabletBootstrapListener::GetDefaultBootstrapListener(metadata.get(),
+                                                               &listener);
   RETURN_NOT_OK(BootstrapTablet(metadata.Pass(),
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 &metric_ctx_,
+                                listener.Pass(),
                                 &tablet, &log));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is

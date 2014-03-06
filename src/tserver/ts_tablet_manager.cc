@@ -271,9 +271,13 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
+    gscoped_ptr<tablet::TabletBootstrapListener> listener;
+    tablet::TabletBootstrapListener::GetDefaultBootstrapListener(meta.get(),
+                                                                 &listener);
     s = BootstrapTablet(meta.Pass(),
                         scoped_refptr<server::Clock>(server_->clock()),
                         &metric_ctx_,
+                        listener.Pass(),
                         &tablet, &log);
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to bootstrap: "
