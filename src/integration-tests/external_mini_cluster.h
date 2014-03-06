@@ -21,6 +21,11 @@ class HostPort;
 class Sockaddr;
 class Subprocess;
 
+namespace client {
+class KuduClient;
+struct KuduClientOptions;
+} // namespace client
+
 namespace master {
 class MasterServiceProxy;
 } // namespace master
@@ -95,6 +100,15 @@ class ExternalMiniCluster {
   // Returns Status::TimedOut if the desired count is not achieved with the given
   // timeout.
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
+
+  // Create a client configured to talk to this cluster.
+  // Options may contain override options for the client. If no messenger is provided,
+  // the internal messenger owned by this class is used. The master address will
+  // be overridden to talk to the running master.
+  //
+  // REQUIRES: the cluster must have already been Start()ed.
+  Status CreateClient(const client::KuduClientOptions& opts,
+                      std::tr1::shared_ptr<client::KuduClient>* client);
 
  private:
   Status StartMaster();

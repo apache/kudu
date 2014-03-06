@@ -159,8 +159,9 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   const MonoDelta &timeout = call->controller()->timeout();
   MonoTime deadline;
   if (timeout.ToNanoseconds() == 0) {
-    LOG(WARNING) << "Client call has no timeout set for connection id: "
-        << call->conn_id().ToString();
+    LOG(WARNING) << "Client call " << call->method()
+                 << " has no timeout set for connection id: "
+                 << call->conn_id().ToString();
     deadline = MonoTime::Max();
   } else {
     deadline = MonoTime::Now(MonoTime::FINE);

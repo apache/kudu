@@ -7,6 +7,7 @@
 #include <string>
 #include <tr1/memory>
 
+#include "client/client.h"
 #include "common/wire_protocol.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
@@ -112,10 +113,11 @@ Status ExternalMiniCluster::Start() {
     RETURN_NOT_OK_PREPEND(AddTabletServer(),
                           Substitute("Failed starting tablet server $0", i));
   }
-
   RETURN_NOT_OK(WaitForTabletServerCount(
                   opts_.num_tablet_servers,
                   MonoDelta::FromSeconds(kTabletServerRegistrationTimeoutSeconds)));
+
+  started_ = true;
   return Status::OK();
 }
 
@@ -198,6 +200,19 @@ shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
     new MasterServiceProxy(messenger_, master_->bound_rpc_addr()));
 }
 
+Status ExternalMiniCluster::CreateClient(const client::KuduClientOptions& their_opts,
+                                         shared_ptr<client::KuduClient>* client) {
+  CHECK(started_);
+
+  client::KuduClientOptions opts(their_opts);
+  opts.master_server_addr = master_->bound_rpc_hostport().ToString();
+  if (!opts.messenger) {
+    opts.messenger = messenger_;
+  }
+
+  return client::KuduClient::Create(opts, client);
+}
+
 //------------------------------------------------------------
 // ExternalDaemon
 //------------------------------------------------------------
@@ -226,6 +241,10 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   string info_path = JoinPathSegments(data_dir_, "info.pb");
   argv.push_back("--server_dump_info_path=" + info_path);
   argv.push_back("--server_dump_info_format=pb");
+
+  // A previous instance of the daemon may have run in the same directory. So, remove
+  // the previous info file if it's there.
+  ignore_result(Env::Default()->DeleteFile(info_path));
 
   // Ensure that logging goes to the test output and doesn't get buffered.
   argv.push_back("--logtostderr");
