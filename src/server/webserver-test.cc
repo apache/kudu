@@ -20,6 +20,8 @@ class WebserverTest : public KuduTest {
   }
 
   virtual void SetUp() {
+    KuduTest::SetUp();
+
     AddDefaultPathHandlers(server_.get());
     ASSERT_STATUS_OK(server_->Start());
 

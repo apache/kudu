@@ -736,6 +736,7 @@ class PosixEnv : public Env {
     CHECK_NE(name, "/");
     CHECK_NE(name, "./");
     CHECK_NE(name, ".");
+    CHECK_NE(name, "");
 
     // FTS requires a non-const copy of the name. strdup it and free() when
     // we leave scope.
