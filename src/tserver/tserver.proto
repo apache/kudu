@@ -50,6 +50,9 @@ message TabletServerErrorPB {
     // If the tablet has a newer schema than the requested one the "alter"
     // request will be rejected with this error.
     TABLET_HAS_A_NEWER_SCHEMA = 11;
+
+    // The tablet is hosted on this server, but not in RUNNING state.
+    TABLET_NOT_RUNNING = 12;
   }
 
   // The error code.

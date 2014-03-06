@@ -41,6 +41,8 @@ void StatusToPB(const Status& status, AppStatusPB* pb) {
     pb->set_code(AppStatusPB::RUNTIME_ERROR);
   } else if (status.IsNetworkError()) {
     pb->set_code(AppStatusPB::NETWORK_ERROR);
+  } else if (status.IsServiceUnavailable()) {
+    pb->set_code(AppStatusPB::SERVICE_UNAVAILABLE);
   } else {
     LOG(WARNING) << "Unknown error code translation from internal error "
                  << status.ToString() << ": sending UNKNOWN_ERROR";
@@ -84,6 +86,8 @@ Status StatusFromPB(const AppStatusPB& pb) {
       return Status::RuntimeError(pb.message(), "", posix_code);
     case AppStatusPB::NETWORK_ERROR:
       return Status::NetworkError(pb.message(), "", posix_code);
+    case AppStatusPB::SERVICE_UNAVAILABLE:
+      return Status::ServiceUnavailable(pb.message(), "", posix_code);
     case AppStatusPB::UNKNOWN_ERROR:
     default:
       LOG(WARNING) << "Unknown error code in status: " << pb.ShortDebugString();

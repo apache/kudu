@@ -3,13 +3,17 @@
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "tserver/tserver_service.service.h"
 
 namespace kudu {
 
-namespace tablet { class TransactionContext; }
+namespace tablet {
+class TabletPeer;
+class TransactionContext;
+} // namespace tablet
 
 namespace tserver {
 
@@ -46,6 +50,17 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     rpc::RpcContext* context);
 
  private:
+  // Lookup the given tablet, ensuring that it both exists and is RUNNING.
+  // If it is not, responds to the RPC associated with 'context' after setting
+  // resp->mutable_error() to indicate the failure reason.
+  //
+  // Returns true if successful.
+  template<class RespClass>
+  bool LookupTabletOrRespond(const std::string& tablet_id,
+                             std::tr1::shared_ptr<tablet::TabletPeer>* peer,
+                             RespClass* resp,
+                             rpc::RpcContext* context);
+
   void HandleNewScanRequest(const ScanRequestPB* req,
                             ScanResponsePB* resp,
                             rpc::RpcContext* context);

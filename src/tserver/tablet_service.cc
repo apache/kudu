@@ -126,6 +126,31 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
     server_(server) {
 }
 
+template<class RespClass>
+bool TabletServiceImpl::LookupTabletOrRespond(const string& tablet_id,
+                                              shared_ptr<TabletPeer>* peer,
+                                              RespClass* resp,
+                                              rpc::RpcContext* context) {
+  // Check that it exists.
+  if (PREDICT_FALSE(!server_->tablet_manager()->LookupTablet(tablet_id, peer))) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet not found"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return false;
+  }
+
+  // Check RUNNING state.
+  metadata::TabletStatePB state = (*peer)->state();
+  if (PREDICT_FALSE(state != metadata::RUNNING)) {
+    Status s = Status::ServiceUnavailable("Tablet not RUNNING",
+                                          metadata::TabletStatePB_Name(state));
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return false;
+  }
+  return true;
+}
+
 void TabletServiceImpl::Ping(const PingRequestPB* req,
                              PingResponsePB* resp,
                              rpc::RpcContext* context) {
@@ -138,13 +163,7 @@ void TabletServiceImpl::AlterSchema(const AlterSchemaRequestPB* req,
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
-  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return;
-  }
-  DCHECK(tablet_peer) << "Null tablet peer";
+  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   uint32_t schema_version = tablet_peer->tablet()->metadata()->schema_version();
 
@@ -249,13 +268,7 @@ void TabletServiceImpl::DeleteTablet(const DeleteTabletRequestPB* req,
   DVLOG(3) << "Received Delete Tablet RPC: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
-  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return;
-  }
-  DCHECK(tablet_peer) << "Null tablet peer";
+  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   Status s = server_->tablet_manager()->DeleteTablet(tablet_peer);
   if (PREDICT_FALSE(!s.ok())) {
@@ -277,13 +290,7 @@ void TabletServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
   DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
-  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return;
-  }
-  DCHECK(tablet_peer) << "Null tablet peer";
+  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   ChangeConfigTransactionContext *tx_ctx =
     new ChangeConfigTransactionContext(tablet_peer.get(), req, resp);
@@ -306,13 +313,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   shared_ptr<TabletPeer> tablet_peer;
-  if (!server_->tablet_manager()->LookupTablet(req->tablet_id(), &tablet_peer)) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return;
-  }
-  DCHECK(tablet_peer) << "Null tablet peer";
+  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
 
   WriteTransactionContext *tx_ctx =
     new WriteTransactionContext(tablet_peer.get(), req, resp);
@@ -439,13 +440,7 @@ void TabletServiceImpl::HandleNewScanRequest(const ScanRequestPB* req,
 
   const NewScanRequestPB& scan_pb = req->new_scan_request();
   shared_ptr<TabletPeer> tablet_peer;
-  if (PREDICT_FALSE(!server_->tablet_manager()->LookupTablet(
-                      scan_pb.tablet_id(), &tablet_peer))) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
-    return;
-  }
+  if (!LookupTabletOrRespond(scan_pb.tablet_id(), &tablet_peer, resp, context)) return;
 
   // Create the user's requested projection.
   // TODO: add test cases for bad projections including 0 columns

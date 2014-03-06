@@ -96,12 +96,6 @@ Status TabletPeer::Shutdown() {
 }
 
 Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
-  {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
-    if (PREDICT_FALSE(state_ != metadata::RUNNING))
-      return Status::IllegalState("Tablet not in RUNNING state.");
-  }
-
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderWriteTransaction* transaction = new LeaderWriteTransaction(tx_ctx,
@@ -114,12 +108,6 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
 }
 
 Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
-  {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
-    if (PREDICT_FALSE(state_ != metadata::RUNNING))
-      return Status::IllegalState("Tablet not in RUNNING state.");
-  }
-
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderAlterSchemaTransaction* transaction =
