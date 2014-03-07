@@ -428,6 +428,8 @@ service MasterService {
   rpc GetTabletLocations(GetTabletLocationsRequestPB) returns (GetTabletLocationsResponsePB);
 
   rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB);
+  rpc IsCreateTableDone(IsCreateTableDoneRequestPB) returns (IsCreateTableDoneResponsePB);
+
   rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB);
 
   rpc AlterTable(AlterTableRequestPB) returns (AlterTableResponsePB);

@@ -38,6 +38,9 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void CreateTable(const CreateTableRequestPB* req,
                            CreateTableResponsePB* resp,
                            rpc::RpcContext* rpc);
+  virtual void IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
+                                 IsCreateTableDoneResponsePB* resp,
+                                 rpc::RpcContext* rpc);
   virtual void DeleteTable(const DeleteTableRequestPB* req,
                            DeleteTableResponsePB* resp,
                            rpc::RpcContext* rpc);

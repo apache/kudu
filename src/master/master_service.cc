@@ -121,6 +121,16 @@ void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
   rpc->RespondSuccess();
 }
 
+ void MasterServiceImpl::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
+                                           IsCreateTableDoneResponsePB* resp,
+                                           rpc::RpcContext* rpc) {
+  Status s = server_->catalog_manager()->IsCreateTableDone(req, resp);
+  if (!s.ok() && !resp->has_error()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+  }
+  rpc->RespondSuccess();
+}
+
 void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
                                     DeleteTableResponsePB* resp,
                                     rpc::RpcContext* rpc) {

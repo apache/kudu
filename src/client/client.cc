@@ -127,8 +127,11 @@ Status KuduClient::CreateTable(const std::string& table_name,
 
   RETURN_NOT_OK(master_proxy_->CreateTable(req, &resp, &rpc));
   if (resp.has_error()) {
+    // TODO: if already exist and in progress spin
     return StatusFromPB(resp.error().status());
   }
+
+  // TODO: Spin if create is in progress
 
   return Status::OK();
 }
