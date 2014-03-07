@@ -429,6 +429,34 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   return Status::OK();
 }
 
+Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
+                                         IsCreateTableDoneResponsePB* resp) {
+  scoped_refptr<TableInfo> table;
+
+  // 1. Lookup the table and verify if it exists
+  TRACE("Looking up table");
+  RETURN_NOT_OK(FindTable(req->table(), &table));
+  if (table == NULL) {
+    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  TRACE("Locking table");
+  TableMetadataLock l(table.get(), TableMetadataLock::READ);
+  if (l.data().is_deleted()) {
+    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+
+  // 2. Verify if the create is in-progress
+  TRACE("Verify if the table creation is in progress for $0", table->ToString());
+  resp->set_done(!table->IsCreateInProgress());
+
+  return Status::OK();
+}
+
 void CatalogManager::CreateTablets(const CreateTableRequestPB* req,
                                    TableInfo *table,
                                    vector<TabletInfo* > *tablets) {
@@ -962,6 +990,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       // Mark the tablet as running
       // TODO: we could batch the IO onto a background thread, or at least
       // across multiple tablets in the same report.
+      VLOG(1) << "Tablet " << tablet->ToString() << " is now online";
       tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning,
                                             "Tablet reported by leader");
       Status s = sys_tablets_->UpdateTablets(boost::assign::list_of(tablet.get()));
@@ -1618,7 +1647,9 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
 
 bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                              TabletLocationsPB* locs_pb) {
+  metadata::QuorumPB stale_quorum;
   TSRegistrationPB reg;
+
   vector<TabletReplica> locs;
   {
     TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
@@ -1627,11 +1658,15 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
 
     locs.clear();
     tablet->GetLocations(&locs);
+    if (locs.empty() && l_tablet.data().pb.has_quorum()) {
+      stale_quorum.CopyFrom(l_tablet.data().pb.quorum());
+    }
   }
 
   locs_pb->set_tablet_id(tablet->tablet_id());
   locs_pb->set_start_key(tablet->metadata().state().pb.start_key());
   locs_pb->set_end_key(tablet->metadata().state().pb.end_key());
+  locs_pb->set_stale(locs.empty());
 
   BOOST_FOREACH(const TabletReplica& replica, locs) {
     TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
@@ -1643,6 +1678,16 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
     replica.ts_desc->GetRegistration(&reg);
     tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
   }
+
+  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, stale_quorum.peers()) {
+    TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+    replica_pb->set_role(peer.role());
+
+    TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
+    tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
+    tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
+  }
+
   return true;
 }
 
@@ -1928,6 +1973,16 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
     if (e.second->reported_schema_version() < version) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool TableInfo::IsCreateInProgress() const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+    if (!e.second->metadata().state().is_running()) {
       return true;
     }
   }

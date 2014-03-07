@@ -223,6 +223,12 @@ message TabletLocationsPB {
 
   required bytes start_key = 3;
   required bytes end_key = 4;
+
+  // true if the tablet was running but no tablet server has reported it yet.
+  // The set of replicas will be the last one that was hosting the tablet.
+  // This should happen on Master restart when the request is issued before
+  // the TS has the time to notify the Master about the tablets that is hosting.
+  required bool stale = 5;
 }
 
 // Info about a single tablet server, returned to the client as part
@@ -267,6 +273,18 @@ message CreateTableResponsePB {
   optional MasterErrorPB error = 1;
 
   optional bytes table_id = 2;
+}
+
+message IsCreateTableDoneRequestPB {
+  required TableIdentifierPB table = 1;
+}
+
+message IsCreateTableDoneResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  // true if the create operation is completed, false otherwise
+  optional bool done = 3;
 }
 
 message DeleteTableRequestPB {

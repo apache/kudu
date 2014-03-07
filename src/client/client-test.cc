@@ -676,5 +676,29 @@ TEST_F(ClientTest, TestGetTableSchema) {
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
 }
 
+TEST_F(ClientTest, TestStaleLocations) {
+  string tablet_id = client_table_->tablet_id();
+
+  // The Tablet is up and running the location should not be stale
+  master::TabletLocationsPB locs_pb;
+  ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
+                  tablet_id, &locs_pb));
+  ASSERT_FALSE(locs_pb.stale());
+
+  // On Master restart and no tablet report we expect the locations to be stale
+  cluster_->mini_tablet_server(0)->Shutdown();
+  cluster_->mini_master()->Restart();
+  ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
+                  tablet_id, &locs_pb));
+  ASSERT_TRUE(locs_pb.stale());
+
+  // Restart the TS and Wait for the tablets to be reported to the master.
+  cluster_->mini_tablet_server(0)->Start();
+  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+  ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
+                  tablet_id, &locs_pb));
+  ASSERT_FALSE(locs_pb.stale());
+}
+
 } // namespace client
 } // namespace kudu

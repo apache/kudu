@@ -213,6 +213,9 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   const CowObject<PersistentTableInfo>& metadata() const { return metadata_; }
   CowObject<PersistentTableInfo>& metadata() { return metadata_; }
 
+  // Returns true if the table creation is in-progress
+  bool IsCreateInProgress() const;
+
   // Returns true if an "Alter" operation is in-progress
   bool IsAlterInProgress(uint32_t version) const;
 
@@ -282,6 +285,10 @@ class CatalogManager {
   Status CreateTable(const CreateTableRequestPB* req,
                      CreateTableResponsePB* resp,
                      rpc::RpcContext* rpc);
+
+  // Get the information about an in-progress create operation
+  Status IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
+                           IsCreateTableDoneResponsePB* resp);
 
   // Delete the specified table
   //
