@@ -21,6 +21,8 @@ namespace kudu {
 
 // glog doesn't allow multiple invocations of InitGoogleLogging. This method conditionally
 // calls InitGoogleLogging only if it hasn't been called before.
+//
+// It also takes care of installing the google failure signal handler.
 void InitGoogleLoggingSafe(const char* arg);
 
 // Returns the full pathname of the symlink to the most recent log

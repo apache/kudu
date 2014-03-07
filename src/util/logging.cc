@@ -43,6 +43,9 @@ namespace kudu {
 void InitGoogleLoggingSafe(const char* arg) {
   mutex::scoped_lock logging_lock(logging_mutex);
   if (logging_initialized) return;
+
+  google::InstallFailureSignalHandler();
+
   if (!FLAGS_log_filename.empty()) {
     for (int severity = google::INFO; severity <= google::FATAL; ++severity) {
       google::SetLogSymlink(severity, FLAGS_log_filename.c_str());
