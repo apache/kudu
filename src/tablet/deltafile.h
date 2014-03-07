@@ -83,7 +83,8 @@ class DeltaFileWriter {
 };
 
 
-class DeltaFileReader : public DeltaStore {
+class DeltaFileReader : public DeltaStore,
+                        public std::tr1::enable_shared_from_this<DeltaFileReader> {
  public:
   static const char * const kSchemaMetaEntryName;
   static const char * const kDeltaStatsEntryName;
@@ -92,13 +93,13 @@ class DeltaFileReader : public DeltaStore {
   static Status Open(Env *env,
                      const string &path,
                      int64_t delta_id,
-                     gscoped_ptr<DeltaFileReader> *reader_out);
+                     std::tr1::shared_ptr<DeltaFileReader>* reader_out);
 
   static Status Open(const string& path,
                      const shared_ptr<RandomAccessFile> &file,
                      uint64_t file_size,
                      int64_t delta_id,
-                     gscoped_ptr<DeltaFileReader> *reader_out);
+                     std::tr1::shared_ptr<DeltaFileReader>* reader_out);
 
   // See DeltaStore::NewDeltaIterator(...)
   Status NewDeltaIterator(const Schema *projection,
@@ -213,7 +214,8 @@ class DeltaFileIterator : public DeltaIterator {
 
   // The passed 'projection' and 'dfr' must remain valid for the lifetime
   // of the iterator.
-  DeltaFileIterator(const DeltaFileReader *dfr, const Schema *projection,
+  DeltaFileIterator(const std::tr1::shared_ptr<const DeltaFileReader>& dfr,
+                    const Schema *projection,
                     const MvccSnapshot &snap);
 
 
@@ -237,7 +239,7 @@ class DeltaFileIterator : public DeltaIterator {
   // Log a FATAL error message about a bad delta.
   void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas, const string &msg);
 
-  const DeltaFileReader *dfr_;
+  std::tr1::shared_ptr<const DeltaFileReader> dfr_;
   shared_ptr<cfile::CFileReader> cfile_reader_;
 
   // Mapping from projected column index back to memrowset column index.

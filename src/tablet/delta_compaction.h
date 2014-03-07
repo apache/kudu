@@ -19,10 +19,9 @@ class DeltaKey;
 class DeltaCompactionInput {
  public:
 
-  // Creates a compaction input from a DeltaFileReader. The
-  // DeltaFileReader reference must be valid for the lifetime the
-  // DeltaCompactionInput. The projection is the compaction output schema.
-  static Status Open(const DeltaFileReader &reader,
+  // Creates a compaction input from a DeltaFileReader.
+  // 'projection' is the compaction output schema.
+  static Status Open(const std::tr1::shared_ptr<DeltaFileReader>& reader,
                      const Schema* projection,
                      gscoped_ptr<DeltaCompactionInput> *input);
 

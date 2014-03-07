@@ -160,7 +160,7 @@ Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 Status DeltaFileReader::Open(Env *env,
                              const string &path,
                              int64_t delta_id,
-                             gscoped_ptr<DeltaFileReader> *reader_out) {
+                             shared_ptr<DeltaFileReader>* reader_out) {
   shared_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &file));
   uint64_t size;
@@ -172,7 +172,7 @@ Status DeltaFileReader::Open(const string& path,
                              const shared_ptr<RandomAccessFile> &file,
                              uint64_t file_size,
                              int64_t delta_id,
-                             gscoped_ptr<DeltaFileReader> *reader_out) {
+                             shared_ptr<DeltaFileReader>* reader_out) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::Open(file, file_size, cfile::ReaderOptions(), &cf_reader));
 
@@ -240,7 +240,7 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          const MvccSnapshot &snap,
                                          DeltaIterator** iterator) const {
   if (snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp())) {
-    *iterator = new DeltaFileIterator(this, projection, snap);
+    *iterator = new DeltaFileIterator(shared_from_this(), projection, snap);
     return Status::OK();
   }
   return Status::NotFound("MvccSnapshot outside the range of this delta.");
@@ -279,7 +279,7 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 // DeltaFileIterator
 ////////////////////////////////////////////////////////////
 
-DeltaFileIterator::DeltaFileIterator(const DeltaFileReader *dfr,
+DeltaFileIterator::DeltaFileIterator(const shared_ptr<const DeltaFileReader>& dfr,
                                      const Schema *projection,
                                      const MvccSnapshot &snap) :
   dfr_(dfr),

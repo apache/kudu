@@ -80,7 +80,7 @@ class TestDeltaFile : public ::testing::Test {
   }
 
   void VerifyTestFile() {
-    gscoped_ptr<DeltaFileReader> reader;
+    shared_ptr<DeltaFileReader> reader;
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
               reader->delta_stats().update_count(0));
@@ -156,7 +156,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
   WriteTestFile();
 
   {
-    gscoped_ptr<DeltaFileReader> reader;
+    shared_ptr<DeltaFileReader> reader;
     ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
@@ -200,7 +200,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 
 TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   WriteTestFile(10, 20);
-  gscoped_ptr<DeltaFileReader> reader;
+  shared_ptr<DeltaFileReader> reader;
   ASSERT_STATUS_OK(DeltaFileReader::Open(env_.get(), kTestPath, 0, &reader));
 
   gscoped_ptr<DeltaIterator> iter;

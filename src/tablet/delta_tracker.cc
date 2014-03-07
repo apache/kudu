@@ -200,7 +200,7 @@ Status DeltaTracker::Open() {
       return s;
     }
 
-    gscoped_ptr<DeltaFileReader> dfr;
+    shared_ptr<DeltaFileReader> dfr;
     s = DeltaFileReader::Open("---", dfile, dsize, delta_id, &dfr);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open delta file " << idx << ": "
@@ -210,7 +210,7 @@ Status DeltaTracker::Open() {
 
     max_id = std::max(max_id, dfr->id());
     LOG(INFO) << "Successfully opened delta file " << idx;
-    delta_stores_.push_back(shared_ptr<DeltaStore>(dfr.release()));
+    delta_stores_.push_back(dfr);
   }
 
   // the id of the first DeltaMemStore is the max id of the current ones +1
@@ -231,10 +231,15 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
   vector<shared_ptr<DeltaCompactionInput> > inputs;
   for (size_t idx = start_idx; idx <= end_idx; ++idx) {
     shared_ptr<DeltaStore> &delta_store = delta_stores_[idx];
-    DeltaFileReader *dfr = down_cast<DeltaFileReader *>(delta_store.get());
+
+    // In DEBUG mode, the following asserts that the object is of the right type
+    // (using RTTI)
+    ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
+    shared_ptr<DeltaFileReader> dfr = std::tr1::static_pointer_cast<DeltaFileReader>(delta_store);
+
     LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
     gscoped_ptr<DeltaCompactionInput> dci;
-    RETURN_NOT_OK(DeltaCompactionInput::Open(*dfr, &schema_, &dci));
+    RETURN_NOT_OK(DeltaCompactionInput::Open(dfr, &schema_, &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
     target_stores->push_back(delta_store);
     target_ids->push_back(delta_store->id());
@@ -245,7 +250,7 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
 
 Status DeltaTracker::AtomicUpdateStores(size_t start_idx, size_t end_idx,
                                         const vector<shared_ptr<DeltaStore> > &expected_stores,
-                                        gscoped_ptr<DeltaFileReader> new_store) {
+                                        const shared_ptr<DeltaFileReader>& new_store) {
   boost::lock_guard<boost::shared_mutex> lock(component_lock_);
 
   // First check that delta stores match the old stores
@@ -261,7 +266,7 @@ Status DeltaTracker::AtomicUpdateStores(size_t start_idx, size_t end_idx,
   delta_stores_.erase(erase_start, erase_end);
 
   // Insert the new store
-  delta_stores_.push_back(shared_ptr<DeltaStore>(new_store.release()));
+  delta_stores_.push_back(new_store);
   return Status::OK();
 }
 
@@ -299,7 +304,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   int64_t compacted_id = compacted_ids.back();
 
   // Open the new deltafile
-  gscoped_ptr<DeltaFileReader> dfr;
+  shared_ptr<DeltaFileReader> dfr;
   size_t data_size = 0;
   shared_ptr<RandomAccessFile> data_reader;
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader,
@@ -308,7 +313,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
                                       data_size, compacted_id, &dfr));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
-  RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr.Pass()));
+  RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr));
   LOG(INFO) << "Opened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->AtomicRemoveRedoDeltaDataBlocks(start_idx, end_idx,
@@ -415,7 +420,7 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
 }
 
 Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
-                              gscoped_ptr<DeltaFileReader> *dfr) {
+                              shared_ptr<DeltaFileReader>* dfr) {
 
   // Open file for write.
   BlockId block_id;
@@ -489,7 +494,7 @@ Status DeltaTracker::Flush() {
   // Now, actually flush the contents of the old DMS.
   // TODO: need another lock to prevent concurrent flushers
   // at some point.
-  gscoped_ptr<DeltaFileReader> dfr;
+  shared_ptr<DeltaFileReader> dfr;
   Status s = FlushDMS(old_dms.get(), &dfr);
   CHECK(s.ok())
     << "Failed to flush DMS: " << s.ToString()
@@ -506,7 +511,7 @@ Status DeltaTracker::Flush() {
 
     CHECK_EQ(delta_stores_[idx], old_dms)
       << "Another thread modified the delta store list during flush";
-    delta_stores_[idx].reset(dfr.release());
+    delta_stores_[idx] = dfr;
   }
 
   return Status::OK();

@@ -122,12 +122,12 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 class DeltaFileCompactionInput : public DeltaCompactionInput {
  public:
 
-  explicit DeltaFileCompactionInput(const Schema* schema,
+  explicit DeltaFileCompactionInput(const shared_ptr<DeltaFileReader>& dfr,
                                     const Schema* projection,
-                                    const DeltaStats& stats,
                                     gscoped_ptr<CFileIterator> iter)
-      : iter_(iter.Pass()),
-        stats_(stats),
+      : dfr_(dfr),
+        iter_(iter.Pass()),
+        stats_(dfr->delta_stats()),
         data_(new Slice[kRowsPerBlock]),
         arena_(32*1024, 128*1024),
         block_(GetTypeInfo(STRING),
@@ -135,7 +135,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
                data_.get(),
                kRowsPerBlock,
                &arena_),
-        delta_projector_(schema, projection),
+        delta_projector_(&dfr->schema(), projection),
         initted_(false),
         block_prepared_(false) {
   }
@@ -202,6 +202,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaFileCompactionInput);
 
+  shared_ptr<DeltaFileReader> dfr_;
   gscoped_ptr<CFileIterator> iter_;
   DeltaStats stats_;
   gscoped_ptr<Slice[]> data_;
@@ -674,14 +675,14 @@ Status MajorDeltaCompaction::Compact(shared_ptr<RowSetMetadata>* output,
   return Status::OK();
 }
 
-Status DeltaCompactionInput::Open(const DeltaFileReader &reader,
+Status DeltaCompactionInput::Open(const shared_ptr<DeltaFileReader>& reader,
                                   const Schema* projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
   CHECK(projection->has_column_ids());
   gscoped_ptr<CFileIterator> iter;
-  RETURN_NOT_OK(reader.cfile_reader()->NewIterator(&iter));
-  input->reset(new DeltaFileCompactionInput(&reader.schema(), projection,
-                                            reader.delta_stats(),
+  RETURN_NOT_OK(reader->cfile_reader()->NewIterator(&iter));
+  input->reset(new DeltaFileCompactionInput(reader,
+                                            projection,
                                             iter.Pass()));
   return Status::OK();
 }

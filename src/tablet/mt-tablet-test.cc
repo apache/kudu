@@ -230,10 +230,14 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
       if (tablet_->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
         CHECK_OK(tablet_->Flush());
-
       } else {
         LOG(INFO) << "Not flushing, memrowset not very full";
       }
+
+      if (tablet_->DeltaMemStoresSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+        CHECK_OK(tablet_->FlushBiggestDMS());
+      }
+
       // Wait, unless the inserters are all done.
       running_insert_count_.TimedWait(boost::posix_time::milliseconds(wait_time));
       wait_time *= FLAGS_flusher_backoff;

@@ -60,11 +60,10 @@ class TestDeltaCompaction : public KuduTest {
   Status OpenAsCompactionInput(const string& path, uint64_t deltafile_idx,
                                const Schema* projection,
                                gscoped_ptr<DeltaCompactionInput> *dci) {
-    gscoped_ptr<DeltaFileReader> reader;
+    shared_ptr<DeltaFileReader> reader;
     RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader));
     CHECK_EQ(deltafile_idx_, reader->id());
-    RETURN_NOT_OK(DeltaCompactionInput::Open(*reader, projection, dci));
-    pool_.Add(reader.release());
+    RETURN_NOT_OK(DeltaCompactionInput::Open(reader, projection, dci));
     deltafile_idx_++;
     return Status::OK();
   }
@@ -121,7 +120,6 @@ class TestDeltaCompaction : public KuduTest {
  protected:
   int64_t deltafile_idx_;
   Schema schema_;
-  AutoReleasePool pool_;
 };
 
 TEST_F(TestDeltaCompaction, TestDeltaFileCompactionInput) {

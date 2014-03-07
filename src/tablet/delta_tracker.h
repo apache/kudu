@@ -130,7 +130,7 @@ class DeltaTracker {
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(DeltaMemStore* dms,
-                  gscoped_ptr<DeltaFileReader> *dfr);
+                  shared_ptr<DeltaFileReader>* dfr);
 
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
 
@@ -139,7 +139,7 @@ class DeltaTracker {
   // with the "new_store"; otherwise, crashes with a FATAL error message.
   Status AtomicUpdateStores(size_t start_idx, size_t end_idx,
                             const vector<shared_ptr<DeltaStore> > &expected_stores,
-                            gscoped_ptr<DeltaFileReader> new_store);
+                            const std::tr1::shared_ptr<DeltaFileReader>& new_store);
 
   // Performs the actual compaction. Results of compaction are written to "data_writer",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
