@@ -990,13 +990,13 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // Replace the compacted rowsets with the new on-disk rowsets.
   AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_rowsets);
 
-  // Remove old rowsets
-  WARN_NOT_OK(DeleteCompactionInputs(input),
-              "Unable to remove compaction inputs. Will GC later.");
-
   // Write out the new Tablet Metadata
   RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), out_metas, mrs_being_flushed),
                         "Failed to flush new tablet metadata");
+
+  // Remove old rowsets
+  WARN_NOT_OK(DeleteCompactionInputs(input),
+              "Unable to remove compaction inputs. Will GC later.");
 
   LOG(INFO) << "Successfully flush/compacted " << drsw.written_count()
             << " rows" << "(" << drsw.written_size() << " bytes)";
