@@ -51,6 +51,11 @@ struct ProbeStats;
 // This class is also responsible for flushing the in-memory deltas to disk.
 class DeltaTracker {
  public:
+  enum MetadataFlushType {
+    FLUSH_METADATA,
+    NO_FLUSH_METADATA
+  };
+
   DeltaTracker(const shared_ptr<metadata::RowSetMetadata>& rowset_metadata,
                const Schema &schema,
                rowid_t num_rows,
@@ -74,7 +79,15 @@ class DeltaTracker {
                                                  int64_t* last_store_id) const;
 
   Status Open();
-  Status Flush();
+
+  // Flushes the current DeltaMemStore and replaces it with a new one.
+  // Caller selects whether to also have the RowSetMetadata (and consequently
+  // the TabletMetadata) flushed.
+  //
+  // NOTE: 'flush_type' should almost always be set to 'FLUSH_METADATA', or else
+  // delta stores might become unrecoverable. TODO: see KUDU-204 to clean this up
+  // a bit.
+  Status Flush(MetadataFlushType flush_type);
 
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into a local arena.
@@ -141,7 +154,8 @@ class DeltaTracker {
 
   Status OpenDeltaFileReaders();
   Status FlushDMS(DeltaMemStore* dms,
-                  shared_ptr<DeltaFileReader>* dfr);
+                  shared_ptr<DeltaFileReader>* dfr,
+                  MetadataFlushType flush_type);
 
   // This collects all undo and redo stores.
   void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;

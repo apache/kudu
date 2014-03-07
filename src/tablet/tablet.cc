@@ -975,56 +975,16 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                           "Failed to create compaction inputs");
   }
 
-  OpId missed_delta_anchor_op_id;
-  if (PREDICT_TRUE(consensus_)) {
-    // For each MISSED_DELTA update, have the DMS anchor on the OpId of the
-    // last operation, even though it is likely that that OpId
-    // will not be the same one that is written in the MISSED_DELTA commit
-    // message in the Log (it may be earlier).
-    consensus_->GetLastOpId(&missed_delta_anchor_op_id);
-  } else {
-    missed_delta_anchor_op_id.CopyFrom(MaximumOpId());
-  }
-
-  // Updating rows in the compaction outputs needs to be tracked or else we
-  // lose data on recovery. However because compactions run independently
-  // of the replicated state machine this transaction is committed locally
-  // only _and_ the commit must include the actual row data (vs. normally
-  // only including the ids of the destination MemRowSets/DeltaRowStores).
-  WriteTransactionContext compaction_tx;
+  // Update the output rowsets with the deltas that came in in phase 1, before we swapped
+  // in the DuplicatingRowSets. This will perform a flush of the updated DeltaTrackers
+  // in the end so that the data that is reported in the log as belonging to the input
+  // rowsets is flushed.
   RETURN_NOT_OK_PREPEND(ReupdateMissedDeltas(metadata_->oid(),
-                                             &compaction_tx,
                                              merge.get(),
                                              flush_snap,
                                              snap2,
-                                             new_disk_rowsets,
-                                             missed_delta_anchor_op_id),
+                                             new_disk_rowsets),
                         "Failed to re-update deltas missed during compaction phase 1");
-
-  if (PREDICT_TRUE(consensus_) && compaction_tx.Result().mutations_size() > 0) {
-    Barrier_AtomicIncrement(&total_missed_deltas_mutations_,
-                            compaction_tx.Result().mutations_size());
-
-    // Commit this locally. For more information, see LocalCommit().
-    // Do not assign an OpId. LocalCommit() will do that in order
-    // to ensure that the OpIds in the Log increase monotonically.
-    // Passing the above missed_delta_anchor_op_id to ReupdateMissedDeltas()
-    // serves as a conservative anchor (possibly prior to the OpId actually
-    // written to the Log) that allows us to avoid writing a pre-commit message
-    // to the Log before writing the missed deltas to the DMS.
-    OperationPB commit_op;
-    CommitMsg* commit = commit_op.mutable_commit();
-    commit->mutable_result()->CopyFrom(compaction_tx.Result());
-    commit->set_op_type(MISSED_DELTA);
-    // Missed delta mutations each carry their own timestamps and there is no
-    // timestamp for the whole write, as in normal writes. Thus we encode
-    // kInvalidTimestamp as the commit timestamp so that clocks spit out an
-    // error if this is used to update a clock.
-    Timestamp::kInvalidTimestamp.EncodeToString(commit->mutable_timestamp());
-    shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
-    RETURN_NOT_OK(consensus_->LocalCommit(&commit_op, commit_clbk));
-    RETURN_NOT_OK(commit_clbk->Wait());
-  }
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostReupdateMissedDeltas(),

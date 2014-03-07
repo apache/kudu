@@ -131,22 +131,6 @@ class Consensus {
   // FOLLOWERs, i.e. is_leader() returns false.
   virtual Status Update(ReplicaUpdateContext* context) = 0;
 
-  // Appends a local commit to the state machine.
-  //
-  // This function is required as different nodes have independent physical
-  // layers and therefore need to sometimes issue "local" commit messages that
-  // change only the local state and not the coordinated state
-  // machine.
-  //
-  // Will assign the last-assigned OpId to the operation, write it to the local
-  // log, and leave the object mutated with the assigned OpId set. This ensures
-  // that OpIds stay monotonic in the log, even with local commits.
-  //
-  // local_commit_op: Operation to be committed. Its OpId must be uninitialized.
-  // commit_callback: Callback to invoke once the commit is done.
-  virtual Status LocalCommit(OperationPB* local_commit_op,
-                             const std::tr1::shared_ptr<FutureCallback>& commit_callback) = 0;
-
   // Returns the number of participants that constitutes a majority for this
   // quorum, e.g. 1 for a quorum of 1 participant, 2 for a quorum of 2,3
   // participants, 3 for a quorum of 4,5 participants etc..

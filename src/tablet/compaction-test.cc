@@ -447,15 +447,12 @@ TEST_F(TestCompaction, TestOneToOne) {
   UpdateRows(rs.get(), 1000, 0, 3);
 
   string dummy_name = "";
-  WriteTransactionContext tx_ctx;
 
   ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
-                                        &tx_ctx,
                                         input.get(),
                                         snap,
                                         snap2,
-                                        boost::assign::list_of(rs),
-                                        op_id_));
+                                        boost::assign::list_of(rs)));
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
@@ -505,16 +502,13 @@ TEST_F(TestCompaction, TestKUDU102) {
   gscoped_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
 
   string dummy_name = "";
-  WriteTransactionContext tx_ctx;
 
   // This would fail without KUDU-102
   ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
-                                        &tx_ctx,
                                         input.get(),
                                         snap,
                                         snap2,
-                                        boost::assign::list_of(rs) (rs_b),
-                                        op_id_));
+                                        boost::assign::list_of(rs) (rs_b)));
 }
 
 

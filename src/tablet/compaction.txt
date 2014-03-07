@@ -43,17 +43,6 @@ Phase 1: merge data:
     RowSet. This will reflect any updates or deletes which arrived prior to the
     start of phase 1, but no updates or deletes which arrive during either
     phase of the compaction.
-  - An additional integer column is created during this merge which contains
-    an entry for each of the rows in the input RowSet. The value of this column
-    is the corresponding row ID in the output RowSet.
-
-    For example, if there were no garbage-collected rows at all in the RowSet being compacted,
-    this column will simply contain the sequence (1, 2, 3 ... N) where N is the
-    number of rows in the input RowSet.
-
-    If rowid 3 had been GCed, this will contain the sequence (1, 2, x, 3...)
-    where 'x' is any special value indicating that the row has been deleted in
-    the output.
 
   - Any mutations which arrive during this phase are applied only to the input
     RowSets' delta tracking structures. Because the merge operates on a snapshot,
@@ -61,33 +50,29 @@ Phase 1: merge data:
 
 Phase 2: migrate deltas from phase 1
   - Any mutations which arrive during this phase should be applied to both the
-    input RowSet and the output RowSet. This is simple to do either by duplicating
-    the key lookup into the output RowSet's key column, or by using the mapping
-    column which was output as part of phase 1.
+    input RowSet and the output RowSet. This is simple to do by duplicating
+    the key lookup into the output RowSet's key column when the update arrives.
+    This is implemented by swapping in a "DuplicatingRowSet" implementation which
+    forwards updates to both the input and output rowsets.
+
+  - Any reads during this phase must be served from the input RowSet, since the
+    output RowSet is missing the deltas which arrived during the merge phase.
 
   - Because the merge output ignored any mutations which arrived during phase 1,
     we must now 'migrate' those mutations to the output RowSet. This can be done
     efficiently by collecting all of the deltas which were not included in the
-    snapshot iterator, and merging their ordinal indexes with the mapping column
-    created above. This translates the old rowid to the new rowid, so the same
-    delta can be inserted into the output RowSet's delta tracking structures.
-
-  - Any reads during this phase must be served from the input RowSet, since the
-    output RowSet is missing the deltas which arrived during the merge phase (B).
+    snapshot iterator, and applying them to the output rowset's delta tracker.
 
 
 End of Phase 2: swap RowSets
   - After Phase 2, the two RowSets have logically identical data, and they may
     be atomically swapped. Once the output RowSet has been swapped in, new updates
-    only need to be applied to the output RowSet, and the old RowSet (as well as its
-    mapping column) may be dropped.
-
+    only need to be applied to the output RowSet, and the old RowSet may be dropped.
 
 Extending to multiple RowSets
 ------------------------------
 
 The above algorithm can be extended to multiple RowSets equally well. At the beginning
 of the compaction, each RowSet is snapshotted, and a snapshot iterator created. A merge
-iterator then performs the merge of all of the snapshots in ascending key order, while
-simultaneously outputting the rowid mapping for each of the old RowSets.
+iterator then performs the merge of all of the snapshots in ascending key order.
 

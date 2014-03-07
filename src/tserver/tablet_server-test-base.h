@@ -54,7 +54,6 @@ using kudu::rpc::RpcController;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TxOperationPB;
-using kudu::tablet::MissedDeltaMutationPB;
 
 namespace kudu {
 namespace tserver {

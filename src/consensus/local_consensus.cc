@@ -180,32 +180,6 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
   return Status::OK();
 }
 
-Status LocalConsensus::LocalCommit(OperationPB* local_commit_op,
-                                   const shared_ptr<FutureCallback>& commit_callback) {
-  DCHECK(local_commit_op);
-  DCHECK(!local_commit_op->id().IsInitialized())
-      << "Local commit OpId will be overwritten. Do not initialize it: "
-      << local_commit_op->DebugString();
-
-  CHECK(local_commit_op->has_commit())
-      << "Only a commit message may be written via LocalCommit(): "
-      << local_commit_op->DebugString();
-
-  LogEntryBatch* reserved_entry_batch;
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-
-    // Keep OpIds monotonic in the Log.
-    local_commit_op->mutable_id()->CopyFrom(last_op_id_);
-
-    // Reserve the next slot in the log for the MISSED_DELTA commit operation.
-    RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(local_commit_op),
-                                &reserved_entry_batch));
-  }
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, commit_callback));
-  return Status::OK();
-}
-
 Status LocalConsensus::Shutdown() {
   RETURN_NOT_OK(log_->Close());
   VLOG(1) << "LocalConsensus Shutdown!";

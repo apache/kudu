@@ -29,15 +29,6 @@ message MutationResultPB {
   repeated MutationTargetPB mutations = 2;
 }
 
-// A mutation executed during the ReupdateMissedDeltas() phase of compaction/flush.
-// Needs to keep the actual row key and changelist of the mutated row so that we
-// can replay it on recovery.
-message MissedDeltaMutationPB {
-  required kudu.RowwiseRowBlockPB row_key = 1;
-  required bytes changelist = 2;
-  required bytes timestamp = 3;
-}
-
 // Stores the result of an Insert or Mutate.
 message TxOperationPB {
 
@@ -55,8 +46,6 @@ message TxOperationPB {
   optional int64 mrs_id = 3;
   // set if this is a MutationOp
   optional MutationResultPB mutation_result = 4;
-  // set if this is a missed mutation. 'mutation_result' must also be set.
-  optional MissedDeltaMutationPB missed_delta_mutation = 5;
 }
 
 // The final result of a transaction, including the result of each individual

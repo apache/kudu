@@ -126,12 +126,10 @@ Status FlushCompactionInput(CompactionInput *input,
 //
 // All effectively applied mutations are collected in compaction_tc.
 Status ReupdateMissedDeltas(const string &tablet_name,
-                            WriteTransactionContext *compaction_tc,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
-                            const RowSetVector &output_rowsets,
-                            const consensus::OpId& op_id);
+                            const RowSetVector &output_rowsets);
 
 
 // Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.

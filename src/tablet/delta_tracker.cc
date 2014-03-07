@@ -451,8 +451,8 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
 }
 
 Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
-                              shared_ptr<DeltaFileReader>* dfr) {
-
+                              shared_ptr<DeltaFileReader>* dfr,
+                              MetadataFlushType flush_type) {
   // Open file for write.
   BlockId block_id;
   shared_ptr<WritableFile> data_writer;
@@ -487,16 +487,17 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
-  s = rowset_metadata_->Flush();
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();
-    return s;
+  if (flush_type == FLUSH_METADATA) {
+    s = rowset_metadata_->Flush();
+    if (!s.ok()) {
+      LOG(ERROR) << "Unable to commit Delta block metadata for: " << block_id.ToString();
+      return s;
+    }
   }
-
   return Status::OK();
 }
 
-Status DeltaTracker::Flush() {
+Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   boost::lock_guard<boost::mutex> l(compact_flush_lock_);
 
   // First, swap out the old DeltaMemStore a new one,
@@ -530,7 +531,7 @@ Status DeltaTracker::Flush() {
   // TODO: need another lock to prevent concurrent flushers
   // at some point.
   shared_ptr<DeltaFileReader> dfr;
-  Status s = FlushDMS(old_dms.get(), &dfr);
+  Status s = FlushDMS(old_dms.get(), &dfr, flush_type);
   CHECK(s.ok())
     << "Failed to flush DMS: " << s.ToString()
     << "\nTODO: need to figure out what to do with error handling "
@@ -571,7 +572,7 @@ Status DeltaTracker::AlterSchema(const Schema& schema) {
   if (!require_update) {
     return Status::OK();
   }
-  return Flush();
+  return Flush(DeltaTracker::FLUSH_METADATA);
 }
 
 size_t DeltaTracker::DeltaMemStoreSize() const {

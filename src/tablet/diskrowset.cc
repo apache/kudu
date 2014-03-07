@@ -458,7 +458,7 @@ Status DiskRowSet::Open() {
 }
 
 Status DiskRowSet::FlushDeltas() {
-  return delta_tracker_->Flush();
+  return delta_tracker_->Flush(DeltaTracker::FLUSH_METADATA);
 }
 
 Status DiskRowSet::MinorCompactDeltaStores() {

@@ -3,10 +3,12 @@
 #include <glog/logging.h>
 #include <deque>
 #include <string>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "common/wire_protocol.h"
 #include "gutil/macros.h"
+#include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "tablet/cfile_set.h"
 #include "tablet/compaction.h"
@@ -15,6 +17,8 @@
 #include "tablet/diskrowset.h"
 #include "tablet/tablet.pb.h"
 #include "tablet/transactions/write_transaction.h"
+
+using std::tr1::unordered_set;
 
 namespace kudu {
 namespace tablet {
@@ -764,12 +768,10 @@ Status FlushCompactionInput(CompactionInput* input,
 }
 
 Status ReupdateMissedDeltas(const string &tablet_name,
-                            WriteTransactionContext *tx_ctx,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
-                            const RowSetVector &output_rowsets,
-                            const consensus::OpId& op_id) {
+                            const RowSetVector &output_rowsets) {
   RETURN_NOT_OK(input->Init());
 
   VLOG(1) << "Re-updating missed deltas between snapshot " <<
@@ -780,6 +782,13 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, output_rowsets) {
     delta_trackers.push_back(down_cast<DiskRowSet *>(rs.get())->delta_tracker());
   }
+
+  // The map of updated delta trackers, indexed by id.
+  unordered_set<DeltaTracker*> updated_trackers;
+
+  // When we apply the updates to the new DMS, there is no need to anchor them
+  // since these stores are not yet part of the tablet.
+  const consensus::OpId max_op_id = log::MaximumOpId();
 
   // The rowid where the current (front) delta tracker starts.
   int64_t delta_tracker_base_row = 0;
@@ -877,32 +886,13 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,
                                        mut->changelist(),
-                                       op_id,
+                                       max_op_id,
                                        result.get());
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
             << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
         if (s.ok()) {
-          // TODO Making missed deltas take the whole row key is a lot simpler
-          // than just storing the row_idx (which would require a complex
-          // method such as this one to find the right delta to put in on
-          // replay and accessing private tablet state).
-          // On the other hand using a row block for a single row key
-          // seems wasteful...
-          gscoped_ptr<RowwiseRowBlockPB> row_block(new RowwiseRowBlockPB);
-          CHECK_OK(SchemaToColumnPBsWithoutIds(schema, row_block->mutable_schema()));
-
-          buf.clear();
-          ContiguousRow row_key(key_schema, buf.data());
-          CHECK_OK(key_projector.ProjectRowForWrite(row.row, &row_key, &arena));
-          ConstContiguousRow const_row_key(row_key);
-          AddRowToRowBlockPB(const_row_key, row_block.get());
-
-          CHECK_OK(tx_ctx->AddMissedMutation(mut->timestamp(),
-                                             row_block.Pass(),
-                                             mut->changelist(),
-                                             result.Pass()));
-        } else {
-          tx_ctx->AddFailedMutation(s);
+          // Update the set of delta trackers with the one we've just updated.
+          InsertIfNotPresent(&updated_trackers, cur_tracker);
         }
       }
 
@@ -912,6 +902,21 @@ Status ReupdateMissedDeltas(const string &tablet_name,
     }
 
     RETURN_NOT_OK(input->FinishBlock());
+  }
+
+
+  // Flush the trackers that got updated, this will make sure that all missed deltas
+  // get flushed before we update the tablet's metadata at the end of compaction/flush.
+  // Note that we don't flush the metadata here, as to we will update the metadata
+  // at the end of the compaction/flush.
+  //
+  // TODO: there should be a more elegant way of preventing metadata flush at this point
+  // using pinning, or perhaps a builder interface for new rowset metadata objects.
+  // See KUDU-204.
+  BOOST_FOREACH(DeltaTracker* tracker, updated_trackers) {
+    VLOG(1) << "Flushing DeltaTracker updated with missed deltas...";
+    RETURN_NOT_OK_PREPEND(tracker->Flush(DeltaTracker::NO_FLUSH_METADATA),
+                          "Could not flush delta tracker after missed delta update");
   }
 
   return Status::OK();

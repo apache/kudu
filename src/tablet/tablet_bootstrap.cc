@@ -142,11 +142,6 @@ class TabletBootstrap {
   Status PlayChangeConfigRequest(OperationPB* replicate_op,
                                  const OperationPB& commit_op);
 
-  // Plays missed deltas mutations, skipping those that have already been flushed.
-  // Missed delta mutations are appended to the new log as the original mutations
-  // were logged as not applied.
-  Status PlayMissedDeltaUpdates(const OperationPB& commit_op);
-
   // Plays inserts, skipping those that have already been flushed.
   Status PlayInsertions(WriteTransactionContext* tx_ctx,
                         const SchemaPB& schema_pb,
@@ -663,17 +658,9 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
   } else {
     // FIXME: This is likely incorrect, we could have an orphaned commit on log roll.
     // Needs test. See KUDU-141.
-    //
-    // For now, MISSED_DELTA commits are the only ones with no corresponding ReplicateMsg
-    if (op_type != MISSED_DELTA) {
-      // A COMMIT entry which refers to an earlier op_id which has already been handled.
-      return Status::Corruption(Substitute("Found non- MISSED_DELTA orphaned commit: $0",
-                                             entry->operation().commit().DebugString()));
-    }
 
-    // Handle writes performed during flushes/compactions.
-    RETURN_NOT_OK_PREPEND(PlayMissedDeltaUpdates(entry->operation()),
-                          Substitute("Failed to play MISSED_DELTA updates"));
+    return Status::Corruption(Substitute("Found orphaned commit: $0",
+                                         entry->operation().commit().DebugString()));
   }
 
   delete entry;
@@ -889,126 +876,6 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
   new_commit_op->mutable_id()->CopyFrom(commit_op.id());
   CommitMsg* commit = new_commit_op->mutable_commit();
   commit->CopyFrom(commit_op.commit());
-  RETURN_NOT_OK(log_->Append(&commit_entry));
-
-  return Status::OK();
-}
-
-Status TabletBootstrap::PlayMissedDeltaUpdates(const OperationPB& commit_op) {
-  DCHECK(commit_op.has_id());
-  OpId missed_delta_id = commit_op.id();
-  const CommitMsg& commit_msg = commit_op.commit();
-
-  // Missed delta mutations, even though they are applied as regular mutations on replay,
-  // they need to keep their MISSED_DELTA status. This because on log replay, as with the original
-  // mutation, the original commit log entry indicates that the mutation is already
-  // flushed when in fact it isn't.
-  // In order to solve this we can keep the original missed delta, but need to update it to
-  // the store to which it was applied on replay, as it might not be the same store as the
-  // original MISSED_DELTA.
-  LogEntryPB commit_entry;
-  commit_entry.set_type(OPERATION);
-  OperationPB* new_commit_op = commit_entry.mutable_operation();
-  CommitMsg* new_commit = new_commit_op->mutable_commit();
-  new_commit->CopyFrom(commit_msg);
-  new_commit_op->mutable_id()->CopyFrom(missed_delta_id);
-
-  WriteTransactionContext tx_ctx;
-  gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
-  tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
-
-  int missed_delta_idx = 0;
-  BOOST_FOREACH(const TxOperationPB& operation, commit_msg.result().mutations()) {
-    if (PREDICT_FALSE(!operation.has_missed_delta_mutation())) {
-      return Status::Corruption(Substitute("Missed delta operation must have "
-                                           "missed delta mutations: $0",
-                                           operation.ShortDebugString()));
-    }
-    MissedDeltaMutationPB missed_delta = operation.missed_delta_mutation();
-
-    Schema mutation_schema;
-    vector<const uint8_t*> row_block;
-    RETURN_NOT_OK(DecodeBlock(missed_delta.mutable_row_key(),
-                              false,
-                              &mutation_schema,
-                              &row_block));
-
-    Schema mutation_key_schema = mutation_schema.CreateKeyProjection();
-
-    if (PREDICT_FALSE(row_block.size() != 1)) {
-      return Status::Corruption(Substitute("A Missed Delta Update mutation "
-                                           "should only have one key. "
-                                           "Mutation: $0", missed_delta.ShortDebugString()));
-    }
-
-    const uint8_t* row_key_ptr = row_block[0];
-    RowChangeList changelist(missed_delta.changelist());
-
-    MutationInput mutation_input(&tx_ctx,
-                                 missed_delta_id,
-                                 0,
-                                 mutation_key_schema,
-                                 mutation_schema,
-                                 row_key_ptr,
-                                 &changelist);
-
-    bool applied_mutation = false;
-    RETURN_NOT_OK_PREPEND(PlayMutation(mutation_input,
-                                       operation,
-                                       &applied_mutation),
-                          Substitute("Failed to apply MISSED_DELTA mutation: $0\nReason",
-                                     missed_delta.ShortDebugString()));
-
-    if (applied_mutation) {
-      // update the clock with the missed delta mutation timestamp
-      RETURN_NOT_OK(UpdateClock(missed_delta.timestamp()));
-    }
-
-    // Here is where we update the original missed delta to set whichever stores
-    // it was applied to on replay or set the status if it was skipped.
-    const TxResultPB& result = tx_ctx.Result();
-
-    // First do some sanity checks
-    if (PREDICT_FALSE(new_commit->mutable_result()->mutations_size() < missed_delta_idx)) {
-      return Status::Corruption(Substitute("new MISSED_DELTA commit must have "
-                                           "at least as many results as the "
-                                           "original."
-                                           "\nApplied: $0\nOriginal: $1",
-                                           new_commit->ShortDebugString(),
-                                           operation.ShortDebugString()));
-    }
-
-    TxOperationPB* new_operation =
-      new_commit->mutable_result()->mutable_mutations(missed_delta_idx);
-
-    if (applied_mutation) {
-      // confirm that the result is the expected one
-      if (PREDICT_FALSE(!result.mutations(missed_delta_idx).has_mutation_result())) {
-        return Status::Corruption(Substitute("MISSED_DELTA mutation was applied"
-                                             " but the original mutation had no result."
-                                             "\nApplied: $0\nOriginal: $1",
-                                             new_operation->ShortDebugString(),
-                                             operation.ShortDebugString()));
-      }
-      new_operation->mutable_mutation_result()->CopyFrom(
-        result.mutations(missed_delta_idx).mutation_result());
-    } else {
-      // confirm that the result is the expected one
-      if (PREDICT_FALSE(!result.mutations(missed_delta_idx).has_failed_status())) {
-        return Status::Corruption(Substitute("MISSED_DELTA mutation failed to "
-                                             "apply but the original mutation "
-                                             "had no failed status."
-                                             "\nApplied: $0\nOriginal: $1",
-                                             new_operation->ShortDebugString(),
-                                             operation.ShortDebugString()));
-      }
-      new_operation->mutable_failed_status()->CopyFrom(
-        result.mutations(missed_delta_idx).failed_status());
-    }
-
-    missed_delta_idx++;
-  }
-
   RETURN_NOT_OK(log_->Append(&commit_entry));
 
   return Status::OK();

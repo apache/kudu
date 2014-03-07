@@ -37,11 +37,8 @@ enum OperationType {
 // A wrapper around replicates and commits so that we can send to peers
 // in total order without having to rebuild order between replicates/commits.
 // Each operation must either have a replicate or a commit, but not both.
-// The OpId is optional as missed delta commits have no OpId, all other
-// operations must have an id.
 message OperationPB {
-  // Optional as local operations do not have ids.
-  optional OpId id = 2;
+  required OpId id = 2;
   optional ReplicateMsg replicate = 3;
   optional CommitMsg commit = 4;
 }

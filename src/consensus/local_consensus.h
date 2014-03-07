@@ -44,9 +44,6 @@ class LocalConsensus : public ConsensusBase {
 
   Status Update(ReplicaUpdateContext* context);
 
-  virtual Status LocalCommit(OperationPB* local_commit_op,
-                             const std::tr1::shared_ptr<FutureCallback>& commit_callback) OVERRIDE;
-
   Status Commit(ConsensusContext* context, OperationPB* commit_op);
 
   Status Shutdown();
