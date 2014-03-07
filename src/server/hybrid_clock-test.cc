@@ -88,9 +88,6 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
   // Actually this should be close to 0, but we are sure it can't be bigger than
   // current_ts.physical_ts.max_error_usec
   ASSERT_LT(delta.ToMicroseconds(), current_max_error);
-  // If the delta is more that a few micros we waited when we shouldn't have
-  // use 1000 to be safe.
-  ASSERT_LT(delta.ToMicroseconds(), 1000);
 }
 
 // The normal case for transactions. Obtain a timestamp and then wait until
