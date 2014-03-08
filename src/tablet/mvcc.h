@@ -6,12 +6,14 @@
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 #include <string>
+#include <vector>
 
 #include "gutil/gscoped_ptr.h"
 #include "server/clock.h"
 #include "util/locks.h"
 
 namespace kudu {
+class CountDownLatch;
 namespace tablet {
 class MvccManager;
 
@@ -69,6 +71,9 @@ class MvccSnapshot {
   friend class MvccManager;
   FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);
   FRIEND_TEST(MvccTest, TestMayHaveUncommittedTransactionsBefore);
+  FRIEND_TEST(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights);
+
+  typedef unordered_set<Timestamp::val_type>::iterator InFlightsIterator;
 
   // Summary rule:
   // A transaction T is committed if and only if:
@@ -123,13 +128,39 @@ class MvccManager {
   // transactions have been committed at the time of this call.
   void TakeSnapshot(MvccSnapshot *snapshot) const;
 
+  // Take a snapshot of the MVCC state at 'timestamp'. The difference
+  // between this method and the above is that in-flight transactions
+  // whose timestamp is bigger than or equal to 'timestamp' will not
+  // be included in the returned snapshot.
+  void TakeSnapshotAtTimestamp(MvccSnapshot *snapshot, Timestamp timestamp) const;
+
+  // Blocks until all transactions in the provided snapshot are committed.
+  // 'snap' is assumed to having been obtained from a previous call
+  // to TakeSnapshot() or TakeSnapshotAtTimestamp().
+  void WaitUntilAllCommitted(const MvccSnapshot& snap);
+
+  ~MvccManager();
+
  private:
   void InitTransactionUnlocked(const Timestamp& timestamp);
+
+  FRIEND_TEST(MvccTest, TestAreAllTransactionsCommitted);
+
+  struct WaitingState {
+    const MvccSnapshot* snap;
+    CountDownLatch* latch;
+  };
+
+  // Returns true if all transactions in the provided snapshot are committed.
+  // NOTE: This does not take 'lock_', it is assumed that the caller has
+  // previously obtained the lock.
+  bool AreAllTransactionsCommitted(const MvccSnapshot& snapshot);
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
   scoped_refptr<server::Clock> clock_;
+  vector<WaitingState*> waiters_;
 
   DISALLOW_COPY_AND_ASSIGN(MvccManager);
 };

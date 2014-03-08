@@ -13,6 +13,8 @@
 #include "gutil/strings/strcat.h"
 #include "server/logical_clock.h"
 #include "tablet/mvcc.h"
+#include "util/countdown_latch.h"
+#include "util/stopwatch.h"
 
 namespace kudu { namespace tablet {
 
@@ -78,11 +80,82 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
       cur_snap_.all_committed_before_timestamp_ = cur_snap_.none_committed_after_timestamp_;
     }
   }
+
+  // Check if someone is waiting for transactions to be committed.
+  if (PREDICT_FALSE(!waiters_.empty())) {
+    vector<WaitingState*>::iterator iter = waiters_.begin();
+    while (iter != waiters_.end()) {
+      WaitingState* waiter = *iter;
+      if (AreAllTransactionsCommitted(*waiter->snap)) {
+        iter = waiters_.erase(iter);
+        waiter->latch->CountDown();
+        continue;
+      }
+      iter++;
+    }
+  }
+}
+
+void MvccManager::WaitUntilAllCommitted(const MvccSnapshot& snap) {
+
+  CountDownLatch latch(1);
+  WaitingState waiting_state;
+  {
+    boost::lock_guard<LockType> l(lock_);
+    if (AreAllTransactionsCommitted(snap)) return;
+    waiting_state.snap = &snap;
+    waiting_state.latch = &latch;
+    waiters_.push_back(&waiting_state);
+  }
+  waiting_state.latch->Wait();
+}
+
+bool MvccManager::AreAllTransactionsCommitted(const MvccSnapshot& snap) {
+  // if 'snap' has no in-flight transactions report all committed.
+  if (snap.timestamps_in_flight_.empty()) {
+    return true;
+  }
+  // if it does, go through all of them and check if they are still
+  // in the in-flight set
+  BOOST_FOREACH(Timestamp::val_type in_flight_in_snap, snap.timestamps_in_flight_) {
+    if (!cur_snap_.IsCommitted(Timestamp(in_flight_in_snap))) return false;
+  }
+  // if all the in_flights in snap are committed return true
+  return true;
 }
 
 void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
   boost::lock_guard<LockType> l(lock_);
   *snap = cur_snap_;
+}
+
+void MvccManager::TakeSnapshotAtTimestamp(MvccSnapshot *snap, Timestamp timestamp) const {
+  {
+    boost::lock_guard<LockType> l(lock_);
+    *snap = cur_snap_;
+  }
+  // If the current snapshot can't have uncommitted transactions before
+  // 'timestamp' just return a plain snapshot in the past.
+  if (!snap->MayHaveUncommittedTransactionsAtOrBefore(timestamp)) {
+     *snap = MvccSnapshot(timestamp);
+  }
+
+  // If not we use the current snapshot but remove in-flight transactions from
+  // it whose timestamp is greater than or equal to 'timestamp'.
+  // TODO we can optimize slightly by decreasing 'none_committed_after_timestamp_'
+  // to the first erased in_flight, if there is one
+  MvccSnapshot::InFlightsIterator iter = snap->timestamps_in_flight_.begin();
+  while (iter != snap->timestamps_in_flight_.end()) {
+    if (Timestamp((*iter)).CompareTo(timestamp) >= 0) {
+      iter = snap->timestamps_in_flight_.erase(iter);
+      continue;
+    }
+    iter++;
+  }
+}
+
+MvccManager::~MvccManager() {
+  CHECK(waiters_.empty());
 }
 
 ////////////////////////////////////////////////////////////
