@@ -106,13 +106,13 @@ Status LocalConsensus::Append(
                                            repl_callback,
                                            commit_callback));
 
-    // [Once group commit is implemented,] this will reserve the
-    // correct slot in the log for the replication operation.
-    // [Currently Reserve() submits a task to an execute inside Log
-    // that appends and syncs the operation.]
+    // Reserve the correct slot in the log for the replication operation.
     RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(new_context->replicate_op()),
                                 &reserved_entry_batch));
   }
+  // Serialize and mark the message as ready to be appended.
+  // When the Log actually fsync()s this message to disk, 'repl_callback'
+  // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, repl_callback));
 
   context->reset(new_context.release());
@@ -145,13 +145,13 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
     commit_clbk = context->commit_callback();
     context->release_commit_callback();
 
-    // [Once group commit is implemented, this will] reserve the
-    // correct slot in the log for the commit operation.
-    // [Currently Reserve() submits a task to an execute inside Log
-    // that appends and syncs the operation.]
+    // Reserve the correct slot in the log for the commit operation.
     RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(commit_op),
                                 &reserved_entry_batch));
   }
+  // Serialize and mark the message as ready to be appended.
+  // When the Log actually fsync()s this message to disk, 'commit_clbk'
+  // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, commit_clbk));
   return Status::OK();
 }
