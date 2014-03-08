@@ -109,6 +109,17 @@ class TabletMetadata {
   // Note that this returns a copy so should not be used in a tight loop.
   QuorumPB Quorum() const;
 
+  // Increments flush pin count by one: if flush pin count > 0,
+  // metadata will _not_ be flushed to disk during Flush().
+  void PinFlush();
+
+  // Decrements flush pin count by one: if flush pin count is zero,
+  // metadata will be flushed to disk during the next call to Flush()
+  // or -- if Flush() had been called after a call to PinFlush() but
+  // before this method was called -- Flush() will be called inside
+  // this method.
+  Status UnPinFlush();
+
   Status Flush();
 
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
@@ -197,6 +208,7 @@ class TabletMetadata {
 
   std::string start_key_;
   std::string end_key_;
+
   FsManager *fs_manager_;
   RowSetMetadataVector rowsets_;
 
@@ -212,6 +224,15 @@ class TabletMetadata {
   std::string table_name_;
 
   metadata::QuorumPB quorum_;
+
+  // If this counter is > 0 then Flush() will not write any data to
+  // disk.
+  size_t num_flush_pins_;
+
+  // Set if Flush() is called when num_flush_pins_ is > 0; if true,
+  // then next UnPinFlush will call Flush() again to ensure the
+  // metadata is persisted.
+  bool needs_flush_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };

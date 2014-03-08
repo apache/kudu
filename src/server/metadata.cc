@@ -99,7 +99,9 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     schema_(schema),
     schema_version_(0),
     table_name_(table_name),
-    quorum_(quorum) {
+    quorum_(quorum),
+    num_flush_pins_(0),
+    needs_flush_(false) {
   CHECK(schema_.has_column_ids());
 }
 
@@ -207,8 +209,29 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
   return UpdateAndFlushUnlocked(to_remove, to_add, last_durable_mrs_id, super_block);
 }
 
+void TabletMetadata::PinFlush() {
+  boost::lock_guard<LockType> l(lock_);
+  num_flush_pins_++;
+}
+
+Status TabletMetadata::UnPinFlush() {
+  boost::lock_guard<LockType> l(lock_);
+  DCHECK_GT(num_flush_pins_, 0);
+  num_flush_pins_--;
+  if (needs_flush_) {
+    RETURN_NOT_OK(Flush());
+  }
+  return Status::OK();
+}
+
 Status TabletMetadata::Flush() {
   boost::lock_guard<LockType> l(lock_);
+  if (num_flush_pins_ > 0) {
+    needs_flush_ = true;
+    LOG(INFO) << "Not flushing: waiting for" << num_flush_pins_ << " pins to be released.";
+    return Status::OK();
+  }
+  needs_flush_ = false;
   return UpdateAndFlushUnlocked(RowSetMetadataIds(), RowSetMetadataVector(),
                                 last_durable_mrs_id_, NULL);
 }
