@@ -87,6 +87,7 @@ Status LeaderChangeConfigTransaction::Apply() {
 
   // change the config in the tablet metadata.
   tx_ctx_->tablet_peer()->tablet()->metadata()->SetQuorum(tx_ctx_->request()->new_config());
+  RETURN_NOT_OK(tx_ctx_->tablet_peer()->tablet()->metadata()->Flush());
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(CHANGE_CONFIG_OP);
