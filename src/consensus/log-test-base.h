@@ -55,6 +55,8 @@ using tablet::MemStoreTargetPB;
 
 const char* kTestTable = "test-log-table";
 const char* kTestTablet = "test-log-tablet";
+const bool APPEND_SYNC = true;
+const bool APPEND_ASYNC = false;
 
 class LogTestBase : public KuduTest {
  public:
@@ -115,7 +117,7 @@ class LogTestBase : public KuduTest {
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
   // Note that this test does not insert into tablet so the data contained in
   // the ReplicateMsgs doesn't necessarily need to make sense.
-  void AppendReplicateBatch(int index) {
+  void AppendReplicateBatch(int index, bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
@@ -141,12 +143,16 @@ class LogTestBase : public KuduTest {
                    batch_request->mutable_row_operations());
     batch_request->set_tablet_id(kTestTablet);
 
-    ASSERT_STATUS_OK(log_->Append(&log_entry));
+    if (sync) {
+      AppendSync(&log_entry);
+    } else {
+      AppendAsync(operation);
+    }
   }
 
   // Append a commit log entry containing one entry for the insert and one
   // for the mutate.
-  void AppendCommit(int index, int original_op_index) {
+  void AppendCommit(int index, int original_op_index, bool sync = APPEND_SYNC) {
     // The mrs id for the insert.
     const int kTargetMrsId = 1;
 
@@ -154,10 +160,11 @@ class LogTestBase : public KuduTest {
     const int kTargetRsId = 0;
     const int kTargetDeltaId = 0;
 
-    AppendCommit(index, original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId);
+    AppendCommit(index, original_op_index, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
   }
 
-  void AppendCommit(int index, int original_op_index, int mrs_id, int rs_id, int delta_id) {
+  void AppendCommit(int index, int original_op_index, int mrs_id, int rs_id, int delta_id,
+                    bool sync = APPEND_SYNC) {
     LogEntryPB log_entry;
     log_entry.set_type(OPERATION);
     OperationPB* operation = log_entry.mutable_operation();
@@ -184,11 +191,26 @@ class LogTestBase : public KuduTest {
     target->set_delta_id(delta_id);
     target->set_rs_id(rs_id);
 
-    ASSERT_STATUS_OK(log_->Append(&log_entry));
+    if (sync) {
+      AppendSync(&log_entry);
+    } else {
+      AppendAsync(operation);
+    }
+  }
+
+  void AppendSync(LogEntryPB* log_entry) {
+    ASSERT_STATUS_OK(log_->Append(log_entry));
+  }
+
+  void AppendAsync(OperationPB* operation) {
+    LogEntryBatch* reserved_entry_batch;
+    ASSERT_STATUS_OK(log_->Reserve(boost::assign::list_of(operation),
+                                   &reserved_entry_batch));
+    ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry_batch));
   }
 
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
-  void AppendReplicateBatchAndCommitEntryPairsToLog(int count) {
+  void AppendReplicateBatchAndCommitEntryPairsToLog(int count, bool sync = true) {
     for (int i = 0; i < count; i++) {
       AppendReplicateBatch(current_id_);
       AppendCommit(current_id_ + 1, current_id_);

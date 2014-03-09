@@ -218,6 +218,31 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   }
 }
 
+// Tests that we can append FLUSH_MARKER messages to the log queue to make sure
+// all messages up to a certain point were fsync()ed without actually
+// writing them to the log.
+TEST_F(LogTest, TestWaitUntilAllFlushed) {
+  BuildLog();
+  // Append 4 replicate/commit pairs asynchronously
+  AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC);
+
+  ASSERT_STATUS_OK(log_->WaitUntilAllFlushed());
+
+  // Make sure we only get 4 entries back and that no FLUSH_MARKER commit is found.
+  BuildLogReader();
+  ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[0], &entries_));
+  ASSERT_EQ(entries_.size(), 4);
+  for (int i = 0; i < 4 ; i++) {
+    ASSERT_TRUE(entries_[i]->has_operation());
+    if (i % 2 == 0) {
+      ASSERT_TRUE(entries_[i]->operation().has_replicate());
+    } else {
+      ASSERT_TRUE(entries_[i]->operation().has_commit());
+      ASSERT_EQ(WRITE_OP, entries_[i]->operation().commit().op_type());
+    }
+  }
+}
+
 // Tests log reopening and that GC'ing the old log's segments works.
 TEST_F(LogTest, TestLogReopenAndGC) {
   BuildLog();

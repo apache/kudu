@@ -86,10 +86,17 @@ class Log {
   Status AsyncAppend(LogEntryBatch* entry,
                      const std::tr1::shared_ptr<FutureCallback>& callback);
 
+  // Like the method above, but without a callback.
+  Status AsyncAppend(LogEntryBatch* entry);
+
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
   // TODO get rid of this method, transition to the asynchronous API
   Status Append(LogEntryPB* entry);
+
+  // Blocks the current thread until all the entries in the log queue
+  // are flushed.
+  Status WaitUntilAllFlushed();
 
   // Kick off an asynchronous task that pre-allocates a new
   // log-segment, initializing 'allocation_future_'. To check whether
@@ -187,6 +194,11 @@ class Log {
 
   // Make segments roll over.
   Status RollOver();
+
+  // Actually makes the reservation in the queue, after entries have
+  // beed added to a batch.
+  Status DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
+                   LogEntryBatch** reserved_entry);
 
   // Creates the name for a new segment as log-<seqno>
   string CreateSegmentFileName(uint64_t sequence_number);

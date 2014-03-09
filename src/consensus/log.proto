@@ -16,6 +16,10 @@ enum LogEntryTypePB {
   // making the Log store OperationPB directly, as LogEntryPB might
   // become obsolete.
   TABLET_METADATA = 2;
+  // Marker entry for dummy log messages. These will never end up in the log,
+  // just serve the purpose of making sure that all entries up to the FLUSH_MARKER
+  // entry are flushed.
+  FLUSH_MARKER = 3;
 };
 
 // An entry in the WAL/state machine log.

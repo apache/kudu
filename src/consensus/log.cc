@@ -108,12 +108,15 @@ void Log::AppendThread::RunThread() {
       LOG(ERROR) << "Error syncing log" << s.ToString();
       DLOG(FATAL) << "Aborting: " << s.ToString();
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
-        entry_batch->callback()->OnFailure(s);
+        if (entry_batch->callback() != NULL) {
+          entry_batch->callback()->OnFailure(s);
+        }
       }
     } else {
       VLOG(2) << "Synchronized " << entry_batches.size() << " entry batches";
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
-        if (PREDICT_TRUE(!entry_batch->failed_to_append())) {
+        if (PREDICT_TRUE(!entry_batch->failed_to_append()
+                         && entry_batch->callback() != NULL)) {
           entry_batch->callback()->OnSuccess();
         }
       }
@@ -302,6 +305,12 @@ Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
     entry_pb->set_type(log::OPERATION);
     entry_pb->set_allocated_operation(op);
   }
+  return DoReserve(entry_batch.Pass(), reserved_entry);
+}
+
+Status Log::DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
+                    LogEntryBatch** reserved_entry) {
+  int num_ops = entry_batch->entry_size();
   gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_batch.Pass(), num_ops));
   new_entry_batch->MarkReserved();
 
@@ -328,12 +337,29 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const shared_ptr<FutureCallb
   return Status::OK();
 }
 
+Status Log::AsyncAppend(LogEntryBatch* entry_batch) {
+  CHECK_EQ(state_, kLogWriting);
+
+  RETURN_NOT_OK(entry_batch->Serialize());
+  entry_batch->MarkReady();
+
+  return Status::OK();
+}
+
 Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   // TODO (perf) make this more efficient, cache the highest id
   // during LogEntryBatch::Serialize()
 
   size_t num_entries = entry_batch->count();
   DCHECK_GT(num_entries, 0) << "Cannot call DoAppend() with zero entries reserved";
+
+
+  Slice entry_batch_data = entry_batch->data();
+  uint32_t entry_batch_bytes = entry_batch->total_size_bytes();
+  // If there is no data to write return OK.
+  if (PREDICT_FALSE(entry_batch_bytes == 0)) {
+    return Status::OK();
+  }
 
   // Keep track of the first OpId seen in this batch.
   // This is needed for writing initial_opid into each log segment header.
@@ -366,9 +392,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   if (!active_segment_->IsHeaderWritten()) {
     WriteHeader(first_op_id);
   }
-
-  Slice entry_batch_data = entry_batch->data();
-  uint32_t entry_batch_bytes = entry_batch->total_size_bytes();
 
   if (metrics_) {
     metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
@@ -453,6 +476,19 @@ Status Log::Append(LogEntryPB* phys_entry) {
   entry_batch.entry_batch_pb_->mutable_entry()->ExtractSubrange(0, 1, NULL);
   return s;
 }
+
+Status Log::WaitUntilAllFlushed() {
+  // In order to make sure we empty the queue we need to use
+  // the async api.
+  gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
+  entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
+  LogEntryBatch* reserved_entry_batch;
+  RETURN_NOT_OK(DoReserve(entry_batch.Pass(), &reserved_entry_batch));
+  shared_ptr<LatchCallback> callback(new LatchCallback());
+  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
+  return callback->Wait();
+}
+
 
 Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
   boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
@@ -633,6 +669,12 @@ void LogEntryBatch::MarkReserved() {
 Status LogEntryBatch::Serialize() {
   DCHECK_EQ(state_, kEntryReserved);
   buffer_.clear();
+  // FLUSH_MARKER LogEntries are markers and are not serialized.
+  if (PREDICT_FALSE(count() == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER)) {
+    state_ = kEntrySerialized;
+    total_size_bytes_ = 0;
+    return Status::OK();
+  }
   buffer_.reserve(total_size_bytes_);
 
   if (!pb_util::AppendToString(*entry_batch_pb_, &buffer_)) {
