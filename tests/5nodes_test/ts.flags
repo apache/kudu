@@ -1,0 +1,7 @@
+--tablet_server_rpc_bind_addresses=0.0.0.0:0
+--tablet_server_web_port=0
+--max_message_size=67108864
+--minloglevel=0
+--block_cache_capacity_mb=512
+--log_force_fsync_all=false
+--v=0

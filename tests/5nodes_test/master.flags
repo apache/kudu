@@ -1,0 +1,2 @@
+--master_rpc_bind_addresses=0.0.0.0:61000
+--master_web_port=61010
