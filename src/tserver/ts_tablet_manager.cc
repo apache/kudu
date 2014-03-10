@@ -442,6 +442,10 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
     StatusToPB(tablet_peer->error(), error_status);
   }
   reported_tablet->set_role(tablet_peer->role());
+
+  if (tablet_peer->tablet() != NULL) {
+    reported_tablet->set_schema_version(tablet_peer->tablet()->metadata()->schema_version());
+  }
 }
 
 void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {

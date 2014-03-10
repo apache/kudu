@@ -57,38 +57,56 @@ class AlterTableTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
-    string tablet_id;
+
 
     // Add a tablet, make sure it reports itself.
-    CreateTabletForTesting(cluster_->mini_master(), kTableName, schema_, &tablet_id);
+    CreateTabletForTesting(cluster_->mini_master(), kTableName, schema_, &tablet_id_);
 
     TabletLocationsPB locs;
-    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id, 1, &locs));
+    ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_, 1, &locs));
     ASSERT_EQ(1, locs.replicas_size());
     LOG(INFO) << "Tablet successfully reported on " << locs.replicas(0).ts_info().permanent_uuid();
 
     ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-                tablet_id, &tablet_peer_));
+                tablet_id_, &tablet_peer_));
   }
 
   virtual void TearDown() {
     cluster_->Shutdown();
   }
 
-  Status AlterTable(const AlterTableRequestPB& alter_req) {
-    {
-      AlterTableResponsePB resp;
-      RETURN_NOT_OK(
-        cluster_->mini_master()->master()->catalog_manager()->AlterTable(&alter_req, &resp, NULL));
+  void RestartTabletServer() {
+    if (cluster_->mini_tablet_server(0)->server() != NULL) {
+      cluster_->mini_tablet_server(0)->Shutdown();
     }
 
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Start());
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->WaitStarted());
+
+    ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
+                tablet_id_, &tablet_peer_));
+  }
+
+  Status AlterTable(const AlterTableRequestPB& alter_req) {
+    return AlterTable(alter_req, 50);
+  }
+
+  Status AlterTable(const AlterTableRequestPB& alter_req, int wait_attempts) {
+    AlterTableResponsePB resp;
+    RETURN_NOT_OK(
+        cluster_->mini_master()->master()->catalog_manager()->AlterTable(&alter_req, &resp, NULL));
+
     // spin waiting for alter to be complete
+    return WaitAlterTableCompletion(alter_req.table().table_name(), wait_attempts);
+  }
+
+  Status WaitAlterTableCompletion(const std::string& table_name, int attempts) {
     int wait_time = 1000;
-    for (int i = 0; i < 80; ++i) {
+    for (int i = 0; i < attempts; ++i) {
       IsAlterTableDoneRequestPB req;
       IsAlterTableDoneResponsePB resp;
 
-      req.mutable_table()->CopyFrom(alter_req.table());
+      req.mutable_table()->set_table_name(table_name);
       RETURN_NOT_OK(
         cluster_->mini_master()->master()->catalog_manager()->IsAlterTableDone(&req, &resp, NULL));
       if (resp.done()) {
@@ -108,6 +126,7 @@ class AlterTableTest : public KuduTest {
   gscoped_ptr<MiniCluster> cluster_;
   Schema schema_;
 
+  string tablet_id_;
   std::tr1::shared_ptr<TabletPeer> tablet_peer_;
 };
 
@@ -173,5 +192,36 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
 
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 }
+
+// Verify that the alter command is sent to the TS down on restart
+TEST_F(AlterTableTest, TestAlterOnRestart) {
+  ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
+
+  // Shutdown the TS
+  cluster_->mini_tablet_server(0)->Shutdown();
+
+  // Send the Alter request
+  {
+    AlterTableRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+
+    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::ADD_COLUMN);
+    uint32_t x = 10;
+    ColumnSchemaToPB(ColumnSchema("new-u32", UINT32, true, &x),
+                     step->mutable_add_column()->mutable_schema());
+    Status s = AlterTable(req, 20);
+    ASSERT_TRUE(s.IsTimedOut());
+  }
+
+  // Verify that the Schema is the old one
+  ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
+
+  // Restart the TS and wait for the new schema
+  RestartTabletServer();
+  ASSERT_STATUS_OK(WaitAlterTableCompletion(kTableName, 50));
+  ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
+}
+
 
 } // namespace kudu

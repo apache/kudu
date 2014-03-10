@@ -680,8 +680,10 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
       return Status::OK();
     }
 
-    LOG(INFO) << "Alter schema from " << schema_.ToString() << " to " <<
-                 tx_ctx->schema()->ToString();
+    LOG(INFO) << "Alter schema from " << schema_.ToString()
+              << " version " << metadata_->schema_version()
+              << " to " << tx_ctx->schema()->ToString()
+              << " version " << tx_ctx->schema_version();
     schema_ = *tx_ctx->schema();
     metadata_->SetSchema(schema_, tx_ctx->schema_version());
     if (tx_ctx->has_new_table_name()) {
