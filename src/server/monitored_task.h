@@ -18,6 +18,7 @@ class MonitoredTask : public base::RefCountedThreadSafe<MonitoredTask>,
       kStatePreparing,
       kStateRunning,
       kStateComplete,
+      kStateFailed,
       kStateAborted,
     };
 

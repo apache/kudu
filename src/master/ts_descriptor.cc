@@ -53,6 +53,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   has_tablet_report_ = false;
 
   registration_.reset(new TSRegistrationPB(registration));
+  proxy_.reset();
 
   return Status::OK();
 }

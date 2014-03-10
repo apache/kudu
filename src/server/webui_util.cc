@@ -118,6 +118,9 @@ void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
       case MonitoredTask::kStateComplete:
         state = "Complete";
         break;
+      case MonitoredTask::kStateFailed:
+        state = "Failed";
+        break;
       case MonitoredTask::kStateAborted:
         state = "Aborted";
         break;
