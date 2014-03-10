@@ -33,11 +33,13 @@
 #include "tserver/scanners.h"
 #include "util/test_graph.h"
 #include "util/test_util.h"
+#include "util/metrics.h"
 #include "rpc/messenger.h"
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DECLARE_bool(use_hybrid_clock);
+DECLARE_bool(log_force_fsync_all);
 DECLARE_int32(max_clock_sync_error_usec);
 
 using std::string;
@@ -73,7 +75,8 @@ class TabletServerTest : public KuduTest {
  public:
   typedef pair<uint32_t, uint32_t> KeyValue;
 
-  TabletServerTest() {
+  TabletServerTest() :
+    ts_test_metric_context_(&ts_test_metric_registry_, "ts_server-test") {
     CreateTestSchema(&schema_);
     key_schema_ = schema_.CreateKeyProjection();
     rb_.reset(new RowBuilder(schema_));
@@ -88,6 +91,8 @@ class TabletServerTest : public KuduTest {
 
     // increase the max error tolerance.
     FLAGS_max_clock_sync_error_usec = 5000000;
+
+    FLAGS_log_force_fsync_all = true;
 
     CreateSharedRegion();
     StartTabletServer();
@@ -355,6 +360,9 @@ class TabletServerTest : public KuduTest {
   gscoped_ptr<MiniTabletServer> mini_server_;
   shared_ptr<TabletPeer> tablet_peer_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
+
+  MetricRegistry ts_test_metric_registry_;
+  MetricContext ts_test_metric_context_;
 
   volatile SharedData* shared_data_;
   void* shared_region_;

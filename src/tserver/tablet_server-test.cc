@@ -12,6 +12,14 @@ using kudu::rpc::RpcController;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 
+DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
+             "Number of rows to insert in the warmup phase of the single threaded"
+             " tablet server insert latency micro-benchmark");
+
+DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
+             "Number of rows to insert in the testing phase of the single threaded"
+             " tablet server insert latency micro-benchmark");
+
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
@@ -1107,6 +1115,41 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TestEqualSeqNoIsRejected) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_CONFIG, resp.error().code());
   }
+}
+
+TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
+  HistogramPrototype hist_proto("insert-latency",
+                                MetricUnit::kMicroseconds,
+                                "TabletServer single threaded insert latency.",
+                                10000000,
+                                2);
+
+  Histogram* histogram = hist_proto.Instantiate(ts_test_metric_context_);
+
+  uint64_t warmup = AllowSlowTests() ?
+      FLAGS_single_threaded_insert_latency_bench_warmup_rows : 10;
+
+  for (int i = 0; i < warmup; i++) {
+    InsertTestRowsRemote(0, i, 1);
+  }
+
+  uint64_t max_rows = AllowSlowTests() ?
+      FLAGS_single_threaded_insert_latency_bench_insert_rows : 100;
+
+  for (int i = warmup; i < warmup + max_rows; i++) {
+    MonoTime before = MonoTime::Now(MonoTime::FINE);
+    InsertTestRowsRemote(0, i, 1);
+    MonoTime after = MonoTime::Now(MonoTime::FINE);
+    MonoDelta delta = after.GetDeltaSince(before);
+    histogram->Increment(delta.ToMicroseconds());
+  }
+
+  // Generate the JSON.
+  std::stringstream out;
+  JsonWriter writer(&out);
+  ASSERT_STATUS_OK(histogram->WriteAsJson("ts-insert-latency", &writer));
+
+  LOG(INFO) << out.str();
 }
 
 } // namespace tserver
