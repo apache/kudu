@@ -33,6 +33,9 @@ LOG_DIR_NAME=build/bench-logs
 OUT_DIR_NAME=build/bench-out
 HTML_FILE="benchmarks.html"
 
+# Most tests will run this many times.
+NUM_SAMPLES=10
+
 ################################################################
 # Global variables
 ################################################################
@@ -73,14 +76,14 @@ record_result() {
 load_stats() {
   local TEST_NAME="$1"
   if [ "$BENCHMARK_MODE" = "$MODE_JENKINS" ]; then
-    # Get last month of stats
-    python get-job-stats-from-mysql.py $TEST_NAME 1
+    # Get last 4 weeks of stats
+    python get-job-stats-from-mysql.py $TEST_NAME 28
   else
     # Convert MySQL wildcards to shell wildcards.
     local TEST_NAME=$(echo $TEST_NAME | perl -pe 's/%/*/g')
     local STATS_FILES=$(ls $OUTDIR/$LOCAL_STATS_BASE-$TEST_NAME.tsv)
     # Note: literal tabs in below string.
-    echo "workload	avg_runtime	build_number"
+    echo "workload	runtime	build_number"
     for f in $STATS_FILES; do
       cat $f
     done
@@ -116,7 +119,7 @@ build_kudu() {
   make clean
   # clean up before we run
   rm -Rf /tmp/kudutpch1-$UID
-  mkdir /tmp/kudutpch1-$UID
+  mkdir -p /tmp/kudutpch1-$UID
 
   NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
   make -j${NUM_PROCS} 2>&1 | tee build.log
@@ -131,30 +134,30 @@ run_benchmarks() {
     &> $LOGDIR/${MT_TABLET_TEST}.log
 
   # run rpc-bench test 5 times. 10 seconds per run
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/rpc-bench &> $LOGDIR/$RPC_BENCH_TEST$i.log
   done
 
   # run cbtree-test 5 times. 20 seconds per run
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/cbtree-test \
       --gtest_filter=TestCBTree.TestScanPerformance &> $LOGDIR/${CBTREE_TEST}$i.log
   done
 
   # run bloomfile-test 5 times. ~3.3 seconds per run
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     ./build/latest/bloomfile-test --benchmark_queries=10000000 --bloom_size_bytes=32768 \
       --n_keys=100000 --gtest_filter=*Benchmark &> $LOGDIR/$BLOOM_TEST$i.log
   done
 
   # run wire_protocol-test 5 times. 6 seconds per run
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/wire_protocol-test --gtest_filter=*Benchmark \
       &> $LOGDIR/$WIRE_PROTOCOL_TEST$i.log
   done
 
   # run compaction-test 5 times, 6 seconds each
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/compaction-test \
       --gtest_filter=TestCompaction.BenchmarkMerge* &> $LOGDIR/${COMPACT_MERGE_BENCH}$i.log
   done
@@ -185,46 +188,46 @@ parse_and_record_all_results() {
   done
 
   # parse out the real time from: "Times for Insert 10000000 keys: real 16.438s user 16.164s  sys 0.229s"
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "Times for Insert" $LOGDIR/${CBTREE_TEST}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ConcurrentBTreeScanInsert $i $real
   done
 
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "not frozen" $LOGDIR/${CBTREE_TEST}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ConcurrentBTreeScanNotFrozen $i $real
   done
 
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "(frozen" $LOGDIR/${CBTREE_TEST}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ConcurrentBTreeScanFrozen $i $real
   done
 
   # parse out the real time from "Times for with overlap: real 0.557s user 0.546s sys 0.010s"
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "with overlap" $LOGDIR/${COMPACT_MERGE_BENCH}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ${COMPACT_MERGE_BENCH}${WITH_OVERLAP} $i $real
   done
 
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "without overlap" $LOGDIR/${COMPACT_MERGE_BENCH}$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER ${COMPACT_MERGE_BENCH}${NO_OVERLAP} $i $real
   done
 
   # Parse out the real time from: "Times for Running 10000000 queries: real 3.281s  user 3.273s sys 0.000s"
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "Times for Running" $LOGDIR/$BLOOM_TEST$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER $BLOOM_TEST $i $real
   done
 
   # Parse out the real time from: "Times for Converting to PB: real 5.962s  user 5.918s sys 0.025s"
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "Times for Converting" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER $WIRE_PROTOCOL_TEST $i $real
   done
 
   # parse the rate out of: "I1009 15:00:30.023576 27043 rpc-bench.cc:108] Reqs/sec:         84404.4"
-  for i in {0..4}; do
+  for i in $(seq 1 $NUM_SAMPLES); do
     rate=`grep Reqs $LOGDIR/$RPC_BENCH_TEST$i.log | cut -d ":" -f 5 | tr -d ' '`
     record_result $BUILD_IDENTIFIER $RPC_BENCH_TEST $i $rate
   done
@@ -288,18 +291,17 @@ load_stats_and_generate_plots() {
   # Move all the pngs to OUT_DIR.
   mv *.png $OUTDIR/
 
-  # Generate an HTML file aggregating the PNGs in local mode.
-  if [ "${BENCHMARK_MODE}" = "${MODE_LOCAL}" ]; then
-    pushd $OUTDIR/
-    PNGS=$(ls *.png)
-    echo -n > "$OUTDIR/$HTML_FILE"
-    echo "<title>Kudu Benchmarks</title>" >> "$OUTDIR/$HTML_FILE"
-    echo "<h1 align=center>Kudu Benchmarks</h1>" >> "$OUTDIR/$HTML_FILE"
-    for png in $PNGS; do
-      echo "<img src=$png><br>" >> "$OUTDIR/$HTML_FILE"
-    done
-    popd
-  fi
+  # Generate an HTML file aggregating the PNGs.
+  # Mostly for local usage, but somewhat useful to check the Jenkins runs too.
+  pushd $OUTDIR/
+  PNGS=$(ls *.png)
+  echo -n > "$OUTDIR/$HTML_FILE"
+  echo "<title>Kudu Benchmarks</title>" >> "$OUTDIR/$HTML_FILE"
+  echo "<h1 align=center>Kudu Benchmarks</h1>" >> "$OUTDIR/$HTML_FILE"
+  for png in $PNGS; do
+    echo "<img src=$png><br>" >> "$OUTDIR/$HTML_FILE"
+  done
+  popd
 
   popd
   popd
@@ -369,14 +371,15 @@ export PATH=$BASE_DIR/thirdparty/installed/bin:$PATH
 export PPROF_PATH=$BASE_DIR/thirdparty/installed/bin/pprof
 
 # Create output directories if needed.
-[ -d "$LOGDIR" ] || mkdir "$LOGDIR"
-[ -d "$OUTDIR" ] || mkdir "$OUTDIR"
+[ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"
+[ -d "$OUTDIR" ] || mkdir -p "$OUTDIR"
 
 # Clean up files from previous runs.
 rm -f $LOGDIR/*.log
 rm -f $LOGDIR/*.txt
 rm -f $OUTDIR/*.tsv
 rm -f $OUTDIR/*.png
+rm -f $OUTDIR/*.html
 
 # Kick off the benchmark script.
 run $*
