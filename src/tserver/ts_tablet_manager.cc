@@ -18,6 +18,7 @@
 #include "master/master.pb.h"
 #include "server/fsmanager.h"
 #include "server/metadata.pb.h"
+#include "tablet/tablet.pb.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet_peer.h"
@@ -37,6 +38,8 @@ using kudu::log::Log;
 using kudu::log::OpIdAnchorRegistry;
 using kudu::master::ReportedTabletPB;
 using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletStatusListener;
+using kudu::tablet::TabletStatusPB;
 using kudu::master::TabletReportPB;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
@@ -120,7 +123,7 @@ Status TSTabletManager::Init() {
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet);
 
-    shared_ptr<TabletPeer> tablet_peer(new TabletPeer());
+    shared_ptr<TabletPeer> tablet_peer(new TabletPeer(*meta));
     RegisterTablet(meta->oid(), tablet_peer);
 
     RETURN_NOT_OK(bootstrap_pool_.SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
@@ -212,7 +215,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
                         "Couldn't persist master block for new tablet");
 
-  shared_ptr<TabletPeer> new_peer(new TabletPeer());
+  shared_ptr<TabletPeer> new_peer(new TabletPeer(*meta));
   RegisterTablet(meta->oid(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
   OpenTablet(meta.release());
@@ -275,13 +278,10 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
   LOG_TIMING(INFO, Substitute("Tablet $0 bootstrap complete.", tablet_id)) {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
-    gscoped_ptr<tablet::TabletBootstrapListener> listener;
-    tablet::TabletBootstrapListener::GetDefaultBootstrapListener(meta.get(),
-                                                                 &listener);
     s = BootstrapTablet(meta.Pass(),
                         scoped_refptr<server::Clock>(server_->clock()),
                         &metric_ctx_,
-                        listener.Pass(),
+                        tablet_peer->status_listener(),
                         &tablet,
                         &log,
                         &opid_anchor_registry);
@@ -390,16 +390,6 @@ void TSTabletManager::GetTabletPeers(vector<shared_ptr<TabletPeer> >* tablet_pee
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
 
-void TSTabletManager::GetOnlineTabletPeers(
-  vector<shared_ptr<TabletPeer> >* online_tablet_peers) const {
-  vector<shared_ptr<TabletPeer> > tablet_peers;
-  GetTabletPeers(&tablet_peers);
-  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, tablet_peers) {
-    if (peer->state() != metadata::BOOTSTRAPPING) {
-      online_tablet_peers->push_back(peer);
-    }
-  }
-}
 
 void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);

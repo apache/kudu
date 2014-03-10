@@ -11,6 +11,8 @@
 #include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/tablet_metrics.h"
+#include "tablet/tablet_bootstrap.h"
+#include "tablet/tablet.pb.h"
 #include "util/metrics.h"
 #include "util/trace.h"
 
@@ -28,12 +30,16 @@ using metadata::TabletMetadata;
 // ============================================================================
 //  Tablet Peer
 // ============================================================================
-TabletPeer::TabletPeer()
-    : // prepare executor has a single thread as prepare must be done in order
-      // of submission
-      prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)) {
+TabletPeer::TabletPeer(const TabletMetadata& meta)
+  : status_listener_(new TabletStatusListener(meta)),
+    // prepare executor has a single thread as prepare must be done in order
+    // of submission
+    prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)) {
   apply_executor_.reset(TaskExecutor::CreateNew("apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
+}
+
+TabletPeer::~TabletPeer() {
 }
 
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
@@ -138,6 +144,22 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
   // transaction deletes itself on delete/abort
   return transaction->Execute();
 }
+
+void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
+  boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+  DCHECK(status_pb_out != NULL);
+  DCHECK(status_listener_.get() != NULL);
+  status_pb_out->set_tablet_id(status_listener_->tablet_id());
+  status_pb_out->set_table_name(status_listener_->table_name());
+  status_pb_out->set_last_status(status_listener_->last_status());
+  status_pb_out->set_start_key(status_listener_->start_key());
+  status_pb_out->set_end_key(status_listener_->end_key());
+  status_pb_out->set_state(state_);
+  if (tablet() != NULL) {
+    status_pb_out->set_estimated_on_disk_size(tablet()->EstimateOnDiskSize());
+  }
+}
+
 
 }  // namespace tablet
 }  // namespace kudu

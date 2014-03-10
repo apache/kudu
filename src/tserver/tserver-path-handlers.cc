@@ -10,12 +10,15 @@
 #include "gutil/strings/human_readable.h"
 #include "gutil/strings/substitute.h"
 #include "server/webui_util.h"
+#include "tablet/tablet.pb.h"
+#include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
 #include "util/url-coding.h"
 
 using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletStatusPB;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
@@ -41,26 +44,40 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &args,
                                                  std::stringstream *output) {
   vector<shared_ptr<TabletPeer> > peers;
-  // TODO (KUDU-137): expose more information on tablet peers
-  // undergoing bootstrapping.
-  tserver_->tablet_manager()->GetOnlineTabletPeers(&peers);
+  tserver_->tablet_manager()->GetTabletPeers(&peers);
 
-  *output << "<h1>Online tablets</h1>\n";
+  *output << "<h1>Tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Table Name</th><th>Tablet ID</th><th>On-disk Size</th></tr>\n";
+  *output << "  <tr><th>Table Name</th><th>Tablet ID</th>"
+      "<th>End key</th><th>Start key</th>"
+      "<th>State</th><th>On-disk Size</th><th>Last status</th></tr>\n";
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
-    DCHECK(peer->tablet() != NULL)
-        << "if tablet peer is not bootstrapping, tablet should not be NULL";
-    string id = peer->tablet()->tablet_id();
-    string table_name = peer->tablet()->metadata()->table_name();
-    string tablet_link = Substitute("<a href=\"/tablet?id=$0\">$1</a>",
-                                    UrlEncodeToString(id),
-                                    EscapeForHtmlToString(id));
-    string n_bytes = HumanReadableNumBytes::ToString(peer->tablet()->EstimateOnDiskSize());
-    // TODO: would be nice to include some other stuff like memory usage, table
-    // name, key range, etc.
-    (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th></tr>\n",
-                            EscapeForHtmlToString(table_name), tablet_link, n_bytes);
+    TabletStatusPB status;
+    peer->GetTabletStatusPB(&status);
+    string id = status.tablet_id();
+    string table_name = status.table_name();
+    string tablet_id_or_link;
+    if (peer->tablet() != NULL) {
+      tablet_id_or_link = Substitute("<a href=\"/tablet?id=$0\">$1</a>",
+                                UrlEncodeToString(id),
+                                EscapeForHtmlToString(id));
+    } else {
+      tablet_id_or_link = EscapeForHtmlToString(id);
+    }
+    string n_bytes = "";
+    if (status.has_estimated_on_disk_size()) {
+      n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
+    }
+    string state = metadata::TabletStatePB_Name(status.state());
+    // TODO: would be nice to include some other stuff like memory usage
+    (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th>"
+                            "<th>$3</th><th>$4</th><th>$5</th></tr>\n",
+                            EscapeForHtmlToString(table_name),
+                            tablet_id_or_link,
+                            EscapeForHtmlToString(status.start_key()),
+                            EscapeForHtmlToString(status.end_key()),
+                            state, n_bytes,
+                            EscapeForHtmlToString(status.last_status()));
   }
   *output << "</table>\n";
 }

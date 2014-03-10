@@ -2,6 +2,7 @@
 #ifndef KUDU_TABLET_TABLET_BOOTSTRAP_H_
 #define KUDU_TABLET_TABLET_BOOTSTRAP_H_
 
+#include <boost/thread/shared_mutex.hpp>
 #include <tr1/memory>
 #include <string>
 
@@ -29,19 +30,39 @@ class Clock;
 namespace tablet {
 class Tablet;
 
-// An API for monitoring the tablet bootstrap process.
-class TabletBootstrapListener {
+// A listener for logging the tablet related statuses as well as
+// piping it into the web UI.
+class TabletStatusListener {
  public:
-  virtual ~TabletBootstrapListener() {
+  explicit TabletStatusListener(const metadata::TabletMetadata& meta);
+
+  ~TabletStatusListener();
+
+  void StatusMessage(const std::string& status);
+
+  const std::string tablet_id() const { return tablet_id_; }
+
+  const std::string table_name() const { return table_name_; }
+
+  const std::string start_key() const { return start_key_; }
+
+  const std::string end_key() const { return end_key_; }
+
+  std::string last_status() const {
+    boost::shared_lock<boost::shared_mutex> l(lock_);
+    return last_status_;
   }
 
-  virtual void StatusMessage(const std::string& status) = 0;
+ private:
+  mutable boost::shared_mutex lock_;
 
-  // Creates an instance of the default implementation of
-  // TabletBootstrapListener for tablet described by 'meta'.
-  static void GetDefaultBootstrapListener(
-      const metadata::TabletMetadata* meta,
-      gscoped_ptr<TabletBootstrapListener>* listener);
+  const std::string tablet_id_;
+  const std::string table_name_;
+  const std::string start_key_;
+  const std::string end_key_;
+  std::string last_status_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabletStatusListener);
 };
 
 extern const char* kLogRecoveryDir;
@@ -55,7 +76,7 @@ extern const char* kLogRecoveryDir;
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        const scoped_refptr<server::Clock>& clock,
                        MetricContext* metric_context,
-                       gscoped_ptr<TabletBootstrapListener> boostrap_listener,
+                       TabletStatusListener* status_listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
                        gscoped_ptr<log::OpIdAnchorRegistry>* opid_anchor_registry);

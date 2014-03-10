@@ -9,10 +9,17 @@
 #include "tablet/tablet.h"
 #include "util/metrics.h"
 
+
 namespace kudu {
+
+namespace metadata {
+class TabletMetadata;
+}
 
 namespace tablet {
 class ChangeConfigTransactionContext;
+class TabletStatusPB;
+class TabletStatusListener;
 
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -22,7 +29,9 @@ class ChangeConfigTransactionContext;
 class TabletPeer {
  public:
 
-  TabletPeer();
+  explicit TabletPeer(const metadata::TabletMetadata& meta);
+
+  ~TabletPeer();
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
@@ -68,9 +77,11 @@ class TabletPeer {
   // asynchronously.
   Status SubmitChangeConfig(ChangeConfigTransactionContext* tx_ctx);
 
+  void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
+
   consensus::Consensus* consensus() { return consensus_.get(); }
 
-  Tablet* tablet() {
+  Tablet* tablet() const {
     return tablet_.get();
   }
 
@@ -88,7 +99,11 @@ class TabletPeer {
     return quorum_peer_.role();
   }
 
-  // Sets the tablet state to FAILED additionally setting the error to the provided
+  TabletStatusListener* status_listener() const {
+    return status_listener_.get();
+  }
+
+  // sets the tablet state to FAILED additionally setting the error to the provided
   // one.
   void SetFailed(const Status& error) {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
@@ -114,6 +129,7 @@ class TabletPeer {
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
   gscoped_ptr<consensus::Consensus> consensus_;
+  gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
 
   // lock protecting internal (usually rare) state changes.

@@ -33,6 +33,8 @@ class TabletMetadata;
 
 namespace tablet {
 class TabletPeer;
+class TabletStatusPB;
+class TabletStatusListener;
 }
 
 namespace tserver {
@@ -120,10 +122,6 @@ class TSTabletManager {
   // Get all of the tablets currently hosted on this server.
   void GetTabletPeers(std::vector<std::tr1::shared_ptr<tablet::TabletPeer> >* tablet_peers) const;
 
-  // Get all of the online tablets currently hosted on this server.
-  void GetOnlineTabletPeers(
-    std::vector<std::tr1::shared_ptr<tablet::TabletPeer> >* online_tablet_peers) const;
-
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -192,6 +190,7 @@ class TSTabletManager {
     uint32_t change_seq_;
   };
   typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
+
   DirtyMap dirty_tablets_;
   int32_t next_report_seq_;
 

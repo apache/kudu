@@ -85,7 +85,7 @@ class TabletBootstrap {
   TabletBootstrap(gscoped_ptr<metadata::TabletMetadata> meta,
                   const scoped_refptr<Clock>& clock,
                   MetricContext* metric_context,
-                  gscoped_ptr<TabletBootstrapListener> listener);
+                  TabletStatusListener* listener);
 
   // Plays the log segments, rebuilding the portion of the Tablet's soft
   // state that is present in the log (additional soft state may be present
@@ -197,7 +197,7 @@ class TabletBootstrap {
   gscoped_ptr<metadata::TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   MetricContext* metric_context_;
-  gscoped_ptr<TabletBootstrapListener> listener_;
+  TabletStatusListener* listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
   gscoped_ptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
   gscoped_ptr<log::Log> log_;
@@ -209,32 +209,24 @@ class TabletBootstrap {
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
-// Implementation of 'TabletBootstrap' that simply logs status
-// messages at INFO level.
-class LoggingBootstrapListener : public TabletBootstrapListener {
- public:
-  explicit LoggingBootstrapListener(const metadata::TabletMetadata* meta);
-
-  virtual void StatusMessage(const std::string& status);
- private:
-  const std::string tablet_id_;
-};
-
-LoggingBootstrapListener::LoggingBootstrapListener(
-    const metadata::TabletMetadata* meta)
-  : tablet_id_(meta->oid()) {
+TabletStatusListener::TabletStatusListener(
+    const metadata::TabletMetadata& meta)
+    : tablet_id_(meta.oid()),
+      table_name_(meta.table_name()),
+      start_key_(meta.start_key()),
+      end_key_(meta.end_key()),
+      last_status_("") {
 }
 
-void LoggingBootstrapListener::StatusMessage(const string& status) {
-  LOG(INFO) << "Bootstrap for tablet id " << tablet_id_ << ": " << status;
+TabletStatusListener::~TabletStatusListener() {
 }
 
-
-void TabletBootstrapListener::GetDefaultBootstrapListener(
-    const metadata::TabletMetadata* meta,
-    gscoped_ptr<TabletBootstrapListener>* listener) {
-  listener->reset(new LoggingBootstrapListener(meta));
+void TabletStatusListener::StatusMessage(const string& status) {
+  LOG(INFO) << "Tablet id " << tablet_id_ << ": " << status;
+  boost::lock_guard<boost::shared_mutex> l(lock_);
+  last_status_ = status;
 }
+
 
 // helper to encapsulate the arguments required for a mutation
 struct MutationInput {
@@ -258,11 +250,11 @@ struct MutationInput {
 Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
                        const scoped_refptr<Clock>& clock,
                        MetricContext* metric_context,
-                       gscoped_ptr<TabletBootstrapListener> listener,
+                       TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        gscoped_ptr<log::Log>* rebuilt_log,
                        gscoped_ptr<log::OpIdAnchorRegistry>* opid_anchor_registry) {
-  TabletBootstrap bootstrap(meta.Pass(), clock, metric_context, listener.Pass());
+  TabletBootstrap bootstrap(meta.Pass(), clock, metric_context, listener);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, opid_anchor_registry));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -323,11 +315,11 @@ static string DebugInfo(const string& tablet_id,
 TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
                                  const scoped_refptr<Clock>& clock,
                                  MetricContext* metric_context,
-                                 gscoped_ptr<TabletBootstrapListener> listener)
+                                 TabletStatusListener* listener)
     : meta_(meta.Pass()),
       clock_(clock),
       metric_context_(metric_context),
-      listener_(listener.Pass()),
+      listener_(listener),
       recovery_ts_(GetCurrentTimeMicros()),
       arena_(256*1024, 4*1024*1024) {
 }
@@ -338,7 +330,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   string tablet_id = meta_->oid();
 
-  listener_->StatusMessage("Starting.");
+  listener_->StatusMessage("Bootstrap starting.");
 
   if (VLOG_IS_ON(1)) {
     shared_ptr<TabletSuperBlockPB> super_block;
@@ -383,7 +375,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   RETURN_NOT_OK_PREPEND(PlaySegments(), "Failed log replay. Reason");
 
-  listener_->StatusMessage("Complete.");
+  listener_->StatusMessage("Bootstrap complete.");
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->reset(log_.release());
   opid_anchor_registry->reset(opid_anchor_registry_.release());
@@ -750,7 +742,7 @@ Status TabletBootstrap::PlaySegments() {
     // TODO: could be more granular here and log during the segments as well,
     // plus give info about number of MB processed, but this is better than
     // nothing.
-    listener_->StatusMessage(Substitute("Replayed $0/$1 log segments.",
+    listener_->StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments.",
                                         segment_idx + 1, log_reader_->size()));
   }
 
