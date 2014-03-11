@@ -72,8 +72,10 @@ Status MiniTabletServer::WaitStarted() {
 }
 
 void MiniTabletServer::Shutdown() {
-  server_->Shutdown();
-  server_.reset();
+  if (started_) {
+    server_->Shutdown();
+    server_.reset();
+  }
   started_ = false;
 }
 

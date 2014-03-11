@@ -222,6 +222,7 @@ class TableInfo : public base::RefCountedThreadSafe<TableInfo> {
   void AddTask(MonitoredTask *task);
   void RemoveTask(MonitoredTask *task);
   void AbortTasks();
+  void WaitTasksCompletion();
   void GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *tasks);
 
  private:

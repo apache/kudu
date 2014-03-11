@@ -223,5 +223,26 @@ TEST_F(AlterTableTest, TestAlterOnRestart) {
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
+// Verify that nothing is left behind on cluster shutdown with pending async tasks
+TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
+  ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
+
+  // Shutdown the TS
+  cluster_->mini_tablet_server(0)->Shutdown();
+
+  // Send the Alter request
+  {
+    AlterTableRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+
+    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::ADD_COLUMN);
+    uint32_t x = 10;
+    ColumnSchemaToPB(ColumnSchema("new-u32", UINT32, true, &x),
+                     step->mutable_add_column()->mutable_schema());
+    Status s = AlterTable(req, 1);
+    ASSERT_TRUE(s.IsTimedOut());
+  }
+}
 
 } // namespace kudu

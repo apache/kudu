@@ -332,6 +332,12 @@ void CatalogManager::Shutdown() {
 
   // Shutdown the Catalog Manager backgroud thread
   background_tasks_->Shutdown();
+
+  // Abort and Wait tables task completion
+  BOOST_FOREACH(const TableInfoMap::value_type& e, table_ids_map_) {
+    e.second->AbortTasks();
+    e.second->WaitTasksCompletion();
+  }
 }
 
 static void SetupError(MasterErrorPB* error,
@@ -1051,15 +1057,17 @@ class AsyncTabletRequestTask : public MonitoredTask {
   }
 
   void DeferredCallback() {
-    bool retry = (attempt_ < max_attempts());
+    bool retry = (attempt_ < max_attempts() && state_ != kStateAborted);
     if (!rpc_.status().ok()) {
       LOG(WARNING) << permanent_uuid_ << " " << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
       if (retry) {
         usleep((1 + (attempt_ / 5)) * 1000000);
-        WARN_NOT_OK(ResetTSProxy(), "Reset TS Proxy");
+        if ((retry = (state_ != kStateAborted))) {
+          WARN_NOT_OK(ResetTSProxy(), "Reset TS Proxy");
+        }
       }
-    } else {
+    } else if (state_ != kStateAborted) {
       HandleResponse(attempt_);
     }
 
@@ -1989,6 +1997,20 @@ void TableInfo::AbortTasks() {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(MonitoredTask* task, pending_tasks_) {
     task->Abort();
+  }
+}
+
+void TableInfo::WaitTasksCompletion() {
+  int wait_time = 250;
+  while (1) {
+    {
+      boost::lock_guard<simple_spinlock> l(lock_);
+      if (pending_tasks_.empty()) {
+        break;
+      }
+    }
+    usleep(wait_time);
+    wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
 }
 
