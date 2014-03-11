@@ -192,7 +192,7 @@ void ReactorThread::TimerHandler(ev::timer &watcher, int revents) {
     return;
   }
   MonoTime now(MonoTime::Now(MonoTime::COARSE));
-  VLOG(2) << name() << ": timer tick at " << now.ToString();
+  VLOG(4) << name() << ": timer tick at " << now.ToString();
   cur_time_ = now;
 
   ScanIdleConnections();
