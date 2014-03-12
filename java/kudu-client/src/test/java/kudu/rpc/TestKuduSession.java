@@ -167,6 +167,8 @@ public class TestKuduSession extends BaseKuduTest {
     buffered.join(2000);
     assertEquals(10, countInRange(0, 40));
 
+    // TODO add a test for manual flush against multiple tablets once we can pre-split on ints
+
     // Test Alter
     // Add a col
     AlterTableBuilder atb = new AlterTableBuilder();

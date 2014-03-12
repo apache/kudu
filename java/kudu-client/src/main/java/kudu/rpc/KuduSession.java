@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -148,15 +149,23 @@ public class KuduSession {
 
   /**
    * Flushes the buffered operations
-   * @return a Deferred if operations needed to be flushed, else null
+   * This method doesn't guarantee that all the apply()'d operations will be flushed since some
+   * might still be trying to locate their tablet.
+   * @return a Deferred whose callback chain will be invoked when
+   * everything that was buffered at the time of the call has been flushed.
    */
   public Deferred<Object> flush() {
+    final ArrayList<Deferred<Object>> d =
+        new ArrayList<Deferred<Object>>(operations.size());
+    Map<Slice, Batch> oldOperations = new HashMap<Slice, Batch>(operations.size());
     synchronized (this) {
-      for (Slice tablet : operations.keySet()) {
-        return flushTablet(tablet); // TODO merge
-      }
+      oldOperations.putAll(operations);
+      operations.clear();
     }
-    return null;
+    for (Batch inserts : oldOperations.values()) {
+      d.add(flushTablet(inserts));
+    }
+    return (Deferred) Deferred.group(d);
   }
 
   /**
@@ -357,12 +366,7 @@ public class KuduSession {
   /**
    * Flushes the edits for the given tablet
    */
-  private Deferred<Object> flushTablet(Slice tablet) {
-    // Copy the batch to a local variable and null it out.
-    final Batch inserts;
-    synchronized (this) {
-      inserts = this.operations.remove(tablet);
-    }
+  private Deferred<Object> flushTablet(Batch inserts) {
     if (inserts != null && inserts.ops.size() != 0) {
       //final Deferred<Object> d = operations.getDeferred();
       LOG.debug("Sending " + inserts.ops.size());
@@ -383,7 +387,12 @@ public class KuduSession {
 
     public void run(final Timeout timeout) {
       LOG.debug("Flushing " + this.tabletSlice.toString(Charset.defaultCharset()));
-      flushTablet(this.tabletSlice);
+      // Copy the batch to a local variable and null it out.
+      final Batch inserts;
+      synchronized (KuduSession.this) {
+        inserts = operations.remove(tabletSlice);
+      }
+      flushTablet(inserts);
     }
     public String toString() {
       return "flush commits of session " + KuduSession.this +
