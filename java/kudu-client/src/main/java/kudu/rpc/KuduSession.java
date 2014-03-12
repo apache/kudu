@@ -179,7 +179,7 @@ public class KuduSession {
     if (operation == null) {
       throw new NullPointerException("Cannot apply a null operation");
     }
-    // TODO starts looking a lot like sendRpcToTablet
+
     if (KuduClient.cannotRetryRequest(operation)) {
       return KuduClient.tooManyAttempts(operation, null);
     }
@@ -198,7 +198,18 @@ public class KuduSession {
       Deferred<Object> d = addToBuffer(tablet.getTabletId(), operation);
       return d;
     }
-    final class RetryRpc implements Callback<Deferred<Object>, Object> {
+
+    // TODO starts looking a lot like sendRpcToTablet
+    operation.attempt++;
+    if (client.isTableNotServed(table)) {
+      return client.delayedIsCreateTableDone(table, operation, getRetryRpcCB(operation));
+    }
+
+    return client.locateTablet(table, rowkey).addBothDeferring(getRetryRpcCB(operation));
+  }
+
+  Callback<Deferred<Object>, Object> getRetryRpcCB(final Operation operation) {
+    final class RetryRpcCB implements Callback<Deferred<Object>, Object> {
       public Deferred<Object> call(final Object arg) {
         Deferred<Object> d = client.handleLookupExceptions(operation, arg);
         return d == null ? apply(operation):  // Retry the RPC.
@@ -208,13 +219,7 @@ public class KuduSession {
         return "retry RPC";
       }
     }
-    operation.attempt++;
-    Deferred<Object> delayedRpc = client.sleepIfTableNotAvailable(table, operation);
-    if (delayedRpc != null) {
-      return delayedRpc;
-    }
-
-    return client.locateTablet(table, rowkey).addBothDeferring(new RetryRpc());
+    return new RetryRpcCB();
   }
 
   /**

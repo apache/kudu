@@ -34,7 +34,6 @@ import kudu.Schema;
 import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.tserver.Tserver;
 import kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
@@ -462,21 +461,6 @@ public class KuduClient {
     }
     final RemoteTablet tablet = getTablet(tableName, rowkey);
 
-    final class RetryRpc implements Callback<Deferred<Object>, Object> {
-      public Deferred<Object> call(final Object arg) {
-        Deferred<Object> d = handleLookupExceptions(request, arg);
-        return d == null ? sendRpcToTablet(request):  // Retry the RPC.
-                           d; // something went wrong
-      }
-      public String toString() {
-        return "retry RPC";
-      }
-    }
-    Deferred<Object> delayedRpc = sleepIfTableNotAvailable(tableName, request);
-    if (delayedRpc != null) {
-      return delayedRpc;
-    }
-
     if (tablet != null) {
       TabletClient tabletClient = clientFor(tablet);
       if (tabletClient != null) {
@@ -486,36 +470,114 @@ public class KuduClient {
         return d;
       }
     }
-    return locateTablet(tableName, rowkey).addBothDeferring(new RetryRpc());
+    // Right after creating a table a request will fall into locateTablet since we don't know yet
+    // if the table is ready or not. If discoverTablet() didn't get any tablets back,
+    // then on retry we'll fall into the following block. It will sleep, then call the master to
+    // see if the table was created. We'll spin like this until the table is created and then
+    // we'll try to locate the tablet again.
+    if (tablesNotServed.containsKey(tableName)) {
+      return delayedIsCreateTableDone(tableName, request, getRetryRpcCB(request));
+    }
+
+    return locateTablet(tableName, rowkey).addBothDeferring(getRetryRpcCB(request));
+  }
+
+  private Callback<Deferred<Object>, Object> getRetryRpcCB(final KuduRpc request) {
+    final class RetryRpcCB implements Callback<Deferred<Object>, Object> {
+      public Deferred<Object> call(final Object arg) {
+        Deferred<Object> d = handleLookupExceptions(request, arg);
+        return d == null ? sendRpcToTablet(request):  // Retry the RPC.
+                           d; // something went wrong
+      }
+      public String toString() {
+        return "retry RPC";
+      }
+    }
+    return new RetryRpcCB();
   }
 
   /**
-   * Utility method that checks if we're in the special case where the table has no tablets. We
-   * just need to wait it out. This method will schedule for the provided RPC to be resent later
-   * after some sleep.
+   * This method will call IsCreateTableDone on the master after sleeping for
+   * getSleepTimeForRpc() based on the provided KuduRpc's number of attempts. Once this is done,
+   * the provided callback will be called
    * @param tableName Table to lookup
-   * @param rpc request to replay if the table isn't ready
-   * @return a deferred object if the table is unavailable, or null if the table is ready
+   * @param rpc Original KuduRpc that needs to access the table
+   * @param cb Callback to call on completion
+   * @return Deferred used to track the provided KuduRpc
    */
-  Deferred<Object> sleepIfTableNotAvailable(final String tableName, final KuduRpc rpc) {
-    // We know that recently this RPC or another couldn't find a location for
-    // this table, sleep some time before retrying.
-    if (tablesNotServed.containsKey(tableName)) {
-      Deferred<Object> d = rpc.getDeferred();
-      final class TableNotServedTimer implements TimerTask {
-        public void run(final Timeout timeout) {
-          tablesNotServed.remove(tableName);
-          sendRpcToTablet(rpc);
+  Deferred<Object> delayedIsCreateTableDone(final String tableName, final KuduRpc rpc,
+                                            final Callback<Deferred<Object>, Object> cb) {
+
+    final class RetryTimer implements TimerTask {
+      public void run(final Timeout timeout) {
+        final boolean has_permit = acquireMasterLookupPermit();
+        if (!has_permit) {
+          // If we failed to acquire a permit, it's worth checking if someone
+          // looked up the tablet we're interested in.  Every once in a while
+          // this will save us a Master lookup.
+          if (!tablesNotServed.containsKey(tableName)) {
+            try {
+              cb.call(null);
+              return;
+            } catch (Exception e) {
+              // we're calling RetryRpcCB which doesn't throw exceptions, ignore
+            }
+          }
         }
-      };
-      long sleepTime = getSleepTimeForRcp(rpc);
-      newTimeout(new TableNotServedTimer(), sleepTime);
-      return d;
-    }
-    return null;
+        final Deferred<Object> d =
+            clientFor(masterTabletHack).isCreateTableDone(tableName).addCallback(new
+                IsCreateTableDoneCB(tableName));
+        if (has_permit) {
+          d.addBoth(new ReleaseMasterLookupPermit());
+        }
+        d.addBothDeferring(cb);
+      }
+    };
+    long sleepTime = getSleepTimeForRpc(rpc);
+    newTimeout(new RetryTimer(), sleepTime);
+
+    return rpc.getDeferred();
   }
 
-  private long getSleepTimeForRcp(KuduRpc rpc) {
+  private final class ReleaseMasterLookupPermit implements Callback<Object, Object> {
+    public Object call(final Object arg) {
+      releaseMasterLookupPermit();
+      return arg;
+    }
+    public String toString() {
+      return "release master lookup permit";
+    }
+  };
+
+  /** Callback executed when IsCreateTableDone completes.  */
+  private final class IsCreateTableDoneCB implements Callback<Object,
+      Master.IsCreateTableDoneResponsePB> {
+    final String table;
+    IsCreateTableDoneCB(String table) {
+      this.table = table;
+    }
+    public Object call(final Master.IsCreateTableDoneResponsePB response) {
+      if (response.getDone()) {
+        LOG.debug("Table " + table + " was created");
+        tablesNotServed.remove(table);
+      } else if (response.hasError()) {
+        throw new MasterErrorException(response.getError());
+      } else {
+        LOG.debug("Table " + table + " is still being created");
+      }
+      return null;
+    }
+    public String toString() {
+      return "ask the master if " + table + " was created";
+    }
+  };
+
+  boolean isTableNotServed(String tableName) {
+    return tablesNotServed.containsKey(tableName);
+  }
+
+
+  long getSleepTimeForRpc(KuduRpc rpc) {
     // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
     long sleepTime = (rpc.attempt * SLEEP_TIME) + sleepRandomizer.nextInt(50);
     if (LOG.isDebugEnabled()) {
@@ -611,19 +673,10 @@ public class KuduClient {
       }
     }
     final Deferred<Object> d =
-        clientFor(masterTabletHack).getTableLocations(table, rowkey).addCallback(new MasterLookupCB(table,
-            rowkey));
+        clientFor(masterTabletHack).getTableLocations(table, rowkey).
+            addCallback(new MasterLookupCB(table, rowkey));
     if (has_permit) {
-      final class ReleaseMetaLookupPermit implements Callback<Object, Object> {
-        public Object call(final Object arg) {
-          releaseMasterLookupPermit();
-          return arg;
-        }
-        public String toString() {
-          return "release master lookup permit";
-        }
-      };
-      d.addBoth(new ReleaseMetaLookupPermit());
+      d.addBoth(new ReleaseMasterLookupPermit());
     }
     return d;
   }
@@ -642,17 +695,21 @@ public class KuduClient {
       tooManyAttempts(rpc, ex);
     }
 
+    delayedSendRpcToTablet(rpc);
+  }
+
+  private void delayedSendRpcToTablet(final KuduRpc rpc) {
     // Here we simply retry the RPC later. We might be doing this along with a lot of other RPCs
     // in parallel. Asynchbase does some hacking with a "probe" RPC while putting the other ones
     // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
     // we're not expecting this in Kudu.
-    final class NSTETimer implements TimerTask {
+    final class RetryTimer implements TimerTask {
       public void run(final Timeout timeout) {
         sendRpcToTablet(rpc);
       }
     };
-    long sleepTime = getSleepTimeForRcp(rpc);
-    newTimeout(new NSTETimer(), sleepTime);
+    long sleepTime = getSleepTimeForRpc(rpc);
+    newTimeout(new RetryTimer(), sleepTime);
   }
 
   /**
@@ -665,7 +722,7 @@ public class KuduClient {
     tablet.removeTabletServer(server);
   }
 
-  /** Callback executed when a lookup in META completes.  */
+  /** Callback executed when a master lookup completes.  */
   private final class MasterLookupCB implements Callback<Object,
       Master.GetTableLocationsResponsePB> {
     final String table;
@@ -678,7 +735,7 @@ public class KuduClient {
       return discoverTablet(table, rowkey, arg);
     }
     public String toString() {
-      return "get tabletSlice locations from the master";
+      return "get tablet locations from the master";
     }
   };
 
@@ -709,7 +766,7 @@ public class KuduClient {
     if (response.getTabletLocationsCount() == 0) {
       // Keep a note that the table exists but it's not served yet, we'll retry
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Table " + table + " doesn't have any tablets");
+        LOG.debug("Table " + table + " hasn't been created yet");
       }
       tablesNotServed.putIfAbsent(table, new Object());
       return null;

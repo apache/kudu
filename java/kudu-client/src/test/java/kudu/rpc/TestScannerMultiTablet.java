@@ -36,15 +36,15 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   @Test(timeout = 100000)
   public void test() throws Exception {
     KuduSession session = client.newSession();
-    session.setFlushMode(KuduSession.FlushMode.MANUAL_FLUSH);
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
 
     String[] keys = new String[] {"1", "2", "3"};
-    Deferred<Object> buffered = null;
     for (String key1 : keys) {
       for (String key2 : keys) {
         Insert insert = table.newInsert();
         insert.addString(schema.getColumn(0).getName(), key1 + key2);
-        buffered = session.apply(insert);
+        Deferred<Object> d = session.apply(insert);
+        d.join(DEFAULT_SLEEP);
       }
     }
 
@@ -53,9 +53,6 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     // tablet '1', '2': '11', '12', '13'
     // tablet '2', '3': '21', '22', '23'
     // tablet '3', '': '31', '32', '33'
-
-    session.flush();
-    buffered.join(DEFAULT_SLEEP);
 
     assertEquals(0, countRowsInScan(getScanner("", "1"))); // There's nothing in the 1st tablet
     assertEquals(1, countRowsInScan(getScanner("", "11"))); // Grab the very first row

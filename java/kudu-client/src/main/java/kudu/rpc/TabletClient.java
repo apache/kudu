@@ -516,6 +516,60 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         }
       };
 
+  public Deferred<Master.IsCreateTableDoneResponsePB> isCreateTableDone(final String tableName) {
+    final class IsCreateTableDone extends KuduRpc {
+      IsCreateTableDone(KuduTable table) {
+        super(table);
+      }
+
+      @Override
+      String method() {
+        return "IsCreateTableDone";
+      }
+
+      @Override
+      Object deserialize(final ChannelBuffer buf) {
+        Master.IsCreateTableDoneResponsePB.Builder builder = Master.IsCreateTableDoneResponsePB
+            .newBuilder();
+        readProtobuf(buf, builder);
+        return builder.build();
+      }
+
+      @Override
+      ChannelBuffer serialize(Message header) {
+        final Master.IsCreateTableDoneRequestPB.Builder builder = Master
+            .IsCreateTableDoneRequestPB.newBuilder();
+        builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
+        return toChannelBuffer(header, builder.build());
+      }
+    };
+    final KuduRpc rpc = new IsCreateTableDone(kuduClient.masterTableHack);
+    rpc.setTablet(kuduClient.masterTabletHack);
+    final Deferred<Master.IsCreateTableDoneResponsePB> d = rpc.getDeferred()
+        .addCallback(isCreateTableDoneCB);
+    sendRpc(rpc);
+    return d;
+  }
+
+  private static final Callback<Master.IsCreateTableDoneResponsePB, Object>
+      isCreateTableDoneCB =
+      new Callback<Master.IsCreateTableDoneResponsePB, Object>() {
+        public Master.IsCreateTableDoneResponsePB call(final Object response) {
+          if (response == null) {  // No result.
+            return null;
+          } else if (response instanceof Master.IsCreateTableDoneResponsePB) {
+            final Master.IsCreateTableDoneResponsePB pb = (Master.IsCreateTableDoneResponsePB)
+                response;
+            return pb;
+          } else {
+            throw new InvalidResponseException(Master.IsCreateTableDoneResponsePB.class, response);
+          }
+        }
+        public String toString() {
+          return "type isCreateTableDone response";
+        }
+      };
+
   /**
    * Tells whether or not this handler should be used.
    * <p>
