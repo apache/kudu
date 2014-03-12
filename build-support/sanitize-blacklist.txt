@@ -7,6 +7,5 @@ fun:*kudu18safe_math_internal*
 
 # Workaround for a bug in clang's libstdc++ which causes a false positive
 # trying to use ostream << std::hex
-fun:_Ios_Fmtflags
-
-
+# See http://llvm.org/bugs/show_bug.cgi?id=18156
+fun:*_Ios_Fmtflags*
