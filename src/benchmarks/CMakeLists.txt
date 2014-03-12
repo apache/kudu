@@ -26,3 +26,4 @@ target_link_libraries(rle ${KUDU_TEST_LINK_LIBS})
 # Tests
 set(KUDU_TEST_LINK_LIBS tpch ${KUDU_TEST_LINK_LIBS})
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)
+ADD_KUDU_TEST(tpch/local_line_item_dao-test)

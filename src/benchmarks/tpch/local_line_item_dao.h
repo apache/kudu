@@ -7,6 +7,7 @@
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "common/row.h"
+#include "consensus/opid_anchor_registry.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/write_transaction.h"
 #include "benchmarks/tpch/line_item_dao.h"
@@ -25,18 +26,20 @@ class LocalLineItemDAO : public LineItemDAO {
       CHECK_OK(fs_manager_.Open());
     }
   }
-  virtual void WriteLine(const PartialRow& row);
-  virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations);
-  virtual void Init();
-  virtual void FinishWriting();
-  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec);
-  virtual bool HasMore();
-  virtual void GetNext(RowBlock *block);
-  virtual bool IsTableEmpty();
-  ~LocalLineItemDAO();
+  virtual ~LocalLineItemDAO() OVERRIDE;
+
+  virtual void WriteLine(const PartialRow& row) OVERRIDE;
+  virtual void MutateLine(const ConstContiguousRow &row, const faststring &mutations) OVERRIDE;
+  virtual void Init() OVERRIDE;
+  virtual void FinishWriting() OVERRIDE;
+  virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec) OVERRIDE;
+  virtual bool HasMore() OVERRIDE;
+  virtual void GetNext(RowBlock *block) OVERRIDE;
+  virtual bool IsTableEmpty() OVERRIDE;
 
  private:
   kudu::FsManager fs_manager_;
+  log::OpIdAnchorRegistry opid_anchor_registry_;
   gscoped_ptr<kudu::tablet::Tablet> tablet_;
   tablet::WriteTransactionContext tx_ctx_;
   gscoped_ptr<RowwiseIterator> current_iter_;
