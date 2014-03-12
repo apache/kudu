@@ -7,6 +7,7 @@
 #include <tr1/memory>
 
 #include "common/timestamp.h"
+#include "common/wire_protocol.h"
 #include "consensus/consensus.h"
 #include "util/auto_release_pool.h"
 #include "util/countdown_latch.h"
@@ -82,16 +83,26 @@ class TransactionCompletionCallback {
 
 // TransactionCompletionCallback implementation that can be waited on.
 // Helper to make async transaction, sync.
+// This is templated to accept any response PB that has a TabletServerError
+// 'error' field and to set the error before performing the latch countdown.
+template<class ResponsePB>
 class LatchTransactionCompletionCallback : public TransactionCompletionCallback {
  public:
-  explicit LatchTransactionCompletionCallback(CountDownLatch *latch) : latch_(latch) {}
+  explicit LatchTransactionCompletionCallback(CountDownLatch* latch,
+                                              ResponsePB* response)
+  : latch_(latch),
+    response_(response) {}
 
   virtual void TransactionCompleted() {
+    tserver::TabletServerErrorPB* error = response_->mutable_error();
+    StatusToPB(status_, error->mutable_status());
+    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
     latch_->CountDown();
   }
 
  private:
-  CountDownLatch *latch_;
+  CountDownLatch* latch_;
+  ResponsePB* response_;
 };
 
 

@@ -127,7 +127,7 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
 Status SysTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
   CountDownLatch latch(1);
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
-    new LatchTransactionCompletionCallback(&latch));
+    new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
   tablet::WriteTransactionContext *tx_ctx =
     new tablet::WriteTransactionContext(tablet_peer_.get(), req, resp);
   tx_ctx->set_completion_callback(txn_callback.Pass());
