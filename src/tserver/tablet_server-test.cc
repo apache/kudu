@@ -862,7 +862,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   AlterSchemaResponsePB resp;
   RpcController rpc;
 
-  InsertTestRowsDirect(0, 2);
+  InsertTestRowsRemote(0, 0, 2);
 
   // Add one column with a default value
   const uint32_t c2_write_default = 5;
@@ -884,7 +884,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   }
 
   {
-    InsertTestRowsDirect(2, 2);
+    InsertTestRowsRemote(0, 2, 2);
     shared_ptr<TabletPeer> tablet;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
     ASSERT_STATUS_OK(tablet->tablet()->Flush());
