@@ -117,7 +117,8 @@ void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
   arena_footprint_ += current_->size();
   if (PREDICT_FALSE(arena_footprint_ > FLAGS_arena_warn_threshold_bytes) && !warned_) {
     LOG(WARNING) << "Arena " << reinterpret_cast<const void *>(this)
-                 << " exceeded warning threshold"
+                 << " footprint (" << arena_footprint_ << " bytes) exceeded warning threshold ("
+                 << FLAGS_arena_warn_threshold_bytes << " bytes)\n"
                  << GetStackTrace();
     warned_ = true;
   }
