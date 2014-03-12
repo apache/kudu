@@ -35,6 +35,8 @@ const char* MetricUnit::Name(Type unit) {
       return "requests";
     case kRows:
       return "rows";
+    case kConnections:
+      return "connections";
     case kProbes:
       return "probes";
     case kNanoseconds:

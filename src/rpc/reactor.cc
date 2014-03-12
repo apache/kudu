@@ -498,7 +498,9 @@ class RegisterConnectionTask : public ReactorTask {
   }
 
   virtual void Abort(const Status &status) {
-    conn_->Shutdown(status);
+    // We don't need to Shutdown the connection since it was never registered.
+    // This is only used for inbound connections, and inbound connections will
+    // never have any calls added to them until they've been registered.
     delete this;
   }
 

@@ -7,8 +7,12 @@
 #include <boost/bind.hpp>
 #include <gtest/gtest.h>
 
+#include "gutil/stl_util.h"
+#include "util/metrics.h"
 #include "util/test_util.h"
 #include "util/thread_util.h"
+
+METRIC_DECLARE_counter(rpc_connections_accepted);
 
 using std::string;
 
@@ -192,6 +196,52 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
 
   ASSERT_EQ(1, errors_backpressure);
   ASSERT_EQ(2, errors_shutdown);
+}
+
+static void HammerServerWithTCPConns(const Sockaddr& addr) {
+  while (true) {
+    Socket socket;
+    CHECK_OK(socket.Init(0));
+    Status s;
+    LOG_SLOW_EXECUTION(INFO, 100, "Connect took long") {
+      s = socket.Connect(addr);
+    }
+    if (!s.ok()) {
+      CHECK(s.IsNetworkError()) << "Unexpected error: " << s.ToString();
+      return;
+    }
+    CHECK_OK(socket.Close());
+  }
+}
+
+// Regression test for KUDU-128.
+// Test that shuts down the server while new TCP connections are incoming.
+TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr);
+
+  // Start a number of threads which just hammer the server with TCP connections.
+  vector<boost::thread*> threads;
+  ElementDeleter d(&threads);
+  for (int i = 0; i < 8; i++) {
+    threads.push_back(new boost::thread(&HammerServerWithTCPConns, server_addr));
+  }
+
+  // Sleep until the server has started to actually accept some connections from the
+  // test threads.
+  Counter* conns_accepted =
+    METRIC_rpc_connections_accepted.Instantiate(*server_messenger_->metric_context());
+  while (conns_accepted->value() == 0) {
+    usleep(100);
+  }
+
+  // Shutdown while there are still new connections appearing.
+  server_messenger_->Shutdown();
+
+  BOOST_FOREACH(boost::thread* t, threads) {
+    ASSERT_STATUS_OK(ThreadJoiner(t, "TCP connector thread").warn_every_ms(500).Join());
+  }
 }
 
 } // namespace rpc

@@ -17,12 +17,16 @@
 #include "rpc/messenger.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
+#include "util/metrics.h"
 #include "util/status.h"
 #include "util/thread_util.h"
 
 using google::protobuf::Message;
 using std::tr1::shared_ptr;
 using std::string;
+
+METRIC_DEFINE_counter(rpc_connections_accepted, kudu::MetricUnit::kConnections,
+                      "Number of incoming TCP connections made to the RPC server");
 
 namespace kudu {
 namespace rpc {
@@ -32,6 +36,8 @@ AcceptorPool::AcceptorPool(Messenger *messenger,
  : messenger_(messenger),
    socket_(socket->Release()),
    bind_address_(bind_address),
+   rpc_connections_accepted_(METRIC_rpc_connections_accepted.Instantiate(
+                               *CHECK_NOTNULL(messenger->metric_context()))),
    closing_(false) {
 }
 
@@ -97,6 +103,7 @@ void AcceptorPool::RunThread() {
           << s.ToString();
       continue;
     }
+    rpc_connections_accepted_->Increment();
     messenger_->RegisterInboundSocket(&new_sock, remote);
   }
   VLOG(1) << "AcceptorPool shutting down.";

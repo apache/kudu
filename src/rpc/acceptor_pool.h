@@ -14,6 +14,7 @@
 
 namespace kudu {
 
+class Counter;
 class Socket;
 
 namespace rpc {
@@ -43,6 +44,9 @@ class AcceptorPool {
   Socket socket_;
   Sockaddr bind_address_;
   std::vector<std::tr1::shared_ptr<boost::thread> > threads_;
+
+  Counter* rpc_connections_accepted_;
+
   Atomic32 closing_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceptorPool);

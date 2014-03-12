@@ -155,6 +155,7 @@ struct MetricUnit {
     kBytes,
     kRequests,
     kRows,
+    kConnections,
     kProbes,
     kNanoseconds,
     kMicroseconds,
