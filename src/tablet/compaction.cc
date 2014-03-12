@@ -476,7 +476,8 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                              Mutation** new_redo_head,
                                              Arena* arena,
                                              RowBlockRow* dst_row,
-                                             bool* is_garbage_collected) {
+                                             bool* is_garbage_collected,
+                                             uint64_t* num_rows_history_truncated) {
 
   // TODO actually perform garbage collection
   // Right now we persist all mutations.
@@ -567,8 +568,16 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         // by this reinsert
         redo_head = NULL;
 
-        LOG(WARNING) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
-            " under snap: " << snap.ToString() << ERROR_LOG_CONTEXT;
+        if ((*num_rows_history_truncated)++ == 0) {
+          LOG(WARNING) << "Found REINSERT REDO truncating row history for "
+              << ERROR_LOG_CONTEXT << " Note: this warning will appear "
+              "only for the first truncated row";
+        }
+
+        if (PREDICT_FALSE(VLOG_IS_ON(2))) {
+          VLOG(2) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
+              " under snap: " << snap.ToString() << ERROR_LOG_CONTEXT;
+        }
       } else {
         // Delete mutations are left as redos
         undo_encoder.SetToDelete();
@@ -597,9 +606,12 @@ Status FlushCompactionInput(CompactionInput* input,
   vector<CompactionInputRow> rows;
 
   DCHECK(out->schema().has_column_ids());
+
   RowBlock block(out->schema(), 100, NULL);
 
   Arena arena(1*1024*1024, 4*1024*1024);
+
+  uint64_t num_rows_history_truncated = 0;
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
@@ -620,8 +632,8 @@ Status FlushCompactionInput(CompactionInput* input,
         " Undo Mutations: " << Mutation::StringifyMutationList(schema, input_row.undo_head);
 
       // Collect the new UNDO/REDO mutations.
-      Mutation* new_undos_head;
-      Mutation* new_redos_head;
+      Mutation* new_undos_head = NULL;
+      Mutation* new_redos_head = NULL;
 
       bool is_garbage_collected;
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
@@ -630,7 +642,8 @@ Status FlushCompactionInput(CompactionInput* input,
                                                    &new_redos_head,
                                                    &arena,
                                                    &dst_row,
-                                                   &is_garbage_collected));
+                                                   &is_garbage_collected,
+                                                   &num_rows_history_truncated));
 
       // Whether this row was garbage collected
       if (is_garbage_collected) {
@@ -666,6 +679,11 @@ Status FlushCompactionInput(CompactionInput* input,
     }
 
     RETURN_NOT_OK(input->FinishBlock());
+  }
+
+  if (num_rows_history_truncated > 0) {
+    LOG(WARNING) << "Total " << num_rows_history_truncated
+        << " rows lost some history due to REINSERT after DELETE";
   }
   return Status::OK();
 }

@@ -710,8 +710,10 @@ class TabletTestBase : public KuduTabletTest {
       ASSERT_STATUS_OK_FAST(RowwiseIterator::CopyBlock(iter.get(), &block));
 
       RowBlockRow rb_row = block.row(0);
-      DLOG(INFO) << "Fetched batch of " << block.nrows() << "\n"
-                 << "First row: " << schema_.DebugRow(rb_row);
+      if (VLOG_IS_ON(2)) {
+        VLOG(2) << "Fetched batch of " << block.nrows() << "\n"
+            << "First row: " << schema_.DebugRow(rb_row);
+      }
 
       for (int i = 0; i < block.nrows(); i++) {
         rb_row.Reset(&block, i);
