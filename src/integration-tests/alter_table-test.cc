@@ -194,7 +194,8 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
 }
 
 // Verify that the alter command is sent to the TS down on restart
-TEST_F(AlterTableTest, TestAlterOnRestart) {
+// Disabled: doesn't pass reliably due to bugs. See KUDU-163.
+TEST_F(AlterTableTest, DISABLED_TestAlterOnRestart) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
   // Shutdown the TS

@@ -1218,7 +1218,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
       }
     } else {
       state_ = kStateComplete;
-      VLOG(1) << permanent_uuid_ << " delete complete on tablet " << tablet_id_;
+      VLOG(1) << "TS " << permanent_uuid_ << " delete complete on tablet " << tablet_id_;
     }
   }
 
@@ -1281,13 +1281,15 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
       }
     } else {
       state_ = kStateComplete;
-      VLOG(1) << permanent_uuid_ << " alter complete on tablet " << tablet_->ToString();
+      VLOG(1) << "TS " << permanent_uuid_ << " alter complete on tablet " << tablet_->ToString();
     }
 
     if (state_ == kStateComplete &&
         tablet_->set_reported_schema_version(schema_version_) &&
         !tablet_->table()->IsAlterInProgress(schema_version_)) {
       MarkAlterTableAsComplete();
+    } else {
+      VLOG(1) << "Still waiting for other tablets to finish ALTER";
     }
   }
 
@@ -1965,6 +1967,9 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
     if (e.second->reported_schema_version() < version) {
+      VLOG(3) << "Table " << table_id_ << " ALTER in progress due to tablet "
+              << e.second->ToString() << " because reported schema "
+              << e.second->reported_schema_version() << " < expected " << version;
       return true;
     }
   }
