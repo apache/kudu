@@ -44,6 +44,11 @@ class CompactionInput {
 
   virtual Status Init() = 0;
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) = 0;
+
+  // Returns the arena for this compaction input corresponding to the last
+  // prepared block. This must be called *after* PrepareBlock() as if this
+  // is a MergeCompactionInput only then will the right arena be selected.
+  virtual Arena*  PreparedBlockArena() = 0;
   virtual Status FinishBlock() = 0;
 
   virtual bool HasMoreBlocks() = 0;

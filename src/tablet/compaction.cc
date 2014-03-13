@@ -75,6 +75,8 @@ class MemRowSetCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
+  Arena* PreparedBlockArena() { return &arena_; }
+
   virtual Status FinishBlock() {
     return Status::OK();
   }
@@ -150,6 +152,8 @@ class RowSetCompactionInput : public CompactionInput {
     first_rowid_in_block_ += block_.nrows();
     return Status::OK();
   }
+
+  virtual Arena* PreparedBlockArena() { return &arena_; }
 
   virtual Status FinishBlock() {
     return Status::OK();
@@ -282,6 +286,7 @@ class MergeCompactionInput : public CompactionInput {
         MergeState *state = states_[i];
 
         if (state->empty()) {
+          prepared_block_arena_ = state->input->PreparedBlockArena();
           // If any of our inputs runs out of pending entries, then we can't keep
           // merging -- this input may have further blocks to process.
           // Rather than pulling another block here, stop the loop. If it's truly
@@ -302,6 +307,8 @@ class MergeCompactionInput : public CompactionInput {
 
     return Status::OK();
   }
+
+  virtual Arena* PreparedBlockArena() { return prepared_block_arena_; }
 
   virtual Status FinishBlock() {
     return ProcessEmptyInputs();
@@ -401,6 +408,7 @@ class MergeCompactionInput : public CompactionInput {
 
   const Schema* schema_;
   vector<MergeState *> states_;
+  Arena* prepared_block_arena_;
 };
 
 } // anonymous namespace
@@ -609,13 +617,10 @@ Status FlushCompactionInput(CompactionInput* input,
 
   RowBlock block(out->schema(), 100, NULL);
 
-  Arena arena(1*1024*1024, 4*1024*1024);
-
   uint64_t num_rows_history_truncated = 0;
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
-    arena.Reset();
 
     int n = 0;
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
@@ -640,7 +645,7 @@ Status FlushCompactionInput(CompactionInput* input,
                                                    input_row,
                                                    &new_undos_head,
                                                    &new_redos_head,
-                                                   &arena,
+                                                   input->PreparedBlockArena(),
                                                    &dst_row,
                                                    &is_garbage_collected,
                                                    &num_rows_history_truncated));
