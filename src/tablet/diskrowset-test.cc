@@ -367,12 +367,12 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   RollingDiskRowSetWriter writer(tablet_->metadata(), schema_,
                                  BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                  64 * 1024); // roll every 64KB
-  DoWriteTestRowSet(30000, &writer);
+  DoWriteTestRowSet(10000, &writer);
 
-  // Should have rolled 3 times.
+  // Should have rolled 4 times.
   vector<shared_ptr<RowSetMetadata> > metas;
   writer.GetWrittenRowSetMetadata(&metas);
-  EXPECT_EQ(3, metas.size());
+  EXPECT_EQ(4, metas.size());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
     ASSERT_TRUE(meta->HasColumnDataBlockForTests(0));
   }
