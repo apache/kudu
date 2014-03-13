@@ -124,7 +124,12 @@ struct InitializationData {
 };
 static struct InitializationData* sasl_init_data;
 
-static void DoSaslInit(const char* app_name) {
+// Actually perform the initialization for the SASL subsystem.
+// Meant to be called via GoogleOnceInitArg().
+static void DoSaslInit(void* app_name_char_array) {
+  // Explicitly cast from void* here so GoogleOnce doesn't have to deal with it.
+  // We were getting Clang 3.4 UBSAN errors when letting GoogleOnce cast.
+  const char* const app_name = reinterpret_cast<const char* const>(app_name_char_array);
   VLOG(3) << "Initializing SASL library";
 
   sasl_init_data = new InitializationData();
@@ -151,7 +156,10 @@ static void DoSaslInit(const char* app_name) {
 static GoogleOnceType once = GOOGLE_ONCE_INIT;
 
 Status SaslInit(const char* const app_name) {
-  GoogleOnceInitArg(&once, &DoSaslInit, app_name);
+  GoogleOnceInitArg(&once,
+                    &DoSaslInit,
+                    // This is a bit ugly, but Clang 3.4 UBSAN complains otherwise.
+                    reinterpret_cast<void*>(const_cast<char*>(app_name)));
   if (PREDICT_FALSE(sasl_init_data->app_name != app_name)) {
     return Status::InvalidArgument("SaslInit called successively with different arguments",
         StringPrintf("Previous: %s, current: %s", sasl_init_data->app_name.c_str(), app_name));
