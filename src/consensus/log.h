@@ -14,12 +14,14 @@
 namespace kudu {
 
 class FsManager;
+class MetricContext;
 
 namespace log {
 
 class LogReader;
 class LogEntryBatch;
 class OpIdAnchorRegistry;
+struct LogMetrics;
 
 // Log interface, inspired by Raft's (logcabin) Log. Provides durability to
 // Kudu as a normal Write Ahead Log and also plays the role of persistent
@@ -54,6 +56,7 @@ class Log {
                      FsManager *fs_manager,
                      const std::string& tablet_id,
                      OpIdAnchorRegistry* opid_anchor_registry,
+                     MetricContext* parent_metric_context,
                      gscoped_ptr<Log> *log);
 
   ~Log();
@@ -166,7 +169,8 @@ class Log {
       FsManager *fs_manager,
       const string& log_path,
       const string& tablet_id,
-      OpIdAnchorRegistry* opid_anchor_registry);
+      OpIdAnchorRegistry* opid_anchor_registry,
+      MetricContext* parent_metric_context);
 
   // Initializes a new one or continues an existing log.
   Status Init();
@@ -259,6 +263,9 @@ class Log {
   State state_;
   SegmentAllocationState allocation_state_;
   OpIdAnchorRegistry* opid_anchor_registry_;
+
+  gscoped_ptr<MetricContext> metric_context_;
+  gscoped_ptr<LogMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(Log);
 };

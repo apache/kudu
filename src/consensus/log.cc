@@ -4,6 +4,7 @@
 
 #include "consensus/log_reader.h"
 #include "consensus/opid_anchor_registry.h"
+#include "consensus/log_metrics.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/stl_util.h"
 #include "server/fsmanager.h"
@@ -14,6 +15,7 @@
 #include "util/stopwatch.h"
 #include "util/countdown_latch.h"
 #include "util/thread_util.h"
+#include "util/metrics.h"
 
 // TODO Size of the queue/buffer should be defined bytewise, rather
 // than by the element count.
@@ -81,6 +83,12 @@ void Log::AppendThread::RunThread() {
     if (PREDICT_FALSE(!queue->BlockingDrainTo(&entry_batches))) {
       break;
     }
+
+    if (log_->metrics_) {
+      log_->metrics_->entry_batches_per_group->Increment(entry_batches.size());
+    }
+
+    SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
 
     BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
       entry_batch->WaitForReady();
@@ -166,6 +174,7 @@ Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const std::string& tablet_id,
                  OpIdAnchorRegistry* opid_anchor_registry,
+                 MetricContext* parent_metrics_context,
                  gscoped_ptr<Log> *log) {
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
@@ -177,7 +186,8 @@ Status Log::Open(const LogOptions &options,
                                    fs_manager,
                                    tablet_wal_path,
                                    tablet_id,
-                                   opid_anchor_registry));
+                                   opid_anchor_registry,
+                                   parent_metrics_context));
   RETURN_NOT_OK(new_log->Init());
   log->reset(new_log.release());
   return Status::OK();
@@ -192,7 +202,8 @@ Log::Log(const LogOptions &options,
          FsManager *fs_manager,
          const string& log_path,
          const string& tablet_id,
-         OpIdAnchorRegistry* opid_anchor_registry)
+         OpIdAnchorRegistry* opid_anchor_registry,
+         MetricContext* parent_metric_context)
 : options_(options),
   fs_manager_(fs_manager),
   log_dir_(log_path),
@@ -205,6 +216,11 @@ Log::Log(const LogOptions &options,
   state_(kLogInitialized),
   allocation_state_(kAllocationNotStarted),
   opid_anchor_registry_(opid_anchor_registry) {
+  if (parent_metric_context) {
+    metric_context_.reset(new MetricContext(*parent_metric_context,
+                                            strings::Substitute("log.tablet-$0", tablet_id)));
+    metrics_.reset(new LogMetrics(*metric_context_));
+  }
 }
 
 Status Log::Init() {
@@ -258,6 +274,8 @@ Status Log::AsyncAllocateSegment() {
 }
 
 Status Log::RollOver() {
+  SCOPED_LATENCY_METRIC(metrics_, roll_latency);
+
   // Check if any errors have occurred during allocation
   allocation_future_->Wait();
   RETURN_NOT_OK(allocation_future_->status());
@@ -352,6 +370,10 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   Slice entry_batch_data = entry_batch->data();
   uint32_t entry_batch_bytes = entry_batch_data.size();
 
+  if (metrics_) {
+    metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
+  }
+
   // if the size of this entry overflows the current segment, get a new one
   if (allocation_state() == kAllocationNotStarted) {
     if ((active_segment_->writable_file()->Size() + entry_batch_bytes + 4) > max_segment_size_) {
@@ -374,10 +396,12 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   }
 
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
+    SCOPED_LATENCY_METRIC(metrics_, append_latency);
+
     RETURN_NOT_OK(active_segment_->writable_file()->Append(
       Slice(reinterpret_cast<uint8_t *>(&entry_batch_bytes), 4)));
+    RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_batch_data));
   }
-  RETURN_NOT_OK(active_segment_->writable_file()->Append(entry_batch_data));
   // TODO: Add a record checksum to each WAL record (see KUDU-109).
   return Status::OK();
 }
@@ -404,6 +428,7 @@ Status Log::WriteHeaderForTests() {
 }
 
 Status Log::Sync() {
+  SCOPED_LATENCY_METRIC(metrics_, sync_latency);
   if (force_sync_all_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
       RETURN_NOT_OK(active_segment_->writable_file()->Sync());

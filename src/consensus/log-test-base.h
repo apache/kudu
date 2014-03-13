@@ -69,6 +69,7 @@ class LogTestBase : public KuduTest {
                        fs_manager_.get(),
                        kTestTablet,
                        &opid_anchor_registry_,
+                       NULL,
                        &log_));
   }
 

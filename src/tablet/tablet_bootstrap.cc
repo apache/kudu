@@ -482,6 +482,7 @@ Status TabletBootstrap::OpenNewLog() {
                           tablet_->metadata()->fs_manager(),
                           tablet_->tablet_id(),
                           opid_anchor_registry_.get(),
+                          metric_context_,
                           &log_));
   // Disable sync temprorarily in order to speed up appends during the
   // bootstrap process.

@@ -25,6 +25,7 @@ set(LOG_SRCS
   log.cc
   log_reader.cc
   opid_anchor_registry.cc
+  log_metrics.cc
 )
 
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
