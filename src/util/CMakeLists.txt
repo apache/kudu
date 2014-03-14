@@ -32,6 +32,7 @@ add_library(kudu_util
   threadpool.cc
   task_executor.cc
   test_graph.cc
+  threadlocal.cc
   thread_util.cc
   trace.cc
   user.cc
@@ -78,6 +79,7 @@ ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(user-test)
 ADD_KUDU_TEST(safe_math-test)
 ADD_KUDU_TEST(bit-util-test)
+ADD_KUDU_TEST(mt-threadlocal-test RUN_SERIAL true)
 ADD_KUDU_TEST(thread_util-test)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(trace-test)
