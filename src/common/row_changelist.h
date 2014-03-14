@@ -60,6 +60,11 @@ class RowChangeList {
     return encoded_data_[0] == kReinsert;
   }
 
+  bool is_delete() const {
+    DCHECK_GT(encoded_data_.size(), 0);
+    return encoded_data_[0] == kDelete;
+  }
+
   bool is_null() const {
     return encoded_data_.size() == 0;
   }

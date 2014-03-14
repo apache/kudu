@@ -294,9 +294,36 @@ class MergeCompactionInput : public CompactionInput {
           return Status::OK();
         }
 
-        if (smallest_idx < 0 || schema_->Compare(state->next().row, smallest.row) < 0) {
+        if (smallest_idx < 0) {
           smallest_idx = i;
           smallest = state->next();
+          continue;
+        }
+        int row_comp = schema_->Compare(state->next().row, smallest.row);
+        if (row_comp < 0) {
+          smallest_idx = i;
+          smallest = state->next();
+          continue;
+        }
+        // If we found two duplicated rows, we want the row with the highest
+        // mutation timestamp and will discard the rest as they must be ghosts
+        // (in debug mode CompareMutations() makes sure this is true) and we
+        // don't have REINSERT encoding.
+        if (PREDICT_FALSE(row_comp == 0)) {
+          int mutation_comp = CompareMutations(state->next(), smallest);
+          DCHECK_NE(mutation_comp, 0);
+          if (mutation_comp > 0) {
+            // If the previous smallest row has a highest mutation that is lower
+            // than this one discard it.
+            states_[smallest_idx]->pop_front();
+            smallest_idx = i;
+            smallest = state->next();
+            continue;
+          } else {
+            // .. otherwise pop the current one
+            states_[i]->pop_front();
+            continue;
+          }
         }
       }
       DCHECK_GE(smallest_idx, 0);
@@ -404,6 +431,46 @@ class MergeCompactionInput : public CompactionInput {
     } else {
       return false;
     }
+  }
+
+  // Compare the mutations of two duplicated rows.
+  static int CompareMutations(const CompactionInputRow& left, const CompactionInputRow& right) {
+    // Duplicated rows have disjoint histories, we don't need to get the latest
+    // mutation, the first one should be enough for the sake of determining the most recent
+    // row, but in debug mode do get the latest to make sure one of the rows is a ghost.
+    const Mutation* left_latest = left.redo_head != NULL ? left.redo_head : left.undo_head;
+    const Mutation* right_latest = right.redo_head != NULL ? right.redo_head : right.undo_head;
+    int ret = left_latest->timestamp().CompareTo(right_latest->timestamp());
+#ifndef NDEBUG
+    int debug_ret = DebugCompareMutations(left, right);
+    CHECK_EQ(ret, debug_ret);
+#endif
+    return ret;
+  }
+
+  static int DebugCompareMutations(const CompactionInputRow& left,
+                                   const CompactionInputRow& right) {
+    const Mutation* left_latest = GetLatestMutation(left);
+    const Mutation* right_latest = GetLatestMutation(right);
+    DCHECK(left_latest);
+    DCHECK(right_latest);
+    DCHECK(left_latest->changelist().is_delete() || right_latest->changelist().is_delete())
+        << "One of the duplicated rows must be a ghost.";
+    return left_latest->timestamp().CompareTo(right_latest->timestamp());
+  }
+
+
+  static const Mutation* GetLatestMutation(const CompactionInputRow& row) {
+    const Mutation* latest = NULL;
+    if (row.redo_head != NULL) {
+      latest = row.redo_head;
+      while (latest->next() != NULL) {
+        latest = latest->next();
+      }
+    } else {
+      latest = row.undo_head;
+    }
+    return latest;
   }
 
   const Schema* schema_;
@@ -858,7 +925,8 @@ Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
       const Schema& schema = input_row.row.schema();
       LOG_STRING(INFO, lines) << schema.DebugRow(input_row.row) <<
-        " mutations: " + Mutation::StringifyMutationList(schema, input_row.redo_head);
+        " Undos: " + Mutation::StringifyMutationList(schema, input_row.undo_head) <<
+        " Redos: " + Mutation::StringifyMutationList(schema, input_row.redo_head);
     }
 
     RETURN_NOT_OK(input->FinishBlock());

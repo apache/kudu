@@ -150,6 +150,37 @@ TYPED_TEST(TestTablet, TestInsertsAndMutationsAreUndoneWithMVCCAfterFlush) {
   STLDeleteElements(&expected_rows);
 }
 
+// This tests KUDU-165, a regression where multiple old ghost rows were appearing in
+// compaction outputs and sometimes would be selected as the most recent version
+// of the row.
+// In particular this makes sure that when there is a ghost row in one row set
+// and a live one on another the live one is the only one that survives compaction.
+TYPED_TEST(TestTablet, TestGhostRowsOnDiskRowSets) {
+  // Create a few INSERT/DELETE pairs on-disk by writing and flushing.
+  // Each of the resulting rowsets has a single row which is a "ghost" since its
+  // redo data has the DELETE.
+  WriteTransactionContext tx;
+
+  for (int i = 0; i < 3; i++) {
+    this->InsertTestRow(&tx, 0, 0);
+    tx.Reset();
+    this->DeleteTestRow(&tx, 0);
+    tx.Reset();
+    ASSERT_STATUS_OK(this->tablet_->Flush());
+  }
+
+  // Create one more rowset on disk which has just an INSERT (ie a non-ghost row).
+  this->InsertTestRow(&tx, 0, 0);
+  tx.Reset();
+  ASSERT_STATUS_OK(this->tablet_->Flush());
+
+  // Compact. This should result in a rowset with just one row in it.
+  ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));
+
+  // Should still be able to update, since the row is live.
+  ASSERT_STATUS_OK(this->UpdateTestRow(&tx, 0, 1));
+}
+
 // Test that inserting a row which already exists causes an AlreadyPresent
 // error
 TYPED_TEST(TestTablet, TestInsertDuplicateKey) {

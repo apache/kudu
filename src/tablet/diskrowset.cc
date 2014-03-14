@@ -143,6 +143,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
   if (written_count_ == 0) {
     Slice enc_key = schema().EncodeComparableKey(block.row(0), &last_encoded_key_);
     key_index_writer()->AddMetadataPair(DiskRowSet::kMinKeyMetaEntryName, enc_key);
+    last_encoded_key_.clear();
   }
 
   // Write the batch to each of the columns
@@ -158,24 +159,33 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     }
   }
 
-  // Write the batch to the ad hoc index if we're using one
-  if (ad_hoc_index_writer_ != NULL) {
-    for (int i = 0; i < block.nrows(); i++) {
-      // TODO merge this loop with the bloom loop below to
-      // avoid re-encoding the keys
-      Slice enc_key = schema().EncodeComparableKey(block.row(i), &last_encoded_key_);
-      RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&enc_key, 1));
-    }
-  }
+#ifndef NDEBUG
+    faststring prev_key;
+#endif
 
-  // Write the batch to the bloom
+  // Write the batch to the bloom and optionally the ad-hoc index
   for (size_t i = 0; i < block.nrows(); i++) {
+#ifndef NDEBUG
+    prev_key.assign_copy(last_encoded_key_.data(), last_encoded_key_.size());
+#endif
+
     // TODO: performance might be better if we actually batch this -
     // encode a bunch of key slices, then pass them all in one go.
     RowBlockRow row = block.row(i);
     // Insert the encoded key into the bloom.
     Slice enc_key = schema().EncodeComparableKey(row, &last_encoded_key_);
     RETURN_NOT_OK(bloom_writer_->AppendKeys(&enc_key, 1));
+
+    // Write the batch to the ad hoc index if we're using one
+    if (ad_hoc_index_writer_ != NULL) {
+      RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&enc_key, 1));
+    }
+
+#ifndef NDEBUG
+    CHECK_LT(Slice(prev_key).compare(enc_key), 0)
+      << enc_key.ToDebugString() << " appended to file not > previous key "
+      << Slice(prev_key).ToDebugString();
+#endif
   }
 
   written_count_ += block.nrows();

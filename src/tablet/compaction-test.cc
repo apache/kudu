@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // All rights reserved
 
+#include <algorithm>
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -110,6 +111,33 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
+  void DeleteRows(RowSet *rowset, int n_rows, int delta) {
+    char keybuf[256];
+    faststring update_buf;
+    const Schema& schema = rowset->schema();
+    for (uint32_t i = 0; i < n_rows; i++) {
+      SCOPED_TRACE(i);
+      ScopedTransaction tx(&mvcc_);
+      snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
+
+      update_buf.clear();
+      RowChangeListEncoder update(schema, &update_buf);
+      update.SetToDelete();
+
+      RowBuilder rb(schema.CreateKeyProjection());
+      rb.AddString(Slice(keybuf));
+      RowSetKeyProbe probe(rb.row());
+      ProbeStats stats;
+      MutationResultPB result;
+      ASSERT_STATUS_OK(rowset->MutateRow(tx.timestamp(),
+                                         probe,
+                                         RowChangeList(update_buf),
+                                         op_id_,
+                                         &stats,
+                                         &result));
+    }
+  }
+
   // Iterate over the given compaction input, stringifying and dumping each
   // yielded row to *out
   void IterateInput(CompactionInput *input, vector<string> *out) {
@@ -147,6 +175,15 @@ class TestCompaction : public KuduRowSetTest {
 
     gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, &projection));
     DoFlush(compact_input.get(), projection, merge_snap, rowset_meta);
+  }
+
+  // Compacts a set of DRSs together and returns the first of the output rowsets.
+  void CompactAndReopen(const vector<shared_ptr<DiskRowSet> >& rowsets,
+                        const Schema& projection,
+                        shared_ptr<DiskRowSet> *rs) {
+    shared_ptr<RowSetMetadata> rowset_meta;
+    DoCompact(rowsets, projection, &rowset_meta);
+    ASSERT_STATUS_OK(DiskRowSet::Open(rowset_meta, &opid_anchor_registry_, rs));
   }
 
   void FlushAndReopen(const MemRowSet& mrs, shared_ptr<DiskRowSet> *rs, const Schema& projection) {
@@ -278,9 +315,13 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, &schema_, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=0) mutations: [@11(SET val=1), @21(SET val=2)]",
+  ASSERT_EQ("(string key=hello 00000000, uint32 val=0) "
+      "Undos: [@1(DELETE)] "
+      "Redos: [@11(SET val=1), @21(SET val=2)]",
             out[0]);
-  ASSERT_EQ("(string key=hello 00000090, uint32 val=9) mutations: [@20(SET val=1), @30(SET val=2)]",
+  ASSERT_EQ("(string key=hello 00000090, uint32 val=9) "
+      "Undos: [@10(DELETE)] "
+      "Redos: [@20(SET val=1), @30(SET val=2)]",
             out[9]);
 }
 
@@ -308,11 +349,74 @@ TEST_F(TestCompaction, TestRowSetInput) {
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   ASSERT_EQ("(string key=hello 00000000, uint32 val=0) "
-            "mutations: [@11(SET val=1), @21(SET val=2), @31(SET val=3), @41(SET val=4)]",
+      "Undos: [@1(DELETE)] "
+      "Redos: [@11(SET val=1), @21(SET val=2), @31(SET val=3), @41(SET val=4)]",
             out[0]);
   ASSERT_EQ("(string key=hello 00000090, uint32 val=9) "
-            "mutations: [@20(SET val=1), @30(SET val=2), @40(SET val=3), @50(SET val=4)]",
+      "Undos: [@10(DELETE)] "
+      "Redos: [@20(SET val=1), @30(SET val=2), @40(SET val=3), @50(SET val=4)]",
             out[9]);
+}
+
+// Tests that the same rows, duplicated in three DRSs, ghost in two of them
+// appears only once on the compaction output
+TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
+  shared_ptr<DiskRowSet> rs1;
+  {
+    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, &opid_anchor_registry_));
+    InsertRows(mrs.get(), 10, 0);
+    FlushAndReopen(*mrs, &rs1, schema_);
+    ASSERT_NO_FATAL_FAILURE();
+  }
+  // Now delete the rows, this will make the rs report them as deleted and
+  // so we would reinsert them into the MRS.
+  DeleteRows(rs1.get(), 10, 0);
+
+  shared_ptr<DiskRowSet> rs2;
+  {
+    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, &opid_anchor_registry_));
+    InsertRows(mrs.get(), 10, 0);
+    UpdateRows(mrs.get(), 10, 0, 1);
+    FlushAndReopen(*mrs, &rs2, schema_);
+    ASSERT_NO_FATAL_FAILURE();
+  }
+  DeleteRows(rs2.get(), 10, 0);
+
+  shared_ptr<DiskRowSet> rs3;
+  {
+    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, &opid_anchor_registry_));
+    InsertRows(mrs.get(), 10, 0);
+    UpdateRows(mrs.get(), 10, 0, 2);
+    FlushAndReopen(*mrs, &rs3, schema_);
+    ASSERT_NO_FATAL_FAILURE();
+  }
+
+  shared_ptr<DiskRowSet> result;
+  vector<shared_ptr<DiskRowSet> > all_rss;
+  all_rss.push_back(rs3);
+  all_rss.push_back(rs1);
+  all_rss.push_back(rs2);
+
+  SeedRandom();
+  // Shuffle the row sets to make sure we test different orderings
+  std::random_shuffle(all_rss.begin(), all_rss.end());
+
+  // Now compact all the drs and make sure we don't get duplicated keys on the output
+  CompactAndReopen(all_rss, schema_, &result);
+
+  gscoped_ptr<CompactionInput> input(
+      CompactionInput::Create(*result,
+                              &schema_,
+                              MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+  vector<string> out;
+  IterateInput(input.get(), &out);
+  ASSERT_EQ(out.size(), 10);
+  ASSERT_EQ("(string key=hello 00000000, uint32 val=2) "
+      "Undos: [@61(SET val=0), @51(DELETE)] "
+      "Redos: []", out[0]);
+  ASSERT_EQ("(string key=hello 00000090, uint32 val=2) "
+      "Undos: [@70(SET val=9), @60(DELETE)] "
+      "Redos: []", out[9]);
 }
 
 // Test case which doesn't do any merging -- just compacts
@@ -356,8 +460,9 @@ TEST_F(TestCompaction, TestOneToOne) {
   input.reset(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_)));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=1) mutations: "
-            "[@2001(SET val=2), @3001(SET val=3)]", out[0]);
+  ASSERT_EQ("(string key=hello 00000000, uint32 val=1) "
+      "Undos: [@1001(SET val=0), @1(DELETE)] "
+      "Redos: [@2001(SET val=2), @3001(SET val=3)]", out[0]);
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
@@ -460,8 +565,8 @@ TEST_F(TestCompaction, TestMergeMRS) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 20);
-  EXPECT_EQ(out[0], "(string key=hello 00000000, uint32 val=0) mutations: []");
-  EXPECT_EQ(out[19], "(string key=hello 00000091, uint32 val=9) mutations: []");
+  EXPECT_EQ(out[0], "(string key=hello 00000000, uint32 val=0) Undos: [@1(DELETE)] Redos: []");
+  EXPECT_EQ(out[19], "(string key=hello 00000091, uint32 val=9) Undos: [@20(DELETE)] Redos: []");
 }
 
 #ifdef NDEBUG
