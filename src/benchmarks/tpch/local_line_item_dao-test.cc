@@ -13,10 +13,6 @@
 #include "common/partial_row.h"
 #include "util/status.h"
 #include "util/test_util.h"
-#include "master/master-test-util.h"
-#include "master/mini_master.h"
-#include "tserver/mini_tablet_server.h"
-#include "integration-tests/mini_cluster.h"
 
 namespace kudu {
 

@@ -6,6 +6,7 @@ PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
   PROTO_FILES common.proto)
 
 add_library(kudu_common_proto ${COMMON_PROTO_SRCS} ${COMMON_PROTO_HDRS})
+target_link_libraries(kudu_common_proto protobuf)
 
 PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -13,7 +14,7 @@ PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
   PROTO_FILES wire_protocol.proto)
 
 add_library(wire_protocol_proto ${WIRE_PROTOCOL_PROTO_SRCS} ${WIRE_PROTOCOL_PROTO_HDRS})
-add_dependencies(wire_protocol_proto kudu_common_proto)
+target_link_libraries(wire_protocol_proto kudu_common_proto protobuf)
 
 set(COMMON_SRCS
   generic_iterators.cc

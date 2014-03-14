@@ -39,10 +39,11 @@ add_library(kudu_util
   monotime.cc
   url-coding.cc
 )
-set(KUDU_UTIL_LIBS kudu_util)
 
-# NOTE: we don't explicitly link against libcurl, since curl_util is only
-# used in tests, and we don't want to pull it in everywhere.
+# TODO: we don't really need to link agaist libcurl, since it's only used by
+# tests.
+target_link_libraries(kudu_util gutil ${CURL_LIBRARIES} ${Boost_LIBRARIES} protobuf)
+
 
 add_library(kudu_test_main test_main.cc)
 target_link_libraries(kudu_test_main gflags glog gtest)
@@ -89,5 +90,7 @@ PROTOBUF_GENERATE_CPP(JSONWRITER_TEST_PROTO_SRCS JSONWRITER_TEST_PROTO_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES jsonwriter_test.proto)
 ADD_LIBRARY(jsonwriter_test_proto ${JSONWRITER_TEST_PROTO_SRCS} ${JSONWRITER_TEST_PROTO_HDRS})
+target_link_libraries(jsonwriter_test_proto protobuf)
+
 ADD_KUDU_TEST(jsonwriter-test)
-TARGET_LINK_LIBRARIES(jsonwriter-test jsonwriter_test_proto)
+target_link_libraries(jsonwriter-test jsonwriter_test_proto)

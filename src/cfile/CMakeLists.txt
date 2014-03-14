@@ -6,7 +6,7 @@ PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
   PROTO_FILES cfile.proto)
 
 add_library(cfile_proto ${CFILE_PROTO_SRCS} ${CFILE_PROTO_HDRS})
-add_dependencies(cfile_proto kudu_common_proto)
+target_link_libraries(cfile_proto kudu_common_proto protobuf)
 
 set(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 
@@ -23,11 +23,12 @@ set(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
 )
 
 add_library(cfile ${CFILE_SRCS})
-target_link_libraries(cfile kudu_common)
+target_link_libraries(cfile kudu_common kudu_util gutil)
 target_link_libraries(cfile cfile_proto)
-target_link_libraries(cfile ${KUDU_DEP_LIBS})
+target_link_libraries(cfile lz4 snappy zlib)
 
 # Tests
+SET(KUDU_TEST_LINK_LIBS cfile ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(index-test)
 ADD_KUDU_TEST(cfile-test)
 ADD_KUDU_TEST(encoding-test)

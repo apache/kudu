@@ -34,14 +34,9 @@ add_dependencies(tablet_proto kudu_common)
 
 set(TABLET_SRCS ${TABLET_SRCS} ${TABLET_PROTO_SRCS})
 add_library(tablet ${TABLET_SRCS})
-add_dependencies(tablet kudu_common)
-add_dependencies(tablet gutil)
-add_dependencies(tablet cfile_proto)
-add_dependencies(tablet server)
-add_dependencies(tablet consensus_proto)
-add_dependencies(tablet log_proto)
+target_link_libraries(tablet kudu_common cfile gutil server_common kudu_util consensus)
 
-# tablet-test
+set(KUDU_TEST_LINK_LIBS tablet ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(tablet-test)
 ADD_KUDU_TEST(mt-tablet-test RUN_SERIAL true)
 ADD_KUDU_TEST(diskrowset-test)

@@ -15,7 +15,7 @@ KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   PROTO_FILES tserver_service.proto)
 
 add_library(tserver_service_proto ${TSERVER_KRPC_SRCS} ${TSERVER_KRPC_HDRS})
-target_link_libraries(tserver_service_proto krpc)
+target_link_libraries(tserver_service_proto protobuf krpc)
 add_dependencies(tserver_service_proto kudu_common tserver_proto)
 
 
@@ -31,24 +31,16 @@ set(TSERVER_SRCS
 )
 
 add_library(tserver ${TSERVER_SRCS})
-target_link_libraries(tserver tserver_proto)
+
+set(KUDU_TEST_LINK_LIBS tserver ${KUDU_TEST_LINK_LIBS})
+target_link_libraries(tserver tserver_proto protobuf)
 target_link_libraries(tserver tserver_service_proto)
 target_link_libraries(tserver master_proto)
 target_link_libraries(tserver consensus_proto)
 target_link_libraries(tserver log_proto)
 target_link_libraries(tserver log)
 target_link_libraries(tserver consensus)
-
-add_dependencies(tserver kudu_common)
-add_dependencies(tserver server)
-add_dependencies(tserver tablet)
-add_dependencies(tserver tserver_proto)
-add_dependencies(tserver tserver_service_proto)
-add_dependencies(tserver krpc)
-add_dependencies(tserver log)
-add_dependencies(tserver log_proto)
-add_dependencies(tserver consensus)
-add_dependencies(tserver consensus_proto)
+target_link_libraries(tserver server_common server_process tablet)
 
 # Tests
 ADD_KUDU_TEST(tablet_server-test)

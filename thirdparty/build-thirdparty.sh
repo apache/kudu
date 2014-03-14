@@ -16,7 +16,6 @@ else
   for arg in "$*"; do
     case $arg in
       "cmake")      F_CMAKE=1 ;;
-      "cyrus-sasl") F_CYRUS_SASL=1 ;;
       "gflags")     F_GFLAGS=1 ;;
       "glog")       F_GLOG=1 ;;
       "gperftools") F_GPERFTOOLS=1 ;;
@@ -92,7 +91,7 @@ fi
 # build protobuf
 if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
   cd $PROTOBUF_DIR
-  ./configure --with-pic --disable-shared --prefix=$PREFIX
+  ./configure --with-pic --enable-shared --enable-static --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -120,29 +119,8 @@ fi
 ## build libev
 if [ -n "$F_ALL" -o -n "$F_LIBEV" ]; then
   cd $LIBEV_DIR
-  ./configure --with-pic --disable-shared --prefix=$PREFIX
+  ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
-fi
-
-## build cyrus-sasl
-if [ -n "$F_ALL" -o -n "$F_CYRUS_SASL" ]; then
-  cd $CYRUS_SASL_DIR
-  [ -r Makefile ] && make distclean # (Jenkins was complaining about CFLAGS changes)
-  # Disable everything except those protocols needed.
-  # SASL does not have a --with-pic configuration, so we'd normally pass CLAGS="-DPIC".
-  # The gssapi plugin requires -DPIC to link, otherwise it can't find some symbols.
-  # Unfortunately, there seem to be some compatibility issues with RHEL6 that still need to be
-  # resolved when cyrus is built with -DPIC. Apparently, it's unable to load auxprop plugins
-  # from the system, particularly sasldb. That failure to load the sasldb plugin causes errors
-  # with plain authentication (anonymous is also affected even without -DPIC, but we have a
-  # hack in sasl_server.cc to work around that case). So... disabling PIC and gssapi for now.
-  ./configure --disable-gssapi \
-    --disable-digest --disable-sql --disable-cram --disable-ldap --disable-otp \
-    --enable-static --enable-staticdlopen --with-dblib=none --without-des \
-    --prefix=$PREFIX
-  make clean
-  make # no -j$PARALLEL ... concurrent build probs on RHEL?
-  make install
 fi
 
 # Build rapidjson
@@ -206,6 +184,10 @@ fi
 if [ -n "$F_ALL" -o -n "$F_GCOVR" ]; then
   cp -a $GCOVR_DIR/scripts/gcovr $PREFIX/bin/gcovr
 fi
+
+# Remove any old thirdparty deps which hung around from previous versions
+rm -f $PREFIX/lib/libsasl*
+rm -Rf $PREFIX/lib/sasl2
 
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"

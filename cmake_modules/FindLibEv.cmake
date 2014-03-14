@@ -3,6 +3,7 @@
 #  LIBEV_INCLUDE_DIR, directory containing headers
 #  LIBEV_LIBS, directory containing libev libraries
 #  LIBEV_STATIC_LIB, path to libev.a
+#  LIBEV_SHARED_LIB, path to libev.so
 #  LIBEV_FOUND, whether libev has been found
 
 set(LIBEV_SEARCH_HEADER_PATHS  
@@ -25,6 +26,9 @@ if (LIBEV_INCLUDE_DIR AND LIBEV_LIB_PATH)
   set(LIBEV_FOUND TRUE)
   set(LIBEV_LIBS ${LIBEV_SEARCH_LIB_PATH})
   set(LIBEV_STATIC_LIB ${LIBEV_SEARCH_LIB_PATH}/libev.a)
+  if(EXISTS ${LIBEV_SEARCH_LIB_PATH}/libev.so)
+    set(LIBEV_SHARED_LIB ${LIBEV_SEARCH_LIB_PATH}/libev.so)
+  endif()
 else ()
   set(LIBEV_FOUND FALSE)
 endif ()
@@ -50,4 +54,5 @@ mark_as_advanced(
   LIBEV_INCLUDE_DIR
   LIBEV_LIBS
   LIBEV_STATIC_LIB
+  LIBEV_SHARED_LIB
 )

@@ -1,60 +1,43 @@
 # Copyright (c) 2013, Cloudera, inc.
 # All rights reserved.
 #
-# - Find Cyrus SASL (sasl.h, libsasl2.a -- NOT libsasl2.so)
-# - Find Cyrus SASL plugins (sasl2/libplain.so, sasl2/libanonymous.so)
-# - NOTE that the plugins must exist on the local system. Cyrus SASL is hard-coded to
-#   look in the system path for plugin libraries. While this is something that can be
-#   overridden at runtime, for security reasons it makes sense not to statically link
-#   the plugin libraries so that administrators can more easily patch security issues.
+# - Find Cyrus SASL (sasl.h, libsasl2.so)
+#
 # This module defines
 #  CYRUS_SASL_INCLUDE_DIR, directory containing headers
-#  CYRUS_SASL_LIBS, path to required libs for the linker
-#  CYRUS_SASL_STATIC_LIB, path to libsasl2.a
-#  CYRUS_SASL_ANON_DYN_LIB, path to sasl2/libanonymous.so
-#  CYRUS_SASL_PLAIN_DYN_LIB, path to sasl2/libplain.so
+#  CYRUS_SASL_SHARED_LIB, path to libsasl2.so
+#  CYRUS_SASL_LIB_DEPS other libraries that SASL depends on
 #  CYRUS_SASL_FOUND, whether Cyrus SASL and its plugins have been found
+#
+# N.B: we do _not_ include sasl in thirdparty, for a fairly subtle reason. The
+# TLDR version is that newer versions of cyrus-sasl (>=2.1.26) have a bug fix
+# for https://bugzilla.cyrusimap.org/show_bug.cgi?id=3590, but that bug fix
+# relied on a change both on the plugin side and on the library side. If you
+# then try to run the new version of sasl (e.g from our thirdparty tree) with
+# an older version of a plugin (eg from RHEL6 install), you'll get a SASL_NOMECH
+# error due to this bug.
+#
+# In practice, Cyrus-SASL is so commonly used and generally non-ABI-breaking that
+# we should be OK to depend on the host installation.
 
-set(CYRUS_SASL_SEARCH_HEADER_PATHS
-  ${THIRDPARTY_PREFIX}/include
-)
+find_path(CYRUS_SASL_INCLUDE_DIR sasl/sasl.h)
+find_library(CYRUS_SASL_SHARED_LIB NAMES libsasl2.so)
 
-set(CYRUS_SASL_SEARCH_LIB_PATH
-  ${THIRDPARTY_PREFIX}/lib
-)
-
-find_path(CYRUS_SASL_INCLUDE_DIR sasl/sasl.h PATHS
-  ${CYRUS_SASL_SEARCH_HEADER_PATHS}
-  # make sure we don't accidentally pick up a different version
-  NO_DEFAULT_PATH
-)
-
-find_library(CYRUS_SASL_STATIC_LIB NAMES libsasl2.a PATHS ${CYRUS_SASL_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
-find_library(CYRUS_SASL_PLAIN_DYN_LIB NAMES sasl2/libplain.so)    # look on system path
-find_library(CYRUS_SASL_ANON_DYN_LIB NAMES sasl2/libanonymous.so) # look on system path
-
-if (CYRUS_SASL_INCLUDE_DIR AND CYRUS_SASL_STATIC_LIB AND CYRUS_SASL_PLAIN_DYN_LIB AND CYRUS_SASL_ANON_DYN_LIB)
+if (CYRUS_SASL_INCLUDE_DIR AND CYRUS_SASL_SHARED_LIB)
   set(CYRUS_SASL_FOUND TRUE)
-
-  set(CYRUS_SASL_LIBS ${CYRUS_SASL_STATIC_LIB})
-  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} ${CYRUS_SASL_PLAIN_DYN_LIB})
-  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} ${CYRUS_SASL_ANON_DYN_LIB})
-  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} dl)
-  set(CYRUS_SASL_LIBS ${CYRUS_SASL_LIBS} crypt)
 else ()
   set(CYRUS_SASL_FOUND FALSE)
 endif ()
 
 if (CYRUS_SASL_FOUND)
+  set(CYRUS_SASL_LIB_DEPS dl crypt)
   if (NOT CyrusSASL_FIND_QUIETLY)
-    message(STATUS "Found the CyrusSASL library: ${CYRUS_SASL_STATIC_LIB}")
-    message(STATUS "Found the CyrusSASL plugins: ${CYRUS_SASL_PLAIN_DYN_LIB};${CYRUS_SASL_ANON_DYN_LIB}")
+    message(STATUS "Found the CyrusSASL library: ${CYRUS_SASL_SHARED_LIB}")
   endif ()
 else ()
   if (NOT CyrusSASL_FIND_QUIETLY)
-    set(CYRUS_SASL_ERR_MSG "Could not find the CyrusSASL Library. Looked for headers")
-    set(CYRUS_SASL_ERR_MSG "${CYRUS_SASL_ERR_MSG} in ${CYRUS_SASL_SEARCH_HEADER_PATHS}, and for libs")
-    set(CYRUS_SASL_ERR_MSG "${CYRUS_SASL_ERR_MSG} in ${CYRUS_SASL_SEARCH_LIB_PATH} as well as system paths")
+    set(CYRUS_SASL_ERR_MSG "Could not find the CyrusSASL Library.")
+    set(CYRUS_SASL_ERR_MSG "Install libsasl2-dev or cyrus-sasl-devel packages to build.")
     if (CyrusSASL_FIND_REQUIRED)
       message(FATAL_ERROR "${CYRUS_SASL_ERR_MSG}")
     else (CyrusSASL_FIND_REQUIRED)
@@ -65,8 +48,6 @@ endif ()
 
 mark_as_advanced(
   CYRUS_SASL_INCLUDE_DIR
-  CYRUS_SASL_STATIC_LIB
-  CYRUS_SASL_PLAIN_DYN_LIB
-  CYRUS_SASL_ANON_DYN_LIB
-  CYRUS_SASL_LIBS
+  CYRUS_SASL_SHARED_LIB
+  CYRUS_SASL_LIB_DEPS
 )

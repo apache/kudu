@@ -6,11 +6,11 @@ PROTOBUF_GENERATE_CPP(CONSENSUS_PROTO_SRCS CONSENSUS_PROTO_HDRS
   PROTO_FILES consensus.proto)
 
 add_library(consensus_proto ${CONSENSUS_PROTO_SRCS} ${CONSENSUS_PROTO_HDRS})
-add_dependencies(consensus_proto kudu_common_proto)
-add_dependencies(consensus_proto cfile_proto)
-add_dependencies(consensus_proto metadata_proto)
-add_dependencies(consensus_proto tserver_proto)
-add_dependencies(consensus_proto tablet_proto)
+target_link_libraries(consensus_proto tserver_proto protobuf)
+target_link_libraries(consensus_proto kudu_common_proto)
+target_link_libraries(consensus_proto cfile_proto)
+target_link_libraries(consensus_proto metadata_proto)
+target_link_libraries(consensus_proto tablet_proto)
 
 PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -18,7 +18,7 @@ PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
   PROTO_FILES log.proto)
 
 add_library(log_proto ${LOG_PROTO_SRCS} ${LOG_PROTO_HDRS})
-add_dependencies(log_proto consensus_proto)
+target_link_libraries(log_proto consensus_proto)
 
 set(LOG_SRCS
   log_util.cc
@@ -28,11 +28,11 @@ set(LOG_SRCS
 )
 
 add_library(log ${LOG_SRCS} ${LOG_PROTO_SRCS})
-target_link_libraries(log gutil)
+target_link_libraries(log server_common gutil)
 target_link_libraries(log kudu_common)
 target_link_libraries(log consensus_proto)
-target_link_libraries(log log_proto)
-target_link_libraries(log server)
+target_link_libraries(log log_proto metadata_proto)
+
 
 set(CONSENSUS_SRCS
   consensus.cc
@@ -41,19 +41,13 @@ set(CONSENSUS_SRCS
   local_consensus.cc
 )
 
-add_library(consensus ${CONSENSUS_SRCS} ${CONSENSUS_PROTO_SRCS})
-target_link_libraries(consensus cfile)
+add_library(consensus ${CONSENSUS_SRCS})
 target_link_libraries(consensus consensus_proto)
-target_link_libraries(consensus krpc)
 target_link_libraries(consensus kudu_common)
 target_link_libraries(consensus log)
-target_link_libraries(consensus server)
-target_link_libraries(consensus tserver_proto)
-target_link_libraries(consensus tserver_service_proto)
 
 set(KUDU_TEST_LINK_LIBS
   log
-  server
   consensus
   tserver
   cfile
@@ -70,7 +64,6 @@ ADD_KUDU_TEST(opid_anchor_registry-test)
 #Tools
 set(KUDU_LINK_LIBS
   log
-  server
   consensus
   tserver
   kudu_common

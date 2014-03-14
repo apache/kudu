@@ -6,10 +6,10 @@ The following dependencies are necessary to build kudu:
 - boost >= 1.41 and < 1.53 including boost::thread and the boost PIC module
 - cmake 2.8.7
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
+- libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)
 
 Earlier versions of each of these may work, but have not recently
 been tested.
-
 
 Download and build thirdparty dependencies
 ------------------------------------------------------------

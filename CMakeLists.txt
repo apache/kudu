@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
+include(CMakeParseArguments)
 
 ############################################################
 # Compiler flags
@@ -176,13 +177,37 @@ enable_testing()
 ############################################################
 # Dependencies
 ############################################################
-set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
+function(ADD_THIRDPARTY_LIB LIB_NAME)
+  set(options)
+  set(one_value_args SHARED_LIB STATIC_LIB)
+  set(multi_value_args DEPS)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
+  if(ARG_UNPARSED_ARGUMENTS)
+    message(SEND_ERROR "Error: unrecognized arguments: ${ARG_UNPARSED_ARGUMENTS}")
+  endif()
+
+  if((KUDU_STATIC_LINK AND ARG_STATIC_LIB) OR (NOT ARG_SHARED_LIB))
+    if(NOT ARG_STATIC_LIB)
+      message(FATAL_ERROR "No static or shared library provided for ${LIB_NAME}")
+    endif()
+    add_library(${LIB_NAME} STATIC IMPORTED)
+    set_target_properties(${LIB_NAME} PROPERTIES IMPORTED_LOCATION "${ARG_STATIC_LIB}")
+    message("Added static library dependency ${LIB_NAME}: ${ARG_STATIC_LIB}")
+  else()
+    add_library(${LIB_NAME} SHARED IMPORTED)
+    set_target_properties(${LIB_NAME} PROPERTIES IMPORTED_LOCATION "${ARG_SHARED_LIB}")
+    message("Added shared library dependency ${LIB_NAME}: ${ARG_SHARED_LIB}")
+  endif()
+
+  if(ARG_DEPS)
+    set_target_properties(${LIB_NAME} PROPERTIES IMPORTED_LINK_INTERFACE_LIBRARIES "${ARG_DEPS}")
+  endif()
+endfunction()
 
 # Look in thirdparty/installed before anywhere else for system dependencies.
+set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
 set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX})
-
 set(LIBS ${LIBS} -lrt)
-set(TEST_ONLY_LIBS)
 
 ## Boost
 ### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
@@ -199,85 +224,78 @@ set(LIBS ${LIBS} ${Boost_LIBRARIES})
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
 include_directories(SYSTEM ${CYRUS_SASL_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(cyrus_sasl
+  SHARED_LIB "${CYRUS_SASL_SHARED_LIB}"
+  DEPS "${CYRUS_SASL_LIB_DEPS}")
 
 ## GLog
 find_package(GLog REQUIRED)
 include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
-if ("${KUDU_STATIC_LINK}")
-  add_library(glog STATIC IMPORTED)
-  set_target_properties(glog PROPERTIES IMPORTED_LOCATION "${GLOG_STATIC_LIB}")
-else()
-  add_library(glog SHARED IMPORTED)
-  set_target_properties(glog PROPERTIES IMPORTED_LOCATION "${GLOG_LIBS}/libglog.so")
-endif()
+ADD_THIRDPARTY_LIB(glog
+  STATIC_LIB "${GLOG_STATIC_LIB}"
+  SHARED_LIB "${GLOG_LIBS}/libglog.so")
 set(LIBS ${LIBS} glog)
 
 ## GFlags
 find_package(GFlags REQUIRED)
 include_directories(SYSTEM ${GFLAGS_INCLUDE_DIR})
-if ("${KUDU_STATIC_LINK}")
-  add_library(gflags STATIC IMPORTED)
-  set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_STATIC_LIB}")
-else()
-  add_library(gflags SHARED IMPORTED)
-  set_target_properties(gflags PROPERTIES IMPORTED_LOCATION "${GFLAGS_LIBS}/libgflags.so")
-endif()
+ADD_THIRDPARTY_LIB(gflags
+  STATIC_LIB "${GFLAGS_STATIC_LIB}"
+  SHARED_LIB "${GFLAGS_LIBS}/libgflags.so")
 set(LIBS ${LIBS} gflags)
 
 ## GTest
 find_package(GTest REQUIRED)
 include_directories(SYSTEM ${GTEST_INCLUDE_DIR})
-add_library(gtest STATIC IMPORTED)
-set_target_properties(gtest PROPERTIES IMPORTED_LOCATION "${GTEST_LIBRARY}")
-#set(LIBS ${LIBS} gtest) # gtest not needed for non-tests.
-set(KUDU_MIN_TEST_LIBS kudu_test_main)
+ADD_THIRDPARTY_LIB(gtest STATIC_LIB "${GTEST_LIBRARY}")
 
 ## Protobuf
 set(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
 find_package( Protobuf REQUIRED )
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
-if ("${KUDU_STATIC_LINK}")
-  add_library(protobuf STATIC IMPORTED)
-  set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_STATIC_LIBRARY}")
-else()
-  add_library(protobuf SHARED IMPORTED)
-  set_target_properties(protobuf PROPERTIES IMPORTED_LOCATION "${PROTOBUF_LIBRARY}")
-endif()
-set(LIBS ${LIBS} protobuf)
+ADD_THIRDPARTY_LIB(protobuf
+  STATIC_LIB "${PROTOBUF_STATIC_LIBRARY}"
+  SHARED_LIB "${PROTOBUF_LIBRARY}")
+ADD_THIRDPARTY_LIB(protoc
+  STATIC_LIB "${PROTOBUF_PROTOC_STATIC_LIBRARY}"
+  SHARED_LIB "${PROTOBUF_PROTOC_LIBRARY}"
+  DEPS protobuf)
+
 find_package(KRPC REQUIRED)
 
 ## Snappy
 find_package(Snappy REQUIRED)
 include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
-if (${KUDU_STATIC_LINK})
-  set(LIBS ${LIBS} ${SNAPPY_STATIC_LIB})
-else()
-  set(LIBS ${LIBS} ${SNAPPY_LIBS}/libsnappy.so)
-endif()
+ADD_THIRDPARTY_LIB(snappy
+  STATIC_LIB "${SNAPPY_STATIC_LIB}"
+  SHARED_LIB "${SNAPPY_LIBS}/libsnappy.so")
 
 ## Libev
 find_package(LibEv REQUIRED)
 include_directories(SYSTEM ${LIBEV_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(libev
+  STATIC_LIB "${LIBEV_STATIC_LIB}"
+  SHARED_LIB "${LIBEV_SHARED_LIB}")
 
 ## LZ4
 find_package(Lz4 REQUIRED)
 include_directories(SYSTEM ${LZ4_INCLUDE_DIR})
-set(LIBS ${LIBS} ${LZ4_STATIC_LIB})
+ADD_THIRDPARTY_LIB(lz4 STATIC_LIB "${LZ4_STATIC_LIB}")
 
 ## ZLib
 find_package(Zlib REQUIRED)
 include_directories(SYSTEM ${ZLIB_INCLUDE_DIR})
-if (${KUDU_STATIC_LINK})
-  set(LIBS ${LIBS} ${ZLIB_STATIC_LIB})
-else()
-  set(LIBS ${LIBS} ${ZLIB_LIBS}/libz.so)
-endif()
+ADD_THIRDPARTY_LIB(zlib
+  STATIC_LIB "${ZLIB_STATIC_LIB}"
+  SHARED_LIB "${ZLIB_LIBS}/libz.so")
 
 ## Squeasel
 find_package(Squeasel REQUIRED)
 include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
-set(LIBS ${LIBS} ${SQUEASEL_STATIC_LIB})
+ADD_THIRDPARTY_LIB(squeasel
+  STATIC_LIB "${SQUEASEL_STATIC_LIB}"
+  DEPS "${SQUEASEL_STATIC_LIB_DEPS}")
 
 ## Google PerfTools
 find_package( GPerf REQUIRED )
@@ -287,15 +305,15 @@ endif()
 
 ## curl
 find_package(CURL REQUIRED)
-set(TEST_ONLY_LIBS ${TEST_ONLY_LIBS} ${CURL_LIBRARIES})
-
 
 ############################################################
 # Linker setup
 ############################################################
 set(KUDU_DEP_LIBS ${LIBS})
-set(KUDU_LINK_LIBS client master master_proto tserver tserver_proto tablet server krpc cfile kudu_common kudu_util gutil ${LIBS})
-set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_LINK_LIBS} ${TEST_ONLY_LIBS} ${KUDU_MIN_TEST_LIBS})
+set(KUDU_LINK_LIBS client master master_proto tserver tserver_proto tablet server_common server_process
+    krpc cfile kudu_common kudu_util gutil ${LIBS})
+set(KUDU_MIN_TEST_LIBS kudu_test_main)
+set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
 
 ############################################################
 # "make ctags" target

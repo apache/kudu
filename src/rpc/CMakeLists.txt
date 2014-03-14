@@ -37,17 +37,17 @@ target_link_libraries(krpc
   rpc_header_proto
   kudu_util
   gutil
-  ${LIBEV_STATIC_LIB}
-  ${CYRUS_SASL_LIBS}
+  libev
+  cyrus_sasl
 )
 set(RPC_LIBS krpc)
 
 ### RPC generator tool
 add_executable(protoc-gen-krpc protoc-gen-krpc.cc)
 target_link_libraries(protoc-gen-krpc
-    ${KUDU_DEP_LIBS} 
-    ${PROTOBUF_PROTOC_LIBRARY} 
-    ${PROTOBUF_LIBRARY} 
+    ${KUDU_DEP_LIBS}
+    protoc
+    protobuf
     gutil
     kudu_util)
 
@@ -64,6 +64,9 @@ KRPC_GENERATE(RTEST_KRPC_SRCS RTEST_KRPC_HDRS
   PROTO_FILES rtest.proto)
 add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
 target_link_libraries(rtest_krpc rtest_diff_package_proto)
+
+# Tests
+set(KUDU_TEST_LINK_LIBS krpc ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS})
 
 ADD_KUDU_TEST(rpc-test)
 target_link_libraries(rpc-test rtest_krpc  krpc)

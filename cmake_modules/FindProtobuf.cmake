@@ -143,7 +143,7 @@ if(WIN32)
     set(CMAKE_FIND_LIBRARY_PREFIXES "lib" "")
 endif()
 
-find_library(PROTOBUF_LIBRARY NAMES protobuf
+find_library(PROTOBUF_LIBRARY NAMES libprotobuf.so
              DOC "The Google Protocol Buffers Library"
              PATHS ${THIRDPARTY_PREFIX}/lib
              NO_DEFAULT_PATH
@@ -153,11 +153,16 @@ find_file(PROTOBUF_STATIC_LIBRARY libprotobuf.a
          PATHS ${THIRDPARTY_PREFIX}/lib
          NO_DEFAULT_PATH)
 
-find_library(PROTOBUF_PROTOC_LIBRARY NAMES protoc
+find_library(PROTOBUF_PROTOC_LIBRARY NAMES libprotoc.so
              DOC "The Google Protocol Buffers Compiler Library"
              PATHS ${THIRDPARTY_PREFIX}/lib
              NO_DEFAULT_PATH
 )
+find_library(PROTOBUF_PROTOC_STATIC_LIBRARY NAMES libprotoc.a
+         DOC "Static version of the Google Protocol Buffers Compiler Library"
+         PATHS ${THIRDPARTY_PREFIX}/lib
+         NO_DEFAULT_PATH)
+
 find_program(PROTOBUF_PROTOC_EXECUTABLE NAMES protoc
              DOC "The Google Protocol Buffers Compiler"
              PATHS ${THIRDPARTY_PREFIX}/bin
@@ -168,6 +173,7 @@ mark_as_advanced(PROTOBUF_INCLUDE_DIR
                  PROTOBUF_LIBRARY
                  PROTOBUF_STATIC_LIBRARY
                  PROTOBUF_PROTOC_LIBRARY
+                 PROTOBUF_PROTOC_STATIC_LIBRARY
                  PROTOBUF_PROTOC_EXECUTABLE)
 
 # Restore original find library prefixes

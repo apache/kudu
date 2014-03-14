@@ -6,8 +6,8 @@ set(INTEGRATION_TESTS_SRCS
 )
 
 add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
-set(INTEGRATION_TESTS_DEPS kudu_common tserver master kudu-tablet_server kudu-master)
-add_dependencies(integration-tests ${INTEGRATION_TESTS_DEPS})
+target_link_libraries(integration-tests tserver master client)
+add_dependencies(integration-tests kudu-tablet_server kudu-master)
 
 # Tests
 set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_TEST_LINK_LIBS})
