@@ -57,8 +57,6 @@ class AlterTableTest : public KuduTest {
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
-
-
     // Add a tablet, make sure it reports itself.
     CreateTabletForTesting(cluster_->mini_master(), kTableName, schema_, &tablet_id_);
 
@@ -120,6 +118,26 @@ class AlterTableTest : public KuduTest {
     return Status::TimedOut("AlterTable not completed within the timeout");
   }
 
+  Status AddNewU32Column(const string& table_name,
+                         const string& column_name,
+                         uint32_t default_value) {
+    return AddNewU32Column(table_name, column_name, default_value, 50);
+  }
+
+  Status AddNewU32Column(const string& table_name,
+                         const string& column_name,
+                         uint32_t default_value,
+                         int wait_attempts) {
+    AlterTableRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+
+    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::ADD_COLUMN);
+    ColumnSchemaToPB(ColumnSchema(column_name, UINT32, true, &default_value),
+                     step->mutable_add_column()->mutable_schema());
+    return AlterTable(req, wait_attempts);
+  }
+
  protected:
   static const char *kTableName;
 
@@ -137,19 +155,7 @@ const char *AlterTableTest::kTableName = "fake-table";
 // TODO: create and verify multiple tablets when the client will support that.
 TEST_F(AlterTableTest, TestTabletReports) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
-
-  {
-    AlterTableRequestPB req;
-    req.mutable_table()->set_table_name(kTableName);
-
-    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
-    step->set_type(AlterTableRequestPB::ADD_COLUMN);
-    uint32_t x = 10;
-    ColumnSchemaToPB(ColumnSchema("new-u32", UINT32, true, &x),
-                     step->mutable_add_column()->mutable_schema());
-    ASSERT_STATUS_OK(AlterTable(req));
-  }
-
+  ASSERT_STATUS_OK(AddNewU32Column(kTableName, "new-u32", 0));
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
@@ -158,14 +164,7 @@ TEST_F(AlterTableTest, TestAddExistingColumn) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
   {
-    AlterTableRequestPB req;
-    req.mutable_table()->set_table_name(kTableName);
-
-    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
-    step->set_type(AlterTableRequestPB::ADD_COLUMN);
-    ColumnSchemaToPB(ColumnSchema("c1", UINT32, true),
-                     step->mutable_add_column()->mutable_schema());
-    Status s = AlterTable(req);
+    Status s = AddNewU32Column(kTableName, "c1", 0);
     ASSERT_TRUE(s.IsAlreadyPresent());
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: c1");
   }
@@ -194,8 +193,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
 }
 
 // Verify that the alter command is sent to the TS down on restart
-// Disabled: doesn't pass reliably due to bugs. See KUDU-163.
-TEST_F(AlterTableTest, DISABLED_TestAlterOnRestart) {
+TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
   // Shutdown the TS
@@ -203,15 +201,7 @@ TEST_F(AlterTableTest, DISABLED_TestAlterOnRestart) {
 
   // Send the Alter request
   {
-    AlterTableRequestPB req;
-    req.mutable_table()->set_table_name(kTableName);
-
-    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
-    step->set_type(AlterTableRequestPB::ADD_COLUMN);
-    uint32_t x = 10;
-    ColumnSchemaToPB(ColumnSchema("new-u32", UINT32, true, &x),
-                     step->mutable_add_column()->mutable_schema());
-    Status s = AlterTable(req, 20);
+    Status s = AddNewU32Column(kTableName, "new-u32", 10, 20);
     ASSERT_TRUE(s.IsTimedOut());
   }
 
@@ -233,17 +223,35 @@ TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
 
   // Send the Alter request
   {
-    AlterTableRequestPB req;
-    req.mutable_table()->set_table_name(kTableName);
-
-    AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
-    step->set_type(AlterTableRequestPB::ADD_COLUMN);
-    uint32_t x = 10;
-    ColumnSchemaToPB(ColumnSchema("new-u32", UINT32, true, &x),
-                     step->mutable_add_column()->mutable_schema());
-    Status s = AlterTable(req, 1);
+    Status s = AddNewU32Column(kTableName, "new-u32", 10, 20);
     ASSERT_TRUE(s.IsTimedOut());
   }
+}
+
+// Disabled: doesn't pass due to bugs. See KUDU-173
+// log.cc:279] Check failed: state_ == kLogWriting (2 vs. 1)
+TEST_F(AlterTableTest, DISABLED_TestRestartTSDuringAlter) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping slow test";
+    return;
+  }
+
+  ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
+
+  Status s = AddNewU32Column(kTableName, "new-u32", 10, 0);
+  ASSERT_TRUE(s.IsTimedOut());
+
+  // Restart the TS while alter is running
+  for (int i = 0; i < 3; i++) {
+    usleep(500);
+    cluster_->mini_tablet_server(0)->Shutdown();
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Start());
+    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->WaitStarted());
+  }
+
+  // Wait for the new schema
+  ASSERT_STATUS_OK(WaitAlterTableCompletion(kTableName, 50));
+  ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
 } // namespace kudu

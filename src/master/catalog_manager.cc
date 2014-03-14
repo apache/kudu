@@ -958,6 +958,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
 
   // Check if the tablet requires an "alter table" call
+  bool alter_requested = false;
   if (report.has_schema_version() &&
       table_lock.data().pb.version() != report.schema_version()) {
     if (report.schema_version() > table_lock.data().pb.version()) {
@@ -974,6 +975,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
             << " got " << report.schema_version();
     }
     SendAlterTabletRequest(tablet, ts_desc);
+    alter_requested = true;
   }
 
   table_lock.Unlock();
@@ -990,8 +992,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
 
   if (tablet_lock.data().IsQuorumLeader(ts_desc)) {
-    if (report.has_schema_version()) {
-      tablet->set_reported_schema_version(report.schema_version());
+    if (report.has_schema_version() && !alter_requested) {
+      HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
     }
 
     if (!tablet_lock.data().is_running() && report.state() == metadata::RUNNING) {
@@ -1284,10 +1286,8 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
       VLOG(1) << "TS " << permanent_uuid_ << " alter complete on tablet " << tablet_->ToString();
     }
 
-    if (state_ == kStateComplete &&
-        tablet_->set_reported_schema_version(schema_version_) &&
-        !tablet_->table()->IsAlterInProgress(schema_version_)) {
-      MarkAlterTableAsComplete();
+    if (state_ == kStateComplete) {
+      master_->catalog_manager()->HandleTabletSchemaVersionReport(tablet_.get(), schema_version_);
     } else {
       VLOG(1) << "Still waiting for other tablets to finish ALTER";
     }
@@ -1311,37 +1311,6 @@ class AsyncAlterTable : public AsyncTabletRequestTask {
     VLOG(1) << "Send alter table request to " << permanent_uuid_
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
-  }
-
-  // Mark that every tablet has the latest schema.
-  // TODO: we could batch the IO onto a background thread.
-  //       but this is following the current HandleReportedTablet()
-  void MarkAlterTableAsComplete() {
-    TableInfo *table = tablet_->table();
-    TableMetadataLock l(table, TableMetadataLock::WRITE);
-    if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::kTableStateAltering) {
-      return;
-    }
-
-    uint32_t current_version = l.data().pb.version();
-    if (schema_version_ != current_version && !table->IsAlterInProgress(current_version)) {
-      return;
-    }
-
-    // Update the state from altering to running and remove the last schema
-    DCHECK(l.mutable_data()->pb.has_fully_applied_schema());
-    l.mutable_data()->pb.mutable_fully_applied_schema()->Clear();
-    l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
-                                Substitute("Current schema version=$0", current_version));
-
-    Status s = master_->catalog_manager()->sys_tables()->UpdateTable(table);
-    if (!s.ok()) {
-      // panic-mode: abort the master
-      LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();
-    }
-
-    l.Commit();
-    LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
   }
 
   uint32_t schema_version_;
@@ -1505,6 +1474,40 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   VLOG(1) << "Replaced tablet " << tablet->tablet_id()
           << " with " << replacement->tablet_id()
           << " (Table " << tablet->table()->ToString() << ")";
+}
+
+// TODO: we could batch the IO onto a background thread.
+//       but this is following the current HandleReportedTablet()
+void CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint32_t version) {
+  // Update the schema version if it's the latest
+  tablet->set_reported_schema_version(version);
+
+  // Verify if it's the last tablet report, and the alter completed.
+  TableInfo *table = tablet->table();
+  TableMetadataLock l(table, TableMetadataLock::WRITE);
+  if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::kTableStateAltering) {
+    return;
+  }
+
+  uint32_t current_version = l.data().pb.version();
+  if (version != current_version && !table->IsAlterInProgress(current_version)) {
+    return;
+  }
+
+  // Update the state from altering to running and remove the last schema
+  DCHECK(l.mutable_data()->pb.has_fully_applied_schema());
+  l.mutable_data()->pb.mutable_fully_applied_schema()->Clear();
+  l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
+                              Substitute("Current schema version=$0", current_version));
+
+  Status s = master_->catalog_manager()->sys_tables()->UpdateTable(table);
+  if (!s.ok()) {
+    // panic-mode: abort the master
+    LOG(FATAL) << "An error occurred while updating sys-tables: " << s.ToString();
+  }
+
+  l.Commit();
+  LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
 }
 
 void CatalogManager::ProcessPendingAssignments(

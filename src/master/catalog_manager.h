@@ -428,7 +428,8 @@ class CatalogManager {
                                    DeferredAssignmentActions* deferred);
   void HandleAssignCreatingTablet(TabletInfo* tablet,
                                   DeferredAssignmentActions* deferred);
-
+  void HandleTabletSchemaVersionReport(TabletInfo *tablet,
+                                       uint32_t version);
 
   // Send the create tablet requests to the selected peers of the quorums.
   // The creation is async, and at the moment there is no error checking on the
@@ -487,6 +488,10 @@ class CatalogManager {
   // like the assignment and cleaner
   friend class CatalogManagerBgTasks;
   gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
+
+  // Async operations are accessing some private methods
+  // (TODO: this stuff should be deferred and done in the background thread)
+  friend class AsyncAlterTable;
 
   DISALLOW_COPY_AND_ASSIGN(CatalogManager);
 };
