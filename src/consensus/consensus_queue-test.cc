@@ -6,7 +6,7 @@
 #include <gflags/gflags.h>
 
 #include "consensus/consensus_queue.h"
-#include "util/countdown_latch.h"
+#include "consensus/consensus-test-util.h"
 #include "util/test_macros.h"
 
 DECLARE_int32(consensus_max_batch_size_bytes);
@@ -15,40 +15,7 @@ DECLARE_int32(consensus_entry_cache_size_soft_limit_mb);
 namespace kudu {
 namespace consensus {
 
-class TestOperationStatus : public OperationStatus {
- public:
-  explicit TestOperationStatus(int n_majority)
-      : n_majority_(n_majority),
-        latch_(n_majority) {
-  }
-  void AckPeer(const string& uuid) {
-    latch_.CountDown();
-  }
-  bool IsDone() {
-    return latch_.count() >= n_majority_;
-  }
-  void Wait() {
-    latch_.Wait();
-  }
-
- private:
-  int n_majority_;
-  CountDownLatch latch_;
-
-};
-
 static const char* kPeerUuid = "a";
-
-void AppendReplicateMessagesToQueue(PeerMessageQueue* queue, int count, int n_majority = 1) {
-  for (int i = 0; i < count; i++) {
-    gscoped_ptr<OperationPB> op(new OperationPB);
-    OpId* id = op->mutable_id();
-    id->set_term(i / 7);
-    id->set_index(i % 7);
-    scoped_refptr<OperationStatus> status(new TestOperationStatus(n_majority));
-    queue->AppendOperation(op.Pass(), status);
-  }
-}
 
 // This tests that the peer gets all the messages in the buffer
 TEST(TestConsensusRequestQueue, TestGetAllMessages) {
