@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/stl_util.h"
+#include "util/countdown_latch.h"
 #include "util/metrics.h"
 #include "util/test_util.h"
 #include "util/thread_util.h"
@@ -22,11 +23,13 @@ namespace rpc {
 class MultiThreadedRpcTest : public RpcTestBase {
  public:
   // Make a single RPC call.
-  void SingleCall(Sockaddr server_addr, const char* method_name, Status* result) {
+  void SingleCall(Sockaddr server_addr, const char* method_name,
+                  Status* result, CountDownLatch* latch) {
     LOG(INFO) << "Connecting to " << server_addr.ToString();
     shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
     Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
     *result = DoTestSyncCall(p, method_name);
+    latch->CountDown();
   }
 
   // Make RPC calls until we see a failure.
@@ -167,32 +170,35 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   worker_pool_.reset(new BogusServicePool(server_messenger_, impl.Pass()));
   ASSERT_STATUS_OK(worker_pool_->Init(n_worker_threads_));
 
-  gscoped_ptr<boost::thread> thread1, thread2, thread3;
-  Status status1, status2, status3;
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::SingleCall, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status1), &thread1));
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::SingleCall, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status2), &thread2));
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::SingleCall, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status3), &thread3));
+  gscoped_ptr<boost::thread> threads[3];
+  Status status[3];
+  CountDownLatch latch(1);
+  for (int i = 0; i < 3; i++) {
+    ASSERT_STATUS_OK(StartThread(
+                       boost::bind(
+                         &MultiThreadedRpcTest::SingleCall, this, server_addr,
+                         GenericCalculatorService::kAddMethodName, &status[i], &latch),
+                       &threads[i]));;
+  }
 
-  // One should immediately fail due to backpressure. We provide a little bit of time for that.
-  usleep(100000); // 100ms
+  // One should immediately fail due to backpressure. The latch is only initialized
+  // to wait for the first of three threads to finish.
+  latch.Wait();
 
   // The rest would time out after 10 sec, but we help them along.
   server_messenger_->Shutdown();
 
-  ASSERT_STATUS_OK(ThreadJoiner(thread1.get(), "thread1").warn_every_ms(500).Join());
-  ASSERT_STATUS_OK(ThreadJoiner(thread2.get(), "thread2").warn_every_ms(500).Join());
-  ASSERT_STATUS_OK(ThreadJoiner(thread3.get(), "thread3").warn_every_ms(500).Join());
+  for (int i = 0; i < 3; i++) {
+    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get(), "thread1").warn_every_ms(500).Join());
+  }
 
   // Verify that one error was due to backpressure.
   int errors_backpressure = 0;
   int errors_shutdown = 0;
 
-  IncrementBackpressureOrShutdown(&status1, &errors_backpressure, &errors_shutdown);
-  IncrementBackpressureOrShutdown(&status2, &errors_backpressure, &errors_shutdown);
-  IncrementBackpressureOrShutdown(&status3, &errors_backpressure, &errors_shutdown);
+  for (int i = 0; i < 3; i++) {
+    IncrementBackpressureOrShutdown(&status[i], &errors_backpressure, &errors_shutdown);
+  }
 
   ASSERT_EQ(1, errors_backpressure);
   ASSERT_EQ(2, errors_shutdown);
