@@ -162,10 +162,13 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   InboundCall *c = call.release();
 
+  TRACE_TO(c->trace(), "Inserting onto call queue");
   // Queue message on service queue
   QueueStatus s = service_queue_.Put(c);
   if (PREDICT_TRUE(s == QUEUE_SUCCESS)) {
-    TRACE_TO(c->trace(), "Inserted onto call queue");
+    // NB: do not do anything with 'c' after it is successfully queued --
+    // a service thread may have already dequeued it, processed it, and
+    // responded by this point, in which case the pointer would be invalid.
     return;
   }
 
