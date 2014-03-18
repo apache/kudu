@@ -306,32 +306,24 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
   // Security issue to display this. Commented out but left for debugging purposes.
   //DVLOG(3) << "SASL server: Client token: " << request.token();
 
-  // Hack to work around anonymous plugin compatibility issue.
-  // TODO: Remove need for this hack on RHEL 6
-  int result = SASL_OK;
   const char* server_out = NULL;
   uint32_t server_out_len = 0;
-  if (helper_.IsAnonymousEnabled() && auth.mechanism() == kSaslMechAnonymous) {
-    DVLOG(3) << "SASL Server: Anonymous enabled. Short-circuiting anonymous negotiation";
-    negotiated_mech_ = SaslMechanism::ANONYMOUS;
-  } else {
-    DVLOG(5) << "SASL Server: Calling sasl_server_start()";
-    result = sasl_server_start(
-        sasl_conn_.get(),         // The SASL connection context created by init()
-        auth.mechanism().c_str(), // The mechanism requested by the client.
-        request.token().c_str(),  // Optional string the client gave us.
-        request.token().length(), // Client string len.
-        &server_out,              // The output of the SASL library, might not be NULL terminated
-        &server_out_len);         // Output len.
+  DVLOG(5) << "SASL Server: Calling sasl_server_start()";
+  int result = sasl_server_start(
+      sasl_conn_.get(),         // The SASL connection context created by init()
+      auth.mechanism().c_str(), // The mechanism requested by the client.
+      request.token().c_str(),  // Optional string the client gave us.
+      request.token().length(), // Client string len.
+      &server_out,              // The output of the SASL library, might not be NULL terminated
+      &server_out_len);         // Output len.
 
-    if (PREDICT_FALSE(result != SASL_OK && result != SASL_CONTINUE)) {
-      Status s = Status::NotAuthorized("Unable to negotiate SASL connection",
-          SaslErrDesc(result, sasl_conn_.get()));
-      RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-      return s;
-    }
-    negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
+  if (PREDICT_FALSE(result != SASL_OK && result != SASL_CONTINUE)) {
+    Status s = Status::NotAuthorized("Unable to negotiate SASL connection",
+        SaslErrDesc(result, sasl_conn_.get()));
+    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
   }
+  negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
 
   // We have a valid mechanism match
   if (result == SASL_OK) {
