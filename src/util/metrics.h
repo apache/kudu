@@ -451,8 +451,13 @@ class HistogramPrototype {
 
 class Histogram : public Metric {
  public:
-  void Increment(uint64_t value);
-  void IncrementBy(uint64_t value, uint64_t amount);
+  // Increment the histogram for the given value.
+  // 'value' must be non-negative.
+  void Increment(int64_t value);
+
+  // Increment the histogram for the given value by the given amount.
+  // 'value' and 'amount' must be non-negative.
+  void IncrementBy(int64_t value, int64_t amount);
 
   const std::string& description() const { return description_; }
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }

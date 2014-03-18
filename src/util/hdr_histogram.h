@@ -63,8 +63,8 @@ class HdrHistogram {
   static bool IsValidNumSignificantDigits(int num_significant_digits);
 
   // Record new data.
-  void Increment(uint64_t value);
-  void IncrementBy(uint64_t value, uint64_t count);
+  void Increment(int64_t value);
+  void IncrementBy(int64_t value, int64_t count);
 
   // Fetch configuration params.
   uint64_t highest_trackable_value() const { return highest_trackable_value_; }

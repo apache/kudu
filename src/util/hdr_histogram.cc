@@ -120,11 +120,14 @@ void HdrHistogram::Init() {
   counts_.reset(new Atomic64[counts_array_length_]());  // value-initialized
 }
 
-void HdrHistogram::Increment(uint64_t value) {
+void HdrHistogram::Increment(int64_t value) {
   IncrementBy(value, 1);
 }
 
-void HdrHistogram::IncrementBy(uint64_t value, uint64_t count) {
+void HdrHistogram::IncrementBy(int64_t value, int64_t count) {
+  DCHECK_GE(value, 0);
+  DCHECK_GE(count, 0);
+
   // Dissect the value into bucket and sub-bucket parts, and derive index into
   // counts array:
   int bucket_index = BucketIndex(value);

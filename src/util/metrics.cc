@@ -395,11 +395,11 @@ Histogram::Histogram(const HistogramPrototype& proto)
     description_(proto.description()) {
 }
 
-void Histogram::Increment(uint64_t value) {
+void Histogram::Increment(int64_t value) {
   histogram_->Increment(value);
 }
 
-void Histogram::IncrementBy(uint64_t value, uint64_t amount) {
+void Histogram::IncrementBy(int64_t value, int64_t amount) {
   histogram_->IncrementBy(value, amount);
 }
 
