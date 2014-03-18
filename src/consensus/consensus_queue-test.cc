@@ -20,7 +20,7 @@ static const char* kPeerUuid = "a";
 // This tests that the peer gets all the messages in the buffer
 TEST(TestConsensusRequestQueue, TestGetAllMessages) {
   PeerMessageQueue queue;
-  AppendReplicateMessagesToQueue(&queue, 100);
+  AppendReplicateMessagesToQueue(&queue, 1, 100);
 
   ASSERT_STATUS_OK(queue.TrackPeer(kPeerUuid));
 
@@ -43,21 +43,26 @@ TEST(TestConsensusRequestQueue, TestGetAllMessages) {
   request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
  }
 
-// Tests that the queue is able to track a peer after the beginning
+// Tests that the queue is able to track a peer when it starts tracking a peer
+// after the initial message in the queue. In particular this creates a queue
+// with several messages and then starts to track a peer whose watermark
+// falls in the middle of the current messages in the queue.
 TEST(TestConsensusRequestQueue, TestStartTrackingAfterStart) {
   PeerMessageQueue queue;
-  AppendReplicateMessagesToQueue(&queue, 100);
+  AppendReplicateMessagesToQueue(&queue, 1, 100);
 
+  // Start to track the peer after the queue has some messages in it
+  // at a point that is halfway through the current messages in the queue.
   OpId first_msg;
   first_msg.set_term(7);
-  first_msg.set_index(0);
+  first_msg.set_index(1);
   ASSERT_STATUS_OK(queue.TrackPeer(kPeerUuid, first_msg));
 
   ConsensusRequestPB request;
   ConsensusStatusPB status;
   bool more_pending = false;
 
-  // ask for a request. with normal flags this should get the whole queue.
+  // ask for a request, with normal flags this should get half the queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 50);
   status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
@@ -88,7 +93,7 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   FLAGS_consensus_max_batch_size_bytes = 9 * page_size_estimator.ByteSize();
 
   PeerMessageQueue queue;
-  AppendReplicateMessagesToQueue(&queue, 100);
+  AppendReplicateMessagesToQueue(&queue, 1, 100);
 
   queue.TrackPeer(kPeerUuid);
   bool more_pending = false;
@@ -119,7 +124,8 @@ TEST(TestConsensusRequestQueue, TestBufferTrimsWhenMessagesAreNotNeeded) {
 
   PeerMessageQueue queue;
   // this amount of messages will overflow the buffer by about 2Kb
-  AppendReplicateMessagesToQueue(&queue, 200000);
+  AppendReplicateMessagesToQueue(&queue, 1, 200000, 0);
+
   // test that even though we've overflown the buffer it still keeps within bounds
   ASSERT_LE(queue.GetQueuedOperationsSizeBytesForTests(), 1 * 1024 * 1024);
 }

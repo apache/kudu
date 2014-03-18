@@ -39,10 +39,12 @@ set(CONSENSUS_SRCS
   consensus.cc
   consensus_base.cc
   consensus_queue.cc
+  consensus_peers.cc
   local_consensus.cc
 )
 
 add_library(consensus ${CONSENSUS_SRCS})
+target_link_libraries(consensus tserver_service_proto)
 target_link_libraries(consensus consensus_proto)
 target_link_libraries(consensus kudu_common)
 target_link_libraries(consensus log)
@@ -58,6 +60,7 @@ set(KUDU_TEST_LINK_LIBS
 )
 
 ADD_KUDU_TEST(consensus_queue-test)
+ADD_KUDU_TEST(consensus_peers-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)

@@ -38,16 +38,19 @@ class OperationStatus : public base::RefCountedThreadSafe<OperationStatus> {
  public:
 
   // Peers call this to ack they have executed the operation.
-  virtual void AckPeer(const string& uuid) = 0;
+  virtual void AckPeer(const std::string& uuid) = 0;
 
   // Whether enough/the right peers have ack'd the operation. This might
   // change depending on the operation type or quorum composition.
   // E.g. replication messages need to be ack'd by a majority while commit
   // messages must be at least ack'd by the leader.
-  virtual bool IsDone() = 0;
+  virtual bool IsDone() const = 0;
 
   // Callers can use this to block until IsDone() becomes true.
   virtual void Wait() = 0;
+
+  std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
+
   virtual ~OperationStatus() {}
 };
 
@@ -77,10 +80,6 @@ struct PeerMessage {
 // per peer. If we want to have more than one outstanding RPC we need to
 // modify it.
 class PeerMessageQueue {
-
-  // An ordered map that serves as the buffer for the pending messages.
-  typedef std::map<OpId, PeerMessage*> MessagesBuffer;
-
  public:
 
   PeerMessageQueue();
@@ -96,15 +95,15 @@ class PeerMessageQueue {
                          scoped_refptr<OperationStatus> status);
 
   // Makes the queue tracked this peer. Used for 'empty' peers.
-  Status TrackPeer(const string& uuid);
+  Status TrackPeer(const std::string& uuid);
 
   // Makes the queue track this peer. Used when the peer already has
   // state.
-  Status TrackPeer(const string& uuid, const OpId& replicated_watermark);
+  Status TrackPeer(const std::string& uuid, const OpId& replicated_watermark);
 
   // Makes the queue untrack the peer.
   // Requires that the peer was being tracked.
-  void UntrackPeer(const string& uuid);
+  void UntrackPeer(const std::string& uuid);
 
   // Assembles a request for a quorum peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
@@ -117,12 +116,12 @@ class PeerMessageQueue {
   // instance of ConsensusRequestPB to RequestForPeer(): the buffer will
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
-  Status RequestForPeer(const string& uuid,
+  Status RequestForPeer(const std::string& uuid,
                         ConsensusRequestPB* request);
 
   // Updates the request queue with the latest status of a peer, returns
   // whether this peer has more requests pending.
-  void ResponseFromPeer(const string& uuid,
+  void ResponseFromPeer(const std::string& uuid,
                         const ConsensusStatusPB& status,
                         bool* more_pending);
 
@@ -130,9 +129,14 @@ class PeerMessageQueue {
     return queued_ops_size_bytes_;
   }
 
+  void DumpToLog();
+
   ~PeerMessageQueue();
 
  private:
+  // An ordered map that serves as the buffer for the pending messages.
+  typedef std::map<OpId, PeerMessage*> MessagesBuffer;
+  typedef std::tr1::unordered_map<std::string, OpId*> WatermarksMap;
 
   Status TrimBuffer();
 
@@ -152,7 +156,7 @@ class PeerMessageQueue {
 
   // The current watermark for each peer.
   // The queue owns the OpIds.
-  std::tr1::unordered_map<string, OpId*> watermarks_;
+  WatermarksMap watermarks_;
   MessagesBuffer messages_;
   mutable simple_spinlock queue_lock_;
   OpId low_watermark_;

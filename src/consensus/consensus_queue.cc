@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <gutil/map-util.h>
 #include <gutil/stl_util.h>
@@ -182,6 +183,21 @@ Status PeerMessageQueue::TrimBuffer() {
     delete msg;
   }
   return Status::OK();
+}
+
+void PeerMessageQueue::DumpToLog() {
+  boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  LOG(INFO)<< "Watermarks:";
+  BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
+    LOG(INFO) << "Peer: " << entry.first << " Watermark: "
+      << (entry.second != NULL ? entry.second->ShortDebugString() : "NULL");
+  }
+  LOG(INFO)<< "Messages:";
+  BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
+    LOG(INFO) << "Message: " << entry.first.ShortDebugString()
+      << " Status: " << entry.second->status_->ToString()
+      << " Op: " << entry.second->op_->ShortDebugString();
+  }
 }
 
 PeerMessageQueue::~PeerMessageQueue() {
