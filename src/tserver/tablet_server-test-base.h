@@ -315,7 +315,8 @@ class TabletServerTest : public KuduTest {
       for (int i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
           rb_row.Reset(&block, i);
-          ASSERT_LT(count, expected.size());
+          VLOG(1) << "Verified row " << schema.DebugRow(rb_row);
+          ASSERT_LT(count, expected.size()) << "Got more rows than expected!";
           ASSERT_EQ(expected[count].first, *schema.ExtractColumnFromRow<UINT32>(rb_row, 0));
           ASSERT_EQ(expected[count].second, *schema.ExtractColumnFromRow<UINT32>(rb_row, 1));
           count++;

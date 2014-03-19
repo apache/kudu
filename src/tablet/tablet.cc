@@ -533,6 +533,12 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 
   shared_ptr<DiskRowSet> new_rowset;
   shared_ptr<RowSetMetadata> meta;
+
+  // TODO: isn't there a race here? If someone delta-flushed this DRS right here,
+  // we'd end up not having included the newly flushed delta file in our compaction,
+  // and then the "SetDMSFrom" down below would carry over an empty DRS.
+  // I also wonder whether the rowset IDs are right.
+
   {
     // TODO: make this more fine-grained if possible. Will make sense
     // to re-touch this area once integrated with maintenance ops
@@ -568,7 +574,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
     RETURN_NOT_OK(new_rowset->AlterSchema(schema_));
 
     AtomicSwapRowSets(input_rowsets, new_rowsets);
-    return FlushMetadata(new_rowsets, boost::assign::list_of(meta), kNoMrsFlushed);
+    return FlushMetadata(input_rowsets, boost::assign::list_of(meta), kNoMrsFlushed);
   }
 }
 

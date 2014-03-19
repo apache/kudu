@@ -116,6 +116,7 @@ Status TabletMetadata::LoadFromDisk() {
   CHECK_EQ(state_, kNotLoadedYet);
   TabletSuperBlockPB superblock;
   RETURN_NOT_OK(ReadSuperBlock(&superblock));
+  VLOG(1) << "Loaded tablet superblock " << superblock.DebugString();
 
   // Verify that the tablet id matches with the one in the protobuf
   if (superblock.oid() != master_block_.tablet_id()) {

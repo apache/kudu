@@ -597,6 +597,37 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
 
 }
 
+TEST_F(TabletServerTest, TestRecoveryAfterMajorDeltaCompaction) {
+
+  // Flush a DRS with 1 rows.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1)));
+  ASSERT_NO_FATAL_FAILURE();
+
+  // Update it, flush deltas.
+  ASSERT_NO_FATAL_FAILURE(UpdateTestRowRemote(0, 1, 2));
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2)));
+  ASSERT_NO_FATAL_FAILURE();
+
+  // Major compact.
+  vector<shared_ptr<tablet::RowSet> > rsets;
+  tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
+  ASSERT_STATUS_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
+                     boost::assign::list_of(1)(2),
+                     rsets[0]));
+
+  // Verify that data is still the same.
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2)));
+  ASSERT_NO_FATAL_FAILURE();
+
+  // Verify that data remains after a restart.
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2)));
+  ASSERT_NO_FATAL_FAILURE();
+}
+
 TEST_F(TabletServerTest, TestScan) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
   InsertTestRowsDirect(0, num_rows);
