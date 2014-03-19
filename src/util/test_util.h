@@ -43,10 +43,10 @@ class KuduTest : public ::testing::Test {
     CHECK_OK(env_->GetTestDirectory(&test_dir_));
 
     test_dir_ += strings::Substitute(
-      "/$0.$1.$2",
+      "/$0.$1.$2-$3",
       StringReplace(test_info->test_case_name(), "/", "_", true).c_str(),
       StringReplace(test_info->name(), "/", "_", true).c_str(),
-      env_->NowMicros());
+      env_->NowMicros(), getpid());
 
     ASSERT_STATUS_OK(env_->CreateDir(test_dir_));
   }
