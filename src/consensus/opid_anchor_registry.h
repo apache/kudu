@@ -8,6 +8,7 @@
 #include "consensus/consensus.pb.h"
 #include "consensus/log_util.h"
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "util/locks.h"
 #include "util/status.h"
 
@@ -21,7 +22,7 @@ class OpIdAnchor;
 // the WAL that reference as-yet unflushed in-memory operations.
 //
 // This class is thread-safe.
-class OpIdAnchorRegistry {
+class OpIdAnchorRegistry : public base::RefCountedThreadSafe<OpIdAnchorRegistry> {
  public:
   OpIdAnchorRegistry();
 
@@ -53,6 +54,9 @@ class OpIdAnchorRegistry {
   size_t GetAnchorCountForTests() const;
 
  private:
+  friend class base::RefCountedThreadSafe<OpIdAnchorRegistry>;
+  ~OpIdAnchorRegistry();
+
   typedef std::multimap<consensus::OpId, OpIdAnchor*, OpIdCompareFunctor> OpIdMultiMap;
 
   // Register a new anchor after taking the lock. See Register().
@@ -102,7 +106,7 @@ class OpIdMinAnchorer {
   Status ReleaseAnchor();
 
  private:
-  OpIdAnchorRegistry* const registry_;
+  scoped_refptr<OpIdAnchorRegistry> const registry_;
   const std::string owner_;
   OpIdAnchor anchor_;
   consensus::OpId minimum_op_id_;

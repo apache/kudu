@@ -29,7 +29,7 @@ class TestDeltaMemStore : public KuduTest {
   TestDeltaMemStore()
     : op_id_(log::MaximumOpId()),
       schema_(CreateSchema()),
-      dms_(new DeltaMemStore(0, schema_, &opid_anchor_registry_)),
+      dms_(new DeltaMemStore(0, schema_, new log::OpIdAnchorRegistry())),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
   }
@@ -82,7 +82,6 @@ class TestDeltaMemStore : public KuduTest {
   static const int kStringColumn = 1;
   static const int kIntColumn = 2;
 
-  log::OpIdAnchorRegistry opid_anchor_registry_;
   consensus::OpId op_id_;
 
   const Schema schema_;

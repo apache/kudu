@@ -91,7 +91,7 @@ Status SysTable::CreateNew(FsManager *fs_manager) {
 Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
-  gscoped_ptr<OpIdAnchorRegistry> opid_anchor_registry;
+  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry;
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
@@ -111,7 +111,7 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            tablet->metadata()->Quorum().peers(0),
                                            log.Pass(),
-                                           opid_anchor_registry.Pass()),
+                                           opid_anchor_registry.get()),
                         "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()),

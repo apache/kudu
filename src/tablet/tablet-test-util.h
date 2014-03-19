@@ -24,7 +24,7 @@ using std::vector;
 class KuduTabletTest : public KuduTest {
  public:
   explicit KuduTabletTest(const Schema& schema)
-    : schema_(schema) {
+  : schema_(schema) {
   }
 
   virtual void SetUp() {
@@ -57,7 +57,8 @@ class KuduTabletTest : public KuduTest {
                                                             &metadata));
     scoped_refptr<server::Clock> clock(
         server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
-    tablet_.reset(new Tablet(metadata.Pass(), clock, NULL, &registry_));
+    tablet_.reset(new Tablet(metadata.Pass(), clock, NULL,
+                             new log::OpIdAnchorRegistry()));
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
@@ -82,7 +83,6 @@ class KuduTabletTest : public KuduTest {
  protected:
   const Schema schema_;
   QuorumPB quorum_;
-  log::OpIdAnchorRegistry registry_;
   gscoped_ptr<Tablet> tablet_;
   gscoped_ptr<FsManager> fs_manager_;
 };

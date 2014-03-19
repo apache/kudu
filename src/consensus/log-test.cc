@@ -148,7 +148,7 @@ class LogTest : public LogTestBase {
 
   void CreateAndRegisterNewAnchor(const OpId& op_id, vector<OpIdAnchor*>* anchors) {
     anchors->push_back(new OpIdAnchor());
-    opid_anchor_registry_.Register(op_id, CURRENT_TEST_NAME(), anchors->back());
+    opid_anchor_registry_->Register(op_id, CURRENT_TEST_NAME(), anchors->back());
   }
 
   // Create a series of NO_OP entries in the log.
@@ -290,13 +290,13 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // GC() preserved the first file it finds (searching backwards) with initial
   // OpId strictly earlier than the earliest anchored OpId, plus all following
   // log segments (by sequence number, ascending).
-  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[0]));
-  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[1]));
+  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
+  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
   ASSERT_STATUS_OK(log_->GC());
   ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
 
   // Release and GC another segment.
-  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[2]));
+  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
   ASSERT_STATUS_OK(log_->GC());
   ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
 
@@ -305,7 +305,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 
   // We skip the first three, since we unregistered them above.
   for (int i = 3; i < kNumTotalSegments; i++) {
-    ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[i]));
+    ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
   }
 }
 
@@ -343,7 +343,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
   // Now release the "old" anchors and GC them.
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[i]));
+    ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
   }
   ASSERT_STATUS_OK(log_->GC());
 
@@ -356,7 +356,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   CheckRightNumberOfSegmentFiles(2);
 
   // Unregister the final anchor.
-  ASSERT_STATUS_OK(opid_anchor_registry_.Unregister(anchors[3]));
+  ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[3]));
 }
 
 // Helper to measure the performance of the log.

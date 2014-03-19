@@ -18,6 +18,9 @@ using strings::Substitute;
 
 OpIdAnchorRegistry::OpIdAnchorRegistry() {
 }
+OpIdAnchorRegistry::~OpIdAnchorRegistry() {
+  CHECK(op_ids_.empty());
+}
 
 void OpIdAnchorRegistry::Register(const OpId& op_id,
                                   const string& owner,

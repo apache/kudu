@@ -601,26 +601,8 @@ TEST_F(TabletServerTest, TestScan) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
   InsertTestRowsDirect(0, num_rows);
 
-  ScanRequestPB req;
   ScanResponsePB resp;
-  RpcController rpc;
-
-  // Set up a new request with no predicates, all columns.
-  const Schema& projection = schema_;
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
-  ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
-  req.set_call_seq_id(0);
-  req.set_batch_size_bytes(0); // so it won't return data right away
-
-  // Send the call
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-    ASSERT_TRUE(resp.has_more_results());
-  }
+  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp));
 
   // Ensure that the scanner ID came back and got inserted into the
   // ScannerManager map.
@@ -634,7 +616,7 @@ TEST_F(TabletServerTest, TestScan) {
   // Drain all the rows from the scanner.
   vector<string> results;
   ASSERT_NO_FATAL_FAILURE(
-    DrainScannerToStrings(resp.scanner_id(), projection, &results));
+    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(num_rows, results.size());
 
   for (int i = 0; i < num_rows; i++) {
@@ -648,6 +630,18 @@ TEST_F(TabletServerTest, TestScan) {
     SharedScanner junk;
     ASSERT_FALSE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
   }
+}
+
+
+TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {
+  InsertTestRowsDirect(0, 1);
+
+  ScanResponsePB resp;
+  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp));
+
+  // Scanner is now open. The test will now shut down the TS with the scanner still
+  // out there. Due to KUDU-161 this used to fail, since the scanner (and thus the MRS)
+  // stayed open longer than the anchor registry
 }
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {

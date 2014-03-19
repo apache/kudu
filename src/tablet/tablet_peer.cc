@@ -46,8 +46,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const QuorumPeerPB& quorum_peer,
                         gscoped_ptr<Log> log,
-                        gscoped_ptr<OpIdAnchorRegistry> opid_anchor_registry) {
-
+                        OpIdAnchorRegistry* opid_anchor_registry) {
 
   {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
@@ -56,7 +55,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     clock_ = clock;
     quorum_peer_ = quorum_peer;
     log_.reset(log.release());
-    opid_anchor_registry_.reset(opid_anchor_registry.release());
+    opid_anchor_registry_ = opid_anchor_registry;
     // TODO support different consensus implementations (possibly by adding
     // a TabletPeerOptions).
     consensus_.reset(new LocalConsensus(ConsensusOptions()));

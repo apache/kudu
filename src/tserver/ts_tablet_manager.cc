@@ -269,7 +269,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
 
   shared_ptr<Tablet> tablet;
   gscoped_ptr<Log> log;
-  gscoped_ptr<OpIdAnchorRegistry> opid_anchor_registry;
+  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry;
 
   LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
   TRACE("Bootstrapping tablet");
@@ -302,7 +302,7 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
                            scoped_refptr<server::Clock>(server_->clock()),
                            quorum_peer,
                            log.Pass(),
-                           opid_anchor_registry.Pass());
+                           opid_anchor_registry.get());
     if (!s.ok()) {
       tablet_peer->SetFailed(s);
       return;

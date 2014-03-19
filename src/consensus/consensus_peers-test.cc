@@ -76,7 +76,7 @@ class ConsensusPeersTest : public KuduTest {
   PeerMessageQueue message_queue_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
-  OpIdAnchorRegistry opid_anchor_registry_;
+  gscoped_ptr<Log> log_;
   vector<scoped_refptr<OperationStatus> > statuses_;
   TestPeerProxyFactory peer_proxy_factory_;
 };
@@ -90,7 +90,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
                      kTabletId,
-                     &opid_anchor_registry_,
+                     new OpIdAnchorRegistry(),
                      NULL,
                      &log));
   gscoped_ptr<Peer> local_peer;
@@ -136,7 +136,7 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
                      kTabletId,
-                     &opid_anchor_registry_,
+                     new OpIdAnchorRegistry(),
                      NULL,
                      &log));
   // Create a set of peers

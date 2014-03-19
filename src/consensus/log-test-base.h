@@ -52,6 +52,10 @@ class LogTestBase : public KuduTest {
 
   typedef pair<int, int> DeltaId;
 
+  LogTestBase()
+    : opid_anchor_registry_(new OpIdAnchorRegistry()) {
+  }
+
   virtual void SetUp() {
     KuduTest::SetUp();
     current_id_ = 0;
@@ -68,7 +72,7 @@ class LogTestBase : public KuduTest {
     CHECK_OK(Log::Open(options_,
                        fs_manager_.get(),
                        kTestTablet,
-                       &opid_anchor_registry_,
+                       opid_anchor_registry_.get(),
                        NULL,
                        &log_));
   }
@@ -108,7 +112,7 @@ class LogTestBase : public KuduTest {
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
   vector<LogEntryPB* > entries_;
-  OpIdAnchorRegistry opid_anchor_registry_;
+  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
 };
 
 

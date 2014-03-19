@@ -276,7 +276,7 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(rowset_meta_, &opid_anchor_registry_, rowset);
+    return DiskRowSet::Open(rowset_meta_, new log::OpIdAnchorRegistry(), rowset);
   }
 
   void FormatKey(int i, char *buf, size_t buf_len) {
@@ -285,7 +285,6 @@ class TestRowSet : public KuduRowSetTest {
 
   size_t n_rows_;
   consensus::OpId op_id_; // Generally a "fake" OpId for these tests.
-  log::OpIdAnchorRegistry opid_anchor_registry_;
   MvccManager mvcc_;
 };
 

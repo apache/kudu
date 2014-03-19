@@ -349,6 +349,30 @@ class TabletServerTest : public KuduTest {
     }
   }
 
+  // Open a new scanner which scans all of the columns in the table.
+  void OpenScannerWithAllColumns(ScanResponsePB* resp) {
+    ScanRequestPB req;
+    RpcController rpc;
+
+    // Set up a new request with no predicates, all columns.
+    const Schema& projection = schema_;
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    req.set_call_seq_id(0);
+    req.set_batch_size_bytes(0); // so it won't return data right away
+
+    // Send the call
+    {
+      SCOPED_TRACE(req.DebugString());
+      ASSERT_STATUS_OK(proxy_->Scan(req, resp, &rpc));
+      SCOPED_TRACE(resp->DebugString());
+      ASSERT_FALSE(resp->has_error());
+      ASSERT_TRUE(resp->has_more_results());
+    }
+  }
+
+
   Schema schema_;
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;

@@ -6,8 +6,9 @@
 #include <string>
 #include <vector>
 
-#include "gutil/spinlock.h"
 #include "consensus/log_util.h"
+#include "gutil/ref_counted.h"
+#include "gutil/spinlock.h"
 #include "util/task_executor.h"
 #include "util/blocking_queue.h"
 
@@ -262,7 +263,7 @@ class Log {
 
   State state_;
   SegmentAllocationState allocation_state_;
-  OpIdAnchorRegistry* opid_anchor_registry_;
+  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<LogMetrics> metrics_;

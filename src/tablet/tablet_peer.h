@@ -35,11 +35,12 @@ class TabletPeer {
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
+  // Takes a reference to 'opid_anchor_registry'
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const metadata::QuorumPeerPB& quorum_peer,
               gscoped_ptr<log::Log> log,
-              gscoped_ptr<log::OpIdAnchorRegistry> opid_anchor_registry);
+              log::OpIdAnchorRegistry* opid_anchor_registry);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
@@ -124,7 +125,7 @@ class TabletPeer {
  private:
   metadata::TabletStatePB state_;
   Status error_;
-  gscoped_ptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
+  scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
