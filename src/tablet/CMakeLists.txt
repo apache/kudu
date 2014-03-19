@@ -18,6 +18,7 @@ set(TABLET_SRCS
   diskrowset.cc
   lock_manager.cc
   memrowset.cc
+  multi_column_writer.cc
   mutation.cc
   mvcc.cc
   rowset.cc

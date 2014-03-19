@@ -18,6 +18,7 @@
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
 #include "tablet/delta_compaction.h"
+#include "tablet/multi_column_writer.h"
 #include "util/status.h"
 
 namespace kudu { namespace tablet {
@@ -45,55 +46,9 @@ DiskRowSetWriter::DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
 {}
 
 Status DiskRowSetWriter::Open() {
-  CHECK(cfile_writers_.empty());
-
-  // Open columns.
-  for (int i = 0; i < schema().num_columns(); i++) {
-    const ColumnSchema &col = schema().column(i);
-
-    // TODO: allow options to be configured, perhaps on a per-column
-    // basis as part of the schema. For now use defaults.
-    //
-    // Also would be able to set encoding here, or do something smart
-    // to figure out the encoding on the fly.
-    cfile::WriterOptions opts;
-
-    // Index all columns by ordinal position, so we can match up
-    // the corresponding rows.
-    opts.write_posidx = true;
-
-    /// Set the column storage attributes.
-    opts.storage_attributes = col.attributes();
-
-    // If the schema has a single PK and this is the PK col
-    if (i == 0 && schema().num_key_columns() == 1) {
-      opts.write_validx = true;
-    }
-
-    // Open file for write.
-    shared_ptr<WritableFile> data_writer;
-    Status s = rowset_metadata_->NewColumnDataBlock(i, &data_writer);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to open output file for column " << col.ToString() << ": "
-                   << s.ToString();
-      return s;
-    }
-    // Create the CFile writer itself.
-    gscoped_ptr<cfile::Writer> writer(new cfile::Writer(
-                                        opts,
-                                        col.type_info()->type(),
-                                        col.is_nullable(),
-                                        data_writer));
-    s = writer->Start();
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to Start() writer for column " << col.ToString() << ": "
-                   << s.ToString();
-      return s;
-    }
-
-    LOG(INFO) << "Opened CFile writer for column " << col.ToString();
-    cfile_writers_.push_back(writer.release());
-  }
+  col_writer_.reset(new MultiColumnWriter(rowset_metadata_->fs_manager(),
+                                          &schema()));
+  RETURN_NOT_OK(col_writer_->Open());
 
   // Open bloom filter.
   RETURN_NOT_OK(InitBloomFileWriter());
@@ -109,7 +64,7 @@ Status DiskRowSetWriter::Open() {
 Status DiskRowSetWriter::InitBloomFileWriter() {
   shared_ptr<WritableFile> data_writer;
   RETURN_NOT_OK(rowset_metadata_->NewBloomDataBlock(&data_writer));
-  bloom_writer_.reset(new BloomFileWriter(data_writer, bloom_sizing_));
+  bloom_writer_.reset(new cfile::BloomFileWriter(data_writer, bloom_sizing_));
   return bloom_writer_->Start();
 }
 
@@ -154,17 +109,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
   }
 
   // Write the batch to each of the columns
-  for (int i = 0; i < schema().num_columns(); i++) {
-    // TODO: need to look at the selection vector here and only append the
-    // selected rows?
-    ColumnBlock column = block.column_block(i);
-    if (column.is_nullable()) {
-      RETURN_NOT_OK(cfile_writers_[i]->AppendNullableEntries(column.null_bitmap(),
-          column.data(), column.nrows()));
-    } else {
-      RETURN_NOT_OK(cfile_writers_[i]->AppendEntries(column.data(), column.nrows()));
-    }
-  }
+  RETURN_NOT_OK(col_writer_->AppendBlock(block));
 
 #ifndef NDEBUG
     faststring prev_key;
@@ -210,15 +155,12 @@ Status DiskRowSetWriter::Finish() {
                                         Slice(last_encoded_key_));
   }
 
-  for (int i = 0; i < schema().num_columns(); i++) {
-    cfile::Writer *writer = cfile_writers_[i];
-    Status s = writer->Finish();
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to Finish writer for column " <<
-        schema().column(i).ToString() << ": " << s.ToString();
-      return s;
-    }
-  }
+  // Finish writing the columns themselves.
+  RETURN_NOT_OK(col_writer_->Finish());
+
+  // Put the column data blocks in the metadata.
+  rowset_metadata_->SetColumnDataBlocks(col_writer_->FlushedBlocks());
+
 
   if (ad_hoc_index_writer_ != NULL) {
     // Finish ad hoc index.
@@ -242,13 +184,14 @@ Status DiskRowSetWriter::Finish() {
 }
 
 cfile::Writer *DiskRowSetWriter::key_index_writer() {
-  return ad_hoc_index_writer_ ? ad_hoc_index_writer_.get() : cfile_writers_[0];
+  return ad_hoc_index_writer_ ? ad_hoc_index_writer_.get() : col_writer_->writer_for_col_idx(0);
 }
 
 size_t DiskRowSetWriter::written_size() const {
   size_t size = 0;
-  BOOST_FOREACH(const cfile::Writer *writer, cfile_writers_) {
-    size += writer->written_size();
+
+  if (col_writer_) {
+    size += col_writer_->written_size();
   }
 
   if (bloom_writer_) {
@@ -263,7 +206,6 @@ size_t DiskRowSetWriter::written_size() const {
 }
 
 DiskRowSetWriter::~DiskRowSetWriter() {
-  STLDeleteElements(&cfile_writers_);
 }
 
 RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata,

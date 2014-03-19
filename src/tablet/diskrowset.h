@@ -91,7 +91,7 @@ class DiskRowSetWriter {
 
   bool finished_;
   rowid_t written_count_;
-  std::vector<cfile::Writer *> cfile_writers_;
+  gscoped_ptr<MultiColumnWriter> col_writer_;
   gscoped_ptr<cfile::BloomFileWriter> bloom_writer_;
   gscoped_ptr<cfile::Writer> ad_hoc_index_writer_;
 

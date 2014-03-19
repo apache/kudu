@@ -561,6 +561,12 @@ const string RowSetMetadata::ToString() const {
   return "RowSet(" + boost::lexical_cast<string>(id_) + ")";
 }
 
+void RowSetMetadata::SetColumnDataBlocks(const std::vector<BlockId>& blocks) {
+  CHECK_EQ(blocks.size(), schema_.num_columns());
+  boost::lock_guard<LockType> l(deltas_lock_);
+  column_blocks_ = blocks;
+}
+
 Status RowSetMetadata::AtomicRemoveRedoDeltaDataBlocks(size_t start_idx, size_t end_idx,
                                                        const vector<int64_t>& ids) {
   boost::lock_guard<LockType> l(deltas_lock_);

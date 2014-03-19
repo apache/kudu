@@ -335,6 +335,8 @@ class RowSetMetadata {
     return Status::OK();
   }
 
+  void SetColumnDataBlocks(const std::vector<BlockId>& blocks);
+
   Status OpenColumnDataBlock(size_t col_idx, shared_ptr<RandomAccessFile> *reader, uint64_t *size) {
     DCHECK_LT(col_idx, column_blocks_.size());
     return OpenDataBlock(column_blocks_[col_idx], reader, size);
@@ -392,6 +394,8 @@ class RowSetMetadata {
         fs_manager()->BlockExists(undo_delta_blocks_[idx].second);
   }
 
+  FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
+
  private:
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
     : initted_(false),
@@ -414,8 +418,6 @@ class RowSetMetadata {
                                              DeltaBlockVector* delta_blocks);
 
   Status InitFromPB(const RowSetDataPB& pb);
-
-  FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
 
   void ToProtobuf(RowSetDataPB *pb);
 
