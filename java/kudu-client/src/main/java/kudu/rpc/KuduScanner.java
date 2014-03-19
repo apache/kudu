@@ -26,7 +26,6 @@
  */
 package kudu.rpc;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
@@ -708,7 +707,7 @@ public final class KuduScanner {
               column, i);
         }
       }
-      startKey = encoder.toByteArray();
+      startKey = encoder.extractByteArray();
       assert startKey.length > 0;
       // reset the row result for querying
       this.rowResult.advancePointerTo(-1);

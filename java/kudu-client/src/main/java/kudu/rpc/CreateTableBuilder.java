@@ -2,6 +2,7 @@
 package kudu.rpc;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.master.Master;
 
 /**
@@ -13,10 +14,11 @@ public class CreateTableBuilder {
 
   /**
    * Add a split point for the table. The table in the end will have splits + 1 tablets.
-   * @param key split point
+   * @param builder Key builder for the split point. The builder is reset as part of this
+   *                operation and can be reused.
    */
-  public void addSplitKey(String key) {
-    pb.addPreSplitKeys(ByteString.copyFromUtf8(key));
+  public void addSplitKey(KeyBuilder builder) {
+    pb.addPreSplitKeys(ZeroCopyLiteralByteString.wrap(builder.extractByteArray()));
   }
 
   /**

@@ -19,31 +19,40 @@ class KeyEncoder {
     this.schema = schema;
   }
 
-  void addKey(byte[] value, int offset, int size, ColumnSchema column, int columnIndex) {
+  /**
+   * Utility method for slow paths like table pre-splitting
+   * @param value Key component to add
+   * @param columnIndex Which column we're adding it to
+   */
+  void addKey(byte[] value, int columnIndex) {
+    addKey(value, 0 , value.length, schema.getColumn(columnIndex), columnIndex);
+  }
+
+  void addKey(byte[] bytes, int offset, int size, ColumnSchema column, int columnIndex) {
     assert columnIndex == this.lastIndex + 1 && columnIndex < this.schema.getKeysCount();
     switch (column.getType()) {
       case UINT8:
       case UINT16:
       case UINT32:
       case UINT64:
-        buf.write(value, offset, size);
+        buf.write(bytes, offset, size);
         break;
       case INT8:
       case INT16:
       case INT32:
       case INT64:
         // picking the last byte because little endian
-        byte lastByte = value[offset + (size - 1)];
+        byte lastByte = bytes[offset + (size - 1)];
         lastByte = Bytes.xorLeftMostBit(lastByte);
         if (size > 1) {
-          buf.write(value, offset, size - 1);
+          buf.write(bytes, offset, size - 1);
         }
         buf.write(lastByte);
         break;
       case STRING:
         // if this is the last component, just add
         if (columnIndex + 1 == this.schema.getKeysCount()) {
-          buf.write(value, offset, size);
+          buf.write(bytes, offset, size);
         } else {
           // If we're a middle component of a composite key, we need to add a \x00
           // at the end in order to separate this component from the next one. However,
@@ -51,8 +60,8 @@ class KeyEncoder {
           // \x00 in it would compare wrong, so we have to instead add \x00\x00, and
           // encode \x00 as \x00\x01. -- key_encoder.h
           for (int b = offset; b < (offset + size); b++) {
-            buf.write(value[b]);
-            if (value[b] == 0x00) {
+            buf.write(bytes[b]);
+            if (bytes[b] == 0x00) {
               buf.write(0x01);
             }
           }
@@ -67,8 +76,11 @@ class KeyEncoder {
     this.lastIndex++;
   }
 
-  byte[] toByteArray() {
-    return buf.toByteArray();
+  byte[] extractByteArray() {
+    byte[] bytes = buf.toByteArray();
+    buf.reset();
+    lastIndex = -1;
+    return bytes;
   }
 
 }

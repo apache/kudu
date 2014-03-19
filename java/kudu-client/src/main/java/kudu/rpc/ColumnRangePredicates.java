@@ -51,11 +51,11 @@ class ColumnRangePredicates {
   }
 
   byte[] getStartKey() {
-    return this.startKeyEncoder == null ? null : this.startKeyEncoder.toByteArray();
+    return this.startKeyEncoder == null ? null : this.startKeyEncoder.extractByteArray();
   }
 
   byte[] getEndKey() {
-    return this.endKeyEncoder == null ? null : this.endKeyEncoder.toByteArray();
+    return this.endKeyEncoder == null ? null : this.endKeyEncoder.extractByteArray();
   }
 
 }

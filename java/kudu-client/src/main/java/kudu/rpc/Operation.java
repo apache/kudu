@@ -1,7 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
@@ -14,10 +13,8 @@ import kudu.util.Arena;
 import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
@@ -273,7 +270,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
       }
     }
     // TODO we might want to cache the key
-    return keyEncoder.toByteArray();
+    return keyEncoder.extractByteArray();
   }
 
   /**
