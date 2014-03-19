@@ -45,6 +45,17 @@ public class TestKeyEncoding {
             'r'},
             twoKeyInsertWithNull.key()));
 
+    // The following tests test our assumptions on unsigned data types sorting from KeyEncoder
+    byte four = 4;
+    byte onHundredTwentyFour = -4;
+    four = Bytes.xorLeftMostBit(four);
+    onHundredTwentyFour = Bytes.xorLeftMostBit(onHundredTwentyFour);
+    assertTrue(four < onHundredTwentyFour);
 
+    byte[] threeHundred = Bytes.fromInt(300);
+    byte[] reallyBigNumber = Bytes.fromInt(-300);
+    threeHundred[0] = Bytes.xorLeftMostBit(threeHundred[0]);
+    reallyBigNumber[3] = Bytes.xorLeftMostBit(reallyBigNumber[3]);
+    assertTrue(Bytes.memcmp(threeHundred, reallyBigNumber) < 0);
   }
 }

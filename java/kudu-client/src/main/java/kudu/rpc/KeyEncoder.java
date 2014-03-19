@@ -22,15 +22,23 @@ class KeyEncoder {
   void addKey(byte[] value, int offset, int size, ColumnSchema column, int columnIndex) {
     assert columnIndex == this.lastIndex + 1 && columnIndex < this.schema.getKeysCount();
     switch (column.getType()) {
-      case INT8:
       case UINT8:
-      case INT16:
       case UINT16:
-      case INT32:
       case UINT32:
-      case INT64:
       case UINT64:
         buf.write(value, offset, size);
+        break;
+      case INT8:
+      case INT16:
+      case INT32:
+      case INT64:
+        // picking the last byte because little endian
+        byte lastByte = value[offset + (size - 1)];
+        lastByte = Bytes.xorLeftMostBit(lastByte);
+        if (size > 1) {
+          buf.write(value, offset, size - 1);
+        }
+        buf.write(lastByte);
         break;
       case STRING:
         // if this is the last component, just add

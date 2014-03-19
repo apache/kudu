@@ -27,7 +27,6 @@
 
 package kudu.rpc;
 
-import com.google.common.primitives.UnsignedBytes;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -795,10 +794,7 @@ public class KuduClient {
       // the most common case the table should already be present
       ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(table);
       if (tablets == null) {
-        // TODO this is wrong, we can have signed ints anywhere in the key so we need to compare
-        // TODO individual components with the proper comparator.
-        tablets = new ConcurrentSkipListMap<byte[], RemoteTablet>(UnsignedBytes
-            .lexicographicalComparator());
+        tablets = new ConcurrentSkipListMap<byte[], RemoteTablet>(Bytes.MEMCMP);
         ConcurrentSkipListMap<byte[], RemoteTablet> oldTablets = tabletsCache.putIfAbsent
             (table, tablets);
         if (oldTablets != null) {
@@ -843,7 +839,6 @@ public class KuduClient {
     if (endKey != EMPTY_ARRAY
         // If the stop key is an empty byte array, it means this tablet is the
         // last tablet for this table and this key ought to be in that tablet.
-        // TODO this comparison doesn't take into account signed key components
         && Bytes.memcmp(rowkey, endKey) >= 0) {
       return null;
     }

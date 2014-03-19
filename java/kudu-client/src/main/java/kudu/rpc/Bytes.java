@@ -694,6 +694,17 @@ public final class Bytes {
     return memcmp(a, b);
   }
 
+  /**
+   * This method will apply xor on the left most bit of the provided byte. This is used in Kudu to
+   * have unsigned data types sorting correctly.
+   * @param value byte whose left most bit will be xor'd
+   * @return same byte with xor applied on the left most bit
+   */
+  public static byte xorLeftMostBit(byte value) {
+    value ^= (1 << 7);
+    return value;
+  }
+
   /** A convenient map keyed with a byte array.  */
   public static final class ByteMap<V> extends TreeMap<byte[], V>
       implements Iterable<Map.Entry<byte[], V>> {

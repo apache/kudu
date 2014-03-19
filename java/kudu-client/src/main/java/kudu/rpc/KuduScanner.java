@@ -317,7 +317,6 @@ public final class KuduScanner {
     // We're done if 1) we finished scanning the last tablet, or 2) we're past a configured end
     // row key
     if (tablet.getEndKey() == KuduClient.EMPTY_ARRAY || (this.endKey != KuduClient.EMPTY_ARRAY
-        // TODO wrong comparison due to signs
         && Bytes.memcmp(this.endKey , tablet.getEndKey()) <= 0)) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
