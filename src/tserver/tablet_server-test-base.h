@@ -89,10 +89,8 @@ class TabletServerTest : public KuduTest {
     // Use the hybrid clock for TS tests
     FLAGS_use_hybrid_clock = true;
 
-    // increase the max error tolerance.
-    FLAGS_max_clock_sync_error_usec = 5000000;
-
-    FLAGS_log_force_fsync_all = true;
+    // increase the max error tolerance, for tests, to 10 seconds.
+    FLAGS_max_clock_sync_error_usec = 10000000;
 
     CreateSharedRegion();
     StartTabletServer();
