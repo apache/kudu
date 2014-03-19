@@ -49,9 +49,6 @@ class HybridClock : public Clock {
   // 2 - 'then' is greater than > now.earliest(): need to wait until
   // 'then' - now.earliest()
   //
-  // Note that if 'then' > now.latest() we trim it to now.latest()
-  // as we know the event cannot have happened in the future.
-  //
   // Returns OK if it waited long enough or if no wait was necessary.
   // Returns Status::ServiceUnavailable if the system clock was not
   // synchronized and therefore it couldn't wait out the error.
@@ -72,6 +69,11 @@ class HybridClock : public Clock {
   // Obtains a new Timestamp that embeds both the physical and logical values.
   static Timestamp TimestampFromMicrosecondsAndLogicalValue(uint64_t micros,
                                                             uint64_t logical_value);
+
+  // Creates a new timestamp whose physical time is GetPhysicalValue(original) +
+  // 'micros_to_add' and which retains the same logical value.
+  static Timestamp AddPhysicalTimeToTimestamp(const Timestamp& original,
+                                              int64_t micros_to_add);
 
  private:
   FRIEND_TEST(HybridClockTest, TestWaitUntilAfter_TestCase1);

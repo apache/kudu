@@ -230,7 +230,6 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   uint64_t then_latest_usec = GetPhysicalValue(then_latest);
 
   uint64_t now_earliest_usec = now_usec - error;
-  uint64_t now_latest_usec = now_usec + error;
 
   // Case 1, event happened definitely in the past, return
   if (PREDICT_TRUE(then_latest_usec < now_earliest_usec)) {
@@ -238,11 +237,6 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   }
 
   // Case 2 wait out until we are sure that then_latest has passed
-
-  // Trim then_latest_usec with our current latest as we know the event cannot have
-  // happened in the future. In the worst case (when then_latest_usec >=
-  // now_latest_usec) we wait out 2 * max_error
-  then_latest_usec = std::min(now_latest_usec, then_latest_usec);
 
   // We'll sleep then_latest_usec - now_earliest_usec so that the new
   // nw.earliest is higher than then.latest.
@@ -306,6 +300,14 @@ Timestamp HybridClock::TimestampFromMicrosecondsAndLogicalValue(
     uint64_t logical_value) {
   return Timestamp((micros << kBitsToShift) + logical_value);
 }
+
+Timestamp HybridClock::AddPhysicalTimeToTimestamp(const Timestamp& original,
+                                                  int64_t micros_to_add) {
+  uint64_t new_physical = GetPhysicalValue(original) + micros_to_add;
+  uint64_t old_logical = GetLogicalValue(original);
+  return TimestampFromMicrosecondsAndLogicalValue(new_physical, old_logical);
+}
+
 
 }  // namespace server
 }  // namespace kudu

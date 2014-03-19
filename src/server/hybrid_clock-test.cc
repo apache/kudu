@@ -8,7 +8,6 @@
 #include "util/test_util.h"
 
 DECLARE_int32(max_clock_sync_error_usec);
-DECLARE_bool(require_synchronized_clocks);
 
 namespace kudu {
 namespace server {
@@ -71,15 +70,14 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
   clock_->NowWithError(&past_ts, &max_error);
 
   // make the event 3 * the max. possible error in the past
-  uint64_t past_ts_phys = HybridClock::GetPhysicalValue(past_ts) - 3 * max_error;
-  past_ts = HybridClock::TimestampFromMicroseconds(past_ts_phys);
+  Timestamp past_ts_changed = HybridClock::AddPhysicalTimeToTimestamp(past_ts, -3 * max_error);
 
   MonoTime before = MonoTime::Now(MonoTime::FINE);
   Timestamp current_ts;
   uint64_t current_max_error;
   clock_->NowWithError(&current_ts, &current_max_error);
 
-  Status s = clock_->WaitUntilAfter(past_ts);
+  Status s = clock_->WaitUntilAfter(past_ts_changed);
 
   ASSERT_STATUS_OK(s);
 
@@ -96,42 +94,28 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
 
   // we do no time adjustment, this event should fall right within the possible
   // error interval
-  Timestamp past_ts_latest = clock_->NowLatest();
+  Timestamp past_ts;
+  uint64_t past_max_error;
+  clock_->NowWithError(&past_ts, &past_max_error);
+  Timestamp wait_until = HybridClock::AddPhysicalTimeToTimestamp(past_ts, past_max_error);
 
   MonoTime before = MonoTime::Now(MonoTime::FINE);
   Timestamp current_ts;
-  uint64_t max_error;
-  clock_->NowWithError(&current_ts, &max_error);
-  ASSERT_STATUS_OK(clock_->WaitUntilAfter(past_ts_latest));
-
-  MonoTime after = MonoTime::Now(MonoTime::FINE);
-  MonoDelta delta = after.GetDeltaSince(before);
-  // should have waited 2 * max_error
-  ASSERT_GE(delta.ToMicroseconds(), 2 * max_error);
-}
-
-// Test that we don't wait unbound amounts of time. If an event is too much into
-// the future (outside our possible interval) we trim if to the the latest
-// possible within our interval.
-TEST_F(HybridClockTest, TestWaitUntilAfter_TestIncomingEventIsInTheFuture) {
-
-  Timestamp future_ts;
-  uint64_t max_error;
-  clock_->NowWithError(&future_ts, &max_error);
-
-  // make the event 3* the max. possible error in the future
-  uint64_t future_ts_phys = HybridClock::GetPhysicalValue(future_ts);
-  future_ts_phys = future_ts_phys + 3 * max_error;
-  future_ts = HybridClock::TimestampFromMicroseconds(future_ts_phys);
-
-  MonoTime before = MonoTime::Now(MonoTime::FINE);
-  ASSERT_STATUS_OK(clock_->WaitUntilAfter(future_ts));
+  uint64_t current_max_error;
+  clock_->NowWithError(&current_ts, &current_max_error);
+  ASSERT_STATUS_OK(clock_->WaitUntilAfter(wait_until));
 
   MonoTime after = MonoTime::Now(MonoTime::FINE);
   MonoDelta delta = after.GetDeltaSince(before);
 
-  // Make sure we didn't wait more that 3 times the error.
-  ASSERT_LT(delta.ToMicroseconds(), 3 * max_error);
+  // In the common case current_max_error >= past_max_error and we should have waited
+  // 2 * past_max_error, but if the clock's error is reset between the two reads we might
+  // have waited less time, but always more than 'past_max_error'.
+  if (current_max_error >= past_max_error) {
+    ASSERT_GE(delta.ToMicroseconds(), 2 * past_max_error);
+  } else {
+    ASSERT_GE(delta.ToMicroseconds(), past_max_error);
+  }
 }
 
 }  // namespace server
