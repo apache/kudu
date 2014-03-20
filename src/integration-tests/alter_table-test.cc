@@ -228,9 +228,12 @@ TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
   }
 }
 
-// Disabled: doesn't pass due to bugs. See KUDU-173
-// log.cc:279] Check failed: state_ == kLogWriting (2 vs. 1)
-TEST_F(AlterTableTest, DISABLED_TestRestartTSDuringAlter) {
+// Verify that the new schema is applied/reported even when
+// the TS is going down with the alter operation in progress.
+// On TS restart the master should:
+//  - get the new schema state, and mark the alter as complete
+//  - get the old schema state, and ask the TS again to perform the alter.
+TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;

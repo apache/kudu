@@ -88,7 +88,8 @@ class AlterSchemaTransactionContext : public TransactionContext {
 // Executes the alter schema transaction, leader side.
 class LeaderAlterSchemaTransaction : public LeaderTransaction {
  public:
-  LeaderAlterSchemaTransaction(AlterSchemaTransactionContext* tx_ctx,
+  LeaderAlterSchemaTransaction(TransactionTracker *txn_tracker,
+                               AlterSchemaTransactionContext* tx_ctx,
                                consensus::Consensus* consensus,
                                TaskExecutor* prepare_executor,
                                TaskExecutor* apply_executor,

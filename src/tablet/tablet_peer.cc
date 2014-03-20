@@ -14,6 +14,7 @@
 #include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet.pb.h"
 #include "util/metrics.h"
+#include "util/stopwatch.h"
 #include "util/trace.h"
 
 namespace kudu {
@@ -94,6 +95,13 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
 }
 
 Status TabletPeer::Shutdown() {
+  // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
+  LOG_SLOW_EXECUTION(WARNING, 1000,
+      strings::Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete",
+                          tablet_ != NULL ? tablet_->tablet_id() : "")) {
+    txn_tracker_.WaitForAllToFinish();
+  }
+
   if (consensus_) {
     Status s = consensus_->Shutdown();
     if (!s.ok()) {
@@ -102,14 +110,18 @@ Status TabletPeer::Shutdown() {
   }
   prepare_executor_->Shutdown();
   apply_executor_->Shutdown();
-  VLOG(1) << "TablePeer: " << tablet_->metadata()->oid() << " Shutdown!";
+  if (VLOG_IS_ON(1)) {
+    if (tablet_) {
+      VLOG(1) << "TabletPeer: " << tablet_->metadata()->oid() << " Shutdown!";
+    }
+  }
   return Status::OK();
 }
 
 Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
-  LeaderWriteTransaction* transaction = new LeaderWriteTransaction(tx_ctx,
+  LeaderWriteTransaction* transaction = new LeaderWriteTransaction(&txn_tracker_, tx_ctx,
                                                                    consensus_.get(),
                                                                    prepare_executor_.get(),
                                                                    apply_executor_.get(),
@@ -122,7 +134,7 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderAlterSchemaTransaction* transaction =
-    new LeaderAlterSchemaTransaction(tx_ctx, consensus_.get(),
+    new LeaderAlterSchemaTransaction(&txn_tracker_, tx_ctx, consensus_.get(),
                                      prepare_executor_.get(),
                                      apply_executor_.get(),
                                      prepare_replicate_lock_);
@@ -134,7 +146,7 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderChangeConfigTransaction* transaction =
-      new LeaderChangeConfigTransaction(tx_ctx,
+      new LeaderChangeConfigTransaction(&txn_tracker_, tx_ctx,
                                         consensus_.get(),
                                         prepare_executor_.get(),
                                         apply_executor_.get(),

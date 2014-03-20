@@ -61,7 +61,8 @@ class ChangeConfigTransactionContext : public TransactionContext {
 // Executes the change config transaction, leader side.
 class LeaderChangeConfigTransaction : public LeaderTransaction {
  public:
-  LeaderChangeConfigTransaction(ChangeConfigTransactionContext* tx_ctx,
+  LeaderChangeConfigTransaction(TransactionTracker *txn_tracker,
+                                ChangeConfigTransactionContext* tx_ctx,
                                 consensus::Consensus* consensus,
                                 TaskExecutor* prepare_executor,
                                 TaskExecutor* apply_executor,

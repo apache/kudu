@@ -278,7 +278,8 @@ class WriteTransactionContext : public TransactionContext {
 //
 class LeaderWriteTransaction : public LeaderTransaction {
  public:
-  LeaderWriteTransaction(WriteTransactionContext* tx_ctx,
+  LeaderWriteTransaction(TransactionTracker *txn_tracker,
+                         WriteTransactionContext* tx_ctx,
                          consensus::Consensus* consensus,
                          TaskExecutor* prepare_executor,
                          TaskExecutor* apply_executor,

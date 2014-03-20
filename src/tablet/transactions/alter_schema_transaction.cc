@@ -24,12 +24,14 @@ using tserver::AlterSchemaRequestPB;
 using tserver::AlterSchemaResponsePB;
 using boost::bind;
 
-LeaderAlterSchemaTransaction::LeaderAlterSchemaTransaction(AlterSchemaTransactionContext* tx_ctx,
+LeaderAlterSchemaTransaction::LeaderAlterSchemaTransaction(TransactionTracker *txn_tracker,
+                                               AlterSchemaTransactionContext* tx_ctx,
                                                consensus::Consensus* consensus,
                                                TaskExecutor* prepare_executor,
                                                TaskExecutor* apply_executor,
                                                simple_spinlock& prepare_replicate_lock)
-: LeaderTransaction(consensus,
+: LeaderTransaction(txn_tracker,
+                    consensus,
                     prepare_executor,
                     apply_executor,
                     prepare_replicate_lock),

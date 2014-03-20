@@ -313,4 +313,20 @@ scoped_refptr<T> make_scoped_refptr(T* t) {
   return scoped_refptr<T>(t);
 }
 
+// equal_to and hash implementations for templated scoped_refptrs suitable for
+// use with STL unordered_* containers.
+template <class T>
+struct ScopedRefPtrEqualToFunctor {
+  bool operator()(const scoped_refptr<T>& x, const scoped_refptr<T>& y) const {
+    return x.get() == y.get();
+  }
+};
+
+template <class T>
+struct ScopedRefPtrHashFunctor {
+  size_t operator()(const scoped_refptr<T>& p) const {
+    return reinterpret_cast<size_t>(p.get());
+  }
+};
+
 #endif  // BASE_MEMORY_REF_COUNTED_H_

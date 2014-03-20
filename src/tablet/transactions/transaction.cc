@@ -6,6 +6,7 @@
 
 #include "consensus/consensus.h"
 #include "rpc/rpc_context.h"
+#include "tablet/transactions/transaction_tracker.h"
 #include "util/task_executor.h"
 #include "util/trace.h"
 
@@ -32,15 +33,18 @@ Transaction::Transaction(TaskExecutor* prepare_executor,
   apply_executor_(apply_executor) {
 }
 
-LeaderTransaction::LeaderTransaction(Consensus* consensus,
+LeaderTransaction::LeaderTransaction(TransactionTracker *txn_tracker,
+                                     Consensus* consensus,
                                      TaskExecutor* prepare_executor,
                                      TaskExecutor* apply_executor,
                                      simple_spinlock& prepare_replicate_lock)
     : Transaction(prepare_executor,
                   apply_executor),
+      txn_tracker_(txn_tracker),
       consensus_(consensus),
       prepare_finished_calls_(0),
       prepare_replicate_lock_(prepare_replicate_lock) {
+  txn_tracker_->Add(this);
 }
 
 Status LeaderTransaction::Execute() {
@@ -130,7 +134,7 @@ void LeaderTransaction::HandlePrepareFailure() {
   // If there is no consensus context nothing got done so just reply to the client.
   if (tx_ctx()->consensus_ctx() == NULL) {
     tx_ctx()->completion_callback()->TransactionCompleted();
-    delete this;
+    txn_tracker_->Release(this);
     return;
   }
 
@@ -151,15 +155,14 @@ void LeaderTransaction::HandlePrepareFailure() {
 void LeaderTransaction::ApplySucceeded() {
   UpdateMetrics();
   tx_ctx()->completion_callback()->TransactionCompleted();
-
-  delete this;
+  txn_tracker_->Release(this);
 }
 
 void LeaderTransaction::ApplyFailed(const Status& abort_reason) {
   //TODO use an application level error status here with better error details.
   tx_ctx()->completion_callback()->set_error(abort_reason);
   tx_ctx()->completion_callback()->TransactionCompleted();
-  delete this;
+  txn_tracker_->Release(this);
 }
 
 LeaderTransaction::~LeaderTransaction() {

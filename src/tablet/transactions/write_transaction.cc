@@ -27,12 +27,14 @@ using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 using boost::bind;
 
-LeaderWriteTransaction::LeaderWriteTransaction(WriteTransactionContext* tx_ctx,
+LeaderWriteTransaction::LeaderWriteTransaction(TransactionTracker *txn_tracker,
+                                               WriteTransactionContext* tx_ctx,
                                                consensus::Consensus* consensus,
                                                TaskExecutor* prepare_executor,
                                                TaskExecutor* apply_executor,
                                                simple_spinlock& prepare_replicate_lock)
-: LeaderTransaction(consensus,
+: LeaderTransaction(txn_tracker,
+                    consensus,
                     prepare_executor,
                     apply_executor,
                     prepare_replicate_lock),

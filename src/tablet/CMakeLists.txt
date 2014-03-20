@@ -8,6 +8,7 @@ set(TABLET_SRCS
   transactions/transaction.cc
   transactions/alter_schema_transaction.cc
   transactions/change_config_transaction.cc
+  transactions/transaction_tracker.cc
   transactions/write_transaction.cc
   transactions/write_util.cc
   cfile_set.cc

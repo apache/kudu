@@ -25,13 +25,15 @@ using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
 LeaderChangeConfigTransaction::LeaderChangeConfigTransaction(
+    TransactionTracker *txn_tracker,
     ChangeConfigTransactionContext* tx_ctx,
     consensus::Consensus* consensus,
     TaskExecutor* prepare_executor,
     TaskExecutor* apply_executor,
     simple_spinlock& prepare_replicate_lock,
     boost::mutex* config_lock)
-: LeaderTransaction(consensus,
+: LeaderTransaction(txn_tracker,
+                    consensus,
                     prepare_executor,
                     apply_executor,
                     prepare_replicate_lock),

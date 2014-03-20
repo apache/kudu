@@ -7,6 +7,7 @@
 #include "consensus/log.h"
 #include "consensus/opid_anchor_registry.h"
 #include "tablet/tablet.h"
+#include "tablet/transactions/transaction_tracker.h"
 #include "util/metrics.h"
 
 
@@ -132,6 +133,8 @@ class TabletPeer {
   gscoped_ptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
+
+  TransactionTracker txn_tracker_;
 
   // lock protecting internal (usually rare) state changes.
   mutable simple_spinlock internal_state_lock_;

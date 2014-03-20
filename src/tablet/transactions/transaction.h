@@ -9,6 +9,7 @@
 #include "common/timestamp.h"
 #include "common/wire_protocol.h"
 #include "consensus/consensus.h"
+#include "gutil/ref_counted.h"
 #include "util/auto_release_pool.h"
 #include "util/countdown_latch.h"
 #include "util/status.h"
@@ -27,6 +28,7 @@ class ReplicateMsg;
 
 namespace tablet {
 class TabletPeer;
+class TransactionTracker;
 
 // All metrics associated with a TransactionContext.
 struct TransactionMetrics {
@@ -202,7 +204,8 @@ class TransactionContext {
 // Base class for transactions.
 // Transaction classes encapsulate the logic of executing a transaction. as well
 // as any required state.
-class Transaction {
+// This class is refcounted, and subclasses must not define a public destructor.
+class Transaction : public base::RefCountedThreadSafe<Transaction> {
  public:
   // Starts the execution of a transaction.
   virtual Status Execute() = 0;
@@ -210,11 +213,11 @@ class Transaction {
   // Returns the TransactionContext for this transaction.
   virtual TransactionContext* tx_ctx() = 0;
 
-  virtual ~Transaction() {}
-
  protected:
   Transaction(TaskExecutor* prepare_executor,
               TaskExecutor* apply_executor);
+
+  virtual ~Transaction() {}
 
   // Executes the prepare phase of this transaction, the actual actions
   // of this phase depend on the transaction type, but usually are limited
@@ -260,6 +263,7 @@ class Transaction {
   TaskExecutor* apply_executor_;
 
  private:
+  friend class base::RefCountedThreadSafe<Transaction>;
   DISALLOW_COPY_AND_ASSIGN(Transaction);
 };
 
@@ -267,7 +271,8 @@ class Transaction {
 // For how write transactions are executed see: tablet/transactions/write_transaction.h
 class LeaderTransaction : public Transaction {
  public:
-  LeaderTransaction(consensus::Consensus* consensus,
+  LeaderTransaction(TransactionTracker *txn_tracker,
+                    consensus::Consensus* consensus,
                     TaskExecutor* prepare_executor,
                     TaskExecutor* apply_executor,
                     simple_spinlock& prepare_replicate_lock);
@@ -318,6 +323,7 @@ class LeaderTransaction : public Transaction {
   // returns a commit message that describes the failure.
   virtual void PrepareFailedPreCommitHooks(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
 
+  TransactionTracker *txn_tracker_;
   consensus::Consensus* consensus_;
   Atomic32 prepare_finished_calls_;
   Status prepare_status_;
