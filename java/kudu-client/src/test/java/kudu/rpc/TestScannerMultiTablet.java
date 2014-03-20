@@ -65,14 +65,24 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertEquals(6, countRowsInScan(getScanner("14", "34"))); // Middle of 2nd to middle of 4th
     assertEquals(9, countRowsInScan(getScanner("", "4"))); // Full table scan
 
+    assertEquals(9, countRowsInScan(getScanner("", null))); // Full table scan with empty upper
+    assertEquals(9, countRowsInScan(getScanner(null, "4"))); // Full table scan with empty lower
+    assertEquals(9, countRowsInScan(getScanner(null, null))); // Full table scan with empty bounds
+
   }
 
   private KuduScanner getScanner(String lowerBound, String upperBound) {
     KuduScanner scanner = client.newScanner(table, schema);
     ColumnRangePredicate pred = new ColumnRangePredicate(schema.getColumn(0));
-    pred.setLowerBound(lowerBound);
-    pred.setUpperBound(upperBound);
-    scanner.addColumnRangePredicate(pred);
+    if (lowerBound != null) {
+      pred.setLowerBound(lowerBound);
+    }
+    if (upperBound != null) {
+      pred.setUpperBound(upperBound);
+    }
+    if (lowerBound != null || upperBound != null) {
+      scanner.addColumnRangePredicate(pred);
+    }
     return scanner;
   }
 

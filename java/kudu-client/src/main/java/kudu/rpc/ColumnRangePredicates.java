@@ -58,4 +58,12 @@ class ColumnRangePredicates {
     return this.endKeyEncoder == null ? null : this.endKeyEncoder.extractByteArray();
   }
 
+  boolean hasStartKey() {
+    return this.startKeyEncoder != null;
+  }
+
+  boolean hasEndKey() {
+    return this.endKeyEncoder != null;
+  }
+
 }

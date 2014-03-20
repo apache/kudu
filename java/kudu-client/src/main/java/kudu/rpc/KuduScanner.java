@@ -422,8 +422,13 @@ public final class KuduScanner {
    * Add a predicate for a column
    * Very important constraint: row key predicates must be added in order.
    * @param predicate predicate for a column to add
+   * @throws IllegalArgumentException If no bounds were specified
    */
   public void addColumnRangePredicate(ColumnRangePredicate predicate) {
+    if (predicate.getLowerBound() == null && predicate.getUpperBound() == null) {
+      throw new IllegalArgumentException("When adding a predicate, at least one bound must be " +
+          "specified");
+    }
     columnRangePredicates.addColumnRangePredicate(predicate);
   }
 
@@ -480,8 +485,12 @@ public final class KuduScanner {
     // should be fully configured
     if (this.inFirstTablet) {
       this.inFirstTablet = false;
-      this.startKey = this.columnRangePredicates.getStartKey();
-      this.endKey = this.columnRangePredicates.getEndKey();
+      if (this.columnRangePredicates.hasStartKey()) {
+        this.startKey = this.columnRangePredicates.getStartKey();
+      }
+      if (this.columnRangePredicates.hasEndKey()) {
+        this.endKey = this.columnRangePredicates.getEndKey();
+      }
     }
     return new ScanRequest(table, State.OPENING);
   }

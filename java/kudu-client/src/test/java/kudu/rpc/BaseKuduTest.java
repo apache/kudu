@@ -185,12 +185,12 @@ public class BaseKuduTest {
     while (scanner.hasMoreRows()) {
       Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
-      data.join();
+      data.join(DEFAULT_SLEEP);
     }
 
     Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
     closer.addCallbacks(cb, defaultErrorCB);
-    closer.join();
+    closer.join(DEFAULT_SLEEP);
     return counter.get();
   }
 
@@ -212,7 +212,7 @@ public class BaseKuduTest {
       } else {
         LOG.warn("Got an error response back " + arg);
       }
-      return null;
+      return new Exception("Can't recover from error, see previous WARN");
     }
   };
 
