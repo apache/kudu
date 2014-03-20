@@ -22,24 +22,20 @@ const char* kTabletId = "test-peers-tablet";
 
 class ConsensusPeersTest : public KuduTest {
  public:
+  ConsensusPeersTest() {}
+
   virtual void SetUp() {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
-    CHECK_OK(Log::Open(options_,
-                       fs_manager_.get(),
-                       kTabletId,
-                       &opid_anchor_registry_,
-                       NULL,
-                       &log_));
   }
 
-  void NewLocalPeer(const string& peer_name, gscoped_ptr<Peer>* peer) {
+  void NewLocalPeer(Log* log, const string& peer_name, gscoped_ptr<Peer>* peer) {
     QuorumPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     ASSERT_STATUS_OK(Peer::NewLocalPeer(peer_pb,
                                         kTabletId,
                                         &message_queue_,
-                                        log_.get(),
+                                        log,
                                         peer));
   }
 
@@ -58,9 +54,9 @@ class ConsensusPeersTest : public KuduTest {
     return proxy_ptr;
   }
 
-  void CheckLastLogEntry(int term, int index) {
+  void CheckLastLogEntry(Log* log, int term, int index) {
     OpId id;
-    log_->GetLastEntryOpId(&id);
+    log->GetLastEntryOpId(&id);
     ASSERT_EQ(id.term(), term);
     ASSERT_EQ(id.index(), index);
   }
@@ -81,7 +77,6 @@ class ConsensusPeersTest : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
   OpIdAnchorRegistry opid_anchor_registry_;
-  gscoped_ptr<Log> log_;
   vector<scoped_refptr<OperationStatus> > statuses_;
   TestPeerProxyFactory peer_proxy_factory_;
 };
@@ -91,8 +86,15 @@ class ConsensusPeersTest : public KuduTest {
 // After the operations are considered done the log should
 // reflect the replicated messages.
 TEST_F(ConsensusPeersTest, TestLocalPeer) {
+  gscoped_ptr<Log> log;
+  CHECK_OK(Log::Open(options_,
+                     fs_manager_.get(),
+                     kTabletId,
+                     &opid_anchor_registry_,
+                     NULL,
+                     &log));
   gscoped_ptr<Peer> local_peer;
-  NewLocalPeer("local-peer", &local_peer);
+  NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, &statuses_);
@@ -103,7 +105,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   // requests.
   statuses_[19]->Wait();
   // verify that the requests are in fact logged.
-  CheckLastLogEntry(2, 6);
+  CheckLastLogEntry(log.get(), 2, 6);
 }
 
 // Tests that a remote peer is correctly built and tracked
@@ -130,9 +132,16 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 
 
 TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
+  gscoped_ptr<Log> log;
+  CHECK_OK(Log::Open(options_,
+                     fs_manager_.get(),
+                     kTabletId,
+                     &opid_anchor_registry_,
+                     NULL,
+                     &log));
   // Create a set of peers
   gscoped_ptr<Peer> local_peer;
-  NewLocalPeer("local-peer", &local_peer);
+  NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   gscoped_ptr<Peer> remote_peer1;
   TestPeerProxy* remote_peer1_proxy = NewRemotePeer("remote-peer1", &remote_peer1);
@@ -153,7 +162,7 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   // Now wait for the message to be replicated, this should succeed since
   // majority = 2 and only one peer was delayed.
   statuses_[0]->Wait();
-  CheckLastLogEntry(0, 1);
+  CheckLastLogEntry(log.get(), 0, 1);
   CheckLastRemoteEntry(remote_peer1_proxy, 0, 1);
   ASSERT_EQ(2, test_status(statuses_[0].get())->replicated_count());
 
