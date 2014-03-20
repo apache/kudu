@@ -10,6 +10,10 @@ import org.junit.BeforeClass;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,6 +37,7 @@ public class BaseKuduTest {
   static int masterPort;
 
   static final int DEFAULT_SLEEP = 10000;
+  static final List<Thread> processInputPrinters = new ArrayList<Thread>();
   static Process master;
   static Process tabletServer;
   static KuduClient client;
@@ -56,14 +61,37 @@ public class BaseKuduTest {
       String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt, "--tablet_server_base_dir=" + baseDirPath
           + "/ts-" + now};
 
-      master = Runtime.getRuntime().exec(masterCmdLine);
+      master = configureAndStartProcess(masterCmdLine);
       Thread.sleep(300);
-      tabletServer = Runtime.getRuntime().exec(tsCmdLine);
+      tabletServer = configureAndStartProcess(tsCmdLine);
       // TODO lower than 1000 and we burp a too many retries, fix
       Thread.sleep(1000);
     }
 
     client = new KuduClient(masterAddress, masterPort);
+  }
+
+  /**
+   * Starts a process using the provided command and configures it to be daemon,
+   * redirects the stderr to stdout, and starts a thread that will read from the process' input
+   * stream and redirect that to LOG.
+   * @param command Process and options
+   * @return The started process
+   * @throws IOException Exception if an error prevents from starting the process (unrelated to
+   * in-process errors like if a data folder cannot be found).
+   */
+  static Process configureAndStartProcess(String[] command) throws IOException {
+    ProcessBuilder processBuilder = new ProcessBuilder(command);
+    processBuilder.redirectErrorStream(true);
+    Process proc = processBuilder.start();
+    ProcessInputStreamLogPrinterRunnable printer =
+        new ProcessInputStreamLogPrinterRunnable(proc.getInputStream());
+    Thread thread = new Thread(printer);
+    thread.setDaemon(true);
+    thread.setName(command[0]);
+    processInputPrinters.add(thread);
+    thread.start();
+    return proc;
   }
 
   @AfterClass
@@ -90,6 +118,9 @@ public class BaseKuduTest {
       if (startCluster) {
         master.destroy();
         tabletServer.destroy();
+        for (Thread thread : processInputPrinters) {
+          thread.interrupt();
+        }
       }
     }
   }
@@ -165,5 +196,35 @@ public class BaseKuduTest {
       return null;
     }
   };
+
+  /**
+   * Helper runnable that can log what the processes are sending on their stdout and stderr that
+   * we'd otherwise miss.
+   */
+  static class ProcessInputStreamLogPrinterRunnable implements Runnable {
+
+    private final InputStream is;
+
+    public ProcessInputStreamLogPrinterRunnable(InputStream is) {
+      this.is = is;
+    }
+
+    @Override
+    public void run() {
+      try {
+        String line;
+        BufferedReader in = new BufferedReader(new InputStreamReader(is));
+        while ((line = in.readLine()) != null) {
+          LOG.info(line);
+        }
+        in.close();
+      }
+      catch (Exception e) {
+        if (!e.getMessage().contains("Stream closed")) {
+          LOG.error("Caught error while reading a process' output", e);
+        }
+      }
+    }
+  }
 
 }
