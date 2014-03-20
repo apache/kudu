@@ -62,7 +62,7 @@ Status IndexTreeBuilder::Append(
 Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
   // Now do the same for the positional index blocks, starting
   // with leaf
-  LOG(INFO) << "flushing tree, b-tree has " <<
+  VLOG(1) << "flushing tree, b-tree has " <<
     idx_blocks_.size() << " levels";
 
   // Flush all but the root of the index.
@@ -79,7 +79,7 @@ Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
     return s;
   }
 
-  LOG(INFO) << "Flushed root index block: " << ptr.ToString();
+  VLOG(1) << "Flushed root index block: " << ptr.ToString();
 
   ptr.CopyToPB(info->mutable_root_block());
   return Status::OK();
