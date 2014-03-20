@@ -125,16 +125,9 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 }
 
 Status DeltaMemStore::AlterSchema(const Schema& schema) {
-  if (Count() != 0) {
-    return Status::NotSupported("The DeltaMemStore must be empty to alter the schema");
-  }
-
-  if (schema.num_columns() > delta_stats_.num_columns()) {
-    delta_stats_.Resize(schema.num_columns());
-  }
-
-  schema_ = schema;
-  return Status::OK();
+  // The DeltaMemStore is flushed and re-created with the new Schema.
+  // See DeltaTracker::Flush()
+  return Status::NotSupported("The DeltaMemStore must be empty to alter the schema");
 }
 
 void DeltaMemStore::DebugPrint() const {

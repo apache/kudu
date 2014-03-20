@@ -510,16 +510,16 @@ Status DeltaTracker::Flush() {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
 
     count = dms_->Count();
-    if (count == 0) {
-      // No need to flush if there are no deltas.
-      // Ensure that the DeltaMemStore is using the latest schema.
-      RETURN_NOT_OK(dms_->AlterSchema(schema_));
-      return Status::OK();
-    }
 
     // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
     dms_.reset(new DeltaMemStore(old_dms->id() + 1, schema_, opid_anchor_registry_));
+
+    if (count == 0) {
+      // No need to flush if there are no deltas.
+      // Ensure that the DeltaMemStore is using the latest schema.
+      return Status::OK();
+    }
 
     redo_delta_stores_.push_back(old_dms);
   }
