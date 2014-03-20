@@ -24,10 +24,9 @@ class LogReader {
 
   // Opens a LogReader on a specific tablet log recovery directory, and sets
   // 'reader' to the newly created LogReader.
-  static Status Open(FsManager *fs_manager,
-                     const string& tablet_oid,
-                     uint64_t recovery_ts,
-                     gscoped_ptr<LogReader> *reader);
+  static Status OpenFromRecoveryDir(FsManager *fs_manager,
+                                    const string& tablet_oid,
+                                    gscoped_ptr<LogReader> *reader);
 
   // Initializes a ReadableLogSegment based on a log file on the provided path.
   // Parses the header.

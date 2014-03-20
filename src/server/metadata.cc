@@ -109,7 +109,8 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
   : state_(kNotLoadedYet),
     fs_manager_(fs_manager),
     master_block_(master_block),
-    next_rowset_idx_(0) {
+    next_rowset_idx_(0),
+    needs_flush_(false) {
 }
 
 Status TabletMetadata::LoadFromDisk() {

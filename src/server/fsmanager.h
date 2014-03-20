@@ -167,10 +167,9 @@ class FsManager {
     return JoinPathSegments(GetWalsRootDir(), tablet_id);
   }
 
-  string GetTabletWalRecoveryDir(const std::string& tablet_id, uint64_t timestamp) const {
+  string GetTabletWalRecoveryDir(const std::string& tablet_id) const {
     string path = JoinPathSegments(GetWalsRootDir(), tablet_id);
-    path = JoinPathSegments(path, strings::Substitute("$0-$1",
-             kWalsRecoveryDirPrefix, boost::lexical_cast<string>(timestamp)));
+    path = JoinPathSegments(path, kWalsRecoveryDirName);
     return path;
   }
 
@@ -245,7 +244,7 @@ class FsManager {
   static const char *kDataDirName;
   static const char *kMasterBlockDirName;
   static const char *kWalsDirName;
-  static const char *kWalsRecoveryDirPrefix;
+  static const char *kWalsRecoveryDirName;
   static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
 

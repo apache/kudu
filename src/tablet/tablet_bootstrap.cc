@@ -109,22 +109,24 @@ class TabletBootstrap {
   // when the replay process is completed (as they have been duplicated in the
   // current log directory).
   //
-  // If a "log-recovery" directory is already present the segments in the log
-  // directory are ignored and deleted, as this might signal the node went down
-  // in the middle of recovering.
+  // If a "log-recovery" directory is already present, we will continue to replay
+  // from the "log-recovery" directory. Tablet metadata is updated once replay
+  // has finished from the "log-recovery" directory.
   //
   // TODO get log segments from other replicas.
-  Status FetchLogSegments(bool* fetched);
+  Status FetchLogSegments(bool* needs_recovery);
 
   // Opens a new log in the tablet's log directory.
   // The directory is expected to be clean.
   Status OpenNewLog();
 
-  // Moves the log segments present in the tablet's log dir into a log recovery
-  // directory. Replaying these segments will create a new log that will go into
-  // this directory. If there were any log segments to move to the log recovery
-  // directory 'moved' is set to true.
-  Status MoveLocalSegmentsToRecoveryDir(bool* moved);
+  // Checks if a previous attempt at a recovery has been made: if so,
+  // sets 'needs_recovery' to true.  Otherwise, moves the log segments
+  // present in the tablet's log dir into the log recovery directory.
+  //
+  // Replaying the segments in the log recovery directory will create
+  // a new log that will go into the normal tablet wal directory.
+  Status PrepareRecoveryDir(bool* needs_recovery);
 
   // Plays the log segments into the tablet being built.
   // The process of playing the segments generates a new log that can be continued
@@ -196,6 +198,9 @@ class TabletBootstrap {
   // with it.
   Status UpdateClock(const string& timestamp);
 
+  // Removes the recovery directory.
+  Status RemoveRecoveryDir();
+
   gscoped_ptr<metadata::TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   MetricContext* metric_context_;
@@ -204,7 +209,6 @@ class TabletBootstrap {
   scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
   gscoped_ptr<log::Log> log_;
   gscoped_ptr<log::LogReader> log_reader_;
-  uint64_t recovery_ts_;
 
   Arena arena_;
 
@@ -322,7 +326,6 @@ TabletBootstrap::TabletBootstrap(gscoped_ptr<TabletMetadata> meta,
       clock_(clock),
       metric_context_(metric_context),
       listener_(listener),
-      recovery_ts_(GetCurrentTimeMicros()),
       arena_(256*1024, 4*1024*1024) {
 }
 
@@ -331,6 +334,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   scoped_refptr<OpIdAnchorRegistry>* opid_anchor_registry) {
 
   string tablet_id = meta_->oid();
+  meta_->PinFlush();
 
   listener_->StatusMessage("Bootstrap starting.");
 
@@ -349,14 +353,15 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   bool fetched_blocks;
   RETURN_NOT_OK(FetchBlocksAndOpenTablet(&fetched_blocks));
 
-  bool fetched_segments;
-  RETURN_NOT_OK(FetchLogSegments(&fetched_segments));
+  bool needs_recovery;
+  RETURN_NOT_OK(FetchLogSegments(&needs_recovery));
 
   // This is a new tablet just return OK()
-  if (!fetched_blocks && !fetched_segments) {
+  if (!fetched_blocks && !needs_recovery) {
     LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_id
         << " creating new one.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
+    RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
     rebuilt_tablet->reset(tablet_.release());
     rebuilt_log->reset(log_.release());
     *opid_anchor_registry = opid_anchor_registry_;
@@ -369,14 +374,15 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   // before shutdown *and* the Log was GC()'d but because we aren't doing Log
   // GC on shutdown there should be some segments available even if there is
   // no soft state to rebuild.
-  if (fetched_blocks && !fetched_segments) {
+  if (fetched_blocks && !needs_recovery) {
     return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log "
                                            "segments could be found.",
                                            tablet_id));
   }
 
   RETURN_NOT_OK_PREPEND(PlaySegments(), "Failed log replay. Reason");
-
+  RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
+  RETURN_NOT_OK(RemoveRecoveryDir());
   listener_->StatusMessage("Bootstrap complete.");
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->reset(log_.release());
@@ -397,38 +403,33 @@ Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
   return Status::OK();
 }
 
-Status TabletBootstrap::FetchLogSegments(bool* fetched) {
-
-  RETURN_NOT_OK(MoveLocalSegmentsToRecoveryDir(fetched));
+Status TabletBootstrap::FetchLogSegments(bool* needs_recovery) {
+  RETURN_NOT_OK(PrepareRecoveryDir(needs_recovery));
 
   // TODO in a dist setting we want to get segments from other nodes
   // and do not require that local segments are present but for now
   // we do, i.e. a tablet having local blocks but no local log segments
   // signals lost state.
-  if (!*fetched) {
+  if (!*needs_recovery) {
     return Status::OK();
   }
 
   VLOG(1) << "Existing Log segments found, opening log reader.";
   // Open the reader.
-  RETURN_NOT_OK_PREPEND(LogReader::Open(tablet_->metadata()->fs_manager(),
-                                        tablet_->metadata()->oid(),
-                                        recovery_ts_,
-                                        &log_reader_), "Could not open LogReader. Reason");
+  RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
+                                                       tablet_->metadata()->oid(),
+                                                       &log_reader_),
+                        "Could not open LogReader. Reason");
   return Status::OK();
 }
 
-Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
+Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 
-  *moved = false;
+  *needs_recovery = false;
 
-  // TODO use cmcabe's idea wrt to moving the whole dir instead of
-  // file-by-file
   FsManager* fs_manager = tablet_->metadata()->fs_manager();
-
-  string log_dir = fs_manager->GetTabletWalDir(tablet_->metadata()->oid());
-  string log_recovery_dir = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->oid(),
-                                                                recovery_ts_);
+  string tablet_id = tablet_->metadata()->oid();
+  string log_dir = fs_manager->GetTabletWalDir(tablet_id);
 
   if (!fs_manager->Exists(log_dir)) {
     RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
@@ -436,10 +437,25 @@ Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
     return Status::OK();
   }
 
-  CHECK(!fs_manager->Exists(log_recovery_dir))
-      << "There is already a log/wal recovery directory: " << log_recovery_dir;
+  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
+  if (fs_manager->Exists(recovery_path)) {
+    LOG(INFO) << "Replaying from previous recovery directory: " << recovery_path;
+    vector<string> children;
+    RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
+                          "Couldn't list log segments.");
+    BOOST_FOREACH(const string& child, children) {
+      if (HasSuffixString(child, kTmpSuffix) || HasPrefixString(child, ".")) {
+        continue;
+      }
+      string path = JoinPathSegments(log_dir, child);
+      LOG(INFO) << "Removing old log file from previous aborted recovery attempt: " << path;
+      RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
+    }
+    *needs_recovery = true;
+    return Status::OK();
+  }
 
-  RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_recovery_dir),
+  RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(recovery_path),
                         "Could not create log recovery dir.");
 
   vector<string> children;
@@ -447,6 +463,7 @@ Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
                         "Couldn't list log segments.");
 
   // move the files to the recovery directory
+  // TODO: this loop should become atomic
   BOOST_FOREACH(const string& child, children) {
     if (HasSuffixString(child, kTmpSuffix)) {
       LOG(WARNING) << "Ignoring tmp file in log recovery dir: " << child;
@@ -460,17 +477,30 @@ Status TabletBootstrap::MoveLocalSegmentsToRecoveryDir(bool* moved) {
     }
 
     string source_path = JoinPathSegments(log_dir, child);
-    string dest_path = JoinPathSegments(log_recovery_dir,
-                                                           child);
+    string dest_path = JoinPathSegments(recovery_path, child);
 
     RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(source_path,
                                                         dest_path),
                           Substitute("Could not move log segment from: $0 to: $1",
                                      source_path,
                                      dest_path));
-    VLOG(1) << "Moved log segment from: " << source_path << " to: " << dest_path;
-    *moved = true;
+    LOG(INFO) << "Moved log segment from: " << source_path << " to: " << dest_path;
+    *needs_recovery = true;
   }
+  return Status::OK();
+}
+
+Status TabletBootstrap::RemoveRecoveryDir() {
+  FsManager* fs_manager = tablet_->metadata()->fs_manager();
+  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->oid());
+  string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
+  RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
+                        Substitute("Could not rename old recovery dir from: $0 to: $1",
+                                   recovery_path, tmp_path));
+  LOG(INFO) << "Renamed old recovery dir from: "  << recovery_path << " to: " << tmp_path;
+  RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
+                        "Could not remove renamed recovery dir" +  tmp_path);
+  LOG(INFO) << "Removed renamed recovery dir: " << tmp_path;
   return Status::OK();
 }
 

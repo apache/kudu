@@ -105,6 +105,8 @@ class LinkedListTest : public KuduTest {
                         int64_t* written_count);
   Status VerifyLinkedList(int64_t* verified_count);
 
+  void WaitForBootstrapToFinishAndVerify(int64_t* seen);
+
  protected:
   static const char* kTableName;
   const Schema schema_;
@@ -284,6 +286,25 @@ Status LinkedListTest::VerifyLinkedList(int64_t* verified_count) {
   return Status::OK();
 }
 
+void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t* seen) {
+  Stopwatch sw;
+  sw.start();
+  while (true) {
+    Status s = VerifyLinkedList(seen);
+    if (s.IsServiceUnavailable()) {
+      if (sw.elapsed().wall_seconds() > FLAGS_seconds_to_run) {
+        // We'll give it an equal amount of time to re-load the data as it took
+        // to write it in. Typically it completes much faster than that.
+        FAIL() << "Timed out waiting for table to be accessible again.";
+      }
+      usleep(20*1000);
+      continue;
+    }
+    ASSERT_STATUS_OK(s);
+    break;
+  }
+}
+
 TEST_F(LinkedListTest, TestLoadAndVerify) {
   if (FLAGS_seconds_to_run == 0) {
     FLAGS_seconds_to_run = AllowSlowTests() ? kDefaultRunTimeSlow : kDefaultRunTimeFast;
@@ -302,25 +323,16 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // We need to loop here because the tablet may spend some time in BOOTSTRAPPING state
   // initially after a restart. TODO: Scanner should support its own retries in this circumstance.
   // Remove this loop once client is more fleshed out.
-  Stopwatch sw;
-  sw.start();
-  while (true) {
-    Status s = VerifyLinkedList(&seen);
-    if (s.IsServiceUnavailable()) {
-      if (sw.elapsed().wall_seconds() > FLAGS_seconds_to_run) {
-        // We'll give it an equal amount of time to re-load the data as it took
-        // to write it in. Typically it completes much faster than that.
-        FAIL() << "Timed out waiting for table to be accessible again.";
-      }
-      usleep(20*1000);
-      continue;
-    }
-    ASSERT_STATUS_OK(s);
-    break;
-  }
+  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(&seen));
+  ASSERT_EQ(written, seen);
 
-  // TODO: do another restart where we kill the tserver while it's in the process of bootstrapping,
-  // then verify that it still comes back with all of the data. This currently fails!
+  ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  // Sleep a little bit, so that the tablet is proably in bootstrapping state.
+  usleep(100 * 1000);
+  // Restart while bootstrapping
+  ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(&seen));
+  ASSERT_EQ(written, seen);
 }
 
 } // namespace kudu

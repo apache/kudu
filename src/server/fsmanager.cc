@@ -24,7 +24,7 @@ namespace kudu {
 //  FS Paths
 // ==========================================================================
 const char *FsManager::kWalsDirName = "wals";
-const char *FsManager::kWalsRecoveryDirPrefix = ".recovery";
+const char *FsManager::kWalsRecoveryDirName = ".recovery";
 const char *FsManager::kMasterBlockDirName = "master-blocks";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
