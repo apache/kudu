@@ -26,6 +26,7 @@ public class BaseKuduTest {
   private final static String MASTER_ADDRESS = "masterAddress";
   private final static String MASTER_PORT = "masterPort";
   private final static String FLAGS_PATH = "flagsPath";
+  private final static String BASE_DIR_PATH = "baseDirPath";
   private final static String START_CLUSTER = "startCluster";
   private static boolean startCluster;
   static String masterAddress;
@@ -44,11 +45,16 @@ public class BaseKuduTest {
     masterAddress = System.getProperty(MASTER_ADDRESS);
     masterPort = Integer.parseInt(System.getProperty(MASTER_PORT));
     String flagsPath = System.getProperty(FLAGS_PATH);
+    String baseDirPath = System.getProperty(BASE_DIR_PATH);
     startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
 
     if (startCluster) {
-      String[] masterCmdLine = {"kudu-master", "--flagfile=" + flagsPath};
-      String[] tsCmdLine = {"kudu-tablet_server", masterCmdLine[1]};
+      String flagFileOpt = "--flagfile=" + flagsPath;
+      long now = System.currentTimeMillis();
+      String[] masterCmdLine = {"kudu-master", flagFileOpt, "--master_base_dir=" + baseDirPath
+          + "/master-" + now};
+      String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt, "--tablet_server_base_dir=" + baseDirPath
+          + "/ts-" + now};
 
       master = Runtime.getRuntime().exec(masterCmdLine);
       Thread.sleep(300);

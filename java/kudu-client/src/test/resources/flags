@@ -1,8 +1,6 @@
 --tablet_server_master_addr=127.0.0.1:64000
 --tablet_server_rpc_bind_addresses=0.0.0.0:64030
 --tablet_server_web_port=0
---tablet_server_base_dir=target/testdata/ts
---tablet_server_tablet_id=tpch1
 --max_message_size=67108864
 
 --minloglevel=0
@@ -11,4 +9,3 @@
 
 --master_rpc_bind_addresses=0.0.0.0:64000
 --master_web_port=0
---master_base_dir=target/testdata/master

@@ -78,6 +78,7 @@
                         <masterAddress>localhost</masterAddress>
                         <masterPort>64000</masterPort>
                         <flagsPath>src/test/resources/flags</flagsPath>
+                        <baseDirPath>target/testdata</baseDirPath>
                         <startCluster>true</startCluster>
                     </systemPropertyVariables>
                 </configuration>
