@@ -5,6 +5,7 @@
 #include <boost/thread/thread.hpp>
 #include <tr1/unordered_map>
 
+#include "gutil/atomicops.h"
 #include "gutil/stringprintf.h"
 #include "gutil/walltime.h"
 #include "util/thread_util.h"
@@ -35,7 +36,9 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   TestMultiThreadedRowSetDeltaCompaction()
       : TestRowSet(),
-        update_counter_(0) { }
+        update_counter_(0),
+        should_run_(1) {
+  }
 
   // This thread read the value of an atomic integer, updates all rows
   // in 'rs' to the value + 1, and then sets the atomic integer back
@@ -44,24 +47,27 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   // won't work as a thread setting a value n+1 is not guaranteed to finish
   // before a thread setting value n).
   void RowSetUpdateThread(DiskRowSet *rs) {
-    WallTime start_time = WallTime_Now();
-    while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
+    while (ShouldRun()) {
       uint32_t val = Release_Load(&update_counter_);
       UpdateRowSet(rs, val + 1);
-      Release_Store(&update_counter_, val + 1);
+      if (ShouldRun()) {
+        Release_Store(&update_counter_, val + 1);
+      }
     }
   }
 
   void RowSetFlushThread(DiskRowSet *rs) {
-    WallTime start_time = WallTime_Now();
-    while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
-      CHECK_OK(rs->FlushDeltas());
+    while (ShouldRun()) {
+      if (rs->CountDeltaStores() < 5) {
+        CHECK_OK(rs->FlushDeltas());
+      } else {
+        usleep(10 * 1000);
+      }
     }
   }
 
   void RowSetDeltaCompactionThread(DiskRowSet *rs) {
-    WallTime start_time = WallTime_Now();
-    while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
+    while (ShouldRun()) {
       CHECK_OK(rs->MinorCompactDeltaStores());
     }
   }
@@ -71,8 +77,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     uint32_t default_value = 10 * (1 + col_prefix);
 
     size_t count = 0;
-    WallTime start_time = WallTime_Now();
-    while (WallTime_Now() - start_time < FLAGS_num_seconds_per_thread) {
+    while (ShouldRun()) {
       CHECK_OK(builder.AddColumn(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
                                  false, &default_value, &default_value));
       CHECK_OK(rs->AlterSchema(builder.Build()));
@@ -149,7 +154,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   }
 
   void UpdateRowSet(DiskRowSet *rs, uint32_t value) {
-    for (uint32_t idx = 0; idx < n_rows_; idx++) {
+    for (uint32_t idx = 0; idx < n_rows_ && ShouldRun(); idx++) {
       MutationResultPB result;
       ASSERT_STATUS_OK_FAST(UpdateRow(rs, idx, value, &result));
     }
@@ -161,14 +166,21 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     ASSERT_STATUS_OK(OpenTestRowSet(&rs));
 
     StartThreads(rs.get());
+    sleep(FLAGS_num_seconds_per_thread);
+    base::subtle::NoBarrier_Store(&should_run_, 0);
     ASSERT_NO_FATAL_FAILURE(JoinThreads());
 
     ASSERT_NO_FATAL_FAILURE(ReadVerify(rs.get()));
   }
 
+  bool ShouldRun() const {
+    return NoBarrier_Load(&should_run_);
+  }
+
  protected:
 
   Atomic32 update_counter_;
+  Atomic32 should_run_;
   ptr_vector<boost::thread> update_threads_;
   ptr_vector<boost::thread> flush_threads_;
   ptr_vector<boost::thread> compaction_threads_;
