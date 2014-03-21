@@ -1071,6 +1071,9 @@ class AsyncTabletRequestTask : public MonitoredTask {
       }
     } else if (state_ != kStateAborted) {
       HandleResponse(attempt_);
+      if (state_ != kStateComplete && retry) {
+        usleep((1 + (attempt_ / 5)) * 1000000);
+      }
     }
 
     if (state_ != kStateComplete && retry) {
