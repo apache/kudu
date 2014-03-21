@@ -244,9 +244,7 @@ TEST_F(AlterTableTest, DISABLED_TestRestartTSDuringAlter) {
   // Restart the TS while alter is running
   for (int i = 0; i < 3; i++) {
     usleep(500);
-    cluster_->mini_tablet_server(0)->Shutdown();
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Start());
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->WaitStarted());
+    RestartTabletServer();
   }
 
   // Wait for the new schema
