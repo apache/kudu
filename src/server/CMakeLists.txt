@@ -46,7 +46,7 @@ PROTOBUF_GENERATE_CPP(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
   PROTO_FILES server_base.proto)
 
 add_library(server_process ${SERVER_PROCESS_SRCS} ${SERVER_BASE_PROTO_SRCS} ${SERVER_BASE_PROTO_HDRS})
-target_link_libraries(server_process kudu_common gutil krpc kudu_util squeasel ${KUDU_DEP_LIBS})
+target_link_libraries(server_process server_common kudu_common gutil krpc kudu_util squeasel ${KUDU_DEP_LIBS})
 
 # Tests
 set(KUDU_TEST_LINK_LIBS server_process ${KUDU_MIN_TEST_LIBS})
