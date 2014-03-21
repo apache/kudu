@@ -122,6 +122,7 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
   // libev callback when we may write to the socket.
   void WriteHandler(ev::io &watcher, int revents);
 
+  // Safe to be called from other threads.
   std::string ToString() const;
 
   Direction direction() const { return direction_; }

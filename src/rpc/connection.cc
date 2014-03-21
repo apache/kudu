@@ -43,7 +43,7 @@ Connection::Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
     socket_(socket),
     remote_(remote),
     direction_(direction),
-    last_activity_time_(reactor_thread_->cur_time()),
+    last_activity_time_(MonoTime::Now(MonoTime::FINE)),
     is_epoll_registered_(false),
     next_call_id_(1),
     sasl_client_(kSaslAppName, socket),
@@ -498,16 +498,13 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
 }
 
 std::string Connection::ToString() const {
-  return StringPrintf("Connection{socket_=%d, remote_=%s, "
-        "reactor_=%s, direction_=%s, "
-        "outbound_transfers_.empty()=%s, "
-        "negotiation_complete=%s, last_activity_time=%s}",
-        socket_.GetFd(), remote_.ToString().c_str(),
-        reactor_thread_->reactor()->name().c_str(),
-        direction_ == SERVER ? "server" : "client",
-        (outbound_transfers_.empty() ? "true" : "false"),
-        (negotiation_complete_ ? "true" : "false"),
-        last_activity_time_.ToString().c_str());
+  // This may be called from other threads, so we cannot
+  // include anything in the output about the current state,
+  // which might concurrently change from another thread.
+  return strings::Substitute(
+    "$0 Connection to $1",
+    direction_ == SERVER ? "server" : "client",
+    remote_.ToString());
 }
 
 Status Connection::InitSaslClient() {
