@@ -338,6 +338,15 @@ public class KuduClient {
   }
 
   /**
+   * Get the count of running tablet servers
+   * @return an int, the count
+   */
+  public Deferred<Object> getTabletServersCount() {
+    ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
+    return sendRpcToTablet(rpc);
+  }
+
+  /**
    * Creates a new {@link KuduScanner} for a particular table.
    * @param table The name of the table you intend to scan.
    * The string is assumed to use the platform's default charset.

@@ -1,6 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 package kudu.rpc;
 
+import com.google.common.base.Stopwatch;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
@@ -64,11 +65,29 @@ public class BaseKuduTest {
       master = configureAndStartProcess(masterCmdLine);
       Thread.sleep(300);
       tabletServer = configureAndStartProcess(tsCmdLine);
-      // TODO lower than 1000 and we burp a too many retries, fix
-      Thread.sleep(1000);
     }
 
     client = new KuduClient(masterAddress, masterPort);
+    if (!waitForTabletServers(1)) {
+      fail("Couldn't even get a TS running, aborting");
+    }
+  }
+
+  /**
+   * Wait up to DEFAULT_SLEEP for an expected count of TS to connect to the master
+   * @param expected How many TS are expected
+   * @return true if there are at least as many TS as expected, otherwise false
+   */
+  static boolean waitForTabletServers(int expected) throws Exception {
+    int count = 0;
+    Stopwatch stopwatch = new Stopwatch().start();
+    while (count < expected && stopwatch.elapsedMillis() < DEFAULT_SLEEP) {
+      Thread.sleep(200);
+      Deferred<Object> d = client.getTabletServersCount();
+      d.addErrback(defaultErrorCB);
+      count = (Integer)d.join(DEFAULT_SLEEP);
+    }
+    return count >= expected;
   }
 
   /**
