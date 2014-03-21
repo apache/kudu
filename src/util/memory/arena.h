@@ -157,8 +157,23 @@ class ArenaBase {
   Component* NewComponent(size_t requested_size, size_t minimum_size);
   void AddComponent(Component *component);
 
+  // Load the current component, with "Acquire" semantics (see atomicops.h)
+  inline Component* AcquireLoadCurrent() {
+    return reinterpret_cast<Component*>(
+      base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&current_)));
+  }
+
+  // Store the current component, with "Release" semantics (see atomicops.h)
+  inline void ReleaseStoreCurrent(Component* c) {
+    base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&current_),
+                                reinterpret_cast<AtomicWord>(c));
+  }
+
   BufferAllocator* const buffer_allocator_;
   vector<shared_ptr<Component> > arena_;
+
+  // The current component to allocate from.
+  // Use AcquireLoadCurrent and ReleaseStoreCurrent to load/store.
   Component* current_;
   const size_t max_buffer_size_;
   size_t arena_footprint_;
@@ -333,7 +348,7 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(
 // to non-inline function call for allocation failure
 template <bool THREADSAFE>
 inline void *ArenaBase<THREADSAFE>::AllocateBytesAligned(const size_t size, const size_t align) {
-  void* result = current_->AllocateBytesAligned(size, align);
+  void* result = AcquireLoadCurrent()->AllocateBytesAligned(size, align);
   if (PREDICT_TRUE(result != NULL)) return result;
   return AllocateBytesFallback(size, align);
 }

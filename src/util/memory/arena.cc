@@ -59,11 +59,12 @@ void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size
 
   // It's possible another thread raced with us and already allocated
   // a new component, in which case we should try the "fast path" again
-  void * result = current_->AllocateBytesAligned(size, align);
+  Component* cur = AcquireLoadCurrent();
+  void * result = cur->AllocateBytesAligned(size, align);
   if (PREDICT_FALSE(result != NULL)) return result;
 
   // Really need to allocate more space.
-  size_t next_component_size = min(2 * current_->size(), max_buffer_size_);
+  size_t next_component_size = min(2 * cur->size(), max_buffer_size_);
   // But, allocate enough, even if the request is large. In this case,
   // might violate the max_element_size bound.
   if (next_component_size < size) {
@@ -112,9 +113,9 @@ typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
 // LOCKING: component_lock_ must be held by the current thread.
 template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
-  current_ = component;
-  arena_.push_back(shared_ptr<Component>(current_));
-  arena_footprint_ += current_->size();
+  ReleaseStoreCurrent(component);
+  arena_.push_back(shared_ptr<Component>(component));
+  arena_footprint_ += component->size();
   if (PREDICT_FALSE(arena_footprint_ > FLAGS_arena_warn_threshold_bytes) && !warned_) {
     LOG(WARNING) << "Arena " << reinterpret_cast<const void *>(this)
                  << " footprint (" << arena_footprint_ << " bytes) exceeded warning threshold ("
@@ -132,7 +133,7 @@ void ArenaBase<THREADSAFE>::Reset() {
     shared_ptr<Component> last = arena_.back();
     arena_.clear();
     arena_.push_back(last);
-    current_ = last.get();
+    ReleaseStoreCurrent(last.get());
   }
   arena_.back()->Reset();
   arena_footprint_ = arena_.back()->size();
