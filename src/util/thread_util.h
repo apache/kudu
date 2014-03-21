@@ -39,9 +39,16 @@ enum {
 // Spin loop until *x changes value from 'from' to 'to'.
 inline void SpinWait(Atomic32* x, uint32_t from, int32_t to) {
   int loop_count = 0;
-  while (base::subtle::Acquire_CompareAndSwap(x, from, to) != from) {
+
+  while (base::subtle::Acquire_Load(x) != from) {
     boost::detail::yield(loop_count++);
   }
+
+  // We use an Acquire_Load spin and a Release_Store because we need both
+  // directions of memory barrier here, and atomicops.h doesn't offer a
+  // Barrier_CompareAndSwap call. TSAN will fail with either Release or Acquire
+  // CAS above.
+  base::subtle::Release_Store(x, to);
 }
 
 template<class F>
@@ -81,7 +88,7 @@ Status StartThread(F function, gscoped_ptr<boost::thread>* thread) {
   // popped off the stack and potentially overwritten, so it's possible
   // the thread would see arbitrary data here.
   int loop_count = 0;
-  while (base::subtle::NoBarrier_Load(&indicator) != thread_util_internal::THREAD_RUNNING) {
+  while (base::subtle::Acquire_Load(&indicator) != thread_util_internal::THREAD_RUNNING) {
     boost::detail::yield(loop_count++);
   }
   return Status::OK();
