@@ -97,7 +97,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, &statuses_);
   // signal the peer there are requests pending.
   local_peer->SignalRequest();
   // now wait on the status of the last operation
@@ -118,7 +118,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   TestPeerProxy* proxy = NewRemotePeer("remote-peer", &remote_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, &statuses_);
   // signal the peer there are requests pending.
   remote_peer->SignalRequest();
   // now wait on the status of the last operation
@@ -153,7 +153,7 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   remote_peer2_proxy->DelayResponse();
 
   // Append one message to the queue with majority = 2.
-  AppendReplicateMessagesToQueue(&message_queue_, 1, 1, 2, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 1, 1, 2, 3, &statuses_);
 
   local_peer->SignalRequest();
   remote_peer1->SignalRequest();
@@ -167,9 +167,13 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   ASSERT_EQ(2, test_status(statuses_[0].get())->replicated_count());
 
   ASSERT_STATUS_OK(remote_peer2_proxy->Respond());
+  // Wait until all peers have replicated the message, otherwise
+  // when we add the next one remote_peer2 might find the next message
+  // in the queue and will replicate it, which is not what we want.
+  test_status(statuses_[0].get())->WaitAllReplicated();
 
   // Now append another message to the queue
-  AppendReplicateMessagesToQueue(&message_queue_, 2, 1, 2, &statuses_);
+  AppendReplicateMessagesToQueue(&message_queue_, 2, 1, 2, 3, &statuses_);
 
   // Signal a single peer
   remote_peer1->SignalRequest();

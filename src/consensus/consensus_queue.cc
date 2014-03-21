@@ -108,6 +108,12 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     request->mutable_ops()->AddAllocated(msg->op_.get());
     if (request->ByteSize() > FLAGS_consensus_max_batch_size_bytes) {
       request->mutable_ops()->ReleaseLast();
+      if (PREDICT_FALSE(VLOG_IS_ON(2))) {
+        VLOG(2) << "Request reached max size for peer: "
+            << uuid << " trimmed to: " << request->ops_size()
+            << " ops and " << request->ByteSize() << " bytes."
+            << " max is: " << FLAGS_consensus_max_batch_size_bytes;
+      }
       break;
     }
   }
@@ -137,10 +143,10 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
   if (!peer_watermark) {
     iter = messages_.begin();
   } else {
-    iter = messages_.lower_bound(*peer_watermark);
+    iter = messages_.upper_bound(*peer_watermark);
   }
 
-  if (VLOG_IS_ON(2)) {
+  if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Received Response from Peer: " << uuid << ". Current Watermark: "
         << (*iter).first.ShortDebugString() << ". Status: " << status.ShortDebugString();
   }
@@ -187,14 +193,15 @@ Status PeerMessageQueue::TrimBuffer() {
 
 void PeerMessageQueue::DumpToLog() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  LOG(INFO)<< "Watermarks:";
+  LOG(INFO) << "Watermarks:";
   BOOST_FOREACH(const WatermarksMap::value_type& entry, watermarks_) {
     LOG(INFO) << "Peer: " << entry.first << " Watermark: "
       << (entry.second != NULL ? entry.second->ShortDebugString() : "NULL");
   }
-  LOG(INFO)<< "Messages:";
+  int counter = 0;
+  LOG(INFO) << "Messages:";
   BOOST_FOREACH(const MessagesBuffer::value_type entry, messages_) {
-    LOG(INFO) << "Message: " << entry.first.ShortDebugString()
+    LOG(INFO) << "Message[" << counter++ << "]: " << entry.first.ShortDebugString()
       << " Status: " << entry.second->status_->ToString()
       << " Op: " << entry.second->op_->ShortDebugString();
   }

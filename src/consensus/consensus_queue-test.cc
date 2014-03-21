@@ -88,6 +88,8 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   id->set_index(0);
   id->set_term(0);
 
+  // Save the current flag state.
+  google::FlagSaver saver;
   // we' going to add 100 messages to the queue so we make each page
   // fetch 9 of those, for a total of 12 pages. The last page should have a single op
   FLAGS_consensus_max_batch_size_bytes = 9 * page_size_estimator.ByteSize();
@@ -112,6 +114,48 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
   ASSERT_FALSE(more_pending);
+
+  // extract the ops from the request to avoid double free
+  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
+
+}
+
+TEST(TestConsensusRequestQueue, TestPeersDontAckBeyondWatermarks) {
+  vector<scoped_refptr<OperationStatus> > statuses;
+  PeerMessageQueue queue;
+  AppendReplicateMessagesToQueue(&queue, 1, 100, 1, 1, &statuses);
+
+  // Start to track the peer after the queue has some messages in it
+  // at a point that is halfway through the current messages in the queue.
+  OpId first_msg;
+  first_msg.set_term(7);
+  first_msg.set_index(1);
+  ASSERT_STATUS_OK(queue.TrackPeer(kPeerUuid, first_msg));
+
+  ConsensusRequestPB request;
+  ConsensusStatusPB status;
+  bool more_pending = false;
+
+  // ask for a request, with normal flags this should get half the queue.
+  queue.RequestForPeer(kPeerUuid, &request);
+  ASSERT_EQ(50, request.ops_size());
+  status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
+
+  AppendReplicateMessagesToQueue(&queue, 101, 100, 1, 1, &statuses);
+  queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
+  ASSERT_TRUE(more_pending) << "Queue didn't have anymore requests pending";
+
+  // Make sure the peer only ack'd between message 50 and 100
+  for (int i = 0; i < statuses.size(); i++) {
+    if (i < 50 || i > 99) {
+      ASSERT_FALSE(statuses[i]->IsDone()) << "Operation: " << i << " should be done.";
+      continue;
+    }
+    ASSERT_TRUE(statuses[i]->IsDone())  << "Operation: " << i << " should not be done.";
+  }
+  // if we ask for a new request, it should come back with the rest of the messages
+  queue.RequestForPeer(kPeerUuid, &request);
+  ASSERT_EQ(100, request.ops_size());
 
   // extract the ops from the request to avoid double free
   request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);

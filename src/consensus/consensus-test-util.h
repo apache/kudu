@@ -16,23 +16,33 @@ namespace consensus {
 // to complete.
 class TestOperationStatus : public OperationStatus {
  public:
-  explicit TestOperationStatus(int n_majority)
-    : latch_(n_majority),
+  explicit TestOperationStatus(int n_majority, int total_peers, const OpId& op_id)
+    : op_id_(op_id),
+      majority_latch_(n_majority),
+      all_replicated_latch_(total_peers),
       replicated_count_(0) {
   }
 
   void AckPeer(const string& uuid) {
+    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
+      VLOG(2) << "Peer: " << uuid << " Ack'd op: " << op_id_.ShortDebugString();
+    }
     boost::lock_guard<simple_spinlock> lock(lock_);
     replicated_count_++;
-    latch_.CountDown();
+    majority_latch_.CountDown();
+    all_replicated_latch_.CountDown();
   }
 
   bool IsDone() const {
-    return latch_.count() == 0;
+    return majority_latch_.count() == 0;
   }
 
   void Wait() {
-    latch_.Wait();
+    majority_latch_.Wait();
+  }
+
+  void WaitAllReplicated() {
+    all_replicated_latch_.Wait();
   }
 
   int replicated_count() const {
@@ -41,7 +51,9 @@ class TestOperationStatus : public OperationStatus {
   }
 
  private:
-  CountDownLatch latch_;
+  OpId op_id_;
+  CountDownLatch majority_latch_;
+  CountDownLatch all_replicated_latch_;
   int replicated_count_;
   mutable simple_spinlock lock_;
 };
@@ -59,6 +71,7 @@ static inline void AppendReplicateMessagesToQueue(
     int first,
     int count,
     int n_majority = 1,
+    int total_peers = 1,
     vector<scoped_refptr<OperationStatus> >* statuses_collector = NULL) {
 
   for (int i = first; i < first + count; i++) {
@@ -66,7 +79,7 @@ static inline void AppendReplicateMessagesToQueue(
     OpId* id = op->mutable_id();
     id->set_term(i / 7);
     id->set_index(i % 7);
-    scoped_refptr<OperationStatus> status(new TestOperationStatus(n_majority));
+    scoped_refptr<OperationStatus> status(new TestOperationStatus(n_majority, total_peers, *id));
     queue->AppendOperation(op.Pass(), status);
     if (statuses_collector) {
       statuses_collector->push_back(status);

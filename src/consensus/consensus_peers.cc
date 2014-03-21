@@ -166,7 +166,8 @@ class RemotePeer : public PeerImpl {
       ProcessNextRequest();
     } else {
       if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-        VLOG(2) << "Remote peer received: " << response_.ShortDebugString();
+        VLOG(2) << "Remote peer: " << peer_->peer_pb().permanent_uuid()
+            << " received from remote endpoint: " << response_.ShortDebugString();
       }
       peer_->ProcessResponse(response_.status());
     }
