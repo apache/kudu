@@ -44,13 +44,14 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
  public:
 
   explicit DeltaMemStoreCompactionInput(const Schema* schema,
-                                        const Schema* projection,
+                                        const Schema& projection,
                                         const DeltaStats& stats,
                                         gscoped_ptr<DMSTreeIter> iter)
       : stats_(stats),
         iter_(iter.Pass()),
+        projection_(projection),
         arena_(32*1024, 128*1024),
-        delta_projector_(schema, projection) {
+        delta_projector_(schema, &projection_) {
   }
 
   virtual Status Init() {
@@ -92,7 +93,7 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
   }
 
   const Schema& schema() const {
-    return delta_projector_.projection();
+    return projection_;
   }
 
   const DeltaStats& stats() const {
@@ -110,6 +111,8 @@ class DeltaMemStoreCompactionInput : public DeltaCompactionInput {
 
   gscoped_ptr<DMSTreeIter> iter_;
 
+  Schema projection_;
+
   // Arena used to store the projected mutations of the current block.
   Arena arena_;
 
@@ -123,10 +126,11 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
  public:
 
   explicit DeltaFileCompactionInput(const shared_ptr<DeltaFileReader>& dfr,
-                                    const Schema* projection,
+                                    const Schema& projection,
                                     gscoped_ptr<CFileIterator> iter)
       : dfr_(dfr),
         iter_(iter.Pass()),
+        projection_(projection),
         stats_(dfr->delta_stats()),
         data_(new Slice[kRowsPerBlock]),
         arena_(32*1024, 128*1024),
@@ -135,7 +139,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
                data_.get(),
                kRowsPerBlock,
                &arena_),
-        delta_projector_(&dfr->schema(), projection),
+        delta_projector_(&dfr->schema(), &projection_),
         initted_(false),
         block_prepared_(false) {
   }
@@ -188,7 +192,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
   }
 
   const Schema& schema() const {
-    return delta_projector_.projection();
+    return projection_;
   }
 
   const DeltaStats& stats() const {
@@ -204,6 +208,7 @@ class DeltaFileCompactionInput : public DeltaCompactionInput {
 
   shared_ptr<DeltaFileReader> dfr_;
   gscoped_ptr<CFileIterator> iter_;
+  Schema projection_;
   DeltaStats stats_;
   gscoped_ptr<Slice[]> data_;
   Arena arena_;
@@ -676,9 +681,9 @@ Status MajorDeltaCompaction::Compact(shared_ptr<RowSetMetadata>* output,
 }
 
 Status DeltaCompactionInput::Open(const shared_ptr<DeltaFileReader>& reader,
-                                  const Schema* projection,
+                                  const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
-  CHECK(projection->has_column_ids());
+  CHECK(projection.has_column_ids());
   gscoped_ptr<CFileIterator> iter;
   RETURN_NOT_OK(reader->cfile_reader()->NewIterator(&iter));
   input->reset(new DeltaFileCompactionInput(reader,
@@ -688,9 +693,9 @@ Status DeltaCompactionInput::Open(const shared_ptr<DeltaFileReader>& reader,
 }
 
 Status DeltaCompactionInput::Open(const DeltaMemStore &dms,
-                                  const Schema* projection,
+                                  const Schema& projection,
                                   gscoped_ptr<DeltaCompactionInput> *input) {
-  CHECK(projection->has_column_ids());
+  CHECK(projection.has_column_ids());
   gscoped_ptr<DMSTreeIter> iter(dms.tree().NewIterator());
   input->reset(new DeltaMemStoreCompactionInput(&dms.schema(), projection, dms.delta_stats(),
                                                 iter.Pass()));

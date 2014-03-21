@@ -22,11 +22,11 @@ class DeltaCompactionInput {
   // Creates a compaction input from a DeltaFileReader.
   // 'projection' is the compaction output schema.
   static Status Open(const std::tr1::shared_ptr<DeltaFileReader>& reader,
-                     const Schema* projection,
+                     const Schema& projection,
                      gscoped_ptr<DeltaCompactionInput> *input);
 
   static Status Open(const DeltaMemStore &dms,
-                     const Schema* projection,
+                     const Schema& projection,
                      gscoped_ptr<DeltaCompactionInput> *input);
 
   // Create a merging iterator from multiple DeltaCompactionInputs

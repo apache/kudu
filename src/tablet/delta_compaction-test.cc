@@ -58,7 +58,7 @@ class TestDeltaCompaction : public KuduTest {
   }
 
   Status OpenAsCompactionInput(const string& path, uint64_t deltafile_idx,
-                               const Schema* projection,
+                               const Schema& projection,
                                gscoped_ptr<DeltaCompactionInput> *dci) {
     shared_ptr<DeltaFileReader> reader;
     RETURN_NOT_OK(DeltaFileReader::Open(env_.get(), path, deltafile_idx_, &reader, REDO));
@@ -95,7 +95,7 @@ class TestDeltaCompaction : public KuduTest {
     stats.IncrUpdateCount(0, num_updates);
     RETURN_NOT_OK(dfw->WriteDeltaStats(stats));
     RETURN_NOT_OK(dfw->Finish());
-    RETURN_NOT_OK(OpenAsCompactionInput(path, deltafile_idx_, &schema_, dci));
+    RETURN_NOT_OK(OpenAsCompactionInput(path, deltafile_idx_, schema_, dci));
     return Status::OK();
   }
 
@@ -153,7 +153,7 @@ TEST_F(TestDeltaCompaction, TestFlushDeltaCompactionInput) {
   ASSERT_STATUS_OK(FlushDeltaCompactionInput(merged.get(), dfw.get()));
   ASSERT_STATUS_OK(dfw->Finish());
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, FLAGS_num_delta_files + 1, &schema_, &dci));
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, FLAGS_num_delta_files + 1, schema_, &dci));
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schema_));
   BOOST_FOREACH(const string &str, results) {
@@ -235,7 +235,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     ASSERT_STATUS_OK(dfw->WriteDeltaStats(stats));
     ASSERT_STATUS_OK(dfw->Finish());
     gscoped_ptr<DeltaCompactionInput> dci;
-    ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, &schemas.back(), &dci));
+    ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, schemas.back(), &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
     deltafile_idx++;
   }
@@ -250,7 +250,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   ASSERT_STATUS_OK(dfw->Finish());
 
   gscoped_ptr<DeltaCompactionInput> dci;
-  ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, &merged->schema(), &dci));
+  ASSERT_STATUS_OK(OpenAsCompactionInput(path, deltafile_idx, merged->schema(), &dci));
 
   vector<string> results;
   ASSERT_STATUS_OK(DebugDumpDeltaCompactionInput(dci.get(), &results, schemas.back()));

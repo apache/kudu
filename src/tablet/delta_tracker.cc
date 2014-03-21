@@ -267,7 +267,7 @@ Status DeltaTracker::MakeCompactionInput(size_t start_idx, size_t end_idx,
 
     LOG(INFO) << "Preparing to compact delta file: " << dfr->path();
     gscoped_ptr<DeltaCompactionInput> dci;
-    RETURN_NOT_OK(DeltaCompactionInput::Open(dfr, &schema_, &dci));
+    RETURN_NOT_OK(DeltaCompactionInput::Open(dfr, schema_, &dci));
     inputs.push_back(shared_ptr<DeltaCompactionInput>(dci.release()));
     target_stores->push_back(delta_store);
     target_ids->push_back(delta_store->id());
