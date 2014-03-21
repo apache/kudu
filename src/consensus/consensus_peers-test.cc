@@ -76,7 +76,6 @@ class ConsensusPeersTest : public KuduTest {
   PeerMessageQueue message_queue_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
-  gscoped_ptr<Log> log_;
   vector<scoped_refptr<OperationStatus> > statuses_;
   TestPeerProxyFactory peer_proxy_factory_;
 };
@@ -86,6 +85,7 @@ class ConsensusPeersTest : public KuduTest {
 // After the operations are considered done the log should
 // reflect the replicated messages.
 TEST_F(ConsensusPeersTest, TestLocalPeer) {
+  gscoped_ptr<Peer> local_peer;
   gscoped_ptr<Log> log;
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
@@ -93,7 +93,6 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
                      new OpIdAnchorRegistry(),
                      NULL,
                      &log));
-  gscoped_ptr<Peer> local_peer;
   NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   // Append a bunch of messages to the queue
@@ -132,6 +131,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 
 
 TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
+  gscoped_ptr<Peer> local_peer;
   gscoped_ptr<Log> log;
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
@@ -140,7 +140,6 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
                      NULL,
                      &log));
   // Create a set of peers
-  gscoped_ptr<Peer> local_peer;
   NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   gscoped_ptr<Peer> remote_peer1;

@@ -46,6 +46,10 @@ struct LogMetrics;
 //
 // Methods on this class are _not_ thread-safe and must be externally
 // synchronized unless otherwise noted.
+//
+// Note: The Log needs to be Close()d before any log-writing class is
+// destroyed, otherwise the Log might hold references to these classes
+// to execute the callbacks after each write.
 class Log {
  public:
   static const Status kLogShutdownStatus;

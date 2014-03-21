@@ -36,6 +36,15 @@ struct ConsensusOptions {
 };
 
 // The external interface for a consensus peer.
+//
+// Note: Even though Consensus points to Log, it needs to be destroyed
+// after it. See Log class header comment for the reason why. On the other
+// hand Consensus must be quiesced before closing the log, otherwise it
+// will try to write to a destroyed/closed log.
+// The order of these operations on shutdown must therefore be:
+// 1 - quiesce Consensus
+// 2 - close/destroy Log
+// 3 - destroy Consensus
 class Consensus {
  public:
   Consensus() : state_(kNotInitialized) {}
