@@ -36,6 +36,9 @@ class MonoDelta {
   // Update struct timespec to current value of delta, with nanosecond accuracy.
   void ToTimeSpec(struct timespec *ts) const;
 
+  // Convert a nanosecond value to a timespec.
+  static void NanosToTimeSpec(int64_t nanos, struct timespec* ts);
+
  private:
   friend class MonoTime;
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
@@ -55,6 +58,10 @@ class MonoTime {
     FINE
   };
 
+  static const int64_t kNanosecondsPerSecond = 1000000000L;
+  static const int64_t kNanosecondsPerMillisecond = 1000000L;
+  static const int64_t kNanosecondsPerMicrosecond = 1000L;
+
   // The coarse monotonic time is faster to retrieve, but "only"
   // accurate to within a millisecond or two.  The speed difference will
   // depend on your timer hardware.
@@ -69,13 +76,11 @@ class MonoTime {
   void AddDelta(const MonoDelta &delta);
   bool ComesBefore(const MonoTime &rhs) const;
   std::string ToString() const;
+
  private:
   friend class MonoDelta;
   FRIEND_TEST(TestMonoTime, TestTimeSpec);
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
-  static const int64_t kNanosecondsPerSecond = 1000000000L;
-  static const int64_t kNanosecondsPerMillisecond = 1000000L;
-  static const int64_t kNanosecondsPerMicrosecond = 1000L;
 
   explicit MonoTime(const struct timespec &ts);
   explicit MonoTime(int64_t nanos);

@@ -17,6 +17,7 @@ namespace kudu {
 #define MAX_MONOTONIC_SECONDS \
   (((1ULL<<63) - 1ULL) /(int64_t)MonoTime::kNanosecondsPerSecond)
 
+
 ///
 /// MonoTime
 ///
@@ -106,9 +107,10 @@ void MonoDelta::ToTimeVal(struct timeval *tv) const {
   }
 }
 
-void MonoDelta::ToTimeSpec(struct timespec *ts) const {
-  ts->tv_sec = nano_delta_ / MonoTime::kNanosecondsPerSecond;
-  ts->tv_nsec = nano_delta_ - (ts->tv_sec * MonoTime::kNanosecondsPerSecond);
+
+void MonoDelta::NanosToTimeSpec(int64_t nanos, struct timespec* ts) {
+  ts->tv_sec = nanos / MonoTime::kNanosecondsPerSecond;
+  ts->tv_nsec = nanos - (ts->tv_sec * MonoTime::kNanosecondsPerSecond);
 
   // tv_nsec must be between 0 and 999999999.
   // There is little use for negative timespecs so wrap it in PREDICT_FALSE.
@@ -116,6 +118,10 @@ void MonoDelta::ToTimeSpec(struct timespec *ts) const {
     --(ts->tv_sec);
     ts->tv_nsec += MonoTime::kNanosecondsPerSecond;
   }
+}
+
+void MonoDelta::ToTimeSpec(struct timespec *ts) const {
+  NanosToTimeSpec(nano_delta_, ts);
 }
 
 ///

@@ -5,12 +5,14 @@
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <string>
+#include <semaphore.h>
 
 #include "gutil/hash/city.h"
 #include "gutil/dynamic_annotations.h"
 #include "tablet/lock_manager.h"
 #include "util/pthread_spinlock.h"
 #include "util/locks.h"
+#include "util/semaphore.h"
 
 namespace kudu { namespace tablet {
 
@@ -24,7 +26,8 @@ class TransactionContext;
 // Callers should generally use ScopedRowLock (see below).
 class LockEntry {
  public:
-  explicit LockEntry(const Slice& key) {
+  explicit LockEntry(const Slice& key)
+  : sem(1) {
     key_hash_ = util_hash::CityHash64(reinterpret_cast<const char *>(key.data()), key.size());
     key_ = key;
     refs_ = 1;
@@ -39,7 +42,7 @@ class LockEntry {
   }
 
   // Mutex used by the LockManager
-  boost::timed_mutex mutex;
+  Semaphore sem;
 
  private:
   friend class LockTable;
@@ -290,7 +293,7 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
   // We expect low contention, so just try to try_lock first. This is faster
   // than a timed_lock, since we don't have to do a syscall to get the current
   // time.
-  if (!(*entry)->mutex.try_lock()) {
+  if (!(*entry)->sem.TryAcquire()) {
     // If the current holder of this lock is the same transaction just return
     // a LOCK_ALREADY_ACQUIRED status without actually acquiring the mutex.
     //
@@ -309,8 +312,8 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     // TODO: would be nice to hook in some histogram metric about lock acquisition
     // time.
     int waited_seconds = 0;
-    while (!(*entry)->mutex.timed_lock(boost::posix_time::seconds(1))) {
-      LOG(WARNING) << "Waited " << (++waited_seconds) << " to obtain row lock on key "
+    while (!(*entry)->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
+      LOG(WARNING) << "Waited " << (++waited_seconds) << " seconds to obtain row lock on key "
                    << key.ToDebugString();
       // TODO: add RPC trace annotation here. Above warning should also include an RPC
       // trace ID.
@@ -329,7 +332,7 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
                                              LockManager::LockMode mode,
                                              LockEntry **entry) {
   *entry = locks_->GetLockEntry(key);
-  bool locked = (*entry)->mutex.try_lock();
+  bool locked = (*entry)->sem.TryAcquire();
   if (!locked) {
     locks_->ReleaseLockEntry(*entry);
     return LOCK_BUSY;
@@ -341,7 +344,7 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
 void LockManager::Release(LockEntry *lock, LockStatus ls) {
   DCHECK_NOTNULL(lock)->holder_ = NULL;
   if (ls == LOCK_ACQUIRED) {
-    lock->mutex.unlock();
+    lock->sem.Release();
   }
   locks_->ReleaseLockEntry(lock);
 }

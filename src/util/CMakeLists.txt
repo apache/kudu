@@ -24,6 +24,7 @@ add_library(kudu_util
   path_util.cc
   pb_util.cc
   rwc_lock.cc
+  semaphore.cc
   slice.cc
   spinlock_profiling.cc
   subprocess.cc
