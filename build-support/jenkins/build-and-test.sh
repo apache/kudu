@@ -6,7 +6,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT
+#     Maybe be one of ASAN|TSAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -52,6 +52,10 @@ if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
   CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
+elif [ "$BUILD_TYPE" = "TSAN" ]; then
+  CC=$LLVM_DIR/bin/clang CXX=$LLVM_DIR/bin/clang++ cmake -DKUDU_USE_TSAN=1
+  BUILD_TYPE=fastdebug
+  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
 elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
   BUILD_TYPE=release
   export HEAPCHECK=normal
@@ -82,7 +86,8 @@ rm -Rf /tmp/kudutest-$UID
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
 make -j$NUM_PROCS 2>&1 | tee build.log
-ctest -j$NUM_PROCS
+
+ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS
 
 if [ "$DO_COVERAGE" == "1" ]; then
   echo Generating coverage report...

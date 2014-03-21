@@ -22,7 +22,6 @@
 
 #include <string.h>
 
-#include "gutil/atomicops.h"
 #include <glog/logging.h>
 #include "gutil/logging-inl.h"
 #include "gutil/integral_types.h"

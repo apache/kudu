@@ -1,0 +1,55 @@
+race:_dl_deallocate_tls
+race:kudu::tablet::ScopedRowLock::Release
+
+# Even with newer versions of libstdc++, there appear to be some races
+# which are false positives with the stock version. Rather than rebuilding
+# libstdc++ with TSAN, we just suppress them here.
+race:~basic_string
+race:std::tr1::_Sp_counted_base
+race:std::string::_Rep::_M_refcopy
+race:std::string::_Rep::_M_grab
+race:std::string::_Rep::_M_dispose
+
+# Squeasel bug fix pending
+race:sq_stop
+race:kudu::Webserver::~Webserver()
+race:base::DefaultDeleter<kudu::Webserver>
+
+# Protobuf's implementation of GoogleOnce doesn't properly annotate itself
+race:google::protobuf::GoogleOnceInitImpl
+
+# concurrent btree uses optimistic concurrency, needs to be annotated a bunch
+# more before it would pass. Relatively confident that it is correct based on
+# a lot of stress testing.
+race:concurrent_btree.h
+
+# We're currently a little lax on using atomic instructions for mutations where
+# we might need to. There are possible bugs lurking here, though likely we are
+# hiding behind x86 TSO for now.
+race:kudu::tablet::ApplyMutationsAndGenerateUndos
+race:kudu::tablet::MemRowSet::Iterator::ApplyMutationsToProjectedRow
+race:kudu::tablet::Mutation::*
+race:kudu::RowChangeListDecoder::Init
+
+# ------------------------------------------------------------
+# Known bugs below. As these JIRAs are resolved, please remove the relevant
+# suppression.
+# ------------------------------------------------------------
+
+# KUDU-186: sketchy synchronization in catalog manager
+race:kudu::master::CatalogManagerBgTasks::Shutdown
+
+# KUDU-187: missing read lock on IsCreateInProgress
+race:kudu::master::TableInfo::IsCreateInProgress
+
+# KUDU-188: tablet manager calls tablet_peer->tablet() which is assigned non-atomically
+race:kudu::tablet::TabletPeer::tablet()
+
+# KUDU-189: unsynchronized access to 'state_' in DeferredCallback
+race:kudu::master::AsyncTabletRequestTask::DeferredCallback
+
+# KUDU-190: LogicalClock accesses the clock without atomic op
+race:kudu::tablet::TabletBootstrap::UpdateClock
+
+# KUDU-191: DeleteTable is missing appropriate locking
+race:kudu::tserver::TSTabletManager::DeleteTablet

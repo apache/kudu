@@ -31,5 +31,7 @@ else
   pipe_cmd=cat
 fi
 
+export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ME/tsan-suppressions.txt history_size=7"
+
 echo Running $TEST_NAME, redirecting output into $OUT
 "$@"  2>&1 | $ROOT/thirdparty/asan_symbolize.py | c++filt | $pipe_cmd > $OUT

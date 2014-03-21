@@ -72,15 +72,15 @@ endif ()
 # Add common flags
 set(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
-if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
-  set(IS_CLANG 1)
+# Determine compiler version
+include(CompilerInfo)
+
+if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # Clang helpfully provides a few extensions from C++11 such as the 'override'
   # keyword on methods. This doesn't change behavior, and we selectively enable
   # it in src/gutil/port.h only on clang. So, we can safely use it, and don't want
   # to trigger warnings when we do so.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-extensions")
-else()
-  set(IS_CLANG 0)
 endif()
 
 # Flag to enable clang address sanitizer
@@ -102,15 +102,43 @@ if (${KUDU_USE_UBSAN})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover")
 endif ()
 
-if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}")
-  if (NOT "${IS_CLANG}")
-    message(SEND_ERROR "Cannot use ASAN/UBSAN without clang")
-  endif()
-  # Don't omit frame pointers, so that our failures have better info included.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
+# Flag to enable thread sanitizer (clang or gcc 4.8)
+if (${KUDU_USE_TSAN})
+  add_definitions("-fsanitize=thread")
 
-  # Ensure static linking is on -- otherwise can run into llvm bug #56393:
-  # http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
+  # thread sanitizer requires position independent executable
+  add_definitions("-fPIE")
+
+  # Enables dynamic_annotations.h to actually generate code
+  add_definitions("-DDYNAMIC_ANNOTATIONS_ENABLED")
+
+  # changes atomicops to use the tsan implementations
+  add_definitions("-DTHREAD_SANITIZER")
+
+  # Disables using the precompiled template specializations for std::string, shared_ptr, etc
+  # so that the annotations in the header actually take effect.
+  add_definitions("-D_GLIBCXX_EXTERN_TEMPLATE=0")
+
+  # Some of the above also need to be passed to the linker.
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -fsanitize=thread")
+endif()
+
+
+if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
+  if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
+        ("${COMPILER_FAMILY}" STREQUAL "gcc" AND
+          "${COMPILER_VERSION}" VERSION_GREATER "4.8")))
+    message(SEND_ERROR "Cannot use ASAN/UBSAN/TSAN without clang or gcc >= 4.8")
+  endif()
+  add_definitions("-fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
+
+endif()
+
+# Ensure static linking is on for asan -- otherwise can run into gcc bug #56393:
+# http://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg386467.html
+# We don't want to do this for TSAN, though, because dependencies like static boost
+# may not be linked with -fPIC.
+if (KUDU_USE_ASAN AND NOT KUDU_USE_TSAN)
   set(KUDU_STATIC_LINK ON)
 endif()
 
@@ -297,8 +325,9 @@ ADD_THIRDPARTY_LIB(squeasel
 
 ## Google PerfTools
 find_package( GPerf REQUIRED )
-if (NOT "${KUDU_USE_ASAN}")
+if (NOT KUDU_USE_ASAN AND NOT KUDU_USE_TSAN)
   set(LIBS ${LIBS} ${TCMALLOC_LIBRARY} ${PROFILER_LIBRARY})
+  add_definitions("-DTCMALLOC_ENABLED")
 endif()
 
 ## curl

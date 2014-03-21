@@ -7,8 +7,8 @@
 
 #include "util/metrics.h"
 
-#ifdef ADDRESS_SANITIZER
-#define TCM_ASAN_MSG " (Disabled on this Clang Address Sanitizer build)"
+#ifndef TCMALLOC_ENABLED
+#define TCM_ASAN_MSG " (Disabled - no tcmalloc in this build)"
 #else
 #define TCM_ASAN_MSG
 #endif
@@ -51,7 +51,7 @@ namespace tcmalloc {
 
 static size_t GetTCMallocPropValue(const char* prop) {
   size_t value = 0;
-#ifndef ADDRESS_SANITIZER
+#ifdef TCMALLOC_ENABLED
   if (!MallocExtension::instance()->GetNumericProperty(prop, &value)) {
     LOG(DFATAL) << "Failed to get value of numeric tcmalloc property: " << prop;
   }

@@ -104,8 +104,8 @@ static void MemUsageHandler(const Webserver::ArgumentMap& args, stringstream* ou
   Tags tags(as_text);
 
   (*output) << tags.pre_tag;
-#ifdef ADDRESS_SANITIZER
-  (*output) << "Memory tracking is not available with address sanitizer builds.";
+#ifndef TCMALLOC_ENABLED
+  (*output) << "Memory tracking is not available unless tcmalloc is enabled.";
 #else
   char buf[2048];
   MallocExtension::instance()->GetStats(buf, 2048);
@@ -121,7 +121,7 @@ void AddDefaultPathHandlers(Webserver* webserver) {
   webserver->RegisterPathHandler("/varz", FlagsHandler);
   webserver->RegisterPathHandler("/memz", MemUsageHandler);
 
-#ifndef ADDRESS_SANITIZER
+#ifdef TCMALLOC_ENABLED
   // Remote (on-demand) profiling is disabled if the process is already being profiled.
   if (!FLAGS_enable_process_lifetime_heap_profiling) {
     AddPprofPathHandlers(webserver);

@@ -77,7 +77,7 @@ not themselves crash but rely on behavior which isn't defined by the C++ standar
 You'll need at least clang 3.3 to use this feature.
 
 $ rm -Rf CMakeCache.txt CMakeFiles/
-$ CXX=/opt/bin/clang++ cmake -DKUDU_USE_UBSAN=1 .   # or whatever your path to clang++
+$ CC=clang CXX=clang++ cmake -DKUDU_USE_UBSAN=1 .   # or whatever your path to clang++
 $ make -j
 $ make test
 
@@ -107,6 +107,24 @@ For more information on the heap checker, please see:
 NOTE: The AddressSanitizer doesn't play nice with tcmalloc, so sadly the
 HEAPCHECK environment has no effect if you have enabled ASAN.
 
+Running tests with ThreadSanitizer enabled
+------------------------------------------------------------
+NOTE: this requires a relatively recent version of clang++, and may also require
+a relatively recent version of libstdc++ on your system. It seems to work reasonably
+well on Ubuntu 13.10, but YMMV.
+
+$ rm -Rf CMakeCache.txt CMakeFiles/
+$ CC=clang CXX=clang++ cmake . -DKUDU_USE_TSAN=1
+$ make -j
+$ ctest -j8
+
+Note that we rely on a list of runtime suppressions in build-support/tsan-suppressions.txt.
+If you simply run a unit test like build/latest/foo-test, you won't get these suppressions.
+Instead, use a command like:
+
+$ ctest -R foo-test
+
+and then view the logs in build/test-logs
 
 Generating code coverage reports
 ------------------------------------------------------------

@@ -52,8 +52,8 @@ static void PprofCmdLineHandler(const Webserver::ArgumentMap& args, stringstream
 // by calling HeapProfileStart(filename), continue to do work, and then, some number of
 // seconds later, call GetHeapProfile() followed by HeapProfilerStop().
 static void PprofHeapHandler(const Webserver::ArgumentMap& args, stringstream* output) {
-#ifdef ADDRESS_SANITIZER
-  (*output) << "Heap profiling is not available with address sanitizer builds.";
+#ifndef TCMALLOC_ENABLED
+  (*output) << "Heap profiling is not available without tcmalloc.";
 #else
   Webserver::ArgumentMap::const_iterator it = args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
@@ -75,8 +75,8 @@ static void PprofHeapHandler(const Webserver::ArgumentMap& args, stringstream* o
 // The server should respond by calling ProfilerStart(), continuing to do its work,
 // and then, XX seconds later, calling ProfilerStop().
 static void PprofCpuProfileHandler(const Webserver::ArgumentMap& args, stringstream* output) {
-#ifdef ADDRESS_SANITIZER
-  (*output) << "CPU profiling is not available with address sanitizer builds.";
+#ifndef TCMALLOC_ENABLED
+  (*output) << "CPU profiling is not available without tcmalloc.";
 #else
   Webserver::ArgumentMap::const_iterator it = args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
@@ -103,8 +103,8 @@ static void PprofCpuProfileHandler(const Webserver::ArgumentMap& args, stringstr
 // The server should respond by calling:
 // MallocExtension::instance()->GetHeapGrowthStacks(&output);
 static void PprofGrowthHandler(const Webserver::ArgumentMap& args, stringstream* output) {
-#ifdef ADDRESS_SANITIZER
-  (*output) << "Growth profiling is not available with address sanitizer builds.";
+#ifndef TCMALLOC_ENABLED
+  (*output) << "Growth profiling is not available without tcmalloc.";
 #else
   string heap_growth_stack;
   MallocExtension::instance()->GetHeapGrowthStacks(&heap_growth_stack);

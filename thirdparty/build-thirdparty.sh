@@ -84,7 +84,7 @@ fi
 # build gtest
 if [ -n "$F_ALL" -o -n "$F_GTEST" ]; then
   cd $GTEST_DIR
-  cmake .
+  CXXFLAGS=-fPIC cmake .
   make -j$PARALLEL
 fi
 
@@ -112,7 +112,7 @@ fi
 # build lz4
 if [ -n "$F_ALL" -o -n "$F_LZ4" ]; then
   cd $LZ4_DIR
-  $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
+  CFLAGS=-fPIC $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX $LZ4_DIR
   make -j$PARALLEL install
 fi
 
@@ -136,7 +136,7 @@ if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
   cd $SQUEASEL_DIR
-  ${CC:-gcc} -O3 -DNDEBUG -DNO_SSL_DL -c squeasel.c
+  ${CC:-gcc} -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/
   cp squeasel.h $PREFIX/include/

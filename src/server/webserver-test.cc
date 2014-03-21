@@ -55,10 +55,10 @@ TEST_F(WebserverTest, TestDefaultPaths) {
   // Test memz
   ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/memz?raw=1", addr_.ToString()),
                               &buf));
-#ifndef ADDRESS_SANITIZER
+#ifdef TCMALLOC_ENABLED
   ASSERT_STR_CONTAINS(buf.ToString(), "Bytes in use by application");
 #else
-  ASSERT_STR_CONTAINS(buf.ToString(), "not available with address sanitizer");
+  ASSERT_STR_CONTAINS(buf.ToString(), "not available unless tcmalloc is enabled");
 #endif
 
   // Test varz -- check for one of the built-in gflags flags.
