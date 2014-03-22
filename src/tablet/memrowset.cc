@@ -11,6 +11,7 @@
 #include "common/row.h"
 #include "consensus/opid_anchor_registry.h"
 #include "gutil/atomicops.h"
+#include "gutil/dynamic_annotations.h"
 #include "tablet/memrowset.h"
 #include "tablet/compaction.h"
 
@@ -63,6 +64,8 @@ MemRowSet::MemRowSet(int64_t id,
     has_logged_throttling_(false),
     anchorer_(opid_anchor_registry, Substitute("MemRowSet-$0", id_)) {
   CHECK(schema.has_column_ids());
+  ANNOTATE_BENIGN_RACE(&debug_insert_count_, "insert count isnt accurate");
+  ANNOTATE_BENIGN_RACE(&debug_update_count_, "update count isnt accurate");
 }
 
 Status MemRowSet::AlterSchema(const Schema& schema) {
