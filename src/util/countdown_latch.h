@@ -86,6 +86,7 @@ class CountDownLatch {
   }
 
   uint64_t count() const {
+    boost::lock_guard<boost::mutex> lock(lock_);
     return count_;
   }
 
