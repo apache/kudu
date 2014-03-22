@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "server/metadata.pb.h"
@@ -65,11 +66,11 @@ class TabletServer : public server::ServerBase {
   const ScannerManager* scanner_manager() const { return scanner_manager_.get(); }
 
   void set_fail_heartbeats_for_tests(bool fail_heartbeats_for_tests) {
-    fail_heartbeats_for_tests_ = fail_heartbeats_for_tests;
+    base::subtle::NoBarrier_Store(&fail_heartbeats_for_tests_, 1);
   }
 
   bool fail_heartbeats_for_tests() const {
-    return fail_heartbeats_for_tests_;
+    return base::subtle::NoBarrier_Load(&fail_heartbeats_for_tests_);
   }
 
  private:
@@ -80,7 +81,7 @@ class TabletServer : public server::ServerBase {
   bool initted_;
 
   // If true, all heartbeats will be seen as failed.
-  bool fail_heartbeats_for_tests_;
+  Atomic32 fail_heartbeats_for_tests_;
 
   // The options passed at construction time.
   const TabletServerOptions opts_;
