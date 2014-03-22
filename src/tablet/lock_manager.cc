@@ -7,6 +7,7 @@
 #include <string>
 
 #include "gutil/hash/city.h"
+#include "gutil/dynamic_annotations.h"
 #include "tablet/lock_manager.h"
 #include "util/pthread_spinlock.h"
 #include "util/locks.h"
@@ -299,7 +300,7 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     // obtained and released at the same time). If at any time in the future
     // we opt to perform more fine grained locking, possibly letting transactions
     // release a portion of the locks they no longer need, this no longer is OK.
-    if ((*entry)->holder_== tx) {
+    if (ANNOTATE_UNPROTECTED_READ((*entry)->holder_) == tx) {
       return LOCK_ALREADY_ACQUIRED;
     }
 
