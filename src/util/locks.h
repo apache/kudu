@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 
 #include "gutil/atomicops.h"
+#include "gutil/dynamic_annotations.h"
 #include "gutil/macros.h"
 #include "gutil/port.h"
 #include "gutil/spinlock.h"
@@ -65,8 +66,12 @@ class simple_spinlock {
 // lock is held for very short time intervals.
 class rw_spinlock {
  public:
-  rw_spinlock() : state_(0) {}
-  ~rw_spinlock() {}
+  rw_spinlock() : state_(0) {
+    ANNOTATE_RWLOCK_CREATE(this);
+  }
+  ~rw_spinlock() {
+    ANNOTATE_RWLOCK_DESTROY(this);
+  }
 
   void lock_shared() {
     int loop_count = 0;
@@ -80,9 +85,11 @@ class rw_spinlock {
       // Either was already locked by someone else, or CAS failed.
       boost::detail::yield(loop_count++);
     }
+    ANNOTATE_RWLOCK_ACQUIRED(this, 0);
   }
 
   void unlock_shared() {
+    ANNOTATE_RWLOCK_RELEASED(this, 0);
     int loop_count = 0;
     Atomic32 cur_state = NoBarrier_Load(&state_);
     while (true) {
@@ -118,6 +125,7 @@ class rw_spinlock {
     }
 
     WaitPendingReaders();
+    ANNOTATE_RWLOCK_ACQUIRED(this, 1);
     return true;
   }
 
@@ -135,11 +143,13 @@ class rw_spinlock {
     }
 
     WaitPendingReaders();
+    ANNOTATE_RWLOCK_ACQUIRED(this, 1);
   }
 
   void unlock() {
     // I expect to be the only writer
-    DCHECK_EQ(state_, kWriteFlag);
+    DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(state_), kWriteFlag);
+    ANNOTATE_RWLOCK_RELEASED(this, 1);
     // reset: no writers/no readers
     Release_Store(&state_, 0);
   }
