@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include "gutil/atomicops.h"
 #include "util/rwc_lock.h"
 #include "util/test_util.h"
 #include "util/locks.h"
@@ -8,6 +9,9 @@
 #include <boost/foreach.hpp>
 
 namespace kudu {
+
+using base::subtle::NoBarrier_Load;
+using base::subtle::Release_Store;
 
 class RWCLockTest : public KuduTest {};
 
@@ -59,11 +63,11 @@ struct LockHoldersCount {
 struct SharedState {
   LockHoldersCount counts;
   RWCLock rwc_lock;
-  volatile bool stop;
+  Atomic32 stop;
 };
 
 void ReaderThread(SharedState* state) {
-  while (!state->stop) {
+  while (!NoBarrier_Load(&state->stop)) {
     state->rwc_lock.ReadLock();
     state->counts.AdjustReaders(1);
     state->counts.AdjustReaders(-1);
@@ -73,7 +77,7 @@ void ReaderThread(SharedState* state) {
 
 void WriterThread(SharedState* state) {
   string local_str;
-  while (!state->stop) {
+  while (!NoBarrier_Load(&state->stop)) {
     state->rwc_lock.WriteLock();
     state->counts.AdjustWriters(1);
 
@@ -89,7 +93,7 @@ void WriterThread(SharedState* state) {
 
 TEST_F(RWCLockTest, TestCorrectBehavior) {
   SharedState state;
-  state.stop = false;
+  Release_Store(&state.stop, 0);
 
   vector<boost::thread*> threads;
 
@@ -109,7 +113,7 @@ TEST_F(RWCLockTest, TestCorrectBehavior) {
     usleep(100 * 1000);
   }
 
-  state.stop = true;
+  Release_Store(&state.stop, 1);
 
   BOOST_FOREACH(boost::thread* t, threads) {
     t->join();
