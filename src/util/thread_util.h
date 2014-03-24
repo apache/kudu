@@ -36,7 +36,7 @@ enum {
   THREAD_RUNNING
 };
 
-// Spin loop until *x changes value from 'from' to 'to'.
+// Spin-loop until *x value equals 'from', then set *x value to 'to'.
 inline void SpinWait(Atomic32* x, uint32_t from, int32_t to) {
   int loop_count = 0;
 
