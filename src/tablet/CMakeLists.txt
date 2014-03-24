@@ -57,6 +57,7 @@ ADD_KUDU_TEST(composite-pushdown-test)
 ADD_KUDU_TEST(delta_compaction-test)
 ADD_KUDU_TEST(mt-rowset_delta_compaction-test)
 ADD_KUDU_TEST(major_delta_compaction-test)
+ADD_KUDU_TEST(transactions/transaction_tracker-test)
 
 # Some tests don't have dependencies on other tablet stuff
 set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )

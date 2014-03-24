@@ -4,6 +4,7 @@
 #define KUDU_TABLET_TRANSACTION_TRACKER_H_
 
 #include <string>
+#include <vector>
 
 #include <tr1/unordered_set>
 
@@ -30,6 +31,12 @@ class TransactionTracker {
   // Removes the txn from the pending list.
   // Also triggers the deletion of the Transaction object, if its refcount == 0.
   void Release(Transaction *txn);
+
+  // Populates list of currently-running transactions into 'pending_out' vector.
+  void GetPendingTransactions(std::vector<scoped_refptr<Transaction> >* pending_out);
+
+  // Returns number of pending transactions.
+  int GetNumPendingForTests() const;
 
   void WaitForAllToFinish();
 
