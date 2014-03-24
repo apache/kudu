@@ -80,6 +80,9 @@ EncodedKey* EncodedKeyBuilder::BuildSuccessorEncodedKey() {
 }
 
 EncodedKey *EncodedKeyBuilder::BuildEncodedKey() {
+  if (idx_ == 0) {
+    return NULL;
+  }
   EncodedKey *ret = new EncodedKey(&encoded_key_, &raw_keys_, num_key_cols_);
   idx_ = 0;
   return ret;

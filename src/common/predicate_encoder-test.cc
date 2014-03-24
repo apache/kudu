@@ -22,20 +22,31 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
   RangePredicateEncoder enc(schema);
   uint8_t l = 3;
   uint8_t u = 255;
-  // Apply predicate: a == 255
-  ColumnRangePredicate pred_a(schema.column(0), &u, &u);
-  // Apply predicate b BETWEEN 3 AND 255
-  ColumnRangePredicate pred_b(schema.column(1), &l, &u);
-  ScanSpec spec;
-  spec.AddPredicate(pred_a);
-  spec.AddPredicate(pred_b);
-  ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec));
-  ASSERT_TRUE(spec.predicates().empty()) << "Should have pushed down all predicates";
-  ASSERT_EQ(spec.encoded_ranges().size(), 1);
+  {
+    // Apply predicate: a == 255
+    ColumnRangePredicate pred_a(schema.column(0), &u, &u);
+    // Apply predicate b BETWEEN 3 AND 255
+    ColumnRangePredicate pred_b(schema.column(1), &l, &u);
+    ScanSpec spec;
+    spec.AddPredicate(pred_a);
+    spec.AddPredicate(pred_b);
+    ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec));
+    ASSERT_TRUE(spec.predicates().empty()) << "Should have pushed down all predicates";
+    ASSERT_EQ(spec.encoded_ranges().size(), 1);
 
-  // Expect: key >= (255, 3)
-  const EncodedKeyRange *range = spec.encoded_ranges().front();
-  ASSERT_EQ("encoded key >= \\xff\\x03", range->ToString());
+    // Expect: key >= (255, 3)
+    const EncodedKeyRange *range = spec.encoded_ranges().front();
+    ASSERT_EQ("encoded key >= \\xff\\x03", range->ToString());
+  }
+
+  u = 254;
+  {
+    ScanSpec spec;
+    ColumnRangePredicate pred_a(schema.column(0), boost::none, &u);
+    spec.AddPredicate(pred_a);
+    ASSERT_NO_FATAL_FAILURE(enc.EncodeRangePredicates(&spec));
+    ASSERT_FALSE(spec.encoded_ranges()[0]->has_lower_bound());
+  }
 }
 
 } // namespace kudu
