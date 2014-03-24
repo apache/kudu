@@ -28,6 +28,7 @@
 
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
+using kudu::tablet::TabletStatusPB;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::AlterSchemaTransactionContext;
 using kudu::tablet::ChangeConfigTransactionContext;
@@ -350,6 +351,19 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     context->RespondFailure(Status::InvalidArgument(
                               "Must pass either a scanner_id or new_scan_request"));
   }
+}
+
+void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
+                                    ListTabletsResponsePB* resp,
+                                    rpc::RpcContext* context) {
+  vector<shared_ptr<TabletPeer> > peers;
+  server_->tablet_manager()->GetTabletPeers(&peers);
+  RepeatedPtrField<TabletStatusPB>* peer_status = resp->mutable_tablet_status();
+  BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
+    TabletStatusPB* status = peer_status->Add();
+    peer->GetTabletStatusPB(status);
+  }
+  context->RespondSuccess();
 }
 
 // Extract a void* pointer suitable for use in a ColumnRangePredicate from the

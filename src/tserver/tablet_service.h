@@ -49,6 +49,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     ScanResponsePB* resp,
                     rpc::RpcContext* context);
 
+  virtual void ListTablets(const ListTabletsRequestPB* req,
+                           ListTabletsResponsePB* resp,
+                           rpc::RpcContext* context);
+
  private:
   // Lookup the given tablet, ensuring that it both exists and is RUNNING.
   // If it is not, responds to the RPC associated with 'context' after setting

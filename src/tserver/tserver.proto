@@ -4,6 +4,7 @@ package kudu.tserver;
 import "common/common.proto";
 import "common/wire_protocol.proto";
 import "server/metadata.proto";
+import "tablet/tablet.proto";
 
 // Tablet-server specific errors use this protobuf.
 message TabletServerErrorPB {
@@ -125,6 +126,17 @@ message WriteResponsePB {
     required AppStatusPB error = 3;
   }
   repeated PerRowErrorPB per_row_errors = 2;
+}
+
+// A list tablets request
+message ListTabletsRequestPB {
+}
+
+// A list tablets response
+message ListTabletsResponsePB {
+  optional TabletServerErrorPB error = 1;
+
+  repeated tablet.TabletStatusPB tablet_status = 2;
 }
 
 // A create tablet request.

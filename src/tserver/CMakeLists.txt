@@ -8,6 +8,7 @@ PROTOBUF_GENERATE_CPP(TSERVER_PROTO_SRCS TSERVER_PROTO_HDRS
 add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
 ADD_DEPENDENCIES(tserver_proto kudu_common)
 ADD_DEPENDENCIES(tserver_proto metadata_proto)
+target_link_libraries(tserver_proto tablet_proto)
 
 KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..

@@ -51,10 +51,12 @@
     return _s; \
   } while (0);
 
-#define CHECK_OK(s) do { \
-  Status _s = (s); \
-  CHECK(_s.ok()) << "Bad status: " << _s.ToString(); \
+#define CHECK_OK_PREPEND(to_call, msg) do { \
+  Status _s = (to_call); \
+  CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
   } while (0);
+
+#define CHECK_OK(s) CHECK_OK_PREPEND(s, "Bad status")
 
 namespace kudu {
 
