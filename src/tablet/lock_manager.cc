@@ -145,7 +145,7 @@ LockEntry *LockTable::GetLockEntry(const Slice& key) {
   LockEntry *old_entry;
 
   {
-    boost::lock_guard<rw_spinlock> table_rdlock(lock_.get_lock());
+    boost::shared_lock<rw_spinlock> table_rdlock(lock_.get_lock());
     Bucket *bucket = FindBucket(new_entry->key_hash_);
     {
       boost::lock_guard<simple_spinlock> bucket_lock(bucket->lock);
