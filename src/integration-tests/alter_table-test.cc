@@ -32,6 +32,8 @@ using std::tr1::shared_ptr;
 using master::MiniMaster;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
+using master::GetTableSchemaRequestPB;
+using master::GetTableSchemaResponsePB;
 using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::TabletLocationsPB;
@@ -98,16 +100,33 @@ class AlterTableTest : public KuduTest {
     return WaitAlterTableCompletion(alter_req.table().table_name(), wait_attempts);
   }
 
+  Status GetSchema(const std::string& table_name, Schema *schema) {
+    GetTableSchemaResponsePB resp;
+    GetTableSchemaRequestPB req;
+
+    req.mutable_table()->set_table_name(table_name);
+    RETURN_NOT_OK(
+        cluster_->mini_master()->master()->catalog_manager()->GetTableSchema(&req, &resp));
+
+    return SchemaFromPB(resp.schema(), schema);
+  }
+
+  Status IsAlterTableDone(const std::string& table_name, bool *done) {
+    IsAlterTableDoneRequestPB req;
+    IsAlterTableDoneResponsePB resp;
+    req.mutable_table()->set_table_name(table_name);
+    RETURN_NOT_OK(
+        cluster_->mini_master()->master()->catalog_manager()->IsAlterTableDone(&req, &resp, NULL));
+    *done = resp.done();
+    return Status::OK();
+  }
+
   Status WaitAlterTableCompletion(const std::string& table_name, int attempts) {
     int wait_time = 1000;
     for (int i = 0; i < attempts; ++i) {
-      IsAlterTableDoneRequestPB req;
-      IsAlterTableDoneResponsePB resp;
-
-      req.mutable_table()->set_table_name(table_name);
-      RETURN_NOT_OK(
-        cluster_->mini_master()->master()->catalog_manager()->IsAlterTableDone(&req, &resp, NULL));
-      if (resp.done()) {
+      bool done;
+      RETURN_NOT_OK(IsAlterTableDone(table_name, &done));
+      if (done) {
         return Status::OK();
       }
 
@@ -206,7 +225,12 @@ TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   }
 
   // Verify that the Schema is the old one
-  ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
+  Schema schema;
+  bool alter_done = false;
+  ASSERT_STATUS_OK(GetSchema(kTableName, &schema));
+  ASSERT_TRUE(schema_.Equals(schema));
+  ASSERT_STATUS_OK(IsAlterTableDone(kTableName, &alter_done))
+  ASSERT_FALSE(alter_done);
 
   // Restart the TS and wait for the new schema
   RestartTabletServer();
