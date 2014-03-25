@@ -95,7 +95,6 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
                      kTabletId,
-                     new OpIdAnchorRegistry(),
                      NULL,
                      &log));
   NewLocalPeer(log.get(), "local-peer", &local_peer);
@@ -134,14 +133,12 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   CheckLastRemoteEntry(proxy, 2, 6);
 }
 
-
 TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   gscoped_ptr<Peer> local_peer;
   gscoped_ptr<Log> log;
   CHECK_OK(Log::Open(options_,
                      fs_manager_.get(),
                      kTabletId,
-                     new OpIdAnchorRegistry(),
                      NULL,
                      &log));
   // Create a set of peers

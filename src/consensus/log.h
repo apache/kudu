@@ -10,6 +10,7 @@
 #include "consensus/log_util.h"
 #include "gutil/ref_counted.h"
 #include "gutil/spinlock.h"
+#include "util/locks.h"
 #include "util/task_executor.h"
 #include "util/blocking_queue.h"
 
@@ -22,7 +23,6 @@ namespace log {
 
 class LogReader;
 class LogEntryBatch;
-class OpIdAnchorRegistry;
 struct LogMetrics;
 struct LogEntryBatchLogicalSize;
 
@@ -64,7 +64,6 @@ class Log {
   static Status Open(const LogOptions &options,
                      FsManager *fs_manager,
                      const std::string& tablet_id,
-                     OpIdAnchorRegistry* opid_anchor_registry,
                      MetricContext* parent_metric_context,
                      gscoped_ptr<Log> *log);
 
@@ -143,8 +142,11 @@ class Log {
   // only refer to in-mem state that has been flushed are candidates for
   // garbage collection.
   //
+  // min_op_id is the minimum OpId required to be retained.
+  // If successful, num_gced is set to the number of deleted log segments.
+  //
   // This method is thread-safe.
-  Status GC();
+  Status GC(const consensus::OpId& min_op_id, int* num_gced);
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
@@ -161,6 +163,9 @@ class Log {
     return previous_segments_;
   }
 
+  // Synchronously allocate a new segment and roll the log.
+  Status RollOverForTests();
+
  private:
   friend class LogTest;
   friend class LogTestBase;
@@ -169,7 +174,7 @@ class Log {
   class SegmentAllocationTask;
 
   // Log state.
-  enum State {
+  enum LogState {
     kLogInitialized,
     kLogWriting,
     kLogClosed
@@ -186,7 +191,6 @@ class Log {
       FsManager *fs_manager,
       const string& log_path,
       const string& tablet_id,
-      OpIdAnchorRegistry* opid_anchor_registry,
       MetricContext* parent_metric_context);
 
   // Initializes a new one or continues an existing log.
@@ -236,12 +240,12 @@ class Log {
   }
 
   const SegmentAllocationState allocation_state() {
-    boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
+    boost::shared_lock<boost::shared_mutex> shared_lock(allocation_lock_);
     return allocation_state_;
   }
 
   // Read-write lock to protect 'allocation_state_'.
-  mutable boost::shared_mutex lock_;
+  mutable boost::shared_mutex allocation_lock_;
 
   LogOptions options_;
   FsManager *fs_manager_;
@@ -265,8 +269,8 @@ class Log {
   // The path for the next allocated segment.
   string next_segment_path_;
 
-  // Lock to protect modifications to previous_segments_.
-  mutable simple_spinlock previous_segments_lock_;
+  // Lock to protect modifications to previous_segments_ and state_.
+  mutable percpu_rwlock state_lock_;
 
   // All previous (inactive) un-GC'd segments.
   vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_segments_;
@@ -289,9 +293,8 @@ class Log {
   // The future for an asynchronous log segment preallocation task.
   std::tr1::shared_ptr<kudu::Future> allocation_future_;
 
-  State state_;
+  LogState log_state_;
   SegmentAllocationState allocation_state_;
-  scoped_refptr<OpIdAnchorRegistry> opid_anchor_registry_;
 
   gscoped_ptr<MetricContext> metric_context_;
   gscoped_ptr<LogMetrics> metrics_;
@@ -382,14 +385,14 @@ class LogEntryBatch {
   // 'Serialize()'
   faststring buffer_;
 
-  enum State {
+  enum LogEntryState {
     kEntryInitialized,
     kEntryReserved,
     kEntrySerialized,
     kEntryReady,
     kEntryFailedToAppend
   };
-  State state_;
+  LogEntryState state_;
 
   DISALLOW_COPY_AND_ASSIGN(LogEntryBatch);
 };

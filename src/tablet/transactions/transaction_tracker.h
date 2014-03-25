@@ -33,7 +33,7 @@ class TransactionTracker {
   void Release(Transaction *txn);
 
   // Populates list of currently-running transactions into 'pending_out' vector.
-  void GetPendingTransactions(std::vector<scoped_refptr<Transaction> >* pending_out);
+  void GetPendingTransactions(std::vector<scoped_refptr<Transaction> >* pending_out) const;
 
   // Returns number of pending transactions.
   int GetNumPendingForTests() const;

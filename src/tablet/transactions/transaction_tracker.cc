@@ -32,7 +32,8 @@ void TransactionTracker::Release(Transaction *txn) {
   }
 }
 
-void TransactionTracker::GetPendingTransactions(vector<scoped_refptr<Transaction> >* pending_out) {
+void TransactionTracker::GetPendingTransactions(
+    vector<scoped_refptr<Transaction> >* pending_out) const {
   DCHECK(pending_out->empty());
   boost::lock_guard<simple_spinlock> l(lock_);
   BOOST_FOREACH(const scoped_refptr<Transaction>& tx, pending_txns_) {

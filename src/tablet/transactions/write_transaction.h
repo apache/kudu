@@ -320,10 +320,13 @@ class LeaderWriteTransaction : public LeaderTransaction {
 
   virtual void UpdateMetrics();
 
-  virtual WriteTransactionContext* tx_ctx() { return tx_ctx_.get(); }
+  virtual WriteTransactionContext* tx_ctx() OVERRIDE { return tx_ctx_.get(); }
+  virtual const WriteTransactionContext* tx_ctx() const OVERRIDE { return tx_ctx_.get(); }
+
+ protected:
+  gscoped_ptr<WriteTransactionContext> tx_ctx_;
 
  private:
-  gscoped_ptr<WriteTransactionContext> tx_ctx_;
   DISALLOW_COPY_AND_ASSIGN(LeaderWriteTransaction);
 };
 

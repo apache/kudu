@@ -3,11 +3,14 @@
 #ifndef KUDU_TABLET_TABLET_PEER_H_
 #define KUDU_TABLET_TABLET_PEER_H_
 
+#include <string>
+
 #include "consensus/consensus.h"
 #include "consensus/log.h"
 #include "consensus/opid_anchor_registry.h"
 #include "tablet/tablet.h"
 #include "tablet/transactions/transaction_tracker.h"
+#include "util/countdown_latch.h"
 #include "util/metrics.h"
 #include "util/semaphore.h"
 
@@ -22,6 +25,7 @@ class Messenger;
 }
 
 namespace tablet {
+
 class ChangeConfigTransactionContext;
 class TabletStatusPB;
 class TabletStatusListener;
@@ -134,14 +138,33 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
     return error_;
   }
 
+  // Returns the minimum known OpId that is in-memory or in-flight.
+  // Used for selection of log segments to delete during Log GC.
+  void GetEarliestNeededOpId(consensus::OpId* op_id) const;
+
   server::Clock* clock() {
     return clock_.get();
   }
 
  private:
+  friend class TabletPeerTest;
+  FRIEND_TEST(TabletPeerTest, TestMRSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletPeerTest, TestDMSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletPeerTest, TestActiveTransactionPreventsLogGC);
+
+  // Schedule the Log GC task to run in the executor.
+  Status StartLogGCTask();
+
+  // Task that runs Log GC on a periodic basis.
+  Status RunLogGC();
+
+  // Helper method for log messages. Returns empty string if tablet not assigned.
+  std::string tablet_id() const;
+
   metadata::TabletStatePB state_;
   Status error_;
   scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
+  TransactionTracker txn_tracker_;
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
@@ -149,8 +172,6 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   gscoped_ptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
-
-  TransactionTracker txn_tracker_;
 
   // lock protecting internal (usually rare) state changes.
   mutable simple_spinlock internal_state_lock_;
@@ -162,6 +183,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // TabletPeer, PrepareTasks are executed *serially*.
   gscoped_ptr<TaskExecutor> prepare_executor_;
   gscoped_ptr<TaskExecutor> apply_executor_;
+  gscoped_ptr<TaskExecutor> log_gc_executor_;
+  CountDownLatch log_gc_shutdown_latch_;
 
   scoped_refptr<server::Clock> clock_;
 

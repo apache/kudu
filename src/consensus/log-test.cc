@@ -1,9 +1,10 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include "consensus/log-test-base.h"
-
+#include <boost/bind.hpp>
+#include <boost/function.hpp>
 #include <vector>
 
+#include "consensus/log-test-base.h"
 #include "gutil/stl_util.h"
 #include "tablet/mvcc.h"
 
@@ -188,25 +189,30 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 
   const int kNumTotalSegments = 4;
   const int kNumOpsPerSegment = 5;
+  int num_gced_segments;
   OpId op_id(MinimumOpId());
+  OpId anchored_opid;
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
   ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
-  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
   ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
 
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
-  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
   ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
 
   // Release the remaining "rolled segment" anchor. GC will not delete the
   // last log.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
-  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
   ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
 
   ASSERT_STATUS_OK(log_->Close());
@@ -252,13 +258,16 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
   const int kNumTotalSegments = 3;
   const int kNumOpsPerSegment = 5;
+  int num_gced_segments;
   OpId op_id(MinimumOpId());
+  OpId anchored_opid;
 
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
   ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
-  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
   ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
 
   ASSERT_STATUS_OK(log_->Close());
@@ -279,7 +288,8 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   for (int i = 0; i < 3; i++) {
     ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[i]));
   }
-  ASSERT_STATUS_OK(log_->GC());
+  ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
+  ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
 
   // After GC there should be only one left, because it's the first segment
   // (counting in reverse order) that has an earlier initial OpId than the

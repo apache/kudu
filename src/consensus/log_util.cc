@@ -200,13 +200,26 @@ Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
 }
 
 bool OpIdEquals(const OpId& left, const OpId& right) {
+  DCHECK(left.IsInitialized());
+  DCHECK(right.IsInitialized());
   return left.term() == right.term() && left.index() == right.index();
 }
 
 bool OpIdLessThan(const OpId& left, const OpId& right) {
+  DCHECK(left.IsInitialized());
+  DCHECK(right.IsInitialized());
   if (left.term() < right.term()) return true;
   if (left.term() > right.term()) return false;
   return left.index() < right.index();
+}
+
+bool CopyIfOpIdLessThan(const consensus::OpId& to_compare, consensus::OpId* target) {
+  if (to_compare.IsInitialized() &&
+      (!target->IsInitialized() || OpIdLessThan(to_compare, *target))) {
+    target->CopyFrom(to_compare);
+    return true;
+  }
+  return false;
 }
 
 size_t OpIdHashFunctor::operator() (const OpId& id) const {

@@ -179,6 +179,13 @@ bool OpIdEquals(const consensus::OpId& left, const consensus::OpId& right);
 // Returns true iff left < right.
 bool OpIdLessThan(const consensus::OpId& left, const consensus::OpId& right);
 
+// Copies to_compare into target under the following conditions:
+// - If to_compare is initialized and target is not.
+// - If they are both initialized and to_compare is less than target.
+// Otherwise, does nothing.
+// If to_compare is copied into target, returns true, else false.
+bool CopyIfOpIdLessThan(const consensus::OpId& to_compare, consensus::OpId* target);
+
 // OpId hash functor. Suitable for use with std::unordered_map.
 struct OpIdHashFunctor {
   size_t operator() (const consensus::OpId& id) const;

@@ -87,7 +87,8 @@ class LeaderChangeConfigTransaction : public LeaderTransaction {
   // Actually commits the transaction.
   virtual void ApplySucceeded();
 
-  virtual ChangeConfigTransactionContext* tx_ctx() { return tx_ctx_.get(); }
+  virtual ChangeConfigTransactionContext* tx_ctx() OVERRIDE { return tx_ctx_.get(); }
+  virtual const ChangeConfigTransactionContext* tx_ctx() const OVERRIDE { return tx_ctx_.get(); }
 
  private:
 

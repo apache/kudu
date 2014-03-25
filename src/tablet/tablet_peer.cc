@@ -2,8 +2,14 @@
 
 #include "tablet/tablet_peer.h"
 
+#include <string>
+#include <vector>
+
+#include <gflags/gflags.h>
+
 #include "consensus/local_consensus.h"
 #include "consensus/log.h"
+#include "consensus/log_util.h"
 #include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/sysinfo.h"
@@ -17,6 +23,12 @@
 #include "util/stopwatch.h"
 #include "util/trace.h"
 
+DEFINE_bool(log_gc_enable, true,
+    "Enable garbage collection (deletion) of old write-ahead logs.");
+
+DEFINE_int32(log_gc_sleep_delay_ms, 10000,
+    "Number of milliseconds that each Log GC thread will sleep between runs.");
+
 namespace kudu {
 namespace tablet {
 
@@ -24,9 +36,8 @@ using consensus::Consensus;
 using consensus::ConsensusContext;
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
-using consensus::CHANGE_CONFIG_OP;
-using consensus::WRITE_OP;
-using consensus::OP_ABORT;
+using consensus::OpId;
+using log::CopyIfOpIdLessThan;
 using log::Log;
 using log::OpIdAnchorRegistry;
 using metadata::QuorumPB;
@@ -45,6 +56,8 @@ TabletPeer::TabletPeer(const TabletMetadata& meta)
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)),
+    log_gc_executor_(TaskExecutor::CreateNew("log gc exec", 1)),
+    log_gc_shutdown_latch_(1),
     config_sem_(1) {
   apply_executor_.reset(TaskExecutor::CreateNew("apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
@@ -113,6 +126,9 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
     CHECK_EQ(state_, metadata::CONFIGURING);
     state_ = metadata::RUNNING;
   }
+
+  RETURN_NOT_OK(StartLogGCTask());
+
   return Status::OK();
 }
 
@@ -124,18 +140,21 @@ void TabletPeer::Shutdown() {
 
   // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
-      strings::Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete",
-                          tablet_ != NULL ? tablet_->tablet_id() : "")) {
+      Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete", tablet_id())) {
     txn_tracker_.WaitForAllToFinish();
   }
+
+  // Stop Log GC thread before we close the log.
+  VLOG(1) << Substitute("TabletPeer: tablet $0: Shutting down Log GC thread...", tablet_id());
+  log_gc_shutdown_latch_.CountDown();
+  log_gc_executor_->Shutdown();
 
   consensus_->Shutdown();
   prepare_executor_->Shutdown();
   apply_executor_->Shutdown();
+
   if (VLOG_IS_ON(1)) {
-    if (tablet_) {
-      VLOG(1) << "TabletPeer: " << tablet_->metadata()->oid() << " Shutdown!";
-    }
+    VLOG(1) << "TabletPeer: tablet " << tablet_id() << " shut down!";
   }
 
   {
@@ -216,6 +235,67 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   if (tablet() != NULL) {
     status_pb_out->set_estimated_on_disk_size(tablet()->EstimateOnDiskSize());
   }
+}
+
+Status TabletPeer::StartLogGCTask() {
+  if (PREDICT_FALSE(!FLAGS_log_gc_enable)) {
+    LOG(INFO) << "Log GC is disabled, not deleting old write-ahead logs!";
+    return Status::OK();
+  }
+  shared_ptr<Future> future;
+  return log_gc_executor_->Submit(boost::bind(&TabletPeer::RunLogGC, this), &future);
+}
+
+Status TabletPeer::RunLogGC() {
+  do {
+    OpId min_op_id;
+    int32_t num_gced;
+    GetEarliestNeededOpId(&min_op_id);
+    Status s = log_->GC(min_op_id, &num_gced);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
+      LOG(ERROR) << s.ToString();
+    }
+    // TODO: Possibly back off if num_gced == 0.
+  } while (!log_gc_shutdown_latch_.TimedWait(
+               boost::posix_time::milliseconds(FLAGS_log_gc_sleep_delay_ms)));
+  return Status::OK();
+}
+
+void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
+  min_op_id->Clear();
+
+  // First, we anchor on the last OpId in the Log to establish a lower bound
+  // and avoid racing with the other checks. This limits the Log GC candidate
+  // segments before we check the anchors.
+  Status s = log_->GetLastEntryOpId(min_op_id);
+
+  // Next, we interrogate the anchor registry.
+  // Returns OK if minimum known, NotFound if no anchors are registered.
+  OpId min_anchor_op_id;
+  s = opid_anchor_registry_->GetEarliestRegisteredOpId(&min_anchor_op_id);
+  if (PREDICT_FALSE(!s.ok())) {
+    DCHECK(s.IsNotFound()) << "Unexpected error calling OpIdAnchorRegistry: " << s.ToString();
+  }
+  CopyIfOpIdLessThan(min_anchor_op_id, min_op_id);
+
+  // Next, interrogate the TransactionTracker.
+  vector<scoped_refptr<Transaction> > pending_transactions;
+  txn_tracker_.GetPendingTransactions(&pending_transactions);
+  BOOST_FOREACH(const scoped_refptr<Transaction> tx, pending_transactions) {
+    OpId tx_op_id;
+    tx->GetOpId(&tx_op_id);
+    CopyIfOpIdLessThan(tx_op_id, min_op_id);
+  }
+
+  // Finally, if nothing is known or registered, just don't delete anything.
+  if (!min_op_id->IsInitialized()) {
+    min_op_id->CopyFrom(log::MinimumOpId());
+  }
+}
+
+string TabletPeer::tablet_id() const {
+  return tablet_ != NULL ? tablet_->tablet_id() : "";
 }
 
 }  // namespace tablet

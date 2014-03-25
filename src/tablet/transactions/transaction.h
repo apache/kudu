@@ -239,6 +239,11 @@ class Transaction : public base::RefCountedThreadSafe<Transaction> {
 
   // Returns the TransactionContext for this transaction.
   virtual TransactionContext* tx_ctx() = 0;
+  virtual const TransactionContext* tx_ctx() const = 0;
+
+  // Get the OpId of the transaction.
+  // If unassigned, returns an uninitialized OpId.
+  virtual void GetOpId(consensus::OpId* op_id) const = 0;
 
  protected:
   Transaction(TaskExecutor* prepare_executor,
@@ -310,11 +315,11 @@ class LeaderTransaction : public Transaction {
                     TaskExecutor* apply_executor,
                     simple_spinlock* prepare_replicate_lock);
 
+  virtual ~LeaderTransaction();
+
   virtual Status Execute();
 
-  virtual TransactionContext* tx_ctx() = 0;
-
-  virtual ~LeaderTransaction();
+  virtual void GetOpId(consensus::OpId* op_id) const OVERRIDE;
 
  protected:
   //===========================================================================
@@ -364,6 +369,11 @@ class LeaderTransaction : public Transaction {
   // Lock that protects that, on Execute(), Prepare() and Consensus::Append() are submitted
   // in one go across transactions.
   simple_spinlock* prepare_replicate_lock_;
+
+  // Lock per LeaderTransaction that protects state that may be accessed by
+  // other threads. At time of writing, that is only the TransactionContext's
+  // OpId assigned at Consensus::Append() time.
+  mutable simple_spinlock state_lock_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LeaderTransaction);

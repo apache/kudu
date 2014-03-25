@@ -114,9 +114,6 @@ Status LocalConsensus::Replicate(ConsensusContext* context) {
     cur_op_id->set_term(0);
     cur_op_id->set_index(next_op_id_index_++);
 
-    // TODO: Register TransactionContext (not currently passed) to avoid Log GC
-    // race between Append() and Apply(). See KUDU-152.
-
     // Reserve the correct slot in the log for the replication operation.
     RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(context->replicate_op()),
                                 &reserved_entry_batch));

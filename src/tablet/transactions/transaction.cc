@@ -75,7 +75,15 @@ Status LeaderTransaction::Execute() {
                                                                prepare_finished_callback_,
                                                                commit_finished_callback_));
   // persist the message through consensus, asynchronously
-  Status s = consensus_->Replicate(context.get());
+  Status s;
+  {
+    // Lock the Transaction, since the OpId is being assigned.
+    // This is necessary to make the assigned OpId visible to the
+    // TransactionTracker and Log GC.
+    boost::lock_guard<simple_spinlock> state_lock(state_lock_);
+    s = consensus_->Replicate(context.get());
+  }
+
   if (!s.ok()) {
     prepare_finished_callback_->OnFailure(s);
     HandlePrepareFailure();
@@ -95,6 +103,11 @@ Status LeaderTransaction::Execute() {
   }
   prepare_task_future->AddListener(prepare_finished_callback_);
   return Status::OK();
+}
+
+void LeaderTransaction::GetOpId(consensus::OpId* op_id) const {
+  boost::lock_guard<simple_spinlock> lock(state_lock_);
+  op_id->CopyFrom(tx_ctx()->op_id());
 }
 
 void LeaderTransaction::PrepareSucceeded() {

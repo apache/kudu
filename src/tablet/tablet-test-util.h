@@ -25,7 +25,8 @@ using std::vector;
 class KuduTabletTest : public KuduTest {
  public:
   explicit KuduTabletTest(const Schema& schema)
-  : schema_(schema) {
+    : schema_(schema),
+      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
   virtual void SetUp() {
@@ -56,10 +57,8 @@ class KuduTabletTest : public KuduTest {
                                                             quorum_,
                                                             "", "",
                                                             &metadata));
-    scoped_refptr<server::Clock> clock(
-        server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
-    tablet_.reset(new Tablet(metadata.Pass(), clock, NULL,
-                             new log::OpIdAnchorRegistry()));
+    opid_anchor_registry_ = new log::OpIdAnchorRegistry();
+    tablet_.reset(new Tablet(metadata.Pass(), clock_, NULL, opid_anchor_registry_.get()));
     ASSERT_STATUS_OK(tablet_->Open());
   }
 
@@ -69,6 +68,10 @@ class KuduTabletTest : public KuduTest {
 
   const Schema &schema() const {
     return schema_;
+  }
+
+  server::Clock* clock() {
+    return clock_.get();
   }
 
   void AlterSchema(const Schema& schema) {
@@ -84,7 +87,9 @@ class KuduTabletTest : public KuduTest {
  protected:
   const Schema schema_;
   QuorumPB quorum_;
-  gscoped_ptr<Tablet> tablet_;
+  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<log::OpIdAnchorRegistry> opid_anchor_registry_;
+  std::tr1::shared_ptr<Tablet> tablet_;
   gscoped_ptr<FsManager> fs_manager_;
 };
 

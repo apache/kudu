@@ -3,7 +3,6 @@
 #include "consensus/log.h"
 
 #include "consensus/log_reader.h"
-#include "consensus/opid_anchor_registry.h"
 #include "consensus/log_metrics.h"
 #include "gutil/ref_counted.h"
 #include "gutil/strings/substitute.h"
@@ -176,7 +175,6 @@ const uint64_t Log::kInitialLogSegmentSequenceNumber = 0L;
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const std::string& tablet_id,
-                 OpIdAnchorRegistry* opid_anchor_registry,
                  MetricContext* parent_metrics_context,
                  gscoped_ptr<Log> *log) {
 
@@ -189,7 +187,6 @@ Status Log::Open(const LogOptions &options,
                                    fs_manager,
                                    tablet_wal_path,
                                    tablet_id,
-                                   opid_anchor_registry,
                                    parent_metrics_context));
   RETURN_NOT_OK(new_log->Init());
   log->reset(new_log.release());
@@ -205,7 +202,6 @@ Log::Log(const LogOptions &options,
          FsManager *fs_manager,
          const string& log_path,
          const string& tablet_id,
-         OpIdAnchorRegistry* opid_anchor_registry,
          MetricContext* parent_metric_context)
 : options_(options),
   fs_manager_(fs_manager),
@@ -216,9 +212,9 @@ Log::Log(const LogOptions &options,
   append_thread_(new AppendThread(this)),
   allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
   force_sync_all_(options_.force_fsync_all),
-  state_(kLogInitialized),
-  allocation_state_(kAllocationNotStarted),
-  opid_anchor_registry_(opid_anchor_registry) {
+  log_state_(kLogInitialized),
+  allocation_state_(kAllocationNotStarted) {
+
   if (parent_metric_context) {
     metric_context_.reset(new MetricContext(*parent_metric_context,
                                             strings::Substitute("log.tablet-$0", tablet_id)));
@@ -227,7 +223,8 @@ Log::Log(const LogOptions &options,
 }
 
 Status Log::Init() {
-  CHECK_EQ(state_, kLogInitialized);
+  boost::lock_guard<percpu_rwlock> write_lock(state_lock_);
+  CHECK_EQ(kLogInitialized, log_state_);
 
   // Reader for previous segments.
   gscoped_ptr<LogReader> previous_segments_reader;
@@ -239,7 +236,6 @@ Status Log::Init() {
   // We must pick up where the previous WAL left off in terms of
   // sequence numbers.
   if (previous_segments_reader->size() != 0) {
-    boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
     previous_segments_ = previous_segments_reader->segments();
     VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
@@ -262,12 +258,12 @@ Status Log::Init() {
   RETURN_NOT_OK(SwitchToAllocatedSegment());
 
   RETURN_NOT_OK(append_thread_->Init());
-  state_ = kLogWriting;
+  log_state_ = kLogWriting;
   return Status::OK();
 }
 
 Status Log::AsyncAllocateSegment() {
-  boost::lock_guard<boost::shared_mutex> lock_guard(lock_);
+  boost::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
   CHECK_EQ(allocation_state_, kAllocationNotStarted);
   allocation_future_.reset();
   shared_ptr<Task> allocation_task(new SegmentAllocationTask(this));
@@ -297,7 +293,10 @@ Status Log::RollOver() {
 Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
                     LogEntryBatch** reserved_entry) {
   DCHECK(reserved_entry != NULL);
-  CHECK_EQ(state_, kLogWriting);
+  {
+    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    CHECK_EQ(kLogWriting, log_state_);
+  }
 
   size_t num_ops = ops.size();
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
@@ -330,7 +329,10 @@ Status Log::DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
 }
 
 Status Log::AsyncAppend(LogEntryBatch* entry_batch, const shared_ptr<FutureCallback>& callback) {
-  CHECK_EQ(state_, kLogWriting);
+  {
+    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    CHECK_EQ(kLogWriting, log_state_);
+  }
 
   RETURN_NOT_OK(entry_batch->Serialize());
   entry_batch->set_callback(callback);
@@ -340,7 +342,10 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const shared_ptr<FutureCallb
 }
 
 Status Log::AsyncAppend(LogEntryBatch* entry_batch) {
-  CHECK_EQ(state_, kLogWriting);
+  {
+    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    CHECK_EQ(kLogWriting, log_state_);
+  }
 
   RETURN_NOT_OK(entry_batch->Serialize());
   entry_batch->MarkReady();
@@ -452,6 +457,11 @@ Status Log::WriteHeaderForTests() {
   return WriteHeader(zero);
 }
 
+Status Log::RollOverForTests() {
+  RETURN_NOT_OK(AsyncAllocateSegment());
+  return RollOver();
+}
+
 Status Log::Sync() {
   SCOPED_LATENCY_METRIC(metrics_, sync_latency);
   if (force_sync_all_) {
@@ -493,7 +503,7 @@ Status Log::WaitUntilAllFlushed() {
 
 
 Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
-  boost::shared_lock<boost::shared_mutex> shared_lock(lock_);
+  boost::shared_lock<boost::shared_mutex> shared_lock(allocation_lock_);
   if (last_entry_op_id_.IsInitialized()) {
     DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);
     return Status::OK();
@@ -502,32 +512,19 @@ Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
   }
 }
 
-Status Log::GC() {
-  // TODO: When we add a GC thread, ensure that we stop the thread on Close()
-  // and synchronize on state_.
-  CHECK_EQ(state_, kLogWriting);
-
-  // Consult OpIdAnchorRegistry for OpIds of interest.
-  OpId earliest_needed_op_id;
-  Status s = opid_anchor_registry_->GetEarliestRegisteredOpId(&earliest_needed_op_id);
-  if (!s.ok()) {
-    if (s.IsNotFound()) {
-      return Status::OK();
-    } else {
-      return s.CloneAndPrepend("Unexpected error from "
-                               "OpIdAnchorRegistry::GetEarliestRegisteredOpId()");
-    }
-  }
+Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
+  CHECK(min_op_id.IsInitialized()) << "Invalid min_op_id: " << min_op_id.ShortDebugString();
 
   LOG(INFO) << "Running Log GC on " << log_dir_;
   LOG_TIMING(INFO, "Log GC") {
     vector<string> stale_segment_paths;
     {
-      boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
+      boost::lock_guard<percpu_rwlock> l(state_lock_);
+      CHECK_EQ(kLogWriting, log_state_);
       uint32_t num_stale_segments =
-          FindStaleSegmentsPrefixSize(previous_segments_, earliest_needed_op_id);
+          FindStaleSegmentsPrefixSize(previous_segments_, min_op_id);
       if (num_stale_segments > 0) {
-        LOG(INFO) << "Found " << num_stale_segments << " stale segments.";
+        LOG(INFO) << "Found " << num_stale_segments << " stale log segments.";
         for (int i = 0; i < num_stale_segments; i++) {
           stale_segment_paths.push_back(previous_segments_[i]->path());
         }
@@ -537,9 +534,11 @@ Status Log::GC() {
     }
 
     // Now that they are no longer referenced by the Log, delete the files.
+    *num_gced = 0;
     BOOST_FOREACH(const string& path, stale_segment_paths) {
       LOG(INFO) << "Deleting Log file in path: " << path;
       RETURN_NOT_OK(fs_manager_->env()->DeleteFile(path));
+      (*num_gced)++;
     }
   }
   return Status::OK();
@@ -551,18 +550,21 @@ Status Log::Close() {
     append_thread_->Shutdown();
     VLOG(1) << "Append thread Shutdown()";
   }
-  if (state_ == kLogWriting) {
-    RETURN_NOT_OK(Sync());
-    RETURN_NOT_OK(active_segment_->writable_file()->Close());
-    state_ = kLogClosed;
-    VLOG(1) << "Log closed";
-    return Status::OK();
+
+  boost::lock_guard<percpu_rwlock> l(state_lock_);
+  switch (log_state_) {
+    case kLogWriting:
+      RETURN_NOT_OK(Sync());
+      RETURN_NOT_OK(active_segment_->writable_file()->Close());
+      log_state_ = kLogClosed;
+      VLOG(1) << "Log closed";
+      return Status::OK();
+    case kLogClosed:
+      VLOG(1) << "Log already closed";
+      return Status::OK();
+    default:
+      return Status::IllegalState(Substitute("Bad state for Close() $0", log_state_));
   }
-  if (state_ == kLogClosed) {
-    VLOG(1) << "Log already closed";
-    return Status::OK();
-  }
-  return Status::IllegalState(strings::Substitute("Bad state for Close() $0", state_));
 }
 
 Status Log::PreAllocateNewSegment() {
@@ -580,7 +582,7 @@ Status Log::PreAllocateNewSegment() {
   }
 
   {
-    boost::lock_guard<boost::shared_mutex> lock_guard(lock_);
+    boost::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
     allocation_state_ = kAllocationFinished;
   }
   return Status::OK();
@@ -618,7 +620,7 @@ Status Log::SwitchToAllocatedSegment() {
     // wrote the header out.
     readable_segment->Init(active_segment_->header(), active_segment_->first_entry_offset());
 
-    boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
+    boost::lock_guard<percpu_rwlock> l(state_lock_);
     previous_segments_.push_back(readable_segment);
   }
 
@@ -653,9 +655,13 @@ Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,
 }
 
 Log::~Log() {
-  if (state_ == kLogWriting) {
-    WARN_NOT_OK(Close(), "Error closing log");
+  {
+    boost::shared_lock<rw_spinlock> l(state_lock_.get_lock());
+    if (log_state_ == kLogClosed) {
+      return;
+    }
   }
+  WARN_NOT_OK(Close(), "Error closing log");
 }
 
 LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
