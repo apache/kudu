@@ -5,13 +5,11 @@
 #include <string>
 #include <vector>
 
-#include "cfile/cfile_reader.h"
 #include "cfile/cfile_util.h"
 #include "common/iterator.h"
 #include "common/rowid.h"
 #include "common/schema.h"
 #include "gutil/macros.h"
-#include "server/metadata.h"
 #include "tablet/mvcc.h"
 #include "util/bloom_filter.h"
 #include "util/faststring.h"

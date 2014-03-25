@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <tr1/memory>
 
+#include "common/generic_iterators.h"
 #include "tablet/cfile_set.h"
 #include "tablet/diskrowset-test-base.h"
 #include "tablet/tablet-test-base.h"

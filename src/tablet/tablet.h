@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
 #include "common/predicate_encoder.h"
@@ -13,11 +12,9 @@
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "server/metadata.h"
-#include "tablet/diskrowset.h"
-#include "tablet/memrowset.h"
+#include "tablet/mvcc.h"
 #include "tablet/lock_manager.h"
-#include "tablet/rowset_tree.h"
-#include "util/env.h"
+#include "tablet/rowset.h"
 #include "util/locks.h"
 #include "util/status.h"
 #include "util/slice.h"
@@ -25,6 +22,8 @@
 namespace kudu {
 
 class MetricContext;
+class RowChangeList;
+class UnionIterator;
 
 namespace consensus {
 class Consensus;
@@ -44,9 +43,12 @@ using std::string;
 using std::tr1::shared_ptr;
 
 class AlterSchemaTransactionContext;
-class RowSetsInCompaction;
 class CompactionPolicy;
+class MemRowSet;
+class MvccSnapshot;
 class PreparedRowWrite;
+class RowSetsInCompaction;
+class RowSetTree;
 struct TabletMetrics;
 class WriteTransactionContext;
 
@@ -180,9 +182,7 @@ class Tablet {
 
   Status Compact(CompactFlags flags);
 
-  size_t MemRowSetSize() const {
-    return memrowset_->memory_footprint();
-  }
+  size_t MemRowSetSize() const;
 
   // Estimate the total on-disk size of this tablet, in bytes.
   size_t EstimateOnDiskSize() const;
@@ -245,7 +245,7 @@ class Tablet {
   void SetFlushHooksForTests(const shared_ptr<FlushFaultHooks> &hooks);
   void SetFlushCompactCommonHooksForTests(const shared_ptr<FlushCompactCommonHooks> &hooks);
 
-  int32_t CurrentMrsIdForTests() const { return memrowset_->mrs_id(); }
+  int32_t CurrentMrsIdForTests() const;
 
   int32_t TotalMissedDeltasMutationsForTests() const { return total_missed_deltas_mutations_; }
 
@@ -430,7 +430,7 @@ class Tablet::FlushFaultHooks {
 
 class Tablet::Iterator : public RowwiseIterator {
  public:
-  virtual ~Iterator() {}
+  virtual ~Iterator();
 
   virtual Status Init(ScanSpec *spec);
 

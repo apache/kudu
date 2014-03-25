@@ -12,26 +12,26 @@
 #include <string>
 #include <vector>
 
-#include "rpc/outbound_call.h"
 #include "rpc/response_callback.h"
-#include "rpc/inbound_call.h"
-#include "rpc/transfer.h"
 #include "util/blocking_queue.h"
 #include "util/metrics.h"
 #include "util/monotime.h"
-#include "util/net/socket.h"
+#include "util/net/sockaddr.h"
 #include "util/status.h"
 
 namespace kudu {
 
 class FutureTask;
+class Socket;
 class TaskExecutor;
 
 namespace rpc {
 
 class AcceptorPool;
 class Connection;
+class InboundCall;
 class Messenger;
+class OutboundCall;
 class Reactor;
 class ReactorThread;
 

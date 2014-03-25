@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/partial_row.h"
+#include "common/row_changelist.h"
 #include "common/wire_protocol.h"
 #include "consensus/log.h"
 #include "consensus/log_reader.h"

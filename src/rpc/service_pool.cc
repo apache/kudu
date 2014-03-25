@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "gutil/gscoped_ptr.h"
+#include "rpc/inbound_call.h"
 #include "rpc/messenger.h"
 #include "rpc/service_if.h"
 #include "util/metrics.h"

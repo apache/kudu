@@ -4,7 +4,6 @@
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <iterator>
 #include <limits>
 #include <tr1/memory>
@@ -12,6 +11,7 @@
 
 #include "cfile/cfile.h"
 #include "common/iterator.h"
+#include "common/row_changelist.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "consensus/consensus.h"
@@ -21,15 +21,14 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/numbers.h"
-#include "gutil/strings/split.h"
-#include "gutil/strings/strip.h"
 #include "gutil/strings/substitute.h"
 #include "tablet/compaction.h"
 #include "tablet/compaction_policy.h"
+#include "tablet/delta_compaction.h"
+#include "tablet/diskrowset.h"
 #include "tablet/tablet.h"
 #include "tablet/tablet_metrics.h"
-#include "tablet/diskrowset.h"
-#include "tablet/delta_compaction.h"
+#include "tablet/rowset_tree.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/transactions/write_util.h"
@@ -759,6 +758,10 @@ void Tablet::SetFlushCompactCommonHooksForTests(
   common_hooks_ = hooks;
 }
 
+int32_t Tablet::CurrentMrsIdForTests() const {
+  return memrowset_->mrs_id();
+}
+
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
   // Grab a local reference to the current RowSetTree. This is to avoid
@@ -1168,6 +1171,10 @@ Status Tablet::CountRows(uint64_t *count) const {
   return Status::OK();
 }
 
+size_t Tablet::MemRowSetSize() const {
+  return memrowset_->memory_footprint();
+}
+
 size_t Tablet::EstimateOnDiskSize() const {
   shared_ptr<RowSetTree> rowsets_copy;
 
@@ -1258,6 +1265,8 @@ Tablet::Iterator::Iterator(const Tablet *tablet,
       snap_(snap),
       encoder_(tablet_->key_schema()) {
 }
+
+Tablet::Iterator::~Iterator() {}
 
 Status Tablet::Iterator::Init(ScanSpec *spec) {
   DCHECK(iter_.get() == NULL);

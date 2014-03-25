@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "common/generic_iterators.h"
 #include "gutil/strings/util.h"
 #include "server/logical_clock.h"
 #include "tablet/cfile_set.h"

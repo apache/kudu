@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "common/iterator.h"
+#include "consensus/opid_anchor_registry.h"
 #include "gutil/strings/join.h"
 #include "gutil/casts.h"
 #include "server/logical_clock.h"

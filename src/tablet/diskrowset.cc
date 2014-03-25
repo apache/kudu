@@ -1,6 +1,5 @@
 // Copyright (c) 2012, Cloudera, inc.
 
-#include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 #include <tr1/memory>
 #include <algorithm>
@@ -9,14 +8,13 @@
 #include "common/generic_iterators.h"
 #include "common/iterator.h"
 #include "common/schema.h"
+#include "consensus/opid_anchor_registry.h"
 #include "cfile/bloomfile.h"
 #include "cfile/cfile.h"
 #include "cfile/type_encodings.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/stl_util.h"
-#include "gutil/strings/numbers.h"
-#include "gutil/strings/strip.h"
-#include "consensus/opid_anchor_registry.h"
+#include "tablet/cfile_set.h"
 #include "tablet/compaction.h"
 #include "tablet/diskrowset.h"
 #include "tablet/delta_compaction.h"
@@ -24,6 +22,7 @@
 
 namespace kudu { namespace tablet {
 
+using cfile::BloomFileWriter;
 using cfile::CFileReader;
 using cfile::ReaderOptions;
 using log::OpIdAnchorRegistry;
@@ -36,6 +35,14 @@ using std::tr1::shared_ptr;
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
+
+DiskRowSetWriter::DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
+                                   const BloomFilterSizing &bloom_sizing)
+  : rowset_metadata_(rowset_metadata),
+    bloom_sizing_(bloom_sizing),
+    finished_(false),
+    written_count_(0)
+{}
 
 Status DiskRowSetWriter::Open() {
   CHECK(cfile_writers_.empty());

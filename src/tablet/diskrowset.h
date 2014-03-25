@@ -7,30 +7,27 @@
 #ifndef KUDU_TABLET_DISKROWSET_H_
 #define KUDU_TABLET_DISKROWSET_H_
 
-#include <boost/thread/shared_mutex.hpp>
+#include <boost/thread/mutex.hpp>
 #include <gtest/gtest.h>
-#include <memory>
 #include <string>
 #include <vector>
 
-#include "cfile/cfile.h"
-#include "cfile/cfile_reader.h"
 #include "common/row.h"
-#include "common/rowblock.h"
 #include "common/row_changelist.h"
 #include "common/schema.h"
 #include "gutil/macros.h"
-#include "tablet/deltamemstore.h"
-#include "tablet/delta_tracker.h"
-#include "tablet/cfile_set.h"
+#include "tablet/delta_key.h"
+#include "server/metadata.h"
 #include "tablet/rowset.h"
 #include "util/bloom_filter.h"
-#include "util/memory/arena.h"
 
 namespace kudu {
 
+class RowBlock;
+
 namespace cfile {
 class BloomFileWriter;
+class Writer;
 }
 
 namespace log {
@@ -39,23 +36,19 @@ class OpIdAnchorRegistry;
 
 namespace tablet {
 
-using std::string;
-using kudu::cfile::BloomFileWriter;
-using kudu::cfile::CFileIterator;
-using kudu::cfile::CFileReader;
-
+class CFileSet;
+class DeltaFileWriter;
+class DeltaStats;
+class DeltaTracker;
+class MultiColumnWriter;
+class Mutation;
 class MutationResultPB;
 
 class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
   DiskRowSetWriter(metadata::RowSetMetadata *rowset_metadata,
-                   const BloomFilterSizing &bloom_sizing) :
-    rowset_metadata_(rowset_metadata),
-    bloom_sizing_(bloom_sizing),
-    finished_(false),
-    written_count_(0)
-  {}
+                   const BloomFilterSizing &bloom_sizing);
 
   ~DiskRowSetWriter();
 
@@ -99,7 +92,7 @@ class DiskRowSetWriter {
   bool finished_;
   rowid_t written_count_;
   std::vector<cfile::Writer *> cfile_writers_;
-  gscoped_ptr<BloomFileWriter> bloom_writer_;
+  gscoped_ptr<cfile::BloomFileWriter> bloom_writer_;
   gscoped_ptr<cfile::Writer> ad_hoc_index_writer_;
 
   // The last encoded key written.
@@ -307,11 +300,11 @@ class DiskRowSet : public RowSet {
     return rowset_metadata_->schema();
   }
 
-  string ToString() const {
+  std::string ToString() const {
     return rowset_metadata_->ToString();
   }
 
-  virtual Status DebugDump(vector<string> *out = NULL);
+  virtual Status DebugDump(std::vector<std::string> *out = NULL);
 
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
@@ -346,7 +339,6 @@ class DiskRowSet : public RowSet {
   log::OpIdAnchorRegistry* opid_anchor_registry_;
 
   // Base data for this rowset.
-  // This vector contains one entry for each column.
   shared_ptr<CFileSet> base_data_;
   shared_ptr<DeltaTracker> delta_tracker_;
 

@@ -9,6 +9,7 @@
 #include "common/generic_iterators.h"
 #include "gutil/stringprintf.h"
 #include "gutil/stl_util.h"
+#include "server/metadata.h"
 
 using kudu::metadata::RowSetMetadata;
 

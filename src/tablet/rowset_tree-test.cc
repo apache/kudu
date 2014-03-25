@@ -5,6 +5,7 @@
 #include <glog/logging.h>
 #include <stdio.h>
 
+#include "server/metadata.h"
 #include "tablet/rowset_tree.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
