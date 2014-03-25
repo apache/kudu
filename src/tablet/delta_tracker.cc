@@ -329,7 +329,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   vector<int64_t> compacted_ids;
   RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, data_writer,
                 &compacted_stores, &compacted_ids));
-  int64_t compacted_id = compacted_ids.back();
+  int64_t new_store_id = compacted_ids.back();
 
   // Open the new deltafile
   shared_ptr<DeltaFileReader> dfr;
@@ -338,18 +338,27 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   RETURN_NOT_OK(rowset_metadata_->OpenDataBlock(block_id, &data_reader,
                                                 &data_size));
   RETURN_NOT_OK(DeltaFileReader::Open(block_id.ToString(), data_reader,
-                                      data_size, compacted_id, &dfr, REDO));
+                                      data_size, new_store_id, &dfr, REDO));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
   RETURN_NOT_OK(AtomicUpdateStores(start_idx, end_idx, compacted_stores, dfr));
   LOG(INFO) << "Opened delta block for read: " << block_id.ToString();
 
-  RETURN_NOT_OK(rowset_metadata_->AtomicRemoveRedoDeltaDataBlocks(start_idx, end_idx,
-                                                                  compacted_ids));
-  RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(compacted_id, block_id));
+  // Update the metadata accordingly
+  metadata::RowSetMetadataUpdate update;
+  update.AddRedoDeltaBlock(new_store_id, block_id);
+  BOOST_FOREACH(int64_t id, compacted_ids) {
+    update.RemoveDeltaStoreId(id);
+  }
+  // TODO: need to have some error handling here -- if we somehow can't persist the
+  // metadata, do we end up losing data on recovery?
+  CHECK_OK(rowset_metadata_->CommitUpdate(update));
+
   Status s = rowset_metadata_->Flush();
   if (!s.ok()) {
-    LOG(ERROR) << "Unable to commit delta data block metadata for "
+    // TODO: again need to figure out some way of making this safe. Should we be
+    // writing the metadata _ahead_ of the actual store swap? Probably.
+    LOG(FATAL) << "Unable to commit delta data block metadata for "
                << block_id.ToString() << ": " << s.ToString();
     return s;
   }

@@ -33,6 +33,7 @@ using tablet::BootstrapTest;
 namespace metadata {
 
 class RowSetMetadata;
+class RowSetMetadataUpdate;
 
 typedef std::vector<shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
@@ -346,12 +347,6 @@ class RowSetMetadata {
     return fs_manager()->CreateNewBlock(writer, block_id);
   }
 
-  // If ids of delta data blocks between "start_idx" and "end_idx" match ids specified
-  // in "ids", remove these delta delta blocks from the mapping; otherwise, crash with
-  // a FATAL log messages.
-  Status AtomicRemoveRedoDeltaDataBlocks(size_t start_idx, size_t end_idx,
-                                         const std::vector<int64_t>& ids);
-
   Status CommitRedoDeltaDataBlock(int64_t id, const BlockId& block_id);
 
   Status OpenRedoDeltaDataBlock(size_t index,
@@ -361,8 +356,6 @@ class RowSetMetadata {
 
   size_t redo_delta_blocks_count() const;
 
-  Status AtomicRemoveUndoDeltaDataBlocks(size_t start_idx, size_t end_idx,
-                                         const std::vector<int64_t>& ids);
 
   Status CommitUndoDeltaDataBlock(int64_t id, const BlockId& block_id);
 
@@ -396,6 +389,9 @@ class RowSetMetadata {
 
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
 
+  // Atomically commit a set of changes to this object.
+  Status CommitUpdate(const RowSetMetadataUpdate& update);
+
  private:
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
     : initted_(false),
@@ -412,10 +408,6 @@ class RowSetMetadata {
       last_durable_redo_dms_id_(kNoDurableMemStore) {
     CHECK(schema.has_column_ids());
   }
-
-  Status AtomicRemoveDeltaDataBlocksUnlocked(size_t start_idx, size_t end_idx,
-                                             const vector<int64_t>& ids,
-                                             DeltaBlockVector* delta_blocks);
 
   Status InitFromPB(const RowSetDataPB& pb);
 
@@ -455,6 +447,27 @@ class RowSetMetadata {
 
   friend class TabletMetadata;
   friend class kudu::tools::FsTool;
+};
+
+// A set up of updates to be made to a RowSetMetadata object.
+// Updates can be collected here, and then atomically applied to a RowSetMetadata
+// using the CommitUpdate() function.
+class RowSetMetadataUpdate {
+ public:
+  RowSetMetadataUpdate();
+  ~RowSetMetadataUpdate();
+
+  RowSetMetadataUpdate& RemoveDeltaStoreId(int64_t store_id);
+  RowSetMetadataUpdate& AddRedoDeltaBlock(int64_t store_id, const BlockId& block_id);
+  RowSetMetadataUpdate& ReplaceColumnBlock(int col_idx, const BlockId& block_id);
+
+ private:
+  friend class RowSetMetadata;
+  std::vector<int64_t> delta_stores_to_remove_;
+  std::tr1::unordered_map<int, BlockId> new_redo_blocks_;
+  std::tr1::unordered_map<int, BlockId> cols_to_replace_;
+
+  DISALLOW_COPY_AND_ASSIGN(RowSetMetadataUpdate);
 };
 
 } // namespace metadata

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <utility>
 #include <tr1/unordered_map>
+#include <tr1/unordered_set>
 
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
@@ -567,12 +568,6 @@ void RowSetMetadata::SetColumnDataBlocks(const std::vector<BlockId>& blocks) {
   column_blocks_ = blocks;
 }
 
-Status RowSetMetadata::AtomicRemoveRedoDeltaDataBlocks(size_t start_idx, size_t end_idx,
-                                                       const vector<int64_t>& ids) {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  return AtomicRemoveDeltaDataBlocksUnlocked(start_idx, end_idx, ids, &redo_delta_blocks_);
-}
-
 Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t id, const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
   DCHECK_GE(id, last_durable_redo_dms_id_);
@@ -595,11 +590,6 @@ size_t RowSetMetadata::redo_delta_blocks_count() const {
   return redo_delta_blocks_.size();
 }
 
-Status RowSetMetadata::AtomicRemoveUndoDeltaDataBlocks(size_t start_idx, size_t end_idx,
-                                                       const vector<int64_t>& ids) {
-  boost::lock_guard<LockType> l(deltas_lock_);
-  return AtomicRemoveDeltaDataBlocksUnlocked(start_idx, end_idx, ids, &undo_delta_blocks_);
-}
 
 Status RowSetMetadata::CommitUndoDeltaDataBlock(int64_t id, const BlockId& block_id) {
   boost::lock_guard<LockType> l(deltas_lock_);
@@ -621,26 +611,69 @@ size_t RowSetMetadata::undo_delta_blocks_count() const {
   return undo_delta_blocks_.size();
 }
 
-Status RowSetMetadata::AtomicRemoveDeltaDataBlocksUnlocked(size_t start_idx, size_t end_idx,
-                                                           const vector<int64_t>& ids,
-                                                           DeltaBlockVector* delta_blocks) {
-  CHECK_EQ(end_idx - start_idx + 1, ids.size());
-  CHECK_GE(end_idx, start_idx);
+Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
+  boost::lock_guard<LockType> l(deltas_lock_);
 
-  // First check that we're indeed removing the delta blocks for the delta stores we've
-  // compacted and no other thread has modified this in the mean time. This should always
-  // be true, hence the use of CHECK_EQ().
-  vector<std::pair<int64_t, BlockId> >::iterator deltas_start = delta_blocks->begin() + start_idx;
-  vector<std::pair<int64_t, BlockId> >::iterator deltas_end = delta_blocks->begin() + end_idx;
-  vector<std::pair<int64_t, BlockId> >::const_iterator deltas_it = deltas_start;
-  for (int id_idx = 0; deltas_it != deltas_end; ++id_idx, ++deltas_it) {
-    CHECK_EQ(deltas_it->first, ids[id_idx]);
+  std::tr1::unordered_set<int64_t> to_remove;
+  to_remove.insert(update.delta_stores_to_remove_.begin(),
+                   update.delta_stores_to_remove_.end());
+
+  // Remove old delta stores
+  for (DeltaBlockVector::iterator it = redo_delta_blocks_.begin();
+       it != redo_delta_blocks_.end();) {
+    if (ContainsKey(to_remove, (*it).first)) {
+      CHECK_EQ(to_remove.erase((*it).first), 1);
+      redo_delta_blocks_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (DeltaBlockVector::iterator it = undo_delta_blocks_.begin();
+       it != undo_delta_blocks_.end();) {
+    if (ContainsKey(to_remove, (*it).first)) {
+      CHECK_EQ(to_remove.erase((*it).first), 1);
+      undo_delta_blocks_.erase(it);
+    } else {
+      ++it;
+    }
   }
 
-  // Now we can safely remove the old deltas
-  delta_blocks->erase(deltas_start, deltas_end + 1);
+  // We should have removed all IDs requested.
+  CHECK(to_remove.empty());
+
+  typedef std::pair<int, BlockId> IntBlockPair;
+
+  // Add new redo blocks
+  BOOST_FOREACH(const IntBlockPair& e, update.new_redo_blocks_) {
+    redo_delta_blocks_.push_back(e);
+  }
+
+  BOOST_FOREACH(const IntBlockPair& e, update.cols_to_replace_) {
+    CHECK_LT(e.first, column_blocks_.size());
+    column_blocks_[e.first] = e.second;
+  }
   return Status::OK();
 }
+
+RowSetMetadataUpdate::RowSetMetadataUpdate() {
+}
+RowSetMetadataUpdate::~RowSetMetadataUpdate() {
+}
+RowSetMetadataUpdate& RowSetMetadataUpdate::AddRedoDeltaBlock(int64_t store_id,
+                                                              const BlockId& block_id) {
+  InsertOrDie(&new_redo_blocks_, store_id, block_id);
+  return *this;
+}
+RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnBlock(
+    int col_idx, const BlockId& block_id) {
+  InsertOrDie(&cols_to_replace_, col_idx, block_id);
+  return *this;
+}
+RowSetMetadataUpdate& RowSetMetadataUpdate::RemoveDeltaStoreId(int64_t store_id) {
+  delta_stores_to_remove_.push_back(store_id);
+  return *this;
+}
+
 
 } // namespace metadata
 } // namespace kudu
