@@ -19,8 +19,7 @@ with con:
   cur = con.cursor()
   job_name = sys.argv[1]
   days = sys.argv[2]
-  # build_number > 100 to exclude data from "junk" runs
-  cur.execute("select workload, runtime, build_number from kudu_perf_tpch where workload like %s AND curr_date >= DATE_SUB(NOW(), INTERVAL %s DAY) and runtime != 0 and build_number > 100 ORDER BY workload, build_number, curr_date", (job_name, days))
+  cur.execute("select workload, runtime, build_number from kudu_perf_tpch where workload like %s AND curr_date >= DATE_SUB(NOW(), INTERVAL %s DAY) and runtime != 0 ORDER BY workload, build_number, curr_date", (job_name, days))
   rows = cur.fetchall()
   print 'workload', '\t', 'runtime', '\t', 'build_number'
   for row in rows:

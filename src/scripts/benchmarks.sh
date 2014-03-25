@@ -93,7 +93,10 @@ load_stats() {
 write_img_plot() {
   local INPUT_FILE=$1
   local TEST_NAME=$2
-  Rscript jobs_runtime.R $INPUT_FILE $TEST_NAME
+  # Rscript fails when there's only a header, so just skip
+  if [ `wc -l $INPUT_FILE | cut -d ' ' -f1` -gt 1 ]; then
+    Rscript jobs_runtime.R $INPUT_FILE $TEST_NAME
+  fi
 }
 
 write_mttablet_img_plots() {
@@ -236,6 +239,34 @@ parse_and_record_all_results() {
   popd
 }
 
+generate_ycsb_plots() {
+  local WORKLOAD=$1
+  local PHASE=$2
+  METRIC_NAME=ycsb-$PHASE-$WORKLOAD
+
+  # first plot the overall stats for that phase
+  OVERALL_FILENAME=$METRIC_NAME-OVERALL
+  load_stats $OVERALL_FILENAME-runtime_ms > $OUTDIR/$OVERALL_FILENAME-runtime_ms.tsv
+  write_img_plot $OUTDIR/$OVERALL_FILENAME-runtime_ms.tsv $OVERALL_FILENAME-runtime_ms
+  load_stats $OVERALL_FILENAME-throughput_ops_sec > $OUTDIR/$OVERALL_FILENAME-throughput_ops_sec.tsv
+  write_img_plot $OUTDIR/$OVERALL_FILENAME-throughput_ops_sec.tsv $OVERALL_FILENAME-throughput_ops_sec
+
+  # now plot the individual operations
+  OPS=( INSERT UPDATE READ )
+
+  for op in $OPS; do
+    OP_FILENAME=$METRIC_NAME-$op
+    load_stats $OP_FILENAME-average_latency_us > $OUTDIR/$OP_FILENAME-average_latency_us.tsv
+    write_img_plot $OUTDIR/$OP_FILENAME-average_latency_us.tsv $OP_FILENAME-average_latency_us
+
+    load_stats $OP_FILENAME-95th_latency_ms > $OUTDIR/$OP_FILENAME-95th_latency_ms.tsv
+    write_img_plot $OUTDIR/$OP_FILENAME-95th_latency_ms.tsv $OP_FILENAME-95th_latency_ms
+
+    load_stats $OP_FILENAME-99th_latency_ms > $OUTDIR/$OP_FILENAME-99th_latency_ms.tsv
+    write_img_plot $OUTDIR/$OP_FILENAME-99th_latency_ms.tsv $OP_FILENAME-99th_latency_ms
+  done
+}
+
 load_stats_and_generate_plots() {
   pushd src
   pushd scripts
@@ -276,7 +307,7 @@ load_stats_and_generate_plots() {
 
   if [ "${BENCHMARK_MODE}" = "${MODE_JENKINS}" ]; then
     ################################################################
-    # Plot the separately-recorded TPCH graphs as well
+    # Plot the separately-recorded TPCH and YCSB graphs as well
     # (only for Jenkins)
     ################################################################
 
@@ -286,6 +317,13 @@ load_stats_and_generate_plots() {
 
     load_stats insert_1gb > $OUTDIR/tpch1-insert.tsv
     write_img_plot $OUTDIR/tpch1-insert.tsv tpch1-insert
+
+    # YCSB which runs the 5nodes_workload on a cluster
+    # First we process the loading phase
+    generate_ycsb_plots 5nodes_workload load
+
+    # Then the running phase
+    generate_ycsb_plots 5nodes_workload run
   fi
 
   # Move all the pngs to OUT_DIR.
