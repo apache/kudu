@@ -338,6 +338,14 @@ void CatalogManager::Shutdown() {
     e.second->AbortTasks();
     e.second->WaitTasksCompletion();
   }
+
+  // Shut down the underlying storage for tables and tablets.
+  if (sys_tables_) {
+    sys_tables_->Shutdown();
+  }
+  if (sys_tablets_) {
+    sys_tablets_->Shutdown();
+  }
 }
 
 static void SetupError(MasterErrorPB* error,
@@ -347,11 +355,20 @@ static void SetupError(MasterErrorPB* error,
   error->set_code(code);
 }
 
+Status CatalogManager::CheckOnline() const {
+  if (PREDICT_FALSE(Acquire_Load(&closing_))) {
+    return Status::ServiceUnavailable("CatalogManager is shutting down");
+  }
+  return Status::OK();
+}
+
 // Create a new table.
 // See 'README' in this directory for description of the design.
 Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  RETURN_NOT_OK(CheckOnline());
+
   // 0. Verify the request
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(req->schema(), &schema));
@@ -440,6 +457,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
 
 Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                          IsCreateTableDoneResponsePB* resp) {
+  RETURN_NOT_OK(CheckOnline());
+
   scoped_refptr<TableInfo> table;
 
   // 1. Lookup the table and verify if it exists
@@ -547,6 +566,8 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
                                    rpc::RpcContext* rpc) {
   LOG(INFO) << "Servicing DeleteTable request from " << RequestorString(rpc)
             << ": " << req->ShortDebugString();
+
+  RETURN_NOT_OK(CheckOnline());
 
   scoped_refptr<TableInfo> table;
 
@@ -675,6 +696,8 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   LOG(INFO) << "Servicing AlterTable request from " << RequestorString(rpc)
             << ": " << req->ShortDebugString();
 
+  RETURN_NOT_OK(CheckOnline());
+
   scoped_refptr<TableInfo> table;
 
   // 1. Lookup the table and verify if it exists
@@ -777,6 +800,8 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                         IsAlterTableDoneResponsePB* resp,
                                         rpc::RpcContext* rpc) {
+  RETURN_NOT_OK(CheckOnline());
+
   scoped_refptr<TableInfo> table;
 
   // 1. Lookup the table and verify if it exists
@@ -806,6 +831,8 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 
 Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
                                       GetTableSchemaResponsePB* resp) {
+  RETURN_NOT_OK(CheckOnline());
+
   scoped_refptr<TableInfo> table;
 
   // 1. Lookup the table and verify if it exists
@@ -837,6 +864,8 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
 
 Status CatalogManager::ListTables(const ListTablesRequestPB* req,
                                   ListTablesResponsePB* resp) {
+  RETURN_NOT_OK(CheckOnline());
+
   boost::shared_lock<LockType> l(lock_);
 
   BOOST_FOREACH(const TableInfoMap::value_type& entry, table_names_map_) {
@@ -1708,6 +1737,8 @@ bool CatalogManager::GetTabletLocations(const std::string& tablet_id,
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp) {
+  RETURN_NOT_OK(CheckOnline());
+
   // If start-key is > end-key report an error instead of swap the two
   // since probably there is something wrong app-side.
   if (req->has_start_key() && req->has_end_key() && req->start_key() > req->end_key()) {

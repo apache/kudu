@@ -49,7 +49,10 @@ class TabletPeer {
   Status Start(const metadata::QuorumPB& quorum);
 
   // Shutdown this tablet peer.
-  Status Shutdown();
+  void Shutdown();
+
+  // Check that the tablet is in a RUNNING state.
+  Status CheckRunning() const;
 
   // Submits a write to a tablet and executes it asynchronously.
   // The caller is expected to build and pass a TrasactionContext that points

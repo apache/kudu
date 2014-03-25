@@ -117,8 +117,11 @@ enum TabletStatePB {
   // the reason for the failure.
   FAILED = 3;
 
-  // TODO decide what to do on power down. Possibly add another QUIESCING
-  // state, similar to CONFIGURING.
+  // The Tablet is shutting down, and will not accept further requests.
+  QUIESCING = 4;
+
+  // The Tablet has been stopped.
+  SHUTDOWN = 5;
 }
 
 // The master-block contains the two block-ids required to load the

@@ -55,6 +55,3 @@ race:kudu::master::AsyncTabletRequestTask::DeferredCallback
 
 # KUDU-190: LogicalClock accesses the clock without atomic op
 race:kudu::tablet::TabletBootstrap::UpdateClock
-
-# KUDU-191: DeleteTable is missing appropriate locking
-race:kudu::tserver::TSTabletManager::DeleteTablet

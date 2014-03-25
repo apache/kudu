@@ -139,6 +139,7 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 
   Status s = Status::OK();
 
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
   BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
     if (entry.second->state() == metadata::FAILED) {
       if (s.ok()) {
@@ -230,7 +231,8 @@ Status TSTabletManager::DeleteTablet(const shared_ptr<TabletPeer>& tablet_peer) 
   TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
         tablet_peer->tablet()->metadata()->table_name(),
         tablet_peer->tablet()->metadata()->table_id());
-  RETURN_NOT_OK(tablet_peer->Shutdown());
+  tablet_peer->Shutdown();
+  boost::lock_guard<rw_spinlock> lock(lock_);
   tablet_map_.erase(tablet_peer->tablet()->tablet_id());
   // TODO: Trash the data
   return Status::OK();
@@ -333,7 +335,7 @@ void TSTabletManager::Shutdown() {
   boost::lock_guard<rw_spinlock> l(lock_);
   BOOST_FOREACH(const TabletMap::value_type &pair, tablet_map_) {
     const std::tr1::shared_ptr<TabletPeer>& peer = pair.second;
-    WARN_NOT_OK(peer->Shutdown(), "Unable to close tablet " + peer->tablet()->tablet_id());
+    peer->Shutdown();
   }
   tablet_map_.clear();
   // TODO: add a state variable?
@@ -371,7 +373,7 @@ void TSTabletManager::RegisterTablet(const std::string& tablet_id,
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
                                    std::tr1::shared_ptr<TabletPeer>* tablet_peer) const {
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
   return LookupTabletUnlocked(tablet_id, tablet_peer);
 }
 
@@ -386,7 +388,7 @@ bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
 }
 
 void TSTabletManager::GetTabletPeers(vector<shared_ptr<TabletPeer> >* tablet_peers) const {
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
 
@@ -406,7 +408,7 @@ void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
 }
 
 void TSTabletManager::AcknowledgeTabletReport(const TabletReportPB& report) {
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
 
   int32_t acked_seq = report.sequence_number();
   CHECK_LT(acked_seq, next_report_seq_);
@@ -447,7 +449,7 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
 
 void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
   // Generate an incremental report
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
   report->Clear();
   report->set_sequence_number(next_report_seq_++);
   report->set_is_incremental(true);
@@ -468,7 +470,7 @@ void TSTabletManager::GenerateTabletReport(TabletReportPB* report) {
 }
 
 void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  boost::shared_lock<rw_spinlock> shared_lock(lock_);
   report->Clear();
   report->set_is_incremental(false);
   report->set_sequence_number(next_report_seq_++);

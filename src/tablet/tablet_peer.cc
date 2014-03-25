@@ -27,6 +27,7 @@ using log::OpIdAnchorRegistry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using metadata::TabletMetadata;
+using strings::Substitute;
 
 // ============================================================================
 //  Tablet Peer
@@ -42,6 +43,8 @@ TabletPeer::TabletPeer(const TabletMetadata& meta)
 }
 
 TabletPeer::~TabletPeer() {
+  boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+  CHECK_EQ(state_, metadata::SHUTDOWN);
 }
 
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
@@ -52,6 +55,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
   {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    CHECK_EQ(state_, metadata::BOOTSTRAPPING);
     state_ = metadata::CONFIGURING;
     tablet_ = tablet;
     clock_ = clock;
@@ -90,12 +94,18 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
 
   {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    CHECK_EQ(state_, metadata::CONFIGURING);
     state_ = metadata::RUNNING;
   }
   return Status::OK();
 }
 
-Status TabletPeer::Shutdown() {
+void TabletPeer::Shutdown() {
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    state_ = metadata::QUIESCING;
+  }
+
   // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
       strings::Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete",
@@ -106,7 +116,7 @@ Status TabletPeer::Shutdown() {
   if (consensus_) {
     Status s = consensus_->Shutdown();
     if (!s.ok()) {
-      LOG(WARNING) << "Consensus shutdown failed: " << s.ToString();
+      LOG(DFATAL) << "Consensus shutdown failed: " << s.ToString();
     }
   }
   prepare_executor_->Shutdown();
@@ -116,10 +126,27 @@ Status TabletPeer::Shutdown() {
       VLOG(1) << "TabletPeer: " << tablet_->metadata()->oid() << " Shutdown!";
     }
   }
+
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    state_ = metadata::SHUTDOWN;
+  }
+}
+
+Status TabletPeer::CheckRunning() const {
+  {
+    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    if (state_ != metadata::RUNNING) {
+      return Status::ServiceUnavailable(Substitute("The tablet is not in a running state: $0",
+                                                   metadata::TabletStatePB_Name(state_)));
+    }
+  }
   return Status::OK();
 }
 
 Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
+  RETURN_NOT_OK(CheckRunning());
+
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderWriteTransaction* transaction = new LeaderWriteTransaction(&txn_tracker_, tx_ctx,
@@ -132,6 +159,8 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
 }
 
 Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
+  RETURN_NOT_OK(CheckRunning());
+
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderAlterSchemaTransaction* transaction =
@@ -144,6 +173,8 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
 }
 
 Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
+  RETURN_NOT_OK(CheckRunning());
+
   // TODO keep track of the transaction somewhere so that we can cancel transactions
   // when we change leaders and/or want to quiesce a tablet.
   LeaderChangeConfigTransaction* transaction =
@@ -171,7 +202,6 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
     status_pb_out->set_estimated_on_disk_size(tablet()->EstimateOnDiskSize());
   }
 }
-
 
 }  // namespace tablet
 }  // namespace kudu

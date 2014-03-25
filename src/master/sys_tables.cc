@@ -46,6 +46,12 @@ SysTable::SysTable(Master* master,
     master_(master) {
 }
 
+void SysTable::Shutdown() {
+  if (tablet_peer_) {
+    tablet_peer_->Shutdown();
+  }
+}
+
 Status SysTable::Load(FsManager *fs_manager) {
   metadata::TabletMasterBlockPB master_block;
   SetupTabletMasterBlock(&master_block);

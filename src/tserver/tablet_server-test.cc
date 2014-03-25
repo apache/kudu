@@ -65,6 +65,7 @@ TEST_F(TabletServerTest, TestInsert) {
   Counter* rows_inserted =
       METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContextForTests());
   ASSERT_EQ(0, rows_inserted->value());
+  tablet.reset();
 
   // Send a bad insert which has an empty schema. This should result
   // in an error.
@@ -135,6 +136,7 @@ TEST_F(TabletServerTest, TestInsert) {
   // get the clock's current timestamp
   Timestamp now_before = mini_server_->server()->clock()->Now();
 
+  rows_inserted = NULL;
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
                                             (KeyValue(2, 1))
@@ -157,6 +159,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
       METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContextForTests());
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());
+  tablet.reset();
 
   RpcController controller;
 
@@ -275,6 +278,8 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   // get the clock's current timestamp
   Timestamp now_before = mini_server_->server()->clock()->Now();
 
+  rows_inserted = NULL;
+  rows_updated = NULL;
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, boost::assign::list_of(KeyValue(2, 3))
                                             (KeyValue(3, 4)));

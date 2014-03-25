@@ -40,6 +40,9 @@ class SysTable {
 
   virtual ~SysTable() {}
 
+  // Allow for orderly shutdown of tablet peer, etc.
+  virtual void Shutdown();
+
   // Load the Metadata from disk, and initialize the TabletPeer for the sys-table
   Status Load(FsManager *fs_manager);
 
