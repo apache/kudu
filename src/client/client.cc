@@ -20,6 +20,8 @@
 #include "util/net/dns_resolver.h"
 #include "util/net/net_util.h"
 #include "util/status.h"
+
+#include <algorithm>
 #include <tr1/memory>
 #include <vector>
 
@@ -40,6 +42,8 @@ using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::IsAlterTableDoneRequestPB;
 using kudu::master::IsAlterTableDoneResponsePB;
+using kudu::master::IsCreateTableDoneRequestPB;
+using kudu::master::IsCreateTableDoneResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
@@ -59,7 +63,49 @@ namespace client {
 using internal::Batcher;
 using internal::ErrorCollector;
 
-KuduClientOptions::KuduClientOptions() {
+// Retry helper, takes a function like: Status funcName(const MonoTime& deadline, bool *retry, ...)
+// The function should set the retry flag (default true) if the function should
+// be retried again. On retry == false the return status of the function will be
+// returned to the caller, otherwise a Status::Timeout() will be returned.
+// If the deadline is already expired, no attempt will be made.
+static Status RetryFunc(const MonoTime& deadline,
+                        const string& retry_msg,
+                        const string& timeout_msg,
+                        const boost::function<Status(const MonoTime&, bool*)>& func) {
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  if (!now.ComesBefore(deadline)) {
+    return Status::TimedOut(timeout_msg);
+  }
+
+  int64_t wait_time = 1000;
+  while (1) {
+    MonoTime stime = now;
+    bool retry = true;
+    Status s = func(deadline, &retry);
+    if (!retry) {
+      return s;
+    }
+
+    now = MonoTime::Now(MonoTime::FINE);
+    if (!now.ComesBefore(deadline)) {
+      break;
+    }
+
+    VLOG(1) << retry_msg << " status=" << s.ToString();
+    int64_t timeout_usec = deadline.GetDeltaSince(now).ToNanoseconds() -
+                           now.GetDeltaSince(stime).ToNanoseconds();
+    if (timeout_usec > 0) {
+      wait_time = std::min(wait_time * 5 / 4, timeout_usec);
+      usleep(wait_time);
+      now = MonoTime::Now(MonoTime::FINE);
+    }
+  }
+
+  return Status::TimedOut(timeout_msg);
+}
+
+KuduClientOptions::KuduClientOptions()
+  : default_admin_operation_timeout(MonoDelta::FromMilliseconds(5 * 1000)) {
 }
 
 Status KuduClient::Create(const KuduClientOptions& options,
@@ -117,7 +163,11 @@ Status KuduClient::CreateTable(const std::string& table_name,
   CreateTableResponsePB resp;
   RpcController rpc;
 
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(15 * 1000));
+
   req.set_name(table_name);
+  rpc.set_timeout(options_.default_admin_operation_timeout);
   RETURN_NOT_OK_PREPEND(SchemaToPB(schema, req.mutable_schema()),
                         "Invalid schema");
 
@@ -131,8 +181,38 @@ Status KuduClient::CreateTable(const std::string& table_name,
     return StatusFromPB(resp.error().status());
   }
 
-  // TODO: Spin if create is in progress
+  if (opts.wait_assignment_) {
+    RETURN_NOT_OK(RetryFunc(deadline,
+          "Waiting on Create Table to be completed",
+          "Timeout out waiting for Table Creation",
+          boost::bind(&KuduClient::IsCreateTableInProgress, this, table_name, _1, _2)));
+  }
 
+  return Status::OK();
+}
+
+Status KuduClient::IsCreateTableInProgress(const std::string& table_name,
+                                           bool *create_in_progress) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(options_.default_admin_operation_timeout);
+  return IsCreateTableInProgress(table_name, deadline, create_in_progress);
+}
+
+Status KuduClient::IsCreateTableInProgress(const std::string& table_name,
+                                           const MonoTime& deadline,
+                                           bool *create_in_progress) {
+  IsCreateTableDoneRequestPB req;
+  IsCreateTableDoneResponsePB resp;
+  RpcController rpc;
+
+  req.mutable_table()->set_table_name(table_name);
+  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
+  RETURN_NOT_OK(master_proxy_->IsCreateTableDone(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  *create_in_progress = !resp.done();
   return Status::OK();
 }
 
@@ -142,6 +222,7 @@ Status KuduClient::DeleteTable(const std::string& table_name) {
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
+  rpc.set_timeout(options_.default_admin_operation_timeout);
   RETURN_NOT_OK(master_proxy_->DeleteTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -160,38 +241,42 @@ Status KuduClient::AlterTable(const std::string& table_name,
     return Status::InvalidArgument("No alter steps provided");
   }
 
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(60 * 1000));
+
   req.CopyFrom(*alter.alter_steps_);
   req.mutable_table()->set_table_name(table_name);
+  rpc.set_timeout(options_.default_admin_operation_timeout);
   RETURN_NOT_OK(master_proxy_->AlterTable(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
 
   string alter_name = req.has_new_table_name() ? req.new_table_name() : table_name;
-  {
-    // TODO: same fix as open table
-    while (1) {
-      bool alter_in_progress = false;
-      RETURN_NOT_OK(IsAlterTableInProgress(alter_name, &alter_in_progress));
-      if (!alter_in_progress) {
-        break;
-      }
-
-      /* TODO: Add a timeout or number of retries */
-      usleep(100000);
-    }
-  }
+  RETURN_NOT_OK(RetryFunc(deadline,
+        "Waiting on Alter Table to be completed",
+        "Timeout out waiting for AlterTable",
+        boost::bind(&KuduClient::IsAlterTableInProgress, this, alter_name, _1, _2)));
 
   return Status::OK();
 }
 
 Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
                                           bool *alter_in_progress) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(options_.default_admin_operation_timeout);
+  return IsAlterTableInProgress(table_name, deadline, alter_in_progress);
+}
+
+Status KuduClient::IsAlterTableInProgress(const std::string& table_name,
+                                          const MonoTime& deadline,
+                                          bool *alter_in_progress) {
   IsAlterTableDoneRequestPB req;
   IsAlterTableDoneResponsePB resp;
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
+  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
   RETURN_NOT_OK(master_proxy_->IsAlterTableDone(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -208,6 +293,7 @@ Status KuduClient::GetTableSchema(const std::string& table_name,
   RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
+  rpc.set_timeout(options_.default_admin_operation_timeout);
   RETURN_NOT_OK(master_proxy_->GetTableSchema(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -270,7 +356,8 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
 // CreateTableOptions
 ////////////////////////////////////////////////////////////
 
-CreateTableOptions::CreateTableOptions() {
+CreateTableOptions::CreateTableOptions()
+  : wait_assignment_(true) {
 }
 
 CreateTableOptions::~CreateTableOptions() {
@@ -279,6 +366,11 @@ CreateTableOptions::~CreateTableOptions() {
 CreateTableOptions& CreateTableOptions::WithSplitKeys(
     const std::vector<std::string>& keys) {
   split_keys_ = keys;
+  return *this;
+}
+
+CreateTableOptions& CreateTableOptions::WaitAssignment(bool wait_assignment) {
+  wait_assignment_ = wait_assignment;
   return *this;
 }
 

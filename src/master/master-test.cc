@@ -178,7 +178,9 @@ void MasterTest::CreateTable(const string& table_name,
 
   ASSERT_STATUS_OK(client->CreateTable(
                      table_name, schema,
-                     kudu::client::CreateTableOptions().WithSplitKeys(keys)));
+                     kudu::client::CreateTableOptions()
+                        .WithSplitKeys(keys)
+                        .WaitAssignment(false)));
 }
 
 void MasterTest::DoListTables(ListTablesResponsePB* resp) {

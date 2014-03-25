@@ -88,7 +88,9 @@ void CreateTableStressTest::CreateBigTable(const string& table_name) {
 
   ASSERT_STATUS_OK(client_->CreateTable(
                      table_name, schema_,
-                     kudu::client::CreateTableOptions().WithSplitKeys(keys)));
+                     kudu::client::CreateTableOptions()
+                        .WithSplitKeys(keys)
+                        .WaitAssignment(false)));
 }
 
 

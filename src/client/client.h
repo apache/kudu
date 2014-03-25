@@ -53,6 +53,9 @@ struct KuduClientOptions {
 
   // The messenger to use.
   std::tr1::shared_ptr<rpc::Messenger> messenger;
+
+  // Default Timeout used for admin operations (e.g. CreateTable, AlterTable, ...)
+  MonoDelta default_admin_operation_timeout;
 };
 
 // The KuduClient represents a connection to a cluster. From the user
@@ -89,6 +92,10 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   Status CreateTable(const std::string& table_name,
                      const Schema& schema,
                      const CreateTableOptions& opts);
+
+  // set 'create_in_progress' to true if a CreateTable operation is in-progress
+  Status IsCreateTableInProgress(const std::string& table_name,
+                                 bool *create_in_progress);
 
   Status DeleteTable(const std::string& table_name);
 
@@ -148,6 +155,14 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();
 
+
+  Status IsCreateTableInProgress(const std::string& table_name,
+                                 const MonoTime& deadline,
+                                 bool *create_in_progress);
+  Status IsAlterTableInProgress(const std::string& table_name,
+                                const MonoTime& deadline,
+                                bool *alter_in_progress);
+
   bool initted_;
   KuduClientOptions options_;
   std::tr1::shared_ptr<rpc::Messenger> messenger_;
@@ -170,9 +185,13 @@ class CreateTableOptions {
   // copied.
   CreateTableOptions& WithSplitKeys(const std::vector<std::string>& keys);
 
+  // Wait the assignment
+  CreateTableOptions& WaitAssignment(bool wait_assignment);
+
  private:
   friend class KuduClient;
   std::vector<std::string> split_keys_;
+  bool wait_assignment_;
 };
 
 // A KuduTable represents a table on a particular cluster. It holds the current
