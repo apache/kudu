@@ -714,11 +714,11 @@ TEST_F(TestEncoding, TestStringPrefixBlockBuilderTruncation) {
 TEST_F(TestEncoding, GVIntSeekBenchmark) {
   gscoped_ptr<WriterOptions> opts(new WriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 32768, 1000000, false);
+  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 32768, 100000, false);
 }
 
 TEST_F(TestEncoding, RleIntSeekBenchmark) {
-  DoRleIntSeekTest<UINT32>(32768, 1000000, false);
+  DoRleIntSeekTest<UINT32>(32768, 10000, false);
 }
 #endif
 
