@@ -23,11 +23,9 @@ DuplicatingRowSet::DuplicatingRowSet(const RowSetVector &old_rowsets,
     key_schema_(schema_.CreateKeyProjection()) {
   CHECK_GT(old_rowsets_.size(), 0);
   CHECK_GT(new_rowsets_.size(), 0);
-  always_locked_.lock();
 }
 
 DuplicatingRowSet::~DuplicatingRowSet() {
-  always_locked_.unlock();
 }
 
 // Stringify the given list of rowsets into 'dst'.

@@ -268,7 +268,12 @@ class DuplicatingRowSet : public RowSet {
 
   // A flush-in-progress rowset should never be selected for compaction.
   boost::mutex *compact_flush_lock() {
-    return &always_locked_;
+    LOG(FATAL) << "Cannot be compacted";
+    return NULL;
+  }
+
+  virtual bool IsAvailableForCompaction() OVERRIDE {
+    return false;
   }
 
   ~DuplicatingRowSet();
@@ -295,8 +300,6 @@ class DuplicatingRowSet : public RowSet {
 
   const Schema &schema_;
   const Schema key_schema_;
-
-  boost::mutex always_locked_;
 };
 
 
