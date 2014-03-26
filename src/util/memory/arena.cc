@@ -149,6 +149,12 @@ void ArenaBase<THREADSAFE>::Reset() {
 #endif
 }
 
+template <bool THREADSAFE>
+size_t ArenaBase<THREADSAFE>::memory_footprint() const {
+  boost::lock_guard<mutex_type> lock(component_lock_);
+  return arena_footprint_;
+}
+
 // Explicit instantiation.
 template class ArenaBase<true>;
 template class ArenaBase<false>;

@@ -144,7 +144,7 @@ class ArenaBase {
   // Returns the memory footprint of this arena, in bytes, defined as a sum of
   // all buffer sizes. Always greater or equal to the total number of
   // bytes allocated out of the arena.
-  size_t memory_footprint() const { return arena_footprint_; }
+  size_t memory_footprint() const;
 
  private:
   typedef typename ArenaTraits<THREADSAFE>::mutex_type mutex_type;
@@ -185,7 +185,7 @@ class ArenaBase {
   // Lock covering 'slow path' allocation, when new components are
   // allocated and added to the arena's list. Also covers any other
   // mutation of the component data structure (eg Reset).
-  mutex_type component_lock_;
+  mutable mutex_type component_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(ArenaBase);
 };
