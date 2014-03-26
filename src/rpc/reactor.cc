@@ -547,10 +547,10 @@ void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 
 void Reactor::ScheduleReactorTask(ReactorTask *task) {
   {
-    boost::lock_guard<LockType> lock_guard(lock_);
+    boost::unique_lock<LockType> lock_guard(lock_);
     if (closing_) {
       // We guarantee the reactor lock is not taken when calling Abort().
-      lock_.unlock();
+      lock_guard.unlock();
       task->Abort(SHUTDOWN_ERROR);
       return;
     }
