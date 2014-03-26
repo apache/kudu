@@ -9,7 +9,7 @@
 #include "tablet/tablet.h"
 #include "tablet/transactions/transaction_tracker.h"
 #include "util/metrics.h"
-
+#include "util/semaphore.h"
 
 namespace kudu {
 
@@ -153,7 +153,7 @@ class TabletPeer {
   // metadata.
   // ChangeConfigTransactions obtain this lock on prepare and release it on
   // apply.
-  mutable boost::mutex config_lock_;
+  mutable Semaphore config_sem_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };

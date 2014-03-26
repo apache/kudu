@@ -9,6 +9,7 @@
 #include "tablet/tablet_peer.h"
 #include "tablet/tablet_metrics.h"
 #include "tserver/tserver.pb.h"
+#include "util/semaphore.h"
 #include "util/trace.h"
 
 namespace kudu {
@@ -31,14 +32,14 @@ LeaderChangeConfigTransaction::LeaderChangeConfigTransaction(
     TaskExecutor* prepare_executor,
     TaskExecutor* apply_executor,
     simple_spinlock& prepare_replicate_lock,
-    boost::mutex* config_lock)
+    Semaphore* config_sem)
 : LeaderTransaction(txn_tracker,
                     consensus,
                     prepare_executor,
                     apply_executor,
                     prepare_replicate_lock),
   tx_ctx_(tx_ctx),
-  config_lock_(config_lock) {
+  config_sem_(config_sem) {
 }
 
 void LeaderChangeConfigTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
@@ -50,9 +51,9 @@ void LeaderChangeConfigTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* r
 Status LeaderChangeConfigTransaction::Prepare() {
   TRACE("PREPARE CHANGE CONFIG: Starting");
 
-  tx_ctx_->acquire_config_lock(config_lock_);
+  tx_ctx_->acquire_config_sem(config_sem_);
 
-  // now that we've acquired the lock set the transaction timestamp
+  // now that we've acquired the semaphore, set the transaction timestamp
   tx_ctx_->set_timestamp(tx_ctx_->tablet_peer()->clock()->Now());
 
   const QuorumPB& old_quorum = tx_ctx_->tablet_peer()->tablet()->metadata()->Quorum();
@@ -75,8 +76,8 @@ Status LeaderChangeConfigTransaction::Prepare() {
 
 void LeaderChangeConfigTransaction::PrepareFailedPreCommitHooks(
     gscoped_ptr<CommitMsg>* commit_msg) {
-  // Release the meta lock (no effect if no locks were acquired).
-  tx_ctx_->release_config_lock();
+  // Release the config semaphore (no effect if it was never acquired)
+  tx_ctx_->release_config_sem();
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);

@@ -6,8 +6,10 @@
 #include "gutil/macros.h"
 #include "tablet/transactions/transaction.h"
 #include "util/task_executor.h"
+#include "util/semaphore.h"
 
 namespace kudu {
+
 namespace consensus {
 class Consensus;
 }
@@ -34,20 +36,22 @@ class ChangeConfigTransactionContext : public TransactionContext {
   const tserver::ChangeConfigRequestPB* request() const { return request_; }
   tserver::ChangeConfigResponsePB* response() { return response_; }
 
-  void acquire_config_lock(boost::mutex* meta_lock) {
-    meta_lock_.reset(new boost::lock_guard<boost::mutex>(*meta_lock));
+  void acquire_config_sem(Semaphore* sem) {
+    config_lock_ = boost::unique_lock<Semaphore>(*sem);
   }
 
-  void release_config_lock() {
-    meta_lock_.reset();
+  void release_config_sem() {
+    if (config_lock_.owns_lock()) {
+      config_lock_.unlock();
+    }
   }
 
   void commit() {
-    release_config_lock();
+    release_config_sem();
   }
 
   ~ChangeConfigTransactionContext() {
-    release_config_lock();
+    release_config_sem();
   }
 
  private:
@@ -55,7 +59,7 @@ class ChangeConfigTransactionContext : public TransactionContext {
 
   const tserver::ChangeConfigRequestPB *request_;
   tserver::ChangeConfigResponsePB *response_;
-  gscoped_ptr<boost::lock_guard<boost::mutex> > meta_lock_;
+  boost::unique_lock<Semaphore> config_lock_;
 };
 
 // Executes the change config transaction, leader side.
@@ -67,7 +71,7 @@ class LeaderChangeConfigTransaction : public LeaderTransaction {
                                 TaskExecutor* prepare_executor,
                                 TaskExecutor* apply_executor,
                                 simple_spinlock& prepare_replicate_lock,
-                                boost::mutex* config_lock);
+                                Semaphore* config_sem);
  protected:
 
   void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);
@@ -89,7 +93,7 @@ class LeaderChangeConfigTransaction : public LeaderTransaction {
 
   gscoped_ptr<ChangeConfigTransactionContext> tx_ctx_;
   DISALLOW_COPY_AND_ASSIGN(LeaderChangeConfigTransaction);
-  boost::mutex* config_lock_;
+  Semaphore* config_sem_;
 };
 
 }  // namespace tablet

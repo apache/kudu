@@ -29,6 +29,11 @@ class Semaphore {
   // Release the semaphore.
   void Release();
 
+  // Boost-compatible wrappers.
+  void lock() { Acquire(); }
+  void unlock() { Release(); }
+  bool try_lock() { return TryAcquire(); }
+
  private:
   // Log a fatal error message. Separated out to keep the main functions
   // as small as possible in terms of code size.

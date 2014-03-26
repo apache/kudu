@@ -35,7 +35,8 @@ TabletPeer::TabletPeer(const TabletMetadata& meta)
   : status_listener_(new TabletStatusListener(meta)),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
-    prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)) {
+    prepare_executor_(TaskExecutor::CreateNew("prepare exec", 1)),
+    config_sem_(1) {
   apply_executor_.reset(TaskExecutor::CreateNew("apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
 }
@@ -79,7 +80,7 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
   // Prevent any SubmitChangeConfig calls to try and modify the config
   // until consensus is booted and the actual configuration is stored in
   // the tablet meta.
-  boost::lock_guard<boost::mutex> config_lock(config_lock_);
+  boost::lock_guard<Semaphore> config_lock(config_sem_);
 
   gscoped_ptr<QuorumPB> actual_config;
 
@@ -151,7 +152,7 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
                                         prepare_executor_.get(),
                                         apply_executor_.get(),
                                         prepare_replicate_lock_,
-                                        &config_lock_);
+                                        &config_sem_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
 }
