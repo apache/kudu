@@ -61,8 +61,8 @@ class AlterSchemaTransactionContext : public TransactionContext {
     return request_->schema_version();
   }
 
-  void acquire_tablet_lock(percpu_rwlock& component_lock) {
-    component_lock_ = boost::unique_lock<percpu_rwlock>(component_lock);
+  void acquire_tablet_lock(rw_semaphore& component_lock) {
+    component_lock_ = boost::unique_lock<rw_semaphore>(component_lock);
     DCHECK(component_lock_.owns_lock());
   }
 
@@ -82,7 +82,7 @@ class AlterSchemaTransactionContext : public TransactionContext {
   const Schema* schema_;
   const tserver::AlterSchemaRequestPB *request_;
   tserver::AlterSchemaResponsePB *response_;
-  boost::unique_lock<percpu_rwlock> component_lock_;
+  boost::unique_lock<rw_semaphore> component_lock_;
 };
 
 // Executes the alter schema transaction, leader side.

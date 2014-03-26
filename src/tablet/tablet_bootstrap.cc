@@ -914,8 +914,8 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
     }
     // Note: Using InsertUnlocked as the old API will eventually disappear
 
-    gscoped_ptr<shared_lock<rw_spinlock> > component_lock(
-        new shared_lock<rw_spinlock>(tablet_->component_lock()->get_lock()));
+    gscoped_ptr<shared_lock<rw_semaphore> > component_lock(
+      new shared_lock<rw_semaphore>(*tablet_->component_lock()));
     tx_ctx->set_component_lock(component_lock.Pass());
 
     const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(

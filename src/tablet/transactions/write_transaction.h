@@ -166,11 +166,11 @@ class WriteTransactionContext : public TransactionContext {
   // Sets the component lock for this transaction. The lock will not be
   // unlocked unless either release_locks() or Reset() is called or this
   // TransactionContext is destroyed.
-  void set_component_lock(gscoped_ptr<boost::shared_lock<rw_spinlock> > lock) {
+  void set_component_lock(gscoped_ptr<boost::shared_lock<rw_semaphore> > lock) {
     component_lock_.reset(lock.release());
   }
 
-  boost::shared_lock<rw_spinlock>* component_lock() {
+  boost::shared_lock<rw_semaphore>* component_lock() {
     return component_lock_.get();
   }
 
@@ -201,7 +201,7 @@ class WriteTransactionContext : public TransactionContext {
   // the rows and locks as transformed/acquired by the prepare task
   vector<PreparedRowWrite*> rows_;
   // the component lock, acquired by all inserters/updaters
-  gscoped_ptr<boost::shared_lock<rw_spinlock> > component_lock_;
+  gscoped_ptr<boost::shared_lock<rw_semaphore> > component_lock_;
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
 };
 

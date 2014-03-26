@@ -81,8 +81,8 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
   // acquire the component lock. this is more like "tablet lock" and is used
   // to prevent AlterSchema and other operations that requires exclusive access
   // to the tablet.
-  gscoped_ptr<shared_lock<rw_spinlock> > component_lock_(
-      new shared_lock<rw_spinlock>(tablet->component_lock()->get_lock()));
+  gscoped_ptr<shared_lock<rw_semaphore> > component_lock_(
+      new shared_lock<rw_semaphore>(*tablet->component_lock()));
   tx_ctx->set_component_lock(component_lock_.Pass());
 
 

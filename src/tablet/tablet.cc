@@ -199,8 +199,8 @@ Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
 
-  gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
-      new boost::shared_lock<rw_spinlock>(component_lock_.get_lock()));
+  gscoped_ptr<boost::shared_lock<rw_semaphore> > lock(
+      new boost::shared_lock<rw_semaphore>(component_lock_));
   tx_ctx->set_component_lock(lock.Pass());
 
   // Convert the client row to a server row (with IDs)
@@ -355,8 +355,8 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
   // and Insert() or else there's a possibility of deadlock.
 
 
-  gscoped_ptr<boost::shared_lock<rw_spinlock> > lock(
-      new boost::shared_lock<rw_spinlock>(component_lock_.get_lock()));
+  gscoped_ptr<boost::shared_lock<rw_semaphore> > lock(
+      new boost::shared_lock<rw_semaphore>(component_lock_));
   tx_ctx->set_component_lock(lock.Pass());
 
   // Convert the client RowChangeList to a server RowChangeList (with IDs)
@@ -456,7 +456,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
                                const RowSetVector &new_rowsets,
                                MvccSnapshot *snap_under_lock = NULL) {
-  boost::lock_guard<percpu_rwlock> lock(component_lock_);
+  boost::lock_guard<rw_semaphore> lock(component_lock_);
   AtomicSwapRowSetsUnlocked(old_rowsets, new_rowsets, snap_under_lock);
 }
 
@@ -523,7 +523,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
 
   {
     // Avoid holding component_lock_ for too long
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     updater.reset(new RowSetColumnUpdater(metadata(), input_rs->metadata(), column_indexes));
     input_drs = down_cast<DiskRowSet*>(input_rs.get());
     compaction.reset(input_drs->NewMajorDeltaCompaction(updater.get(), &delta_store_id));
@@ -591,7 +591,7 @@ Status Tablet::Flush() {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
     // as the swap takes.
-    boost::lock_guard<percpu_rwlock> lock(component_lock_);
+    boost::lock_guard<rw_semaphore> lock(component_lock_);
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema(), &input, &old_ms));
   }
   return Flush(input, old_ms, schema());
@@ -768,7 +768,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   // in tablet.h for details on why that would be bad.
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
 
@@ -789,7 +789,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set));
   }
 
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
     if (picked_set.erase(rs.get()) == 0) {
       // Not picked.
@@ -827,7 +827,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 void Tablet::GetRowSetsForTests(RowSetVector* out) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
@@ -1044,7 +1044,7 @@ Status Tablet::Compact(CompactFlags flags) {
 }
 
 Status Tablet::DebugDump(vector<string> *lines) {
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
 
   LOG_STRING(INFO, lines) << "Dumping tablet:";
   LOG_STRING(INFO, lines) << "---------------------------";
@@ -1065,7 +1065,7 @@ Status Tablet::CaptureConsistentIterators(
   const MvccSnapshot &snap,
   const ScanSpec *spec,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
@@ -1114,7 +1114,7 @@ Status Tablet::CountRows(uint64_t *count) const {
   shared_ptr<RowSetTree> rowsets_copy;
 
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     memrowset = memrowset_;
     rowsets_copy = rowsets_;
   }
@@ -1138,7 +1138,7 @@ size_t Tablet::EstimateOnDiskSize() const {
   shared_ptr<RowSetTree> rowsets_copy;
 
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
 
@@ -1154,7 +1154,7 @@ size_t Tablet::DeltaMemStoresSize() const {
   shared_ptr<RowSetTree> rowsets_copy;
 
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
 
@@ -1170,7 +1170,7 @@ Status Tablet::FlushBiggestDMS() {
   shared_ptr<RowSetTree> rowsets_copy;
 
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
 
@@ -1190,7 +1190,7 @@ Status Tablet::MinorCompactWorstDeltas() {
   shared_ptr<RowSetTree> rowsets_copy;
 
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
     rowsets_copy = rowsets_;
   }
 
@@ -1212,7 +1212,7 @@ Status Tablet::MinorCompactWorstDeltas() {
 }
 
 size_t Tablet::num_rowsets() const {
-  boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
+  boost::shared_lock<rw_semaphore> lock(component_lock_);
   return rowsets_->all_rowsets().size();
 }
 

@@ -234,7 +234,7 @@ class Tablet {
   LockManager* lock_manager() { return &lock_manager_; }
 
   // Returns the component lock for this tablet
-  percpu_rwlock* component_lock() { return &component_lock_; }
+  rw_semaphore* component_lock() { return &component_lock_; }
 
   const metadata::TabletMetadata *metadata() const { return metadata_.get(); }
   metadata::TabletMetadata *metadata() { return metadata_.get(); }
@@ -373,7 +373,7 @@ class Tablet {
   //
   // TODO: this could probably done more efficiently with a single atomic swap of a list
   // and an RCU-style quiesce phase, but not worth it for now.
-  mutable percpu_rwlock component_lock_;
+  mutable rw_semaphore component_lock_;
 
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time
