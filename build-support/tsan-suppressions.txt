@@ -31,6 +31,11 @@ race:kudu::tablet::MemRowSet::Iterator::ApplyMutationsToProjectedRow
 race:kudu::tablet::Mutation::*
 race:kudu::RowChangeListDecoder::Init
 
+# GLog's fatal signal handler isn't signal-safe -- it allocates memory.
+# This isn't great, but nothing we can do about it. See
+# https://code.google.com/p/google-glog/issues/detail?id=191
+signal:logging_fail
+
 # ------------------------------------------------------------
 # Known bugs below. As these JIRAs are resolved, please remove the relevant
 # suppression.
