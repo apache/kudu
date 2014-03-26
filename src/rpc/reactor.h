@@ -208,8 +208,6 @@ class ReactorThread {
 // A Reactor manages a ReactorThread
 class Reactor {
  public:
-  static const Status SHUTDOWN_ERROR;
-
   Reactor(const std::tr1::shared_ptr<Messenger>& messenger,
           int index,
           const MessengerBuilder &bld);

@@ -40,8 +40,11 @@ DEFINE_int64(server_negotiation_timeout, 3000, "server negotiation timeout, in m
 namespace kudu {
 namespace rpc {
 
-const Status Reactor::SHUTDOWN_ERROR(
-      Status::ServiceUnavailable("reactor is shutting down", "", ESHUTDOWN));
+namespace {
+Status ShutdownError() {
+  return Status::ServiceUnavailable("reactor is shutting down", "", ESHUTDOWN);
+}
+} // anonymous namespace
 
 ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
   : loop_(0),
@@ -87,13 +90,13 @@ void ReactorThread::ShutdownInternal() {
   for (conn_map_t::iterator c = client_conns_.begin();
        c != client_conns_.end(); c = client_conns_.begin()) {
     const shared_ptr<Connection> &conn = (*c).second;
-    conn->Shutdown(Reactor::SHUTDOWN_ERROR);
+    conn->Shutdown(ShutdownError());
     client_conns_.erase(c);
   }
 
   // Tear down any inbound TCP connections.
   BOOST_FOREACH(const shared_ptr<Connection> &conn, server_conns_) {
-    conn->Shutdown(Reactor::SHUTDOWN_ERROR);
+    conn->Shutdown(ShutdownError());
   }
   server_conns_.clear();
 }
@@ -435,7 +438,7 @@ void Reactor::Shutdown() {
   while (!pending_tasks_.empty()) {
     ReactorTask& task = pending_tasks_.front();
     pending_tasks_.pop_front();
-    task.Abort(SHUTDOWN_ERROR);
+    task.Abort(ShutdownError());
   }
 }
 
@@ -551,7 +554,7 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
     if (closing_) {
       // We guarantee the reactor lock is not taken when calling Abort().
       lock_guard.unlock();
-      task->Abort(SHUTDOWN_ERROR);
+      task->Abort(ShutdownError());
       return;
     }
     pending_tasks_.push_back(*task);
