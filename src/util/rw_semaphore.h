@@ -3,6 +3,7 @@
 #define KUDU_UTIL_RW_SEMAPHORE_H
 
 #include <boost/smart_ptr/detail/yield_k.hpp>
+#include <glog/logging.h>
 
 #include "gutil/atomicops.h"
 #include "gutil/macros.h"
@@ -50,7 +51,7 @@ class rw_semaphore {
         << "unlock_shared() called when there are no shared locks held";
       Atomic32 expected = cur_state;           // I expect a write lock and other readers
       Atomic32 try_new_state = expected - 1;   // Drop me as reader
-      cur_state = base::subtle::Acquire_CompareAndSwap(&state_, expected, try_new_state);
+      cur_state = base::subtle::Release_CompareAndSwap(&state_, expected, try_new_state);
       if (cur_state == expected)
         break;
       // Either was already locked by someone else, or CAS failed.
@@ -87,7 +88,9 @@ class rw_semaphore {
     while (true) {
       Atomic32 expected = cur_state & kNumReadersMask;   // I expect some 0+ readers
       Atomic32 try_new_state = kWriteFlag | expected;    // I want to lock the other writers
-      cur_state = base::subtle::Acquire_CompareAndSwap(&state_, expected, try_new_state);
+      // Note: we use NoBarrier here because we'll do the Acquire barrier down below
+      // in WaitPendingReaders
+      cur_state = base::subtle::NoBarrier_CompareAndSwap(&state_, expected, try_new_state);
       if (cur_state == expected)
         break;
       // Either was already locked by someone else, or CAS failed.
@@ -99,7 +102,7 @@ class rw_semaphore {
 
   void unlock() {
     // I expect to be the only writer
-    DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(state_), kWriteFlag);
+    DCHECK_EQ(base::subtle::NoBarrier_Load(&state_), kWriteFlag);
     // reset: no writers/no readers
     Release_Store(&state_, 0);
   }
@@ -123,7 +126,7 @@ class rw_semaphore {
 
   void WaitPendingReaders() {
     int loop_count = 0;
-    while ((base::subtle::NoBarrier_Load(&state_) & kNumReadersMask) > 0) {
+    while ((base::subtle::Acquire_Load(&state_) & kNumReadersMask) > 0) {
       boost::detail::yield(loop_count++);
     }
   }
