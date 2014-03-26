@@ -13,6 +13,7 @@
 #include "gutil/spinlock.h"
 #include "gutil/sysinfo.h"
 #include "util/errno.h"
+#include "util/rw_semaphore.h"
 
 namespace kudu {
 
@@ -55,18 +56,16 @@ class simple_spinlock {
   DISALLOW_COPY_AND_ASSIGN(simple_spinlock);
 };
 
-// Read-Write lock. 32bit uint that contains the number of readers.
-// When someone wants to write, tries to set the 32bit, and waits until
-// the readers have finished. Readers are spinning while the write flag is set.
+// Reader-writer lock.
+// This is functionally equivalent to rw_semaphore in rw_semaphore.h, but should be
+// used whenever the lock is expected to only be acquired on a single thread.
+// It adds TSAN annotations which will detect misuse of the lock, but those
+// annotations also assume that the same thread the takes the lock will unlock it.
 //
-// This rw-lock makes no attempt at fairness, though it does avoid write
-// starvation (no new readers may obtain the lock if a write is waiting).
-//
-// Given that this is a spin-lock, it should only be used in cases where the
-// lock is held for very short time intervals.
+// See rw_semaphore.h for documentation on the individual methods where unclear.
 class rw_spinlock {
  public:
-  rw_spinlock() : state_(0) {
+  rw_spinlock() {
     ANNOTATE_RWLOCK_CREATE(this);
   }
   ~rw_spinlock() {
@@ -74,112 +73,43 @@ class rw_spinlock {
   }
 
   void lock_shared() {
-    int loop_count = 0;
-    Atomic32 cur_state = NoBarrier_Load(&state_);
-    while (true) {
-      Atomic32 expected = cur_state & kNumReadersMask;   // I expect no write lock
-      Atomic32 try_new_state = expected + 1;          // Add me as reader
-      cur_state = Acquire_CompareAndSwap(&state_, expected, try_new_state);
-      if (cur_state == expected)
-        break;
-      // Either was already locked by someone else, or CAS failed.
-      boost::detail::yield(loop_count++);
-    }
+    sem_.lock_shared();
     ANNOTATE_RWLOCK_ACQUIRED(this, 0);
   }
 
   void unlock_shared() {
     ANNOTATE_RWLOCK_RELEASED(this, 0);
-    int loop_count = 0;
-    Atomic32 cur_state = NoBarrier_Load(&state_);
-    while (true) {
-      DCHECK_GT(cur_state & kNumReadersMask, 0)
-        << "unlock_shared() called when there are no shared locks held";
-      Atomic32 expected = cur_state;           // I expect a write lock and other readers
-      Atomic32 try_new_state = expected - 1;   // Drop me as reader
-      cur_state = Acquire_CompareAndSwap(&state_, expected, try_new_state);
-      if (cur_state == expected)
-        break;
-      // Either was already locked by someone else, or CAS failed.
-      boost::detail::yield(loop_count++);
-    }
+    sem_.unlock_shared();
   }
 
-  // Tries to acquire a write lock, if no one else has it.
-  // This function retries on CAS failure and waits for readers to complete.
   bool try_lock() {
-    int loop_count = 0;
-    Atomic32 cur_state = NoBarrier_Load(&state_);
-    while (true) {
-      // someone else has already the write lock
-      if (cur_state & kWriteFlag)
-        return false;
-
-      Atomic32 expected = cur_state & kNumReadersMask;   // I expect some 0+ readers
-      Atomic32 try_new_state = kWriteFlag | expected;    // I want to lock the other writers
-      cur_state = Acquire_CompareAndSwap(&state_, expected, try_new_state);
-      if (cur_state == expected)
-        break;
-      // Either was already locked by someone else, or CAS failed.
-      boost::detail::yield(loop_count++);
+    bool ret = sem_.try_lock();
+    if (ret) {
+      ANNOTATE_RWLOCK_ACQUIRED(this, 1);
     }
-
-    WaitPendingReaders();
-    ANNOTATE_RWLOCK_ACQUIRED(this, 1);
-    return true;
+    return ret;
   }
 
   void lock() {
-    int loop_count = 0;
-    Atomic32 cur_state = NoBarrier_Load(&state_);
-    while (true) {
-      Atomic32 expected = cur_state & kNumReadersMask;   // I expect some 0+ readers
-      Atomic32 try_new_state = kWriteFlag | expected;    // I want to lock the other writers
-      cur_state = Acquire_CompareAndSwap(&state_, expected, try_new_state);
-      if (cur_state == expected)
-        break;
-      // Either was already locked by someone else, or CAS failed.
-      boost::detail::yield(loop_count++);
-    }
-
-    WaitPendingReaders();
+    sem_.lock();
     ANNOTATE_RWLOCK_ACQUIRED(this, 1);
   }
 
   void unlock() {
-    // I expect to be the only writer
-    DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(state_), kWriteFlag);
     ANNOTATE_RWLOCK_RELEASED(this, 1);
-    // reset: no writers/no readers
-    Release_Store(&state_, 0);
+    sem_.unlock();
   }
 
-  // Return true if the lock is currently held for write by any thread.
-  // See simple_spinlock::is_locked() for details about where this is useful.
   bool is_write_locked() const {
-    return NoBarrier_Load(&state_) & kWriteFlag;
+    return sem_.is_write_locked();
   }
 
-  // Return true if the lock is currently held, either for read or write
-  // by any thread.
-  // See simple_spinlock::is_locked() for details about where this is useful.
   bool is_locked() const {
-    return NoBarrier_Load(&state_);
+    return sem_.is_locked();
   }
 
  private:
-  static const uint32_t kNumReadersMask = 0x7fffffff;
-  static const uint32_t kWriteFlag = 1 << 31;
-
-  void WaitPendingReaders() {
-    int loop_count = 0;
-    while ((NoBarrier_Load(&state_) & kNumReadersMask) > 0) {
-      boost::detail::yield(loop_count++);
-    }
-  }
-
- private:
-  volatile Atomic32 state_;
+  rw_semaphore sem_;
 };
 
 // A reader-writer lock implementation which is biased for use cases where
