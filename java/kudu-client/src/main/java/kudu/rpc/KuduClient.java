@@ -399,6 +399,10 @@ public class KuduClient {
    * @return A deferred row.
    */
   Deferred<Object> scanNextRows(final KuduScanner scanner) {
+    if (scanner.timedOut()) {
+      Exception e = new NonRecoverableException("Time out:" + scanner);
+      return Deferred.fromError(e);
+    }
     final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
     if (client == null) {
@@ -459,7 +463,7 @@ public class KuduClient {
 
   Deferred<Object> sendRpcToTablet(final KuduRpc request) {
     if (cannotRetryRequest(request)) {
-      return tooManyAttempts(request, null);
+      return tooManyAttemptsOrTimeout(request, null);
     }
     request.attempt++;
     final String tableName = request.getTable().getName();
@@ -542,8 +546,11 @@ public class KuduClient {
       }
     };
     long sleepTime = getSleepTimeForRpc(rpc);
-    newTimeout(new RetryTimer(), sleepTime);
+    if (rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
+      return tooManyAttemptsOrTimeout(rpc, null);
+    }
 
+    newTimeout(new RetryTimer(), sleepTime);
     return rpc.getDeferred();
   }
 
@@ -645,20 +652,25 @@ public class KuduClient {
    * already.
    */
   static boolean cannotRetryRequest(final KuduRpc rpc) {
-    return rpc.attempt > 10;  // TODO Don't hardcode.
+    return rpc.deadlineTracker.timedOut() || rpc.attempt > 10;  // TODO Don't hardcode.
   }
 
   /**
    * Returns a {@link Deferred} containing an exception when an RPC couldn't
-   * succeed after too many attempts.
-   * @param request The RPC that was retried too many times.
+   * succeed after too many attempts or if it already timed out.
+   * @param request The RPC that was retried too many times or timed out.
    * @param cause What was cause of the last failed attempt, if known.
    * You can pass {@code null} if the cause is unknown.
    */
-  static Deferred<Object> tooManyAttempts(final KuduRpc request,
-                                          final KuduException cause) {
-    final Exception e = new NonRecoverableException("Too many attempts: "
-        + request, cause);
+  static Deferred<Object> tooManyAttemptsOrTimeout(final KuduRpc request,
+                                                   final KuduException cause) {
+    String message;
+    if (request.deadlineTracker.timedOut()) {
+      message = "Time out: ";
+    } else {
+      message = "Too many attempts: ";
+    }
+    final Exception e = new NonRecoverableException(message + request, cause);
     request.callback(e);
     return Deferred.fromError(e);
   }
@@ -700,13 +712,13 @@ public class KuduClient {
     invalidateTabletCache(rpc.getTablet(), server);
     if (cannotRetry) {
       // This is a callback
-      tooManyAttempts(rpc, ex);
+      tooManyAttemptsOrTimeout(rpc, ex);
     }
 
-    delayedSendRpcToTablet(rpc);
+    delayedSendRpcToTablet(rpc, ex);
   }
 
-  private void delayedSendRpcToTablet(final KuduRpc rpc) {
+  private void delayedSendRpcToTablet(final KuduRpc rpc, KuduException ex) {
     // Here we simply retry the RPC later. We might be doing this along with a lot of other RPCs
     // in parallel. Asynchbase does some hacking with a "probe" RPC while putting the other ones
     // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
@@ -717,6 +729,9 @@ public class KuduClient {
       }
     };
     long sleepTime = getSleepTimeForRpc(rpc);
+    if (rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
+      tooManyAttemptsOrTimeout(rpc, ex);
+    }
     newTimeout(new RetryTimer(), sleepTime);
   }
 

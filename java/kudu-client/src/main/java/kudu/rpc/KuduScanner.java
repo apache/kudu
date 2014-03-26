@@ -134,16 +134,20 @@ public final class KuduScanner {
 
   private boolean inFirstTablet = true;
 
+  private final DeadlineTracker deadlineTracker;
+
   /**
-   * Constructor.
-   * <strong>This byte array will NOT be copied.</strong>
-   * @param table The non-empty name of the table to use.
+   * Creates a KuduScanner but doesn't start the scanner yet
+   * @param client connection to the cluster
+   * @param table which table to scan
+   * @param schema the schema to use
    */
   KuduScanner(final KuduClient client, final KuduTable table, Schema schema) {
     this.client = client;
     this.table = table;
     this.schema = schema;
     this.columnRangePredicates = new ColumnRangePredicates(schema);
+    this.deadlineTracker = new DeadlineTracker();
   }
 
   /**
@@ -379,14 +383,15 @@ public final class KuduScanner {
   }
 
   public String toString() {
-    final String tablet = this.tablet == null ? "null" : this.tablet.toString();
+    final String tablet = this.tablet == null ? "null" : this.tablet.getTabletIdAsString();
     final StringBuilder buf = new StringBuilder();
     buf.append("KuduScanner(table=");
     buf.append(table.getName());
     buf.append("}")
         .append(", tabletSlice=").append(tablet);
-    buf.append(", scannerId=").append(Bytes.pretty(scannerId))
-        .append(')');
+    buf.append(", scannerId=").append(Bytes.pretty(scannerId));
+    buf.append(", ").append(deadlineTracker);
+    buf.append(')');
     return buf.toString();
   }
 
@@ -430,6 +435,15 @@ public final class KuduScanner {
           "specified");
     }
     columnRangePredicates.addColumnRangePredicate(predicate);
+  }
+
+  /**
+   * Set how long this scanner can run for before it expires. The deadline check is triggered
+   * only when more rows must be fetched from a server
+   * @param deadline time in milliseconds that this scanner can run for
+   */
+  public void setDeadlineMillis(long deadline) {
+    this.deadlineTracker.setDeadline(deadline);
   }
 
   /**
@@ -509,7 +523,6 @@ public final class KuduScanner {
     return new ScanRequest(table, State.CLOSING);
   }
 
-
   /**
    * Throws an exception if scanning already started.
    * @throws IllegalStateException if scanning already started.
@@ -518,6 +531,10 @@ public final class KuduScanner {
     if (tablet != null) {
       throw new IllegalStateException("scanning already started");
     }
+  }
+
+  boolean timedOut() {
+    return deadlineTracker.timedOut();
   }
 
   /**
@@ -569,6 +586,9 @@ public final class KuduScanner {
     ScanRequest(KuduTable table, State state) {
       super(table);
       this.state = state;
+      if (deadlineTracker.hasDeadline()) {
+        this.setTimeoutMillis(deadlineTracker.getMillisBeforeDeadline());
+      }
     }
 
     @Override

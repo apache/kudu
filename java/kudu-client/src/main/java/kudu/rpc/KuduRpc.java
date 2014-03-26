@@ -77,6 +77,8 @@ public abstract class KuduRpc {
 
   final KuduTable table;
 
+  final DeadlineTracker deadlineTracker;
+
   /**
    * How many times have we retried this RPC?.
    * Proper synchronization is required, although in practice most of the code
@@ -87,6 +89,7 @@ public abstract class KuduRpc {
 
   KuduRpc(KuduTable table) {
     this.table = table;
+    this.deadlineTracker = new DeadlineTracker();
   }
 
   /**
@@ -132,6 +135,7 @@ public abstract class KuduRpc {
     }
     deferred = null;
     attempt = 0;
+    deadlineTracker.reset();
     d.callback(result);
   }
 
@@ -155,6 +159,10 @@ public abstract class KuduRpc {
     return table;
   }
 
+  void setTimeoutMillis(long timeout) {
+    deadlineTracker.setDeadline(timeout);
+  }
+
   public String toString() {
 
     final StringBuilder buf = new StringBuilder();
@@ -167,6 +175,7 @@ public abstract class KuduRpc {
       buf.append(tablet.getTabletIdAsString());
     }
     buf.append(", attempt=").append(attempt);
+    buf.append(", ").append(deadlineTracker);
     buf.append(')');
     return buf.toString();
   }

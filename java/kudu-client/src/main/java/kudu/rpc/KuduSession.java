@@ -52,6 +52,12 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
  * to use a KuduSession to instantiate reads as well as writes.  This will make
  * it more straight-forward to add RW transactions in the future without
  * significant modifications to the API.
+ *
+ * Timeouts are handled differently depending on the flush mode.
+ * With AUTO_FLUSH_SYNC, the timeout is set on each apply()'d operation.
+ * With AUTO_FLUSH_BACKGROUND and MANUAL_FLUSH, the timeout is assigned to a whole batch of
+ * operations upon flush()'ing. It means that in a situation with a timeout of 500ms and a flush
+ * interval of 1000ms, an operation can be oustanding for up to 1500ms before being timed out.
  */
 public class KuduSession {
 
@@ -88,6 +94,7 @@ public class KuduSession {
   private int interval = 1000;
   private int mutationBufferSpace = 1000;
   private FlushMode flushMode;
+  private long currentTimeout = 0;
 
   @GuardedBy("this")
   private final Map <Slice, Batch> operations = new HashMap<Slice, Batch>();
@@ -136,6 +143,15 @@ public class KuduSession {
    */
   public void setFlushInterval(int interval) {
     this.interval = interval;
+  }
+
+  /**
+   * Sets the timeout for the next applied operations.
+   * The default timeout is 0, which disables the timeout functionality.
+   * @param timeout Timeout in milliseconds
+   */
+  public void setTimeoutMillis(long timeout) {
+    this.currentTimeout = timeout;
   }
 
   /**
@@ -190,11 +206,14 @@ public class KuduSession {
     }
 
     if (KuduClient.cannotRetryRequest(operation)) {
-      return KuduClient.tooManyAttempts(operation, null);
+      return KuduClient.tooManyAttemptsOrTimeout(operation, null);
     }
 
     // If we autoflush, just send it to the TS
     if (flushMode == FlushMode.AUTO_FLUSH_SYNC) {
+      if (currentTimeout != 0) {
+        operation.setTimeoutMillis(currentTimeout);
+      }
       return client.sendRpcToTablet(operation);
     }
     String table = operation.getTable().getName();
@@ -366,11 +385,17 @@ public class KuduSession {
   /**
    * Flushes the edits for the given tablet
    */
-  private Deferred<Object> flushTablet(Batch inserts) {
-    if (inserts != null && inserts.ops.size() != 0) {
-      //final Deferred<Object> d = operations.getDeferred();
-      LOG.debug("Sending " + inserts.ops.size());
-      return client.sendRpcToTablet(inserts);
+  private Deferred<Object> flushTablet(Batch batch) {
+    if (batch != null && batch.ops.size() != 0) {
+      LOG.debug("Sending " + batch.ops.size());
+      if (currentTimeout != 0) {
+        // The deadline tracker started when the Batch was created (in KuduRpc),
+        // but we may have waited for up to interval before getting here,
+        // so we reset tracker now before we actually send this rpc.
+        batch.deadlineTracker.reset();
+        batch.setTimeoutMillis(currentTimeout);
+      }
+      return client.sendRpcToTablet(batch);
     }
     return null;
   }

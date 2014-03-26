@@ -184,11 +184,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     ChannelBuffer payload;
     final String method = rpc.method();
     try {
-      final RpcHeader.RequestHeader header = RpcHeader.RequestHeader.newBuilder()
+      final RpcHeader.RequestHeader.Builder headerBuilder = RpcHeader.RequestHeader.newBuilder()
           .setCallId(rpcid)
-          .setMethodName(method)
-          .build();
-      payload = rpc.serialize(header);
+          .setMethodName(method);
+      if (rpc.deadlineTracker.hasDeadline()) {
+        headerBuilder.setTimeoutMillis((int)rpc.deadlineTracker.getMillisBeforeDeadline());
+      }
+      payload = rpc.serialize(headerBuilder.build());
     } catch (Exception e) {
         LOG.error("Uncaught exception while serializing RPC: " + rpc, e);
         rpc.callback(e);  // Make the RPC fail with the exception.
