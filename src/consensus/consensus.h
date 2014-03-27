@@ -29,7 +29,7 @@ namespace consensus {
 
 // forward declarations
 class ConsensusContext;
-class ReplicaUpdateContext;
+class ReplicaTransactionFactory;
 
 struct ConsensusOptions {
   string tablet_id;
@@ -41,19 +41,22 @@ struct ConsensusOptions {
 // after it. See Log class header comment for the reason why. On the other
 // hand Consensus must be quiesced before closing the log, otherwise it
 // will try to write to a destroyed/closed log.
+//
 // The order of these operations on shutdown must therefore be:
 // 1 - quiesce Consensus
 // 2 - close/destroy Log
 // 3 - destroy Consensus
 class Consensus {
  public:
-  Consensus() : state_(kNotInitialized) {}
+  class ConsensusFaultHooks;
+  Consensus() {}
 
   // Initializes Consensus.
   // Note: Consensus does not own the Log and must be provided a fully built
   // one on startup.
   virtual Status Init(const metadata::QuorumPeerPB& peer,
                       const scoped_refptr<server::Clock>& clock,
+                      ReplicaTransactionFactory* txn_factory,
                       log::Log* log) = 0;
 
   // Starts running the consensus algorithm.
@@ -67,12 +70,16 @@ class Consensus {
   virtual Status Start(const metadata::QuorumPB& initial_quorum,
                        gscoped_ptr<metadata::QuorumPB>* running_quorum) = 0;
 
-  // Stops running the consensus algorithm.
-  virtual Status Shutdown() = 0;
+  // Creates a new ConsensusContext, the entity that owns all the data
+  // structures required for a consensus round, such as the ReplicateMsg
+  // (and later on the CommitMsg). ConsensusContext will also point to and
+  // increase the reference count for the provided callbacks.
+  ConsensusContext* NewContext(
+      gscoped_ptr<ReplicateMsg> entry,
+      const std::tr1::shared_ptr<FutureCallback>& repl_callback,
+      const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
-  // Called by a quorum client to append an entry to the state machine.
-  // Callbacks are provided so that ad-hoc actions can be taken on the
-  // different phases of the two-phase commit process.
+  // Called by a quorum client to replicate an entry to the state machine.
   //
   // From the leader instance perspective execution proceeds as follows:
   //
@@ -84,14 +91,14 @@ class Consensus {
   //             |<---------------ACK------------------+
   //             |                                     |
   //     3)      +--+                                  |
-  //           <----+ ReplicateCallback.onReplicate()  |
+  //           <----+ ctx.replicate_callback()         |
   //             |                                     |
   //     4)   -->| Commit()                            |
   //             |                                     |
   //     5)      +--+                                  |
   //             |<-+ commit                           |
   //             |                                     |
-  //     6)      +--+ CommitCallback.onCommit()        |
+  //     6)      +--+ ctx.commit_callback()            |
   //        Res<----+                                  |
   //             |                                     |
   //             |                                     |
@@ -111,63 +118,53 @@ class Consensus {
   // client's perspective.
   // 7) Leader eventually sends commit message to the quorum.
   //
-  // This method can only be called on the leader (i.e. is_leader() returns
-  // true).
-  // A successful call to Append yields a ConsensusContext that can be used
-  // to call Commit.
-  // The ConsensusContext out parameter will own all the data structures
-  // required for a consensus round, such as the ReplicateMsg (and later on
-  // the CommitMsg). ConsensusContext will also point to and increase the
-  // reference count for the provided callbacks.
-  virtual Status Append(
-      gscoped_ptr<ReplicateMsg> entry,
-      const std::tr1::shared_ptr<FutureCallback>& repl_callback,
-      const std::tr1::shared_ptr<FutureCallback>& commit_callback,
-      OpId* op_id, // TODO: Consider passing the whole TransactionContext.
-      gscoped_ptr<ConsensusContext>* context) = 0;
+  // This method can only be called on the leader, i.e. role() == LEADER
+  virtual Status Replicate(ConsensusContext* context) = 0;
 
   // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
-  // state machines. This method can only be called on LEARNERs and
-  // FOLLOWERs, i.e. is_leader() returns false.
-  virtual Status Update(ReplicaUpdateContext* context) = 0;
-
-  // Returns the number of participants that constitutes a majority for this
-  // quorum, e.g. 1 for a quorum of 1 participant, 2 for a quorum of 2,3
-  // participants, 3 for a quorum of 4,5 participants etc..
-  //
-  // The quorum will stop answering requests if num_participants() becomes
-  // less than n_majority(). To maintain service the quorum can be Reconfigured
-  // to add participants (to maintain/increase n_majority) or to remove
-  // participants (decrease n_majority)
-  virtual uint8_t n_majority() const = 0;
-
-  // Returns the current number of participants of the quorum.
-  virtual uint8_t num_participants() const = 0;
-
-  // Whether this instance of a quorum participant is the current leader of
-  // quorum.
-  virtual bool is_leader() const = 0;
+  // state machines.
+  virtual Status Update(const ConsensusRequestPB* request,
+                        ConsensusResponsePB* response) = 0;
 
   // Returns the current quorum role of this instance.
   virtual metadata::QuorumPeerPB::Role role() const = 0;
 
-  // Returns the current leader of the quorum.
-  // NOTE: Returns a copy, thus should not be used in a tight loop.
-  virtual metadata::QuorumPeerPB CurrentLeader() const = 0;
-
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
-  virtual metadata::QuorumPB CurrentQuorum() const = 0;
+  virtual metadata::QuorumPB Quorum() const = 0;
 
   virtual ~Consensus() {}
 
- protected:
+  void SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks);
 
+  // Stops running the consensus algorithm.
+  virtual void Shutdown() = 0;
+ protected:
   friend class ConsensusContext;
 
   // Called by Consensus context to complete the commit of a consensus
-  // round. CommitMsg pointer ownership will remain with ConsensusContext.
-  virtual Status Commit(ConsensusContext* ctx, OperationPB* msg) = 0;
+  // round.
+  virtual Status Commit(ConsensusContext* ctx) = 0;
+
+  // Fault hooks for tests. In production code this will always be null.
+  std::tr1::shared_ptr<ConsensusFaultHooks> fault_hooks_;
+
+  enum HookPoint {
+    PRE_START,
+    POST_START,
+    PRE_CONFIG_CHANGE,
+    POST_CONFIG_CHANGE,
+    PRE_REPLICATE,
+    POST_REPLICATE,
+    PRE_COMMIT,
+    POST_COMMIT,
+    PRE_UPDATE,
+    POST_UPDATE,
+    PRE_SHUTDOWN,
+    POST_SHUTDOWN
+  };
+
+  Status ExecuteHook(HookPoint point);
 
   enum State {
     kNotInitialized,
@@ -175,108 +172,162 @@ class Consensus {
     kConfiguring,
     kRunning,
   };
-  State state_;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(Consensus);
+};
+
+// A commit continuation for replicas.
+//
+// When a replica transaction is started with ReplicaTransactionFactory::StartTransaction()
+// the context is set with a commit continuation. Once the leader's commit message for this
+// transaction arrives consensus calls ReplicaCommitContinuation::LeaderCommitted() which
+// triggers the replica to apply/abort based on the leader's message.
+//
+// Commit continuations should execute in their own executor, but must execute in order,
+// i.e. the caller should not block until LeaderCommitted() completes but two subsequent
+// calls must complete in the order they were called. This because replicas must enforce
+// that operations are performed in the same order as the leader to keep monotonically
+// increasing timestamps.
+class ReplicaCommitContinuation {
+ public:
+  virtual Status LeaderCommitted(gscoped_ptr<OperationPB> leader_commit_op) = 0;
+  virtual ~ReplicaCommitContinuation() {}
+};
+
+// Factory for replica transactions.
+// An implementation of this factory must be registered prior to consensus
+// start.
+//
+// Replica transactions execute the following way:
+//
+// - When a ReplicateMsg is first received from the leader the Consensus
+//   instance creates the ConsensusContext and calls StartReplicaTransaction().
+//   This will trigger the Prepare(). At the same time replica consensus
+//   instance immediately stores the ReplicateMsg in the Log. Once the replicate
+//   message is stored in stable storage an ACK is sent to the leader (i.e. the
+//   replica Consensus instance does not wait for Prepare() to finish).
+//
+// - When the CommitMsg for a replicate is first received from the leader
+//   the replica waits for the corresponding Prepare() to finish (if it has
+//   not completed yet) and then proceeds to trigger the Apply().
+//
+// - Once Apply() completes the ReplicaTransactionFactory will call Commit()
+//   on 'context' triggering the replica side commit message to be stored
+//   on stable storage and the replica transaction to finish.
+class ReplicaTransactionFactory {
+ public:
+  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusContext> context) = 0;
+  virtual ~ReplicaTransactionFactory() {}
 };
 
 // Context for a consensus round on the LEADER side, typically created as an
 // out-parameter of Consensus::Append.
 class ConsensusContext {
  public:
+  // Ctor used for leader transactions. Leader transactions can and must specify the
+  // callbacks prior to initiating the consensus round.
   ConsensusContext(Consensus* consensus,
                    gscoped_ptr<OperationPB> replicate_op,
                    const std::tr1::shared_ptr<FutureCallback>& replicate_callback,
                    const std::tr1::shared_ptr<FutureCallback>& commit_callback);
 
+  // Ctor used for follower/learner transactions. These transactions do not use the
+  // replicate callback and the commit callback is set later, after the transaction
+  // is actually started.
+  ConsensusContext(Consensus* consensus,
+                   gscoped_ptr<OperationPB> replicate_op);
+
   OperationPB* replicate_op() {
     return replicate_op_.get();
   }
 
+  // Returns the id of the (replicate) operation this context
+  // refers to. This is only set _after_ Consensus::Replicate(context).
+  OpId id() const {
+    return DCHECK_NOTNULL(replicate_op_.get())->id();
+  }
+
   Status Commit(gscoped_ptr<CommitMsg> commit);
+
+  void SetCommitCallback(std::tr1::shared_ptr<FutureCallback>& commit_clbk) {
+    commit_callback_ = commit_clbk;
+  }
 
   const std::tr1::shared_ptr<FutureCallback>& commit_callback() {
     return commit_callback_;
   }
 
-  void release_commit_callback() {
+  const std::tr1::shared_ptr<FutureCallback>& replicate_callback() {
+    return replicate_callback_;
+  }
+
+  std::tr1::shared_ptr<FutureCallback> release_commit_callback() {
+    std::tr1::shared_ptr<FutureCallback> commit_callback = commit_callback_;
     commit_callback_.reset();
+    return commit_callback;
+  }
+
+  OperationPB* commit_op() {
+    return commit_op_.get();
+  }
+
+  OperationPB* leader_commit_op() {
+    return leader_commit_op_.get();
   }
 
   OperationPB* release_commit_op() {
     return commit_op_.release();
   }
 
+  void SetLeaderCommitOp(gscoped_ptr<OperationPB> leader_commit_op) {
+    leader_commit_op_.reset(leader_commit_op.release());
+  }
+
+  void SetReplicaCommitContinuation(ReplicaCommitContinuation* continuation) {
+    continuation_ = continuation;
+  }
+
+  ReplicaCommitContinuation* GetReplicaCommitContinuation() {
+    return continuation_;
+  }
+
  private:
   Consensus* consensus_;
+  // This round's replicate operation.
   gscoped_ptr<OperationPB> replicate_op_;
+  // This round's commit operation.
   gscoped_ptr<OperationPB> commit_op_;
+  // This rounds leader commit operation. This is only present in non-leader
+  // replicas and is required for the creation of the replica's commit
+  // message as it will share some information with the leader.
+  gscoped_ptr<OperationPB> leader_commit_op_;
+  // The callback that is called once the replicate phase of this consensus
+  // round is finished.
   std::tr1::shared_ptr<FutureCallback> replicate_callback_;
+  // The callback that is called once the commit phase of this consensus
+  // round is finished.
   std::tr1::shared_ptr<FutureCallback> commit_callback_;
+  // The commit continuation for replicas. This is only set in non-leader
+  // replicas and is called once the leader's commit message is received
+  // and the replica can proceed with it's own Apply() and Commit().
+  ReplicaCommitContinuation* continuation_;
 };
 
-// A context for a consensus update request, i.e. a batch of ReplicateMsg and
-// and CommitMsgs received from the LEADER. Usually wraps an RpcContext
-// that gets called by the Respond*() methods but not by default so that
-// consensus is not tied to RPC.
-//
-// Contrarily to a ConsensusContext, which refers to a single consensus round
-// and lives LEADER side, a ConsensusUpdateContext may refer a series of
-// of replicate/commit operations (as many as were batched together by the
-// LEADER) and lives FOLLOWER/LEARNER side.
-class ReplicaUpdateContext {
+class Consensus::ConsensusFaultHooks {
  public:
-  ReplicaUpdateContext(const ConsensusRequestPB* request,
-                         ConsensusResponsePB* response)
-    : request_(request),
-      response_(response) {
-  }
-
-  const ConsensusRequestPB* request() { return request_; }
-
-  ConsensusResponsePB* response() { return response_; }
-
-  // Sets the future that was assigned to the replica log task.
-  void SetLogFuture(const std::tr1::shared_ptr<Future>& log_future) {
-    log_future_ = log_future;
-  }
-
-  void AddPrepareFuture(const std::tr1::shared_ptr<Future>& prepare_future) {
-    prepare_futures_.push_back(prepare_future);
-  }
-
-  void AddCommitFuture(const std::tr1::shared_ptr<Future>& commit_future) {
-    commit_futures_.push_back(commit_future);
-  }
-
-  const std::tr1::shared_ptr<Future>& log_future() {
-    return log_future_;
-  }
-
-  const vector<std::tr1::shared_ptr<Future> >& prepare_futures() {
-    return prepare_futures_;
-  }
-
-  const vector<std::tr1::shared_ptr<Future> >& commit_futures() {
-    return commit_futures_;
-  }
-
-  virtual void RespondSuccess() = 0;
-
-  virtual void RespondFailure(const Status &status) = 0;
-
-  virtual ~ReplicaUpdateContext() {}
-
- private:
-  const ConsensusRequestPB* request_;
-  ConsensusResponsePB* response_;
-  std::tr1::shared_ptr<Future> log_future_;
-  vector<std::tr1::shared_ptr<Future> > prepare_futures_;
-  vector<std::tr1::shared_ptr<Future> > commit_futures_;
-
-
-  DISALLOW_COPY_AND_ASSIGN(ReplicaUpdateContext);
+  virtual Status PreStart() { return Status::OK(); }
+  virtual Status PostStart() { return Status::OK(); }
+  virtual Status PreConfigChange() { return Status::OK(); }
+  virtual Status PostConfigChange() { return Status::OK(); }
+  virtual Status PreReplicate() { return Status::OK(); }
+  virtual Status PostReplicate() { return Status::OK(); }
+  virtual Status PreCommit() { return Status::OK(); }
+  virtual Status PostCommit() { return Status::OK(); }
+  virtual Status PreUpdate() { return Status::OK(); }
+  virtual Status PostUpdate() { return Status::OK(); }
+  virtual Status PreShutdown() { return Status::OK(); }
+  virtual Status PostShutdown() { return Status::OK(); }
+  virtual ~ConsensusFaultHooks() {}
 };
 
 } // namespace consensus

@@ -115,9 +115,11 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
+                                           master_->messenger(),
                                            tablet->metadata()->Quorum().peers(0),
                                            log.Pass(),
-                                           opid_anchor_registry.get()),
+                                           opid_anchor_registry.get(),
+                                           tablet->metadata()->Quorum().local()),
                         "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()),

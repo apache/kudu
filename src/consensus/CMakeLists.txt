@@ -37,7 +37,6 @@ target_link_libraries(log log_proto metadata_proto)
 
 set(CONSENSUS_SRCS
   consensus.cc
-  consensus_base.cc
   consensus_queue.cc
   consensus_peers.cc
   local_consensus.cc

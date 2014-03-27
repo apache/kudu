@@ -20,14 +20,22 @@
 namespace kudu {
 namespace tablet {
 
+using consensus::Consensus;
+using consensus::ConsensusContext;
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
+using consensus::CHANGE_CONFIG_OP;
+using consensus::WRITE_OP;
+using consensus::OP_ABORT;
 using log::Log;
 using log::OpIdAnchorRegistry;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using metadata::TabletMetadata;
+using rpc::Messenger;
+using rpc::RpcContext;
 using strings::Substitute;
+using tserver::TabletServerErrorPB;
 
 // ============================================================================
 //  Tablet Peer
@@ -49,9 +57,11 @@ TabletPeer::~TabletPeer() {
 
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
+                        const shared_ptr<Messenger>& messenger,
                         const QuorumPeerPB& quorum_peer,
                         gscoped_ptr<Log> log,
-                        OpIdAnchorRegistry* opid_anchor_registry) {
+                        OpIdAnchorRegistry* opid_anchor_registry,
+                        bool local_peer) {
 
   {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
@@ -60,18 +70,24 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     tablet_ = tablet;
     clock_ = clock;
     quorum_peer_ = quorum_peer;
+    messenger_ = messenger;
     log_.reset(log.release());
     opid_anchor_registry_ = opid_anchor_registry;
     // TODO support different consensus implementations (possibly by adding
     // a TabletPeerOptions).
     consensus_.reset(new LocalConsensus(ConsensusOptions()));
+
+    ConsensusOptions options;
+    options.tablet_id = tablet_->metadata()->oid();
+    consensus_.reset(new LocalConsensus(options));
   }
 
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
   DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
-  RETURN_NOT_OK(consensus_->Init(quorum_peer_, clock, log_.get()));
+  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, this, log_.get()),
+                        "Could not initialize consensus");
 
   // set consensus on the tablet to that it can store local state changes
   // in the log.
@@ -87,7 +103,6 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
   boost::lock_guard<Semaphore> config_lock(config_sem_);
 
   gscoped_ptr<QuorumPB> actual_config;
-
   RETURN_NOT_OK(consensus_->Start(quorum, &actual_config));
   tablet_->metadata()->SetQuorum(*actual_config.get());
   RETURN_NOT_OK(tablet_->metadata()->Flush());
@@ -113,12 +128,7 @@ void TabletPeer::Shutdown() {
     txn_tracker_.WaitForAllToFinish();
   }
 
-  if (consensus_) {
-    Status s = consensus_->Shutdown();
-    if (!s.ok()) {
-      LOG(DFATAL) << "Consensus shutdown failed: " << s.ToString();
-    }
-  }
+  consensus_->Shutdown();
   prepare_executor_->Shutdown();
   apply_executor_->Shutdown();
   if (VLOG_IS_ON(1)) {
@@ -186,6 +196,10 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
                                         &config_sem_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
+}
+
+Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusContext> ctx) {
+  return Status::NotSupported("Replica transactions are not supported with local consensus.");
 }
 
 void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {

@@ -17,6 +17,10 @@ namespace metadata {
 class TabletMetadata;
 }
 
+namespace rpc {
+class Messenger;
+}
+
 namespace tablet {
 class ChangeConfigTransactionContext;
 class TabletStatusPB;
@@ -27,7 +31,7 @@ class TabletStatusListener;
 // state machine through a consensus algorithm, which makes sure that other
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
-class TabletPeer {
+class TabletPeer : public consensus::ReplicaTransactionFactory {
  public:
 
   explicit TabletPeer(const metadata::TabletMetadata& meta);
@@ -35,13 +39,16 @@ class TabletPeer {
   ~TabletPeer();
 
   // Initializes the TabletPeer, namely creating the Log and initializing
-  // Consensus.
+  // Consensus. 'local_peer' indicates whether this should serve the tablet
+  // locally or if it collaborates with other replicas through consensus.
   // Takes a reference to 'opid_anchor_registry'
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
+              const std::tr1::shared_ptr<rpc::Messenger>& messenger,
               const metadata::QuorumPeerPB& quorum_peer,
               gscoped_ptr<log::Log> log,
-              log::OpIdAnchorRegistry* opid_anchor_registry);
+              log::OpIdAnchorRegistry* opid_anchor_registry,
+              bool local_peer);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers
@@ -84,6 +91,10 @@ class TabletPeer {
 
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
+  // Used by consensus to create and start a new ReplicaTransaction.
+  virtual Status StartReplicaTransaction(
+      gscoped_ptr<consensus::ConsensusContext> context) OVERRIDE;
+
   consensus::Consensus* consensus() { return consensus_.get(); }
 
   Tablet* tablet() const {
@@ -100,8 +111,9 @@ class TabletPeer {
   }
 
   const metadata::QuorumPeerPB::Role role() const {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
-    return quorum_peer_.role();
+    if (consensus_)
+      return consensus_->role();
+    return metadata::QuorumPeerPB::NON_PARTICIPANT;
   }
 
   TabletStatusListener* status_listener() const {
@@ -133,6 +145,7 @@ class TabletPeer {
   gscoped_ptr<log::Log> log_;
   std::tr1::shared_ptr<Tablet> tablet_;
   metadata::QuorumPeerPB quorum_peer_;
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;

@@ -22,12 +22,15 @@ using tserver::ChangeConfigRequestPB;
 using tserver::ChangeConfigResponsePB;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options)
-    : ConsensusBase(options),
-      next_op_id_index_(-1) {
+    : options_(options),
+      next_op_id_index_(-1),
+      state_(kNotInitialized),
+      log_(NULL) {
 }
 
 Status LocalConsensus::Init(const QuorumPeerPB& peer,
                             const scoped_refptr<server::Clock>& clock,
+                            ReplicaTransactionFactory* txn_factory,
                             Log* log) {
   CHECK_EQ(state_, kNotInitialized);
   peer_ = peer;
@@ -71,9 +74,10 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
   state_ = kConfiguring;
 
-  OpId op_id; // not currently used. May be needed for anchoring later. See KUDU-152.
-  gscoped_ptr<ConsensusContext> ctx;
-  RETURN_NOT_OK(Append(replicate_msg.Pass(), replicate_clbk, commit_clbk, &op_id, &ctx));
+  gscoped_ptr<ConsensusContext> ctx(NewContext(replicate_msg.Pass(),
+                                               replicate_clbk,
+                                               commit_clbk));
+  RETURN_NOT_OK(Replicate(ctx.get()));
   RETURN_NOT_OK(replicate_clbk->Wait());
 
   ChangeConfigResponsePB resp;
@@ -93,56 +97,41 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   return Status::OK();
 }
 
-Status LocalConsensus::Append(
-    gscoped_ptr<ReplicateMsg> entry,
-    const shared_ptr<FutureCallback>& repl_callback,
-    const shared_ptr<FutureCallback>& commit_callback,
-    OpId* op_id,
-    gscoped_ptr<ConsensusContext>* context) {
-
+Status LocalConsensus::Replicate(ConsensusContext* context) {
   DCHECK_GE(state_, kConfiguring);
 
   LogEntryBatch* reserved_entry_batch;
-  gscoped_ptr<ConsensusContext> new_context;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
-    gscoped_ptr<OperationPB> replicate_op(new OperationPB);
-    replicate_op->set_allocated_replicate(entry.release());
-
     // create the new op id for the entry.
-    OpId* cur_op_id = replicate_op->mutable_id();
+    OpId* cur_op_id = DCHECK_NOTNULL(context->replicate_op())->mutable_id();
     cur_op_id->set_term(0);
     cur_op_id->set_index(next_op_id_index_++);
 
-    DCHECK_NOTNULL(op_id)->CopyFrom(*cur_op_id);
     // TODO: Register TransactionContext (not currently passed) to avoid Log GC
     // race between Append() and Apply(). See KUDU-152.
 
-    // create the consensus context for this round
-    new_context.reset(new ConsensusContext(this, replicate_op.Pass(),
-                                           repl_callback,
-                                           commit_callback));
-
     // Reserve the correct slot in the log for the replication operation.
-    RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(new_context->replicate_op()),
+    RETURN_NOT_OK(log_->Reserve(boost::assign::list_of(context->replicate_op()),
                                 &reserved_entry_batch));
   }
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'
   // is triggered.
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, repl_callback));
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, context->replicate_callback()));
 
-  context->reset(new_context.release());
   return Status::OK();
 }
 
-Status LocalConsensus::Update(ReplicaUpdateContext* context) {
+Status LocalConsensus::Update(const ConsensusRequestPB* request,
+                              ConsensusResponsePB* response) {
   return Status::NotSupported("LocalConsensus does not support Update() calls.");
 }
 
-Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op) {
+Status LocalConsensus::Commit(ConsensusContext* context) {
 
+  OperationPB* commit_op = DCHECK_NOTNULL(context->commit_op());
   DCHECK(commit_op->has_commit()) << "A commit operation must have a commit.";
 
   LogEntryBatch* reserved_entry_batch;
@@ -174,10 +163,9 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
   return Status::OK();
 }
 
-Status LocalConsensus::Shutdown() {
-  RETURN_NOT_OK(log_->Close());
+void LocalConsensus::Shutdown() {
+  WARN_NOT_OK(log_->Close(), "Error closing the Log.");
   VLOG(1) << "LocalConsensus Shutdown!";
-  return Status::OK();
 }
 
 } // end namespace consensus

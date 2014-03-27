@@ -114,6 +114,7 @@ class TransactionContext {
   // being executed through the consensus system.
   void set_consensus_ctx(gscoped_ptr<consensus::ConsensusContext> consensus_ctx) {
     consensus_ctx_.reset(consensus_ctx.release());
+    op_id_ = consensus_ctx_->id();
   }
 
   // Returns the ConsensusContext being used, if this transaction is being

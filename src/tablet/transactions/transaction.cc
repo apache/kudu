@@ -57,15 +57,14 @@ Status LeaderTransaction::Execute() {
   // internally in the consensus implementation.
   boost::lock_guard<simple_spinlock> l(prepare_replicate_lock_);
 
-  gscoped_ptr<ConsensusContext> context;
+
   gscoped_ptr<ReplicateMsg> replicate_msg;
   NewReplicateMsg(&replicate_msg);
+  gscoped_ptr<ConsensusContext> context(consensus_->NewContext(replicate_msg.Pass(),
+                                                               prepare_finished_callback_,
+                                                               commit_finished_callback_));
   // persist the message through consensus, asynchronously
-  Status s = consensus_->Append(replicate_msg.Pass(),
-                                prepare_finished_callback_,
-                                commit_finished_callback_,
-                                tx_ctx()->mutable_op_id(),
-                                &context);
+  Status s = consensus_->Replicate(context.get());
   if (!s.ok()) {
     prepare_finished_callback_->OnFailure(s);
     HandlePrepareFailure();
