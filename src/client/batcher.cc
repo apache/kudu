@@ -578,11 +578,11 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
 
     CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
 
-    PartialRowsPB* to_insert = req.mutable_to_insert_rows();
+    RowOperationsPB* to_insert = req.mutable_to_insert_rows();
 
     // Add the rows
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
-      op->insert->row().AppendToPB(to_insert);
+      op->insert->row().AppendToPB(RowOperationsPB::INSERT, to_insert);
 
       // Set the state now, even though we haven't yet sent it -- at this point
       // there is no return, and we're definitely going to send it. If we waited

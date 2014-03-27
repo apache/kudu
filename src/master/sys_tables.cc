@@ -223,7 +223,7 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
 
   // Insert new Tablets
   if (!tablets_to_add.empty()) {
-    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RowOperationsPB* data = req.mutable_to_insert_rows();
     RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     PartialRow row(&schema_);
@@ -236,7 +236,7 @@ Status SysTabletsTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_t
       row.SetString(kSysTabletsColTableId, tablet->table()->id());
       row.SetString(kSysTabletsColTabletId, tablet->tablet_id());
       row.SetString(kSysTabletsColMetadata, metadata_buf);
-      row.AppendToPB(data);
+      row.AppendToPB(RowOperationsPB::INSERT, data);
     }
   }
 
@@ -372,13 +372,13 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
   WriteResponsePB resp;
   req.set_tablet_id(kSysTablesTabletId);
 
-  PartialRowsPB* data = req.mutable_to_insert_rows();
+  RowOperationsPB* data = req.mutable_to_insert_rows();
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   PartialRow row(&schema_);
   row.SetString(kSysTablesColTableId, table->id());
   row.SetString(kSysTablesColMetadata, metadata_buf);
-  row.AppendToPB(data);
+  row.AppendToPB(RowOperationsPB::INSERT, data);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();

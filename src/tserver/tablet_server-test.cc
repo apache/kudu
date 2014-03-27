@@ -99,7 +99,7 @@ TEST_F(TabletServerTest, TestInsert) {
   // Send an actual row insert.
   {
     controller.Reset();
-    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RowOperationsPB* data = req.mutable_to_insert_rows();
     data->Clear();
 
     AddTestRowToPB(schema_, 1234, 5678, "hello world via RPC", data);
@@ -115,7 +115,7 @@ TEST_F(TabletServerTest, TestInsert) {
   // the above insert. This should generate one error into per_row_errors.
   {
     controller.Reset();
-    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RowOperationsPB* data = req.mutable_to_insert_rows();
     data->Clear();
 
     AddTestRowToPB(schema_, 1, 1, "ceci n'est pas une dupe", data);
@@ -164,7 +164,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     WriteRequestPB req;
     WriteResponsePB resp;
     req.set_tablet_id(kTabletId);
-    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RowOperationsPB* data = req.mutable_to_insert_rows();
     ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     AddTestRowToPB(schema_, 1, 1, "original1", data);
@@ -385,7 +385,7 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     RpcController controller;
 
     req.set_tablet_id(kTabletId);
-    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RowOperationsPB* data = req.mutable_to_insert_rows();
     ASSERT_STATUS_OK(SchemaToPB(bad_schema, req.mutable_schema()));
 
     PartialRow row(&bad_schema);
@@ -393,7 +393,7 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     row.SetUInt32("int_val", 5678);
     row.SetStringCopy("string_val", "hello world via RPC");
     row.SetUInt32("col_doesnt_exist", 91011);
-    row.AppendToPB(data);
+    row.AppendToPB(RowOperationsPB::INSERT, data);
 
     SCOPED_TRACE(req.DebugString());
     ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));

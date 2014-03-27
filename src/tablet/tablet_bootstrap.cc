@@ -144,7 +144,7 @@ class TabletBootstrap {
   // Plays inserts, skipping those that have already been flushed.
   Status PlayInsertions(WriteTransactionContext* tx_ctx,
                         const SchemaPB& schema_pb,
-                        const PartialRowsPB& rows,
+                        const RowOperationsPB& rows,
                         const TxResultPB& result,
                         const consensus::OpId& committed_op_id,
                         int32_t* last_insert_op_idx);
@@ -865,7 +865,7 @@ Status TabletBootstrap::PlayChangeConfigRequest(OperationPB* replicate_op,
 
 Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
                                        const SchemaPB& schema_pb,
-                                       const PartialRowsPB& rows,
+                                       const RowOperationsPB& rows,
                                        const TxResultPB& result,
                                        const OpId& committed_op_id,
                                        int32_t* last_insert_op_idx) {

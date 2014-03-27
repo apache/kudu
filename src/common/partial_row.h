@@ -8,13 +8,13 @@
 
 #include "common/types.h"
 #include "common/row.h"
+#include "common/wire_protocol.pb.h"
 #include "gutil/macros.h"
 #include "util/slice.h"
 
 namespace kudu {
 
 class Arena;
-class PartialRowsPB;
 class RowChangeList;
 class Schema;
 
@@ -135,7 +135,7 @@ class PartialRow {
   //------------------------------------------------------------
 
   // Append this partial row to the given protobuf.
-  void AppendToPB(PartialRowsPB* pb) const;
+  void AppendToPB(RowOperationsPB::Type op_type, RowOperationsPB* pb) const;
 
   // Parse this partial row out of the given protobuf.
   // 'offset' is the offset within the 'rows' field at which
@@ -143,13 +143,18 @@ class PartialRow {
   //
   // NOTE: any string fields in this PartialRow will continue to reference
   // the protobuf data, so the protobuf must remain valid.
-  Status CopyFromPB(const PartialRowsPB& pb, int offset);
+  //
+  // TODO: instead of 'type' being an out-parameter, we should probably rename
+  // PartialRow entirely to RowOperation and set it as a member!
+  // TODO: in fact, this method seems to only be used from tests - kill it?
+  Status CopyFromPB(const RowOperationsPB& pb, int offset,
+                    RowOperationsPB::Type* type);
 
   // Decode the given protobuf, which contains rows according to 'client_schema'.
   // As they are decoded, they are projected into 'tablet_schema', filling in any
   // default values, handling NULLs, etc. The resulting rows are pushed onto
   // '*rows', with their storage allocated from 'dst_arena'.
-  static Status DecodeAndProject(const PartialRowsPB& pb,
+  static Status DecodeAndProject(const RowOperationsPB& pb,
                                  const Schema& client_schema,
                                  const Schema& tablet_schema,
                                  std::vector<uint8_t*>* rows,
@@ -163,7 +168,7 @@ class PartialRow {
   // The resulting 'row_keys' and 'changelists' lists will be exactly the same length.
   // All allocations are done out of 'dst_arena'.
   // TODO: change the output vectors to be a vector of structs?
-  static Status DecodeAndProjectUpdates(const PartialRowsPB& pb,
+  static Status DecodeAndProjectUpdates(const RowOperationsPB& pb,
                                         const Schema& client_schema,
                                         const Schema& tablet_schema,
                                         std::vector<uint8_t*>* row_keys,
@@ -175,7 +180,7 @@ class PartialRow {
   // 'row_keys' is appended to with the decoded keys, and changelists is appended
   // to with "DELETE" changelists, one for each row. The keys are allocated out of
   // 'dst_arena'.
-  static Status DecodeAndProjectDeletes(const PartialRowsPB& pb,
+  static Status DecodeAndProjectDeletes(const RowOperationsPB& pb,
                                         const Schema& client_schema,
                                         const Schema& tablet_schema,
                                         std::vector<uint8_t*>* row_keys,
@@ -189,7 +194,7 @@ class PartialRow {
   // are set.
   // TODO: this is only so that the existing insert RPC can be used with
   // PartialRow on the client side. We have to switch over the WriteRequestPB
-  // to use PartialRowsPB instead, and then kill off this method.
+  // to use RowOperationsPB instead, and then kill off this method.
   ConstContiguousRow as_contiguous_row() const {
     DCHECK(AllColumnsSet());
     return ConstContiguousRow(*schema_, row_data_);

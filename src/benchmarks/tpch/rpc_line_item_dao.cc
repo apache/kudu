@@ -51,8 +51,8 @@ void RpcLineItemDAO::Init() {
 void RpcLineItemDAO::WriteLine(const PartialRow& row) {
   if (!ShouldAddKey(row.as_contiguous_row())) return;
 
-  PartialRowsPB* data = request_.mutable_to_insert_rows();
-  row.AppendToPB(data);
+  RowOperationsPB* data = request_.mutable_to_insert_rows();
+  row.AppendToPB(RowOperationsPB::INSERT, data);
   num_pending_rows_++;
   DoWriteAsync();
   ApplyBackpressure();

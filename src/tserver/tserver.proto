@@ -95,7 +95,7 @@ message WriteRequestPB {
   optional SchemaPB schema = 2;
 
   // Set of rows to insert.
-  optional PartialRowsPB to_insert_rows = 3;
+  optional RowOperationsPB to_insert_rows = 3;
 
   // Set of row keys to mutate.  This rowblock's schema should contain
   // only the key columns

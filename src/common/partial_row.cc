@@ -384,7 +384,7 @@ std::string PartialRow::ToString() const {
 
 #define CHARP(x) reinterpret_cast<const char*>((x))
 
-void PartialRow::AppendToPB(PartialRowsPB* pb) const {
+void PartialRow::AppendToPB(RowOperationsPB::Type op_type, RowOperationsPB* pb) const {
   // See wire_protocol.pb for a description of the format.
   string* dst = pb->mutable_rows();
 
@@ -397,12 +397,14 @@ void PartialRow::AppendToPB(PartialRowsPB* pb) const {
   // right size.
   int isset_bitmap_size = BitmapSize(schema_->num_columns());
   int null_bitmap_size = ContiguousRowHelper::null_bitmap_size(*schema_);
-  int max_size = schema_->byte_size() + isset_bitmap_size + null_bitmap_size;
+  int type_size = 1; // type uses one byte
+  int max_size = type_size + schema_->byte_size() + isset_bitmap_size + null_bitmap_size;
   int old_size = dst->size();
   dst->resize(dst->size() + max_size);
 
   uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(&(*dst)[old_size]);
 
+  *dst_ptr++ = static_cast<uint8_t>(op_type);
   memcpy(dst_ptr, isset_bitmap_, isset_bitmap_size);
   dst_ptr += isset_bitmap_size;
 
@@ -438,7 +440,7 @@ void PartialRow::AppendToPB(PartialRowsPB* pb) const {
 
 namespace {
 
-// Utility class for decoding PartialRowsPB.
+// Utility class for decoding RowOperationsPB.
 //
 // This is factored out so that we can either decode into a new PartialRow
 // object, or into a list of contiguous rows in DecodeAndProject().
@@ -447,7 +449,7 @@ namespace {
 class PBDecoder {
  public:
   PBDecoder(const Schema* schema,
-            const PartialRowsPB* pb)
+            const RowOperationsPB* pb)
     : schema_(schema),
       pb_(pb),
       bm_size_(BitmapSize(schema_->num_columns())),
@@ -461,6 +463,18 @@ class PBDecoder {
                                            offset));
     }
     src_.remove_prefix(offset);
+    return Status::OK();
+  }
+
+  Status ReadOpType(RowOperationsPB::Type* type) {
+    if (PREDICT_FALSE(src_.empty())) {
+      return Status::Corruption("Cannot find operation type");
+    }
+    if (PREDICT_FALSE(!RowOperationsPB_Type_IsValid(src_[0]))) {
+      return Status::Corruption(Substitute("Unknown operation type: $0", src_[0]));
+    }
+    *type = static_cast<RowOperationsPB::Type>(src_[0]);
+    src_.remove_prefix(1);
     return Status::OK();
   }
 
@@ -518,7 +532,7 @@ class PBDecoder {
 
  private:
   const Schema* const schema_;
-  const PartialRowsPB* const pb_;
+  const RowOperationsPB* const pb_;
   const int bm_size_;
   Slice src_;
 
@@ -526,12 +540,16 @@ class PBDecoder {
 };
 } // anonymous namespace
 
-Status PartialRow::CopyFromPB(const PartialRowsPB& pb,
-                              int offset) {
+Status PartialRow::CopyFromPB(const RowOperationsPB& pb,
+                              int offset,
+                              RowOperationsPB::Type* type) {
   DeallocateOwnedStrings();
 
   PBDecoder decoder(schema_, &pb);
   RETURN_NOT_OK(decoder.SkipToOffset(offset));
+
+  // Read the type
+  RETURN_NOT_OK(decoder.ReadOpType(type));
 
   // Read the isset bitmap
   RETURN_NOT_OK(decoder.ReadIssetBitmap(isset_bitmap_));
@@ -652,7 +670,7 @@ class ClientServerMapping {
 
 } // anonymous namespace
 
-Status PartialRow::DecodeAndProject(const PartialRowsPB& pb,
+Status PartialRow::DecodeAndProject(const RowOperationsPB& pb,
                                     const Schema& client_schema,
                                     const Schema& tablet_schema,
                                     std::vector<uint8_t*>* rows,
@@ -684,6 +702,12 @@ Status PartialRow::DecodeAndProject(const PartialRowsPB& pb,
   SetupPrototypeRow(tablet_schema, &prototype_row);
 
   while (decoder.has_next()) {
+    RowOperationsPB::Type type;
+    RETURN_NOT_OK(decoder.ReadOpType(&type));
+    if (PREDICT_FALSE(type != RowOperationsPB::INSERT)) {
+      return Status::Corruption("Expected only INSERT operations");
+    }
+
     // Read the null and isset bitmaps for the client-provided row into
     // our stack storage.
     RETURN_NOT_OK(decoder.ReadIssetBitmap(client_isset_map));
@@ -747,7 +771,7 @@ Status PartialRow::DecodeAndProject(const PartialRowsPB& pb,
 
 
 Status PartialRow::DecodeAndProjectUpdates(
-    const PartialRowsPB& pb,
+    const RowOperationsPB& pb,
     const Schema& client_schema,
     const Schema& tablet_schema,
     std::vector<uint8_t*>* row_keys,
@@ -773,6 +797,12 @@ Status PartialRow::DecodeAndProjectUpdates(
   RowChangeListEncoder rcl_encoder(tablet_schema, &buf);
 
   while (decoder.has_next()) {
+    RowOperationsPB::Type type;
+    RETURN_NOT_OK(decoder.ReadOpType(&type));
+    if (PREDICT_FALSE(type != RowOperationsPB::UPDATE)) {
+      return Status::Corruption("Expected only UPDATE operations");
+    }
+
     // Read the null and isset bitmaps for the client-provided row into
     // our stack storage.
     RETURN_NOT_OK(decoder.ReadIssetBitmap(client_isset_map));
@@ -862,7 +892,7 @@ Status PartialRow::DecodeAndProjectUpdates(
 
 // TODO: share more code with above two methods
 Status PartialRow::DecodeAndProjectDeletes(
-    const PartialRowsPB& pb,
+    const RowOperationsPB& pb,
     const Schema& client_schema,
     const Schema& tablet_schema,
     std::vector<uint8_t*>* row_keys,
@@ -886,6 +916,12 @@ Status PartialRow::DecodeAndProjectDeletes(
   memset(client_null_map, 0, decoder.bitmap_size());
 
   while (decoder.has_next()) {
+    RowOperationsPB::Type type;
+    RETURN_NOT_OK(decoder.ReadOpType(&type));
+    if (PREDICT_FALSE(type != RowOperationsPB::DELETE)) {
+      return Status::Corruption("Expected only DELETE operations");
+    }
+
     // Read the null and isset bitmaps for the client-provided row into
     // our stack storage.
     RETURN_NOT_OK(decoder.ReadIssetBitmap(client_isset_map));

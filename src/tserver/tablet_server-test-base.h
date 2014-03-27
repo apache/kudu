@@ -207,7 +207,7 @@ class TabletServerTest : public KuduTest {
     WriteResponsePB resp;
     RpcController controller;
 
-    PartialRowsPB* data = req.mutable_to_insert_rows();
+    RowOperationsPB* data = req.mutable_to_insert_rows();
 
     ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
 

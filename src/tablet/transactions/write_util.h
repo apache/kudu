@@ -40,7 +40,7 @@ Status DecodeRowBlock(WriteTransactionContext* tx_ctx,
 Status CreatePreparedInsertsAndMutates(Tablet* tablet,
                                        WriteTransactionContext* tx_ctx,
                                        gscoped_ptr<Schema> client_schema,
-                                       const PartialRowsPB& to_insert_rows,
+                                       const RowOperationsPB& to_insert_rows,
                                        gscoped_ptr<Schema> mutates_client_schema,
                                        const vector<const uint8_t *>& to_mutate,
                                        const vector<const RowChangeList *>& mutations);

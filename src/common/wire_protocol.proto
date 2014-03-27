@@ -114,10 +114,19 @@ message RowwiseRowBlockPB {
   optional bytes indirect_data = 5;
 }
 
-// A set of partially-specified rows.
-message PartialRowsPB {
-  // The partial rows of data. Each row is stored in the following format:
+// A set of operations (INSERT, UPDATE, or DELETE) to apply to a table.
+message RowOperationsPB {
+  enum Type {
+    INSERT = 1;
+    UPDATE = 2;
+    DELETE = 3;
+  }
+
+  // The row data for each operation is stored in the following format:
   //
+  // [operation type] (one byte):
+  //   A single-byte field which determines the type of operation. The values are
+  //   based on the 'Type' enum above.
   // [column isset bitmap]   (one bit for each column in the Schema, rounded to nearest byte)
   //   A set bit in this bitmap indicates that the user has specified the given column
   //   in the row. This indicates that the column will be present in the data to follow.
@@ -130,6 +139,6 @@ message PartialRowsPB {
   //   For string data, the pointers are relative to 'indirect_data'.
   //
   // The rows are concatenated end-to-end with no padding/alignment.
-  optional bytes rows = 1;
-  optional bytes indirect_data = 2;
+  optional bytes rows = 2;
+  optional bytes indirect_data = 3;
 }

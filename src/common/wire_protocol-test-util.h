@@ -25,12 +25,12 @@ void AddTestRowToPB(const Schema& schema,
                     uint32_t key,
                     uint32_t int_val,
                     const string& string_val,
-                    PartialRowsPB* block) {
+                    RowOperationsPB* block) {
   PartialRow row(&schema);
   row.SetUInt32("key", key);
   row.SetUInt32("int_val", int_val);
   row.SetStringCopy("string_val", string_val);
-  row.AppendToPB(block);
+  row.AppendToPB(RowOperationsPB::INSERT, block);
 }
 
 void AddTestKeyToBlock(const Schema& key_schema,

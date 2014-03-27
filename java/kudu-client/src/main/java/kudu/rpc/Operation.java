@@ -8,6 +8,7 @@ import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
 import kudu.WireProtocol;
+import kudu.WireProtocol.RowOperationsPB;
 import kudu.tserver.Tserver;
 import kudu.util.Arena;
 import kudu.util.Slice;
@@ -299,7 +300,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
             inserts = new ArrayList<Operation>(operations.length / 3);
           }
           inserts.add(operation);
-          insertRowsSize += operation.partialRowSize + columnBitSetSize;
+          insertRowsSize += 1 + operation.partialRowSize + columnBitSetSize;
           insertIndirectSize += operation.stringsSize;
           break;
         case UPDATE:
@@ -378,7 +379,8 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
 
     if (inserts != null) {
       requestBuilder.setToInsertRows(
-          createPartialRowsPB(inserts, insertRowsSize, insertIndirectSize));
+          createRowOperationsPB(inserts, RowOperationsPB.Type.INSERT,
+                              insertRowsSize, insertIndirectSize));
       requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
     }
     if (hasUpdateOrDelete) {
@@ -423,7 +425,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
             inserts = new ArrayList<Operation>(operations.length / 3);
           }
           inserts.add(operation);
-          insertRowsSize += operation.partialRowSize;
+          insertRowsSize += 1 + operation.partialRowSize;
           insertIndirectSize += operation.stringsSize;
           break;
         case UPDATE:
@@ -431,7 +433,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
             updates = new ArrayList<Operation>(operations.length / 3);
           }
           updates.add(operation);
-          updateRowsSize += operation.partialRowSize;
+          updateRowsSize += 1 + operation.partialRowSize;
           updateIndirectSize += operation.stringsSize;
           break;
         case DELETE:
@@ -439,7 +441,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
             deletes = new ArrayList<Operation>(operations.length / 3);
           }
           deletes.add(operation);
-          deleteRowsSize += operation.partialRowSize;
+          deleteRowsSize += 1 + operation.partialRowSize;
           deleteIndirectSize += operation.stringsSize;
           break;
         default:
@@ -449,24 +451,29 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     }
     // builder.setSchema(ProtobufHelper.schemaToPb(schema);
     if (inserts != null) {
-      // builder.setToInsertRows(createPartialRowsPB(inserts, insertRowsSize, insertIndirectSize);
+      // builder.setToInsertRows(createRowOperationsPB(inserts, RowOperationsPB.Type.INSERT,
+      //                                             insertRowsSize, insertIndirectSize);
     }
     if (updates != null) {
-      // builder.setToUpdateRows(createPartialRowsPB(updates, updateRowsSize, updateIndirectSize);
+      // builder.setToUpdateRows(createRowOperationsPB(updates, RowOperationsPB.Type.UPDATE,
+      //                                             updateRowsSize, updateIndirectSize);
     }
     if (deletes != null) {
-      // builder.setToDeleteRows(createPartialRowsPB(delete, deleteRowsSize, deleteIndirectSize);
-    }
+      // builder.setToDeleteRows(createRowOperationsPB(delete, RowOperationsPB.Type.DELETE,
+      //                                             deleteRowsSize, deleteIndirectSize);
+}
     return requestBuilder;
   }
 
-  static WireProtocol.PartialRowsPB createPartialRowsPB(List<Operation> operations,
-                                                        int rowSize, int indirectSize) {
-    WireProtocol.PartialRowsPB.Builder builder = WireProtocol.PartialRowsPB.newBuilder();
+  static RowOperationsPB createRowOperationsPB(List<Operation> operations,
+                                               RowOperationsPB.Type op_type,
+                                               int rowSize, int indirectSize) {
+    RowOperationsPB.Builder builder = RowOperationsPB.newBuilder();
     ByteBuffer rows = ByteBuffer.allocate(rowSize).order(ByteOrder.LITTLE_ENDIAN);
     ByteBuffer indirectData = indirectSize == 0 ?
         null : ByteBuffer.allocate(indirectSize).order(ByteOrder.LITTLE_ENDIAN);
     for (Operation operation : operations) {
+      rows.put((byte)op_type.getNumber());
       rows.put(toByteArray(operation.columnsBitSet));
       // TODO handle schemas with nulls
       int colIdx = 0;
