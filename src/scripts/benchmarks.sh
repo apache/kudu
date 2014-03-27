@@ -252,7 +252,7 @@ generate_ycsb_plots() {
   write_img_plot $OUTDIR/$OVERALL_FILENAME-throughput_ops_sec.tsv $OVERALL_FILENAME-throughput_ops_sec
 
   # now plot the individual operations
-  OPS=( INSERT UPDATE READ )
+  OPS="INSERT UPDATE READ"
 
   for op in $OPS; do
     OP_FILENAME=$METRIC_NAME-$op
