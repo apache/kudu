@@ -213,13 +213,21 @@ Status KuduClient::GetTableSchema(const std::string& table_name,
     return StatusFromPB(resp.error().status());
   }
 
-  return SchemaFromPB(resp.schema(), schema);
+  Schema server_schema;
+  RETURN_NOT_OK(SchemaFromPB(resp.schema(), &server_schema));
+
+  // Remove the server IDs from the schema
+  schema->Reset(server_schema.columns(), server_schema.num_key_columns());
+  return Status::OK();
 }
 
 Status KuduClient::OpenTable(const std::string& table_name,
-                             const Schema& schema,
                              scoped_refptr<KuduTable>* table) {
   CHECK(initted_) << "Must Init()";
+
+  Schema schema;
+  RETURN_NOT_OK(GetTableSchema(table_name, &schema));
+
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
   scoped_refptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));

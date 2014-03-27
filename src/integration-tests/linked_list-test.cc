@@ -176,7 +176,7 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
   RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_),
                         "Failed to create table");
   scoped_refptr<KuduTable> table;
-  RETURN_NOT_OK(client_->OpenTable(kTableName, schema_, &table));
+  RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
 
   MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
   deadline.AddDelta(run_for);
@@ -231,7 +231,7 @@ struct VerificationState {
 
 Status LinkedListTest::VerifyLinkedList(int64_t* verified_count) {
   scoped_refptr<KuduTable> table;
-  RETURN_NOT_OK(client_->OpenTable(kTableName, schema_, &table));
+  RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
   RETURN_NOT_OK_PREPEND(scanner.SetProjection(verify_projection_), "Bad projection");
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");

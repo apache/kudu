@@ -33,10 +33,10 @@ void RpcLineItemDAO::Init() {
   client::KuduClientOptions opts;
   opts.master_server_addr = master_address_;
   CHECK_OK(client::KuduClient::Create(opts, &client_));
-  Status s = client_->OpenTable(table_name_, schema, &client_table_);
+  Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
     CHECK_OK(client_->CreateTable(table_name_, schema));
-    CHECK_OK(client_->OpenTable(table_name_, schema, &client_table_));
+    CHECK_OK(client_->OpenTable(table_name_, &client_table_));
   } else {
     CHECK_OK(s);
   }

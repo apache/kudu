@@ -108,10 +108,7 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   //
   // TODO: should we offer an async version of this as well?
   // TODO: probably should have a configurable timeout in KuduClientOptions?
-  // TODO: we should fetch the Schema from the catalog, rather than making the
-  // user pass it here. the schema arg is a temporary stand-in.
   Status OpenTable(const std::string& table_name,
-                   const Schema& schema,
                    scoped_refptr<KuduTable>* table);
 
   // Advanced API: return an RPC proxy to the given tablet ID.

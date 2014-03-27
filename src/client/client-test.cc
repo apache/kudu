@@ -80,8 +80,8 @@ class ClientTest : public KuduTest {
     ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_));
     ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
 
-    ASSERT_STATUS_OK(client_->OpenTable(kTableName, schema_, &client_table_));
-    ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, schema_, &client_table2_));
+    ASSERT_STATUS_OK(client_->OpenTable(kTableName, &client_table_));
+    ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, &client_table2_));
 
     // TODO: Can we use the client instead of the direct insert with tablet peer?
     // Grab a reference to the first of them, for more invasive testing.
@@ -226,9 +226,9 @@ const char *ClientTest::kTable2Name = "client-testtb2";
 
 TEST_F(ClientTest, TestBadTable) {
   scoped_refptr<KuduTable> t;
-  Status s = client_->OpenTable("xxx-does-not-exist", Schema(), &t);
+  Status s = client_->OpenTable("xxx-does-not-exist", &t);
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_EQ("Not found: The table does not exist", s.ToString());
+  ASSERT_STR_CONTAINS(s.ToString(), "Not found: The table does not exist");
 }
 
 // Test that, if the master is down, we get an appropriate error
@@ -236,7 +236,7 @@ TEST_F(ClientTest, TestBadTable) {
 TEST_F(ClientTest, TestMasterDown) {
   cluster_->mini_master()->Shutdown();
   scoped_refptr<KuduTable> t;
-  Status s = client_->OpenTable("other-tablet", Schema(), &t);
+  Status s = client_->OpenTable("other-tablet", &t);
   ASSERT_TRUE(s.IsNetworkError());
   ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
 }
@@ -554,25 +554,39 @@ TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsBuffered) {
   DoApplyWithoutFlushTest(10000);
 }
 
-// Do a write with a bad schema on the client side. This should make the Prepare
-// phase of the write fail, which will result in an error on the RPC response.
-// This is currently disabled since it caught a bug (KUDU-72).
-TEST_F(ClientTest, TestWriteWithBadSchema) {
-  // Client uses an incompatible schema ('bad_col' doesn't exist on the server)
-  Schema bad_schema(boost::assign::list_of
-                    (ColumnSchema("key", UINT32))
-                    (ColumnSchema("bad_col", UINT32)),
-                    1);
-  // This succeeds since we don't actually verify the schema on Open, currently.
+
+TEST_F(ClientTest, TestWriteWithBadColumn) {
   scoped_refptr<KuduTable> table;
-  ASSERT_STATUS_OK(client_->OpenTable(kTableName, bad_schema, &table));
+  ASSERT_STATUS_OK(client_->OpenTable(kTableName, &table));
 
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   gscoped_ptr<Insert> insert = table->NewInsert();
   ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("bad_col", 12345));
+  Status s = insert->mutable_row()->SetUInt32("bad_col", 12345);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "No such column: bad_col");
+}
+
+// Do a write with a bad schema on the client side. This should make the Prepare
+// phase of the write fail, which will result in an error on the RPC response.
+TEST_F(ClientTest, TestWriteWithBadSchema) {
+  scoped_refptr<KuduTable> table;
+  ASSERT_STATUS_OK(client_->OpenTable(kTableName, &table));
+
+  // Remove the 'int_val' column.
+  // Now the schema on the client is "old"
+  AlterTableBuilder alter;
+  alter.DropColumn("int_val");
+  ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
+
+  // Try to do a write with the bad schema.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  gscoped_ptr<Insert> insert = table->NewInsert();
+  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
+  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("int_val", 12345));
   ASSERT_STATUS_OK(session->Apply(&insert));
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
@@ -586,10 +600,10 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   ASSERT_EQ(1, errors.size());
   ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
   ASSERT_EQ(errors[0]->status().ToString(),
-            "Invalid argument: Client provided column bad_col[uint32 NOT NULL] "
+            "Invalid argument: Client provided column int_val[uint32 NOT NULL] "
             "not present in tablet");
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "INSERT uint32 key=12345, uint32 bad_col=12345");
+            "INSERT uint32 key=12345, uint32 int_val=12345");
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
@@ -665,7 +679,7 @@ TEST_F(ClientTest, TestDeleteTable) {
   ASSERT_FALSE(tablet_found);
 
   // Try to open the deleted table
-  Status s = client_->OpenTable(kTableName, schema_, &client_table_);
+  Status s = client_->OpenTable(kTableName, &client_table_);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
 }
