@@ -8,6 +8,7 @@
 #include "master/mini_master.h"
 #include "master/catalog_manager.h"
 #include "master/master.h"
+#include "master/ts_descriptor.h"
 #include "master/ts_manager.h"
 #include "tserver/mini_tablet_server.h"
 #include "tserver/tablet_server.h"
@@ -24,6 +25,7 @@ using master::TSDescriptor;
 using master::TabletLocationsPB;
 using std::tr1::shared_ptr;
 using tserver::MiniTabletServer;
+using tserver::TabletServer;
 
 MiniCluster::MiniCluster(Env* env,
                          const string& fs_root,
@@ -142,9 +144,26 @@ Status MiniCluster::WaitForTabletServerCount(int count,
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
     mini_master_->master()->ts_manager()->GetAllDescriptors(descs);
     if (descs->size() == count) {
-      LOG(INFO) << count << " TS(s) registered with Master after "
-                << sw.elapsed().wall_seconds() << "s";
-      return Status::OK();
+      // GetAllDescriptors() may return servers that are no longer online.
+      // Do a second step of verification to verify that the descs that we got
+      // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
+      int match_count = 0;
+      BOOST_FOREACH(const shared_ptr<TSDescriptor>& desc, *descs) {
+        for (int i = 0; i < mini_tablet_servers_.size(); ++i) {
+          TabletServer *ts = mini_tablet_servers_[i]->server();
+          if (ts->instance_pb().permanent_uuid() == desc->permanent_uuid() &&
+              ts->instance_pb().instance_seqno() == desc->latest_seqno()) {
+            match_count++;
+            break;
+          }
+        }
+      }
+
+      if (match_count == count) {
+        LOG(INFO) << count << " TS(s) registered with Master after "
+                  << sw.elapsed().wall_seconds() << "s";
+        return Status::OK();
+      }
     }
     usleep(1 * 1000); // 1ms
   }
