@@ -27,7 +27,6 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
-using consensus::MISSED_DELTA;
 using env_util::OpenFileForRandom;
 
 // This class is responsible for managing the thread that appends to

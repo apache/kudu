@@ -55,7 +55,6 @@ using consensus::Consensus;
 using consensus::OperationPB;
 using consensus::CommitMsg;
 using consensus::ConsensusContext;
-using consensus::MISSED_DELTA;
 using consensus::OpId;
 using log::MaximumOpId;
 using log::OpIdAnchorRegistry;

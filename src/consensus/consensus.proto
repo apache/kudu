@@ -29,9 +29,8 @@ enum OperationType {
   NO_OP = 1;
   OP_ABORT = 2;
   WRITE_OP = 3;
-  MISSED_DELTA = 4;
-  ALTER_SCHEMA_OP = 5;
-  CHANGE_CONFIG_OP = 6;
+  ALTER_SCHEMA_OP = 4;
+  CHANGE_CONFIG_OP = 5;
 }
 
 // A wrapper around replicates and commits so that we can send to peers

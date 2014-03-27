@@ -34,20 +34,18 @@ Status LocalConsensus::Init(const QuorumPeerPB& peer,
   clock_ = clock;
   log_ = log;
   state_ = kInitializing;
-  Status s = log->GetLastEntryOpId(&last_op_id_);
+  OpId initial;
+  Status s = log->GetLastEntryOpId(&initial);
   if (s.ok()) {
     // We are continuing after previously running.
   } else if (s.IsNotFound()) {
     // This is our very first startup! Sally forth!
-    last_op_id_.set_term(0);
-    last_op_id_.set_index(0);
+    initial = log::MinimumOpId();
   } else {
     LOG(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): "
                << s.ToString();
   }
-  // This means that for term 0, only a MISSED_DELTA commit may have an index
-  // of 0. Any non-"physical only" operation will start at 1.
-  next_op_id_index_ = last_op_id_.index() + 1;
+  next_op_id_index_ = initial.index() + 1;
   return Status::OK();
 }
 
@@ -117,8 +115,6 @@ Status LocalConsensus::Append(
     cur_op_id->set_term(0);
     cur_op_id->set_index(next_op_id_index_++);
 
-    last_op_id_.CopyFrom(*cur_op_id);
-
     DCHECK_NOTNULL(op_id)->CopyFrom(*cur_op_id);
     // TODO: Register TransactionContext (not currently passed) to avoid Log GC
     // race between Append() and Apply(). See KUDU-152.
@@ -159,8 +155,6 @@ Status LocalConsensus::Commit(ConsensusContext* context, OperationPB* commit_op)
     commit_id->set_term(0);
     commit_id->set_index(next_op_id_index_++);
 
-    last_op_id_.CopyFrom(*commit_id);
-
     // The commit callback is the very last thing to execute in a transaction
     // so it needs to free all resources. We need release it from the
     // ConsensusContext or we'd get a cycle. (callback would free the
@@ -184,13 +178,6 @@ Status LocalConsensus::Shutdown() {
   RETURN_NOT_OK(log_->Close());
   VLOG(1) << "LocalConsensus Shutdown!";
   return Status::OK();
-}
-
-void LocalConsensus::GetLastOpId(OpId* op_id) const {
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  DCHECK_EQ(state_, kRunning);
-  DCHECK(last_op_id_.IsInitialized());
-  op_id->CopyFrom(last_op_id_);
 }
 
 } // end namespace consensus

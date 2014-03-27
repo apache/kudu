@@ -38,7 +38,6 @@ using kudu::consensus::OpId;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::ALTER_SCHEMA_OP;
 using kudu::consensus::CHANGE_CONFIG_OP;
-using kudu::consensus::MISSED_DELTA;
 using kudu::consensus::OP_ABORT;
 using kudu::consensus::WRITE_OP;
 using kudu::log::Log;
@@ -511,7 +510,7 @@ Status TabletBootstrap::OpenNewLog() {
                           opid_anchor_registry_.get(),
                           metric_context_,
                           &log_));
-  // Disable sync temprorarily in order to speed up appends during the
+  // Disable sync temporarily in order to speed up appends during the
   // bootstrap process.
   log_->DisableSync();
   return Status::OK();
@@ -561,19 +560,6 @@ struct ReplayState {
     }
 
     prev_op_id.CopyFrom(id);
-    return Status::OK();
-  }
-
-  // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
-  // This only applies to MISSED_DELTA commits, which reuse the previous OpId.
-  Status CheckEqualToPriorOpId(const OpId& id) {
-    if (!OpIdEquals(prev_op_id, id)) {
-      return Status::Corruption(
-        Substitute("Unexpected OpId $0 following opid $1, expected same OpId",
-                   id.ShortDebugString(),
-                   prev_op_id.ShortDebugString()));
-    }
-
     return Status::OK();
   }
 
@@ -631,26 +617,18 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
   // TODO: on a term switch, the first commit in any term should discard any
   // pending REPLICATEs from the previous term.
 
-  // All log entries should have an OpId. The MISSED_DELTA entries simply reuse the
-  // last replicated OpId.
+  // All log entries should have an OpId.
   DCHECK(entry->operation().has_id()) << "Entry has no OpId: " << entry->DebugString();
-  consensus::OperationType op_type = entry->operation().commit().op_type();
 
   // Match up the COMMIT/ABORT record with the original entry that it's applied to.
   const OpId& committed_op_id = entry->operation().commit().commited_op_id();
 
   gscoped_ptr<LogEntryPB> existing_entry;
-  if (op_type == MISSED_DELTA) {
-    // Ensure that the MISSED_DELTAs are monotonic ids (they must be equal to
-    // the prior OpId in the log).
-    RETURN_NOT_OK(state->CheckEqualToPriorOpId(entry->operation().id()));
-  } else {
-    // "Normal" consensus commits must be sequentially increasing.
-    RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
-    // They should also have an associated replicate OpId (it may have been in a
-    // deleted log segment though).
-    existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates, committed_op_id));
-  }
+  // Consensus commits must be sequentially increasing.
+  RETURN_NOT_OK(state->CheckSequentialOpId(entry->operation().id()));
+  // They should also have an associated replicate OpId (it may have been in a
+  // deleted log segment though).
+  existing_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates, committed_op_id));
 
   if (existing_entry != NULL) {
     // We found a match.

@@ -68,15 +68,10 @@ class LocalConsensus : public ConsensusBase {
     return quorum_;
   }
 
-  virtual void GetLastOpId(consensus::OpId* op_id) const OVERRIDE;
-
  private:
   metadata::QuorumPeerPB peer_;
   metadata::QuorumPB quorum_;
   int64 next_op_id_index_;
-
-  // The last OpId is used for special handling of MISSED_DELTA operations.
-  OpId last_op_id_;
 
   scoped_refptr<server::Clock> clock_;
 

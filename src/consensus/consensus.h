@@ -159,9 +159,6 @@ class Consensus {
   // NOTE: Returns a copy, thus should not be used in a tight loop.
   virtual metadata::QuorumPB CurrentQuorum() const = 0;
 
-  // Returns the last opid assigned.
-  virtual void GetLastOpId(consensus::OpId* op_id) const = 0;
-
   virtual ~Consensus() {}
 
  protected:
