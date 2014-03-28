@@ -122,21 +122,28 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
 }
 
+static void CheckSequenceNumber(int64_t *seqno,
+                                  const TabletReportPB &report) {
+  ASSERT_LT(*seqno, report.sequence_number());
+  *seqno = report.sequence_number();
+}
+
 TEST_F(TsTabletManagerTest, TestTabletReports) {
   TabletReportPB report;
+  int64_t seqno = -1;
 
   // Generate a tablet report before any tablets are loaded. Should be empty.
   tablet_manager_->GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
-  ASSERT_EQ(0, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
   tablet_manager_->AcknowledgeTabletReport(report);
 
   // Another report should now be incremental, but with no changes.
   tablet_manager_->GenerateTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
-  ASSERT_EQ(1, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
   tablet_manager_->AcknowledgeTabletReport(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
@@ -145,7 +152,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
-  ASSERT_EQ(2, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
 
   // If we don't acknowledge the report, and ask for another incremental report,
   // it should include the tablet again.
@@ -153,14 +160,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_EQ("tablet-1", report.updated_tablets(0).tablet_id());
-  ASSERT_EQ(3, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
 
   // Now acknowledge the last report, and further incrementals should be empty.
   tablet_manager_->AcknowledgeTabletReport(report);
   tablet_manager_->GenerateTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
-  ASSERT_EQ(4, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
   tablet_manager_->AcknowledgeTabletReport(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
@@ -169,14 +176,14 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_EQ("tablet-2", report.updated_tablets(0).tablet_id());
-  ASSERT_EQ(5, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
   tablet_manager_->AcknowledgeTabletReport(report);
 
   // Asking for a full tablet report should re-report both tablets
   tablet_manager_->GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(2, report.updated_tablets().size());
-  ASSERT_EQ(6, report.sequence_number());
+  CheckSequenceNumber(&seqno, report);
 }
 
 } // namespace tserver
