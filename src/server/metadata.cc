@@ -214,6 +214,7 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
 void TabletMetadata::PinFlush() {
   boost::lock_guard<LockType> l(lock_);
   num_flush_pins_++;
+  VLOG(1) << "Number of flush pins: " << num_flush_pins_;
 }
 
 Status TabletMetadata::UnPinFlush() {
@@ -230,7 +231,7 @@ Status TabletMetadata::Flush() {
   boost::lock_guard<LockType> l(lock_);
   if (num_flush_pins_ > 0) {
     needs_flush_ = true;
-    LOG(INFO) << "Not flushing: waiting for" << num_flush_pins_ << " pins to be released.";
+    LOG(INFO) << "Not flushing: waiting for " << num_flush_pins_ << " pins to be released.";
     return Status::OK();
   }
   needs_flush_ = false;

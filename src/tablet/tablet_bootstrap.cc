@@ -487,6 +487,10 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 Status TabletBootstrap::RemoveRecoveryDir() {
   FsManager* fs_manager = tablet_->metadata()->fs_manager();
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->oid());
+
+  DCHECK(fs_manager->Exists(recovery_path))
+      << "Tablet WAL recovery dir " << recovery_path << " does not exist.";
+
   string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
   RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
                         Substitute("Could not rename old recovery dir from: $0 to: $1",

@@ -89,6 +89,13 @@ class ClientTest : public KuduTest {
                 client_table_->tablet_id(), &tablet_peer_));
   }
 
+  virtual void TearDown() {
+    if (cluster_) {
+      cluster_.reset();
+    }
+    KuduTest::TearDown();
+  }
+
  protected:
 
   static const char *kTableName;
