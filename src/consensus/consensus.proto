@@ -90,14 +90,33 @@ message PerOpErrorPB {
 
 // Status message received in the peer responses.
 message ConsensusStatusPB {
+
   // The last message received by the peer.
   // Messages up to this one do not need re-sending.
   required OpId received_watermark = 2;
+
   // The last ReplicateMsg that was logged by the peer.
   required OpId replicated_watermark = 1;
-  // The last commit applied by this peer i.e. the last visible operation
-  // if the peer's tablet were to be scanned.
-  required OpId committed_watermark = 3;
+
+  // The first commit applied by the peer before which all other commits
+  // have been applied. The timestamp of this commit is the 'safe' timestamp
+  // for the replica, i.e. were the replica and leader to be scanned at this
+  // timestamp they would return the same results.
+  //
+  // If safe_commit_watermark is S, then for all COMMIT messages with an
+  // OpId <= S, that commit has been applied at this replica.
+  // NOTE: that this *does not* imply that for a REPLICATE message with
+  // OpId <= S, that that replicate message has necessarily been committed.
+  // For example, with the following sequence:
+  //
+  // 1 REPLICATE insert A
+  // 2 REPLICATE insert B
+  // 3 COMMIT 1
+  //
+  // then safe_commit_watermark = 3 does not imply that "insert B" has
+  // been committed.
+  required OpId safe_commit_watermark = 3;
+
   // Per operation errors.
   repeated PerOpErrorPB errors = 4;
 }

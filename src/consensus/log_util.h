@@ -173,6 +173,7 @@ class WritableLogSegment {
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };
 
+// TODO: move these functors into their own file named opid_functors.h
 // Returns true iff left == right.
 bool OpIdEquals(const consensus::OpId& left, const consensus::OpId& right);
 
@@ -185,6 +186,9 @@ bool OpIdLessThan(const consensus::OpId& left, const consensus::OpId& right);
 // Otherwise, does nothing.
 // If to_compare is copied into target, returns true, else false.
 bool CopyIfOpIdLessThan(const consensus::OpId& to_compare, consensus::OpId* target);
+
+// Return -1, 0, or 1.
+int OpIdCompare(const consensus::OpId& left, const consensus::OpId& right);
 
 // OpId hash functor. Suitable for use with std::unordered_map.
 struct OpIdHashFunctor {
@@ -199,6 +203,12 @@ struct OpIdEqualsFunctor {
 // OpId compare() functor. Suitable for use with std::sort and std::map.
 struct OpIdCompareFunctor {
   // Returns true iff left < right.
+  bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
+};
+
+// OpId comparison functor that returns true iff left > right. Suitable for use
+// td::sort and std::map to sort keys in increasing order.]
+struct OpIdBiggerThanFunctor {
   bool operator() (const consensus::OpId& left, const consensus::OpId& right) const;
 };
 
@@ -223,6 +233,14 @@ uint32_t FindStaleSegmentsPrefixSize(
 bool IsLogFileName(const std::string& fname);
 
 }  // namespace log
+
+// This has to go in namespace 'consensus' for argument-dependent lookup to work.
+// TODO: We should probably move all of the OpId*Functors into the consensus namespace
+// to match where OpId itself is.
+namespace consensus {
+std::ostream& operator<<(std::ostream& os, const consensus::OpId& op_id);
+} // namespace consensus
+
 }  // namespace kudu
 
 #endif /* KUDU_CONSENSUS_LOG_UTIL_H_ */

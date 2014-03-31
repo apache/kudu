@@ -32,7 +32,7 @@ TEST(TestConsensusRequestQueue, TestGetAllMessages) {
   // ask for a request. with normal flags this should get the whole queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 100);
-  status.mutable_committed_watermark()->CopyFrom(request.ops(99).id());
+  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(99).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(99).id());
   status.mutable_received_watermark()->CopyFrom(request.ops(99).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
@@ -68,7 +68,7 @@ TEST(TestConsensusRequestQueue, TestStartTrackingAfterStart) {
   // ask for a request, with normal flags this should get half the queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 50);
-  status.mutable_committed_watermark()->CopyFrom(request.ops(49).id());
+  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
   status.mutable_received_watermark()->CopyFrom(request.ops(49).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
@@ -112,7 +112,7 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   for (int i = 0; i < 11; i++) {
     queue.RequestForPeer(kPeerUuid, &request);
     ASSERT_EQ(9, request.ops_size());
-    status.mutable_committed_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
+    status.mutable_safe_commit_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
     status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
     status.mutable_received_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
     queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
@@ -120,7 +120,7 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   }
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(1, request.ops_size());
-  status.mutable_committed_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
+  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
   status.mutable_received_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
@@ -132,7 +132,7 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
 }
 
 TEST(TestConsensusRequestQueue, TestPeersDontAckBeyondWatermarks) {
-  vector<scoped_refptr<OperationStatus> > statuses;
+  vector<scoped_refptr<OperationStatusTracker> > statuses;
   PeerMessageQueue queue;
   AppendReplicateMessagesToQueue(&queue, 1, 100, 1, 1, &statuses);
 
@@ -150,7 +150,7 @@ TEST(TestConsensusRequestQueue, TestPeersDontAckBeyondWatermarks) {
   // ask for a request, with normal flags this should get half the queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(50, request.ops_size());
-  status.mutable_committed_watermark()->CopyFrom(request.ops(49).id());
+  status.mutable_safe_commit_watermark()->CopyFrom(request.ops(49).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
   status.mutable_received_watermark()->CopyFrom(request.ops(49).id());
 

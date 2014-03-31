@@ -89,7 +89,7 @@ class LocalPeer : public PeerImpl {
                 boost::bind(&LocalPeer::RequestFinishedCallback, this),
                 boost::bind(&LocalPeer::LogAppendFailedCallback, this, _1))) {
     last_replicated_.CopyFrom(initial_op);
-    last_committed_.CopyFrom(initial_op);
+    safe_commit_.CopyFrom(initial_op);
     last_received_.CopyFrom(initial_op);
   }
 
@@ -126,7 +126,7 @@ class LocalPeer : public PeerImpl {
     }
 
     if (last_replicated != NULL) last_replicated_.CopyFrom(*last_replicated);
-    if (last_committed != NULL) last_committed_.CopyFrom(*last_committed);
+    if (last_committed != NULL) safe_commit_.CopyFrom(*last_committed);
 
     last_received_.CopyFrom(*last_received);
 
@@ -146,7 +146,7 @@ class LocalPeer : public PeerImpl {
       }
       ConsensusStatusPB* status = response_.mutable_status();
       status->mutable_replicated_watermark()->CopyFrom(last_replicated_);
-      status->mutable_committed_watermark()->CopyFrom(last_committed_);
+      status->mutable_safe_commit_watermark()->CopyFrom(safe_commit_);
       status->mutable_received_watermark()->CopyFrom(last_received_);
 
       request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
@@ -167,7 +167,7 @@ class LocalPeer : public PeerImpl {
   shared_ptr<FutureCallback> log_append_callback_;
   Status status_;
   OpId last_replicated_;
-  OpId last_committed_;
+  OpId safe_commit_;
   OpId last_received_;
 };
 
@@ -197,7 +197,8 @@ class RemotePeer : public PeerImpl {
     response_.Clear();
     controller_.Reset();
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Remote peer sending: " << request_.ShortDebugString();
+      VLOG(2) << "Remote peer: " << peer_->peer_pb().permanent_uuid() <<" sending: "
+          << request_.ShortDebugString();
     }
 
     state_ = kStateSending;
@@ -381,6 +382,9 @@ void Peer::ProcessResponseError(const Status& status) {
 void Peer::Close() {
   {
     boost::lock_guard<simple_spinlock> lock(peer_lock_);
+    // If the peer is already closed return.
+    if (state_ == kPeerClosed) return;
+
     DCHECK_EQ(state_, kPeerIntitialized);
     state_ = kPeerClosed;
   }

@@ -22,19 +22,20 @@ class Log;
 
 namespace consensus {
 
-// TODO move somewhere common as other places, like bootstrap also need them.
-inline int CompareOps(const OpId& first, const OpId& second) {
-  if (PREDICT_TRUE(first.term() == second.term())) {
-    return first.index() < second.index() ? -1 : first.index() == second.index() ? 0 : 1;
-  }
-  return first.term() < second.term() ? -1 : 1;
-}
-
 // The status associated with each single quorum operation.
-class OperationStatus : public base::RefCountedThreadSafe<OperationStatus> {
+//
+// NOTE: Implementations of this class must be thread safe.
+class OperationStatusTracker : public base::RefCountedThreadSafe<OperationStatusTracker> {
  public:
 
-  // Peers call this to ack they have executed the operation.
+  // Called by PeerMessageQueue after a peer ACKs this operation.
+  //
+  // This will never be called concurrently from multiple threads, since it is always
+  // called under the PeerMessageQueue lock. However, it may be called concurrently with the
+  // IsDone(), IsAllDone(), and Wait().
+  //
+  // This does not need to be idempotent for a given peer -- the PeerMessageQueue ensures
+  // that it is called at most once per peer.
   virtual void AckPeer(const std::string& uuid) = 0;
 
   // Whether enough/the right peers have ack'd the operation. This might
@@ -48,13 +49,13 @@ class OperationStatus : public base::RefCountedThreadSafe<OperationStatus> {
   virtual bool IsAllDone() const = 0;
 
   // Callers can use this to block until IsDone() becomes true or until
-  // a majority of peers report errors. The returned status indicates
-  // whether the operation was successful or not.
+  // a majority of peers report errors.
+  // TODO make this return a status on error.
   virtual void Wait() = 0;
 
   virtual std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
 
-  virtual ~OperationStatus() {}
+  virtual ~OperationStatusTracker() {}
 };
 
 // A peer message that is queued for replication to peers.
@@ -64,14 +65,14 @@ class OperationStatus : public base::RefCountedThreadSafe<OperationStatus> {
 struct PeerMessage {
 
   PeerMessage(gscoped_ptr<OperationPB> op,
-              const scoped_refptr<OperationStatus>& status);
+              const scoped_refptr<OperationStatusTracker>& status);
 
   const OpId& GetOpId() const {
     return op_->id();
   }
 
   gscoped_ptr<OperationPB> op_;
-  scoped_refptr<OperationStatus> status_;
+  scoped_refptr<OperationStatusTracker> status_;
 };
 
 // Tracks all the pending consensus operations on the LEADER side.
@@ -94,7 +95,7 @@ class PeerMessageQueue {
   // Returns OK unless the operation could not be added to the queue for some
   // reason (e.g. the queue reached max size).
   Status AppendOperation(gscoped_ptr<OperationPB> operation,
-                         scoped_refptr<OperationStatus> status);
+                         scoped_refptr<OperationStatusTracker> status);
 
   // Makes the queue track this peer. Used when the peer already has
   // state. The queue assumes the peer has both replicated and committed

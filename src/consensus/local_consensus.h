@@ -2,6 +2,7 @@
 #ifndef KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 #define KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 
+#include <string>
 #include <vector>
 
 #include "consensus/consensus.h"
@@ -41,6 +42,11 @@ class LocalConsensus : public Consensus {
 
   metadata::QuorumPeerPB::Role role() const {
     return metadata::QuorumPeerPB::LEADER;
+  }
+
+  virtual string peer_uuid() const OVERRIDE {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return peer_.permanent_uuid();
   }
 
   metadata::QuorumPB Quorum() const {

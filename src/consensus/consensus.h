@@ -123,11 +123,29 @@ class Consensus {
 
   // Messages sent from LEADER to FOLLOWERS and LEARNERS to update their
   // state machines.
+  // ConsensusRequestPB contains a sequence of 0 or more operations to apply
+  // on the replica. If there are 0 operations the request is considered
+  // 'status-only' i.e. the leader is just asking how far the replica has
+  // received/replicated/committed the operations and the replica replies
+  // as such.
+  // If the sequence contains 1 or more operations they will be applied
+  // in the same order as the leader.
+  // In particular, replicates are stored in the log in the same order as
+  // the leader and Prepare()s are triggered in the same order as the
+  // replicates.
+  // Commit operations have two ids, the "commit_id' which is monotonically
+  // increasing and the 'committed_op_id' which might not be monotonically
+  // increasing (as the leader may commit out-of-order).
+  // Replicas Apply() the commits as soon as the corresponding Prepare()s
+  // are done *and* the CommitMsg has been received from the LEADER.
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) = 0;
 
   // Returns the current quorum role of this instance.
   virtual metadata::QuorumPeerPB::Role role() const = 0;
+
+  // Returns the uuid of this peer.
+  virtual string peer_uuid() const = 0;
 
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
@@ -196,11 +214,12 @@ class ReplicaCommitContinuation {
 
 // Factory for replica transactions.
 // An implementation of this factory must be registered prior to consensus
-// start.
+// start, and is used to create transactions when the consensus implementation receives
+// messages from the leader.
 //
 // Replica transactions execute the following way:
 //
-// - When a ReplicateMsg is first received from the leader the Consensus
+// - When a ReplicateMsg is first received from the leader, the Consensus
 //   instance creates the ConsensusContext and calls StartReplicaTransaction().
 //   This will trigger the Prepare(). At the same time replica consensus
 //   instance immediately stores the ReplicateMsg in the Log. Once the replicate

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "consensus/consensus_queue.h"
+#include "consensus/log_util.h"
 
 #include "common/wire_protocol.h"
 #include "util/auto_release_pool.h"
@@ -32,13 +33,14 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
+using log::OpIdCompare;
 using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
 
 PeerMessage::PeerMessage(gscoped_ptr<OperationPB> op,
-                         const scoped_refptr<OperationStatus>& status)
+                         const scoped_refptr<OperationStatusTracker>& status)
     : op_(op.Pass()),
       status_(status) {
 }
@@ -58,7 +60,7 @@ Status PeerMessageQueue::TrackPeer(const string& uuid, const OpId& initial_water
   // up to a point.
   DCHECK(initial_watermark.IsInitialized());
   ConsensusStatusPB* status = new ConsensusStatusPB();
-  status->mutable_committed_watermark()->CopyFrom(initial_watermark);
+  status->mutable_safe_commit_watermark()->CopyFrom(initial_watermark);
   status->mutable_replicated_watermark()->CopyFrom(initial_watermark);
   status->mutable_received_watermark()->CopyFrom(initial_watermark);
   InsertOrDie(&watermarks_, uuid, status);
@@ -74,7 +76,7 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
 }
 
 Status PeerMessageQueue::AppendOperation(gscoped_ptr<OperationPB> operation,
-                                         scoped_refptr<OperationStatus> status) {
+                                         scoped_refptr<OperationStatusTracker> status) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   DCHECK_EQ(state_, kQueueOpen);
   DCHECK(operation->has_commit()
@@ -148,15 +150,15 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
   // We always start processing messages from the lowest watermark
   // (which might be the replicated or the committed one)
   const OpId* lowest_watermark = &std::min(current_status->replicated_watermark(),
-                                           current_status->committed_watermark(),
-                                           CompareOps);
+                                           current_status->safe_commit_watermark(),
+                                           OpIdCompare);
   iter = messages_.upper_bound(*lowest_watermark);
 
   MessagesBuffer::iterator end_iter = messages_.upper_bound(new_status.received_watermark());
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Received Response from Peer: " << uuid << ". Current Watermark: "
-        << (*iter).first.ShortDebugString() << ". New Status: " << new_status.ShortDebugString();
+    VLOG(2) << "Received Response from Peer: " << uuid << ". Current Status: "
+        << current_status->ShortDebugString() << ". New Status: " << new_status.ShortDebugString();
   }
 
   // We need to ack replicates and commits separately (commits are executed asynchonously).
@@ -169,14 +171,14 @@ void PeerMessageQueue::ResponseFromPeer(const string& uuid,
   for (;iter != end_iter; iter++) {
     msg = (*iter).second;
     if (msg->op_->has_commit() &&
-        CompareOps(msg->op_->id(), current_status->committed_watermark()) > 0 &&
-        CompareOps(msg->op_->id(), new_status.committed_watermark()) <= 0) {
+        OpIdCompare(msg->op_->id(), current_status->safe_commit_watermark()) > 0 &&
+        OpIdCompare(msg->op_->id(), new_status.safe_commit_watermark()) <= 0) {
       msg->status_->AckPeer(uuid);
       continue;
     }
     if (msg->op_->has_replicate() &&
-        CompareOps(msg->op_->id(), current_status->replicated_watermark()) > 0 &&
-        CompareOps(msg->op_->id(), new_status.replicated_watermark()) <= 0) {
+        OpIdCompare(msg->op_->id(), current_status->replicated_watermark()) > 0 &&
+        OpIdCompare(msg->op_->id(), new_status.replicated_watermark()) <= 0) {
       msg->status_->AckPeer(uuid);
       continue;
     }

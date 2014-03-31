@@ -73,15 +73,15 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_EQ(id.index(), index);
   }
 
-  TestOperationStatus* test_status(OperationStatus* status) {
-    return down_cast<TestOperationStatus*, OperationStatus>(status);
+  TestOperationStatus* test_status(OperationStatusTracker* status) {
+    return down_cast<TestOperationStatus*, OperationStatusTracker>(status);
   }
 
  protected:
   PeerMessageQueue message_queue_;
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
-  vector<scoped_refptr<OperationStatus> > statuses_;
+  vector<scoped_refptr<OperationStatusTracker> > statuses_;
   NoOpTestPeerProxyFactory peer_proxy_factory_;
 };
 

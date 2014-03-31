@@ -199,6 +199,13 @@ Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
   return Status::OK();
 }
 
+int OpIdCompare(const OpId& first, const OpId& second) {
+  if (PREDICT_TRUE(first.term() == second.term())) {
+    return first.index() < second.index() ? -1 : first.index() == second.index() ? 0 : 1;
+  }
+  return first.term() < second.term() ? -1 : 1;
+}
+
 bool OpIdEquals(const OpId& left, const OpId& right) {
   DCHECK(left.IsInitialized());
   DCHECK(right.IsInitialized());
@@ -232,6 +239,12 @@ bool OpIdEqualsFunctor::operator() (const OpId& left, const OpId& right) const {
 
 bool OpIdCompareFunctor::operator() (const OpId& left, const OpId& right) const {
   return OpIdLessThan(left, right);
+}
+
+bool OpIdBiggerThanFunctor::operator() (const OpId& left, const OpId& right) const {
+  if (left.term() > right.term()) return true;
+  if (left.term() < right.term()) return false;
+  return left.index() > right.index();
 }
 
 OpId MinimumOpId() {
@@ -319,4 +332,13 @@ bool IsLogFileName(const string& fname) {
 }
 
 }  // namespace log
+
+namespace consensus {
+
+std::ostream& operator<<(std::ostream& os, const consensus::OpId& op_id) {
+  os << op_id.ShortDebugString();
+  return os;
+}
+
+} // namespace consensus
 }  // namespace kudu

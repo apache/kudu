@@ -40,6 +40,9 @@ set(CONSENSUS_SRCS
   consensus_queue.cc
   consensus_peers.cc
   local_consensus.cc
+  raft_consensus.cc
+  raft_consensus_state.cc
+  opid_waiter_set.cc
 )
 
 add_library(consensus ${CONSENSUS_SRCS})
@@ -63,6 +66,7 @@ ADD_KUDU_TEST(consensus_peers-test)
 ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(opid_anchor_registry-test)
+ADD_KUDU_TEST(raft_consensus-test)
 
 #Tools
 set(KUDU_LINK_LIBS
