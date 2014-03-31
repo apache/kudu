@@ -718,6 +718,17 @@ TEST_F(ClientTest, TestStaleLocations) {
   ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
   ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
                   tablet_id, &locs_pb));
+
+  // It may take a while to bootstrap the tablet and send the location report
+  // so spin until we get a non-stale location.
+  int wait_time = 1000;
+  for (int i = 0; i < 80; ++i) {
+    if (!locs_pb.stale()) {
+      break;
+    }
+    usleep(wait_time);
+    wait_time = std::min(wait_time * 5 / 4, 1000000);
+  }
   ASSERT_FALSE(locs_pb.stale());
 }
 
