@@ -81,22 +81,39 @@ message CommitMsg {
 message NoOp {
 }
 
+message PerOpErrorPB {
+  // The id of the operation that failed in the other peer.
+  required OpId id = 1;
+  // The Status explaining why the operation failed.
+  required AppStatusPB status = 2;
+}
+
 // Status message received in the peer responses.
 message ConsensusStatusPB {
-  // The last message received and stored (not processed) by this peer.
-  optional OpId replicated_watermark = 1;
-  // The last commit applied by this peer.
-  optional OpId commit_watermark = 3;
+  // The last message received by the peer.
+  // Messages up to this one do not need re-sending.
+  required OpId received_watermark = 2;
+  // The last ReplicateMsg that was logged by the peer.
+  required OpId replicated_watermark = 1;
+  // The last commit applied by this peer i.e. the last visible operation
+  // if the peer's tablet were to be scanned.
+  required OpId committed_watermark = 3;
+  // Per operation errors.
+  repeated PerOpErrorPB errors = 4;
 }
 
 // A consensus request message, the basic unit of a consensus round.
 message ConsensusRequestPB {
   required string tablet_id = 1;
+  // the uuid of the sender peer
+  required bytes sender_uuid = 2;
   // sequence of operations to be replicated/executed by this peer
   repeated OperationPB ops = 3;
 }
 
 message ConsensusResponsePB {
+  // A generic error message (such as tablet not found), per operation
+  // messages are sent along with the consensus status.
   optional tserver.TabletServerErrorPB error = 1;
   optional ConsensusStatusPB status = 3;
 }

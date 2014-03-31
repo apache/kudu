@@ -4,26 +4,35 @@
 #define KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 
 #include <string>
+#include <tr1/memory>
 
 #include "rpc/response_callback.h"
 #include "server/metadata.pb.h"
 #include "util/locks.h"
 #include "util/status.h"
+#include "util/countdown_latch.h"
 
 namespace kudu {
+class HostPort;
 
 namespace log {
 class Log;
 }
 
 namespace rpc {
+class Messenger;
 class RpcController;
+}
+
+namespace tserver {
+class TabletServerServiceProxy;
 }
 
 namespace consensus {
 class ConsensusRequestPB;
 class ConsensusResponsePB;
 class ConsensusStatusPB;
+class OpId;
 class PeerProxy;
 class PeerImpl;
 class PeerMessageQueue;
@@ -50,66 +59,74 @@ class PeerMessageQueue;
 //                        |
 //                        |
 //                        v
-//               +----------------+
-//          +---+|  Req. Pending? +---+
-//          |    +----------------+   |
-//          |                         |
-//          | Yes                     | No
-//          |                         |
-//          |                         |
-//          v                         v
-//                           +------------------+
-//       return       +------+ Processing Req.? +-----+
-//                    |      +------------------+     |
-//                    |                               |
-//                    | Yes                           | No
-//                    |                               |
-//                    v                               v
-//                pending = true                 ProcessNextRequest()
-//                return                         processing = true
-//                                               - get reqs. from queue
-//                                               - update peer async
-//                                               return
+//              +------------------+
+//       +------+    processing ?  +-----+
+//       |      +------------------+     |
+//       |                               |
+//       | Yes                           | No
+//       |                               |
+//       v                               v
+//     return                      ProcessNextRequest()
+//                                 processing = true
+//                                 - get reqs. from queue
+//                                 - update peer async
+//                                 return
 //
 //                         +
 //                         |
 //      ProcessResponse()  |
-//                         |
+//      processing = false |
 //                         v
 //               +------------------+
-//        +------+  Req. Pending()? +-----+
+//        +------+   more pending?  +-----+
 //        |      +------------------+     |
 //        |                               |
 //        | Yes                           | No
 //        |                               |
 //        v                               v
-//  ProcessNextRequest()           processing = false
-//                                 return
+//  SignalRequest()                    return
+//
 class Peer {
  public:
   // Initializes a peer and get its status.
   Status Init();
 
   // Signals that this peer has a new request to replicate/store.
-  void SignalRequest();
+  // 'force_if_queue_empty' indicates whether the peer should force
+  // send the request even if the queue is empty. This is used for
+  // status-only requests.
+  Status SignalRequest(bool force_if_queue_empty = false);
 
   // Signals that a response was received from the peer.
   void ProcessResponse(const ConsensusStatusPB& status);
 
+  // Signals there was an error sending the request to the peer.
+  void ProcessResponseError(const Status& status);
+
   const metadata::QuorumPeerPB& peer_pb() const { return peer_pb_; }
+
+  // Returns the PeerProxy if this is a remote peer or NULL if it
+  // isn't. Used for tests to fiddle with the proxy and emulate remote
+  // behavior.
+  PeerProxy* GetPeerProxyForTests();
+
+  void Close();
 
   ~Peer();
 
   // Creates a new local peer and makes the queue track it.
   static Status NewLocalPeer(const metadata::QuorumPeerPB& peer_pb,
                              const std::string& tablet_id,
+                             const std::string& leader_uuid,
                              PeerMessageQueue* queue,
                              log::Log* log,
+                             const OpId& initial_op,
                              gscoped_ptr<Peer>* peer);
 
   // Creates a new remote peer and makes the queue track it.
   static Status NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                               const std::string& tablet_id,
+                              const std::string& leader_uuid,
                               PeerMessageQueue* queue,
                               gscoped_ptr<PeerProxy> proxy,
                               gscoped_ptr<Peer>* peer);
@@ -117,22 +134,34 @@ class Peer {
  protected:
   Peer(const metadata::QuorumPeerPB& peer,
        const std::string& tablet_id,
+       const std::string& leader_uuid,
        PeerMessageQueue* queue,
-       log::Log* log);
+       log::Log* log,
+       const OpId& initial_op);
 
   Peer(const metadata::QuorumPeerPB& peer,
        const std::string& tablet_id,
+       const std::string& leader_uuid,
        PeerMessageQueue* queue,
        gscoped_ptr<PeerProxy> proxy);
 
   metadata::QuorumPeerPB peer_pb_;
   gscoped_ptr<PeerImpl> peer_impl_;
   PeerMessageQueue* queue_;
-  bool req_pending_;
   bool processing_;
+
+  CountDownLatch outstanding_req_latch_;
 
   // lock that protects Peer state changes
   mutable simple_spinlock peer_lock_;
+
+  enum State {
+    kPeerCreated,
+    kPeerIntitialized,
+    kPeerClosed
+  };
+
+  State state_;
 };
 
 // A proxy to another peer. Usually a thin wrapper around an rpc proxy but can

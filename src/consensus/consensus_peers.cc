@@ -14,8 +14,9 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "tserver/tserver_service.proxy.h"
+#include "util/net/net_util.h"
 
-DEFINE_int32(consensus_rpc_timeout_ms, 15000,
+DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC comms.");
 
 namespace kudu {
@@ -34,16 +35,22 @@ using tserver::TabletServerServiceProxy;
 class PeerImpl {
  public:
   PeerImpl(Peer* peer,
-           const string& tablet_id)
+           const string& tablet_id,
+           const string& leader_uuid)
       : peer_(peer),
-        tablet_id_(tablet_id) {
+        tablet_id_(tablet_id),
+        leader_uuid_(leader_uuid) {
   }
 
-  virtual Status Init() = 0;
+  // Initializes the Peer implementation and sets 'initial_id' to the last
+  // id received by the replica.
+  virtual Status Init(OpId* initial_id) = 0;
 
   // Sends the next request, asynchronously. The peer lock must be acquired
   // prior to calling this method.
-  virtual void ProcessNextRequest() = 0;
+  // Returns false if there were no pending messages, and thus no request was
+  // sent.
+  virtual bool ProcessNextRequest() = 0;
 
   virtual void RequestFinishedCallback() = 0;
 
@@ -58,8 +65,11 @@ class PeerImpl {
   }
 
  protected:
+  friend class Peer;
+
   Peer* peer_;
   const string tablet_id_;
+  const string leader_uuid_;
   ConsensusRequestPB request_;
   ConsensusResponsePB response_;
 };
@@ -69,35 +79,64 @@ class LocalPeer : public PeerImpl {
  public:
   LocalPeer(Peer* peer,
             const string& tablet_id,
-            log::Log* log)
-      : PeerImpl(peer, tablet_id),
+            const string& leader_uuid,
+            log::Log* log,
+            const OpId& initial_op)
+      : PeerImpl(peer, tablet_id, leader_uuid),
         log_(log),
         log_append_callback_(
             new BoundFunctionCallback(
                 boost::bind(&LocalPeer::RequestFinishedCallback, this),
                 boost::bind(&LocalPeer::LogAppendFailedCallback, this, _1))) {
+    last_replicated_.CopyFrom(initial_op);
+    last_committed_.CopyFrom(initial_op);
+    last_received_.CopyFrom(initial_op);
   }
 
-  Status Init() {
+  Status Init(OpId* initial_id) {
+    initial_id->CopyFrom(last_received_);
     request_.set_tablet_id(tablet_id_);
+    request_.set_sender_uuid(leader_uuid_);
     return Status::OK();
   }
 
-  void ProcessNextRequest() {
+  bool ProcessNextRequest() {
+    if (PREDICT_FALSE(request_.ops_size() == 0)) {
+      return false;
+    }
     response_.Clear();
 
     LogEntryBatch* reserved_entry_batch;
     vector<OperationPB*> ops;
-    BOOST_FOREACH(const OperationPB& op, request_.ops()) {
-      ops.push_back(const_cast<OperationPB*>(&op));
+    OpId* last_replicated = NULL;
+    OpId* last_committed = NULL;
+    OpId* last_received = NULL;
+    for (int i = 0; i < request_.ops_size(); i++) {
+      OperationPB* op = request_.mutable_ops(i);
+      ops.push_back(op);
+      last_received = op->mutable_id();
+      if (op->has_replicate()) {
+        last_replicated = op->mutable_id();
+        continue;
+      }
+      if (op->has_commit()) {
+        last_committed = op->mutable_id();
+        continue;
+      }
     }
+
+    if (last_replicated != NULL) last_replicated_.CopyFrom(*last_replicated);
+    if (last_committed != NULL) last_committed_.CopyFrom(*last_committed);
+
+    last_received_.CopyFrom(*last_received);
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Local peer appending to log: " << request_.ShortDebugString();
     }
 
-    log_->Reserve(ops, &reserved_entry_batch);
-    log_->AsyncAppend(reserved_entry_batch, log_append_callback_);
+    CHECK_OK(log_->Reserve(ops, &reserved_entry_batch));
+    CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_append_callback_));
+    return true;
   }
 
   void RequestFinishedCallback() {
@@ -105,8 +144,11 @@ class LocalPeer : public PeerImpl {
       if (PREDICT_FALSE(VLOG_IS_ON(2))) {
         VLOG(2) << "Local peer logged: " << request_.ShortDebugString();
       }
-      response_.mutable_status()->mutable_replicated_watermark()->CopyFrom(
-          request_.ops(request_.ops_size() - 1).id());
+      ConsensusStatusPB* status = response_.mutable_status();
+      status->mutable_replicated_watermark()->CopyFrom(last_replicated_);
+      status->mutable_committed_watermark()->CopyFrom(last_committed_);
+      status->mutable_received_watermark()->CopyFrom(last_received_);
+
       request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
       peer_->ProcessResponse(response_.status());
     } else {
@@ -124,6 +166,9 @@ class LocalPeer : public PeerImpl {
   log::Log* log_;
   shared_ptr<FutureCallback> log_append_callback_;
   Status status_;
+  OpId last_replicated_;
+  OpId last_committed_;
+  OpId last_received_;
 };
 
 // A remote peer.
@@ -131,39 +176,52 @@ class RemotePeer : public PeerImpl {
  public:
   RemotePeer(Peer* peer,
              const string& tablet_id,
+             const string& leader_uuid,
              gscoped_ptr<PeerProxy> proxy)
-      : PeerImpl(peer, tablet_id),
+      : PeerImpl(peer, tablet_id, leader_uuid),
         proxy_(proxy.Pass()),
-        callback_(boost::bind(&RemotePeer::RequestFinishedCallback, this)) {
+        callback_(boost::bind(&RemotePeer::RequestFinishedCallback, this)),
+        state_(kStateWaiting) {
   }
 
-  Status Init() {
+  Status Init(OpId* initial_id) {
+    // TODO ask the remote peer for the initial id when we have catch up.
+    initial_id->CopyFrom(log::MinimumOpId());
     request_.set_tablet_id(tablet_id_);
+    request_.set_sender_uuid(leader_uuid_);
     return Status::OK();
   }
 
-  void ProcessNextRequest() {
+  bool ProcessNextRequest() {
+    DCHECK_EQ(state_, kStateWaiting);
     response_.Clear();
     controller_.Reset();
-
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Remote peer sending: " << request_.ShortDebugString();
     }
 
-    proxy_->UpdateAsync(&request_, &response_, &controller_, callback_);
+    state_ = kStateSending;
+    // TODO handle errors
+    CHECK_OK(proxy_->UpdateAsync(&request_, &response_, &controller_, callback_));
+    return true;
   }
 
   virtual void RequestFinishedCallback() {
-    if (!controller_.status().ok() || response_.has_error()) {
+    DCHECK_EQ(state_, kStateSending);
+    state_ = kStateWaiting;
+    if (PREDICT_FALSE(!controller_.status().ok() || response_.has_error())) {
       if (VLOG_IS_ON(1)) {
         VLOG(1) << "Error connecting to peer: " << peer_->peer_pb().ShortDebugString()
             << ". Response: " << response_.ShortDebugString()
-            << " Status: " << controller_.status().ToString()
-            << ". sleeping for 20 ms";
+            << " Controller Status: " << controller_.status().ToString();
       }
-      // HACK: We need proper backoff but for now just sleep a fixed amount.
-      usleep(20000);
-      ProcessNextRequest();
+      Status error;
+      if (!controller_.status().ok()) {
+        error = controller_.status();
+      } else {
+        error = StatusFromPB(response_.error().status());
+      }
+      peer_->ProcessResponseError(error);
     } else {
       if (PREDICT_FALSE(VLOG_IS_ON(2))) {
         VLOG(2) << "Remote peer: " << peer_->peer_pb().permanent_uuid()
@@ -177,17 +235,28 @@ class RemotePeer : public PeerImpl {
   gscoped_ptr<PeerProxy> proxy_;
   rpc::RpcController controller_;
   rpc::ResponseCallback callback_;
+
+  enum State {
+    kStateSending,
+    kStateWaiting
+  };
+
+  State state_;
 };
 
 Status Peer::NewLocalPeer(const QuorumPeerPB& peer_pb,
                           const string& tablet_id,
+                          const string& leader_uuid,
                           PeerMessageQueue* queue,
                           Log* log,
+                          const OpId& initial_op,
                           gscoped_ptr<Peer>* peer) {
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
+                                      leader_uuid,
                                       queue,
-                                      log));
+                                      log,
+                                      initial_op));
   RETURN_NOT_OK(new_peer->Init());
   peer->reset(new_peer.release());
   return Status::OK();
@@ -195,12 +264,14 @@ Status Peer::NewLocalPeer(const QuorumPeerPB& peer_pb,
 
 Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
                            const string& tablet_id,
+                           const string& leader_uuid,
                            PeerMessageQueue* queue,
                            gscoped_ptr<PeerProxy> proxy,
                            gscoped_ptr<Peer>* peer) {
 
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
+                                      leader_uuid,
                                       queue,
                                       proxy.Pass()));
   RETURN_NOT_OK(new_peer->Init());
@@ -210,63 +281,123 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
 
 Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
            const string& tablet_id,
+           const string& leader_uuid,
            PeerMessageQueue* queue,
-           Log* log)
+           Log* log,
+           const OpId& initial_op)
     : peer_pb_(peer_pb),
-      peer_impl_(new LocalPeer(this, tablet_id, log)),
+      peer_impl_(new LocalPeer(this, tablet_id, leader_uuid, log, initial_op)),
       queue_(queue),
-      req_pending_(false),
-      processing_(false) {
+      processing_(false),
+      outstanding_req_latch_(0),
+      state_(kPeerCreated) {
 }
 
 Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
            const string& tablet_id,
+           const string& leader_uuid,
            PeerMessageQueue* queue,
            gscoped_ptr<PeerProxy> proxy)
     : peer_pb_(peer_pb),
-      peer_impl_(new RemotePeer(this, tablet_id, proxy.Pass())),
+      peer_impl_(new RemotePeer(this, tablet_id, leader_uuid, proxy.Pass())),
       queue_(queue),
-      req_pending_(false),
-      processing_(false) {
+      processing_(false),
+      outstanding_req_latch_(0),
+      state_(kPeerCreated) {
 }
 
 Status Peer::Init() {
-  RETURN_NOT_OK(peer_impl_->Init());
-  RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid()));
+  boost::lock_guard<simple_spinlock> lock(peer_lock_);
+  OpId initial_id;
+  RETURN_NOT_OK(peer_impl_->Init(&initial_id));
+  RETURN_NOT_OK(queue_->TrackPeer(peer_pb_.permanent_uuid(), initial_id));
+  state_ = kPeerIntitialized;
   return Status::OK();
 }
 
-void Peer::SignalRequest() {
-  boost::lock_guard<simple_spinlock> lock(peer_lock_);
-  // the peer is already set to send another request.
-  if (req_pending_) {
-    return;
+Status Peer::SignalRequest(bool send_status_only_if_queue_empty) {
+  boost::lock_guard<simple_spinlock> lock(peer_lock_);;
+  if (PREDICT_FALSE(state_ == kPeerClosed)) {
+    return Status::IllegalState("Peer was closed.");
   }
-  // if the peer is currently sending, set the request as pending.
+  // If the peer is currently sending return Status::OK().
+  // If there are new requests in the queue we'll get them on ProcessResponse().
   if (processing_) {
-    req_pending_ = true;
-    return;
+    return Status::OK();
   }
   // the peer has no pending request nor is sending: send the request
   queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
-  peer_impl_->ProcessNextRequest();
-  processing_ = true;
+
+  // If the queue is empty, check if we were told to send a status-only
+  // message, if not just return.
+  if (PREDICT_FALSE(peer_impl_->request()->ops_size() == 0 && !send_status_only_if_queue_empty)) {
+    return Status::OK();
+  }
+
+  processing_ = peer_impl_->ProcessNextRequest();
+  if (processing_) {
+    DCHECK_EQ(outstanding_req_latch_.count(), 0);
+    outstanding_req_latch_.Reset(1);
+  } else {
+    outstanding_req_latch_.CountDown();
+  }
+  return Status::OK();
 }
 
 void Peer::ProcessResponse(const ConsensusStatusPB& status) {
+  DCHECK(status.IsInitialized());
   boost::lock_guard<simple_spinlock> lock(peer_lock_);
-  queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), status, &req_pending_);
-  if (req_pending_) {
+  bool more_pending;
+  queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), status, &more_pending);
+  outstanding_req_latch_.CountDown();
+  if (more_pending && state_ != kPeerClosed) {
     queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
-    peer_impl_->ProcessNextRequest();
-    processing_ = true;
+    processing_ = peer_impl_->ProcessNextRequest();
+    if (processing_) {
+      outstanding_req_latch_.Reset(1);
+    }
   } else {
     processing_ = false;
   }
 }
 
+void Peer::ProcessResponseError(const Status& status) {
+  boost::lock_guard<simple_spinlock> lock(peer_lock_);
+  // TODO do better than infinite retries and eventually report the peer dead.
+  // .. and avoid the usleep here.
+  usleep(20000);
+  if (state_ != kPeerClosed) {
+    queue_->RequestForPeer(peer_pb_.permanent_uuid(), peer_impl_->request());
+    processing_ = peer_impl_->ProcessNextRequest();
+    if (processing_) {
+      outstanding_req_latch_.CountDown();
+      outstanding_req_latch_.Reset(1);
+    }
+  } else {
+    outstanding_req_latch_.CountDown();
+  }
+}
+
+void Peer::Close() {
+  {
+    boost::lock_guard<simple_spinlock> lock(peer_lock_);
+    DCHECK_EQ(state_, kPeerIntitialized);
+    state_ = kPeerClosed;
+  }
+
+  LOG(INFO) << "Closing peer: " << peer_pb_.permanent_uuid()
+      << " Waiting for outstanding requests to complete " << outstanding_req_latch_.count();
+  outstanding_req_latch_.Wait();
+
+  {
+    boost::lock_guard<simple_spinlock> lock(peer_lock_);
+    queue_->UntrackPeer(peer_pb_.permanent_uuid());
+  }
+
+}
+
 Peer::~Peer() {
-  queue_->UntrackPeer(peer_pb_.permanent_uuid());
+  Close();
 }
 
 }  // namespace consensus

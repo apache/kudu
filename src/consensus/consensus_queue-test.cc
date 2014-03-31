@@ -7,6 +7,7 @@
 
 #include "consensus/consensus_queue.h"
 #include "consensus/consensus-test-util.h"
+#include "consensus/log_util.h"
 #include "util/test_macros.h"
 
 DECLARE_int32(consensus_max_batch_size_bytes);
@@ -22,7 +23,7 @@ TEST(TestConsensusRequestQueue, TestGetAllMessages) {
   PeerMessageQueue queue;
   AppendReplicateMessagesToQueue(&queue, 1, 100);
 
-  ASSERT_STATUS_OK(queue.TrackPeer(kPeerUuid));
+  ASSERT_STATUS_OK(queue.TrackPeer(kPeerUuid, log::MinimumOpId()));
 
   ConsensusRequestPB request;
   ConsensusStatusPB status;
@@ -31,7 +32,9 @@ TEST(TestConsensusRequestQueue, TestGetAllMessages) {
   // ask for a request. with normal flags this should get the whole queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 100);
+  status.mutable_committed_watermark()->CopyFrom(request.ops(99).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(99).id());
+  status.mutable_received_watermark()->CopyFrom(request.ops(99).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
@@ -65,7 +68,9 @@ TEST(TestConsensusRequestQueue, TestStartTrackingAfterStart) {
   // ask for a request, with normal flags this should get half the queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(request.ops_size(), 50);
+  status.mutable_committed_watermark()->CopyFrom(request.ops(49).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
+  status.mutable_received_watermark()->CopyFrom(request.ops(49).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
   ASSERT_FALSE(more_pending) << "Queue still had requests pending";
 
@@ -87,6 +92,8 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   OpId* id = op->mutable_id();
   id->set_index(0);
   id->set_term(0);
+  ReplicateMsg* msg = op->mutable_replicate();
+  msg->set_op_type(NO_OP);
 
   // Save the current flag state.
   google::FlagSaver saver;
@@ -97,7 +104,7 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   PeerMessageQueue queue;
   AppendReplicateMessagesToQueue(&queue, 1, 100);
 
-  queue.TrackPeer(kPeerUuid);
+  queue.TrackPeer(kPeerUuid, log::MinimumOpId());
   bool more_pending = false;
 
   ConsensusRequestPB request;
@@ -105,13 +112,17 @@ TEST(TestConsensusRequestQueue, TestGetPagedMessages) {
   for (int i = 0; i < 11; i++) {
     queue.RequestForPeer(kPeerUuid, &request);
     ASSERT_EQ(9, request.ops_size());
+    status.mutable_committed_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
     status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
+    status.mutable_received_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
     queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
     ASSERT_TRUE(more_pending);
   }
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(1, request.ops_size());
+  status.mutable_committed_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
+  status.mutable_received_watermark()->CopyFrom(request.ops(request.ops_size() -1).id());
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
   ASSERT_FALSE(more_pending);
 
@@ -139,19 +150,22 @@ TEST(TestConsensusRequestQueue, TestPeersDontAckBeyondWatermarks) {
   // ask for a request, with normal flags this should get half the queue.
   queue.RequestForPeer(kPeerUuid, &request);
   ASSERT_EQ(50, request.ops_size());
+  status.mutable_committed_watermark()->CopyFrom(request.ops(49).id());
   status.mutable_replicated_watermark()->CopyFrom(request.ops(49).id());
+  status.mutable_received_watermark()->CopyFrom(request.ops(49).id());
 
   AppendReplicateMessagesToQueue(&queue, 101, 100, 1, 1, &statuses);
   queue.ResponseFromPeer(kPeerUuid, status, &more_pending);
   ASSERT_TRUE(more_pending) << "Queue didn't have anymore requests pending";
 
+
   // Make sure the peer only ack'd between message 50 and 100
   for (int i = 0; i < statuses.size(); i++) {
     if (i < 50 || i > 99) {
-      ASSERT_FALSE(statuses[i]->IsDone()) << "Operation: " << i << " should be done.";
+      ASSERT_FALSE(statuses[i]->IsDone()) << "Operation: " << i << " should not be done.";
       continue;
     }
-    ASSERT_TRUE(statuses[i]->IsDone())  << "Operation: " << i << " should not be done.";
+    ASSERT_TRUE(statuses[i]->IsDone())  << "Operation: " << i << " should be done.";
   }
   // if we ask for a new request, it should come back with the rest of the messages
   queue.RequestForPeer(kPeerUuid, &request);
@@ -168,7 +182,7 @@ TEST(TestConsensusRequestQueue, TestBufferTrimsWhenMessagesAreNotNeeded) {
 
   PeerMessageQueue queue;
   // this amount of messages will overflow the buffer by about 2Kb
-  AppendReplicateMessagesToQueue(&queue, 1, 200000, 0);
+  AppendReplicateMessagesToQueue(&queue, 1, 200000, 0, 0);
 
   // test that even though we've overflown the buffer it still keeps within bounds
   ASSERT_LE(queue.GetQueuedOperationsSizeBytesForTests(), 1 * 1024 * 1024);

@@ -3,11 +3,13 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
+#include <map>
 #include <string>
 #include <tr1/unordered_map>
-#include <map>
+#include <utility>
 
 #include "consensus/consensus.pb.h"
+#include "consensus/log_util.h"
 #include "gutil/ref_counted.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -20,17 +22,12 @@ class Log;
 
 namespace consensus {
 
-// TODO transform these into functors and move somewhere common
-// as other places, like bootstrap also need them.
-inline bool operator<(const OpId& first, const OpId& second) {
-  if (first.term() == second.term()) {
-    return first.index() < second.index();
+// TODO move somewhere common as other places, like bootstrap also need them.
+inline int CompareOps(const OpId& first, const OpId& second) {
+  if (PREDICT_TRUE(first.term() == second.term())) {
+    return first.index() < second.index() ? -1 : first.index() == second.index() ? 0 : 1;
   }
-  return first.term() < second.term();
-}
-
-inline bool operator==(const OpId& first, const OpId& second) {
-  return first.index() == second.index() && first.term() == second.term();
+  return first.term() < second.term() ? -1 : 1;
 }
 
 // The status associated with each single quorum operation.
@@ -46,10 +43,16 @@ class OperationStatus : public base::RefCountedThreadSafe<OperationStatus> {
   // messages must be at least ack'd by the leader.
   virtual bool IsDone() const = 0;
 
-  // Callers can use this to block until IsDone() becomes true.
+  // Indicates whether all peers have ack'd the operation meaning it can be
+  // freed from the queue.
+  virtual bool IsAllDone() const = 0;
+
+  // Callers can use this to block until IsDone() becomes true or until
+  // a majority of peers report errors. The returned status indicates
+  // whether the operation was successful or not.
   virtual void Wait() = 0;
 
-  std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
+  virtual std::string ToString() const { return  IsDone() ? "Done" : "NotDone"; }
 
   virtual ~OperationStatus() {}
 };
@@ -81,7 +84,6 @@ struct PeerMessage {
 // modify it.
 class PeerMessageQueue {
  public:
-
   PeerMessageQueue();
 
   // Appends a operation that must be replicated to the quorum and associates
@@ -94,12 +96,10 @@ class PeerMessageQueue {
   Status AppendOperation(gscoped_ptr<OperationPB> operation,
                          scoped_refptr<OperationStatus> status);
 
-  // Makes the queue tracked this peer. Used for 'empty' peers.
-  Status TrackPeer(const std::string& uuid);
-
   // Makes the queue track this peer. Used when the peer already has
-  // state.
-  Status TrackPeer(const std::string& uuid, const OpId& replicated_watermark);
+  // state. The queue assumes the peer has both replicated and committed
+  // all messages prior to and including 'initial_watermark'.
+  Status TrackPeer(const std::string& uuid, const OpId& initial_watermark);
 
   // Makes the queue untrack the peer.
   // Requires that the peer was being tracked.
@@ -116,14 +116,19 @@ class PeerMessageQueue {
   // instance of ConsensusRequestPB to RequestForPeer(): the buffer will
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
-  Status RequestForPeer(const std::string& uuid,
-                        ConsensusRequestPB* request);
+  void RequestForPeer(const std::string& uuid,
+                      ConsensusRequestPB* request);
 
   // Updates the request queue with the latest status of a peer, returns
   // whether this peer has more requests pending.
   void ResponseFromPeer(const std::string& uuid,
                         const ConsensusStatusPB& status,
                         bool* more_pending);
+
+  // Closes the queue, peers are still allowed to call UntrackPeer() and
+  // ResponseFromPeer() but no additional peers can be tracked or messages
+  // queued.
+  void Close();
 
   int64_t GetQueuedOperationsSizeBytesForTests() {
     return queued_ops_size_bytes_;
@@ -135,8 +140,10 @@ class PeerMessageQueue {
 
  private:
   // An ordered map that serves as the buffer for the pending messages.
-  typedef std::map<OpId, PeerMessage*> MessagesBuffer;
-  typedef std::tr1::unordered_map<std::string, OpId*> WatermarksMap;
+  typedef std::map<OpId, PeerMessage*, log::OpIdCompareFunctor> MessagesBuffer;
+  typedef std::tr1::unordered_map<std::string, ConsensusStatusPB*> WatermarksMap;
+  typedef std::tr1::unordered_map<OpId, Status> ErrorsMap;
+  typedef std::pair<OpId, Status> ErrorEntry;
 
   Status TrimBuffer();
 
@@ -161,6 +168,12 @@ class PeerMessageQueue {
   mutable simple_spinlock queue_lock_;
   OpId low_watermark_;
 
+  enum State {
+    kQueueOpen,
+    kQueueClosed
+  };
+
+  State state_;
 };
 
 }  // namespace consensus

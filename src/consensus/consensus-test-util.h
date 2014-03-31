@@ -37,6 +37,10 @@ class TestOperationStatus : public OperationStatus {
     return majority_latch_.count() == 0;
   }
 
+  bool IsAllDone() const {
+    return all_replicated_latch_.count() == 0;
+  }
+
   void Wait() {
     majority_latch_.Wait();
   }
@@ -79,6 +83,8 @@ static inline void AppendReplicateMessagesToQueue(
     OpId* id = op->mutable_id();
     id->set_term(i / 7);
     id->set_index(i % 7);
+    ReplicateMsg* msg = op->mutable_replicate();
+    msg->set_op_type(NO_OP);
     scoped_refptr<OperationStatus> status(new TestOperationStatus(n_majority, total_peers, *id));
     queue->AppendOperation(op.Pass(), status);
     if (statuses_collector) {
@@ -87,12 +93,12 @@ static inline void AppendReplicateMessagesToQueue(
   }
 }
 
-// Allows to test remote peers by making the response handling asynchronous and
-// optionally delaying the response.
-class TestPeerProxy : public PeerProxy {
+// Allows to test peers by emulating a noop remote endpoint that just replies
+// that the messages were received/replicated/committed.
+class NoOpTestPeerProxy : public PeerProxy {
  public:
-  TestPeerProxy()
-    : pool_("remote-peer-pool", 0, 1, ThreadPool::DEFAULT_TIMEOUT),
+  NoOpTestPeerProxy()
+    : pool_("noop-peer-pool", 0, 1, ThreadPool::DEFAULT_TIMEOUT),
       delay_response_(false),
       callback_(NULL) {
     CHECK_OK(pool_.Init());
@@ -105,6 +111,10 @@ class TestPeerProxy : public PeerProxy {
     ConsensusStatusPB* status = response->mutable_status();
     if (request->ops_size() > 0) {
       status->mutable_replicated_watermark()->CopyFrom(
+          request->ops(request->ops_size() - 1).id());
+      status->mutable_committed_watermark()->CopyFrom(
+          request->ops(request->ops_size() - 1).id());
+      status->mutable_received_watermark()->CopyFrom(
           request->ops(request->ops_size() - 1).id());
       last_status_.CopyFrom(*status);
     } else if (last_status_.IsInitialized()) {
@@ -144,12 +154,12 @@ class TestPeerProxy : public PeerProxy {
   const rpc::ResponseCallback* callback_;
 };
 
-class TestPeerProxyFactory : public PeerProxyFactory {
+class NoOpTestPeerProxyFactory : public PeerProxyFactory {
  public:
 
   virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
-    proxy->reset(new TestPeerProxy());
+    proxy->reset(new NoOpTestPeerProxy());
     return Status::OK();
   }
 };

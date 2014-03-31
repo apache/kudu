@@ -5,6 +5,7 @@
 #include "consensus/consensus_peers.h"
 #include "consensus/consensus-test-util.h"
 #include "consensus/log.h"
+#include "consensus/log_util.h"
 #include "consensus/opid_anchor_registry.h"
 #include "server/fsmanager.h"
 #include "util/test_macros.h"
@@ -19,6 +20,7 @@ using log::OpIdAnchorRegistry;
 using metadata::QuorumPeerPB;
 
 const char* kTabletId = "test-peers-tablet";
+const char* kLeaderUuid = "test-peers-leader";
 
 class ConsensusPeersTest : public KuduTest {
  public:
@@ -34,20 +36,23 @@ class ConsensusPeersTest : public KuduTest {
     peer_pb.set_permanent_uuid(peer_name);
     ASSERT_STATUS_OK(Peer::NewLocalPeer(peer_pb,
                                         kTabletId,
+                                        kLeaderUuid,
                                         &message_queue_,
                                         log,
+                                        log::MinimumOpId(),
                                         peer));
   }
 
-  TestPeerProxy* NewRemotePeer(const string& peer_name,
+  NoOpTestPeerProxy* NewRemotePeer(const string& peer_name,
                                gscoped_ptr<Peer>* peer) {
     QuorumPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     gscoped_ptr<PeerProxy> proxy;
     CHECK_OK(peer_proxy_factory_.NewProxy(peer_pb, &proxy));
-    TestPeerProxy* proxy_ptr = down_cast<TestPeerProxy*, PeerProxy>(proxy.get());
+    NoOpTestPeerProxy* proxy_ptr = down_cast<NoOpTestPeerProxy*, PeerProxy>(proxy.get());
     CHECK_OK(Peer::NewRemotePeer(peer_pb,
                                  kTabletId,
+                                 kLeaderUuid,
                                  &message_queue_,
                                  proxy.Pass(),
                                  peer));
@@ -61,7 +66,7 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_EQ(id.index(), index);
   }
 
-  void CheckLastRemoteEntry(TestPeerProxy* proxy, int term, int index) {
+  void CheckLastRemoteEntry(NoOpTestPeerProxy* proxy, int term, int index) {
     OpId id;
     id.CopyFrom(proxy->last_status().replicated_watermark());
     ASSERT_EQ(id.term(), term);
@@ -77,7 +82,7 @@ class ConsensusPeersTest : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   LogOptions options_;
   vector<scoped_refptr<OperationStatus> > statuses_;
-  TestPeerProxyFactory peer_proxy_factory_;
+  NoOpTestPeerProxyFactory peer_proxy_factory_;
 };
 
 // Tests that a local peer is correctly built and tracked
@@ -114,7 +119,7 @@ TEST_F(ConsensusPeersTest, TestLocalPeer) {
 // messages.
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
   gscoped_ptr<Peer> remote_peer;
-  TestPeerProxy* proxy = NewRemotePeer("remote-peer", &remote_peer);
+  NoOpTestPeerProxy* proxy = NewRemotePeer("remote-peer", &remote_peer);
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(&message_queue_, 1, 20, 1, 1, &statuses_);
@@ -143,10 +148,10 @@ TEST_F(ConsensusPeersTest, TestLocalAndRemotePeers) {
   NewLocalPeer(log.get(), "local-peer", &local_peer);
 
   gscoped_ptr<Peer> remote_peer1;
-  TestPeerProxy* remote_peer1_proxy = NewRemotePeer("remote-peer1", &remote_peer1);
+  NoOpTestPeerProxy* remote_peer1_proxy = NewRemotePeer("remote-peer1", &remote_peer1);
 
   gscoped_ptr<Peer> remote_peer2;
-  TestPeerProxy* remote_peer2_proxy = NewRemotePeer("remote-peer2", &remote_peer2);
+  NoOpTestPeerProxy* remote_peer2_proxy = NewRemotePeer("remote-peer2", &remote_peer2);
 
   // Delay the response from the second remote peer.
   remote_peer2_proxy->DelayResponse();
