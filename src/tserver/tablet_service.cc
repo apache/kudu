@@ -27,9 +27,12 @@
 #include "util/status.h"
 #include "util/trace.h"
 
+using kudu::consensus::ConsensusRequestPB;
+using kudu::consensus::ConsensusResponsePB;
 using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::TabletStatusPB;
+using kudu::rpc::RpcContext;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::AlterSchemaTransactionContext;
 using kudu::tablet::ChangeConfigTransactionContext;
@@ -364,6 +367,35 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
   }
+  return;
+}
+
+void TabletServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
+                                        ConsensusResponsePB* resp,
+                                        rpc::RpcContext* context) {
+  DVLOG(3) << "Received Consensus Execute RPC: " << req->DebugString();
+
+  shared_ptr<TabletPeer> tablet_peer;
+
+  if (!LookupTabletOrRespond(req->tablet_id(), &tablet_peer, resp, context)) return;
+
+  DCHECK(tablet_peer) << "Null tablet peer";
+
+  // Can't answer update requests if peer is not RUNNING
+  if (tablet_peer->state() != metadata::RUNNING) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::NotFound("Tablet Peer not in RUNNING state"),
+                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    return;
+  }
+  // Submit the update directly to the TabletPeer's Consensus instance.
+  Status s = tablet_peer->consensus()->Update(req, resp);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+  }
+  context->RespondSuccess();
 }
 
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
