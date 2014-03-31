@@ -35,3 +35,10 @@ export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ME/tsan-suppressions.txt histor
 
 echo Running $TEST_NAME, redirecting output into $OUT
 "$@"  2>&1 | $ROOT/thirdparty/asan_symbolize.py | c++filt | $pipe_cmd > $OUT
+
+# TSAN doesn't always exit with a non-zero exit code due to a bug:
+# mutex errors don't get reported through the normal error reporting infrastructure.
+if zgrep --silent "ThreadSanitizer" $OUT ; then
+  echo ThreadSanitizer failures in $OUT
+  exit 1
+fi

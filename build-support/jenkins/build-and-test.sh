@@ -22,12 +22,28 @@ set -o pipefail
 # gather core dumps
 ulimit -c unlimited
 
-# Set up defaults for environment variables.
-export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-1}
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
+BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
+
+# Set up defaults for environment variables.
+DEFAULT_ALLOW_SLOW_TESTS=1
+
+# TSAN builds are pretty slow, so don't do SLOW tests unless explicitly
+# requested
+if [ "$BUILD_TYPE" = "TSAN" ]; then
+  DEFAULT_ALLOW_SLOW_TESTS=0
+fi
+
+export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 LLVM_DIR=${LLVM_DIR:-/opt/toolchain/llvm-3.3/}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TOOLCHAIN=/mnt/toolchain/toolchain.sh
+
+if [ ! -d $LLVM_DIR ]; then
+  echo "No LLVM found ($LLVM_DIR does not exist)"
+  echo "Set LLVM_DIR to the prefix for clang"
+  exit 1
+fi
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
@@ -46,7 +62,6 @@ export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 
 rm -rf CMakeCache.txt CMakeFiles src/*/CMakeFiles
 
-BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
 
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   # NB: passing just "clang++" below causes an infinite loop, see http://www.cmake.org/pipermail/cmake/2012-December/053071.html
