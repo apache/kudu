@@ -400,6 +400,48 @@ Peer::~Peer() {
   Close();
 }
 
+RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
+                           gscoped_ptr<TabletServerServiceProxy> ts_proxy)
+    : hostport_(hostport.Pass()),
+      ts_proxy_(ts_proxy.Pass()) {
+}
+
+Status RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
+                                 ConsensusResponsePB* response,
+                                 rpc::RpcController* controller,
+                                 const rpc::ResponseCallback& callback) {
+  controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
+  ts_proxy_->UpdateConsensusAsync(*request, response, controller, callback);
+  return Status::OK();
+}
+
+RpcPeerProxy::~RpcPeerProxy() {}
+
+RpcPeerProxyFactory::RpcPeerProxyFactory(const shared_ptr<Messenger>& messenger)
+    : messenger_(messenger) {
+}
+
+Status RpcPeerProxyFactory::NewProxy(const QuorumPeerPB& peer_pb,
+                                     gscoped_ptr<PeerProxy>* proxy) {
+
+  gscoped_ptr<HostPort> hostport(new HostPort);
+  RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()))
+
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(hostport->ResolveAddresses(&addrs));
+  if (addrs.size() > 1) {
+    LOG(WARNING)<< "Peer address '" << hostport->ToString() << "' "
+    << "resolves to " << addrs.size() << " different addresses. Using "
+    << addrs[0].ToString();
+  }
+  gscoped_ptr<TabletServerServiceProxy> new_proxy(
+      new TabletServerServiceProxy(messenger_, addrs[0]));
+  proxy->reset(new RpcPeerProxy(hostport.Pass(), new_proxy.Pass()));
+  return Status::OK();
+}
+
+RpcPeerProxyFactory::~RpcPeerProxyFactory() {}
+
 }  // namespace consensus
 }  // namespace kudu
 

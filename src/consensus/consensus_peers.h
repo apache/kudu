@@ -189,6 +189,36 @@ class PeerProxyFactory {
   virtual ~PeerProxyFactory() {}
 };
 
+// PeerProxy implementation that does RPC calls
+class RpcPeerProxy : public PeerProxy {
+ public:
+  RpcPeerProxy(gscoped_ptr<HostPort> hostport,
+               gscoped_ptr<tserver::TabletServerServiceProxy> ts_proxy);
+
+  virtual Status UpdateAsync(const ConsensusRequestPB* request,
+                             ConsensusResponsePB* response,
+                             rpc::RpcController* controller,
+                             const rpc::ResponseCallback& callback) OVERRIDE;
+
+  virtual ~RpcPeerProxy();
+ public:
+  gscoped_ptr<HostPort> hostport_;
+  gscoped_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+};
+
+// PeerProxyFactory implementation that generates RPCPeerProxies
+class RpcPeerProxyFactory : public PeerProxyFactory {
+ public:
+  explicit RpcPeerProxyFactory(const std::tr1::shared_ptr<rpc::Messenger>& messenger);
+
+  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+                          gscoped_ptr<PeerProxy>* proxy) OVERRIDE;
+
+  virtual ~RpcPeerProxyFactory();
+ private:
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+};
+
 }  // namespace consensus
 }  // namespace kudu
 
