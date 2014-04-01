@@ -58,6 +58,14 @@ class LatchCallback : public FutureCallback {
     return status_;
   }
 
+  Status TimedWait(const MonoDelta& delta) {
+    bool done = latch_.TimedWait(boost::posix_time::microseconds(delta.ToMicroseconds()));
+    if (!done) {
+      return Status::TimedOut("Timeout waiting on LatchCallback.");
+    }
+    return status_;
+  }
+
   Status status() const {
     return status_;
   }
