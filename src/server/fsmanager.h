@@ -12,6 +12,7 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/strings/strcat.h"
 #include "gutil/strtoint.h"
 #include "server/oid_generator.h"
 #include "util/env.h"
@@ -169,7 +170,7 @@ class FsManager {
 
   string GetTabletWalRecoveryDir(const std::string& tablet_id) const {
     string path = JoinPathSegments(GetWalsRootDir(), tablet_id);
-    path = JoinPathSegments(path, kWalsRecoveryDirName);
+    StrAppend(&path, kWalsRecoveryDirSuffix);
     return path;
   }
 
@@ -244,7 +245,7 @@ class FsManager {
   static const char *kDataDirName;
   static const char *kMasterBlockDirName;
   static const char *kWalsDirName;
-  static const char *kWalsRecoveryDirName;
+  static const char *kWalsRecoveryDirSuffix;
   static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
 

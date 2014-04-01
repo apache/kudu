@@ -14,6 +14,9 @@
 namespace kudu {
 namespace log {
 
+// Suffix for temprorary files
+extern const char kTmpSuffix[];
+
 // Logs start with "log-" prefix.
 extern const char kLogPrefix[];
 
@@ -208,6 +211,10 @@ Status FindStaleSegmentsPrefixSize(
     const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
     const consensus::OpId& earliest_needed_opid,
     uint32_t *prefix_size);
+
+// Checks if 'fname' is a correctly formatted name of log segment
+// file.
+bool IsLogFileName(const std::string& fname);
 
 }  // namespace log
 }  // namespace kudu

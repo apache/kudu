@@ -70,8 +70,6 @@ using log::OpIdEqualsFunctor;
 struct MutationInput;
 struct ReplayState;
 
-static const char* const kTmpSuffix = ".tmp";
-
 // Bootstraps an existing tablet, fetching the initial state from other replicas
 // or locally and rebuilding soft state by playing log segments. A bootstrapped tablet
 // can then be added to an existing quorum as a LEARNER, which will bring its
@@ -438,7 +436,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
     RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
                           "Couldn't list log segments.");
     BOOST_FOREACH(const string& child, children) {
-      if (HasSuffixString(child, kTmpSuffix) || HasPrefixString(child, ".")) {
+      if (!log::IsLogFileName(child)) {
         continue;
       }
       string path = JoinPathSegments(log_dir, child);
@@ -449,37 +447,30 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
     return Status::OK();
   }
 
-  RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(recovery_path),
-                        "Could not create log recovery dir.");
-
   vector<string> children;
   RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
                         "Couldn't list log segments.");
 
-  // move the files to the recovery directory
-  // TODO: this loop should become atomic
   BOOST_FOREACH(const string& child, children) {
-    if (HasSuffixString(child, kTmpSuffix)) {
-      LOG(WARNING) << "Ignoring tmp file in log recovery dir: " << child;
-      continue;
-    }
-
-    if (HasPrefixString(child, ".")) {
-      // Hidden file or ./..
-      VLOG(1) << "Ignoring hidden file in log recovery dir: " << child;
+    if (!log::IsLogFileName(child)) {
       continue;
     }
 
     string source_path = JoinPathSegments(log_dir, child);
     string dest_path = JoinPathSegments(recovery_path, child);
-
-    RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(source_path,
-                                                        dest_path),
-                          Substitute("Could not move log segment from: $0 to: $1",
-                                     source_path,
-                                     dest_path));
-    LOG(INFO) << "Moved log segment from: " << source_path << " to: " << dest_path;
+    LOG(INFO) << "Will attempt to recover log segment: " << source_path << " to: " << dest_path;
     *needs_recovery = true;
+  }
+
+  if (*needs_recovery) {
+    // Atomically rename the log directory to the recovery directory
+    // and then re-create the log directory.
+    RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(log_dir, recovery_path),
+                          Substitute("Could not move log directory $0 to recovery dir $1",
+                                     log_dir, recovery_path));
+    LOG(INFO) << "Moved log directory: " << log_dir << " to recovery directory: " << recovery_path;
+    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                          "Failed to recreate log directory " + log_dir);
   }
   return Status::OK();
 }

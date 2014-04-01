@@ -14,6 +14,8 @@
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/strings/util.h"
+#include "gutil/strings/split.h"
 #include "util/coding.h"
 #include "util/env_util.h"
 #include "util/pb_util.h"
@@ -42,6 +44,8 @@ using std::tr1::unordered_set;
 using metadata::TabletSuperBlockPB;
 using metadata::RowSetDataPB;
 using strings::Substitute;
+
+const char kTmpSuffix[] = ".tmp";
 
 const char kLogSegmentMagicString[] = "kudulogf";
 
@@ -278,6 +282,27 @@ Status FindStaleSegmentsPrefixSize(
 
   *prefix_size = stale_prefix_size;
   return Status::OK();
+}
+
+bool IsLogFileName(const string& fname) {
+  if (HasPrefixString(fname, ".")) {
+    // Hidden file or ./..
+    VLOG(1) << "Ignoring hidden file: " << fname;
+    return false;
+  }
+
+  if (HasSuffixString(fname, kTmpSuffix)) {
+    LOG(WARNING) << "Ignoring tmp file: " << fname;
+    return false;
+  }
+
+  vector<string> v = strings::Split(fname, "-");
+  if (v.size() != 2 || v[0] != kLogPrefix) {
+    VLOG(1) << "Not a log file: " << fname;
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace log
