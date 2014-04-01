@@ -43,11 +43,11 @@ InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<KuduClient> &client)
 
 Status InsertConsumer::Init() {
   const char *kTableName = "twitter";
-  Status s = client_->OpenTable(kTableName, schema_, &table_);
+  Status s = client_->OpenTable(kTableName, &table_);
   if (s.IsNotFound()) {
     RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_),
                           "Couldn't create twitter table");
-    s = client_->OpenTable(kTableName, schema_, &table_);
+    s = client_->OpenTable(kTableName, &table_);
   }
   RETURN_NOT_OK_PREPEND(s, "Couldn't open twitter table");
 
