@@ -126,20 +126,6 @@ class Env {
   // REQUIRES: lock has not already been unlocked.
   virtual Status UnlockFile(FileLock* lock) = 0;
 
-  // Arrange to run "(*function)(arg)" once in a background thread.
-  //
-  // "function" may run in an unspecified thread.  Multiple functions
-  // added to the same Env may run concurrently in different threads.
-  // I.e., the caller may not assume that background work items are
-  // serialized.
-  virtual void Schedule(
-      void (*function)(void* arg),
-      void* arg) = 0;
-
-  // Start a new thread, invoking "function(arg)" within the new thread.
-  // When "function(arg)" returns, the thread will be destroyed.
-  virtual void StartThread(void (*function)(void* arg), void* arg) = 0;
-
   // *path is set to a temporary directory that can be used for testing. It may
   // or many not have just been created. The directory may or may not differ
   // between runs of the same process, but subsequent calls will return the
@@ -321,12 +307,6 @@ class EnvWrapper : public Env {
     return target_->LockFile(f, l);
   }
   Status UnlockFile(FileLock* l) { return target_->UnlockFile(l); }
-  void Schedule(void (*f)(void*), void* a) { // NOLINT(*)
-    return target_->Schedule(f, a);
-  }
-  void StartThread(void (*f)(void*), void* a) { // NOLINT(*)
-    return target_->StartThread(f, a);
-  }
   virtual Status GetTestDirectory(std::string* path) {
     return target_->GetTestDirectory(path);
   }

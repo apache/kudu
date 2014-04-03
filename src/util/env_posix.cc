@@ -860,10 +860,6 @@ class PosixEnv : public Env {
     return result;
   }
 
-  virtual void Schedule(void (*function)(void*), void* arg); // NOLINT(*)
-
-  virtual void StartThread(void (*function)(void* arg), void* arg);
-
   virtual Status GetTestDirectory(std::string* result) {
     const char* env = getenv("TEST_TMPDIR");
     if (env && env[0] != '\0') {
@@ -918,20 +914,6 @@ class PosixEnv : public Env {
   }
 
  private:
-  void PthreadCall(const char* label, int result) {
-    if (result != 0) {
-      fprintf(stderr, "pthread %s: %s\n", label, ErrnoToString(result).c_str());
-      exit(1);
-    }
-  }
-
-  // BGThread() is the body of the background thread
-  void BGThread();
-  static void* BGThreadWrapper(void* arg) {
-    reinterpret_cast<PosixEnv*>(arg)->BGThread();
-    return NULL;
-  }
-
   // gscoped_ptr Deleter implementation for fts_close
   struct FtsCloser {
     void operator()(FTS *fts) const {
@@ -940,88 +922,9 @@ class PosixEnv : public Env {
   };
 
   size_t page_size_;
-  pthread_mutex_t mu_;
-  pthread_cond_t bgsignal_;
-  pthread_t bgthread_;
-  bool started_bgthread_;
-
-  // Entry per Schedule() call
-  struct BGItem {
-    void* arg;
-    void (*function)(void*); // NOLINT(*)
-  };
-  typedef std::deque<BGItem> BGQueue;
-  BGQueue queue_;
 };
 
-PosixEnv::PosixEnv() : page_size_(getpagesize()),
-                       started_bgthread_(false) {
-  PthreadCall("mutex_init", pthread_mutex_init(&mu_, NULL));
-  PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
-}
-
-void PosixEnv::Schedule(void (*function)(void*), void* arg) { // NOLINT(*)
-  PthreadCall("lock", pthread_mutex_lock(&mu_));
-
-  // Start background thread if necessary
-  if (!started_bgthread_) {
-    started_bgthread_ = true;
-    PthreadCall(
-        "create thread",
-        pthread_create(&bgthread_, NULL,  &PosixEnv::BGThreadWrapper, this));
-  }
-
-  // If the queue is currently empty, the background thread may currently be
-  // waiting.
-  if (queue_.empty()) {
-    PthreadCall("signal", pthread_cond_signal(&bgsignal_));
-  }
-
-  // Add to priority queue
-  queue_.push_back(BGItem());
-  queue_.back().function = function;
-  queue_.back().arg = arg;
-
-  PthreadCall("unlock", pthread_mutex_unlock(&mu_));
-}
-
-void PosixEnv::BGThread() {
-  while (true) {
-    // Wait until there is an item that is ready to run
-    PthreadCall("lock", pthread_mutex_lock(&mu_));
-    while (queue_.empty()) {
-      PthreadCall("wait", pthread_cond_wait(&bgsignal_, &mu_));
-    }
-
-    void (*function)(void*) = queue_.front().function; // NOLINT(*)
-    void* arg = queue_.front().arg;
-    queue_.pop_front();
-
-    PthreadCall("unlock", pthread_mutex_unlock(&mu_));
-    (*function)(arg);
-  }
-}
-
-namespace {
-struct StartThreadState {
-  void (*user_function)(void*); // NOLINT(*)
-  void* arg;
-};
-}
-static void* StartThreadWrapper(void* arg) {
-  StartThreadState* state = reinterpret_cast<StartThreadState*>(arg);
-  state->user_function(state->arg);
-  delete state;
-  return NULL;
-}
-
-void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
-  pthread_t t;
-  StartThreadState* state = new StartThreadState;
-  state->user_function = function;
-  state->arg = arg;
-  PthreadCall("start thread",
-              pthread_create(&t, NULL,  &StartThreadWrapper, state));
+PosixEnv::PosixEnv() : page_size_(getpagesize()) {
 }
 
 }  // namespace
