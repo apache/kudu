@@ -22,8 +22,6 @@ namespace tablet {
 
 using std::tr1::unordered_set;
 
-const char kTestPath[] = "/tmp/test";
-
 class TestDeltaMemStore : public KuduTest {
  public:
   TestDeltaMemStore()
@@ -126,7 +124,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
 
   // Flush the delta file so that the stats get updated.
   shared_ptr<WritableFile> file;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), kTestPath, &file));
+  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env_.get(), GetTestPath("test_file"), &file));
   DeltaFileWriter dfw(schema_, file);
   ASSERT_STATUS_OK(dfw.Start());
   dms_->FlushToFile(&dfw);
