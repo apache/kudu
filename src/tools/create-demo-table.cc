@@ -60,13 +60,13 @@ Status GetDemoSchema(const string& table_name, Schema* schema) {
 }
 
 static int CreateDemoTable(int argc, char** argv) {
-  InitGoogleLoggingSafe(argv[0]);
-  FLAGS_logtostderr = true;
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 2) {
     PrintUsage(argv);
     return 1;
   }
+  InitGoogleLoggingSafe(argv[0]);
+  FLAGS_logtostderr = true;
 
   string table_name = argv[1];
 

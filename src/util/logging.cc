@@ -82,6 +82,8 @@ void InitGoogleLoggingSafe(const char* arg) {
 
   // Needs to be done after InitGoogleLogging
   if (FLAGS_log_filename.empty()) {
+    CHECK_STRNE(google::ProgramInvocationShortName(), "UNKNOWN")
+        << ": must initialize gflags before glog";
     FLAGS_log_filename = google::ProgramInvocationShortName();
   }
 

@@ -96,12 +96,12 @@ static void CompactDeltasThread(const TSTabletManager* tablet_mgr) {
 }
 
 static int TabletServerMain(int argc, char** argv) {
-  InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
     return 1;
   }
+  InitGoogleLoggingSafe(argv[0]);
 
   TabletServerOptions opts;
   TabletServer server(opts);

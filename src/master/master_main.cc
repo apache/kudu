@@ -14,12 +14,12 @@ namespace kudu {
 namespace master {
 
 static int MasterMain(int argc, char** argv) {
-  InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
     return 1;
   }
+  InitGoogleLoggingSafe(argv[0]);
 
   MasterOptions opts;
   Master server(opts);
