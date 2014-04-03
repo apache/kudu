@@ -366,15 +366,17 @@ run() {
 
     BENCHMARK_MODE=$MODE_LOCAL
 
-    # Must specify at least one git hash
-    [ -n "$1" ] || usage_and_die
-
-    while [ -n "$1" ]; do
-      local GIT_HASH="$1"
-      shift
-      git_checkout "$GIT_HASH"
-      build_run_record "$GIT_HASH"
-    done
+    # If no hashes are provided, run against the current HEAD.
+    if [ -z "$1" ]; then
+      build_run_record "working_tree"
+    else
+      while [ -n "$1" ]; do
+        local GIT_HASH="$1"
+        shift
+        git_checkout "$GIT_HASH"
+        build_run_record "$GIT_HASH"
+      done
+    fi
 
   else
     [ -n "$BUILD_NUMBER" ] || usage_and_die
