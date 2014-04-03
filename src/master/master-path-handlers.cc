@@ -89,7 +89,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::ArgumentMap &args,
   string table_id;
   if (!FindCopy(args, "id", &table_id)) {
     // TODO: webserver should give a way to return a non-200 response code
-    *output << "Missing 'table' argument";
+    *output << "Missing 'id' argument";
     return;
   }
 

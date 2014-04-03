@@ -91,14 +91,20 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
   string tablet_id;
   if (!FindCopy(args, "id", &tablet_id)) {
     // TODO: webserver should give a way to return a non-200 response code
-    (*output) << "Missing 'tablet' argument";
+    (*output) << "Missing 'id' argument";
     return;
   }
 
   // Look up tablet.
   shared_ptr<TabletPeer> peer;
   if (!tserver_->tablet_manager()->LookupTablet(tablet_id, &peer)) {
-    (*output) << "Tablet not found";
+    (*output) << "Tablet " << tablet_id << " not found";
+    return;
+  }
+
+  // Can't look at bootstrapping tablets.
+  if (peer->state() == metadata::BOOTSTRAPPING) {
+    (*output) << "Tablet " << tablet_id << " is still bootstrapping";
     return;
   }
 
