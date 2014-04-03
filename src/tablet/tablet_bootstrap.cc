@@ -354,6 +354,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
         << " creating new one.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
+    listener_->StatusMessage("No bootstrap required, opened a new log");
     rebuilt_tablet->reset(tablet_.release());
     rebuilt_log->reset(log_.release());
     *opid_anchor_registry = opid_anchor_registry_;

@@ -69,6 +69,9 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
       n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
     }
     string state = metadata::TabletStatePB_Name(status.state());
+    if (status.state() == metadata::FAILED) {
+      StrAppend(&state, ": ", EscapeForHtmlToString(peer->error().ToString()));
+    }
     // TODO: would be nice to include some other stuff like memory usage
     (*output) << Substitute("<tr><th>$0</th><th>$1</th><th>$2</th>"
                             "<th>$3</th><th>$4</th><th>$5</th></tr>\n",
