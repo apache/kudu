@@ -6,6 +6,8 @@ import kudu.ColumnSchema;
 import kudu.Type;
 import kudu.tserver.Tserver;
 
+import java.math.BigInteger;
+
 /**
  * A range predicate on one of the columns in the underlying data
  * The both boundaries are inclusive
@@ -82,24 +84,40 @@ public class ColumnRangePredicate {
     setLowerBound(lowerBound.getBytes());
   }
 
-  public void setUnsignedLowerBound(byte lowerBound) {
-    checkColumn(Type.UINT8);
-    // TODO
-  }
-
+  /**
+   * Set an unsigned byte for the lower bound
+   * @param lowerBound value for the lower bound
+   */
   public void setUnsignedLowerBound(short lowerBound) {
-    checkColumn(Type.UINT16);
-    // TODO
+    checkColumn(Type.UINT8);
+    setLowerBound(Bytes.fromUnsignedByte(lowerBound));
   }
 
+  /**
+   * Set an unsigned short for the lower bound
+   * @param lowerBound value for the lower bound
+   */
   public void setUnsignedLowerBound(int lowerBound) {
-    checkColumn(Type.UINT32);
-    // TODO
+    checkColumn(Type.UINT16);
+    setLowerBound(Bytes.fromUnsignedShort(lowerBound));
   }
 
+  /**
+   * Set an unsigned int for the lower bound
+   * @param lowerBound value for the lower bound
+   */
   public void setUnsignedLowerBound(long lowerBound) {
+    checkColumn(Type.UINT32);
+    setLowerBound(Bytes.fromUnsignedInt(lowerBound));
+  }
+
+  /**
+   * Set an unsigned long for the lower bound
+   * @param lowerBound value for the lower bound
+   */
+  public void setUnsignedLowerBound(BigInteger lowerBound) {
     checkColumn(Type.UINT64);
-    // TODO
+    setLowerBound(Bytes.fromUnsignedLong(lowerBound));
   }
 
   /**
@@ -147,24 +165,40 @@ public class ColumnRangePredicate {
     setUpperBound(upperBound.getBytes());
   }
 
-  public void setUnsignedUpperBound(byte upperBound) {
-    checkColumn(Type.UINT8);
-    // TODO
-  }
-
+  /**
+   * Set an unsigned byte for the upper bound
+   * @param upperBound value for the upper bound
+   */
   public void setUnsignedUpperBound(short upperBound) {
-    checkColumn(Type.UINT16);
-    // TODO
+    checkColumn(Type.UINT8);
+    setUpperBound(Bytes.fromUnsignedByte(upperBound));
   }
 
+  /**
+   * Set an unsigned short for the upper bound
+   * @param upperBound value for the upper bound
+   */
   public void setUnsignedUpperBound(int upperBound) {
-    checkColumn(Type.UINT32);
-    // TODO
+    checkColumn(Type.UINT16);
+    setUpperBound(Bytes.fromUnsignedShort(upperBound));
   }
 
+  /**
+   * Set an unsigned int for the upper bound
+   * @param upperBound value for the upper bound
+   */
   public void setUnsignedUpperBound(long upperBound) {
+    checkColumn(Type.UINT32);
+    setUpperBound(Bytes.fromUnsignedInt(upperBound));
+  }
+
+  /**
+   * Set an unsigned long for the upper bound
+   * @param upperBound value for the upper bound
+   */
+  public void setUnsignedUpperBound(BigInteger upperBound) {
     checkColumn(Type.UINT64);
-    // TODO
+    setUpperBound(Bytes.fromUnsignedLong(upperBound));
   }
 
   /**

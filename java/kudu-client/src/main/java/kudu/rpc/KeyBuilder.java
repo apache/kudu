@@ -3,6 +3,8 @@ package kudu.rpc;
 
 import kudu.Schema;
 
+import java.math.BigInteger;
+
 /**
  * Builder class to get encoded keys out of passed key components.
  * Key components must be added in order.
@@ -25,7 +27,8 @@ public class KeyBuilder {
    * @throws IllegalArgumentException all the key components were already added
    */
   public KeyBuilder addUnsignedByte(short val) {
-    // TODO
+    byte[] bytes = Bytes.fromUnsignedByte(val);
+    addBytes(bytes);
     return this;
   }
 
@@ -35,7 +38,8 @@ public class KeyBuilder {
    * @throws IllegalArgumentException all the key components were already added
    */
   public KeyBuilder addUnsignedShort(int val) {
-    // TODO
+    byte[] bytes = Bytes.fromUnsignedShort(val);
+    addBytes(bytes);
     return this;
   }
 
@@ -45,7 +49,19 @@ public class KeyBuilder {
    * @throws IllegalArgumentException all the key components were already added
    */
   public KeyBuilder addUnsignedInt(long val) {
-    // TODO
+    byte[] bytes = Bytes.fromUnsignedInt(val);
+    addBytes(bytes);
+    return this;
+  }
+
+  /**
+   * Add a new key component
+   * @param val component to add
+   * @throws IllegalArgumentException all the key components were already added
+   */
+  public KeyBuilder addUnsignedLong(BigInteger val) {
+    byte[] bytes = Bytes.fromUnsignedLong(val);
+    addBytes(bytes);
     return this;
   }
 

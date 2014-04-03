@@ -34,6 +34,7 @@ import org.jboss.netty.util.CharsetUtil;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -46,6 +47,12 @@ import java.util.TreeMap;
  */
 public final class Bytes {
 
+  // Two's complement reference: 2^n .
+  // In this case, 2^64 (so as to emulate a unsigned long)
+  // from http://stackoverflow.com/questions/10886962/interpret-a-negative-number-as-unsigned-with-
+  // biginteger-java
+  private static final BigInteger TWO_COMPL_REF = BigInteger.ONE.shiftLeft(64);
+
   private Bytes() {  // Can't instantiate.
   }
 
@@ -54,7 +61,7 @@ public final class Bytes {
   // ------------------------------ //
 
   /**
-   * Reads a little-endian byte from the beginning of the given array.
+   * Reads a byte from the beginning of the given array.
    * @param b The array to read from.
    * @return A byte
    * @throws IndexOutOfBoundsException if the byte array is too small.
@@ -64,7 +71,7 @@ public final class Bytes {
   }
 
   /**
-   * Reads a little-endian byte from an offset in the given array.
+   * Reads a byte from an offset in the given array.
    * @param b The array to read from.
    * @return A byte
    * @return
@@ -74,21 +81,54 @@ public final class Bytes {
   }
 
   /**
-   * Reads a little-endian unsigned byte from the beginning of the given array.
+   * Reads an unsigned byte from the beginning of the given array.
    * @param b The array to read from.
    * @return A positive byte
    */
-  public static int getUnsignedByte(final byte[] b) {
+  public static short getUnsignedByte(final byte[] b) {
     return getUnsignedByte(b, 0);
   }
 
   /**
-   * Reads a little-endian unsigned byte from an offset in the given array.
+   * Reads an unsigned byte from an offset in the given array.
    * @param b The array to read from.
    * @return A positive byte
    */
-  public static int getUnsignedByte(final byte[] b, final int offset) {
-    return (int) b[offset] & 0x00FF;
+  public static short getUnsignedByte(final byte[] b, final int offset) {
+    return (short) (b[offset] & 0x00FF);
+  }
+
+  /**
+   * Writes an unsigned byte at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n An unsigned byte.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedByte(final byte[] b, final short n) {
+    setUnsignedByte(b, n, 0);
+  }
+
+  /**
+   * Writes an unsigned byte at an offset in the given array.
+   * @param b The array to write to.
+   * @param offset The offset in the array to start writing at.
+   * @param n An unsigned byte.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedByte(final byte[] b, final short n,
+                                      final int offset) {
+    b[offset] = (byte) n;
+  }
+
+  /**
+   * Creates a new byte array containing an unsigned byte.
+   * @param n An unsigned byte.
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromUnsignedByte(final short n) {
+    final byte[] b = new byte[1];
+    setUnsignedByte(b, n);
+    return b;
   }
 
   /**
@@ -109,7 +149,7 @@ public final class Bytes {
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static short getShort(final byte[] b, final int offset) {
-    return (short) (b[offset] << 8 | b[offset + 1] & 0xFF);
+    return (short) (b[offset] & 0xFF | b[offset + 1] << 8 );
   }
 
   /**
@@ -149,9 +189,33 @@ public final class Bytes {
    * Writes a little-endian 2-byte short at an offset in the given array.
    * @param b The array to write to.
    * @param offset The offset in the array to start writing at.
+   * @param n A short integer.
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static void setShort(final byte[] b, final short n,
+                              final int offset) {
+    b[offset + 0] = (byte) (n >>> 0);
+    b[offset + 1] = (byte) (n >>> 8);
+  }
+
+  /**
+   * Writes a little-endian 2-byte unsigned short at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n An unsigned short integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedShort(final byte[] b, final int n) {
+    setUnsignedShort(b, n, 0);
+  }
+
+  /**
+   * Writes a little-endian 2-byte unsigned short at an offset in the given array.
+   * @param b The array to write to.
+   * @param offset The offset in the array to start writing at.
+   * @param n An unsigned short integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedShort(final byte[] b, final int n,
                               final int offset) {
     b[offset + 0] = (byte) (n >>> 0);
     b[offset + 1] = (byte) (n >>> 8);
@@ -165,6 +229,17 @@ public final class Bytes {
   public static byte[] fromShort(final short n) {
     final byte[] b = new byte[2];
     setShort(b, n);
+    return b;
+  }
+
+  /**
+   * Creates a new byte array containing a little-endian 2-byte unsigned short integer.
+   * @param n An unsigned short integer.
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromUnsignedShort(final int n) {
+    final byte[] b = new byte[2];
+    setUnsignedShort(b, n);
     return b;
   }
 
@@ -229,9 +304,34 @@ public final class Bytes {
    * Writes a little-endian 4-byte int at an offset in the given array.
    * @param b The array to write to.
    * @param offset The offset in the array to start writing at.
+   * @param n An integer.
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static void setInt(final byte[] b, final int n, final int offset) {
+    b[offset + 0] = (byte) (n >>> 0);
+    b[offset + 1] = (byte) (n >>> 8);
+    b[offset + 2] = (byte) (n >>>  16);
+    b[offset + 3] = (byte) (n >>>  24);
+  }
+
+  /**
+   * Writes a little-endian 4-byte unsigned int at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n An unsigned integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedInt(final byte[] b, final long n) {
+    setUnsignedInt(b, n, 0);
+  }
+
+  /**
+   * Writes a little-endian 4-byte unsigned int at an offset in the given array.
+   * @param b The array to write to.
+   * @param offset The offset in the array to start writing at.
+   * @param n An unsigned integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedInt(final byte[] b, final long n, final int offset) {
     b[offset + 0] = (byte) (n >>> 0);
     b[offset + 1] = (byte) (n >>> 8);
     b[offset + 2] = (byte) (n >>>  16);
@@ -310,6 +410,43 @@ public final class Bytes {
   }
 
   /**
+   * Creates a new byte array containing a little-endian 4-byte unsigned integer.
+   * @param n An unsigned integer.
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromUnsignedInt(final long n) {
+    final byte[] b = new byte[4];
+    setUnsignedInt(b, n);
+    return b;
+  }
+
+  /**
+   * Reads a little-endian 8-byte unsigned long from the beginning of the given array.
+   * @param b The array to read from.
+   * @return A long integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static BigInteger getUnsignedLong(final byte[] b) {
+    return getUnsignedLong(b, 0);
+  }
+
+  /**
+   * Reads a little-endian 8-byte unsigned long from an offset in the given array.
+   * @param b The array to read from.
+   * @param offset The offset in the array to start reading from.
+   * @return A long integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static BigInteger getUnsignedLong(final byte[] b, final int offset) {
+    long l = getLong(b, offset);
+    BigInteger bi = new BigInteger(l+"");
+    if (bi.compareTo(BigInteger.ZERO) < 0) {
+      bi = bi.add(TWO_COMPL_REF);
+    }
+    return bi;
+  }
+
+  /**
    * Reads a little-endian 8-byte long from the beginning of the given array.
    * @param b The array to read from.
    * @return A long integer.
@@ -330,11 +467,11 @@ public final class Bytes {
     return (b[offset + 0] & 0xFFL) << 0
         | (b[offset + 1] & 0xFFL) << 8
         | (b[offset + 2] & 0xFFL) << 16
-        | (b[offset + 3] & 0xFFL) << 32
-        | (b[offset + 4] & 0xFFL) << 40
-        | (b[offset + 5] & 0xFFL) << 48
-        | (b[offset + 6] & 0xFFL) << 56
-        | (b[offset + 7] & 0xFFL) << 64;
+        | (b[offset + 3] & 0xFFL) << 24
+        | (b[offset + 4] & 0xFFL) << 32
+        | (b[offset + 5] & 0xFFL) << 40
+        | (b[offset + 6] & 0xFFL) << 48
+        | (b[offset + 7] & 0xFFL) << 56;
   }
 
   /**
@@ -351,6 +488,7 @@ public final class Bytes {
    * Writes a little-endian 8-byte long at an offset in the given array.
    * @param b The array to write to.
    * @param offset The offset in the array to start writing at.
+   * @param n A long integer.
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static void setLong(final byte[] b, final long n, final int offset) {
@@ -365,6 +503,27 @@ public final class Bytes {
   }
 
   /**
+   * Writes a little-endian 8-byte unsigned long at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n An unsigned long integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedLong(final byte[] b, final BigInteger n) {
+    setUnsignedLong(b, n, 0);
+  }
+
+  /**
+   * Writes a little-endian 8-byte unsigned long at an offset in the given array.
+   * @param b The array to write to.
+   * @param offset The offset in the array to start writing at.
+   * @param n An unsigned long integer.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setUnsignedLong(final byte[] b, final BigInteger n, final int offset) {
+    setLong(b, n.longValue(), offset);
+  }
+
+  /**
    * Creates a new byte array containing a little-endian 8-byte long integer.
    * @param n A long integer.
    * @return A new byte array containing the given value.
@@ -372,6 +531,17 @@ public final class Bytes {
   public static byte[] fromLong(final long n) {
     final byte[] b = new byte[8];
     setLong(b, n);
+    return b;
+  }
+
+  /**
+   * Creates a new byte array containing a little-endian 8-byte unsigned long integer.
+   * @param n An unsigned long integer.
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromUnsignedLong(final BigInteger n) {
+    final byte[] b = new byte[8];
+    setUnsignedLong(b, n);
     return b;
   }
 

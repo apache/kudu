@@ -5,6 +5,8 @@ import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
 
+import java.math.BigInteger;
+
 /**
  * RowResult represents one row from a scanner. Do not reuse or store the objects.
  */
@@ -104,7 +106,7 @@ public class RowResult {
    * @param columnIndex Column index in the schema
    * @return A positive byte
    */
-  public int getUnsignedByte(int columnIndex) {
+  public short getUnsignedByte(int columnIndex) {
     return Bytes.getUnsignedByte(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
@@ -124,6 +126,15 @@ public class RowResult {
    */
   public long getLong(int columnIndex) {
     return Bytes.getLong(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the specified column's long
+   * @param columnIndex Column index in the schema
+   * @return A positive long
+   */
+  public BigInteger getUnsignedLong(int columnIndex) {
+    return Bytes.getUnsignedLong(this.rowData, getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -170,6 +181,8 @@ public class RowResult {
         buf.append(getInt(i));
       } else if (col.getType().equals(Type.INT64)) {
         buf.append(getLong(i));
+      } else if (col.getType().equals(Type.UINT64)) {
+        buf.append(getUnsignedLong(i));
       } else if (col.getType().equals(Type.STRING)) {
         buf.append(getString(i));
       }

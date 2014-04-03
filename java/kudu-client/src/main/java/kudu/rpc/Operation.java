@@ -14,6 +14,7 @@ import kudu.util.Arena;
 import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -83,7 +84,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   public void addUnsignedByte(String columnName, short val) {
     ColumnSchema col = this.schema.getColumn(columnName);
     checkColumn(col, Type.UINT8);
-    // TODO
+    Bytes.setUnsignedByte(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
   }
 
   /**
@@ -96,7 +97,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   public void addUnsignedShort(String columnName, int val) {
     ColumnSchema col = this.schema.getColumn(columnName);
     checkColumn(col, Type.UINT16);
-    // TODO
+    Bytes.setUnsignedShort(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
   }
 
   /**
@@ -109,7 +110,20 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   public void addUnsignedInt(String columnName, long val) {
     ColumnSchema col = this.schema.getColumn(columnName);
     checkColumn(col, Type.UINT32);
-    // TODO
+    Bytes.setUnsignedInt(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+  }
+
+  /**
+   * Add an unsigned long for the specified column.
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addUnsignedInt(String columnName, BigInteger val) {
+    ColumnSchema col = this.schema.getColumn(columnName);
+    checkColumn(col, Type.UINT64);
+    Bytes.setUnsignedLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
   }
 
   /**
@@ -380,7 +394,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     if (inserts != null) {
       requestBuilder.setToInsertRows(
           createRowOperationsPB(inserts, RowOperationsPB.Type.INSERT,
-                              insertRowsSize, insertIndirectSize));
+              insertRowsSize, insertIndirectSize));
       requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
     }
     if (hasUpdateOrDelete) {
