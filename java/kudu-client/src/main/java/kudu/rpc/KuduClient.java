@@ -33,6 +33,7 @@ import kudu.Schema;
 import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import kudu.metadata.Metadata;
 import kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
@@ -54,6 +55,7 @@ import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -615,12 +617,19 @@ public class KuduClient {
       }
     }
 
-    // TODO figure which replica to send back
     synchronized (tablet.tabletServers) {
       if (tablet.tabletServers.isEmpty()) {
         return null;
       }
-      return tablet.tabletServers.get(0);
+      if (tablet.leaderIndex == RemoteTablet.NO_LEADER_INDEX) {
+        // TODO we don't know where the leader is, either because one wasn't provided or because
+        // we couldn't resolve its IP. We currently send the first TS, revisit.
+        return tablet.tabletServers.get(0);
+      } else {
+        // TODO we currently always hit the leader, we probably don't need to except for writes
+        // and some reads
+        return tablet.tabletServers.get(tablet.leaderIndex);
+      }
     }
   }
 
@@ -1275,11 +1284,13 @@ public class KuduClient {
    */
   class RemoteTablet {
 
+    private static final int NO_LEADER_INDEX = -1;
     private final String table;
     private final Slice tabletId;
     private final ArrayList<TabletClient> tabletServers = new ArrayList<TabletClient>();
     private final byte[] startKey;
     private final byte[] endKey;
+    private int leaderIndex = NO_LEADER_INDEX;
 
     RemoteTablet(String table, Slice tabletId, byte[] startKey, byte[] endKey) {
       this.tabletId = tabletId;
@@ -1293,19 +1304,34 @@ public class KuduClient {
 
       synchronized (tabletServers) { // TODO not a fat lock with IP resolving in it
         tabletServers.clear();
+        leaderIndex = NO_LEADER_INDEX;
         for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
-          for (Common.HostPortPB hp : replica.getTsInfo().getRpcAddressesList()) {
-            addTabletClient(hp.getHost(), hp.getPort());
+
+          List<Common.HostPortPB> addresses = replica.getTsInfo().getRpcAddressesList();
+          if (addresses.isEmpty()) {
+            LOG.warn("Tablet server for tablet " + getTabletIdAsString() + " doesn't have any " +
+                "address");
+            continue;
           }
+          // from meta_cache.cc
+          // TODO: if the TS advertises multiple host/ports, pick the right one
+          // based on some kind of policy. For now just use the first always.
+          int index = addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort());
+          if (replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER) && index != NO_LEADER_INDEX) {
+            leaderIndex = index;
+          }
+        }
+        if (leaderIndex == NO_LEADER_INDEX) {
+          LOG.warn("No leader provided for tablet " + getTabletIdAsString());
         }
       }
     }
 
     // Must be called with tabletServers synchronized
-    void addTabletClient(String host, int port) {
+    int addTabletClient(String host, int port) {
       String ip = getIP(host);
       if (ip == null) {
-        return;
+        return NO_LEADER_INDEX;
       }
       TabletClient client = newClient(ip, port);
       tabletServers.add(client);
@@ -1316,6 +1342,8 @@ public class KuduClient {
           tablets.add(this);
         }
       }
+      // guaranteed to return at least 0
+      return tabletServers.size() - 1;
     }
 
     boolean removeTabletServer(TabletClient ts) {
