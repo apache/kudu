@@ -124,7 +124,12 @@ Instead, use a command like:
 
 $ ctest -R foo-test
 
-and then view the logs in build/test-logs
+and then view the logs in build/test-logs/
+
+In order for all of the suppressions to work, you need libraries with debug
+symbols installed, particularly for libstdc++. On Ubuntu 13.10, the package
+libstdc++6-4.8-dbg is needed for tsan builds to pass. It's not a bad idea to
+install debug symbol packages for libboost, libc, and cyrus-sasl as well.
 
 Generating code coverage reports
 ------------------------------------------------------------
