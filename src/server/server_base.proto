@@ -2,6 +2,7 @@
 package kudu.server;
 
 import "common/common.proto";
+import "common/wire_protocol.proto";
 
 // The status information dumped by a server after it starts.
 // This is currently only optionally exposed on the local host
@@ -9,6 +10,7 @@ import "common/common.proto";
 // future, we may expose a more generic management API via RPC
 // (hence the use of protobuf)
 message ServerStatusPB {
-  repeated HostPortPB bound_rpc_addresses = 1;
-  repeated HostPortPB bound_http_addresses = 2;
+  required NodeInstancePB node_instance = 1;
+  repeated HostPortPB bound_rpc_addresses = 2;
+  repeated HostPortPB bound_http_addresses = 3;
 }

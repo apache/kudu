@@ -116,6 +116,9 @@ Status ServerBase::DumpServerInfo(const std::string& path,
                                   const std::string& format) const {
   ServerStatusPB status;
 
+  // Node instance
+  status.mutable_node_instance()->CopyFrom(*instance_pb_);
+
   // RPC ports
   {
     vector<Sockaddr> addrs;

@@ -187,7 +187,22 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
     rpc.set_timeout(remaining);
     RETURN_NOT_OK_PREPEND(master_proxy()->ListTabletServers(req, &resp, &rpc),
                           "ListTabletServers RPC failed");
-    if (resp.servers_size() == count) {
+
+    // ListTabletServers() may return servers that are no longer online.
+    // Do a second step of verification to verify that the descs that we got
+    // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
+    int match_count = 0;
+    BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
+      BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ets, tablet_servers_) {
+        if (ets->instance_id().permanent_uuid() == e.instance_id().permanent_uuid() &&
+            ets->instance_id().instance_seqno() == e.instance_id().instance_seqno()) {
+          match_count++;
+          break;
+        }
+      }
+    }
+
+    if (match_count == count) {
       LOG(INFO) << count << " TS(s) registered with Master";
       return Status::OK();
     }
@@ -325,6 +340,11 @@ HostPort ExternalDaemon::bound_http_hostport() const {
   HostPort ret;
   CHECK_OK(HostPortFromPB(status_->bound_http_addresses(0), &ret));
   return ret;
+}
+
+const NodeInstancePB& ExternalDaemon::instance_id() const {
+  CHECK(status_);
+  return status_->node_instance();
 }
 
 //------------------------------------------------------------

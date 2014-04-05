@@ -18,6 +18,7 @@ class ExternalDaemon;
 class ExternalMaster;
 class ExternalTabletServer;
 class HostPort;
+class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
 
@@ -143,6 +144,7 @@ class ExternalDaemon : public base::RefCountedThreadSafe<ExternalDaemon> {
   HostPort bound_rpc_hostport() const;
   Sockaddr bound_rpc_addr() const;
   HostPort bound_http_hostport() const;
+  const NodeInstancePB& instance_id() const;
 
   virtual void Shutdown();
 
