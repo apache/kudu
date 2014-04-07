@@ -47,6 +47,8 @@ const char* MetricUnit::Name(Type unit) {
       return "milliseconds";
     case kSeconds:
       return "seconds";
+    case kThreads:
+      return "threads";
     default:
       return "UNKNOWN UNIT";
   }

@@ -1,44 +1,46 @@
 add_library(kudu_util
-  env.cc env_posix.cc env_util.cc
   bitmap.cc
   bloom_filter.cc
   bitmap.cc
   cache.cc
   coding.cc
   curl_util.cc
+  debug-util.cc
+  env.cc env_posix.cc env_util.cc
+  errno.cc
   faststring.cc
   group_varint.cc
   hdr_histogram.cc
-  jsonwriter.cc
-  memcmpable_varint.cc
-  metrics.cc
-  debug-util.cc
   hexdump.cc
+  jsonwriter.cc
   logging.cc
+  memcmpable_varint.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
+  metrics.cc
+  monotime.cc
   net/dns_resolver.cc
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
+  os-util.cc
   path_util.cc
   pb_util.cc
   rwc_lock.cc
   semaphore.cc
   slice.cc
   spinlock_profiling.cc
-  subprocess.cc
   status.cc
   string_case.cc
-  threadpool.cc
+  subprocess.cc
   task_executor.cc
   test_graph.cc
-  threadlocal.cc
+  thread.cc
   thread_util.cc
+  threadlocal.cc
+  threadpool.cc
   trace.cc
   user.cc
-  errno.cc
-  monotime.cc
   url-coding.cc
 )
 

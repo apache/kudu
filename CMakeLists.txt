@@ -277,7 +277,7 @@ if ("${KUDU_STATIC_LINK}")
   set(Boost_USE_STATIC_LIBS ON)
 endif()
 
-find_package(Boost COMPONENTS thread system REQUIRED)
+find_package(Boost COMPONENTS filesystem thread system REQUIRED)
 include_directories(SYSTEM ${Boost_INCLUDE_DIR} )
 set(LIBS ${LIBS} ${Boost_LIBRARIES})
 

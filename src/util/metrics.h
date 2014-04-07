@@ -161,6 +161,7 @@ struct MetricUnit {
     kMicroseconds,
     kMilliseconds,
     kSeconds,
+    kThreads,
   };
   static const char* Name(Type unit);
 };
