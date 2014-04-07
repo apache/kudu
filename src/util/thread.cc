@@ -10,6 +10,7 @@
 // - Added spinlock for protection against KUDU-11.
 // - Replaced boost exception throwing on thread creation with status.
 // - Added ThreadJoiner.
+// - Added prctl(PR_SET_NAME) to name threads.
 
 #include "util/thread.h"
 
@@ -18,6 +19,7 @@
 #include <boost/system/system_error.hpp>
 #include <map>
 #include <set>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -341,6 +343,27 @@ inline void SpinWait(Atomic32* x, uint32_t from, int32_t to) {
   base::subtle::Release_Store(x, to);
 }
 
+static void SetThreadName(const string& name, int64 tid) {
+  // On linux we can get the thread names to show up in the debugger by setting
+  // the process name for the LWP.  We don't want to do this for the main
+  // thread because that would rename the process, causing tools like killall
+  // to stop working.
+  if (tid == getpid()) {
+    return;
+  }
+
+  // http://0pointer.de/blog/projects/name-your-threads.html
+  // Set the name for the LWP (which gets truncated to 15 characters).
+  // Note that glibc also has a 'pthread_setname_np' api, but it may not be
+  // available everywhere and it's only benefit over using prctl directly is
+  // that it can set the name of threads other than the current thread.
+  int err = prctl(PR_SET_NAME, name.c_str());
+  // We expect EPERM failures in sandboxed processes, just ignore those.
+  if (err < 0 && errno != EPERM) {
+    PLOG(ERROR) << "prctl(PR_SET_NAME)";
+  }
+}
+
 void Thread::StartThread(const ThreadFunctor& functor) {
   DCHECK(thread_manager.get() != NULL)
       << "Thread created before InitThreading called";
@@ -402,6 +425,8 @@ void Thread::SuperviseThread(const string& name, const string& category,
   // Any reference to any parameter not copied in by value may no longer be valid after
   // this point, since the caller that is waiting on *c_p_tid != UNINITIALISED_THREAD_ID
   // may wake, take the lock and destroy the enclosing Thread object.
+
+  SetThreadName(name_copy, system_tid);
 
   functor();
   thread_mgr_ref->RemoveThread(boost::this_thread::get_id(), category_copy);
