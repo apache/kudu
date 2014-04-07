@@ -7,6 +7,7 @@
 // - Switched from promise to spinlock in SuperviseThread to RunThread
 //   communication.
 // - Fixes for cpplint.
+// - Added spinlock for protection against KUDU-11.
 
 #include "util/thread.h"
 
@@ -248,14 +249,41 @@ Status StartThreadInstrumentation(MetricRegistry* registry, Webserver* webserver
   return thread_manager->StartInstrumentation(registry, webserver);
 }
 
+enum {
+  THREAD_NOT_ASSIGNED,
+  THREAD_ASSIGNED,
+  THREAD_RUNNING
+};
+
+// Spin-loop until *x value equals 'from', then set *x value to 'to'.
+inline void SpinWait(Atomic32* x, uint32_t from, int32_t to) {
+  int loop_count = 0;
+
+  while (base::subtle::Acquire_Load(x) != from) {
+    boost::detail::yield(loop_count++);
+  }
+
+  // We use an Acquire_Load spin and a Release_Store because we need both
+  // directions of memory barrier here, and atomicops.h doesn't offer a
+  // Barrier_CompareAndSwap call. TSAN will fail with either Release or Acquire
+  // CAS above.
+  base::subtle::Release_Store(x, to);
+}
+
 void Thread::StartThread(const ThreadFunctor& functor) {
   DCHECK(thread_manager.get() != NULL)
       << "Thread created before InitThreading called";
   DCHECK_EQ(tid_, UNINITIALISED_THREAD_ID) << "StartThread called twice";
 
   Atomic64 c_p_tid = UNINITIALISED_THREAD_ID;
+  Atomic32 p_c_assigned = THREAD_NOT_ASSIGNED;
+
   thread_.reset(
-      new thread(&Thread::SuperviseThread, name_, category_, functor, &c_p_tid));
+      new thread(&Thread::SuperviseThread, name_, category_, functor,
+                 &c_p_tid, &p_c_assigned));
+
+  // We've assigned into thread_; the child may now continue running.
+  Release_Store(&p_c_assigned, THREAD_ASSIGNED);
 
   // Wait for the child to discover its tid, then set it.
   int loop_count = 0;
@@ -268,7 +296,7 @@ void Thread::StartThread(const ThreadFunctor& functor) {
 }
 
 void Thread::SuperviseThread(const string& name, const string& category,
-    Thread::ThreadFunctor functor, Atomic64* c_p_tid) {
+    Thread::ThreadFunctor functor, Atomic64* c_p_tid, Atomic32 *p_c_assigned) {
   int64_t system_tid = syscall(SYS_gettid);
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
@@ -286,6 +314,9 @@ void Thread::SuperviseThread(const string& name, const string& category,
   // Use boost's get_id rather than the system thread ID as the unique key for this thread
   // since the latter is more prone to being recycled.
   thread_mgr_ref->AddThread(boost::this_thread::get_id(), name_copy, category_copy, system_tid);
+
+  // Wait for the parent to unblock us.
+  SpinWait(p_c_assigned, THREAD_ASSIGNED, THREAD_RUNNING);
 
   // Signal the parent with our tid. This signal serves double duty: the parent also knows
   // that we're done with the function parameters.

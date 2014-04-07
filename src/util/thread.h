@@ -7,6 +7,7 @@
 // - Switched from promise to spinlock in SuperviseThread to RunThread
 //   communication.
 // - Fixes for cpplint.
+// - Added spinlock for protection against KUDU-11.
 
 #ifndef KUDU_UTIL_THREAD_H
 #define KUDU_UTIL_THREAD_H
@@ -153,11 +154,16 @@ class Thread {
   // Thread, but that's not the same semantics as boost::thread, which we are trying to
   // emulate here.
   //
+  // Additionally, StartThread() notifies SuperviseThread() when the actual thread object
+  // has been assigned (SuperviseThread() is spinning during this time). Without this,
+  // the new thread may reference the actual thread object before it has been assigned by
+  // StartThread(). See KUDU-11 for more details.
+  //
   // As a result, the 'functor' parameter is deliberately copied into this method, since
   // it is used after the notification completes.h The tid parameter is written to exactly
   // once before SuperviseThread() notifies the caller.
   static void SuperviseThread(const std::string& name, const std::string& category,
-      ThreadFunctor functor, Atomic64* c_p_tid);
+      ThreadFunctor functor, Atomic64* c_p_tid, Atomic32* p_c_assigned);
 };
 
 // Initialises the threading subsystem. Must be called before a Thread is created.
