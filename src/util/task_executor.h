@@ -3,6 +3,7 @@
 #ifndef KUDU_UTIL_TASK_EXECUTOR_H
 #define KUDU_UTIL_TASK_EXECUTOR_H
 
+#include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <tr1/memory>

@@ -2,15 +2,16 @@
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <tr1/unordered_set>
 
 #include "gutil/macros.h"
+#include "gutil/strings/substitute.h"
 #include "tablet/tablet-test-base.h"
 #include "util/countdown_latch.h"
 #include "util/test_graph.h"
+#include "util/thread.h"
 
 DEFINE_int32(num_insert_threads, 8, "Number of inserting threads to launch");
 DEFINE_int32(num_counter_threads, 8, "Number of counting threads to launch");
@@ -41,10 +42,14 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   using superclass::tablet_;
   using superclass::setup_;
  public:
+  virtual void SetUp() {
+    superclass::SetUp();
+    ts_collector_.StartDumperThread();
+  }
+
   MultiThreadedTabletTest()
     : running_insert_count_(FLAGS_num_insert_threads),
       ts_collector_(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) {
-    ts_collector_.StartDumperThread();
   }
 
   void InsertThread(int tid) {
@@ -307,17 +312,20 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   template<typename FunctionType>
   void StartThreads(int n_threads, const FunctionType &function) {
     for (int i = 0; i < n_threads; i++) {
-      threads_.push_back(new boost::thread(function, this, i));
+      scoped_refptr<kudu::Thread> new_thread;
+      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("test$0", i),
+          function, this, i, &new_thread));
+      threads_.push_back(new_thread);
     }
   }
 
   void JoinThreads() {
-    BOOST_FOREACH(boost::thread &thr, threads_) {
-      thr.join();
+    BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+     CHECK_OK(ThreadJoiner(thr.get()).Join());
     }
   }
 
-  boost::ptr_vector<boost::thread> threads_;
+  std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch running_insert_count_;
 
   TimeSeriesCollector ts_collector_;

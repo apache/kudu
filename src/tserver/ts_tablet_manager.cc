@@ -109,7 +109,6 @@ Status TSTabletManager::Init() {
   RETURN_NOT_OK(bootstrap_pool_.Init());
 
   // Register the tablets and trigger the asynchronous bootstrap
-  vector<shared_ptr<boost::thread> > tablet_initializers;
   BOOST_FOREACH(const string& tablet, tablets) {
     gscoped_ptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),

@@ -226,9 +226,6 @@ class Thread : public base::RefCountedThreadSafe<Thread> {
   void SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid);
 };
 
-// Initialises the threading subsystem. Must be called before a Thread is created.
-void InitThreading();
-
 // Registers /threadz with the debug webserver, and creates thread-tracking metrics under
 // the "thread-manager." prefix
 Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);

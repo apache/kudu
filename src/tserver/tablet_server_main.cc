@@ -1,6 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
@@ -16,6 +15,7 @@
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
 #include "util/logging.h"
+#include "util/thread.h"
 
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
@@ -114,10 +114,14 @@ static int TabletServerMain(int argc, char** argv) {
   // simple threads here from main.
   LOG(INFO) << "Starting flush/compact threads";
   const TSTabletManager* ts_tablet_manager = server.tablet_manager();
-  boost::thread compact_thread(CompactThread, ts_tablet_manager);
-  boost::thread compact_deltas_thread(CompactDeltasThread, ts_tablet_manager);
-  boost::thread flush_thread(FlushThread, ts_tablet_manager);
-  boost::thread flushdm_thread(FlushDeltaMemStoresThread, ts_tablet_manager);
+  CHECK_OK(kudu::Thread::Create("tablet server", "compact",
+      CompactThread, ts_tablet_manager, NULL));
+  CHECK_OK(kudu::Thread::Create("tablet server", "compact ds",
+      CompactDeltasThread, ts_tablet_manager, NULL));
+  CHECK_OK(kudu::Thread::Create("tablet server", "flush",
+      FlushThread, ts_tablet_manager, NULL));
+  CHECK_OK(kudu::Thread::Create("tablet server", "flush dm",
+      FlushDeltaMemStoresThread, ts_tablet_manager, NULL));
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());

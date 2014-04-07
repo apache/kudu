@@ -1,14 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <boost/foreach.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/thread/thread.hpp>
 #include <tr1/unordered_map>
 
 #include "gutil/atomicops.h"
 #include "gutil/stringprintf.h"
+#include "gutil/strings/substitute.h"
 #include "gutil/walltime.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 #include "tablet/diskrowset-test-base.h"
 
 enum {
@@ -110,43 +109,43 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   void StartThreads(DiskRowSet *rs) {
     for (int i = 0; i < FLAGS_num_update_threads; i++) {
-      update_threads_.push_back(new boost::thread(
-            &TestMultiThreadedRowSetDeltaCompaction::RowSetUpdateThread,
-            this, rs));
+      scoped_refptr<kudu::Thread> thread;
+      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("log_writer$0", i),
+          &TestMultiThreadedRowSetDeltaCompaction::RowSetUpdateThread, this, rs, &thread));
+      update_threads_.push_back(thread);
     }
     for (int i = 0; i < FLAGS_num_flush_threads; i++) {
-      flush_threads_.push_back(new boost::thread(
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetFlushThread, this,
-          rs));
+      scoped_refptr<kudu::Thread> thread;
+      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("delta_flush$0", i),
+          &TestMultiThreadedRowSetDeltaCompaction::RowSetFlushThread, this, rs, &thread));
+      flush_threads_.push_back(thread);
     }
     for (int i = 0; i < FLAGS_num_compaction_threads; i++) {
-      compaction_threads_.push_back(new boost::thread(
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetDeltaCompactionThread, this,
-          rs));
+      scoped_refptr<kudu::Thread> thread;
+      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("delta_compaction$0", i),
+          &TestMultiThreadedRowSetDeltaCompaction::RowSetDeltaCompactionThread, this, rs, &thread));
+      compaction_threads_.push_back(thread);
     }
     for (int i = 0; i < FLAGS_num_alter_schema_threads; i++) {
-      alter_schema_threads_.push_back(new boost::thread(
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetAlterSchemaThread, this,
-          rs, i));
+      scoped_refptr<kudu::Thread> thread;
+      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("alter_schema$0", i),
+          &TestMultiThreadedRowSetDeltaCompaction::RowSetAlterSchemaThread, this, rs, i, &thread));
+      alter_schema_threads_.push_back(thread);
     }
   }
 
   void JoinThreads() {
     for (int i = 0; i < update_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(&update_threads_[i],
-                                    StringPrintf("rowset update thread %d", i)).Join());
+      ASSERT_STATUS_OK(ThreadJoiner(update_threads_[i].get()).Join());
     }
     for (int i = 0; i < flush_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(&flush_threads_[i],
-                                    StringPrintf("delta flush thread %d", i)).Join());
+      ASSERT_STATUS_OK(ThreadJoiner(flush_threads_[i].get()).Join());
     }
     for (int i = 0; i < compaction_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(&compaction_threads_[i],
-                                    StringPrintf("delta compaction thread %d", i)).Join());
+      ASSERT_STATUS_OK(ThreadJoiner(compaction_threads_[i].get()).Join());
     }
     for (int i = 0; i < alter_schema_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(&alter_schema_threads_[i],
-                                    StringPrintf("alter schema thread %d", i)).Join());
+      ASSERT_STATUS_OK(ThreadJoiner(alter_schema_threads_[i].get()).Join());
     }
   }
 
@@ -182,10 +181,10 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   Atomic32 update_counter_;
   Atomic32 should_run_;
-  ptr_vector<boost::thread> update_threads_;
-  ptr_vector<boost::thread> flush_threads_;
-  ptr_vector<boost::thread> compaction_threads_;
-  ptr_vector<boost::thread> alter_schema_threads_;
+  vector<scoped_refptr<kudu::Thread> > update_threads_;
+  vector<scoped_refptr<kudu::Thread> > flush_threads_;
+  vector<scoped_refptr<kudu::Thread> > compaction_threads_;
+  vector<scoped_refptr<kudu::Thread> > alter_schema_threads_;
 };
 
 static void SetupFlagsForSlowTests() {

@@ -3,6 +3,7 @@
 #ifndef KUDU_CONSENSUS_LOG_H_
 #define KUDU_CONSENSUS_LOG_H_
 
+#include <boost/thread/shared_mutex.hpp>
 #include <string>
 #include <vector>
 

@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "gutil/gscoped_ptr.h"
-#include "util/env.h"
 #include "tablet/lock_manager.h"
+#include "util/env.h"
 #include "util/stopwatch.h"
 #include "util/test_util.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 
 using std::vector;
 using std::tr1::shared_ptr;
@@ -118,7 +118,7 @@ class LmTestThread {
   }
 
   void Start() {
-    thread_.reset(new boost::thread(boost::bind(&LmTestThread::Run, this)));
+    CHECK_OK(kudu::Thread::Create("test", "test", &LmTestThread::Run, this, &thread_));
   }
 
   void Run() {
@@ -145,11 +145,11 @@ class LmTestThread {
   }
 
   void Join() {
-    CHECK_OK(ThreadJoiner(thread_.get(), "LmTestThread").
+    CHECK_OK(ThreadJoiner(thread_.get()).
              warn_after_ms(1000).
              warn_every_ms(5000).
              Join());
-    thread_.reset(NULL);
+    thread_ = NULL;
   }
 
  private:
@@ -158,7 +158,7 @@ class LmTestThread {
   vector<const Slice*> keys_;
   const vector<LmTestResource*> resources_;
   uint64_t tid_;
-  gscoped_ptr<boost::thread> thread_;
+  scoped_refptr<kudu::Thread> thread_;
 };
 
 static void runPerformanceTest(const char *test_type,

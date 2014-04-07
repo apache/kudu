@@ -9,8 +9,8 @@
 
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
+#include "util/thread.h"
 #include "util/threadpool.h"
-#include "util/thread_util.h"
 #include "util/trace.h"
 
 namespace kudu {
@@ -160,8 +160,6 @@ void ThreadPool::ThreadFinishedUnlocked(int expected_num_threads) {
 }
 
 void ThreadPool::DispatchThread(bool permanent) {
-  SetThreadName(name_ + " [worker]");
-
   bool is_active = false;
   while (true) {
     QueueEntry entry;
@@ -219,17 +217,14 @@ void ThreadPool::DispatchThread(bool permanent) {
 }
 
 Status ThreadPool::CreateThreadUnlocked() {
-  try {
-    // The first few threads are permanent, and do not time out.
-    bool permanent = (num_threads_ < min_threads_);
-    boost::thread nthread(boost::bind(&ThreadPool::DispatchThread,
-                                      this, permanent));
-    nthread.detach();
+  // The first few threads are permanent, and do not time out.
+  bool permanent = (num_threads_ < min_threads_);
+  Status s = kudu::Thread::Create("thread pool", strings::Substitute("$0 [worker]", name_),
+                                  &ThreadPool::DispatchThread, this, permanent, NULL);
+  if (s.ok()) {
     num_threads_++;
-  } catch(const boost::thread_resource_error& exception) {
-    return Status::RuntimeError("boost thread creation error", exception.what());
   }
-  return Status::OK();
+  return s;
 }
 
 } // namespace kudu

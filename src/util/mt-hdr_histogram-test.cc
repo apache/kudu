@@ -1,15 +1,14 @@
 // Copyright (c) 2013, Cloudera, inc.
-#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include <vector>
 
-#include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "gutil/stl_util.h"
 #include "util/hdr_histogram.h"
 #include "util/status.h"
 #include "util/test_util.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 
 DEFINE_int32(histogram_test_num_threads, 16,
     "Number of threads to spawn for mt-hdr_histogram test");
@@ -44,13 +43,13 @@ TEST_F(MtHdrHistogramTest, ConcurrentWriteTest) {
 
   HdrHistogram hist(100000LU, 3);
 
-  gscoped_ptr<boost::thread>* threads = new gscoped_ptr<boost::thread>[num_threads_];
+  scoped_refptr<kudu::Thread>* threads = new scoped_refptr<kudu::Thread>[num_threads_];
   for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(StartThread(boost::bind(IncrementSameHistValue, &hist, kValue, num_times_),
-                         &threads[i]));
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("thread-$0", i),
+        IncrementSameHistValue, &hist, kValue, num_times_, &threads[i]));
   }
   for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(ThreadJoiner(threads[i].get(), strings::Substitute("thread-%s", i)).Join());
+    CHECK_OK(ThreadJoiner(threads[i].get()).Join());
   }
 
   HdrHistogram snapshot(hist);
@@ -66,10 +65,10 @@ TEST_F(MtHdrHistogramTest, ConcurrentCopyWhileWritingTest) {
 
   HdrHistogram hist(100000LU, 3);
 
-  gscoped_ptr<boost::thread>* threads = new gscoped_ptr<boost::thread>[num_threads_];
+  scoped_refptr<kudu::Thread>* threads = new scoped_refptr<kudu::Thread>[num_threads_];
   for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(StartThread(boost::bind(IncrementSameHistValue, &hist, kValue, num_times_),
-                         &threads[i]));
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("thread-$0", i),
+        IncrementSameHistValue, &hist, kValue, num_times_, &threads[i]));
   }
 
   // This is somewhat racy but the goal is to catch this issue at least
@@ -87,7 +86,7 @@ TEST_F(MtHdrHistogramTest, ConcurrentCopyWhileWritingTest) {
   }
 
   for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(ThreadJoiner(threads[i].get(), strings::Substitute("thread-%s", i)).Join());
+    CHECK_OK(ThreadJoiner(threads[i].get()).Join());
   }
 
   delete[] threads;

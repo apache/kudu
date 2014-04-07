@@ -6,7 +6,6 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
-#include <boost/thread/thread.hpp>
 #include <ev++.h>
 #include <glog/logging.h>
 #include <netinet/in.h>
@@ -17,7 +16,7 @@
 
 #include <string>
 
-#include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "rpc/connection.h"
 #include "rpc/messenger.h"
 #include "rpc/negotiation.h"
@@ -28,9 +27,9 @@
 #include "util/countdown_latch.h"
 #include "util/errno.h"
 #include "util/monotime.h"
+#include "util/thread.h"
 #include "util/net/socket.h"
 #include "util/status.h"
-#include "util/thread_util.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -72,7 +71,7 @@ Status ReactorThread::Init() {
                coarse_timer_granularity_.ToSeconds());
 
   // Create Reactor thread.
-  return StartThread(boost::bind(&ReactorThread::RunThread, this), &thread_);
+  return kudu::Thread::Create("reactor", "rpc reactor", &ReactorThread::RunThread, this, &thread_);
 }
 
 void ReactorThread::Shutdown() {
@@ -255,11 +254,10 @@ Reactor *ReactorThread::reactor() {
 }
 
 bool ReactorThread::IsCurrentThread() const {
-  return thread_ && thread_->get_id() == boost::this_thread::get_id();
+  return thread_.get() == kudu::Thread::current_thread();
 }
 
 void ReactorThread::RunThread() {
-  SetThreadName("rpc reactor");
   DVLOG(6) << "Calling ReactorThread::RunThread()...";
   loop_.run(0);
   VLOG(1) << name() << " thread exiting.";

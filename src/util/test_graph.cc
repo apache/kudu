@@ -4,14 +4,14 @@
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/thread/locks.hpp>
-#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 
+#include "gutil/ref_counted.h"
 #include "gutil/stringprintf.h"
 #include "gutil/walltime.h"
 #include "util/status.h"
 #include "util/test_graph.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 
 namespace kudu {
 
@@ -53,13 +53,14 @@ void TimeSeriesCollector::StartDumperThread() {
   CHECK(!started_);
   exit_latch_.Reset(1);
   started_ = true;
-  dumper_thread_.reset(new boost::thread(&TimeSeriesCollector::DumperThread, this));
+  CHECK_OK(kudu::Thread::Create("time series", "dumper",
+      &TimeSeriesCollector::DumperThread, this, &dumper_thread_));
 }
 
 void TimeSeriesCollector::StopDumperThread() {
   CHECK(started_);
   exit_latch_.CountDown();
-  CHECK_OK(ThreadJoiner(dumper_thread_.get(), "time series dumper thread").Join());
+  CHECK_OK(ThreadJoiner(dumper_thread_.get()).Join());
   started_ = false;
 }
 

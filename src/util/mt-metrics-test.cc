@@ -6,18 +6,18 @@
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
-#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <rapidjson/prettywriter.h>
 
 #include "gutil/atomicops.h"
+#include "gutil/ref_counted.h"
 #include "gutil/strings/substitute.h"
 #include "util/jsonwriter.h"
 #include "util/metrics.h"
 #include "util/monotime.h"
 #include "util/test_util.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 
 DEFINE_int32(mt_metrics_test_num_threads, 4,
              "Number of threads to spawn in mt metrics tests");
@@ -42,12 +42,15 @@ static void CountWithCounter(Counter* counter, int num_increments) {
 
 // Helper function that spawns and then joins a bunch of threads.
 static void RunWithManyThreads(boost::function<void()>* f, int num_threads) {
-  vector<shared_ptr<boost::thread> > threads;
+  vector<scoped_refptr<kudu::Thread> > threads;
   for (int i = 0; i < num_threads; i++) {
-    threads.push_back(shared_ptr<boost::thread>(new boost::thread(*f)));
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", StringPrintf("thread%d", i),
+          *f, &new_thread));
+    threads.push_back(new_thread);
   }
   for (int i = 0; i < num_threads; i++) {
-    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get(), StringPrintf("thread%d", i)).Join());
+    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get()).Join());
   }
 }
 

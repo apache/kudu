@@ -3,7 +3,6 @@
 #ifndef KUDU_SERVICE_POOL_H
 #define KUDU_SERVICE_POOL_H
 
-#include <boost/thread/thread.hpp>
 #include <tr1/memory>
 #include <vector>
 
@@ -12,6 +11,7 @@
 #include "gutil/ref_counted.h"
 #include "rpc/rpc_service.h"
 #include "util/blocking_queue.h"
+#include "util/thread.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -50,7 +50,7 @@ class ServicePool : public RpcService {
  private:
   void RunThread();
   gscoped_ptr<ServiceIf> service_;
-  std::vector<std::tr1::shared_ptr<boost::thread> > threads_;
+  std::vector<scoped_refptr<kudu::Thread> > threads_;
   BlockingQueue<InboundCall*> service_queue_;
   Histogram* incoming_queue_time_;
   Counter* rpcs_timed_out_in_queue_;

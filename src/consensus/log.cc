@@ -5,16 +5,17 @@
 #include "consensus/log_reader.h"
 #include "consensus/opid_anchor_registry.h"
 #include "consensus/log_metrics.h"
+#include "gutil/ref_counted.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/stl_util.h"
 #include "server/fsmanager.h"
 #include "util/coding.h"
 #include "util/env_util.h"
+#include "util/thread.h"
 #include "util/path_util.h"
 #include "util/pb_util.h"
 #include "util/stopwatch.h"
 #include "util/countdown_latch.h"
-#include "util/thread_util.h"
 #include "util/metrics.h"
 
 // TODO Size of the queue/buffer should be defined bytewise, rather
@@ -55,7 +56,7 @@ class Log::AppendThread {
   mutable boost::mutex lock_;
   Log* log_;
   bool closing_;
-  gscoped_ptr<boost::thread> thread_;
+  scoped_refptr<kudu::Thread> thread_;
   CountDownLatch finished_;
 };
 
@@ -68,8 +69,8 @@ Log::AppendThread::AppendThread(Log *log)
 
 Status Log::AppendThread::Init() {
   DCHECK(thread_.get() == NULL) << "Already initialized";
-  RETURN_NOT_OK(StartThread(boost::bind(
-      &AppendThread::RunThread, this), &thread_));
+  RETURN_NOT_OK(kudu::Thread::Create("log", "appender",
+      &AppendThread::RunThread, this, &thread_));
   return Status::OK();
 }
 
@@ -143,7 +144,7 @@ void Log::AppendThread::Shutdown() {
 
   LOG(INFO) << "Log append thread shut down!";
 
-  CHECK_OK(ThreadJoiner(thread_.get(), "log appender thread").Join())
+  CHECK_OK(ThreadJoiner(thread_.get()).Join())
 }
 
 // This task is submitted to allocation_executor_ in order to

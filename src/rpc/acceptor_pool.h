@@ -3,11 +3,11 @@
 #ifndef KUDU_RPC_ACCEPTOR_POOL_H
 #define KUDU_RPC_ACCEPTOR_POOL_H
 
-#include <boost/thread/thread.hpp>
 #include <tr1/memory>
 #include <vector>
 
 #include "gutil/atomicops.h"
+#include "util/thread.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
 #include "util/status.h"
@@ -43,7 +43,7 @@ class AcceptorPool {
   Messenger *messenger_;
   Socket socket_;
   Sockaddr bind_address_;
-  std::vector<std::tr1::shared_ptr<boost::thread> > threads_;
+  std::vector<scoped_refptr<kudu::Thread> > threads_;
 
   Counter* rpc_connections_accepted_;
 

@@ -10,9 +10,10 @@
 #include <vector>
 
 #include "gutil/algorithm.h"
+#include "gutil/ref_counted.h"
+#include "util/thread.h"
 #include "util/task_executor.h"
 #include "util/locks.h"
-#include "util/thread_util.h"
 
 DEFINE_int32(num_writer_threads, 4, "Number of threads writing to the log");
 DEFINE_int32(num_ops_per_thread, 2000, "Number of operations per thread");
@@ -98,17 +99,18 @@ class MultiThreadedLogTest : public LogTestBase {
 
   void Run() {
     for (int i = 0; i < FLAGS_num_writer_threads; i++) {
-      threads_.push_back(shared_ptr<boost::thread>(
-          new boost::thread(boost::bind(
-              &MultiThreadedLogTest::LogWriterThread, this, i))));
+      scoped_refptr<kudu::Thread> new_thread;
+      CHECK_OK(kudu::Thread::Create("test", "inserter",
+          &MultiThreadedLogTest::LogWriterThread, this, i, &new_thread));
+      threads_.push_back(new_thread);
     }
-    BOOST_FOREACH(shared_ptr<boost::thread>& thread, threads_) {
-      ASSERT_STATUS_OK(ThreadJoiner(thread.get(), "inserter thread").Join());
+    BOOST_FOREACH(scoped_refptr<kudu::Thread>& thread, threads_) {
+      ASSERT_STATUS_OK(ThreadJoiner(thread.get()).Join());
     }
   }
  private:
   simple_spinlock lock_;
-  vector<shared_ptr<boost::thread> > threads_;
+  vector<scoped_refptr<kudu::Thread> > threads_;
 };
 
 TEST_F(MultiThreadedLogTest, TestAppends) {

@@ -1,19 +1,19 @@
 // Copyright 2014 Cloudera, Inc.
 #include <boost/foreach.hpp>
-#include <boost/thread/thread.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <tr1/unordered_set>
 
 #include "gutil/macros.h"
 #include "gutil/map-util.h"
+#include "gutil/ref_counted.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "util/countdown_latch.h"
 #include "util/env.h"
 #include "util/locks.h"
 #include "util/test_util.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 #include "util/threadlocal.h"
 
 using std::tr1::unordered_set;
@@ -23,8 +23,7 @@ using strings::Substitute;
 namespace kudu {
 namespace threadlocal {
 
-class ThreadLocalTest : public KuduTest {
-};
+class ThreadLocalTest : public KuduTest {};
 
 const int kTargetCounterVal = 1000000;
 
@@ -160,20 +159,18 @@ static uint64_t Iterate(CounterRegistry* registry, int expected_counters) {
 
 static void TestThreadLocalCounters(CounterRegistry* registry, const int num_threads) {
   LOG(INFO) << "Starting threads...";
-  vector<boost::thread*> threads;
-  ElementDeleter threads_deleter(&threads);
+  vector<scoped_refptr<kudu::Thread> > threads;
 
   CountDownLatch counters_ready(num_threads);
   CountDownLatch reader_ready(1);
   CountDownLatch counters_done(num_threads);
   CountDownLatch reader_done(1);
   for (int i = 0; i < num_threads; i++) {
-    threads.push_back(new boost::thread(&RegisterCounterAndLoopIncr,
-                                        registry,
-                                        &counters_ready,
-                                        &reader_ready,
-                                        &counters_done,
-                                        &reader_done));
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+        &RegisterCounterAndLoopIncr, registry, &counters_ready, &reader_ready,
+        &counters_done, &reader_done, &new_thread));
+    threads.push_back(new_thread);
   }
 
   // Wait for all threads to start and register their Counters.
@@ -199,8 +196,8 @@ static void TestThreadLocalCounters(CounterRegistry* registry, const int num_thr
   reader_done.CountDown();
 
   LOG(INFO) << "Joining & deleting threads...";
-  BOOST_FOREACH(boost::thread* thread, threads) {
-    CHECK_OK(ThreadJoiner(thread, "test thread").Join());
+  BOOST_FOREACH(scoped_refptr<kudu::Thread> thread, threads) {
+    CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
   LOG(INFO) << "Done.";
 }
@@ -262,12 +259,11 @@ TEST_F(ThreadLocalTest, TestTLSMember) {
   vector<CountDownLatch*> writers_ready;
   vector<CountDownLatch*> readers_ready;
   vector<std::string*> out_strings;
-  vector<boost::thread*> threads;
+  vector<scoped_refptr<kudu::Thread> > threads;
 
   ElementDeleter writers_deleter(&writers_ready);
   ElementDeleter readers_deleter(&readers_ready);
   ElementDeleter out_strings_deleter(&out_strings);
-  ElementDeleter threads_deleter(&threads);
 
   CountDownLatch all_done(1);
   CountDownLatch threads_exiting(num_threads);
@@ -277,13 +273,11 @@ TEST_F(ThreadLocalTest, TestTLSMember) {
     writers_ready.push_back(new CountDownLatch(1));
     readers_ready.push_back(new CountDownLatch(1));
     out_strings.push_back(new std::string());
-    threads.push_back(new boost::thread(&RunAndAssign,
-                                   writers_ready[i],
-                                   readers_ready[i],
-                                   &all_done,
-                                   &threads_exiting,
-                                   Substitute("$0", i),
-                                   out_strings[i]));
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+        &RunAndAssign, writers_ready[i], readers_ready[i],
+        &all_done, &threads_exiting, Substitute("$0", i), out_strings[i], &new_thread));
+    threads.push_back(new_thread);
   }
 
   // Unlatch the threads in order.
@@ -304,8 +298,8 @@ TEST_F(ThreadLocalTest, TestTLSMember) {
   }
 
   LOG(INFO) << "Joining & deleting threads...";
-  BOOST_FOREACH(boost::thread* thread, threads) {
-    CHECK_OK(ThreadJoiner(thread, "test thread").Join());
+  BOOST_FOREACH(scoped_refptr<kudu::Thread> thread, threads) {
+    CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
 }
 

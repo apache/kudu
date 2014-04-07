@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/bind.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>

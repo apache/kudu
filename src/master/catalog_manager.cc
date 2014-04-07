@@ -26,7 +26,6 @@
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
-#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 
 #include <algorithm>
@@ -37,6 +36,7 @@
 #include "gutil/macros.h"
 #include "gutil/map-util.h"
 #include "gutil/mathlimits.h"
+#include "gutil/ref_counted.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/escaping.h"
 #include "gutil/strings/substitute.h"
@@ -48,7 +48,7 @@
 #include "master/ts_manager.h"
 #include "tserver/tserver_service.proxy.h"
 #include "rpc/rpc_context.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 #include "util/trace.h"
 #include "cfile/type_encodings.h"
 
@@ -226,12 +226,13 @@ class CatalogManagerBgTasks {
   bool pending_updates_;
   mutable boost::mutex lock_;
   boost::condition_variable cond_;
-  gscoped_ptr<boost::thread> thread_;
+  scoped_refptr<kudu::Thread> thread_;
   CatalogManager *catalog_manager_;
 };
 
 Status CatalogManagerBgTasks::Init() {
-  RETURN_NOT_OK(StartThread(boost::bind(&CatalogManagerBgTasks::Run, this), &thread_));
+  RETURN_NOT_OK(kudu::Thread::Create("catalog manager", "bgtasks",
+      &CatalogManagerBgTasks::Run, this, &thread_));
   return Status::OK();
 }
 
@@ -243,13 +244,11 @@ void CatalogManagerBgTasks::Shutdown() {
 
   Wake();
   if (thread_ != NULL) {
-    CHECK_OK(ThreadJoiner(thread_.get(), "catalog manager thread").Join());
+    CHECK_OK(ThreadJoiner(thread_.get()).Join());
   }
 }
 
 void CatalogManagerBgTasks::Run() {
-  SetThreadName("cat_mgr bgtasks");
-
   const int kMaxWaitMs = 60000;
   const int kMinWaitMs = 1000;
   while (!NoBarrier_Load(&closing_)) {
@@ -1092,7 +1091,8 @@ class AsyncTabletRequestTask : public MonitoredTask {
   virtual int max_attempts() const { return 60; }
 
   void Callback() {
-    boost::thread new_thr(&AsyncTabletRequestTask::DeferredCallback, this);
+    CHECK_OK(kudu::Thread::Create("catalog manager", "task cb",
+        &AsyncTabletRequestTask::DeferredCallback, this, NULL));
   }
 
   void DeferredCallback() {

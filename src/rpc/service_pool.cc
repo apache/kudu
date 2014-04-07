@@ -10,13 +10,14 @@
 #include <vector>
 
 #include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "rpc/inbound_call.h"
 #include "rpc/messenger.h"
 #include "rpc/service_if.h"
 #include "gutil/strings/substitute.h"
 #include "util/metrics.h"
 #include "util/status.h"
-#include "util/thread_util.h"
+#include "util/thread.h"
 #include "util/trace.h"
 
 using std::tr1::shared_ptr;
@@ -48,13 +49,11 @@ ServicePool::~ServicePool() {
 }
 
 Status ServicePool::Init(int num_threads) {
-  try {
-    for (int i = 0; i < num_threads; i++) {
-      threads_.push_back(shared_ptr<boost::thread>(
-          new boost::thread(boost::bind(&ServicePool::RunThread, this))));
-    }
-  } catch(const boost::thread_resource_error &exception) {
-    CHECK_EQ(string(), exception.what());
+  for (int i = 0; i < num_threads; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("service pool", "rpc worker",
+        &ServicePool::RunThread, this, &new_thread));
+    threads_.push_back(new_thread);
   }
   return Status::OK();
 }
@@ -66,8 +65,8 @@ void ServicePool::Shutdown() {
   if (closing_) return;
   closing_ = true;
   // TODO: Use a proper thread pool implementation.
-  BOOST_FOREACH(shared_ptr<boost::thread>& thread, threads_) {
-    CHECK_OK(ThreadJoiner(thread.get(), "service thread").Join());
+  BOOST_FOREACH(scoped_refptr<kudu::Thread>& thread, threads_) {
+    CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
 
   // Now we must drain the service queue.
@@ -109,7 +108,6 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
 }
 
 void ServicePool::RunThread() {
-  SetThreadName("rpc worker");
   while (true) {
     gscoped_ptr<InboundCall> incoming;
     if (!service_queue_.BlockingGet(&incoming)) {

@@ -12,7 +12,6 @@
 #include "util/countdown_latch.h"
 #include "util/metrics.h"
 #include "util/test_util.h"
-#include "util/thread_util.h"
 
 METRIC_DECLARE_counter(rpc_connections_accepted);
 
@@ -25,9 +24,8 @@ namespace rpc {
 class MultiThreadedRpcTest : public RpcTestBase {
  public:
   // Make a single RPC call.
-  void SingleCall(Sockaddr server_addr, const char* method_name, const string& thread_name,
+  void SingleCall(Sockaddr server_addr, const char* method_name,
                   Status* result, CountDownLatch* latch) {
-    SetThreadName(thread_name);
     LOG(INFO) << "Connecting to " << server_addr.ToString();
     shared_ptr<Messenger> client_messenger(CreateMessenger("ClientSC"));
     Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
@@ -36,9 +34,8 @@ class MultiThreadedRpcTest : public RpcTestBase {
   }
 
   // Make RPC calls until we see a failure.
-  void HammerServer(Sockaddr server_addr, const char* method_name, const string& thread_name,
+  void HammerServer(Sockaddr server_addr, const char* method_name,
                     Status* last_result) {
-    SetThreadName(thread_name);
     shared_ptr<Messenger> client_messenger(CreateMessenger("ClientHS"));
     HammerServerWithMessenger(server_addr, method_name, last_result, client_messenger);
   }
@@ -64,8 +61,8 @@ class MultiThreadedRpcTest : public RpcTestBase {
   }
 };
 
-static void AssertShutdown(boost::thread* thread, const string& thread_name, const Status* status) {
-  ASSERT_STATUS_OK(ThreadJoiner(thread, thread_name).warn_every_ms(500).Join());
+static void AssertShutdown(kudu::Thread* thread, const Status* status) {
+  ASSERT_STATUS_OK(ThreadJoiner(thread).warn_every_ms(500).Join());
   string msg = status->ToString();
   ASSERT_TRUE(msg.find("Service unavailable") != string::npos ||
               msg.find("Network error") != string::npos)
@@ -80,12 +77,12 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   StartTestServer(&server_addr);
 
   const int kNumThreads = 4;
-  gscoped_ptr<boost::thread> threads[kNumThreads];
+  scoped_refptr<kudu::Thread> threads[kNumThreads];
   Status statuses[kNumThreads];
   for (int i = 0; i < kNumThreads; i++) {
-    ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this,
-        server_addr, GenericCalculatorService::kAddMethodName,
-        Substitute("client-thread-$0", i), &statuses[i]), &threads[i]));
+    ASSERT_STATUS_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+      &MultiThreadedRpcTest::HammerServer, this, server_addr,
+      GenericCalculatorService::kAddMethodName, &statuses[i], &threads[i]));
   }
 
   usleep(50000); // 50ms
@@ -96,7 +93,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   server_messenger_->Shutdown();
 
   for (int i = 0; i < kNumThreads; i++) {
-    AssertShutdown(threads[i].get(), "thread1", &statuses[i]);
+    AssertShutdown(threads[i].get(), &statuses[i]);
   }
 }
 
@@ -109,13 +106,11 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
 
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
 
-  gscoped_ptr<boost::thread> thread;
+  scoped_refptr<kudu::Thread> thread;
   Status status;
-  ASSERT_STATUS_OK(
-    StartThread(boost::bind(&MultiThreadedRpcTest::HammerServerWithMessenger, this, server_addr,
-                            GenericCalculatorService::kAddMethodName, &status, client_messenger),
-                &thread));
-
+  ASSERT_STATUS_OK(kudu::Thread::Create("test", "test",
+      &MultiThreadedRpcTest::HammerServerWithMessenger, this, server_addr,
+      GenericCalculatorService::kAddMethodName, &status, client_messenger, &thread));
 
   // Shut down the messenger after a very brief sleep. This often will race so that the
   // call gets submitted to the messenger before shutdown, but the negotiation won't have
@@ -125,7 +120,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
   client_messenger->Shutdown();
   client_messenger.reset();
 
-  ASSERT_STATUS_OK(ThreadJoiner(thread.get(), "client thread").warn_every_ms(500).Join());
+  ASSERT_STATUS_OK(ThreadJoiner(thread.get()).warn_every_ms(500).Join());
   ASSERT_TRUE(status.IsServiceUnavailable());
   string msg = status.ToString();
   SCOPED_TRACE(msg);
@@ -183,17 +178,13 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   ASSERT_STATUS_OK(service_pool_->Init(n_worker_threads_));
   server_messenger_->RegisterService(service_name_, service_pool_);
 
-  gscoped_ptr<boost::thread> threads[3];
+  scoped_refptr<kudu::Thread> threads[3];
   Status status[3];
   CountDownLatch latch(1);
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(StartThread(
-                       boost::bind(
-                         &MultiThreadedRpcTest::SingleCall, this, server_addr,
-                         GenericCalculatorService::kAddMethodName,
-                         Substitute("client thread $0", i),
-                         &status[i], &latch),
-                       &threads[i]));;
+    ASSERT_STATUS_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+      &MultiThreadedRpcTest::SingleCall, this, server_addr,
+      GenericCalculatorService::kAddMethodName, &status[i], &latch, &threads[i]));
   }
 
   // One should immediately fail due to backpressure. The latch is only initialized
@@ -206,8 +197,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   server_messenger_->Shutdown();
 
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get(), Substitute("client thread $0", i))
-                     .warn_every_ms(500).Join());
+    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get()).warn_every_ms(500).Join());
   }
 
   // Verify that one error was due to backpressure.
@@ -246,10 +236,12 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   StartTestServer(&server_addr);
 
   // Start a number of threads which just hammer the server with TCP connections.
-  vector<boost::thread*> threads;
-  ElementDeleter d(&threads);
+  vector<scoped_refptr<kudu::Thread> > threads;
   for (int i = 0; i < 8; i++) {
-    threads.push_back(new boost::thread(&HammerServerWithTCPConns, server_addr));
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+        &HammerServerWithTCPConns, server_addr, &new_thread));
+    threads.push_back(new_thread);
   }
 
   // Sleep until the server has started to actually accept some connections from the
@@ -265,8 +257,8 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
-  BOOST_FOREACH(boost::thread* t, threads) {
-    ASSERT_STATUS_OK(ThreadJoiner(t, "TCP connector thread").warn_every_ms(500).Join());
+  BOOST_FOREACH(scoped_refptr<kudu::Thread>& t, threads) {
+    ASSERT_STATUS_OK(ThreadJoiner(t.get()).warn_every_ms(500).Join());
   }
 }
 

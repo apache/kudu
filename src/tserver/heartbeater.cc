@@ -3,11 +3,11 @@
 #include "tserver/heartbeater.h"
 
 #include <boost/foreach.hpp>
-#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "gutil/strings/substitute.h"
 #include "master/master.h"
 #include "master/master.proxy.h"
@@ -16,10 +16,10 @@
 #include "tserver/tablet_server_options.h"
 #include "tserver/ts_tablet_manager.h"
 #include "util/countdown_latch.h"
+#include "util/thread.h"
 #include "util/monotime.h"
 #include "util/net/net_util.h"
 #include "util/status.h"
-#include "util/thread_util.h"
 
 DEFINE_int32(heartbeat_rpc_timeout_ms, 15000,
              "Timeout used for the TS->Master heartbeat RPCs. "
@@ -74,7 +74,7 @@ class Heartbeater::Thread {
   TabletServer* const server_;
 
   // The actual running thread (NULL before it is started)
-  gscoped_ptr<boost::thread> thread_;
+  scoped_refptr<kudu::Thread> thread_;
 
   // RPC proxy to the master.
   gscoped_ptr<master::MasterServiceProxy> proxy_;
@@ -285,14 +285,15 @@ void Heartbeater::Thread::RunThread() {
 }
 
 bool Heartbeater::Thread::IsCurrentThread() const {
-  return thread_ && thread_->get_id() == boost::this_thread::get_id();
+  return thread_.get() == kudu::Thread::current_thread();
 }
 
 Status Heartbeater::Thread::Start() {
   CHECK(thread_ == NULL);
 
   run_latch_.Reset(1);
-  return StartThread(boost::bind(&Heartbeater::Thread::RunThread, this), &thread_);
+  return kudu::Thread::Create("heartbeater", "heartbeat",
+      &Heartbeater::Thread::RunThread, this, &thread_);
 }
 
 Status Heartbeater::Thread::Stop() {
@@ -301,8 +302,8 @@ Status Heartbeater::Thread::Stop() {
   }
 
   run_latch_.CountDown();
-  RETURN_NOT_OK(ThreadJoiner(thread_.get(), "heartbeat thread").Join());
-  thread_.reset();
+  RETURN_NOT_OK(ThreadJoiner(thread_.get()).Join());
+  thread_ = NULL;
   return Status::OK();
 }
 

@@ -18,6 +18,7 @@
 #include "server/webserver.h"
 #include "server/server_base_options.h"
 #include "server/server_base.pb.h"
+#include "util/thread.h"
 #include "util/env.h"
 #include "util/metrics.h"
 #include "util/net/sockaddr.h"
@@ -47,6 +48,7 @@ ServerBase::ServerBase(const ServerBaseOptions& options,
   } else {
     clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
   }
+  CHECK_OK(StartThreadInstrumentation(metric_registry_.get(), web_server_.get()));
 }
 
 ServerBase::~ServerBase() {

@@ -12,6 +12,7 @@
 // - Added ThreadJoiner.
 // - Added prctl(PR_SET_NAME) to name threads.
 // - Added current_thread() abstraction using TLS.
+// - Used GoogleOnce to make thread_manager initialization lazy.
 
 #include "util/thread.h"
 
@@ -28,6 +29,7 @@
 
 #include "gutil/atomicops.h"
 #include "gutil/mathlimits.h"
+#include "gutil/once.h"
 #include "gutil/strings/substitute.h"
 #include "util/debug-util.h"
 #include "util/errno.h"
@@ -62,7 +64,10 @@ __thread Thread* Thread::tls_ = NULL;
 // that a race between the end of the process's main thread (and therefore the destruction
 // of thread_manager) and the end of a thread that tries to remove itself from the
 // manager after the destruction can be avoided.
-shared_ptr<ThreadMgr> thread_manager;
+static shared_ptr<ThreadMgr> thread_manager;
+
+// Controls the single (lazy) initialization of thread_manager.
+static GoogleOnceType once = GOOGLE_ONCE_INIT;
 
 // A singleton class that tracks all live threads, and groups them together for easy
 // auditing. Used only by Thread.
@@ -249,14 +254,12 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args,
   }
 }
 
-// Not thread-safe.
-void InitThreading() {
-  if (thread_manager.get() == NULL) {
-    thread_manager.reset(new ThreadMgr());
-  }
+static void InitThreading() {
+  thread_manager.reset(new ThreadMgr());
 }
 
 Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
+  GoogleOnceInit(&once, &InitThreading);
   return thread_manager->StartInstrumentation(metric, web);
 }
 
@@ -348,9 +351,6 @@ static void SetThreadName(const string& name, int64 tid) {
 
 Status Thread::StartThread(const std::string& category, const std::string& name,
                            const ThreadFunctor& functor, scoped_refptr<Thread> *holder) {
-  DCHECK(thread_manager.get() != NULL)
-      << "Thread created before InitThreading called";
-
   Atomic64 c_p_tid = UNINITIALISED_THREAD_ID;
 
   // Temporary reference for the duration of this function.
@@ -390,6 +390,7 @@ void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
   string name = strings::Substitute("$0-$1", name_, system_tid);
 
   // Take an additional reference to the thread manager, which we'll need below.
+  GoogleOnceInit(&once, &InitThreading);
   shared_ptr<ThreadMgr> thread_mgr_ref = thread_manager;
 
   // Set up the TLS.

@@ -2,17 +2,17 @@
 #ifndef KUDU_TEST_GRAPH_COLLECTOR_H
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
-#include <boost/thread/thread.hpp>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <string>
 
-#include "gutil/gscoped_ptr.h"
+#include "gutil/ref_counted.h"
 #include "gutil/macros.h"
 #include "gutil/walltime.h"
 #include "util/countdown_latch.h"
 #include "util/faststring.h"
 #include "util/pthread_spinlock.h"
+#include "util/thread.h"
 
 namespace kudu {
 
@@ -66,7 +66,7 @@ class TimeSeriesCollector {
   SeriesMap series_map_;
   mutable boost::mutex series_lock_;
 
-  gscoped_ptr<boost::thread> dumper_thread_;
+  scoped_refptr<kudu::Thread> dumper_thread_;
 
   // Latch used to stop the dumper_thread_. When the thread is started,
   // this is set to 1, and when the thread should exit, it is counted down.

@@ -13,13 +13,14 @@
 #include <string>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "gutil/strings/substitute.h"
 #include "rpc/messenger.h"
+#include "util/thread.h"
 #include "util/net/sockaddr.h"
 #include "util/net/socket.h"
 #include "util/metrics.h"
 #include "util/status.h"
-#include "util/thread_util.h"
 
 using google::protobuf::Message;
 using std::tr1::shared_ptr;
@@ -46,15 +47,15 @@ AcceptorPool::~AcceptorPool() {
 }
 
 Status AcceptorPool::Init(int num_threads) {
-  try {
-    for (int i = 0; i < num_threads; i++) {
-      threads_.push_back(shared_ptr<boost::thread>(
-          new boost::thread(boost::bind(&AcceptorPool::RunThread, this))));
+  for (int i = 0; i < num_threads; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    Status s = kudu::Thread::Create("acceptor pool", "acceptor",
+        &AcceptorPool::RunThread, this, &new_thread);
+    if (!s.ok()) {
+      Shutdown();
+      return s;
     }
-  } catch(const boost::thread_resource_error &exception) {
-    Shutdown();
-    return Status::RuntimeError(string("boost thread creation error: ") +
-                                exception.what());
+    threads_.push_back(new_thread);
   }
   return Status::OK();
 }
@@ -72,8 +73,8 @@ void AcceptorPool::Shutdown() {
               strings::Substitute("Could not shut down acceptor socket on $0",
                                   bind_address_.ToString()));
 
-  BOOST_FOREACH(const shared_ptr<boost::thread>& thread, threads_) {
-    CHECK_OK(ThreadJoiner(thread.get(), "acceptor thread").Join());
+  BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads_) {
+    CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
   threads_.clear();
 }
