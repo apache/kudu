@@ -9,6 +9,7 @@
 // - Fixes for cpplint.
 // - Added spinlock for protection against KUDU-11.
 // - Replaced boost exception throwing on thread creation with status.
+// - Added ThreadJoiner.
 
 #ifndef KUDU_UTIL_THREAD_H
 #define KUDU_UTIL_THREAD_H
@@ -27,7 +28,61 @@
 namespace kudu {
 
 class MetricRegistry;
+class Thread;
 class Webserver;
+
+// TODO: temporary hack to avoid collisions with thread_util.{cc,h}
+#define ThreadJoiner TJoiner
+
+// Utility to join on a thread, printing warning messages if it
+// takes too long. For example:
+//
+//   ThreadJoiner(&my_thread, "processing thread")
+//     .warn_after_ms(1000)
+//     .warn_every_ms(5000)
+//     .Join();
+//
+// TODO: would be nice to offer a way to use ptrace() or signals to
+// dump the stack trace of the thread we're trying to join on if it
+// gets stuck. But, after looking for 20 minutes or so, it seems
+// pretty complicated to get right.
+class ThreadJoiner {
+ public:
+  explicit ThreadJoiner(const Thread* thread);
+
+  // Start emitting warnings after this many milliseconds.
+  ThreadJoiner& warn_after_ms(int ms);
+
+  // After the warnings after started, emit another warning at the
+  // given interval.
+  ThreadJoiner& warn_every_ms(int ms);
+
+  // If the thread has not stopped after this number of milliseconds, give up
+  // joining on it and return Status::Aborted.
+  //
+  // -1 (the default) means to wait forever trying to join.
+  ThreadJoiner& give_up_after_ms(int ms);
+
+  // Join the thread, subject to the above parameters. If the thread joining
+  // fails for any reason, returns RuntimeError. If it times out, returns
+  // Aborted.
+  Status Join();
+
+ private:
+  enum {
+    kDefaultWarnAfterMs = 1000,
+    kDefaultWarnEveryMs = 1000,
+    kDefaultGiveUpAfterMs = -1 // forever
+  };
+
+  const Thread* thread_;
+
+  int warn_after_ms_;
+  int warn_every_ms_;
+  int give_up_after_ms_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThreadJoiner);
+};
 
 // Thin wrapper around boost::thread that can register itself with the singleton ThreadMgr
 // (a private class implemented in thread.cc entirely, which tracks all live threads so
@@ -42,6 +97,7 @@ class Webserver;
 //
 // TODO: Consider allowing fragment IDs as category parameters.
 class Thread {
+  friend class ThreadJoiner;
  public:
   // This constructor pattern mimics that in boost::thread. There is
   // one constructor for each number of arguments that the thread
@@ -105,7 +161,7 @@ class Thread {
 
   // Blocks until this thread finishes execution. Once this method returns, the thread
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
-  void Join() const { thread_->join(); }
+  void Join() const { ThreadJoiner(this).Join(); }
 
   // The thread ID assigned to this thread by the operating system. If the OS does not
   // support retrieving the tid, returns Thread::INVALID_THREAD_ID.

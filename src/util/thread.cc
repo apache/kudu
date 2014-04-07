@@ -9,10 +9,13 @@
 // - Fixes for cpplint.
 // - Added spinlock for protection against KUDU-11.
 // - Replaced boost exception throwing on thread creation with status.
+// - Added ThreadJoiner.
 
 #include "util/thread.h"
 
+#include <algorithm>
 #include <boost/foreach.hpp>
+#include <boost/system/system_error.hpp>
 #include <map>
 #include <set>
 #include <sys/syscall.h>
@@ -21,6 +24,8 @@
 #include <vector>
 
 #include "gutil/atomicops.h"
+#include "gutil/mathlimits.h"
+#include "gutil/strings/substitute.h"
 #include "server/webserver.h"
 #include "util/debug-util.h"
 #include "util/errno.h"
@@ -249,6 +254,70 @@ void InitThreading() {
 
 Status StartThreadInstrumentation(MetricRegistry* registry, Webserver* webserver) {
   return thread_manager->StartInstrumentation(registry, webserver);
+}
+
+ThreadJoiner::ThreadJoiner(const Thread* thr)
+  : thread_(CHECK_NOTNULL(thr)),
+    warn_after_ms_(kDefaultWarnAfterMs),
+    warn_every_ms_(kDefaultWarnEveryMs),
+    give_up_after_ms_(kDefaultGiveUpAfterMs) {
+}
+
+ThreadJoiner& ThreadJoiner::warn_after_ms(int ms) {
+  warn_after_ms_ = ms;
+  return *this;
+}
+
+ThreadJoiner& ThreadJoiner::warn_every_ms(int ms) {
+  warn_every_ms_ = ms;
+  return *this;
+}
+
+ThreadJoiner& ThreadJoiner::give_up_after_ms(int ms) {
+  give_up_after_ms_ = ms;
+  return *this;
+}
+
+Status ThreadJoiner::Join() {
+  if (boost::this_thread::get_id() == thread_->thread_->get_id()) {
+    return Status::InvalidArgument("Can't join on own thread", thread_->name_);
+  }
+
+  int waited_ms = 0;
+  bool keep_trying = true;
+  while (keep_trying) {
+    if (waited_ms >= warn_after_ms_) {
+      LOG(WARNING) << "Waited for " << waited_ms << "ms trying to join with "
+                   << thread_->name_;
+    }
+
+    int remaining_before_giveup = MathLimits<int>::kMax;
+    if (give_up_after_ms_ != -1) {
+      remaining_before_giveup = give_up_after_ms_ - waited_ms;
+    }
+
+    int remaining_before_next_warn = warn_every_ms_;
+    if (waited_ms < warn_after_ms_) {
+      remaining_before_next_warn = warn_after_ms_ - waited_ms;
+    }
+
+    if (remaining_before_giveup < remaining_before_next_warn) {
+      keep_trying = false;
+    }
+
+    int wait_for = min(remaining_before_giveup, remaining_before_next_warn);
+    try {
+      if (thread_->thread_->timed_join(boost::posix_time::milliseconds(wait_for))) {
+        return Status::OK();
+      }
+    } catch(boost::system::system_error& e) {
+      return Status::RuntimeError(strings::Substitute("Error occured joining on $0",
+          thread_->name_), e.what());
+    }
+    waited_ms += wait_for;
+  }
+  return Status::Aborted(strings::Substitute("Timed out after $0ms joining on $1",
+                                             waited_ms, thread_->name_));
 }
 
 enum {
