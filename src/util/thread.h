@@ -8,6 +8,7 @@
 //   communication.
 // - Fixes for cpplint.
 // - Added spinlock for protection against KUDU-11.
+// - Replaced boost exception throwing on thread creation with status.
 
 #ifndef KUDU_UTIL_THREAD_H
 #define KUDU_UTIL_THREAD_H
@@ -110,6 +111,10 @@ class Thread {
   // support retrieving the tid, returns Thread::INVALID_THREAD_ID.
   int64_t tid() const { return tid_; }
 
+  // The status of the thread. If the thread failed to start during construction, it
+  // will be reflected here.
+  Status status() const { return status_; }
+
   static const int64_t INVALID_THREAD_ID = -1;
 
  private:
@@ -132,6 +137,9 @@ class Thread {
   // constructor returns from StartThread() the tid_ is guaranteed to be set either to a
   // non-negative integer, or INVALID_THREAD_ID.
   int64_t tid_;
+
+  // Status of thread construction.
+  Status status_;
 
   // Starts the thread running SuperviseThread(), and returns once that thread has
   // initialised and its TID read. Waits for notification from the started thread that

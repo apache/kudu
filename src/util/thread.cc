@@ -8,6 +8,7 @@
 //   communication.
 // - Fixes for cpplint.
 // - Added spinlock for protection against KUDU-11.
+// - Replaced boost exception throwing on thread creation with status.
 
 #include "util/thread.h"
 
@@ -33,6 +34,7 @@ using boost::mem_fn;
 using boost::mutex;
 using boost::shared_ptr;
 using boost::thread;
+using boost::thread_resource_error;
 using std::endl;
 using std::map;
 using std::stringstream;
@@ -278,9 +280,14 @@ void Thread::StartThread(const ThreadFunctor& functor) {
   Atomic64 c_p_tid = UNINITIALISED_THREAD_ID;
   Atomic32 p_c_assigned = THREAD_NOT_ASSIGNED;
 
-  thread_.reset(
-      new thread(&Thread::SuperviseThread, name_, category_, functor,
-                 &c_p_tid, &p_c_assigned));
+  try {
+    thread_.reset(
+        new thread(&Thread::SuperviseThread, name_, category_, functor,
+                   &c_p_tid, &p_c_assigned));
+  } catch(thread_resource_error &e) {
+    status_ = Status::RuntimeError(e.what());
+    return;
+  }
 
   // We've assigned into thread_; the child may now continue running.
   Release_Store(&p_c_assigned, THREAD_ASSIGNED);
@@ -293,6 +300,7 @@ void Thread::StartThread(const ThreadFunctor& functor) {
   tid_ = base::subtle::Acquire_Load(&c_p_tid);
 
   VLOG(2) << "Started thread " << tid_ << " - " << category_ << ":" << name_;
+  status_ = Status::OK();
 }
 
 void Thread::SuperviseThread(const string& name, const string& category,
