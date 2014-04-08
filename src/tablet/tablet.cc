@@ -392,7 +392,6 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   DCHECK(tx_ctx->op_id().IsInitialized()) << "TransactionContext OpId needed for anchoring";
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
-  result->set_type(OperationResultPB::MUTATE);
 
   // Validate the update.
   RowChangeListDecoder rcl_decoder(schema_, *mutate->changelist());

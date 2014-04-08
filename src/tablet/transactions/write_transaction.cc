@@ -142,11 +142,11 @@ Status LeaderWriteTransaction::Apply() {
   Status s;
   BOOST_FOREACH(const PreparedRowWrite *row, tx_ctx_->rows()) {
     switch (row->write_type()) {
-      case OperationResultPB::INSERT: {
+      case PreparedRowWrite::INSERT: {
         s = tablet->InsertUnlocked(tx_ctx(), row);
         break;
       }
-      case OperationResultPB::MUTATE: {
+      case PreparedRowWrite::MUTATE: {
         s = tablet->MutateRowUnlocked(tx_ctx(), row);
         break;
       }
@@ -154,7 +154,7 @@ Status LeaderWriteTransaction::Apply() {
     if (PREDICT_FALSE(!s.ok())) {
       WriteResponsePB::PerRowErrorPB* error = tx_ctx_->response()->add_per_row_errors();
       error->set_row_index(i);
-      error->set_is_insert(row->write_type() == OperationResultPB::INSERT);
+      error->set_is_insert(row->write_type() == PreparedRowWrite::INSERT);
       StatusToPB(s, error->mutable_error());
     }
     i++;
@@ -203,7 +203,6 @@ Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mr
         << "tx_id doesn't match the id of the ongoing transaction";
   }
   OperationResultPB* insert = result_pb_.add_inserts();
-  insert->set_type(OperationResultPB::INSERT);
   insert->add_mutated_stores()->set_mrs_id(mrs_id);
   tx_metrics_.successful_inserts++;
   return Status::OK();
@@ -211,14 +210,12 @@ Status WriteTransactionContext::AddInsert(const Timestamp &timestamp, int64_t mr
 
 void WriteTransactionContext::AddFailedInsert(const Status &status) {
   OperationResultPB* insert = result_pb_.add_inserts();
-  insert->set_type(OperationResultPB::INSERT);
   StatusToPB(status, insert->mutable_failed_status());
   failed_operations_++;
 }
 
 Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
                                             gscoped_ptr<OperationResultPB> result) {
-  DCHECK_EQ(OperationResultPB::MUTATE, result->type());
   if (PREDICT_FALSE(mvcc_tx_.get() != NULL)) {
     DCHECK_EQ(mvcc_tx_->timestamp(), timestamp)
         << "tx_id doesn't match the id of the ongoing transaction";
@@ -230,7 +227,6 @@ Status WriteTransactionContext::AddMutation(const Timestamp &timestamp,
 
 void WriteTransactionContext::AddFailedMutation(const Status &status) {
   OperationResultPB* mutation = result_pb_.add_mutations();
-  mutation->set_type(OperationResultPB::MUTATE);
   StatusToPB(status, mutation->mutable_failed_status());
   failed_operations_++;
 }
@@ -279,7 +275,7 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row,
       changelist_(NULL),
       probe_(probe.Pass()),
       row_lock_(lock.Pass()),
-      op_type_(OperationResultPB::INSERT) {
+      op_type_(INSERT) {
 }
 
 PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
@@ -291,7 +287,7 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
       changelist_(changelist),
       probe_(probe.Pass()),
       row_lock_(lock.Pass()),
-      op_type_(OperationResultPB::MUTATE) {
+      op_type_(MUTATE) {
 }
 
 }  // namespace tablet

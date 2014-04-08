@@ -339,6 +339,11 @@ class LeaderWriteTransaction : public LeaderTransaction {
 // of this class.
 class PreparedRowWrite {
  public:
+  enum Type {
+    INSERT,
+    MUTATE
+  };
+
   const ConstContiguousRow* row() const {
     return row_;
   }
@@ -359,7 +364,7 @@ class PreparedRowWrite {
     return row_lock_.get();
   }
 
-  const OperationResultPB::TxOperationTypePB write_type() const {
+  const Type write_type() const {
     return op_type_;
   }
 
@@ -384,8 +389,7 @@ class PreparedRowWrite {
 
   const gscoped_ptr<RowSetKeyProbe> probe_;
   const gscoped_ptr<ScopedRowLock> row_lock_;
-  const OperationResultPB::TxOperationTypePB op_type_;
-
+  const Type op_type_;
 };
 
 }  // namespace tablet

@@ -91,11 +91,9 @@ class LogTest : public LogTestBase {
     TxResultPB* result = commit->mutable_result();
 
     OperationResultPB* insert = result->add_inserts();
-    insert->set_type(OperationResultPB::INSERT);
     insert->add_mutated_stores()->set_mrs_id(kTargetMrsId);
 
     OperationResultPB* mutate = result->add_mutations();
-    mutate->set_type(OperationResultPB::MUTATE);
     MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_delta_id(kTargetDeltaId);
     target->set_rs_id(kTargetRsId);
