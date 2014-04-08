@@ -176,7 +176,7 @@ class MemRowSet : public RowSet,
                            const RowChangeList &delta,
                            const consensus::OpId& op_id,
                            ProbeStats* stats,
-                           MutationResultPB *result) OVERRIDE;
+                           OperationResultPB *result) OVERRIDE;
 
   // Return the number of entries in the memrowset.
   // NOTE: this requires iterating all data, and is thus

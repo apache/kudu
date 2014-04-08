@@ -31,7 +31,7 @@ class MockRowSet : public RowSet {
                            const RowChangeList &update,
                            const consensus::OpId& op_id_,
                            ProbeStats* stats,
-                           MutationResultPB *result) OVERRIDE {
+                           OperationResultPB *result) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

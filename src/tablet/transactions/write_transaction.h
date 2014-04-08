@@ -96,7 +96,7 @@ class WriteTransactionContext : public TransactionContext {
   // tablet id, the mvcc transaction id, the mutation that was applied
   // and the delta stores that were mutated.
   Status AddMutation(const Timestamp &tx_id,
-                     gscoped_ptr<MutationResultPB> result);
+                     gscoped_ptr<OperationResultPB> result);
 
   // Adds a missed mutation to this TransactionContext.
   // Missed mutations are the ones that are applied on Phase 2 of compaction
@@ -107,7 +107,7 @@ class WriteTransactionContext : public TransactionContext {
   Status AddMissedMutation(const Timestamp& timestamp,
                            gscoped_ptr<RowwiseRowBlockPB> row_key,
                            const RowChangeList& changelist,
-                           gscoped_ptr<MutationResultPB> result);
+                           gscoped_ptr<OperationResultPB> result);
 
   // Adds a failed mutation to this TransactionContext, including the status
   // explaining why it failed.
@@ -359,7 +359,7 @@ class PreparedRowWrite {
     return row_lock_.get();
   }
 
-  const TxOperationPB::TxOperationTypePB write_type() const {
+  const OperationResultPB::TxOperationTypePB write_type() const {
     return op_type_;
   }
 
@@ -384,7 +384,7 @@ class PreparedRowWrite {
 
   const gscoped_ptr<RowSetKeyProbe> probe_;
   const gscoped_ptr<ScopedRowLock> row_lock_;
-  const TxOperationPB::TxOperationTypePB op_type_;
+  const OperationResultPB::TxOperationTypePB op_type_;
 
 };
 

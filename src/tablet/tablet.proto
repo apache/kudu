@@ -4,33 +4,22 @@ package kudu.tablet;
 import "common/wire_protocol.proto";
 import "server/metadata.proto";
 
-// Stores the id of the MemRowSet (for MemRowSet mutations) or of the row set
-// *and* delta for DeltaRowStore mutations.
-message MutationTargetPB {
-  optional int64 mrs_id = 1;
-  optional int64 rs_id = 2;
-  optional int64 delta_id = 3;
-}
+// Stores the id of the MemRowSet (for inserts or mutations against MRS)
+// or of the (row set, delta ID) pair for mutations against a DiskRowSet.
+message MemStoreTargetPB {
+  // -1 defaults here are so that, if a caller forgets to check has_mrs_id(),
+  // they won't accidentally see real-looking (i.e 0) IDs.
 
-// Keeps a set of mutations applied to a single key on mutate. Usually only
-// contains one entry in 'mutations' but may contain two if the mutation went
-// through a DuplicatingRowSet.
-message MutationResultPB {
+  // Either this field...
+  optional int64 mrs_id = 1 [ default = -1];
 
-  enum MutationTypePB {
-    NO_MUTATION = 0;
-    MRS_MUTATION = 1;
-    DELTA_MUTATION = 2;
-    DUPLICATED_MUTATION = 3;
-    FAILED_MUTATION = 4;
-  }
-
-  required MutationTypePB type = 1;
-  repeated MutationTargetPB mutations = 2;
+  // ... or both of the following fields are set.
+  optional int64 rs_id = 2 [ default = -1 ];
+  optional int64 delta_id = 3 [ default = -1 ];
 }
 
 // Stores the result of an Insert or Mutate.
-message TxOperationPB {
+message OperationResultPB {
 
   enum TxOperationTypePB {
     INSERT = 0;
@@ -42,19 +31,21 @@ message TxOperationPB {
   required TxOperationTypePB type = 1;
   // set if this particular operation failed
   optional kudu.AppStatusPB failed_status = 2;
-  // set if this is an InsertOp
-  optional int64 mrs_id = 3;
-  // set if this is a MutationOp
-  optional MutationResultPB mutation_result = 4;
+
+  // The stores that the operation affected.
+  // For INSERTs, this will always be just one store.
+  // For MUTATE, it may be more than one if the mutation arrived during
+  // a compaction.
+  repeated MemStoreTargetPB mutated_stores = 3;
 }
 
 // The final result of a transaction, including the result of each individual
 // operation.
 message TxResultPB {
   // all the inserts in this transaction
-  repeated TxOperationPB inserts = 1;
+  repeated OperationResultPB inserts = 1;
   // all the mutations in this transaction
-  repeated TxOperationPB mutations = 2;
+  repeated OperationResultPB mutations = 2;
 }
 
 // Delta statistics for a flushed deltastore

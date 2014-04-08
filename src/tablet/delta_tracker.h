@@ -39,8 +39,8 @@ using std::tr1::shared_ptr;
 class DeltaCompactionInput;
 class DeltaMemStore;
 class DeltaFileReader;
-class MutationResultPB;
-class MutationTargetPB;
+class OperationResultPB;
+class MemStoreTargetPB;
 struct ProbeStats;
 
 // The DeltaTracker is the part of a DiskRowSet which is responsible for
@@ -97,7 +97,7 @@ class DeltaTracker {
                 rowid_t row_idx,
                 const RowChangeList &update,
                 const consensus::OpId& op_id,
-                MutationResultPB* result);
+                OperationResultPB* result);
 
   // Check if the given row has been deleted -- i.e if the most recent
   // delta for this row is a deletion.

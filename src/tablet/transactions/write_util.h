@@ -45,9 +45,6 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
                                        const vector<const uint8_t *>& to_mutate,
                                        const vector<const RowChangeList *>& mutations);
 
-// Calculates type of the mutation based on the set fields and number of targets.
-MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result);
-
 // Return a row that is the Projection of the 'user_row_ptr' on the 'tablet_schema'.
 // The 'tablet_schema' pointer will be referenced by the returned row, so must
 // remain valid as long as the row.

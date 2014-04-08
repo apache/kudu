@@ -102,7 +102,7 @@ class TestCompaction : public KuduRowSetTest {
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;
-      MutationResultPB result;
+      OperationResultPB result;
       ASSERT_STATUS_OK(rowset->MutateRow(tx.timestamp(),
                                          probe,
                                          RowChangeList(update_buf),
@@ -129,7 +129,7 @@ class TestCompaction : public KuduRowSetTest {
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;
-      MutationResultPB result;
+      OperationResultPB result;
       ASSERT_STATUS_OK(rowset->MutateRow(tx.timestamp(),
                                          probe,
                                          RowChangeList(update_buf),

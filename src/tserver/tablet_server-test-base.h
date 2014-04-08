@@ -53,7 +53,6 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
-using kudu::tablet::TxOperationPB;
 
 namespace kudu {
 namespace tserver {

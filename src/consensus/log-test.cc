@@ -16,9 +16,8 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using tserver::WriteRequestPB;
 using tablet::TxResultPB;
-using tablet::TxOperationPB;
-using tablet::MutationResultPB;
-using tablet::MutationTargetPB;
+using tablet::OperationResultPB;
+using tablet::MemStoreTargetPB;
 
 extern const char* kTestTablet;
 
@@ -91,20 +90,15 @@ class LogTest : public LogTestBase {
 
     TxResultPB* result = commit->mutable_result();
 
-    TxOperationPB* insert = result->add_inserts();
-    insert->set_type(TxOperationPB::INSERT);
-    insert->set_mrs_id(kTargetMrsId);
+    OperationResultPB* insert = result->add_inserts();
+    insert->set_type(OperationResultPB::INSERT);
+    insert->add_mutated_stores()->set_mrs_id(kTargetMrsId);
 
-    TxOperationPB* mutate = result->add_mutations();
-    mutate->set_type(TxOperationPB::MUTATE);
-
-    MutationResultPB* mutation_result = mutate->mutable_mutation_result();
-
-    MutationTargetPB* target = mutation_result->add_mutations();
+    OperationResultPB* mutate = result->add_mutations();
+    mutate->set_type(OperationResultPB::MUTATE);
+    MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_delta_id(kTargetDeltaId);
     target->set_rs_id(kTargetRsId);
-
-    mutation_result->set_type(MutationType(mutation_result));
 
     ASSERT_STATUS_OK(log_->Append(&log_entry));
   }

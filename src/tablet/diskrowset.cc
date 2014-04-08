@@ -501,7 +501,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
                              const RowChangeList &update,
                              const consensus::OpId& op_id,
                              ProbeStats* stats,
-                             MutationResultPB* result) {
+                             OperationResultPB* result) {
   CHECK(open_);
 
   rowid_t row_idx;

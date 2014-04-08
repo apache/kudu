@@ -172,7 +172,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
                             const RowChangeList &delta,
                             const consensus::OpId& op_id,
                             ProbeStats* stats,
-                            MutationResultPB *result) {
+                            OperationResultPB *result) {
   {
     btree::PreparedMutation<btree::BTreeTraits> mutation(probe.encoded_key_slice());
     mutation.Prepare(&tree_);
@@ -198,7 +198,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
     // the appended mutation.
     mut->AppendToListAtomic(&row.header_->redo_head);
 
-    MutationTargetPB* target = result->add_mutations();
+    MemStoreTargetPB* target = result->add_mutated_stores();
     target->set_mrs_id(id_);
   }
 

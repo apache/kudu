@@ -52,7 +52,7 @@ using kudu::metadata::TabletMetadata;
 using kudu::metadata::TabletSuperBlockPB;
 using kudu::metadata::RowSetMetadata;
 using kudu::server::Clock;
-using kudu::tablet::MutationResultPB;
+using kudu::tablet::OperationResultPB;
 using kudu::tablet::PreparedRowWrite;
 using kudu::tablet::Tablet;
 using kudu::tserver::AlterSchemaRequestPB;
@@ -159,24 +159,9 @@ class TabletBootstrap {
   // Plays a single mutation. 'applied_mutation' indicates whether the mutation
   // was actually applied or was skipped.
   Status PlayMutation(const MutationInput& mutation_input,
-                      const TxOperationPB& op_result,
-                      bool* applied_mutation);
+                      const OperationResultPB& op_result);
 
-  // Checks if the MRS that is the target of this mutation has
-  // been flushed and applies it otherwise. 'applied_mutation'
-  // indicates whether the mutation was actually applied or was
-  // skipped.
-  Status HandleMRSMutation(const MutationInput& mutation_input,
-                           const MutationTargetPB& mutation_target,
-                           bool* applied_mutation);
-
-  // Checks if the DMS that is the target of this mutation has
-  // been flushed and applies it otherwise. 'applied_mutation'
-  // indicates whether the mutation was actually applied or was
-  // skipped.
-  Status HandleDMSMutation(const MutationInput& mutation_input,
-                           const MutationTargetPB& mutation_target,
-                           bool* applied_mutation);
+  bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target);
 
   // Applies a mutation
   Status ApplyMutation(const MutationInput& mutation_input);
@@ -767,6 +752,14 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   gscoped_ptr<ScopedTransaction> mvcc_tx(new ScopedTransaction(tablet_->mvcc_manager()));
   tx_ctx.set_current_mvcc_tx(mvcc_tx.Pass());
 
+  // Use committed OpId for mem store anchoring.
+  tx_ctx.mutable_op_id()->CopyFrom(replicate_op->id());
+
+  // Take the lock for the whole batch of updates.
+  gscoped_ptr<shared_lock<rw_semaphore> > component_lock(
+    new shared_lock<rw_semaphore>(*tablet_->component_lock()));
+  tx_ctx.set_component_lock(component_lock.Pass());
+
   int32_t last_insert_op_idx = 0;
   if (write->has_to_insert_rows()) {
     RETURN_NOT_OK(PlayInsertions(&tx_ctx,
@@ -867,24 +860,16 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
   RETURN_NOT_OK_PREPEND(SchemaFromPB(schema_pb, &inserts_schema),
                         "Couldn't decode client schema");
 
-
-
-
-  // TODO: this makes a needless copy here, even though we know that we won't
-  // have concurrent schema change. However, we can't use schema_ptr since we don't
-  // hold component_lock yet here.
-  Schema tablet_schema(tablet_->schema());
-
   arena_.Reset();
   vector<DecodedRowOperation> decoded_ops;
-  RowOperationsPBDecoder dec(&ops_pb, &inserts_schema, &tablet_schema, &arena_);
+  RowOperationsPBDecoder dec(&ops_pb, &inserts_schema, tablet_->schema_ptr(), &arena_);
   RETURN_NOT_OK_PREPEND(dec.DecodeOperations(&decoded_ops),
                         Substitute("Could not decode row operations: $0",
                                    ops_pb.ShortDebugString()));
 
   int32_t insert_idx = 0;
   BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
-    TxOperationPB op_result = result.inserts(insert_idx++);
+    OperationResultPB op_result = result.inserts(insert_idx++);
     // check if the insert failed in the original transaction
     if (PREDICT_FALSE(op_result.has_failed_status())) {
       if (VLOG_IS_ON(1)) {
@@ -896,26 +881,23 @@ Status TabletBootstrap::PlayInsertions(WriteTransactionContext* tx_ctx,
       tx_ctx->AddFailedInsert(Status::RuntimeError("Row insert failed previously."));
       continue;
     }
-    if (PREDICT_FALSE(!op_result.has_mrs_id())) {
+    if (PREDICT_FALSE(op_result.mutated_stores_size() != 1 ||
+                      !op_result.mutated_stores(0).has_mrs_id())) {
       return Status::Corruption(Substitute("Insert operation result must have an mrs_id: $0",
                                            op_result.ShortDebugString()));
     }
     // check if the insert is already flushed
-    if (op_result.mrs_id() <= tablet_->metadata()->last_durable_mrs_id()) {
+    if (WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
       if (VLOG_IS_ON(1)) {
         VLOG(1) << "Skipping insert that was already flushed. OpId: "
             << committed_op_id.DebugString() << " insert index: "
-            << insert_idx - 1 << " flushed to: " << op_result.mrs_id()
+            << insert_idx - 1 << " flushed to: " << op_result.mutated_stores(0).mrs_id()
             << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
       }
       tx_ctx->AddFailedInsert(Status::AlreadyPresent("Row to insert was already flushed."));
       continue;
     }
     // Note: Using InsertUnlocked as the old API will eventually disappear
-
-    gscoped_ptr<shared_lock<rw_semaphore> > component_lock(
-      new shared_lock<rw_semaphore>(*tablet_->component_lock()));
-    tx_ctx->set_component_lock(component_lock.Pass());
 
     const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(
       new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
@@ -956,15 +938,10 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
                             &mutates_schema,
                             &row_key_block));
 
-  // TODO(perf): we're copying the schema here for every update which is
-  // overkill. But schema_ptr() will throw an assertion since we don't
-  // hold the component lock here. Perhaps we should take the component lock
-  // even though we don't strictly need it for concurrency control.
-  Schema tablet_schema = tablet_->schema();
-  DeltaProjector delta_projector(&mutates_schema, &tablet_schema);
+  DeltaProjector delta_projector(&mutates_schema, tablet_->schema_ptr());
   if (!delta_projector.is_identity()) {
     RETURN_NOT_OK(tablet_->schema().VerifyProjectionCompatibility(mutates_schema));
-    RETURN_NOT_OK(mutates_schema.GetProjectionMapping(tablet_->schema(), &delta_projector));
+    RETURN_NOT_OK(mutates_schema.GetProjectionMapping(*tablet_->schema_ptr(), &delta_projector));
   }
 
   Schema mutates_key_schema = mutates_schema.CreateKeyProjection();
@@ -978,7 +955,7 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
 
   uint32_t mutate_op_idx = first_mutate_op_idx;
   BOOST_FOREACH(const uint8_t* row_key_ptr, row_key_block) {
-    const TxOperationPB& op_result = result.mutations(mutate_op_idx++);
+    const OperationResultPB& op_result = result.mutations(mutate_op_idx++);
     // check if the mutation failed in the original transaction
     if (PREDICT_FALSE(op_result.has_failed_status())) {
       if (VLOG_IS_ON(1)) {
@@ -999,159 +976,90 @@ Status TabletBootstrap::PlayMutations(WriteTransactionContext* tx_ctx,
                                  mutates_schema,
                                  row_key_ptr,
                                  mutation);
-    bool applied_mutation = false;
-    RETURN_NOT_OK(PlayMutation(mutation_input, op_result, &applied_mutation));
-    // FIXME: Not checking value of applied_mutation result. See KUDU-159.
+    RETURN_NOT_OK(PlayMutation(mutation_input, op_result));
   }
   return Status::OK();
 }
 
 Status TabletBootstrap::PlayMutation(const MutationInput& mutation_input,
-                                     const TxOperationPB& op_result,
-                                     bool* applied_mutation) {
-
-  switch (op_result.mutation_result().type()) {
-    // With MRS_MUTATIONs we do much like with inserts, i.e. we check if the
-    // MRS has not been flushed and apply it otherwise.
-    case MutationResultPB::MRS_MUTATION:
-    {
-      if (PREDICT_FALSE(op_result.mutation_result().mutations_size() != 1)) {
-        return Status::Corruption(Substitute("MRS Mutations must only have one mutation: $0",
-                                             op_result.ShortDebugString()));
-      }
-      const MutationTargetPB& mutation_target = op_result.mutation_result().mutations(0);
-      RETURN_NOT_OK(HandleMRSMutation(mutation_input, mutation_target, applied_mutation));
-      return Status::OK();
-    }
-    // With DELTA_MUTATIONs we check if the delta of the rs in question has
-    // been flushed and apply it otherwise.
-    case MutationResultPB::DELTA_MUTATION:
-    {
-      if (PREDICT_FALSE(op_result.mutation_result().mutations_size() != 1)) {
-        return Status::Corruption(Substitute("DMS Mutations must only have one mutation: $0",
-                                             op_result.ShortDebugString()));
-      }
-      const MutationTargetPB& mutation_target = op_result.mutation_result().mutations(0);
-      RETURN_NOT_OK(HandleDMSMutation(mutation_input, mutation_target, applied_mutation));
-      return Status::OK();
-    }
-    // Duplicated mutations happen mid compaction, and either one has been
-    // flushed or none have been flushed.
-    case MutationResultPB::DUPLICATED_MUTATION:
-    {
-      if (PREDICT_FALSE(op_result.mutation_result().mutations_size() != 2)) {
-        return Status::Corruption(Substitute("Duplicated Mutations must have two mutations: $0",
-                                             op_result.ShortDebugString()));
-      }
-
-      // The first mutation in a duplicated mutation might not have been flushed when
-      // a node fails mid compaction/flush, after swapping in the duplicating rowsets
-      // but before flushing the new metadata. If the first mutation was applied
-      // we skip the second.
-      const MutationTargetPB& first_mutation_target = op_result.mutation_result().mutations(0);
-      if (first_mutation_target.has_mrs_id()) {
-        RETURN_NOT_OK(HandleMRSMutation(mutation_input, first_mutation_target, applied_mutation));
-      } else {
-        RETURN_NOT_OK(HandleDMSMutation(mutation_input, first_mutation_target, applied_mutation));
-      }
-
-      if (*applied_mutation) return Status::OK();
-
-      // If the first mutation was not applied we remove the result as duplicated
-      // mutations turn into regular mutations on replay.
-      // We need to const cast the result to remove the last mutation result.
-      const_cast<TxResultPB&>(mutation_input.tx_ctx->Result()).mutable_mutations()->RemoveLast();
-
-      // If the first duplicated mutation was not applied we try to apply the second
-      const MutationTargetPB& second_mutation_target = op_result.mutation_result().mutations(1);
-      if (second_mutation_target.has_mrs_id()) {
-        RETURN_NOT_OK(HandleMRSMutation(mutation_input, second_mutation_target, applied_mutation));
-      } else {
-        RETURN_NOT_OK(HandleDMSMutation(mutation_input, second_mutation_target, applied_mutation));
-      }
-      return Status::OK();
-    }
-    default:
-      return Status::IllegalState(Substitute("Unsupported mutation type: $0",
-                                             op_result.ShortDebugString()));
+                                     const OperationResultPB& op_result) {
+  int num_mutated_stores = op_result.mutated_stores_size();
+  if (PREDICT_FALSE(num_mutated_stores == 0 || num_mutated_stores > 2)) {
+    return Status::Corruption(Substitute("Mutations must have one or two mutated_stores: $0",
+                                         op_result.ShortDebugString()));
   }
-  LOG(DFATAL);
-  return Status::IllegalState("");
-}
 
-Status TabletBootstrap::HandleMRSMutation(const MutationInput& mutation_input,
-                                          const MutationTargetPB& mutation_target,
-                                          bool* applied_mutation) {
-  if (mutation_target.mrs_id() <= tablet_->metadata()->last_durable_mrs_id()) {
-    string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
-    if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Skipping MRS_MUTATION that was already flushed. OpId: "
-          << mutation_input.committed_op_id.DebugString()
-          << " insert index: " << mutation_input.mutation_op_block_index
-          << " flushed to: " << mutation_target.mrs_id()
-          << " latest durable mrs id: " << mutation_target.mrs_id()
-          << " mutation: " << mutation;
+
+  // The mutation may have been duplicated, so we'll check whether any of the
+  // output targets was "unflushed".
+  int num_unflushed_stores = 0;
+  BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
+    if (!WasStoreAlreadyFlushed(mutated_store)) {
+      num_unflushed_stores++;
+    } else {
+      if (VLOG_IS_ON(1)) {
+        string mutation = mutation_input.changelist->ToString(*tablet_->schema_ptr());
+        VLOG(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
+                << " that was already flushed. "
+                << "OpId: " << mutation_input.tx_ctx->op_id().DebugString();
+      }
     }
-    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(
-                                               Substitute("MRS mutation "
-                                                          "flushed: $0", mutation)));
-    *applied_mutation = false;
+  }
+
+  if (num_unflushed_stores == 0) {
+    // The mutation was fully flushed.
+    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent("Update was already flushed."));
     return Status::OK();
   }
+
+  if (num_unflushed_stores == 2) {
+    // 18:47 < dralves> off the top of my head, if we crashed before writing the meta
+    //                  at the end of a flush/compation then both mutations could
+    //                  potentually be considered unflushed
+    // This case is not currently covered by any tests -- we need to add test coverage
+    // for this. See KUDU-218. It's likely the correct behavior is just to apply the edit,
+    // ie not fatal below.
+    LOG(DFATAL) << "TODO: add test coverage for case where op is unflushed in both duplicated "
+                << "targets";
+  }
+
   RETURN_NOT_OK(ApplyMutation(mutation_input));
-  *applied_mutation = true;
   return Status::OK();
 }
 
-Status TabletBootstrap::HandleDMSMutation(const MutationInput& mutation_input,
-                                          const MutationTargetPB& mutation_target,
-                                          bool* applied_mutation) {
-  // TODO right now this is using GetRowSetForTests which goes through
-  // the rs's every time. Just adding a method that gets row sets by id
-  // is not enough. We really need to take a snapshot of the initial
-  // metadata with regard to which row sets are alive at the time. By
-  // doing this we decouple replaying from the current state of the tablet,
-  // which allows us to do compactions/flushes on replay.
-  const RowSetMetadata* row_set = tablet_->metadata()->GetRowSetForTests(
-      mutation_target.rs_id());
 
-  // if we can't find the row_set it was compacted
-  if (row_set == NULL) {
-    string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
-    if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Skipping DELTA_MUTATION that was already compacted. OpId: "
-          << mutation_input.committed_op_id.DebugString()
-          << " mutation index: " << mutation_input.mutation_op_block_index
-          << " flushed to: " << mutation_target.rs_id()
-          << " mutation: " <<mutation;
-    }
-    mutation_input.tx_ctx->AddFailedMutation(
-      Status::AlreadyPresent(Substitute("DMS mutation flushed and compacted: $0",
-                                        mutation)));
-    *applied_mutation = false;
-    return Status::OK();
-  }
+bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
+  if (target.has_mrs_id()) {
+    DCHECK(!target.has_rs_id());
+    DCHECK(!target.has_delta_id());
 
-  // if it exists we check if the mutation is already flushed
-  if (mutation_target.delta_id() <= row_set->last_durable_redo_dms_id()) {
-    string mutation = mutation_input.changelist->ToString(mutation_input.changelist_schema);
-    if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Skipping DELTA_MUTATION that was already flushed. OpId: "
-          << mutation_input.committed_op_id.DebugString()
-          << " mutation index: " << mutation_input.mutation_op_block_index
-          << " flushed to: " << mutation_target.rs_id()
-          << " latest durable dms id: " << row_set->last_durable_redo_dms_id()
-          << " mutation: " << mutation;
+    // The original mutation went to the MRS. It is flushed if it went to an MRS
+    // with a lower ID than the latest flushed one.
+    return target.mrs_id() <= tablet_->metadata()->last_durable_mrs_id();
+  } else {
+    // The original mutation went to a DRS's delta store.
+
+    // TODO right now this is using GetRowSetForTests which goes through
+    // the rs's every time. Just adding a method that gets row sets by id
+    // is not enough. We really need to take a snapshot of the initial
+    // metadata with regard to which row sets are alive at the time. By
+    // doing this we decouple replaying from the current state of the tablet,
+    // which allows us to do compactions/flushes on replay.
+    const RowSetMetadata* row_set = tablet_->metadata()->GetRowSetForTests(
+      target.rs_id());
+
+    // if we can't find the row_set it was compacted
+    if (row_set == NULL) {
+      return true;
     }
-    mutation_input.tx_ctx->AddFailedMutation(Status::AlreadyPresent(
-                                               Substitute("DMS mutation "
-                                                          "flushed: $0", mutation)));
-    *applied_mutation = false;
-    return Status::OK();
+
+    // if it exists we check if the mutation is already flushed
+    if (target.delta_id() <= row_set->last_durable_redo_dms_id()) {
+      return true;
+    }
+
+    return false;
   }
-  RETURN_NOT_OK(ApplyMutation(mutation_input));
-  *applied_mutation = true;
-  return Status::OK();
 }
 
 Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
@@ -1163,9 +1071,6 @@ Status TabletBootstrap::ApplyMutation(const MutationInput& mutation_input) {
   RETURN_NOT_OK(tablet_->CreatePreparedMutate(mutation_input.tx_ctx, row_key.get(),
                                               mutation_input.changelist,
                                               &prepared_row));
-
-  // Use committed OpId for mem store anchoring.
-  mutation_input.tx_ctx->mutable_op_id()->CopyFrom(mutation_input.committed_op_id);
 
   RETURN_NOT_OK(tablet_->MutateRowUnlocked(mutation_input.tx_ctx, prepared_row.get()));
 

@@ -42,7 +42,7 @@ class DeltaStats;
 class DeltaTracker;
 class MultiColumnWriter;
 class Mutation;
-class MutationResultPB;
+class OperationResultPB;
 
 class DiskRowSetWriter {
  public:
@@ -255,7 +255,7 @@ class DiskRowSet : public RowSet {
                    const RowChangeList &update,
                    const consensus::OpId& op_id,
                    ProbeStats* stats,
-                   MutationResultPB* result) OVERRIDE;
+                   OperationResultPB* result) OVERRIDE;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present, ProbeStats* stats) const;
 

@@ -225,8 +225,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).mrs_id());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
 
   // The row is deleted, so we shouldn't see it in the iterator.
   vector<string> rows;
@@ -256,9 +255,9 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   // Delete it again, now that it's in DRS.
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
-  ASSERT_EQ(MutationResultPB::DELTA_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(1L, last_mutation(tx_ctx).mutations(0).rs_id());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).delta_id());
+  ASSERT_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+  ASSERT_EQ(1L, last_mutation(tx_ctx).mutated_stores(0).rs_id());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).delta_id());
   ASSERT_STATUS_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(0, rows.size());
 
@@ -292,8 +291,8 @@ TYPED_TEST(TestTablet, TestFlushWithReinsert) {
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).mrs_id());
+  ASSERT_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
   tx_ctx.Reset();
   this->InsertTestRow(&tx_ctx, 0, 1);
 
@@ -313,14 +312,14 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).mrs_id());
+  ASSERT_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
   tx_ctx.Reset();
   this->InsertTestRow(&tx_ctx, 0, 1);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->DeleteTestRow(&tx_ctx, 0));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).mrs_id());
+  ASSERT_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
 
   // During the snapshot flush, insert/delete/insert some more during the flush.
   class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
@@ -332,14 +331,14 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
       test_->InsertTestRow(&tx_ctx, 0, 1);
       tx_ctx.Reset();
       CHECK_OK(test_->DeleteTestRow(&tx_ctx, 0));
-      CHECK_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-      CHECK_EQ(1L, last_mutation(tx_ctx).mutations(0).mrs_id());
+      CHECK_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+      CHECK_EQ(1L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
       tx_ctx.Reset();
       test_->InsertTestRow(&tx_ctx, 0, 2);
       tx_ctx.Reset();
       CHECK_OK(test_->DeleteTestRow(&tx_ctx, 0));
-      CHECK_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-      CHECK_EQ(1L, last_mutation(tx_ctx).mutations(0).mrs_id());
+      CHECK_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+      CHECK_EQ(1L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
       tx_ctx.Reset();
       test_->InsertTestRow(&tx_ctx, 0, 3);
       return Status::OK();
@@ -517,8 +516,8 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   this->InsertTestRow(&tx_ctx, 0, 0);
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 1));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).mrs_id());
+  ASSERT_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).mrs_id());
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 2));
   tx_ctx.Reset();
@@ -541,9 +540,9 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   // Update the row a few times in DeltaMemStore
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 4));
-  ASSERT_EQ(MutationResultPB::DELTA_MUTATION, last_mutation(tx_ctx).type());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).rs_id());
-  ASSERT_EQ(0L, last_mutation(tx_ctx).mutations(0).delta_id());
+  ASSERT_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).rs_id());
+  ASSERT_EQ(0L, last_mutation(tx_ctx).mutated_stores(0).delta_id());
   tx_ctx.Reset();
   ASSERT_STATUS_OK(this->UpdateTestRow(&tx_ctx, 0, 5));
   tx_ctx.Reset();
@@ -638,6 +637,12 @@ TYPED_TEST(TestTablet, TestCompaction) {
   }
 }
 
+enum MutationType {
+  MRS_MUTATION,
+  DELTA_MUTATION,
+  DUPLICATED_MUTATION
+};
+
 // Hook used by the Test*WithConcurrentMutation tests.
 //
 // Every time one of these hooks triggers, it inserts a row starting
@@ -651,12 +656,23 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
         flushed_(flushed),
         i_(0) {
   }
-  Status DoHook(MutationResultPB::MutationTypePB expected_mutation_type) {
+  Status DoHook(MutationType expected_mutation_type) {
     WriteTransactionContext tx_ctx;
     RETURN_NOT_OK(test_->DeleteTestRow(&tx_ctx, i_));
-    CHECK_EQ(expected_mutation_type, last_mutation(tx_ctx).type());
-    if (PREDICT_FALSE(expected_mutation_type == MutationResultPB::DUPLICATED_MUTATION)) {
-      CHECK_EQ(2, last_mutation(tx_ctx).mutations_size());
+
+    switch (expected_mutation_type) {
+      case MRS_MUTATION:
+        CHECK_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+        CHECK(last_mutation(tx_ctx).mutated_stores(0).has_mrs_id());
+        break;
+      case DELTA_MUTATION:
+        CHECK_EQ(1, last_mutation(tx_ctx).mutated_stores_size());
+        CHECK(last_mutation(tx_ctx).mutated_stores(0).has_rs_id());
+        CHECK(last_mutation(tx_ctx).mutated_stores(0).has_delta_id());
+        break;
+      case DUPLICATED_MUTATION:
+        CHECK_EQ(2, last_mutation(tx_ctx).mutated_stores_size());
+        break;
     }
     tx_ctx.Reset();
     RETURN_NOT_OK(test_->UpdateTestRow(&tx_ctx, 10 + i_, 1000 + i_));
@@ -670,26 +686,26 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
     // before we flush we update the MemRowSet afterwards we update the
     // DeltaMemStore
     if (!flushed_) {
-      return DoHook(MutationResultPB::MRS_MUTATION);
+      return DoHook(MRS_MUTATION);
     } else {
-      return DoHook(MutationResultPB::DELTA_MUTATION);
+      return DoHook(DELTA_MUTATION);
     }
   }
   virtual Status PostWriteSnapshot() {
     if (!flushed_) {
-      return DoHook(MutationResultPB::MRS_MUTATION);
+      return DoHook(MRS_MUTATION);
     } else {
-      return DoHook(MutationResultPB::DELTA_MUTATION);
+      return DoHook(DELTA_MUTATION);
     }
   }
   virtual Status PostSwapInDuplicatingRowSet() {
-    return DoHook(MutationResultPB::DUPLICATED_MUTATION);
+    return DoHook(DUPLICATED_MUTATION);
   }
   virtual Status PostReupdateMissedDeltas() {
-    return DoHook(MutationResultPB::DUPLICATED_MUTATION);
+    return DoHook(DUPLICATED_MUTATION);
   }
   virtual Status PostSwapNewRowSet() {
-    return DoHook(MutationResultPB::DELTA_MUTATION);
+    return DoHook(DELTA_MUTATION);
   }
  protected:
   TestFixture *test_;
@@ -702,7 +718,7 @@ class MyFlushHooks : public Tablet::FlushFaultHooks, public MyCommonHooks<TestFi
  public:
   explicit MyFlushHooks(TestFixture *test, bool flushed) :
            MyCommonHooks<TestFixture>(test, flushed) {}
-  virtual Status PostSwapNewMemRowSet() { return this->DoHook(MutationResultPB::MRS_MUTATION); }
+  virtual Status PostSwapNewMemRowSet() { return this->DoHook(MRS_MUTATION); }
 };
 
 template<class TestFixture>
@@ -710,7 +726,7 @@ class MyCompactHooks : public Tablet::CompactionFaultHooks, public MyCommonHooks
  public:
   explicit MyCompactHooks(TestFixture *test, bool flushed) :
            MyCommonHooks<TestFixture>(test, flushed) {}
-  Status PostSelectIterators() { return this->DoHook(MutationResultPB::DELTA_MUTATION); }
+  Status PostSelectIterators() { return this->DoHook(DELTA_MUTATION); }
 };
 
 // Test for Flush with concurrent update, delete and insert during the
@@ -727,7 +743,7 @@ TYPED_TEST(TestTablet, TestFlushWithConcurrentMutation) {
   this->tablet_->SetFlushCompactCommonHooksForTests(hooks);
 
   // First hook before we do the Flush
-  ASSERT_STATUS_OK(hooks->DoHook(MutationResultPB::MRS_MUTATION));
+  ASSERT_STATUS_OK(hooks->DoHook(MRS_MUTATION));
 
   // Then do the flush with the hooks enabled.
   ASSERT_STATUS_OK(this->tablet_->Flush());
@@ -797,7 +813,7 @@ TYPED_TEST(TestTablet, TestCompactionWithConcurrentMutation) {
   this->tablet_->SetFlushCompactCommonHooksForTests(hooks);
 
   // First hook pre-compaction.
-  ASSERT_STATUS_OK(hooks->DoHook(MutationResultPB::DELTA_MUTATION));
+  ASSERT_STATUS_OK(hooks->DoHook(DELTA_MUTATION));
 
   // Issue compaction
   ASSERT_STATUS_OK(this->tablet_->Compact(Tablet::FORCE_COMPACT_ALL));

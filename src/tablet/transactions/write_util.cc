@@ -152,19 +152,6 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
   return Status::OK();
 }
 
-MutationResultPB::MutationTypePB MutationType(const MutationResultPB* result) {
-  if (result->mutations_size() == 0) {
-    return MutationResultPB::NO_MUTATION;
-  }
-  if (result->mutations_size() == 1) {
-    return result->mutations(0).has_mrs_id() ?
-        MutationResultPB::MRS_MUTATION :
-        MutationResultPB::DELTA_MUTATION;
-  }
-  DCHECK_EQ(result->mutations_size(), 2);
-  return MutationResultPB::DUPLICATED_MUTATION;
-}
-
 const ConstContiguousRow* ProjectRowForInsert(WriteTransactionContext* tx_ctx,
                                               const Schema* tablet_schema,
                                               const RowProjector& row_projector,

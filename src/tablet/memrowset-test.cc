@@ -99,7 +99,7 @@ class TestMemRowSet : public ::testing::Test {
   Status UpdateRow(MemRowSet *mrs,
                    const string &key,
                    uint32_t new_val,
-                   MutationResultPB* result) {
+                   OperationResultPB* result) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(schema_, &mutation_buf_);
@@ -117,7 +117,7 @@ class TestMemRowSet : public ::testing::Test {
                           result);
   }
 
-  Status DeleteRow(MemRowSet *mrs, const string &key, MutationResultPB* result) {
+  Status DeleteRow(MemRowSet *mrs, const string &key, OperationResultPB* result) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
     RowChangeListEncoder update(schema_, &mutation_buf_);
@@ -261,10 +261,10 @@ TEST_F(TestMemRowSet, TestUpdate) {
   CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=1)");
 
   // Update a key which exists.
-  MutationResultPB result;
+  OperationResultPB result;
   ASSERT_STATUS_OK(UpdateRow(mrs.get(), "hello world", 2, &result));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
-  ASSERT_EQ(0L, result.mutations(0).mrs_id());
+  ASSERT_EQ(1, result.mutated_stores_size());
+  ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
   // Validate the updated value
   CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=2)");
@@ -273,7 +273,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
   result.Clear();
   Status s = UpdateRow(mrs.get(), "does not exist", 3, &result);
   ASSERT_TRUE(s.IsNotFound()) << "bad status: " << s.ToString();
-  ASSERT_EQ(MutationResultPB::NO_MUTATION, MutationType(&result));
+  ASSERT_EQ(0, result.mutated_stores_size());
 }
 
 // Test which inserts many rows into memrowset and checks for their
@@ -306,10 +306,10 @@ TEST_F(TestMemRowSet, TestDelete) {
   EXPECT_TRUE(present);
 
   // Delete it.
-  MutationResultPB result;
+  OperationResultPB result;
   ASSERT_STATUS_OK(DeleteRow(mrs.get(), kRowKey, &result));
-  ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
-  ASSERT_EQ(0L, result.mutations(0).mrs_id());
+  ASSERT_EQ(1, result.mutated_stores_size());
+  ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
   MvccSnapshot snapshot_after_delete(mvcc_);
 
@@ -321,12 +321,12 @@ TEST_F(TestMemRowSet, TestDelete) {
   result.Clear();
   Status s = DeleteRow(mrs.get(), kRowKey, &result);
   ASSERT_TRUE(s.IsNotFound()) << "Unexpected status: " << s.ToString();
-  ASSERT_EQ(MutationResultPB::NO_MUTATION, MutationType(&result));
+  ASSERT_EQ(0, result.mutated_stores_size());
 
   result.Clear();
   s = UpdateRow(mrs.get(), kRowKey, 12345, &result);
   ASSERT_TRUE(s.IsNotFound()) << "Unexpected status: " << s.ToString();
-  ASSERT_EQ(MutationResultPB::NO_MUTATION, MutationType(&result));
+  ASSERT_EQ(0, result.mutated_stores_size());
 
   // Re-insert a new row with the same key.
   ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 2));
@@ -428,10 +428,10 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
 
   // Update the row 5 times (setting its int column to increasing ints 1-5)
   for (uint32_t i = 1; i <= 5; i++) {
-    MutationResultPB result;
+    OperationResultPB result;
     ASSERT_STATUS_OK(UpdateRow(mrs.get(), "my row", i, &result));
-    ASSERT_EQ(MutationResultPB::MRS_MUTATION, MutationType(&result));
-    ASSERT_EQ(0L, result.mutations(0).mrs_id());
+    ASSERT_EQ(1, result.mutated_stores_size());
+    ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
     // Transaction is committed. Save the snapshot after this commit.
     snapshots.push_back(MvccSnapshot(mvcc_));

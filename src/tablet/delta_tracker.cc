@@ -411,14 +411,14 @@ Status DeltaTracker::Update(Timestamp timestamp,
                             rowid_t row_idx,
                             const RowChangeList &update,
                             const consensus::OpId& op_id,
-                            MutationResultPB* result) {
+                            OperationResultPB* result) {
   // TODO: can probably lock this more fine-grained.
   boost::shared_lock<boost::shared_mutex> lock(component_lock_);
   DCHECK_LT(row_idx, num_rows_);
 
   Status s = dms_->Update(timestamp, row_idx, update, op_id);
   if (s.ok()) {
-    MutationTargetPB* target = result->add_mutations();
+    MemStoreTargetPB* target = result->add_mutated_stores();
     target->set_rs_id(rowset_metadata_->id());
     target->set_delta_id(dms_->id());
   }

@@ -33,7 +33,7 @@ namespace tablet {
 class CompactionInput;
 class MvccSnapshot;
 class RowSetKeyProbe;
-class MutationResultPB;
+class OperationResultPB;
 struct ProbeStats;
 
 class RowSet {
@@ -58,7 +58,7 @@ class RowSet {
                            const RowChangeList &update,
                            const consensus::OpId& op_id,
                            ProbeStats* stats,
-                           MutationResultPB* result) = 0;
+                           OperationResultPB* result) = 0;
 
   // Return a new RowIterator for this rowset, with the given projection.
   // The projection schema must remain valid for the lifetime of the iterator.
@@ -240,7 +240,7 @@ class DuplicatingRowSet : public RowSet {
                            const RowChangeList &update,
                            const consensus::OpId& op_id,
                            ProbeStats* stats,
-                           MutationResultPB* result) OVERRIDE;
+                           OperationResultPB* result) OVERRIDE;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                          ProbeStats* stats) const;

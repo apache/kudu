@@ -83,7 +83,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
                                     const RowChangeList &update,
                                     const consensus::OpId& op_id,
                                     ProbeStats* stats,
-                                    MutationResultPB* result) {
+                                    OperationResultPB* result) {
   // Duplicate the update to both the relevant input rowset and the output rowset.
   //
   // It's crucial to do the mutation against the input side first, due to the potential
