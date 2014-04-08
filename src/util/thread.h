@@ -10,6 +10,7 @@
 // - Added spinlock for protection against KUDU-11.
 // - Replaced boost exception throwing on thread creation with status.
 // - Added ThreadJoiner.
+// - Added current_thread() abstraction using TLS.
 
 #ifndef KUDU_UTIL_THREAD_H
 #define KUDU_UTIL_THREAD_H
@@ -96,7 +97,7 @@ class ThreadJoiner {
 // operating system, and to assign threads to resource control groups.
 //
 // TODO: Consider allowing fragment IDs as category parameters.
-class Thread {
+class Thread : public base::RefCountedThreadSafe<Thread> {
   friend class ThreadJoiner;
  public:
   // This constructor pattern mimics that in boost::thread. There is
@@ -112,51 +113,50 @@ class Thread {
   //  - F - a method type that supports operator(), and the instance passed to the
   //    constructor is executed immediately in a separate thread.
   //  - A1...An - argument types whose instances are passed to f(...)
+  //  - holder - optional shared pointer to hold a reference to the created thread.
   template <class F>
-  Thread(const std::string& category, const std::string& name, const F& f)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(f);
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, f, holder);
   }
 
   template <class F, class A1>
-  Thread(const std::string& category, const std::string& name, const F& f, const A1& a1)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(boost::bind(f, a1));
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       const A1& a1, scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, boost::bind(f, a1), holder);
   }
 
   template <class F, class A1, class A2>
-  Thread(const std::string& category, const std::string& name, const F& f,
-      const A1& a1, const A2& a2)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(boost::bind(f, a1, a2));
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       const A1& a1, const A2& a2, scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, boost::bind(f, a1, a2), holder);
   }
 
   template <class F, class A1, class A2, class A3>
-  Thread(const std::string& category, const std::string& name, const F& f,
-      const A1& a1, const A2& a2, const A3& a3)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(boost::bind(f, a1, a2, a3));
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       const A1& a1, const A2& a2, const A3& a3, scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, boost::bind(f, a1, a2, a3), holder);
   }
 
   template <class F, class A1, class A2, class A3, class A4>
-  Thread(const std::string& category, const std::string& name, const F& f,
-      const A1& a1, const A2& a2, const A3& a3, const A4& a4)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(boost::bind(f, a1, a2, a3, a4));
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       const A1& a1, const A2& a2, const A3& a3, const A4& a4,
+                       scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, boost::bind(f, a1, a2, a3, a4), holder);
   }
 
   template <class F, class A1, class A2, class A3, class A4, class A5>
-  Thread(const std::string& category, const std::string& name, const F& f,
-      const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(boost::bind(f, a1, a2, a3, a4, a5));
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5,
+                       scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, boost::bind(f, a1, a2, a3, a4, a5), holder);
   }
 
   template <class F, class A1, class A2, class A3, class A4, class A5, class A6>
-  Thread(const std::string& category, const std::string& name, const F& f,
-      const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6)
-      : category_(category), name_(name), tid_(UNINITIALISED_THREAD_ID) {
-    StartThread(boost::bind(f, a1, a2, a3, a4, a5, a6));
+  static Status Create(const std::string& category, const std::string& name, const F& f,
+                       const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5,
+                       const A6& a6, scoped_refptr<Thread>* holder) {
+    return StartThread(category, name, boost::bind(f, a1, a2, a3, a4, a5, a6), holder);
   }
 
   // Blocks until this thread finishes execution. Once this method returns, the thread
@@ -167,9 +167,8 @@ class Thread {
   // support retrieving the tid, returns Thread::INVALID_THREAD_ID.
   int64_t tid() const { return tid_; }
 
-  // The status of the thread. If the thread failed to start during construction, it
-  // will be reflected here.
-  Status status() const { return status_; }
+  // The current thread of execution, or NULL if the current thread isn't a Thread.
+  static Thread* current_thread() { return tls_; }
 
   static const int64_t INVALID_THREAD_ID = -1;
 
@@ -181,6 +180,12 @@ class Thread {
 
   // Function object that wraps the user-supplied function to run in a separate thread.
   typedef boost::function<void ()> ThreadFunctor;
+
+  Thread(const std::string& category, const std::string& name)
+    : category_(category),
+      name_(name),
+      tid_(UNINITIALISED_THREAD_ID) {
+  }
 
   // The actual thread object that runs the user's method via SuperviseThread().
   boost::scoped_ptr<boost::thread> thread_;
@@ -194,40 +199,37 @@ class Thread {
   // non-negative integer, or INVALID_THREAD_ID.
   int64_t tid_;
 
-  // Status of thread construction.
-  Status status_;
+  // Thread local pointer to the current thread of execution. Will be NULL if the current
+  // thread is not a Thread.
+  static __thread Thread* tls_;
 
   // Starts the thread running SuperviseThread(), and returns once that thread has
-  // initialised and its TID read. Waits for notification from the started thread that
-  // initialisation is complete before returning.
-  void StartThread(const ThreadFunctor& functor);
+  // initialised and its TID has been read. Waits for notification from the started
+  // thread that initialisation is complete before returning. On success, stores a
+  // reference to the thread in holder.
+  static Status StartThread(const std::string& category, const std::string& name,
+                            const ThreadFunctor& functor, scoped_refptr<Thread>* holder);
 
   // Wrapper for the user-supplied function. Always invoked from thread_. Executes the
-  // method in functor_, but before doing so registers with the global ThreadMgr and reads
+  // method in functor, but before doing so registers with the global ThreadMgr and reads
   // the thread's system TID. After the method terminates, it is unregistered.
   //
   // SuperviseThread() notifies StartThread() when thread initialisation is completed via
   // the c_p_tid parameter, which is set to the new thread's system ID. After this point,
-  // it is no longer safe for SuperviseThread() to refer to parameters passed by reference
-  // or pointer to this method, because of a wrinkle in the lifecycle of boost threads: if
-  // the thread object representing a thread should be destroyed, the actual
-  // operating-system thread continues to run (the thread is detached, not
-  // terminated). Therefore it's not safe to make reference to the Thread object or any of
-  // its members in SuperviseThread() after it notifies the caller via thread_started that
-  // initialisation is completed.  An alternative is to join() in the destructor of
-  // Thread, but that's not the same semantics as boost::thread, which we are trying to
-  // emulate here.
+  // it is no longer safe for SuperviseThread() to refer to 'this', because of a wrinkle
+  // in the lifecycle of boost threads: if the thread object representing a thread should
+  // be destroyed, the actual operating-system thread continues to run (the thread is
+  // detached, not terminated). Therefore it's not safe to make reference to the Thread
+  // object or any of its members in SuperviseThread() after it notifies the caller via
+  // c_p_tid that initialisation is completed.  An alternative is to join() in the
+  // destructor of Thread, but that's not the same semantics as boost::thread, which we
+  // are trying to emulate here.
   //
   // Additionally, StartThread() notifies SuperviseThread() when the actual thread object
   // has been assigned (SuperviseThread() is spinning during this time). Without this,
   // the new thread may reference the actual thread object before it has been assigned by
   // StartThread(). See KUDU-11 for more details.
-  //
-  // As a result, the 'functor' parameter is deliberately copied into this method, since
-  // it is used after the notification completes.h The tid parameter is written to exactly
-  // once before SuperviseThread() notifies the caller.
-  static void SuperviseThread(const std::string& name, const std::string& category,
-      ThreadFunctor functor, Atomic64* c_p_tid, Atomic32* p_c_assigned);
+  void SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid, Atomic32* p_c_assigned);
 };
 
 // Initialises the threading subsystem. Must be called before a Thread is created.

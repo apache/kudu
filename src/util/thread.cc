@@ -11,6 +11,7 @@
 // - Replaced boost exception throwing on thread creation with status.
 // - Added ThreadJoiner.
 // - Added prctl(PR_SET_NAME) to name threads.
+// - Added current_thread() abstraction using TLS.
 
 #include "util/thread.h"
 
@@ -54,6 +55,7 @@ METRIC_DEFINE_gauge_uint64(total_threads, MetricUnit::kThreads,
                            "All time total number of threads");
 METRIC_DEFINE_gauge_uint64(current_num_threads, MetricUnit::kThreads,
                            "Current number of running threads");
+__thread Thread* Thread::tls_ = NULL;
 
 // Singleton instance of ThreadMgr. Only visible in this file, used only by Thread.
 // The Thread class adds a reference to thread_manager while it is supervising a thread so
@@ -281,7 +283,8 @@ ThreadJoiner& ThreadJoiner::give_up_after_ms(int ms) {
 }
 
 Status ThreadJoiner::Join() {
-  if (boost::this_thread::get_id() == thread_->thread_->get_id()) {
+  if (Thread::current_thread() &&
+      Thread::current_thread()->tid() == thread_->tid()) {
     return Status::InvalidArgument("Can't join on own thread", thread_->name_);
   }
 
@@ -364,24 +367,29 @@ static void SetThreadName(const string& name, int64 tid) {
   }
 }
 
-void Thread::StartThread(const ThreadFunctor& functor) {
+Status Thread::StartThread(const std::string& category, const std::string& name,
+                           const ThreadFunctor& functor, scoped_refptr<Thread> *holder) {
   DCHECK(thread_manager.get() != NULL)
       << "Thread created before InitThreading called";
-  DCHECK_EQ(tid_, UNINITIALISED_THREAD_ID) << "StartThread called twice";
 
   Atomic64 c_p_tid = UNINITIALISED_THREAD_ID;
   Atomic32 p_c_assigned = THREAD_NOT_ASSIGNED;
 
+  // Temporary reference for the duration of this function.
+  scoped_refptr<Thread> thr = new Thread(category, name);
   try {
-    thread_.reset(
-        new thread(&Thread::SuperviseThread, name_, category_, functor,
-                   &c_p_tid, &p_c_assigned));
+    thr->thread_.reset(
+        new thread(&Thread::SuperviseThread, thr.get(), functor, &c_p_tid, &p_c_assigned));
   } catch(thread_resource_error &e) {
-    status_ = Status::RuntimeError(e.what());
-    return;
+    return Status::RuntimeError(e.what());
   }
 
-  // We've assigned into thread_; the child may now continue running.
+  // Optional, and only set if the thread was successfully created.
+  if (holder) {
+    *holder = thr;
+  }
+
+  // We've set all child-visible state, so the child may now continue running.
   Release_Store(&p_c_assigned, THREAD_ASSIGNED);
 
   // Wait for the child to discover its tid, then set it.
@@ -389,31 +397,34 @@ void Thread::StartThread(const ThreadFunctor& functor) {
   while (base::subtle::Acquire_Load(&c_p_tid) == UNINITIALISED_THREAD_ID) {
     boost::detail::yield(loop_count++);
   }
-  tid_ = base::subtle::Acquire_Load(&c_p_tid);
+  thr->tid_ = base::subtle::Acquire_Load(&c_p_tid);
 
-  VLOG(2) << "Started thread " << tid_ << " - " << category_ << ":" << name_;
-  status_ = Status::OK();
+  VLOG(2) << "Started thread " << thr->tid_ << " - " << category << ":" << name;
+  return Status::OK();
 }
 
-void Thread::SuperviseThread(const string& name, const string& category,
-    Thread::ThreadFunctor functor, Atomic64* c_p_tid, Atomic32 *p_c_assigned) {
+void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid, Atomic32 *p_c_assigned) {
   int64_t system_tid = syscall(SYS_gettid);
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
     LOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;
   }
-  // Make a copy, since we want to refer to these variables after the unsafe point below.
-  string category_copy = category;
-  shared_ptr<ThreadMgr> thread_mgr_ref = thread_manager;
-  stringstream ss;
-  ss << (name.empty() ? "thread" : name) << "-" << system_tid;
-  string name_copy = ss.str();
+  string name = strings::Substitute("$0-$1", name_, system_tid);
 
-  if (category_copy.empty()) category_copy = "no-category";
+  // Take an additional reference to the thread manager, which we'll need below.
+  shared_ptr<ThreadMgr> thread_mgr_ref = thread_manager;
+
+  // Set up the TLS.
+  //
+  // We could store a scoped_refptr in the TLS itself, but as its lifecycle is
+  // poorly defined, we'll use a bare pointer and take an additional reference on
+  // _thread out of band, in thread_ref.
+  scoped_refptr<Thread> thread_ref = this;
+  tls_ = this;
 
   // Use boost's get_id rather than the system thread ID as the unique key for this thread
   // since the latter is more prone to being recycled.
-  thread_mgr_ref->AddThread(boost::this_thread::get_id(), name_copy, category_copy, system_tid);
+  thread_mgr_ref->AddThread(boost::this_thread::get_id(), name, category_, system_tid);
 
   // Wait for the parent to unblock us.
   SpinWait(p_c_assigned, THREAD_ASSIGNED, THREAD_RUNNING);
@@ -424,12 +435,12 @@ void Thread::SuperviseThread(const string& name, const string& category,
 
   // Any reference to any parameter not copied in by value may no longer be valid after
   // this point, since the caller that is waiting on *c_p_tid != UNINITIALISED_THREAD_ID
-  // may wake, take the lock and destroy the enclosing Thread object.
+  // may wake and return.
 
-  SetThreadName(name_copy, system_tid);
+  SetThreadName(name, system_tid);
 
   functor();
-  thread_mgr_ref->RemoveThread(boost::this_thread::get_id(), category_copy);
+  thread_mgr_ref->RemoveThread(boost::this_thread::get_id(), category_);
 }
 
 } // namespace kudu
