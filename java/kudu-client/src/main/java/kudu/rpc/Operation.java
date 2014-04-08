@@ -7,7 +7,6 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
-import kudu.WireProtocol;
 import kudu.WireProtocol.RowOperationsPB;
 import kudu.tserver.Tserver;
 import kudu.util.Arena;
@@ -328,7 +327,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
       assert operation.schema == schema;
 
       rows.put(operation.getChangeType().toEncodedByte());
-      rows.put(toByteArray(operation.columnsBitSet));
+      rows.put(toByteArray(operation.columnsBitSet, schema.getColumnCount()));
       // TODO handle schemas with nulls
       int colIdx = 0;
       byte[] rowData = operation.rowAlloc;
@@ -372,8 +371,8 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     return (count + 7) / 8;
   }
 
-  static byte[] toByteArray(BitSet bits) {
-    byte[] bytes = new byte[getSizeOfColumnBitSet(bits.length())];
+  static byte[] toByteArray(BitSet bits, int colCount) {
+    byte[] bytes = new byte[getSizeOfColumnBitSet(colCount)];
     for (int i = 0; i < bits.length(); i++) {
       if (bits.get(i)) {
         bytes[i / 8] |= 1 << (i % 8);
