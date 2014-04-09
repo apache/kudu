@@ -48,7 +48,7 @@ basis, but if you make large changes it can be a good idea to run it locally
 before pushing. To do so, you'll need a local install of clang.
 
 $ rm -Rf CMakeCache.txt CMakeFiles/
-$ CXX=/opt/bin/clang++ cmake -DKUDU_USE_ASAN=1 .   # or whatever your path to clang++
+$ CC=clang CXX=clang++ cmake -DKUDU_USE_ASAN=1 .   # or whatever your path to clang++
 $ make -j
 $ make test
 
