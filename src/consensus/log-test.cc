@@ -272,17 +272,14 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_STATUS_OK(log_->GC());
   ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
 
-  // Freeing the first 2 anchors should allow GC of the first.
-  // This is because we are anchoring on the earliest OpId in each log, and
-  // GC() preserved the first file it finds (searching backwards) with initial
-  // OpId strictly earlier than the earliest anchored OpId, plus all following
-  // log segments (by sequence number, ascending).
+  // Freeing the first 2 anchors should allow GC of them.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
   ASSERT_STATUS_OK(log_->GC());
-  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
 
-  // Release and GC another segment.
+  // Release the remaining "rolled segment" anchor. GC will not delete the
+  // last log.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
   ASSERT_STATUS_OK(log_->GC());
   ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());

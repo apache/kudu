@@ -247,8 +247,6 @@ class Tablet {
 
   int32_t CurrentMrsIdForTests() const;
 
-  int32_t TotalMissedDeltasMutationsForTests() const { return total_missed_deltas_mutations_; }
-
   // Runs a major delta major compaction on columns at specified
   // indexes in 'input_rowset'; 'column_indexes' must be sorted.
   // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
@@ -354,8 +352,6 @@ class Tablet {
 
   MvccManager mvcc_;
   LockManager lock_manager_;
-
-  Atomic32 total_missed_deltas_mutations_;
 
   gscoped_ptr<CompactionPolicy> compaction_policy_;
 

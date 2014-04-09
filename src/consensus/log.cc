@@ -481,13 +481,11 @@ Status Log::GC() {
 
   LOG(INFO) << "Running Log GC on " << log_dir_;
   LOG_TIMING(INFO, "Log GC") {
-    uint32_t num_stale_segments = 0;
     vector<string> stale_segment_paths;
     {
       boost::lock_guard<simple_spinlock> l(previous_segments_lock_);
-      RETURN_NOT_OK(FindStaleSegmentsPrefixSize(previous_segments_,
-                                                earliest_needed_op_id,
-                                                &num_stale_segments));
+      uint32_t num_stale_segments =
+          FindStaleSegmentsPrefixSize(previous_segments_, earliest_needed_op_id);
       if (num_stale_segments > 0) {
         LOG(INFO) << "Found " << num_stale_segments << " stale segments.";
         for (int i = 0; i < num_stale_segments; i++) {

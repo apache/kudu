@@ -201,16 +201,15 @@ consensus::OpId MinimumOpId();
 // Return the maximum possible OpId.
 consensus::OpId MaximumOpId();
 
-// Find WAL segments for GC whose highest initial OpId is less than
-// earliest_needed_opid. We can approximate this by taking all segments that
-// are at least 2 segments _before_ the segment with an initial_opid strictly
-// greater than the earliest needed OpId.
-// i.e. if we need 7, and segments start with 0, 5 & 10, then we must retain
-// the logs starting with 10 and 5, but we can GC the log starting with OpId 0.
-Status FindStaleSegmentsPrefixSize(
+// Find WAL segments for deletion whose largest contained OpId is less than
+// earliest_needed_opid. We never identify the latest segment as stale.
+// For example, if we need to retain OpId 7, and the rolled log segments start
+// with 0, 5, and 10, respectively, then we must retain the logs starting with
+// 10 and 5, but we can GC the log segment starting with OpId 0.
+// See comments in the implementation file for more details on the algorithm.
+uint32_t FindStaleSegmentsPrefixSize(
     const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
-    const consensus::OpId& earliest_needed_opid,
-    uint32_t *prefix_size);
+    const consensus::OpId& earliest_needed_opid);
 
 // Checks if 'fname' is a correctly formatted name of log segment
 // file.

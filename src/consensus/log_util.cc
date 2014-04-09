@@ -250,25 +250,26 @@ struct DeltaIdEqualsTo {
   }
 };
 
-Status FindStaleSegmentsPrefixSize(
+uint32_t FindStaleSegmentsPrefixSize(
     const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
-    const consensus::OpId& earliest_needed_opid,
-    uint32_t *prefix_size) {
-
+    const consensus::OpId& earliest_needed_opid) {
   // We iterate in reverse order.
-  // Keep the 1st log segment with initial OpId strictly less than the
+  // Keep the 1st log segment with initial OpId less than or equal to the
   // earliest needed OpId, and delete all the log segments preceding it
   // (preceding meaning in natural order).
-  uint32_t stale_prefix_size = 0;
+  uint32_t num_stale_segments = 0;
   bool seen_earlier_opid = false;
   BOOST_REVERSE_FOREACH(const shared_ptr<ReadableLogSegment> &segment, segments) {
-    if (OpIdLessThan(segment->header().initial_id(), earliest_needed_opid)) {
+    const OpId& first_in_segment = segment->header().initial_id();
+    if (OpIdLessThan(first_in_segment, earliest_needed_opid) ||
+        OpIdEquals(first_in_segment, earliest_needed_opid)) {
       if (!seen_earlier_opid) {
-        // This log will likely contain our data, do not delete it.
+        // earliest_needed_opid may be in the middle of this segment, do not
+        // delete it (but earlier ones can go).
         seen_earlier_opid = true;
       } else {
         // All the earlier logs can go.
-        stale_prefix_size++;
+        num_stale_segments++;
       }
     } else {
       CHECK(!seen_earlier_opid)
@@ -280,8 +281,7 @@ Status FindStaleSegmentsPrefixSize(
     }
   }
 
-  *prefix_size = stale_prefix_size;
-  return Status::OK();
+  return num_stale_segments;
 }
 
 bool IsLogFileName(const string& fname) {
