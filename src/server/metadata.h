@@ -227,7 +227,7 @@ class TabletMetadata {
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.
-  size_t num_flush_pins_;
+  int32_t num_flush_pins_;
 
   // Set if Flush() is called when num_flush_pins_ is > 0; if true,
   // then next UnPinFlush will call Flush() again to ensure the

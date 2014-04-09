@@ -110,6 +110,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
     fs_manager_(fs_manager),
     master_block_(master_block),
     next_rowset_idx_(0),
+    num_flush_pins_(0),
     needs_flush_(false) {
 }
 
@@ -213,13 +214,14 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
 
 void TabletMetadata::PinFlush() {
   boost::lock_guard<LockType> l(lock_);
+  CHECK_GE(num_flush_pins_, 0);
   num_flush_pins_++;
   VLOG(1) << "Number of flush pins: " << num_flush_pins_;
 }
 
 Status TabletMetadata::UnPinFlush() {
   boost::lock_guard<LockType> l(lock_);
-  DCHECK_GT(num_flush_pins_, 0);
+  CHECK_GT(num_flush_pins_, 0);
   num_flush_pins_--;
   if (needs_flush_) {
     RETURN_NOT_OK(Flush());
@@ -229,6 +231,7 @@ Status TabletMetadata::UnPinFlush() {
 
 Status TabletMetadata::Flush() {
   boost::lock_guard<LockType> l(lock_);
+  CHECK_GE(num_flush_pins_, 0);
   if (num_flush_pins_ > 0) {
     needs_flush_ = true;
     LOG(INFO) << "Not flushing: waiting for " << num_flush_pins_ << " pins to be released.";
