@@ -743,9 +743,7 @@ Status TabletBootstrap::PlayWriteRequest(OperationPB* replicate_op,
   tx_state.mutable_op_id()->CopyFrom(replicate_op->id());
 
   // Take the lock for the whole batch of updates.
-  gscoped_ptr<shared_lock<rw_semaphore> > component_lock(
-    new shared_lock<rw_semaphore>(*tablet_->component_lock()));
-  tx_state.set_component_lock(component_lock.Pass());
+  tx_state.set_component_lock(tablet_->component_lock());
 
   if (write->has_row_operations()) {
     // TODO: is above always true at this point in the code?

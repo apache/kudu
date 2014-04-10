@@ -219,9 +219,7 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
   // The order of the various locks is critical!
   // See comment block in MutateRow(...) below for details.
 
-  gscoped_ptr<boost::shared_lock<rw_semaphore> > lock(
-      new boost::shared_lock<rw_semaphore>(component_lock_));
-  tx_state->set_component_lock(lock.Pass());
+  tx_state->set_component_lock(&component_lock_);
 
   // Convert the client row to a server row (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
@@ -256,7 +254,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   CHECK(open_) << "must Open() first!";
   // make sure that the WriteTransactionState has the component lock and that
   // there the PreparedRowWrite has the row lock.
-  DCHECK(tx_state->component_lock()) << "WriteTransactionState must hold the component lock.";
+  DCHECK(tx_state->has_component_lock()) << "WriteTransactionState must hold the component lock.";
   DCHECK(insert->row_lock()) << "PreparedRowWrite must hold the row lock.";
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
@@ -378,10 +376,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
   // It is critical, however, that we're consistent with this choice between here
   // and Insert() or else there's a possibility of deadlock.
 
-
-  gscoped_ptr<boost::shared_lock<rw_semaphore> > lock(
-      new boost::shared_lock<rw_semaphore>(component_lock_));
-  tx_state->set_component_lock(lock.Pass());
+  tx_state->set_component_lock(&component_lock_);
 
   // Convert the client RowChangeList to a server RowChangeList (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
@@ -570,13 +565,12 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
     // TODO: make this more fine-grained if possible. Will make sense
     // to re-touch this area once integrated with maintenance ops
     // scheduling.
-    shared_ptr<boost::mutex::scoped_try_lock> input_rs_lock(
-        new boost::mutex::scoped_try_lock(*input_drs->compact_flush_lock()));
-    CHECK(input_rs_lock->owns_lock());
+    boost::mutex::scoped_try_lock input_rs_lock(*input_drs->compact_flush_lock());
+    CHECK(input_rs_lock.owns_lock());
 
-    shared_ptr<boost::mutex::scoped_try_lock> input_dt_lock(
-        new boost::mutex::scoped_try_lock(*input_drs->delta_tracker()->compact_flush_lock()));
-    CHECK(input_dt_lock->owns_lock());
+    boost::mutex::scoped_try_lock input_dt_lock(
+      *input_drs->delta_tracker()->compact_flush_lock());
+    CHECK(input_dt_lock.owns_lock());
 
     BlockId delta_block;
     size_t ndeltas = 0;

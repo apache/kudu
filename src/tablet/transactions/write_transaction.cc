@@ -66,9 +66,7 @@ Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_sc
   // acquire the component lock. this is more like "tablet lock" and is used
   // to prevent AlterSchema and other operations that requires exclusive access
   // to the tablet.
-  gscoped_ptr<shared_lock<rw_semaphore> > component_lock_(
-      new shared_lock<rw_semaphore>(*tablet->component_lock()));
-  state()->set_component_lock(component_lock_.Pass());
+  state()->set_component_lock(tablet->component_lock());
 
   TRACE("Projecting inserts");
   // Now that the schema is fixed, we can project the operations into that schema.
@@ -310,7 +308,9 @@ void WriteTransactionState::commit() {
     mvcc_tx_->Commit();
   }
   mvcc_tx_.reset();
-  component_lock_.reset();
+  if (component_lock_.owns_lock()) {
+    component_lock_.unlock();
+  }
   release_row_locks();
 }
 

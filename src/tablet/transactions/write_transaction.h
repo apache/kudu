@@ -57,7 +57,6 @@ class WriteTransactionState : public TransactionState {
         failed_operations_(0),
         request_(NULL),
         response_(NULL),
-        component_lock_(NULL),
         mvcc_tx_(NULL) {
   }
 
@@ -69,7 +68,6 @@ class WriteTransactionState : public TransactionState {
         failed_operations_(0),
         request_(request),
         response_(response),
-        component_lock_(NULL),
         mvcc_tx_(NULL) {
     external_consistency_mode_ = request->external_consistency_mode();
   }
@@ -81,7 +79,6 @@ class WriteTransactionState : public TransactionState {
         failed_operations_(0),
         request_(request),
         response_(NULL),
-        component_lock_(NULL),
         mvcc_tx_(NULL) {
   }
 
@@ -164,12 +161,12 @@ class WriteTransactionState : public TransactionState {
   // Sets the component lock for this transaction. The lock will not be
   // unlocked unless either release_locks() or Reset() is called or this
   // TransactionState is destroyed.
-  void set_component_lock(gscoped_ptr<boost::shared_lock<rw_semaphore> > lock) {
-    component_lock_.reset(lock.release());
+  void set_component_lock(rw_semaphore* lock) {
+    component_lock_ = boost::shared_lock<rw_semaphore>(*lock);
   }
 
-  boost::shared_lock<rw_semaphore>* component_lock() {
-    return component_lock_.get();
+  bool has_component_lock() const {
+    return component_lock_.owns_lock();
   }
 
   // Releases all the row locks acquired by this transaction.
@@ -201,7 +198,7 @@ class WriteTransactionState : public TransactionState {
   // the rows and locks as transformed/acquired by the prepare task
   vector<PreparedRowWrite*> rows_;
   // the component lock, acquired by all inserters/updaters
-  gscoped_ptr<boost::shared_lock<rw_semaphore> > component_lock_;
+  boost::shared_lock<rw_semaphore> component_lock_;
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
 };
 
