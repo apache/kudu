@@ -50,6 +50,7 @@
 #include "rpc/rpc_context.h"
 #include "util/thread_util.h"
 #include "util/trace.h"
+#include "cfile/type_encodings.h"
 
 DEFINE_int32(async_rpc_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS async rpc calls. "
@@ -71,6 +72,7 @@ using strings::Substitute;
 using rpc::RpcContext;
 using tserver::TabletServerErrorPB;
 using metadata::QuorumPeerPB;
+using cfile::TypeEncodingInfo;
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -637,7 +639,13 @@ static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
           return Status::InvalidArgument("ADD_COLUMN missing column info");
         }
 
+        // Verify that encoding is appropriate for the new column's
+        // type
         ColumnSchema new_col = ColumnSchemaFromPB(step.add_column().schema());
+        const TypeEncodingInfo *dummy;
+        RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info().type(),
+                                            new_col.attributes().encoding(),
+                                            &dummy));
 
         // can't accept a NOT NULL column without read default
         if (!new_col.is_nullable() && !new_col.has_read_default()) {

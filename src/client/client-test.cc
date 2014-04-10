@@ -644,12 +644,30 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
   }
 
+  // test that specifying an encoding incompatible with the column's
+  // type throws an error
+  {
+    alter.Reset();
+    alter.AddNullableColumn("new_string_val", STRING, ColumnStorageAttributes(GROUP_VARINT));
+    Status s = client_->AlterTable(kTableName, alter);
+    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_STR_CONTAINS(s.ToString(), "Unsupported type/encoding pair");
+    ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
+  }
+
+  {
+    alter.Reset();
+    alter.AddNullableColumn("new_string_val", STRING, ColumnStorageAttributes(PREFIX_ENCODING));
+    ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
+    ASSERT_EQ(2, tablet_peer_->tablet()->metadata()->schema_version());
+  }
+
   {
     const char *kRenamedTableName = "RenamedTable";
     alter.Reset();
     alter.RenameTable(kRenamedTableName);
     ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
-    ASSERT_EQ(2, tablet_peer_->tablet()->metadata()->schema_version());
+    ASSERT_EQ(3, tablet_peer_->tablet()->metadata()->schema_version());
     ASSERT_EQ(kRenamedTableName, tablet_peer_->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
