@@ -10,7 +10,7 @@ KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
   PROTO_FILES master.proto)
 
 add_library(master_proto ${MASTER_PROTO_SRCS} ${MASTER_PROTO_HDRS} ${MASTER_KRPC_SRCS})
-target_link_libraries(master_proto metadata_proto wire_protocol_proto protobuf)
+target_link_libraries(master_proto metadata_proto wire_protocol_proto protobuf rpc_header_proto)
 
 set(MASTER_SRCS
   catalog_manager.cc
@@ -26,7 +26,7 @@ set(MASTER_SRCS
 
 add_library(master ${MASTER_SRCS} ${MASTER_PROTO_SRCS} ${MASTER_KRPC_SRCS})
 target_link_libraries(master kudu_common tablet server_common server_process krpc gutil kudu_util
-                      tserver_service_proto master_proto)
+                      tserver_service_proto master_proto rpc_header_proto)
 
 # Tests
 set(KUDU_TEST_LINK_LIBS master ${KUDU_TEST_LINK_LIBS})
