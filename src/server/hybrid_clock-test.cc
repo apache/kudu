@@ -65,6 +65,8 @@ TEST_F(HybridClockTest, TestUpdate_LogicalValueIncreasesByAmount) {
 // Test that the incoming event is in the past, i.e. less than now - max_error
 TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
 
+  MonoTime before = MonoTime::Now(MonoTime::FINE);
+
   Timestamp past_ts;
   uint64_t max_error;
   clock_->NowWithError(&past_ts, &max_error);
@@ -72,7 +74,6 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
   // make the event 3 * the max. possible error in the past
   Timestamp past_ts_changed = HybridClock::AddPhysicalTimeToTimestamp(past_ts, -3 * max_error);
 
-  MonoTime before = MonoTime::Now(MonoTime::FINE);
   Timestamp current_ts;
   uint64_t current_max_error;
   clock_->NowWithError(&current_ts, &current_max_error);
@@ -92,6 +93,8 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
 // we're sure that tx_latest < now_earliest.
 TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
 
+  MonoTime before = MonoTime::Now(MonoTime::FINE);
+
   // we do no time adjustment, this event should fall right within the possible
   // error interval
   Timestamp past_ts;
@@ -99,7 +102,6 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
   clock_->NowWithError(&past_ts, &past_max_error);
   Timestamp wait_until = HybridClock::AddPhysicalTimeToTimestamp(past_ts, past_max_error);
 
-  MonoTime before = MonoTime::Now(MonoTime::FINE);
   Timestamp current_ts;
   uint64_t current_max_error;
   clock_->NowWithError(&current_ts, &current_max_error);
