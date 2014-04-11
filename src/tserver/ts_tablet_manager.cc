@@ -47,7 +47,6 @@ using kudu::metadata::TabletMasterBlockPB;
 using kudu::metadata::TabletMetadata;
 using kudu::tablet::Tablet;
 
-static const char* const kTmpSuffix = ".tmp";
 static const int kNumTabletsToBoostrapSimultaneously = 4;
 
 namespace kudu {
@@ -99,17 +98,9 @@ Status TSTabletManager::Init() {
 
   // Search for tablets in the master block dir
   BOOST_FOREACH(const string& child, children) {
-    if (HasSuffixString(child, kTmpSuffix)) {
-      LOG(WARNING) << "Ignoring tmp file in master block dir: " << child;
+    if (!Tablet::IsTabletFileName(child)) {
       continue;
     }
-
-    if (HasPrefixString(child, ".")) {
-      // Hidden file or ./..
-      VLOG(1) << "Ignoring hidden file in master block dir: " << child;
-      continue;
-    }
-
     tablets.push_back(child);
   }
 
@@ -353,15 +344,7 @@ Status TSTabletManager::PersistMasterBlock(const TabletMasterBlockPB& pb) {
 
 Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlockPB* block) {
   string path = fs_manager_->GetMasterBlockPath(tablet_id);
-  RETURN_NOT_OK(pb_util::ReadPBFromPath(fs_manager_->env(), path, block));
-  if (tablet_id != block->tablet_id()) {
-    LOG_AND_RETURN(ERROR, Status::Corruption(
-                     strings::Substitute("Corrupt master block $0: PB has wrong tablet ID",
-                                         path),
-                     block->ShortDebugString()));
-  }
-
-  return Status::OK();
+  return TabletMetadata::OpenMasterBlock(fs_manager_->env(), path, tablet_id, block);
 }
 
 void TSTabletManager::RegisterTablet(const std::string& tablet_id,

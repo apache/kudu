@@ -18,6 +18,10 @@
 
 namespace kudu {
 
+namespace tools {
+class FsTool;
+}
+
 // TODO: This is only used by tablet, maybe should be in the tablet namespace
 namespace metadata {
 
@@ -59,6 +63,12 @@ class TabletMetadata {
   static Status Load(FsManager* fs_manager,
                      const TabletMasterBlockPB& master_block,
                      gscoped_ptr<TabletMetadata>* metadata);
+
+  // Load a tablet's master block from the file system.
+  static Status OpenMasterBlock(Env* env,
+                                const std::string& master_block_path,
+                                const std::string& expected_tablet_id,
+                                TabletMasterBlockPB* master_block);
 
   // Try to load an existing tablet. If it does not exist, create it.
   // If it already existed, verifies that the schema of the tablet matches the
@@ -400,6 +410,18 @@ class RowSetMetadata {
   typedef simple_spinlock LockType;
   mutable LockType deltas_lock_;
 
+  const BlockId& column_block(size_t col_idx) const {
+    return column_blocks_[col_idx];
+  }
+
+  const std::pair<int64_t, BlockId>& redo_delta_block(size_t idx) const {
+    return redo_delta_blocks_[idx];
+  }
+
+  const std::pair<int64_t, BlockId>& undo_delta_block(size_t idx) const {
+    return undo_delta_blocks_[idx];
+  }
+
   int64_t id_;
   Schema schema_;
   BlockId bloom_block_;
@@ -412,6 +434,7 @@ class RowSetMetadata {
   int64_t last_durable_redo_dms_id_;
 
   friend class TabletMetadata;
+  friend class kudu::tools::FsTool;
 };
 
 } // namespace metadata

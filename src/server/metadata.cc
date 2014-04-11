@@ -14,6 +14,7 @@
 #include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "gutil/strings/substitute.h"
+#include "util/pb_util.h"
 #include "server/metadata.pb.h"
 #include "server/metadata_util.h"
 
@@ -80,6 +81,20 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
   } else {
     return s;
   }
+}
+
+Status TabletMetadata::OpenMasterBlock(Env* env,
+                                       const string& master_block_path,
+                                       const string& expected_tablet_id,
+                                       TabletMasterBlockPB* master_block) {
+  RETURN_NOT_OK(pb_util::ReadPBFromPath(env, master_block_path, master_block));
+  if (expected_tablet_id != master_block->tablet_id()) {
+    LOG_AND_RETURN(ERROR, Status::Corruption(
+        strings::Substitute("Corrupt master block $0: PB has wrong tablet ID",
+                            master_block_path),
+        master_block->ShortDebugString()));
+  }
+  return Status::OK();
 }
 
 TabletMetadata::TabletMetadata(FsManager *fs_manager,

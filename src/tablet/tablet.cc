@@ -22,6 +22,7 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/substitute.h"
+#include "gutil/strings/util.h"
 #include "tablet/compaction.h"
 #include "tablet/compaction_policy.h"
 #include "tablet/delta_compaction.h"
@@ -71,6 +72,7 @@ using strings::Substitute;
 using base::subtle::Barrier_AtomicIncrement;
 
 static const int64_t kNoMrsFlushed = -1;
+static const char* const kTmpSuffix = ".tmp";
 
 static CompactionPolicy *CreateCompactionPolicy() {
   if (FLAGS_tablet_compaction_policy == "size") {
@@ -835,6 +837,21 @@ void Tablet::GetRowSetsForTests(RowSetVector* out) {
   BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
     out->push_back(rs);
   }
+}
+
+bool Tablet::IsTabletFileName(const std::string& fname) {
+  if (HasSuffixString(fname, kTmpSuffix)) {
+    LOG(WARNING) << "Ignoring tmp file in master block dir: " << fname;
+    return false;
+  }
+
+  if (HasPrefixString(fname, ".")) {
+    // Hidden file or ./..
+    VLOG(1) << "Ignoring hidden file in master block dir: " << fname;
+    return false;
+  }
+
+  return true;
 }
 
 Status Tablet::FlushMetadata(const RowSetVector& to_remove,

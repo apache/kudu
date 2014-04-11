@@ -98,6 +98,8 @@ const char *FsMetadataTypeToString(FsMetadataType type);
 //    <kudu.root.dir>/data/<prefix-0>/<prefix-2>/<prefix-4>/<name>
 class FsManager {
  public:
+  static const char *kWalsRecoveryDirSuffix;
+
   FsManager(Env *env, const string& root_path);
 
   ~FsManager();
@@ -245,7 +247,6 @@ class FsManager {
   static const char *kDataDirName;
   static const char *kMasterBlockDirName;
   static const char *kWalsDirName;
-  static const char *kWalsRecoveryDirSuffix;
   static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
 
