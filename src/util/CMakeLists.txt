@@ -36,7 +36,6 @@ add_library(kudu_util
   task_executor.cc
   test_graph.cc
   thread.cc
-  thread_util.cc
   threadlocal.cc
   threadpool.cc
   trace.cc

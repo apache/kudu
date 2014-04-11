@@ -32,9 +32,6 @@ class MetricRegistry;
 class Thread;
 class WebCallbackRegistry;
 
-// TODO: temporary hack to avoid collisions with thread_util.{cc,h}
-#define ThreadJoiner TJoiner
-
 // Utility to join on a thread, printing warning messages if it
 // takes too long. For example:
 //
