@@ -723,6 +723,8 @@ TEST_F(ClientTest, TestStaleLocations) {
   // so spin until we get a non-stale location.
   int wait_time = 1000;
   for (int i = 0; i < 80; ++i) {
+    ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
+                    tablet_id, &locs_pb));
     if (!locs_pb.stale()) {
       break;
     }
