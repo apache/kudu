@@ -238,7 +238,11 @@ TEST_F(ClientTest, TestMasterDown) {
   scoped_refptr<KuduTable> t;
   Status s = client_->OpenTable("other-tablet", &t);
   ASSERT_TRUE(s.IsNetworkError());
-  ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
+  const string& msg = s.ToString();
+  ASSERT_TRUE(msg.find("Connection refused") != string::npos ||
+              msg.find("EOF") != string::npos ||
+              msg.find("Connection reset") != string::npos)
+      << "Unexpected client error message: " << msg;
 }
 
 TEST_F(ClientTest, TestScan) {

@@ -6,6 +6,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
 
@@ -25,10 +26,7 @@ struct RpcServerOptions {
   uint32_t num_acceptors_per_address;
   uint32_t num_service_threads;
   uint16_t default_port;
-
-  // TODO: add service queue length -- awkward to do right now since the
-  // service queue is part of the messenger instead of the RpcServer.
-  // This is do for some refactoring.
+  size_t service_queue_length;
 };
 
 class RpcServer {
@@ -36,9 +34,8 @@ class RpcServer {
   explicit RpcServer(const RpcServerOptions& opts);
   ~RpcServer();
 
-  Status Init();
-  Status Start(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-               gscoped_ptr<rpc::ServiceIf> service);
+  Status Init(const std::tr1::shared_ptr<rpc::Messenger>& messenger);
+  Status Start(gscoped_ptr<rpc::ServiceIf> service);
   void Shutdown();
 
   string ToString() const;
@@ -50,12 +47,14 @@ class RpcServer {
  private:
   const RpcServerOptions options_;
   bool initted_;
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  std::string service_name_;
 
   // Parsed addresses to bind RPC to. Set by Init()
   std::vector<Sockaddr> rpc_bind_addresses_;
 
   std::vector<std::tr1::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
-  gscoped_ptr<rpc::ServicePool> service_pool_;
+  scoped_refptr<rpc::ServicePool> service_pool_;
   DISALLOW_COPY_AND_ASSIGN(RpcServer);
 };
 

@@ -134,6 +134,7 @@ void Connection::Shutdown(const Status &status) {
   read_io_.stop();
   write_io_.stop();
   is_epoll_registered_ = false;
+  WARN_NOT_OK(socket_.Close(), "Error closing socket");
 }
 
 void Connection::QueueOutbound(gscoped_ptr<OutboundTransfer> transfer) {

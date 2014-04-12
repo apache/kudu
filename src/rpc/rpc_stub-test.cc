@@ -279,7 +279,7 @@ TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
   }
 
   // Verify that the timedout call got short circuited before being processed.
-  const Counter* timed_out_in_queue = worker_pool_->rpcs_timed_out_in_queue_metric();
+  const Counter* timed_out_in_queue = service_pool_->RpcsTimedOutInQueueMetricForTests();
   ASSERT_EQ(1, timed_out_in_queue->value());
 }
 

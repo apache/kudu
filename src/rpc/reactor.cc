@@ -90,12 +90,15 @@ void ReactorThread::ShutdownInternal() {
   for (conn_map_t::iterator c = client_conns_.begin();
        c != client_conns_.end(); c = client_conns_.begin()) {
     const shared_ptr<Connection> &conn = (*c).second;
+    VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(ShutdownError());
     client_conns_.erase(c);
   }
 
   // Tear down any inbound TCP connections.
+  VLOG(1) << name() << ": tearing down inbound TCP connections...";
   BOOST_FOREACH(const shared_ptr<Connection> &conn, server_conns_) {
+    VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(ShutdownError());
   }
   server_conns_.clear();

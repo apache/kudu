@@ -13,12 +13,14 @@
 #include "rpc/inbound_call.h"
 #include "rpc/messenger.h"
 #include "rpc/service_if.h"
+#include "gutil/strings/substitute.h"
 #include "util/metrics.h"
 #include "util/status.h"
 #include "util/thread_util.h"
 #include "util/trace.h"
 
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 METRIC_DEFINE_histogram(incoming_queue_time, kudu::MetricUnit::kMicroseconds,
     "Number of microseconds incoming RPC requests spend in the worker queue",
@@ -31,22 +33,18 @@ METRIC_DEFINE_counter(rpcs_timed_out_in_queue, kudu::MetricUnit::kRequests,
 namespace kudu {
 namespace rpc {
 
-ServicePool::ServicePool(const std::tr1::shared_ptr<Messenger> &messenger,
-                         gscoped_ptr<ServiceIf> service)
-  : messenger_(messenger),
-    service_(service.Pass()),
-    incoming_queue_time_(METRIC_incoming_queue_time.Instantiate(
-                           *(CHECK_NOTNULL(messenger_->metric_context())))),
-    rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(
-                               *(CHECK_NOTNULL(messenger_->metric_context())))) {
+ServicePool::ServicePool(gscoped_ptr<ServiceIf> service,
+                         const MetricContext& metric_ctx,
+                         size_t service_queue_length)
+  : service_(service.Pass()),
+    service_queue_(service_queue_length),
+    incoming_queue_time_(METRIC_incoming_queue_time.Instantiate(metric_ctx)),
+    rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(metric_ctx)),
+    closing_(false) {
 }
 
 ServicePool::~ServicePool() {
-  // We can't join all of our threads unless the Messenger is closing.
-  CHECK(messenger_->closing());
-  BOOST_FOREACH(shared_ptr<boost::thread>& thread, threads_) {
-    CHECK_OK(ThreadJoiner(thread.get(), "service thread").Join());
-  }
+  Shutdown();
 }
 
 Status ServicePool::Init(int num_threads) {
@@ -61,11 +59,60 @@ Status ServicePool::Init(int num_threads) {
   return Status::OK();
 }
 
+void ServicePool::Shutdown() {
+  service_queue_.Shutdown();
+
+  boost::lock_guard<boost::mutex> lock(shutdown_lock_);
+  if (closing_) return;
+  closing_ = true;
+  // TODO: Use a proper thread pool implementation.
+  BOOST_FOREACH(shared_ptr<boost::thread>& thread, threads_) {
+    CHECK_OK(ThreadJoiner(thread.get(), "service thread").Join());
+  }
+
+  // Now we must drain the service queue.
+  Status status = Status::ServiceUnavailable("Service is shutting down");
+  gscoped_ptr<InboundCall> incoming;
+  while (service_queue_.BlockingGet(&incoming)) {
+    incoming.release()->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN, status);
+  }
+}
+
+Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
+  InboundCall* c = call.release();
+
+  TRACE_TO(c->trace(), "Inserting onto call queue");
+  // Queue message on service queue
+  QueueStatus queue_status = service_queue_.Put(c);
+  if (PREDICT_TRUE(queue_status == QUEUE_SUCCESS)) {
+    // NB: do not do anything with 'c' after it is successfully queued --
+    // a service thread may have already dequeued it, processed it, and
+    // responded by this point, in which case the pointer would be invalid.
+    return Status::OK();
+  }
+
+  Status status = Status::OK();
+  if (queue_status == QUEUE_FULL) {
+    status = Status::ServiceUnavailable(Substitute(
+                             "The service queue is full; it "
+                             "has $0 items. Transfer dropped because of backpressure.",
+                             service_queue_.max_elements()));
+    c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY, status);
+  } else if (queue_status == QUEUE_SHUTDOWN) {
+    status = Status::ServiceUnavailable("Service is shutting down");
+    c->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN, status);
+  } else {
+    status = Status::RuntimeError(Substitute("Unknown error from BlockingQueue: $0", queue_status));
+    c->RespondFailure(ErrorStatusPB::FATAL_UNKNOWN, status);
+  }
+  return status;
+}
+
 void ServicePool::RunThread() {
   SetThreadName("rpc worker");
   while (true) {
     gscoped_ptr<InboundCall> incoming;
-    if (!messenger_->service_queue().BlockingGet(&incoming)) {
+    if (!service_queue_.BlockingGet(&incoming)) {
       VLOG(1) << "ServicePool: messenger shutting down.";
       return;
     }

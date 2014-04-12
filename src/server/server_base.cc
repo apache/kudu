@@ -107,7 +107,7 @@ Status ServerBase::Init() {
   builder.set_metric_context(metric_context());
   RETURN_NOT_OK(builder.Build(&messenger_));
 
-  RETURN_NOT_OK(rpc_server_->Init());
+  RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
   return Status::OK();
 }
@@ -155,7 +155,7 @@ Status ServerBase::DumpServerInfo(const std::string& path,
 }
 
 Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
-  RETURN_NOT_OK(rpc_server_->Start(messenger_, rpc_impl.Pass()));
+  RETURN_NOT_OK(rpc_server_->Start(rpc_impl.Pass()));
 
   AddDefaultPathHandlers(web_server_.get());
   RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
@@ -170,10 +170,6 @@ Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
 }
 
 void ServerBase::Shutdown() {
-  if (messenger_) {
-    messenger_->Shutdown();
-    messenger_.reset();
-  }
   web_server_->Stop();
   rpc_server_->Shutdown();
 }

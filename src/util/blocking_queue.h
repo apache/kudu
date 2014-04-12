@@ -9,6 +9,7 @@
 #include <boost/type_traits/remove_pointer.hpp>
 #include <unistd.h>
 #include <list>
+#include <tr1/type_traits>
 #include <vector>
 
 #include "gutil/basictypes.h"
@@ -36,6 +37,13 @@ class BlockingQueue {
       max_elements_(max_elements) {
   }
 
+  // If the queue holds a bare pointer, it must be empty on destruction, since
+  // it may have ownership of the pointer.
+  ~BlockingQueue() {
+    DCHECK(list_.empty() || !std::tr1::is_pointer<T>::value)
+        << "BlockingQueue holds bare pointers at destruction time";
+  }
+
   // Get an element from the queue.  Returns false if we were shut down prior to
   // getting the element.
   bool BlockingGet(T *out) {
@@ -54,8 +62,8 @@ class BlockingQueue {
     }
   }
 
-  // Get an element from the queue.  Returns false if we were shut down prior to
-  // getting the element.
+  // Get an element from the queue.  Returns false if the queue is empty and
+  // we were shut down prior to getting the element.
   bool BlockingGet(gscoped_ptr<T_VAL> *out) {
     T t;
     bool got_element = BlockingGet(&t);

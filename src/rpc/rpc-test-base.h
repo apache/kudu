@@ -196,6 +196,10 @@ class RpcTestBase : public KuduTest {
   }
 
   virtual void TearDown() {
+    if (service_pool_) {
+      server_messenger_->UnregisterService(service_name_);
+      service_pool_->Shutdown();
+    }
     if (server_messenger_) {
       server_messenger_->Shutdown();
     }
@@ -277,14 +281,18 @@ class RpcTestBase : public KuduTest {
     ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
     *server_addr = pool->bind_address();
 
-    gscoped_ptr<ServiceIf> impl(new ServiceClass(metric_ctx_));
-    worker_pool_.reset(new ServicePool(server_messenger_, impl.Pass()));
-    ASSERT_STATUS_OK(worker_pool_->Init(n_worker_threads_));
+    gscoped_ptr<ServiceIf> service(new ServiceClass(metric_ctx_));
+    service_name_ = service->service_name();
+    const MetricContext& metric_ctx = *server_messenger_->metric_context();
+    service_pool_ = new ServicePool(service.Pass(), metric_ctx, 50);
+    server_messenger_->RegisterService(service_name_, service_pool_);
+    ASSERT_STATUS_OK(service_pool_->Init(n_worker_threads_));
   }
 
  protected:
+  string service_name_;
   shared_ptr<Messenger> server_messenger_;
-  gscoped_ptr<ServicePool> worker_pool_;
+  scoped_refptr<ServicePool> service_pool_;
   int n_worker_threads_;
   int n_server_reactor_threads_;
   int keepalive_time_ms_;

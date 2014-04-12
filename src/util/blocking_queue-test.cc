@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
+#include <vector>
 
 #include "util/countdown_latch.h"
 #include "util/blocking_queue.h"
@@ -52,6 +53,25 @@ TEST(BlockingQueueTest, TestTooManyInsertions) {
   ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
   ASSERT_EQ(test_queue.Put(123), QUEUE_FULL);
 }
+
+TEST(BlockingQueueTest, TestNonPointerParamsMayBeNonEmptyOnDestruct) {
+  BlockingQueue<int32_t> test_queue(1);
+  ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
+  // No DCHECK failure on destruct.
+}
+
+#ifndef NDEBUG
+TEST(BlockingQueueDeathTest, TestPointerParamsMustBeEmptyOnDestruct) {
+  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+  ASSERT_DEATH({
+      BlockingQueue<int32_t*> test_queue(1);
+      int32_t element = 123;
+      ASSERT_EQ(test_queue.Put(&element), QUEUE_SUCCESS);
+      // Debug assertion triggered on queue destruction since type is a pointer.
+    },
+    "BlockingQueue holds bare pointers");
+}
+#endif // NDEBUG
 
 TEST(BlockingQueueTest, TestGetFromShutdownQueue) {
   BlockingQueue<int64_t> test_queue(2);

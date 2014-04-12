@@ -15,11 +15,13 @@
 #include <string>
 
 #include "gutil/gscoped_ptr.h"
+#include "gutil/stl_util.h"
 #include "rpc/acceptor_pool.h"
 #include "rpc/connection.h"
 #include "rpc/constants.h"
 #include "rpc/reactor.h"
 #include "rpc/rpc_header.pb.h"
+#include "rpc/rpc_service.h"
 #include "rpc/sasl_common.h"
 #include "rpc/transfer.h"
 #include "util/errno.h"
@@ -46,8 +48,7 @@ MessengerBuilder::MessengerBuilder(const std::string &name)
     connection_keepalive_time_(MonoDelta::FromSeconds(10)),
     num_reactors_(4),
     num_negotiation_threads_(4),
-    coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
-    service_queue_length_(50) {
+    coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)) {
 }
 
 MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelta &keepalive) {
@@ -67,12 +68,6 @@ MessengerBuilder& MessengerBuilder::set_negotiation_threads(int num_negotiation_
 
 MessengerBuilder& MessengerBuilder::set_coarse_timer_granularity(const MonoDelta &granularity) {
   coarse_timer_granularity_ = granularity;
-  return *this;
-}
-
-MessengerBuilder &MessengerBuilder::set_service_queue_length(
-                                int service_queue_length) {
-  service_queue_length_ = service_queue_length;
   return *this;
 }
 
@@ -111,31 +106,29 @@ void Messenger::AllExternalReferencesDropped() {
 }
 
 void Messenger::Shutdown() {
-  {
-    boost::lock_guard<boost::mutex> guard(lock_);
-    if (closing_) {
-      return;
-    }
-    VLOG(1) << "shutting down messenger " << name_;
-    closing_ = true;
+  boost::lock_guard<boost::mutex> guard(lock_);
+  if (closing_) {
+    return;
   }
-  service_queue_.Shutdown();
+  VLOG(1) << "shutting down messenger " << name_;
+  closing_ = true;
 
-  // Drain any remaining calls that haven't been responded to.
-  InboundCall *call = NULL;
-  while (service_queue_.BlockingGet(&call)) {
-    call->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN,
-                         Status::ServiceUnavailable("Server shutting down"));
+  DCHECK(!rpc_service_) << "Unregister RPC services before shutting down Messenger";
+  rpc_service_ = NULL;
+
+  BOOST_FOREACH(const shared_ptr<AcceptorPool>& acceptor_pool, acceptor_pools_) {
+    acceptor_pool->Shutdown();
   }
+  acceptor_pools_.clear();
 
+  // Need to shut down negotiation executor before the reactors, since the
+  // reactors close the Connection sockets, and may race against the negotiation
+  // thread's blocking reads & writes.
+  negotiation_executor_->Shutdown();
 
-  BOOST_FOREACH(shared_ptr<AcceptorPool> &pool, acceptor_pools_) {
-    pool->Shutdown();
-  }
   BOOST_FOREACH(Reactor* reactor, reactors_) {
     reactor->Shutdown();
   }
-  negotiation_executor_->Shutdown();
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
@@ -154,35 +147,46 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   return Status::OK();
 }
 
+// Register a new RpcService to handle inbound requests.
+Status Messenger::RegisterService(const string& service_name,
+                                  const scoped_refptr<RpcService>& service) {
+  DCHECK(service);
+  boost::lock_guard<boost::mutex> guard(lock_);
+  // TODO: Key services on service name.
+  rpc_service_ = service;
+  return Status::OK();
+}
+
+// Unregister an RpcService.
+Status Messenger::UnregisterService(const string& service_name) {
+  boost::lock_guard<boost::mutex> guard(lock_);
+  if (!rpc_service_) {
+    return Status::ServiceUnavailable("Service is not registered");
+  } else {
+    rpc_service_ = NULL;
+  }
+  return Status::OK();
+}
+
 void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   Reactor *reactor = RemoteToReactor(call->conn_id().remote());
   reactor->QueueOutboundCall(call);
 }
 
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
-  InboundCall *c = call.release();
+  TRACE_TO(call->trace(), "Inserting onto call queue");
 
-  TRACE_TO(c->trace(), "Inserting onto call queue");
-  // Queue message on service queue
-  QueueStatus s = service_queue_.Put(c);
-  if (PREDICT_TRUE(s == QUEUE_SUCCESS)) {
-    // NB: do not do anything with 'c' after it is successfully queued --
-    // a service thread may have already dequeued it, processed it, and
-    // responded by this point, in which case the pointer would be invalid.
+  boost::lock_guard<boost::mutex> guard(lock_);
+  if (PREDICT_FALSE(!rpc_service_)) {
+    Status s = Status::ServiceUnavailable("RPC Service is not registered",
+                                          call->ToString());
+    LOG(INFO) << s.ToString();
+    call.release()->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_SERVICE, s);
     return;
   }
 
-  if (s == QUEUE_FULL) {
-    c->RespondFailure(
-      ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
-      Status::ServiceUnavailable(StringPrintf(
-                             "The service queue is full; it "
-                             "has %zd items. Transfer dropped because of backpressure.",
-                             service_queue_.max_elements())));
-  } else if (s == QUEUE_SHUTDOWN) {
-    c->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN,
-                      Status::ServiceUnavailable("Service is shutting down"));
-  }
+  // The RpcService will respond to the client on success or failure.
+  WARN_NOT_OK(rpc_service_->QueueInboundCall(call.Pass()), "Unable to handle RPC call");
 }
 
 void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote) {
@@ -191,9 +195,8 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 }
 
 Messenger::Messenger(const MessengerBuilder &bld)
-  : closing_(false),
-    service_queue_(bld.service_queue_length_),
-    name_(bld.name_),
+  : name_(bld.name_),
+    closing_(false),
     retain_self_(this) {
   if (bld.metric_ctx_) {
     metric_ctx_.reset(new MetricContext(*bld.metric_ctx_));
@@ -206,11 +209,9 @@ Messenger::Messenger(const MessengerBuilder &bld)
 }
 
 Messenger::~Messenger() {
+  boost::lock_guard<boost::mutex> guard(lock_);
   CHECK(closing_) << "Should have already shut down";
-  BOOST_FOREACH(Reactor* r, reactors_) {
-    delete r;
-  }
-  reactors_.clear();
+  STLDeleteElements(&reactors_);
 }
 
 Reactor* Messenger::RemoteToReactor(const Sockaddr &remote) {

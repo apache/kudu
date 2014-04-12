@@ -2,7 +2,7 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
-#include <boost/thread/locks.hpp>
+#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <gutil/gscoped_ptr.h>
 #include <stdint.h>
@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "rpc/response_callback.h"
-#include "util/blocking_queue.h"
 #include "util/metrics.h"
 #include "util/monotime.h"
 #include "util/net/sockaddr.h"
@@ -28,12 +28,12 @@ class TaskExecutor;
 namespace rpc {
 
 class AcceptorPool;
-class Connection;
 class InboundCall;
 class Messenger;
 class OutboundCall;
 class Reactor;
 class ReactorThread;
+class RpcService;
 
 struct AcceptorPoolInfo {
  public:
@@ -71,10 +71,6 @@ class MessengerBuilder {
   // Set the granularity with which connections are checked for keepalive.
   MessengerBuilder &set_coarse_timer_granularity(const MonoDelta &granularity);
 
-  // Set the maximum number of inbound messages that can be queued before we
-  // start rejecting them.
-  MessengerBuilder &set_service_queue_length(int service_queue_length);
-
   // Set metric context for use by RPC systems.
   MessengerBuilder &set_metric_context(const MetricContext& metric_ctx);
 
@@ -87,7 +83,6 @@ class MessengerBuilder {
   int num_reactors_;
   int num_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
-  size_t service_queue_length_;
   gscoped_ptr<MetricContext> metric_ctx_;
 };
 
@@ -126,6 +121,13 @@ class Messenger {
   Status AddAcceptorPool(const Sockaddr &accept_addr, int num_threads,
                          std::tr1::shared_ptr<AcceptorPool>* pool);
 
+  // Register a new RpcService to handle inbound requests.
+  Status RegisterService(const std::string& service_name,
+                         const scoped_refptr<RpcService>& service);
+
+  // Unregister currently-registered RpcService.
+  Status UnregisterService(const std::string& service_name);
+
   // Queue a call for transmission. This will pick the appropriate reactor,
   // and enqueue a task on that reactor to assign and send the call.
   void QueueOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
@@ -137,10 +139,6 @@ class Messenger {
   void RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote);
 
   TaskExecutor* negotiation_executor() const { return negotiation_executor_.get(); }
-
-  BlockingQueue<InboundCall*>& service_queue() {
-    return service_queue_;
-  }
 
   std::string name() const {
     return name_;
@@ -167,20 +165,22 @@ class Messenger {
   // any references. See 'retain_self_' for more info.
   void AllExternalReferencesDropped();
 
-  // protects closing_, acceptor_pools_, next_call_id_, cur_time_
+  const std::string name_;
+
+  // protects closing_, acceptor_pools_, rpc_service_.
   mutable boost::mutex lock_;
 
   bool closing_;
-
-  kudu::BlockingQueue<InboundCall*> service_queue_;
-
-  const std::string name_;
 
   // Pools which are listening on behalf of this messenger.
   // Note that the user may have called Shutdown() on one of these
   // pools, so even though we retain the reference, it may no longer
   // be listening.
   acceptor_vec_t acceptor_pools_;
+
+  // RPC service that handles inbound requests.
+  // TODO: Allow multiple services to be registered.
+  scoped_refptr<RpcService> rpc_service_;
 
   std::vector<Reactor*> reactors_;
 

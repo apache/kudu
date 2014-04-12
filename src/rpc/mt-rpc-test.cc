@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/stl_util.h"
+#include "gutil/strings/substitute.h"
 #include "util/countdown_latch.h"
 #include "util/metrics.h"
 #include "util/test_util.h"
@@ -16,6 +17,7 @@
 METRIC_DECLARE_counter(rpc_connections_accepted);
 
 using std::string;
+using strings::Substitute;
 
 namespace kudu {
 namespace rpc {
@@ -23,18 +25,21 @@ namespace rpc {
 class MultiThreadedRpcTest : public RpcTestBase {
  public:
   // Make a single RPC call.
-  void SingleCall(Sockaddr server_addr, const char* method_name,
+  void SingleCall(Sockaddr server_addr, const char* method_name, const string& thread_name,
                   Status* result, CountDownLatch* latch) {
+    SetThreadName(thread_name);
     LOG(INFO) << "Connecting to " << server_addr.ToString();
-    shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+    shared_ptr<Messenger> client_messenger(CreateMessenger("ClientSC"));
     Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
     *result = DoTestSyncCall(p, method_name);
     latch->CountDown();
   }
 
   // Make RPC calls until we see a failure.
-  void HammerServer(Sockaddr server_addr, const char* method_name, Status* last_result) {
-    shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  void HammerServer(Sockaddr server_addr, const char* method_name, const string& thread_name,
+                    Status* last_result) {
+    SetThreadName(thread_name);
+    shared_ptr<Messenger> client_messenger(CreateMessenger("ClientHS"));
     HammerServerWithMessenger(server_addr, method_name, last_result, client_messenger);
   }
 
@@ -74,26 +79,25 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   Sockaddr server_addr;
   StartTestServer(&server_addr);
 
-  gscoped_ptr<boost::thread> thread1, thread2, thread3, thread4;
-  Status status1, status2, status3, status4;
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status1), &thread1));
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status2), &thread2));
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status3), &thread3));
-  ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this, server_addr,
-        GenericCalculatorService::kAddMethodName, &status4), &thread4));
+  const int kNumThreads = 4;
+  gscoped_ptr<boost::thread> threads[kNumThreads];
+  Status statuses[kNumThreads];
+  for (int i = 0; i < kNumThreads; i++) {
+    ASSERT_STATUS_OK(StartThread(boost::bind(&MultiThreadedRpcTest::HammerServer, this,
+        server_addr, GenericCalculatorService::kAddMethodName,
+        Substitute("client-thread-$0", i), &statuses[i]), &threads[i]));
+  }
 
   usleep(50000); // 50ms
 
   // Shut down server.
+  ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
+  service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
-  AssertShutdown(thread1.get(), "thread1", &status1);
-  AssertShutdown(thread2.get(), "thread2", &status2);
-  AssertShutdown(thread3.get(), "thread3", &status3);
-  AssertShutdown(thread4.get(), "thread4", &status4);
+  for (int i = 0; i < kNumThreads; i++) {
+    AssertShutdown(threads[i].get(), "thread1", &statuses[i]);
+  }
 }
 
 // Test shutting down the client messenger exactly as a thread is about to start
@@ -134,10 +138,12 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
 // This bogus service pool leaves the service queue full.
 class BogusServicePool : public ServicePool {
  public:
-  BogusServicePool(const shared_ptr<Messenger>& messenger, gscoped_ptr<ServiceIf> service)
-    : ServicePool(messenger, service.Pass()) {
+  BogusServicePool(gscoped_ptr<ServiceIf> service,
+                   const MetricContext& metric_ctx,
+                   size_t service_queue_length)
+    : ServicePool(service.Pass(), metric_ctx, service_queue_length) {
   }
-  virtual Status Init(int num_threads) {
+  virtual Status Init(int num_threads) OVERRIDE {
     // Do nothing
     return Status::OK();
   }
@@ -158,19 +164,24 @@ void IncrementBackpressureOrShutdown(const Status* status, int* backpressure, in
 
 // Test that we get a Service Unavailable error when we max out the incoming RPC service queue.
 TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
+  const size_t kMaxConcurrency = 2;
+
   MessengerBuilder bld("messenger1");
-  bld.set_num_reactors(2);
-  bld.set_service_queue_length(2);
+  bld.set_num_reactors(kMaxConcurrency);
   bld.set_metric_context(metric_ctx_);
   CHECK_OK(bld.Build(&server_messenger_));
 
   shared_ptr<AcceptorPool> pool;
-  ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
+  ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), kMaxConcurrency, &pool));
   Sockaddr server_addr = pool->bind_address();
 
-  gscoped_ptr<ServiceIf> impl(new GenericCalculatorService());
-  worker_pool_.reset(new BogusServicePool(server_messenger_, impl.Pass()));
-  ASSERT_STATUS_OK(worker_pool_->Init(n_worker_threads_));
+  gscoped_ptr<ServiceIf> service(new GenericCalculatorService());
+  service_name_ = service->service_name();
+  service_pool_ = new BogusServicePool(service.Pass(),
+                                      *server_messenger_->metric_context(),
+                                      kMaxConcurrency);
+  ASSERT_STATUS_OK(service_pool_->Init(n_worker_threads_));
+  server_messenger_->RegisterService(service_name_, service_pool_);
 
   gscoped_ptr<boost::thread> threads[3];
   Status status[3];
@@ -179,7 +190,9 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
     ASSERT_STATUS_OK(StartThread(
                        boost::bind(
                          &MultiThreadedRpcTest::SingleCall, this, server_addr,
-                         GenericCalculatorService::kAddMethodName, &status[i], &latch),
+                         GenericCalculatorService::kAddMethodName,
+                         Substitute("client thread $0", i),
+                         &status[i], &latch),
                        &threads[i]));;
   }
 
@@ -188,10 +201,13 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   latch.Wait();
 
   // The rest would time out after 10 sec, but we help them along.
+  ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
+  service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get(), "thread1").warn_every_ms(500).Join());
+    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get(), Substitute("client thread $0", i))
+                     .warn_every_ms(500).Join());
   }
 
   // Verify that one error was due to backpressure.
@@ -245,6 +261,8 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   }
 
   // Shutdown while there are still new connections appearing.
+  ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
+  service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
   BOOST_FOREACH(boost::thread* t, threads) {
