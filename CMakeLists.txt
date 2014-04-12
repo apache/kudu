@@ -81,6 +81,26 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # it in src/gutil/port.h only on clang. So, we can safely use it, and don't want
   # to trigger warnings when we do so.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-extensions")
+
+  # Using Clang with ccache causes a bunch of spurious warnings that are
+  # purportedly fixed in the next version of ccache. See the following for details:
+  #
+  #   http://petereisentraut.blogspot.com/2011/05/ccache-and-clang.html
+  #   http://petereisentraut.blogspot.com/2011/09/ccache-and-clang-part-2.html
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Qunused-arguments")
+
+  # Only hardcode -fcolor-diagnostics if stderr is opened on a terminal. Otherwise
+  # the color codes show up as noisy artifacts.
+  #
+  # This test is imperfect because 'cmake' and 'make' can be run independently
+  # (with different terminal options), and we're testing during the former.
+  execute_process(COMMAND test -t 2 RESULT_VARIABLE KUDU_IS_TTY)
+  if (${KUDU_IS_TTY} EQUAL 0)
+    message("Running in a controlling terminal")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
+  else()
+    message("Running without a controlling terminal")
+  endif()
 endif()
 
 # Flag to enable clang address sanitizer
