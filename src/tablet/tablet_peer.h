@@ -104,15 +104,17 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   consensus::Consensus* consensus() { return consensus_.get(); }
 
   Tablet* tablet() const {
+    boost::lock_guard<simple_spinlock> lock(lock_);
     return tablet_.get();
   }
 
   const std::tr1::shared_ptr<Tablet>& shared_tablet() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
     return tablet_;
   }
 
   const metadata::TabletStatePB state() const {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     return state_;
   }
 
@@ -129,14 +131,14 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   // sets the tablet state to FAILED additionally setting the error to the provided
   // one.
   void SetFailed(const Status& error) {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     state_ = metadata::FAILED;
     error_ = error;
   }
 
   // Returns the error that occurred, when state is FAILED.
   Status error() const {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     return error_;
   }
 
@@ -187,8 +189,9 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
 
-  // lock protecting internal (usually rare) state changes.
-  mutable simple_spinlock internal_state_lock_;
+  // lock protecting internal (usually rare) state changes as well as access to
+  // smart pointers to data structures such as tablet_ and consensus_.
+  mutable simple_spinlock lock_;
 
   // TODO move these executors to TabletServer when we support multiple tablets
   // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_executor_'

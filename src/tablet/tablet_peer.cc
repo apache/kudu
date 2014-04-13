@@ -72,7 +72,7 @@ TabletPeer::TabletPeer(const TabletMetadata& meta)
 }
 
 TabletPeer::~TabletPeer() {
-  boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+  boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, metadata::SHUTDOWN);
 }
 
@@ -84,23 +84,22 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         OpIdAnchorRegistry* opid_anchor_registry,
                         bool local_peer) {
 
-  {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
-    CHECK_EQ(state_, metadata::BOOTSTRAPPING);
-    state_ = metadata::CONFIGURING;
-    tablet_ = tablet;
-    clock_ = clock;
-    quorum_peer_ = quorum_peer;
-    messenger_ = messenger;
-    log_.reset(log.release());
-    opid_anchor_registry_ = opid_anchor_registry;
-    // TODO support different consensus implementations (possibly by adding
-    // a TabletPeerOptions).
+  boost::lock_guard<simple_spinlock> lock(lock_);
 
-    ConsensusOptions options;
-    options.tablet_id = tablet_->metadata()->oid();
-    consensus_.reset(new LocalConsensus(options));
-  }
+  CHECK_EQ(state_, metadata::BOOTSTRAPPING);
+  state_ = metadata::CONFIGURING;
+  tablet_ = tablet;
+  clock_ = clock;
+  quorum_peer_ = quorum_peer;
+  messenger_ = messenger;
+  log_.reset(log.release());
+  opid_anchor_registry_ = opid_anchor_registry;
+  // TODO support different consensus implementations (possibly by adding
+  // a TabletPeerOptions).
+
+  ConsensusOptions options;
+  options.tablet_id = tablet_->metadata()->oid();
+  consensus_.reset(new LocalConsensus(options));
 
   DCHECK(tablet_) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
@@ -130,7 +129,7 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
   RETURN_NOT_OK(tablet_->metadata()->Flush());
 
   {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, metadata::CONFIGURING);
     state_ = metadata::RUNNING;
   }
@@ -141,6 +140,7 @@ Status TabletPeer::Start(const QuorumPB& quorum) {
 }
 
 const metadata::QuorumPeerPB::Role TabletPeer::role() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
   if (tablet_ == NULL) {
     return metadata::QuorumPeerPB::NON_PARTICIPANT;
   }
@@ -159,7 +159,7 @@ const metadata::QuorumPeerPB::Role TabletPeer::role() const {
 
 void TabletPeer::Shutdown() {
   {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     state_ = metadata::QUIESCING;
   }
   tablet_->UnregisterMaintenanceOps();
@@ -184,14 +184,14 @@ void TabletPeer::Shutdown() {
   }
 
   {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     state_ = metadata::SHUTDOWN;
   }
 }
 
 Status TabletPeer::CheckRunning() const {
   {
-    boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+    boost::lock_guard<simple_spinlock> lock(lock_);
     if (state_ != metadata::RUNNING) {
       return Status::ServiceUnavailable(Substitute("The tablet is not in a running state: $0",
                                                    metadata::TabletStatePB_Name(state_)));
@@ -231,7 +231,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> ctx) {
 }
 
 void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
-  boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
+  boost::lock_guard<simple_spinlock> lock(lock_);
   DCHECK(status_pb_out != NULL);
   DCHECK(status_listener_.get() != NULL);
   status_pb_out->set_tablet_id(status_listener_->tablet_id());
@@ -240,8 +240,8 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   status_pb_out->set_start_key(status_listener_->start_key());
   status_pb_out->set_end_key(status_listener_->end_key());
   status_pb_out->set_state(state_);
-  if (tablet() != NULL) {
-    status_pb_out->set_estimated_on_disk_size(tablet()->EstimateOnDiskSize());
+  if (tablet_) {
+    status_pb_out->set_estimated_on_disk_size(tablet_->EstimateOnDiskSize());
   }
 }
 
