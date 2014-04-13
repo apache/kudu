@@ -30,9 +30,9 @@ etc, you can find these in thirdparty/installed/bin/
 Building kudu
 ------------------------------------------------------------
 
-# Add <root of kudu tree>/thirdparty/installed/bin to your $PATH 
+# Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
 # before other parts of $PATH that may contain cmake, such as /usr/bin
-# e.g. "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH" 
+# e.g. "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
 # if using bash
 $ cmake .
 $ make -j4
@@ -111,6 +111,7 @@ For more information on the heap checker, please see:
 NOTE: The AddressSanitizer doesn't play nice with tcmalloc, so sadly the
 HEAPCHECK environment has no effect if you have enabled ASAN.
 
+
 Running tests with ThreadSanitizer enabled
 ------------------------------------------------------------
 NOTE: this requires a relatively recent version of clang++, and may also require
@@ -134,6 +135,16 @@ In order for all of the suppressions to work, you need libraries with debug
 symbols installed, particularly for libstdc++. On Ubuntu 13.10, the package
 libstdc++6-4.8-dbg is needed for tsan builds to pass. It's not a bad idea to
 install debug symbol packages for libboost, libc, and cyrus-sasl as well.
+
+TSAN may truncate a few lines of the stack trace when reporting where the error
+is. This can be bewildering. It's documented for TSANv1 here:
+http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm
+It is not mentioned in the documentation for TSANv2, but has been observed.
+In order to find out what is _really_ happening, set a breakpoint on the TSAN
+report in GDB using the following incantation:
+
+gdb -ex 'set disable-randomization off' -ex 'b __tsan::PrintReport' ./some-test
+
 
 Generating code coverage reports
 ------------------------------------------------------------
