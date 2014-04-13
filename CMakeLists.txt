@@ -86,6 +86,11 @@ endif()
 # Flag to enable clang address sanitizer
 # This will only build if clang is the chosen compiler
 if (${KUDU_USE_ASAN})
+  if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
+          ("${COMPILER_FAMILY}" STREQUAL "gcc" AND "${COMPILER_VERSION}" VERSION_GREATER "4.8")))
+    message(SEND_ERROR "Cannot use ASAN without clang or gcc >= 4.8")
+  endif()
+
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
 
   # Ensure static linking is on -- otherwise can run into llvm bug #56393:
@@ -99,11 +104,20 @@ endif ()
 # - disable 'alignment' because unaligned access is really OK on Nehalem and we do it
 #   all over the place.
 if (${KUDU_USE_UBSAN})
+  if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
+          ("${COMPILER_FAMILY}" STREQUAL "gcc" AND "${COMPILER_VERSION}" VERSION_GREATER "4.9")))
+    message(SEND_ERROR "Cannot use UBSAN without clang or gcc >= 4.9")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover")
 endif ()
 
 # Flag to enable thread sanitizer (clang or gcc 4.8)
 if (${KUDU_USE_TSAN})
+  if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
+          ("${COMPILER_FAMILY}" STREQUAL "gcc" AND "${COMPILER_VERSION}" VERSION_GREATER "4.8")))
+    message(SEND_ERROR "Cannot use TSAN without clang or gcc >= 4.8")
+  endif()
+
   add_definitions("-fsanitize=thread")
 
   # thread sanitizer requires position independent executable
@@ -125,13 +139,13 @@ endif()
 
 
 if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
-  if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
-        ("${COMPILER_FAMILY}" STREQUAL "gcc" AND
-          "${COMPILER_VERSION}" VERSION_GREATER "4.8")))
-    message(SEND_ERROR "Cannot use ASAN/UBSAN/TSAN without clang or gcc >= 4.8")
+  # GCC 4.8 and 4.9 (latest as of this writing) don't allow you to specify a
+  # sanitizer blacklist.
+  if("${COMPILER_FAMILY}" STREQUAL "clang")
+    add_definitions("-fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
+  else()
+    message(WARNING "GCC does not support specifying a sanitizer blacklist. Known sanitizer check failures will not be suppressed.")
   endif()
-  add_definitions("-fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
-
 endif()
 
 # Ensure static linking is on for asan -- otherwise can run into gcc bug #56393:
