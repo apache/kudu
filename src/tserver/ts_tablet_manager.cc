@@ -83,7 +83,8 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
     server_(server),
     next_report_seq_(0),
     metric_ctx_(metric_ctx),
-    bootstrap_pool_("tablet-bootstrap") {
+    bootstrap_pool_("tablet-bootstrap",
+                    0, kNumTabletsToBoostrapSimultaneously, ThreadPool::DEFAULT_TIMEOUT) {
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -114,7 +115,7 @@ Status TSTabletManager::Init() {
 
   // TODO base the number of parallel tablet bootstraps on something related
   // to the number of physical devices.
-  RETURN_NOT_OK(bootstrap_pool_.Init(kNumTabletsToBoostrapSimultaneously));
+  RETURN_NOT_OK(bootstrap_pool_.Init());
 
   // Register the tablets and trigger the asynchronous bootstrap
   vector<shared_ptr<boost::thread> > tablet_initializers;

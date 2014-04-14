@@ -92,10 +92,10 @@ static inline void AppendReplicateMessagesToQueue(
 class TestPeerProxy : public PeerProxy {
  public:
   TestPeerProxy()
-    : pool_("remote-peer-pool"),
+    : pool_("remote-peer-pool", 0, 1, ThreadPool::DEFAULT_TIMEOUT),
       delay_response_(false),
       callback_(NULL) {
-    CHECK_OK(pool_.Init(1));
+    CHECK_OK(pool_.Init());
   }
 
   virtual Status UpdateAsync(const ConsensusRequestPB* request,

@@ -148,11 +148,18 @@ void TaskExecutor::Shutdown() {
   thread_pool_->Shutdown();
 }
 
-TaskExecutor *TaskExecutor::CreateNew(const string& name,
-                                      size_t num_threads) {
-  std::tr1::shared_ptr<ThreadPool> thread_pool(new ThreadPool(name));
+TaskExecutor* TaskExecutor::CreateNew(const string& name,
+                                      size_t max_threads) {
+  return CreateNew(name, 0, max_threads);
+}
 
-  Status s = thread_pool->Init(num_threads);
+TaskExecutor* TaskExecutor::CreateNew(const string& name,
+                                      size_t min_threads,
+                                      size_t max_threads) {
+  std::tr1::shared_ptr<ThreadPool> thread_pool(
+        new ThreadPool(name, min_threads, max_threads, ThreadPool::DEFAULT_TIMEOUT));
+
+  Status s = thread_pool->Init();
   if (!s.ok()) {
     LOG(ERROR)<< "Unable to initialize the TaskExecutor ThreadPool for "
               << name << ": " << s.ToString();
@@ -161,6 +168,7 @@ TaskExecutor *TaskExecutor::CreateNew(const string& name,
 
   return new TaskExecutor(thread_pool);
 }
+
 
 }  // namespace kudu
 

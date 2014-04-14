@@ -14,6 +14,7 @@
 
 #include "gutil/macros.h"
 #include "gutil/port.h"
+#include "util/monotime.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -34,20 +35,35 @@ class Runnable {
 //    static void Func(int n) { ... }
 //    class Task : public Runnable { ... }
 //
-//    ThreadPool thread_pool;
+//    ThreadPool thread_pool("my_pool", 0, 5, ThreadPool::DEFAULT_TIMEOUT);
 //    thread_pool.Submit(shared_ptr<Runnable>(new Task()));
 //    thread_pool.Submit(boost::bind(&Func, 10));
 class ThreadPool {
  public:
-  // Create a new thread pool. The 'name' is only used for debugging
-  // output and default names of the worker threads. Since thread names
-  // are limited to 16 characters on Linux, it's good to choose a short
-  // name here.
-  explicit ThreadPool(const std::string& name);
+  // Default timeout to use for threads.
+  static const MonoDelta DEFAULT_TIMEOUT;
+
+  // Create a new thread pool.
+  //
+  // name: used for debugging output and default names of the worker threads.
+  //    Since thread names are limited to 16 characters on Linux, it's good to
+  //    choose a short name here.
+  //
+  // min_threads: minimum number of threads we'll have at any time.
+
+  // max_threads: maximum number of threads we'll have at any time.
+  //
+  // timeout: how long we'll keep around a thread before timing it out.
+  //    We always keep at least min_threads.
+  //
+  // TODO: this class needs a builder.
+  ThreadPool(const std::string& name, int min_threads,
+             int max_threads, const MonoDelta &timeout);
+
   ~ThreadPool();
 
-  // Initialize the thread pool with the specified number of threads
-  Status Init(size_t num_threads);
+  // Initialize the thread pool.  We will start the minimum number of threads.
+  Status Init();
 
   // Wait for the running tasks to complete and then shutdown the threads.
   // All the other pending tasks in the queue will be removed.
@@ -83,17 +99,23 @@ class ThreadPool {
   bool TimedWait(const boost::system_time& time_until);
 
  private:
-  // Dispatcher responsible for dequeueing and executing the tasks
-  void DispatchThread();
+  // Clear all entries from queue_. Requires that lock_ is held.
+  void ClearQueue();
 
-  // Require external locking
-  bool is_idle() const {
-    return queue_.empty() && active_threads_ == 0;
-  }
+  // Decrements number of thread, wakes up any thread waiting for all
+  // threads to be finished. Requires that lock_ is held.
+  void ThreadFinishedUnlocked(int expected_num_threads);
+
+  // Dispatcher responsible for dequeueing and executing the tasks
+  void DispatchThread(bool permanent);
+
+  // Create new thread. Required that lock_ is held.
+  Status CreateThreadUnlocked();
 
  private:
-  // Clear all entries from queue_. Requires lock_ is held.
-  void ClearQueue();
+  FRIEND_TEST(TestThreadPool, TestThreadPoolWithNoMinimum);
+  FRIEND_TEST(TestThreadPool, TestVariableSizeThreadPool);
+  DISALLOW_COPY_AND_ASSIGN(ThreadPool);
 
   struct QueueEntry {
     std::tr1::shared_ptr<Runnable> runnable;
@@ -101,15 +123,17 @@ class ThreadPool {
   };
 
   const std::string name_;
-
-  boost::mutex lock_;
-  boost::condition_variable queue_changed_;
   std::list<QueueEntry> queue_;
-
-  bool closing_;
-  size_t active_threads_;
-  boost::condition_variable no_active_thread_;
-  std::vector<boost::thread *> threads_;
+  boost::mutex lock_;
+  Status pool_status_;
+  int num_threads_;
+  int active_threads_;
+  const int min_threads_;
+  const int max_threads_;
+  const MonoDelta timeout_;
+  boost::condition_variable queue_changed_;
+  boost::condition_variable idle_cond_;
+  boost::condition_variable no_threads_cond_;
 };
 
 } // namespace kudu

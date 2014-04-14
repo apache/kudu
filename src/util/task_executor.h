@@ -299,9 +299,17 @@ class TaskExecutor {
   explicit TaskExecutor(const std::tr1::shared_ptr<ThreadPool>& thread_pool);
   ~TaskExecutor();
 
-  // Create a new Executor with its own ThreadPool.
-  static TaskExecutor *CreateNew(const std::string& name,
-                                 size_t num_threads);
+  // Create a new Executor with its own ThreadPool and a maximum of
+  // 'max_threads' threads. Idle threads will be timed out (see
+  // threadpool.h for more information).
+  static TaskExecutor* CreateNew(const std::string& name,
+                                 size_t max_threads);
+
+  // Like the above CreateNew(), but with 'min_threads' minimum number
+  // of threads which will not be timed out if idle.
+  static TaskExecutor* CreateNew(const string& name,
+                                 size_t min_threads,
+                                 size_t max_threads);
 
   // Wait for the running tasks to complete and then shutdown the threads.
   // All the other pending tasks in the queue will be removed.
