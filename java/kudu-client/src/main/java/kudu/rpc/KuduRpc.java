@@ -30,12 +30,12 @@ import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
-import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.IOException;
-import java.nio.charset.Charset;
+
+import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
 /**
  * Abstract base class for all RPC requests going out to Kudu.
@@ -79,6 +79,9 @@ public abstract class KuduRpc {
 
   final DeadlineTracker deadlineTracker;
 
+  protected long propagatedTimestamp = -1;
+  protected ExternalConsistencyMode externalConsistencyMode = NO_CONSISTENCY;
+
   /**
    * How many times have we retried this RPC?.
    * Proper synchronization is required, although in practice most of the code
@@ -118,6 +121,27 @@ public abstract class KuduRpc {
    * The value is guaranteed to be both positive and of a "reasonable" size.
    */
   abstract Object deserialize(ChannelBuffer buf);
+
+  /**
+   * Sets the external consistency mode for this RPC.
+   * TODO make this cover most if not all RPCs (right now only scans and writes use this).
+   * @param externalConsistencyMode the mode to set
+   */
+  public void setExternalConsistencyMode(ExternalConsistencyMode externalConsistencyMode) {
+    this.externalConsistencyMode = externalConsistencyMode;
+  }
+
+  public ExternalConsistencyMode getExternalConsistencyMode() {
+    return this.externalConsistencyMode;
+  }
+
+  /**
+   * Sets the propagated timestamp for this RPC.
+   * @param propagatedTimestamp the timestamp to propagate
+   */
+  public void setPropagatedTimestamp(long propagatedTimestamp) {
+    this.propagatedTimestamp = propagatedTimestamp;
+  }
 
   /**
    * Package private way of making an RPC complete by giving it its result.

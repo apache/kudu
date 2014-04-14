@@ -36,6 +36,10 @@ public class KuduTable {
     return this.name;
   }
 
+  public KuduClient getClient() {
+    return this.client;
+  }
+
   public Slice getNameAsSlice() {
     return this.nameAsSlice;
   }

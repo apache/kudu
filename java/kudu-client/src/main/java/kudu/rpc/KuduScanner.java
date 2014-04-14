@@ -26,25 +26,30 @@
  */
 package kudu.rpc;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
+import kudu.Common;
 import kudu.Schema;
 import kudu.Type;
 import kudu.WireProtocol;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import kudu.util.HybridTimeUtil;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 
+import static kudu.rpc.KuduClient.*;
 import static kudu.tserver.Tserver.*;
 
 /**
- * Creates a scanner to read data sequentially from HBase.
+ * Creates a scanner to read data sequentially from Kudu.
  * <p>
  * This class is <strong>not synchronized</strong> as it's expected to be
  * used from a single thread at a time.  It's rarely (if ever?) useful to
@@ -73,6 +78,25 @@ import static kudu.tserver.Tserver.*;
 public final class KuduScanner {
 
   private static final Logger LOG = LoggerFactory.getLogger(KuduScanner.class);
+
+  /**
+   * The possible read modes for scanners.
+   * @see src/common/common.proto for a detailed explanations on the
+   *      meaning and implications of each mode.
+   */
+  public enum ReadMode {
+    READ_LATEST(Common.ReadMode.READ_LATEST),
+    READ_AT_SNAPSHOT(Common.ReadMode.READ_AT_SNAPSHOT);
+
+    private Common.ReadMode pbVersion;
+    private ReadMode(Common.ReadMode pbVersion) {
+      this.pbVersion = pbVersion;
+    }
+    public Common.ReadMode pbVersion() {
+      return this.pbVersion;
+    }
+  }
+
   private final KuduClient client;
   private final KuduTable table;
   private final Schema schema;
@@ -117,12 +141,12 @@ public final class KuduScanner {
   /**
    *
    */
-  private byte[] startKey = KuduClient.EMPTY_ARRAY;
+  private byte[] startKey = EMPTY_ARRAY;
 
   /**
    *
    */
-  private byte[] endKey = KuduClient.EMPTY_ARRAY;
+  private byte[] endKey = EMPTY_ARRAY;
 
   private boolean closed = false;
 
@@ -136,6 +160,9 @@ public final class KuduScanner {
 
   private final DeadlineTracker deadlineTracker;
 
+  private ReadMode readMode;
+  private long timestamp = NO_TIMESTAMP;
+
   /**
    * Creates a KuduScanner but doesn't start the scanner yet
    * @param client connection to the cluster
@@ -148,6 +175,33 @@ public final class KuduScanner {
     this.schema = schema;
     this.columnRangePredicates = new ColumnRangePredicates(schema);
     this.deadlineTracker = new DeadlineTracker();
+    this.readMode = ReadMode.READ_LATEST;
+  }
+
+  /**
+   * Like the above but allows to set the ReadMode.
+   */
+  KuduScanner(final KuduClient client, final KuduTable table, Schema schema, ReadMode readMode) {
+    this.client = client;
+    this.table = table;
+    this.schema = schema;
+    this.columnRangePredicates = new ColumnRangePredicates(schema);
+    this.deadlineTracker = new DeadlineTracker();
+    this.readMode = readMode;
+  }
+
+  /**
+   * Like the above but allows to set the ReadMode and a snapshot timestamp.
+   */
+  KuduScanner(final KuduClient client, final KuduTable table, Schema schema,
+    ReadMode readMode, long timestamp, TimeUnit timeUnit) {
+    this.client = client;
+    this.table = table;
+    this.schema = schema;
+    this.columnRangePredicates = new ColumnRangePredicates(schema);
+    this.deadlineTracker = new DeadlineTracker();
+    this.readMode = readMode;
+    this.timestamp = HybridTimeUtil.clockTimestampToHTTimestamp(timestamp, timeUnit);
   }
 
   /**
@@ -174,6 +228,27 @@ public final class KuduScanner {
    */
   public long getMaxNumBytes() {
     return max_num_bytes;
+  }
+
+  /**
+   * Returns the ReadMode for this scanner.
+   * @return the configured read mode for this scanner
+   * @see src/common/common.proto for information on ReadModes
+   */
+  public ReadMode getReadMode() {
+    return this.readMode;
+  }
+
+  /**
+   * Allow to set a previously encoded HT timestamp as a snapshot timestamp, for tests.
+   */
+  @VisibleForTesting
+  public void setSnapshotTimestamp(long htTimestamp) {
+    this.timestamp = htTimestamp;
+  }
+
+  protected long getSnapshotTimestamp() {
+    return this.timestamp;
   }
 
   /**
@@ -319,7 +394,7 @@ public final class KuduScanner {
   void scanFinished() {
     // We're done if 1) we finished scanning the last tablet, or 2) we're past a configured end
     // row key
-    if (tablet.getEndKey() == KuduClient.EMPTY_ARRAY || (this.endKey != KuduClient.EMPTY_ARRAY
+    if (tablet.getEndKey() == EMPTY_ARRAY || (this.endKey != EMPTY_ARRAY
         && Bytes.memcmp(this.endKey , tablet.getEndKey()) <= 0)) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
@@ -608,6 +683,19 @@ public final class KuduScanner {
           newBuilder.setLimit(limit); // currently ignored
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
           newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getTabletIdAsBytes()));
+          newBuilder.setReadMode(KuduScanner.this.getReadMode().pbVersion());
+          // if the last propagated timestamp is set send it with the scan
+          if (table.getClient().getLastPropagatedTimestamp() != NO_TIMESTAMP) {
+            newBuilder.setPropagatedTimestamp(table.getClient().getLastPropagatedTimestamp());
+          }
+          newBuilder.setReadMode(KuduScanner.this.getReadMode().pbVersion());
+
+          // if the mode is set to read on snapshot sent the snapshot timestamp
+          if (KuduScanner.this.getReadMode() == ReadMode.READ_AT_SNAPSHOT &&
+            KuduScanner.this.getSnapshotTimestamp() != NO_TIMESTAMP) {
+            newBuilder.setSnapTimestamp(KuduScanner.this.getSnapshotTimestamp());
+          }
+
           if (!columnRangePredicates.predicates.isEmpty()) {
             newBuilder.addAllRangePredicates(columnRangePredicates.predicates);
           }
@@ -624,7 +712,13 @@ public final class KuduScanner {
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);
       }
-      return toChannelBuffer(header, builder.build());
+
+      ScanRequestPB request = builder.build();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Sending scan req: " + request.toString());
+      }
+
+      return toChannelBuffer(header, request);
     }
 
     @Override

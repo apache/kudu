@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static kudu.rpc.ExternalConsistencyMode.NO_CONSISTENCY;
 
 /**
  * A KuduSession belongs to a specific KuduClient, and represents a context in
@@ -94,6 +95,7 @@ public class KuduSession {
   private int interval = 1000;
   private int mutationBufferSpace = 1000;
   private FlushMode flushMode;
+  private ExternalConsistencyMode consistencyMode;
   private long currentTimeout = 0;
 
   @GuardedBy("this")
@@ -106,6 +108,7 @@ public class KuduSession {
   KuduSession(KuduClient client) {
     this.client = client;
     this.flushMode = FlushMode.AUTO_FLUSH_SYNC;
+    this.consistencyMode = NO_CONSISTENCY;
   }
 
   /**
@@ -120,6 +123,21 @@ public class KuduSession {
       }
     }
     this.flushMode = flushMode;
+  }
+
+  /**
+   * Set the new external consistency mode for this session.
+   * @param consistencyMode new external consistency mode, can the same as the previous one.
+   * @throws IllegalArgumentException if the buffer isn't empty
+   */
+  public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode) {
+    synchronized (this) {
+      if (!this.operations.isEmpty()) {
+        throw new IllegalArgumentException("Cannot change consistency mode "
+            + "when writes are buffered");
+      }
+    }
+    this.consistencyMode = consistencyMode;
   }
 
   /**
@@ -214,6 +232,7 @@ public class KuduSession {
       if (currentTimeout != 0) {
         operation.setTimeoutMillis(currentTimeout);
       }
+      operation.setExternalConsistencyMode(this.consistencyMode);
       return client.sendRpcToTablet(operation);
     }
     String table = operation.getTable().getName();
@@ -280,6 +299,7 @@ public class KuduSession {
         // We found a tablet that needs batching, this is the only place where
         // we schedule a flush
         batch = new Batch(operation.getTable());
+        batch.setExternalConsistencyMode(this.consistencyMode);
         operations.put(tablet, batch);
         addBatchCallbacks(batch);
         // If we forced flush, it means we already have an outstanding flush scheduled
@@ -324,6 +344,9 @@ public class KuduSession {
           LOG.error(resp.getError().getStatus().getMessage());
           throw new NonRecoverableException(resp.getError().getStatus().getMessage());
         }
+        if (resp.hasWriteTimestamp()) {
+          KuduSession.this.client.updateLastPropagatedTimestamp(resp.getWriteTimestamp());
+        }
         // the row errors come in a list that we assume is in the same order as we sent them
         // TODO verify
         // we increment this index every time we send an error
@@ -337,7 +360,7 @@ public class KuduSession {
           }
           request.ops.get(i).callback(callbackObj);
         }
-        return null;
+        return resp;
       }
 
       public String toString() {

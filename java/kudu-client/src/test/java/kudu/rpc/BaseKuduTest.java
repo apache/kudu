@@ -58,9 +58,9 @@ public class BaseKuduTest {
       String flagFileOpt = "--flagfile=" + flagsPath;
       long now = System.currentTimeMillis();
       String[] masterCmdLine = {"kudu-master", flagFileOpt, "--master_base_dir=" + baseDirPath
-          + "/master-" + now};
-      String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt, "--tablet_server_base_dir=" + baseDirPath
-          + "/ts-" + now};
+        + "/master-" + now, "--use_hybrid_clock=true", "--max_clock_sync_error_usec=10000000"};
+      String[] tsCmdLine = {"kudu-tablet_server", flagFileOpt, "--tablet_server_base_dir="
+        + baseDirPath + "/ts-" + now, "--use_hybrid_clock=true", "--max_clock_sync_error_usec=10000000"};
 
       master = configureAndStartProcess(masterCmdLine);
       Thread.sleep(300);

@@ -27,6 +27,7 @@
 
 package kudu.rpc;
 
+import com.google.common.annotations.VisibleForTesting;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -58,13 +59,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.*;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static kudu.rpc.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static kudu.rpc.KuduScanner.ReadMode.READ_AT_SNAPSHOT;
 
 /**
  * A fully asynchronous, thread-safe, modern Kudu client.
@@ -105,6 +104,7 @@ public class KuduClient {
   public static final Logger LOG = LoggerFactory.getLogger(KuduClient.class);
   public static final int SLEEP_TIME = 500;
   public static final byte[] EMPTY_ARRAY = new byte[0];
+  public static final int NO_TIMESTAMP = -1;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -177,6 +177,13 @@ public class KuduClient {
 
   private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
 
+  /**
+   * Timestamp required for HybridTime external consistency through timestamp
+   * propagation.
+   * @see src/common/common.proto
+   */
+  private long lastPropagatedTimestamp = NO_TIMESTAMP;
+
   // A table is considered not served when we get an empty list of locations but know
   // that a tablet exists. This is currently only used for new tables
   private final ConcurrentHashMap<String, Object> tablesNotServed
@@ -218,6 +225,26 @@ public class KuduClient {
        new Schema(new ArrayList<ColumnSchema>(0)));
     this.masterTabletHack = new RemoteTablet(MASTER_TABLE_HACK,
         MASTER_TABLE_HACK_SLICE, EMPTY_ARRAY, EMPTY_ARRAY);
+  }
+
+  /**
+   * Updates the last timestamp received from a server. Used for CLIENT_PROPAGATED
+   * external consistency. This is only publicly visible so that it can be set
+   * on tests, users should generally disregard this method.
+   *
+   * @param lastPropagatedTimestamp the last timestamp received from a server
+   */
+  @VisibleForTesting
+  public synchronized void updateLastPropagatedTimestamp(long lastPropagatedTimestamp) {
+    if (this.lastPropagatedTimestamp == -1 ||
+      this.lastPropagatedTimestamp < lastPropagatedTimestamp) {
+      this.lastPropagatedTimestamp = lastPropagatedTimestamp;
+    }
+  }
+
+  @VisibleForTesting
+  public synchronized long getLastPropagatedTimestamp() {
+    return lastPropagatedTimestamp;
   }
 
   public Deferred<Object> ping() {
@@ -352,11 +379,36 @@ public class KuduClient {
    * Creates a new {@link KuduScanner} for a particular table.
    * @param table The name of the table you intend to scan.
    * The string is assumed to use the platform's default charset.
+   * The scanner will be created with ReadMode.READ_LATEST
    * @return A new scanner for this table.
+   * @see src/common/common.proto for info on ReadModes
    */
   public KuduScanner newScanner(final KuduTable table, Schema schema) {
     return new KuduScanner(this, table, schema);
   }
+
+  /**
+   * Like the above but creates a snapshot scanner. Snapshot scanners
+   * are required for externally consistent reads. In this overload the server
+   * will assign the snapshot timestamp.
+   *
+   * @see src/common/common.proto for info on ReadModes and snapshot scanners
+   */
+  public KuduScanner newSnapshotScanner(final KuduTable table, Schema schema) {
+    return new KuduScanner(this, table, schema, READ_AT_SNAPSHOT);
+  }
+
+  /**
+   * Like the above, also creates a Snapshot scanner, but allows to specify
+   * the snapshot timestamp.
+   *
+   * @see src/common/common.proto for info on ReadModes and snapshot scanners
+   */
+  public KuduScanner newSnapshotScanner(final KuduTable table,
+    Schema schema, long timestamp, TimeUnit timeUnit) {
+    return new KuduScanner(this, table, schema, READ_AT_SNAPSHOT);
+  }
+
 
   /**
    * Package-private access point for {@link KuduScanner}s to open themselves.
@@ -475,6 +527,14 @@ public class KuduClient {
     }
     final RemoteTablet tablet = getTablet(tableName, rowkey);
 
+    // Set the propagated timestamp so that the next time we send a message to
+    // the server the message includes the last propagated timestamp.
+    long lastPropagatedTs = getLastPropagatedTimestamp();
+    if (request.getExternalConsistencyMode() == CLIENT_PROPAGATED &&
+      lastPropagatedTs != NO_TIMESTAMP) {
+      request.setPropagatedTimestamp(lastPropagatedTs);
+    }
+
     if (tablet != null) {
       TabletClient tabletClient = clientFor(tablet);
       if (tabletClient != null) {
@@ -484,6 +544,7 @@ public class KuduClient {
         return d;
       }
     }
+
     // Right after creating a table a request will fall into locateTablet since we don't know yet
     // if the table is ready or not. If discoverTablet() didn't get any tablets back,
     // then on retry we'll fall into the following block. It will sleep, then call the master to

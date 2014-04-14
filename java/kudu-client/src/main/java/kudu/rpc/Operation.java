@@ -20,6 +20,9 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 
+import static kudu.rpc.KuduClient.NO_TIMESTAMP;
+import static kudu.rpc.KuduSession.*;
+
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
  * and knows how to serialize its child classes.
@@ -266,6 +269,10 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   ChannelBuffer serialize(Message header) {
     final Tserver.WriteRequestPB.Builder builder = createAndFillWriteRequestPB(this);
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
+    builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
+    if (this.propagatedTimestamp != NO_TIMESTAMP) {
+      builder.setPropagatedTimestamp(this.propagatedTimestamp);
+    }
     return toChannelBuffer(header, builder.build());
   }
 
