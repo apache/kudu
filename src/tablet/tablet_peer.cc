@@ -75,7 +75,6 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     opid_anchor_registry_ = opid_anchor_registry;
     // TODO support different consensus implementations (possibly by adding
     // a TabletPeerOptions).
-    consensus_.reset(new LocalConsensus(ConsensusOptions()));
 
     ConsensusOptions options;
     options.tablet_id = tablet_->metadata()->oid();
