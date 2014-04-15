@@ -23,7 +23,7 @@
 namespace kudu {
 namespace rpc {
 
-typedef std::list<std::tr1::shared_ptr<Connection> > conn_list_t;
+typedef std::list<scoped_refptr<Connection> > conn_list_t;
 
 class Messenger;
 class MessengerBuilder;
@@ -70,7 +70,7 @@ class ReactorThread {
   friend class Connection;
 
   // Client-side connection map.
-  typedef std::tr1::unordered_map<ConnectionId, std::tr1::shared_ptr<Connection>,
+  typedef std::tr1::unordered_map<ConnectionId, scoped_refptr<Connection>,
                                   ConnectionIdHash, ConnectionIdEqual> conn_map_t;
 
   ReactorThread(Reactor *reactor, const MessengerBuilder &bld);
@@ -115,13 +115,13 @@ class ReactorThread {
   // Begin the process of connection negotiation.
   // Must be called from the reactor thread.
   // Deadline specifies latest time negotiation may complete before timeout.
-  Status StartConnectionNegotiation(const std::tr1::shared_ptr<Connection> &conn,
-                                    const MonoTime &deadline);
+  Status StartConnectionNegotiation(const scoped_refptr<Connection>& conn,
+                                    const MonoTime& deadline);
 
   // Transition back from negotiating to processing requests.
   // Must be called from the reactor thread.
-  void CompleteConnectionNegotiation(const std::tr1::shared_ptr<Connection> &conn,
-      const Status &status);
+  void CompleteConnectionNegotiation(const scoped_refptr<Connection>& conn,
+      const Status& status);
 
  private:
   friend class AssignOutboundCallTask;
@@ -136,9 +136,9 @@ class ReactorThread {
   // May return a bad Status if the connect() call fails.
   // The resulting connection object is managed internally by the reactor thread.
   // Deadline specifies latest time allowed for initializing the connection.
-  Status FindOrStartConnection(const ConnectionId &conn_id,
-                               std::tr1::shared_ptr<Connection> *conn,
-                               const MonoTime &deadline);
+  Status FindOrStartConnection(const ConnectionId& conn_id,
+                               scoped_refptr<Connection>* conn,
+                               const MonoTime& deadline);
 
   // Shut down the given connection, removing it from the connection tracking
   // structures of this reactor.
@@ -164,7 +164,7 @@ class ReactorThread {
   void AssignOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
 
   // Register a new connection.
-  void RegisterConnection(const std::tr1::shared_ptr<Connection> &conn);
+  void RegisterConnection(const scoped_refptr<Connection>& conn);
 
   // Actually perform shutdown of the thread, tearing down any connections,
   // etc. This is called from within the thread.

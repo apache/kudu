@@ -408,7 +408,7 @@ void Connection::ReadHandler(ev::io &watcher, int revents) {
 void Connection::HandleIncomingCall(gscoped_ptr<InboundTransfer> transfer) {
   DCHECK(reactor_thread_->IsCurrentThread());
 
-  gscoped_ptr<InboundCall> call(new InboundCall(shared_from_this()));
+  gscoped_ptr<InboundCall> call(new InboundCall(this));
   Status s = call->ParseFrom(transfer.Pass());
   if (!s.ok()) {
     LOG(WARNING) << ToString() << ": received bad data: " << s.ToString();
@@ -529,7 +529,7 @@ Status Connection::InitSaslServer() {
 // regular RPC handling. Destroys Connection on negotiation error.
 class NegotiationCompletedTask : public ReactorTask {
  public:
-  NegotiationCompletedTask(const shared_ptr<Connection>& conn,
+  NegotiationCompletedTask(Connection* conn,
       const Status& negotiation_status)
     : conn_(conn),
       negotiation_status_(negotiation_status) {
@@ -548,13 +548,13 @@ class NegotiationCompletedTask : public ReactorTask {
   }
 
  private:
-  shared_ptr<Connection> conn_;
+  scoped_refptr<Connection> conn_;
   Status negotiation_status_;
 };
 
 void Connection::CompleteNegotiation(const Status& negotiation_status) {
   NegotiationCompletedTask *task =
-      new NegotiationCompletedTask(shared_from_this(), negotiation_status);
+      new NegotiationCompletedTask(this, negotiation_status);
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 

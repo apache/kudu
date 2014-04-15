@@ -24,7 +24,7 @@ DEFINE_bool(rpc_dump_all_traces, false,
 namespace kudu {
 namespace rpc {
 
-InboundCall::InboundCall(const shared_ptr<Connection> &conn)
+InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
     trace_(new Trace) {
   RecordCallReceived();

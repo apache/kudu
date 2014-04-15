@@ -177,7 +177,7 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
 /// ClientNegotiationTask
 ///
 
-ClientNegotiationTask::ClientNegotiationTask(const shared_ptr<Connection>& conn,
+ClientNegotiationTask::ClientNegotiationTask(const scoped_refptr<Connection>& conn,
                                              const MonoTime &deadline)
   : conn_(conn),
     deadline_(deadline) {
@@ -201,7 +201,7 @@ bool ClientNegotiationTask::Abort() {
 /// ServerNegotiationTask
 ///
 
-ServerNegotiationTask::ServerNegotiationTask(const shared_ptr<Connection>& conn,
+ServerNegotiationTask::ServerNegotiationTask(const scoped_refptr<Connection>& conn,
                                              const MonoTime &deadline)
   : conn_(conn),
     deadline_(deadline) {
@@ -225,7 +225,7 @@ bool ServerNegotiationTask::Abort() {
 /// NegotiationCallback
 ///
 
-NegotiationCallback::NegotiationCallback(const shared_ptr<Connection>& conn)
+NegotiationCallback::NegotiationCallback(const scoped_refptr<Connection>& conn)
   : conn_(conn) {
 }
 

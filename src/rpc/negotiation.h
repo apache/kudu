@@ -6,6 +6,7 @@
 
 #include <tr1/memory>
 
+#include "gutil/ref_counted.h"
 #include "util/monotime.h"
 #include "util/task_executor.h"
 
@@ -23,11 +24,11 @@ class SaslServer;
 // sending the ConnectionContextPB.
 class ClientNegotiationTask : public kudu::Task {
  public:
-  ClientNegotiationTask(const std::tr1::shared_ptr<Connection>& conn, const MonoTime &deadline);
+  ClientNegotiationTask(const scoped_refptr<Connection>& conn, const MonoTime &deadline);
   virtual kudu::Status Run();
   virtual bool Abort();
  private:
-  std::tr1::shared_ptr<Connection> conn_;
+  scoped_refptr<Connection> conn_;
   MonoTime deadline_;
 };
 
@@ -35,23 +36,23 @@ class ClientNegotiationTask : public kudu::Task {
 // receiving / validating the ConnectionContextPB.
 class ServerNegotiationTask : public kudu::Task {
  public:
-  explicit ServerNegotiationTask(const std::tr1::shared_ptr<Connection>& conn,
+  explicit ServerNegotiationTask(const scoped_refptr<Connection>& conn,
                                  const MonoTime &deadline);
   virtual kudu::Status Run();
   virtual bool Abort();
  private:
-  std::tr1::shared_ptr<Connection> conn_;
+  scoped_refptr<Connection> conn_;
   MonoTime deadline_;
 };
 
 // Return control of the connection back to the Reactor.
 class NegotiationCallback : public FutureCallback {
  public:
-  explicit NegotiationCallback(const std::tr1::shared_ptr<Connection>& conn);
+  explicit NegotiationCallback(const scoped_refptr<Connection>& conn);
   virtual void OnSuccess();
   virtual void OnFailure(const kudu::Status& status);
  private:
-  std::tr1::shared_ptr<Connection> conn_;
+  scoped_refptr<Connection> conn_;
 };
 
 } // namespace rpc

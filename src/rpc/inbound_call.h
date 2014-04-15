@@ -44,7 +44,7 @@ struct InboundCallTiming {
 // Inbound call on server
 class InboundCall {
  public:
-  explicit InboundCall(const std::tr1::shared_ptr<Connection>& conn);
+  explicit InboundCall(Connection* conn);
   ~InboundCall();
 
   // Parse an inbound call message.
@@ -140,7 +140,7 @@ class InboundCall {
   void LogTrace() const;
 
   // The connection on which this inbound call arrived.
-  std::tr1::shared_ptr<Connection> conn_;
+  scoped_refptr<Connection> conn_;
 
   // The header of the incoming call. Set by ParseFrom()
   RequestHeader header_;

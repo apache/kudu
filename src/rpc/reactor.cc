@@ -89,7 +89,7 @@ void ReactorThread::ShutdownInternal() {
   VLOG(1) << name() << ": tearing down outbound TCP connections...";
   for (conn_map_t::iterator c = client_conns_.begin();
        c != client_conns_.end(); c = client_conns_.begin()) {
-    const shared_ptr<Connection> &conn = (*c).second;
+    const scoped_refptr<Connection>& conn = (*c).second;
     VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(ShutdownError());
     client_conns_.erase(c);
@@ -97,7 +97,7 @@ void ReactorThread::ShutdownInternal() {
 
   // Tear down any inbound TCP connections.
   VLOG(1) << name() << ": tearing down inbound TCP connections...";
-  BOOST_FOREACH(const shared_ptr<Connection> &conn, server_conns_) {
+  BOOST_FOREACH(const scoped_refptr<Connection>& conn, server_conns_) {
     VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(ShutdownError());
   }
@@ -142,7 +142,7 @@ void ReactorThread::AsyncHandler(ev::async &watcher, int revents) {
   }
 }
 
-void ReactorThread::RegisterConnection(const shared_ptr<Connection> &conn) {
+void ReactorThread::RegisterConnection(const scoped_refptr<Connection>& conn) {
   DCHECK(IsCurrentThread());
 
   // Set a limit on how long the server will negotiate with a new client.
@@ -159,7 +159,7 @@ void ReactorThread::RegisterConnection(const shared_ptr<Connection> &conn) {
 
 void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   DCHECK(IsCurrentThread());
-  shared_ptr<Connection> conn;
+  scoped_refptr<Connection> conn;
 
   // TODO: Move call deadline timeout computation into OutboundCall constructor.
   const MonoDelta &timeout = call->controller()->timeout();
@@ -215,7 +215,7 @@ void ReactorThread::ScanIdleConnections() {
   conn_list_t::iterator c_end = server_conns_.end();
   uint64_t timed_out = 0;
   for (; c != c_end; ) {
-    const shared_ptr<Connection> &conn = *c;
+    const scoped_refptr<Connection>& conn = *c;
     if (!conn->Idle()) {
       VLOG(3) << "Connection " << conn->ToString() << " not idle";
       ++c; // TODO: clean up this loop
@@ -270,7 +270,7 @@ void ReactorThread::RunThread() {
 }
 
 Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
-                                            shared_ptr<Connection> *conn,
+                                            scoped_refptr<Connection>* conn,
                                             const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
   conn_map_t::const_iterator c = client_conns_.find(conn_id);
@@ -290,7 +290,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   RETURN_NOT_OK(StartConnect(&sock, conn_id.remote(), &connect_in_progress));
 
   // Register the new connection in our map.
-  (*conn).reset(new Connection(this, conn_id.remote(), sock.Release(), Connection::CLIENT));
+  *conn = new Connection(this, conn_id.remote(), sock.Release(), Connection::CLIENT);
   (*conn)->set_service_name(conn_id.service_name());
   (*conn)->set_user_credentials(conn_id.user_credentials());
 
@@ -309,7 +309,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   return Status::OK();
 }
 
-Status ReactorThread::StartConnectionNegotiation(const shared_ptr<Connection> &conn,
+Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>& conn,
     const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
 
@@ -329,7 +329,7 @@ Status ReactorThread::StartConnectionNegotiation(const shared_ptr<Connection> &c
   return Status::OK();
 }
 
-void ReactorThread::CompleteConnectionNegotiation(const shared_ptr<Connection> &conn,
+void ReactorThread::CompleteConnectionNegotiation(const scoped_refptr<Connection>& conn,
       const Status &status) {
   DCHECK(IsCurrentThread());
   if (PREDICT_FALSE(!status.ok())) {
@@ -494,7 +494,7 @@ Status Reactor::GetMetrics(ReactorMetrics *metrics) {
 
 class RegisterConnectionTask : public ReactorTask {
  public:
-  explicit RegisterConnectionTask(const shared_ptr<Connection> &conn) :
+  explicit RegisterConnectionTask(const scoped_refptr<Connection>& conn) :
     conn_(conn)
   {}
 
@@ -511,12 +511,12 @@ class RegisterConnectionTask : public ReactorTask {
   }
 
  private:
-  shared_ptr<Connection> conn_;
+  scoped_refptr<Connection> conn_;
 };
 
 void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
-  shared_ptr<Connection> conn(
+  scoped_refptr<Connection> conn(
     new Connection(&thread_, remote, socket->Release(), Connection::SERVER));
   RegisterConnectionTask *task = new RegisterConnectionTask(conn);
   ScheduleReactorTask(task);

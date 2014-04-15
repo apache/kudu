@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "gutil/ref_counted.h"
 #include "rpc/outbound_call.h"
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_server.h"
@@ -48,7 +49,7 @@ class ReactorThread;
 // This class is not fully thread-safe.  It is accessed only from the context of a
 // single ReactorThread except where otherwise specified.
 //
-class Connection : public std::tr1::enable_shared_from_this<Connection> {
+class Connection : public base::RefCountedThreadSafe<Connection> {
  public:
   enum Direction {
     // This host is sending calls via this connection.
@@ -167,8 +168,8 @@ class Connection : public std::tr1::enable_shared_from_this<Connection> {
     ev::timer timeout_timer;
   };
 
-  typedef std::tr1::unordered_map<uint64_t, CallAwaitingResponse *> car_map_t;
-  typedef std::tr1::unordered_map<uint64_t, InboundCall *> inbound_call_map_t;
+  typedef std::tr1::unordered_map<uint64_t, CallAwaitingResponse*> car_map_t;
+  typedef std::tr1::unordered_map<uint64_t, InboundCall*> inbound_call_map_t;
 
   // Returns the next valid (positive) sequential call ID by incrementing a counter
   // and ensuring we roll over from INT32_MAX to 0.
