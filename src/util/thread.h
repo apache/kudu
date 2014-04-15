@@ -30,7 +30,7 @@ namespace kudu {
 
 class MetricRegistry;
 class Thread;
-class Webserver;
+class WebCallbackRegistry;
 
 // TODO: temporary hack to avoid collisions with thread_util.{cc,h}
 #define ThreadJoiner TJoiner
@@ -237,7 +237,7 @@ void InitThreading();
 
 // Registers /threadz with the debug webserver, and creates thread-tracking metrics under
 // the "thread-manager." prefix
-Status StartThreadInstrumentation(MetricRegistry* registry, Webserver* webserver);
+Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
 } // namespace kudu
 
 #endif /* KUDU_UTIL_THREAD_H */

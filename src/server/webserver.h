@@ -23,6 +23,7 @@
 #include "server/webserver_options.h"
 #include "util/net/sockaddr.h"
 #include "util/status.h"
+#include "util/web_callback_registry.h"
 
 struct sq_connection;
 struct sq_request_info;
@@ -32,12 +33,8 @@ namespace kudu {
 
 // Wrapper class for the Mongoose web server library. Clients may register callback
 // methods which produce output for a given URL path
-class Webserver {
+class Webserver : public WebCallbackRegistry {
  public:
-  typedef std::map<std::string, std::string> ArgumentMap;
-  typedef boost::function<void (const ArgumentMap& args, std::stringstream* output)>
-      PathHandlerCallback;
-
   // Using this constructor, the webserver will bind to all available
   // interfaces.
   explicit Webserver(const WebserverOptions& opts);
@@ -55,17 +52,8 @@ class Webserver {
   // bound to. Requires that the server has been Start()ed.
   Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const;
 
-  // Register a callback for a URL path. Path should not include the
-  // http://hostname/ prefix. If is_styled is true, the page is meant to be for
-  // people to look at and is styled.  If false, it is meant to be for machines to
-  // scrape.  If is_on_nav_bar is true,  a link to this page is
-  // printed in the navigation bar at the top of each debug page. Otherwise the
-  // link does not appear, and the page is rendered without HTML headers and
-  // footers.
-  // The first registration's choice of is_styled overrides all
-  // subsequent registrations for that URL.
-  void RegisterPathHandler(const std::string& path, const PathHandlerCallback& callback,
-                           bool is_styled = true, bool is_on_nav_bar = true);
+  virtual void RegisterPathHandler(const std::string& path, const PathHandlerCallback& callback,
+                                   bool is_styled = true, bool is_on_nav_bar = true);
 
   // True if serving all traffic over SSL, false otherwise
   bool IsSecure() const;

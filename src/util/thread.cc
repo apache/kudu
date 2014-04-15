@@ -29,12 +29,12 @@
 #include "gutil/atomicops.h"
 #include "gutil/mathlimits.h"
 #include "gutil/strings/substitute.h"
-#include "server/webserver.h"
 #include "util/debug-util.h"
 #include "util/errno.h"
 #include "util/metrics.h"
 #include "util/url-coding.h"
 #include "util/os-util.h"
+#include "util/web_callback_registry.h"
 
 using boost::bind;
 using boost::lock_guard;
@@ -70,7 +70,7 @@ class ThreadMgr {
  public:
   ThreadMgr() : metrics_enabled_(false) { }
 
-  Status StartInstrumentation(MetricRegistry* registry, Webserver* webserver);
+  Status StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
 
   // Registers a thread to the supplied category. The key is a boost::thread::id, used
   // instead of the system TID since boost::thread::id is always available, unlike
@@ -130,14 +130,14 @@ class ThreadMgr {
   uint64 ReadNumCurrentThreads();
 
   // Webpage callback; prints all threads by category
-  void ThreadPathHandler(const Webserver::ArgumentMap& args, stringstream* output);
+  void ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args, stringstream* output);
   void PrintThreadCategoryRows(const ThreadCategory& category, stringstream* output);
 };
 
-Status ThreadMgr::StartInstrumentation(MetricRegistry* registry, Webserver* webserver) {
-  DCHECK_NOTNULL(registry);
-  DCHECK_NOTNULL(webserver);
-  MetricContext ctx(registry, "threading");
+Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
+  DCHECK_NOTNULL(metric);
+  DCHECK_NOTNULL(web);
+  MetricContext ctx(metric, "threading");
   lock_guard<mutex> l(lock_);
   metrics_enabled_ = true;
 
@@ -148,9 +148,9 @@ Status ThreadMgr::StartInstrumentation(MetricRegistry* registry, Webserver* webs
   METRIC_current_num_threads.InstantiateFunctionGauge(ctx,
       bind(&ThreadMgr::ReadNumCurrentThreads, this));
 
-  Webserver::PathHandlerCallback thread_callback =
+  WebCallbackRegistry::PathHandlerCallback thread_callback =
       bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
-  webserver->RegisterPathHandler("/threadz", thread_callback);
+  web->RegisterPathHandler("/threadz", thread_callback);
   return Status::OK();
 }
 
@@ -200,11 +200,11 @@ void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
   }
 }
 
-void ThreadMgr::ThreadPathHandler(const Webserver::ArgumentMap& args,
+void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args,
     stringstream* output) {
   lock_guard<mutex> l(lock_);
   vector<const ThreadCategory*> categories_to_print;
-  Webserver::ArgumentMap::const_iterator category_name = args.find("group");
+  WebCallbackRegistry::ArgumentMap::const_iterator category_name = args.find("group");
   if (category_name != args.end()) {
     string group = EscapeForHtmlToString(category_name->second);
     (*output) << "<h2>Thread Group: " << group << "</h2>" << endl;
@@ -256,8 +256,8 @@ void InitThreading() {
   }
 }
 
-Status StartThreadInstrumentation(MetricRegistry* registry, Webserver* webserver) {
-  return thread_manager->StartInstrumentation(registry, webserver);
+Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
+  return thread_manager->StartInstrumentation(metric, web);
 }
 
 ThreadJoiner::ThreadJoiner(const Thread* thr)
