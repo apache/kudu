@@ -48,8 +48,8 @@ Status DeltaStatsToPB(const DeltaStats& delta_stats,
     int64_t update_count = delta_stats.update_count(idx);
     pb->add_per_column_update_count(update_count);
   }
-  delta_stats.max_timestamp().EncodeToString(pb->mutable_max_timestamp());
-  delta_stats.min_timestamp().EncodeToString(pb->mutable_min_timestamp());
+  pb->set_max_timestamp(delta_stats.max_timestamp().ToUint64());
+  pb->set_min_timestamp(delta_stats.min_timestamp().ToUint64());
   return Status::OK();
 }
 
@@ -60,9 +60,9 @@ Status DeltaStatsFromPB(const DeltaStatsPB& pb,
     delta_stats->IncrUpdateCount(idx, pb.per_column_update_count(idx));
   }
   Timestamp timestamp;
-  RETURN_NOT_OK(timestamp.DecodeFromString(pb.max_timestamp()));
+  RETURN_NOT_OK(timestamp.FromUint64(pb.max_timestamp()));
   delta_stats->set_max_timestamp(timestamp);
-  RETURN_NOT_OK(timestamp.DecodeFromString(pb.min_timestamp()));
+  RETURN_NOT_OK(timestamp.FromUint64(pb.min_timestamp()));
   delta_stats->set_min_timestamp(timestamp);
   return Status::OK();
 }

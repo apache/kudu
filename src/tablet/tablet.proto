@@ -45,9 +45,9 @@ message DeltaStatsPB {
   // available for the column
   repeated int64 per_column_update_count = 2;
   // The min Timestamp that was stored in this delta.
-  required bytes min_timestamp = 3;
+  required fixed64 min_timestamp = 3;
   // The max Timestamp that was stored in this delta.
-  required bytes max_timestamp = 4;
+  required fixed64 max_timestamp = 4;
 }
 
 message TabletStatusPB {

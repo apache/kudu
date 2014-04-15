@@ -73,7 +73,7 @@ class LogTest : public LogTestBase {
 
     CommitMsg* commit = operation->mutable_commit();
     commit->set_op_type(WRITE_OP);
-    Timestamp(original_op_index).EncodeToString(commit->mutable_timestamp());
+    commit->set_timestamp(Timestamp(original_op_index).ToUint64());
 
     OpId* original_op_id = commit->mutable_commited_op_id();
     original_op_id->set_term(0);

@@ -82,7 +82,7 @@ void LeaderChangeConfigTransaction::PrepareFailedPreCommitHooks(
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_change_config_response()->CopyFrom(*tx_ctx_->response());
-  tx_ctx_->timestamp().EncodeToString((*commit_msg)->mutable_timestamp());
+  (*commit_msg)->set_timestamp(tx_ctx_->timestamp().ToUint64());
 }
 
 Status LeaderChangeConfigTransaction::Apply() {
@@ -94,7 +94,7 @@ Status LeaderChangeConfigTransaction::Apply() {
 
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->set_op_type(CHANGE_CONFIG_OP);
-  tx_ctx_->timestamp().EncodeToString(commit->mutable_timestamp());
+  commit->set_timestamp(tx_ctx_->timestamp().ToUint64());
 
   TRACE("APPLY CHANGE CONFIG: finished, triggering COMMIT");
 

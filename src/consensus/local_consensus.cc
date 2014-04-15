@@ -85,7 +85,7 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   commit_msg->set_op_type(CHANGE_CONFIG_OP);
   commit_msg->mutable_commited_op_id()->CopyFrom(ctx->replicate_op()->id());
   commit_msg->mutable_change_config_response()->CopyFrom(resp);
-  clock_->Now().EncodeToString(commit_msg->mutable_timestamp());
+  commit_msg->set_timestamp(clock_->Now().ToUint64());
   RETURN_NOT_OK(ctx->Commit(commit_msg.Pass()));
 
 

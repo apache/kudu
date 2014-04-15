@@ -37,17 +37,12 @@ string Timestamp::ToString() const {
   return strings::Substitute("$0", v);
 }
 
-void Timestamp::EncodeToString(string* encode_to) const {
-  faststring buf;
-  EncodeTo(&buf);
-  encode_to->append(reinterpret_cast<const char*>(buf.data()), buf.size());
+uint64_t Timestamp::ToUint64() const {
+  return v;
 }
 
-Status Timestamp::DecodeFromString(const string& decode_from) {
-  Slice slice(decode_from);
-  if (!DecodeFrom(&slice)) {
-    return Status::Corruption("Cannot decode timestamp.");
-  }
+Status Timestamp::FromUint64(uint64_t value) {
+  v = value;
   return Status::OK();
 }
 

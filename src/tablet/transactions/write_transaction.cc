@@ -86,7 +86,7 @@ void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>*
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_write_response()->CopyFrom(*tx_ctx_->response());
   (*commit_msg)->mutable_result()->CopyFrom(tx_ctx_->Result());
-  tx_ctx_->timestamp().EncodeToString((*commit_msg)->mutable_timestamp());
+  (*commit_msg)->set_timestamp(tx_ctx_->timestamp().ToUint64());
 }
 
 // FIXME: Since this is called as a void in a thread-pool callback,
@@ -125,7 +125,7 @@ Status LeaderWriteTransaction::Apply() {
   gscoped_ptr<CommitMsg> commit(new CommitMsg());
   commit->mutable_result()->CopyFrom(tx_ctx_->Result());
   commit->set_op_type(WRITE_OP);
-  tx_ctx_->timestamp().EncodeToString(commit->mutable_timestamp());
+  commit->set_timestamp(tx_ctx_->timestamp().ToUint64());
 
   TRACE("APPLY: finished, triggering COMMIT");
 

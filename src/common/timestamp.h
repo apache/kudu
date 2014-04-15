@@ -36,10 +36,11 @@ class Timestamp {
 
   std::string ToString() const;
 
-  // Encodes this Timestamp and appends it to the provided string.
-  void EncodeToString(std::string* encode_to) const;
+  // Returns this Timestamp as an uint64_t
+  uint64_t ToUint64() const;
 
-  Status DecodeFromString(const std::string& decode_from);
+  // Sets this Timestamp from 'value'
+  Status FromUint64(uint64_t value);
 
   val_type value() const { return v; }
 

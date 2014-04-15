@@ -170,7 +170,7 @@ class TabletBootstrap {
 
   // Decodes a Timestamp from the provided string and updates the clock
   // with it.
-  Status UpdateClock(const string& timestamp);
+  Status UpdateClock(uint64_t timestamp);
 
   // Removes the recovery directory.
   Status RemoveRecoveryDir();
@@ -979,9 +979,9 @@ Status TabletBootstrap::ApplyMutation(WriteTransactionContext* tx_ctx,
   return Status::OK();
 }
 
-Status TabletBootstrap::UpdateClock(const string& timestamp) {
+Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
   Timestamp ts;
-  RETURN_NOT_OK(ts.DecodeFromString(timestamp));
+  RETURN_NOT_OK(ts.FromUint64(timestamp));
   RETURN_NOT_OK(clock_->Update(ts));
   return Status::OK();
 }

@@ -60,8 +60,8 @@ message CommitMsg {
   required OperationType op_type = 1;
   // the id of the message this commit pertains to
   optional OpId commited_op_id = 2;
-    // the transaction id for the operation
-  required bytes timestamp = 3;
+  // the transaction timestamp for the operation
+  required fixed64 timestamp = 3;
   // The operations that were applied and/or failed in this transaction.
   optional tablet.TxResultPB result = 4;
   // The response to the write request, will contain the global status
