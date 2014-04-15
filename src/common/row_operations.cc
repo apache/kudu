@@ -128,6 +128,7 @@ Status RowOperationsPBDecoder::ReadOpType(RowOperationsPB::Type* type) {
 
 Status RowOperationsPBDecoder::ReadIssetBitmap(const uint8_t** bitmap) {
   if (PREDICT_FALSE(src_.size() < bm_size_)) {
+    *bitmap = NULL;
     return Status::Corruption("Cannot find isset bitmap");
   }
   *bitmap = src_.data();
@@ -137,6 +138,7 @@ Status RowOperationsPBDecoder::ReadIssetBitmap(const uint8_t** bitmap) {
 
 Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
   if (PREDICT_FALSE(src_.size() < bm_size_)) {
+    *null_bm = NULL;
     return Status::Corruption("Cannot find null bitmap");
   }
   *null_bm = src_.data();
