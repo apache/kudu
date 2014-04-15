@@ -215,21 +215,15 @@ class Thread : public base::RefCountedThreadSafe<Thread> {
   // the thread's system TID. After the method terminates, it is unregistered.
   //
   // SuperviseThread() notifies StartThread() when thread initialisation is completed via
-  // the c_p_tid parameter, which is set to the new thread's system ID. After this point,
-  // it is no longer safe for SuperviseThread() to refer to 'this', because of a wrinkle
-  // in the lifecycle of boost threads: if the thread object representing a thread should
-  // be destroyed, the actual operating-system thread continues to run (the thread is
-  // detached, not terminated). Therefore it's not safe to make reference to the Thread
-  // object or any of its members in SuperviseThread() after it notifies the caller via
-  // c_p_tid that initialisation is completed.  An alternative is to join() in the
-  // destructor of Thread, but that's not the same semantics as boost::thread, which we
-  // are trying to emulate here.
+  // the c_p_tid parameter, which is set to the new thread's system ID. By that point in
+  // time SuperviseThread() has also taken a reference to thread', allowing it to refer
+  // to it even after the caller moves on.
   //
   // Additionally, StartThread() notifies SuperviseThread() when the actual thread object
   // has been assigned (SuperviseThread() is spinning during this time). Without this,
   // the new thread may reference the actual thread object before it has been assigned by
   // StartThread(). See KUDU-11 for more details.
-  void SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid, Atomic32* p_c_assigned);
+  void SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid);
 };
 
 // Initialises the threading subsystem. Must be called before a Thread is created.

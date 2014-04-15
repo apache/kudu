@@ -325,27 +325,6 @@ Status ThreadJoiner::Join() {
                                              waited_ms, thread_->name_));
 }
 
-enum {
-  THREAD_NOT_ASSIGNED,
-  THREAD_ASSIGNED,
-  THREAD_RUNNING
-};
-
-// Spin-loop until *x value equals 'from', then set *x value to 'to'.
-inline void SpinWait(Atomic32* x, uint32_t from, int32_t to) {
-  int loop_count = 0;
-
-  while (base::subtle::Acquire_Load(x) != from) {
-    boost::detail::yield(loop_count++);
-  }
-
-  // We use an Acquire_Load spin and a Release_Store because we need both
-  // directions of memory barrier here, and atomicops.h doesn't offer a
-  // Barrier_CompareAndSwap call. TSAN will fail with either Release or Acquire
-  // CAS above.
-  base::subtle::Release_Store(x, to);
-}
-
 static void SetThreadName(const string& name, int64 tid) {
   // On linux we can get the thread names to show up in the debugger by setting
   // the process name for the LWP.  We don't want to do this for the main
@@ -373,13 +352,12 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
       << "Thread created before InitThreading called";
 
   Atomic64 c_p_tid = UNINITIALISED_THREAD_ID;
-  Atomic32 p_c_assigned = THREAD_NOT_ASSIGNED;
 
   // Temporary reference for the duration of this function.
   scoped_refptr<Thread> thr = new Thread(category, name);
   try {
     thr->thread_.reset(
-        new thread(&Thread::SuperviseThread, thr.get(), functor, &c_p_tid, &p_c_assigned));
+        new thread(&Thread::SuperviseThread, thr.get(), functor, &c_p_tid));
   } catch(thread_resource_error &e) {
     return Status::RuntimeError(e.what());
   }
@@ -389,21 +367,21 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
     *holder = thr;
   }
 
-  // We've set all child-visible state, so the child may now continue running.
-  Release_Store(&p_c_assigned, THREAD_ASSIGNED);
-
-  // Wait for the child to discover its tid, then set it.
+  // Wait for the child to discover its tid, then set it. The child will be
+  // waiting on tid_; setting it is a signal that all child-visible state
+  // has also been set.
   int loop_count = 0;
-  while (base::subtle::Acquire_Load(&c_p_tid) == UNINITIALISED_THREAD_ID) {
+  while (Acquire_Load(&c_p_tid) == UNINITIALISED_THREAD_ID) {
     boost::detail::yield(loop_count++);
   }
-  thr->tid_ = base::subtle::Acquire_Load(&c_p_tid);
+  int64 system_tid = Acquire_Load(&c_p_tid);
+  Release_Store(&thr->tid_, system_tid);
 
-  VLOG(2) << "Started thread " << thr->tid_ << " - " << category << ":" << name;
+  VLOG(2) << "Started thread " << system_tid << " - " << category << ":" << name;
   return Status::OK();
 }
 
-void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid, Atomic32 *p_c_assigned) {
+void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
   int64_t system_tid = syscall(SYS_gettid);
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
@@ -422,23 +400,24 @@ void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid, Atomic32 
   scoped_refptr<Thread> thread_ref = this;
   tls_ = this;
 
-  // Use boost's get_id rather than the system thread ID as the unique key for this thread
-  // since the latter is more prone to being recycled.
-  thread_mgr_ref->AddThread(boost::this_thread::get_id(), name, category_, system_tid);
-
-  // Wait for the parent to unblock us.
-  SpinWait(p_c_assigned, THREAD_ASSIGNED, THREAD_RUNNING);
-
-  // Signal the parent with our tid. This signal serves double duty: the parent also knows
-  // that we're done with the function parameters.
+  // Signal the parent with our tid.
   Release_Store(c_p_tid, system_tid);
 
   // Any reference to any parameter not copied in by value may no longer be valid after
   // this point, since the caller that is waiting on *c_p_tid != UNINITIALISED_THREAD_ID
   // may wake and return.
 
-  SetThreadName(name, system_tid);
+  // When tid_ has been set, the parent is done assigning everything and we can proceed to
+  // the functor.
+  int loop_count = 0;
+  while (Acquire_Load(&tid_) == UNINITIALISED_THREAD_ID) {
+    boost::detail::yield(loop_count++);
+  }
 
+  // Use boost's get_id rather than the system thread ID as the unique key for this thread
+  // since the latter is more prone to being recycled.
+  thread_mgr_ref->AddThread(boost::this_thread::get_id(), name, category_, system_tid);
+  SetThreadName(name, system_tid);
   functor();
   thread_mgr_ref->RemoveThread(boost::this_thread::get_id(), category_);
 }
