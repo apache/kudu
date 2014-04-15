@@ -69,8 +69,8 @@ Status Master::Start() {
 void Master::Shutdown() {
   string name = ToString();
   LOG(INFO) << name << " shutting down...";
-  catalog_manager_->Shutdown();
   ServerBase::Shutdown();
+  catalog_manager_->Shutdown();
   LOG(INFO) << name << " shutdown complete.";
 }
 
