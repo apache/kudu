@@ -46,6 +46,7 @@ RowSetTree::RowSetTree()
 }
 
 Status RowSetTree::Reset(const RowSetVector &rowsets) {
+  CHECK(!initted_);
   std::vector<RowSetWithBounds *> entries;
   RowSetVector unbounded;
   ElementDeleter deleter(&entries);
