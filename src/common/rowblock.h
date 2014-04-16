@@ -243,8 +243,8 @@ class RowBlockRow {
     return row_index_;
   }
 
-  const Schema& schema() const {
-    return row_block_->schema();
+  const Schema* schema() const {
+    return &row_block_->schema();
   }
 
   bool is_null(size_t col_idx) const {

@@ -194,7 +194,7 @@ TEST_F(WireProtocolTest, TestRowBlockRoundTrip) {
   ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
   ASSERT_EQ(kNumRows, row_ptrs.size());
   for (int i = 0; i < kNumRows; i++) {
-    ConstContiguousRow row(schema_, row_ptrs[i]);
+    ConstContiguousRow row(&schema_, row_ptrs[i]);
     ASSERT_EQ(StringPrintf("col1 %d", i),
               schema_.ExtractColumnFromRow<STRING>(row, 0)->ToString());
     ASSERT_EQ(StringPrintf("col2 %d", i),
@@ -225,7 +225,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   vector<const uint8_t*> row_ptrs;
   ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, &pb, &row_ptrs));
   ASSERT_EQ(1, row_ptrs.size());
-  ConstContiguousRow row_roundtripped(schema_, row_ptrs[0]);
+  ConstContiguousRow row_roundtripped(&schema_, row_ptrs[0]);
   ASSERT_EQ(schema_.DebugRow(block.row(0)), schema_.DebugRow(row_roundtripped));
 }
 

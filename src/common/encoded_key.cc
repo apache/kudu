@@ -47,10 +47,10 @@ string EncodedKey::Stringify(const Schema &schema) const {
 
 ////////////////////////////////////////////////////////////
 
-EncodedKeyBuilder::EncodedKeyBuilder(const Schema &schema)
+EncodedKeyBuilder::EncodedKeyBuilder(const Schema* schema)
  : schema_(schema),
-   encoded_key_(schema.key_byte_size()),
-   num_key_cols_(schema.num_key_columns()),
+   encoded_key_(schema->key_byte_size()),
+   num_key_cols_(schema->num_key_columns()),
    idx_(0) {
 }
 
@@ -58,13 +58,13 @@ void EncodedKeyBuilder::Reset() {
   encoded_key_.clear();
   idx_ = 0;
   raw_keys_.clear();
-  encoded_key_.reserve(schema_.key_byte_size());
+  encoded_key_.reserve(schema_->key_byte_size());
 }
 
 void EncodedKeyBuilder::AddColumnKey(const void *raw_key) {
   DCHECK_LT(idx_, num_key_cols_);
 
-  const ColumnSchema &col = schema_.column(idx_);
+  const ColumnSchema &col = schema_->column(idx_);
   DCHECK(!col.is_nullable());
 
   const TypeInfo* ti = col.type_info();
@@ -89,7 +89,7 @@ EncodedKey *EncodedKeyBuilder::BuildEncodedKey() {
 }
 
 void EncodedKeyBuilder::AssignCopy(const EncodedKeyBuilder &other) {
-  DCHECK_SCHEMA_EQ(schema_, other.schema_);
+  DCHECK_SCHEMA_EQ(*schema_, *other.schema_);
 
   encoded_key_.assign_copy(other.encoded_key_.data(),
                            other.encoded_key_.length());

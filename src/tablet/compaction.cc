@@ -57,7 +57,7 @@ class MemRowSetCompactionInput : public CompactionInput {
     }
 
     arena_.Reset();
-    RowChangeListEncoder undo_encoder(iter_->schema(), &buffer_);
+    RowChangeListEncoder undo_encoder(&iter_->schema(), &buffer_);
     for (int i = 0; i < num_in_block; i++) {
       // TODO: A copy is performed to make all CompactionInputRow have the same schema
       CompactionInputRow &input_row = block->at(i);
@@ -565,13 +565,13 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   // Right now we persist all mutations.
   *is_garbage_collected = false;
 
-  const Schema& schema = dst_row->schema();
+  const Schema* schema = dst_row->schema();
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
-    "Row: " << schema.DebugRow(*dst_row) << \
-    " Redo Mutations: " << Mutation::StringifyMutationList(schema, src_row.redo_head) << \
-    " Undo Mutations: " << Mutation::StringifyMutationList(schema, src_row.undo_head)
+    "Row: " << schema->DebugRow(*dst_row) << \
+    " Redo Mutations: " << Mutation::StringifyMutationList(*schema, src_row.redo_head) << \
+    " Undo Mutations: " << Mutation::StringifyMutationList(*schema, src_row.undo_head)
 
   faststring dst;
   RowChangeListEncoder undo_encoder(schema, &dst);
@@ -594,7 +594,7 @@ static Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
     undo_encoder.Reset();
 
     Mutation* current_undo;
-    DVLOG(3) << "  @" << redo_mut->timestamp() << ": " << redo_mut->changelist().ToString(schema);
+    DVLOG(3) << "  @" << redo_mut->timestamp() << ": " << redo_mut->changelist().ToString(*schema);
 
     RowChangeListDecoder redo_decoder(schema, redo_mut->changelist());
     Status s = redo_decoder.Init();
@@ -698,17 +698,17 @@ Status FlushCompactionInput(CompactionInput* input,
 
     int n = 0;
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
-      const Schema& schema(input_row.row.schema());
-      DCHECK_SCHEMA_EQ(schema, out->schema());
-      DCHECK(schema.has_column_ids());
+      const Schema* schema = input_row.row.schema();
+      DCHECK_SCHEMA_EQ(*schema, out->schema());
+      DCHECK(schema->has_column_ids());
 
       RowBlockRow dst_row = block.row(n);
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
 
-      DVLOG(2) << "Input Row: " << dst_row.schema().DebugRow(dst_row) <<
+      DVLOG(2) << "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
         " RowId: " << input_row.row.row_index() <<
-        " Redo Mutations: " << Mutation::StringifyMutationList(schema, input_row.redo_head) <<
-        " Undo Mutations: " << Mutation::StringifyMutationList(schema, input_row.undo_head);
+        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head) <<
+        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.undo_head);
 
       // Collect the new UNDO/REDO mutations.
       Mutation* new_undos_head = NULL;
@@ -740,10 +740,10 @@ Status FlushCompactionInput(CompactionInput* input,
         out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs_);
       }
 
-      DVLOG(2) << "Output Row: " << dst_row.schema().DebugRow(dst_row) <<
+      DVLOG(2) << "Output Row: " << dst_row.schema()->DebugRow(dst_row) <<
           " RowId: " << index_in_current_drs_
-          << " Redo Mutations: " << Mutation::StringifyMutationList(schema, new_redos_head)
-          << " Undo Mutations: " << Mutation::StringifyMutationList(schema, new_undos_head);
+          << " Redo Mutations: " << Mutation::StringifyMutationList(*schema, new_redos_head)
+          << " Undo Mutations: " << Mutation::StringifyMutationList(*schema, new_undos_head);
 
       n++;
       if (n == block.nrows()) {
@@ -796,12 +796,12 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   // TODO: on this pass, we don't actually need the row data, just the
   // updates. So, this can be made much faster.
   vector<CompactionInputRow> rows;
-  const Schema &schema(input->schema());
+  const Schema* schema = &input->schema();
   const Schema key_schema(input->schema().CreateKeyProjection());
 
   // Arena and projector to store/project row keys for missed delta updates
   Arena arena(1024, 1024*1024);
-  RowProjector key_projector(&schema, &key_schema);
+  RowProjector key_projector(schema, &key_schema);
   RETURN_NOT_OK(key_projector.Init());
   faststring buf;
 
@@ -810,9 +810,9 @@ Status ReupdateMissedDeltas(const string &tablet_name,
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     BOOST_FOREACH(const CompactionInputRow &row, rows) {
-      DVLOG(2) << "Revisiting row: " << schema.DebugRow(row.row) <<
-          " Redo Mutations: " << Mutation::StringifyMutationList(schema, row.redo_head) <<
-          " Undo Mutations: " << Mutation::StringifyMutationList(schema, row.undo_head);
+      DVLOG(2) << "Revisiting row: " << schema->DebugRow(row.row) <<
+          " Redo Mutations: " << Mutation::StringifyMutationList(*schema, row.redo_head) <<
+          " Undo Mutations: " << Mutation::StringifyMutationList(*schema, row.undo_head);
 
       for (const Mutation *mut = row.redo_head;
            mut != NULL;
@@ -844,8 +844,8 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         CHECK(!decoder.is_reinsert())
           << "Shouldn't see REINSERT missed by first flush pass in compaction."
           << " snap_to_exclude=" << snap_to_exclude.ToString()
-          << " row=" << schema.DebugRow(row.row)
-          << " mutations=" << Mutation::StringifyMutationList(schema, row.redo_head);
+          << " row=" << schema->DebugRow(row.row)
+          << " mutations=" << Mutation::StringifyMutationList(*schema, row.redo_head);
 
         if (!snap_to_include.IsCommitted(mut->timestamp())) {
           // The mutation was inserted after the DuplicatingRowSet was swapped in.
@@ -853,7 +853,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           // to copy it in.
 
           DVLOG(2) << "Skipping already-duplicated delta for row " << row_idx
-                   << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
+                   << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
           continue;
         }
 
@@ -861,7 +861,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         // pass, but before the DuplicatingRowSet was swapped in. We need to transfer
         // this over to the output rowset.
         DVLOG(1) << "Flushing missed delta for row " << row_idx
-                  << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
+                  << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
 
         DeltaTracker *cur_tracker = delta_trackers.front();
 
@@ -882,14 +882,14 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         }
 
         gscoped_ptr<OperationResultPB> result(new OperationResultPB);
-        DCHECK_SCHEMA_EQ(schema, cur_tracker->schema());
+        DCHECK_SCHEMA_EQ(*schema, cur_tracker->schema());
         Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,
                                        mut->changelist(),
                                        max_op_id,
                                        result.get());
         DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
-            << " @" << mut->timestamp() << ": " << mut->changelist().ToString(schema);
+            << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
         if (s.ok()) {
           // Update the set of delta trackers with the one we've just updated.
           InsertIfNotPresent(&updated_trackers, cur_tracker);
@@ -931,10 +931,10 @@ Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
-      const Schema& schema = input_row.row.schema();
-      LOG_STRING(INFO, lines) << schema.DebugRow(input_row.row) <<
-        " Undos: " + Mutation::StringifyMutationList(schema, input_row.undo_head) <<
-        " Redos: " + Mutation::StringifyMutationList(schema, input_row.redo_head);
+      const Schema* schema = input_row.row.schema();
+      LOG_STRING(INFO, lines) << schema->DebugRow(input_row.row) <<
+        " Undos: " + Mutation::StringifyMutationList(*schema, input_row.undo_head) <<
+        " Redos: " + Mutation::StringifyMutationList(*schema, input_row.redo_head);
     }
 
     RETURN_NOT_OK(input->FinishBlock());

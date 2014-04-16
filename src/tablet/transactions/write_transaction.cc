@@ -97,7 +97,7 @@ Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_sc
         // TODO: allocating ConstContiguousRow is kind of a waste since it is just
         // a {schema, ptr} pair itself and probably cheaper to copy around.
         ConstContiguousRow *row = state()->AddToAutoReleasePool(
-          new ConstContiguousRow(*tablet->schema_unlocked().get(), op.row_data));
+          new ConstContiguousRow(tablet->schema_unlocked().get(), op.row_data));
         RETURN_NOT_OK(tablet->CreatePreparedInsert(state(), row, &row_write));
         break;
       }
@@ -111,7 +111,7 @@ Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_sc
         // old API that has a Mutate method that receives the row as a reference.
         // TODO: allocating ConstContiguousRow is kind of a waste since it is just
         // a {schema, ptr} pair itself and probably cheaper to copy around.
-        ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
+        ConstContiguousRow* row_key = new ConstContiguousRow(&tablet->key_schema(), row_key_ptr);
         row_key = state()->AddToAutoReleasePool(row_key);
         RETURN_NOT_OK(tablet->CreatePreparedMutate(state(), row_key, mutation, &row_write));
         break;
@@ -404,9 +404,9 @@ PreparedRowWrite::PreparedRowWrite(const ConstContiguousRow* row_key,
 string PreparedRowWrite::ToString() const {
   switch (op_type_) {
     case INSERT:
-      return Substitute("INSERT $0", row_->schema().DebugRowKey(*row_));
+      return Substitute("INSERT $0", row_->schema()->DebugRowKey(*row_));
     case MUTATE:
-      return Substitute("MUTATE $0", row_key_->schema().DebugRowKey(*row_key_));
+      return Substitute("MUTATE $0", row_key_->schema()->DebugRowKey(*row_key_));
       break;
     default:
       LOG(FATAL);

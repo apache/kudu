@@ -18,11 +18,11 @@ namespace kudu {
 string DecodedRowOperation::ToString(const Schema& schema) const {
   switch (type) {
     case RowOperationsPB::INSERT:
-      return "INSERT " + schema.DebugRow(ConstContiguousRow(schema, row_data));
+      return "INSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
       return Substitute("MUTATE $0 $1",
-                        schema.DebugRowKey(ConstContiguousRow(schema, row_data)),
+                        schema.DebugRowKey(ConstContiguousRow(&schema, row_data)),
                         changelist.ToString(schema));
     default:
       LOG(DFATAL) << "Bad type: " << type;
@@ -68,7 +68,7 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartia
          null_bitmap_size);
   dst_ptr += null_bitmap_size;
 
-  ContiguousRow row(*schema, partial_row.row_data_);
+  ContiguousRow row(schema, partial_row.row_data_);
   for (int i = 0; i < schema->num_columns(); i++) {
     if (!partial_row.IsColumnSet(i)) continue;
     const ColumnSchema& col = schema->column(i);
@@ -297,7 +297,7 @@ Status RowOperationsPBDecoder::DecodeInsert(const uint8_t* prototype_row_storage
   // still likely faster (and simpler) than looping through all the server-side
   // columns to initialize defaults where non-set on every row.
   memcpy(tablet_row_storage, prototype_row_storage, tablet_row_size_);
-  ContiguousRow tablet_row(*tablet_schema_, tablet_row_storage);
+  ContiguousRow tablet_row(tablet_schema_, tablet_row_storage);
 
   // Now handle each of the columns passed by the user, replacing the defaults
   // from the prototype.
@@ -361,7 +361,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   // We're passing the full schema instead of the key schema here.
   // That's OK because the keys come at the bottom. We lose some bounds
   // checking in debug builds, but it avoids an extra copy of the key schema.
-  ContiguousRow rowkey(*tablet_schema_, rowkey_storage);
+  ContiguousRow rowkey(tablet_schema_, rowkey_storage);
 
   // First process the key columns.
   int client_col_idx = 0;
@@ -396,7 +396,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   // For DELETE, we expect no other columns to be set (and we verify that).
   if (op->type == RowOperationsPB::UPDATE) {
     faststring buf;
-    RowChangeListEncoder rcl_encoder(*tablet_schema_, &buf);
+    RowChangeListEncoder rcl_encoder(tablet_schema_, &buf);
 
     // Now process the rest of columns as updates.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
@@ -477,7 +477,7 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
   // this to create a starting point for each row as we decode it, with
   // all the defaults in place without having to loop.
   uint8_t prototype_row_storage[tablet_row_size_];
-  ContiguousRow prototype_row(*tablet_schema_, prototype_row_storage);
+  ContiguousRow prototype_row(tablet_schema_, prototype_row_storage);
   SetupPrototypeRow(*tablet_schema_, &prototype_row);
 
   while (HasNext()) {

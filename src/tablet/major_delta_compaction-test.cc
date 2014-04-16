@@ -89,7 +89,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   void UpdateRows(int nrows, bool even) {
     WriteTransactionState tx_state;
     faststring update_buf;
-    RowChangeListEncoder update(schema_, &update_buf);
+    RowChangeListEncoder update(&schema_, &update_buf);
     RowBuilder rb(schema_.CreateKeyProjection());
     for (int idx = 0; idx < nrows; idx++) {
       ExpectedRow* row = &expected_state_[idx];

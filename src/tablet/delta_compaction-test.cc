@@ -82,7 +82,7 @@ class TestDeltaCompaction : public KuduTest {
     int64_t num_updates = 0;
     for (int i = first_row; i < limit; i++) {
       buf.clear();
-      RowChangeListEncoder update(schema_, &buf);
+      RowChangeListEncoder update(&schema_, &buf);
       uint32_t new_val = i;
       update.AddColumnUpdate(0, &new_val);
       int num_txns = random() % 3;
@@ -200,7 +200,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     DeltaStats stats(schema.num_columns());
     for (size_t i = 0; i < kNumUpdates; ++i) {
       buf.clear();
-      RowChangeListEncoder update(schema, &buf);
+      RowChangeListEncoder update(&schema, &buf);
       for (size_t col_idx = schema.num_key_columns(); col_idx < schema.num_columns(); ++col_idx) {
         stats.IncrUpdateCount(col_idx, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);

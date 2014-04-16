@@ -236,7 +236,7 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddString(string("row_a_2"));
   rb.AddUint32(3);
   rb.AddInt32(-3);
-  ContiguousRow row_a(schema);
+  ContiguousRow row_a(&schema);
   ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
 
   rb.Reset();
@@ -244,7 +244,7 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddString(string("row_b_2"));
   rb.AddUint32(3);
   rb.AddInt32(-3);
-  ContiguousRow row_b(schema);
+  ContiguousRow row_b(&schema);
   ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
 
   ASSERT_GT(schema.Compare(row_b, row_a), 0);
@@ -361,7 +361,7 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
 
   RowBuilder rb(schema);
   rb.AddString(Slice("hello world"));
-  ConstContiguousRow row(rb.schema(), rb.data());
+  ConstContiguousRow row(&rb.schema(), rb.data());
 
   LOG_TIMING(INFO, "Encoding") {
     for (int i = 0; i < 10000000; i++) {

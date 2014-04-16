@@ -210,7 +210,7 @@ static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   DCHECK_EQ(row_slice.size(), schema.byte_size());
 
   RowBlock block(schema, 1, NULL);
-  ConstContiguousRow row(schema, row_slice.data());
+  ConstContiguousRow row(&schema, row_slice.data());
   RowBlockRow dst_row = block.row(0);
   RETURN_NOT_OK(CopyRow(row, &dst_row, reinterpret_cast<Arena*>(NULL)));
 

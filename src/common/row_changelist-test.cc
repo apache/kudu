@@ -34,7 +34,7 @@ class TestRowChangeList : public KuduTest {
 
 TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   faststring buf;
-  RowChangeListEncoder rcl(schema_, &buf);
+  RowChangeListEncoder rcl(&schema_, &buf);
 
   // Construct an update with several columns changed
   Slice update1("update1");
@@ -51,7 +51,7 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   EXPECT_EQ(string("SET col1=update1, col2=update2, col3=12345"),
             RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder(schema_, RowChangeList(buf));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
   ASSERT_STATUS_OK(decoder.Init());
   size_t idx;
   const void *val;
@@ -75,7 +75,7 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
 
 TEST_F(TestRowChangeList, TestDeletes) {
   faststring buf;
-  RowChangeListEncoder rcl(schema_, &buf);
+  RowChangeListEncoder rcl(&schema_, &buf);
 
   // Construct a deletion.
   rcl.SetToDelete();
@@ -85,7 +85,7 @@ TEST_F(TestRowChangeList, TestDeletes) {
   // Read it back.
   EXPECT_EQ(string("DELETE"), RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder(schema_, RowChangeList(buf));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
   ASSERT_STATUS_OK(decoder.Init());
   ASSERT_TRUE(decoder.is_delete());
 }
@@ -98,7 +98,7 @@ TEST_F(TestRowChangeList, TestReinserts) {
 
   // Construct a REINSERT.
   faststring buf;
-  RowChangeListEncoder rcl(schema_, &buf);
+  RowChangeListEncoder rcl(&schema_, &buf);
   rcl.SetToReinsert(rb.data());
 
   LOG(INFO) << "Encoded: " << HexDump(buf);
@@ -107,33 +107,33 @@ TEST_F(TestRowChangeList, TestReinserts) {
   EXPECT_EQ(string("REINSERT (string col1=hello, string col2=world, uint32 col3=12345)"),
             RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder(schema_, RowChangeList(buf));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
   ASSERT_STATUS_OK(decoder.Init());
   ASSERT_TRUE(decoder.is_reinsert());
   ASSERT_EQ(decoder.reinserted_row_slice(), rb.data());
 }
 
 TEST_F(TestRowChangeList, TestInvalid_EmptySlice) {
-  RowChangeListDecoder decoder(schema_, RowChangeList(Slice()));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice()));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "empty changelist");
 }
 
 TEST_F(TestRowChangeList, TestInvalid_BadTypeEnum) {
-  RowChangeListDecoder decoder(schema_, RowChangeList(Slice("\xff", 1)));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice("\xff", 1)));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "Corruption: bad type enum value: 255 in \\xff");
 }
 
 TEST_F(TestRowChangeList, TestInvalid_TooLongDelete) {
-  RowChangeListDecoder decoder(schema_, RowChangeList(Slice("\x02""blahblah")));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice("\x02""blahblah")));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "Corruption: DELETE changelist too long");
 }
 
 
 TEST_F(TestRowChangeList, TestInvalid_TooShortReinsert) {
-  RowChangeListDecoder decoder(schema_, RowChangeList(Slice("\x03")));
+  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice("\x03")));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "Corruption: REINSERT changelist wrong length");
 }

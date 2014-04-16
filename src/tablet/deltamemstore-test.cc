@@ -43,7 +43,7 @@ class TestDeltaMemStore : public KuduTest {
   template<class Iterable>
   void UpdateIntsAtIndexes(const Iterable &indexes_to_update) {
     faststring buf;
-    RowChangeListEncoder update(schema_, &buf);
+    RowChangeListEncoder update(&schema_, &buf);
 
     BOOST_FOREACH(uint32_t idx_to_update, indexes_to_update) {
       ScopedTransaction tx(&mvcc_);
@@ -105,7 +105,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
   uint32_t n_rows = 1000;
   faststring update_buf;
 
-  RowChangeListEncoder update(schema_, &update_buf);
+  RowChangeListEncoder update(&schema_, &update_buf);
   for (uint32_t idx = 0; idx < n_rows; idx++) {
     update.Reset();
     if (idx % 4 == 0) {
@@ -171,7 +171,7 @@ TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {
 // right arena.
 TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   faststring update_buf;
-  RowChangeListEncoder update(schema_, &update_buf);
+  RowChangeListEncoder update(&schema_, &update_buf);
 
   // Update a cell, taking care that the buffer we use to perform
   // the update gets cleared after usage. This ensures that the
@@ -219,7 +219,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
 // are carried forward, but may fall behind newer transactions.
 TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
   faststring update_buf;
-  RowChangeListEncoder update(schema_, &update_buf);
+  RowChangeListEncoder update(&schema_, &update_buf);
 
   {
     ScopedTransaction tx1(&mvcc_);
@@ -246,7 +246,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
 TEST_F(TestDeltaMemStore, TestDMSBasic) {
   faststring update_buf;
-  RowChangeListEncoder update(schema_, &update_buf);
+  RowChangeListEncoder update(&schema_, &update_buf);
 
   char buf[256];
   for (uint32_t i = 0; i < 1000; i++) {

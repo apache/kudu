@@ -184,7 +184,7 @@ class RowSetKeyProbe {
   const BloomKeyProbe &bloom_probe() const { return bloom_probe_; }
 
   // The schema containing the key.
-  const Schema &schema() const { return row_key_.schema(); }
+  const Schema* schema() const { return row_key_.schema(); }
 
   const EncodedKey &encoded_key() const {
     return *encoded_key_;
@@ -303,7 +303,7 @@ class DuplicatingRowSet : public RowSet {
   RowSetVector old_rowsets_;
   RowSetVector new_rowsets_;
 
-  const Schema &schema_;
+  const Schema schema_;
   const Schema key_schema_;
 };
 

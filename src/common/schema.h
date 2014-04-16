@@ -409,7 +409,7 @@ class Schema {
   template<DataType Type, class RowType>
   const typename DataTypeTraits<Type>::cpp_type *
   ExtractColumnFromRow(const RowType& row, size_t idx) const {
-    DCHECK_SCHEMA_EQ(*this, row.schema());
+    DCHECK_SCHEMA_EQ(*this, *row.schema());
     const ColumnSchema& col_schema = cols_[idx];
     DCHECK_LT(idx, cols_.size());
     DCHECK_EQ(col_schema.type_info()->type(), Type);
@@ -429,7 +429,7 @@ class Schema {
   // so should be avoided in hot paths.
   template<class RowType>
   string DebugRow(const RowType& row) const {
-    DCHECK_SCHEMA_EQ(*this, row.schema());
+    DCHECK_SCHEMA_EQ(*this, *row.schema());
     return DebugRowColumns(row, num_columns());
   }
 
@@ -438,7 +438,7 @@ class Schema {
   // hot paths.
   template<class RowType>
   string DebugRowKey(const RowType& row) const {
-    DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, row.schema());
+    DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, *row.schema());
     return DebugRowColumns(row, num_key_columns());
   }
 
@@ -460,7 +460,7 @@ class Schema {
   // Compare two rows of this schema.
   template<class RowTypeA, class RowTypeB>
   int Compare(const RowTypeA& lhs, const RowTypeB& rhs) const {
-    DCHECK(KeyEquals(lhs.schema()) && KeyEquals(rhs.schema()));
+    DCHECK(KeyEquals(*lhs.schema()) && KeyEquals(*rhs.schema()));
 
     for (size_t col = 0; col < num_key_columns_; col++) {
       int col_compare = column(col).Compare(lhs.cell_ptr(col), rhs.cell_ptr(col));
@@ -506,7 +506,7 @@ class Schema {
   // Returns the encoded key.
   template <class RowType>
   Slice EncodeComparableKey(const RowType& row, faststring *dst) const {
-    DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, row.schema());
+    DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, *row.schema());
 
     dst->clear();
     for (size_t i = 0; i < num_key_columns_; i++) {

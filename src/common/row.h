@@ -20,20 +20,21 @@ namespace kudu {
 // stack.
 struct SimpleConstCell {
  public:
-  SimpleConstCell(const ColumnSchema& col_schema,
+  // Both parameters must remain valid for the lifetime of the cell object.
+  SimpleConstCell(const ColumnSchema* col_schema,
                   const void* value)
     : col_schema_(col_schema),
       value_(value) {
   }
 
-  DataType type() const { return col_schema_.type_info()->type(); }
-  size_t size() const { return col_schema_.type_info()->size(); }
-  bool is_nullable() const { return col_schema_.is_nullable(); }
+  DataType type() const { return col_schema_->type_info()->type(); }
+  size_t size() const { return col_schema_->type_info()->size(); }
+  bool is_nullable() const { return col_schema_->is_nullable(); }
   const void* ptr() const { return value_; }
   bool is_null() const { return value_ == NULL; }
 
  private:
-  const ColumnSchema& col_schema_;
+  const ColumnSchema* col_schema_;
   const void* value_;
 };
 
@@ -95,9 +96,9 @@ Status CopyCell(const SrcCellType &src, DstCellType* dst, ArenaType *dst_arena) 
 // during the copy.
 template<class RowType1, class RowType2, class ArenaType>
 inline Status CopyRow(const RowType1 &src_row, RowType2 *dst_row, ArenaType *dst_arena) {
-  DCHECK_SCHEMA_EQ(src_row.schema(), dst_row->schema());
+  DCHECK_SCHEMA_EQ(*src_row.schema(), *dst_row->schema());
 
-  for (int i = 0; i < src_row.schema().num_columns(); i++) {
+  for (int i = 0; i < src_row.schema()->num_columns(); i++) {
     typename RowType1::Cell src = src_row.cell(i);
     typename RowType2::Cell dst = dst_row->cell(i);
     RETURN_NOT_OK(CopyCell(src, &dst, dst_arena));
@@ -166,8 +167,8 @@ class RowProjector {
   }
 
   bool is_identity() const { return is_identity_; }
-  const Schema& projection() const { return *projection_; }
-  const Schema& base_schema() const { return *base_schema_; }
+  const Schema* projection() const { return projection_; }
+  const Schema* base_schema() const { return base_schema_; }
 
   // Returns the mapping between base schema and projection schema columns
   // first: is the projection column index, second: is the base_schema  index
@@ -214,8 +215,8 @@ class RowProjector {
   // Indirected data is copied into the provided dst arena.
   template<class RowType1, class RowType2, class ArenaType, bool FOR_READ>
   Status ProjectRow(const RowType1& src_row, RowType2 *dst_row, ArenaType *dst_arena) const {
-    DCHECK_SCHEMA_EQ(*base_schema_, src_row.schema());
-    DCHECK_SCHEMA_EQ(*projection_, dst_row->schema());
+    DCHECK_SCHEMA_EQ(*base_schema_, *src_row.schema());
+    DCHECK_SCHEMA_EQ(*projection_, *dst_row->schema());
 
     // Copy directly from base Data
     for (vector<ProjectionIdxMapping>::const_iterator it =
@@ -239,7 +240,7 @@ class RowProjector {
       const ColumnSchema& col_proj = projection_->column(proj_idx);
       const void *vdefault = FOR_READ ? col_proj.read_default_value() :
                                         col_proj.write_default_value();
-      SimpleConstCell src_cell(col_proj, vdefault);
+      SimpleConstCell src_cell(&col_proj, vdefault);
       typename RowType2::Cell dst_cell = dst_row->cell(proj_idx);
       RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
     }
@@ -286,8 +287,8 @@ class DeltaProjector {
 
   bool is_identity() const { return is_identity_; }
 
-  const Schema& projection() const { return *projection_; }
-  const Schema& delta_schema() const { return *delta_schema_; }
+  const Schema* projection() const { return projection_; }
+  const Schema* delta_schema() const { return delta_schema_; }
 
   bool get_base_col_from_proj_idx(size_t proj_col_idx, size_t *base_col_idx) const {
     return FindCopy(base_cols_mapping_, proj_col_idx, base_col_idx);
@@ -363,10 +364,10 @@ class DeltaProjector {
 // storage.
 template <class RowType, class ArenaType>
 inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
-  const Schema &schema = row->schema();
+  const Schema* schema = row->schema();
   // For any Slice columns, copy the sliced data into the arena
   // and update the pointers
-  for (int i = 0; i < schema.num_columns(); i++) {
+  for (int i = 0; i < schema->num_columns(); i++) {
     typename RowType::Cell cell = row->cell(i);
     if (cell.type() == STRING) {
       if (cell.is_nullable() && cell.is_null()) {
@@ -440,13 +441,13 @@ class ContiguousRowCell {
   size_t size() const { return type_info()->size(); }
   const void* ptr() const { return row_->cell_ptr(col_idx_); }
   void* mutable_ptr() const { return row_->mutable_cell_ptr(col_idx_); }
-  bool is_nullable() const { return row_->schema().column(col_idx_).is_nullable(); }
+  bool is_nullable() const { return row_->schema()->column(col_idx_).is_nullable(); }
   bool is_null() const { return row_->is_null(col_idx_); }
   void set_null(bool is_null) const { row_->set_null(col_idx_, is_null); }
 
  private:
   const TypeInfo* type_info() const {
-    return row_->schema().column(col_idx_).type_info();
+    return row_->schema()->column(col_idx_).type_info();
   }
 
   const ContiguousRowType* row_;
@@ -458,11 +459,11 @@ class ContiguousRow {
  public:
   typedef ContiguousRowCell<ContiguousRow> Cell;
 
-  ContiguousRow(const Schema& schema, uint8_t *row_data = NULL)
+  ContiguousRow(const Schema* schema, uint8_t *row_data = NULL)
     : schema_(schema), row_data_(row_data) {
   }
 
-  const Schema& schema() const {
+  const Schema* schema() const {
     return schema_;
   }
 
@@ -471,15 +472,15 @@ class ContiguousRow {
   }
 
   bool is_null(size_t col_idx) const {
-    return ContiguousRowHelper::is_null(schema_, row_data_, col_idx);
+    return ContiguousRowHelper::is_null(*schema_, row_data_, col_idx);
   }
 
   void set_null(size_t col_idx, bool is_null) const {
-    ContiguousRowHelper::SetCellIsNull(schema_, row_data_, col_idx, is_null);
+    ContiguousRowHelper::SetCellIsNull(*schema_, row_data_, col_idx, is_null);
   }
 
   const uint8_t *cell_ptr(size_t col_idx) const {
-    return ContiguousRowHelper::cell_ptr(schema_, row_data_, col_idx);
+    return ContiguousRowHelper::cell_ptr(*schema_, row_data_, col_idx);
   }
 
   uint8_t *mutable_cell_ptr(size_t col_idx) const {
@@ -487,7 +488,7 @@ class ContiguousRow {
   }
 
   const uint8_t *nullable_cell_ptr(size_t col_idx) const {
-    return ContiguousRowHelper::nullable_cell_ptr(schema_, row_data_, col_idx);
+    return ContiguousRowHelper::nullable_cell_ptr(*schema_, row_data_, col_idx);
   }
 
   Cell cell(size_t col_idx) const {
@@ -497,7 +498,7 @@ class ContiguousRow {
  private:
   friend class ConstContiguousRow;
 
-  const Schema& schema_;
+  const Schema* schema_;
   uint8_t *row_data_;
 };
 
@@ -512,15 +513,15 @@ class ConstContiguousRow {
       row_data_(row.row_data_) {
   }
 
-  ConstContiguousRow(const Schema& schema, const void *row_data)
+  ConstContiguousRow(const Schema* schema, const void *row_data)
     : schema_(schema), row_data_(reinterpret_cast<const uint8_t *>(row_data)) {
   }
 
-  ConstContiguousRow(const Schema& schema, const Slice& row_slice)
+  ConstContiguousRow(const Schema* schema, const Slice& row_slice)
     : schema_(schema), row_data_(row_slice.data()) {
   }
 
-  const Schema& schema() const {
+  const Schema* schema() const {
     return schema_;
   }
 
@@ -529,19 +530,19 @@ class ConstContiguousRow {
   }
 
   size_t row_size() const {
-    return ContiguousRowHelper::row_size(schema_);
+    return ContiguousRowHelper::row_size(*schema_);
   }
 
   bool is_null(size_t col_idx) const {
-    return ContiguousRowHelper::is_null(schema_, row_data_, col_idx);
+    return ContiguousRowHelper::is_null(*schema_, row_data_, col_idx);
   }
 
   const uint8_t *cell_ptr(size_t col_idx) const {
-    return ContiguousRowHelper::cell_ptr(schema_, row_data_, col_idx);
+    return ContiguousRowHelper::cell_ptr(*schema_, row_data_, col_idx);
   }
 
   const uint8_t *nullable_cell_ptr(size_t col_idx) const {
-    return ContiguousRowHelper::nullable_cell_ptr(schema_, row_data_, col_idx);
+    return ContiguousRowHelper::nullable_cell_ptr(*schema_, row_data_, col_idx);
   }
 
   Cell cell(size_t col_idx) const {
@@ -549,7 +550,7 @@ class ConstContiguousRow {
   }
 
  private:
-  const Schema& schema_;
+  const Schema* schema_;
   const uint8_t *row_data_;
 };
 
@@ -562,10 +563,11 @@ void ContiguousRowCell<ConstContiguousRow>::set_null(bool null) const;
 
 
 // Utility class for building rows corresponding to a given schema.
-// This is used when inserting data into the MemStore or a new Layer.
+// This is used only by tests.
+// TODO: move it into a test utility.
 class RowBuilder {
  public:
-  explicit RowBuilder(const Schema &schema)
+  explicit RowBuilder(const Schema& schema)
     : schema_(schema),
       arena_(1024, 1024*1024),
       bitmap_size_(ContiguousRowHelper::null_bitmap_size(schema)) {
@@ -685,7 +687,7 @@ class RowBuilder {
   }
 
   ConstContiguousRow row() const {
-    return ConstContiguousRow(schema_, data());
+    return ConstContiguousRow(&schema_, data());
   }
 
  private:

@@ -262,15 +262,15 @@ Status Tablet::InsertForTesting(WriteTransactionState *tx_state,
   CHECK(open_) << "must Open() first!";
   DCHECK(tx_state) << "you must have a transaction context";
 
-  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, row.schema());
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *row.schema());
 
   // Convert the client row to a server row (with IDs)
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
   //       One is the RPC side, the other is this method.
-  DCHECK(!row.schema().has_column_ids());
-  RowProjector row_projector(&row.schema(), schema_.get());
+  DCHECK(!row.schema()->has_column_ids());
+  RowProjector row_projector(row.schema(), schema_.get());
   if (!row_projector.is_identity()) {
-    RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(row.schema()));
+    RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(*row.schema()));
     RETURN_NOT_OK(row_projector.Init());
   }
   const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_state, schema_.get(),
@@ -298,7 +298,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   // make sure that the WriteTransactionState has the component lock and that
   // there the PreparedRowWrite has the row lock.
   DCHECK(insert->has_row_lock()) << "PreparedRowWrite must hold the row lock.";
-  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, insert->row()->schema());
+  DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, *insert->row()->schema());
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
   ProbeStats stats;
@@ -368,7 +368,7 @@ Status Tablet::MutateRowForTesting(WriteTransactionState *tx_state,
                                    const Schema& update_schema,
                                    const RowChangeList& update) {
   // TODO: use 'probe' when calling UpdateRow on each rowset.
-  DCHECK_SCHEMA_EQ(key_schema_, row_key.schema());
+  DCHECK_SCHEMA_EQ(key_schema_, *row_key.schema());
   DCHECK_KEY_PROJECTION_SCHEMA_EQ(key_schema_, update_schema);
   DCHECK(tx_state) << "you must have a transaction context";
   CHECK(tx_state->rows().empty()) << "WriteTransactionState must have no PreparedRowWrites.";
@@ -409,7 +409,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(*schema_.get(), mutate->changelist());
+  RowChangeListDecoder rcl_decoder(schema_.get(), mutate->changelist());
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
@@ -1427,7 +1427,7 @@ Tablet::Iterator::Iterator(const Tablet *tablet,
     : tablet_(tablet),
       projection_(projection),
       snap_(snap),
-      encoder_(tablet_->key_schema()) {
+      encoder_(&tablet_->key_schema()) {
 }
 
 Tablet::Iterator::~Iterator() {}

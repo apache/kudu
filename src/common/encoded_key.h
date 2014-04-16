@@ -55,7 +55,8 @@ class EncodedKey {
 // one or more key columns specified as raw pointers.
 class EncodedKeyBuilder {
  public:
-  explicit EncodedKeyBuilder(const Schema &schema);
+  // 'schema' must remain valid for the lifetime of the EncodedKeyBuilder.
+  explicit EncodedKeyBuilder(const Schema* schema);
 
   void Reset();
 
@@ -77,7 +78,7 @@ class EncodedKeyBuilder {
  private:
   DISALLOW_COPY_AND_ASSIGN(EncodedKeyBuilder);
 
-  const Schema &schema_;
+  const Schema* schema_;
   faststring encoded_key_;
   const size_t num_key_cols_;
   size_t idx_;

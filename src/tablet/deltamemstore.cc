@@ -137,7 +137,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
     RowChangeList val(v);
     // Mutation is for the target row, check deletion status.
-    RowChangeListDecoder decoder(schema_, RowChangeList(v));
+    RowChangeListDecoder decoder(&schema_, RowChangeList(v));
     RETURN_NOT_OK(decoder.Init());
     decoder.TwiddleDeleteStatus(deleted);
 
@@ -285,7 +285,7 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
 
     RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
     uint32_t idx_in_block = key.row_idx() - prepared_idx_;
-    RowChangeListDecoder decoder(dms_->schema(), changelist);
+    RowChangeListDecoder decoder(&dms_->schema(), changelist);
 
     RETURN_NOT_OK_RET(decoder.Init(),
                       CorruptionStatus(string("Unable to decode changelist: ") + s.ToString(),
@@ -323,7 +323,7 @@ Status DMSIterator::ApplyDeletes(SelectionVector *sel_vec) {
     RETURN_NOT_OK(DecodeMutation(&src, &key, &changelist));
 
     uint32_t idx_in_block = key.row_idx() - prepared_idx_;
-    RowChangeListDecoder decoder(dms_->schema(), changelist);
+    RowChangeListDecoder decoder(&dms_->schema(), changelist);
 
     RETURN_NOT_OK_RET(decoder.Init(),
                       CorruptionStatus(string("Unable to decode changelist: ") + s.ToString(),

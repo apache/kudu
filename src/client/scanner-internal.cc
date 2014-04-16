@@ -35,7 +35,7 @@ KuduScanner::Data::Data(KuduTable* table)
     table_(DCHECK_NOTNULL(table)),
     projection_(table->schema().schema_.get()),
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
-    spec_encoder_(*table->schema().schema_),
+    spec_encoder_(table->schema().schema_.get()),
     start_key_(NULL),
     end_key_(NULL) {
 }

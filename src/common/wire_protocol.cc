@@ -289,7 +289,7 @@ Status RewriteRowBlockPB(const Schema& schema,
     int row_idx = 0;
     size_t offset = 0;
     while (offset < row_data->size()) {
-      ContiguousRow row(schema, reinterpret_cast<uint8_t*>(&(*row_data)[offset]));
+      ContiguousRow row(&schema, reinterpret_cast<uint8_t*>(&(*row_data)[offset]));
       uint8_t* dst_cell = row.mutable_cell_ptr(i);
 
       if (!col.is_nullable() || !row.is_null(i)) {
@@ -356,7 +356,7 @@ void AppendRowToString<ConstContiguousRow>(const ConstContiguousRow& row, string
 
 template<>
 void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
-  size_t row_size = ContiguousRowHelper::row_size(row.schema());
+  size_t row_size = ContiguousRowHelper::row_size(*row.schema());
   size_t appended_offset = buf->size();
   buf->resize(buf->size() + row_size);
   uint8_t* copied_rowdata = reinterpret_cast<uint8_t*>(&(*buf)[appended_offset]);
@@ -367,7 +367,7 @@ void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
 
 template<class RowType>
 void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
-  const Schema& schema = row.schema();
+  const Schema* schema = row.schema();
   // Append the row directly to the data.
   // This will append a host-local pointer for any slice data, so we need
   // to then relocate those pointers into the 'indirect_data' part of the protobuf.
@@ -377,8 +377,8 @@ void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
 
   uint8_t* copied_rowdata = reinterpret_cast<uint8_t*>(&(*data_buf)[appended_offset]);
   ContiguousRow copied_row(schema, copied_rowdata);
-  for (int i = 0; i < schema.num_columns(); i++) {
-    const ColumnSchema& col = schema.column(i);
+  for (int i = 0; i < schema->num_columns(); i++) {
+    const ColumnSchema& col = schema->column(i);
     uint8_t* dst_cell = copied_row.mutable_cell_ptr(i);
     if (col.is_nullable() && row.is_null(i)) {
       // Zero the data so we don't leak any uninitialized memory to another

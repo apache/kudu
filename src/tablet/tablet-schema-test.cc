@@ -52,7 +52,7 @@ class TestTabletSchema : public KuduTabletTest {
     RowBuilder rb(schema.CreateKeyProjection());
     rb.AddUint32(key);
     faststring buf;
-    RowChangeListEncoder mutation(schema, &buf);
+    RowChangeListEncoder mutation(&schema, &buf);
     mutation.SetToDelete();
     WriteTransactionState tx_state;
     ASSERT_STATUS_OK(tablet()->MutateRowForTesting(&tx_state, rb.row(), schema,
@@ -63,7 +63,7 @@ class TestTabletSchema : public KuduTabletTest {
     RowBuilder rb(schema.CreateKeyProjection());
     rb.AddUint32(key);
     faststring buf;
-    RowChangeListEncoder mutation(schema, &buf);
+    RowChangeListEncoder mutation(&schema, &buf);
     mutation.AddColumnUpdate(col_idx, &new_val);
     WriteTransactionState tx_state;
     ASSERT_STATUS_OK(tablet()->MutateRowForTesting(&tx_state, rb.row(), schema,

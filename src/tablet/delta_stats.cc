@@ -38,7 +38,7 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
   // the columns as opposed to the existing [(id, change)] format -- this will be
   // substantial change and useful elsewhere in the code. However, for now we're
   // using the hacky approach of decoding the changelist and extracting the column ids.
-  RowChangeListDecoder update_decoder(schema, update);
+  RowChangeListDecoder update_decoder(&schema, update);
   RETURN_NOT_OK(update_decoder.Init());
   if (PREDICT_FALSE(update_decoder.is_delete())) {
     IncrDeleteCount(1);

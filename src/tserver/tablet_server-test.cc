@@ -1577,7 +1577,7 @@ TEST_F(TabletServerTest, TestRpcServerCreateDestroy) {
 
 TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   const char *tabletId = "TestWriteOutOfBoundsTablet";
-  EncodedKeyBuilder key_builder(schema_);
+  EncodedKeyBuilder key_builder(&schema_);
   int val = 10;
   key_builder.AddColumnKey(&val);
   gscoped_ptr<EncodedKey> start(key_builder.BuildEncodedKey());

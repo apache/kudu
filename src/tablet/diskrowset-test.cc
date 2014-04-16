@@ -130,7 +130,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   // Try to add a mutation for a key not in the file (but which falls
   // between two valid keys)
   faststring buf;
-  RowChangeListEncoder enc(schema_, &buf);
+  RowChangeListEncoder enc(&schema_, &buf);
   enc.SetToDelete();
 
   Timestamp timestamp(0);
@@ -279,7 +279,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   // Update the single row multiple times, taking an MVCC snapshot
   // after each update.
   faststring update_buf;
-  RowChangeListEncoder update(schema_, &update_buf);
+  RowChangeListEncoder update(&schema_, &update_buf);
   for (uint32_t i = 2; i <= 5; i++) {
     {
       ScopedTransaction tx(&mvcc_);

@@ -458,7 +458,7 @@ TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
 
 void EncodeStringKey(const Schema &schema, const Slice& key,
                      gscoped_ptr<EncodedKey> *encoded_key) {
-  EncodedKeyBuilder kb(schema);
+  EncodedKeyBuilder kb(&schema);
   kb.AddColumnKey(&key);
   encoded_key->reset(kb.BuildEncodedKey());
 }

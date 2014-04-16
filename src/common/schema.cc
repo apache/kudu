@@ -243,7 +243,7 @@ string Schema::ToString() const {
 void Schema::DecodeRowKey(Slice encoded_key,
                           uint8_t* buffer,
                           Arena* arena) const {
-  ContiguousRow row(*this, buffer);
+  ContiguousRow row(this, buffer);
 
   size_t offset = 0;
   size_t remaining = encoded_key.size();
@@ -283,7 +283,7 @@ string Schema::DebugEncodedRowKey(Slice encoded_key) const {
   Arena arena(1024, 128 * 1024);
   uint8_t* buf = reinterpret_cast<uint8_t*>(arena.AllocateBytes(key_byte_size()));
   DecodeRowKey(encoded_key, buf, &arena);
-  ConstContiguousRow row(*this, buf);
+  ConstContiguousRow row(this, buf);
   return DebugRowKey(row);
 }
 

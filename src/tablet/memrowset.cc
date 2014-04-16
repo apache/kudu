@@ -39,7 +39,7 @@ bool MRSRow::IsGhost() const {
     RowChangeListDecoder decoder(schema(), mut->changelist());
     Status s = decoder.Init();
     if (!PREDICT_TRUE(s.ok())) {
-      LOG(FATAL) << "Failed to decode: " << mut->changelist().ToString(schema())
+      LOG(FATAL) << "Failed to decode: " << mut->changelist().ToString(*schema())
                   << " (" << s.ToString() << ")";
     }
     if (decoder.is_delete()) {
@@ -113,8 +113,8 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
 Status MemRowSet::Insert(Timestamp timestamp,
                          const ConstContiguousRow& row,
                          const OpId& op_id) {
-  CHECK(row.schema().has_column_ids());
-  DCHECK_SCHEMA_EQ(schema_, row.schema());
+  CHECK(row.schema()->has_column_ids());
+  DCHECK_SCHEMA_EQ(schema_, *row.schema());
 
   faststring enc_key_buf;
   schema_.EncodeComparableKey(row, &enc_key_buf);
@@ -159,7 +159,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
 }
 
 Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, MRSRow *ms_row) {
-  DCHECK_SCHEMA_EQ(schema_, row.schema());
+  DCHECK_SCHEMA_EQ(schema_, *row.schema());
 
   // TODO(perf): This path makes some unnecessary copies that could be reduced,
   // but let's assume that REINSERT is really rare and code for clarity over speed
@@ -172,7 +172,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;
-  RowChangeListEncoder encoder(schema_, &buf);
+  RowChangeListEncoder encoder(&schema_, &buf);
   encoder.SetToReinsert(row_copy.row_slice());
 
   // Move the REINSERT mutation itself into our Arena.
@@ -354,7 +354,7 @@ Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
   DCHECK_NE(state_, kUninitialized) << "not initted";
 
   if (key.size() > 0) {
-    ConstContiguousRow row_slice(memrowset_->schema(), key);
+    ConstContiguousRow row_slice(&memrowset_->schema(), key);
     memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
   } else {
     // Seeking to empty key shouldn't try to run any encoding.

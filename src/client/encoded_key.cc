@@ -20,7 +20,7 @@ string KuduEncodedKey::ToString() const {
 }
 
 KuduEncodedKeyBuilder::KuduEncodedKeyBuilder(const KuduSchema& schema)
-  : key_builder_(new EncodedKeyBuilder(*schema.schema_)) {
+  : key_builder_(new EncodedKeyBuilder(schema.schema_.get())) {
 }
 
 KuduEncodedKeyBuilder::~KuduEncodedKeyBuilder() {}

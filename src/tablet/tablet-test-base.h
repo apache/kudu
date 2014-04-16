@@ -98,7 +98,7 @@ struct StringKeyTestSetup {
     *new_val = 10000 + row_idx;
 
     faststring ubuf;
-    RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(1, new_val);
+    RowChangeListEncoder(&test_schema_, &ubuf).AddColumnUpdate(1, new_val);
     return tablet->MutateRowForTesting(tx_state, rb.row(), test_schema_, RowChangeList(ubuf));
   }
 
@@ -196,7 +196,7 @@ struct CompositeKeyTestSetup {
     *new_val = 10000 + row_idx;
 
     faststring ubuf;
-    RowChangeListEncoder(test_schema_, &ubuf).AddColumnUpdate(2, new_val);
+    RowChangeListEncoder(&test_schema_, &ubuf).AddColumnUpdate(2, new_val);
     return tablet->MutateRowForTesting(tx_state, rb.row(), test_schema_, RowChangeList(ubuf));
   }
 
@@ -281,7 +281,7 @@ struct IntKeyTestSetup {
     BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = 10000 + row_idx;
-    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1, new_val);
+    RowChangeListEncoder(&test_schema_, &buf).AddColumnUpdate(1, new_val);
     return tablet->MutateRowForTesting(tx_state, rb.row(), test_schema_, RowChangeList(buf));
   }
 
@@ -537,7 +537,7 @@ struct NullableValueTestSetup {
     BuildRowKey(&rb, row_idx);
     faststring buf;
     *new_val = CalcUpdateValue(row_idx);
-    RowChangeListEncoder(test_schema_, &buf).AddColumnUpdate(1,
+   RowChangeListEncoder(&test_schema_, &buf).AddColumnUpdate(1,
                                                              IsNullRow(row_idx) ?
                                                              new_val : NULL);
     return tablet->MutateRowForTesting(tx_state, rb.row(), test_schema_, RowChangeList(buf));
@@ -668,7 +668,7 @@ class TabletTestBase : public KuduTabletTest {
     // select the col to update (the third if there is only one key
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
-    RowChangeListEncoder(schema_, &buf).AddColumnUpdate(col_idx, &new_val);
+    RowChangeListEncoder(&schema_, &buf).AddColumnUpdate(col_idx, &new_val);
     return tablet()->MutateRowForTesting(tx_state, rb.row(), schema_, RowChangeList(buf));
   }
 
@@ -676,7 +676,7 @@ class TabletTestBase : public KuduTabletTest {
     RowBuilder rb(schema_.CreateKeyProjection());
     setup_.BuildRowKey(&rb, row_idx);
     faststring buf;
-    RowChangeListEncoder(schema_, &buf).SetToDelete();
+    RowChangeListEncoder(&schema_, &buf).SetToDelete();
     return tablet()->MutateRowForTesting(tx_state, rb.row(), schema_, RowChangeList(buf));
   }
 

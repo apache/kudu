@@ -13,7 +13,7 @@ namespace kudu {
 
 string RowChangeList::ToString(const Schema &schema) const {
   DCHECK_GT(encoded_data_.size(), 0);
-  RowChangeListDecoder decoder(schema, *this);
+  RowChangeListDecoder decoder(&schema, *this);
 
   Status s = decoder.Init();
   if (!s.ok()) {
@@ -23,7 +23,7 @@ string RowChangeList::ToString(const Schema &schema) const {
   if (decoder.is_delete()) {
     return string("DELETE");
   } else if (decoder.is_reinsert()) {
-    ConstContiguousRow row(schema, decoder.remaining_);
+    ConstContiguousRow row(&schema, decoder.remaining_);
     return string("REINSERT ") + schema.DebugRow(row);
   } else {
     CHECK(decoder.is_update()) << "Unknown changelist type!";
@@ -75,7 +75,7 @@ Status RowChangeListDecoder::Init() {
   }
 
   if (PREDICT_FALSE(is_reinsert())) {
-    int expected_size = ContiguousRowHelper::row_size(schema_) + 1;
+    int expected_size = ContiguousRowHelper::row_size(*schema_) + 1;
     if (remaining_.size() != expected_size) {
       return Status::Corruption(Substitute("REINSERT changelist wrong length (expected $0)",
                                            expected_size,
@@ -101,8 +101,8 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
     // ReInsert = MemStore Insert -> Delete -> (Re)Insert
     ConstContiguousRow src_row = ConstContiguousRow(projector.delta_schema(),
                                                     decoder.reinserted_row_slice());
-    RowProjector row_projector(&projector.delta_schema(), &projector.projection());
-    size_t row_size = ContiguousRowHelper::row_size(projector.projection());
+    RowProjector row_projector(projector.delta_schema(), projector.projection());
+    size_t row_size = ContiguousRowHelper::row_size(*projector.projection());
     uint8_t buffer[row_size];
     ContiguousRow row(projector.projection(), buffer);
     RETURN_NOT_OK(row_projector.Init());
@@ -131,7 +131,7 @@ Status RowChangeListDecoder::RemoveColumnsFromChangeList(const RowChangeList& sr
                                                          const std::vector<size_t>& column_indexes,
                                                          const Schema &schema,
                                                          RowChangeListEncoder* out) {
-  RowChangeListDecoder decoder(schema, src);
+  RowChangeListDecoder decoder(&schema, src);
   RETURN_NOT_OK(decoder.Init());
   if (decoder.is_delete()) {
     out->SetToDelete();

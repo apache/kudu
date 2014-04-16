@@ -5,7 +5,7 @@
 
 namespace kudu {
 
-RangePredicateEncoder::RangePredicateEncoder(const Schema &key_schema)
+RangePredicateEncoder::RangePredicateEncoder(const Schema* key_schema)
     : key_schema_(key_schema),
       lower_builder_(key_schema_),
       upper_builder_(key_schema_) {
@@ -14,7 +14,7 @@ RangePredicateEncoder::RangePredicateEncoder(const Schema &key_schema)
 void RangePredicateEncoder::EncodeRangePredicates(ScanSpec *spec, bool erase_pushed) {
   DCHECK_EQ(spec->encoded_ranges().size(), 0);
 
-  int num_key_cols = key_schema_.num_key_columns();
+  int num_key_cols = key_schema_->num_key_columns();
   const ColumnRangePredicate *key_preds[num_key_cols];
   ExtractPredicatesOnKeys(*spec, key_preds);
 
@@ -112,12 +112,12 @@ void RangePredicateEncoder::EncodeRangePredicates(ScanSpec *spec, bool erase_pus
 
 void RangePredicateEncoder::ExtractPredicatesOnKeys(
     const ScanSpec &spec, const ColumnRangePredicate **key_preds) const {
-  int num_key_cols = key_schema_.num_key_columns();
+  int num_key_cols = key_schema_->num_key_columns();
   for (int i = 0; i < num_key_cols; ++i) {
     key_preds[i] = NULL;
   }
   BOOST_FOREACH(const ColumnRangePredicate &pred, spec.predicates()) {
-    int idx = key_schema_.find_column(pred.column().name());
+    int idx = key_schema_->find_column(pred.column().name());
     if (idx != -1 && idx < num_key_cols) {
       if (key_preds[idx] != NULL) {
         VLOG(1) << "Since we can only push down a single predicate "
@@ -133,7 +133,7 @@ void RangePredicateEncoder::ExtractPredicatesOnKeys(
 int RangePredicateEncoder::CountKeyPrefixEqualities(
     const ColumnRangePredicate **key_preds) const {
   int prefix_end = -1;
-  int num_key_cols = key_schema_.num_key_columns();
+  int num_key_cols = key_schema_->num_key_columns();
   for (int i = 0; i < num_key_cols; ++i) {
     const ColumnRangePredicate *pred = key_preds[i];
     if (pred != NULL) {
@@ -158,7 +158,7 @@ int RangePredicateEncoder::CountKeyPrefixEqualities(
 
 void RangePredicateEncoder::ErasePushedPredicates(
     ScanSpec *spec, const ColumnRangePredicate **key_preds) const {
-  int num_key_cols = key_schema_.num_key_columns();
+  int num_key_cols = key_schema_->num_key_columns();
   ScanSpec::PredicateList* preds = spec->mutable_predicates();
   ScanSpec::PredicateList::iterator it = preds->begin();
   for (int i = 0; i < num_key_cols; ++i) {

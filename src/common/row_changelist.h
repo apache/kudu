@@ -84,10 +84,8 @@ class RowChangeList {
 class RowChangeListEncoder {
  public:
   // Construct a new encoder.
-  // NOTE: The 'schema' parameter is stored by reference, rather than copied.
-  // It is assumed that this class is only used in tightly scoped contexts where
-  // this is appropriate.
-  RowChangeListEncoder(const Schema &schema,
+  // NOTE: The 'schema' parameter must remain valid as long as the encoder.
+  RowChangeListEncoder(const Schema* schema,
                        faststring *dst) :
     schema_(schema),
     type_(RowChangeList::kUninitialized),
@@ -120,7 +118,7 @@ class RowChangeListEncoder {
       DCHECK_EQ(RowChangeList::kUpdate, type_);
     }
 
-    const ColumnSchema& col_schema = schema_.column(col_idx);
+    const ColumnSchema& col_schema = schema_->column(col_idx);
     const TypeInfo* ti = col_schema.type_info();
 
     // TODO: Now that RowChangeList is only used on the server side,
@@ -129,7 +127,7 @@ class RowChangeListEncoder {
     // Encode the column index if is coming from the client (no IDs)
     // Encode the column ID if is coming from the server (with IDs)
     // The MutateRow Projection step will figure out the client to server mapping.
-    size_t col_id = schema_.has_column_ids() ? schema_.column_id(col_idx) : col_idx;
+    size_t col_id = schema_->has_column_ids() ? schema_->column_id(col_idx) : col_idx;
     InlinePutVarint32(dst_, col_id);
 
     // If the column is nullable set the null flag
@@ -168,7 +166,7 @@ class RowChangeListEncoder {
     dst_->push_back(type);
   }
 
-  const Schema &schema_;
+  const Schema* schema_;
   RowChangeList::ChangeType type_;
   faststring *dst_;
 };
@@ -182,7 +180,7 @@ class RowChangeListDecoder {
   // NOTE: The 'schema' parameter is stored by reference, rather than copied.
   // It is assumed that this class is only used in tightly scoped contexts where
   // this is appropriate.
-  RowChangeListDecoder(const Schema &schema,
+  RowChangeListDecoder(const Schema* schema,
                        const RowChangeList &src)
     : schema_(schema),
       remaining_(src.slice()),
@@ -225,7 +223,7 @@ class RowChangeListDecoder {
       size_t col_id = 0xdeadbeef;
       const void* col_val = NULL;
       RETURN_NOT_OK(DecodeNext(&col_id, &col_val));
-      size_t col_idx = schema_.find_column_by_id(col_id);
+      size_t col_idx = schema_->find_column_by_id(col_id);
       CHECK_NE(col_idx, -1);
       BitmapSet(bitmap, col_idx);
     }
@@ -237,14 +235,14 @@ class RowChangeListDecoder {
   template<class RowType, class ArenaType>
   Status ApplyRowUpdate(RowType *dst_row, ArenaType *arena, RowChangeListEncoder* undo_encoder) {
     // TODO: Handle different schema
-    DCHECK(schema_.Equals(dst_row->schema()));
+    DCHECK(schema_->Equals(*dst_row->schema()));
 
     while (HasNext()) {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
 
-      SimpleConstCell src(schema_.column(updated_col), new_val);
+      SimpleConstCell src(&schema_->column(updated_col), new_val);
       typename RowType::Cell dst_cell = dst_row->cell(updated_col);
 
       // save the old cell on the undo encoder
@@ -263,8 +261,8 @@ class RowChangeListDecoder {
   Status ApplyToOneColumn(size_t row_idx, ColumnType *dst_col, size_t col_idx, ArenaType *arena) {
     DCHECK_EQ(RowChangeList::kUpdate, type_);
 
-    const ColumnSchema& col_schema = schema_.column(col_idx);
-    size_t col_id = schema_.column_id(col_idx);
+    const ColumnSchema& col_schema = schema_->column(col_idx);
+    size_t col_id = schema_->column_id(col_idx);
 
     // TODO: Handle the "different type" case (adapter_cols_mapping)
     DCHECK_EQ(col_schema.type_info()->type(), dst_col->type_info()->type());
@@ -274,7 +272,7 @@ class RowChangeListDecoder {
       const void *new_val = NULL;
       RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
       if (updated_col == col_id) {
-        SimpleConstCell src(col_schema, new_val);
+        SimpleConstCell src(&col_schema, new_val);
         typename ColumnType::Cell dst_cell = dst_col->cell(row_idx);
         RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
         // TODO: could potentially break; here if we're guaranteed to only have one update
@@ -345,7 +343,7 @@ class RowChangeListDecoder {
 
     *col_id = id;
 
-    const ColumnSchema& col_schema = schema_.column_by_id(id);
+    const ColumnSchema& col_schema = schema_->column_by_id(id);
     const TypeInfo* ti = col_schema.type_info();
 
     // If the column is nullable check the null flag
@@ -381,7 +379,7 @@ class RowChangeListDecoder {
   }
 
 
-  const Schema &schema_;
+  const Schema* schema_;
 
   // Data remaining in the source buffer.
   // This slice is advanced forward as entries are decoded.

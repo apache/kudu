@@ -20,7 +20,9 @@ using std::vector;
 // lifetime of any classes that access the EncodedKeyRange instances.
 class RangePredicateEncoder {
  public:
-  explicit RangePredicateEncoder(const Schema &key_schema);
+  // 'key_schema' is not copied and must remain valid for the lifetime
+  // of this object.
+  explicit RangePredicateEncoder(const Schema* key_schema);
 
   // Encodes the predicates found in 'spec' into a key range which is
   // then emitted back into 'spec'.
@@ -44,7 +46,7 @@ class RangePredicateEncoder {
   void ErasePushedPredicates(ScanSpec *spec,
                              const ColumnRangePredicate **key_preds) const;
 
-  const Schema key_schema_;
+  const Schema* key_schema_;
   EncodedKeyBuilder lower_builder_;
   EncodedKeyBuilder upper_builder_;
   AutoReleasePool pool_;

@@ -55,7 +55,7 @@ class MRSRow {
     memrowset_ = memrowset;
   }
 
-  const Schema& schema() const;
+  const Schema* schema() const;
 
   Timestamp insertion_timestamp() const { return header_->insertion_timestamp; }
 
@@ -65,16 +65,16 @@ class MRSRow {
   const Slice &row_slice() const { return row_slice_; }
 
   bool is_null(size_t col_idx) const {
-    return ContiguousRowHelper::is_null(schema(), row_slice_.data(), col_idx);
+    return ContiguousRowHelper::is_null(*schema(), row_slice_.data(), col_idx);
   }
 
   void set_null(size_t col_idx, bool is_null) const {
-    ContiguousRowHelper::SetCellIsNull(schema(),
+    ContiguousRowHelper::SetCellIsNull(*schema(),
       const_cast<uint8_t*>(row_slice_.data()), col_idx, is_null);
   }
 
   const uint8_t *cell_ptr(size_t col_idx) const {
-    return ContiguousRowHelper::cell_ptr(schema(), row_slice_.data(), col_idx);
+    return ContiguousRowHelper::cell_ptr(*schema(), row_slice_.data(), col_idx);
   }
 
   uint8_t *mutable_cell_ptr(size_t col_idx) const {
@@ -82,7 +82,7 @@ class MRSRow {
   }
 
   const uint8_t *nullable_cell_ptr(size_t col_idx) const {
-    return ContiguousRowHelper::nullable_cell_ptr(schema(), row_slice_.data(), col_idx);
+    return ContiguousRowHelper::nullable_cell_ptr(*schema(), row_slice_.data(), col_idx);
   }
 
   Cell cell(size_t col_idx) const {
@@ -449,8 +449,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return "memrowset iterator";
   }
 
-  const Schema &schema() const OVERRIDE {
-    return projector_.projection();
+  const Schema& schema() const OVERRIDE {
+    return *projector_.projection();
   }
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
@@ -517,14 +517,14 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
       // Check if it's a deletion.
       // TODO: can we reuse the 'decoder' object by adding a Reset or something?
-      RowChangeListDecoder decoder(memrowset_->schema_nonvirtual(), mut->changelist());
+      RowChangeListDecoder decoder(&memrowset_->schema_nonvirtual(), mut->changelist());
       RETURN_NOT_OK(decoder.Init());
       if (decoder.is_delete()) {
         decoder.TwiddleDeleteStatus(&is_deleted);
       } else if (decoder.is_reinsert()) {
         decoder.TwiddleDeleteStatus(&is_deleted);
 
-        ConstContiguousRow reinserted(memrowset_->schema_nonvirtual(),
+        ConstContiguousRow reinserted(&memrowset_->schema_nonvirtual(),
                                       decoder.reinserted_row_slice());
         RETURN_NOT_OK(projector_.ProjectRowForRead(reinserted, dst_row, dst_arena));
       } else {
@@ -534,7 +534,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
         // Instead, we should keep the backwards mapping of columns.
         BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping,
                       projector_.base_cols_mapping()) {
-          RowChangeListDecoder decoder(memrowset_->schema_nonvirtual(), mut->changelist());
+          RowChangeListDecoder decoder(&memrowset_->schema_nonvirtual(), mut->changelist());
           RETURN_NOT_OK(decoder.Init());
           ColumnBlock dst_col = dst_row->column_block(mapping.first);
           RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
@@ -585,8 +585,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
   boost::optional<const Slice &> upper_bound_;
 };
 
-inline const Schema& MRSRow::schema() const {
-  return memrowset_->schema_nonvirtual();
+inline const Schema* MRSRow::schema() const {
+  return &memrowset_->schema_nonvirtual();
 }
 
 } // namespace tablet

@@ -77,7 +77,7 @@ Status KuduPartialRow::Set(int col_idx,
                  col.name(), col.type_info()->name()));
   }
 
-  ContiguousRow row(*schema_, row_data_);
+  ContiguousRow row(schema_, row_data_);
 
   // If we're replacing an existing STRING value, deallocate the old value.
   if (TYPE == STRING) DeallocateStringIfSet(col_idx);
@@ -99,7 +99,7 @@ Status KuduPartialRow::Set(int col_idx,
 
 void KuduPartialRow::DeallocateStringIfSet(int col_idx) {
   if (BitmapTest(owned_strings_bitmap_, col_idx)) {
-    ContiguousRow row(*schema_, row_data_);
+    ContiguousRow row(schema_, row_data_);
     const Slice* dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx);
     delete [] dst->data();
     BitmapClear(owned_strings_bitmap_, col_idx);
@@ -207,7 +207,7 @@ Status KuduPartialRow::SetNull(int col_idx) {
 
   if (col.type_info()->type() == STRING) DeallocateStringIfSet(col_idx);
 
-  ContiguousRow row(*schema_, row_data_);
+  ContiguousRow row(schema_, row_data_);
   row.set_null(col_idx, true);
 
   // Mark the column as set.
@@ -251,7 +251,7 @@ bool KuduPartialRow::IsNull(int col_idx) const {
 
   if (!IsColumnSet(col_idx)) return false;
 
-  ContiguousRow row(*schema_, row_data_);
+  ContiguousRow row(schema_, row_data_);
   return row.is_null(col_idx);
 }
 
@@ -344,7 +344,7 @@ Status KuduPartialRow::Get(int col_idx,
     return Status::NotFound("column is NULL");
   }
 
-  ContiguousRow row(*schema_, row_data_);
+  ContiguousRow row(schema_, row_data_);
   memcpy(val, row.cell_ptr(col_idx), sizeof(*val));
   return Status::OK();
 }
@@ -363,7 +363,7 @@ bool KuduPartialRow::IsKeySet() const {
 
 
 std::string KuduPartialRow::ToString() const {
-  ContiguousRow row(*schema_, row_data_);
+  ContiguousRow row(schema_, row_data_);
   std::string ret;
   bool first = true;
   for (int i = 0; i < schema_->num_columns(); i++) {

@@ -60,7 +60,7 @@ class TestDeltaFile : public ::testing::Test {
     for (int i = FLAGS_first_row_to_update; i <= FLAGS_last_row_to_update; i += 2) {
       for (int timestamp = min_timestamp; timestamp <= max_timestamp; timestamp++) {
         buf.clear();
-        RowChangeListEncoder update(schema_, &buf);
+        RowChangeListEncoder update(&schema_, &buf);
         uint32_t new_val = timestamp + i;
         update.AddColumnUpdate(0, &new_val);
         DeltaKey key(i, Timestamp(timestamp));

@@ -558,7 +558,7 @@ struct ApplyingVisitor {
     // TODO: this code looks eerily similar to DMSIterator::ApplyUpdates!
     // I bet it can be combined.
 
-    RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
+    RowChangeListDecoder decoder(&dfi->dfr_->schema(), RowChangeList(deltas));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
       return decoder.ApplyToOneColumn(rel_idx, dst, col_to_apply, dst->arena());
@@ -638,7 +638,7 @@ struct DeletingVisitor {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
-    RowChangeListDecoder decoder(dfi->dfr_->schema(), RowChangeList(deltas));
+    RowChangeListDecoder decoder(&dfi->dfr_->schema(), RowChangeList(deltas));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
       return Status::OK();
@@ -752,7 +752,7 @@ struct FilterAndAppendVisitor {
     *continue_visit = true;
 
     faststring buf;
-    RowChangeListEncoder enc(dfi->dfr_->schema(), &buf);
+    RowChangeListEncoder enc(&dfi->dfr_->schema(), &buf);
     RETURN_NOT_OK(
         RowChangeListDecoder::RemoveColumnsFromChangeList(RowChangeList(deltas),
                                                           column_indexes,

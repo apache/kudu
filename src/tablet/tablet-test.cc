@@ -184,7 +184,7 @@ TYPED_TEST(TestTablet, TestGhostRowsOnDiskRowSets) {
 TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   RowBuilder rb(this->schema_);
   this->setup_.BuildRow(&rb, 12345);
-  ConstContiguousRow row(rb.schema(), rb.data());
+  ConstContiguousRow row(&this->schema_, rb.data());
 
   WriteTransactionState tx_state;
   ASSERT_STATUS_OK(this->tablet()->InsertForTesting(&tx_state, row));

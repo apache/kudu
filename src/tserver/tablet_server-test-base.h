@@ -286,7 +286,7 @@ class TabletServerTest : public KuduTest {
       ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection,resp.mutable_data(), &rows));
       VLOG(1) << "Round trip got " << rows.size() << " rows";
       BOOST_FOREACH(const uint8_t* row_ptr, rows) {
-        ConstContiguousRow row(projection, row_ptr);
+        ConstContiguousRow row(&projection, row_ptr);
         results->push_back(projection.DebugRow(row));
       }
     } while (resp.has_more_results());

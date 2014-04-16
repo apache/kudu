@@ -19,7 +19,7 @@ TEST(TestRangePredicateEncoder, TestEncodeRangePredicates) {
                 (ColumnSchema("b", UINT8))
                 (ColumnSchema("c", UINT8)),
                 3);
-  RangePredicateEncoder enc(schema);
+  RangePredicateEncoder enc(&schema);
   uint8_t l = 3;
   uint8_t u = 255;
   {

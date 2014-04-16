@@ -71,7 +71,7 @@ class TestCompaction : public KuduRowSetTest {
       // The MemRowSet is not projecting the row, so must be done by the caller
       RowProjector projector(&row_builder_.schema(), &mrs->schema());
       uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
-      ContiguousRow dst_row(mrs->schema(), rowbuf);
+      ContiguousRow dst_row(&mrs->schema(), rowbuf);
       ASSERT_STATUS_OK_FAST(projector.Init());
       ASSERT_STATUS_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
                             &dst_row, static_cast<Arena*>(NULL)));
@@ -95,7 +95,7 @@ class TestCompaction : public KuduRowSetTest {
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
-      RowChangeListEncoder update(schema, &update_buf);
+      RowChangeListEncoder update(&schema, &update_buf);
       update.AddColumnUpdate(col_idx, &new_val);
 
       RowBuilder rb(schema.CreateKeyProjection());
@@ -122,7 +122,7 @@ class TestCompaction : public KuduRowSetTest {
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
-      RowChangeListEncoder update(schema, &update_buf);
+      RowChangeListEncoder update(&schema, &update_buf);
       update.SetToDelete();
 
       RowBuilder rb(schema.CreateKeyProjection());

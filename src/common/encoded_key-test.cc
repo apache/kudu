@@ -20,7 +20,7 @@ class EncodedKeyTest : public ::testing::Test {
  public:
   EncodedKeyTest()
   : schema_(CreateSchema()),
-    key_builder_(schema_) {
+    key_builder_(&schema_) {
   }
 
   static Schema CreateSchema() {
@@ -55,7 +55,7 @@ class EncodedKeyTest : public ::testing::Test {
                           void* val) {
     Schema schema(boost::assign::list_of
                   (ColumnSchema("key", Type)), 1);
-    EncodedKeyBuilder builder(schema);
+    EncodedKeyBuilder builder(&schema);
     builder.AddColumnKey(val);
     gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
     EXPECT_ROWKEY_EQ(schema, expected, *key);
@@ -143,7 +143,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
                   (ColumnSchema("key1", UINT32))
                   (ColumnSchema("key2", UINT64)), 3);
 
-    EncodedKeyBuilder builder(schema);
+    EncodedKeyBuilder builder(&schema);
     uint16_t key0 = 12345;
     uint32_t key1 = 123456;
     uint64_t key2 = 1234567891011121314;
@@ -162,7 +162,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
     Schema schema(boost::assign::list_of
                   (ColumnSchema("key0", UINT16))
                   (ColumnSchema("key1", STRING)), 2);
-    EncodedKeyBuilder builder(schema);
+    EncodedKeyBuilder builder(&schema);
     uint16_t key0 = 12345;
     Slice key1("aKey");
     builder.AddColumnKey(&key0);
@@ -178,7 +178,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
                   (ColumnSchema("key0", UINT16))
                   (ColumnSchema("key1", STRING))
                   (ColumnSchema("key2", UINT8)), 3);
-    EncodedKeyBuilder builder(schema);
+    EncodedKeyBuilder builder(&schema);
     uint16_t key0 = 12345;
     Slice key1("aKey");
     uint8_t key2 = 123;

@@ -15,16 +15,16 @@ const ConstContiguousRow* ProjectRowForInsert(WriteTransactionState* tx_state,
                                               const uint8_t *user_row_ptr) {
   const ConstContiguousRow* row;
   if (row_projector.is_identity()) {
-    row = new ConstContiguousRow(*tablet_schema, user_row_ptr);
+    row = new ConstContiguousRow(tablet_schema, user_row_ptr);
   } else {
     uint8_t *rowbuf = new uint8_t[ContiguousRowHelper::row_size(*tablet_schema)];
     tx_state->AddArrayToAutoReleasePool(rowbuf);
     ConstContiguousRow src_row(row_projector.base_schema(), user_row_ptr);
-    ContiguousRow proj_row(*tablet_schema, rowbuf);
+    ContiguousRow proj_row(tablet_schema, rowbuf);
     CHECK_OK(row_projector.ProjectRowForWrite(src_row, &proj_row, static_cast<Arena*>(NULL)));
     row = new ConstContiguousRow(proj_row);
   }
-  DCHECK(row->schema().has_column_ids());
+  DCHECK(row->schema()->has_column_ids());
   return tx_state->AddToAutoReleasePool(row);
 }
 

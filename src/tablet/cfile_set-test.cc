@@ -225,7 +225,8 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Create iterator.
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
-  RangePredicateEncoder encoder(schema_.CreateKeyProjection());
+  Schema key_schema = schema_.CreateKeyProjection();
+  RangePredicateEncoder encoder(&key_schema);
 
   // Create a scan with a range predicate on the key column.
   ScanSpec spec;

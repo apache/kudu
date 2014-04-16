@@ -930,7 +930,7 @@ Status TabletBootstrap::PlayInsert(WriteTransactionState* tx_state,
 
   shared_ptr<Schema> schema(tablet_->schema_unlocked());
   const ConstContiguousRow* row = tx_state->AddToAutoReleasePool(
-    new ConstContiguousRow(*schema.get(), op.row_data));
+    new ConstContiguousRow(schema.get(), op.row_data));
 
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
@@ -939,12 +939,12 @@ Status TabletBootstrap::PlayInsert(WriteTransactionState* tx_state,
   // apply the insert to the tablet
   RETURN_NOT_OK_PREPEND(tablet_->InsertUnlocked(tx_state, prepared_row.get()),
                         Substitute("Failed to insert row $0. Reason",
-                                   row->schema().DebugRow(*row)));
+                                   row->schema()->DebugRow(*row)));
 
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "Applied Insert. OpId: "
             << tx_state->op_id().DebugString()
-            << " row: " << row->schema().DebugRow(*row);
+            << " row: " << row->schema()->DebugRow(*row);
   }
   return Status::OK();
 }
@@ -1038,7 +1038,7 @@ Status TabletBootstrap::ApplyMutation(WriteTransactionState* tx_state,
                                       const DecodedRowOperation& op) {
   shared_ptr<Schema> schema(tablet_->schema_unlocked());
   gscoped_ptr<ConstContiguousRow> row_key(
-    new ConstContiguousRow(*schema.get(), op.row_data));
+    new ConstContiguousRow(schema.get(), op.row_data));
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
   RETURN_NOT_OK(tablet_->CreatePreparedMutate(tx_state, row_key.get(),

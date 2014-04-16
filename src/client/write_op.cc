@@ -21,9 +21,9 @@ KuduWriteOperation::~KuduWriteOperation() {}
 gscoped_ptr<EncodedKey> KuduWriteOperation::CreateKey() const {
   CHECK(row_.IsKeySet()) << "key must be set";
 
-  ConstContiguousRow row(*row_.schema(), row_.row_data_);
+  ConstContiguousRow row(row_.schema(), row_.row_data_);
   EncodedKeyBuilder kb(row.schema());
-  for (int i = 0; i < row.schema().num_key_columns(); i++) {
+  for (int i = 0; i < row.schema()->num_key_columns(); i++) {
     kb.AddColumnKey(row.cell_ptr(i));
   }
   gscoped_ptr<EncodedKey> key(kb.BuildEncodedKey());

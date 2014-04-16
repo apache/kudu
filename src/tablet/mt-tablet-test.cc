@@ -113,7 +113,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           // Issue an update
           uint32_t new_val = old_val + 1;
           update_buf.clear();
-          RowChangeListEncoder(schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
+          RowChangeListEncoder(&schema_, &update_buf).AddColumnUpdate(col_idx, &new_val);
           WriteTransactionState dummy;
           CHECK_OK(tablet()->MutateRowForTesting(&dummy, rb.row(), schema_,
                                                 RowChangeList(update_buf)));
