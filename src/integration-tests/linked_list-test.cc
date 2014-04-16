@@ -148,9 +148,9 @@ class ChainGenerator {
     uint64_t this_key = (Rand64() << 8) | chain_idx_;
     uint64_t ts = GetCurrentTimeMicros();
     gscoped_ptr<Insert> insert = table->NewInsert();
-    insert->mutable_row()->SetUInt64(kKeyColumnName, this_key);
-    insert->mutable_row()->SetUInt64(kInsertTsColumnName, ts);
-    insert->mutable_row()->SetUInt64(kLinkColumnName, prev_key_);
+    CHECK_OK(insert->mutable_row()->SetUInt64(kKeyColumnName, this_key));
+    CHECK_OK(insert->mutable_row()->SetUInt64(kInsertTsColumnName, ts));
+    CHECK_OK(insert->mutable_row()->SetUInt64(kLinkColumnName, prev_key_));
     RETURN_NOT_OK_PREPEND(session->Apply(&insert),
                           Substitute("Unable to apply insert with key $0 at ts $1",
                                      this_key, ts));

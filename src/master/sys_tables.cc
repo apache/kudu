@@ -350,8 +350,8 @@ Status SysTablesTable::AddTable(const TableInfo *table) {
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   PartialRow row(&schema_);
-  row.SetString(kSysTablesColTableId, table->id());
-  row.SetString(kSysTablesColMetadata, metadata_buf);
+  CHECK_OK(row.SetString(kSysTablesColTableId, table->id()));
+  CHECK_OK(row.SetString(kSysTablesColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
 

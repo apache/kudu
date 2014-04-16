@@ -33,47 +33,47 @@ class PartialRow {
   // Setters
   //------------------------------------------------------------
 
-  Status SetInt8(const Slice& col_name, int8_t val);
-  Status SetInt16(const Slice& col_name, int16_t val);
-  Status SetInt32(const Slice& col_name, int32_t val);
-  Status SetInt64(const Slice& col_name, int64_t val);
+  Status SetInt8(const Slice& col_name, int8_t val) WARN_UNUSED_RESULT;
+  Status SetInt16(const Slice& col_name, int16_t val) WARN_UNUSED_RESULT;
+  Status SetInt32(const Slice& col_name, int32_t val) WARN_UNUSED_RESULT;
+  Status SetInt64(const Slice& col_name, int64_t val) WARN_UNUSED_RESULT;
 
-  Status SetUInt8(const Slice& col_name, uint8_t val);
-  Status SetUInt16(const Slice& col_name, uint16_t val);
-  Status SetUInt32(const Slice& col_name, uint32_t val);
-  Status SetUInt64(const Slice& col_name, uint64_t val);
+  Status SetUInt8(const Slice& col_name, uint8_t val) WARN_UNUSED_RESULT;
+  Status SetUInt16(const Slice& col_name, uint16_t val) WARN_UNUSED_RESULT;
+  Status SetUInt32(const Slice& col_name, uint32_t val) WARN_UNUSED_RESULT;
+  Status SetUInt64(const Slice& col_name, uint64_t val) WARN_UNUSED_RESULT;
 
   // Same as above setters, but with numeric column indexes.
   // These are faster since they avoid a hashmap lookup, so should
   // be preferred in performance-sensitive code (eg bulk loaders).
-  Status SetInt8(int col_idx, int8_t val);
-  Status SetInt16(int col_idx, int16_t val);
-  Status SetInt32(int col_idx, int32_t val);
-  Status SetInt64(int col_idx, int64_t val);
+  Status SetInt8(int col_idx, int8_t val) WARN_UNUSED_RESULT;
+  Status SetInt16(int col_idx, int16_t val) WARN_UNUSED_RESULT;
+  Status SetInt32(int col_idx, int32_t val) WARN_UNUSED_RESULT;
+  Status SetInt64(int col_idx, int64_t val) WARN_UNUSED_RESULT;
 
-  Status SetUInt8(int col_idx, uint8_t val);
-  Status SetUInt16(int col_idx, uint16_t val);
-  Status SetUInt32(int col_idx, uint32_t val);
-  Status SetUInt64(int col_idx, uint64_t val);
+  Status SetUInt8(int col_idx, uint8_t val) WARN_UNUSED_RESULT;
+  Status SetUInt16(int col_idx, uint16_t val) WARN_UNUSED_RESULT;
+  Status SetUInt32(int col_idx, uint32_t val) WARN_UNUSED_RESULT;
+  Status SetUInt64(int col_idx, uint64_t val) WARN_UNUSED_RESULT;
 
   // Sets the string but does not copy the value. The string
   // must remain valid until the call to AppendToPB().
-  Status SetString(const Slice& col_name, const Slice& val);
-  Status SetString(int col_idx, const Slice& val);
+  Status SetString(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetString(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   // Copies 'val' immediately.
-  Status SetStringCopy(const Slice& col_name, const Slice& val);
-  Status SetStringCopy(int col_idx, const Slice& val);
+  Status SetStringCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetStringCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   // Set the given column to NULL. This will only succeed on nullable
   // columns. Use Unset(...) to restore a column to its default.
-  Status SetNull(const Slice& col_name);
-  Status SetNull(int col_idx);
+  Status SetNull(const Slice& col_name) WARN_UNUSED_RESULT;
+  Status SetNull(int col_idx) WARN_UNUSED_RESULT;
 
   // Unsets the given column. Note that this is different from setting
   // it to NULL.
-  Status Unset(const Slice& col_name);
-  Status Unset(int col_idx);
+  Status Unset(const Slice& col_name) WARN_UNUSED_RESULT;
+  Status Unset(int col_idx) WARN_UNUSED_RESULT;
 
   //------------------------------------------------------------
   // Getters
@@ -89,33 +89,33 @@ class PartialRow {
   bool IsNull(const Slice& col_name) const;
   bool IsNull(int col_idx) const;
 
-  Status GetInt8(const Slice& col_name, int8_t* val) const;
-  Status GetInt16(const Slice& col_name, int16_t* val) const;
-  Status GetInt32(const Slice& col_name, int32_t* val) const;
-  Status GetInt64(const Slice& col_name, int64_t* val) const;
+  Status GetInt8(const Slice& col_name, int8_t* val) const WARN_UNUSED_RESULT;
+  Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
+  Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
+  Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
 
-  Status GetUInt8(const Slice& col_name, uint8_t* val) const;
-  Status GetUInt16(const Slice& col_name, uint16_t* val) const;
-  Status GetUInt32(const Slice& col_name, uint32_t* val) const;
-  Status GetUInt64(const Slice& col_name, uint64_t* val) const;
+  Status GetUInt8(const Slice& col_name, uint8_t* val) const WARN_UNUSED_RESULT;
+  Status GetUInt16(const Slice& col_name, uint16_t* val) const WARN_UNUSED_RESULT;
+  Status GetUInt32(const Slice& col_name, uint32_t* val) const WARN_UNUSED_RESULT;
+  Status GetUInt64(const Slice& col_name, uint64_t* val) const WARN_UNUSED_RESULT;
 
   // Same as above getters, but with numeric column indexes.
   // These are faster since they avoid a hashmap lookup, so should
   // be preferred in performance-sensitive code.
-  Status GetInt8(int col_idx, int8_t* val) const;
-  Status GetInt16(int col_idx, int16_t* val) const;
-  Status GetInt32(int col_idx, int32_t* val) const;
-  Status GetInt64(int col_idx, int64_t* val) const;
+  Status GetInt8(int col_idx, int8_t* val) const WARN_UNUSED_RESULT;
+  Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
+  Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
+  Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
 
-  Status GetUInt8(int col_idx, uint8_t* val) const;
-  Status GetUInt16(int col_idx, uint16_t* val) const;
-  Status GetUInt32(int col_idx, uint32_t* val) const;
-  Status GetUInt64(int col_idx, uint64_t* val) const;
+  Status GetUInt8(int col_idx, uint8_t* val) const WARN_UNUSED_RESULT;
+  Status GetUInt16(int col_idx, uint16_t* val) const WARN_UNUSED_RESULT;
+  Status GetUInt32(int col_idx, uint32_t* val) const WARN_UNUSED_RESULT;
+  Status GetUInt64(int col_idx, uint64_t* val) const WARN_UNUSED_RESULT;
 
   // Gets the string but does not copy the value. Callers should
   // copy the resulting Slice if necessary.
-  Status GetString(const Slice& col_name, Slice* val) const;
-  Status GetString(int col_idx, Slice* val) const;
+  Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
 
   //------------------------------------------------------------
   // Utility code

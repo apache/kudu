@@ -29,9 +29,9 @@ void AddTestRowToPB(RowOperationsPB::Type op_type,
                     const string& string_val,
                     RowOperationsPB* ops) {
   PartialRow row(&schema);
-  row.SetUInt32("key", key);
-  row.SetUInt32("int_val", int_val);
-  row.SetStringCopy("string_val", string_val);
+  CHECK_OK(row.SetUInt32("key", key));
+  CHECK_OK(row.SetUInt32("int_val", int_val));
+  CHECK_OK(row.SetStringCopy("string_val", string_val));
   RowOperationsPBEncoder enc(ops);
   enc.Add(op_type, row);
 }

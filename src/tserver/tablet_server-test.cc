@@ -457,10 +457,10 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     ASSERT_STATUS_OK(SchemaToPB(bad_schema, req.mutable_schema()));
 
     PartialRow row(&bad_schema);
-    row.SetUInt32("key", 1234);
-    row.SetUInt32("int_val", 5678);
-    row.SetStringCopy("string_val", "hello world via RPC");
-    row.SetUInt32("col_doesnt_exist", 91011);
+    CHECK_OK(row.SetUInt32("key", 1234));
+    CHECK_OK(row.SetUInt32("int_val", 5678));
+    CHECK_OK(row.SetStringCopy("string_val", "hello world via RPC"));
+    CHECK_OK(row.SetUInt32("col_doesnt_exist", 91011));
     RowOperationsPBEncoder enc(data);
     enc.Add(RowOperationsPB::INSERT, row);
 
