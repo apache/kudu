@@ -131,7 +131,7 @@ Status Writer::Start() {
   data_block_.reset(bb);
 
   if (is_nullable_) {
-    size_t nrows = ((options_.block_size + typeinfo_.size() - 1) / typeinfo_.size());
+    size_t nrows = ((options_.block_size + typeinfo_->size() - 1) / typeinfo_->size());
     null_bitmap_builder_.reset(new NullBitmapBuilder(nrows * 8));
   }
 
@@ -215,7 +215,7 @@ Status Writer::AppendEntries(const void *entries, size_t count) {
     int n = data_block_->Add(ptr, rem);
     DCHECK_GE(n, 0);
 
-    ptr += typeinfo_.size() * n;
+    ptr += typeinfo_->size() * n;
     rem -= n;
     value_count_ += n;
 
@@ -245,7 +245,7 @@ Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries,
         DCHECK_GE(n, 0);
 
         null_bitmap_builder_->AddRun(true, n);
-        ptr += n * typeinfo_.size();
+        ptr += n * typeinfo_->size();
         value_count_ += n;
         rem -= n;
 
@@ -256,7 +256,7 @@ Status Writer::AppendNullableEntries(const uint8_t *bitmap, const void *entries,
       } while (rem > 0);
     } else {
       null_bitmap_builder_->AddRun(false, nblock);
-      ptr += nblock * typeinfo_.size();
+      ptr += nblock * typeinfo_->size();
       value_count_ += nblock;
     }
   }
@@ -284,14 +284,14 @@ Status Writer::FinishCurDataBlock() {
   VLOG(2) << "estimated size=" << data_block_->EstimateEncodedSize()
           << " actual=" << data.size();
 
-  uint8_t key_tmp_space[typeinfo_.size()];
+  uint8_t key_tmp_space[typeinfo_->size()];
 
   if (validx_builder_ != NULL) {
     // If we're building an index, we need to copy the first
     // key from the block locally, so we can write it into that index.
     RETURN_NOT_OK(data_block_->GetFirstKey(key_tmp_space));
     VLOG(1) << "Appending validx entry\n" <<
-      kudu::HexDump(Slice(key_tmp_space, typeinfo_.size()));
+      kudu::HexDump(Slice(key_tmp_space, typeinfo_->size()));
   }
 
   vector<Slice> v;
@@ -341,7 +341,7 @@ Status Writer::AppendRawBlock(const vector<Slice> &data_slices,
       "must pass a  key for raw block if validx is configured";
     VLOG(1) << "Appending validx entry\n" <<
       kudu::HexDump(Slice(reinterpret_cast<const uint8_t *>(validx_key),
-                          typeinfo_.size()));
+                          typeinfo_->size()));
     key_encoder_.ResetAndEncode(validx_key, &tmp_buf_);
     s = validx_builder_->Append(Slice(tmp_buf_), ptr);
     if (!s.ok()) {

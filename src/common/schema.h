@@ -98,7 +98,7 @@ class ColumnSchema {
                const void *write_default = NULL,
                ColumnStorageAttributes attributes = ColumnStorageAttributes()) :
       name_(name),
-      type_info_(&GetTypeInfo(type)),
+      type_info_(GetTypeInfo(type)),
       is_nullable_(is_nullable),
       read_default_(read_default ? new Variant(type, read_default) : NULL),
       attributes_(attributes) {
@@ -110,8 +110,8 @@ class ColumnSchema {
     }
   }
 
-  const TypeInfo &type_info() const {
-    return *type_info_;
+  const TypeInfo* type_info() const {
+    return type_info_;
   }
 
   bool is_nullable() const {
@@ -170,7 +170,7 @@ class ColumnSchema {
 
   bool EqualsType(const ColumnSchema &other) const {
     return is_nullable_ == other.is_nullable_ &&
-           type_info().type() == other.type_info().type();
+           type_info()->type() == other.type_info()->type();
   }
 
   bool Equals(const ColumnSchema &other, bool check_defaults) const {
@@ -412,7 +412,7 @@ class Schema {
     DCHECK_SCHEMA_EQ(*this, row.schema());
     const ColumnSchema& col_schema = cols_[idx];
     DCHECK_LT(idx, cols_.size());
-    DCHECK_EQ(col_schema.type_info().type(), Type);
+    DCHECK_EQ(col_schema.type_info()->type(), Type);
 
     const void *val;
     if (col_schema.is_nullable()) {
@@ -496,9 +496,9 @@ class Schema {
     dst->clear();
     for (size_t i = 0; i < num_key_columns_; i++) {
       DCHECK(!cols_[i].is_nullable());
-      const TypeInfo &ti = cols_[i].type_info();
+      const TypeInfo* ti = cols_[i].type_info();
       bool is_last = i == num_key_columns_ - 1;
-      GetKeyEncoder(ti.type()).Encode(row.cell_ptr(i), is_last, dst);
+      GetKeyEncoder(ti->type()).Encode(row.cell_ptr(i), is_last, dst);
     }
     return Slice(*dst);
   }

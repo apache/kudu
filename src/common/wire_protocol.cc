@@ -119,26 +119,26 @@ Status SchemaFromPB(const SchemaPB& pb, Schema *schema) {
 void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
   pb->Clear();
   pb->set_name(col_schema.name());
-  pb->set_type(col_schema.type_info().type());
+  pb->set_type(col_schema.type_info()->type());
   pb->set_is_nullable(col_schema.is_nullable());
   pb->set_encoding(col_schema.attributes().encoding());
   pb->set_compression(col_schema.attributes().compression());
   if (col_schema.has_read_default()) {
-    if (col_schema.type_info().type() == STRING) {
+    if (col_schema.type_info()->type() == STRING) {
       const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
       pb->set_read_default_value(read_slice->data(), read_slice->size());
     } else {
       const void *read_value = col_schema.read_default_value();
-      pb->set_read_default_value(read_value, col_schema.type_info().size());
+      pb->set_read_default_value(read_value, col_schema.type_info()->size());
     }
   }
   if (col_schema.has_write_default()) {
-    if (col_schema.type_info().type() == STRING) {
+    if (col_schema.type_info()->type() == STRING) {
       const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
       pb->set_write_default_value(write_slice->data(), write_slice->size());
     } else {
       const void *write_value = col_schema.write_default_value();
-      pb->set_write_default_value(write_value, col_schema.type_info().size());
+      pb->set_write_default_value(write_value, col_schema.type_info()->size());
     }
   }
 }
@@ -251,7 +251,7 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
 
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
-    if (col.type_info().type() != STRING) {
+    if (col.type_info()->type() != STRING) {
       continue;
     }
 
@@ -342,11 +342,11 @@ void DoAddRowToRowBlockPB(const RowType& row, RowwiseRowBlockPB* pb) {
     if (col.is_nullable() && row.is_null(i)) {
       // Zero the data so we don't leak any uninitialized memory to another
       // host/security domain.
-      memset(dst_cell, 0, col.type_info().size());
+      memset(dst_cell, 0, col.type_info()->size());
       continue;
     }
 
-    if (col.type_info().type() == STRING) {
+    if (col.type_info()->type() == STRING) {
       // Copy the slice data into the 'indirect_data' field, and replace
       // the pointer with an offset into that field.
       Slice *slice = reinterpret_cast<Slice *>(dst_cell);
@@ -439,13 +439,13 @@ void ConvertRowBlockToPB(const RowBlock& block, RowwiseRowBlockPB* pb) {
     // TODO: Using LLVM to build a specialized CopyColumn on the fly should have
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
-    if (col.is_nullable() && col.type_info().type() == STRING) {
+    if (col.is_nullable() && col.type_info()->type() == STRING) {
       CopyColumn<true, true>(block, i, base, pb->mutable_indirect_data());
-    } else if (col.is_nullable() && col.type_info().type() != STRING) {
+    } else if (col.is_nullable() && col.type_info()->type() != STRING) {
       CopyColumn<true, false>(block, i, base, pb->mutable_indirect_data());
-    } else if (!col.is_nullable() && col.type_info().type() == STRING) {
+    } else if (!col.is_nullable() && col.type_info()->type() == STRING) {
       CopyColumn<false, true>(block, i, base, pb->mutable_indirect_data());
-    } else if (!col.is_nullable() && col.type_info().type() != STRING) {
+    } else if (!col.is_nullable() && col.type_info()->type() != STRING) {
       CopyColumn<false, false>(block, i, base, pb->mutable_indirect_data());
     } else {
       LOG(FATAL) << "cannot reach here";

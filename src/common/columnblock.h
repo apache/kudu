@@ -22,7 +22,7 @@ class ColumnBlock {
  public:
   typedef ColumnBlockCell Cell;
 
-  ColumnBlock(const TypeInfo &type,
+  ColumnBlock(const TypeInfo* type,
               uint8_t *null_bitmap,
               void *data,
               size_t nrows,
@@ -41,20 +41,20 @@ class ColumnBlock {
   }
 
   void SetCellValue(size_t idx, const void *new_val) {
-    strings::memcpy_inlined(mutable_cell_ptr(idx), new_val, type_.size());
+    strings::memcpy_inlined(mutable_cell_ptr(idx), new_val, type_->size());
   }
 
 #ifndef NDEBUG
   void OverwriteWithPattern(size_t idx, StringPiece pattern) {
     char *col_data = reinterpret_cast<char *>(mutable_cell_ptr(idx));
-    kudu::OverwriteWithPattern(col_data, type_.size(), pattern);
+    kudu::OverwriteWithPattern(col_data, type_->size(), pattern);
   }
 #endif
 
   // Return a pointer to the given cell.
   const uint8_t *cell_ptr(size_t idx) const {
     DCHECK_LT(idx, nrows_);
-    return data_ + type_.size() * idx;
+    return data_ + type_->size() * idx;
   }
 
   // Returns a pointer to the given cell or NULL.
@@ -78,14 +78,14 @@ class ColumnBlock {
     return !BitmapTest(null_bitmap_, idx);
   }
 
-  const size_t stride() const { return type_.size(); }
+  const size_t stride() const { return type_->size(); }
   const uint8_t * data() const { return data_; }
   uint8_t *data() { return data_; }
   const size_t nrows() const { return nrows_; }
 
   Arena *arena() { return arena_; }
 
-  const TypeInfo& type_info() const {
+  const TypeInfo* type_info() const {
     return type_;
   }
 
@@ -96,10 +96,10 @@ class ColumnBlock {
   // Return a pointer to the given cell.
   uint8_t *mutable_cell_ptr(size_t idx) {
     DCHECK_LT(idx, nrows_);
-    return data_ + type_.size() * idx;
+    return data_ + type_->size() * idx;
   }
 
-  const TypeInfo &type_;
+  const TypeInfo *type_;
   uint8_t *null_bitmap_;
 
   uint8_t *data_;
@@ -115,8 +115,8 @@ class ColumnBlockCell {
     : block_(block), row_idx_(row_idx) {
   }
 
-  DataType type() const { return block_.type_info().type(); }
-  size_t size() const { return block_.type_info().size(); }
+  DataType type() const { return block_.type_info()->type(); }
+  size_t size() const { return block_.type_info()->size(); }
   const void* ptr() const { return block_.cell_ptr(row_idx_); }
   void* mutable_ptr() { return block_.mutable_cell_ptr(row_idx_); }
   bool is_nullable() const { return block_.is_nullable(); }
@@ -175,7 +175,7 @@ class ColumnDataView {
     return column_block_->stride();
   }
 
-  const TypeInfo& type_info() const {
+  const TypeInfo* type_info() const {
     return column_block_->type_info();
   }
 

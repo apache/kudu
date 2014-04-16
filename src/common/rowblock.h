@@ -163,7 +163,7 @@ class RowBlock {
     size_t bitmap_size = BitmapSize(row_capacity_);
     for (size_t i = 0; i < schema_.num_columns(); ++i) {
       const ColumnSchema& col_schema = schema_.column(i);
-      size_t col_size = col_schema.type_info().size() * row_capacity_;
+      size_t col_size = col_schema.type_info()->size() * row_capacity_;
       if (col_schema.is_nullable()) {
         col_size += bitmap_size;
       }
@@ -194,7 +194,7 @@ class RowBlock {
     size_t bitmap_size = BitmapSize(nrows);
     for (size_t col = 0; col < schema.num_columns(); col++) {
       const ColumnSchema& col_schema = schema.column(col);
-      block_size += nrows * col_schema.type_info().size();
+      block_size += nrows * col_schema.type_info()->size();
       if (col_schema.is_nullable())
         block_size += bitmap_size;
     }

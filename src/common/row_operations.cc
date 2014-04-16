@@ -75,7 +75,7 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const PartialRow
 
     if (col.is_nullable() && row.is_null(i)) continue;
 
-    if (col.type_info().type() == STRING) {
+    if (col.type_info()->type() == STRING) {
       const Slice* val = reinterpret_cast<const Slice*>(row.cell_ptr(i));
       size_t indirect_offset = pb_->mutable_indirect_data()->size();
       pb_->mutable_indirect_data()->append(reinterpret_cast<const char*>(val->data()),
@@ -85,8 +85,8 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const PartialRow
       memcpy(dst_ptr, &to_append, sizeof(Slice));
       dst_ptr += sizeof(Slice);
     } else {
-      memcpy(dst_ptr, row.cell_ptr(i), col.type_info().size());
-      dst_ptr += col.type_info().size();
+      memcpy(dst_ptr, row.cell_ptr(i), col.type_info()->size());
+      dst_ptr += col.type_info()->size();
     }
   }
 
@@ -147,12 +147,12 @@ Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
 }
 
 Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst) {
-  int size = col.type_info().size();
+  int size = col.type_info()->size();
   if (PREDICT_FALSE(src_.size() < size)) {
     return Status::Corruption("Not enough data for column", col.ToString());
   }
   // Copy the data
-  if (col.type_info().type() == STRING) {
+  if (col.type_info()->type() == STRING) {
     // The Slice in the protobuf has a pointer relative to the indirect data,
     // not a real pointer. Need to fix that.
     const Slice* slice = reinterpret_cast<const Slice*>(src_.data());
@@ -187,7 +187,7 @@ void SetupPrototypeRow(const Schema& schema,
       if (col.is_nullable()) {
         row->set_null(i, false);
       }
-      memcpy(row->mutable_cell_ptr(i), col.write_default_value(), col.type_info().size());
+      memcpy(row->mutable_cell_ptr(i), col.write_default_value(), col.type_info()->size());
     } else if (col.is_nullable()) {
       row->set_null(i, true);
     } else {

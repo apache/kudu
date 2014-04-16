@@ -67,7 +67,7 @@ RowBlock::RowBlock(const Schema &schema,
   size_t bitmap_size = BitmapSize(row_capacity_);
   for (size_t i = 0; i < schema.num_columns(); ++i) {
     const ColumnSchema& col_schema = schema.column(i);
-    size_t col_size = row_capacity_ * col_schema.type_info().size();
+    size_t col_size = row_capacity_ * col_schema.type_info()->size();
     if (col_schema.is_nullable()) {
       col_size += bitmap_size;
     }

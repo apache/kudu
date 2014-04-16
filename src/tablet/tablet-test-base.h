@@ -309,7 +309,7 @@ struct IntKeyTestSetup {
 
   Schema test_schema_;
   Schema test_key_schema_;
-  const TypeInfo &type_info_;
+  const TypeInfo* type_info_;
 };
 
 template<>

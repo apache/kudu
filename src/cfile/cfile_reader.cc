@@ -105,7 +105,7 @@ Status CFileReader::Init() {
 
   RETURN_NOT_OK(ReadAndParseFooter());
 
-  type_info_ = &GetTypeInfo(footer_->data_type());
+  type_info_ = GetTypeInfo(footer_->data_type());
 
   RETURN_NOT_OK(TypeEncodingInfo::Get(footer_->data_type(),
                                       footer_->encoding(),

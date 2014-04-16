@@ -12,10 +12,10 @@ namespace kudu {
 using std::string;
 
 
-ValueRange::ValueRange(const TypeInfo &type,
+ValueRange::ValueRange(const TypeInfo* type,
                        boost::optional<const void *> lower_bound,
                        boost::optional<const void *> upper_bound)
-  : type_info_(&type),
+  : type_info_(type),
     lower_bound_(lower_bound),
     upper_bound_(upper_bound) {
   CHECK(has_lower_bound() || has_upper_bound())

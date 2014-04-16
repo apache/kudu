@@ -68,12 +68,12 @@ Status PartialRow::Set(int col_idx,
                        const typename DataTypeTraits<TYPE>::cpp_type& val,
                        bool owned) {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (PREDICT_FALSE(col.type_info().type() != TYPE)) {
+  if (PREDICT_FALSE(col.type_info()->type() != TYPE)) {
     // TODO: at some point we could allow type coercion here.
     return Status::InvalidArgument(
       Substitute("invalid type $0 provided for column '$1' (expected $2)",
                  DataTypeTraits<TYPE>::name(),
-                 col.name(), col.type_info().name()));
+                 col.name(), col.type_info()->name()));
   }
 
   ContiguousRow row(*schema_, row_data_);
@@ -204,7 +204,7 @@ Status PartialRow::SetNull(int col_idx) {
     return Status::InvalidArgument("column not nullable", col.ToString());
   }
 
-  if (col.type_info().type() == STRING) DeallocateStringIfSet(col_idx);
+  if (col.type_info()->type() == STRING) DeallocateStringIfSet(col_idx);
 
   ContiguousRow row(*schema_, row_data_);
   row.set_null(col_idx, true);
@@ -222,7 +222,7 @@ Status PartialRow::Unset(const Slice& col_name) {
 
 Status PartialRow::Unset(int col_idx) {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (col.type_info().type() == STRING) DeallocateStringIfSet(col_idx);
+  if (col.type_info()->type() == STRING) DeallocateStringIfSet(col_idx);
   BitmapClear(isset_bitmap_, col_idx);
   return Status::OK();
 }
@@ -328,12 +328,12 @@ template<DataType TYPE>
 Status PartialRow::Get(int col_idx,
                        typename DataTypeTraits<TYPE>::cpp_type* val) const {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (PREDICT_FALSE(col.type_info().type() != TYPE)) {
+  if (PREDICT_FALSE(col.type_info()->type() != TYPE)) {
     // TODO: at some point we could allow type coercion here.
     return Status::InvalidArgument(
       Substitute("invalid type $0 provided for column '$1' (expected $2)",
                  DataTypeTraits<TYPE>::name(),
-                 col.name(), col.type_info().name()));
+                 col.name(), col.type_info()->name()));
   }
 
   if (PREDICT_FALSE(!IsColumnSet(col_idx))) {

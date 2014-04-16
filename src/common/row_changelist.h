@@ -121,7 +121,7 @@ class RowChangeListEncoder {
     }
 
     const ColumnSchema& col_schema = schema_.column(col_idx);
-    const TypeInfo &ti = col_schema.type_info();
+    const TypeInfo* ti = col_schema.type_info();
 
     // TODO: Now that RowChangeList is only used on the server side,
     // maybe it should always be using column IDs?
@@ -139,7 +139,7 @@ class RowChangeListEncoder {
     }
 
     // Copy the new value itself
-    if (ti.type() == STRING) {
+    if (ti->type() == STRING) {
       Slice src;
       memcpy(&src, new_val, sizeof(Slice));
 
@@ -148,7 +148,7 @@ class RowChangeListEncoder {
       dst_->append(src.data(), src.size());
     } else {
       // Otherwise, just copy the data itself.
-      dst_->append(new_val, ti.size());
+      dst_->append(new_val, ti->size());
     }
   }
 
@@ -267,7 +267,7 @@ class RowChangeListDecoder {
     size_t col_id = schema_.column_id(col_idx);
 
     // TODO: Handle the "different type" case (adapter_cols_mapping)
-    DCHECK_EQ(col_schema.type_info().type(), dst_col->type_info().type());
+    DCHECK_EQ(col_schema.type_info()->type(), dst_col->type_info()->type());
 
     while (HasNext()) {
       size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
@@ -346,7 +346,7 @@ class RowChangeListDecoder {
     *col_id = id;
 
     const ColumnSchema& col_schema = schema_.column_by_id(id);
-    const TypeInfo &ti = col_schema.type_info();
+    const TypeInfo* ti = col_schema.type_info();
 
     // If the column is nullable check the null flag
     if (col_schema.is_nullable()) {
@@ -365,7 +365,7 @@ class RowChangeListDecoder {
     }
 
     // Decode the value itself
-    if (ti.type() == STRING) {
+    if (ti->type() == STRING) {
       if (!GetLengthPrefixedSlice(&remaining_, &last_decoded_slice_)) {
         return Status::Corruption("invalid slice in delta");
       }
@@ -374,7 +374,7 @@ class RowChangeListDecoder {
 
     } else {
       *val_out = remaining_.data();
-      remaining_.remove_prefix(ti.size());
+      remaining_.remove_prefix(ti->size());
     }
 
     return Status::OK();

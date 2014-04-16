@@ -81,7 +81,7 @@ Status DiskRowSetWriter::Open() {
     // Create the CFile writer itself.
     gscoped_ptr<cfile::Writer> writer(new cfile::Writer(
                                         opts,
-                                        col.type_info().type(),
+                                        col.type_info()->type(),
                                         col.is_nullable(),
                                         data_writer));
     s = writer->Start();

@@ -54,7 +54,7 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
     const ColumnSchema& col = schema.column(i);
 
     *output << EscapeForHtmlToString(col.name()) << " ";
-    switch (col.type_info().type()) {
+    switch (col.type_info()->type()) {
       case STRING:
         *output << "STRING";
         break;
@@ -75,7 +75,7 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
         *output << "BIGINT";
         break;
       default:
-        *output << "[unsupported type " << col.type_info().name() << "!]";
+        *output << "[unsupported type " << col.type_info()->name() << "!]";
         break;
     }
     if (i < schema.num_columns() - 1) {

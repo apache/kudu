@@ -30,7 +30,7 @@ class ValueRange {
   // open on that end.
   //
   // A range must be bounded on at least one end.
-  ValueRange(const TypeInfo &type,
+  ValueRange(const TypeInfo* type,
              boost::optional<const void *> lower_bound,
              boost::optional<const void *> upper_bound);
 
@@ -55,7 +55,7 @@ class ValueRange {
   bool ContainsCell(const void *cell) const;
 
  private:
-  const TypeInfo *type_info_;
+  const TypeInfo* type_info_;
   boost::optional<const void *> lower_bound_;
   boost::optional<const void *> upper_bound_;
 };

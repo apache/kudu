@@ -31,11 +31,11 @@ int TypeInfo::Compare(const void *lhs, const void *rhs) const {
 
 class TypeInfoResolver {
  public:
-  const TypeInfo &GetTypeInfo(DataType t) {
+  const TypeInfo* GetTypeInfo(DataType t) {
     const TypeInfo *type_info = mapping_[t].get();
     CHECK(type_info != NULL) <<
       "Bad type: " << t;
-    return *type_info;
+    return type_info;
   }
 
  private:
@@ -65,7 +65,7 @@ class TypeInfoResolver {
   DISALLOW_COPY_AND_ASSIGN(TypeInfoResolver);
 };
 
-const TypeInfo &GetTypeInfo(DataType type) {
+const TypeInfo* GetTypeInfo(DataType type) {
   return Singleton<TypeInfoResolver>::get()->GetTypeInfo(type);
 }
 

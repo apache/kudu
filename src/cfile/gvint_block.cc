@@ -261,7 +261,7 @@ Status GVIntBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 }
 
 Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
-  DCHECK_EQ(dst->type_info().type(), UINT32);
+  DCHECK_EQ(dst->type_info()->type(), UINT32);
   DCHECK_EQ(dst->stride(), sizeof(uint32_t));
 
   PtrSink<uint32_t> sink(dst->data());

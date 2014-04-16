@@ -26,8 +26,8 @@ struct SimpleConstCell {
       value_(value) {
   }
 
-  DataType type() const { return col_schema_.type_info().type(); }
-  size_t size() const { return col_schema_.type_info().size(); }
+  DataType type() const { return col_schema_.type_info()->type(); }
+  size_t size() const { return col_schema_.type_info()->size(); }
   bool is_nullable() const { return col_schema_.is_nullable(); }
   const void* ptr() const { return value_; }
   bool is_null() const { return value_ == NULL; }
@@ -429,8 +429,8 @@ class ContiguousRowCell {
     : row_(row), col_idx_(idx) {
   }
 
-  DataType type() const { return type_info().type(); }
-  size_t size() const { return type_info().size(); }
+  DataType type() const { return type_info()->type(); }
+  size_t size() const { return type_info()->size(); }
   const void* ptr() const { return row_->cell_ptr(col_idx_); }
   void* mutable_ptr() const { return row_->mutable_cell_ptr(col_idx_); }
   bool is_nullable() const { return row_->schema().column(col_idx_).is_nullable(); }
@@ -438,7 +438,7 @@ class ContiguousRowCell {
   void set_null(bool is_null) const { row_->set_null(col_idx_, is_null); }
 
  private:
-  const TypeInfo& type_info() const {
+  const TypeInfo* type_info() const {
     return row_->schema().column(col_idx_).type_info();
   }
 
@@ -685,12 +685,12 @@ class RowBuilder {
   DISALLOW_COPY_AND_ASSIGN(RowBuilder);
 
   void CheckNextType(DataType type) {
-    CHECK_EQ(schema_.column(col_idx_).type_info().type(),
+    CHECK_EQ(schema_.column(col_idx_).type_info()->type(),
              type);
   }
 
   void Advance() {
-    int size = schema_.column(col_idx_).type_info().size();
+    int size = schema_.column(col_idx_).type_info()->size();
     byte_idx_ += size;
     col_idx_++;
   }

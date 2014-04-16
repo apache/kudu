@@ -67,9 +67,9 @@ void EncodedKeyBuilder::AddColumnKey(const void *raw_key) {
   const ColumnSchema &col = schema_.column(idx_);
   DCHECK(!col.is_nullable());
 
-  const TypeInfo &ti = col.type_info();
+  const TypeInfo* ti = col.type_info();
   bool is_last = idx_ == num_key_cols_ - 1;
-  GetKeyEncoder(ti.type()).Encode(raw_key, is_last, &encoded_key_);
+  GetKeyEncoder(ti->type()).Encode(raw_key, is_last, &encoded_key_);
   raw_keys_.push_back(raw_key);
 
   ++idx_;

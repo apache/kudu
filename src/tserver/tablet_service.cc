@@ -449,12 +449,12 @@ static Status ExtractPredicateValue(const ColumnSchema& schema,
   // If the type is a STRING, then we need to return a pointer to a Slice
   // element pointing to the string. Otherwise, just verify that the provided
   // value was the right size.
-  if (schema.type_info().type() == STRING) {
+  if (schema.type_info()->type() == STRING) {
     Slice* s = pool->Add(new Slice(data_copy, pb_value.size()));
     *result = s;
   } else {
     // TODO: add test case for this invalid request
-    size_t expected_size = schema.type_info().size();
+    size_t expected_size = schema.type_info()->size();
     if (pb_value.size() != expected_size) {
       return Status::InvalidArgument(
         StringPrintf("Bad predicate on %s. Expected value size %zd, got %zd",

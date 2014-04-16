@@ -203,7 +203,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
         stats.IncrUpdateCount(col_idx, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);
         int update_value = deltafile_idx * 100 + i;
-        switch (col_schema.type_info().type()) {
+        switch (col_schema.type_info()->type()) {
           case UINT32:
             {
               uint32_t u32_val = update_value;
@@ -218,7 +218,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
             }
             break;
           default:
-            FAIL() << "Type " << DataType_Name(col_schema.type_info().type()) << " Not Supported";
+            FAIL() << "Type " << DataType_Name(col_schema.type_info()->type()) << " Not Supported";
             break;
         }
       }

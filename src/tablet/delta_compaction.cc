@@ -518,7 +518,7 @@ Status RowSetColumnUpdater::Open(shared_ptr<RowSetMetadata>* output_rowset_meta)
     gscoped_ptr<cfile::Writer> writer(
         new cfile::Writer(
             opts,
-            col.type_info().type(),
+            col.type_info()->type(),
             col.is_nullable(),
             data_writers[col_idx]));
     Status s = writer->Start();

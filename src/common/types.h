@@ -22,7 +22,7 @@ class TypeInfo;
 
 // This is the important bit of this header:
 // given a type enum, get the TypeInfo about it.
-extern const TypeInfo &GetTypeInfo(DataType type);
+extern const TypeInfo* GetTypeInfo(DataType type);
 
 // Information about a given type.
 // This is a runtime equivalent of the TypeTraits template below.
@@ -340,7 +340,7 @@ class Variant {
   bool Equals(const Variant *other) const {
     if (other == NULL || type_ != other->type_)
       return false;
-    return GetTypeInfo(type_).Compare(value(), other->value()) == 0;
+    return GetTypeInfo(type_)->Compare(value(), other->value()) == 0;
   }
 
  private:

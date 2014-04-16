@@ -110,7 +110,7 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
     // The map uses the 'name' string from within the ColumnSchema object.
     name_to_index_[col.name()] = i++;
     col_offsets_.push_back(off);
-    off += col.type_info().size();
+    off += col.type_info()->size();
   }
 
   if (PREDICT_FALSE(cols.size() != name_to_index_.size())) {

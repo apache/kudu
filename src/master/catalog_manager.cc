@@ -643,7 +643,7 @@ static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
         // type
         ColumnSchema new_col = ColumnSchemaFromPB(step.add_column().schema());
         const TypeEncodingInfo *dummy;
-        RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info().type(),
+        RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info()->type(),
                                             new_col.attributes().encoding(),
                                             &dummy));
 

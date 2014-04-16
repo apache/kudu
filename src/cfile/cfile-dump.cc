@@ -28,7 +28,7 @@ void DumpIterator(const CFileReader &reader, CFileIterator *it) {
   const TypeInfo *type = reader.type_info();
   int max_rows = kBufSize/type->size();
   uint8_t nulls[BitmapSize(max_rows)];
-  ColumnBlock cb(*type, reader.is_nullable() ? nulls : NULL, buf, max_rows, &arena);
+  ColumnBlock cb(type, reader.is_nullable() ? nulls : NULL, buf, max_rows, &arena);
 
   string strbuf;
   uint64_t count = 0;

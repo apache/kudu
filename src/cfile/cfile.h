@@ -164,7 +164,7 @@ class Writer {
   DataType datatype_;
   EncodingType encoding_type_;
   CompressionType compression_;
-  const TypeInfo &typeinfo_;
+  const TypeInfo* typeinfo_;
   const TypeEncodingInfo* type_encoding_info_;
   const KeyEncoder& key_encoder_;
 
