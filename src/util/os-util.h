@@ -3,6 +3,7 @@
 // Imported from Impala. Changes include:
 // - Namespace + imports.
 // - Fixes for cpplint.
+// - Fixed parsing when thread names have spaces.
 
 #ifndef KUDU_UTIL_OS_UTIL_H
 #define KUDU_UTIL_OS_UTIL_H
@@ -27,8 +28,14 @@ struct ThreadStats {
   ThreadStats() : user_ns(0), kernel_ns(0), iowait_ns(0) { }
 };
 
+// Populates ThreadStats object using a given buffer. The buffer is expected to
+// conform to /proc/<pid>/task/<tid>/stat layout; an error will be returned otherwise.
+//
+// If 'name' is supplied, the extracted thread name will be written to it.
+Status ParseStat(const std::string&buffer, std::string* name, ThreadStats* stats);
+
 // Populates ThreadStats object for a given thread by reading from
-// /proc/<pid>/task/<tid>/stats. Returns OK unless the file cannot be read or is in an
+// /proc/<pid>/task/<tid>/stat. Returns OK unless the file cannot be read or is in an
 // unrecognised format, or if the kernel version is not modern enough.
 Status GetThreadStats(int64_t tid, ThreadStats* stats);
 

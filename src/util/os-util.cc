@@ -5,6 +5,7 @@
 // - Replaced GetStrErrMsg with ErrnoToString.
 // - Replaced StringParser with strings/numbers.
 // - Fixes for cpplint.
+// - Fixed parsing when thread names have spaces.
 
 #include "util/os-util.h"
 
@@ -37,13 +38,54 @@ namespace kudu {
 
 static const int64_t TICKS_PER_SEC = sysconf(_SC_CLK_TCK);
 
-// Offsets into the ../stat file array of per-thread statistics
-static const int64_t USER_TICKS = 13;
-static const int64_t KERNEL_TICKS = 14;
-static const int64_t IO_WAIT = 41;
+// Offsets into the ../stat file array of per-thread statistics.
+//
+// They are themselves offset by two because the pid and comm fields of the
+// file are parsed separately.
+static const int64_t USER_TICKS = 13 - 2;
+static const int64_t KERNEL_TICKS = 14 - 2;
+static const int64_t IO_WAIT = 41 - 2;
 
 // Largest offset we are interested in, to check we get a well formed stat file.
 static const int64_t MAX_OFFSET = IO_WAIT;
+
+Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stats) {
+  DCHECK(stats != NULL);
+
+  // The thread name should be the only field with parentheses. But the name
+  // itself may contain parentheses.
+  size_t open_paren = buffer.find('(');
+  size_t close_paren = buffer.rfind(')');
+  if (open_paren == string::npos  ||      // '(' must exist
+      close_paren == string::npos ||      // ')' must exist
+      open_paren >= close_paren   ||      // '(' must come before ')'
+      close_paren + 2 == buffer.size()) { // there must be at least two chars after ')'
+    return Status::IOError("Unrecognised /proc format");
+  }
+  string extracted_name = buffer.substr(open_paren + 1, close_paren - (open_paren + 1));
+  string rest = buffer.substr(close_paren + 2);
+  vector<string> splits;
+  split(splits, rest, is_any_of(" "), token_compress_on);
+  if (splits.size() < MAX_OFFSET) {
+    return Status::IOError("Unrecognised /proc format");
+  }
+
+  int64 tmp;
+  if (safe_strto64(splits[USER_TICKS], &tmp)) {
+    stats->user_ns = tmp * (1e9 / TICKS_PER_SEC);
+  }
+  if (safe_strto64(splits[KERNEL_TICKS], &tmp)) {
+    stats->kernel_ns = tmp * (1e9 / TICKS_PER_SEC);
+  }
+  if (safe_strto64(splits[IO_WAIT], &tmp)) {
+    stats->iowait_ns = tmp * (1e9 / TICKS_PER_SEC);
+  }
+  if (name != NULL) {
+    *name = extracted_name;
+  }
+  return Status::OK();
+
+}
 
 Status GetThreadStats(int64_t tid, ThreadStats* stats) {
   DCHECK(stats != NULL);
@@ -65,23 +107,7 @@ Status GetThreadStats(int64_t tid, ThreadStats* stats) {
   string buffer((istreambuf_iterator<char>(proc_file)),
       istreambuf_iterator<char>());
 
-  vector<string> splits;
-  split(splits, buffer, is_any_of(" "), token_compress_on);
-  if (splits.size() < MAX_OFFSET) {
-    return Status::IOError("Unrecognised /proc format");
-  }
-
-  int64 tmp;
-  if (safe_strto64(splits[USER_TICKS], &tmp)) {
-    stats->user_ns = tmp * (1e9 / TICKS_PER_SEC);
-  }
-  if (safe_strto64(splits[KERNEL_TICKS], &tmp)) {
-    stats->kernel_ns = tmp * (1e9 / TICKS_PER_SEC);
-  }
-  if (safe_strto64(splits[IO_WAIT], &tmp)) {
-    stats->iowait_ns = tmp * (1e9 / TICKS_PER_SEC);
-  }
-  return Status::OK();
+  return ParseStat(buffer, NULL, stats); // don't want the name
 }
 
 bool RunShellProcess(const string& cmd, string* msg) {
