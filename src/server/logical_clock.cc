@@ -1,12 +1,18 @@
 // Copyright (c) 2013, Cloudera, inc.
 
+#include <boost/bind.hpp>
+
 #include "server/logical_clock.h"
 
 #include "gutil/atomicops.h"
+#include "util/metrics.h"
 #include "util/status.h"
 
 namespace kudu {
 namespace server {
+
+METRIC_DEFINE_gauge_uint64(clock_timestamp, kudu::MetricUnit::kCount,
+                           "Logical clock timestamp.");
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
@@ -46,6 +52,18 @@ Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
 LogicalClock* LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
   // initialize at 'timestamp' - 1 so that the  first output value is 'timestamp'.
   return new LogicalClock(timestamp.value() - 1);
+}
+
+uint64_t LogicalClock::NowForMetrics() {
+  return Now().ToUint64();
+}
+
+
+void LogicalClock::RegisterMetrics(MetricRegistry* registry) {
+  MetricContext ctx(registry, "clock");
+  METRIC_clock_timestamp.InstantiateFunctionGauge(
+      ctx,
+      boost::bind(&LogicalClock::NowForMetrics, this));
 }
 
 }  // namespace server

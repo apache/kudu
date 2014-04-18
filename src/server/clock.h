@@ -9,6 +9,7 @@
 
 namespace kudu {
 class faststring;
+class MetricRegistry;
 class MonoDelta;
 class Slice;
 class Status;
@@ -45,6 +46,9 @@ class Clock : public base::RefCountedThreadSafe<Clock> {
   // Can also be used to implement 'external consistency' in the same sense as
   // Google's Spanner.
   virtual Status WaitUntilAfter(const Timestamp& then) = 0;
+
+  // Register the clock metrics in the registry.
+  virtual void RegisterMetrics(MetricRegistry* registry) = 0;
 
   virtual ~Clock() {}
 };

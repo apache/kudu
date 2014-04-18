@@ -37,12 +37,18 @@ class LogicalClock : public Clock {
   // WaitUntilAfter() is unavailable for this clock.
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
 
+  virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
+
   // Creates a logical clock whose first output value on a Now() call is 'timestamp'.
   static LogicalClock* CreateStartingAt(const Timestamp& timestamp);
 
  private:
   // Should use LogicalClock::CreatingStartingAt()
   explicit LogicalClock(Timestamp::val_type initial_time) : now_(initial_time) {}
+
+  // Used to get the timestamp for metrics.
+  uint64_t NowForMetrics();
+
   base::subtle::Atomic64 now_;
 };
 

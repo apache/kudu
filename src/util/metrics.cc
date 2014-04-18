@@ -29,6 +29,8 @@ using strings::Substitute;
 
 const char* MetricUnit::Name(Type unit) {
   switch (unit) {
+    case kCount:
+      return "units";
     case kBytes:
       return "bytes";
     case kRequests:

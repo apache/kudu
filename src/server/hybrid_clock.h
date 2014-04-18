@@ -32,6 +32,8 @@ class HybridClock : public Clock {
   // Updates the clock with a timestamp originating on another machine.
   virtual Status Update(const Timestamp& to_update) OVERRIDE;
 
+  virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
+
   // Blocks the caller thread until the current time is after 'then'.
   //
   // The incoming time 'then' is assumed to be the latest time possible
@@ -87,6 +89,12 @@ class HybridClock : public Clock {
   void NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
 
   uint64_t GetTimeUsecs(ntptimeval* timeval);
+
+  // Used to get the timestamp for metrics.
+  uint64_t NowForMetrics();
+
+  // Used to get the current error, for metrics.
+  uint64_t ErrorForMetrics();
 
   uint64_t divisor_;
 

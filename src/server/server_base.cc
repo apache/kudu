@@ -87,6 +87,8 @@ Status ServerBase::GenerateInstanceID() {
 
 Status ServerBase::Init() {
   tcmalloc::RegisterMetrics(metric_registry_.get());
+  clock_->RegisterMetrics(metric_registry_.get());
+
   InitSpinLockContentionProfiling();
 
   Status s = fs_manager_->Open();

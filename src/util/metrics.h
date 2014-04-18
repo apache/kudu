@@ -152,6 +152,7 @@ class MetricContext;
 // As additional units are required, add them to this enum and also to Name().
 struct MetricUnit {
   enum Type {
+    kCount,
     kBytes,
     kRequests,
     kRows,

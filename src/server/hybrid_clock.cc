@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 
 #include <algorithm>
+#include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <sys/timex.h>
@@ -9,6 +10,7 @@
 
 #include "gutil/strings/substitute.h"
 #include "util/errno.h"
+#include "util/metrics.h"
 #include "util/locks.h"
 #include "util/status.h"
 
@@ -20,6 +22,11 @@ DEFINE_bool(use_hybrid_clock, false,
             "Whether HybridClock should be used as the default clock"
             " implementation. This is for testing purposes only, eventually"
             " the hybrid clock will become the default and only option.");
+
+METRIC_DEFINE_gauge_uint64(clock_timestamp, kudu::MetricUnit::kMicroseconds,
+                           "Hybrid clock timestamp.");
+METRIC_DEFINE_gauge_uint64(clock_error, kudu::MetricUnit::kMicroseconds,
+                           "Server clock maximum error.");
 
 using kudu::Status;
 using strings::Substitute;
@@ -277,6 +284,31 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   }
 
   return Status::OK();
+}
+
+// Used to get the timestamp for metrics.
+uint64_t HybridClock::NowForMetrics() {
+  return Now().ToUint64();
+}
+
+// Used to get the current error, for metrics.
+uint64_t HybridClock::ErrorForMetrics() {
+  Timestamp now;
+  uint64_t error;
+
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  NowWithError(&now, &error);
+  return error;
+}
+
+void HybridClock::RegisterMetrics(MetricRegistry* registry) {
+  MetricContext ctx(registry, "clock");
+  METRIC_clock_timestamp.InstantiateFunctionGauge(
+      ctx,
+      boost::bind(&HybridClock::NowForMetrics, this));
+  METRIC_clock_error.InstantiateFunctionGauge(
+      ctx,
+      boost::bind(&HybridClock::ErrorForMetrics, this));
 }
 
 uint64_t HybridClock::GetTimeUsecs(ntptimeval* timeval) {
