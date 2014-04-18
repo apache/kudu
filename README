@@ -19,8 +19,9 @@ Download and build thirdparty dependencies
 $ thirdparty/build-if-necessary.sh
 
 This downloads and builds the thirdparty dependencies and installs them into
-thirdparty/installed/. When new thirdparty dependencies are added by other
-developers, you may need to re-run this script.
+thirdparty/installed/. The script is also invoked by cmake, so new thirdparty
+dependencies added by other developers will be downloaded and built
+automatically in subsequent builds.
 
 If you are looking to manually run the protobuf compiler, the pprof tool,
 etc, you can find these in thirdparty/installed/bin/
