@@ -13,6 +13,7 @@
 // - Added prctl(PR_SET_NAME) to name threads.
 // - Added current_thread() abstraction using TLS.
 // - Used GoogleOnce to make thread_manager initialization lazy.
+// - Switched shared_ptr from boost to tr1.
 
 #include "util/thread.h"
 
@@ -24,6 +25,7 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <tr1/memory>
 #include <unistd.h>
 #include <vector>
 
@@ -42,7 +44,7 @@ using boost::bind;
 using boost::lock_guard;
 using boost::mem_fn;
 using boost::mutex;
-using boost::shared_ptr;
+using std::tr1::shared_ptr;
 using boost::thread;
 using boost::thread_resource_error;
 using std::endl;
@@ -74,6 +76,11 @@ static GoogleOnceType once = GOOGLE_ONCE_INIT;
 class ThreadMgr {
  public:
   ThreadMgr() : metrics_enabled_(false) { }
+
+  ~ThreadMgr() {
+    lock_guard<mutex> l(lock_);
+    thread_categories_.clear();
+  }
 
   Status StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
 
