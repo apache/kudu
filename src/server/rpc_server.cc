@@ -97,9 +97,11 @@ void RpcServer::Shutdown() {
   }
   acceptor_pools_.clear();
 
-  WARN_NOT_OK(messenger_->UnregisterService(service_name_),
-              Substitute("Unable to unregister service $0", service_name_));
-  service_pool_->Shutdown();
+  if (service_pool_) {
+    WARN_NOT_OK(messenger_->UnregisterService(service_name_),
+                Substitute("Unable to unregister service $0", service_name_));
+    service_pool_->Shutdown();
+  }
 }
 
 void RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {

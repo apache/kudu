@@ -1119,5 +1119,21 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   LOG(INFO) << out.str();
 }
 
+// Simple test to ensure we can destroy an RpcServer in different states of
+// initialization before Start()ing it.
+TEST_F(TabletServerTest, TestRpcServerCreateDestroy) {
+  RpcServerOptions opts;
+  {
+    RpcServer server1(opts);
+  }
+  {
+    RpcServer server2(opts);
+    MessengerBuilder mb("foo");
+    shared_ptr<Messenger> messenger;
+    ASSERT_STATUS_OK(mb.Build(&messenger));
+    ASSERT_STATUS_OK(server2.Init(messenger));
+  }
+}
+
 } // namespace tserver
 } // namespace kudu
