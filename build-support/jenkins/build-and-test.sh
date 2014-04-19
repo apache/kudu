@@ -45,6 +45,17 @@ if [ ! -d $LLVM_DIR ]; then
   exit 1
 fi
 
+# If they specified an explicit test directory, ensure it's going to be usable.
+if [ -n "$TEST_TMPDIR" ]; then
+  if [ ! -d "$TEST_TMPDIR" ]; then
+    mkdir -p "$TEST_TMPDIR"
+  fi
+  if [ ! -w "$TEST_TMPDIR" ]; then
+    echo "Error: Test output directory ($TEST_TMPDIR) is not writable on $(hostname) by user $(whoami)"
+    exit 1
+  fi
+fi
+
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
 cd $ROOT
 
