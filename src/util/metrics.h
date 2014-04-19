@@ -145,6 +145,7 @@ class GaugePrototype;
 class HdrHistogram;
 class Histogram;
 class HistogramPrototype;
+class HistogramSnapshotPB;
 
 class MetricContext;
 
@@ -215,6 +216,10 @@ class MetricRegistry {
   Histogram* FindOrCreateHistogram(const std::string& name,
                                    const HistogramPrototype& proto);
 
+  // Returns the Histogram with name equal to 'name' or NULL is no
+  // such histogram can be found.
+  Histogram* FindHistogram(const std::string& name) const;
+
   // Not thread-safe, used for tests.
   const UnorderedMetricMap& UnsafeMetricsMapForTests() const { return metrics_; }
 
@@ -227,7 +232,7 @@ class MetricRegistry {
   // Must be called while holding the registry lock.
   template<typename T>
   T* FindMetricUnlocked(const std::string& name,
-                        MetricType::Type metric_type);
+                        MetricType::Type metric_type) const;
 
   template<typename T>
   Gauge* CreateGauge(const std::string& name,
@@ -464,6 +469,9 @@ class Histogram : public Metric {
   const std::string& description() const { return description_; }
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
   virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
+
+  // Captures the value counts in this histogram.
+  Status CaptureValueCounts(HistogramSnapshotPB* snapshot);
 
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
   uint64_t TotalCountForTests() const;

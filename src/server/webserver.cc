@@ -181,7 +181,17 @@ Status Webserver::Start() {
 
   RegisterPathHandler("/", default_callback);
 
-  LOG(INFO) << "Webserver started";
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(GetBoundAddresses(&addrs));
+  string bound_addresses_str;
+  BOOST_FOREACH(const Sockaddr& addr, addrs) {
+    if (!bound_addresses_str.empty()) {
+      bound_addresses_str += ", ";
+    }
+    StrAppend(&bound_addresses_str, addr.ToString());
+  }
+
+  LOG(INFO) << "Webserver started. Bound to: " << bound_addresses_str;
   return Status::OK();
 }
 

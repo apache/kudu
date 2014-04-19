@@ -44,10 +44,16 @@ add_library(kudu_util
   url-coding.cc
 )
 
+PROTOBUF_GENERATE_CPP(HISTOGRAM_PROTO_SRCS HISTOGRAM_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES histogram.proto)
+ADD_LIBRARY(histogram_proto ${HISTOGRAM_PROTO_SRCS} ${HISTOGRAM_PROTO_HDRS})
+ADD_DEPENDENCIES(histogram_proto protobuf)
+
 # TODO: we don't really need to link agaist libcurl, since it's only used by
 # tests.
-target_link_libraries(kudu_util gutil ${CURL_LIBRARIES} ${Boost_LIBRARIES} protobuf)
-
+target_link_libraries(kudu_util gutil ${CURL_LIBRARIES} ${Boost_LIBRARIES} protobuf histogram_proto)
 
 add_library(kudu_test_main test_main.cc)
 target_link_libraries(kudu_test_main gflags glog gtest)

@@ -12,6 +12,7 @@
 #include "gutil/stl_util.h"
 #include "gutil/strings/substitute.h"
 #include "util/hdr_histogram.h"
+#include "util/histogram.pb.h"
 #include "util/jsonwriter.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -87,15 +88,20 @@ MetricRegistry::~MetricRegistry() {
   STLDeleteValues(&metrics_);
 }
 
+Histogram* MetricRegistry::FindHistogram(const std::string& name) const {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  return FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
+}
+
+
 template<typename T>
 T* MetricRegistry::FindMetricUnlocked(const std::string& name,
-                                      MetricType::Type metric_type) {
+                                      MetricType::Type metric_type) const {
   Metric* metric = FindPtrOrNull(metrics_, name);
   if (metric != NULL) {
     CHECK_EQ(metric_type, metric->type())
-      << "Downcast expects " << MetricType::Name(metric_type)
-      << " but found " << MetricType::Name(metric->type()) << " for "
-      << name;
+          << "Downcast expects " << MetricType::Name(metric_type)
+          << " but found " << MetricType::Name(metric->type()) << " for " << name;
     return down_cast<T*>(metric);
   }
   return NULL;
@@ -458,6 +464,21 @@ Status Histogram::WriteAsJson(const std::string& name, JsonWriter* writer) const
   writer->String(description_);
 
   writer->EndObject();
+  return Status::OK();
+}
+
+Status Histogram::CaptureValueCounts(HistogramSnapshotPB* snapshot_pb) {
+  HdrHistogram snapshot(*histogram_);
+  RecordedValuesIterator iter(&snapshot);
+  snapshot_pb->set_unit(MetricUnit::Name(unit_));
+  snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());
+  snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
+  while (iter.HasNext()) {
+    HistogramIterationValue value;
+    RETURN_NOT_OK(iter.Next(&value));
+    snapshot_pb->add_values(value.value_iterated_to);
+    snapshot_pb->add_counts(value.count_at_value_iterated_to);
+  }
   return Status::OK();
 }
 

@@ -1,0 +1,16 @@
+// Copyright (c) 2014, Cloudera, inc.
+package kudu;
+
+// Captures the state of an Histogram.
+message HistogramSnapshotPB {
+  required string name = 1;
+  required string unit = 2;
+  required uint64 max_trackable_value = 3;
+  required int32 num_significant_digits = 4;
+  repeated uint64 values = 5 [packed = true];
+  repeated uint64 counts = 6 [packed = true];
+}
+
+message HistogramSnapshotsListPB {
+  repeated HistogramSnapshotPB histograms = 1;
+}

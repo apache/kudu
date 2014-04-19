@@ -20,10 +20,15 @@
 #include <sys/stat.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
+#include <boost/foreach.hpp>
 #include <google/malloc_extension.h>
+#include <vector>
 
+#include "gutil/map-util.h"
+#include "gutil/strings/split.h"
 #include "server/pprof-path-handlers.cc"
 #include "server/webserver.h"
+#include "util/histogram.pb.h"
 #include "util/metrics.h"
 #include "util/jsonwriter.h"
 
@@ -134,6 +139,30 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
   JsonWriter writer(output);
   WARN_NOT_OK(metrics->WriteAsJson(&writer),
               "Couldn't write JSON metrics over HTTP");
+  // check if the requestor is asking for particular histograms
+  // by passing a comma separated list of histogram names.
+  const string* histogram_names = FindOrNull(args, "histograms");
+  if (histogram_names != NULL) {
+    vector<string> histogram_names_vec;
+    SplitStringUsing(*histogram_names, ",", &histogram_names_vec);
+    HistogramSnapshotsListPB histograms_pb;
+    BOOST_FOREACH(const string& histogram_name, histogram_names_vec) {
+      Histogram* histogram = metrics->FindHistogram(histogram_name);
+      if (histogram == NULL) {
+        LOG(WARNING) << "Client requested a histogram that does not exist: " << histogram_name;
+        return;
+      }
+      HistogramSnapshotPB* snapshot = histograms_pb.add_histograms();
+      snapshot->set_name(histogram_name);
+      Status status = histogram->CaptureValueCounts(snapshot);
+      if (!status.ok()) {
+        WARN_NOT_OK(status, "Cannot capture histogram snapshot");
+        return;
+      }
+    }
+    writer.Protobuf(histograms_pb);
+    return;
+  }
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {
