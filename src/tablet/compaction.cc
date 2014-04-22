@@ -109,9 +109,9 @@ class MemRowSetCompactionInput : public CompactionInput {
 ////////////////////////////////////////////////////////////
 
 // CompactionInput yielding rows and mutations from an on-disk DiskRowSet.
-class RowSetCompactionInput : public CompactionInput {
+class DiskRowSetCompactionInput : public CompactionInput {
  public:
-  RowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
+  DiskRowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
                         shared_ptr<DeltaIterator> redo_delta_iter,
                         shared_ptr<DeltaIterator> undo_delta_iter) :
     base_iter_(base_iter.Pass()),
@@ -171,7 +171,7 @@ class RowSetCompactionInput : public CompactionInput {
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(RowSetCompactionInput);
+  DISALLOW_COPY_AND_ASSIGN(DiskRowSetCompactionInput);
   gscoped_ptr<RowwiseIterator> base_iter_;
   shared_ptr<DeltaIterator> redo_delta_iter_;
   shared_ptr<DeltaIterator> undo_delta_iter_;
@@ -507,7 +507,7 @@ CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
           projection,
           MvccSnapshot::CreateSnapshotIncludingNoTransactions()));
 
-  return new RowSetCompactionInput(base_iter.Pass(), redo_deltas, undo_deltas);
+  return new DiskRowSetCompactionInput(base_iter.Pass(), redo_deltas, undo_deltas);
 }
 
 CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
