@@ -14,6 +14,7 @@
 // - Added current_thread() abstraction using TLS.
 // - Used GoogleOnce to make thread_manager initialization lazy.
 // - Switched shared_ptr from boost to tr1.
+// - Added ThreadMgr::ScopedRemoveThread for exception safety in Thread::SuperviseThread.
 
 #include "util/thread.h"
 
@@ -93,6 +94,25 @@ class ThreadMgr {
   // Removes a thread from the supplied category. If the thread has
   // already been removed, this is a no-op.
   void RemoveThread(const thread::id& boost_id, const string& category);
+
+  // Helper for ensuring exception safety: calls RemoveThread() once
+  // we exit the current scope.
+  class ScopedRemoveThread {
+   public:
+    // Note: all parameters passed in to this constructor must remain
+    // valid until the object exits the scope.
+    ScopedRemoveThread(ThreadMgr* mgr, const thread::id& boost_id, const string& category)
+        : mgr_(mgr), boost_id_(boost_id), category_(category) {
+    }
+
+    ~ScopedRemoveThread() {
+      mgr_->RemoveThread(boost_id_, category_);
+    }
+   private:
+    ThreadMgr* mgr_;
+    const thread::id& boost_id_;
+    const string& category_;
+  };
 
  private:
   // Container class for any details we want to capture about a thread
@@ -425,9 +445,12 @@ void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
   // Use boost's get_id rather than the system thread ID as the unique key for this thread
   // since the latter is more prone to being recycled.
   thread_mgr_ref->AddThread(boost::this_thread::get_id(), name, category_, system_tid);
-  SetThreadName(name, system_tid);
-  functor();
-  thread_mgr_ref->RemoveThread(boost::this_thread::get_id(), category_);
+  {
+    ThreadMgr::ScopedRemoveThread remove_thread(thread_mgr_ref.get(),
+                                                boost::this_thread::get_id(), category_);
+    SetThreadName(name, system_tid);
+    functor();
+  }
 }
 
 } // namespace kudu
