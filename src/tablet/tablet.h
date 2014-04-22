@@ -345,7 +345,7 @@ class Tablet {
   consensus::Consensus* consensus_;
   log::OpIdAnchorRegistry* opid_anchor_registry_;
 
-  Atomic32 next_mrs_id_;
+  int64_t next_mrs_id_;
 
   // A pointer to the server's clock.
   scoped_refptr<server::Clock> clock_;

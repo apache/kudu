@@ -736,7 +736,8 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   // Replace the MemRowSet
   RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema_, &input, &old_ms));
 
-  // The "global tablet lock" is acquired in CreatePreparedAlterSchema()
+  // Tablet::component_lock_ is acquired in CreatePreparedAlterSchema()
+  CHECK(component_lock_.is_write_locked());
   tx_ctx->release_tablet_lock();
 
   // Flush the old MemRowSet
