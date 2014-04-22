@@ -61,13 +61,9 @@ class ClientTest : public KuduTest {
 
     FLAGS_heartbeat_interval_ms = 10;
 
-    // Start minicluster
+    // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
     ASSERT_STATUS_OK(cluster_->Start());
-
-
-    // Wait for the tablets to be reported to the master.
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 
     // Connect to the cluster.
     KuduClientOptions opts;

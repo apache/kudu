@@ -19,18 +19,14 @@
 # limitations under the License.
 #
 ##
-# script to run protoc to generate protocol buf files.
-# usage: ./build-proto.sh
+# Script to find and run protoc to generate protocol buf files.
+# Should be used exclusively by Maven.
 #
 
 KUDU_DIR=`dirname $0`/../../..
-SRC_DIR=$KUDU_DIR/src
-JAVA_DIR=$KUDU_DIR/java/kudu-client/src/main/java/
-PROTO_FILES=`find $SRC_DIR -type f -name "*.proto"`
 PROTOC_BIN=$KUDU_DIR/thirdparty/installed/bin/protoc
 if [ ! -f "$PROTOC_BIN" ] ; then
   if which protoc > /dev/null; then
-    echo 'Warning: Using protoc from PATH instead of the 3rd party folder'
     PROTOC_BIN=`which protoc`
   else
     echo 'Error: protoc is missing from the 3rd party folder and on the PATH'
@@ -38,7 +34,4 @@ if [ ! -f "$PROTOC_BIN" ] ; then
   fi
 fi
 
-set -x
-for f in $PROTO_FILES ; do
-  $PROTOC_BIN -I=$SRC_DIR --java_out=$JAVA_DIR $f
-done
+$PROTOC_BIN "$@"

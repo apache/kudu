@@ -133,5 +133,7 @@ if [ -f "$TOOLCHAIN" ]; then
   source $TOOLCHAIN
 fi
 cd java
-./kudu-client/dev-support/build-proto.sh
+# use git clean to help with the transition from protoc generated files in
+# src/main/java to target/generated-sources.
+git clean -df
 mvn clean test

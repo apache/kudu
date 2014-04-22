@@ -32,6 +32,7 @@
         <surefire.version>2.16</surefire.version>
         <slf4j.version>1.6.1</slf4j.version>
         <maven.assembly.version>2.2.1</maven.assembly.version>
+        <protoc.version>0.1.10</protoc.version>
     </properties>
 
     <modules>
@@ -53,4 +54,11 @@
         </plugins>
     </build>
 
+    <pluginRepositories>
+      <!-- For maven-protoc-plugin -->
+      <pluginRepository>
+        <id>protoc-plugin</id>
+        <url>http://maven.davidtrott.com/repository</url>
+      </pluginRepository>
+    </pluginRepositories>
 </project>

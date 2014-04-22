@@ -133,10 +133,16 @@ public class BaseKuduTest {
         }
       }
     } finally {
-      client.shutdown();
+      if (client != null) {
+        client.shutdown();
+      }
       if (startCluster) {
-        master.destroy();
-        tabletServer.destroy();
+        if (master != null) {
+          master.destroy();
+        }
+        if (tabletServer != null) {
+          tabletServer.destroy();
+        }
         for (Thread thread : processInputPrinters) {
           thread.interrupt();
         }
