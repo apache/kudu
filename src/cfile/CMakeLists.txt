@@ -8,19 +8,20 @@ PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
 add_library(cfile_proto ${CFILE_PROTO_SRCS} ${CFILE_PROTO_HDRS})
 target_link_libraries(cfile_proto kudu_common_proto protobuf)
 
-set(CFILE_SRCS cfile.cc index_block.cc index_btree.cc cfile_reader.cc
-
+set(CFILE_SRCS
   block_cache.cc
-  bloomfile.cc
-  type_encodings.cc
-
-  compression_codec.cc
   block_compression.cc
-
+  bloomfile.cc
+  cfile.cc
+  cfile_reader.cc
+  cfile_util.cc
+  compression_codec.cc
   gvint_block.cc
-  string_prefix_block.cc
+  index_block.cc
+  index_btree.cc
   string_plain_block.cc
-)
+  string_prefix_block.cc
+  type_encodings.cc)
 
 add_library(cfile ${CFILE_SRCS})
 target_link_libraries(cfile kudu_common kudu_util gutil)

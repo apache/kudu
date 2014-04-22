@@ -9,7 +9,6 @@
 #include <tr1/memory>
 #include <iostream>
 #include <vector>
-#include <utility>
 
 #include "gutil/strings/substitute.h"
 #include "gutil/strings/util.h"
@@ -20,6 +19,7 @@
 #include "server/fsmanager.h"
 #include "consensus/log_util.h"
 #include "consensus/log_reader.h"
+#include "cfile/cfile_reader.h"
 #include "tablet/tablet.h"
 
 namespace kudu {
@@ -28,6 +28,11 @@ namespace tools {
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using cfile::CFileIterator;
+using cfile::CFileReader;
+using cfile::DumpIterator;
+using cfile::DumpIteratorOptions;
+using cfile::ReaderOptions;
 using strings::Substitute;
 using tablet::Tablet;
 using metadata::TabletMasterBlockPB;
@@ -146,7 +151,7 @@ Status FsTool::ListAllTablets() {
     if (detail_level_ >= HEADERS_ONLY) {
       std::cout << "Tablet: " << tablet << std::endl;
       string path = JoinPathSegments(fs_manager_->GetMasterBlockDir(), tablet);
-      RETURN_NOT_OK(PrintTabletMeta(path, tablet));
+      RETURN_NOT_OK(PrintTabletMetaInternal(path, tablet));
     } else {
       std::cout << "\t" << tablet << std::endl;
     }
@@ -198,7 +203,14 @@ Status FsTool::PrintLogSegmentHeader(const string& path) {
   return Status::OK();
 }
 
-Status FsTool::PrintTabletMeta(const string& master_block_path, const string& tablet_id) {
+Status FsTool::PrintTabletMeta(const string& tablet_id) {
+  string master_block_path;
+  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
+  return PrintTabletMetaInternal(master_block_path, tablet_id);
+}
+
+Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
+                                       const string& tablet_id) {
   gscoped_ptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
@@ -227,9 +239,22 @@ Status FsTool::LoadTabletMetadata(const string& master_block_path,
       s, Substitute("Unexpected error reading master block for tablet '$0' from '$1'",
                     tablet_id,
                     master_block_path));
-  return TabletMetadata::Load(fs_manager_.get(), master_block_pb, meta);
+  VLOG(1) << "Loaded master block: " << master_block_pb.ShortDebugString();
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), master_block_pb, meta));
+  return Status::OK();
 }
 
+Status FsTool::GetMasterBlockPath(const string& tablet_id,
+                                  string* master_block_path) {
+  string path = fs_manager_->GetMasterBlockPath(tablet_id);
+  if (!fs_manager_->Exists(path)) {
+    return Status::NotFound(Substitute("master block for tablet '$0' not found in '$1'",
+                                       tablet_id, base_dir_));
+  }
+
+  *master_block_path = path;
+  return Status::OK();
+}
 Status FsTool::ListBlocksForAllTablets() {
   DCHECK(initialized_);
 
@@ -244,13 +269,8 @@ Status FsTool::ListBlocksForAllTablets() {
 Status FsTool::ListBlocksForTablet(const string& tablet_id) {
   DCHECK(initialized_);
 
-  string master_block_path = JoinPathSegments(fs_manager_->GetMasterBlockDir(),
-                                              tablet_id);
-
-  if (!fs_manager_->Exists(master_block_path)) {
-    return Status::NotFound(Substitute("master block for tablet '$0' not found in '$1'",
-                                       tablet_id, base_dir_));
-  }
+  string master_block_path;
+  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
 
   std::cout << "Master block for tablet " << tablet_id << ": " << master_block_path << std::endl;
 
@@ -277,7 +297,7 @@ Status FsTool::ListBlocksForTablet(const string& tablet_id) {
 
 Status FsTool::ListBlocksInRowSet(const Schema& schema,
                                   const RowSetMetadata& rs_meta) {
-  typedef std::pair<int64_t, BlockId> DeltaBlock;
+
 
   for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
 
@@ -285,7 +305,7 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
       std::cout << "Column block for column " << schema.column(col_idx).ToString() << ": ";
       std::cout << rs_meta.column_block(col_idx).ToString() << std::endl;
     } else {
-      std::cout << "No column data blocks blocks for column "
+      std::cout << "No column data blocks for column "
                 << schema.column(col_idx).ToString() << ". " << std::endl;
     }
   }
@@ -305,6 +325,112 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
   return Status::OK();
 }
 
+Status FsTool::DumpTablet(const std::string& tablet_id,
+                          const DumpOptions& opts) {
+  DCHECK(initialized_);
+
+  string master_block_path;
+  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
+
+  gscoped_ptr<TabletMetadata> meta;
+  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+
+  if (meta->rowsets().empty()) {
+    std::cout << "No rowsets found on disk for tablet " << tablet_id << std::endl;
+    return Status::OK();
+  }
+
+  Schema schema = meta->schema();
+
+  size_t idx = 0;
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
+    std::cout << "Dumping rowset " << idx++ << std::endl;
+    RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), *rs_meta, opts));
+  }
+
+  return Status::OK();
+}
+
+Status FsTool::DumpRowSet(const string& tablet_id,
+                          size_t rowset_idx,
+                          const DumpOptions& opts) {
+  DCHECK(initialized_);
+
+  string master_block_path;
+  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
+
+  gscoped_ptr<TabletMetadata> meta;
+  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+
+  if (rowset_idx >= meta->rowsets().size()) {
+    return Status::InvalidArgument(
+        Substitute("index '$0' out of bounds for tablet '$1', number of rowsets=$2",
+                   rowset_idx, tablet_id, meta->rowsets().size()));
+  }
+
+  return DumpRowSetInternal(meta->schema(), *meta->rowsets()[rowset_idx], opts);
+}
+
+Status FsTool::DumpRowSetInternal(const Schema& schema,
+                                  const RowSetMetadata& rs_meta,
+                                  const DumpOptions& opts) {
+
+  std::cout << "RowSet metadata: " << rs_meta.ToString() << std::endl;
+
+  for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
+    if (rs_meta.HasColumnDataBlockForTests(col_idx)) {
+      std::cout << "Dumping column block for column " << schema.column(col_idx).ToString() << ": ";
+      std::cout << std::endl;
+      RETURN_NOT_OK(DumpCFileBlockInternal(rs_meta.column_block(col_idx), opts));
+    } else {
+      std::cout << "No column data blocks for column "
+                << schema.column(col_idx).ToString() << ". " << std::endl;
+    }
+  }
+
+  for (size_t idx = 0; idx < rs_meta.undo_delta_blocks_count(); ++idx) {
+    DeltaBlock block = rs_meta.undo_delta_block(idx);
+    std::cout << "Dumping undo delta block delta id = " << block.first << ": " << std::endl;
+    RETURN_NOT_OK(DumpCFileBlockInternal(block.second, opts));
+  }
+
+  for (size_t idx = 0; idx < rs_meta.redo_delta_blocks_count(); ++idx) {
+    DeltaBlock block = rs_meta.redo_delta_block(idx);
+    std::cout << "Redo delta block delta id = " << block.first << ": " << std::endl;
+    RETURN_NOT_OK(DumpCFileBlockInternal(block.second, opts));
+  }
+
+  return Status::OK();
+}
+
+Status FsTool::DumpCFileBlock(const std::string& block_id_str, const DumpOptions &opts) {
+  BlockId block_id(block_id_str);
+  if (!fs_manager_->BlockExists(block_id)) {
+    return Status::NotFound(Substitute("block '$0' does not exist under '$1'",
+                                       block_id_str, base_dir_));
+  }
+  return DumpCFileBlockInternal(block_id, opts);
+}
+
+Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions& opts) {
+  shared_ptr<RandomAccessFile> block_reader;
+  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
+  uint64_t file_size;
+  RETURN_NOT_OK(block_reader->Size(&file_size));
+  gscoped_ptr<CFileReader> reader;
+  RETURN_NOT_OK(CFileReader::Open(block_reader, file_size, ReaderOptions(), &reader));
+
+  std::cout << "CFile Header: " << std::endl << reader->header().ShortDebugString() << std::endl;
+  std::cout << "Number of values: " << reader->footer().num_values() << std::endl;
+
+  gscoped_ptr<CFileIterator> it;
+  RETURN_NOT_OK(reader->NewIterator(&it));
+  RETURN_NOT_OK(it->SeekToFirst());
+  DumpIteratorOptions iter_opts;
+  iter_opts.nrows = opts.nrows;
+  iter_opts.print_rows = detail_level_ > HEADERS_ONLY;
+  return DumpIterator(*reader, it.get(), &std::cout, iter_opts);
+}
 
 } // namespace tools
 } // namespace kudu

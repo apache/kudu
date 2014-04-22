@@ -24,3 +24,7 @@ target_link_libraries(fs_tool ${KUDU_LINK_LIBS})
 add_executable(kudu-fs_list fs_list-tool.cc)
 target_link_libraries(kudu-fs_list ${KUDU_LINK_LIBS})
 target_link_libraries(kudu-fs_list fs_tool)
+
+add_executable(kudu-fs_dump fs_dump-tool.cc)
+target_link_libraries(kudu-fs_dump ${KUDU_LINK_LIBS})
+target_link_libraries(kudu-fs_dump fs_tool)

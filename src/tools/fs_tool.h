@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <utility>
 
 #include "gutil/gscoped_ptr.h"
 #include "util/status.h"
@@ -16,6 +17,7 @@ namespace kudu {
 
 class FsManager;
 class Schema;
+class BlockId;
 
 namespace metadata {
 class TabletMetadata;
@@ -23,6 +25,16 @@ class RowSetMetadata;
 }
 
 namespace tools {
+
+struct DumpOptions {
+  std::string start_key;
+  std::string end_key;
+  size_t nrows;
+
+  DumpOptions()
+      : start_key(""), end_key(""), nrows(0) {
+  }
+};
 
 class FsTool {
  public:
@@ -59,14 +71,23 @@ class FsTool {
   // Lists blocks for all tablets.
   Status ListBlocksForAllTablets();
 
-  // Prints the tablet metadata for a tablet 'tablet_id' with a master
-  // block residing in 'master_block_path'. Will log an error but
-  // return Status::OK() if the tablet id for the master block doesn't
-  // equal 'tablet_id'.
-  Status PrintTabletMeta(const std::string& master_block_path,
-                         const std::string& tablet_id);
+  // Prints the tablet metadata for a tablet 'tablet_id'.
+  Status PrintTabletMeta(const std::string& tablet_id);
 
+  // Dumps all of the rowset in tablet. See also: DumpRowSet().
+  Status DumpTablet(const std::string& tablet_id,
+                    const DumpOptions& opts);
+
+  // Dumps column blocks, all types of delta blocks for a given
+  // rowset.
+  Status DumpRowSet(const std::string& tablet_id,
+                    size_t rowset_idx,
+                    const DumpOptions& opts);
+
+  Status DumpCFileBlock(const std::string& block_id,
+                        const DumpOptions& opts);
  private:
+  typedef std::pair<int64_t, BlockId> DeltaBlock;
 
   Status ListSegmentsInDir(const std::string& segments_dir);
 
@@ -78,6 +99,19 @@ class FsTool {
                             gscoped_ptr<metadata::TabletMetadata> *meta);
 
   Status GetTabletsInMasterBlockDir(std::vector<std::string>* tablets);
+
+  Status DumpRowSetInternal(const Schema& schema,
+                            const metadata::RowSetMetadata& rs_meta,
+                            const DumpOptions& opts);
+
+  Status GetMasterBlockPath(const std::string& tablet_id,
+                            std::string* master_block_path);
+
+  Status DumpCFileBlockInternal(const BlockId& block_id,
+                                const DumpOptions& opts);
+
+  Status PrintTabletMetaInternal(const std::string& master_block_path,
+                                 const std::string& tablet_id);
 
   bool initialized_;
   const std::string base_dir_;

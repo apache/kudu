@@ -3,6 +3,7 @@
 #define CFILE_UTIL_H_
 
 #include <algorithm>
+#include <iostream>
 
 #include "cfile/cfile.pb.h"
 
@@ -17,6 +18,8 @@
 namespace kudu {
 namespace cfile {
 
+class CFileReader;
+class CFileIterator;
 
 struct WriterOptions {
   // Approximate size of user data packed per block.  Note that the
@@ -69,6 +72,29 @@ inline void EncodeKey(const ConstContiguousRow& row_slice,
   }
   encoded_key->reset(kb.BuildEncodedKey());
 }
+
+struct DumpIteratorOptions {
+  // If true, print values of rows, otherwise only print aggregate
+  // information.
+  bool print_rows;
+
+  // Number of rows to iterate over. If 0, will iterate over all rows.
+  size_t nrows;
+
+  DumpIteratorOptions()
+      : print_rows(false), nrows(0) {
+  }
+};
+
+// Dumps the contents of a cfile to 'out'; 'reader' and 'iterator'
+// must be initialized. See cfile/cfile-dump.cc and tools/fs_tool.cc
+// for sample usage.
+//
+// See also: DumpIteratorOptions
+Status DumpIterator(const CFileReader& reader,
+                    CFileIterator* it,
+                    std::ostream* out,
+                    const DumpIteratorOptions& opts);
 
 }  // namespace cfile
 }  // namespace kudu
