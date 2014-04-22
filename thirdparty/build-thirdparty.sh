@@ -3,7 +3,7 @@
 
 set -x
 set -e
-TP_DIR=$(readlink -f $(dirname $BASH_SOURCE))
+TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
 source $TP_DIR/vars.sh
 
@@ -38,8 +38,14 @@ fi
 ################################################################################
 
 # Determine how many parallel jobs to use for make based on the number of cores
-PARALLEL=$(grep -c processor /proc/cpuinfo)
-
+if [[ "$OSTYPE" == "linux-gnu" ]]; then
+  PARALLEL=$(grep -c processor /proc/cpuinfo)
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  PARALLEL=$(sysctl -n hw.ncpu)
+else
+  echo Unsupported platform $OSTYPE
+  exit 1
+fi
 
 mkdir -p "$PREFIX/include"
 mkdir -p "$PREFIX/lib"
