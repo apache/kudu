@@ -44,13 +44,13 @@ LeaderTransaction::LeaderTransaction(TransactionTracker *txn_tracker,
                                      Consensus* consensus,
                                      TaskExecutor* prepare_executor,
                                      TaskExecutor* apply_executor,
-                                     simple_spinlock& prepare_replicate_lock)
+                                     simple_spinlock* prepare_replicate_lock)
     : Transaction(prepare_executor,
                   apply_executor),
       txn_tracker_(txn_tracker),
       consensus_(consensus),
       prepare_finished_calls_(0),
-      prepare_replicate_lock_(prepare_replicate_lock) {
+      prepare_replicate_lock_(DCHECK_NOTNULL(prepare_replicate_lock)) {
   txn_tracker_->Add(this);
 }
 
@@ -62,7 +62,7 @@ Status LeaderTransaction::Execute() {
   // This relies on the fact that (a) the prepare_executor_ only has a single
   // worker thread, and (b) that Consensus::Append calls do not get reordered
   // internally in the consensus implementation.
-  boost::lock_guard<simple_spinlock> l(prepare_replicate_lock_);
+  boost::lock_guard<simple_spinlock> l(*prepare_replicate_lock_);
 
 
   gscoped_ptr<ReplicateMsg> replicate_msg;

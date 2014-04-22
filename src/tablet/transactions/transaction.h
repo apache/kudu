@@ -302,7 +302,7 @@ class LeaderTransaction : public Transaction {
                     consensus::Consensus* consensus,
                     TaskExecutor* prepare_executor,
                     TaskExecutor* apply_executor,
-                    simple_spinlock& prepare_replicate_lock);
+                    simple_spinlock* prepare_replicate_lock);
 
   virtual Status Execute();
 
@@ -357,8 +357,7 @@ class LeaderTransaction : public Transaction {
 
   // Lock that protects that, on Execute(), Prepare() and Consensus::Append() are submitted
   // in one go across transactions.
-  // TODO swap this for a ptr if possible
-  simple_spinlock& prepare_replicate_lock_;
+  simple_spinlock* prepare_replicate_lock_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LeaderTransaction);

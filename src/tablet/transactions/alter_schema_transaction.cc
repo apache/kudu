@@ -29,7 +29,7 @@ LeaderAlterSchemaTransaction::LeaderAlterSchemaTransaction(TransactionTracker *t
                                                consensus::Consensus* consensus,
                                                TaskExecutor* prepare_executor,
                                                TaskExecutor* apply_executor,
-                                               simple_spinlock& prepare_replicate_lock)
+                                               simple_spinlock* prepare_replicate_lock)
 : LeaderTransaction(txn_tracker,
                     consensus,
                     prepare_executor,

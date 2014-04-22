@@ -70,7 +70,7 @@ class LeaderChangeConfigTransaction : public LeaderTransaction {
                                 consensus::Consensus* consensus,
                                 TaskExecutor* prepare_executor,
                                 TaskExecutor* apply_executor,
-                                simple_spinlock& prepare_replicate_lock,
+                                simple_spinlock* prepare_replicate_lock,
                                 Semaphore* config_sem);
  protected:
 

@@ -27,7 +27,7 @@ class MockLeaderWriteTransaction : public LeaderWriteTransaction {
                              consensus::Consensus* consensus,
                              TaskExecutor* prepare_executor,
                              TaskExecutor* apply_executor,
-                             simple_spinlock& prepare_replicate_lock)
+                             simple_spinlock* prepare_replicate_lock)
     : LeaderWriteTransaction(txn_tracker, tx_ctx, consensus,
                              prepare_executor, apply_executor, prepare_replicate_lock) {
   }
@@ -48,7 +48,7 @@ TEST_F(TransactionTrackerTest, TestGetPending) {
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
   scoped_refptr<MockLeaderWriteTransaction> tx(new MockLeaderWriteTransaction(
                                                   &tracker_, new WriteTransactionContext(), NULL,
-                                                  executor.get(), executor.get(), lock));
+                                                  executor.get(), executor.get(), &lock));
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
   vector<scoped_refptr<Transaction> > pending_transactions;

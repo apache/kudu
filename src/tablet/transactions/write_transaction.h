@@ -280,7 +280,7 @@ class LeaderWriteTransaction : public LeaderTransaction {
                          consensus::Consensus* consensus,
                          TaskExecutor* prepare_executor,
                          TaskExecutor* apply_executor,
-                         simple_spinlock& prepare_replicate_lock);
+                         simple_spinlock* prepare_replicate_lock);
  protected:
 
   void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);

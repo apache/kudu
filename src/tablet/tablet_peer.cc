@@ -162,7 +162,7 @@ Status TabletPeer::SubmitWrite(WriteTransactionContext *tx_ctx) {
                                                                    consensus_.get(),
                                                                    prepare_executor_.get(),
                                                                    apply_executor_.get(),
-                                                                   prepare_replicate_lock_);
+                                                                   &prepare_replicate_lock_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
 }
@@ -176,7 +176,7 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionContext *tx_ctx) {
     new LeaderAlterSchemaTransaction(&txn_tracker_, tx_ctx, consensus_.get(),
                                      prepare_executor_.get(),
                                      apply_executor_.get(),
-                                     prepare_replicate_lock_);
+                                     &prepare_replicate_lock_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
 }
@@ -191,7 +191,7 @@ Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionContext *tx_ctx) {
                                         consensus_.get(),
                                         prepare_executor_.get(),
                                         apply_executor_.get(),
-                                        prepare_replicate_lock_,
+                                        &prepare_replicate_lock_,
                                         &config_sem_);
   // transaction deletes itself on delete/abort
   return transaction->Execute();
