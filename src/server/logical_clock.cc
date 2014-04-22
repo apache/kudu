@@ -30,13 +30,13 @@ Status LogicalClock::Update(const Timestamp& to_update) {
   DCHECK_NE(to_update.value(), Timestamp::kInvalidTimestamp.value())
       << "Updating the clock with an invalid timestamp";
   Atomic64 new_value = to_update.value();
-  // if the incoming value is less than the current one there's nothing to do
-  if (new_value <= now_) return Status::OK();
+
   while (true) {
-    Atomic64 current_value = now_;
-    // if we failed the CAS before maybe (though unlikely) the local time
-    // got updated past the incoming time and we can just return.
-    if (PREDICT_FALSE(new_value <= current_value)) return Status::OK();
+    Atomic64 current_value = NoBarrier_Load(&now_);
+    // if the incoming value is less than the current one, or we've failed the
+    // CAS because the current clock increased to higher than the incoming value,
+    // we can stop the loop now.
+    if (new_value <= current_value) return Status::OK();
     // otherwise try a CAS
     if (PREDICT_TRUE(NoBarrier_CompareAndSwap(&now_, current_value, new_value)
         == current_value))

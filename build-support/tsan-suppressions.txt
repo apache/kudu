@@ -48,6 +48,3 @@ race:kudu::tablet::TabletPeer::tablet()
 
 # KUDU-189: unsynchronized access to 'state_' in DeferredCallback
 race:kudu::master::AsyncTabletRequestTask::DeferredCallback
-
-# KUDU-190: LogicalClock accesses the clock without atomic op
-race:kudu::tablet::TabletBootstrap::UpdateClock
