@@ -793,7 +793,8 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionContext* tx_ctx,
 
   arena_.Reset();
   vector<DecodedRowOperation> decoded_ops;
-  RowOperationsPBDecoder dec(&ops_pb, &inserts_schema, tablet_->schema_ptr(), &arena_);
+  shared_ptr<Schema> schema(tablet_->schema_unlocked());
+  RowOperationsPBDecoder dec(&ops_pb, &inserts_schema, schema.get(), &arena_);
   RETURN_NOT_OK_PREPEND(dec.DecodeOperations(&decoded_ops),
                         Substitute("Could not decode row operations: $0",
                                    ops_pb.ShortDebugString()));
@@ -854,8 +855,9 @@ Status TabletBootstrap::PlayInsert(WriteTransactionContext* tx_ctx,
     return Status::OK();
   }
 
+  shared_ptr<Schema> schema(tablet_->schema_unlocked());
   const ConstContiguousRow* row = tx_ctx->AddToAutoReleasePool(
-    new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
+    new ConstContiguousRow(*schema.get(), op.row_data));
 
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
@@ -895,7 +897,7 @@ Status TabletBootstrap::PlayMutation(WriteTransactionContext* tx_ctx,
       num_unflushed_stores++;
     } else {
       if (VLOG_IS_ON(1)) {
-        string mutation = op.changelist.ToString(*tablet_->schema_ptr());
+        string mutation = op.changelist.ToString(*tablet_->schema_unlocked().get());
         VLOG(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
                 << " that was already flushed. "
                 << "OpId: " << tx_ctx->op_id().DebugString();
@@ -961,8 +963,9 @@ bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
 
 Status TabletBootstrap::ApplyMutation(WriteTransactionContext* tx_ctx,
                                       const DecodedRowOperation& op) {
+  shared_ptr<Schema> schema(tablet_->schema_unlocked());
   gscoped_ptr<ConstContiguousRow> row_key(
-    new ConstContiguousRow(*tablet_->schema_ptr(), op.row_data));
+    new ConstContiguousRow(*schema.get(), op.row_data));
   gscoped_ptr<PreparedRowWrite> prepared_row;
   // TODO maybe we shouldn't acquire the row lock on replay?
   RETURN_NOT_OK(tablet_->CreatePreparedMutate(tx_ctx, row_key.get(),
@@ -973,8 +976,8 @@ Status TabletBootstrap::ApplyMutation(WriteTransactionContext* tx_ctx,
 
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "Applied Mutation. OpId: " << tx_ctx->op_id().DebugString()
-            << " row key: " << tablet_->schema_ptr()->DebugRowKey(*row_key)
-            << " mutation: " << op.changelist.ToString(*tablet_->schema_ptr());
+            << " row key: " << schema.get()->DebugRowKey(*row_key)
+            << " mutation: " << op.changelist.ToString(*schema.get());
   }
   return Status::OK();
 }

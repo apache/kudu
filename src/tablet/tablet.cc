@@ -89,8 +89,8 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
                const scoped_refptr<server::Clock>& clock,
                const MetricContext* parent_metric_context,
                OpIdAnchorRegistry* opid_anchor_registry)
-  : schema_(metadata->schema()),
-    key_schema_(schema_.CreateKeyProjection()),
+  : schema_(new Schema(metadata->schema())),
+    key_schema_(schema_->CreateKeyProjection()),
     metadata_(metadata.Pass()),
     rowsets_(new RowSetTree()),
     consensus_(NULL),
@@ -98,7 +98,8 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
     next_mrs_id_(0),
     mvcc_(clock),
     open_(false) {
-  CHECK(schema_.has_column_ids());
+  boost::lock_guard<rw_semaphore> lock(component_lock_);
+  CHECK(schema_->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
   if (parent_metric_context) {
@@ -112,8 +113,9 @@ Tablet::~Tablet() {
 }
 
 Status Tablet::Open() {
+  boost::lock_guard<rw_semaphore> lock(component_lock_);
   CHECK(!open_) << "already open";
-  CHECK(schema_.has_column_ids());
+  CHECK(schema_->has_column_ids());
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
@@ -136,7 +138,8 @@ Status Tablet::Open() {
   CHECK_OK(rowsets_->Reset(rowsets_opened));
 
   // now that the current state is loaded create the new MemRowSet with the next id
-  memrowset_.reset(new MemRowSet(next_mrs_id_, schema_, opid_anchor_registry_));
+  memrowset_.reset(new MemRowSet(next_mrs_id_, *schema_.get(),
+                                 opid_anchor_registry_));
   next_mrs_id_++;
 
   open_ = true;
@@ -145,7 +148,8 @@ Status Tablet::Open() {
 
 Status Tablet::GetMappedReadProjection(const Schema& projection,
                                        Schema *mapped_projection) const {
-  return schema_.GetMappedReadProjection(projection, mapped_projection);
+  shared_ptr<Schema> cur_schema(schema());
+  return cur_schema->GetMappedReadProjection(projection, mapped_projection);
 }
 
 void Tablet::SetConsensus(Consensus* consensus) {
@@ -209,12 +213,13 @@ Status Tablet::InsertForTesting(WriteTransactionContext *tx_ctx,
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
   //       One is the RPC side, the other is this method that should be renamed InsertForTesting()
   DCHECK(!row.schema().has_column_ids());
-  RowProjector row_projector(&row.schema(), &schema_);
+  DCHECK(component_lock_.is_locked());
+  RowProjector row_projector(&row.schema(), schema_.get());
   if (!row_projector.is_identity()) {
-    RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(row.schema()));
+    RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(row.schema()));
     RETURN_NOT_OK(row_projector.Init());
   }
-  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, &schema_,
+  const ConstContiguousRow* proj_row = ProjectRowForInsert(tx_ctx, schema_.get(),
                                                            row_projector, row.row_data());
 
   gscoped_ptr<PreparedRowWrite> row_write;
@@ -365,10 +370,11 @@ Status Tablet::MutateRowForTesting(WriteTransactionContext *tx_ctx,
   // TODO: We have now three places where we do the projection (RPC, Tablet, Bootstrap)
   //       One is the RPC side, the other is this method that should be renamed MutateForTesting()
   DCHECK(!update_schema.has_column_ids());
-  DeltaProjector delta_projector(&update_schema, &schema_);
+  DCHECK(component_lock_.is_locked());
+  DeltaProjector delta_projector(&update_schema, schema_.get());
   if (!delta_projector.is_identity()) {
-    RETURN_NOT_OK(schema_.VerifyProjectionCompatibility(update_schema));
-    RETURN_NOT_OK(update_schema.GetProjectionMapping(schema_, &delta_projector));
+    RETURN_NOT_OK(schema_->VerifyProjectionCompatibility(update_schema));
+    RETURN_NOT_OK(update_schema.GetProjectionMapping(*schema_.get(), &delta_projector));
   }
 
   RowChangeList changelist = ProjectMutation(tx_ctx, delta_projector, update);
@@ -396,7 +402,8 @@ Status Tablet::MutateRowUnlocked(WriteTransactionContext *tx_ctx,
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(schema_, mutate->changelist());
+  DCHECK(component_lock_.is_locked());
+  RowChangeListDecoder rcl_decoder(*schema_.get(), mutate->changelist());
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
@@ -523,6 +530,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
   DiskRowSet* input_drs = NULL;
   int64_t delta_store_id;
   gscoped_ptr<MajorDeltaCompaction> compaction;
+  shared_ptr<Schema> cur_schema;
 
   {
     // Avoid holding component_lock_ for too long
@@ -530,6 +538,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
     updater.reset(new RowSetColumnUpdater(metadata(), input_rs->metadata(), column_indexes));
     input_drs = down_cast<DiskRowSet*>(input_rs.get());
     compaction.reset(input_drs->NewMajorDeltaCompaction(updater.get(), &delta_store_id));
+    cur_schema = schema_;
   }
 
   shared_ptr<DiskRowSet> new_rowset;
@@ -552,8 +561,6 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
         new boost::mutex::scoped_try_lock(*input_drs->delta_tracker()->compact_flush_lock()));
     CHECK(input_dt_lock->owns_lock());
 
-    boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-
     BlockId delta_block;
     size_t ndeltas = 0;
 
@@ -572,7 +579,7 @@ Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
     input_rowsets.push_back(input_rs);
 
     // Ensure that the latest schema is set to the new RowSets
-    RETURN_NOT_OK(new_rowset->AlterSchema(schema_));
+    RETURN_NOT_OK(new_rowset->AlterSchema(*cur_schema.get()));
 
     AtomicSwapRowSets(input_rowsets, new_rowsets);
     return FlushMetadata(input_rowsets, boost::assign::list_of(meta), kNoMrsFlushed);
@@ -590,15 +597,17 @@ Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
 Status Tablet::Flush() {
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_mrs;
+  shared_ptr<Schema> old_schema;
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
     // as the swap takes.
     boost::lock_guard<rw_semaphore> lock(component_lock_);
-    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema(), &input, &old_mrs));
+    old_schema = schema_;
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*old_schema.get(), &input, &old_mrs));
   }
   // Note: "input" should only contain old_mrs.
-  return Flush(input, old_mrs, schema());
+  return Flush(input, old_mrs, *old_schema.get());
 }
 
 Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
@@ -700,29 +709,27 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_ms;
   {
-    boost::unique_lock<percpu_rwlock> schema_lock(schema_lock_);
-
     // If the current version >= new version, there is nothing to do.
-    bool same_schema = schema_.Equals(*tx_ctx->schema());
+    DCHECK(component_lock_.is_locked());
+    bool same_schema = schema_->Equals(*tx_ctx->schema());
     if (metadata_->schema_version() >= tx_ctx->schema_version()) {
       LOG(INFO) << "Already running schema version " << metadata_->schema_version()
                 << " got alter request for version " << tx_ctx->schema_version();
       return Status::OK();
     }
 
-    LOG(INFO) << "Alter schema from " << schema_.ToString()
+    LOG(INFO) << "Alter schema from " << schema_->ToString()
               << " version " << metadata_->schema_version()
               << " to " << tx_ctx->schema()->ToString()
               << " version " << tx_ctx->schema_version();
-    schema_ = *tx_ctx->schema();
-    metadata_->SetSchema(schema_, tx_ctx->schema_version());
+    schema_.reset(new Schema(*tx_ctx->schema()));
+    metadata_->SetSchema(*schema_, tx_ctx->schema_version());
     if (tx_ctx->has_new_table_name()) {
       metadata_->SetTableName(tx_ctx->new_table_name());
     }
 
     // If the current schema and the new one are equal, there is nothing to do.
     if (same_schema) {
-      schema_lock.unlock();
       return metadata_->Flush();
     }
 
@@ -732,12 +739,12 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
     //       with the current code the only way we can do a flush ouside this big lock
     //       is to get the list of DeltaMemStores out from the AlterSchema method...
     BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_->all_rowsets()) {
-      RETURN_NOT_OK(rs->AlterSchema(schema_));
+      RETURN_NOT_OK(rs->AlterSchema(*schema_.get()));
     }
   }
 
   // Replace the MemRowSet
-  RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema_, &input, &old_ms));
+  RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*schema_.get(), &input, &old_ms));
 
   // Tablet::component_lock_ is acquired in CreatePreparedAlterSchema()
   CHECK(component_lock_.is_write_locked());
@@ -948,15 +955,17 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
   MvccSnapshot snap2;
-  AtomicSwapRowSets(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
+  shared_ptr<Schema> schema2;
+  {
+    boost::lock_guard<rw_semaphore> lock(component_lock_);
+    AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset), &snap2);
+    schema2 = schema_;
+  }
 
   // Ensure that the latest schema is set to the new RowSets
-  {
-    boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_disk_rowsets) {
-      RETURN_NOT_OK_PREPEND(rs->AlterSchema(schema_),
-                            "Failed to set current schema on latest RS");
-    }
+  BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_disk_rowsets) {
+    RETURN_NOT_OK_PREPEND(rs->AlterSchema(*schema2.get()),
+                          "Failed to set current schema on latest RS");
   }
 
   if (common_hooks_) {
@@ -988,11 +997,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // 3) don't allow DMS to flush in an in-progress rowset.
   LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
-  {
-    boost::shared_lock<rw_spinlock> lock(schema_lock_.get_lock());
-    RETURN_NOT_OK_PREPEND(input.CreateCompactionInput(snap2, &schema_, &merge),
-                          "Failed to create compaction inputs");
-  }
+  RETURN_NOT_OK_PREPEND(input.CreateCompactionInput(snap2,
+          schema2.get(), &merge), "Failed to create compaction inputs");
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped
   // in the DuplicatingRowSets. This will perform a flush of the updated DeltaTrackers
@@ -1060,7 +1066,8 @@ Status Tablet::Compact(CompactFlags flags) {
 
   input.DumpToLog();
 
-  return DoCompactionOrFlush(schema(), input, kNoMrsFlushed);
+  shared_ptr<Schema> cur_schema(schema());
+  return DoCompactionOrFlush(*cur_schema.get(), input, kNoMrsFlushed);
 }
 
 Status Tablet::DebugDump(vector<string> *lines) {

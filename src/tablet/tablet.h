@@ -211,16 +211,14 @@ class Tablet {
   // has a very small number of rows.
   Status DebugDump(vector<string> *lines = NULL);
 
-  // Return the current schema of the metadata. Note that this returns
-  // a copy, so should not be used in a performance-critical section.
-  Schema schema() const { return schema_; }
-
-  // Return a pointer to the current Schema. Callers must only use this
-  // while protected by the component lock to prevent concurrent schema change,
-  // which could invalidate the Schema object.
-  const Schema* schema_ptr() const {
+  shared_ptr<Schema> schema_unlocked() const {
     DCHECK(component_lock_.is_locked());
-    return &schema_;
+    return schema_;
+  }
+
+  shared_ptr<Schema> schema() const {
+    boost::shared_lock<rw_semaphore> lock(component_lock_);
+    return schema_;
   }
 
   // Returns a reference to the key projection of the tablet schema.
@@ -336,8 +334,8 @@ class Tablet {
   Status GetMappedReadProjection(const Schema& projection,
                                  Schema *mapped_projection) const;
 
-  Schema schema_;
-  Schema key_schema_;
+  shared_ptr<Schema> schema_;
+  const Schema key_schema_;
   gscoped_ptr<metadata::TabletMetadata> metadata_;
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
@@ -380,15 +378,6 @@ class Tablet {
   // this lock, you should also hold component_lock_ in read mode so that
   // no other thread could perform a swap underneath.
   mutable boost::mutex compact_select_lock_;
-
-  // Lock protecting the schema access
-  // Shared mode:
-  //  - DoCompactionOrFlush takes the lock to access the schema to ensure that
-  //    the newly added rowsets have the latest one.
-  //  - schema returns a copy of the current schema and takes the lock
-  // Exclusive mode:
-  //  - AlterSchema take this lock to prevent reading the half set schema
-  mutable percpu_rwlock schema_lock_;
 
   bool open_;
 

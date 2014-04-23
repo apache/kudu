@@ -1152,9 +1152,9 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
 // Column IDs are assigned to the user request schema on the tablet server
 // based on the latest schema.
 TEST_F(TabletServerTest, TestInvalidScanRequest_WithIds) {
-  const Schema& projection = tablet_peer_->tablet()->schema();
-  ASSERT_TRUE(projection.has_column_ids());
-  VerifyScanRequestFailure(projection,
+  shared_ptr<Schema> projection(tablet_peer_->tablet()->schema());
+  ASSERT_TRUE(projection->has_column_ids());
+  VerifyScanRequestFailure(*projection.get(),
                            TabletServerErrorPB::INVALID_SCHEMA,
                            "User requests should not have Column IDs");
 }

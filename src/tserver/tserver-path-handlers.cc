@@ -114,11 +114,11 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::ArgumentMap &ar
 
   // Output schema in tabular format.
   *output << "<h2>Schema</h2>\n";
-  Schema schema = peer->tablet()->schema();
-  HtmlOutputSchemaTable(schema, output);
+  shared_ptr<Schema> schema(peer->tablet()->schema());
+  HtmlOutputSchemaTable(*schema.get(), output);
 
   *output << "<h2>Impala CREATE TABLE statement</h2>\n";
-  HtmlOutputImpalaSchema(table_name, schema, output);
+  HtmlOutputImpalaSchema(table_name, *schema.get(), output);
 }
 
 } // namespace tserver

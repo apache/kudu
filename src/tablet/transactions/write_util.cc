@@ -45,7 +45,7 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
   if (ops_pb.rows().size() > 0) {
     RowOperationsPBDecoder dec(&ops_pb,
                                &client_schema,
-                               tablet->schema_ptr(),
+                               tablet->schema_unlocked().get(),
                                tx_ctx->arena());
     Status s = dec.DecodeOperations(&decoded_ops);
     if (!s.ok()) {
@@ -69,7 +69,7 @@ Status CreatePreparedInsertsAndMutates(Tablet* tablet,
         // TODO: allocating ConstContiguousRow is kind of a waste since it is just
         // a {schema, ptr} pair itself and probably cheaper to copy around.
         ConstContiguousRow *row = tx_ctx->AddToAutoReleasePool(
-          new ConstContiguousRow(*tablet->schema_ptr(), op.row_data));
+          new ConstContiguousRow(*tablet->schema_unlocked().get(), op.row_data));
         RETURN_NOT_OK(tablet->CreatePreparedInsert(tx_ctx, row, &row_write));
         break;
       }

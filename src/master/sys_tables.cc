@@ -126,7 +126,8 @@ Status SysTable::SetupTablet(gscoped_ptr<metadata::TabletMetadata> metadata) {
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(tablet->metadata()->Quorum()),
                                             "Failed to Start() TabletPeer");
 
-  schema_ = SchemaBuilder(tablet->schema()).BuildWithoutIds();
+  shared_ptr<Schema> schema(tablet->schema());
+  schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();
   key_schema_ = schema_.CreateKeyProjection();
   return Status::OK();
 }
