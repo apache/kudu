@@ -31,6 +31,7 @@ set(COMMON_SRCS
   schema.cc
   timestamp.cc
   types.cc
+  maintenance_manager.cc
 )
 
 add_library(kudu_common ${COMMON_SRCS})
@@ -48,3 +49,4 @@ ADD_KUDU_TEST(wire_protocol-test)
 ADD_KUDU_TEST(predicate_encoder-test)
 ADD_KUDU_TEST(partial_row-test)
 ADD_KUDU_TEST(row_operations-test)
+ADD_KUDU_TEST(maintenance_manager-test)

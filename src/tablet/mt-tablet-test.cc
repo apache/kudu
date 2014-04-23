@@ -24,7 +24,7 @@ DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
 
 DEFINE_int64(inserts_per_thread, 1000,
              "Number of rows inserted by each inserter thread");
-DEFINE_int32(flush_threshold_mb, 0, "Minimum memrowset size to flush");
+DEFINE_int32(tablet_test_flush_threshold_mb, 0, "Minimum memrowset size to flush");
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
@@ -234,13 +234,13 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     int wait_time = FLAGS_flusher_initial_frequency_ms;
     while (running_insert_count_.count() > 0) {
 
-      if (tablet_->MemRowSetSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      if (tablet_->MemRowSetSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
         CHECK_OK(tablet_->Flush());
       } else {
         LOG(INFO) << "Not flushing, memrowset not very full";
       }
 
-      if (tablet_->DeltaMemStoresSize() > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      if (tablet_->DeltaMemStoresSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
         CHECK_OK(tablet_->FlushBiggestDMS());
       }
 

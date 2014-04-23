@@ -6,6 +6,7 @@
 #include <string>
 #include <tr1/memory>
 
+#include "common/maintenance_manager.h"
 #include "common/schema.h"
 #include "common/wire_protocol-test-util.h"
 #include "gutil/gscoped_ptr.h"
@@ -56,6 +57,7 @@ class AlterTableTest : public KuduTest {
     KuduTest::SetUp();
 
     cluster_.reset(new MiniCluster(env_.get(), test_dir_, 1));
+    MaintenanceManager::Disable();
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
 

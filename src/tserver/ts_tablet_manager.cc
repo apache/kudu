@@ -10,6 +10,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "common/maintenance_manager.h"
 #include "common/wire_protocol.h"
 #include "consensus/log.h"
 #include "consensus/opid_anchor_registry.h"
@@ -316,6 +317,8 @@ void TSTabletManager::OpenTablet(TabletMetadata* metadata) {
       return;
     }
 
+    tablet_peer->tablet()->RegisterMaintenanceOps(
+                server_->maintenance_manager());
     // tablet_peer state changed to RUNNING, mark the tablet dirty
     {
       boost::lock_guard<rw_spinlock> lock(lock_);

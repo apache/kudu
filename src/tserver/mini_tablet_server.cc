@@ -14,6 +14,7 @@
 #include "tablet/tablet_peer.h"
 #include "tserver/tablet_server.h"
 #include "tserver/ts_tablet_manager.h"
+#include "common/maintenance_manager.h"
 #include "consensus/log.h"
 #include "consensus/log.pb.h"
 #include "consensus/consensus.h"

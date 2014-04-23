@@ -12,6 +12,7 @@
 #include "cfile/cfile.h"
 #include "common/iterator.h"
 #include "common/row_changelist.h"
+#include "common/maintenance_manager.h"
 #include "common/scan_spec.h"
 #include "common/schema.h"
 #include "consensus/consensus.h"
@@ -49,9 +50,12 @@ DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "
              "algorithm is selected");
 
+DEFINE_int32(flush_threshold_mb, 64, "Minimum memrowset size to flush");
+
 namespace kudu {
 namespace tablet {
 
+using kudu::MaintenanceManager;
 using consensus::Consensus;
 using consensus::OperationPB;
 using consensus::CommitMsg;
@@ -110,6 +114,10 @@ Tablet::Tablet(gscoped_ptr<TabletMetadata> metadata,
 }
 
 Tablet::~Tablet() {
+  // We need to clear the maintenance ops manually here, so that the operation
+  // callbacks can't trigger while we're in the process of tearing down the rest
+  // of the tablet fields.
+  STLDeleteElements(&maintenance_ops_);
 }
 
 Status Tablet::Open() {
@@ -593,8 +601,12 @@ Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
   return Status::OK();
 }
 
-
 Status Tablet::Flush() {
+  boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
+  return FlushUnlocked();
+}
+
+Status Tablet::FlushUnlocked() {
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_mrs;
   shared_ptr<Schema> old_schema;
@@ -607,7 +619,7 @@ Status Tablet::Flush() {
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*old_schema.get(), &input, &old_mrs));
   }
   // Note: "input" should only contain old_mrs.
-  return Flush(input, old_mrs, *old_schema.get());
+  return FlushInternal(input, old_mrs, *old_schema.get());
 }
 
 Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
@@ -631,10 +643,9 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
   return Status::OK();
 }
 
-Status Tablet::Flush(const RowSetsInCompaction& input,
-                     const shared_ptr<MemRowSet>& old_ms,
-                     const Schema& schema) {
-  boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
+Status Tablet::FlushInternal(const RowSetsInCompaction& input,
+                             const shared_ptr<MemRowSet>& old_ms,
+                             const Schema& schema) {
   CHECK(open_);
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
@@ -742,7 +753,8 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
   tx_ctx->release_tablet_lock();
 
   // Flush the old MemRowSet
-  return Flush(input, old_ms, *tx_ctx->schema());
+  boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
+  return FlushInternal(input, old_ms, *tx_ctx->schema());
 }
 
 void Tablet::SetCompactionHooksForTests(
@@ -763,6 +775,130 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 int32_t Tablet::CurrentMrsIdForTests() const {
   return memrowset_->mrs_id();
 }
+
+class FlushRowSetsOp : public MaintenanceOp {
+ public:
+  explicit FlushRowSetsOp(Tablet* tablet)
+    : MaintenanceOp(StringPrintf("FlushRowSetsOp(%s)", tablet->tablet_id().c_str())),
+      tablet_(tablet)
+  { }
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) {
+    {
+      boost::mutex::scoped_try_lock guard(tablet_->rowsets_flush_lock_);
+      stats->runnable = guard.owns_lock();
+    }
+    boost::shared_lock<rw_semaphore> lock(tablet_->component_lock_);
+    stats->ram_anchored = tablet_->MemRowSetSize();
+    // TODO: add a field to MemRowSet storing how old a timestamp it contains
+    stats->ts_anchored_secs = 0;
+    // TODO: use workload statistics here to find out how "hot" the tablet has
+    // been in the last 5 minutes.
+    if (stats->ram_anchored > FLAGS_flush_threshold_mb * 1024 * 1024) {
+      int extra_mb = stats->ram_anchored / 1024 / 1024;
+      stats->perf_improvement = extra_mb;
+    } else {
+      stats->perf_improvement = 0;
+    }
+  }
+
+  virtual bool Prepare() {
+    // Try to acquire the rowsets_flush_lock_.  If we can't, the Prepare step
+    // fails.  This also implies that only one instance of FlushRowSetsOp can be
+    // running at once.
+    guard.reset(new boost::mutex::scoped_try_lock(tablet_->rowsets_flush_lock_));
+    return guard->owns_lock();
+  }
+
+  virtual void Perform() {
+    tablet_->FlushUnlocked();
+    guard.reset();
+  }
+
+ private:
+  Tablet *const tablet_;
+  shared_ptr<boost::mutex::scoped_try_lock> guard;
+};
+
+class CompactRowSetsOp : public MaintenanceOp {
+ public:
+  explicit CompactRowSetsOp(Tablet* tablet)
+    : MaintenanceOp(StringPrintf("CompactRowSetsOp(%s)", tablet->tablet_id().c_str())),
+      last_(MonoTime::Now(MonoTime::FINE)),
+      tablet_(tablet),
+      compact_running_(0)
+  { }
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) {
+    boost::shared_lock<rw_semaphore> lock(tablet_->component_lock_);
+    stats->runnable = true;
+    stats->ram_anchored = 0;
+    stats->ts_anchored_secs = 0;
+
+    // TODO: use workload statistics here to find out how "hot" the tablet has
+    // been in the last 5 minutes.  For now, we just set perf_improvement to 0
+    // if the tablet has been compacted in the last 5 seconds.
+    MonoTime now(MonoTime::Now(MonoTime::FINE));
+    MonoDelta delta(now.GetDeltaSince(last_));
+    int64_t deltaMs = delta.ToMilliseconds();
+    if (deltaMs < 5000) {
+      stats->perf_improvement = 0;
+    } else {
+      stats->perf_improvement = deltaMs / 10;
+    }
+
+    // Reduce perf_improvement_ if there is another rowset compaction already
+    // running on this tablet.
+    stats->perf_improvement /= (compact_running_ + 1);
+  }
+
+  virtual bool Prepare() {
+    compact_running_ = running();
+    return true;
+  }
+
+  virtual void Perform() {
+    tablet_->Compact(Tablet::COMPACT_NO_FLAGS);
+    last_ = MonoTime::Now(MonoTime::FINE);
+  }
+
+ private:
+  MonoTime last_;
+  Tablet *const tablet_;
+  uint32_t compact_running_;
+};
+
+class FlushDeltaMemStoresOp : public MaintenanceOp {
+ public:
+  explicit FlushDeltaMemStoresOp(Tablet* tablet)
+    : MaintenanceOp(StringPrintf("FlushDeltaMemStoresOp(%s)",
+                                 tablet->tablet_id().c_str())),
+      tablet_(tablet)
+  { }
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) {
+    size_t dms_size = tablet_->DeltaMemStoresSize();
+    uint64_t threshold = FLAGS_flush_threshold_mb * 1024LLU * 1024LLU;
+    if (dms_size < threshold) {
+      stats->perf_improvement = 0;
+    } else {
+      stats->perf_improvement = (2.0f * dms_size) / threshold;
+    }
+    stats->ram_anchored = dms_size;
+    stats->ts_anchored_secs = 0;
+  }
+
+  virtual bool Prepare() {
+    return true;
+  }
+
+  virtual void Perform() {
+    tablet_->FlushBiggestDMS();
+  }
+
+ private:
+  Tablet *const tablet_;
+};
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
@@ -851,6 +987,24 @@ bool Tablet::IsTabletFileName(const std::string& fname) {
   }
 
   return true;
+}
+
+void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
+  gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushRowSetsOp(this));
+  maint_mgr->RegisterOp(mrs_flush_op.get());
+  maintenance_ops_.push_back(mrs_flush_op.release());
+
+  gscoped_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
+  maint_mgr->RegisterOp(rs_compact_op.get());
+  maintenance_ops_.push_back(rs_compact_op.release());
+
+  gscoped_ptr<MaintenanceOp> dms_flush_op(new FlushDeltaMemStoresOp(this));
+  maint_mgr->RegisterOp(dms_flush_op.get());
+  maintenance_ops_.push_back(dms_flush_op.release());
+}
+
+void Tablet::UnregisterMaintenanceOps() {
+  STLDeleteElements(&maintenance_ops_);
 }
 
 Status Tablet::FlushMetadata(const RowSetVector& to_remove,

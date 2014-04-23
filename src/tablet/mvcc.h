@@ -160,7 +160,7 @@ class MvccManager {
   mutable LockType lock_;
   MvccSnapshot cur_snap_;
   scoped_refptr<server::Clock> clock_;
-  vector<WaitingState*> waiters_;
+  std::vector<WaitingState*> waiters_;
 
   DISALLOW_COPY_AND_ASSIGN(MvccManager);
 };

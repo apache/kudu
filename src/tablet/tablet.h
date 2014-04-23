@@ -6,18 +6,18 @@
 #include <vector>
 
 #include "common/iterator.h"
-#include "common/schema.h"
 #include "common/predicate_encoder.h"
+#include "common/schema.h"
 #include "gutil/atomicops.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/macros.h"
 #include "server/metadata.h"
-#include "tablet/mvcc.h"
 #include "tablet/lock_manager.h"
+#include "tablet/mvcc.h"
 #include "tablet/rowset.h"
 #include "util/locks.h"
-#include "util/status.h"
 #include "util/slice.h"
+#include "util/status.h"
 
 namespace kudu {
 
@@ -37,6 +37,9 @@ namespace server {
 class Clock;
 }
 
+class MaintenanceManager;
+class MaintenanceOp;
+
 namespace tablet {
 
 using std::string;
@@ -54,6 +57,9 @@ class WriteTransactionContext;
 
 class Tablet {
  public:
+  friend class CompactRowSetsOp;
+  friend class FlushRowSetsOp;
+
   class CompactionFaultHooks;
   class FlushCompactCommonHooks;
   class FlushFaultHooks;
@@ -149,9 +155,7 @@ class Tablet {
                         const MvccSnapshot &snap,
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
-  // TODO: Document me.
-  // Apparently, this method only flushes the MemRowSet.
-  // To flush the DeltaMemStores, call something else.
+  // Flush the MemRowSet to disk.  This does not flush the DeltaMemStores.
   Status Flush();
 
   // Prepares the transaction context for the alter schema operation.
@@ -259,6 +263,13 @@ class Tablet {
   // finished and delta files is finished is part of Tablet class.
   void GetRowSetsForTests(vector<shared_ptr<RowSet> >* out);
 
+  // Register the maintenance ops associated with this tablet
+  void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
+
+  // Unregister the maintenance ops associated with this tablet.  Visible for
+  // testing.
+  void UnregisterMaintenanceOps();
+
   const std::string& tablet_id() const { return metadata_->oid(); }
 
   // Return the metrics for this tablet.
@@ -273,6 +284,8 @@ class Tablet {
 
  private:
   friend class Iterator;
+
+  Status FlushUnlocked();
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
@@ -323,7 +336,7 @@ class Tablet {
                                   shared_ptr<MemRowSet> *old_ms);
 
   // TODO: Document me.
-  Status Flush(const RowSetsInCompaction& input,
+  Status FlushInternal(const RowSetsInCompaction& input,
                const shared_ptr<MemRowSet>& old_ms,
                const Schema& schema);
 
@@ -390,6 +403,8 @@ class Tablet {
   shared_ptr<CompactionFaultHooks> compaction_hooks_;
   shared_ptr<FlushFaultHooks> flush_hooks_;
   shared_ptr<FlushCompactCommonHooks> common_hooks_;
+
+  std::vector<MaintenanceOp*> maintenance_ops_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

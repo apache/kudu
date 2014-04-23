@@ -6,6 +6,7 @@
 #include <list>
 #include <vector>
 
+#include "common/maintenance_manager.h"
 #include "gutil/strings/substitute.h"
 #include "rpc/service_if.h"
 #include "server/fsmanager.h"
@@ -35,7 +36,8 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
     opts_(opts),
     tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_context())),
     scanner_manager_(new ScannerManager()),
-    path_handlers_(new TabletServerPathHandlers(this)) {
+    path_handlers_(new TabletServerPathHandlers(this)),
+    maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)) {
 }
 
 TabletServer::~TabletServer() {
@@ -87,6 +89,7 @@ Status TabletServer::Start() {
 
   RETURN_NOT_OK(ServerBase::Start(gscoped_ptr<ServiceIf>(new TabletServiceImpl(this))));
   RETURN_NOT_OK(heartbeater_->Start());
+  RETURN_NOT_OK(maintenance_manager_->Init());
   return Status::OK();
 }
 
@@ -94,6 +97,7 @@ void TabletServer::Shutdown() {
   LOG(INFO) << "TabletServer shutting down...";
 
   if (initted_) {
+    maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
     ServerBase::Shutdown();
     tablet_manager_->Shutdown();

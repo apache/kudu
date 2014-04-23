@@ -3,6 +3,7 @@
 #define KUDU_TSERVER_TABLET_SERVER_H
 
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "gutil/atomicops.h"
@@ -20,6 +21,7 @@
 namespace kudu {
 
 class FsManager;
+class MaintenanceManager;
 class Webserver;
 
 namespace rpc {
@@ -73,6 +75,10 @@ class TabletServer : public server::ServerBase {
     return base::subtle::NoBarrier_Load(&fail_heartbeats_for_tests_);
   }
 
+  MaintenanceManager* maintenance_manager() {
+    return maintenance_manager_.get();
+  }
+
  private:
   friend class TabletServerTest;
 
@@ -99,6 +105,9 @@ class TabletServer : public server::ServerBase {
 
   // Webserver path handlers
   gscoped_ptr<TabletServerPathHandlers> path_handlers_;
+
+  // The maintenance manager for this tablet server
+  std::tr1::shared_ptr<MaintenanceManager> maintenance_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServer);
 };

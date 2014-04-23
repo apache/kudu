@@ -19,6 +19,7 @@
 #include <signal.h>
 #include <utility>
 
+#include "common/maintenance_manager.h"
 #include "common/wire_protocol-test-util.h"
 #include "consensus/log_reader.h"
 #include "gutil/atomicops.h"
@@ -113,6 +114,10 @@ class TabletServerTest : public KuduTest {
   }
 
   virtual void StartTabletServer() {
+    // Disable the maintenance ops manager since we want to trigger our own
+    // maintenance operations at predetermined times.
+    MaintenanceManager::Disable();
+
     // Start server.
     mini_server_.reset(new MiniTabletServer(env_.get(), GetTestPath("TabletServerTest-fsroot")));
     ASSERT_STATUS_OK(mini_server_->Start());
