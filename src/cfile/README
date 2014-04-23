@@ -4,7 +4,7 @@ CFile is a simple columnar format which stores multiple related B-Trees.
 File format
 -----------------
 
-<Header>
+<header>
 <blocks>
 <btree root blocks>
 <footer>
@@ -15,21 +15,16 @@ Header
 ------
 
 <magic>: the string 'kuducfil'
-<header length>: 32-bit integer length delimiter
-  <header>: CFileHeader protobuf
+<header length>: 32-bit unsigned integer length delimiter
+<header>: CFileHeaderPB protobuf
+
 
 Footer
 ------
 
-CFileFooter protobuf
-
+<footer>: CFileFooterPB protobuf
 <magic>: the string 'kuducfil'
 <footer length> (length of protobuf)
-
-
-
-
-
 
 
 ==============================
@@ -50,14 +45,14 @@ Starts with a header of four uint32s, group-varint coded:
   <unused>             /
 
 Followed by prefix-compressed values. Each value is stored relative
-to the proceeding value using the following format:
+to the value preceding it using the following format:
 
   shared_bytes: varint32
   unshared_bytes: varint32
   delta: char[unshared_bytes]
 
 Periodically there will be a "restart point" which is necessary for
-faster binary searching. At a "restart point", unshared_bytes is
+faster binary searching. At a "restart point", shared_bytes is
 0 but otherwise the encoding is the same.
 
 At the end of the block is a trailer with the offsets of the
@@ -135,7 +130,7 @@ For example:
 
 In this case, we wrote N leaf blocks, which filled up the node labeled
 Int 1. At this point, the writer would create Int 0 with one entry pointing
-to Int 1. Further leave blocks (N+1 and N+2) would be written to a new
+to Int 1. Further leaf blocks (N+1 and N+2) would be written to a new
 internal node (Int 2). When the file is completed, Int 2 will spill,
 adding its entry into Int 0 as well.
 

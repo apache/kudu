@@ -589,15 +589,16 @@ Status Tablet::DeleteCompactionInputs(const RowSetsInCompaction &input) {
 
 Status Tablet::Flush() {
   RowSetsInCompaction input;
-  shared_ptr<MemRowSet> old_ms;
+  shared_ptr<MemRowSet> old_mrs;
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
     // as the swap takes.
     boost::lock_guard<rw_semaphore> lock(component_lock_);
-    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema(), &input, &old_ms));
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(schema(), &input, &old_mrs));
   }
-  return Flush(input, old_ms, schema());
+  // Note: "input" should only contain old_mrs.
+  return Flush(input, old_mrs, schema());
 }
 
 Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
@@ -1194,15 +1195,15 @@ Status Tablet::FlushBiggestDMS() {
   }
 
   int64_t max_size = -1;
-  shared_ptr<RowSet> biggest_dms;
+  shared_ptr<RowSet> biggest_drs;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, rowsets_copy->all_rowsets()) {
     int64_t current = rowset->DeltaMemStoreSize();
     if (current > max_size) {
       max_size = current;
-      biggest_dms = rowset;
+      biggest_drs = rowset;
     }
   }
-  return max_size > 0 ? biggest_dms->FlushDeltas() : Status::OK();
+  return max_size > 0 ? biggest_drs->FlushDeltas() : Status::OK();
 }
 
 Status Tablet::MinorCompactWorstDeltas() {

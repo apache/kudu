@@ -123,14 +123,11 @@ Status FlushCompactionInput(CompactionInput *input,
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // yield no further rows.
-//
-// All effectively applied mutations are collected in compaction_tc.
 Status ReupdateMissedDeltas(const string &tablet_name,
                             CompactionInput *input,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets);
-
 
 // Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.
 // This consumes all of the input in the compaction input.
