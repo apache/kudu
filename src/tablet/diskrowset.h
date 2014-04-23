@@ -340,7 +340,7 @@ class DiskRowSet : public RowSet {
 
   // Base data for this rowset.
   shared_ptr<CFileSet> base_data_;
-  shared_ptr<DeltaTracker> delta_tracker_;
+  gscoped_ptr<DeltaTracker> delta_tracker_;
 
   // Lock governing this rowset's inclusion in a compact/flush. If locked,
   // no other compactor will attempt to include this rowset.
