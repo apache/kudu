@@ -15,6 +15,14 @@
 #   LLVM_DIR
 #     Path in which to find bin/clang and bin/clang++
 
+# If a commit messages contains a line that says 'DONT_BUILD', exit
+# immediately.
+DONT_BUILD=$(git show|grep '^DONT_BUILD$')
+if [ "x$DONT_BUILD" != "x" ]; then
+    echo "*** Build not requested. Exiting."
+    exit 1
+fi
+
 set -e
 # We pipe our build output to a log file with tee.
 # This bash setting ensures that the script exits if the build fails.
