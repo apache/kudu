@@ -201,6 +201,44 @@ TEST_F(TestRpc, TestCallTimeout) {
   ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(10)));
 }
 
+static void AcceptAndReadForever(Socket* listen_sock) {
+  // Accept the TCP connection.
+  Socket server_sock;
+  Sockaddr remote;
+  CHECK_OK(listen_sock->Accept(&server_sock, &remote, 0));
+
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(10));
+
+  size_t nread;
+  uint8_t buf[1024];
+  while (server_sock.BlockingRecv(buf, sizeof(buf), &nread, deadline).ok()) {
+  }
+}
+
+// Starts a fake listening socket which never actually negotiates.
+// Ensures that the client gets a reasonable status code in this case.
+TEST_F(TestRpc, TestNegotiationTimeout) {
+  // Set up a simple socket server which accepts a connection.
+  Sockaddr server_addr;
+  Socket listen_sock;
+  ASSERT_STATUS_OK(StartFakeServer(&listen_sock, &server_addr));
+
+  // Create another thread to accept the connection on the fake server.
+  scoped_refptr<Thread> acceptor_thread;
+  ASSERT_STATUS_OK(Thread::Create("test", "acceptor",
+                                  AcceptAndReadForever, &listen_sock,
+                                  &acceptor_thread));
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(100)));
+
+  acceptor_thread->Join();
+}
+
 // Test that client calls get failed properly when the server they're connected to
 // shuts down.
 TEST_F(TestRpc, TestServerShutsDown) {

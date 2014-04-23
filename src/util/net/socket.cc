@@ -358,6 +358,9 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
       if (s.posix_code() == EINTR) {
         continue;
       }
+      if (s.posix_code() == EAGAIN) {
+        return Status::TimedOut("");
+      }
       return s.CloneAndPrepend("BlockingWrite error");
     }
     if (PREDICT_FALSE(inc_num_written == 0)) {
@@ -416,6 +419,9 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoT
       // Continue silently when the syscall is interrupted.
       if (s.posix_code() == EINTR) {
         continue;
+      }
+      if (s.posix_code() == EAGAIN) {
+        return Status::TimedOut("");
       }
       return s.CloneAndPrepend("BlockingRecv error");
     }

@@ -102,7 +102,7 @@ static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
     DVLOG(4) << "Client waiting to connect for negotiation, time remaining until timeout deadline: "
              << remaining.ToString();
     if (PREDICT_FALSE(remaining.ToNanoseconds() <= 0)) {
-      return Status::NetworkError("Timeout exceeded waiting to connect");
+      return Status::TimedOut("Timeout exceeded waiting to connect");
     }
     remaining.ToTimeSpec(&ts);
     int ready = pselect(nfds, NULL, &writefds, NULL, &ts, NULL);

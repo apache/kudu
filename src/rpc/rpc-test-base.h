@@ -248,7 +248,15 @@ class RpcTestBase : public KuduTest {
     Status s = p.SyncRequest(GenericCalculatorService::kSleepMethodName, req, &resp, &c);
     ASSERT_FALSE(s.ok());
     sw.stop();
-    ASSERT_LT(sw.elapsed().wall_seconds(), 0.100); // this arbitrary max can make tests flaky...
+
+    int expected_millis = timeout.ToMilliseconds();
+    int elapsed_millis = sw.elapsed().wall_millis();
+
+    // We shouldn't timeout significantly faster than our configured timeout.
+    EXPECT_GE(elapsed_millis, expected_millis - 10);
+    // And we also shouldn't take the full 0.5sec that we asked for
+    EXPECT_LT(elapsed_millis, 500);
+    EXPECT_TRUE(s.IsTimedOut());
     LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
 
