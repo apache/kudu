@@ -614,6 +614,8 @@ Status Tablet::FlushUnlocked() {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers for as long
     // as the swap takes.
+    // Also, this ensures that no write transactions are running (and thus
+    // after the swap, no more writers may insert into the old MRS).
     boost::lock_guard<rw_semaphore> lock(component_lock_);
     old_schema = schema_;
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*old_schema.get(), &input, &old_mrs));
@@ -650,7 +652,14 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
   // it in as a new rowset, replacing it with an empty one.
-
+  //
+  // At this point, we have already swapped in a new empty rowset, and
+  // any new inserts are going into that one. 'old_ms' is effectively
+  // frozen -- no new inserts should arrive after this point, since
+  // we took component_lock_ when swapping in the new one.
+  //
+  // NOTE: updates and deletes may still arrive into 'old_ms' at this point.
+  //
   // TODO(perf): there's a memrowset.Freeze() call which we might be able to
   // use to improve iteration performance during the flush. The old design
   // used this, but not certain whether it's still doable with the new design.
@@ -658,13 +667,12 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   uint64_t start_insert_count = old_ms->debug_insert_count();
   int64_t mrs_being_flushed = old_ms->mrs_id();
 
-  LOG(INFO) << "Flush: entering stage 1 (freezing old memrowset from inserts)";
-
   if (flush_hooks_) {
     RETURN_NOT_OK_PREPEND(flush_hooks_->PostSwapNewMemRowSet(),
                           "PostSwapNewMemRowSet hook failed");
   }
 
+  LOG(INFO) << "Flush: entering stage 1 (old memrowset already frozen for inserts)";
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
@@ -690,16 +698,10 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionContext *tx_ctx,
     return Status::InvalidArgument("Missing Column IDs");
   }
 
-  // TODO: Take a "global tablet lock", We should probably add the RW sched.
-  //
-  // User Operation Sched:
-  //  SHARED_LOCK: read and writes can happen concurrently
-  //  EXCLUSIVE_LOCK: alter schema must run when no reads/writes are in progress
-  //                  but we can keep compaction running, since is not a big deal
-  //                  if we compact something with the old schema, we have already
-  //                  plenty of files with the old schema.
-  tx_ctx->acquire_tablet_lock(component_lock_);
-
+  // Alter schema must run when no reads/writes are in progress.
+  // However, compactions and flushes can continue to run in parallel
+  // with the schema change,
+  tx_ctx->acquire_component_lock(component_lock_);
   tx_ctx->set_schema(schema);
   return Status::OK();
 }
@@ -750,7 +752,7 @@ Status Tablet::AlterSchema(AlterSchemaTransactionContext *tx_ctx) {
 
   // Tablet::component_lock_ is acquired in CreatePreparedAlterSchema()
   CHECK(component_lock_.is_write_locked());
-  tx_ctx->release_tablet_lock();
+  tx_ctx->release_component_lock();
 
   // Flush the old MemRowSet
   boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
@@ -1091,7 +1093,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     new_disk_rowsets.push_back(new_rowset);
   }
 
-  // Finished Phase 1. Start duplicating any new updates into the new on-disk
+  // Setup for Phase 2: Start duplicating any new updates into the new on-disk
   // rowsets.
   //
   // During Phase 1, we may have missed some updates which came into the input
@@ -1100,6 +1102,23 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // original rowset(s), but mirror updates to both the input and the output
   // data.
   //
+  // It's crucial that, during the rest of the compaction, we do not allow the
+  // output rowsets to flush their deltas to disk. This is to avoid the following
+  // bug:
+  // - during phase 1, timestamp 1 updates a flushed row. This is only reflected in the
+  //   input rowset. (ie it is a "missed delta")
+  // - during phase 2, timestamp 2 updates the same row. This is reflected in both the
+  //   input and output, because of the DuplicatingRowSet.
+  // - now suppose the output rowset were allowed to flush deltas. This would create the
+  //   first DeltaFile for the output rowset, with only timestamp 2.
+  // - Now we run the "ReupdateMissedDeltas", and copy over the first transaction to the output
+  //   DMS, which later flushes.
+  // The end result would be that redos[0] has timestamp 2, and redos[1] has timestamp 1.
+  // This breaks an invariant that the redo files are time-ordered, and would we would probably
+  // reapply the deltas in the wrong order on the read path.
+  //
+  // The way that we avoid this case is that DuplicatingRowSet's FlushDeltas method is a
+  // no-op.
   LOG(INFO) << op_name << ": entering phase 2 (starting to duplicate updates "
             << "in new rowsets)";
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
@@ -1123,28 +1142,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                           "PostSwapInDuplicatingRowSet hook failed");
   }
 
-  // Phase 2. Some updates may have come in during Phase 1 which are only reflected in the
-  // input rowsets, but not in the output rowsets. Here we re-scan the compaction input, copying
-  // those missed updates into the new rowset's DeltaTracker.
-  //
-  // TODO: is there some bug here? Here's a potentially bad scenario:
-  // - during flush, timestamp 1 updates a flushed row
-  // - At the beginning of step 4, timestamp 2 updates the same flushed row, followed by ~1000
-  //   more updates against the new rowset. This causes the new rowset to flush its deltas
-  //   before timestamp 1 is transferred to it.
-  // - Now the redos_0 deltafile in the new rowset includes timestamp 2-1000, and the DMS is empty.
-  // - This code proceeds, and pushes timestamp1 into the DMS.
-  // - DMS eventually flushes again, and redos_1 includes an _earlier_ update than redos_0.
-  // At read time, since we apply updates from the redo logs in order, we might end up reading
-  // the earlier data instead of the later data.
-  //
-  // Potential solutions:
-  // 1) don't apply the changes in step 4 directly into the new rowset's DMS. Instead, reserve
-  //    redos_0 for these edits, and write them directly to that file, even though it will likely
-  //    be very small.
-  // 2) at read time, as deltas are applied, keep track of the max timestamp for each of the columns
-  //    and don't let an earlier update overwrite a later one.
-  // 3) don't allow DMS to flush in an in-progress rowset.
+  // Phase 2. Here we re-scan the compaction input, copying those missed updates into the
+  // new rowset's DeltaTracker.
   LOG(INFO) << op_name << " Phase 2: carrying over any updates which arrived during Phase 1";
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
   RETURN_NOT_OK_PREPEND(
@@ -1171,11 +1170,6 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // ------------------------------
   // Flush was successful.
 
-  // TODO: Commit the swap. We used to write to a 'tmp' location and then
-  // rename into place, but now that compaction uses a rolling writer, we have
-  // multiple outputs, and we can't do the atomic multi-file rename. This will
-  // be made atomic by Matteo's metadata branch.
-
   // Replace the compacted rowsets with the new on-disk rowsets.
   AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_disk_rowsets);
 
@@ -1188,8 +1182,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
               Substitute("Unable to remove $0 inputs. Will GC later.",
                            op_name).c_str());
 
-  LOG(INFO) << op_name << "successful on " << drsw.written_count()
-            << " rows" << "(" << drsw.written_size() << " bytes)";
+  LOG(INFO) << op_name << " successful on " << drsw.written_count()
+            << " rows " << "(" << drsw.written_size() << " bytes)";
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),

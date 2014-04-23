@@ -31,7 +31,7 @@ class AlterSchemaTransactionContext : public TransactionContext {
   }
 
   ~AlterSchemaTransactionContext() {
-    release_tablet_lock();
+    release_component_lock();
   }
 
   AlterSchemaTransactionContext(TabletPeer* tablet_peer,
@@ -61,19 +61,19 @@ class AlterSchemaTransactionContext : public TransactionContext {
     return request_->schema_version();
   }
 
-  void acquire_tablet_lock(rw_semaphore& component_lock) {
+  void acquire_component_lock(rw_semaphore& component_lock) {
     component_lock_ = boost::unique_lock<rw_semaphore>(component_lock);
     DCHECK(component_lock_.owns_lock());
   }
 
-  void release_tablet_lock() {
+  void release_component_lock() {
     if (component_lock_.owns_lock()) {
       component_lock_.unlock();
     }
   }
 
   void commit() {
-    release_tablet_lock();
+    release_component_lock();
   }
 
  private:

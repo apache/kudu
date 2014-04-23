@@ -155,7 +155,11 @@ class Tablet {
                         const MvccSnapshot &snap,
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
-  // Flush the MemRowSet to disk.  This does not flush the DeltaMemStores.
+  // Flush the current MemRowSet for this tablet to disk. This swaps
+  // in a new (initially empty) MemRowSet in its place.
+  //
+  // This doesn't flush any DeltaMemStores for any existing RowSets.
+  // To do that, call FlushBiggestDMS() for example.
   Status Flush();
 
   // Prepares the transaction context for the alter schema operation.

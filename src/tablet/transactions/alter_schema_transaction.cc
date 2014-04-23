@@ -68,8 +68,7 @@ Status LeaderAlterSchemaTransaction::Prepare() {
 }
 
 void LeaderAlterSchemaTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>* commit_msg) {
-  // Release the tablet lock (no effect if no locks were acquired).
-  tx_ctx_->release_tablet_lock();
+  tx_ctx_->release_component_lock();
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);

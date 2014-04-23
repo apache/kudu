@@ -1,5 +1,6 @@
-This document explains the mechanics of performing a flush/compaction.
+This document explains the mechanics of performing a rowset flush/compaction.
 For details explaining how compactions are selected, see compaction-policy.txt.
+NOTE: this does not describe anything about flushing delta stores to delta files!
 
 Compaction design notes
 ------------------------------------------------------------
@@ -16,10 +17,13 @@ Let's start with the simple example of compacting from 1 input rowset to
 applying updates. The compaction has two main phases:
 
 
-  before
+      "flush_snap"
+           |
+           |
+  before   v
 <----------|
               Phase 1:
-              merging
+          merging/flushing
            |-----------|
                          Phase 2: migrate
                          deltas
@@ -38,7 +42,7 @@ Transition into Phase 1:
   - Create a snapshot iterator to merge the input RowSets, and save the
     associated MVCC snapshot state.
 
-Phase 1: merge data:
+Phase 1: merge/flush data:
   - Use the iterator created above to create a new set of data for the output
     RowSet. This will reflect any updates or deletes which arrived prior to the
     start of phase 1, but no updates or deletes which arrive during either

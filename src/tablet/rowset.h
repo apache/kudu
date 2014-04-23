@@ -286,7 +286,12 @@ class DuplicatingRowSet : public RowSet {
 
   size_t CountDeltaStores() const { return 0; }
 
-  Status FlushDeltas() { return Status::OK(); }
+  Status FlushDeltas() {
+    // It's important that DuplicatingRowSet does not FlushDeltas. This prevents
+    // a bug where we might end up with out-of-order deltas. See the long
+    // comment in Tablet::Flush(...)
+    return Status::OK();
+  }
 
   Status MinorCompactDeltaStores() { return Status::OK(); }
 
