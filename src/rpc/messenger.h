@@ -145,7 +145,7 @@ class Messenger {
   }
 
   bool closing() const {
-    boost::lock_guard<boost::mutex> guard(lock_);
+    boost::shared_lock<rw_spinlock> guard(lock_.get_lock());
     return closing_;
   }
 
@@ -168,7 +168,7 @@ class Messenger {
   const std::string name_;
 
   // protects closing_, acceptor_pools_, rpc_service_.
-  mutable boost::mutex lock_;
+  mutable percpu_rwlock lock_;
 
   bool closing_;
 
