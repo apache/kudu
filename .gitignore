@@ -1,6 +1,5 @@
 *.pb.cc
 *.pb.h
-*~
 *.a
 *.o
 
@@ -13,23 +12,29 @@ TAGS
 tags
 cscope.*
 Testing
-nbproject/
 perf.data
 perf.data.old
 oprofile_data
-*.swp
 *.service.cc
 *.service.h
 *.proxy.cc
 *.proxy.h
 build/
-.project
-.cproject
-.settings/
 .ycm_extra_conf.py
 .ycm_extra_conf.pyc
 *.kdev4
 .kdev4/
 .metadata/
 *.iml
+
+# VIM/emacs stuff
+*.swp
+*~
+
+# IDE cruft
+.settings/
 .idea/
+nbproject/
+.project
+.cproject
+.csettings/
