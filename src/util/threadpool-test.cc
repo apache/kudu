@@ -129,6 +129,24 @@ TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
   ASSERT_EQ(0, thread_pool.num_threads_);
 }
 
+// Regression test for a bug where a task is submitted exactly
+// as a thread is about to exit. Previously this could hang forever.
+TEST(TestThreadPool, TestRace) {
+  alarm(10);
+  MonoDelta timeout = MonoDelta::FromMicroseconds(1);
+  ThreadPool thread_pool("test", 0, 1, timeout);
+  ASSERT_STATUS_OK(thread_pool.Init());
+
+  for (int i = 0; i < 500; i++) {
+    CountDownLatch l(1);
+    ASSERT_STATUS_OK(thread_pool.SubmitFunc(boost::bind(&CountDownLatch::CountDown, &l)));
+    l.Wait();
+    // Sleeping a different amount in each iteration makes it more likely to hit
+    // the bug.
+    usleep(i);
+  }
+}
+
 TEST(TestThreadPool, TestVariableSizeThreadPool) {
   MonoDelta timeout = MonoDelta::FromMilliseconds(1);
   ThreadPool thread_pool("test", 1, 4, timeout);

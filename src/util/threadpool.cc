@@ -152,55 +152,44 @@ bool ThreadPool::TimedWait(const boost::system_time& time_until) {
   return true;
 }
 
-void ThreadPool::ThreadFinishedUnlocked(int expected_num_threads) {
-  CHECK_EQ(num_threads_, expected_num_threads);
-  if (--num_threads_ == 0) {
-    no_threads_cond_.notify_all();
-  }
-}
-
 void ThreadPool::DispatchThread(bool permanent) {
-  bool is_active = false;
+  boost::unique_lock<boost::mutex> unique_lock(lock_);
   while (true) {
-    QueueEntry entry;
-    {
-      boost::unique_lock<boost::mutex> unique_lock(lock_);
+    // Note: Status::Aborted() is used to indicate normal shutdown.
+    if (!pool_status_.ok()) {
+      VLOG(2) << "DispatchThread exiting: " << pool_status_.ToString();
+      break;
+    }
 
-      if (is_active) {
-        is_active = false;
-        if (--active_threads_ == 0) {
-          idle_cond_.notify_all();
-        }
-      }
-
-      // Note: Status::Aborted() is used to indicate normal shutdown.
-      if (!pool_status_.ok()) {
-        VLOG(2) << "DispatchThread exiting: " << pool_status_.ToString();
-        break;
-      }
-
-      if (queue_.empty()) {
-        if (permanent) {
-          queue_changed_.wait(unique_lock);
-        } else {
-          boost::posix_time::time_duration timeout =
-              boost::posix_time::microseconds(timeout_.ToMicroseconds());
-          if (!queue_changed_.timed_wait(unique_lock, timeout)) {
+    if (queue_.empty()) {
+      if (permanent) {
+        queue_changed_.wait(unique_lock);
+      } else {
+        boost::posix_time::time_duration timeout =
+          boost::posix_time::microseconds(timeout_.ToMicroseconds());
+        if (!queue_changed_.timed_wait(unique_lock, timeout)) {
+          // After much investigation, it appears that boost's condition variables have
+          // a weird behavior in which they can return 'false' from timed_wait even if
+          // another thread did in fact notify. This doesn't happen with pthread cond
+          // vars, but apparently after a timeout there is some brief period during
+          // which another thread may actually grab the mutex, notify, and release again
+          // before we get the mutex. So, we'll recheck the empty queue case regardless.
+          if (queue_.empty()) {
             VLOG(1) << "Timed out worker for pool " << name_ << " after "
                     << timeout_.ToMilliseconds() << " ms.";
             break;
           }
         }
-        continue;
       }
-
-      // Fetch a pending task
-      entry = queue_.front();
-      queue_.pop_front();
-      ++active_threads_;
-      is_active = true;
+      continue;
     }
 
+    // Fetch a pending task
+    QueueEntry entry = queue_.front();
+    queue_.pop_front();
+    ++active_threads_;
+
+    unique_lock.unlock();
     ADOPT_TRACE(entry.trace);
     // Release the reference which was held by the queued item.
     if (entry.trace) {
@@ -208,11 +197,24 @@ void ThreadPool::DispatchThread(bool permanent) {
     }
     // Execute the task
     entry.runnable->Run();
+    unique_lock.lock();
+
+    if (--active_threads_ == 0) {
+      idle_cond_.notify_all();
+    }
   }
 
-  {
-    boost::unique_lock<boost::mutex> unique_lock(lock_);
-    ThreadFinishedUnlocked(num_threads_);
+  // It's important that we hold the lock between exiting the loop and dropping
+  // num_threads_. Otherwise it's possible someone else could come along here
+  // and add a new task just as the last running thread is about to exit.
+  CHECK(unique_lock.owns_lock());
+
+  if (--num_threads_ == 0) {
+    no_threads_cond_.notify_all();
+
+    // Sanity check: if we're the last thread exiting, the queue ought to be
+    // empty. Otherwise it will never get processed.
+    CHECK(queue_.empty());
   }
 }
 

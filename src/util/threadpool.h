@@ -101,10 +101,6 @@ class ThreadPool {
   // Clear all entries from queue_. Requires that lock_ is held.
   void ClearQueue();
 
-  // Decrements number of thread, wakes up any thread waiting for all
-  // threads to be finished. Requires that lock_ is held.
-  void ThreadFinishedUnlocked(int expected_num_threads);
-
   // Dispatcher responsible for dequeueing and executing the tasks
   void DispatchThread(bool permanent);
 
