@@ -112,7 +112,8 @@ TEST_F(CreateTableStressTest, CreateBigTable) {
   cluster_->mini_master()->master()->catalog_manager()->DumpState(&std::cerr);
 }
 
-TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
+// Temporarily disabled while working on KUDU-234
+TEST_F(CreateTableStressTest, DISABLED_RestartMasterDuringCreation) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
@@ -135,7 +136,8 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   }
 }
 
-TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
+// Disabled for KUDU-234
+TEST_F(CreateTableStressTest, DISABLED_TestGetTableLocationsOptions) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
