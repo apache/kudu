@@ -35,6 +35,9 @@ struct TabletMetrics {
 
   Histogram* commit_wait_duration;
   Histogram* snapshot_scan_inflight_wait_duration;
+  Histogram* write_op_duration_no_consistency;
+  Histogram* write_op_duration_client_propagated_consistency;
+  Histogram* write_op_duration_commit_wait_consistency;
 };
 
 class ProbeStatsSubmitter {

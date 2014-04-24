@@ -26,6 +26,21 @@ METRIC_DEFINE_counter(mrs_consulted, kudu::MetricUnit::kProbes,
 METRIC_DEFINE_counter(bytes_flushed, kudu::MetricUnit::kBytes,
     "Number of bytes that have been flushed to disk by this tablet.");
 
+METRIC_DEFINE_histogram(write_op_duration_no_consistency,
+  kudu::MetricUnit::kMicroseconds,
+  "Duration of Writes to this tablet with external consistency set to NO_CONSISTENCY.",
+  60000000LU, 2);
+
+METRIC_DEFINE_histogram(write_op_duration_client_propagated_consistency,
+  kudu::MetricUnit::kMicroseconds,
+  "Duration of Writes to this tablet with external consistency set to CLIENT_PROPAGATED.",
+  60000000LU, 2);
+
+METRIC_DEFINE_histogram(write_op_duration_commit_wait_consistency,
+  kudu::MetricUnit::kMicroseconds,
+  "Duration of Writes to this tablet with external consistency set to COMMIT_WAIT.",
+  60000000LU, 2);
+
 METRIC_DEFINE_histogram(commit_wait_duration,
   kudu::MetricUnit::kMicroseconds,
   "Microseconds spent waiting for COMMIT_WAIT external consistency writes for this tablet.",
@@ -51,7 +66,10 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     MINIT(mrs_consulted),
     MINIT(bytes_flushed),
     MINIT(commit_wait_duration),
-    MINIT(snapshot_scan_inflight_wait_duration) {
+    MINIT(snapshot_scan_inflight_wait_duration),
+    MINIT(write_op_duration_no_consistency),
+    MINIT(write_op_duration_client_propagated_consistency),
+    MINIT(write_op_duration_commit_wait_consistency) {
 }
 #undef MINIT
 

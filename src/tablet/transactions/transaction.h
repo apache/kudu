@@ -292,6 +292,9 @@ class Transaction : public base::RefCountedThreadSafe<Transaction> {
   TaskExecutor* prepare_executor_;
   TaskExecutor* apply_executor_;
 
+  // this transaction's start time
+  MonoTime start_time_;
+
  private:
   friend class base::RefCountedThreadSafe<Transaction>;
   DISALLOW_COPY_AND_ASSIGN(Transaction);

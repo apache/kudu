@@ -32,6 +32,7 @@ Transaction::Transaction(TaskExecutor* prepare_executor,
                               boost::bind(&Transaction::ApplyFailed, this, _1))),
   prepare_executor_(prepare_executor),
   apply_executor_(apply_executor) {
+  start_time_ = MonoTime::Now(MonoTime::FINE);
 }
 
 Status Transaction::CommitWait() {

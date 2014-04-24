@@ -168,6 +168,19 @@ void LeaderWriteTransaction::UpdateMetrics() {
     if (tx_ctx()->external_consistency_mode() == COMMIT_WAIT) {
       metrics->commit_wait_duration->Increment(tx_ctx_->metrics().commit_wait_duration_usec);
     }
+    uint64_t op_duration_usec =
+        MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time_).ToMicroseconds();
+    switch (tx_ctx()->external_consistency_mode()) {
+      case NO_CONSISTENCY:
+        metrics->write_op_duration_no_consistency->Increment(op_duration_usec);
+        break;
+      case CLIENT_PROPAGATED:
+        metrics->write_op_duration_client_propagated_consistency->Increment(op_duration_usec);
+        break;
+      case COMMIT_WAIT:
+        metrics->write_op_duration_commit_wait_consistency->Increment(op_duration_usec);
+        break;
+    }
   }
 }
 
