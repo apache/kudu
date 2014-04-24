@@ -15,6 +15,7 @@
 #include "gutil/strings/escaping.h"
 #include "rpc/rpc_context.h"
 #include "tablet/tablet_peer.h"
+#include "tablet/tablet_metrics.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
@@ -765,8 +766,11 @@ Status TabletServiceImpl::HandleScanAtSnapshot(gscoped_ptr<RowwiseIterator>* ite
 
   // Wait for the in-flights in the snapshot to be finished
   TRACE("Waiting for operations in snapshot to commit");
+  MonoTime before = MonoTime::Now(MonoTime::FINE);
   tablet_peer->tablet()->mvcc_manager()->WaitUntilAllCommitted(snap);
-  TRACE("All operations in snapshot committed.");
+  uint64_t duration_usec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
+  tablet_peer->tablet()->metrics()->snapshot_scan_inflight_wait_duration->Increment(duration_usec);
+  TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
   RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap, iter));
   resp->set_snap_timestamp(snap_timestamp.ToUint64());

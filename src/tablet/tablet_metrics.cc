@@ -31,6 +31,11 @@ METRIC_DEFINE_histogram(commit_wait_duration,
   "Microseconds spent waiting for COMMIT_WAIT external consistency writes for this tablet.",
   60000000LU, 2);
 
+METRIC_DEFINE_histogram(snapshot_scan_inflight_wait_duration,
+  kudu::MetricUnit::kMicroseconds,
+  "Microseconds spent waiting for in-flight writes to complete for READ_AT_SNAPSHOT scans.",
+  60000000LU, 2);
+
 namespace kudu {
 namespace tablet {
 
@@ -45,7 +50,8 @@ TabletMetrics::TabletMetrics(const MetricContext& metric_ctx)
     MINIT(deltas_consulted),
     MINIT(mrs_consulted),
     MINIT(bytes_flushed),
-    MINIT(commit_wait_duration) {
+    MINIT(commit_wait_duration),
+    MINIT(snapshot_scan_inflight_wait_duration) {
 }
 #undef MINIT
 

@@ -34,6 +34,7 @@ struct TabletMetrics {
   Counter* bytes_flushed;
 
   Histogram* commit_wait_duration;
+  Histogram* snapshot_scan_inflight_wait_duration;
 };
 
 class ProbeStatsSubmitter {
