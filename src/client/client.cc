@@ -332,7 +332,7 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
 Status KuduClient::GetTabletProxy(const std::string& tablet_id,
                                   shared_ptr<TabletServerServiceProxy>* proxy) {
   // TODO: write a proper async version of this for async client.
-  shared_ptr<RemoteTablet> remote_tablet;
+  scoped_refptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
   Synchronizer s;

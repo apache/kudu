@@ -93,7 +93,7 @@ struct InFlightRefresh;
 // the tablet's locations, status, etc.
 //
 // This class is thread-safe.
-class RemoteTablet {
+class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
  public:
   explicit RemoteTablet(const std::string& tablet_id)
     : tablet_id_(tablet_id),
@@ -173,14 +173,14 @@ class MetaCache {
   // like timeout/trace/etc.
   void LookupTabletByRow(const KuduTable* table,
                          const PartialRow& row,
-                         std::tr1::shared_ptr<RemoteTablet>* remote_tablet,
+                         scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
   // Look up or create the RemoteTablet object for the given tablet ID.
   //
   // This is always a local operation (no network round trips or DNS resolution, etc).
   void LookupTabletByID(const std::string& tablet_id,
-                        std::tr1::shared_ptr<RemoteTablet>* remote_tablet);
+                        scoped_refptr<RemoteTablet>* remote_tablet);
 
 
   // TODO: make private
@@ -210,7 +210,7 @@ class MetaCache {
   std::tr1::unordered_map<std::string, RemoteTabletServer*> ts_cache_;
 
   // Cache of tablets which we are maintaining information about.
-  std::tr1::unordered_map<std::string, std::tr1::shared_ptr<RemoteTablet> > tablet_cache_;
+  std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablet_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };

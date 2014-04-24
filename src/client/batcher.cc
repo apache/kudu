@@ -143,8 +143,7 @@ struct InFlightOp {
 
   // The tablet the operation is destined for.
   // This is only filled in after passing through the kLookingUpTablet state.
-  // TODO: we could save 8 bytes per op by making this scoped_refptr instead of a shared_ptr.
-  std::tr1::shared_ptr<RemoteTablet> tablet;
+  scoped_refptr<RemoteTablet> tablet;
 
   string ToString() const {
     return strings::Substitute("op[state=$0, insert=$1]",

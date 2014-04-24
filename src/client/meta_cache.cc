@@ -242,7 +242,7 @@ RemoteTabletServer* MetaCache::UpdateTabletServer(const master::TSInfoPB& pb) {
 
 void MetaCache::LookupTabletByRow(const KuduTable* table,
                                   const PartialRow& row,
-                                  shared_ptr<RemoteTablet>* remote_tablet,
+                                  scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
   // TODO: this is where we'd look at some sorted map of row keys for
   // the tablet. Efficiency wise, we probably want some way we can end up
@@ -256,7 +256,7 @@ void MetaCache::LookupTabletByRow(const KuduTable* table,
 
 
 void MetaCache::LookupTabletByID(const string& tablet_id,
-                                 shared_ptr<RemoteTablet>* remote_tablet) {
+                                 scoped_refptr<RemoteTablet>* remote_tablet) {
   // Most of the time, we'll already have an object for this tablet in the
   // cache, so we can just use a read-lock.
   {
