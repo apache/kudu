@@ -14,7 +14,7 @@
 // - Added current_thread() abstraction using TLS.
 // - Used GoogleOnce to make thread_manager initialization lazy.
 // - Switched shared_ptr from boost to tr1.
-// - Added ThreadMgr::ScopedRemoveThread for exception safety in Thread::SuperviseThread.
+// - Added ThreadMgr::ScopedThread for exception safety/RAII in Thread::SuperviseThread.
 
 #include "util/thread.h"
 
@@ -83,6 +83,8 @@ class ThreadMgr {
     thread_categories_.clear();
   }
 
+  static void SetThreadName(const std::string& name, int64 tid);
+
   Status StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
 
   // Registers a thread to the supplied category. The key is a boost::thread::id, used
@@ -95,23 +97,32 @@ class ThreadMgr {
   // already been removed, this is a no-op.
   void RemoveThread(const thread::id& boost_id, const string& category);
 
-  // Helper for ensuring exception safety: calls RemoveThread() once
+  // Helper for ensuring exception safety: adds the thread to 'mgr' at
+  // start, sets the correct thread name and calls RemoveThread() once
   // we exit the current scope.
-  class ScopedRemoveThread {
+  class ScopedThread {
    public:
-    // Note: all parameters passed in to this constructor must remain
-    // valid until the object exits the scope.
-    ScopedRemoveThread(ThreadMgr* mgr, const thread::id& boost_id, const string& category)
-        : mgr_(mgr), boost_id_(boost_id), category_(category) {
+    ScopedThread(ThreadMgr* mgr,
+                 const std::string& name,
+                 const std::string& category,
+                 int64_t system_tid)
+        : mgr_(DCHECK_NOTNULL(mgr)),
+          category_(category),
+          // Use boost's get_id rather than the system thread ID as the unique key for this thread
+          // since the latter is more prone to being recycled.
+          boost_thread_id_(boost::this_thread::get_id()) {
+      mgr_->AddThread(boost_thread_id_, name, category_, system_tid);
+      SetThreadName(name, system_tid);
     }
 
-    ~ScopedRemoveThread() {
-      mgr_->RemoveThread(boost_id_, category_);
+    ~ScopedThread() {
+      mgr_->RemoveThread(boost_thread_id_, category_);
     }
+
    private:
     ThreadMgr* mgr_;
-    const thread::id& boost_id_;
-    const string& category_;
+    const std::string& category_;
+    const thread::id boost_thread_id_;
   };
 
  private:
@@ -165,6 +176,27 @@ class ThreadMgr {
   void ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args, stringstream* output);
   void PrintThreadCategoryRows(const ThreadCategory& category, stringstream* output);
 };
+
+void ThreadMgr::SetThreadName(const string& name, int64 tid) {
+  // On linux we can get the thread names to show up in the debugger by setting
+  // the process name for the LWP.  We don't want to do this for the main
+  // thread because that would rename the process, causing tools like killall
+  // to stop working.
+  if (tid == getpid()) {
+    return;
+  }
+
+  // http://0pointer.de/blog/projects/name-your-threads.html
+  // Set the name for the LWP (which gets truncated to 15 characters).
+  // Note that glibc also has a 'pthread_setname_np' api, but it may not be
+  // available everywhere and it's only benefit over using prctl directly is
+  // that it can set the name of threads other than the current thread.
+  int err = prctl(PR_SET_NAME, name.c_str());
+  // We expect EPERM failures in sandboxed processes, just ignore those.
+  if (err < 0 && errno != EPERM) {
+    PLOG(ERROR) << "prctl(PR_SET_NAME)";
+  }
+}
 
 Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
   MetricContext ctx(DCHECK_NOTNULL(metric), "threading");
@@ -353,26 +385,7 @@ Status ThreadJoiner::Join() {
                                              waited_ms, thread_->name_));
 }
 
-static void SetThreadName(const string& name, int64 tid) {
-  // On linux we can get the thread names to show up in the debugger by setting
-  // the process name for the LWP.  We don't want to do this for the main
-  // thread because that would rename the process, causing tools like killall
-  // to stop working.
-  if (tid == getpid()) {
-    return;
-  }
 
-  // http://0pointer.de/blog/projects/name-your-threads.html
-  // Set the name for the LWP (which gets truncated to 15 characters).
-  // Note that glibc also has a 'pthread_setname_np' api, but it may not be
-  // available everywhere and it's only benefit over using prctl directly is
-  // that it can set the name of threads other than the current thread.
-  int err = prctl(PR_SET_NAME, name.c_str());
-  // We expect EPERM failures in sandboxed processes, just ignore those.
-  if (err < 0 && errno != EPERM) {
-    PLOG(ERROR) << "prctl(PR_SET_NAME)";
-  }
-}
 
 Status Thread::StartThread(const std::string& category, const std::string& name,
                            const ThreadFunctor& functor, scoped_refptr<Thread> *holder) {
@@ -440,13 +453,8 @@ void Thread::SuperviseThread(ThreadFunctor functor, Atomic64* c_p_tid) {
     boost::detail::yield(loop_count++);
   }
 
-  // Use boost's get_id rather than the system thread ID as the unique key for this thread
-  // since the latter is more prone to being recycled.
-  thread_mgr_ref->AddThread(boost::this_thread::get_id(), name, category_, system_tid);
   {
-    ThreadMgr::ScopedRemoveThread remove_thread(thread_mgr_ref.get(),
-                                                boost::this_thread::get_id(), category_);
-    SetThreadName(name, system_tid);
+    ThreadMgr::ScopedThread scoped_thread(thread_mgr_ref.get(), name, category_, system_tid);
     functor();
   }
 }
