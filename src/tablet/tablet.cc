@@ -619,10 +619,6 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
   // increment the next mrs_id
   next_mrs_id_++;
 
-  if ((*old_ms)->empty()) {
-    return Status::OK();
-  }
-
   // Mark the memrowset rowset as locked, so compactions won't consider it
   // for inclusion in any concurrent compactions.
   shared_ptr<boost::mutex::scoped_try_lock> ms_lock(
@@ -640,12 +636,6 @@ Status Tablet::Flush(const RowSetsInCompaction& input,
                      const Schema& schema) {
   boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
   CHECK(open_);
-
-  if (input.num_rowsets() == 1 && old_ms->empty()) {
-    // flushing empty memrowset is a no-op
-    LOG(INFO) << "Flush requested on empty memrowset";
-    return Status::OK();
-  }
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
   // it in as a new rowset, replacing it with an empty one.

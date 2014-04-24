@@ -261,5 +261,33 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   VerifyTabletRows(s2, keys);
 }
 
+// Verify modifying an empty MemRowSet
+TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
+  std::vector<std::pair<string, string> > keys;
+
+  // Switch schema to s2
+  SchemaBuilder builder(tablet_->metadata()->schema());
+  ASSERT_STATUS_OK(builder.AddNullableColumn("c2", UINT32));
+  AlterSchema(builder.Build());
+  Schema s2 = builder.BuildWithoutIds();
+
+  // Verify we can insert some new data
+  RowBuilder rb(s2);
+  rb.AddUint32(2);
+  rb.AddUint32(2);
+  rb.AddUint32(2);
+  WriteTransactionContext tx_ctx;
+  ASSERT_STATUS_OK(tablet_->InsertForTesting(&tx_ctx, rb.row()));
+  MutateRow(s2, /* key= */ 2, /* col_idx= */ 0, /* new_val= */ 2);
+  //MutateRow(s2, /* key= */ 1, /* col_idx= */ 2, /* new_val= */ 2);
+
+  // Verify that the new 'c1' and 'c2' have the correct values.
+  keys.clear();
+  keys.push_back(std::pair<string, string>("key=2", "c1=2"));
+  VerifyTabletRows(s2, keys);
+  keys.push_back(std::pair<string, string>("key=2", "c2=2"));
+  VerifyTabletRows(s2, keys);
+}
+
 } // namespace tablet
 } // namespace kudu
