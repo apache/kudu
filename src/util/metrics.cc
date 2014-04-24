@@ -220,7 +220,6 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer) const {
       metrics.insert(val);
     }
   }
-  writer->StartObject();
 
   writer->String("metrics");
   writer->StartArray();
@@ -230,7 +229,6 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer) const {
   }
   writer->EndArray();
 
-  writer->EndObject();
   return Status::OK();
 }
 

@@ -77,7 +77,9 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
+  writer.StartObject();
   ASSERT_STATUS_OK(metrics.WriteAsJson(&writer));
+  writer.EndObject();
 
   // Now parse it back out.
   rapidjson::Document d;
