@@ -130,7 +130,7 @@ void Log::AppendThread::Shutdown() {
     return;
   }
 
-  LOG(INFO) << "Shutting down Log append thread!";
+  VLOG(1) << "Shutting down Log append thread!";
 
   BlockingQueue<LogEntryBatch*>* queue = log_->entry_queue();
   queue->Shutdown();
@@ -142,7 +142,7 @@ void Log::AppendThread::Shutdown() {
 
   finished_.Wait();
 
-  LOG(INFO) << "Log append thread shut down!";
+  VLOG(1) << "Log append thread shut down!";
 
   CHECK_OK(ThreadJoiner(thread_.get()).Join())
 }
@@ -247,9 +247,9 @@ Status Log::Init() {
   }
 
   if (force_sync_all_) {
-    LOG(INFO) << "Log is configured to fsync() on all Append() calls";
+    LOG_FIRST_N(INFO, 1) << "Log is configured to fsync() on all Append() calls";
   } else {
-    LOG(INFO) << "Log is configured to *not* fsync() on all Append() calls";
+    LOG_FIRST_N(INFO, 1) << "Log is configured to *not* fsync() on all Append() calls";
   }
 
   // We always create a new segment when the log starts.
