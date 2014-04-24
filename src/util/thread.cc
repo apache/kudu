@@ -167,9 +167,7 @@ class ThreadMgr {
 };
 
 Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
-  DCHECK_NOTNULL(metric);
-  DCHECK_NOTNULL(web);
-  MetricContext ctx(metric, "threading");
+  MetricContext ctx(DCHECK_NOTNULL(metric), "threading");
   lock_guard<mutex> l(lock_);
   metrics_enabled_ = true;
 
@@ -182,7 +180,7 @@ Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegist
 
   WebCallbackRegistry::PathHandlerCallback thread_callback =
       bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
-  web->RegisterPathHandler("/threadz", thread_callback);
+  DCHECK_NOTNULL(web)->RegisterPathHandler("/threadz", thread_callback);
   return Status::OK();
 }
 
