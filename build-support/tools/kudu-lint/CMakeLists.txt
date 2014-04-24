@@ -40,11 +40,11 @@ set(END_GROUP "-Wl,--end-group")
 
 add_executable(kudu-lint kudu-lint.cc)
 target_link_libraries(kudu-lint
-  ${LLVM_LDFLAGS}
   ${START_GROUP}
   ${CLANG_LIBS}
   ${LLVM_LIBS}
   ${END_GROUP}
+  ${LLVM_LDFLAGS}
   )
 
 # Disable RTTI since we have to inherit from Clang-provided classes,
