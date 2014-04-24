@@ -379,6 +379,11 @@ class Tablet {
   // no other thread could perform a swap underneath.
   mutable boost::mutex compact_select_lock_;
 
+  // We take this lock when flushing the tablet's rowsets in Tablet::Flush.  We
+  // don't want to have two flushes in progress at once, in case the one which
+  // started earlier completes after the one started later.
+  mutable boost::mutex rowsets_flush_lock_;
+
   bool open_;
 
   // Fault hooks. In production code, these will always be NULL.

@@ -638,6 +638,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
 Status Tablet::Flush(const RowSetsInCompaction& input,
                      const shared_ptr<MemRowSet>& old_ms,
                      const Schema& schema) {
+  boost::lock_guard<boost::mutex> lock(rowsets_flush_lock_);
   CHECK(open_);
 
   if (input.num_rowsets() == 1 && old_ms->empty()) {
