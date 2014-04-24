@@ -881,9 +881,11 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
 }
 
 Status Tablet::DoCompactionOrFlush(const Schema& schema,
-                                   const RowSetsInCompaction &input,
-                                   int64_t mrs_being_flushed) {
-  LOG(INFO) << "Compaction: entering phase 1 (flushing snapshot)";
+        const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
+  const char *op_name =
+        (mrs_being_flushed == kNoMrsFlushed) ?  "Compaction" : "Flush";
+
+  LOG(INFO) << op_name << ": entering phase 1 (flushing snapshot)";
 
   MvccSnapshot flush_snap(mvcc_);
 
@@ -913,20 +915,20 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // GCed in this compaction. In that case, we don't actually want to reopen.
   bool gced_all_input = drsw.written_count() == 0;
   if (gced_all_input) {
-    LOG(INFO) << "Compaction resulted in no output rows (all input rows were GCed!)";
-    LOG(INFO) << "Removing all input rowsets.";
+    LOG(INFO) << op_name << " resulted in no output rows (all input rows "
+              << "were GCed!)  Removing all input rowsets.";
     AtomicSwapRowSets(input.rowsets(), RowSetVector());
 
     // Remove old rowsets.
     // TODO: Consensus catch-up may want to reserve the compaction inputs.
     WARN_NOT_OK(DeleteCompactionInputs(input),
-                "Unable to remove compaction inputs. Will GC later.");
+        Substitute("Unable to remove $0 inputs. Will GC later.", op_name));
 
     // Write out the new Tablet Metadata
     return FlushMetadata(input.rowsets(), RowSetMetadataVector(), mrs_being_flushed);
   }
 
-  // The RollingDiskRowSet writer wrote out one or more RowSets as the compaction
+  // The RollingDiskRowSet writer wrote out one or more RowSets as the
   // output. Open these into 'new_rowsets'.
   vector<shared_ptr<RowSet> > new_disk_rowsets;
   RowSetMetadataVector new_drs_metas;
@@ -938,21 +940,24 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     shared_ptr<DiskRowSet> new_rowset;
     Status s = DiskRowSet::Open(meta, opid_anchor_registry_, &new_rowset);
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to open snapshot compaction results " << meta->ToString() << ": "
-                   << s.ToString();
+      LOG(WARNING) << "Unable to open snapshot " << op_name << " results "
+                   << meta->ToString() << ": " << s.ToString();
       return s;
     }
     new_disk_rowsets.push_back(new_rowset);
   }
 
-  // Finished Phase 1. Start duplicating any new updates into the new on-disk rowsets.
+  // Finished Phase 1. Start duplicating any new updates into the new on-disk
+  // rowsets.
   //
-  // During Phase 1, we may have missed some updates which came into the input rowsets
-  // while we were writing. So, we can't immediately start reading from the on-disk
-  // rowsets alone. Starting here, we continue to read from the original rowset(s), but
-  // mirror updates to both the input and the output data.
+  // During Phase 1, we may have missed some updates which came into the input
+  // rowsets while we were writing. So, we can't immediately start reading from
+  // the on-disk rowsets alone. Starting here, we continue to read from the
+  // original rowset(s), but mirror updates to both the input and the output
+  // data.
   //
-  LOG(INFO) << "Compaction: entering phase 2 (starting to duplicate updates in new rowsets)";
+  LOG(INFO) << op_name << ": entering phase 2 (starting to duplicate updates "
+            << "in new rowsets)";
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
   MvccSnapshot snap2;
@@ -996,10 +1001,11 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // 2) at read time, as deltas are applied, keep track of the max timestamp for each of the columns
   //    and don't let an earlier update overwrite a later one.
   // 3) don't allow DMS to flush in an in-progress rowset.
-  LOG(INFO) << "Compaction Phase 2: carrying over any updates which arrived during Phase 1";
+  LOG(INFO) << op_name << " Phase 2: carrying over any updates which arrived during Phase 1";
   LOG(INFO) << "Phase 2 snapshot: " << snap2.ToString();
-  RETURN_NOT_OK_PREPEND(input.CreateCompactionInput(snap2,
-          schema2.get(), &merge), "Failed to create compaction inputs");
+  RETURN_NOT_OK_PREPEND(
+      input.CreateCompactionInput(snap2, schema2.get(), &merge),
+          Substitute("Failed to create $0 inputs", op_name).c_str());
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped
   // in the DuplicatingRowSets. This will perform a flush of the updated DeltaTrackers
@@ -1010,7 +1016,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                                              flush_snap,
                                              snap2,
                                              new_disk_rowsets),
-                        "Failed to re-update deltas missed during compaction phase 1");
+        Substitute("Failed to re-update deltas missed during $0 phase 1",
+                     op_name).c_str());
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostReupdateMissedDeltas(),
@@ -1034,9 +1041,10 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
 
   // Remove old rowsets
   WARN_NOT_OK(DeleteCompactionInputs(input),
-              "Unable to remove compaction inputs. Will GC later.");
+              Substitute("Unable to remove $0 inputs. Will GC later.",
+                           op_name).c_str());
 
-  LOG(INFO) << "Successfully flush/compacted " << drsw.written_count()
+  LOG(INFO) << op_name << "successful on " << drsw.written_count()
             << " rows" << "(" << drsw.written_size() << " bytes)";
 
   if (common_hooks_) {
