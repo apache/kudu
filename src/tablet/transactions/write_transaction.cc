@@ -165,6 +165,9 @@ void LeaderWriteTransaction::UpdateMetrics() {
     // Tablet code itself instead of this wrapper code?
     metrics->rows_inserted->IncrementBy(tx_ctx_->metrics().successful_inserts);
     metrics->rows_updated->IncrementBy(tx_ctx_->metrics().successful_updates);
+    if (tx_ctx()->external_consistency_mode() == COMMIT_WAIT) {
+      metrics->commit_wait_duration->Increment(tx_ctx_->metrics().commit_wait_duration_usec);
+    }
   }
 }
 

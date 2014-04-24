@@ -35,8 +35,11 @@ Transaction::Transaction(TaskExecutor* prepare_executor,
 }
 
 Status Transaction::CommitWait() {
+  MonoTime before = MonoTime::Now(MonoTime::FINE);
   DCHECK(tx_ctx()->external_consistency_mode() == COMMIT_WAIT);
   RETURN_NOT_OK(tx_ctx()->tablet_peer()->clock()->WaitUntilAfter(tx_ctx()->timestamp()));
+  tx_ctx()->mutable_metrics()->commit_wait_duration_usec =
+      MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   return Status::OK();
 }
 
@@ -185,12 +188,14 @@ LeaderTransaction::~LeaderTransaction() {
 
 TransactionMetrics::TransactionMetrics()
   : successful_inserts(0),
-    successful_updates(0) {
+    successful_updates(0),
+    commit_wait_duration_usec(0) {
 }
 
 void TransactionMetrics::Reset() {
   successful_inserts = 0;
   successful_updates = 0;
+  commit_wait_duration_usec = 0;
 }
 
 

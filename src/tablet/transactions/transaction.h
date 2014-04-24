@@ -36,6 +36,7 @@ struct TransactionMetrics {
   void Reset();
   int successful_inserts;
   int successful_updates;
+  uint64_t commit_wait_duration_usec;
 };
 
 // A parent class for the callback that gets called when transactions
@@ -127,6 +128,8 @@ class TransactionContext {
 
   // Return metrics related to this transaction.
   const TransactionMetrics& metrics() const { return tx_metrics_; }
+
+  TransactionMetrics* mutable_metrics() { return &tx_metrics_; }
 
   void set_completion_callback(gscoped_ptr<TransactionCompletionCallback> completion_clbk) {
     completion_clbk_.reset(completion_clbk.release());

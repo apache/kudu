@@ -7,6 +7,7 @@
 namespace kudu {
 
 class Counter;
+class Histogram;
 class MetricContext;
 
 namespace tablet {
@@ -31,6 +32,8 @@ struct TabletMetrics {
   Counter* deltas_consulted;
   Counter* mrs_consulted;
   Counter* bytes_flushed;
+
+  Histogram* commit_wait_duration;
 };
 
 class ProbeStatsSubmitter {
