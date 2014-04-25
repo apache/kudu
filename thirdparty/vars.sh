@@ -52,7 +52,7 @@ RAPIDJSON_DIR=$TP_DIR/rapidjson-${RAPIDJSON_VERSION}
 #  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
 #
 # File a HD ticket for access to the cloudera-dev AWS instance to push to S3.
-SQUEASEL_VERSION=3cbbaf305ea69e774449ab356d10509349e783e5
+SQUEASEL_VERSION=48355449ecf93256cd0bf9411f7807197c9e0e8e
 SQUEASEL_DIR=$TP_DIR/squeasel-${SQUEASEL_VERSION}
 
 # SVN revision of google style guide:

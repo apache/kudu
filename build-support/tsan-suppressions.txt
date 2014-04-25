@@ -10,11 +10,6 @@ race:std::string::_Rep::_M_refcopy
 race:std::string::_Rep::_M_grab
 race:std::string::_Rep::_M_dispose
 
-# Squeasel bug fix pending
-race:sq_stop
-race:kudu::Webserver::~Webserver()
-race:base::DefaultDeleter<kudu::Webserver>
-
 # Protobuf's implementation of GoogleOnce doesn't properly annotate itself
 race:google::protobuf::GoogleOnceInitImpl
 
