@@ -76,7 +76,11 @@ static GoogleOnceType once = GOOGLE_ONCE_INIT;
 // auditing. Used only by Thread.
 class ThreadMgr {
  public:
-  ThreadMgr() : metrics_enabled_(false) { }
+  ThreadMgr()
+      : metrics_enabled_(false),
+        total_threads_metric_(0),
+        current_num_threads_metric_(0) {
+  }
 
   ~ThreadMgr() {
     lock_guard<mutex> l(lock_);
@@ -165,12 +169,12 @@ class ThreadMgr {
 
   // Counters to track all-time total number of threads, and the
   // current number of running threads.
-  uint64 total_threads_metric_;
-  uint64 current_num_threads_metric_;
+  uint64_t total_threads_metric_;
+  uint64_t current_num_threads_metric_;
 
   // Metric callbacks.
-  uint64 ReadNumTotalThreads();
-  uint64 ReadNumCurrentThreads();
+  uint64_t ReadNumTotalThreads();
+  uint64_t ReadNumCurrentThreads();
 
   // Webpage callback; prints all threads by category
   void ThreadPathHandler(const WebCallbackRegistry::ArgumentMap& args, stringstream* output);
@@ -216,12 +220,12 @@ Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegist
   return Status::OK();
 }
 
-uint64 ThreadMgr::ReadNumTotalThreads() {
+uint64_t ThreadMgr::ReadNumTotalThreads() {
   lock_guard<mutex> l(lock_);
   return total_threads_metric_;
 }
 
-uint64 ThreadMgr::ReadNumCurrentThreads() {
+uint64_t ThreadMgr::ReadNumCurrentThreads() {
   lock_guard<mutex> l(lock_);
   return current_num_threads_metric_;
 }
