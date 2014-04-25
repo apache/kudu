@@ -353,27 +353,32 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
   string tablet_id = tablet_->metadata()->oid();
   string log_dir = fs_manager->GetTabletWalDir(tablet_id);
 
-  if (!fs_manager->Exists(log_dir)) {
-    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
-                          "Failed to create log dir");
-    return Status::OK();
-  }
-
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
   if (fs_manager->Exists(recovery_path)) {
     LOG(INFO) << "Replaying from previous recovery directory: " << recovery_path;
-    vector<string> children;
-    RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
-                          "Couldn't list log segments.");
-    BOOST_FOREACH(const string& child, children) {
-      if (!log::IsLogFileName(child)) {
-        continue;
+    if (fs_manager->Exists(log_dir)) {
+      vector<string> children;
+      RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
+                            "Couldn't list log segments.");
+      BOOST_FOREACH(const string& child, children) {
+        if (!log::IsLogFileName(child)) {
+          continue;
+        }
+        string path = JoinPathSegments(log_dir, child);
+        LOG(INFO) << "Removing old log file from previous aborted recovery attempt: " << path;
+        RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
       }
-      string path = JoinPathSegments(log_dir, child);
-      LOG(INFO) << "Removing old log file from previous aborted recovery attempt: " << path;
-      RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
+    } else {
+      RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                            "Failed to create log dir");
     }
     *needs_recovery = true;
+    return Status::OK();
+  }
+
+  if (!fs_manager->Exists(log_dir)) {
+    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                          "Failed to create log dir");
     return Status::OK();
   }
 
