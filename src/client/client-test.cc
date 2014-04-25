@@ -13,6 +13,7 @@
 #include "common/row.h"
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/serialize.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/catalog_manager.h"
 #include "master/master-test-util.h"
@@ -153,7 +154,7 @@ class ClientTest : public KuduTest {
     pred.set_upper_bound("hello 3");
     ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
-    LOG_TIMING(INFO, "Scanning with no predicates") {
+    LOG_TIMING(INFO, "Scanning with string predicate") {
       ASSERT_STATUS_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
@@ -165,6 +166,34 @@ class ClientTest : public KuduTest {
           ConstContiguousRow row(schema_, row_ptr);
           Slice s = *schema_.ExtractColumnFromRow<STRING>(row, 2);
           if (!s.starts_with("hello 2") && s != Slice("hello 3")) {
+            FAIL() << schema_.DebugRow(row);
+          }
+        }
+      }
+    }
+  }
+
+  void DoTestScanWithKeyPredicate() {
+    KuduScanner scanner(client_table_.get());
+    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ColumnRangePredicatePB pred;
+    ColumnSchemaToPB(schema_.column(0), pred.mutable_column());
+    pred.set_lower_bound(EncodeUint32(5));
+    pred.set_upper_bound(EncodeUint32(10));
+    ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+
+    LOG_TIMING(INFO, "Scanning with key predicate") {
+      ASSERT_STATUS_OK(scanner.Open());
+
+      ASSERT_TRUE(scanner.HasMoreRows());
+      vector<const uint8_t*> rows;
+      while (scanner.HasMoreRows()) {
+        ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+
+        BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+          ConstContiguousRow row(schema_, row_ptr);
+          uint32_t k = *schema_.ExtractColumnFromRow<UINT32>(row, 0);
+          if (k < 5 || k > 10) {
             FAIL() << schema_.DebugRow(row);
           }
         }
@@ -247,6 +276,7 @@ TEST_F(ClientTest, TestScan) {
 
   DoTestScanWithoutPredicates();
   DoTestScanWithStringPredicate();
+  DoTestScanWithKeyPredicate();
 }
 
 TEST_F(ClientTest, TestScanEmptyTable) {

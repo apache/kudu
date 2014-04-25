@@ -11,6 +11,7 @@
 #include "common/wire_protocol.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/join.h"
 #include "gutil/strings/substitute.h"
 #include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.proxy.h"
@@ -652,13 +653,61 @@ Status AlterTableBuilder::RenameColumn(const std::string& old_name,
 }
 
 ////////////////////////////////////////////////////////////
+// ColumnRangePredicates
+////////////////////////////////////////////////////////////
+
+ColumnRangePredicates::ColumnRangePredicates(const Schema *schema)
+  : schema_(schema),
+    last_column_idx_(-1) {
+}
+
+void ColumnRangePredicates::AddRangePredicate(const ColumnRangePredicatePB& pb) {
+  int idx = schema_->find_column(pb.column().name());
+  CHECK_NE(idx, -1) << "Column not found in schema";
+  if (schema_->is_key_column(idx)) {
+    CHECK_LT(last_column_idx_, idx) << "Key columns must be added in order";
+    if (pb.has_lower_bound()) {
+      if (!lower_builder_.get()) {
+        lower_builder_.reset(new EncodedKeyBuilder(*schema_));
+      }
+      lower_builder_->AddColumnKey(pb.lower_bound().data());
+    }
+    if (pb.has_upper_bound()) {
+      if (!upper_builder_.get()) {
+        upper_builder_.reset(new EncodedKeyBuilder(*schema_));
+      }
+      upper_builder_->AddColumnKey(pb.upper_bound().data());
+    }
+  }
+  pbs_.push_back(pb);
+  last_column_idx_ = idx;
+}
+
+bool ColumnRangePredicates::HasStartKey() {
+  return lower_builder_.get();
+}
+
+bool ColumnRangePredicates::HasEndKey() {
+  return upper_builder_.get();
+}
+
+EncodedKey* ColumnRangePredicates::GetStartKey() {
+  return lower_builder_->BuildEncodedKey();
+}
+
+EncodedKey* ColumnRangePredicates::GetEndKey() {
+  return upper_builder_->BuildEncodedKey();
+}
+
+////////////////////////////////////////////////////////////
 // KuduScanner
 ////////////////////////////////////////////////////////////
 
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
     data_in_open_(false),
-    table_(DCHECK_NOTNULL(table)) {
+    table_(DCHECK_NOTNULL(table)),
+    preds_(&table->schema()) {
 }
 
 KuduScanner::~KuduScanner() {
@@ -680,16 +729,20 @@ Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
 
 Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicatePB& pb) {
   CHECK(!open_) << "Scanner already open";
-  NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
-  scan->add_range_predicates()->CopyFrom(pb);
+  preds_.AddRangePredicate(pb);
   return Status::OK();
 }
 
 Status KuduScanner::Open() {
   CHECK(!open_) << "Scanner already open";
 
+  NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
+  BOOST_FOREACH(const ColumnRangePredicatePB& pb, preds_.pbs()) {
+    scan->add_range_predicates()->CopyFrom(pb);
+  }
+
   // TODO: Replace with a request to locations by start/end key
-  next_req_.mutable_new_scan_request()->set_tablet_id(table_->tablet_id_);
+  scan->set_tablet_id(table_->tablet_id_);
 
   controller_.Reset();
   // TODO: make configurable through API

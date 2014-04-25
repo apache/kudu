@@ -2,6 +2,7 @@
 #ifndef KUDU_CLIENT_CLIENT_H
 #define KUDU_CLIENT_CLIENT_H
 
+#include "common/encoded_key.h"
 #include "common/partial_row.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
@@ -317,6 +318,30 @@ class AlterTableBuilder {
   master::AlterTableRequestPB* alter_steps_;
 
   DISALLOW_COPY_AND_ASSIGN(AlterTableBuilder);
+};
+
+// Encapsulates zero or more column range predicates, exposing encoded keys
+// representing lower and upper bounds along the way.
+class ColumnRangePredicates {
+ public:
+  explicit ColumnRangePredicates(const Schema* schema);
+
+  // Add a range predicate for a column. If the column is a key column, the
+  // predicate must be added before predicates for other key columns.
+  void AddRangePredicate(const tserver::ColumnRangePredicatePB& pb);
+
+  const std::vector<tserver::ColumnRangePredicatePB>& pbs() const { return pbs_; }
+
+  bool HasStartKey();
+  bool HasEndKey();
+  EncodedKey* GetStartKey();
+  EncodedKey* GetEndKey();
+ private:
+  const Schema* schema_;
+  int last_column_idx_;
+  gscoped_ptr<EncodedKeyBuilder> lower_builder_;
+  gscoped_ptr<EncodedKeyBuilder> upper_builder_;
+  std::vector<tserver::ColumnRangePredicatePB> pbs_;
 };
 
 // An error which occurred in a given operation. This tracks the operation
@@ -659,6 +684,7 @@ class KuduScanner {
   // Add a predicate to this scanner.
   // The predicates act as conjunctions -- i.e, they all must pass for
   // a row to be returned.
+  // Predicates affecting key columns must be added in column order.
   // TODO: currently, the predicates must refer to columns which are also
   // part of the projection.
   Status AddConjunctPredicate(const tserver::ColumnRangePredicatePB& pb);
@@ -712,6 +738,8 @@ class KuduScanner {
   rpc::RpcController controller_;
 
   KuduTable* table_;
+
+  ColumnRangePredicates preds_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);
 };

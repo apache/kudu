@@ -388,10 +388,14 @@ class Schema {
     return false;
   }
 
-  // Returns true if the specified column is a key
+  // Returns true if the specified column (by name) is a key
   bool is_key_column(const StringPiece col_name) const {
-    int index = find_column(col_name);
-    return index >= 0 && index < num_key_columns_;
+    return is_key_column(find_column(col_name));
+  }
+
+  // Returns true if the specified column (by index) is a key
+  bool is_key_column(size_t idx) const {
+    return idx < num_key_columns_;
   }
 
   // Return true if this Schema is initialized and valid.
