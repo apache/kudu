@@ -95,7 +95,7 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
     status = Status::ServiceUnavailable(Substitute(
                              "The service queue is full; it "
                              "has $0 items. Transfer dropped because of backpressure.",
-                             service_queue_.max_elements()));
+                             service_queue_.max_size()));
     c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY, status);
   } else if (queue_status == QUEUE_SHUTDOWN) {
     status = Status::ServiceUnavailable("Service is shutting down");

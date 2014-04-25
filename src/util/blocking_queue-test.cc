@@ -6,6 +6,7 @@
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <string>
 #include <tr1/memory>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "util/blocking_queue.h"
 
 using std::tr1::shared_ptr;
+using std::string;
 
 namespace kudu {
 
@@ -52,6 +54,23 @@ TEST(BlockingQueueTest, TestTooManyInsertions) {
   ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
   ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);
   ASSERT_EQ(test_queue.Put(123), QUEUE_FULL);
+}
+
+namespace {
+
+struct LengthLogicalSize {
+  static size_t logical_size(const string& s) {
+    return s.length();
+  }
+};
+
+} // anonymous namespace
+
+TEST(BlockingQueueTest, TestLogicalSize) {
+  BlockingQueue<string, LengthLogicalSize> test_queue(4);
+  ASSERT_EQ(test_queue.Put("a"), QUEUE_SUCCESS);
+  ASSERT_EQ(test_queue.Put("bcd"), QUEUE_SUCCESS);
+  ASSERT_EQ(test_queue.Put("e"), QUEUE_FULL);
 }
 
 TEST(BlockingQueueTest, TestNonPointerParamsMayBeNonEmptyOnDestruct) {

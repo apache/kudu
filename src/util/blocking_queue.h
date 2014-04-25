@@ -24,7 +24,15 @@ enum QueueStatus {
   QUEUE_FULL = 2
 };
 
-template <typename T>
+// Default logical length implementation: always returns 1.
+struct DefaultLogicalSize {
+  template<typename T>
+  static size_t logical_size(const T& /* unused */) {
+    return 1;
+  }
+};
+
+template <typename T, class LOGICAL_SIZE = DefaultLogicalSize>
 class BlockingQueue {
  public:
   // If T is a pointer, this will be the base type.  If T is not a pointer, you
@@ -32,9 +40,10 @@ class BlockingQueue {
   // Template substitution failure is not an error.
   typedef typename boost::remove_pointer<T>::type T_VAL;
 
-  explicit BlockingQueue(size_t max_elements)
+  explicit BlockingQueue(size_t max_size)
     : shutdown_(false),
-      max_elements_(max_elements) {
+      size_(0),
+      max_size_(max_size) {
   }
 
   // If the queue holds a bare pointer, it must be empty on destruction, since
@@ -52,6 +61,7 @@ class BlockingQueue {
       if (!list_.empty()) {
         *out = list_.front();
         list_.pop_front();
+        decrement_size_unlocked(*out);
         not_full_.notify_one();
         return true;
       }
@@ -83,6 +93,7 @@ class BlockingQueue {
         out->reserve(list_.size());
         BOOST_FOREACH(const T& elt, list_) {
           out->push_back(elt);
+          decrement_size_unlocked(elt);
         }
         list_.clear();
         not_full_.notify_one();
@@ -98,17 +109,18 @@ class BlockingQueue {
   // Attempts to put the given value in the queue.
   // Returns:
   //   QUEUE_SUCCESS: if successfully inserted
-  //   QUEUE_FULL: if the queue has reached max_elements
+  //   QUEUE_FULL: if the queue has reached max_size
   //   QUEUE_SHUTDOWN: if someone has already called Shutdown()
   QueueStatus Put(const T &val) {
     boost::lock_guard<boost::mutex> guard(lock_);
-    if (list_.size() >= max_elements_) {
+    if (size_ >= max_size_) {
       return QUEUE_FULL;
     }
     if (shutdown_) {
       return QUEUE_SHUTDOWN;
     }
     list_.push_back(val);
+    increment_size_unlocked(val);
     not_empty_.notify_one();
     return QUEUE_SUCCESS;
   }
@@ -132,8 +144,9 @@ class BlockingQueue {
       if (shutdown_) {
         return false;
       }
-      if (list_.size() < max_elements_) {
+      if (size_ < max_size_) {
         list_.push_back(val);
+        increment_size_unlocked(val);
         not_empty_.notify_one();
         return true;
       }
@@ -168,13 +181,25 @@ class BlockingQueue {
     return list_.empty();
   }
 
-  size_t max_elements() const {
-    return max_elements_;
+  size_t max_size() const {
+    return max_size_;
   }
 
  private:
+
+  // Increments queue size. Must be called when 'lock_' is held.
+  void increment_size_unlocked(const T& t) {
+    size_ += LOGICAL_SIZE::logical_size(t);
+  }
+
+  // Decrements queue size. Must be called when 'lock_' is held.
+  void decrement_size_unlocked(const T& t) {
+    size_ -= LOGICAL_SIZE::logical_size(t);
+  }
+
   bool shutdown_;
-  size_t max_elements_;
+  size_t size_;
+  size_t max_size_;
   boost::condition_variable not_empty_;
   boost::condition_variable not_full_;
   mutable boost::mutex lock_;
