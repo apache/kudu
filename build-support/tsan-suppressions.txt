@@ -12,6 +12,7 @@ race:std::string::_Rep::_M_dispose
 
 # Protobuf's implementation of GoogleOnce doesn't properly annotate itself
 race:google::protobuf::GoogleOnceInitImpl
+race:google::protobuf::Message::GetReflection
 
 # concurrent btree uses optimistic concurrency, needs to be annotated a bunch
 # more before it would pass. Relatively confident that it is correct based on
