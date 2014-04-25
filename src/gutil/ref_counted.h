@@ -303,8 +303,8 @@ class scoped_refptr {
   }
 
   // Like gscoped_ptr::reset(), drops a reference on the currently held object
-  // (if any), and adds a reference to the passed-in object.
-  void reset(T* p) {
+  // (if any), and adds a reference to the passed-in object (if not NULL).
+  void reset(T* p = NULL) {
     *this = p;
   }
 
