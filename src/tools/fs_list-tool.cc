@@ -8,6 +8,7 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <sstream>
 #include <tr1/memory>
 #include <iostream>
 #include <vector>
@@ -32,6 +33,9 @@ enum CommandType {
   LIST_BLOCKS = 4
 };
 
+// TODO: extract and generalized the "verb" handling code with other
+// tools such that it can be shared with other tools.
+
 struct CommandHandler {
   CommandType type_;
   string name_;
@@ -52,15 +56,19 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
     (CommandHandler(LIST_BLOCKS, "list_blocks",
                     "List block for tablet (optionally accepts a tablet id)."));
 
+void PrintUsageToStream(const string& prog_name, std::ostream* out) {
+  *out << "Usage: " << prog_name << " [-verbose] -base_dir <dir> <command> [option] "
+       << std::endl << std::endl
+       << "Commands: " << std::endl;
+  BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
+    *out << handler.name_ << ": " << handler.desc_ << std::endl;
+  }
+}
+
 void Usage(const string& prog_name, const string& msg) {
   std::cerr << "Error " << prog_name << ": " << msg << std::endl
-            << std::endl
-            << "Usage: " << prog_name << " [-verbose] -base_dir <dir> <command> [option] "
-            << std::endl << std::endl
-            << "Commands: " << std::endl;
-  BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
-    std::cerr << handler.name_ << ": " << handler.desc_ << std::endl;
-  }
+            << std::endl;
+  PrintUsageToStream(prog_name, &std::cerr);
 }
 
 bool ValidateCommand(int argc, char** argv, CommandType* out) {
@@ -82,6 +90,9 @@ bool ValidateCommand(int argc, char** argv, CommandType* out) {
 
 static int FsListToolMain(int argc, char** argv) {
   FLAGS_logtostderr = 1;
+  std::stringstream usage_str;
+  PrintUsageToStream(argv[0], &usage_str);
+  google::SetUsageMessage(usage_str.str());
   google::ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
 
