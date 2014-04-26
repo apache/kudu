@@ -4,8 +4,6 @@
 
 #include "util/metrics.h"
 
-DECLARE_int32(group_commit_queue_size);
-
 METRIC_DEFINE_counter(bytes_logged, kudu::MetricUnit::kBytes,
                       "Number of bytes logged since service start");
 

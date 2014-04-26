@@ -24,6 +24,9 @@ class LogReader;
 class LogEntryBatch;
 class OpIdAnchorRegistry;
 struct LogMetrics;
+struct LogEntryBatchLogicalSize;
+
+typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQueue;
 
 // Log interface, inspired by Raft's (logcabin) Log. Provides durability to
 // Kudu as a normal Write Ahead Log and also plays the role of persistent
@@ -211,8 +214,8 @@ class Log {
 
   Status Sync();
 
-  BlockingQueue<LogEntryBatch*>* entry_queue() {
-    return &entry_batch_queue;
+  LogEntryBatchQueue* entry_queue() {
+    return &entry_batch_queue_;
   }
 
   const SegmentAllocationState allocation_state() {
@@ -253,7 +256,7 @@ class Log {
 
   // The queue used to communicate between the thread calling
   // Reserve() and the Log Appender thread
-  BlockingQueue<LogEntryBatch*> entry_batch_queue;
+  LogEntryBatchQueue entry_batch_queue_;
 
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
@@ -285,6 +288,7 @@ class LogEntryBatch {
 
  private:
   friend class Log;
+  friend struct LogEntryBatchLogicalSize;
 
   LogEntryBatch(gscoped_ptr<LogEntryPB[]> phys_entries, size_t count);
 
@@ -329,11 +333,19 @@ class LogEntryBatch {
 
   size_t count() const { return count_; }
 
+  // Returns the total size in bytes of the object.
+  size_t total_size_bytes() const {
+    return total_size_bytes_;
+  }
+
   // Contents of the log entries that will be written to disk.
   gscoped_ptr<LogEntryPB[]> phys_entries_;
 
   // Number of entries in phys_entries_
   size_t count_;
+
+  // Total size in bytes of all entries
+  uint32_t total_size_bytes_;
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.
@@ -360,6 +372,13 @@ class LogEntryBatch {
   State state_;
 
   DISALLOW_COPY_AND_ASSIGN(LogEntryBatch);
+};
+
+// Used by 'Log::queue_' to determine logical size of a LogEntryBatch.
+struct LogEntryBatchLogicalSize {
+  static size_t logical_size(const LogEntryBatch* batch) {
+    return batch->total_size_bytes();
+  }
 };
 
 }  // namespace log

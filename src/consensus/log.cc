@@ -18,11 +18,8 @@
 #include "util/countdown_latch.h"
 #include "util/metrics.h"
 
-// TODO Size of the queue/buffer should be defined bytewise, rather
-// than by the element count.
-DEFINE_int32(group_commit_queue_size, 1024,
-             "Maxmimum size of the group commit queue. TODO: name does not account"
-             "for the fact that elements of the queue can contain multiple operations");
+DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
+             "Maxmimum size of the group commit queue in bytes");
 
 namespace kudu {
 namespace log {
@@ -75,7 +72,7 @@ Status Log::AppendThread::Init() {
 }
 
 void Log::AppendThread::RunThread() {
-  BlockingQueue<LogEntryBatch*>* queue = log_->entry_queue();
+  LogEntryBatchQueue* queue = log_->entry_queue();
   while (PREDICT_TRUE(!closing())) {
     std::vector<LogEntryBatch*> entry_batches;
     ElementDeleter d(&entry_batches);
@@ -132,7 +129,7 @@ void Log::AppendThread::Shutdown() {
 
   VLOG(1) << "Shutting down Log append thread!";
 
-  BlockingQueue<LogEntryBatch*>* queue = log_->entry_queue();
+  LogEntryBatchQueue* queue = log_->entry_queue();
   queue->Shutdown();
 
   {
@@ -209,7 +206,7 @@ Log::Log(const LogOptions &options,
   log_dir_(log_path),
   tablet_id_(tablet_id),
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
-  entry_batch_queue(FLAGS_group_commit_queue_size),
+  entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
   append_thread_(new AppendThread(this)),
   allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
   force_sync_all_(options_.force_fsync_all),
@@ -307,7 +304,7 @@ Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
   gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_pbs.Pass(), num_ops));
   new_entry_batch->MarkReserved();
 
-  if (PREDICT_FALSE(!entry_batch_queue.BlockingPut(new_entry_batch.get()))) {
+  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(new_entry_batch.get()))) {
     return kLogShutdownStatus;
   }
 
@@ -368,7 +365,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   }
 
   Slice entry_batch_data = entry_batch->data();
-  uint32_t entry_batch_bytes = entry_batch_data.size();
+  uint32_t entry_batch_bytes = entry_batch->total_size_bytes();
 
   if (metrics_) {
     metrics_->bytes_logged->IncrementBy(entry_batch_bytes);
@@ -616,7 +613,11 @@ LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryPB[]> phys_entries,
                   size_t count)
     : phys_entries_(phys_entries.Pass()),
       count_(count),
+      total_size_bytes_(0),
       state_(kEntryInitialized) {
+  for (int i = 0; i < count_; ++i) {
+    total_size_bytes_ += phys_entries_[i].ByteSize();
+  }
 }
 
 LogEntryBatch::~LogEntryBatch() {
@@ -631,11 +632,7 @@ void LogEntryBatch::MarkReserved() {
 Status LogEntryBatch::Serialize() {
   DCHECK_EQ(state_, kEntryReserved);
   buffer_.clear();
-  uint32_t totalByteSize = 0;
-  for (int i = 0; i < count_; ++i) {
-    totalByteSize += phys_entries_[i].ByteSize();
-  }
-  buffer_.reserve(totalByteSize);
+  buffer_.reserve(total_size_bytes_);
   for (int i = 0; i < count_; ++i) {
     LogEntryPB& entry_batch = phys_entries_[i];
     if (!pb_util::AppendToString(entry_batch, &buffer_)) {
