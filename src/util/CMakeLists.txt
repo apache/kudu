@@ -4,6 +4,7 @@ add_library(kudu_util
   bitmap.cc
   cache.cc
   coding.cc
+  crc.cc
   curl_util.cc
   debug-util.cc
   env.cc env_posix.cc env_util.cc
@@ -48,11 +49,15 @@ PROTOBUF_GENERATE_CPP(HISTOGRAM_PROTO_SRCS HISTOGRAM_PROTO_HDRS
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
   PROTO_FILES histogram.proto)
 ADD_LIBRARY(histogram_proto ${HISTOGRAM_PROTO_SRCS} ${HISTOGRAM_PROTO_HDRS})
-ADD_DEPENDENCIES(histogram_proto protobuf)
+target_link_libraries(histogram_proto protobuf)
 
-# TODO: we don't really need to link agaist libcurl, since it's only used by
-# tests.
-target_link_libraries(kudu_util gutil ${CURL_LIBRARIES} ${Boost_LIBRARIES} protobuf histogram_proto)
+# TODO: we don't really need to link agaist libcurl, since it's only used by # tests.
+target_link_libraries(kudu_util ${CURL_LIBRARIES})
+target_link_libraries(kudu_util ${Boost_LIBRARIES})
+target_link_libraries(kudu_util crcutil)
+target_link_libraries(kudu_util gutil)
+target_link_libraries(kudu_util histogram_proto)
+target_link_libraries(kudu_util protobuf)
 
 add_library(kudu_test_main test_main.cc)
 target_link_libraries(kudu_test_main gflags glog gtest)
@@ -61,6 +66,7 @@ set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_DEP_LIBS} ${KUDU_MIN_TEST_LIBS} )
 ADD_KUDU_TEST(bitmap-test)
 ADD_KUDU_TEST(blocking_queue-test)
 ADD_KUDU_TEST(cache-test)
+ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(memory/arena-test)
 ADD_KUDU_TEST(bloom_filter-test)
