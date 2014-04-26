@@ -30,6 +30,7 @@ else
       "gsg")        F_GSG=1 ;;
       "gcovr")      F_GCOVR=1 ;;
       "curl")       F_CURL=1 ;;
+      "crcutil")    F_CRCUTIL=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -173,6 +174,14 @@ if [ -n "$F_ALL" -o -n "$F_CURL" ]; then
     --disable-ipv6
   make -j$PARALLEL
   make install
+fi
+
+## build crcutil
+if [ -n "$F_ALL" -o -n "$F_CRCUTIL" ]; then
+  cd $CRCUTIL_DIR
+  ./autogen.sh
+  ./configure --prefix=$PREFIX
+  make -j$PARALLEL install
 fi
 
 # Copy boost_uuid into the include directory.
