@@ -27,14 +27,18 @@ MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
 Timestamp MvccManager::StartTransaction() {
   boost::lock_guard<LockType> l(lock_);
   Timestamp now = clock_->Now();
-  InitTransactionUnlocked(now);
+  while (PREDICT_FALSE(!InitTransactionUnlocked(now))) {
+    now = clock_->Now();
+  }
   return now;
 }
 
 Timestamp MvccManager::StartTransactionAtLatest() {
   boost::lock_guard<LockType> l(lock_);
   Timestamp now_latest = clock_->NowLatest();
-  InitTransactionUnlocked(now_latest);
+  while (PREDICT_FALSE(!InitTransactionUnlocked(now_latest))) {
+    now_latest = clock_->NowLatest();
+  }
 
   // If in debug mode enforce that transactions have monotonically increasing
   // timestamps at all times
@@ -49,13 +53,12 @@ Timestamp MvccManager::StartTransactionAtLatest() {
   return now_latest;
 }
 
-void MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
+bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
   cur_snap_.none_committed_after_timestamp_ = Timestamp(timestamp.value() + 1);
   if (cur_snap_.timestamps_in_flight_.empty()) {
     cur_snap_.all_committed_before_timestamp_ = timestamp;
   }
-  bool was_inserted = cur_snap_.timestamps_in_flight_.insert(timestamp.value()).second;
-  DCHECK(was_inserted) << "Already had timestamp " << timestamp.ToString() << " in in-flight list";
+  return cur_snap_.timestamps_in_flight_.insert(timestamp.value()).second;
 }
 
 void MvccManager::CommitTransaction(Timestamp timestamp) {

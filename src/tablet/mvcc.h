@@ -142,7 +142,7 @@ class MvccManager {
   ~MvccManager();
 
  private:
-  void InitTransactionUnlocked(const Timestamp& timestamp);
+  bool InitTransactionUnlocked(const Timestamp& timestamp);
 
   FRIEND_TEST(MvccTest, TestAreAllTransactionsCommitted);
 
