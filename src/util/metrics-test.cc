@@ -1,4 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
+#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
@@ -77,9 +78,9 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  writer.StartObject();
-  ASSERT_STATUS_OK(metrics.WriteAsJson(&writer));
-  writer.EndObject();
+  ASSERT_STATUS_OK(metrics.WriteAsJson(&writer,
+                                       vector<string>(),
+                                       vector<string>()));
 
   // Now parse it back out.
   rapidjson::Document d;

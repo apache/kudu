@@ -2,6 +2,7 @@
 #include "util/metrics.h"
 
 #include <map>
+#include <set>
 
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
@@ -209,26 +210,54 @@ Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
   return histogram;
 }
 
-Status MetricRegistry::WriteAsJson(JsonWriter* writer) const {
+Status MetricRegistry::WriteAsJson(JsonWriter* writer,
+                                   const vector<string>& requested_metrics,
+                                   const vector<string>& requested_detail_metrics) const {
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
   typedef std::map<string, Metric*> OrderedMetricMap;
   OrderedMetricMap metrics;
+  std::set<string> requested_detail_metrics_set;
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     boost::lock_guard<simple_spinlock> l(lock_);
     BOOST_FOREACH(const UnorderedMetricMap::value_type& val, metrics_) {
-      metrics.insert(val);
+      if (!requested_metrics.empty()) {
+       BOOST_FOREACH(const string& requested_metric, requested_metrics) {
+         if (val.first.find(requested_metric) != std::string::npos) {
+           metrics.insert(val);
+           break;
+         }
+       }
+      } else {
+        metrics.insert(val);
+      }
+      if (!requested_detail_metrics.empty()) {
+        BOOST_FOREACH(const string& requested_detail_metric, requested_detail_metrics) {
+          if (val.first.find(requested_detail_metric) != std::string::npos) {
+            requested_detail_metrics_set.insert(val.first);
+            break;
+          }
+        }
+      }
     }
   }
+
+  writer->StartObject();
 
   writer->String("metrics");
   writer->StartArray();
   BOOST_FOREACH(OrderedMetricMap::value_type& val, metrics) {
-    WARN_NOT_OK(val.second->WriteAsJson(val.first, writer),
-                strings::Substitute("Failed to write $0 as JSON", val.first));
+    if (ContainsKey(requested_detail_metrics_set, val.first)) {
+      WARN_NOT_OK(val.second->WriteAsJson(val.first, writer, DETAILED),
+                     strings::Substitute("Failed to write $0 as JSON", val.first));
+    } else {
+      WARN_NOT_OK(val.second->WriteAsJson(val.first, writer, NORMAL),
+                          strings::Substitute("Failed to write $0 as JSON", val.first));
+    }
   }
   writer->EndArray();
 
+  writer->EndObject();
   return Status::OK();
 }
 
@@ -255,7 +284,9 @@ MetricContext::MetricContext(const MetricContext& parent, const string& name)
 // Gauge
 //
 
-Status Gauge::WriteAsJson(const string& name, JsonWriter* writer) const {
+Status Gauge::WriteAsJson(const string& name,
+                          JsonWriter* writer,
+                          MetricWriteGranularity granularity) const {
   writer->StartObject();
 
   writer->String("type");
@@ -345,7 +376,9 @@ void Counter::DecrementBy(int64_t amount) {
   IncrementBy(-amount);
 }
 
-Status Counter::WriteAsJson(const string& name, JsonWriter* writer) const {
+Status Counter::WriteAsJson(const string& name,
+                            JsonWriter* writer,
+                            MetricWriteGranularity granularity) const {
   writer->StartObject();
 
   writer->String("type");
@@ -411,71 +444,46 @@ void Histogram::IncrementBy(int64_t value, int64_t amount) {
   histogram_->IncrementBy(value, amount);
 }
 
-Status Histogram::WriteAsJson(const std::string& name, JsonWriter* writer) const {
-  HdrHistogram snapshot(*histogram_);
+Status Histogram::WriteAsJson(const std::string& name,
+                              JsonWriter* writer,
+                              MetricWriteGranularity granularity) const {
 
-  writer->StartObject();
-
-  writer->String("type");
-  writer->String(MetricType::Name(type()));
-
-  writer->String("name");
-  writer->String(name);
-
-  writer->String("unit");
-  writer->String(MetricUnit::Name(unit_));
-
-  writer->String("max_trackable_value");
-  writer->Uint64(snapshot.highest_trackable_value());
-
-  writer->String("num_sig_digits");
-  writer->Uint64(snapshot.num_significant_digits());
-
-  writer->String("total_count");
-  writer->Uint64(snapshot.TotalCount());
-
-  writer->String("min");
-  writer->Uint64(snapshot.MinValue());
-
-  writer->String("mean");
-  writer->Double(snapshot.MeanValue());
-
-  writer->String("percentile_75");
-  writer->Uint64(snapshot.ValueAtPercentile(75));
-
-  writer->String("percentile_95");
-  writer->Uint64(snapshot.ValueAtPercentile(95));
-
-  writer->String("percentile_99");
-  writer->Uint64(snapshot.ValueAtPercentile(99));
-
-  writer->String("percentile_99_9");
-  writer->Uint64(snapshot.ValueAtPercentile(99.9));
-
-  writer->String("percentile_99_99");
-  writer->Uint64(snapshot.ValueAtPercentile(99.99));
-
-  writer->String("max");
-  writer->Uint64(snapshot.MaxValue());
-
-  writer->String("description");
-  writer->String(description_);
-
-  writer->EndObject();
+  HistogramSnapshotPB snapshot;
+  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, granularity));
+  snapshot.set_name(name);
+  writer->Protobuf(snapshot);
   return Status::OK();
 }
 
-Status Histogram::CaptureValueCounts(HistogramSnapshotPB* snapshot_pb) {
+Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
+                                         MetricWriteGranularity granularity) const {
   HdrHistogram snapshot(*histogram_);
-  RecordedValuesIterator iter(&snapshot);
+  snapshot_pb->set_type(MetricType::Name(type()));
   snapshot_pb->set_unit(MetricUnit::Name(unit_));
   snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());
   snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
-  while (iter.HasNext()) {
-    HistogramIterationValue value;
-    RETURN_NOT_OK(iter.Next(&value));
-    snapshot_pb->add_values(value.value_iterated_to);
-    snapshot_pb->add_counts(value.count_at_value_iterated_to);
+  snapshot_pb->set_total_count(snapshot.TotalCount());
+  snapshot_pb->set_min(snapshot.MinValue());
+  snapshot_pb->set_mean(snapshot.MeanValue());
+  snapshot_pb->set_percentile_75(snapshot.ValueAtPercentile(75));
+  snapshot_pb->set_percentile_95(snapshot.ValueAtPercentile(95));
+  snapshot_pb->set_percentile_99(snapshot.ValueAtPercentile(99));
+  snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
+  snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
+  snapshot_pb->set_max(snapshot.MaxValue());
+  snapshot_pb->set_description(description_);
+
+  if (granularity == DETAILED) {
+    // If the caller asked for the details of this histogram it probably
+    // already got the description, so save some space by clearing it.
+    snapshot_pb->clear_description();
+    RecordedValuesIterator iter(&snapshot);
+    while (iter.HasNext()) {
+      HistogramIterationValue value;
+      RETURN_NOT_OK(iter.Next(&value));
+      snapshot_pb->add_values(value.value_iterated_to);
+      snapshot_pb->add_counts(value.count_at_value_iterated_to);
+    }
   }
   return Status::OK();
 }

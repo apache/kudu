@@ -1477,7 +1477,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  ASSERT_STATUS_OK(histogram->WriteAsJson("ts-insert-latency", &writer));
+  ASSERT_STATUS_OK(histogram->WriteAsJson("ts-insert-latency", &writer, NORMAL));
 
   LOG(INFO) << out.str();
 }

@@ -3,12 +3,23 @@ package kudu;
 
 // Captures the state of an Histogram.
 message HistogramSnapshotPB {
-  required string name = 1;
-  required string unit = 2;
-  required uint64 max_trackable_value = 3;
-  required int32 num_significant_digits = 4;
-  repeated uint64 values = 5 [packed = true];
-  repeated uint64 counts = 6 [packed = true];
+  required string type = 1;
+  required string name = 2;
+  optional string description = 3;
+  required string unit = 4;
+  required uint64 max_trackable_value = 5;
+  required int32 num_significant_digits = 6;
+  required uint64 total_count = 7;
+  required uint64 min = 8;
+  required double mean = 9;
+  required uint64 percentile_75 = 10;
+  required uint64 percentile_95 = 11;
+  required uint64 percentile_99 = 12;
+  required uint64 percentile_99_9 = 13;
+  required uint64 percentile_99_99 = 14;
+  required uint64 max = 15;
+  repeated uint64 values = 16 [packed = true];
+  repeated uint64 counts = 17 [packed = true];
 }
 
 message HistogramSnapshotsListPB {

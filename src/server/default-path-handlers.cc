@@ -137,46 +137,21 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     const Webserver::ArgumentMap& args, std::stringstream* output) {
   JsonWriter writer(output);
-  // check if the requestor is asking for particular histograms
-  // by passing a comma separated list of histogram names.
-  HistogramSnapshotsListPB histograms_pb;
-  const string* histogram_names = FindOrNull(args, "histograms");
-  if (histogram_names != NULL) {
-    vector<string> histogram_names_vec;
-    SplitStringUsing(*histogram_names, ",", &histogram_names_vec);
-    BOOST_FOREACH(const string& histogram_name, histogram_names_vec) {
-      Histogram* histogram = metrics->FindHistogram(histogram_name);
-      if (histogram == NULL) {
-        VLOG(1) << "Client requested a histogram that does not exist: " << histogram_name;
-        continue;
-      }
-      HistogramSnapshotPB* snapshot = histograms_pb.add_histograms();
-      snapshot->set_name(histogram_name);
-      Status status = histogram->CaptureValueCounts(snapshot);
-      if (!status.ok()) {
-        WARN_NOT_OK(status, "Cannot capture histogram snapshot");
-        return;
-      }
-    }
+  const string* requested_metrics_param = FindOrNull(args, "metrics");
+  const string* requested_detail_metrics_param = FindOrNull(args, "detailed_metrics");
+  vector<string> requested_metrics;
+  vector<string> requested_detail_metrics;
+
+  if (requested_metrics_param != NULL) {
+    SplitStringUsing(*requested_metrics_param, ",", &requested_metrics);
   }
-  writer.StartObject();
-  WARN_NOT_OK(metrics->WriteAsJson(&writer), "Couldn't write JSON metrics over HTTP");
-  if (histograms_pb.histograms_size() > 0) {
-    writer.String("histograms");
-    writer.StartArray();
-    // TODO maybe clean this up. We want 'histograms' to be a a top level
-    // key in the same map as 'metrics', but if we json-serialize the
-    // whole 'histograms_pb' it will be written an an object i.e.:
-    // {metrics:[metrics...],{histograms:[histograms...]}} instead of the
-    // desired {metrics:[metrics...],histograms:[histograms...]}. The list pb
-    // might still be useful if we want to allow to get the histograms through
-    // RPC but if not we can (and should) let it go.
-    BOOST_FOREACH(const HistogramSnapshotPB& snapshot, histograms_pb.histograms()) {
-      writer.Protobuf(snapshot);
-    }
-    writer.EndArray();
+
+  if (requested_detail_metrics_param != NULL) {
+    SplitStringUsing(*requested_detail_metrics_param, ",", &requested_detail_metrics);
   }
-  writer.EndObject();
+
+  WARN_NOT_OK(metrics->WriteAsJson(&writer, requested_metrics, requested_detail_metrics),
+              "Couldn't write JSON metrics over HTTP");
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {

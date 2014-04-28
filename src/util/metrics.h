@@ -82,6 +82,7 @@
 #include <boost/function.hpp>
 #include <string>
 #include <tr1/unordered_map>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -178,12 +179,19 @@ class MetricType {
   static const char* const kHistogramType;
 };
 
+enum MetricWriteGranularity {
+  NORMAL,
+  DETAILED
+};
+
 // Base class to allow for putting all metrics into a single container.
 class Metric {
  public:
   virtual ~Metric() {}
   // All metrics must be able to render themselves as JSON.
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* writer) const = 0;
+  virtual Status WriteAsJson(const std::string& name,
+                             JsonWriter* writer,
+                             MetricWriteGranularity granularity) const = 0;
   virtual MetricType::Type type() const = 0;
  protected:
   Metric() {}
@@ -198,7 +206,19 @@ class MetricRegistry {
 
   MetricRegistry();
   ~MetricRegistry();
-  Status WriteAsJson(JsonWriter* writer) const;
+
+  // Writes metrics in this registry to 'writer'. If 'requested_metrics' is
+  // non-null only the metrics whose names match one of the substrings in
+  // 'requested_metrics' will be included in the generated json.
+  // Similarly the metrics whose names match one of the substrings in
+  // 'requested_detail_metrics' will include additional detail in the generated
+  // json. Currently 'requested_detail_metrics' only works for histograms
+  // and includes the full counts and values of the histograms in the response.
+  // NOTE: Including all the counts and values can easily make the generated
+  // json very large. Use with caution.
+  Status WriteAsJson(JsonWriter* writer,
+                     const vector<string>& requested_metrics,
+                     const vector<string>& requested_detail_metrics) const;
 
   Counter* FindOrCreateCounter(const std::string& name,
                                const CounterPrototype& proto);
@@ -321,7 +341,9 @@ class Gauge : public Metric {
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kGauge; }
   virtual const MetricUnit::Type& unit() const { return unit_; }
   virtual const std::string& description() const { return description_; }
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
+  virtual Status WriteAsJson(const std::string& name,
+                             JsonWriter* w,
+                             MetricWriteGranularity granularity) const OVERRIDE;
  protected:
   virtual void WriteValue(JsonWriter* writer) const = 0;
   const MetricUnit::Type unit_;
@@ -420,7 +442,9 @@ class Counter : public Metric {
   void DecrementBy(int64_t amount);
   const std::string& description() const { return description_; }
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
+  virtual Status WriteAsJson(const std::string& name,
+                             JsonWriter* w,
+                             MetricWriteGranularity granularity) const OVERRIDE;
 
  private:
   friend class MetricRegistry;
@@ -468,10 +492,13 @@ class Histogram : public Metric {
 
   const std::string& description() const { return description_; }
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
-  virtual Status WriteAsJson(const std::string& name, JsonWriter* w) const OVERRIDE;
+  virtual Status WriteAsJson(const std::string& name,
+                             JsonWriter* w,
+                             MetricWriteGranularity granularity) const OVERRIDE;
 
-  // Captures the value counts in this histogram.
-  Status CaptureValueCounts(HistogramSnapshotPB* snapshot);
+  // Returns a snapshot of this histogram including the bucketed values and counts.
+  Status GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot,
+                                MetricWriteGranularity granularity) const;
 
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
   uint64_t TotalCountForTests() const;
