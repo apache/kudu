@@ -372,11 +372,13 @@ class InMemoryEnv : public EnvWrapper {
 
     lock_guard<mutex> lock(mutex_);
 
-    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i) {
+    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ) {
       const std::string& filename = i->first;
 
       if (filename.size() >= dir.size() && Slice(filename).starts_with(Slice(dir))) {
-        file_map_.erase(i);
+        file_map_.erase(i++);
+      } else {
+        ++i;
       }
     }
 
