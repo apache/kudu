@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <tr1/memory>
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
@@ -15,11 +16,16 @@
 #include "gutil/strings/human_readable.h"
 #include "util/status.h"
 #include "util/env.h"
+#include "util/memory/arena.h"
 #include "util/logging.h"
 #include "server/fsmanager.h"
+#include "common/rowblock.h"
+#include "common/row_changelist.h"
 #include "consensus/log_util.h"
 #include "consensus/log_reader.h"
 #include "cfile/cfile_reader.h"
+#include "tablet/cfile_set.h"
+#include "tablet/deltafile.h"
 #include "tablet/tablet.h"
 
 namespace kudu {
@@ -34,7 +40,13 @@ using cfile::DumpIterator;
 using cfile::DumpIteratorOptions;
 using cfile::ReaderOptions;
 using strings::Substitute;
+using tablet::DeltaFileReader;
+using tablet::DeltaIterator;
+using tablet::DeltaKeyAndUpdate;
+using tablet::DeltaType;
+using tablet::MvccSnapshot;
 using tablet::Tablet;
+using tablet::CFileSet;
 using metadata::TabletMasterBlockPB;
 using metadata::TabletMetadata;
 using metadata::RowSetMetadata;
@@ -345,7 +357,7 @@ Status FsTool::DumpTablet(const std::string& tablet_id,
   size_t idx = 0;
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
     std::cout << "Dumping rowset " << idx++ << std::endl;
-    RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), *rs_meta, opts));
+    RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), rs_meta, opts));
   }
 
   return Status::OK();
@@ -368,36 +380,46 @@ Status FsTool::DumpRowSet(const string& tablet_id,
                    rowset_idx, tablet_id, meta->rowsets().size()));
   }
 
-  return DumpRowSetInternal(meta->schema(), *meta->rowsets()[rowset_idx], opts);
+  return DumpRowSetInternal(meta->schema(), meta->rowsets()[rowset_idx], opts);
 }
 
 Status FsTool::DumpRowSetInternal(const Schema& schema,
-                                  const RowSetMetadata& rs_meta,
+                                  const shared_ptr<RowSetMetadata>& rs_meta,
                                   const DumpOptions& opts) {
 
-  std::cout << "RowSet metadata: " << rs_meta.ToString() << std::endl;
+  std::cout << "RowSet metadata: " << rs_meta->ToString() << std::endl;
 
   for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
-    if (rs_meta.HasColumnDataBlockForTests(col_idx)) {
+    if (rs_meta->HasColumnDataBlockForTests(col_idx)) {
       std::cout << "Dumping column block for column " << schema.column(col_idx).ToString() << ": ";
       std::cout << std::endl;
-      RETURN_NOT_OK(DumpCFileBlockInternal(rs_meta.column_block(col_idx), opts));
+      RETURN_NOT_OK(DumpCFileBlockInternal(rs_meta->column_block(col_idx), opts));
     } else {
       std::cout << "No column data blocks for column "
                 << schema.column(col_idx).ToString() << ". " << std::endl;
     }
   }
 
-  for (size_t idx = 0; idx < rs_meta.undo_delta_blocks_count(); ++idx) {
-    DeltaBlock block = rs_meta.undo_delta_block(idx);
+  for (size_t idx = 0; idx < rs_meta->undo_delta_blocks_count(); ++idx) {
+    DeltaBlock block = rs_meta->undo_delta_block(idx);
     std::cout << "Dumping undo delta block delta id = " << block.first << ": " << std::endl;
-    RETURN_NOT_OK(DumpCFileBlockInternal(block.second, opts));
+    RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
+                                              rs_meta,
+                                              block.second,
+                                              block.first,
+                                              tablet::UNDO,
+                                              opts));
   }
 
-  for (size_t idx = 0; idx < rs_meta.redo_delta_blocks_count(); ++idx) {
-    DeltaBlock block = rs_meta.redo_delta_block(idx);
+  for (size_t idx = 0; idx < rs_meta->redo_delta_blocks_count(); ++idx) {
+    DeltaBlock block = rs_meta->redo_delta_block(idx);
     std::cout << "Redo delta block delta id = " << block.first << ": " << std::endl;
-    RETURN_NOT_OK(DumpCFileBlockInternal(block.second, opts));
+     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
+                                               rs_meta,
+                                               block.second,
+                                               block.first,
+                                               tablet::REDO,
+                                               opts));
   }
 
   return Status::OK();
@@ -414,9 +436,8 @@ Status FsTool::DumpCFileBlock(const std::string& block_id_str, const DumpOptions
 
 Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions& opts) {
   shared_ptr<RandomAccessFile> block_reader;
-  RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block_reader));
   uint64_t file_size;
-  RETURN_NOT_OK(block_reader->Size(&file_size));
+  RETURN_NOT_OK(OpenBlockAsFile(block_id, &file_size, &block_reader));
   gscoped_ptr<CFileReader> reader;
   RETURN_NOT_OK(CFileReader::Open(block_reader, file_size, ReaderOptions(), &reader));
 
@@ -430,6 +451,113 @@ Status FsTool::DumpCFileBlockInternal(const BlockId& block_id, const DumpOptions
   iter_opts.nrows = opts.nrows;
   iter_opts.print_rows = detail_level_ > HEADERS_ONLY;
   return DumpIterator(*reader, it.get(), &std::cout, iter_opts);
+}
+
+Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
+                                           const shared_ptr<RowSetMetadata>& rs_meta,
+                                           const BlockId& block_id,
+                                           int64_t delta_id,
+                                           DeltaType delta_type,
+                                           const DumpOptions& opts) {
+  // Open the delta reader
+  shared_ptr<RandomAccessFile> block_reader;
+  uint64_t file_size;
+  RETURN_NOT_OK(OpenBlockAsFile(block_id, &file_size, &block_reader));
+  string path = fs_manager_->GetBlockPath(block_id);
+  shared_ptr<DeltaFileReader> delta_reader;
+  RETURN_NOT_OK(DeltaFileReader::Open(path,
+                                      block_reader,
+                                      file_size,
+                                      delta_id,
+                                      &delta_reader,
+                                      delta_type));
+  // Create the delta iterator.
+  // TODO: see if it's worth re-factoring NewDeltaIterator to return a
+  // gscoped_ptr that can then be released if we need a raw or shared
+  // pointer.
+  DeltaIterator* raw_iter;
+
+  MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  Status s = delta_reader->NewDeltaIterator(&schema, snap_all, &raw_iter);
+
+  if (s.IsNotFound()) {
+    std::cout << "Empty delta block." << std::endl;
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
+
+  // NewDeltaIterator returns Status::OK() iff a new DeltaIterator is created. Thus,
+  // it's safe to have a gscoped_ptr take possesion of 'raw_iter' here.
+  gscoped_ptr<DeltaIterator> delta_iter(raw_iter);
+  RETURN_NOT_OK(delta_iter->Init());
+  RETURN_NOT_OK(delta_iter->SeekToOrdinal(0));
+
+  // TODO: it's awkward that whenever we want to iterate over deltas we also
+  // need to open the CFileSet for the rowset. Ideally, we should use information stored
+  // in the footer/store additional information in the footer as to make it feasible
+  // iterate over all deltas using a DeltaFileIterator alone.
+  shared_ptr<CFileSet> cfileset(new CFileSet(rs_meta));
+  RETURN_NOT_OK(cfileset->Open());
+  gscoped_ptr<CFileSet::Iterator> cfileset_iter(cfileset->NewIterator(&schema));
+
+  RETURN_NOT_OK(cfileset_iter->Init(NULL));
+
+  const size_t kRowsPerBlock  = 100;
+  size_t nrows = 0;
+  size_t ndeltas = 0;
+  Arena arena(32 * 1024, 128 * 1024);
+  RowBlock block(schema, kRowsPerBlock, &arena);
+
+  // See tablet/delta_compaction.cc to understand why this loop is structured the way
+  // it is.
+  while (cfileset_iter->HasNext()) {
+    size_t n;
+    if (opts.nrows > 0) {
+      // Note: number of deltas may not equal the number of rows, but
+      // since this is a CLI tool (and the nrows option exists
+      // primarily to limit copious output) it's okay not to be
+      // exact here.
+      size_t remaining = opts.nrows - nrows;
+      n = std::min(remaining, kRowsPerBlock);
+    } else {
+      n = kRowsPerBlock;
+    }
+
+    arena.Reset();
+    cfileset_iter->PrepareBatch(&n);
+
+    block.Resize(n);
+
+    RETURN_NOT_OK(delta_iter->PrepareBatch(n));
+    vector<DeltaKeyAndUpdate> out;
+    RETURN_NOT_OK(delta_iter->FilterColumnsAndAppend(vector<size_t>(),
+                                                     &out,
+                                                     &arena));
+    BOOST_FOREACH(const DeltaKeyAndUpdate& upd, out) {
+      if (detail_level_ > HEADERS_ONLY) {
+        std::cout << upd.key.ToString() << " "
+                  << RowChangeList(upd.cell).ToString(schema) << std::endl;
+        ++ndeltas;
+      }
+    }
+    RETURN_NOT_OK(cfileset_iter->FinishBatch());
+
+    nrows += n;
+  }
+
+  LOG(INFO) << "Processed " << ndeltas << " deltas, for total of " << nrows << " possible rows.";
+  return Status::OK();
+}
+
+Status FsTool::OpenBlockAsFile(const BlockId& block_id,
+                               uint64_t* file_size,
+                               shared_ptr<RandomAccessFile>* block_reader) {
+  RETURN_NOT_OK_PREPEND(fs_manager_->OpenBlock(block_id, block_reader),
+                        Substitute("Failed to open block $0", block_id.ToString()));
+  RETURN_NOT_OK_PREPEND((*block_reader)->Size(file_size),
+                        Substitute("Failed to determine the size of block $0",
+                                   block_id.ToString()));
+  return Status::OK();
 }
 
 } // namespace tools

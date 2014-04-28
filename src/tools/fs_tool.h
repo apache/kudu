@@ -12,12 +12,14 @@
 
 #include "gutil/gscoped_ptr.h"
 #include "util/status.h"
+#include "tablet/delta_key.h"
 
 namespace kudu {
 
 class FsManager;
 class Schema;
 class BlockId;
+class RandomAccessFile;
 
 namespace metadata {
 class TabletMetadata;
@@ -101,7 +103,7 @@ class FsTool {
   Status GetTabletsInMasterBlockDir(std::vector<std::string>* tablets);
 
   Status DumpRowSetInternal(const Schema& schema,
-                            const metadata::RowSetMetadata& rs_meta,
+                            const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
                             const DumpOptions& opts);
 
   Status GetMasterBlockPath(const std::string& tablet_id,
@@ -110,8 +112,19 @@ class FsTool {
   Status DumpCFileBlockInternal(const BlockId& block_id,
                                 const DumpOptions& opts);
 
+  Status DumpDeltaCFileBlockInternal(const Schema& schema,
+                                     const std::tr1::shared_ptr<metadata::RowSetMetadata>& rs_meta,
+                                     const BlockId& block_id,
+                                     int64_t delta_id, // TODO (WIP): pass DeltaBlock instead
+                                     tablet::DeltaType delta_type,
+                                     const DumpOptions& opts);
+
   Status PrintTabletMetaInternal(const std::string& master_block_path,
                                  const std::string& tablet_id);
+
+  Status OpenBlockAsFile(const BlockId& block_id,
+                         uint64_t* file_size,
+                         std::tr1::shared_ptr<RandomAccessFile>* block_reader);
 
   bool initialized_;
   const std::string base_dir_;

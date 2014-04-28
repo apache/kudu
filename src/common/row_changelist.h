@@ -306,7 +306,7 @@ class RowChangeListDecoder {
                               const RowChangeList& src,
                               faststring *buf);
 
-  // If 'src' is an update, then only add changes for columns
+  // If 'src' is an update, then only add changes for columns NOT
   // specified by 'column_indexes' to 'out'. Delete and Re-insert
   // changes are added to 'out' as-is. If an update only contained
   // changes for 'column_indexes', then out->is_initialized() will
