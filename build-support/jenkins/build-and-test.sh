@@ -17,7 +17,7 @@
 
 # If a commit messages contains a line that says 'DONT_BUILD', exit
 # immediately.
-DONT_BUILD=$(git show|grep '^DONT_BUILD$')
+DONT_BUILD=$(git show|egrep '^\s{4}DONT_BUILD$')
 if [ "x$DONT_BUILD" != "x" ]; then
     echo "*** Build not requested. Exiting."
     exit 1
