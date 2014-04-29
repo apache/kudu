@@ -30,6 +30,8 @@
 namespace kudu {
 namespace rpc {
 
+class DumpRunningRpcsRequestPB;
+class RpcConnectionPB;
 class ReactorThread;
 
 //
@@ -147,6 +149,9 @@ class Connection : public base::RefCountedThreadSafe<Connection> {
 
   // Indicate that negotiation is complete and that the Reactor is now in control of the socket.
   void MarkNegotiationComplete();
+
+  Status DumpPB(const DumpRunningRpcsRequestPB& req,
+                RpcConnectionPB* resp);
 
   ReactorThread *reactor_thread() const { return reactor_thread_; }
 

@@ -28,6 +28,8 @@ class TaskExecutor;
 namespace rpc {
 
 class AcceptorPool;
+class DumpRunningRpcsRequestPB;
+class DumpRunningRpcsResponsePB;
 class InboundCall;
 class Messenger;
 class OutboundCall;
@@ -137,6 +139,10 @@ class Messenger {
 
   // Take ownership of the socket via Socket::Release
   void RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote);
+
+  // Dump the current RPCs into the given protobuf.
+  Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
+                         DumpRunningRpcsResponsePB* resp);
 
   TaskExecutor* negotiation_executor() const { return negotiation_executor_.get(); }
 

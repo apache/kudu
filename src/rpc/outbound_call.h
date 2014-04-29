@@ -15,6 +15,7 @@
 #include "rpc/rpc_header.pb.h"
 #include "rpc/response_callback.h"
 #include "util/locks.h"
+#include "util/monotime.h"
 #include "util/net/sockaddr.h"
 #include "util/slice.h"
 #include "util/status.h"
@@ -28,6 +29,8 @@ class Message;
 namespace kudu {
 namespace rpc {
 
+class RpcCallInProgressPB;
+class DumpRunningRpcsRequestPB;
 class CallResponse;
 class Connection;
 class InboundTransfer;
@@ -164,8 +167,8 @@ class OutboundCall {
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.
   void set_call_id(int32_t call_id) {
-    DCHECK_EQ(call_id_, kInvalidCallId) << "Already has a call ID";
-    call_id_ = call_id;
+    DCHECK_EQ(header_.call_id(), kInvalidCallId) << "Already has a call ID";
+    header_.set_call_id(call_id);
   }
 
   // Serialize the call for the wire. Requires that SetRequestParam()
@@ -198,25 +201,26 @@ class OutboundCall {
 
   std::string ToString() const;
 
+  void DumpPB(const DumpRunningRpcsRequestPB& req, RpcCallInProgressPB* resp);
 
   ////////////////////////////////////////////////////////////
   // Getters
   ////////////////////////////////////////////////////////////
 
   const ConnectionId& conn_id() const { return conn_id_; }
-  const std::string& method() const { return method_; }
+  const std::string& method() const { return header_.method_name(); }
   const ResponseCallback &callback() const { return callback_; }
   RpcController* controller() { return controller_; }
   const RpcController* controller() const { return controller_; }
 
   // Return true if a call ID has been assigned to this call.
   bool call_id_assigned() const {
-    return call_id_ != kInvalidCallId;
+    return header_.call_id() != kInvalidCallId;
   }
 
   int32_t call_id() const {
     DCHECK(call_id_assigned());
-    return call_id_;
+    return header_.call_id();
   }
 
  private:
@@ -246,6 +250,9 @@ class OutboundCall {
   // return current status
   Status status() const;
 
+  // Time when the call was first initiatied.
+  MonoTime start_time_;
+
   // Return the error protobuf, if a remote error occurred.
   // This will only be non-NULL if status().IsRemoteError().
   const ErrorStatusPB* error_pb() const;
@@ -261,17 +268,17 @@ class OutboundCall {
   // Call the user-provided callback.
   void CallCallback();
 
+  // The RPC header.
+  // Parts of this (eg the call ID) are only assigned once this call has been
+  // passed to the reactor thread and assigned a connection.
+  RequestHeader header_;
+
   ConnectionId conn_id_;
-  std::string method_;
   ResponseCallback callback_;
   RpcController* controller_;
 
   // Pointer for the protobuf where the response should be written.
   google::protobuf::Message* response_;
-
-  // Call ID -- only assigned once this call has been passed to the reactor
-  // thread and assigned a connection.
-  int32_t call_id_;
 
   // Buffers for storing segments of the wire-format request.
   faststring header_buf_;

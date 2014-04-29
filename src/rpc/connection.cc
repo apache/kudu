@@ -15,6 +15,7 @@
 
 #include "gutil/map-util.h"
 #include "rpc/auth_store.h"
+#include "rpc/rpc_introspection.pb.h"
 #include "rpc/constants.h"
 #include "rpc/messenger.h"
 #include "rpc/reactor.h"
@@ -561,6 +562,27 @@ void Connection::CompleteNegotiation(const Status& negotiation_status) {
 void Connection::MarkNegotiationComplete() {
   DCHECK(reactor_thread_->IsCurrentThread());
   negotiation_complete_ = true;
+}
+
+Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
+                          RpcConnectionPB* resp) {
+  resp->set_remote_ip(remote_.ToString());
+  resp->set_remote_user_credentials(user_credentials_.ToString());
+
+  if (direction_ == CLIENT) {
+    BOOST_FOREACH(const car_map_t::value_type& entry, awaiting_response_) {
+      CallAwaitingResponse *c = entry.second;
+      c->call->DumpPB(req, resp->add_calls_in_flight());
+    }
+  } else if (direction_ == SERVER) {
+    BOOST_FOREACH(const inbound_call_map_t::value_type& entry, calls_being_handled_) {
+      InboundCall* c = entry.second;
+      c->DumpPB(req, resp->add_calls_in_flight());
+    }
+  } else {
+    LOG(FATAL);
+  }
+  return Status::OK();
 }
 
 } // namespace rpc

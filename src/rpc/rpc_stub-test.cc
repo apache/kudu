@@ -6,6 +6,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 
 #include "gutil/stl_util.h"
+#include "rpc/rpc_introspection.pb.h"
 #include "rpc/rtest.proxy.h"
 #include "rpc/rtest.service.h"
 #include "rpc/rpc-test-base.h"
@@ -281,6 +282,48 @@ TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
   // Verify that the timedout call got short circuited before being processed.
   const Counter* timed_out_in_queue = service_pool_->RpcsTimedOutInQueueMetricForTests();
   ASSERT_EQ(1, timed_out_in_queue->value());
+}
+
+TEST_F(RpcStubTest, TestDumpCallsInFlight) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+  AsyncSleep sleep;
+  sleep.req.set_sleep_micros(100 * 1000); // 100ms
+  p.SleepAsync(sleep.req, &sleep.resp, &sleep.rpc,
+               boost::bind(&CountDownLatch::CountDown, &sleep.latch));
+
+  // Check the running RPC status on the client messenger.
+  DumpRunningRpcsRequestPB dump_req;
+  DumpRunningRpcsResponsePB dump_resp;
+  dump_req.set_include_traces(true);
+
+  ASSERT_STATUS_OK(client_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
+  LOG(INFO) << "client messenger: " << dump_resp.DebugString();
+  ASSERT_EQ(1, dump_resp.outbound_connections_size());
+  ASSERT_EQ(1, dump_resp.outbound_connections(0).calls_in_flight_size());
+  ASSERT_EQ("Sleep", dump_resp.outbound_connections(0).calls_in_flight(0).header().method_name());
+  ASSERT_GT(dump_resp.outbound_connections(0).calls_in_flight(0).micros_elapsed(), 0);
+
+  // And the server messenger.
+  // We have to loop this until we find a result since the actual call is sent
+  // asynchronously off of the main thread (ie the server may not be handling it yet)
+  for (int i = 0; i < 100; i++) {
+    dump_resp.Clear();
+    ASSERT_STATUS_OK(server_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
+    if (dump_resp.inbound_connections_size() > 0 &&
+        dump_resp.inbound_connections(0).calls_in_flight_size() > 0) {
+      break;
+    }
+    usleep(1000);
+  }
+
+  LOG(INFO) << "server messenger: " << dump_resp.DebugString();
+  ASSERT_EQ(1, dump_resp.inbound_connections_size());
+  ASSERT_EQ(1, dump_resp.inbound_connections(0).calls_in_flight_size());
+  ASSERT_EQ("Sleep", dump_resp.inbound_connections(0).calls_in_flight(0).header().method_name());
+  ASSERT_GT(dump_resp.inbound_connections(0).calls_in_flight(0).micros_elapsed(), 0);
+  ASSERT_STR_CONTAINS(dump_resp.inbound_connections(0).calls_in_flight(0).trace_buffer(),
+                      "Inserting onto call queue");
+  sleep.latch.Wait();
 }
 
 } // namespace rpc

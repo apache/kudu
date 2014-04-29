@@ -31,6 +31,7 @@ set(SERVER_PROCESS_SRCS
   global-flags.cc
   default-path-handlers.cc
   pprof-path-handlers.cc
+  rpcz-path-handler.cc
   rpc_server.cc
   server_base.cc
   server_base_options.cc

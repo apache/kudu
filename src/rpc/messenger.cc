@@ -230,5 +230,14 @@ Status Messenger::Init() {
   return Status::OK();
 }
 
+Status Messenger::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
+                                  DumpRunningRpcsResponsePB* resp) {
+  boost::shared_lock<rw_spinlock> guard(lock_.get_lock());
+  BOOST_FOREACH(Reactor* reactor, reactors_) {
+    RETURN_NOT_OK(reactor->DumpRunningRpcs(req, resp));
+  }
+  return Status::OK();
+}
+
 } // namespace rpc
 } // namespace kudu

@@ -7,16 +7,18 @@
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
-#include "gutil/stringprintf.h"
+#include "gutil/strings/substitute.h"
 #include "rpc/outbound_call.h"
 #include "rpc/constants.h"
 #include "rpc/rpc_controller.h"
+#include "rpc/rpc_introspection.pb.h"
 #include "rpc/serialization.h"
 #include "rpc/transfer.h"
 
 namespace kudu {
 namespace rpc {
 
+using strings::Substitute;
 using google::protobuf::Message;
 using google::protobuf::io::CodedOutputStream;
 
@@ -31,13 +33,14 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
                            const ResponseCallback& callback)
   : state_(READY),
     conn_id_(conn_id),
-    method_(method),
     callback_(callback),
     controller_(DCHECK_NOTNULL(controller)),
-    response_(DCHECK_NOTNULL(response_storage)),
-    call_id_(kInvalidCallId) {
+    response_(DCHECK_NOTNULL(response_storage)) {
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
            << " and RPC timeout: " << controller->timeout().ToString();
+  header_.set_method_name(method);
+  header_.set_call_id(kInvalidCallId);
+  start_time_ = MonoTime::Now(MonoTime::FINE);
 }
 
 OutboundCall::~OutboundCall() {
@@ -51,12 +54,9 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
     return Status::InvalidArgument("Must call SetRequestParam() before SerializeTo()");
   }
 
-  RequestHeader header;
-  header.set_call_id(call_id());
-  header.set_method_name(method());
-  header.set_timeout_millis(controller_->timeout().ToMilliseconds());
+  header_.set_timeout_millis(controller_->timeout().ToMilliseconds());
 
-  CHECK_OK(serialization::SerializeHeader(header, param_len, &header_buf_));
+  CHECK_OK(serialization::SerializeHeader(header_, param_len, &header_buf_));
 
   // Return the concatenated packet.
   slices->push_back(Slice(header_buf_));
@@ -235,8 +235,16 @@ bool OutboundCall::IsFinished() const {
 }
 
 string OutboundCall::ToString() const {
-  return StringPrintf("RPC call %s -> %s",
-                      method_.c_str(), conn_id_.ToString().c_str());
+  return Substitute("RPC call $0 -> $1",
+                      method(), conn_id_.ToString());
+}
+
+void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
+                          RpcCallInProgressPB* resp) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  resp->mutable_header()->CopyFrom(header_);
+  resp->set_micros_elapsed(
+    MonoTime::Now(MonoTime::FINE) .GetDeltaSince(start_time_).ToMicroseconds());
 }
 
 ///

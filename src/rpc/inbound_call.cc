@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "rpc/connection.h"
+#include "rpc/rpc_introspection.pb.h"
 #include "rpc/serialization.h"
 #include "util/metrics.h"
 #include "util/trace.h"
@@ -108,6 +109,16 @@ string InboundCall::ToString() const {
   return StringPrintf("Call %s from %s (#%d)", method_name().c_str(),
                       conn_->remote().ToString().c_str(),
                       header_.call_id());
+}
+
+void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
+                         RpcCallInProgressPB* resp) {
+  resp->mutable_header()->CopyFrom(header_);
+  if (req.include_traces() && trace_) {
+    resp->set_trace_buffer(trace_->DumpToString());
+  }
+  resp->set_micros_elapsed(MonoTime::Now(MonoTime::FINE).GetDeltaSince(timing_.time_received)
+                           .ToMicroseconds());
 }
 
 void InboundCall::LogTrace() const {

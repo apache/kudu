@@ -8,6 +8,13 @@ PROTOBUF_GENERATE_CPP(RPC_HEADER_PROTO_SRCS RPC_HEADER_PROTO_HDRS
 add_library(rpc_header_proto ${RPC_HEADER_PROTO_SRCS} ${RPC_HEADER_PROTO_HDRS})
 target_link_libraries(rpc_header_proto protobuf)
 
+PROTOBUF_GENERATE_CPP(RPC_INTROSPECTION_PROTO_SRCS RPC_INTROSPECTION_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/..
+  PROTO_FILES rpc_introspection.proto)
+add_library(rpc_introspection_proto ${RPC_INTROSPECTION_PROTO_SRCS} ${RPC_INTROSPECTION_PROTO_HDRS})
+target_link_libraries(rpc_introspection_proto rpc_header_proto protobuf)
+
 ### RPC library
 add_library(krpc
     acceptor_pool.cc
@@ -35,6 +42,7 @@ add_library(krpc
 
 target_link_libraries(krpc
   rpc_header_proto
+  rpc_introspection_proto
   kudu_util
   gutil
   libev

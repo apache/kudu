@@ -33,6 +33,8 @@ class Trace;
 namespace rpc {
 
 class Connection;
+class DumpRunningRpcsRequestPB;
+class RpcCallInProgressPB;
 class UserCredentials;
 
 struct InboundCallTiming {
@@ -93,6 +95,8 @@ class InboundCall {
   void SerializeResponseTo(std::vector<Slice>* slices) const;
 
   std::string ToString() const;
+
+  void DumpPB(const DumpRunningRpcsRequestPB& req, RpcCallInProgressPB* resp);
 
   const UserCredentials& user_credentials() const;
 

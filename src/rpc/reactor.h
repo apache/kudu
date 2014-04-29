@@ -25,6 +25,8 @@ namespace rpc {
 
 typedef std::list<scoped_refptr<Connection> > conn_list_t;
 
+class DumpRunningRpcsRequestPB;
+class DumpRunningRpcsResponsePB;
 class Messenger;
 class MessengerBuilder;
 class Reactor;
@@ -78,9 +80,10 @@ class ReactorThread {
   // This may be called from another thread.
   Status Init();
 
-  // Collect metrics on the reactor.
+  // Add any connections on this reactor thread into the given status dump.
   // May be called from another thread.
-  Status GetMetrics(ReactorMetrics *metrics);
+  Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
+                         DumpRunningRpcsResponsePB* resp);
 
   // Block until the Reactor thread is shut down
   //
@@ -123,9 +126,12 @@ class ReactorThread {
   void CompleteConnectionNegotiation(const scoped_refptr<Connection>& conn,
       const Status& status);
 
+  // Collect metrics.
+  // Must be called from the reactor thread.
+  Status GetMetrics(ReactorMetrics *metrics);
+
  private:
   friend class AssignOutboundCallTask;
-  friend class GetMetricsTask;
   friend class RegisterConnectionTask;
 
   // Run the main event loop of the reactor.
@@ -169,9 +175,6 @@ class ReactorThread {
   // Actually perform shutdown of the thread, tearing down any connections,
   // etc. This is called from within the thread.
   void ShutdownInternal();
-
-  // Collect metrics -- called within the loop.
-  void GetMetricsInternal(ReactorMetrics *metrics);
 
   scoped_refptr<kudu::Thread> thread_;
 
@@ -223,6 +226,10 @@ class Reactor {
   // Collect metrics about the reactor.
   Status GetMetrics(ReactorMetrics *metrics);
 
+  // Add any connections on this reactor thread into the given status dump.
+  Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
+                         DumpRunningRpcsResponsePB* resp);
+
   // Queue a new incoming connection. Takes ownership of the underlying fd from
   // 'socket', but not the Socket object itself.
   // If the reactor is already shut down, takes care of closing the socket.
@@ -239,6 +246,8 @@ class Reactor {
   // Does _not_ take ownership of 'task' -- the task should take care of
   // deleting itself after running if it is allocated on the heap.
   void ScheduleReactorTask(ReactorTask *task);
+
+  Status RunOnReactorThread(const boost::function<Status()>& f);
 
   // If the Reactor is closing, returns false.
   // Otherwise, drains the pending_tasks_ queue into the provided list.

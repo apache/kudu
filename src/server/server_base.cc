@@ -16,6 +16,7 @@
 #include "server/rpc_server.h"
 #include "server/tcmalloc_metrics.h"
 #include "server/webserver.h"
+#include "server/rpcz-path-handler.h"
 #include "server/server_base_options.h"
 #include "server/server_base.pb.h"
 #include "util/thread.h"
@@ -162,6 +163,7 @@ Status ServerBase::Start(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
   RETURN_NOT_OK(rpc_server_->Start(rpc_impl.Pass()));
 
   AddDefaultPathHandlers(web_server_.get());
+  AddRpczPathHandlers(messenger_, web_server_.get());
   RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
   RETURN_NOT_OK(web_server_->Start());
 

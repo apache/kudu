@@ -21,6 +21,7 @@
 #include "rpc/messenger.h"
 #include "rpc/negotiation.h"
 #include "rpc/rpc_controller.h"
+#include "rpc/rpc_introspection.pb.h"
 #include "rpc/sasl_client.h"
 #include "rpc/sasl_server.h"
 #include "rpc/transfer.h"
@@ -108,10 +109,24 @@ ReactorTask::ReactorTask() {
 ReactorTask::~ReactorTask() {
 }
 
-void ReactorThread::GetMetricsInternal(ReactorMetrics *metrics) {
+Status ReactorThread::GetMetrics(ReactorMetrics *metrics) {
   DCHECK(IsCurrentThread());
   metrics->num_client_connections_ = client_conns_.size();
   metrics->num_server_connections_ = server_conns_.size();
+  return Status::OK();
+}
+
+Status ReactorThread::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
+                                      DumpRunningRpcsResponsePB* resp) {
+  DCHECK(IsCurrentThread());
+  BOOST_FOREACH(const scoped_refptr<Connection>& conn, server_conns_) {
+    RETURN_NOT_OK(conn->DumpPB(req, resp->add_inbound_connections()));
+  }
+  BOOST_FOREACH(const conn_map_t::value_type& entry, client_conns_) {
+    Connection* conn = entry.second.get();
+    RETURN_NOT_OK(conn->DumpPB(req, resp->add_outbound_connections()));
+  }
+  return Status::OK();
 }
 
 void ReactorThread::WakeThread() {
@@ -456,38 +471,50 @@ bool Reactor::closing() const {
   return closing_;
 }
 
-// Task to call GetMetricsInternal within the thread.
-class GetMetricsTask : public ReactorTask {
+// Task to call an arbitrary function within the reactor thread.
+class RunFunctionTask : public ReactorTask {
  public:
-  explicit GetMetricsTask(ReactorMetrics *metrics) :
-    metrics_(metrics),
+  explicit RunFunctionTask(const boost::function<Status()>& f) :
+    function_(f),
     latch_(1)
   {}
 
   virtual void Run(ReactorThread *reactor) {
-    reactor->GetMetricsInternal(metrics_);
+    status_ = function_();
     latch_.CountDown();
   }
   virtual void Abort(const Status &status) {
     status_ = status;
     latch_.CountDown();
   }
-  void Wait() {
+
+  // Wait until the function has completed, and return the Status
+  // returned by the function.
+  Status Wait() {
     latch_.Wait();
+    return status_;
   }
-  const Status &status() const { return status_; }
 
  private:
-  ReactorMetrics *metrics_;
+  boost::function<Status()> function_;
   Status status_;
   CountDownLatch latch_;
 };
 
 Status Reactor::GetMetrics(ReactorMetrics *metrics) {
-  GetMetricsTask task(metrics);
+  return RunOnReactorThread(boost::bind(&ReactorThread::GetMetrics, &thread_, metrics));
+}
+
+Status Reactor::RunOnReactorThread(const boost::function<Status()>& f) {
+  RunFunctionTask task(f);
   ScheduleReactorTask(&task);
-  task.Wait();
-  return task.status();
+  return task.Wait();
+}
+
+Status Reactor::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
+                                DumpRunningRpcsResponsePB* resp) {
+  return RunOnReactorThread(boost::bind(&ReactorThread::DumpRunningRpcs, &thread_,
+                                        boost::ref(req), resp));
 }
 
 class RegisterConnectionTask : public ReactorTask {
