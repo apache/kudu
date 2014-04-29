@@ -1,0 +1,25 @@
+From 025204bb14ea87d0c720bec0cb8a2793f9e42574 Mon Sep 17 00:00:00 2001
+From: Mike Percy <mpercy@cloudera.com>
+Date: Mon, 28 Apr 2014 21:31:36 -0700
+Subject: [PATCH 2/2] Support automake 1.14
+
+---
+ autogen.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/autogen.sh b/autogen.sh
+index 6bd28c0..605e192 100755
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -43,7 +43,7 @@ echo "Generating preliminary configure.ac"
+ autoscan
+ 
+ sed 's/^AC_INIT(.*$/AC_INIT(crcutil, 1.0, crcutil@googlegroups.com)\
+-AM_INIT_AUTOMAKE([foreign -Wall -Werror])\
++AM_INIT_AUTOMAKE([foreign subdir-objects])\
+ AC_PROG_RANLIB() \
+ AC_CONFIG_FILES([Makefile]) \
+ AC_OUTPUT()/' configure.scan >configure.ac
+-- 
+1.8.3.2
+
