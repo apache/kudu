@@ -100,7 +100,7 @@ void Log::AppendThread::RunThread() {
         // abort all subsequent transactions in this batch or allow
         // them to be appended? What about transactions in future
         // batches?
-        entry_batch->callback()->OnFailure(s);
+        entry_batch->callback()(s);
       }
     }
 
@@ -110,7 +110,7 @@ void Log::AppendThread::RunThread() {
       DLOG(FATAL) << "Aborting: " << s.ToString();
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
         if (entry_batch->callback() != NULL) {
-          entry_batch->callback()->OnFailure(s);
+          entry_batch->callback()(s);
         }
       }
     } else {
@@ -118,7 +118,7 @@ void Log::AppendThread::RunThread() {
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
         if (PREDICT_TRUE(!entry_batch->failed_to_append()
                          && entry_batch->callback() != NULL)) {
-          entry_batch->callback()->OnSuccess();
+          entry_batch->callback()(Status::OK());
         }
       }
     }
@@ -328,7 +328,7 @@ Status Log::DoReserve(gscoped_ptr<LogEntryBatchPB> entry_batch,
   return Status::OK();
 }
 
-Status Log::AsyncAppend(LogEntryBatch* entry_batch, const shared_ptr<FutureCallback>& callback) {
+Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
@@ -498,9 +498,9 @@ Status Log::WaitUntilAllFlushed() {
   entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(DoReserve(entry_batch.Pass(), &reserved_entry_batch));
-  shared_ptr<LatchCallback> callback(new LatchCallback());
-  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
-  return callback->Wait();
+  Synchronizer s;
+  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.callback()));
+  return s.Wait();
 }
 
 

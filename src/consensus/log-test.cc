@@ -69,9 +69,9 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
 
   LogEntryBatch* reserved_entry;
   ASSERT_STATUS_OK(log_->Reserve(ops, &reserved_entry));
-  shared_ptr<LatchCallback> cb(new LatchCallback);
-  ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, cb));
-  ASSERT_STATUS_OK(cb->Wait());
+  Synchronizer sync;
+  ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, sync.callback()));
+  ASSERT_STATUS_OK(sync.Wait());
 
   BuildLogReader();
   vector<LogEntryPB*> entries;

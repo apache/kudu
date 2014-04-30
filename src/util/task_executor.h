@@ -12,6 +12,7 @@
 
 #include "gutil/macros.h"
 #include "gutil/port.h"
+#include "util/async_util.h"
 #include "util/countdown_latch.h"
 #include "util/locks.h"
 #include "util/status.h"
@@ -37,6 +38,26 @@ class FutureCallback {
 
   virtual ~FutureCallback() {
   }
+};
+
+// Adapter which lets FutureCallbacks be used in the context of a StatusCallback.
+// This simply translates from one API to a another.
+class FutureToStatusCallback {
+ public:
+  explicit FutureToStatusCallback(const std::tr1::shared_ptr<FutureCallback>& future)
+    : future_(future) {
+  }
+
+  void operator()(const Status& s) {
+    if (PREDICT_TRUE(s.ok())) {
+      future_->OnSuccess();
+    } else {
+      future_->OnFailure(s);
+    }
+  }
+
+ private:
+  const std::tr1::shared_ptr<FutureCallback> future_;
 };
 
 // FutureCallback implementation that can be waited on.

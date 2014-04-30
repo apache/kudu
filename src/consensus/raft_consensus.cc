@@ -300,7 +300,9 @@ Status RaftConsensus::ReplicaCommitUnlocked(ConsensusContext* context,
 
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(log_->Reserve(boost::assign::list_of((commit_op)), &reserved_entry_batch));
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, context->commit_callback()));
+  // TODO: replace the FutureCallbacks in ConsensusContext with StatusCallbacks
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
+                                  FutureToStatusCallback(context->commit_callback())));
 
   state_->UpdateReplicaCommittedOpIdUnlocked(commit_op_id, committed_op_id);
   return Status::OK();
@@ -336,7 +338,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                                     ConsensusStatusPB* status) {
-  shared_ptr<LatchCallback> log_callback;
+  Synchronizer log_synchronizer;
   vector<OperationPB*> replicate_ops;
   vector<const OperationPB*> commit_ops;
 
@@ -368,12 +370,11 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     }
 
     LogEntryBatch* reserved_entry_batch;
-    if (replicate_ops.size() > 0) {
-      log_callback.reset(new LatchCallback());
+    if (!replicate_ops.empty()) {
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       log_->Reserve(replicate_ops, &reserved_entry_batch);
-      log_->AsyncAppend(reserved_entry_batch, log_callback);
+      log_->AsyncAppend(reserved_entry_batch, log_synchronizer.callback());
     }
 
     // Trigger the replica Prepares() and Apply()s.
@@ -395,17 +396,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     state_->UpdateLastReceivedOpIdUnlocked(request->ops(request->ops_size() - 1).id());
   }
 
-  // Release the lock while we wait for the log callback and re-acquire it to update
-  // the replica state.
-  // Note that this is safe because dist consensus now only supports a single outstanding
-  // request at a time and this way we can allow commits to proceed while we wait.
-  if (log_callback.get() != NULL) {
-    // Wait on the log callback if we tried to do log replicates
-    RETURN_NOT_OK(log_callback->Wait());
-  }
-
   // Update the last replicated op id
   if (!replicate_ops.empty()) {
+    // Release the lock while we wait for the log append to finish, and re-acquire it to update
+    // the replica state.
+    // Note that this is safe because dist consensus now only supports a single outstanding
+    // request at a time and this way we can allow commits to proceed while we wait.
+    RETURN_NOT_OK(log_synchronizer.Wait());
+
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
     state_->UpdateLastReplicatedOpIdUnlocked(replicate_ops[replicate_ops.size() - 1]->id());

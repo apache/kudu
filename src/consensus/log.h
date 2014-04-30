@@ -10,9 +10,11 @@
 #include "consensus/log_util.h"
 #include "gutil/ref_counted.h"
 #include "gutil/spinlock.h"
+#include "util/async_util.h"
 #include "util/locks.h"
 #include "util/task_executor.h"
 #include "util/blocking_queue.h"
+#include "util/status.h"
 
 namespace kudu {
 
@@ -83,7 +85,7 @@ class Log {
   // Asynchronously appends 'entry' to the log. Once the append
   // completes and is synced, 'callback' will be invoked.
   Status AsyncAppend(LogEntryBatch* entry,
-                     const std::tr1::shared_ptr<FutureCallback>& callback);
+                     const StatusCallback& callback);
 
   // Like the method above, but without a callback.
   Status AsyncAppend(LogEntryBatch* entry);
@@ -325,13 +327,13 @@ class LogEntryBatch {
 
   // Sets the callback that will be invoked after the entry is
   // appended and synced to disk
-  void set_callback(const std::tr1::shared_ptr<FutureCallback>& cb) {
+  void set_callback(const StatusCallback& cb) {
     callback_ = cb;
   }
 
   // Returns the callback that will be invoked after the entry is
   // appended and synced to disk.
-  const std::tr1::shared_ptr<FutureCallback>& callback() {
+  const StatusCallback& callback() {
     return callback_;
   }
 
@@ -377,7 +379,7 @@ class LogEntryBatch {
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.
-  std::tr1::shared_ptr<FutureCallback> callback_;
+  StatusCallback callback_;
 
   // Used to coordinate the synchronizer thread and the caller
   // thread: this lock starts out locked, and is unlocked by the

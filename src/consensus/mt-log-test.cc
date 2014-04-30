@@ -29,19 +29,17 @@ using std::vector;
 
 namespace {
 
-class CustomLatchCallback : public FutureCallback {
+class CustomLatchCallback {
  public:
   CustomLatchCallback(CountDownLatch* latch, vector<Status>* errors)
       : latch_(latch),
         errors_(errors) {
   }
 
-  virtual void OnSuccess() {
-    latch_->CountDown();
-  }
-
-  virtual void OnFailure(const Status& status) {
-    errors_->push_back(status);
+  void operator()(const Status& s) {
+    if (!s.ok()) {
+      errors_->push_back(s);
+    }
     latch_->CountDown();
   }
 
@@ -99,7 +97,7 @@ class MultiThreadedLogTest : public LogTestBase {
         ASSERT_STATUS_OK(log_->Reserve(batch_ops, &entry_batch));
       } // lock_guard scope
       shared_ptr<CustomLatchCallback> cb(new CustomLatchCallback(&latch, &errors));
-      ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb));
+      ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, CustomLatchCallback(&latch, &errors)));
       // Copy 'batch_ops' to 'ops', so that they can be free upon thread termination.
       std::copy(batch_ops.begin(), batch_ops.end(), std::back_inserter(ops));
     }

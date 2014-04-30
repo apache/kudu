@@ -121,7 +121,8 @@ Status LocalConsensus::Replicate(ConsensusContext* context) {
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'repl_callback'
   // is triggered.
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, context->replicate_callback()));
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
+                                  FutureToStatusCallback(context->replicate_callback())));
 
   return Status::OK();
 }
@@ -161,7 +162,8 @@ Status LocalConsensus::Commit(ConsensusContext* context) {
   // Serialize and mark the message as ready to be appended.
   // When the Log actually fsync()s this message to disk, 'commit_clbk'
   // is triggered.
-  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch, commit_clbk));
+  RETURN_NOT_OK(log_->AsyncAppend(reserved_entry_batch,
+                                  FutureToStatusCallback(commit_clbk)));
   return Status::OK();
 }
 

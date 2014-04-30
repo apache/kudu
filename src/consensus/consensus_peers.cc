@@ -83,11 +83,7 @@ class LocalPeer : public PeerImpl {
             log::Log* log,
             const OpId& initial_op)
       : PeerImpl(peer, tablet_id, leader_uuid),
-        log_(log),
-        log_append_callback_(
-            new BoundFunctionCallback(
-                boost::bind(&LocalPeer::RequestFinishedCallback, this),
-                boost::bind(&LocalPeer::LogAppendFailedCallback, this, _1))) {
+        log_(log) {
     last_replicated_.CopyFrom(initial_op);
     safe_commit_.CopyFrom(initial_op);
     last_received_.CopyFrom(initial_op);
@@ -135,7 +131,8 @@ class LocalPeer : public PeerImpl {
     }
 
     CHECK_OK(log_->Reserve(ops, &reserved_entry_batch));
-    CHECK_OK(log_->AsyncAppend(reserved_entry_batch, log_append_callback_));
+    CHECK_OK(log_->AsyncAppend(reserved_entry_batch,
+                               boost::bind(&LocalPeer::LogAppendCallback, this, _1)));
     return true;
   }
 
@@ -157,12 +154,12 @@ class LocalPeer : public PeerImpl {
     }
   }
 
-  void LogAppendFailedCallback(Status status) {
+ private:
+  void LogAppendCallback(const Status& status) {
     status_ = status;
     RequestFinishedCallback();
   }
 
- private:
   log::Log* log_;
   shared_ptr<FutureCallback> log_append_callback_;
   Status status_;
