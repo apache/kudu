@@ -7,11 +7,16 @@
 
 #include "consensus/log_reader.h"
 #include "gutil/stl_util.h"
+#include "gutil/strings/numbers.h"
 #include "util/env.h"
 #include "util/pb_util.h"
 
 DEFINE_bool(print_headers, true, "print the log segment headers");
-DEFINE_bool(print_entries, true, "print all log entries");
+DEFINE_string(print_entries, "full",
+              "How to print entries:\n"
+              "  false|0|no = don't print\n"
+              "  true|1|yes|full = print them fully\n"
+              "  id = print only their ids");
 DEFINE_int32(truncate_data, 100,
              "Truncate the data fields to the given number of bytes "
              "before printing. Set to 0 to disable");
@@ -22,19 +27,55 @@ using std::string;
 using std::cout;
 using std::endl;
 
+enum PrintEntryType {
+  DONT_PRINT,
+  PRINT_FULL,
+  PRINT_ID
+};
+
+static PrintEntryType ParsePrintType() {
+  if (ParseLeadingBoolValue(FLAGS_print_entries.c_str(), true) == false) {
+    return DONT_PRINT;
+  } else if (ParseLeadingBoolValue(FLAGS_print_entries.c_str(), false) == true ||
+             FLAGS_print_entries == "full") {
+    return PRINT_FULL;
+  } else if (FLAGS_print_entries == "id") {
+    return PRINT_ID;
+  } else {
+    LOG(FATAL) << "Unknown value for --print_entries: " << FLAGS_print_entries;
+  }
+}
+
 void PrintSegment(LogReader* reader,
                   const shared_ptr<ReadableLogSegment>& segment) {
+  PrintEntryType print_type = ParsePrintType();
   if (FLAGS_print_headers) {
     cout << "Header:\n" << segment->header().DebugString();
   }
   vector<LogEntryPB*> entries;
   CHECK_OK(reader->ReadEntries(segment, &entries));
-  if (FLAGS_print_entries) {
-    BOOST_FOREACH(LogEntryPB* entry, entries) {
-      if (FLAGS_truncate_data > 0) {
-        pb_util::TruncateFields(entry, FLAGS_truncate_data);
-      }
+
+  if (print_type == DONT_PRINT) return;
+
+  BOOST_FOREACH(LogEntryPB* entry, entries) {
+    if (FLAGS_truncate_data > 0) {
+      pb_util::TruncateFields(entry, FLAGS_truncate_data);
+    }
+
+    if (print_type == PRINT_FULL) {
       cout << "Entry:\n" << entry->DebugString();
+    } else if (print_type == PRINT_ID) {
+      cout << entry->operation().id().term() << "." << entry->operation().id().index() << "\t";
+      if (entry->operation().has_commit()) {
+        cout << "COMMIT " << entry->operation().commit().commited_op_id().term()
+             << "." << entry->operation().commit().commited_op_id().index();
+      } else if (entry->operation().has_replicate()) {
+        cout << "REPLICATE "
+             << OperationType_Name(entry->operation().replicate().op_type());
+      } else {
+        cout << "UNKNOWN";
+      }
+      cout << endl;
     }
   }
 }
