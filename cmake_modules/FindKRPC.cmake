@@ -65,7 +65,6 @@ function(KRPC_GENERATE SRCS HDRS)
         file(MAKE_DIRECTORY ${PROTO_DST_ROOT}/${FIL_PT})
     endif()
 
-    GET_TARGET_PROPERTY(KRPC_BIN protoc-gen-krpc LOCATION)
     add_custom_command(
       OUTPUT "${PROTO_CC_OUT}" "${PROTO_H_OUT}"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}
@@ -76,8 +75,8 @@ function(KRPC_GENERATE SRCS HDRS)
     add_custom_command(
       OUTPUT "${SERVICE_CC}" "${SERVICE_H}" "${PROXY_CC}" "${PROXY_H}"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}
-      ARGS --plugin=${KRPC_BIN} --krpc_out ${ARG_BINARY_ROOT} --proto_path ${ARG_SOURCE_ROOT} ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
-      DEPENDS ${ABS_FIL} "${PROTO_H_OUT}" "${PROTO_CC_OUT}" "${KRPC_BIN}"
+      ARGS --plugin=$<TARGET_FILE:protoc-gen-krpc> --krpc_out ${ARG_BINARY_ROOT} --proto_path ${ARG_SOURCE_ROOT} ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
+      DEPENDS ${ABS_FIL} "${PROTO_H_OUT}" "${PROTO_CC_OUT}" protoc-gen-krpc
       COMMENT "Running KRPC protocol buffer compiler on ${FIL}"
       VERBATIM)
   endforeach()
