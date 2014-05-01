@@ -99,8 +99,8 @@ message RowwiseRowBlockPB {
   optional int32 num_rows = 3 [ default = 0 ];
 
   // The rows of data. Each row is stored in the same in-memory format
-  // as kudu::ContigiousRow (i.e a null bitmap followed by the raw unencoded
-  // data).
+  // as kudu::ContigiousRow (i.e the raw unencoded data followed by
+  // a null bitmap).
   //
   // The data for NULL cells will be present with undefined contents --
   // typically it will be filled with \x00s but this is not guaranteed,
