@@ -261,9 +261,7 @@ public class TestKuduSession extends BaseKuduTest {
       @Override
       public Object call(KuduScanner.RowResultIterator arg) throws Exception {
         if (arg == null) return null;
-        RowResult row;
-        while (arg.hasNext()) {
-          row = arg.next();
+        for (RowResult row : arg) {
           if (row.getInt(0) == key) {
             exists.set(true);
             break;
@@ -297,9 +295,7 @@ public class TestKuduSession extends BaseKuduTest {
           @Override
           public Object call(KuduScanner.RowResultIterator arg) throws Exception {
             if (arg == null) return null;
-            RowResult row;
-            while (arg.hasNext()) {
-              row = arg.next();
+            for (RowResult row : arg) {
               if (row.isNull(3)) {
                 ai.incrementAndGet();
               }

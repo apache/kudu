@@ -179,9 +179,7 @@ public class BaseKuduTest {
       @Override
       public Object call(KuduScanner.RowResultIterator arg) throws Exception {
         if (arg == null) return null;
-        RowResult row;
-        while (arg.hasNext()) {
-          row = arg.next();
+        for (RowResult row : arg) {
           counter.incrementAndGet();
         }
         return null;

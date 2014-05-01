@@ -774,7 +774,7 @@ public final class KuduScanner {
    * Class that contains the rows sent by a tablet server, exhausting this iterator only means
    * that all the rows from the last server response were read.
    */
-  public class RowResultIterator implements Iterator<RowResult> {
+  public class RowResultIterator implements Iterator<RowResult>, Iterable<RowResult> {
 
     private final Schema schema;
     private final byte[] bs;
@@ -875,6 +875,11 @@ public final class KuduScanner {
     @Override
     public String toString() {
       return "RowResultIterator for " + this.numRows + " rows";
+    }
+
+    @Override
+    public Iterator<RowResult> iterator() {
+      return this;
     }
   }
 }
