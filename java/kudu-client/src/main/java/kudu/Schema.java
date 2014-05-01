@@ -1,6 +1,8 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu;
 
+import kudu.rpc.Bytes;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,6 +20,7 @@ public class Schema {
   private final int stringCount;
   private final int rowSize;
   private final int keysCount;
+  private final boolean hasNullableColumns;
 
   /**
    * Constructs a schema using the specified columns and does some internal accounting
@@ -31,8 +34,12 @@ public class Schema {
     this.columnsMap = new HashMap<String, ColumnSchema>(columns.size());
     int pos = 0;
     int i = 0;
+    boolean hasNulls = false;
     // pre-compute a few counts and offsets
     for (ColumnSchema col : this.columns) {
+      if (col.isNullable()) {
+        hasNulls = true;
+      }
       this.columnsMap.put(col.getName(), col);
       columnOffsets[i] = pos;
       pos += col.getType().getSize();
@@ -44,9 +51,10 @@ public class Schema {
       }
       i++;
     }
+    this.hasNullableColumns = hasNulls;
     this.stringCount = strcnt;
     this.keysCount = keycnt;
-    this.rowSize = getRowSize(columns);
+    this.rowSize = getRowSize(this);
   }
 
   /**
@@ -139,15 +147,27 @@ public class Schema {
     return new Schema(columns);
   }
 
+
+  /**
+   * Tells if there's at least one nullable column
+   * @return true if at least one column is nullable, else false.
+   */
+  public boolean hasNullableColumns() {
+    return this.hasNullableColumns;
+  }
+
   /**
    * Gives the size in bytes for a single row given the specified schema
    * @param schema row's schema
    * @return row size in bytes
    */
-  public static int getRowSize(List<ColumnSchema> schema) {
+  public static int getRowSize(Schema schema) {
     int totalSize = 0;
-    for (ColumnSchema column : schema) {
+    for (ColumnSchema column : schema.getColumns()) {
       totalSize += column.getType().getSize();
+    }
+    if (schema.hasNullableColumns()) {
+      totalSize += Bytes.getBitSetSize(schema.getColumnCount());
     }
     return totalSize;
   }

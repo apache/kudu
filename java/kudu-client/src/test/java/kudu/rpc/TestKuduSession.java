@@ -1,28 +1,18 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
-import kudu.ColumnSchema;
 import kudu.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import kudu.Type;
-import kudu.tserver.Tserver;
-import org.junit.AfterClass;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static kudu.Type.INT32;
-import static kudu.Type.STRING;
 import static org.junit.Assert.*;
 
 /**
@@ -169,6 +159,16 @@ public class TestKuduSession extends BaseKuduTest {
 
     // TODO add a test for manual flush against multiple tablets once we can pre-split on ints
 
+    // Test nulls
+    // add 10 rows with the nullable column set to null
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
+    for (int i = 40; i < 50; i++) {
+      session.apply(createInsertWithNull(i)).join();
+    }
+
+    // now scan those rows and make sure the column is null
+    assertEquals(10, countNullColumns(40, 50));
+
     // Test Alter
     // Add a col
     AlterTableBuilder atb = new AlterTableBuilder();
@@ -229,6 +229,15 @@ public class TestKuduSession extends BaseKuduTest {
     return insert;
   }
 
+  public static Insert createInsertWithNull(int key) {
+    Insert insert = table.newInsert();
+    insert.addInt(schema.getColumn(0).getName(), key);
+    insert.addInt(schema.getColumn(1).getName(), 2);
+    insert.addInt(schema.getColumn(2).getName(), 3);
+    insert.setNull(schema.getColumn(3).getName());
+    return insert;
+  }
+
   public static Update createUpdate(int key) {
 
     Update update = table.newUpdate();
@@ -276,6 +285,38 @@ public class TestKuduSession extends BaseKuduTest {
     Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
     closer.join();
     return exists.get();
+  }
+
+  public static int countNullColumns(final int startKey, final int endKey) throws Exception {
+
+    KuduScanner scanner = getScanner(startKey, endKey);
+    final AtomicInteger ai = new AtomicInteger();
+
+    Callback<Object, KuduScanner.RowResultIterator> cb =
+        new Callback<Object, KuduScanner.RowResultIterator>() {
+          @Override
+          public Object call(KuduScanner.RowResultIterator arg) throws Exception {
+            if (arg == null) return null;
+            RowResult row;
+            while (arg.hasNext()) {
+              row = arg.next();
+              if (row.isNull(3)) {
+                ai.incrementAndGet();
+              }
+            }
+            return null;
+          }
+        };
+
+    while (scanner.hasMoreRows()) {
+      Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
+      data.addCallbacks(cb, defaultErrorCB);
+      data.join();
+    }
+
+    Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
+    closer.join();
+    return ai.get();
   }
 
   public static int countInRange(final int startOrder, final int endOrder) throws Exception {

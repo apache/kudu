@@ -21,7 +21,6 @@ import java.util.BitSet;
 import java.util.List;
 
 import static kudu.rpc.KuduClient.NO_TIMESTAMP;
-import static kudu.rpc.KuduSession.*;
 
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
@@ -56,6 +55,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   final byte[] rowAlloc;
   final int offset;
   final BitSet columnsBitSet;
+  final BitSet nullsBitSet;
 
   // The following attributes are used to speed up serialization
   int stringsSize;
@@ -73,6 +73,8 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     super(table);
     this.schema = table.getSchema();
     this.columnsBitSet = new BitSet(this.schema.getColumnCount());
+    this.nullsBitSet = schema.hasNullableColumns() ?
+        new BitSet(this.schema.getColumnCount()) : null;
     this.rowSize = schema.getRowSize();
     this.arena = new Arena();
     Arena.Allocation alloc = this.arena.allocateBytes(this.rowSize);
@@ -219,6 +221,23 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
   }
 
   /**
+   * Set the specified column to null
+   * @param columnName Name of the column
+   * @throws IllegalArgumentException if the column doesn't exist or cannot be set to null
+   */
+  public void setNull(String columnName) {
+    assert nullsBitSet != null;
+    ColumnSchema col = schema.getColumn(columnName);
+    checkColumnExists(col);
+    if (!col.isNullable()) {
+      throw new IllegalArgumentException(col.getName() + " cannot be set to null");
+    }
+    int idx = schema.getColumns().indexOf(col);
+    columnsBitSet.set(idx);
+    nullsBitSet.set(idx);
+  }
+
+  /**
    * Verifies if the column exists and belongs to the specified type
    * It also does some internal accounting
    * @param column column the user wants to set
@@ -226,8 +245,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
    * @throws IllegalArgumentException if the column or type was invalid
    */
   void checkColumn(ColumnSchema column, Type type) {
-    if (column == null)
-      throw new IllegalArgumentException("Column name isn't present in the table's schema");
+    checkColumnExists(column);
     if (!column.getType().equals(type))
       throw new IllegalArgumentException(column.getName() +
           "'s isn't " + type.getName() + ", it's " + column.getType().getName());
@@ -237,6 +255,15 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
         encodedSize += column.getType().getSize(); // strings have their own processing in addString
       }
     }
+  }
+
+  /**
+   * @param column column the user wants to set
+   * @throws IllegalArgumentException if the column doesn't exist
+   */
+  void checkColumnExists(ColumnSchema column) {
+    if (column == null)
+      throw new IllegalArgumentException("Column name isn't present in the table's schema");
   }
 
   /**
@@ -258,6 +285,18 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
    */
   boolean isSet(int column) {
     return this.columnsBitSet.get(column);
+  }
+
+  /**
+   * Tells if the specified column was set to null by the user
+   * @param column column's index in the schema
+   * @return true if it was set, else false
+   */
+  boolean isSetToNull(int column) {
+    if (this.nullsBitSet == null) {
+      return false;
+    }
+    return this.nullsBitSet.get(column);
   }
 
   @Override
@@ -319,9 +358,13 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     // Pre-calculate the sizes for the buffers.
     int rowSize = 0;
     int indirectSize = 0;
-    final int columnBitSetSize = getSizeOfColumnBitSet(schema.getColumnCount());
+    final int columnBitSetSize = Bytes.getBitSetSize(schema.getColumnCount());
     for (Operation operation : operations) {
       rowSize += 1 /* for the op type */ + operation.partialRowSize + columnBitSetSize;
+      if (schema.hasNullableColumns()) {
+        // nullsBitSet is the same size as the columnBitSet
+        rowSize += columnBitSetSize;
+      }
       indirectSize += operation.stringsSize;
     }
 
@@ -334,15 +377,17 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
       assert operation.schema == schema;
 
       rows.put(operation.getChangeType().toEncodedByte());
-      rows.put(toByteArray(operation.columnsBitSet, schema.getColumnCount()));
-      // TODO handle schemas with nulls
+      rows.put(Bytes.fromBitSet(operation.columnsBitSet, schema.getColumnCount()));
+      if (schema.hasNullableColumns()) {
+        rows.put(Bytes.fromBitSet(operation.nullsBitSet, schema.getColumnCount()));
+      }
       int colIdx = 0;
       byte[] rowData = operation.rowAlloc;
       int stringsIndex = 0;
       int currentRowOffset = operation.offset;
       for (ColumnSchema col : operation.schema.getColumns()) {
         // Keys should always be specified, maybe check?
-        if (operation.isSet(colIdx)) {
+        if (operation.isSet(colIdx) && !operation.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING) {
             Slice slice = operation.strings.get(stringsIndex);
             rows.putLong(indirectData.position());
@@ -372,19 +417,5 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
     requestBuilder.setRowOperations(rowOpsBuilder);
     return requestBuilder;
-  }
-
-  static int getSizeOfColumnBitSet(int count) {
-    return (count + 7) / 8;
-  }
-
-  static byte[] toByteArray(BitSet bits, int colCount) {
-    byte[] bytes = new byte[getSizeOfColumnBitSet(colCount)];
-    for (int i = 0; i < bits.length(); i++) {
-      if (bits.get(i)) {
-        bytes[i / 8] |= 1 << (i % 8);
-      }
-    }
-    return bytes;
   }
 }

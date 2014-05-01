@@ -37,6 +37,7 @@ import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Map;
@@ -862,6 +863,30 @@ public final class Bytes {
       return 1;
     }
     return memcmp(a, b);
+  }
+
+  public static int getBitSetSize(int items) {
+    return (items + 7) / 8;
+  }
+
+  public static byte[] fromBitSet(BitSet bits, int colCount) {
+    byte[] bytes = new byte[getBitSetSize(colCount)];
+    for (int i = 0; i < bits.length(); i++) {
+      if (bits.get(i)) {
+        bytes[i / 8] |= 1 << (i % 8);
+      }
+    }
+    return bytes;
+  }
+
+  public static BitSet toBitSet(byte[] b, int offset, int colCount) {
+    BitSet bs = new BitSet(colCount);
+    for (int i = 0; i < colCount; i++) {
+      if ((b[offset + (i / 8)] >> (i % 8) & 1) == 1) {
+        bs.set(i);
+      }
+    }
+    return bs;
   }
 
   /**

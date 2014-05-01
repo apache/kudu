@@ -205,7 +205,7 @@ public class BaseKuduTest {
     columns.add(new ColumnSchema("key", INT32, true));
     columns.add(new ColumnSchema("column1_i", INT32));
     columns.add(new ColumnSchema("column2_i", INT32));
-    columns.add(new ColumnSchema("column3_s", STRING));
+    columns.add(new ColumnSchema("column3_s", STRING, false, true, null));
     return new Schema(columns);
   }
 

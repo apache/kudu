@@ -797,7 +797,7 @@ public final class KuduScanner {
       int expectedSize = numRows * rowSize;
       if (expectedSize != bs.length) {
         throw new NonRecoverableException("RowResult block has " + bs.length + " bytes of data " +
-            "but expected " + expectedSize + "  for " + numRows + " rows");
+            "but expected " + expectedSize + " for " + numRows + " rows");
       }
       this.rowResult = new RowResult(this.schema, this.bs, this.indirectBs);
 
@@ -833,7 +833,7 @@ public final class KuduScanner {
       startKey = encoder.extractByteArray();
       assert startKey.length > 0;
       // reset the row result for querying
-      this.rowResult.advancePointerTo(-1);
+      this.rowResult.resetPointer();
     }
 
     @Override
