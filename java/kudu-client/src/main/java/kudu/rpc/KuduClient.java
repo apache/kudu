@@ -686,9 +686,13 @@ public class KuduClient {
         // TODO we don't know where the leader is, either because one wasn't provided or because
         // we couldn't resolve its IP. We currently send the first TS, revisit.
         return tablet.tabletServers.get(0);
+      } else if (tablet.tabletServers.size() == tablet.leaderIndex) {
+        // Case where the leader got disconnected but we haven't refreshed the locations yet.
+        // This will trigger that.
+        return null;
       } else {
         // TODO we currently always hit the leader, we probably don't need to except for writes
-        // and some reads
+        // and some reads.
         return tablet.tabletServers.get(tablet.leaderIndex);
       }
     }
