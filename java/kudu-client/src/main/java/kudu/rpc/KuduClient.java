@@ -465,9 +465,15 @@ public class KuduClient {
       // means that we lost the connection to that TabletServer, so we have to
       // re-open this scanner if we wanna keep scanning.
       scanner.invalidate();        // Invalidate the scanner so that ...
-      @SuppressWarnings("unchecked")
-      final Deferred<Object> d = (Deferred) scanner.nextRows();
-      return d;  // ... this will re-open it ______.^
+      if (scanner.isFaultTolerantScan()) {
+        @SuppressWarnings("unchecked")
+        final Deferred<Object> d = (Deferred) scanner.nextRows();
+        return d;  // ... this will re-open it ______.^
+      } else {
+        Exception e = new NonRecoverableException("Scanner encountered a tablet server failure: " +
+            scanner);
+        return Deferred.fromError(e);
+      }
     }
     //num_scans.increment();
     final KuduRpc next_request = scanner.getNextRowsRequest();

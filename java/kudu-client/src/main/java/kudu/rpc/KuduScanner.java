@@ -532,6 +532,15 @@ public final class KuduScanner {
     this.faultTolerantScan = faultTolerantScan;
   }
 
+  /**
+   * Is this scanner fault tolerant or not.
+   * TODO functionality not implemented, it's never fault tolerant
+   * @return true if the scanner can tolerate tablet server failures, else false
+   */
+  public boolean isFaultTolerantScan() {
+    return this.faultTolerantScan;
+  }
+
   // ---------------------- //
   // Package private stuff. //
   // ---------------------- //
