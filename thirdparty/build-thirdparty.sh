@@ -39,7 +39,7 @@ fi
 ################################################################################
 
 # Determine how many parallel jobs to use for make based on the number of cores
-if [[ "$OSTYPE" == "linux-gnu" ]]; then
+if [[ "$OSTYPE" =~ ^linux ]]; then
   PARALLEL=$(grep -c processor /proc/cpuinfo)
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   PARALLEL=$(sysctl -n hw.ncpu)
