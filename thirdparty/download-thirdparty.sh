@@ -9,6 +9,16 @@ cd $TP_DIR
 
 source vars.sh
 
+delete_if_wrong_patchlevel() {
+  DIR=$1
+  PATCHLEVEL=$2
+  if [ ! -f $DIR/patchlevel-$PATCHLEVEL ]; then
+    echo It appears that $DIR is missing the latest local patches.
+    echo Removing it so we re-download it.
+    rm -Rf $DIR
+  fi
+}
+
 if [ ! -d gtest-${GTEST_VERSION} ]; then
   echo "Fetching gtest"
   curl -OC - ${CLOUDFRONT_URL_PREFIX}/gtest-${GTEST_VERSION}.zip
@@ -16,11 +26,18 @@ if [ ! -d gtest-${GTEST_VERSION} ]; then
   rm gtest-${GTEST_VERSION}.zip
 fi
 
+GLOG_PATCHLEVEL=1
+delete_if_wrong_patchlevel glog-${GLOG_VERSION} $GLOG_PATCHLEVEL
 if [ ! -d glog-${GLOG_VERSION} ]; then
   echo "Fetching glog"
   curl -OC - ${CLOUDFRONT_URL_PREFIX}/glog-${GLOG_VERSION}.tar.gz
   tar xzf glog-${GLOG_VERSION}.tar.gz
   rm glog-${GLOG_VERSION}.tar.gz
+
+  pushd glog-${GLOG_VERSION}
+  patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
+  touch patchlevel-$GLOG_PATCHLEVEL
+  popd
 fi
 
 if [ ! -d gflags-${GFLAGS_VERSION} ]; then
@@ -34,17 +51,14 @@ fi
 # If you add or remove patches, bump the patchlevel below to ensure
 # that any new Jenkins builds pick up your patches.
 GPERFTOOLS_PATCHLEVEL=1
-if [ ! -f gperftools-${GPERFTOOLS_VERSION}/patchlevel-$GPERFTOOLS_PATCHLEVEL ]; then
-  echo It appears that the gperftools version we have is missing
-  echo the latest local patches. Removing it so we re-download it.
-  rm -Rf gperftools-${GPERFTOOLS_VERSION}
-fi
+delete_if_wrong_patchlevel gperftools-${GPERFTOOLS_VERSION} $GPERFTOOLS_PATCHLEVEL
 
 if [ ! -d gperftools-${GPERFTOOLS_VERSION} ]; then
   echo "Fetching gperftools"
   curl -OC - ${CLOUDFRONT_URL_PREFIX}/gperftools-${GPERFTOOLS_VERSION}.tar.gz
   tar xzf gperftools-${GPERFTOOLS_VERSION}.tar.gz
   rm gperftools-${GPERFTOOLS_VERSION}.tar.gz
+
   pushd gperftools-${GPERFTOOLS_VERSION}
   patch -p1 < $TP_DIR/patches/gperftools-issue-560-Revert-issue-481.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
