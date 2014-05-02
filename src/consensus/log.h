@@ -156,6 +156,7 @@ class Log {
 
  private:
   friend class LogTest;
+  friend class LogTestBase;
 
   class AppendThread;
   class SegmentAllocationTask;

@@ -22,6 +22,12 @@ namespace tools {
 class FsTool;
 }
 
+namespace tablet {
+class BootstrapTest;
+}
+
+using tablet::BootstrapTest;
+
 // TODO: This is only used by tablet, maybe should be in the tablet namespace
 namespace metadata {
 
@@ -164,6 +170,8 @@ class TabletMetadata {
   FsManager *fs_manager() const { return fs_manager_; }
 
   int64_t last_durable_mrs_id() { return last_durable_mrs_id_; }
+
+  void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 
   // Creates a TabletSuperBlockPB that reflects the current tablet metadata
   // and sets 'super_block' to it.
@@ -360,6 +368,10 @@ class RowSetMetadata {
   TabletMetadata *tablet_metadata() const { return tablet_metadata_; }
 
   int64_t last_durable_redo_dms_id() const { return last_durable_redo_dms_id_; }
+
+  void SetLastDurableRedoDmsIdForTests(int64_t redo_dms_id) {
+    last_durable_redo_dms_id_ = redo_dms_id;
+  }
 
   bool HasColumnDataBlockForTests(size_t idx) const {
     return column_blocks_.size() > idx && fs_manager()->BlockExists(column_blocks_[idx]);

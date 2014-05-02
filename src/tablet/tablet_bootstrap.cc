@@ -564,11 +564,18 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* entr
     // We found a match.
     RETURN_NOT_OK(HandleEntryPair(existing_entry.get(), entry));
   } else {
-    // FIXME: This is likely incorrect, we could have an orphaned commit on log roll.
-    // Needs test. See KUDU-141.
-
-    return Status::Corruption(Substitute("Found orphaned commit: $0",
-                                         entry->operation().commit().DebugString()));
+    const CommitMsg& commit = entry->operation().commit();
+    // TODO: move this to DEBUG once we have enough test cycles
+    BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
+      BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
+        if (!WasStoreAlreadyFlushed(mutated_store)) {
+          return Status::Corruption(
+              Substitute("Orphan commit $0 has a mutated store $1 that was NOT already flushed",
+                         commit.ShortDebugString(), mutated_store.ShortDebugString()));
+        }
+      }
+    }
+    VLOG(1) << "Ignoring orphan commit: " << commit.DebugString();
   }
 
   delete entry;

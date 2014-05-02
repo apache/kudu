@@ -1,7 +1,9 @@
 // Copyright (c) 2013, Cloudera, inc.
 
-#include <vector>
 #include "consensus/log-test-base.h"
+
+#include <vector>
+
 #include "gutil/stl_util.h"
 #include "tablet/mvcc.h"
 
@@ -11,128 +13,14 @@ DEFINE_int32(num_batches, 10000,
 namespace kudu {
 namespace log {
 
-using consensus::NO_OP;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
-using tserver::WriteRequestPB;
-using tablet::TxResultPB;
-using tablet::OperationResultPB;
-using tablet::MemStoreTargetPB;
 
+extern const char* kTestTable;
 extern const char* kTestTablet;
 
 class LogTest : public LogTestBase {
  public:
-
-  // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
-  // Note that this test does not insert into tablet so the data contained in
-  // the ReplicateMsgs doesn't necessarily need to make sense.
-  void AppendReplicateBatch(int index) {
-    LogEntryPB log_entry;
-    log_entry.set_type(OPERATION);
-    OperationPB* operation = log_entry.mutable_operation();
-
-    ReplicateMsg* replicate = operation->mutable_replicate();
-    replicate->set_op_type(WRITE_OP);
-
-    OpId* op_id = operation->mutable_id();
-    op_id->set_term(0);
-    op_id->set_index(index);
-
-    WriteRequestPB* batch_request = replicate->mutable_write_request();
-    ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
-    AddTestRowToPB(RowOperationsPB::INSERT, schema_,
-                   index,
-                   0,
-                   "this is a test insert",
-                   batch_request->mutable_row_operations());
-    AddTestRowToPB(RowOperationsPB::UPDATE, schema_,
-                   index + 1,
-                   0,
-                   "this is a test mutate",
-                   batch_request->mutable_row_operations());
-    batch_request->set_tablet_id(kTestTablet);
-
-    ASSERT_STATUS_OK(log_->Append(&log_entry));
-  }
-
-  // Append a commit log entry containing one entry for the insert and one
-  // for the mutate.
-  void AppendCommit(int index, int original_op_index) {
-
-    // The mrs id for the insert.
-    const int kTargetMrsId = 1;
-
-    // The rs and delta ids for the mutate.
-    const int kTargetRsId = 0;
-    const int kTargetDeltaId = 0;
-
-    LogEntryPB log_entry;
-    log_entry.set_type(OPERATION);
-    OperationPB* operation = log_entry.mutable_operation();
-
-    CommitMsg* commit = operation->mutable_commit();
-    commit->set_op_type(WRITE_OP);
-    commit->set_timestamp(Timestamp(original_op_index).ToUint64());
-
-    OpId* original_op_id = commit->mutable_commited_op_id();
-    original_op_id->set_term(0);
-    original_op_id->set_index(original_op_index);
-
-    OpId* commit_id = operation->mutable_id();
-    commit_id->set_term(0);
-    commit_id->set_index(index);
-
-    TxResultPB* result = commit->mutable_result();
-
-    OperationResultPB* insert = result->add_ops();
-    insert->add_mutated_stores()->set_mrs_id(kTargetMrsId);
-
-    OperationResultPB* mutate = result->add_ops();
-    MemStoreTargetPB* target = mutate->add_mutated_stores();
-    target->set_delta_id(kTargetDeltaId);
-    target->set_rs_id(kTargetRsId);
-
-    ASSERT_STATUS_OK(log_->Append(&log_entry));
-  }
-
-  // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
-  void AppendReplicateBatchAndCommitEntryPairsToLog(int count) {
-    for (int i = 0; i < count; i++) {
-      AppendReplicateBatch(current_id_);
-      AppendCommit(current_id_ + 1, current_id_);
-      current_id_ += 2;
-    }
-  }
-
-  // Append a single NO_OP entry. Increments op_id by one.
-  Status AppendNoOp(OpId* op_id) {
-    LogEntryPB log_entry;
-    log_entry.set_type(OPERATION);
-    OperationPB* operation = log_entry.mutable_operation();
-    operation->mutable_id()->CopyFrom(*op_id);
-    operation->mutable_replicate()->set_op_type(NO_OP);
-    RETURN_NOT_OK(log_->Append(&log_entry));
-
-    // Increment op_id.
-    op_id->set_index(op_id->index() + 1);
-    return Status::OK();
-  }
-
-  // Append a number of no-op entries to the log.
-  // Increments op_id's index by the number of records written.
-  Status AppendNoOps(OpId* op_id, int num) {
-    for (int i = 0; i < num; i++) {
-      RETURN_NOT_OK(AppendNoOp(op_id));
-    }
-    return Status::OK();
-  }
-
-  Status RollLog() {
-    RETURN_NOT_OK(log_->AsyncAllocateSegment());
-    return log_->RollOver();
-  }
-
   void CreateAndRegisterNewAnchor(const OpId& op_id, vector<OpIdAnchor*>* anchors) {
     anchors->push_back(new OpIdAnchor());
     opid_anchor_registry_->Register(op_id, CURRENT_TEST_NAME(), anchors->back());
