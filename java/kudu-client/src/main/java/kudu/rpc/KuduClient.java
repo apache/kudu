@@ -552,7 +552,7 @@ public class KuduClient {
     }
 
     // Right after creating a table a request will fall into locateTablet since we don't know yet
-    // if the table is ready or not. If discoverTablet() didn't get any tablets back,
+    // if the table is ready or not. If discoverTablets() didn't get any tablets back,
     // then on retry we'll fall into the following block. It will sleep, then call the master to
     // see if the table was created. We'll spin like this until the table is created and then
     // we'll try to locate the tablet again.
@@ -774,7 +774,7 @@ public class KuduClient {
     }
     final Deferred<Object> d =
         clientFor(masterTabletHack).getTableLocations(table, rowkey).
-            addCallback(new MasterLookupCB(table, rowkey));
+            addCallback(new MasterLookupCB(table));
     if (has_permit) {
       d.addBoth(new ReleaseMasterLookupPermit());
     }
@@ -829,13 +829,12 @@ public class KuduClient {
   private final class MasterLookupCB implements Callback<Object,
       Master.GetTableLocationsResponsePB> {
     final String table;
-    final byte[] rowkey;
-    MasterLookupCB(String table, byte[] rowkey) {
+    MasterLookupCB(String table) {
       this.table = table;
-      this.rowkey = rowkey;
     }
     public Object call(final Master.GetTableLocationsResponsePB arg) {
-      return discoverTablet(table, rowkey, arg);
+      discoverTablets(table, arg);
+      return null;
     }
     public String toString() {
       return "get tablet locations from the master";
@@ -861,8 +860,7 @@ public class KuduClient {
     masterLookups.release();
   }
 
-  private RemoteTablet discoverTablet(String table, byte[] rowkey, Master.GetTableLocationsResponsePB
-      response) {
+  private void discoverTablets(String table, Master.GetTableLocationsResponsePB response) {
     if (response.hasError()) {
       throw new MasterErrorException(response.getError());
     }
@@ -872,8 +870,20 @@ public class KuduClient {
         LOG.debug("Table " + table + " hasn't been created yet");
       }
       tablesNotServed.putIfAbsent(table, new Object());
-      return null;
+      return;
     }
+    // Doing a get first instead of putIfAbsent to avoid creating unnecessary CSLMs because in
+    // the most common case the table should already be present
+    ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(table);
+    if (tablets == null) {
+      tablets = new ConcurrentSkipListMap<byte[], RemoteTablet>(Bytes.MEMCMP);
+      ConcurrentSkipListMap<byte[], RemoteTablet> oldTablets = tabletsCache.putIfAbsent
+          (table, tablets);
+      if (oldTablets != null) {
+        tablets = oldTablets;
+      }
+    }
+
     for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
       Slice tabletId = new Slice(tabletPb.getTabletId().toByteArray());
       RemoteTablet rt = tablet2client.get(tabletId);
@@ -889,29 +899,17 @@ public class KuduClient {
       RemoteTablet oldRt = tablet2client.putIfAbsent(tabletId, rt);
       if (oldRt != null) {
         // someone beat us to it
-        return getTablet(table, rowkey);
+        continue;
       }
       LOG.info("Discovering tablet " + tabletId.toString(Charset.defaultCharset()) + " for " +
-          "table " + table + " for rowkey " + Bytes.pretty(rowkey) + " with start key " + Bytes
-          .pretty(startKey) + " and endkey " + Bytes.pretty(endKey));
-      // Doing a get first instead of putIfAbsent to avoid creating unnecessary CSLMs because in
-      // the most common case the table should already be present
-      ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(table);
-      if (tablets == null) {
-        tablets = new ConcurrentSkipListMap<byte[], RemoteTablet>(Bytes.MEMCMP);
-        ConcurrentSkipListMap<byte[], RemoteTablet> oldTablets = tabletsCache.putIfAbsent
-            (table, tablets);
-        if (oldTablets != null) {
-          tablets = oldTablets;
-        }
-      }
+          "table " + table + " with start key " + Bytes.pretty(startKey) + " and endkey " +
+          Bytes.pretty(endKey));
       rt.refreshServers(tabletPb);
       // This is making this tablet available
       // Even if two clients were racing in this method they are putting the same RemoteTablet
       // with the same start key in the CSLM in the end
       tablets.put(rt.getStartKey(), rt);
     }
-    return getTablet(table, rowkey);
   }
 
   /**
