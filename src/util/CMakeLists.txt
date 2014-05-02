@@ -11,6 +11,7 @@ add_library(kudu_util
   errno.cc
   faststring.cc
   group_varint.cc
+  pstack_watcher.cc
   hdr_histogram.cc
   hexdump.cc
   jsonwriter.cc
@@ -72,6 +73,7 @@ ADD_KUDU_TEST(cache-test)
 ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(group_varint-test)
+ADD_KUDU_TEST(pstack_watcher-test)
 ADD_KUDU_TEST(hdr_histogram-test)
 ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(interval_tree-test)

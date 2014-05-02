@@ -13,6 +13,9 @@ namespace kudu {
 
 // Wrapper around a spawned subprocess.
 //
+// program will be treated as an absolute path unless it begins with a dot or a
+// slash.
+//
 // This takes care of creating pipes to/from the subprocess and offers
 // basic functionality to wait on it or send signals.
 //
@@ -20,9 +23,13 @@ namespace kudu {
 // will be forcibly SIGKILLed to avoid orphaning processes.
 class Subprocess {
  public:
-  Subprocess(const std::string& exec_path,
+  Subprocess(const std::string& program,
              const std::vector<std::string>& argv);
   ~Subprocess();
+
+  // Disable the stderr output from the subprocess.  Must be called before the
+  // subprocess starts.
+  void DisableStderr();
 
   // Start the subprocess.
   //
@@ -69,13 +76,14 @@ class Subprocess {
  private:
   Status DoWait(int* ret, int options);
 
-  std::string exec_path_;
+  std::string program_;
   std::vector<std::string> argv_;
 
   bool started_;
   int child_pid_;
   int to_child_stdin_;
   int from_child_stdout_;
+  bool disable_stderr_;
 
   DISALLOW_COPY_AND_ASSIGN(Subprocess);
 };

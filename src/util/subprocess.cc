@@ -75,14 +75,15 @@ void CloseNonStandardFDs() {
 
 } // anonymous namespace
 
-Subprocess::Subprocess(const string& exec_path,
+Subprocess::Subprocess(const string& program,
                        const vector<string>& argv)
-  : exec_path_(exec_path),
+  : program_(program),
     argv_(argv),
     started_(false),
     child_pid_(-1),
     to_child_stdin_(-1),
-    from_child_stdout_(-1) {
+    from_child_stdout_(-1),
+    disable_stderr_(false) {
 }
 
 Subprocess::~Subprocess() {
@@ -101,6 +102,11 @@ Subprocess::~Subprocess() {
   if (from_child_stdout_ >= 0) {
     close(from_child_stdout_);
   }
+}
+
+void Subprocess::DisableStderr() {
+  CHECK(!started_);
+  disable_stderr_ = true;
 }
 
 Status Subprocess::Start() {
@@ -134,10 +140,21 @@ Status Subprocess::Start() {
     // We are the child
     PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
     PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
-
     CloseNonStandardFDs();
+    if (disable_stderr_) {
+      // We must not close stderr, because then when a new file descriptor gets
+      // opened, it might get stderr's number.  (We always allocate the lowest
+      // available file descriptor number.)  Instead, we reopen stderr as
+      // /dev/null.
+      int dev_null = open("/dev/null", O_WRONLY);
+      if (dev_null < 0) {
+        PLOG(WARNING) << "failed to open /dev/null";
+      } else {
+        PCHECK(dup2(dev_null, STDERR_FILENO));
+      }
+    }
 
-    execv(exec_path_.c_str(), &argv_ptrs[0]);
+    execvp(program_.c_str(), &argv_ptrs[0]);
     PLOG(WARNING) << "Couldn't exec";
     _exit(errno);
   } else {
