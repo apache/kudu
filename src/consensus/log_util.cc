@@ -67,14 +67,27 @@ LogOptions::LogOptions()
   async_preallocate_segments(FLAGS_log_async_preallocate_segments) {
 }
 
-ReadableLogSegment::ReadableLogSegment(
-    const std::string &path,
-    uint64_t file_size,
-    const std::tr1::shared_ptr<RandomAccessFile>& readable_file)
-: path_(path),
-  file_size_(file_size),
-  readable_file_(readable_file),
-  is_initialized_(false) {
+Status ReadableLogSegment::Open(Env* env,
+                                const string& path,
+                                shared_ptr<ReadableLogSegment>* segment) {
+  VLOG(1) << "Parsing wal segment: " << path;
+  uint64_t file_size;
+  RETURN_NOT_OK(env->GetFileSize(path, &file_size));
+  shared_ptr<RandomAccessFile> readable_file;
+  RETURN_NOT_OK(env_util::OpenFileForRandom(env, path, &readable_file));
+
+  segment->reset(new ReadableLogSegment(path, file_size, readable_file));
+  RETURN_NOT_OK((*segment)->Init());
+  return Status::OK();
+}
+
+ReadableLogSegment::ReadableLogSegment(const std::string &path,
+                                       uint64_t file_size,
+                                       const shared_ptr<RandomAccessFile>& readable_file)
+  : path_(path),
+    file_size_(file_size),
+    readable_file_(readable_file),
+    is_initialized_(false) {
 }
 
 void ReadableLogSegment::Init(const LogSegmentHeaderPB& header, uint64_t first_entry_offset) {
@@ -120,6 +133,79 @@ Status ReadableLogSegment::Init() {
   first_entry_offset_ = header_size + kLogSegmentMagicAndHeaderLength;
   is_initialized_ = true;
 
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
+  uint64_t offset = first_entry_offset();
+  VLOG(1) << "Reading segment entries offset: " << offset << " file size: "
+          << file_size();
+  faststring tmp_buf;
+  while (offset < file_size()) {
+    gscoped_ptr<LogEntryBatchPB> current_batch;
+
+    // Read the entry length first, if we get 0 back that just means that
+    // the log hasn't been ftruncated().
+    uint32_t length;
+    RETURN_NOT_OK(ReadEntryLength(&offset, &length));
+    if (length == 0) {
+      return Status::OK();
+    }
+
+    Status status = ReadEntryBatch(&offset, length, &tmp_buf, &current_batch);
+    if (status.ok()) {
+      if (VLOG_IS_ON(3)) {
+        VLOG(3) << "Read Log entry batch: " << current_batch->DebugString();
+      }
+      for (size_t i = 0; i < current_batch->entry_size(); ++i) {
+        entries->push_back(current_batch->mutable_entry(i));
+      }
+      current_batch->mutable_entry()->ExtractSubrange(0,
+                                                      current_batch->entry_size(),
+                                                      NULL);
+    } else {
+      RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
+          "cannot read further. 'entries' contains log entries read up to $0"
+          " bytes", offset));
+    }
+  }
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadEntryLength(uint64_t *offset, uint32_t *len) {
+  uint8_t scratch[kEntryLengthSize];
+  Slice slice;
+  RETURN_NOT_OK(ReadFully(readable_file().get(), *offset, kEntryLengthSize,
+                          &slice, scratch));
+  RETURN_NOT_OK(slice.check_size(kEntryLengthSize));
+  *offset += kEntryLengthSize;
+  *len = DecodeFixed32(slice.data());
+  return Status::OK();
+}
+
+Status ReadableLogSegment::ReadEntryBatch(uint64_t *offset,
+                                          uint32_t length,
+                                          faststring *tmp_buf,
+                                          gscoped_ptr<LogEntryBatchPB> *entry_batch) {
+
+  if (length == 0 || length > file_size() - *offset) {
+    return Status::Corruption(StringPrintf("Invalid entry length %d.", length));
+  }
+
+  tmp_buf->clear();
+  tmp_buf->resize(length);
+  Slice entry_batch_slice;
+  RETURN_NOT_OK(readable_file()->Read(*offset,
+                                      length,
+                                      &entry_batch_slice,
+                                      tmp_buf->data()));
+
+  gscoped_ptr<LogEntryBatchPB> read_entry_batch(new LogEntryBatchPB());
+  RETURN_NOT_OK(pb_util::ParseFromArray(read_entry_batch.get(),
+                                        entry_batch_slice.data(),
+                                        length));
+  *offset += length;
+  entry_batch->reset(read_entry_batch.release());
   return Status::OK();
 }
 

@@ -28,20 +28,6 @@ class LogReader {
                                     const string& tablet_oid,
                                     gscoped_ptr<LogReader> *reader);
 
-  // Initializes a ReadableLogSegment based on a log file on the provided path.
-  // Parses the header.
-  static Status InitSegment(Env* env,
-                            const string &log_file,
-                            shared_ptr<ReadableLogSegment>* segment);
-
-  // Reads all entries of the provided segment, adds them the 'entries' vector.
-  // The 'entries' vector owns the read entries.
-  // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
-  // the log entries read up to the corrupted are returned in the 'entries' vector.
-  static Status ReadEntries(
-      const std::tr1::shared_ptr<ReadableLogSegment> &segment,
-      vector<LogEntryPB* >* entries);
-
   // Returns the number of segments in path_, set only once on Init().
   const uint32_t size();
 
@@ -59,37 +45,6 @@ class LogReader {
 
   // Reads the headers of all segments in 'path_'.
   Status Init(const string& path_);
-
-  // Parses the log segment header.
-  // May return Status::Uninitialized if the log segment is totally empty.
-  // Otherwise, may return Status::Corruption in case of error or Status::OK
-  // on success.
-  // See ReadableLogSegment::Init() for more details.
-  static Status ParseHeaderAndBuildSegment(
-      const uint64_t file_size,
-      const string &path,
-      const std::tr1::shared_ptr<RandomAccessFile> &file,
-      std::tr1::shared_ptr<ReadableLogSegment> *segment);
-
-  // Parses length of the log entry and sets *parsed_len to this value.
-  static Status ParseEntryLength(const Slice &data,
-                                 uint32_t *parsed_len);
-
-  // Reads length from a segment and sets *len to this value.
-  // Also increments the passed offset* by the length of the entry.
-  static Status ReadEntryLength(
-      const std::tr1::shared_ptr<ReadableLogSegment> &segment,
-      uint64_t *offset,
-      uint32_t *len);
-
-  // Reads a log entry batch from the provided readable segment, which gets decoded
-  // into 'entry_batch' and increments 'offset' by the batch's length.
-  static Status ReadEntryBatch(
-      const std::tr1::shared_ptr<ReadableLogSegment> &segment,
-      faststring *tmp_buf,
-      uint64_t *offset,
-      uint32_t length,
-      gscoped_ptr<LogEntryBatchPB> *entry_batch);
 
   FsManager *fs_manager_;
   const string tablet_oid_;

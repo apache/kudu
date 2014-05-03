@@ -53,9 +53,9 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
 
 LogReader::LogReader(FsManager *fs_manager,
                      const string& tablet_oid)
-: fs_manager_(fs_manager),
-  tablet_oid_(tablet_oid),
-  state_(kLogReaderInitialized) {
+  : fs_manager_(fs_manager),
+    tablet_oid_(tablet_oid),
+    state_(kLogReaderInitialized) {
 }
 
 Status LogReader::Init(const string& tablet_wal_path) {
@@ -80,7 +80,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
     if (HasPrefixString(log_file, kLogPrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       shared_ptr<ReadableLogSegment> segment;
-      RETURN_NOT_OK(InitSegment(env, fqp, &segment));
+      RETURN_NOT_OK(ReadableLogSegment::Open(env, fqp, &segment));
       DCHECK(segment);
       segments_.push_back(segment);
     }
@@ -92,121 +92,8 @@ Status LogReader::Init(const string& tablet_wal_path) {
   return Status::OK();
 }
 
-Status LogReader::InitSegment(Env* env,
-                              const string &log_file,
-                              shared_ptr<ReadableLogSegment>* segment) {
-  VLOG(1) << "Parsing segment: " << log_file;
-  uint64_t file_size;
-  RETURN_NOT_OK(env->GetFileSize(log_file, &file_size));
-  shared_ptr<RandomAccessFile> file;
-  RETURN_NOT_OK(kudu::env_util::OpenFileForRandom(env, log_file, &file));
-  RETURN_NOT_OK(ParseHeaderAndBuildSegment(file_size,
-                                           log_file,
-                                           file,
-                                           segment));
-  return Status::OK();
-}
-
-Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
-                              vector<LogEntryPB* >* entries) {
-  uint64_t offset = segment->first_entry_offset();
-  VLOG(1) << "Reading segment entries offset: " << offset << " file size: "
-          << segment->file_size();
-  faststring tmp_buf;
-  while (offset < segment->file_size()) {
-    gscoped_ptr<LogEntryBatchPB> current_batch;
-
-    // Read the entry length first, if we get 0 back that just means that
-    // the log hasn't been ftruncated().
-    uint32_t length;
-    RETURN_NOT_OK(ReadEntryLength(segment, &offset, &length));
-    if (length == 0) {
-      return Status::OK();
-    }
-
-    Status status = ReadEntryBatch(segment, &tmp_buf, &offset, length, &current_batch);
-    if (status.ok()) {
-      if (VLOG_IS_ON(3)) {
-        VLOG(3) << "Read Log entry batch: " << current_batch->DebugString();
-      }
-      for (size_t i = 0; i < current_batch->entry_size(); ++i) {
-        entries->push_back(current_batch->mutable_entry(i));
-      }
-      current_batch->mutable_entry()->ExtractSubrange(0,
-                                                      current_batch->entry_size(),
-                                                      NULL);
-    } else {
-      RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
-          "cannot read further. 'entries' contains log entries read up to $0"
-          " bytes", offset));
-    }
-  }
-  return Status::OK();
-}
-
 const uint32_t LogReader::size() {
   return segments_.size();
-}
-
-Status LogReader::ParseHeaderAndBuildSegment(
-    const uint64_t file_size,
-    const string &path,
-    const shared_ptr<RandomAccessFile> &file,
-    shared_ptr<ReadableLogSegment> *segment) {
-
-  segment->reset(new ReadableLogSegment(path,
-                                        file_size,
-                                        file));
-  RETURN_NOT_OK((*segment)->Init());
-  return Status::OK();
-}
-
-Status LogReader::ParseEntryLength(const Slice &data,
-                                   uint32_t *parsed_len) {
-
-  RETURN_NOT_OK(data.check_size(kEntryLengthSize));
-
-  *parsed_len = DecodeFixed32(data.data());
-  return Status::OK();
-}
-
-Status LogReader::ReadEntryLength(
-    const shared_ptr<ReadableLogSegment> &segment,
-    uint64_t *offset,
-    uint32_t *len) {
-  uint8_t scratch[kEntryLengthSize];
-  Slice slice;
-  RETURN_NOT_OK(ReadFully(segment->readable_file().get(), *offset, kEntryLengthSize,
-                          &slice, scratch));
-  *offset += kEntryLengthSize;
-  return ParseEntryLength(slice, len);
-}
-
-Status LogReader::ReadEntryBatch(const shared_ptr<ReadableLogSegment> &segment,
-                                 faststring *tmp_buf,
-                                 uint64_t *offset,
-                                 uint32_t length,
-                                 gscoped_ptr<LogEntryBatchPB> *entry_batch) {
-
-  if (length == 0 || length > segment->file_size() - *offset) {
-    return Status::Corruption(StringPrintf("Invalid entry length %d.", length));
-  }
-
-  tmp_buf->clear();
-  tmp_buf->resize(length);
-  Slice entry_batch_slice;
-  RETURN_NOT_OK(segment->readable_file()->Read(*offset,
-                                               length,
-                                               &entry_batch_slice,
-                                               tmp_buf->data()));
-
-  gscoped_ptr<LogEntryBatchPB> read_entry_batch(new LogEntryBatchPB());
-  RETURN_NOT_OK(pb_util::ParseFromArray(read_entry_batch.get(),
-                                        entry_batch_slice.data(),
-                                        length));
-  *offset += length;
-  entry_batch->reset(read_entry_batch.release());
-  return Status::OK();
 }
 
 }  // namespace log

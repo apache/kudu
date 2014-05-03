@@ -193,9 +193,9 @@ Status FsTool::ListSegmentsInDir(const string& segments_dir) {
 
 Status FsTool::PrintLogSegmentHeader(const string& path) {
   shared_ptr<ReadableLogSegment> segment;
-  Status s = LogReader::InitSegment(fs_manager_->env(),
-                                    path,
-                                    &segment);
+  Status s = ReadableLogSegment::Open(fs_manager_->env(),
+                                      path,
+                                      &segment);
 
   if (s.IsUninitialized()) {
     LOG(ERROR) << path << " is not initialized: " << s.ToString();

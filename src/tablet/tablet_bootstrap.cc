@@ -226,7 +226,7 @@ Status BootstrapTablet(gscoped_ptr<metadata::TabletMetadata> meta,
 }
 
 static string DebugInfo(const string& tablet_id,
-                        int segment_idx,
+                        int segment_seqno,
                         int entry_idx,
                         const string& segment_path,
                         const LogEntryPB& entry) {
@@ -239,7 +239,7 @@ static string DebugInfo(const string& tablet_id,
     debug_str.append("...");
   }
   return Substitute("Debug Info: Error playing entry $0 of segment $1 of tablet $2. "
-                    "Segment path: $3. Entry: $4", entry_idx, segment_idx, tablet_id,
+                    "Segment path: $3. Entry: $4", entry_idx, segment_seqno, tablet_id,
                     segment_path, debug_str);
 }
 
@@ -650,16 +650,19 @@ Status TabletBootstrap::PlaySegments() {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
   ReplayState state;
-  for (int segment_idx = 0; segment_idx < log_reader_->size(); ++segment_idx) {
+  const vector<shared_ptr<log::ReadableLogSegment> >& segments = log_reader_->segments();
+  int segment_count = 0;
+  BOOST_FOREACH(const shared_ptr<log::ReadableLogSegment>& segment, segments) {
+
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
     // TODO: Optimize this to not read the whole thing into memory?
-    Status read_status = log_reader_->ReadEntries(log_reader_->segments()[segment_idx], &entries);
+    Status read_status = segment->ReadEntries(&entries);
     for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
       LogEntryPB* entry = entries[entry_idx];
       RETURN_NOT_OK_PREPEND(HandleEntry(&state, entry),
-                            DebugInfo(tablet_->tablet_id(), segment_idx,
-                                      entry_idx, log_reader_->segments()[segment_idx]->path(),
+                            DebugInfo(tablet_->tablet_id(), segment->header().sequence_number(),
+                                      entry_idx, segment->path(),
                                       *entry));
 
       // If HandleEntry returns OK, then it has taken ownership of the entry.
@@ -678,15 +681,16 @@ Status TabletBootstrap::PlaySegments() {
                                            "Read up to entry: $1 of segment: $2, in path: $3.",
                                            tablet_->tablet_id(),
                                            entries.size(),
-                                           segment_idx,
-                                           log_reader_->segments()[segment_idx]->path()));
+                                           segment->header().sequence_number(),
+                                           segment->path()));
     }
 
     // TODO: could be more granular here and log during the segments as well,
     // plus give info about number of MB processed, but this is better than
     // nothing.
     listener_->StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments.",
-                                        segment_idx + 1, log_reader_->size()));
+                                        segment_count + 1, log_reader_->size()));
+    segment_count++;
   }
 
   int num_orphaned = state.pending_replicates.size();

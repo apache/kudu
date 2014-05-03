@@ -116,14 +116,13 @@ void PrintDecoded(const LogEntryPB& entry) {
   }
 }
 
-void PrintSegment(LogReader* reader,
-                  const shared_ptr<ReadableLogSegment>& segment) {
+void PrintSegment(const shared_ptr<ReadableLogSegment>& segment) {
   PrintEntryType print_type = ParsePrintType();
   if (FLAGS_print_headers) {
     cout << "Header:\n" << segment->header().DebugString();
   }
   vector<LogEntryPB*> entries;
-  CHECK_OK(reader->ReadEntries(segment, &entries));
+  CHECK_OK(segment->ReadEntries(&entries));
 
   if (print_type == DONT_PRINT) return;
 
@@ -152,7 +151,7 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
   BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, reader->segments()) {
-    PrintSegment(reader.get(), segment);
+    PrintSegment(segment);
   }
 }
 
@@ -160,9 +159,9 @@ void DumpSegment(const string &segment_path) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
   shared_ptr<ReadableLogSegment> segment;
-  CHECK_OK(LogReader::InitSegment(env, segment_path, &segment));
+  CHECK_OK(ReadableLogSegment::Open(env, segment_path, &segment));
   CHECK(segment);
-  PrintSegment(reader.get(), segment);
+  PrintSegment(segment);
 }
 
 } // namespace log

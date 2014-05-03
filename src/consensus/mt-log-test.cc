@@ -137,8 +137,8 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   }
   ASSERT_STATUS_OK(log_->Close());
   BuildLogReader();
-  for (int i = 0; i < log_reader_->size(); i++) {
-    ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[i], &entries_));
+  BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, log_reader_->segments()) {
+    ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
   }
   vector<uint32_t> ids;
   EntriesToIdList(&ids);

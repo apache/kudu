@@ -4,8 +4,8 @@
 #define KUDU_CONSENSUS_LOG_UTIL_H_
 
 #include <string>
-#include <vector>
 #include <tr1/memory>
+#include <vector>
 
 #include "consensus/log.pb.h"
 #include "gutil/macros.h"
@@ -55,11 +55,15 @@ struct LogOptions {
 // A readable log segment for recovery and follower catch-up.
 class ReadableLogSegment {
  public:
+  // Factory method to construct a ReadableLogSegment from a file on the FS.
+  static Status Open(Env* env,
+                     const std::string& path,
+                     std::tr1::shared_ptr<ReadableLogSegment>* segment);
+
   // Build a readable segment to read entries from the provided path.
-  ReadableLogSegment(
-      const std::string &path,
-      uint64_t file_size,
-      const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
+  ReadableLogSegment(const std::string &path,
+                     uint64_t file_size,
+                     const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
 
   // Initialize the ReadableLogSegment.
   // This initializer provides methods for avoiding disk IO when creating a
@@ -73,6 +77,13 @@ class ReadableLogSegment {
   // This initializer will parse the log segment header.
   // Note: This returns Status and may fail.
   Status Init();
+
+  // Reads all entries of the provided segment & adds them the 'entries' vector.
+  // The 'entries' vector owns the read entries.
+  // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
+  // the log entries read up to the corrupted are returned in the 'entries'
+  // vector.
+  Status ReadEntries(vector<LogEntryPB*>* entries);
 
   bool IsInitialized() const {
     return is_initialized_;
@@ -104,6 +115,17 @@ class ReadableLogSegment {
   // Helper functions called by Init().
   Status ReadMagicAndHeaderLength(uint32_t *len);
   Status ParseMagicAndLength(const Slice &data, uint32_t *parsed_len);
+
+  // Reads length from the segment and sets *len to this value.
+  // Also increments the passed offset* by the length of the entry.
+  Status ReadEntryLength(uint64_t *offset, uint32_t *len);
+
+  // Reads a log entry batch from the provided readable segment, which gets decoded
+  // into 'entry_batch' and increments 'offset' by the batch's length.
+  Status ReadEntryBatch(uint64_t *offset,
+                        uint32_t length,
+                        faststring* tmp_buf,
+                        gscoped_ptr<LogEntryBatchPB>* entry_batch);
 
   const std::string path_;
 

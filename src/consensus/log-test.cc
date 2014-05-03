@@ -76,7 +76,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  ASSERT_STATUS_OK(log_reader_->ReadEntries(log_reader_->segments()[0], &entries));
+  ASSERT_STATUS_OK((*log_reader_->segments().begin())->ReadEntries(&entries));
 
   ASSERT_EQ(2, entries.size());
 
@@ -91,7 +91,8 @@ TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  ASSERT_STATUS_OK(log_reader_->ReadEntries(log_reader_->segments()[0], &entries));
+  const shared_ptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
+  ASSERT_STATUS_OK(first_segment->ReadEntries(&entries));
   // Close after testing to ensure correct shutdown
   // TODO : put this in TearDown() with a test on log state?
   ASSERT_STATUS_OK(log_->Close());
@@ -149,7 +150,8 @@ TEST_F(LogTest, TestCorruptLog) {
 
   BuildLogReader();
   ASSERT_EQ(1, log_reader_->size());
-  Status status = LogReader::ReadEntries(log_reader_->segments()[0], &entries_);
+  const shared_ptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
+  Status status = first_segment->ReadEntries(&entries_);
   ASSERT_TRUE(status.IsCorruption());
 
   // Last entry is corrupted but we should still see the previous ones.
@@ -173,8 +175,8 @@ TEST_F(LogTest, TestSegmentRollover) {
 
   ASSERT_STATUS_OK(log_->Close());
   BuildLogReader();
-  for (int i = 0; i < log_reader_->size(); i++) {
-    ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[i], &entries_));
+  BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, log_reader_->segments()) {
+    ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
   }
 
   ASSERT_EQ(num_entries, entries_.size());
@@ -236,7 +238,7 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
 
   // Make sure we only get 4 entries back and that no FLUSH_MARKER commit is found.
   BuildLogReader();
-  ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[0], &entries_));
+  ASSERT_STATUS_OK((*log_reader_->segments().begin())->ReadEntries(&entries_));
   ASSERT_EQ(entries_.size(), 4);
   for (int i = 0; i < 4 ; i++) {
     ASSERT_TRUE(entries_[i]->has_operation());
@@ -322,9 +324,9 @@ TEST_F(LogTest, TestWriteManyBatches) {
     LOG(INFO) << "Starting to read log";
     BuildLogReader();
     uint32_t num_entries = 0;
-    for (int i = 0; i < log_reader_->size(); i++) {
+    BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, log_reader_->segments()) {
       STLDeleteElements(&entries_);
-      ASSERT_STATUS_OK(LogReader::ReadEntries(log_reader_->segments()[i], &entries_));
+      ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
       num_entries += entries_.size();
     }
     ASSERT_EQ(num_entries, num_batches * 2);
