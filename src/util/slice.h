@@ -17,6 +17,7 @@
 
 #include <assert.h>
 #include <glog/logging.h>
+#include <map>
 #include <stddef.h>
 #include <string.h>
 #include <string>
@@ -121,6 +122,13 @@ class Slice {
             (strings::memeq(data_, x.data_, x.size_)));
   }
 
+  // Comparator struct, useful for ordered collections (like STL maps).
+  struct Comparator {
+    bool operator()(const Slice& a, const Slice& b) {
+      return a.compare(b) < 0;
+    }
+  };
+
  private:
   const uint8_t* data_;
   size_t size_;
@@ -137,6 +145,10 @@ inline bool operator!=(const Slice& x, const Slice& y) {
   return !(x == y);
 }
 
+inline std::ostream& operator<<(std::ostream& o, const Slice& s) {
+  return o << s.ToDebugString(16); // should be enough for anyone...
+}
+
 inline int Slice::compare(const Slice& b) const {
   const int min_len = (size_ < b.size_) ? size_ : b.size_;
   int r = strings::fastmemcmp_inlined(data_, b.data_, min_len);
@@ -146,6 +158,12 @@ inline int Slice::compare(const Slice& b) const {
   }
   return r;
 }
+
+// STL map whose keys are Slices.
+template <typename T>
+struct SliceMap {
+  typedef std::map<Slice, T, Slice::Comparator> type;
+};
 
 }  // namespace kudu
 
