@@ -4,7 +4,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)
 
 # Make sure thirdparty stuff is up-to-date.
-execute_process(COMMAND thirdparty/build-if-necessary.sh)
+if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
+  execute_process(COMMAND thirdparty/build-if-necessary.sh)
+endif()
 
 ############################################################
 # Compiler flags
