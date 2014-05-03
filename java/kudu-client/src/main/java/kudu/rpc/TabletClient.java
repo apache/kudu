@@ -454,12 +454,17 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * Only for the masters, right now since a master is considered a TabletClient then it needs to
    * be able to contact the master services.
    * @param tableName Table name to lookup
-   * @param rowkey If null it will retrieve all the tablet locations it can. If not then it will
-   *               only retrieve the tablet that contains the rowkey
+   * @param startKey Start row key to begin lookup from.
+   * @param startKey End row key to end lookup at.
    * @return deferred action
    */
   public Deferred<Master.GetTableLocationsResponsePB> getTableLocations(final String tableName,
-                                                                        final byte[] rowkey) {
+                                                                        final byte[] startKey,
+                                                                        final byte[] endKey) {
+    if (startKey != null && endKey != null && Bytes.memcmp(startKey, endKey) > 0) {
+      throw new IllegalArgumentException("The start key needs to be smaller or equal to the end " +
+          "key");
+    }
 
     final class GetTableLocations extends KuduRpc {
       GetTableLocations(KuduTable table) {
@@ -484,9 +489,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         final Master.GetTableLocationsRequestPB.Builder builder = Master
             .GetTableLocationsRequestPB.newBuilder();
         builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
-        if (rowkey != null) {
-          builder.setStartKey(ZeroCopyLiteralByteString.wrap(rowkey));
-          builder.setEndKey(ZeroCopyLiteralByteString.wrap(rowkey));
+        if (startKey != null) {
+          builder.setStartKey(ZeroCopyLiteralByteString.wrap(startKey));
+        }
+        if (endKey != null) {
+          builder.setEndKey(ZeroCopyLiteralByteString.wrap(endKey));
         }
         return toChannelBuffer(header, builder.build());
       }

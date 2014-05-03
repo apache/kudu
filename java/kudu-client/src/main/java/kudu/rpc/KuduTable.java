@@ -1,8 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
+import kudu.Common;
 import kudu.Schema;
 import kudu.util.Slice;
+
+import java.util.List;
+import java.util.NavigableMap;
 
 /**
  * A KuduTable represents a table on a particular cluster. It holds the current
@@ -56,5 +60,32 @@ public class KuduTable {
     return new Delete(this);
   }
 
+  /**
+   * Get all the tablets for this table. This may query the master multiple times if there
+   * are a lot of tablets.
+   * @param deadline deadline in milliseconds for this method to finish
+   * @return a sorted map keyed by the tablets themselves pointing to their addresses.
+   * @throws Exception
+   */
+  public NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> getTabletsLocations(
+      long deadline) throws Exception {
+    return getTabletsLocations(null, null, deadline);
+  }
+
+  /**
+   * Get all or some tablets for this table. This may query the master multiple times if there
+   * are a lot of tablets.
+   * This method blocks until it gets all the tablets.
+   * @param startKey where to start in the table, pass null to start at the beginning
+   * @param endKey where to stop in the table, pass null to get all the tablets until the end of
+   *               the table
+   * @param deadline deadline in milliseconds for this method to finish
+   * @return a sorted map keyed by the tablets themselves pointing to their addresses.
+   * @throws Exception
+   */
+  public NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> getTabletsLocations(
+      byte[] startKey, byte[] endKey, long deadline) throws Exception {
+    return client.syncLocateTable(name, startKey, endKey, deadline);
+  }
 
 }

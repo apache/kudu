@@ -157,6 +157,7 @@ public class BaseKuduTest {
       @Override
       public Object call(Object arg) throws Exception {
         gotError.set(true);
+        LOG.error("Error : " + arg);
         return null;
       }
     });

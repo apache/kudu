@@ -28,6 +28,8 @@
 package kudu.rpc;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Objects;
+import com.google.common.collect.ComparisonChain;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
@@ -55,9 +57,11 @@ import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Random;
 import java.util.concurrent.*;
 
@@ -773,12 +777,63 @@ public class KuduClient {
       }
     }
     final Deferred<Object> d =
-        clientFor(masterTabletHack).getTableLocations(table, rowkey).
+        clientFor(masterTabletHack).getTableLocations(table, rowkey, rowkey).
             addCallback(new MasterLookupCB(table));
     if (has_permit) {
       d.addBoth(new ReleaseMasterLookupPermit());
     }
     return d;
+  }
+
+  /**
+   * Get all or some tablets for a given table. This may query the master multiple times if there
+   * are a lot of tablets.
+   * This method blocks until it gets all the tablets.
+   * @param table Table name
+   * @param startKey where to start in the table, pass null to start at the beginning
+   * @param endKey where to stop in the table, pass null to get all the tablets until the end of
+   *               the table
+   * @param deadline deadline in milliseconds for this method to finish
+   * @return a sorted map keyed by the tablets themselves pointing to their addresses.
+   * @throws Exception
+   */
+  NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> syncLocateTable(String table,
+                                                     byte[] startKey,
+                                                     byte[] endKey,
+                                                     long deadline) throws Exception {
+    ConcurrentSkipListMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> tablets =
+        new ConcurrentSkipListMap<KuduClient.RemoteTablet, List<Common.HostPortPB>>();
+    DeadlineTracker deadlineTracker = new DeadlineTracker();
+    deadlineTracker.setDeadline(deadline);
+    while (true) {
+      if (deadlineTracker.timedOut()) {
+        throw new NonRecoverableException("Took too long getting the list of tablets, " +
+            "deadline=" + deadline);
+      }
+      final Deferred<Master.GetTableLocationsResponsePB> d =
+          clientFor(masterTabletHack).getTableLocations(table, startKey, endKey);
+      // TODO we should post-process exceptions that come out here, do in KUDU-169
+      Master.GetTableLocationsResponsePB response =
+          d.join(deadlineTracker.getMillisBeforeDeadline());
+      // Table doesn't exist or is being created.
+      if (response.getTabletLocationsCount() == 0) {
+        break;
+      }
+      for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
+        RemoteTablet rt = createTabletFromPb(table, tabletPb);
+        List<Common.HostPortPB> addresses = rt.getAddressesFromPb(tabletPb);
+        tablets.put(rt, addresses);
+      }
+      byte[] lastEndKey = tablets.lastEntry().getKey().endKey;
+      // If true, we're done, else we have to go back to the master with the last end key
+      if (lastEndKey == EMPTY_ARRAY ||
+          (endKey != null && Bytes.memcmp(lastEndKey, endKey) > 0)) {
+        break;
+      } else {
+        startKey = lastEndKey;
+      }
+    }
+    return tablets;
   }
 
   /**
@@ -885,15 +940,17 @@ public class KuduClient {
     }
 
     for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
-      Slice tabletId = new Slice(tabletPb.getTabletId().toByteArray());
-      RemoteTablet rt = tablet2client.get(tabletId);
-      if (rt != null) {
+      // Early creating the tablet so that it parses out the pb
+      RemoteTablet rt = createTabletFromPb(table, tabletPb);
+      Slice tabletId = rt.tabletId;
+
+      // If we already know about this one, just refresh the locations
+      RemoteTablet currentTablet = tablet2client.get(tabletId);
+      if (currentTablet != null) {
         rt.refreshServers(tabletPb);
         continue;
       }
-      byte[] startKey = tabletPb.getStartKey().toByteArray();
-      byte[] endKey = tabletPb.getEndKey().toByteArray();
-      rt = new RemoteTablet(table, tabletId, startKey, endKey);
+
       // Putting it here first doesn't make it visible because tabletsCache is always looked up
       // first.
       RemoteTablet oldRt = tablet2client.putIfAbsent(tabletId, rt);
@@ -902,14 +959,22 @@ public class KuduClient {
         continue;
       }
       LOG.info("Discovering tablet " + tabletId.toString(Charset.defaultCharset()) + " for " +
-          "table " + table + " with start key " + Bytes.pretty(startKey) + " and endkey " +
-          Bytes.pretty(endKey));
+          "table " + table + " with start key " + Bytes.pretty(rt.startKey) + " and endkey " +
+          Bytes.pretty(rt.endKey));
       rt.refreshServers(tabletPb);
       // This is making this tablet available
       // Even if two clients were racing in this method they are putting the same RemoteTablet
       // with the same start key in the CSLM in the end
       tablets.put(rt.getStartKey(), rt);
     }
+  }
+
+  RemoteTablet createTabletFromPb(String table, Master.TabletLocationsPB tabletPb) {
+    byte[] startKey = tabletPb.getStartKey().toByteArray();
+    byte[] endKey = tabletPb.getEndKey().toByteArray();
+    Slice tabletId = new Slice(tabletPb.getTabletId().toByteArray());
+    RemoteTablet rt = new RemoteTablet(table, tabletId, startKey, endKey);
+    return rt;
   }
 
   /**
@@ -1351,7 +1416,7 @@ public class KuduClient {
   /**
    * This class encapsulates the information regarding a tablet and its locations
    */
-  class RemoteTablet {
+  public class RemoteTablet implements Comparable<RemoteTablet> {
 
     private static final int NO_LEADER_INDEX = -1;
     private final String table;
@@ -1386,7 +1451,8 @@ public class KuduClient {
           // TODO: if the TS advertises multiple host/ports, pick the right one
           // based on some kind of policy. For now just use the first always.
           int index = addTabletClient(addresses.get(0).getHost(), addresses.get(0).getPort());
-          if (replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER) && index != NO_LEADER_INDEX) {
+          if (replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER) &&
+              index != NO_LEADER_INDEX) {
             leaderIndex = index;
           }
         }
@@ -1422,7 +1488,7 @@ public class KuduClient {
       }
     }
 
-    String getTable() {
+    public String getTable() {
       return table;
     }
 
@@ -1430,11 +1496,11 @@ public class KuduClient {
       return tabletId;
     }
 
-    byte[] getStartKey() {
+    public byte[] getStartKey() {
       return startKey;
     }
 
-    byte[] getEndKey() {
+    public byte[] getEndKey() {
       return endKey;
     }
 
@@ -1444,6 +1510,60 @@ public class KuduClient {
 
     String getTabletIdAsString() {
       return tabletId.toString(Charset.defaultCharset());
+    }
+
+    List<Common.HostPortPB> getAddressesFromPb(Master.TabletLocationsPB tabletLocations) {
+      List<Common.HostPortPB> addresses = new ArrayList<Common.HostPortPB>(tabletLocations
+          .getReplicasCount());
+      for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
+        addresses.add(replica.getTsInfo().getRpcAddresses(0));
+      }
+      return addresses;
+    }
+
+    @Override
+    public int compareTo(RemoteTablet remoteTablet) {
+      if (remoteTablet == null) {
+        return 1;
+      }
+
+      int result = ComparisonChain.start()
+          .compare(this.table, remoteTablet.table)
+          .compare(this.startKey, remoteTablet.startKey, Bytes.MEMCMP).result();
+
+      if (result != 0) {
+        return result;
+      }
+
+      int endKeyCompare = Bytes.memcmp(this.endKey, remoteTablet.endKey);
+
+      if (endKeyCompare != 0) {
+        if (this.startKey != EMPTY_ARRAY
+            && this.endKey == EMPTY_ARRAY) {
+          return 1; // this is last tablet
+        }
+        if (remoteTablet.startKey != EMPTY_ARRAY
+            && remoteTablet.endKey == EMPTY_ARRAY) {
+          return -1; // remoteTablet is the last tablet
+        }
+        return endKeyCompare;
+      }
+      return 0;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+
+      RemoteTablet that = (RemoteTablet) o;
+
+      return this.compareTo(that) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(table, startKey, endKey);
     }
   }
 
