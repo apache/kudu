@@ -160,6 +160,8 @@ inline int Slice::compare(const Slice& b) const {
 }
 
 // STL map whose keys are Slices.
+//
+// See sample usage in slice-test.cc.
 template <typename T>
 struct SliceMap {
   typedef std::map<Slice, T, Slice::Comparator> type;
