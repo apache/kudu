@@ -26,6 +26,7 @@ namespace log {
 
 using consensus::OpId;
 using env_util::OpenFileForRandom;
+using strings::Substitute;
 
 // This class is responsible for managing the thread that appends to
 // the log file.
@@ -294,14 +295,14 @@ Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
   CHECK_EQ(state_, kLogWriting);
 
   size_t num_ops = ops.size();
-  gscoped_ptr<LogEntryPB[]> entry_pbs(new LogEntryPB[num_ops]);
+  gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   for (size_t i = 0; i < num_ops; i++) {
     consensus::OperationPB* op = ops[i];
-    LogEntryPB* entry_pb = &entry_pbs[i];
+    LogEntryPB* entry_pb = entry_batch->add_entry();
     entry_pb->set_type(log::OPERATION);
     entry_pb->set_allocated_operation(op);
   }
-  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_pbs.Pass(), num_ops));
+  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(entry_batch.Pass(), num_ops));
   new_entry_batch->MarkReserved();
 
   if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(new_entry_batch.get()))) {
@@ -337,24 +338,26 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   // Keep track of the first OpId seen in this batch.
   // This is needed for writing initial_opid into each log segment header.
   OpId first_op_id;
-  first_op_id.CopyFrom(entry_batch->phys_entries_[0].operation().id());
+  first_op_id.CopyFrom(entry_batch->entry_batch_pb_->entry(0).operation().id());
   DCHECK(first_op_id.IsInitialized());
 
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
-  last_entry_op_id_.CopyFrom(entry_batch->phys_entries_[num_entries - 1].operation().id());
+  last_entry_op_id_.CopyFrom(
+      entry_batch->entry_batch_pb_->entry(num_entries - 1).operation().id());
   DCHECK(last_entry_op_id_.IsInitialized());
 
   for (size_t i = 0; i < num_entries; i++) {
-    LogEntryPB& entry_pb = entry_batch->phys_entries_[i];
-    CHECK_EQ(OPERATION, entry_pb.type()) << "Unexpected log entry type: " << entry_pb.DebugString();
-    DCHECK(entry_pb.operation().has_id());
-    DCHECK(entry_pb.operation().id().IsInitialized());
+    LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
+    CHECK_EQ(OPERATION, entry_pb->type())
+        << "Unexpected log entry type: " << entry_pb->DebugString();
+    DCHECK(entry_pb->operation().has_id());
+    DCHECK(entry_pb->operation().id().IsInitialized());
 
     if (caller_owns_operation) {
       // If the OperationPB was allocated by another thread, we must release
       // it to avoid freeing the memory.
-      entry_pb.release_operation();
+      entry_pb->release_operation();
     }
   }
 
@@ -435,8 +438,9 @@ Status Log::Sync() {
 }
 
 Status Log::Append(LogEntryPB* phys_entry) {
-  gscoped_ptr<LogEntryPB[]> phys_entries(phys_entry);
-  LogEntryBatch entry_batch(phys_entries.Pass(), 1);
+  gscoped_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
+  entry_batch_pb->mutable_entry()->AddAllocated(phys_entry);
+  LogEntryBatch entry_batch(entry_batch_pb.Pass(), 1);
   entry_batch.state_ = LogEntryBatch::kEntryReserved;
   Status s = entry_batch.Serialize();
   if (s.ok()) {
@@ -446,7 +450,7 @@ Status Log::Append(LogEntryPB* phys_entry) {
       s = Sync();
     }
   }
-  ignore_result(entry_batch.phys_entries_.release());
+  entry_batch.entry_batch_pb_->mutable_entry()->ExtractSubrange(0, 1, NULL);
   return s;
 }
 
@@ -609,15 +613,11 @@ Log::~Log() {
   }
 }
 
-LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryPB[]> phys_entries,
-                  size_t count)
-    : phys_entries_(phys_entries.Pass()),
+LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
+    : entry_batch_pb_(entry_batch_pb.Pass()),
+      total_size_bytes_(entry_batch_pb_->ByteSize()),
       count_(count),
-      total_size_bytes_(0),
       state_(kEntryInitialized) {
-  for (int i = 0; i < count_; ++i) {
-    total_size_bytes_ += phys_entries_[i].ByteSize();
-  }
 }
 
 LogEntryBatch::~LogEntryBatch() {
@@ -629,18 +629,17 @@ void LogEntryBatch::MarkReserved() {
   state_ = kEntryReserved;
 }
 
+
 Status LogEntryBatch::Serialize() {
   DCHECK_EQ(state_, kEntryReserved);
   buffer_.clear();
   buffer_.reserve(total_size_bytes_);
-  for (int i = 0; i < count_; ++i) {
-    LogEntryPB& entry_batch = phys_entries_[i];
-    if (!pb_util::AppendToString(entry_batch, &buffer_)) {
-      return Status::IOError(strings::Substitute(
-          "unable to serialize entry pb $0 out of $1; entry contents: $3",
-          i, count_, entry_batch.DebugString()));
-    }
+
+  if (!pb_util::AppendToString(*entry_batch_pb_, &buffer_)) {
+    return Status::IOError(Substitute("unable to serialize the entry batch, contents: $1",
+                                      entry_batch_pb_->DebugString()));
   }
+
   state_ = kEntrySerialized;
   return Status::OK();
 }
@@ -659,4 +658,3 @@ void LogEntryBatch::WaitForReady() {
 
 }  // namespace log
 }  // namespace kudu
-

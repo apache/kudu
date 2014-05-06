@@ -82,14 +82,14 @@ class LogReader {
       uint64_t *offset,
       uint32_t *len);
 
-  // Reads a log entry from the provided readable segment, which gets decoded
-  // into 'entry' and increments 'offset' by the entry's length.
-  static Status ReadEntry(
+  // Reads a log entry batch from the provided readable segment, which gets decoded
+  // into 'entry_batch' and increments 'offset' by the batch's length.
+  static Status ReadEntryBatch(
       const std::tr1::shared_ptr<ReadableLogSegment> &segment,
       faststring *tmp_buf,
       uint64_t *offset,
       uint32_t length,
-      gscoped_ptr<LogEntryPB> *entry);
+      gscoped_ptr<LogEntryBatchPB> *entry_batch);
 
   FsManager *fs_manager_;
   const string tablet_oid_;

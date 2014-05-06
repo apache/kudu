@@ -24,6 +24,11 @@ message LogEntryPB {
   optional consensus.OperationPB operation = 2;
 }
 
+// A batch of entries in the WAL.
+message LogEntryBatchPB {
+  repeated LogEntryPB entry = 1;
+}
+
 // A header for a log segment.
 message LogSegmentHeaderPB {
   // Log format major version.

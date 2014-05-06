@@ -45,6 +45,43 @@ class LogTest : public LogTestBase {
 
 };
 
+// If we write more than one entry in a batch, we should be able to
+// read all of those entries back.
+TEST_F(LogTest, TestMultipleEntriesInABatch) {
+  BuildLog();
+
+  OperationPB op1;
+  op1.mutable_replicate()->set_op_type(WRITE_OP);
+  OpId* op_id = op1.mutable_id();
+  op_id->set_term(0);
+  op_id->set_index(1);
+
+  OperationPB op2;
+  op2.mutable_replicate()->set_op_type(WRITE_OP);
+  op_id = op2.mutable_id();
+  op_id->set_term(0);
+  op_id->set_index(1);
+
+  vector<consensus::OperationPB*> ops;
+  ops.push_back(&op1);
+  ops.push_back(&op2);
+
+  LogEntryBatch* reserved_entry;
+  ASSERT_STATUS_OK(log_->Reserve(ops, &reserved_entry));
+  shared_ptr<LatchCallback> cb(new LatchCallback);
+  ASSERT_STATUS_OK(log_->AsyncAppend(reserved_entry, cb));
+  ASSERT_STATUS_OK(cb->Wait());
+
+  BuildLogReader();
+  vector<LogEntryPB*> entries;
+  ElementDeleter deleter(&entries);
+  ASSERT_STATUS_OK(log_reader_->ReadEntries(log_reader_->segments()[0], &entries));
+
+  ASSERT_EQ(2, entries.size());
+
+  ASSERT_STATUS_OK(log_->Close());
+}
+
 // Test that the reader can read from the log even if it hasn't been
 // properly closed.
 TEST_F(LogTest, TestLogNotTrimmed) {

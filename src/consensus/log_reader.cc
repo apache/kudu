@@ -114,7 +114,7 @@ Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
           << segment->file_size();
   faststring tmp_buf;
   while (offset < segment->file_size()) {
-    gscoped_ptr<LogEntryPB> current;
+    gscoped_ptr<LogEntryBatchPB> current_batch;
 
     // Read the entry length first, if we get 0 back that just means that
     // the log hasn't been ftruncated().
@@ -124,12 +124,17 @@ Status LogReader::ReadEntries(const shared_ptr<ReadableLogSegment> &segment,
       return Status::OK();
     }
 
-    Status status = ReadEntry(segment, &tmp_buf, &offset, length, &current);
+    Status status = ReadEntryBatch(segment, &tmp_buf, &offset, length, &current_batch);
     if (status.ok()) {
       if (VLOG_IS_ON(3)) {
-        VLOG(3) << "Read Log entry: " << current->DebugString();
+        VLOG(3) << "Read Log entry batch: " << current_batch->DebugString();
       }
-      entries->push_back(current.release());
+      for (size_t i = 0; i < current_batch->entry_size(); ++i) {
+        entries->push_back(current_batch->mutable_entry(i));
+      }
+      current_batch->mutable_entry()->ExtractSubrange(0,
+                                                      current_batch->entry_size(),
+                                                      NULL);
     } else {
       RETURN_NOT_OK_PREPEND(status, strings::Substitute("Log File corrupted, "
           "cannot read further. 'entries' contains log entries read up to $0"
@@ -177,11 +182,11 @@ Status LogReader::ReadEntryLength(
   return ParseEntryLength(slice, len);
 }
 
-Status LogReader::ReadEntry(const shared_ptr<ReadableLogSegment> &segment,
-                            faststring *tmp_buf,
-                            uint64_t *offset,
-                            uint32_t length,
-                            gscoped_ptr<LogEntryPB> *entry) {
+Status LogReader::ReadEntryBatch(const shared_ptr<ReadableLogSegment> &segment,
+                                 faststring *tmp_buf,
+                                 uint64_t *offset,
+                                 uint32_t length,
+                                 gscoped_ptr<LogEntryBatchPB> *entry_batch) {
 
   if (length == 0 || length > segment->file_size() - *offset) {
     return Status::Corruption(StringPrintf("Invalid entry length %d.", length));
@@ -189,18 +194,18 @@ Status LogReader::ReadEntry(const shared_ptr<ReadableLogSegment> &segment,
 
   tmp_buf->clear();
   tmp_buf->resize(length);
-  Slice entry_slice;
+  Slice entry_batch_slice;
   RETURN_NOT_OK(segment->readable_file()->Read(*offset,
                                                length,
-                                               &entry_slice,
+                                               &entry_batch_slice,
                                                tmp_buf->data()));
 
-  gscoped_ptr<LogEntryPB> read_entry(new LogEntryPB());
-  RETURN_NOT_OK(pb_util::ParseFromArray(read_entry.get(),
-                                        entry_slice.data(),
+  gscoped_ptr<LogEntryBatchPB> read_entry_batch(new LogEntryBatchPB());
+  RETURN_NOT_OK(pb_util::ParseFromArray(read_entry_batch.get(),
+                                        entry_batch_slice.data(),
                                         length));
   *offset += length;
-  entry->reset(read_entry.release());
+  entry_batch->reset(read_entry_batch.release());
   return Status::OK();
 }
 

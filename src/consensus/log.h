@@ -291,7 +291,7 @@ class LogEntryBatch {
   friend class Log;
   friend struct LogEntryBatchLogicalSize;
 
-  LogEntryBatch(gscoped_ptr<LogEntryPB[]> phys_entries, size_t count);
+  LogEntryBatch(gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count);
 
   // Serializes contents of the entry to an internal buffer.
   Status Serialize();
@@ -340,13 +340,13 @@ class LogEntryBatch {
   }
 
   // Contents of the log entries that will be written to disk.
-  gscoped_ptr<LogEntryPB[]> phys_entries_;
+  gscoped_ptr<LogEntryBatchPB> entry_batch_pb_;
 
-  // Number of entries in phys_entries_
-  size_t count_;
-
-  // Total size in bytes of all entries
+   // Total size in bytes of all entries
   uint32_t total_size_bytes_;
+
+  // Number of entries in 'entry_batch_pb_'
+  size_t count_;
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.
