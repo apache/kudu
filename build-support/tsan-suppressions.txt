@@ -48,3 +48,6 @@ race:kudu::tablet::TabletPeer::tablet()
 
 # KUDU-189: unsynchronized access to 'state_' in DeferredCallback
 race:kudu::master::AsyncTabletRequestTask::DeferredCallback
+
+# KUDU-228: unsynchronized access to consensus_.
+race:kudu::tablet::TabletPeer::role
