@@ -27,6 +27,7 @@ add_library(kudu_util
   os-util.cc
   path_util.cc
   pb_util.cc
+  random_util.cc
   rwc_lock.cc
   semaphore.cc
   slice.cc
@@ -88,6 +89,7 @@ ADD_KUDU_TEST(string_case-test)
 ADD_KUDU_TEST(memcmpable_varint-test LABELS no_tsan)
 ADD_KUDU_TEST(monotime-test)
 ADD_KUDU_TEST(pb_util-test)
+ADD_KUDU_TEST(random_util-test)
 ADD_KUDU_TEST(threadpool-test)
 ADD_KUDU_TEST(task_executor-test)
 ADD_KUDU_TEST(user-test)

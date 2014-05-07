@@ -7,16 +7,19 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 
+#include <algorithm>
 #include <vector>
 
 #include "gutil/algorithm.h"
 #include "gutil/ref_counted.h"
+#include "util/random_util.h"
 #include "util/thread.h"
 #include "util/task_executor.h"
 #include "util/locks.h"
 
 DEFINE_int32(num_writer_threads, 4, "Number of threads writing to the log");
-DEFINE_int32(num_ops_per_thread, 2000, "Number of operations per thread");
+DEFINE_int32(num_batches_per_thread, 2000, "Number of batches per thread");
+DEFINE_int32(num_ops_per_batch_avg, 5, "Target average number of ops per batch");
 
 namespace kudu {
 namespace log {
@@ -54,41 +57,54 @@ extern const char *kTestTablet;
 class MultiThreadedLogTest : public LogTestBase {
  public:
 
+  virtual void SetUp() {
+    LogTestBase::SetUp();
+    SeedRandom();
+  }
+
   void LogWriterThread(int thread_id) {
     vector<OperationPB*> ops;
     ElementDeleter deleter(&ops);
 
-    CountDownLatch latch(FLAGS_num_ops_per_thread);
+    CountDownLatch latch(FLAGS_num_batches_per_thread);
     vector<Status> errors;
-    for (int i = 0; i < FLAGS_num_ops_per_thread; i++) {
+    for (int i = 0; i < FLAGS_num_batches_per_thread; i++) {
       LogEntryBatch* entry_batch;
+      vector<OperationPB*> batch_ops;
+      int num_ops = static_cast<int>(NormalDist(
+          static_cast<double>(FLAGS_num_ops_per_batch_avg), 1.0));
+      DVLOG(1) << num_ops << " ops in this batch";
+      num_ops =  std::max(num_ops, 1);
       {
         boost::lock_guard<simple_spinlock> lock_guard(lock_);
-        gscoped_ptr<OperationPB> op(new OperationPB);
-        uint32_t index = current_id_++;
-        OpId* op_id = op->mutable_id();
-        op_id->set_term(0);
-        op_id->set_index(index);
+        for (int j = 0; j < num_ops; j++) {
+          gscoped_ptr<OperationPB> op(new OperationPB);
+          uint32_t index = current_id_++;
+          OpId* op_id = op->mutable_id();
+          op_id->set_term(0);
+          op_id->set_index(index);
 
-        ReplicateMsg* replicate = op->mutable_replicate();
-        replicate->set_op_type(WRITE_OP);
+          ReplicateMsg* replicate = op->mutable_replicate();
+          replicate->set_op_type(WRITE_OP);
 
-        tserver::WriteRequestPB* request = replicate->mutable_write_request();
-        AddTestRowToPB(RowOperationsPB::INSERT, schema_,
-                       index,
-                       0,
-                       "this is a test insert",
-                       request->mutable_row_operations());
-        request->set_tablet_id(kTestTablet);
-        ASSERT_STATUS_OK(log_->Reserve(boost::assign::list_of(op.get()),
-                                       &entry_batch));
-        ops.push_back(op.release());
-      }
+          tserver::WriteRequestPB* request = replicate->mutable_write_request();
+          AddTestRowToPB(RowOperationsPB::INSERT, schema_,
+                         index,
+                         0,
+                         "this is a test insert",
+                         request->mutable_row_operations());
+          request->set_tablet_id(kTestTablet);
+          batch_ops.push_back(op.release());
+        }
+        ASSERT_STATUS_OK(log_->Reserve(batch_ops, &entry_batch));
+      } // lock_guard scope
       shared_ptr<CustomLatchCallback> cb(new CustomLatchCallback(&latch, &errors));
       ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb));
+      // Copy 'batch_ops' to 'ops', so that they can be free upon thread termination.
+      std::copy(batch_ops.begin(), batch_ops.end(), std::back_inserter(ops));
     }
-    LOG_TIMING(INFO, strings::Substitute("thread $0 waiting to append and sync $1 entries",
-                                        thread_id, FLAGS_num_ops_per_thread)) {
+    LOG_TIMING(INFO, strings::Substitute("thread $0 waiting to append and sync $1 batches",
+                                        thread_id, FLAGS_num_batches_per_thread)) {
       latch.Wait();
     }
     BOOST_FOREACH(const Status& status, errors) {
@@ -115,9 +131,10 @@ class MultiThreadedLogTest : public LogTestBase {
 
 TEST_F(MultiThreadedLogTest, TestAppends) {
   BuildLog();
-  LOG_TIMING(INFO, strings::Substitute("inserting $0 requests($1 threads, $2 per-thread)",
-                                      FLAGS_num_writer_threads * FLAGS_num_ops_per_thread,
-                                      FLAGS_num_ops_per_thread, FLAGS_num_writer_threads)) {
+  int start_current_id = current_id_;
+  LOG_TIMING(INFO, strings::Substitute("inserting $0 batches($1 threads, $2 per-thread)",
+                                      FLAGS_num_writer_threads * FLAGS_num_batches_per_thread,
+                                      FLAGS_num_batches_per_thread, FLAGS_num_writer_threads)) {
     ASSERT_NO_FATAL_FAILURE(Run());
   }
   ASSERT_STATUS_OK(log_->Close());
@@ -127,8 +144,8 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   }
   vector<uint32_t> ids;
   EntriesToIdList(&ids);
-  ASSERT_EQ(FLAGS_num_writer_threads * FLAGS_num_ops_per_thread,
-            ids.size());
+  DVLOG(1) << "Wrote total of " << current_id_ - start_current_id << " ops";
+  ASSERT_EQ(current_id_ - start_current_id, ids.size());
   ASSERT_TRUE(util::gtl::is_sorted(ids.begin(), ids.end()));
 }
 
