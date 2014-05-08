@@ -223,7 +223,6 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   MaintenanceOp* ts_anchored_secs_op = NULL;
   uint64_t best_perf_improvement = 0;
   MaintenanceOp* best_perf_improvement_op = NULL;
-  OpMapTy::iterator ops_end = ops_.end();
   BOOST_FOREACH(OpMapTy::value_type &val, ops_) {
     MaintenanceOp* op(val.first);
     MaintenanceOpStats& stats(val.second);
