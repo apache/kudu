@@ -221,6 +221,7 @@ message TabletLocationsPB {
 
   repeated ReplicaPB replicas = 2;
 
+  // In the following keys, the non-string components are in big-endian order
   required bytes start_key = 3;
   required bytes end_key = 4;
 
@@ -315,7 +316,7 @@ message ListTablesResponsePB {
 message GetTableLocationsRequestPB {
   required TableIdentifierPB table = 1;
 
-  // key-range
+  // key-range, in big-endian order for non-string components
   optional bytes start_key = 3;
   optional bytes end_key = 4;
 

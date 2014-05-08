@@ -45,6 +45,23 @@ public class TestKeyEncoding {
             'r'},
             twoKeyInsertWithNull.key()));
 
+    // test that we get the correct memcmp result, the bytes are in big-endian order in a key
+    List<ColumnSchema> cols3 = new ArrayList<ColumnSchema>();
+    cols3.add(new ColumnSchema("key", Type.INT32, true));
+    cols3.add(new ColumnSchema("key2", Type.STRING, true));
+    Schema schemaIntString = new Schema(cols3);
+    KuduTable table3 = new KuduTable(null, "three", schemaIntString);
+    Insert small = new Insert(table3);
+    small.addInt("key", 20);
+    small.addString("key2", "data");
+    assertEquals(0, Bytes.memcmp(small.key(), small.key()));
+
+    Insert big = new Insert(table3);
+    big.addInt("key", 10000);
+    big.addString("key2", "data");
+    assertTrue(Bytes.memcmp(small.key(), big.key()) < 0);
+    assertTrue(Bytes.memcmp(big.key(), small.key()) > 0);
+
     // The following tests test our assumptions on unsigned data types sorting from KeyEncoder
     byte four = 4;
     byte onHundredTwentyFour = -4;

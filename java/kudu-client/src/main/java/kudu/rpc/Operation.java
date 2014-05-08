@@ -248,7 +248,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
     checkColumnExists(column);
     if (!column.getType().equals(type))
       throw new IllegalArgumentException(column.getName() +
-          "'s isn't " + type.getName() + ", it's " + column.getType().getName());
+          " isn't " + type.getName() + ", it's " + column.getType().getName());
     if (!column.isKey()) {
       encodedSize++; // col id
       if (!column.getType().equals(Type.STRING)) {

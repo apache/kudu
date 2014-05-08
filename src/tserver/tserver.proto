@@ -152,6 +152,7 @@ message ListTabletsResponsePB {
 message CreateTabletRequestPB {
   required bytes table_id = 1;
   required bytes tablet_id = 2;
+  // In the following keys, the non-string components are in big-endian order
   required bytes start_key = 3;
   required bytes end_key = 4;
 

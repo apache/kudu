@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 
 /**
  * Utility class used to encode row keys in a format that is mainly used for tablet lookups.
+ * Converts the non-string columns to big-endian order to facilitate memcmp
  */
 class KeyEncoder {
 
@@ -35,19 +36,23 @@ class KeyEncoder {
       case UINT16:
       case UINT32:
       case UINT64:
-        buf.write(bytes, offset, size);
+        for (int i = size - 1; i >= 0; i--) {
+          buf.write(bytes[offset + i]);
+        }
         break;
       case INT8:
       case INT16:
       case INT32:
       case INT64:
-        // picking the last byte because little endian
+        // picking the first byte because big endian
         byte lastByte = bytes[offset + (size - 1)];
         lastByte = Bytes.xorLeftMostBit(lastByte);
-        if (size > 1) {
-          buf.write(bytes, offset, size - 1);
-        }
         buf.write(lastByte);
+        if (size > 1) {
+          for (int i = size - 2; i >= 0; i--) {
+            buf.write(bytes[offset + i]);
+          }
+        }
         break;
       case STRING:
         // if this is the last component, just add
