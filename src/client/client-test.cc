@@ -39,6 +39,9 @@ namespace kudu {
 namespace client {
 
 using master::CatalogManager;
+using master::GetTableLocationsRequestPB;
+using master::GetTableLocationsResponsePB;
+using master::TabletLocationsPB;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 using tserver::ColumnRangePredicatePB;
@@ -73,18 +76,21 @@ class ClientTest : public KuduTest {
 
     ASSERT_STATUS_OK(KuduClient::Create(opts, &client_));
 
-    // Set up two test table/tablets inside the server.
-    // TODO: replace with 1 table with two tablets when we'll add the pre-splits to the client
-    ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_));
+    // Set up two test tables inside the server. One has a single split, just so
+    // that code is exercised a little more.
+    vector<string> keys;
+    EncodedKeyBuilder builder(schema_);
+    int val = 9;
+    builder.AddColumnKey(&val);
+    gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
+    keys.push_back(key->encoded_key().ToString());
+    ASSERT_STATUS_OK(client_->CreateTable(kTableName, schema_,
+                                          CreateTableOptions()
+                                              .WithSplitKeys(keys)));
     ASSERT_STATUS_OK(client_->CreateTable(kTable2Name, schema_));
 
     ASSERT_STATUS_OK(client_->OpenTable(kTableName, &client_table_));
     ASSERT_STATUS_OK(client_->OpenTable(kTable2Name, &client_table2_));
-
-    // TODO: Can we use the client instead of the direct insert with tablet peer?
-    // Grab a reference to the first of them, for more invasive testing.
-    ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-                client_table_->tablet_id(), &tablet_peer_));
   }
 
   virtual void TearDown() {
@@ -98,30 +104,47 @@ class ClientTest : public KuduTest {
 
   static const char *kTableName;
   static const char *kTable2Name;
+  static const uint32_t kNoBound;
 
-  // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-  void InsertTestRows(int num_rows) {
-    tablet::WriteTransactionState tx_state;
-    for (int i = 0; i < num_rows; i++) {
-      CHECK_OK(tablet_peer_->tablet()->InsertForTesting(&tx_state, BuildTestRow(i)));
-      tx_state.Reset();
-    }
-    CHECK_OK(tablet_peer_->tablet()->Flush());
+  string GetFirstTabletId(KuduTable* table) {
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    req.mutable_table()->set_table_name(table->name());
+    CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(
+        &req, &resp));
+    CHECK(resp.tablet_locations_size() > 0);
+    return resp.tablet_locations(0).tablet_id();
   }
 
-  ConstContiguousRow BuildTestRow(int index) {
-    rb_.Reset();
-    rb_.AddUint32(index);
-    rb_.AddUint32(index * 2);
-    rb_.AddString(StringPrintf("hello %d", index));
-    rb_.AddUint32(index * 3);
-    return rb_.row();
+  // Inserts 'num_rows' test rows via RPC.
+  void InsertTestRows(int num_rows) {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    session->SetTimeoutMillis(5000);
+    for (int i = 0; i < num_rows; i++) {
+      gscoped_ptr<Insert> insert(BuildTestRow(i));
+      ASSERT_STATUS_OK(session->Apply(&insert));
+      if (i % 25 == 0) { // to avoid backpressure
+        ASSERT_STATUS_OK(session->Flush());
+      }
+    }
+    ASSERT_STATUS_OK(session->Flush()); // and one more for good measure
+  }
+
+  gscoped_ptr<Insert> BuildTestRow(int index) {
+    gscoped_ptr<Insert> insert = client_table_->NewInsert();
+    PartialRow* row = insert->mutable_row();
+    CHECK_OK(row->SetUInt32(0, index));
+    CHECK_OK(row->SetUInt32(1, index * 2));
+    CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", index))));
+    CHECK_OK(row->SetUInt32(3, index * 3));
+    return insert.Pass();
   }
 
   void DoTestScanWithoutPredicates() {
     Schema projection = schema_.CreateKeyProjection();
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(projection));
+    ASSERT_STATUS_OK(scanner.SetProjection(&projection));
     LOG_TIMING(INFO, "Scanning with no predicates") {
       ASSERT_STATUS_OK(scanner.Open());
 
@@ -136,6 +159,7 @@ class ClientTest : public KuduTest {
           uint32_t to_add = *projection.ExtractColumnFromRow<UINT32>(row, 0);
           sum += implicit_cast<uint64_t>(to_add);
         }
+        rows.clear();
       }
       // The sum should be the sum of the arithmetic series from
       // 0..FLAGS_test_scan_num_rows-1
@@ -147,7 +171,7 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithStringPredicate() {
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     ColumnRangePredicatePB pred;
     ColumnSchemaToPB(schema_.column(2), pred.mutable_column());
     pred.set_lower_bound("hello 2");
@@ -169,13 +193,14 @@ class ClientTest : public KuduTest {
             FAIL() << schema_.DebugRow(row);
           }
         }
+        rows.clear();
       }
     }
   }
 
   void DoTestScanWithKeyPredicate() {
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     ColumnRangePredicatePB pred;
     ColumnSchemaToPB(schema_.column(0), pred.mutable_column());
     pred.set_lower_bound(EncodeUint32(5));
@@ -197,19 +222,37 @@ class ClientTest : public KuduTest {
             FAIL() << schema_.DebugRow(row);
           }
         }
+        rows.clear();
       }
     }
   }
 
   int CountRowsFromClient(KuduTable* table) {
+    return CountRowsFromClient(table, kNoBound, kNoBound);
+  }
+
+  int CountRowsFromClient(KuduTable* table, uint32_t lower_bound, uint32_t upper_bound) {
     KuduScanner scanner(table);
-    CHECK_OK(scanner.SetProjection(Schema(vector<ColumnSchema>(), 0)));
+    Schema empty_projection(vector<ColumnSchema>(), 0);
+    CHECK_OK(scanner.SetProjection(&empty_projection));
+    if (lower_bound != kNoBound || upper_bound != kNoBound) {
+      ColumnRangePredicatePB pred;
+      ColumnSchemaToPB(table->schema().column(0), pred.mutable_column());
+      if (lower_bound != kNoBound) {
+        pred.set_lower_bound(EncodeUint32(lower_bound));
+      }
+      if (upper_bound != kNoBound) {
+        pred.set_upper_bound(EncodeUint32(upper_bound));
+      }
+      CHECK_OK(scanner.AddConjunctPredicate(pred));
+    }
     CHECK_OK(scanner.Open());
     int count = 0;
     vector<const uint8_t*> rows;
     while (scanner.HasMoreRows()) {
       CHECK_OK(scanner.NextBatch(&rows));
       count += rows.size();
+      rows.clear();
     }
     return count;
   }
@@ -217,15 +260,16 @@ class ClientTest : public KuduTest {
   void ScanRowsToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
-    scanner.SetProjection(schema_);
-    CHECK_OK(scanner.Open());
+    scanner.SetProjection(&schema_);
+    ASSERT_STATUS_OK(scanner.Open());
     vector<const uint8_t*> rows;
     while (scanner.HasMoreRows()) {
-      CHECK_OK(scanner.NextBatch(&rows));
+      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
       BOOST_FOREACH(const uint8_t* row_ptr, rows) {
         ConstContiguousRow row(schema_, row_ptr);
         row_strings->push_back(schema_.DebugRow(row));
       }
+      rows.clear();
     }
   }
 
@@ -244,11 +288,11 @@ class ClientTest : public KuduTest {
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> client_table_;
   scoped_refptr<KuduTable> client_table2_;
-  shared_ptr<TabletPeer> tablet_peer_;
 };
 
 const char *ClientTest::kTableName = "client-testtb";
 const char *ClientTest::kTable2Name = "client-testtb2";
+const uint32_t ClientTest::kNoBound = kuint32max;
 
 TEST_F(ClientTest, TestBadTable) {
   scoped_refptr<KuduTable> t;
@@ -279,11 +323,69 @@ TEST_F(ClientTest, TestScan) {
   DoTestScanWithKeyPredicate();
 }
 
+TEST_F(ClientTest, TestScanMultiTablet) {
+  // 5 tablets, each with 10 rows worth of space.
+  EncodedKeyBuilder key_builder(schema_);
+  gscoped_ptr<EncodedKey> key;
+  vector<string> keys;
+  for (int i = 1; i < 5; i++) {
+    int val = i * 10;
+    key_builder.Reset();
+    key_builder.AddColumnKey(&val);
+    key.reset(key_builder.BuildEncodedKey());
+    keys.push_back(key->encoded_key().ToString());
+  }
+  ASSERT_STATUS_OK(client_->CreateTable("TestScanMultiTablet", schema_,
+                                        kudu::client::CreateTableOptions()
+                                            .WithSplitKeys(keys)));
+  scoped_refptr<KuduTable> table;
+  ASSERT_STATUS_OK(client_->OpenTable("TestScanMultiTablet", &table));
+
+  // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...57 into each
+  // tablet, except the first which is empty.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(5000);
+  for (int i = 1; i < 5; i++) {
+    gscoped_ptr<Insert> insert;
+    insert = BuildTestRow(2 + (i * 10));
+    ASSERT_STATUS_OK(session->Apply(&insert));
+    insert = BuildTestRow(3 + (i * 10));
+    ASSERT_STATUS_OK(session->Apply(&insert));
+    insert = BuildTestRow(5 + (i * 10));
+    ASSERT_STATUS_OK(session->Apply(&insert));
+    insert = BuildTestRow(7 + (i * 10));
+    ASSERT_STATUS_OK(session->Apply(&insert));
+  }
+  ASSERT_STATUS_OK(session->Flush());
+
+  // Run through various scans.
+  ASSERT_EQ(16, CountRowsFromClient(client_table_.get(), kNoBound, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(client_table_.get(), kNoBound, 15));
+  ASSERT_EQ(9, CountRowsFromClient(client_table_.get(), 27, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(client_table_.get(), 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(client_table_.get(), 0, 10));
+  ASSERT_EQ(4, CountRowsFromClient(client_table_.get(), 0, 20));
+  ASSERT_EQ(8, CountRowsFromClient(client_table_.get(), 0, 30));
+  ASSERT_EQ(6, CountRowsFromClient(client_table_.get(), 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(client_table_.get(), 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(client_table_.get(), 50, kNoBound));
+}
+
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
+  Schema empty_projection(vector<ColumnSchema>(), 0);
+  ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
   ASSERT_STATUS_OK(scanner.Open());
+
+  // There are two tablets in the table, both empty. Until we scan to
+  // the last tablet, HasMoreRows will return true (because it doesn't
+  // know whether there's data in subsequent tablets).
+  ASSERT_TRUE(scanner.HasMoreRows());
+  vector<const uint8_t*> rows;
+  ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+  ASSERT_TRUE(rows.empty());
   ASSERT_FALSE(scanner.HasMoreRows());
-  scanner.Close();
 }
 
 // Test scanning with an empty projection. This should yield an empty
@@ -293,7 +395,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
   InsertTestRows(FLAGS_test_scan_num_rows);
   Schema empty_projection(vector<ColumnSchema>(), 0);
   KuduScanner scanner(client_table_.get());
-  ASSERT_STATUS_OK(scanner.SetProjection(empty_projection));
+  ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
   LOG_TIMING(INFO, "Scanning with no projected columns") {
     ASSERT_STATUS_OK(scanner.Open());
 
@@ -303,6 +405,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
     while (scanner.HasMoreRows()) {
       ASSERT_STATUS_OK(scanner.NextBatch(&rows));
       count += rows.size();
+      rows.clear();
     }
     ASSERT_EQ(FLAGS_test_scan_num_rows, count);
   }
@@ -333,7 +436,7 @@ TEST_F(ClientTest, TestCloseScanner) {
   {
     SCOPED_TRACE("Implicit close");
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     ASSERT_STATUS_OK(scanner.Open());
     ASSERT_EQ(0, manager->CountActiveScanners());
     scanner.Close();
@@ -344,7 +447,7 @@ TEST_F(ClientTest, TestCloseScanner) {
   {
     SCOPED_TRACE("Explicit close");
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+    ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
     ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0)); // won't return data on open
     ASSERT_STATUS_OK(scanner.Open());
     ASSERT_EQ(1, manager->CountActiveScanners());
@@ -356,7 +459,7 @@ TEST_F(ClientTest, TestCloseScanner) {
     SCOPED_TRACE("Close when out of scope");
     {
       KuduScanner scanner(client_table_.get());
-      ASSERT_STATUS_OK(scanner.SetProjection(schema_));
+      ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
       ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0));
       ASSERT_STATUS_OK(scanner.Open());
       ASSERT_EQ(1, manager->CountActiveScanners());
@@ -638,13 +741,17 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
+  // TODO: These tests explicitly use a single-tablet table (client_table2_),
+  // because multi-tablet tables are prone to deadlocking.
+  //
+  // See KUDU-237 for more details.
   AlterTableBuilder alter;
 
   // test that remove key should throws an error
   {
     alter.Reset();
     alter.DropColumn("key");
-    Status s = client_->AlterTable(kTableName, alter);
+    Status s = client_->AlterTable(kTable2Name, alter);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column");
   }
@@ -653,7 +760,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     alter.Reset();
     alter.RenameColumn("key", "key2");
-    Status s = client_->AlterTable(kTableName, alter);
+    Status s = client_->AlterTable(kTable2Name, alter);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "cannot rename a key column");
   }
@@ -662,17 +769,23 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     alter.Reset();
     alter.RenameColumn("int_val", "string_val");
-    Status s = client_->AlterTable(kTableName, alter);
+    Status s = client_->AlterTable(kTable2Name, alter);
     ASSERT_TRUE(s.IsAlreadyPresent());
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
   }
+
+  // Need a tablet peer for the next set of tests.
+  string tablet_id = GetFirstTabletId(client_table2_.get());
+  shared_ptr<TabletPeer> tablet_peer;
+  ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
+      tablet_id, &tablet_peer));
 
   {
     alter.Reset();
     alter.DropColumn("int_val");
     alter.AddNullableColumn("new_col", UINT32);
-    ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
-    ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
+    ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
+    ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
   // test that specifying an encoding incompatible with the column's
@@ -680,55 +793,56 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     alter.Reset();
     alter.AddNullableColumn("new_string_val", STRING, ColumnStorageAttributes(GROUP_VARINT));
-    Status s = client_->AlterTable(kTableName, alter);
+    Status s = client_->AlterTable(kTable2Name, alter);
     ASSERT_TRUE(s.IsNotSupported());
     ASSERT_STR_CONTAINS(s.ToString(), "Unsupported type/encoding pair");
-    ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
+    ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
   {
     alter.Reset();
     alter.AddNullableColumn("new_string_val", STRING, ColumnStorageAttributes(PREFIX_ENCODING));
-    ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
-    ASSERT_EQ(2, tablet_peer_->tablet()->metadata()->schema_version());
+    ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
+    ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
   }
 
   {
     const char *kRenamedTableName = "RenamedTable";
     alter.Reset();
     alter.RenameTable(kRenamedTableName);
-    ASSERT_STATUS_OK(client_->AlterTable(kTableName, alter));
-    ASSERT_EQ(3, tablet_peer_->tablet()->metadata()->schema_version());
-    ASSERT_EQ(kRenamedTableName, tablet_peer_->tablet()->metadata()->table_name());
+    ASSERT_STATUS_OK(client_->AlterTable(kTable2Name, alter));
+    ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(kRenamedTableName, tablet_peer->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
     ASSERT_TRUE(catalog_manager->TableNameExists(kRenamedTableName));
-    ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
+    ASSERT_FALSE(catalog_manager->TableNameExists(kTable2Name));
   }
 }
 
 TEST_F(ClientTest, TestDeleteTable) {
-  string tablet_id = tablet_peer_->tablet()->tablet_id();
+  string tablet_id = GetFirstTabletId(client_table2_.get());
 
   // Remove the table
   // NOTE that it returns when the operation is completed on the master side
-  ASSERT_STATUS_OK(client_->DeleteTable(kTableName));
+  ASSERT_STATUS_OK(client_->DeleteTable(kTable2Name));
   CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
-  ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
+  ASSERT_FALSE(catalog_manager->TableNameExists(kTable2Name));
 
   // Wait until the table is removed from the TS
   int wait_time = 1000;
   bool tablet_found = true;
   for (int i = 0; i < 80 && tablet_found; ++i) {
+    shared_ptr<TabletPeer> tablet_peer;
     tablet_found = cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-                      tablet_id, &tablet_peer_);
+                      tablet_id, &tablet_peer);
     usleep(wait_time);
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
   ASSERT_FALSE(tablet_found);
 
   // Try to open the deleted table
-  Status s = client_->OpenTable(kTableName, &client_table_);
+  Status s = client_->OpenTable(kTable2Name, &client_table_);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
 }
@@ -747,7 +861,7 @@ TEST_F(ClientTest, TestGetTableSchema) {
 }
 
 TEST_F(ClientTest, TestStaleLocations) {
-  string tablet_id = client_table_->tablet_id();
+  string tablet_id = GetFirstTabletId(client_table2_.get());
 
   // The Tablet is up and running the location should not be stale
   master::TabletLocationsPB locs_pb;

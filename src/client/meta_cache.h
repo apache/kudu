@@ -30,6 +30,7 @@ class TabletServerServiceProxy;
 
 namespace master {
 class MasterServiceProxy;
+class TabletLocationsPB_ReplicaPB;
 class TSInfoPB;
 } // namespace master
 
@@ -87,7 +88,10 @@ struct RemoteReplica {
   RemoteTabletServer* ts;
 };
 
+struct InFlightLookup;
 struct InFlightRefresh;
+
+typedef std::tr1::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 
 // The client's view of a given tablet. This object manages lookups of
 // the tablet's locations, status, etc.
@@ -95,56 +99,38 @@ struct InFlightRefresh;
 // This class is thread-safe.
 class RemoteTablet : public base::RefCountedThreadSafe<RemoteTablet> {
  public:
-  explicit RemoteTablet(const std::string& tablet_id)
+  RemoteTablet(const std::string& tablet_id,
+               const Slice& start_key,
+               const Slice& end_key)
     : tablet_id_(tablet_id),
-      state_(kInvalid) {
+      start_key_(start_key),
+      end_key_(end_key) {
   }
 
-  // Refresh the replica information about this tablet from the master
-  // if necessary.
-  //
-  // When the replicas are available, StatusCallback is called. If the information
-  // is already cached, 'cb' may be called immediately from the same thread.
-  //
-  // The provided callback may run on an IO thread, so should never block or
-  // otherwise be expensive to run.
-  void Refresh(KuduClient* cient, const StatusCallback& cb,
-               bool force);
+  // Updates this tablet's replica locations.
+  void Refresh(const TabletServerMap& tservers,
+               const google::protobuf::RepeatedPtrField
+                 <master::TabletLocationsPB_ReplicaPB>& replicas);
 
   // Return the tablet server hosting the Nth replica.
   //
   // Returns NULL if 'idx' is out of bounds. Since the list of
-  // replicas may be updated by other threads concurrenctly, callers
+  // replicas may be updated by other threads concurrently, callers
   // should always check the result against NULL.
   RemoteTabletServer* replica_tserver(int idx);
 
   const std::string& tablet_id() const { return tablet_id_; }
 
+  const Slice& start_key() const { return start_key_; }
+  const Slice& end_key() const { return end_key_; }
+
  private:
-  enum State {
-    // The current data in this structure is known to be incorrect.
-    // (eg the structure has just been created).
-    kInvalid,
-
-    // TODO: add a 'kLookingUp' state which would be used when one thread
-    // is already in the process of resolving this tablet. Then other threads
-    // can piggy-back on the same response, rather than potentially duplicating
-    // work.
-
-    // As best we know, the current information about this tablet is
-    // up-to-date and can be used without any round-trip to the master.
-    kValid
-  };
-
-  // RPC Callback (see impl for details).
-  void GetTabletLocationsCB(KuduClient* client, InFlightRefresh* ifr);
-
   const std::string tablet_id_;
-
+  const Slice start_key_;
+  const Slice end_key_;
   mutable simple_spinlock lock_;
 
   // All non-const members are protected by 'lock_'.
-  State state_;
   std::vector<RemoteReplica> replicas_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteTablet);
@@ -160,41 +146,41 @@ class MetaCache {
   explicit MetaCache(KuduClient* client);
   ~MetaCache();
 
-  // Look up which tablet hosts the given row of the given table.
-  // When it is available, the tablet is stored in *remote_tablet
-  // and the callback is fired.
+  // Look up which tablet hosts the given key of the given table. When it
+  // is available, the tablet is stored in *remote_tablet and the callback is fired.
+  //
   // NOTE: the callback may be called from an IO thread or inline with
   // this call if the cached data is already available.
   //
-  // The returned RemoteTablet has not been Refresh()ed upon the callback
-  // firing.
+  // NOTE: the memory referenced by 'key' must remain valid until 'callback' is
+  // invoked.
   //
   // TODO: we probably need some kind of struct here for things
   // like timeout/trace/etc.
-  void LookupTabletByRow(const KuduTable* table,
-                         const PartialRow& row,
+  void LookupTabletByKey(const KuduTable* table,
+                         const Slice& key,
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
-  // Look up or create the RemoteTablet object for the given tablet ID.
+  // Look up the RemoteTablet object for the given tablet ID. Will die if not
+  // found.
   //
   // This is always a local operation (no network round trips or DNS resolution, etc).
   void LookupTabletByID(const std::string& tablet_id,
                         scoped_refptr<RemoteTablet>* remote_tablet);
 
-
-  // TODO: make private
-
  private:
-  friend class RemoteTablet;
-
   // Update our information about the given tablet server.
   //
   // This is called when we get some response from the master which contains
   // the latest host/port info for a server.
   //
-  // Returns the updated record.
-  RemoteTabletServer* UpdateTabletServer(const master::TSInfoPB& pb);
+  // NOTE: Must be called with lock_ held.
+  void UpdateTabletServer(const master::TSInfoPB& pb);
+
+  // Called on the slow LookupTablet path when the master responds. Populates
+  // the tablet caches and invokes the user-specified callback.
+  void GetTableLocationsCB(InFlightLookup* ifl);
 
   KuduClient* client_;
 
@@ -207,11 +193,23 @@ class MetaCache {
   // shared_ptr, etc.
   //
   // Protected by lock_
-  std::tr1::unordered_map<std::string, RemoteTabletServer*> ts_cache_;
+  TabletServerMap ts_cache_;
 
-  // Cache of tablets which we are maintaining information about.
-  std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablet_cache_;
+  // Cache of tablets, keyed by table name, then by start key.
+  //
+  // Protected by lock_.
+  typedef SliceMap<scoped_refptr<RemoteTablet> >::type SliceTabletMap;
+  std::tr1::unordered_map<std::string, SliceTabletMap> tablets_by_table_and_key_;
 
+  // Manages data for slices from tablets_by_table_and_key_.
+  //
+  // Protected by lock_.
+  Arena slice_data_arena_;
+
+  // Cache of tablets, keyed by tablet ID.
+  //
+  // Protected by lock_
+  std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablets_by_id_;
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };
 

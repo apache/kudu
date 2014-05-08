@@ -21,6 +21,7 @@
 namespace kudu {
 
 class DnsResolver;
+class RpcLineItemDAO;
 
 namespace rpc {
 class Messenger;
@@ -34,11 +35,12 @@ class MasterServiceProxy;
 namespace client {
 
 class AlterTableBuilder;
-class Insert;
-class KuduTable;
-class KuduSession;
-class MetaCache;
 class CreateTableOptions;
+class Insert;
+class KuduSession;
+class KuduTable;
+class MetaCache;
+class RemoteTablet;
 
 namespace internal {
 class Batcher;
@@ -119,12 +121,6 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
   Status OpenTable(const std::string& table_name,
                    scoped_refptr<KuduTable>* table);
 
-  // Advanced API: return an RPC proxy to the given tablet ID.
-  // TODO: this is only here temporarily. Eventually, users of this API should
-  // not ever be exposed to the actual RPC proxy directly.
-  Status GetTabletProxy(const std::string& tablet_id,
-                        std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
-
   // Create a new session for interacting with the cluster.
   // User is responsible for destroying the session object.
   // This is a fully local operation (no RPCs or blocking).
@@ -150,12 +146,19 @@ class KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
 
  private:
   friend class KuduTable;
+  friend class KuduScanner;
   friend class RemoteTablet;
   friend class internal::Batcher;
+
+  // TODO: When RpcLineItemDAO uses the client API, this goes away. See KUDU-264.
+  friend class kudu::RpcLineItemDAO;
 
   explicit KuduClient(const KuduClientOptions& options);
   Status Init();
 
+  // Return an RPC proxy to the given tablet ID.
+  Status GetTabletProxy(const std::string& tablet_id,
+                        std::tr1::shared_ptr<tserver::TabletServerServiceProxy>* proxy);
 
   Status IsCreateTableInProgress(const std::string& table_name,
                                  const MonoTime& deadline,
@@ -212,14 +215,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
   // Create a new insertion for this table.
   gscoped_ptr<Insert> NewInsert();
 
-  // Get a proxy to the tablet server hosting this table.
-  // This is a temporary shim which will go away once tablets are splittable, etc.
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy();
-
-  // TODO: REMOVE ME (exposed because some code uses some direct stuff)
-  // --------------------------------------------------------------------------
-  const string& tablet_id() const { return tablet_id_; }
-  // --------------------------------------------------------------------------
+  KuduClient *client() const { return client_.get(); }
 
  private:
   friend class KuduClient;
@@ -236,19 +232,7 @@ class KuduTable : public base::RefCountedThreadSafe<KuduTable> {
 
   std::tr1::shared_ptr<KuduClient> client_;
 
-  // TODO: this will eventually go away, since every request will potentially go
-  // to a different server. Instead, each request should lookup the RemoteTablet,
-  // instance, use that to get a RemoteTabletServer, and then use that to obtain
-  // the proxy.
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
-
-  // Lock protecting proxy_
-  // Should not call any Batcher methods or Session methods while holding this
-  // lock.
-  mutable simple_spinlock lock_;
-
   std::string name_;
-  string tablet_id_;
 
   // TODO: figure out how we deal with a schema change from the client perspective.
   // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
@@ -268,6 +252,11 @@ class Insert {
 
   PartialRow* mutable_row() { return &row_; }
   const PartialRow& row() const { return row_; }
+
+  // Create and encode the key for this insert.
+  //
+  // Caller takes ownership of the allocated memory.
+  gscoped_ptr<EncodedKey> CreateKey();
 
   std::string ToString() const {
     return "INSERT " + row_.ToString();
@@ -675,11 +664,9 @@ class KuduScanner {
   explicit KuduScanner(KuduTable* table);
   ~KuduScanner();
 
-  // TODO: add an explicit close? use the dtor? would be good to
-  // free the server-side resources.
-
-  // Set the projection used for this scanner.
-  Status SetProjection(const Schema& projection);
+  // Set the projection used for this scanner. The given 'projection' object
+  // must remain valid for the lifetime of this scanner object.
+  Status SetProjection(const Schema* projection);
 
   // Add a predicate to this scanner.
   // The predicates act as conjunctions -- i.e, they all must pass for
@@ -703,13 +690,17 @@ class KuduScanner {
   // to reuse this Scanner object.
   void Close();
 
-  // Return true if there are more rows to be fetched from this scanner.
+  // Return true if there may be rows to be fetched from this scanner.
+  //
+  // Note: will be true provided there's at least one more tablet left to
+  // scan, even if that tablet has no data (we'll only know once we scan it).
   bool HasMoreRows() const;
 
-  // Return the next batch of rows.
-  // Each row is a pointer suitable for constructing a ConstContiguousRow.
-  // TODO: this isn't a good API... need to fix this up while maintaining good
-  // performance.
+  // Appends the next batch of rows to the 'rows' vector. Each row is a
+  // pointer suitable for constructing a ConstContiguousRow.
+  //
+  // TODO: this isn't a good API... need to fix this up while maintaining
+  // good performance.
   Status NextBatch(std::vector<const uint8_t*>* rows);
 
   // Set the hint for the size of the next batch in bytes.
@@ -717,14 +708,44 @@ class KuduScanner {
   // to the tablet server won't return data.
   Status SetBatchSizeBytes(uint32_t batch_size);
 
+  // Returns a string representation of this scan.
+  std::string ToString() const;
+
  private:
   Status CheckForErrors();
 
+  Status OpenTablet(const Slice& key);
+
+  // Extracts data from the last scan response and adds them to 'rows'.
+  Status ExtractRows(std::vector<const uint8_t*>* rows);
+
+  // Returns whether there exist more tablets we should scan.
+  //
+  // Note: there may not be any actual matching rows in subsequent tablets,
+  // but we won't know until we scan them.
+  bool MoreTablets() const;
+
+  // Possible scan requests.
+  enum RequestType {
+    // A new scan of a particular tablet.
+    NEW,
+
+    // A continuation of an existing scan (to read more rows).
+    CONTINUE,
+
+    // A close of a partially-completed scan. Complete scans are closed
+    // automatically by the tablet server.
+    CLOSE
+  };
+
+  // Modifies fields in 'next_req_' in preparation for a new request.
+  void PrepareRequest(RequestType state);
+
   bool open_;
-
   bool data_in_open_;
-
-  Schema projection_;
+  const Schema* projection_;
+  bool has_batch_size_bytes_;
+  uint32 batch_size_bytes_;
 
   // The next scan request to be sent. This is cached as a field
   // since most scan requests will share the scanner ID with the previous
@@ -737,9 +758,21 @@ class KuduScanner {
   // RPC controller for the last in-flight RPC.
   rpc::RpcController controller_;
 
+  // The table we're scanning.
   KuduTable* table_;
 
+  // Range predicates to constrain scanning.
   ColumnRangePredicates preds_;
+
+  // Key range we're scanning (optional). Extracted from column range
+  // predicates during Open.
+  gscoped_ptr<EncodedKey> start_key_;
+  gscoped_ptr<EncodedKey> end_key_;
+
+  // The tablet we're scanning.
+  scoped_refptr<RemoteTablet> remote_;
+
+  static const size_t kRpcTimeoutMillis = 5000;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);
 };

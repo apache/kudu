@@ -141,6 +141,8 @@ struct InFlightOp {
   // reference.
   gscoped_ptr<Insert> insert;
 
+  gscoped_ptr<EncodedKey> key;
+
   // The tablet the operation is destined for.
   // This is only filled in after passing through the kLookingUpTablet state.
   scoped_refptr<RemoteTablet> tablet;
@@ -373,6 +375,7 @@ Status Batcher::Add(gscoped_ptr<Insert> insert) {
   InFlightOp* op = new InFlightOp;
   op->insert.reset(insert.release());
   op->state = InFlightOp::kLookingUpTablet;
+  op->key = op->insert->CreateKey();
 
   AddInFlightOp(op);
   if (VLOG_IS_ON(2)) {
@@ -381,8 +384,11 @@ Status Batcher::Add(gscoped_ptr<Insert> insert) {
 
   // Increment our reference count for the outstanding callback.
   AddRef();
-  client_->meta_cache_->LookupTabletByRow(op->insert->table(), op->insert->row(), &op->tablet,
-                                 boost::bind(&Batcher::TabletLookupFinished, this, op, _1));
+  client_->meta_cache_->LookupTabletByKey(op->insert->table(),
+                                          op->key->encoded_key(),
+                                          &op->tablet,
+                                          boost::bind(&Batcher::TabletLookupFinished, this,
+                                                      op, _1));
   return Status::OK();
 }
 
@@ -425,60 +431,22 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     return;
   }
 
-  {
-    boost::lock_guard<simple_spinlock> l(op->lock_);
-    if (VLOG_IS_ON(2)) {
-      VLOG(2) << "TabletLookupFinished for " << op->insert->ToString()
-              << ": " << s.ToString();
-      if (s.ok()) {
-        VLOG(2) << "Result: tablet_id = " << op->tablet->tablet_id();
-      }
-    }
-
-    // We've figured out which tablet the row falls under.
-    // Next, we need to find the current locations of that tablet.
-    CHECK(s.ok()) << "TODO: handle failed lookup of row";
-    CHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
-    CHECK(op->tablet != NULL);
-    op->state = InFlightOp::kRefreshingTabletLocations;
-  }
-
-  bool force = false;
-  AddRef();
-  op->tablet->Refresh(client_,
-                      boost::bind(&Batcher::TabletRefreshFinished, this, op, _1),
-                      force);
-}
-
-void Batcher::TabletRefreshFinished(InFlightOp* op, const Status& s) {
-  ScopedRefReleaser<Batcher> releaser(this);
-  if (IsAborted()) {
-    VLOG(1) << "Aborted batch: TabletRefreshFinished for " << op->insert->ToString();
-    MarkInFlightOpFailed(op, Status::Aborted("Batch aborted"));
-    // 'op' is deleted by above function.
-    return;
-  }
-
-  boost::unique_lock<simple_spinlock> l(lock_);
-  boost::unique_lock<simple_spinlock> l2(op->lock_);
-  CHECK_EQ(op->state, InFlightOp::kRefreshingTabletLocations);
-
   if (VLOG_IS_ON(2)) {
-    VLOG(2) << "TabletRefreshFinished for " << op->insert->ToString()
+    VLOG(2) << "TabletLookupFinished for " << op->insert->ToString()
             << ": " << s.ToString();
+    if (s.ok()) {
+      VLOG(2) << "Result: tablet_id = " << op->tablet->tablet_id();
+    }
   }
 
   if (!s.ok()) {
-    l2.unlock();
-    l.unlock();
     MarkInFlightOpFailed(op, s);
     CheckForFinishedFlush();
     return;
   }
 
-  // We've found the locations of the tablet.
-  // Next we want to make sure we have DNS-resolved the TS.
-  CHECK(s.ok()) << "TODO: handle failed lookup of tablet";
+  boost::unique_lock<simple_spinlock> l(lock_);
+  boost::unique_lock<simple_spinlock> l2(op->lock_);
 
   RemoteTabletServer* ts = op->tablet->replica_tserver(0);
   CHECK(ts != NULL) << "TODO: handle no tablet locations";
@@ -486,6 +454,12 @@ void Batcher::TabletRefreshFinished(InFlightOp* op, const Status& s) {
   if (VLOG_IS_ON(2)) {
     VLOG(2) << "Result: loc = " << ts->ToString();
   }
+
+  // We've figured out which tablet the row falls under.
+  // Next, we need to find the current locations of that tablet.
+  CHECK_EQ(op->state, InFlightOp::kLookingUpTablet);
+  CHECK(op->tablet != NULL);
+  op->state = InFlightOp::kRefreshingTabletLocations;
 
   bool needs_tsproxy_refresh = false;
   PerTSBuffer* buf = FindPtrOrNull(per_ts_buffers_, ts);
@@ -571,9 +545,10 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     // so we'll just grab the table from the first.
     const KuduTable* table = rpc->ops[0]->insert->table();
     const Schema& schema = table->schema();
+    const RemoteTablet* tablet = entry.first;
 
     req.Clear();
-    req.set_tablet_id(entry.first->tablet_id());
+    req.set_tablet_id(tablet->tablet_id());
     // Set up schema
 
     CHECK_OK(SchemaToPB(schema, req.mutable_schema()));
@@ -583,6 +558,12 @@ void Batcher::FlushBuffer(RemoteTabletServer* ts, PerTSBuffer* buf) {
     // Add the rows
     RowOperationsPBEncoder enc(to_insert);
     BOOST_FOREACH(InFlightOp* op, rpc->ops) {
+      DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
+          << "Row " << schema.DebugEncodedRowKey(op->key->encoded_key().ToString())
+          << " not in range (" << schema.DebugEncodedRowKey(tablet->start_key().ToString())
+          << ", " << schema.DebugEncodedRowKey(tablet->end_key().ToString())
+          << ")";
+
       enc.Add(RowOperationsPB::INSERT, op->insert->row());
 
       // Set the state now, even though we haven't yet sent it -- at this point

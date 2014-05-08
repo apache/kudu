@@ -178,6 +178,31 @@ FindOrNull(Collection& collection,  // NOLINT
   return &it->second;
 }
 
+// Returns a pointer to the const value associated with the greatest key
+// that's less than or equal to the given key, or NULL if no such key exists.
+template <class Collection>
+const typename Collection::value_type::second_type*
+FindFloorOrNull(const Collection& collection,
+                const typename Collection::value_type::first_type& key) {
+  typename Collection::const_iterator it = collection.upper_bound(key);
+  if (it == collection.begin()) {
+    return 0;
+  }
+  return &(--it)->second;
+}
+
+// Same as above but returns a pointer to the non-const value.
+template <class Collection>
+typename Collection::value_type::second_type*
+FindFloorOrNull(Collection& collection,  // NOLINT
+                const typename Collection::value_type::first_type& key) {
+  typename Collection::iterator it = collection.upper_bound(key);
+  if (it == collection.begin()) {
+    return 0;
+  }
+  return &(--it)->second;
+}
+
 // Returns the pointer value associated with the given key. If none is found,
 // NULL is returned. The function is designed to be used with a map of keys to
 // pointers.

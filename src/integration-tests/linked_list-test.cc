@@ -35,6 +35,7 @@
 #include "util/stopwatch.h"
 #include "util/test_util.h"
 
+using kudu::client::CreateTableOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientOptions;
 using kudu::client::KuduScanner;
@@ -55,6 +56,8 @@ enum {
 };
 
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
+DEFINE_int32(num_tablets, 4, "Number of tablets over which to split the data");
+DEFINE_int32(num_tablet_servers, 2, "Number of tablet servers to start");
 
 static const char* const kKeyColumnName = "rand_key";
 static const char* const kLinkColumnName = "link_to";
@@ -89,7 +92,7 @@ class LinkedListTest : public KuduTest {
       cluster_.reset();
     }
     ExternalMiniClusterOptions opts;
-    opts.num_tablet_servers = 1;
+    opts.num_tablet_servers = FLAGS_num_tablet_servers;
     opts.data_root = GetTestPath("linked-list-cluster");
     opts.extra_tserver_flags.push_back("--skip_remove_old_recovery_dir");
     cluster_.reset(new ExternalMiniCluster(opts));
@@ -106,6 +109,9 @@ class LinkedListTest : public KuduTest {
   Status VerifyLinkedList(int64_t expected, int64_t* verified_count);
 
   void WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t* seen);
+  // Generates a vector of keys for the table such that each tablet is
+  // responsible for an equal fraction of the uint64 key space.
+  vector<string> GenerateSplitKeys() const;
 
  protected:
   static const char* kTableName;
@@ -176,9 +182,26 @@ class ChainGenerator {
 };
 } // anonymous namespace
 
+vector<string> LinkedListTest::GenerateSplitKeys() const {
+  EncodedKeyBuilder key_builder(schema_);
+  gscoped_ptr<EncodedKey> key;
+  vector<string> split_keys;
+  uint64_t increment = kuint64max / FLAGS_num_tablets;
+  for (uint64_t i = 1; i < FLAGS_num_tablets; i++) {
+    uint64_t val = i * increment;
+    key_builder.Reset();
+    key_builder.AddColumnKey(&val);
+    key.reset(key_builder.BuildEncodedKey());
+    split_keys.push_back(key->encoded_key().ToString());
+  }
+  return split_keys;
+}
+
 Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
-                                      int64_t* written_count) {
-  RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_),
+                                      int64_t *written_count) {
+  RETURN_NOT_OK_PREPEND(client_->CreateTable(kTableName, schema_,
+                                             CreateTableOptions()
+                                               .WithSplitKeys(GenerateSplitKeys())),
                         "Failed to create table");
   scoped_refptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
@@ -248,7 +271,7 @@ Status LinkedListTest::VerifyLinkedList(int64_t expected, int64_t* verified_coun
   scoped_refptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
-  RETURN_NOT_OK_PREPEND(scanner.SetProjection(verify_projection_), "Bad projection");
+  RETURN_NOT_OK_PREPEND(scanner.SetProjection(&verify_projection_), "Bad projection");
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");
 
   vector<const uint8_t*> rows;
@@ -272,6 +295,7 @@ Status LinkedListTest::VerifyLinkedList(int64_t expected, int64_t* verified_coun
         seen_link_to.push_back(link);
       }
     }
+    rows.clear();
   }
   *verified_count = seen_key.size();
   LOG(INFO) << "Done collecting results (" << (*verified_count) << " rows in "

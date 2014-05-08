@@ -11,7 +11,6 @@
 #include "common/wire_protocol.h"
 #include "gutil/casts.h"
 #include "gutil/stl_util.h"
-#include "gutil/strings/join.h"
 #include "gutil/strings/substitute.h"
 #include "master/master.h" // TODO: remove this include - just needed for default port
 #include "master/master.proxy.h"
@@ -46,6 +45,7 @@ using kudu::master::IsAlterTableDoneResponsePB;
 using kudu::master::IsCreateTableDoneRequestPB;
 using kudu::master::IsCreateTableDoneResponsePB;
 using kudu::master::MasterServiceProxy;
+using kudu::master::TabletLocationsPB;
 using kudu::tserver::ColumnRangePredicatePB;
 using kudu::tserver::NewScanRequestPB;
 using kudu::tserver::ScanRequestPB;
@@ -336,16 +336,12 @@ Status KuduClient::GetTabletProxy(const std::string& tablet_id,
   scoped_refptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
-  Synchronizer s;
-  remote_tablet->Refresh(this, s.callback(), false);
-  RETURN_NOT_OK(s.Wait());
-
   RemoteTabletServer* ts = remote_tablet->replica_tserver(0);
   if (ts == NULL) {
     return Status::NotFound(Substitute("No replicas for tablet $0", tablet_id));
   }
 
-  s.Reset();
+  Synchronizer s;
   ts->RefreshProxy(this, s.callback(), false);
   RETURN_NOT_OK(s.Wait());
 
@@ -398,6 +394,7 @@ Status KuduTable::Open() {
   req.mutable_table()->set_table_name(name_);
   do {
     rpc::RpcController rpc;
+    rpc.set_timeout(client_->options_.default_admin_operation_timeout);
     RETURN_NOT_OK(client_->master_proxy()->GetTableLocations(req, &resp, &rpc));
     if (resp.has_error()) {
       return StatusFromPB(resp.error().status());
@@ -410,24 +407,9 @@ Status KuduTable::Open() {
     usleep(100000);
   } while (1);
 
-  // TODO: we can use the info inside the resp...
-  // TODO: some code relies on table->name() as tablet id
-  DCHECK_EQ(1, resp.tablet_locations_size()) << "Only one tablet supported by the client";
-  tablet_id_ = resp.tablet_locations(0).tablet_id();
-  VLOG(1) << "Open Table " << name_ << ", found tablet=" << tablet_id_;
+  VLOG(1) << "Open Table " << name_ << ", found " << resp.tablet_locations_size() << " tablets";
   return Status::OK();
 }
-
-std::tr1::shared_ptr<tserver::TabletServerServiceProxy> KuduTable::proxy() {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  if (proxy_) {
-    return proxy_;
-  }
-  // CHECK is wrong here, but this whole method is going away sooner or later...
-  CHECK_OK(client_->GetTabletProxy(tablet_id_, &proxy_));
-  return proxy_;
-}
-
 
 gscoped_ptr<Insert> KuduTable::NewInsert() {
   return gscoped_ptr<Insert>(new Insert(this));
@@ -585,6 +567,18 @@ Insert::Insert(KuduTable* table)
 
 Insert::~Insert() {}
 
+gscoped_ptr<EncodedKey> Insert::CreateKey() {
+  CHECK(row_.IsKeySet()) << "key must be set";
+
+  ConstContiguousRow row = row_.as_contiguous_row();
+  EncodedKeyBuilder kb(row.schema());
+  for (int i = 0; i < row.schema().num_key_columns(); i++) {
+    kb.AddColumnKey(row.cell_ptr(i));
+  }
+  gscoped_ptr<EncodedKey> key(kb.BuildEncodedKey());
+  return key.Pass();
+}
+
 ////////////////////////////////////////////////////////////
 // AlterTable
 ////////////////////////////////////////////////////////////
@@ -706,6 +700,9 @@ EncodedKey* ColumnRangePredicates::GetEndKey() {
 KuduScanner::KuduScanner(KuduTable* table)
   : open_(false),
     data_in_open_(false),
+    projection_(NULL),
+    has_batch_size_bytes_(false),
+    batch_size_bytes_(0),
     table_(DCHECK_NOTNULL(table)),
     preds_(&table->schema()) {
 }
@@ -714,16 +711,15 @@ KuduScanner::~KuduScanner() {
   Close();
 }
 
-Status KuduScanner::SetProjection(const Schema& projection) {
+Status KuduScanner::SetProjection(const Schema* projection) {
   CHECK(!open_) << "Scanner already open";
   projection_ = projection;
-  NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
-  RETURN_NOT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
   return Status::OK();
 }
 
 Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
-  next_req_.set_batch_size_bytes(batch_size);
+  has_batch_size_bytes_ = true;
+  batch_size_bytes_ = batch_size;
   return Status::OK();
 }
 
@@ -733,35 +729,57 @@ Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicatePB& pb) {
   return Status::OK();
 }
 
-Status KuduScanner::Open() {
-  CHECK(!open_) << "Scanner already open";
+void KuduScanner::PrepareRequest(RequestType state) {
+  if (state == KuduScanner::CLOSE) {
+    next_req_.set_batch_size_bytes(0);
+  } else if (has_batch_size_bytes_) {
+    next_req_.set_batch_size_bytes(batch_size_bytes_);
+  } else {
+    next_req_.clear_batch_size_bytes();
+  }
 
+  if (state == KuduScanner::NEW) {
+    next_req_.set_call_seq_id(0);
+  } else {
+    next_req_.set_call_seq_id(next_req_.call_seq_id() + 1);
+  }
+}
+
+Status KuduScanner::OpenTablet(const Slice& key) {
+  Synchronizer s;
+  table_->client_->meta_cache_->LookupTabletByKey(table_,
+                                                  key,
+                                                  &remote_, s.callback());
+  RETURN_NOT_OK(s.Wait());
+  shared_ptr<TabletServerServiceProxy> proxy;
+  table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
+
+  // Scan it.
+  PrepareRequest(KuduScanner::NEW);
+  next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
   BOOST_FOREACH(const ColumnRangePredicatePB& pb, preds_.pbs()) {
     scan->add_range_predicates()->CopyFrom(pb);
   }
-
-  // TODO: Replace with a request to locations by start/end key
-  scan->set_tablet_id(table_->tablet_id_);
-
+  scan->set_tablet_id(remote_->tablet_id());
+  RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
   controller_.Reset();
-  // TODO: make configurable through API
-  const int kOpenTimeoutMs = 5000;
-  controller_.set_timeout(MonoDelta::FromMilliseconds(kOpenTimeoutMs));
-
-  RETURN_NOT_OK(table_->proxy()->Scan(next_req_, &last_response_, &controller_));
+  controller_.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
+  RETURN_NOT_OK(proxy->Scan(next_req_, &last_response_, &controller_));
   RETURN_NOT_OK(CheckForErrors());
-  data_in_open_ = last_response_.has_data();
 
   next_req_.clear_new_scan_request();
+  data_in_open_ = last_response_.has_data();
   if (last_response_.has_more_results()) {
     next_req_.set_scanner_id(last_response_.scanner_id());
-    VLOG(1) << "Started scanner " << last_response_.scanner_id();
+    VLOG(1) << "Opened tablet " << remote_->tablet_id()
+            << ", scanner ID " << last_response_.scanner_id();
+  } else if (last_response_.has_data()) {
+    VLOG(1) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned";
   } else {
-    VLOG(1) << "Scanner matched no rows, no scanner ID assigned.";
+    VLOG(1) << "Opened tablet " << remote_->tablet_id() << " (no rows), no scanner ID assigned";
   }
 
-  open_ = true;
   return Status::OK();
 }
 
@@ -784,8 +802,38 @@ struct CloseCallback {
 };
 } // anonymous namespace
 
+string KuduScanner::ToString() const {
+  Slice start_key = start_key_ ? start_key_->encoded_key() : Slice("INF");
+  Slice end_key = end_key_ ? end_key_->encoded_key() : Slice("INF");
+  return strings::Substitute("$0: [$1,$2)", table_->name(),
+                             start_key.ToString(), end_key.ToString());
+}
+
+Status KuduScanner::Open() {
+  CHECK(!open_) << "Scanner already open";
+  CHECK(projection_ != NULL) << "No projection provided";
+
+  // Find the first tablet.
+  if (preds_.HasStartKey()) {
+    start_key_.reset(preds_.GetStartKey());
+
+  }
+  if (preds_.HasEndKey()) {
+    end_key_.reset(preds_.GetEndKey());
+  }
+
+  VLOG(1) << "Beginning scan " << ToString();
+
+  RETURN_NOT_OK(OpenTablet(start_key_ != NULL ? start_key_->encoded_key() : Slice()));
+
+  open_ = true;
+  return Status::OK();
+}
+
 void KuduScanner::Close() {
   if (!open_) return;
+
+  VLOG(1) << "Ending scan " << ToString();
 
   if (next_req_.scanner_id().empty()) {
     // In the case that the scan matched no rows, and this was determined
@@ -797,11 +845,13 @@ void KuduScanner::Close() {
 
   CloseCallback* closer = new CloseCallback;
   closer->scanner_id = next_req_.scanner_id();
-  next_req_.set_batch_size_bytes(0);
+  PrepareRequest(KuduScanner::CLOSE);
   next_req_.set_close_scanner(true);
-  closer->controller.set_timeout(MonoDelta::FromMilliseconds(5000));
-  table_->proxy()->ScanAsync(next_req_, &closer->response, &closer->controller,
-                            boost::bind(&CloseCallback::Callback, closer));
+  closer->controller.set_timeout(MonoDelta::FromMilliseconds(kRpcTimeoutMillis));
+  shared_ptr<TabletServerServiceProxy> proxy;
+  table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
+  proxy->ScanAsync(next_req_, &closer->response, &closer->controller,
+                   boost::bind(&CloseCallback::Callback, closer));
   next_req_.Clear();
   open_ = false;
 }
@@ -814,9 +864,24 @@ Status KuduScanner::CheckForErrors() {
   return StatusFromPB(last_response_.error().status());
 }
 
+bool KuduScanner::MoreTablets() const {
+  CHECK(open_);
+  return !remote_->end_key().empty() &&
+      (end_key_ == NULL || end_key_->encoded_key().compare(remote_->end_key()) > 0);
+}
+
 bool KuduScanner::HasMoreRows() const {
   CHECK(open_);
-  return data_in_open_ || last_response_.has_more_results();
+  return data_in_open_ || // more data in hand
+      last_response_.has_more_results() || // more data in this tablet
+      MoreTablets(); // more tablets to scan, possibly with more data
+}
+
+Status KuduScanner::ExtractRows(vector<const uint8_t*>* rows) {
+  size_t before = rows->size();
+  Status s = ExtractRowsFromRowBlockPB(*projection_, last_response_.mutable_data(), rows);
+  VLOG(1) << "Extracted " << rows->size() - before << " rows";
+  return s;
 }
 
 Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
@@ -825,17 +890,37 @@ Status KuduScanner::NextBatch(std::vector<const uint8_t*>* rows) {
   // need to do some swapping of the response objects around to avoid
   // stomping on the memory the user is looking at.
   CHECK(open_);
-  if (!data_in_open_) {
-    controller_.Reset();
-    rows->clear();
-    RETURN_NOT_OK(table_->proxy_->Scan(next_req_, &last_response_, &controller_));
-    RETURN_NOT_OK(CheckForErrors());
-  } else {
-    data_in_open_ = false;
-  }
 
-  RETURN_NOT_OK(ExtractRowsFromRowBlockPB(projection_, last_response_.mutable_data(), rows));
-  return Status::OK();
+  if (data_in_open_) {
+    // We have data from a previous scan.
+    VLOG(1) << "Extracting data from scan " << ToString();
+    data_in_open_ = false;
+    return ExtractRows(rows);
+  } else if (last_response_.has_more_results()) {
+    // More data is available in this tablet.
+    VLOG(1) << "Continuing scan " << ToString();
+
+    controller_.Reset();
+    shared_ptr<TabletServerServiceProxy> proxy;
+    table_->client_->GetTabletProxy(remote_->tablet_id(), &proxy);
+    PrepareRequest(KuduScanner::CONTINUE);
+    RETURN_NOT_OK(proxy->Scan(next_req_, &last_response_, &controller_));
+    RETURN_NOT_OK(CheckForErrors());
+    return ExtractRows(rows);
+  } else if (MoreTablets()) {
+    // More data may be available in other tablets.
+    //
+    // No need to close the current tablet; we scanned all the data so the
+    // server closed it for us.
+    VLOG(1) << "Scanning next tablet " << ToString();
+    RETURN_NOT_OK(OpenTablet(remote_->end_key()));
+
+    // No rows written, the next invocation will pick them up.
+    return Status::OK();
+  } else {
+    // No more data anywhere.
+    return Status::OK();
+  }
 }
 
 

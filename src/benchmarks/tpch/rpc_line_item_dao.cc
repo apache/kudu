@@ -10,6 +10,7 @@
 #include "gutil/map-util.h"
 
 #include "client/client.h"
+#include "client/meta_cache.h"
 #include "common/row.h"
 #include "common/row_operations.h"
 #include "common/scan_spec.h"
@@ -42,9 +43,15 @@ void RpcLineItemDAO::Init() {
     CHECK_OK(s);
   }
 
-  // TODO: Use the client api instead of the direct request
-  proxy_ = client_table_->proxy();
-  request_.set_tablet_id(client_table_->tablet_id());
+  // TODO: Use the client api instead of the direct request. This only
+  // works because we've created a single-tablet table.
+  Synchronizer sync;
+  scoped_refptr<client::RemoteTablet> remote;
+  client_->meta_cache_->LookupTabletByKey(client_table_.get(), Slice(),
+                                     &remote, sync.callback());
+  CHECK_OK(sync.Wait());
+  CHECK_OK(client_->GetTabletProxy(remote->tablet_id(), &proxy_));
+  request_.set_tablet_id(remote->tablet_id());
   CHECK_OK(SchemaToPB(schema, request_.mutable_schema()));
 }
 
@@ -109,7 +116,6 @@ void RpcLineItemDAO::DoWriteAsync() {
     num_pending_rows_ = 0;
 
     request_.mutable_row_operations()->Clear();
-    request_.mutable_row_operations()->Clear();
     orders_in_request_.clear();
   }
 }
@@ -164,7 +170,7 @@ void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {
 void RpcLineItemDAO::OpenScanner(Schema &query_schema, ColumnRangePredicatePB &pred) {
   client::KuduScanner *scanner = new client::KuduScanner(client_table_.get());
   current_scanner_.reset(scanner);
-  CHECK_OK(current_scanner_->SetProjection(query_schema));
+  CHECK_OK(current_scanner_->SetProjection(&query_schema));
   if (pred.has_column()) {
     CHECK_OK(current_scanner_->AddConjunctPredicate(pred));
   }

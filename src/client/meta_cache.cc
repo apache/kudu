@@ -2,6 +2,7 @@
 
 #include "client/client.h"
 #include "client/meta_cache.h"
+#include "common/wire_protocol.h"
 #include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "master/master.proxy.h"
@@ -15,12 +16,18 @@
 #include <glog/logging.h>
 
 using kudu::HostPortPB;
+using kudu::master::GetTableLocationsRequestPB;
+using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::GetTabletLocationsRequestPB;
-using kudu::master::GetTabletLocationsResponsePB;;
+using kudu::master::GetTabletLocationsResponsePB;
 using kudu::master::MasterServiceProxy;
+using kudu::master::TabletLocationsPB;
+using kudu::master::TabletLocationsPB_ReplicaPB;
+using kudu::master::TSInfoPB;
 using kudu::tserver::TabletServerServiceProxy;
 using kudu::rpc::RpcController;
 using std::string;
+using std::map;
 using std::tr1::shared_ptr;
 
 namespace kudu {
@@ -112,80 +119,18 @@ string RemoteTabletServer::ToString() const {
 
 ////////////////////////////////////////////////////////////
 
-// State information for RemoteTablet::Refresh's async path.
-struct InFlightRefresh {
-  RpcController rpc;
-  GetTabletLocationsResponsePB resp;
-  StatusCallback user_callback;
-};
 
-void RemoteTablet::Refresh(KuduClient* client, const StatusCallback& cb,
-                           bool force) {
-  {
-    boost::unique_lock<simple_spinlock> l(lock_);
-    if (state_ == kValid) {
-      // Must unlock here, in case the user callback calls back into a
-      // RemoteTablet call.
-      l.unlock();
-      cb(Status::OK());
-      return;
-    }
-  }
-  // Need to actually refresh.
-
-  // TODO: add some kind of flag in here that a refresh is in progress so
-  // multiple refresh calls piggy-back.
-
-  // TODO: add RPC timeout
-  InFlightRefresh *ref = new InFlightRefresh;
-  ref->user_callback = cb;
-
-  GetTabletLocationsRequestPB req;
-  req.add_tablet_ids(tablet_id_);
-
-  shared_ptr<MasterServiceProxy> master = client->master_proxy();
-  master->GetTabletLocationsAsync(req, &ref->resp, &ref->rpc,
-                                  boost::bind(&RemoteTablet::GetTabletLocationsCB, this,
-                                              client, ref));
-}
-
-// Callback for GetTabletLocationsAsync (see above).
-// Takes care of parsing the RPC result, adopting the new information,
-// and calling the user-provided callback.
-void RemoteTablet::GetTabletLocationsCB(KuduClient* client, InFlightRefresh* ifr) {
-  gscoped_ptr<InFlightRefresh> ifr_deleter(ifr); // delete on scope exit
-
-  Status s = ifr->rpc.status();
-
-  // If the RPC succeeded, but the response is missing the locations for the
-  // tablet we requested, return an error.
-  if (s.ok() &&
-      (ifr->resp.tablet_locations().size() != 1 ||
-       ifr->resp.tablet_locations(0).tablet_id() != tablet_id_)) {
-    // TODO: need better error handling here.
-    s = Status::NotFound("RPC response invalid", ifr->resp.DebugString());
-  }
-
-  if (!s.ok()) {
-    LOG(WARNING) << "Failed to fetch tablet locations for " << tablet_id_
-                 << ": " << s.ToString();
-    ifr->user_callback(s);
-    return;
-  }
-
+void RemoteTablet::Refresh(const TabletServerMap& tservers,
+                           const google::protobuf::RepeatedPtrField
+                             <TabletLocationsPB_ReplicaPB>& replicas) {
   // Adopt the data from the successful response.
-  {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    BOOST_FOREACH(const master::TabletLocationsPB_ReplicaPB& replica,
-                  ifr->resp.tablet_locations(0).replicas()) {
-      RemoteReplica rep;
-      rep.ts = client->meta_cache_->UpdateTabletServer(replica.ts_info());
-      replicas_.push_back(rep);
-    }
-
-    state_ = kValid;
+  boost::lock_guard<simple_spinlock> l(lock_);
+  replicas_.clear();
+  BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, replicas) {
+    RemoteReplica rep;
+    rep.ts = FindOrDie(tservers, r.ts_info().permanent_uuid());
+    replicas_.push_back(rep);
   }
-  ifr->user_callback(s);
 }
 
 RemoteTabletServer* RemoteTablet::replica_tserver(int idx) {
@@ -198,82 +143,159 @@ RemoteTabletServer* RemoteTablet::replica_tserver(int idx) {
 ////////////////////////////////////////////////////////////
 
 MetaCache::MetaCache(KuduClient* client)
-  : client_(client) {
+  : client_(client),
+    slice_data_arena_(16 * 1024, 128 * 1024) { // arbitrarily chosen
 }
 
 MetaCache::~MetaCache() {
   STLDeleteValues(&ts_cache_);
 }
 
-RemoteTabletServer* MetaCache::UpdateTabletServer(const master::TSInfoPB& pb) {
-  for (int i = 0; i < 2; i++) {
-    // Try two times: on the first time, just take the read-lock, since it's likely
-    // that we don't need to modify the map. If we fail to find the TS, then we'll
-    // go through the loop again with the write lock.
-    boost::shared_lock<rw_spinlock> l_shared(lock_, boost::defer_lock);
-    boost::unique_lock<rw_spinlock> l_exclusive(lock_, boost::defer_lock);
-
-    if (i == 0) {
-      l_shared.lock();
-    } else {
-      l_exclusive.lock();
-    }
-
-    RemoteTabletServer* ret = FindPtrOrNull(ts_cache_, pb.permanent_uuid());
-    if (ret) {
-      ret->Update(pb);
-      return ret;
-    }
-
-    // If we only took the shared lock, we need to try again with the exclusive
-    // one before we actually insert the new TS.
-    if (l_shared.owns_lock()) continue;
-    DCHECK(l_exclusive.owns_lock());
-
-    VLOG(1) << "Client caching new TabletServer " << pb.permanent_uuid();
-
-    ret = new RemoteTabletServer(pb);
-    InsertOrDie(&ts_cache_, pb.permanent_uuid(), ret);
-    return ret;
+void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
+  DCHECK(lock_.is_write_locked());
+  RemoteTabletServer* ts = FindPtrOrNull(ts_cache_, pb.permanent_uuid());
+  if (ts) {
+    ts->Update(pb);
+    return;
   }
-  LOG(FATAL) << "Cannot reach here";
-  return NULL;
+
+  VLOG(1) << "Client caching new TabletServer " << pb.permanent_uuid();
+  InsertOrDie(&ts_cache_, pb.permanent_uuid(), new RemoteTabletServer(pb));
 }
 
-void MetaCache::LookupTabletByRow(const KuduTable* table,
-                                  const PartialRow& row,
+struct InFlightLookup {
+  RpcController rpc;
+  GetTableLocationsResponsePB resp;
+  StatusCallback user_callback;
+  string table_name;
+  Slice key;
+  scoped_refptr<RemoteTablet> *remote_tablet;
+};
+
+void MetaCache::GetTableLocationsCB(InFlightLookup* ifl) {
+  gscoped_ptr<InFlightLookup> ifl_deleter(ifl); // delete on scope exit
+
+  // The logging below refers to tablet locations even though the RPC was
+  // GetTableLocations. That's because we're using said RPC to look up
+  // the location of a particular tablet.
+  Status s = ifl->rpc.status();
+  if (!s.ok()) {
+    LOG(WARNING) << "Failed to fetch tablet with start key " << ifl->key << ": "
+        << s.ToString();
+    ifl->user_callback(s);
+    return;
+  }
+
+  s = StatusFromPB(ifl->resp.error().status());
+  if (!s.ok()) {
+    LOG(WARNING) << "Failed to fetch tablet with start key " << ifl->key << ": "
+        << s.ToString();
+    ifl->user_callback(s);
+    return;
+  }
+
+  if (ifl->resp.tablet_locations_size() == 0) {
+    LOG(WARNING) << "Unable to find tablet with start key " << ifl->key;
+    ifl->user_callback(Status::NotFound("No tablet found"));
+    return;
+  }
+
+  boost::unique_lock<rw_spinlock> l(lock_);
+  SliceTabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
+                                                  ifl->table_name, SliceTabletMap());
+  BOOST_FOREACH(const TabletLocationsPB& loc, ifl->resp.tablet_locations()) {
+    // First, update the tserver cache, needed for the Refresh calls below.
+    BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, loc.replicas()) {
+      UpdateTabletServer(r.ts_info());
+    }
+
+    // Next, update the tablet caches.
+    string tablet_id = loc.tablet_id();
+    scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
+    if (remote.get() != NULL) {
+      // Start/end keys should not have changed.
+      DCHECK_EQ(loc.start_key(), remote->start_key().ToString());
+      DCHECK_EQ(loc.end_key(), remote->end_key().ToString());
+
+      VLOG(3) << "Refreshing tablet " << tablet_id;
+      remote->Refresh(ts_cache_, loc.replicas());
+      continue;
+    }
+
+    VLOG(3) << "Caching tablet " << tablet_id << " for (" << ifl->table_name
+        << "," << loc.start_key() << "," << loc.end_key() << ")";
+
+    // The keys will outlive the pbs, so we relocate their data into our arena.
+    Slice relocated_start_key;
+    Slice relocated_end_key;
+    CHECK(slice_data_arena_.RelocateSlice(Slice(loc.start_key()), &relocated_start_key));
+    CHECK(slice_data_arena_.RelocateSlice(Slice(loc.end_key()), &relocated_end_key));
+
+    remote = new RemoteTablet(tablet_id, relocated_start_key, relocated_end_key);
+    remote->Refresh(ts_cache_, loc.replicas());
+
+    InsertOrDie(&tablets_by_id_, tablet_id, remote);
+    InsertOrDie(&tablets_by_key, remote->start_key(), remote);
+  }
+
+  // Always return the first tablet.
+  *ifl->remote_tablet = FindOrDie(tablets_by_id_,
+                                  ifl->resp.tablet_locations(0).tablet_id());
+  l.unlock();
+  ifl->user_callback(Status::OK());
+}
+
+void MetaCache::LookupTabletByKey(const KuduTable* table,
+                                  const Slice& key,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
-  // TODO: this is where we'd look at some sorted map of row keys for
-  // the tablet. Efficiency wise, we probably want some way we can end up
-  // caching the encoded row key with the PartialRow in case we have to look it up
-  // again, etc.
-  // For now, since we have one tablet per table, the tablet ID is just the table
-  // name.
-  LookupTabletByID(table->tablet_id(), remote_tablet);
-  callback(Status::OK());
-}
+  const Schema& schema = table->schema();
 
-
-void MetaCache::LookupTabletByID(const string& tablet_id,
-                                 scoped_refptr<RemoteTablet>* remote_tablet) {
-  // Most of the time, we'll already have an object for this tablet in the
-  // cache, so we can just use a read-lock.
-  {
-    boost::shared_lock<rw_spinlock> l(lock_);
-    if (FindCopy(tablet_cache_, tablet_id, remote_tablet)) {
+  // Fast path: there's a tablet in the cache.
+  SliceTabletMap tablets;
+  boost::shared_lock<rw_spinlock> l(lock_);
+  if (FindCopy(tablets_by_table_and_key_, table->name(), &tablets)) {
+    scoped_refptr<RemoteTablet>* r = FindFloorOrNull(tablets, key);
+    if (r != NULL &&                          // tablet.start <= key
+        ((*r)->end_key().empty() ||           // tablet doesn't end
+         (*r)->end_key().compare(key)) > 0) { // key < tablet.end
+      VLOG(3) << "Fast lookup: found tablet " << (*r)->tablet_id()
+              << " for " << schema.DebugEncodedRowKey(key.ToString())
+              << " of " << table->name();
+      *remote_tablet = *r;
+      l.unlock();
+      callback(Status::OK());
       return;
     }
   }
+  l.unlock();
 
-  // We didn't have an object for this tablet. So, we need to insert a new one,
-  // requiring the write-lock.
-  {
-    boost::unique_lock<rw_spinlock> l(lock_);
-    *remote_tablet = LookupOrInsertNewSharedPtr(&tablet_cache_, tablet_id, tablet_id);
-    return;
-  }
+  // Slow path: must lookup the tablet in the master.
+  VLOG(3) << "Fast lookup: no tablet "
+          << " for " << schema.DebugEncodedRowKey(key.ToString())
+          << " of " << table->name();
+  GetTableLocationsRequestPB req;
+  req.mutable_table()->set_table_name(table->name());
+  req.set_start_key(key.data(), key.size());
+
+  // The end key is left unset intentionally so that we'll prefetch some
+  // additional tablets.
+
+  InFlightLookup *ref = new InFlightLookup;
+  ref->rpc.set_timeout(MonoDelta::FromMilliseconds(5000));
+  ref->user_callback = callback;
+  ref->table_name = table->name();
+  ref->key = key;
+  ref->remote_tablet = remote_tablet;
+
+  shared_ptr<MasterServiceProxy> master = table->client()->master_proxy();
+  master->GetTableLocationsAsync(req, &ref->resp, &ref->rpc,
+                                 boost::bind(&MetaCache::GetTableLocationsCB, this, ref));
 }
 
+void MetaCache::LookupTabletByID(const std::string& tablet_id,
+                                 scoped_refptr<RemoteTablet>* remote_tablet) {
+  *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
+}
 } // namespace client
 } // namespace kudu

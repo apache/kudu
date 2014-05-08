@@ -133,13 +133,10 @@ class PartialRow {
 
   const Schema* schema() const { return schema_; }
 
-  // Return this row as a contiguous row. This will crash unless all columns
-  // are set.
-  // TODO: this is only so that the existing insert RPC can be used with
-  // PartialRow on the client side. We have to switch over the WriteRequestPB
-  // to use RowOperationsPB instead, and then kill off this method.
+  // Return this row as a contiguous row.
+  // NOTE: because this is a partial row, some of the columns in the returned
+  // ContiguousRow may contain garbage data.
   ConstContiguousRow as_contiguous_row() const {
-    DCHECK(AllColumnsSet());
     return ConstContiguousRow(*schema_, row_data_);
   }
 
