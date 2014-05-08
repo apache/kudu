@@ -651,7 +651,9 @@ Log::~Log() {
 
 LogEntryBatch::LogEntryBatch(gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
     : entry_batch_pb_(entry_batch_pb.Pass()),
-      total_size_bytes_(entry_batch_pb_->ByteSize()),
+      total_size_bytes_(
+          PREDICT_FALSE(count == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER) ?
+          0 : entry_batch_pb_->ByteSize()),
       count_(count),
       state_(kEntryInitialized) {
 }
@@ -672,7 +674,6 @@ Status LogEntryBatch::Serialize() {
   // FLUSH_MARKER LogEntries are markers and are not serialized.
   if (PREDICT_FALSE(count() == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER)) {
     state_ = kEntrySerialized;
-    total_size_bytes_ = 0;
     return Status::OK();
   }
   buffer_.reserve(total_size_bytes_);

@@ -355,10 +355,10 @@ class LogEntryBatch {
   gscoped_ptr<LogEntryBatchPB> entry_batch_pb_;
 
    // Total size in bytes of all entries
-  uint32_t total_size_bytes_;
+  const uint32_t total_size_bytes_;
 
   // Number of entries in 'entry_batch_pb_'
-  size_t count_;
+  const size_t count_;
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.
