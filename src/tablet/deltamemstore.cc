@@ -382,6 +382,13 @@ Status DMSIterator::FilterColumnsAndAppend(const metadata::ColumnIndexes& col_in
   return Status::InvalidArgument("FilterColumsAndAppend() is not supported by DMSIterator");
 }
 
+bool DMSIterator::HasNext() {
+  // TODO implement this if we ever want to include DeltaMemStore in minor
+  // delta compaction.
+  LOG(FATAL) << "Unimplemented";
+  return false;
+}
+
 string DMSIterator::ToString() const {
   return "DMSIterator";
 }

@@ -142,7 +142,10 @@ class DMSIterator : public DeltaIterator {
   Status FilterColumnsAndAppend(const metadata::ColumnIndexes& col_indexes,
                                 vector<DeltaKeyAndUpdate>* out,
                                 Arena* arena) OVERRIDE;
+
   string ToString() const OVERRIDE;
+
+  virtual bool HasNext() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);

@@ -27,8 +27,13 @@ set(TABLET_SRCS
   rowset_info.cc
   rowset_tree.cc
   svg_dump.cc
-  delta_stats.cc deltamemstore.cc deltafile.cc delta_tracker.cc
+  deltafile.cc
+  deltamemstore.cc
   delta_compaction.cc
+  delta_iterator_merger.cc
+  delta_stats.cc
+  delta_store.cc
+  delta_tracker.cc
 )
 
 PROTOBUF_GENERATE_CPP(TABLET_PROTO_SRCS TABLET_PROTO_HDRS

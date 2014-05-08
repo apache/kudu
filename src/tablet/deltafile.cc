@@ -736,6 +736,10 @@ Status DeltaFileIterator::CollectMutations(vector<Mutation *> *dst, Arena *dst_a
   return VisitMutations(&visitor);
 }
 
+bool DeltaFileIterator::HasNext() {
+  return !exhausted_ || !delta_blocks_.empty();
+}
+
 string DeltaFileIterator::ToString() const {
   return "DeltaFileIterator(" + dfr_->path() + ")";
 }

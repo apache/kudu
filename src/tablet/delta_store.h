@@ -5,14 +5,22 @@
 
 #include <string>
 #include <vector>
+#include <tr1/memory>
+
 #include "common/columnblock.h"
 #include "common/schema.h"
 #include "util/status.h"
 #include "tablet/mutation.h"
 #include "tablet/mvcc.h"
+#include "tablet/delta_key.h"
 #include "tablet/delta_stats.h"
+#include "server/metadata.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+
+class SelectionVector;
+
+namespace tablet {
 
 class DeltaIterator;
 class DeltaFileWriter;
@@ -71,6 +79,8 @@ class DeltaStore {
 struct DeltaKeyAndUpdate {
   DeltaKey key;
   Slice cell;
+
+  std::string Stringify(DeltaType type, const Schema& schema) const;
 };
 
 class DeltaIterator {
@@ -119,12 +129,38 @@ class DeltaIterator {
                                         vector<DeltaKeyAndUpdate>* out,
                                         Arena* arena) = 0;
 
+  // Returns true if there are any more rows left in this iterator.
+  virtual bool HasNext() = 0;
+
   // Return a string representation suitable for debug printouts.
   virtual std::string ToString() const = 0;
 
   virtual ~DeltaIterator() {}
 };
 
+enum {
+  ITERATE_OVER_ALL_ROWS = 0
+};
+
+// Dumps contents of 'iter' to 'out', line-by-line.  Used to unit test
+// minor delta compaction.
+//
+// If nrows is 0, all rows will be dumped.
+Status DebugDumpDeltaIterator(DeltaType type,
+                              DeltaIterator* iter,
+                              const Schema& schema,
+                              size_t nrows,
+                              vector<std::string>* out);
+
+// Writes the contents of 'iter' to 'out', block by block.  Used by
+// minor delta compaction.
+//
+// If nrows is 0, all rows will be dumped.
+template<DeltaType Type>
+Status WriteDeltaIteratorToFile(DeltaIterator* iter,
+                                const Schema& schema,
+                                size_t nrows,
+                                DeltaFileWriter* out);
 
 } // namespace tablet
 } // namespace kudu

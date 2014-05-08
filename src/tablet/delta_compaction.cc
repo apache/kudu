@@ -709,13 +709,6 @@ DeltaCompactionInput
   return new MergeDeltaCompactionInput(projection, inputs);
 }
 
-static string FormatDebugDeltaCell(const Schema &schema, const DeltaKeyAndUpdate &cell) {
-  return StrCat(Substitute("(delta key=$0, change_list=$1)",
-                           StringPrintf("%04u@tx%04u", cell.key.row_idx(),
-                                        atoi(cell.key.timestamp().ToString().c_str())),
-                           RowChangeList(cell.cell).ToString(schema)));
-}
-
 Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string> *lines,
                                      const Schema &schema) {
   RETURN_NOT_OK(input->Init());
@@ -725,7 +718,7 @@ Status DebugDumpDeltaCompactionInput(DeltaCompactionInput *input, vector<string>
     RETURN_NOT_OK(input->PrepareBlock(&cells));
 
     BOOST_FOREACH(const DeltaKeyAndUpdate &cell, cells) {
-      LOG_STRING(INFO, lines) << FormatDebugDeltaCell(schema, cell);
+      LOG_STRING(INFO, lines) << cell.Stringify(REDO, schema);
     }
     RETURN_NOT_OK(input->FinishBlock());
   }

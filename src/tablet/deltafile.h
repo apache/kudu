@@ -181,6 +181,7 @@ class DeltaFileIterator : public DeltaIterator {
                                 vector<DeltaKeyAndUpdate>* out,
                                 Arena* arena) OVERRIDE;
   string ToString() const OVERRIDE;
+  virtual bool HasNext() OVERRIDE;
 
  private:
   friend class DeltaFileReader;
