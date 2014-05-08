@@ -17,6 +17,8 @@
 #include <cstdarg>
 #include <string>
 #include <vector>
+
+#include "gutil/gscoped_ptr.h"
 #include "util/status.h"
 
 namespace kudu {
@@ -75,6 +77,19 @@ class Env {
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
                                  WritableFile** result) = 0;
+
+  // Creates a new WritableFile provided the name_template parameter.
+  // The last six characters of name_template must be "XXXXXX" and these are
+  // replaced with a string that makes the filename unique.
+  // The resulting created filename, if successful, will be stored in the
+  // created_filename out parameter.
+  // The file is created with permissions 0600, that is, read plus write for
+  // owner only. The implementation will create the file in a secure manner,
+  // and will return an error Status if it is unable to open the file.
+  virtual Status NewTempWritableFile(const WritableFileOptions& opts,
+                                     const std::string& name_template,
+                                     std::string* created_filename,
+                                     gscoped_ptr<WritableFile>* result) = 0;
 
   // Returns true iff the named file exists.
   virtual bool FileExists(const std::string& fname) = 0;
@@ -288,6 +303,10 @@ class EnvWrapper : public Env {
   }
   Status NewWritableFile(const WritableFileOptions& o, const std::string& f, WritableFile** r) {
     return target_->NewWritableFile(o, f, r);
+  }
+  Status NewTempWritableFile(const WritableFileOptions& o, const std::string& t,
+                             std::string* f, gscoped_ptr<WritableFile>* r) OVERRIDE {
+    return target_->NewTempWritableFile(o, t, f, r);
   }
   bool FileExists(const std::string& f) { return target_->FileExists(f); }
   Status GetChildren(const std::string& dir, std::vector<std::string>* r) {

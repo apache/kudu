@@ -30,6 +30,7 @@
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
+using strings::Substitute;
 
 static __thread uint64_t thread_local_id;
 static Atomic64 cur_thread_local_id_;
@@ -689,20 +690,34 @@ class PosixEnv : public Env {
 
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
-                                 WritableFile** result) {
+                                 WritableFile** result) OVERRIDE {
     Status s;
     const int fd = open(fname.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
     if (fd < 0) {
       *result = NULL;
       s = IOError(fname, errno);
     } else {
-      if (opts.mmap_file) {
-        *result = new PosixMmapFile(fname, fd, page_size_, opts.sync_on_close);
-      } else {
-        *result = new PosixWritableFile(fname, fd, opts.sync_on_close);
-      }
+      gscoped_ptr<WritableFile> writable_file;
+      InstantiateNewWritableFile(fname, fd, opts, &writable_file);
+      *result = writable_file.release();
     }
     return s;
+  }
+
+  virtual Status NewTempWritableFile(const WritableFileOptions& opts,
+                                     const std::string& name_template,
+                                     std::string* created_filename,
+                                     gscoped_ptr<WritableFile>* result) OVERRIDE {
+    gscoped_ptr<char[]> fname(new char[name_template.size() + 1]);
+    ::snprintf(fname.get(), name_template.size() + 1, "%s", name_template.c_str());
+    const int fd = ::mkstemp(fname.get());
+    if (fd < 0) {
+      return IOError(Substitute("Call to mkstemp() failed on name template $0", name_template),
+                     errno);
+    }
+    *created_filename = fname.get();
+    InstantiateNewWritableFile(*created_filename, fd, opts, result);
+    return Status::OK();
   }
 
   virtual bool FileExists(const std::string& fname) {
@@ -920,6 +935,17 @@ class PosixEnv : public Env {
       if (fts) { fts_close(fts); }
     }
   };
+
+  void InstantiateNewWritableFile(const std::string& fname,
+                                  int fd,
+                                  const WritableFileOptions& opts,
+                                  gscoped_ptr<WritableFile>* result) {
+    if (opts.mmap_file) {
+      result->reset(new PosixMmapFile(fname, fd, page_size_, opts.sync_on_close));
+    } else {
+      result->reset(new PosixWritableFile(fname, fd, opts.sync_on_close));
+    }
+  }
 
   size_t page_size_;
 };
