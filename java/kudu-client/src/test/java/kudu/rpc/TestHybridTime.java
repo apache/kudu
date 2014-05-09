@@ -43,7 +43,7 @@ public class TestHybridTime extends BaseKuduTest {
     builder.addSplitKey(keyBuilder.addString("3"));
     createTable(tableName, schema, builder);
 
-    table = client.openTable(tableName, schema);
+    table = openTable(tableName);
 
     // FIXME Hack: Scan all tablets so that we get them in cache
     // see: https://jira.cloudera.com/browse/KUDU-232

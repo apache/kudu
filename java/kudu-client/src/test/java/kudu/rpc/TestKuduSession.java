@@ -39,7 +39,7 @@ public class TestKuduSession extends BaseKuduTest {
     BaseKuduTest.setUpBeforeClass();
     createTable(tableName, schema, new CreateTableBuilder());
 
-    table = client.openTable(tableName, schema);
+    table = openTable(tableName);
   }
 
 

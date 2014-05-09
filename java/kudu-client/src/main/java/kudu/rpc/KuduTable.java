@@ -14,7 +14,7 @@ import java.util.NavigableMap;
  * instance.
  *
  * Upon construction, the table is looked up in the catalog (or catalog cache),
- * and the schema fetched for introspection. TODO
+ * and the schema fetched for introspection.
  *
  * This class is thread-safe.
  */
@@ -25,7 +25,7 @@ public class KuduTable {
   private final String name;
   private final Slice nameAsSlice;
 
-  public KuduTable(KuduClient client, String name, Schema schema) {
+  KuduTable(KuduClient client, String name, Schema schema) {
     this.schema = schema;
     this.client = client;
     this.name = name;

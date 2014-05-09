@@ -2,6 +2,7 @@
 package kudu.rpc;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import kudu.Common;
 import kudu.Schema;
@@ -33,6 +34,12 @@ public class TestKuduTable extends BaseKuduTest {
     String table1 = baseTableName + System.currentTimeMillis();
 
     // Test a non-existing table
+    try {
+      client.openTable(table1).join(DEFAULT_SLEEP);
+      fail("Should receive an exception since the table doesn't exist");
+    } catch (Exception ex) {
+      // expected
+    }
     NavigableMap<KuduClient.RemoteTablet, List<Common.HostPortPB>> tablets =
         client.syncLocateTable(table1, null, null, DEFAULT_SLEEP);
     assertEquals(0, tablets.size());
@@ -85,7 +92,7 @@ public class TestKuduTable extends BaseKuduTest {
     }
     createTable(tableName, schema, builder);
 
-    KuduTable table = client.openTable(tableName, schema);
+    KuduTable table = openTable(tableName);
     // calling getTabletsLocation won't wait on the table to be assigned so we trigger the wait
     // by scanning
     countRowsInScan(client.newScanner(table, schema));

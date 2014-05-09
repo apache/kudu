@@ -257,16 +257,6 @@ public class KuduClient {
   }
 
   /**
-   * Open the table with the given name.
-   * @param name table to open
-   * @param schema schema to use. TODO retrieve from the cluster in the future
-   * @return a table to use Operations
-   */
-  public KuduTable openTable(String name, Schema schema) {
-    return new KuduTable(this, name, schema);
-  }
-
-  /**
    * Create a table on the cluster with the specified name and schema. Default table
    * configurations are used, mainly the tablet will have one tablet.
    * @param name Table's name
@@ -377,6 +367,33 @@ public class KuduClient {
   public Deferred<Object> getTabletServersCount() {
     ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
     return sendRpcToTablet(rpc);
+  }
+
+  Deferred<Object> getTableSchema(String name) {
+    Deferred<Object> d = sendRpcToTablet(new GetTableSchemaRequest(this.masterTableHack, name));
+    return d;
+  }
+
+  /**
+   * Open the table with the given name.
+   * @param name table to open
+   * @return a KuduTable if the table exists, else a MasterErrorException
+   */
+  public Deferred<Object> openTable(final String name) {
+    return getTableSchema(name).addCallback(new Callback<Object, Object>() {
+      @Override
+      public Object call(Object o) throws Exception {
+        if (o instanceof Exception) {
+          return o;
+        }
+        if (!(o instanceof Schema)) {
+          return new NonRecoverableException("Did not receive a schema from the master or an " +
+              "exception when opening a table");
+        }
+        Schema schema = (Schema) o;
+        return new KuduTable(KuduClient.this, name, schema);
+      }
+    });
   }
 
   /**

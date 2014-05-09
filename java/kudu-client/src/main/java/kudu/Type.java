@@ -89,4 +89,27 @@ public enum Type {
     }
   }
 
+  /**
+   * Convert the pb DataType to a Type
+   * @param type DataType to convert
+   * @return a matching Type
+   */
+  public static Type getTypeForDataType(DataType type) {
+    switch (type) {
+      case STRING: return STRING;
+      case INT8: return INT8;
+      case UINT8: return UINT8;
+      case INT16: return INT16;
+      case UINT16: return UINT16;
+      case INT32: return INT32;
+      case UINT32: return UINT32;
+      case INT64: return INT64;
+      case UINT64: return UINT64;
+      default:
+        throw new IllegalArgumentException("The provided data type doesn't map" +
+            " to know any known one: " + type.getDescriptorForType().getFullName());
+
+    }
+  }
+
 }

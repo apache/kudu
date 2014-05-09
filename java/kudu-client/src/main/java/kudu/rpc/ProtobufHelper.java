@@ -6,6 +6,7 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
+import kudu.Type;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +51,16 @@ public class ProtobufHelper {
     if (column.getDefaultValue() != null) schemaBuilder.setReadDefaultValue
         (ZeroCopyLiteralByteString.wrap(objectToWireFormat(column, column.getDefaultValue())));
     return schemaBuilder.build();
+  }
+
+  public static Schema pbToSchema(Common.SchemaPB schema) {
+    List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnsCount());
+    for (Common.ColumnSchemaPB columnPb : schema.getColumnsList()) {
+      ColumnSchema column = new ColumnSchema(columnPb.getName(), Type.getTypeForDataType(columnPb
+          .getType()), columnPb.getIsKey(), columnPb.getIsNullable(), null);
+      columns.add(column);
+    }
+    return new Schema(columns);
   }
 
   private static byte[] objectToWireFormat(ColumnSchema col, Object value) {

@@ -31,7 +31,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     builder.addSplitKey(keyBuilder.addString("3"));
     createTable(tableName, schema, builder);
 
-    table = client.openTable(tableName, schema);
+    table = openTable(tableName);
   }
 
   @Test(timeout = 100000)

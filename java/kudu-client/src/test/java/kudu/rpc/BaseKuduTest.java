@@ -222,6 +222,17 @@ public class BaseKuduTest {
   };
 
   /**
+   * Helper method to open a table. It sets the default sleep time when joining on the Deferred.
+   * @param name Name of the table
+   * @return A KuduTable
+   * @throws Exception MasterErrorException if the table doesn't exist
+   */
+  static KuduTable openTable(String name) throws Exception {
+    Deferred<Object> d = client.openTable(name);
+    return (KuduTable)d.join(DEFAULT_SLEEP);
+  }
+
+  /**
    * Helper runnable that can log what the processes are sending on their stdout and stderr that
    * we'd otherwise miss.
    */

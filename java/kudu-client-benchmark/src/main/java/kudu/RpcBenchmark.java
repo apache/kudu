@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class RpcBenchmark {
 
+  private final static long DEFAULT_SLEEP = 5000;
+
   private static void test(String address, int port) throws Exception {
     KuduClient client = null;
     try {
@@ -27,10 +29,10 @@ public class RpcBenchmark {
       Schema schema = Tpch1Schema.getTpch1Schema();
       String tableName = "tpch1";
       Deferred<Object> create = client.createTable(tableName, schema);
-      create.join(5000);
-      KuduTable table = client.openTable(tableName, schema);
+      create.join(DEFAULT_SLEEP);
+      KuduTable table = (KuduTable)client.openTable(tableName).join(DEFAULT_SLEEP);
       Deferred<Object> dd = client.ping();
-      dd.join(5000);
+      dd.join(DEFAULT_SLEEP);
 
       final AtomicLong counter = new AtomicLong();
       Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {
@@ -93,7 +95,7 @@ public class RpcBenchmark {
       }
       session.flush();
       for (int i = 0; i < 24; i++) {
-        boolean completed = latch.await(5000, TimeUnit.MILLISECONDS);
+        boolean completed = latch.await(DEFAULT_SLEEP, TimeUnit.MILLISECONDS);
         if (latch.getCount() != 0) {
           System.out.println("Not all rows came back, remaining " + latch.getCount());
         }
