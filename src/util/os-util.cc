@@ -9,7 +9,6 @@
 
 #include "util/os-util.h"
 
-#include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <fstream>
 #include <sstream>
@@ -18,14 +17,14 @@
 #include <unistd.h>
 
 #include "gutil/strings/numbers.h"
+#include "gutil/strings/split.h"
 #include "gutil/strings/substitute.h"
 #include "util/errno.h"
 
-using boost::is_any_of;
-using boost::token_compress_on;
 using std::ifstream;
 using std::istreambuf_iterator;
 using std::stringstream;
+using strings::Split;
 using strings::Substitute;
 
 namespace kudu {
@@ -64,8 +63,7 @@ Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stat
   }
   string extracted_name = buffer.substr(open_paren + 1, close_paren - (open_paren + 1));
   string rest = buffer.substr(close_paren + 2);
-  vector<string> splits;
-  split(splits, rest, is_any_of(" "), token_compress_on);
+  vector<string> splits = Split(rest, " ", strings::SkipEmpty());
   if (splits.size() < MAX_OFFSET) {
     return Status::IOError("Unrecognised /proc format");
   }
