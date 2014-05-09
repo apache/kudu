@@ -34,14 +34,14 @@ public class BaseKuduTest {
   private final static String BASE_DIR_PATH = "baseDirPath";
   private final static String START_CLUSTER = "startCluster";
   private static boolean startCluster;
-  static String masterAddress;
-  static int masterPort;
+  private static String masterAddress;
+  private static int masterPort;
 
-  static final int DEFAULT_SLEEP = 10000;
+  protected static final int DEFAULT_SLEEP = 10000;
   static final List<Thread> processInputPrinters = new ArrayList<Thread>();
   static Process master;
   static Process tabletServer;
-  static KuduClient client;
+  protected static KuduClient client;
 
   private static List<String> tableNames = new ArrayList<String>();
 
@@ -150,7 +150,7 @@ public class BaseKuduTest {
     }
   }
 
-  static void createTable(String tableName, Schema schema, CreateTableBuilder builder) {
+  protected static void createTable(String tableName, Schema schema, CreateTableBuilder builder) {
     Deferred<Object> d = client.createTable(tableName, schema, builder);
     final AtomicBoolean gotError = new AtomicBoolean(false);
     d.addErrback(new Callback<Object, Object>() {
@@ -173,7 +173,7 @@ public class BaseKuduTest {
     tableNames.add(tableName);
   }
 
-  static int countRowsInScan(KuduScanner scanner) throws Exception{
+  protected static int countRowsInScan(KuduScanner scanner) throws Exception{
     final AtomicInteger counter = new AtomicInteger();
 
     Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {
@@ -227,9 +227,17 @@ public class BaseKuduTest {
    * @return A KuduTable
    * @throws Exception MasterErrorException if the table doesn't exist
    */
-  static KuduTable openTable(String name) throws Exception {
+  protected static KuduTable openTable(String name) throws Exception {
     Deferred<Object> d = client.openTable(name);
     return (KuduTable)d.join(DEFAULT_SLEEP);
+  }
+
+  protected static int getMasterPort() {
+    return masterPort;
+  }
+
+  protected static String getMasterAddress() {
+    return masterAddress;
   }
 
   /**

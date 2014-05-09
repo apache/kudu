@@ -33,11 +33,13 @@
         <slf4j.version>1.6.1</slf4j.version>
         <maven.assembly.version>2.2.1</maven.assembly.version>
         <protoc.version>0.1.10</protoc.version>
+        <hadoop.version>2.3.0-cdh5.0.0</hadoop.version>
     </properties>
 
     <modules>
         <module>kudu-client</module>
         <module>kudu-client-benchmark</module>
+        <module>kudu-mapreduce</module>
     </modules>
 
     <build>
@@ -51,6 +53,57 @@
                     <target>1.6</target>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>2.3.2</version>
+                <executions>
+                    <execution>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <failIfNoTests>false</failIfNoTests>
+                    <reuseForks>false</reuseForks>
+                    <systemPropertyVariables>
+                        <masterAddress>localhost</masterAddress>
+                        <masterPort>64000</masterPort>
+                        <flagsPath>../test-resources/flags</flagsPath>
+                        <baseDirPath>target/testdata</baseDirPath>
+                        <startCluster>true</startCluster>
+                    </systemPropertyVariables>
+                    <argLine>-enableassertions -Xmx1900m -XX:MaxPermSize=100m
+                    -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true
+                    -Djava.awt.headless=true</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>${antrun.version}</version>
+                <executions>
+                    <execution>
+                        <phase>test-compile</phase>
+                        <configuration>
+                            <target>
+                                <delete dir="${testdata.dir}"/>
+                                <mkdir dir="${testdata.dir}"/>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -61,4 +114,15 @@
         <url>http://maven.davidtrott.com/repository</url>
       </pluginRepository>
     </pluginRepositories>
+
+  <repositories>
+    <repository>
+      <id>cdh.repo</id>
+      <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
+      <name>Cloudera Repositories</name>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+ </repositories>
 </project>

@@ -1,0 +1,112 @@
+// Copyright (c) 2014, Cloudera, inc.
+package kudu.mapreduce;
+
+import kudu.rpc.BaseKuduTest;
+import kudu.rpc.CreateTableBuilder;
+import kudu.rpc.Insert;
+import kudu.rpc.KuduScanner;
+import kudu.rpc.KuduTable;
+import kudu.rpc.Operation;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+
+import static org.junit.Assert.*;
+
+public class TestOutputFormatJob extends BaseKuduTest {
+
+  private final static String TABLE_NAME =
+      TestOutputFormatJob.class.getName() + "-" + System.currentTimeMillis();
+
+  private static final HadoopTestingUtility hadoopUtil = new HadoopTestingUtility();
+
+  @BeforeClass
+  public static void setUpBeforeClass() throws Exception {
+    BaseKuduTest.setUpBeforeClass();
+    createTable(TABLE_NAME, getBasicSchema(), new CreateTableBuilder());
+  }
+
+  @AfterClass
+  public static void tearDownAfterClass() throws Exception {
+    try {
+      BaseKuduTest.tearDownAfterClass();
+    } finally {
+      hadoopUtil.cleanup();
+    }
+  }
+
+  @Test
+  public void test() throws Exception {
+    Configuration conf = new Configuration();
+    String testHome =
+        hadoopUtil.getTestDir(TestOutputFormatJob.class.getName(), conf).getAbsolutePath();
+    String jobName = TestOutputFormatJob.class.getName();
+    Job job = new Job(conf, jobName);
+
+
+    // Create a 2 lines input file
+    File data = new File(testHome + "/data.txt");
+    writeDataFile(data);
+    FileInputFormat.setInputPaths(job, data.toString());
+
+    // Configure the job to map the file and write to kudu, without reducers
+    Class mapperClass = TestMapperTableOutput.class;
+    job.setJarByClass(mapperClass);
+    job.setMapperClass(mapperClass);
+    job.setInputFormatClass(TextInputFormat.class);
+    job.setNumReduceTasks(0);
+    KuduTableMapReduceUtil.initTableOutputFormat(job, getMasterAddress() + ":" + getMasterPort(),
+        TABLE_NAME,
+        DEFAULT_SLEEP, false);
+
+    assertTrue("Test job did not end properly", job.waitForCompletion(true));
+
+    // Make sure the data's there
+    KuduTable table = openTable(TABLE_NAME);
+    KuduScanner scanner = client.newScanner(table, getBasicSchema());
+    assertEquals(2, countRowsInScan(scanner));
+  }
+
+  /**
+   * Simple Mapper that writes one row per line, the key is the line number and the STRING column
+   * is the data from that line
+   */
+  static class TestMapperTableOutput extends
+      Mapper<LongWritable, Text, WritableRowKey, Operation> {
+
+    private KuduTable table;
+    @Override
+    protected void map(LongWritable key, Text value, Context context) throws IOException,
+        InterruptedException {
+      Insert insert = table.newInsert();
+      insert.addInt(table.getSchema().getColumn(0).getName(), (int) key.get());
+      insert.addInt(table.getSchema().getColumn(1).getName(), 1);
+      insert.addInt(table.getSchema().getColumn(2).getName(), 2);
+      insert.addString(table.getSchema().getColumn(3).getName(), value.toString());
+      context.write(new WritableRowKey(insert), insert);
+    }
+
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+      super.setup(context);
+      table = KuduTableMapReduceUtil.getTableFromContext(context);
+    }
+  }
+
+  private void writeDataFile(File data) throws IOException {
+    FileOutputStream fos = new FileOutputStream(data);
+    fos.write("VALUE1\nVALUE2\n".getBytes());
+    fos.close();
+  }
+}

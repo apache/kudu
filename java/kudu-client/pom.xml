@@ -68,41 +68,6 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>${surefire.version}</version>
-                <configuration>
-                    <failIfNoTests>false</failIfNoTests>
-                    <reuseForks>false</reuseForks>
-                    <systemPropertyVariables>
-                        <masterAddress>localhost</masterAddress>
-                        <masterPort>64000</masterPort>
-                        <flagsPath>src/test/resources/flags</flagsPath>
-                        <baseDirPath>target/testdata</baseDirPath>
-                        <startCluster>true</startCluster>
-                    </systemPropertyVariables>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>${antrun.version}</version>
-                <executions>
-                    <execution>
-                        <phase>test-compile</phase>
-                        <configuration>
-                            <target>
-                                <delete dir="${testdata.dir}"/>
-                                <mkdir dir="${testdata.dir}"/>
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
                 <groupId>com.google.protobuf.tools</groupId>
                 <artifactId>maven-protoc-plugin</artifactId>
                 <version>${protoc.version}</version>
