@@ -2,13 +2,17 @@
 package kudu.rpc;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
+import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
+import kudu.Type;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
 
@@ -35,7 +39,7 @@ public class TestKuduTable extends BaseKuduTest {
 
     // Test a non-existing table
     try {
-      client.openTable(table1).join(DEFAULT_SLEEP);
+      openTable(table1);
       fail("Should receive an exception since the table doesn't exist");
     } catch (Exception ex) {
       // expected
@@ -44,10 +48,34 @@ public class TestKuduTable extends BaseKuduTest {
         client.syncLocateTable(table1, null, null, DEFAULT_SLEEP);
     assertEquals(0, tablets.size());
 
-    createTableWithSplitsAndTest(0);
+    // Test with defaults
+    String tableWithDefault = baseTableName + "WithDefault" + System.currentTimeMillis();
+    CreateTableBuilder builder = new CreateTableBuilder();
+    List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnCount());
+    int defaultInt = 30;
+    String defaultString = "data";
+    for (ColumnSchema columnSchema : schema.getColumns()) {
+      Object defaultValue;
+      if (columnSchema.getType() == Type.INT32) {
+        defaultValue = defaultInt;
+      } else {
+        defaultValue = defaultString;
+      }
+      columns.add(new ColumnSchema(columnSchema.getName(), columnSchema.getType(),
+          columnSchema.isKey(), columnSchema.isNullable(), defaultValue));
+    }
+    Schema schemaWithDefault = new Schema(columns);
+    createTable(tableWithDefault, schemaWithDefault, builder);
+    KuduTable kuduTable = openTable(tableWithDefault);
+    assertEquals(new Integer(defaultInt), kuduTable.getSchema().getColumn(0).getDefaultValue());
+    assertEquals(defaultString,
+        kuduTable.getSchema().getColumn(columns.size() - 1).getDefaultValue());
 
+    // Test splitting and reading those splits
+    KuduTable kuduTableWithoutDefaults = createTableWithSplitsAndTest(0);
+    // finish testing read defaults
+    assertNull(kuduTableWithoutDefaults.getSchema().getColumn(0).getDefaultValue());
     createTableWithSplitsAndTest(3);
-
     createTableWithSplitsAndTest(10);
 
     KuduTable table = createTableWithSplitsAndTest(30);

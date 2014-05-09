@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 package kudu.rpc;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
@@ -8,6 +9,8 @@ import kudu.Common;
 import kudu.Schema;
 import kudu.Type;
 
+import java.math.BigInteger;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -56,33 +59,65 @@ public class ProtobufHelper {
   public static Schema pbToSchema(Common.SchemaPB schema) {
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnsCount());
     for (Common.ColumnSchemaPB columnPb : schema.getColumnsList()) {
-      ColumnSchema column = new ColumnSchema(columnPb.getName(), Type.getTypeForDataType(columnPb
-          .getType()), columnPb.getIsKey(), columnPb.getIsNullable(), null);
+      Type type = Type.getTypeForDataType(columnPb.getType());
+      Object defaultValue = columnPb.hasReadDefaultValue() ? byteStringToObject(type,
+          columnPb.getReadDefaultValue()) : null;
+      ColumnSchema column = new ColumnSchema(columnPb.getName(), type, columnPb.getIsKey(),
+          columnPb.getIsNullable(), defaultValue);
       columns.add(column);
     }
     return new Schema(columns);
   }
 
   private static byte[] objectToWireFormat(ColumnSchema col, Object value) {
-    // TODO just like in Operation, we don't handle unsigned ints
     switch (col.getType()) {
       case INT8:
-      case UINT8:
         return new byte[] { ((Byte)value).byteValue() };
+      case UINT8:
+        return Bytes.fromUnsignedByte((Short) value);
       case INT16:
-      case UINT16:
         return Bytes.fromShort((Short)value);
+      case UINT16:
+        return Bytes.fromUnsignedShort((Integer) value);
       case INT32:
-      case UINT32:
         return Bytes.fromInt((Integer) value);
+      case UINT32:
+        return Bytes.fromUnsignedInt((Long) value);
       case INT64:
-      case UINT64:
         return Bytes.fromLong((Long) value);
+      case UINT64:
+        return Bytes.fromUnsignedLong((BigInteger) value);
       case STRING:
-        return ((String)value).getBytes();
+        return ((String)value).getBytes(Charset.forName("UTF-8"));
       default:
         throw new IllegalArgumentException("The column " + col.getName() + " is of type " + col
             .getType() + " which is unknown");
+    }
+  }
+
+  private static Object byteStringToObject(Type type, ByteString value) {
+    byte[] buf = ZeroCopyLiteralByteString.zeroCopyGetBytes(value);
+    switch (type) {
+      case INT8:
+        return Bytes.getByte(buf);
+      case UINT8:
+        return Bytes.getUnsignedByte(buf);
+      case INT16:
+        return Bytes.getShort(buf);
+      case UINT16:
+        return Bytes.getUnsignedShort(buf);
+      case INT32:
+        return Bytes.getInt(buf);
+      case UINT32:
+        return Bytes.getUnsignedInt(buf);
+      case INT64:
+        return Bytes.getLong(buf);
+      case UINT64:
+        return Bytes.getUnsignedLong(buf);
+      case STRING:
+        return new String(buf, Charset.forName("UTF-8"));
+      default:
+        throw new IllegalArgumentException("This type is unknown: " + type);
     }
   }
 }
