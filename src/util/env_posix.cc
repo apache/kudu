@@ -767,6 +767,17 @@ class PosixEnv : public Env {
     return result;
   };
 
+  virtual Status SyncDir(const std::string& dirname) {
+    int dir_fd;
+    if ((dir_fd = open(dirname.c_str(), O_DIRECTORY|O_RDONLY)) != 0) {
+      return IOError(dirname, errno);
+    }
+    if (fsync(dir_fd) != 0) {
+      return IOError(dirname, errno);
+    }
+    return Status::OK();
+  }
+
 
   virtual Status DeleteRecursively(const std::string &name) {
     // Some sanity checks

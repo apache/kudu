@@ -594,9 +594,10 @@ Status Log::SwitchToAllocatedSegment() {
 
   string new_segment_path = CreateSegmentFileName(active_segment_sequence_number_);
 
-  // TODO KUDU-261: Technically, we need to fsync DirName(new_segment_path)
-  // after RenameFile().
   RETURN_NOT_OK(fs_manager_->env()->RenameFile(next_segment_path_, new_segment_path));
+  if (force_sync_all_) {
+    RETURN_NOT_OK(fs_manager_->env()->SyncDir(log_dir_));
+  }
 
   // Create a new segment.
   gscoped_ptr<WritableLogSegment> new_segment(

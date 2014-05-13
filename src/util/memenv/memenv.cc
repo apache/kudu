@@ -363,6 +363,10 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
+  virtual Status SyncDir(const std::string& dirname) {
+    return Status::OK();
+  }
+
   virtual Status DeleteRecursively(const std::string& dirname) {
     CHECK(!dirname.empty());
     string dir(dirname);
