@@ -117,7 +117,7 @@ Tablet::~Tablet() {
   // We need to clear the maintenance ops manually here, so that the operation
   // callbacks can't trigger while we're in the process of tearing down the rest
   // of the tablet fields.
-  STLDeleteElements(&maintenance_ops_);
+  UnregisterMaintenanceOps();
 }
 
 Status Tablet::Open() {
@@ -1006,6 +1006,9 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 }
 
 void Tablet::UnregisterMaintenanceOps() {
+  BOOST_FOREACH(MaintenanceOp* op, maintenance_ops_) {
+    op->Unregister();
+  }
   STLDeleteElements(&maintenance_ops_);
 }
 

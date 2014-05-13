@@ -137,6 +137,7 @@ void TabletPeer::Shutdown() {
     boost::lock_guard<simple_spinlock> lock(internal_state_lock_);
     state_ = metadata::QUIESCING;
   }
+  tablet_->UnregisterMaintenanceOps();
 
   // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,

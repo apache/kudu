@@ -49,10 +49,13 @@ MaintenanceOp::MaintenanceOp(const std::string &name)
 }
 
 MaintenanceOp::~MaintenanceOp() {
-  MaintenanceManager* manager =  manager_.get();
-  if (manager) {
-    manager->UnregisterOp(this);
-  }
+  CHECK(!manager_.get()) << "You must unregister the " << name_
+         << " Op before destroying it.";
+}
+
+void MaintenanceOp::Unregister() {
+  CHECK(manager_.get()) << "Op " << name_ << " was never registered.";
+  manager_->UnregisterOp(this);
 }
 
 std::string MaintenanceOp::name() const {

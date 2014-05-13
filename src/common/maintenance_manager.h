@@ -53,6 +53,9 @@ class MaintenanceOp {
   explicit MaintenanceOp(const std::string& name);
   virtual ~MaintenanceOp();
 
+  // Unregister this op, if it is currently registered.
+  void Unregister();
+
   // Update the op statistics.  This will be called every scheduling period
   // (about a few times a second), so it should not be too expensive.
   // This will be run under the MaintenanceManager lock.
