@@ -28,7 +28,7 @@ DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
        "Polling interval for the maintenance manager scheduler, "
        "in milliseconds.");
 DEFINE_int64(maintenance_manager_memory_limit, 0,
-       "Maximum amount of memory this daemon should use.  -1 for "
+       "Maximum amount of memory this daemon should use.  0 for "
        "autosizing based on the total system memory.");
 DEFINE_int64(maintenance_manager_max_ts_anchored_secs, 0,
        "We will try not to let entries sit in the write-ahead log for "
@@ -76,12 +76,12 @@ MaintenanceManager::MaintenanceManager(const Options& options)
     shutdown_(false),
     mem_target_(0),
     running_ops_(0),
-    polling_interval_ms_(options.polling_interval_ms < 0 ?
+    polling_interval_ms_(options.polling_interval_ms <= 0 ?
           FLAGS_maintenance_manager_polling_interval_ms :
           options.polling_interval_ms),
     memory_limit_(options.memory_limit <= 0 ?
           FLAGS_maintenance_manager_memory_limit : options.memory_limit),
-    max_ts_anchored_secs_(options.max_ts_anchored_secs < 0 ?
+    max_ts_anchored_secs_(options.max_ts_anchored_secs <= 0 ?
           FLAGS_maintenance_manager_max_ts_anchored_secs :
           options.max_ts_anchored_secs) { }
 
