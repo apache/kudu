@@ -15,6 +15,7 @@
 #include "gutil/map-util.h"
 #include "gutil/strings/substitute.h"
 #include "util/pb_util.h"
+#include "util/trace.h"
 #include "server/metadata.pb.h"
 #include "server/metadata_util.h"
 
@@ -287,14 +288,18 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   BlockId a_blk(master_block_.block_a());
   BlockId b_blk(master_block_.block_b());
   if (sblk_sequence_ & 1) {
+    TRACE("Writing metadata block");
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(a_blk, *(pb.get())));
+    TRACE("Deleting old metadata block");
     Status s = fs_manager_->DeleteBlock(b_blk);
     if (!s.ok() && !s.IsNotFound()) {
       WARN_NOT_OK(s, "Unable to delete old metadata block " + b_blk.ToString()
                   + " for tablet " + oid());
     }
   } else {
+    TRACE("Writing metadata block");
     RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(b_blk, *(pb.get())));
+    TRACE("Deleting old metadata block");
     Status s = fs_manager_->DeleteBlock(a_blk);
     if (!s.ok() && !s.IsNotFound()) {
       WARN_NOT_OK(s, "Unable to delete old metadata block " + a_blk.ToString()
@@ -307,6 +312,7 @@ Status TabletMetadata::UpdateAndFlushUnlocked(
   if (super_block != NULL) {
     super_block->swap(pb);
   }
+  TRACE("Metadata flushed");
   return Status::OK();
 }
 

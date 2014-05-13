@@ -27,6 +27,7 @@
 #include "util/env.h"
 #include "util/errno.h"
 #include "util/slice.h"
+#include "util/stopwatch.h"
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
@@ -550,13 +551,15 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Sync() {
-    if (pending_sync_type_ == FSYNC) {
-      if (fsync(fd_) < 0) {
-        return IOError(filename_, errno);
-      }
-    } else if (pending_sync_type_ == FDATASYNC) {
-      if (fdatasync(fd_) <  0) {
-        return IOError(filename_, errno);
+    LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename_)) {
+      if (pending_sync_type_ == FSYNC) {
+        if (fsync(fd_) < 0) {
+          return IOError(filename_, errno);
+        }
+      } else if (pending_sync_type_ == FDATASYNC) {
+        if (fdatasync(fd_) <  0) {
+          return IOError(filename_, errno);
+        }
       }
     }
     pending_sync_type_ = NONE;

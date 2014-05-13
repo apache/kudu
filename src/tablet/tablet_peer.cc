@@ -95,15 +95,17 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 }
 
 Status TabletPeer::Start(const QuorumPB& quorum) {
-
   // Prevent any SubmitChangeConfig calls to try and modify the config
   // until consensus is booted and the actual configuration is stored in
   // the tablet meta.
   boost::lock_guard<Semaphore> config_lock(config_sem_);
 
   gscoped_ptr<QuorumPB> actual_config;
+  TRACE("Starting consensus");
   RETURN_NOT_OK(consensus_->Start(quorum, &actual_config));
   tablet_->metadata()->SetQuorum(*actual_config.get());
+
+  TRACE("Flushing metadata");
   RETURN_NOT_OK(tablet_->metadata()->Flush());
 
   {

@@ -7,6 +7,7 @@
 #include "consensus/log.h"
 #include "server/metadata.h"
 #include "server/clock.h"
+#include "util/trace.h"
 
 namespace kudu {
 namespace consensus {
@@ -74,12 +75,14 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
   shared_ptr<LatchCallback> commit_clbk(new LatchCallback);
   state_ = kConfiguring;
 
+  TRACE("Replicating initial config");
   gscoped_ptr<ConsensusContext> ctx(NewContext(replicate_msg.Pass(),
                                                replicate_clbk,
                                                commit_clbk));
   RETURN_NOT_OK(Replicate(ctx.get()));
   RETURN_NOT_OK(replicate_clbk->Wait());
 
+  TRACE("Committing local config");
   ChangeConfigResponsePB resp;
   gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(CHANGE_CONFIG_OP);
@@ -90,6 +93,8 @@ Status LocalConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
 
   RETURN_NOT_OK(commit_clbk->Wait());
+  TRACE("Consensus started");
+
   running_quorum->reset(new QuorumPB(initial_quorum));
 
   quorum_ = initial_quorum;
