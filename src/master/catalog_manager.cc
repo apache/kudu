@@ -1660,7 +1660,11 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
   // TODO: Select N Replicas
   // at the moment we have to scan all the tablets to build a map TS -> tablets
   // to know how many tablets a TS has... so, let's do a dumb assignment for now.
-  int index = rand();
+  //
+  // Using a static variable here ensures that we round-robin our assignments.
+  // TODO: In the future we should do something smarter based on number of tablets currently
+  // running on each server, since round-robin may get unbalanced after moves/deletes.
+  static int index = rand();
   for (int i = 0; i < nreplicas; ++i) {
     const TSDescriptor *ts = ts_descs[index++ % ts_descs.size()].get();
 
