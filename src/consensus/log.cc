@@ -21,6 +21,8 @@
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maxmimum size of the group commit queue in bytes");
 
+static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
+
 namespace kudu {
 namespace log {
 
@@ -566,13 +568,10 @@ Status Log::Close() {
 Status Log::PreAllocateNewSegment() {
   CHECK_EQ(allocation_state(), kAllocationInProgress);
 
-  string placeholder_path = SegmentPlaceholderFileName();
-  VLOG(1) << "Creating next WAL segment, placeholder path: " << placeholder_path;
   WritableFileOptions opts;
   opts.mmap_file = false;
   opts.sync_on_close = force_sync_all_;
-  RETURN_NOT_OK(env_util::OpenFileForWrite(opts,
-      fs_manager_->env(), placeholder_path, &next_segment_file_));
+  RETURN_NOT_OK(CreatePlaceholderSegment(opts, &next_segment_path_, &next_segment_file_));
 
   if (options_.preallocate_segments) {
     // TODO (perf) zero the new segments -- this could result in
@@ -593,12 +592,11 @@ Status Log::SwitchToAllocatedSegment() {
   // Increment "next" log segment seqno.
   active_segment_sequence_number_++;
 
-  string placeholder_path = SegmentPlaceholderFileName();
   string new_segment_path = CreateSegmentFileName(active_segment_sequence_number_);
 
-  // TODO Technically, we need to fsync DirName(new_segment_path)
+  // TODO KUDU-261: Technically, we need to fsync DirName(new_segment_path)
   // after RenameFile().
-  RETURN_NOT_OK(fs_manager_->env()->RenameFile(placeholder_path, new_segment_path));
+  RETURN_NOT_OK(fs_manager_->env()->RenameFile(next_segment_path_, new_segment_path));
 
   // Create a new segment.
   gscoped_ptr<WritableLogSegment> new_segment(
@@ -638,9 +636,19 @@ string Log::CreateSegmentFileName(uint64_t sequence_number) {
                                               StringPrintf("%09lu", sequence_number)));
 }
 
-string Log::SegmentPlaceholderFileName() {
-  static const string kSegmentPlaceHolderSuffix = "___TMP___";
-  return JoinPathSegments(log_dir_, kSegmentPlaceHolderSuffix);
+Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,
+                                     string* result_path,
+                                     shared_ptr<WritableFile>* out) {
+  string path_tmpl = JoinPathSegments(log_dir_, kSegmentPlaceholderFileTemplate);
+  VLOG(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
+  gscoped_ptr<WritableFile> segment_file;
+  RETURN_NOT_OK(fs_manager_->env()->NewTempWritableFile(opts,
+                                                        path_tmpl,
+                                                        result_path,
+                                                        &segment_file));
+  VLOG(1) << "Created next WAL segment, placeholder path: " << *result_path;
+  out->reset(segment_file.release());
+  return Status::OK();
 }
 
 Log::~Log() {

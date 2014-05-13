@@ -203,9 +203,13 @@ class Log {
   // Creates the name for a new segment as log-<seqno>
   string CreateSegmentFileName(uint64_t sequence_number);
 
-  // Returns a temprorary place holder path for a segment
-  // being asynchronously allocated.
-  string SegmentPlaceholderFileName();
+  // Sets 'out' to a newly created temporary file (see
+  // Env::NewTempWritableFile()) for a placeholder segment. Sets
+  // 'result_path' to the fully qualified path to the unique filename
+  // created for the segment.
+  Status CreatePlaceholderSegment(const WritableFileOptions& opts,
+                                  std::string* result_path,
+                                  std::tr1::shared_ptr<WritableFile>* out);
 
   // Creates a new WAL segment on disk, writes the next_segment_header_ to
   // disk as the header, and sets active_segment_ to point to this new segment.
@@ -257,6 +261,9 @@ class Log {
 
   // The writable file for the next allocated segment
   std::tr1::shared_ptr<WritableFile> next_segment_file_;
+
+  // The path for the next allocated segment.
+  string next_segment_path_;
 
   // Lock to protect modifications to previous_segments_.
   mutable simple_spinlock previous_segments_lock_;
