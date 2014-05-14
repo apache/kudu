@@ -83,7 +83,8 @@ Subprocess::Subprocess(const string& program,
     child_pid_(-1),
     to_child_stdin_(-1),
     from_child_stdout_(-1),
-    disable_stderr_(false) {
+    disable_stderr_(false),
+    disable_stdout_(false) {
 }
 
 Subprocess::~Subprocess() {
@@ -107,6 +108,24 @@ Subprocess::~Subprocess() {
 void Subprocess::DisableStderr() {
   CHECK(!started_);
   disable_stderr_ = true;
+}
+
+void Subprocess::DisableStdout() {
+  CHECK(!started_);
+  disable_stdout_ = true;
+}
+
+static void RedirectToDevNull(int fd) {
+  // We must not close stderr or stdout, because then when a new file descriptor
+  // gets opened, it might get that fd number.  (We always allocate the lowest
+  // available file descriptor number.)  Instead, we reopen that fd as
+  // /dev/null.
+  int dev_null = open("/dev/null", O_WRONLY);
+  if (dev_null < 0) {
+    PLOG(WARNING) << "failed to open /dev/null";
+  } else {
+    PCHECK(dup2(dev_null, fd));
+  }
 }
 
 Status Subprocess::Start() {
@@ -134,7 +153,7 @@ Status Subprocess::Start() {
 
   int ret = fork();
   if (ret == -1) {
-    return Status::RuntimeError("Unable to fork", ErrnoToString(errno));
+    return Status::RuntimeError("Unable to fork", ErrnoToString(errno), errno);
   }
   if (ret == 0) {
     // We are the child
@@ -142,16 +161,10 @@ Status Subprocess::Start() {
     PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
     CloseNonStandardFDs();
     if (disable_stderr_) {
-      // We must not close stderr, because then when a new file descriptor gets
-      // opened, it might get stderr's number.  (We always allocate the lowest
-      // available file descriptor number.)  Instead, we reopen stderr as
-      // /dev/null.
-      int dev_null = open("/dev/null", O_WRONLY);
-      if (dev_null < 0) {
-        PLOG(WARNING) << "failed to open /dev/null";
-      } else {
-        PCHECK(dup2(dev_null, STDERR_FILENO));
-      }
+      RedirectToDevNull(STDERR_FILENO);
+    }
+    if (disable_stdout_) {
+      RedirectToDevNull(STDOUT_FILENO);
     }
 
     execvp(program_.c_str(), &argv_ptrs[0]);

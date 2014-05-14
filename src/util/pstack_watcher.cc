@@ -74,19 +74,22 @@ Status PstackWatcher::HasProgram(const char* progname) {
   argv.push_back(progname);
   Subprocess proc(which, argv);
   proc.DisableStderr();
+  proc.DisableStdout();
   Status status = proc.Start();
   if (!status.ok()) {
     LOG(WARNING) << "HasProgram(" << progname << "): error running 'which': "
                  << status.ToString();
     return status;
   }
-  ::close(proc.ReleaseChildStdoutFd());
   int wait_status = 0;
   RETURN_NOT_OK(proc.Wait(&wait_status));
   if ((WIFEXITED(wait_status)) && (0 == WEXITSTATUS(wait_status))) {
     return Status::OK();
   }
-  return Status::NotFound(StringPrintf("can't find %s", progname));
+  return Status::NotFound(Substitute("can't find $0: exited?=$1, status=$2",
+                                     progname,
+                                     static_cast<bool>(WIFEXITED(wait_status)),
+                                     WEXITSTATUS(wait_status)));
 }
 
 void PstackWatcher::LogPstack() {

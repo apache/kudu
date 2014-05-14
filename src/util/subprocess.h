@@ -31,6 +31,10 @@ class Subprocess {
   // subprocess starts.
   void DisableStderr();
 
+  // Disable the stdout output from the subprocess.  Must be called before the
+  // subprocess starts.
+  void DisableStdout();
+
   // Start the subprocess.
   //
   // Thie returns a bad Status if the fork() fails. However,
@@ -84,6 +88,7 @@ class Subprocess {
   int to_child_stdin_;
   int from_child_stdout_;
   bool disable_stderr_;
+  bool disable_stdout_;
 
   DISALLOW_COPY_AND_ASSIGN(Subprocess);
 };
