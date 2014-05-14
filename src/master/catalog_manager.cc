@@ -195,14 +195,17 @@ class CatalogManagerBgTasks {
 
   void Wake() {
     boost::lock_guard<boost::mutex> lock(lock_);
+    pending_updates_ = true;
     cond_.notify_all();
   }
 
   void Wait(int msec) {
     boost::unique_lock<boost::mutex> lock(lock_);
     if (closing_) return;
-    boost::system_time wtime = boost::get_system_time() + boost::posix_time::milliseconds(msec);
-    cond_.timed_wait(lock, wtime);
+    if (!pending_updates_) {
+      boost::system_time wtime = boost::get_system_time() + boost::posix_time::milliseconds(msec);
+      cond_.timed_wait(lock, wtime);
+    }
     pending_updates_ = false;
   }
 
@@ -211,11 +214,6 @@ class CatalogManagerBgTasks {
     if (pending_updates_) {
       cond_.notify_all();
     }
-  }
-
-  void NotifyForUpdate() {
-    boost::lock_guard<boost::mutex> lock(lock_);
-    pending_updates_ = true;
   }
 
  private:
