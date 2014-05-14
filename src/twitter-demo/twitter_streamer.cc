@@ -8,6 +8,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <string>
+#include <string.h>
 
 #include "twitter-demo/oauth.h"
 #include "gutil/macros.h"
@@ -155,7 +156,28 @@ Status TwitterStreamer::DoStreaming() {
 }
 
 size_t TwitterStreamer::DataReceived(const Slice& slice) {
-  consumer_->ConsumeJSON(slice);
+  recv_buf_.append(slice.data(), slice.size());
+
+  // Chop the received data into lines.
+  while (true) {
+    void* newline_ptr = memchr(recv_buf_.data(), '\n', recv_buf_.size());
+    if (newline_ptr == NULL) {
+      // no newlines
+      break;
+    }
+    int newline_idx = reinterpret_cast<uintptr_t>(newline_ptr) -
+      reinterpret_cast<uintptr_t>(recv_buf_.data());
+
+    Slice line(recv_buf_.data(), newline_idx);
+    consumer_->ConsumeJSON(line);
+
+    // Copy remaining data back to front of the buffer
+    int rem_size = recv_buf_.size() - newline_idx - 1;
+    memmove(recv_buf_.data(), &recv_buf_[newline_idx + 1], rem_size);
+    // Resize to only have the front
+    recv_buf_.resize(rem_size);
+  }
+
   return slice.size();
 }
 

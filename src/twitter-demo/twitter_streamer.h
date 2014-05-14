@@ -5,6 +5,7 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 
+#include "util/faststring.h"
 #include "util/slice.h"
 #include "util/status.h"
 
@@ -36,6 +37,8 @@ class TwitterStreamer {
   boost::thread thread_;
   boost::mutex lock_;
   Status stream_status_;
+
+  faststring recv_buf_;
 
   TwitterConsumer* consumer_;
 
