@@ -60,6 +60,7 @@ target_link_libraries(kudu_util crcutil)
 target_link_libraries(kudu_util gutil)
 target_link_libraries(kudu_util histogram_proto)
 target_link_libraries(kudu_util protobuf)
+target_link_libraries(kudu_util rt)
 
 add_library(kudu_test_main test_main.cc)
 target_link_libraries(kudu_test_main gflags glog gtest)

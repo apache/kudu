@@ -47,6 +47,10 @@ add_library(gutil
 ./hash/city.cc
 ./utf/rune.c
 )
+
+# clock_gettime() requires -lrt
+target_link_libraries(gutil rt)
+
 # Disable warnings which trigger a lot in the Google code:
 set_target_properties(gutil PROPERTIES
   COMPILE_FLAGS "-funsigned-char -Wno-deprecated -Wno-char-subscripts")
