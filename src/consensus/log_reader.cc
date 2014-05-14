@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 #include <algorithm>
 
+#include "gutil/map-util.h"
 #include "gutil/stl_util.h"
 #include "gutil/strings/util.h"
 #include "gutil/strings/substitute.h"
@@ -20,14 +21,6 @@ namespace log {
 using consensus::OpId;
 using env_util::ReadFully;
 using strings::Substitute;
-
-// Returns whether segment i comes before segment j.
-static bool CompareSegments(const scoped_refptr<ReadableLogSegment>& i,
-                            const scoped_refptr<ReadableLogSegment>& j) {
-  uint64_t i_seqno = i->header().sequence_number();
-  uint64_t j_seqno = j->header().sequence_number();
-  return i_seqno < j_seqno;
-}
 
 Status LogReader::Open(FsManager *fs_manager,
                        const string& tablet_oid,
@@ -82,12 +75,11 @@ Status LogReader::Init(const string& tablet_wal_path) {
       scoped_refptr<ReadableLogSegment> segment;
       RETURN_NOT_OK(ReadableLogSegment::Open(env, fqp, &segment));
       DCHECK(segment);
-      segments_.push_back(segment);
+      const OpId& op_id = segment->header().initial_id();
+      InsertOrDie(&segments_, op_id, segment);
     }
   }
 
-  // sort the segments
-  sort(segments_.begin(), segments_.end(), CompareSegments);
   state_ = kLogReaderReading;
   return Status::OK();
 }

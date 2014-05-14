@@ -5,6 +5,7 @@
 
 #include <boost/thread/shared_mutex.hpp>
 #include <string>
+#include <map>
 #include <vector>
 
 #include "consensus/log_util.h"
@@ -150,6 +151,26 @@ class Log {
   // This method is thread-safe.
   Status GC(const consensus::OpId& min_op_id, int* num_gced);
 
+  // Copies a "snapshot" of the previous_segments_ field into "segments".
+  // The caller should hold an anchor on the underlying OpIds to prevent the
+  // Log::GC() thread from deleting pointed-to log files while reading them,
+  // even though with the file descriptors open, they should remain readable.
+  //
+  // Because the Log does not do the anchoring for you, there is no guarantee
+  // that the segments will continue to exist once this function returns, unless
+  // you do the anchoring yourself.
+  // TODO: It would be more user-friendly to automatically anchor the earliest
+  // OpId returned as part of this call. See KUDU-284.
+  //
+  // This method is thread-safe.
+  void GetReadableLogSegments(ReadableLogSegmentMap* segments) const;
+
+  // Returns number of "rolled" log segments.
+  //
+  // This is not a constant-time operation.
+  // This method is thread-safe.
+  int GetNumReadableLogSegmentsForTests() const;
+
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
     return active_segment_->path();
@@ -158,12 +179,6 @@ class Log {
   // Forces the write of a header to the active segment.
   // For testing recovery when only the header has been written, but no records.
   Status WriteHeaderForTests();
-
-  // Note: accessing this internal structure is _not_ thread-safe while
-  // concurrently running GC().
-  const vector<scoped_refptr<ReadableLogSegment> >& PreviousSegmentsForTests() const {
-    return previous_segments_;
-  }
 
   // Synchronously allocate a new segment and roll the log.
   Status RollOverForTests();
@@ -271,7 +286,7 @@ class Log {
   LogState log_state_;
 
   // All previous (inactive) un-GC'd segments.
-  vector<scoped_refptr<ReadableLogSegment> > previous_segments_;
+  ReadableLogSegmentMap previous_segments_;
 
   // Lock to protect last_entry_op_id_, which is constantly written but
   // read occasionally by things like consensus and log GC.

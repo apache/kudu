@@ -4,6 +4,8 @@
 
 #include "consensus/log_reader.h"
 #include "consensus/log_metrics.h"
+#include "consensus/log_util.h"
+#include "gutil/map-util.h"
 #include "gutil/ref_counted.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/stl_util.h"
@@ -240,7 +242,7 @@ Status Log::Init() {
     VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
 
-    const scoped_refptr<ReadableLogSegment>& segment = previous_segments_.back();
+    const scoped_refptr<ReadableLogSegment>& segment = previous_segments_.rbegin()->second;
     uint64_t last_written_seqno = segment->header().sequence_number();
     active_segment_sequence_number_ = last_written_seqno + 1;
   }
@@ -522,18 +524,31 @@ Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
   LOG(INFO) << "Running Log GC on " << log_dir_;
   LOG_TIMING(INFO, "Log GC") {
     vector<string> stale_segment_paths;
+
     {
       boost::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
-      uint32_t num_stale_segments =
-          FindStaleSegmentsPrefixSize(previous_segments_, min_op_id);
+
+      OpIdRange initial_opids;
+      size_t num_stale_segments =
+          FindStaleSegmentsPrefixSize(previous_segments_, min_op_id, &initial_opids);
+
       if (num_stale_segments > 0) {
         LOG(INFO) << "Found " << num_stale_segments << " stale log segments.";
-        for (int i = 0; i < num_stale_segments; i++) {
-          stale_segment_paths.push_back(previous_segments_[i]->path());
+        const ReadableLogSegmentMap::iterator& first = previous_segments_.find(initial_opids.first);
+        // Sanity check.
+        const OpId& earliest_available_opid = previous_segments_.begin()->first;
+        CHECK(OpIdEquals(initial_opids.first, earliest_available_opid))
+            << "OpIds should be equal: " << initial_opids.first.ShortDebugString()
+            << " and " << earliest_available_opid.ShortDebugString();
+        // The last OpId in the initial_opids range is not inclusive.
+        const ReadableLogSegmentMap::iterator& last = previous_segments_.find(initial_opids.second);
+        ReadableLogSegmentMap::iterator copy_iter = first;
+        while (copy_iter != last) {
+          stale_segment_paths.push_back(copy_iter->second->path());
+          copy_iter++;
         }
-        previous_segments_.erase(previous_segments_.begin(),
-                                 previous_segments_.begin() + num_stale_segments);
+        previous_segments_.erase(first, last);
       }
     }
 
@@ -546,6 +561,17 @@ Status Log::GC(const consensus::OpId& min_op_id, int32_t* num_gced) {
     }
   }
   return Status::OK();
+}
+
+void Log::GetReadableLogSegments(ReadableLogSegmentMap* segments) const {
+  DCHECK(segments);
+  boost::shared_lock<rw_spinlock> l(state_lock_.get_lock());
+  *segments = previous_segments_;
+}
+
+int Log::GetNumReadableLogSegmentsForTests() const {
+  boost::shared_lock<rw_spinlock> l(state_lock_.get_lock());
+  return previous_segments_.size();
 }
 
 Status Log::Close() {
@@ -623,9 +649,10 @@ Status Log::SwitchToAllocatedSegment() {
     // Note: active_segment_->header() will only contain an initialized PB if we
     // wrote the header out.
     readable_segment->Init(active_segment_->header(), active_segment_->first_entry_offset());
+    const OpId& op_id = readable_segment->header().initial_id();
 
     boost::lock_guard<percpu_rwlock> l(state_lock_);
-    previous_segments_.push_back(readable_segment);
+    InsertOrDie(&previous_segments_, op_id, readable_segment);
   }
 
   // Now set 'active_segment_' to the new segment.
@@ -685,7 +712,6 @@ void LogEntryBatch::MarkReserved() {
   ready_lock_.Lock();
   state_ = kEntryReserved;
 }
-
 
 Status LogEntryBatch::Serialize() {
   DCHECK_EQ(state_, kEntryReserved);

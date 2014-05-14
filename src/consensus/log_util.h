@@ -3,8 +3,11 @@
 #ifndef KUDU_CONSENSUS_LOG_UTIL_H_
 #define KUDU_CONSENSUS_LOG_UTIL_H_
 
+#include <iosfwd>
+#include <map>
 #include <string>
 #include <tr1/memory>
+#include <utility>
 #include <vector>
 
 #include "consensus/log.pb.h"
@@ -27,6 +30,16 @@ extern const size_t kEntryLengthSize;
 extern const int kLogMajorVersion;
 extern const int kLogMinorVersion;
 
+class ReadableLogSegment;
+struct OpIdCompareFunctor;
+
+typedef std::map<consensus::OpId, scoped_refptr<ReadableLogSegment>, OpIdCompareFunctor>
+        ReadableLogSegmentMap;
+
+// Range of OpIds. The first item is inclusive, the second item is exclusive,
+// i.e.: [first, second).
+typedef std::pair<consensus::OpId, consensus::OpId> OpIdRange;
+
 // Options for the State Machine/Write Ahead Log
 struct LogOptions {
 
@@ -46,12 +59,11 @@ struct LogOptions {
   LogOptions();
 };
 
-// A segment of the log, can either be a ReadableLogSegment (for replay and
+// A segment of the log can either be a ReadableLogSegment (for replay and
 // consensus catch-up) or a WritableLogSegment (where the Log actually stores
 // state). LogSegments have a maximum size defined in LogOptions (set from the
 // log_segment_size_mb flag, which defaults to 64). Upon reaching this size
 // segments are rolled over and the Log continues in a new segment.
-
 
 // A readable log segment for recovery and follower catch-up.
 class ReadableLogSegment : public base::RefCountedThreadSafe<ReadableLogSegment> {
@@ -250,9 +262,19 @@ consensus::OpId MaximumOpId();
 // with 0, 5, and 10, respectively, then we must retain the logs starting with
 // 10 and 5, but we can GC the log segment starting with OpId 0.
 // See comments in the implementation file for more details on the algorithm.
-uint32_t FindStaleSegmentsPrefixSize(
-    const std::vector<scoped_refptr<ReadableLogSegment> > &segments,
-    const consensus::OpId& earliest_needed_opid);
+//
+// Returns number of stale segments found.
+//
+// If the returned number of stale segments is non-zero, 'stale_op_id_range'
+// will be an interval of stale OpIds (the end being exclusive), starting at
+// the initial OpId of the first stale segment and ending at the initial OpId
+// of the first non-stale segment.
+//
+// Note: The range is based on initial OpId per segment because that is how each
+// segment is keyed in the ReadableLogSegmentMap.
+size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
+                                   const consensus::OpId& earliest_needed_opid,
+                                   OpIdRange* initial_op_id_range);
 
 // Checks if 'fname' is a correctly formatted name of log segment
 // file.

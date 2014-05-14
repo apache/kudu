@@ -76,7 +76,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  ASSERT_STATUS_OK((*log_reader_->segments().begin())->ReadEntries(&entries));
+  ASSERT_STATUS_OK(log_reader_->segments().begin()->second->ReadEntries(&entries));
 
   ASSERT_EQ(2, entries.size());
 
@@ -91,7 +91,7 @@ TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  const scoped_refptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
+  const scoped_refptr<ReadableLogSegment>& first_segment = log_reader_->segments().begin()->second;
   ASSERT_STATUS_OK(first_segment->ReadEntries(&entries));
   // Close after testing to ensure correct shutdown
   // TODO : put this in TearDown() with a test on log state?
@@ -150,7 +150,7 @@ TEST_F(LogTest, TestCorruptLog) {
 
   BuildLogReader();
   ASSERT_EQ(1, log_reader_->size());
-  const scoped_refptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
+  const scoped_refptr<ReadableLogSegment>& first_segment = log_reader_->segments().begin()->second;
   Status status = first_segment->ReadEntries(&entries_);
   ASSERT_TRUE(status.IsCorruption());
 
@@ -171,12 +171,12 @@ TEST_F(LogTest, TestSegmentRollover) {
   do {
     AppendNoOps(&op_id, kNumEntriesPerBatch);
     num_entries += kNumEntriesPerBatch;
-  } while (log_->PreviousSegmentsForTests().size() < 3);
+  } while (log_->GetNumReadableLogSegmentsForTests() < 3);
 
   ASSERT_STATUS_OK(log_->Close());
   BuildLogReader();
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, log_reader_->segments()) {
-    ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
+  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, log_reader_->segments()) {
+    ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
   }
 
   ASSERT_EQ(num_entries, entries_.size());
@@ -198,24 +198,24 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
-  ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(3, log_->GetNumReadableLogSegmentsForTests());
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(3, log_->GetNumReadableLogSegmentsForTests());
 
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[0]));
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[1]));
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log_->GetNumReadableLogSegmentsForTests());
 
   // Release the remaining "rolled segment" anchor. GC will not delete the
   // last log.
   ASSERT_STATUS_OK(opid_anchor_registry_->Unregister(anchors[2]));
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log_->GetNumReadableLogSegmentsForTests());
 
   ASSERT_STATUS_OK(log_->Close());
   CheckRightNumberOfSegmentFiles(2);
@@ -238,7 +238,7 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
 
   // Make sure we only get 4 entries back and that no FLUSH_MARKER commit is found.
   BuildLogReader();
-  ASSERT_STATUS_OK((*log_reader_->segments().begin())->ReadEntries(&entries_));
+  ASSERT_STATUS_OK(log_reader_->segments().begin()->second->ReadEntries(&entries_));
   ASSERT_EQ(entries_.size(), 4);
   for (int i = 0; i < 4 ; i++) {
     ASSERT_TRUE(entries_[i]->has_operation());
@@ -267,10 +267,10 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   ASSERT_STATUS_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
-  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(2, log_->GetNumReadableLogSegmentsForTests());
   ASSERT_STATUS_OK(opid_anchor_registry_->GetEarliestRegisteredOpId(&anchored_opid));
   ASSERT_STATUS_OK(log_->GC(anchored_opid, &num_gced_segments));
-  ASSERT_EQ(2, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(2, log_->GetNumReadableLogSegmentsForTests());
 
   ASSERT_STATUS_OK(log_->Close());
 
@@ -279,7 +279,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   BuildLog();
 
   // The "old" data consists of 3 segments. We still hold anchors.
-  ASSERT_EQ(3, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(3, log_->GetNumReadableLogSegmentsForTests());
 
   // Write to a new log segment, as if we had taken new requests and the
   // mem stores are holding anchors, but don't roll it.
@@ -296,7 +296,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   // After GC there should be only one left, because it's the first segment
   // (counting in reverse order) that has an earlier initial OpId than the
   // earliest one we are anchored on (which is in our active "new" segment).
-  ASSERT_EQ(1, log_->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log_->GetNumReadableLogSegmentsForTests());
   ASSERT_STATUS_OK(log_->Close());
 
   CheckRightNumberOfSegmentFiles(2);
@@ -324,9 +324,9 @@ TEST_F(LogTest, TestWriteManyBatches) {
     LOG(INFO) << "Starting to read log";
     BuildLogReader();
     uint32_t num_entries = 0;
-    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, log_reader_->segments()) {
+    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, log_reader_->segments()) {
       STLDeleteElements(&entries_);
-      ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
+      ASSERT_STATUS_OK(entry.second->ReadEntries(&entries_));
       num_entries += entries_.size();
     }
     ASSERT_EQ(num_entries, num_batches * 2);

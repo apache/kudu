@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "common/iterator.h"
+#include "consensus/log_util.h"
 #include "tablet/tablet_bootstrap.h"
 #include "tablet/tablet-test-util.h"
 #include "server/logical_clock.h"
@@ -25,9 +26,9 @@ using std::string;
 
 using log::Log;
 using log::LogTestBase;
-using log::TabletMasterBlockPB;
 using log::OpIdAnchorRegistry;
-
+using log::ReadableLogSegmentMap;
+using log::TabletMasterBlockPB;
 using server::Clock;
 using server::LogicalClock;
 
@@ -127,7 +128,9 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // Create an orphanned commit by first adding a commit a newly
   // rolled logfile, and then by removing the previous commits.
   AppendCommit(current_id_ + 1, current_id_);
-  fs_manager_->env()->DeleteFile(log_->PreviousSegmentsForTests()[0]->path());
+  ReadableLogSegmentMap segments;
+  log_->GetReadableLogSegments(&segments);
+  fs_manager_->env()->DeleteFile(segments.begin()->second->path());
 
   // Note: when GLOG_v=1, the test logs should include 'Ignoring
   // orphan commit: op_type: WRITE_OP...' line.
@@ -164,7 +167,9 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 
   AppendCommit(current_id_ + 1, current_id_);
 
-  fs_manager_->env()->DeleteFile(log_->PreviousSegmentsForTests()[0]->path());
+  ReadableLogSegmentMap segments;
+  log_->GetReadableLogSegments(&segments);
+  fs_manager_->env()->DeleteFile(segments.begin()->second->path());
 
   current_id_ += 2;
 

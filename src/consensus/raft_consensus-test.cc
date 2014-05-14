@@ -7,8 +7,9 @@
 #include "common/wire_protocol-test-util.h"
 #include "consensus/consensus.pb.h"
 #include "consensus/consensus-test-util.h"
-#include "consensus/raft_consensus.h"
+#include "consensus/log_util.h"
 #include "consensus/opid_anchor_registry.h"
+#include "consensus/raft_consensus.h"
 #include "gutil/stl_util.h"
 #include "consensus/log_reader.h"
 #include "rpc/rpc_context.h"
@@ -28,7 +29,7 @@ using log::Log;
 using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
-using log::ReadableLogSegment;
+using log::ReadableLogSegmentMap;
 using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using metadata::TabletSuperBlockPB;
@@ -237,8 +238,8 @@ class RaftConsensusTest : public KuduTest {
                                           &log_reader));
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
-    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment> segment, log_reader->segments()) {
-      ASSERT_STATUS_OK(segment->ReadEntries(&entries));
+    BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, log_reader->segments()) {
+      ASSERT_STATUS_OK(entry.second->ReadEntries(&entries));
     }
     BOOST_FOREACH(LogEntryPB* entry, entries) {
       operations->push_back(entry->release_operation());

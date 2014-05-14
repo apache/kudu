@@ -32,45 +32,46 @@
 #include "util/path_util.h"
 #include "util/locks.h"
 
-using boost::shared_lock;
-using kudu::consensus::CommitMsg;
-using kudu::consensus::ConsensusRound;
-using kudu::consensus::OperationPB;
-using kudu::consensus::OpId;
-using kudu::consensus::ReplicateMsg;
-using kudu::consensus::ALTER_SCHEMA_OP;
-using kudu::consensus::CHANGE_CONFIG_OP;
-using kudu::consensus::OP_ABORT;
-using kudu::consensus::WRITE_OP;
-using kudu::log::Log;
-using kudu::log::LogEntryPB;
-using kudu::log::LogOptions;
-using kudu::log::LogReader;
-using kudu::log::OpIdAnchorRegistry;
-using kudu::log::OPERATION;
-using kudu::metadata::QuorumPB;
-using kudu::metadata::TabletMetadata;
-using kudu::metadata::TabletSuperBlockPB;
-using kudu::metadata::RowSetMetadata;
-using kudu::server::Clock;
-using kudu::tablet::OperationResultPB;
-using kudu::tablet::PreparedRowWrite;
-using kudu::tablet::Tablet;
-using kudu::tserver::AlterSchemaRequestPB;
-using kudu::tserver::ChangeConfigRequestPB;
-using kudu::tserver::WriteRequestPB;
-using std::tr1::shared_ptr;
-using strings::Substitute;
-
 DEFINE_bool(skip_remove_old_recovery_dir, false,
             "Skip removing WAL recovery dir after startup. (useful for debugging)");
 
 namespace kudu {
 namespace tablet {
 
-using log::OpIdHashFunctor;
+using boost::shared_lock;
+using consensus::CommitMsg;
+using consensus::ConsensusRound;
+using consensus::OperationPB;
+using consensus::OpId;
+using consensus::ReplicateMsg;
+using consensus::ALTER_SCHEMA_OP;
+using consensus::CHANGE_CONFIG_OP;
+using consensus::OP_ABORT;
+using consensus::WRITE_OP;
+using log::Log;
+using log::LogEntryPB;
+using log::LogOptions;
+using log::LogReader;
+using log::OpIdAnchorRegistry;
 using log::OpIdEquals;
 using log::OpIdEqualsFunctor;
+using log::OpIdHashFunctor;
+using log::OPERATION;
+using log::ReadableLogSegment;
+using log::ReadableLogSegmentMap;
+using metadata::QuorumPB;
+using metadata::TabletMetadata;
+using metadata::TabletSuperBlockPB;
+using metadata::RowSetMetadata;
+using server::Clock;
+using tablet::OperationResultPB;
+using tablet::PreparedRowWrite;
+using tablet::Tablet;
+using tserver::AlterSchemaRequestPB;
+using tserver::ChangeConfigRequestPB;
+using tserver::WriteRequestPB;
+using std::tr1::shared_ptr;
+using strings::Substitute;
 
 struct ReplayState;
 
@@ -650,9 +651,10 @@ Status TabletBootstrap::PlaySegments() {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
   ReplayState state;
-  const vector<scoped_refptr<log::ReadableLogSegment> >& segments = log_reader_->segments();
+  const ReadableLogSegmentMap& segments = log_reader_->segments();
   int segment_count = 0;
-  BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, segments) {
+  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& seg_entry, segments) {
+    const scoped_refptr<ReadableLogSegment>& segment = seg_entry.second;
 
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);

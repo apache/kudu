@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <iostream>
 #include <limits>
 #include <utility>
 
@@ -355,26 +356,31 @@ struct DeltaIdEqualsTo {
   }
 };
 
-uint32_t FindStaleSegmentsPrefixSize(
-    const std::vector<scoped_refptr<ReadableLogSegment> > &segments,
-    const consensus::OpId& earliest_needed_opid) {
+size_t FindStaleSegmentsPrefixSize(const ReadableLogSegmentMap& segment_map,
+                                   const consensus::OpId& earliest_needed_opid,
+                                   OpIdRange* initial_op_id_range) {
+  DCHECK(initial_op_id_range);
   // We iterate in reverse order.
   // Keep the 1st log segment with initial OpId less than or equal to the
   // earliest needed OpId, and delete all the log segments preceding it
   // (preceding meaning in natural order).
-  uint32_t num_stale_segments = 0;
+  size_t num_stale_segments = 0;
   bool seen_earlier_opid = false;
-  BOOST_REVERSE_FOREACH(const scoped_refptr<ReadableLogSegment> &segment, segments) {
-    const OpId& first_in_segment = segment->header().initial_id();
-    if (OpIdLessThan(first_in_segment, earliest_needed_opid) ||
-        OpIdEquals(first_in_segment, earliest_needed_opid)) {
+  BOOST_REVERSE_FOREACH(const ReadableLogSegmentMap::value_type& entry, segment_map) {
+    const OpId& initial_op_id_in_segment = entry.first;
+    const scoped_refptr<ReadableLogSegment>& segment = entry.second;
+    if (OpIdLessThan(initial_op_id_in_segment, earliest_needed_opid) ||
+        OpIdEquals(initial_op_id_in_segment, earliest_needed_opid)) {
       if (!seen_earlier_opid) {
         // earliest_needed_opid may be in the middle of this segment, do not
         // delete it (but earlier ones can go).
         seen_earlier_opid = true;
+        initial_op_id_range->second = initial_op_id_in_segment;
+        initial_op_id_range->first = initial_op_id_in_segment;
       } else {
         // All the earlier logs can go.
         num_stale_segments++;
+        initial_op_id_range->first = initial_op_id_in_segment;
       }
     } else {
       CHECK(!seen_earlier_opid)

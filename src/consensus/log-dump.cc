@@ -150,8 +150,8 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
 
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, reader->segments()) {
-    PrintSegment(segment);
+  BOOST_FOREACH(const ReadableLogSegmentMap::value_type& entry, reader->segments()) {
+    PrintSegment(entry.second);
   }
 }
 

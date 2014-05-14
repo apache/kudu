@@ -228,9 +228,9 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
 
   AssertNoLogAnchors();
 
-  ASSERT_EQ(0, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(0, log->GetNumReadableLogSegmentsForTests());
   ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(3));
-  ASSERT_EQ(3, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(3, log->GetNumReadableLogSegmentsForTests());
 
   AssertLogAnchorEarlierThanLogLatest();
   CHECK_GT(tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests(), 0);
@@ -250,7 +250,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(2, num_gced);
-  ASSERT_EQ(1, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log->GetNumReadableLogSegmentsForTests());
 }
 
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
@@ -261,9 +261,9 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
   AssertNoLogAnchors();
 
-  ASSERT_EQ(0, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(0, log->GetNumReadableLogSegmentsForTests());
   ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(2));
-  ASSERT_EQ(2, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(2, log->GetNumReadableLogSegmentsForTests());
 
   // Flush MRS & GC log so the next mutation goes into a DMS.
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
@@ -272,26 +272,26 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
   // back to the latest OpId written to the Log if no anchors are set.
   ASSERT_EQ(1, num_gced);
-  ASSERT_EQ(1, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log->GetNumReadableLogSegmentsForTests());
   AssertNoLogAnchors();
 
   // Execute a mutation.
   ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(1));
   AssertLogAnchorEarlierThanLogLatest();
   CHECK_GT(tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests(), 0);
-  ASSERT_EQ(2, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(2, log->GetNumReadableLogSegmentsForTests());
 
   // Execute another couple inserts, but Flush it so it doesn't anchor.
   ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(2));
   ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
-  ASSERT_EQ(4, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(4, log->GetNumReadableLogSegmentsForTests());
 
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
   // Note that this will allow GC of the 2nd insert done above.
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(1, num_gced);
-  ASSERT_EQ(3, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(3, log->GetNumReadableLogSegmentsForTests());
 
   // Flush DMS to release the anchor.
   tablet_peer_->tablet()->FlushBiggestDMS();
@@ -306,7 +306,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(2, num_gced);
-  ASSERT_EQ(1, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log->GetNumReadableLogSegmentsForTests());
 }
 
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
@@ -317,9 +317,9 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   AssertNoLogAnchors();
 
-  ASSERT_EQ(0, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(0, log->GetNumReadableLogSegmentsForTests());
   ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(4));
-  ASSERT_EQ(4, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(4, log->GetNumReadableLogSegmentsForTests());
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
   ASSERT_EQ(1, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
@@ -372,12 +372,12 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(4, num_gced);
-  ASSERT_EQ(1, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log->GetNumReadableLogSegmentsForTests());
 
   // We use mutations here, since an MRS Flush() quiesces the tablet, and we
   // want to ensure the only thing "anchoring" is the TransactionTracker.
   ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(3));
-  ASSERT_EQ(4, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(4, log->GetNumReadableLogSegmentsForTests());
   ASSERT_EQ(1, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
   tablet_peer_->tablet()->FlushBiggestDMS();
   ASSERT_EQ(0, tablet_peer_->opid_anchor_registry_->GetAnchorCountForTests());
@@ -389,7 +389,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(0, num_gced);
-  ASSERT_EQ(4, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(4, log->GetNumReadableLogSegmentsForTests());
 
   // Now we release the transaction and wait for everything to complete.
   // We fully quiesce and flush, which should release all anchors.
@@ -405,7 +405,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   tablet_peer_->GetEarliestNeededOpId(&min_op_id);
   ASSERT_STATUS_OK(log->GC(min_op_id, &num_gced));
   ASSERT_EQ(3, num_gced);
-  ASSERT_EQ(1, log->PreviousSegmentsForTests().size());
+  ASSERT_EQ(1, log->GetNumReadableLogSegmentsForTests());
 }
 
 } // namespace tablet

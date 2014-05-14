@@ -31,7 +31,7 @@ class LogReader {
   // Returns the number of segments in path_, set only once on Init().
   const uint32_t size();
 
-  const vector<scoped_refptr<ReadableLogSegment> > &segments() {
+  const ReadableLogSegmentMap& segments() {
     DCHECK_EQ(state_ , kLogReaderReading) << "log reader was not Init()ed:"
                                           << state_;
     return segments_;
@@ -48,7 +48,7 @@ class LogReader {
 
   FsManager *fs_manager_;
   const string tablet_oid_;
-  vector<scoped_refptr<ReadableLogSegment> > segments_;
+  ReadableLogSegmentMap segments_;
 
   enum State {
     kLogReaderInitialized,
