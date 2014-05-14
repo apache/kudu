@@ -48,9 +48,9 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::ArgumentMap &a
 
   *output << "<h1>Tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Table Name</th><th>Tablet ID</th>"
-      "<th>End key</th><th>Start key</th>"
-      "<th>State</th><th>On-disk Size</th><th>Last status</th></tr>\n";
+  *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
+      "<th>Start key</th><th>End key</th>"
+      "<th>State</th><th>On-disk size</th><th>Last status</th></tr>\n";
   BOOST_FOREACH(const shared_ptr<TabletPeer>& peer, peers) {
     TabletStatusPB status;
     peer->GetTabletStatusPB(&status);
