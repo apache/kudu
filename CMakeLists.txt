@@ -100,11 +100,11 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # This test is imperfect because 'cmake' and 'make' can be run independently
   # (with different terminal options), and we're testing during the former.
   execute_process(COMMAND test -t 2 RESULT_VARIABLE KUDU_IS_TTY)
-  if (${KUDU_IS_TTY} EQUAL 0)
+  if ((${KUDU_IS_TTY} EQUAL 0) AND (NOT ("$ENV{TERM}" STREQUAL "dumb")))
     message("Running in a controlling terminal")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
   else()
-    message("Running without a controlling terminal")
+    message("Running without a controlling terminal or in a dumb terminal")
   endif()
 endif()
 
