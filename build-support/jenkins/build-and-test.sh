@@ -136,4 +136,6 @@ cd java
 # use git clean to help with the transition from protoc generated files in
 # src/main/java to target/generated-sources.
 git clean -df
+
+export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ME/tsan-suppressions.txt history_size=7"
 mvn clean test
