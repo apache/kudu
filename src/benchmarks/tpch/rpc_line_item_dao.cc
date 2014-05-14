@@ -164,14 +164,10 @@ void RpcLineItemDAO::FinishWriting() {
 }
 
 void RpcLineItemDAO::OpenScanner(const Schema &query_schema, ScanSpec *spec) {
-  LOG(FATAL) << "NOT IMPLEMENTED!";
-}
-
-void RpcLineItemDAO::OpenScanner(Schema &query_schema, ColumnRangePredicatePB &pred) {
   client::KuduScanner *scanner = new client::KuduScanner(client_table_.get());
   current_scanner_.reset(scanner);
   CHECK_OK(current_scanner_->SetProjection(&query_schema));
-  if (pred.has_column()) {
+  BOOST_FOREACH(const ColumnRangePredicate& pred, spec->predicates()) {
     CHECK_OK(current_scanner_->AddConjunctPredicate(pred));
   }
   CHECK_OK(current_scanner_->Open());

@@ -13,7 +13,6 @@
 #include "common/row.h"
 #include "common/wire_protocol.h"
 #include "gutil/stl_util.h"
-#include "gutil/strings/serialize.h"
 #include "integration-tests/mini_cluster.h"
 #include "master/catalog_manager.h"
 #include "master/master-test-util.h"
@@ -44,7 +43,6 @@ using master::GetTableLocationsResponsePB;
 using master::TabletLocationsPB;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
-using tserver::ColumnRangePredicatePB;
 
 const uint32_t kNonNullDefault = 12345;
 
@@ -177,10 +175,9 @@ class ClientTest : public KuduTest {
   void DoTestScanWithStringPredicate() {
     KuduScanner scanner(client_table_.get());
     ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
-    ColumnRangePredicatePB pred;
-    ColumnSchemaToPB(schema_.column(2), pred.mutable_column());
-    pred.set_lower_bound("hello 2");
-    pred.set_upper_bound("hello 3");
+    Slice lower("hello 2");
+    Slice upper("hello 3");
+    ColumnRangePredicate pred(schema_.column(2), &lower, &upper);
     ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
     LOG_TIMING(INFO, "Scanning with string predicate") {
@@ -194,7 +191,7 @@ class ClientTest : public KuduTest {
         BOOST_FOREACH(const uint8_t* row_ptr, rows) {
           ConstContiguousRow row(schema_, row_ptr);
           Slice s = *schema_.ExtractColumnFromRow<STRING>(row, 2);
-          if (!s.starts_with("hello 2") && s != Slice("hello 3")) {
+          if (!s.starts_with("hello 2") && !s.starts_with("hello 3")) {
             FAIL() << schema_.DebugRow(row);
           }
         }
@@ -206,10 +203,9 @@ class ClientTest : public KuduTest {
   void DoTestScanWithKeyPredicate() {
     KuduScanner scanner(client_table_.get());
     ASSERT_STATUS_OK(scanner.SetProjection(&schema_));
-    ColumnRangePredicatePB pred;
-    ColumnSchemaToPB(schema_.column(0), pred.mutable_column());
-    pred.set_lower_bound(EncodeUint32(5));
-    pred.set_upper_bound(EncodeUint32(10));
+    uint32_t lower = 5;
+    uint32_t upper = 10;
+    ColumnRangePredicate pred(schema_.column(0), &lower, &upper);
     ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
 
     LOG_TIMING(INFO, "Scanning with key predicate") {
@@ -240,15 +236,14 @@ class ClientTest : public KuduTest {
     KuduScanner scanner(table);
     Schema empty_projection(vector<ColumnSchema>(), 0);
     CHECK_OK(scanner.SetProjection(&empty_projection));
-    if (lower_bound != kNoBound || upper_bound != kNoBound) {
-      ColumnRangePredicatePB pred;
-      ColumnSchemaToPB(table->schema().column(0), pred.mutable_column());
-      if (lower_bound != kNoBound) {
-        pred.set_lower_bound(EncodeUint32(lower_bound));
-      }
-      if (upper_bound != kNoBound) {
-        pred.set_upper_bound(EncodeUint32(upper_bound));
-      }
+    if (lower_bound != kNoBound && upper_bound != kNoBound) {
+      ColumnRangePredicate pred(table->schema().column(0), &lower_bound, &upper_bound);
+      CHECK_OK(scanner.AddConjunctPredicate(pred));
+    } else if (lower_bound != kNoBound) {
+      ColumnRangePredicate pred(table->schema().column(0), &lower_bound, boost::none);
+      CHECK_OK(scanner.AddConjunctPredicate(pred));
+    } else if (upper_bound != kNoBound) {
+      ColumnRangePredicate pred(table->schema().column(0), boost::none, &upper_bound);
       CHECK_OK(scanner.AddConjunctPredicate(pred));
     }
     CHECK_OK(scanner.Open());

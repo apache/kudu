@@ -22,7 +22,11 @@ class RangePredicateEncoder {
  public:
   explicit RangePredicateEncoder(const Schema &key_schema);
 
-  void EncodeRangePredicates(ScanSpec *spec);
+  // Encodes the predicates found in 'spec' into a key range which is
+  // then emitted back into 'spec'.
+  //
+  // If 'erase_pushed' is true, pushed predicates are removed from 'spec'.
+  void EncodeRangePredicates(ScanSpec *spec, bool erase_pushed);
 
  private:
 

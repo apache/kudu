@@ -81,14 +81,10 @@ static void UpdateThread(Demo *demo) {
     VLOG(1) << "current order: " << current_order;
 
     // 2. Fetch the order including the column we want to update
-    ColumnRangePredicatePB pred;
-    ColumnSchemaToPB(query_schema.column(0), pred.mutable_column());
-    pred.mutable_lower_bound()->assign(
-      reinterpret_cast<const char*>(&current_order), sizeof(current_order));
-    pred.mutable_upper_bound()->assign(
-      reinterpret_cast<const char*>(&current_order), sizeof(current_order));
-
-    dao->OpenScanner(query_schema, pred);
+    ScanSpec spec;
+    ColumnRangePredicate pred(query_schema.column(0), &current_order, &current_order);
+    spec.AddPredicate(pred);
+    dao->OpenScanner(query_schema, &spec);
     vector<const uint8_t*> rows;
     while (dao->HasMore()) {
       dao->GetNext(&rows);

@@ -658,53 +658,6 @@ Status AlterTableBuilder::RenameColumn(const std::string& old_name,
 }
 
 ////////////////////////////////////////////////////////////
-// ColumnRangePredicates
-////////////////////////////////////////////////////////////
-
-ColumnRangePredicates::ColumnRangePredicates(const Schema *schema)
-  : schema_(schema),
-    last_column_idx_(-1) {
-}
-
-void ColumnRangePredicates::AddRangePredicate(const ColumnRangePredicatePB& pb) {
-  int idx = schema_->find_column(pb.column().name());
-  CHECK_NE(idx, -1) << "Column not found in schema";
-  if (schema_->is_key_column(idx)) {
-    CHECK_LT(last_column_idx_, idx) << "Key columns must be added in order";
-    if (pb.has_lower_bound()) {
-      if (!lower_builder_.get()) {
-        lower_builder_.reset(new EncodedKeyBuilder(*schema_));
-      }
-      lower_builder_->AddColumnKey(pb.lower_bound().data());
-    }
-    if (pb.has_upper_bound()) {
-      if (!upper_builder_.get()) {
-        upper_builder_.reset(new EncodedKeyBuilder(*schema_));
-      }
-      upper_builder_->AddColumnKey(pb.upper_bound().data());
-    }
-  }
-  pbs_.push_back(pb);
-  last_column_idx_ = idx;
-}
-
-bool ColumnRangePredicates::HasStartKey() {
-  return lower_builder_.get();
-}
-
-bool ColumnRangePredicates::HasEndKey() {
-  return upper_builder_.get();
-}
-
-EncodedKey* ColumnRangePredicates::GetStartKey() {
-  return lower_builder_->BuildEncodedKey();
-}
-
-EncodedKey* ColumnRangePredicates::GetEndKey() {
-  return upper_builder_->BuildEncodedKey();
-}
-
-////////////////////////////////////////////////////////////
 // KuduScanner
 ////////////////////////////////////////////////////////////
 
@@ -715,7 +668,9 @@ KuduScanner::KuduScanner(KuduTable* table)
     has_batch_size_bytes_(false),
     batch_size_bytes_(0),
     table_(DCHECK_NOTNULL(table)),
-    preds_(&table->schema()) {
+    spec_encoder_(table->schema()),
+    start_key_(NULL),
+    end_key_(NULL) {
 }
 
 KuduScanner::~KuduScanner() {
@@ -734,9 +689,9 @@ Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
   return Status::OK();
 }
 
-Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicatePB& pb) {
+Status KuduScanner::AddConjunctPredicate(const ColumnRangePredicate& pred) {
   CHECK(!open_) << "Scanner already open";
-  preds_.AddRangePredicate(pb);
+  spec_.AddPredicate(pred);
   return Status::OK();
 }
 
@@ -756,6 +711,24 @@ void KuduScanner::PrepareRequest(RequestType state) {
   }
 }
 
+void KuduScanner::CopyPredicateBound(const ColumnSchema& col,
+                                     const void* bound_src,
+                                     string* bound_dst) {
+  const void* src;
+  size_t size;
+  if (col.type_info()->type() == STRING) {
+    // Copying a string involves an extra level of indirection through its
+    // owning slice.
+    const Slice* s = reinterpret_cast<const Slice*>(bound_src);
+    src = s->data();
+    size = s->size();
+  } else {
+    src = bound_src;
+    size = col.type_info()->size();
+  }
+  bound_dst->assign(reinterpret_cast<const char*>(src), size);
+}
+
 Status KuduScanner::OpenTablet(const Slice& key) {
   // TODO: scanners don't really require a leader. For now, however,
   // we always scan from the leader.
@@ -772,9 +745,24 @@ Status KuduScanner::OpenTablet(const Slice& key) {
   PrepareRequest(KuduScanner::NEW);
   next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
-  BOOST_FOREACH(const ColumnRangePredicatePB& pb, preds_.pbs()) {
-    scan->add_range_predicates()->CopyFrom(pb);
+
+  // Set up the predicates.
+  scan->clear_range_predicates();
+  BOOST_FOREACH(const ColumnRangePredicate& pred, spec_.predicates()) {
+    const ColumnSchema& col = pred.column();
+    const ValueRange& range = pred.range();
+    ColumnRangePredicatePB* pb = scan->add_range_predicates();
+    if (range.has_lower_bound()) {
+      CopyPredicateBound(col, range.lower_bound(),
+                         pb->mutable_lower_bound());
+    }
+    if (range.has_upper_bound()) {
+      CopyPredicateBound(col, range.upper_bound(),
+                         pb->mutable_upper_bound());
+    }
+    ColumnSchemaToPB(col, pb->mutable_column());
   }
+
   scan->set_tablet_id(remote_->tablet_id());
   RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
   controller_.Reset();
@@ -828,12 +816,17 @@ Status KuduScanner::Open() {
   CHECK(projection_ != NULL) << "No projection provided";
 
   // Find the first tablet.
-  if (preds_.HasStartKey()) {
-    start_key_.reset(preds_.GetStartKey());
-
-  }
-  if (preds_.HasEndKey()) {
-    end_key_.reset(preds_.GetEndKey());
+  spec_encoder_.EncodeRangePredicates(&spec_, false);
+  CHECK(!spec_.has_encoded_ranges() ||
+        spec_.encoded_ranges().size() == 1);
+  if (spec_.has_encoded_ranges()) {
+    const EncodedKeyRange* key_range = spec_.encoded_ranges()[0];
+    if (key_range->has_lower_bound()) {
+      start_key_ = &key_range->lower_bound();
+    }
+    if (key_range->has_upper_bound()) {
+      end_key_ = &key_range->upper_bound();
+    }
   }
 
   VLOG(1) << "Beginning scan " << ToString();

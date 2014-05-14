@@ -20,7 +20,6 @@
 namespace kudu {
 
 using tserver::MiniTabletServer;
-using tserver::ColumnRangePredicatePB;
 
 class RpcLineItemDAOTest : public KuduTest {
 
@@ -69,8 +68,8 @@ class RpcLineItemDAOTest : public KuduTest {
 
   int CountRows() {
     Schema query_schema = schema_.CreateKeyProjection();
-    ColumnRangePredicatePB pred;
-    dao_->OpenScanner(query_schema, pred);
+    ScanSpec spec;
+    dao_->OpenScanner(query_schema, &spec);
     vector<const uint8_t*> rows;
     int count = 0;
     while (dao_->HasMore()) {
@@ -110,9 +109,8 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   ASSERT_STATUS_OK(update.SetUInt32(tpch::kQuantityColIdx, 12345));
   dao_->MutateLine(update);
   dao_->FinishWriting();
-
-  ColumnRangePredicatePB pred;
-  dao_->OpenScanner(schema_, pred);
+  ScanSpec spec;
+  dao_->OpenScanner(schema_, &spec);
   vector<const uint8_t*> rows;
   while (dao_->HasMore()) {
     dao_->GetNext(&rows);

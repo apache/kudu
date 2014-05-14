@@ -231,7 +231,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   uint32_t upper = 2009;
   ColumnRangePredicate pred1(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred1);
-  encoder.EncodeRangePredicates(&spec);
+  encoder.EncodeRangePredicates(&spec, true);
   ASSERT_STATUS_OK(iter->Init(&spec));
 
   // Check that the bounds got pushed as index bounds.

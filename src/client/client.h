@@ -4,6 +4,9 @@
 
 #include "common/encoded_key.h"
 #include "common/partial_row.h"
+#include "common/predicate_encoder.h"
+#include "common/scan_predicate.h"
+#include "common/scan_spec.h"
 #include "common/schema.h"
 #include "gutil/gscoped_ptr.h"
 #include "gutil/ref_counted.h"
@@ -14,6 +17,7 @@
 #include "tserver/tserver_service.proxy.h" // TODO: move this to a protocol/ module
 
 #include <gtest/gtest.h>
+#include <map>
 #include <string>
 #include <tr1/memory>
 #include <vector>
@@ -314,30 +318,6 @@ class AlterTableBuilder {
   master::AlterTableRequestPB* alter_steps_;
 
   DISALLOW_COPY_AND_ASSIGN(AlterTableBuilder);
-};
-
-// Encapsulates zero or more column range predicates, exposing encoded keys
-// representing lower and upper bounds along the way.
-class ColumnRangePredicates {
- public:
-  explicit ColumnRangePredicates(const Schema* schema);
-
-  // Add a range predicate for a column. If the column is a key column, the
-  // predicate must be added before predicates for other key columns.
-  void AddRangePredicate(const tserver::ColumnRangePredicatePB& pb);
-
-  const std::vector<tserver::ColumnRangePredicatePB>& pbs() const { return pbs_; }
-
-  bool HasStartKey();
-  bool HasEndKey();
-  EncodedKey* GetStartKey();
-  EncodedKey* GetEndKey();
- private:
-  const Schema* schema_;
-  int last_column_idx_;
-  gscoped_ptr<EncodedKeyBuilder> lower_builder_;
-  gscoped_ptr<EncodedKeyBuilder> upper_builder_;
-  std::vector<tserver::ColumnRangePredicatePB> pbs_;
 };
 
 // An error which occurred in a given operation. This tracks the operation
@@ -678,10 +658,9 @@ class KuduScanner {
   // Add a predicate to this scanner.
   // The predicates act as conjunctions -- i.e, they all must pass for
   // a row to be returned.
-  // Predicates affecting key columns must be added in column order.
   // TODO: currently, the predicates must refer to columns which are also
   // part of the projection.
-  Status AddConjunctPredicate(const tserver::ColumnRangePredicatePB& pb);
+  Status AddConjunctPredicate(const ColumnRangePredicate& pred);
 
   // Begin scanning.
   Status Open();
@@ -720,6 +699,11 @@ class KuduScanner {
 
  private:
   Status CheckForErrors();
+
+  // Copies a predicate lower or upper bound from 'bound_src' into
+  // 'bound_dst'.
+  void CopyPredicateBound(const ColumnSchema& col,
+                          const void* bound_src, string* bound_dst);
 
   Status OpenTablet(const Slice& key);
 
@@ -768,13 +752,17 @@ class KuduScanner {
   // The table we're scanning.
   KuduTable* table_;
 
-  // Range predicates to constrain scanning.
-  ColumnRangePredicates preds_;
+  // Machinery to store and encode raw column range predicates into
+  // encoded keys.
+  ScanSpec spec_;
+  RangePredicateEncoder spec_encoder_;
 
   // Key range we're scanning (optional). Extracted from column range
   // predicates during Open.
-  gscoped_ptr<EncodedKey> start_key_;
-  gscoped_ptr<EncodedKey> end_key_;
+  //
+  // Memory is owned by 'spec_encoder_'.
+  const EncodedKey* start_key_;
+  const EncodedKey* end_key_;
 
   // The tablet we're scanning.
   scoped_refptr<RemoteTablet> remote_;

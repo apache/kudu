@@ -1421,7 +1421,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   vector<shared_ptr<RowwiseIterator> > iters;
   if (spec != NULL) {
-    encoder_.EncodeRangePredicates(spec);
+    encoder_.EncodeRangePredicates(spec, true);
   }
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
       &projection_, snap_, spec, &iters));

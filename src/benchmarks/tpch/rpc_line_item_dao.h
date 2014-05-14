@@ -35,7 +35,6 @@ class RpcLineItemDAO : public LineItemDAO {
   virtual void FinishWriting();
   void BatchFinished();
   virtual void OpenScanner(const Schema &query_schema, ScanSpec *spec);
-  void OpenScanner(Schema &query_schema, ColumnRangePredicatePB &pred);
   virtual bool HasMore();
   virtual void GetNext(RowBlock *block);
   void GetNext(vector<const uint8_t*> *rows);
