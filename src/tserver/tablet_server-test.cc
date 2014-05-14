@@ -1498,5 +1498,49 @@ TEST_F(TabletServerTest, TestRpcServerCreateDestroy) {
   }
 }
 
+TEST_F(TabletServerTest, TestWriteOutOfBounds) {
+  const char *tabletId = "TestWriteOutOfBoundsTablet";
+  EncodedKeyBuilder key_builder(schema_);
+  int val = 10;
+  key_builder.AddColumnKey(&val);
+  gscoped_ptr<EncodedKey> start(key_builder.BuildEncodedKey());
+  val = 20;
+  key_builder.Reset();
+  key_builder.AddColumnKey(&val);
+  gscoped_ptr<EncodedKey> end(key_builder.BuildEncodedKey());
+  QuorumPB quorum;
+  quorum.set_seqno(0);
+  ASSERT_STATUS_OK(mini_server_->server()->tablet_manager()->CreateNewTablet(
+      "TestWriteOutOfBoundsTable", tabletId,
+      start->encoded_key().ToString(),
+      end->encoded_key().ToString(),
+      tabletId, SchemaBuilder(schema_).Build(),
+      quorum, NULL));
+
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  RpcController controller;
+  req.set_tablet_id(tabletId);
+  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  const google::protobuf::EnumDescriptor* op_type = RowOperationsPB_Type_descriptor();
+  for (int i = 0; i < op_type->value_count() - 1; i++) { // INSERT and UPDATE
+    RowOperationsPB* data = req.mutable_row_operations();
+    AddTestRowToPB(static_cast<RowOperationsPB_Type>(op_type->value(i)->number()),
+                   schema_, val, 1, "1", data);
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, resp.error().code());
+    Status s = StatusFromPB(resp.error().status());
+    EXPECT_TRUE(s.IsNotFound());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Not found: Row not within tablet range");
+    data->Clear();
+    controller.Reset();
+  }
+}
+
 } // namespace tserver
 } // namespace kudu

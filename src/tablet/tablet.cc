@@ -192,6 +192,11 @@ Status Tablet::CreatePreparedInsert(const WriteTransactionContext* tx_ctx,
                                     const ConstContiguousRow* row,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row));
+  if (!probe->encoded_key().InRange(Slice(metadata_->start_key()),
+                                    Slice(metadata_->end_key()))) {
+    return Status::NotFound("Row not within tablet range");
+  }
+
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
                                                         tx_ctx,
                                                         probe->encoded_key_slice(),
@@ -303,6 +308,11 @@ Status Tablet::CreatePreparedMutate(const WriteTransactionContext* tx_ctx,
                                     const RowChangeList& changelist,
                                     gscoped_ptr<PreparedRowWrite>* row_write) {
   gscoped_ptr<tablet::RowSetKeyProbe> probe(new tablet::RowSetKeyProbe(*row_key));
+  if (!probe->encoded_key().InRange(Slice(metadata_->start_key()),
+                                    Slice(metadata_->end_key()))) {
+    return Status::NotFound("Row not within tablet range");
+  }
+
   gscoped_ptr<ScopedRowLock> row_lock(new ScopedRowLock(&lock_manager_,
                                                         tx_ctx,
                                                         probe->encoded_key_slice(),
