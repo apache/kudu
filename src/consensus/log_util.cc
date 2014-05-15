@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <boost/foreach.hpp>
 #include <limits>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
 #include <utility>
 
 #include "gflags/gflags.h"
@@ -37,12 +35,7 @@ namespace log {
 
 using consensus::OpId;
 using env_util::ReadFully;
-using google::protobuf::RepeatedPtrField;
 using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
-using std::tr1::unordered_set;
-using metadata::TabletSuperBlockPB;
-using metadata::RowSetDataPB;
 using strings::Substitute;
 
 const char kTmpSuffix[] = ".tmp";
