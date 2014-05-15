@@ -6,6 +6,7 @@
 #include <boost/noncopyable.hpp>
 #include <boost/lexical_cast.hpp>
 #include <google/protobuf/message_lite.h>
+#include <iosfwd>
 #include <tr1/memory>
 #include <string>
 #include <vector>
@@ -63,6 +64,8 @@ class BlockId {
  private:
   string id_;
 };
+
+std::ostream& operator<<(std::ostream& o, const BlockId& block_id);
 
 struct BlockIdHash {
   size_t operator()(const BlockId& block_id) const {

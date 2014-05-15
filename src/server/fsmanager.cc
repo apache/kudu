@@ -2,6 +2,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <iostream>
 
 #include "gutil/strings/numbers.h"
 #include "gutil/strings/strip.h"
@@ -201,6 +202,10 @@ Status FsManager::ReadMetadataBlock(const BlockId& block_id, MessageLite *msg) {
     return s.CloneAndPrepend("Unable to read '" + block_id.ToString() + "' metadata block");
   }
   return Status::OK();
+}
+
+std::ostream& operator<<(std::ostream& o, const BlockId& block_id) {
+  return o << block_id.ToString();
 }
 
 } // namespace kudu
