@@ -244,18 +244,12 @@ class Log {
     return allocation_state_;
   }
 
-  // Read-write lock to protect 'allocation_state_'.
-  mutable boost::shared_mutex allocation_lock_;
-
   LogOptions options_;
   FsManager *fs_manager_;
   string log_dir_;
 
   // The ID of the tablet this log is dedicated to.
   std::string tablet_id_;
-
-  // The last known OpId written to this log (any segment).
-  consensus::OpId last_entry_op_id_;
 
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;
@@ -269,11 +263,20 @@ class Log {
   // The path for the next allocated segment.
   string next_segment_path_;
 
-  // Lock to protect modifications to previous_segments_ and state_.
+  // Lock to protect modifications to previous_segments_ and log_state_.
   mutable percpu_rwlock state_lock_;
+
+  LogState log_state_;
 
   // All previous (inactive) un-GC'd segments.
   vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_segments_;
+
+  // Lock to protect last_entry_op_id_, which is constantly written but
+  // read occasionally by things like consensus and log GC.
+  mutable rw_spinlock last_entry_op_id_lock_;
+
+  // The last known OpId written to this log (any segment).
+  consensus::OpId last_entry_op_id_;
 
   // The maximum segment size, in bytes.
   uint64_t max_segment_size_;
@@ -293,7 +296,9 @@ class Log {
   // The future for an asynchronous log segment preallocation task.
   std::tr1::shared_ptr<kudu::Future> allocation_future_;
 
-  LogState log_state_;
+  // Read-write lock to protect 'allocation_state_'.
+  mutable boost::shared_mutex allocation_lock_;
+
   SegmentAllocationState allocation_state_;
 
   gscoped_ptr<MetricContext> metric_context_;

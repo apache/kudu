@@ -207,12 +207,12 @@ Log::Log(const LogOptions &options,
   fs_manager_(fs_manager),
   log_dir_(log_path),
   tablet_id_(tablet_id),
+  log_state_(kLogInitialized),
   max_segment_size_(options_.segment_size_mb * 1024 * 1024),
   entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
   append_thread_(new AppendThread(this)),
   allocation_executor_(TaskExecutor::CreateNew("allocation exec", 1)),
   force_sync_all_(options_.force_fsync_all),
-  log_state_(kLogInitialized),
   allocation_state_(kAllocationNotStarted) {
 
   if (parent_metric_context) {
@@ -360,7 +360,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   size_t num_entries = entry_batch->count();
   DCHECK_GT(num_entries, 0) << "Cannot call DoAppend() with zero entries reserved";
 
-
   Slice entry_batch_data = entry_batch->data();
   uint32_t entry_batch_bytes = entry_batch->total_size_bytes();
   // If there is no data to write return OK.
@@ -376,9 +375,12 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
-  last_entry_op_id_.CopyFrom(
-      entry_batch->entry_batch_pb_->entry(num_entries - 1).operation().id());
-  DCHECK(last_entry_op_id_.IsInitialized());
+  {
+    boost::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
+    last_entry_op_id_.CopyFrom(
+        entry_batch->entry_batch_pb_->entry(num_entries - 1).operation().id());
+    DCHECK(last_entry_op_id_.IsInitialized());
+  }
 
   for (size_t i = 0; i < num_entries; i++) {
     LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
@@ -503,7 +505,7 @@ Status Log::WaitUntilAllFlushed() {
 
 
 Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
-  boost::shared_lock<boost::shared_mutex> shared_lock(allocation_lock_);
+  boost::shared_lock<rw_spinlock> read_lock(last_entry_op_id_lock_);
   if (last_entry_op_id_.IsInitialized()) {
     DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);
     return Status::OK();
