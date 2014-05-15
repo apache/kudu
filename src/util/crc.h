@@ -15,6 +15,9 @@ typedef crcutil_interface::CRC Crc;
 // Returns pointer to singleton instance of CRC32C implementation.
 Crc* GetCrc32cInstance();
 
+// Helper function to simply calculate a CRC32C of the given data.
+uint32_t Crc32c(const void* data, size_t length);
+
 } // namespace crc
 } // namespace kudu
 

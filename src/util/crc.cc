@@ -25,5 +25,11 @@ Crc* GetCrc32cInstance() {
   return crc32c_instance;
 }
 
+uint32_t Crc32c(const void* data, size_t length) {
+  uint64_t crc32 = 0;
+  GetCrc32cInstance()->Compute(data, length, &crc32);
+  return static_cast<uint32_t>(crc32); // Only uses lower 32 bits.
+}
+
 } // namespace crc
 } // namespace kudu
