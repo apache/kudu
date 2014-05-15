@@ -33,16 +33,30 @@ void StatusToPB(const Status& status, AppStatusPB* pb) {
     pb->set_code(AppStatusPB::NOT_SUPPORTED);
   } else if (status.IsInvalidArgument()) {
     pb->set_code(AppStatusPB::INVALID_ARGUMENT);
-  } else if (status.IsAlreadyPresent()) {
-    pb->set_code(AppStatusPB::ALREADY_PRESENT);
   } else if (status.IsIOError()) {
     pb->set_code(AppStatusPB::IO_ERROR);
+  } else if (status.IsAlreadyPresent()) {
+    pb->set_code(AppStatusPB::ALREADY_PRESENT);
   } else if (status.IsRuntimeError()) {
     pb->set_code(AppStatusPB::RUNTIME_ERROR);
   } else if (status.IsNetworkError()) {
     pb->set_code(AppStatusPB::NETWORK_ERROR);
+  } else if (status.IsIllegalState()) {
+    pb->set_code(AppStatusPB::ILLEGAL_STATE);
+  } else if (status.IsNotAuthorized()) {
+    pb->set_code(AppStatusPB::NOT_AUTHORIZED);
+  } else if (status.IsAborted()) {
+    pb->set_code(AppStatusPB::ABORTED);
+  } else if (status.IsRemoteError()) {
+    pb->set_code(AppStatusPB::REMOTE_ERROR);
   } else if (status.IsServiceUnavailable()) {
     pb->set_code(AppStatusPB::SERVICE_UNAVAILABLE);
+  } else if (status.IsTimedOut()) {
+    pb->set_code(AppStatusPB::TIMED_OUT);
+  } else if (status.IsUninitialized()) {
+    pb->set_code(AppStatusPB::UNINITIALIZED);
+  } else if (status.IsConfigurationError()) {
+    pb->set_code(AppStatusPB::CONFIGURATION_ERROR);
   } else {
     LOG(WARNING) << "Unknown error code translation from internal error "
                  << status.ToString() << ": sending UNKNOWN_ERROR";
@@ -86,8 +100,22 @@ Status StatusFromPB(const AppStatusPB& pb) {
       return Status::RuntimeError(pb.message(), "", posix_code);
     case AppStatusPB::NETWORK_ERROR:
       return Status::NetworkError(pb.message(), "", posix_code);
+    case AppStatusPB::ILLEGAL_STATE:
+      return Status::IllegalState(pb.message(), "", posix_code);
+    case AppStatusPB::NOT_AUTHORIZED:
+      return Status::NotAuthorized(pb.message(), "", posix_code);
+    case AppStatusPB::ABORTED:
+      return Status::Aborted(pb.message(), "", posix_code);
+    case AppStatusPB::REMOTE_ERROR:
+      return Status::RemoteError(pb.message(), "", posix_code);
     case AppStatusPB::SERVICE_UNAVAILABLE:
       return Status::ServiceUnavailable(pb.message(), "", posix_code);
+    case AppStatusPB::TIMED_OUT:
+      return Status::TimedOut(pb.message(), "", posix_code);
+    case AppStatusPB::UNINITIALIZED:
+      return Status::Uninitialized(pb.message(), "", posix_code);
+    case AppStatusPB::CONFIGURATION_ERROR:
+      return Status::ConfigurationError(pb.message(), "", posix_code);
     case AppStatusPB::UNKNOWN_ERROR:
     default:
       LOG(WARNING) << "Unknown error code in status: " << pb.ShortDebugString();

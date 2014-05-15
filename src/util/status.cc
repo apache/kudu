@@ -93,6 +93,9 @@ std::string Status::CodeAsString() const {
     case kUninitialized:
       type = "Uninitialized";
       break;
+    case kConfigurationError:
+      type = "Configuration error";
+      break;
     default:
       snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
                static_cast<int>(code()));
