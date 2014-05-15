@@ -61,14 +61,14 @@ class MultiThreadedLogTest : public LogTestBase {
   }
 
   void LogWriterThread(int thread_id) {
-    vector<OperationPB*> ops;
+    vector<const OperationPB*> ops;
     ElementDeleter deleter(&ops);
 
     CountDownLatch latch(FLAGS_num_batches_per_thread);
     vector<Status> errors;
     for (int i = 0; i < FLAGS_num_batches_per_thread; i++) {
       LogEntryBatch* entry_batch;
-      vector<OperationPB*> batch_ops;
+      vector<const OperationPB*> batch_ops;
       int num_ops = static_cast<int>(NormalDist(
           static_cast<double>(FLAGS_num_ops_per_batch_avg), 1.0));
       DVLOG(1) << num_ops << " ops in this batch";

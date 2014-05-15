@@ -339,7 +339,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                                     ConsensusStatusPB* status) {
   Synchronizer log_synchronizer;
-  vector<OperationPB*> replicate_ops;
+  vector<const OperationPB*> replicate_ops;
   vector<const OperationPB*> commit_ops;
 
   // Split the operations into two lists, one for REPLICATE
@@ -352,7 +352,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       continue;
     }
     if (op.has_replicate()) {
-      replicate_ops.push_back(&const_cast<OperationPB&>(op));
+      replicate_ops.push_back(&op);
     } else if (op.has_commit()) {
       commit_ops.push_back(&op);
     } else {

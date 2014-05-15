@@ -103,7 +103,7 @@ class LocalPeer : public PeerImpl {
     response_.Clear();
 
     LogEntryBatch* reserved_entry_batch;
-    vector<OperationPB*> ops;
+    vector<const OperationPB*> ops;
     OpId* last_replicated = NULL;
     OpId* last_committed = NULL;
     OpId* last_received = NULL;

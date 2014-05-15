@@ -63,7 +63,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
   op_id->set_term(0);
   op_id->set_index(1);
 
-  vector<consensus::OperationPB*> ops;
+  vector<const consensus::OperationPB*> ops;
   ops.push_back(&op1);
   ops.push_back(&op2);
 

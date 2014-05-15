@@ -79,7 +79,7 @@ class Log {
   //
   // WARNING: the caller _must_ call AsyncAppend() or else the log
   // will "stall" and will never be able to make forward progress.
-  Status Reserve(const vector<consensus::OperationPB*>& ops,
+  Status Reserve(const vector<const consensus::OperationPB*>& ops,
                  LogEntryBatch** reserved_entry);
 
   // Asynchronously appends 'entry' to the log. Once the append

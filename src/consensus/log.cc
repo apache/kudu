@@ -290,7 +290,7 @@ Status Log::RollOver() {
   return Status::OK();
 }
 
-Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
+Status Log::Reserve(const vector<const consensus::OperationPB*>& ops,
                     LogEntryBatch** reserved_entry) {
   DCHECK(reserved_entry != NULL);
   {
@@ -301,7 +301,9 @@ Status Log::Reserve(const vector<consensus::OperationPB*>& ops,
   size_t num_ops = ops.size();
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   for (size_t i = 0; i < num_ops; i++) {
-    consensus::OperationPB* op = ops[i];
+    // We want to re-use the existing objects here, so const-casting allows
+    // us to put a reference in the new PB.
+    consensus::OperationPB* op = const_cast<consensus::OperationPB*>(ops[i]);
     LogEntryPB* entry_pb = entry_batch->add_entry();
     entry_pb->set_type(log::OPERATION);
     entry_pb->set_allocated_operation(op);
