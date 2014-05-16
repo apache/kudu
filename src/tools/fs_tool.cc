@@ -518,6 +518,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
       // primarily to limit copious output) it's okay not to be
       // exact here.
       size_t remaining = opts.nrows - nrows;
+      if (remaining == 0) break;
       n = std::min(remaining, kRowsPerBlock);
     } else {
       n = kRowsPerBlock;

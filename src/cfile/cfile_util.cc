@@ -32,6 +32,7 @@ Status DumpIterator(const CFileReader& reader,
   uint64_t count = 0;
   while (it->HasNext()) {
     size_t n = opts.nrows == 0 ? max_rows : std::min(max_rows, opts.nrows - count);
+    if (n == 0) break;
 
     RETURN_NOT_OK(it->CopyNextValues(&n, &cb));
 
