@@ -154,6 +154,7 @@ class ChainGenerator {
     RETURN_NOT_OK_PREPEND(session->Apply(&insert),
                           Substitute("Unable to apply insert with key $0 at ts $1",
                                      this_key, ts));
+    prev_key_ = this_key;
     return Status::OK();
   }
 
