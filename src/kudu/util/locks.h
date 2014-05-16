@@ -193,7 +193,7 @@ class percpu_rwlock {
  private:
   struct padded_lock {
     rw_spinlock lock;
-    char padding[CACHELINE_SIZE - sizeof(rw_spinlock)];
+    char padding[CACHELINE_SIZE - (sizeof(rw_spinlock) % CACHELINE_SIZE)];
   };
 
   int n_cpus_;

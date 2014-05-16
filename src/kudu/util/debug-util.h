@@ -32,5 +32,45 @@ std::string GetStackTraceHex();
 // may invoke the dynamic loader.
 void HexStackTraceToString(char* buf, size_t size);
 
+// Efficient class for collecting and later stringifying a stack trace.
+//
+// Requires external synchronization.
+class StackTrace {
+ public:
+  StackTrace()
+    : num_frames_(0) {
+  }
+
+  void Reset() {
+    num_frames_ = 0;
+  }
+
+  // Collect and store the current stack trace.
+  // This function is not async-safe (i.e do not call from signal handler
+  // contexts).
+  void Collect();
+
+  // Stringify the trace into the given buffer.
+  // The resulting output is hex addresses suitable for passing into 'addr2line'
+  // later.
+  void StringifyToHex(char* buf, size_t size) const;
+
+  // Same as above, but returning a std::string.
+  std::string ToHexString() const;
+
+ private:
+  enum {
+    // The maximum number of stack frames to collect.
+    kMaxFrames = 16,
+
+    // The max number of characters any frame requires in string form.
+    kHexEntryLength = 16
+  };
+
+  int num_frames_;
+  void* frames_[kMaxFrames];
+};
+
 } // namespace kudu
+
 #endif

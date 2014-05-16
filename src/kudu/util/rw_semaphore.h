@@ -8,6 +8,8 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/util/debug-util.h"
 
 #ifndef NDEBUG
 #include "kudu/util/thread.h"
@@ -28,6 +30,13 @@ namespace kudu {
 //
 // If the semaphore is expected to always be released from the same thread
 // that acquired it, use rw_spinlock instead.
+//
+// In order to support easier debugging of leaked locks, this class can track
+// the stack trace of the last thread to lock it in write mode. To do so,
+// uncomment the following define:
+//   #define RW_SEMAPHORE_TRACK_HOLDER 1
+// ... and then in gdb, print the contents of the semaphore, and you should
+// see the collected stack trace.
 class rw_semaphore {
  public:
   rw_semaphore() : state_(0) {
@@ -84,6 +93,7 @@ class rw_semaphore {
     }
 
     WaitPendingReaders();
+    RecordLockHolderStack();
     return true;
   }
 
@@ -103,9 +113,11 @@ class rw_semaphore {
     }
 
     WaitPendingReaders();
+
 #ifndef NDEBUG
     writer_tid_ = Thread::PlatformThreadId();
 #endif // NDEBUG
+    RecordLockHolderStack();
   }
 
   void unlock() {
@@ -116,6 +128,7 @@ class rw_semaphore {
     writer_tid_ = -1; // Invalid tid.
 #endif // NDEBUG
 
+    ResetLockHolderStack();
     // Reset: no writers & no readers.
     Release_Store(&state_, 0);
   }
@@ -136,6 +149,21 @@ class rw_semaphore {
  private:
   static const uint32_t kNumReadersMask = 0x7fffffff;
   static const uint32_t kWriteFlag = 1 << 31;
+
+#ifdef RW_SEMAPHORE_TRACK_HOLDER
+  StackTrace writer_stack_;
+  void RecordLockHolderStack() {
+    writer_stack_.Collect();
+  }
+  void ResetLockHolderStack() {
+    writer_stack_.Reset();
+  }
+#else
+  void RecordLockHolderStack() {
+  }
+  void ResetLockHolderStack() {
+  }
+#endif
 
   void WaitPendingReaders() {
     int loop_count = 0;
