@@ -103,9 +103,9 @@ class LinkedListTest : public KuduTest {
   // Sets *written_count to the number of rows inserted.
   Status LoadLinkedList(const MonoDelta& run_for,
                         int64_t* written_count);
-  Status VerifyLinkedList(int64_t* verified_count);
+  Status VerifyLinkedList(int64_t expected, int64_t* verified_count);
 
-  void WaitForBootstrapToFinishAndVerify(int64_t* seen);
+  void WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t* seen);
 
  protected:
   static const char* kTableName;
@@ -223,75 +223,90 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
   }
 }
 
-struct VerificationState {
-  VerificationState() : seen_key(false), seen_link(false) {}
+// Verify that the given sorted vector does not contain any duplicate entries.
+// If it does, *errors will be incremented once per duplicate and the given message
+// will be logged.
+static void VerifyNoDuplicateEntries(const vector<uint64_t>& ints, int* errors,
+                                     const string& message) {
+  for (int i = 1; i < ints.size(); i++) {
+    if (ints[i] == ints[i - 1]) {
+      LOG(ERROR) << message << ": " << ints[i];
+      (*errors)++;
+    }
+  }
+}
 
-  uint8_t seen_key;
-  uint8_t seen_link;
-};
-
-Status LinkedListTest::VerifyLinkedList(int64_t* verified_count) {
+Status LinkedListTest::VerifyLinkedList(int64_t expected, int64_t* verified_count) {
   scoped_refptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
   RETURN_NOT_OK_PREPEND(scanner.SetProjection(verify_projection_), "Bad projection");
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");
 
-  typedef unordered_map<uint64_t, VerificationState> StateMap;
-  StateMap state;
-
   vector<const uint8_t*> rows;
+  vector<uint64_t> seen_key;
+  vector<uint64_t> seen_link_to;
+  seen_key.reserve(expected);
+  seen_link_to.reserve(expected);
 
+  Stopwatch sw;
+  sw.start();
   while (scanner.HasMoreRows()) {
     RETURN_NOT_OK(scanner.NextBatch(&rows));
     BOOST_FOREACH(const uint8_t* row_ptr, rows) {
       ConstContiguousRow row(verify_projection_, row_ptr);
 
       uint64_t key = *verify_projection_.ExtractColumnFromRow<UINT64>(row, 0);
+      seen_key.push_back(key);
       uint64_t link = *verify_projection_.ExtractColumnFromRow<UINT64>(row, 1);
-
-      {
-        VerificationState& s = LookupOrInsert(&state, key, VerificationState());
-        s.seen_key++;
-      }
-
       if (link != 0) {
-        VerificationState& s = LookupOrInsert(&state, link, VerificationState());
-        s.seen_link++;
+        // Links to entry 0 don't count - the first inserts use this link
+        seen_link_to.push_back(link);
       }
     }
   }
+  *verified_count = seen_key.size();
+  LOG(INFO) << "Done collecting results (" << (*verified_count) << " rows in "
+            << sw.elapsed().wall_millis() << "ms)";
+
+  LOG(INFO) << "Sorting results before verification of linked list structure...";
+  std::sort(seen_key.begin(), seen_key.end());
+  std::sort(seen_link_to.begin(), seen_link_to.end());
+  LOG(INFO) << "Done sorting";
+
 
   int errors = 0;
 
-  BOOST_FOREACH(const StateMap::value_type& e, state) {
-    if (e.second.seen_link && !e.second.seen_key) {
-      LOG(ERROR) << "Entry " << e.first << " was linked to but not present";
-      errors++;
-    }
-    if (e.second.seen_link > 1) {
-      LOG(ERROR) << "Entry " << e.first << " linked multiple times";
-      errors++;
-    }
-    if (e.second.seen_key > 1) {
-      LOG(ERROR) << "Entry " << e.first << " seen multiple times";
-      errors++;
-    }
+  // Verify that no key was seen multiple times or linked to multiple times
+  VerifyNoDuplicateEntries(seen_key, &errors, "Seen row key multiple times");
+  VerifyNoDuplicateEntries(seen_link_to, &errors, "Seen link to row multiple times");
+  // Verify that every key that was linked to was present
+  vector<uint64_t> broken_links = STLSetDifference(seen_link_to, seen_key);
+  BOOST_FOREACH(uint64_t broken, broken_links) {
+    LOG(ERROR) << "Entry " << broken << " was linked to but not present";
+    errors++;
   }
 
-  LOG(INFO) << "Verified " << state.size() << " entries";
-  *verified_count = state.size();
+  // Verify that only the expected number of keys were seen but not linked to.
+  // Only the last "batch" should have this characteristic.
+  vector<uint64_t> not_linked_to = STLSetDifference(seen_key, seen_link_to);
+  if (not_linked_to.size() != FLAGS_num_chains) {
+    LOG(ERROR) << "Had " << not_linked_to.size() << " entries which were seen but not"
+               << " linked to. Expected only " << FLAGS_num_chains;
+    errors++;
+  }
+
   if (errors > 0) {
     return Status::Corruption("Had one or more errors during verification (see log)");
   }
   return Status::OK();
 }
 
-void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t* seen) {
+void LinkedListTest::WaitForBootstrapToFinishAndVerify(int64_t expected, int64_t* seen) {
   Stopwatch sw;
   sw.start();
   while (true) {
-    Status s = VerifyLinkedList(seen);
+    Status s = VerifyLinkedList(expected, seen);
     if (s.IsServiceUnavailable()) {
       if (sw.elapsed().wall_seconds() > FLAGS_seconds_to_run) {
         // We'll give it an equal amount of time to re-load the data as it took
@@ -315,7 +330,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   ASSERT_STATUS_OK(LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run), &written));
 
   int64_t seen = 0;
-  ASSERT_STATUS_OK(VerifyLinkedList(&seen));
+  ASSERT_STATUS_OK(VerifyLinkedList(written, &seen));
   ASSERT_EQ(written, seen);
 
   // Kill and restart the cluster, verify data remains.
@@ -324,7 +339,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   // We need to loop here because the tablet may spend some time in BOOTSTRAPPING state
   // initially after a restart. TODO: Scanner should support its own retries in this circumstance.
   // Remove this loop once client is more fleshed out.
-  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(&seen));
+  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(written, &seen));
   ASSERT_EQ(written, seen);
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
@@ -332,7 +347,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   usleep(100 * 1000);
   // Restart while bootstrapping
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
-  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(&seen));
+  ASSERT_NO_FATAL_FAILURE(WaitForBootstrapToFinishAndVerify(written, &seen));
   ASSERT_EQ(written, seen);
 }
 
