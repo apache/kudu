@@ -15,6 +15,8 @@
  */
 package kudu.mapreduce;
 
+import com.google.common.net.HostAndPort;
+import kudu.rpc.KuduClient;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
 import org.apache.commons.logging.Log;
@@ -22,6 +24,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.apache.hadoop.util.JarFinder;
@@ -64,12 +67,36 @@ public class KuduTableMapReduceUtil {
                                            String table, long operationTimeoutMs,
                                            boolean addDependencies) throws IOException {
     job.setOutputFormatClass(KuduTableOutputFormat.class);
-    job.setOutputKeyClass(WritableRowKey.class);
+    job.setOutputKeyClass(NullWritable.class);
     job.setOutputValueClass(Operation.class);
+
     Configuration conf = job.getConfiguration();
     conf.set(KuduTableOutputFormat.MASTER_ADDRESS_KEY, masterAddress);
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, table);
     conf.setLong(KuduTableOutputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
+    if (addDependencies) {
+      addDependencyJars(job);
+    }
+  }
+
+  /**
+   *
+   * @param job Job to configure
+   * @param masterAddress hostname:port where the master is
+   * @param table Which table to read from
+   * @param operationTimeoutMs Timeout for operations to complete
+   * @param addDependencies If the job should add the Kudu dependencies to the distributed cache
+   * @throws IOException
+   */
+  public static void initTableInputFormat(Job job, String masterAddress,
+                                          String table, long operationTimeoutMs,
+                                          boolean addDependencies) throws IOException {
+    job.setInputFormatClass(KuduTableInputFormat.class);
+
+    Configuration conf = job.getConfiguration();
+    conf.set(KuduTableInputFormat.MASTER_ADDRESS_KEY, masterAddress);
+    conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
+    conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
     if (addDependencies) {
       addDependencyJars(job);
     }
@@ -84,6 +111,16 @@ public class KuduTableMapReduceUtil {
   public static KuduTable getTableFromContext(TaskInputOutputContext context) {
     String multitonKey = context.getConfiguration().get(KuduTableOutputFormat.MULTITON_KEY);
     return KuduTableOutputFormat.getKuduTable(multitonKey);
+  }
+
+  /**
+   * Utility method to parse the master address out and create a KuduClient
+   * @param masterAddress host and port
+   * @return a KuduClient
+   */
+  static KuduClient connect(String masterAddress) {
+    HostAndPort hp = HostAndPort.fromString(masterAddress);
+    return new KuduClient(hp.getHostText(), hp.getPort());
   }
 
   /**
@@ -165,7 +202,7 @@ public class KuduTableMapReduceUtil {
     addDependencyJars(conf,
         // explicitly pull a class from each module
         kudu.rpc.Operation.class,                      // kudu-client
-        kudu.mapreduce.WritableRowKey.class,           // kudu-mapreduce
+        kudu.mapreduce.KuduTableMapReduceUtil.class,   // kudu-mapreduce
         // pull necessary dependencies
         org.jboss.netty.channel.ChannelFactory.class,
         com.google.protobuf.Message.class,

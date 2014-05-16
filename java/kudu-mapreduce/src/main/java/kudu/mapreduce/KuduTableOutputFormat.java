@@ -65,15 +65,14 @@ public class KuduTableOutputFormat<KEY> extends OutputFormat<KEY,
     String tableName = this.conf.get(OUTPUT_TABLE_KEY);
     this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
 
-    HostAndPort hp = HostAndPort.fromString(masterAddress);
-    this.client = new KuduClient(hp.getHostText(), hp.getPort());
+    this.client = KuduTableMapReduceUtil.connect(masterAddress);
     Deferred<Object> d = client.openTable(tableName);
     try {
       this.table = (KuduTable)d.join(this.operationTimeoutMs);
     } catch (Exception ex) {
       throw new RuntimeException("Could not obtain the table from the master, " +
           "is the master running and is this table created? tablename=" + tableName + " and " +
-          "master address= " + hp.getHostText() + ":" + hp.getPort(), ex);
+          "master address= " + masterAddress, ex);
     }
     this.session = client.newSession();
     this.session.setTimeoutMillis(this.operationTimeoutMs);

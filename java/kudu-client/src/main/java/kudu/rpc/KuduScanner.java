@@ -27,6 +27,7 @@
 package kudu.rpc;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import kudu.ColumnSchema;
@@ -139,14 +140,20 @@ public final class KuduScanner {
   private long limit = Long.MAX_VALUE;
 
   /**
-   *
+   * Set by {@link #setEncodedStartKey(byte[])} when an encoded key is available or in {@link
+   * #getOpenRequest()} if the key was specified with column predicates. If it's not set by the
+   * user, it will default to EMPTY_ARRAY.
+   * It is then reset to the new start key of each tablet we open a scanner on as we go forward.
    */
-  private byte[] startKey = EMPTY_ARRAY;
+  private byte[] startKey = null;
 
   /**
-   *
+   * Set by {@link #setEncodedEndKey(byte[])} when an encoded key is available or in {@link
+   * #getOpenRequest()} if the key was specified with column predicates. If it's not set by the
+   * user, it will default to EMPTY_ARRAY.
+   * It's never modified after that.
    */
-  private byte[] endKey = EMPTY_ARRAY;
+  private byte[] endKey = null;
 
   private boolean closed = false;
 
@@ -161,6 +168,7 @@ public final class KuduScanner {
   private final DeadlineTracker deadlineTracker;
 
   private ReadMode readMode;
+
   private long timestamp = NO_TIMESTAMP;
 
   /**
@@ -513,6 +521,28 @@ public final class KuduScanner {
   }
 
   /**
+   * This method bypasses the need to add column predicates to set the start row key in its
+   * encoded format. If you don't what that means then don't use this.
+   * @param encodedStartKey Encoded start key
+   * @throws java.lang.IllegalStateException if the scanner already started scanning
+   */
+  public void setEncodedStartKey(byte[] encodedStartKey) {
+    checkScanningNotStarted();
+    this.startKey = encodedStartKey;
+  }
+
+  /**
+   * This method bypasses the need to add column predicates to set the end row key in its encoded
+   * format. If you don't what that means then don't use this.
+   * @param encodedEndKey Encoded end key
+   * @throws java.lang.IllegalStateException if the scanner already started scanning
+   */
+  public void setEncodedEndKey(byte[] encodedEndKey) {
+    checkScanningNotStarted();
+    this.endKey = encodedEndKey;
+  }
+
+  /**
    * Set how long this scanner can run for before it expires. The deadline check is triggered
    * only when more rows must be fetched from a server
    * @param deadline time in milliseconds that this scanner can run for
@@ -583,11 +613,21 @@ public final class KuduScanner {
     // should be fully configured
     if (this.inFirstTablet) {
       this.inFirstTablet = false;
+
+      String errorMessage = "The encoded %s key cannot be specified when using column range " +
+          "predicates on key columns";
       if (this.columnRangePredicates.hasStartKey()) {
+        Preconditions.checkState(this.startKey == null, errorMessage, "start");
         this.startKey = this.columnRangePredicates.getStartKey();
+      } else if (this.startKey == null) {
+        this.startKey = EMPTY_ARRAY;
       }
+
       if (this.columnRangePredicates.hasEndKey()) {
+        Preconditions.checkState(this.endKey == null, errorMessage, "end");
         this.endKey = this.columnRangePredicates.getEndKey();
+      } else if (this.endKey == null) {
+        this.endKey = EMPTY_ARRAY;
       }
     }
     return new ScanRequest(table, State.OPENING);

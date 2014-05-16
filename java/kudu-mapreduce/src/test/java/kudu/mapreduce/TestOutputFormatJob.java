@@ -9,6 +9,7 @@ import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -50,7 +51,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
-        hadoopUtil.getTestDir(TestOutputFormatJob.class.getName(), conf).getAbsolutePath();
+        hadoopUtil.setupAndGetTestDir(TestOutputFormatJob.class.getName(), conf).getAbsolutePath();
     String jobName = TestOutputFormatJob.class.getName();
     Job job = new Job(conf, jobName);
 
@@ -83,7 +84,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
    * is the data from that line
    */
   static class TestMapperTableOutput extends
-      Mapper<LongWritable, Text, WritableRowKey, Operation> {
+      Mapper<LongWritable, Text, NullWritable, Operation> {
 
     private KuduTable table;
     @Override
@@ -94,7 +95,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
       insert.addInt(table.getSchema().getColumn(1).getName(), 1);
       insert.addInt(table.getSchema().getColumn(2).getName(), 2);
       insert.addString(table.getSchema().getColumn(3).getName(), value.toString());
-      context.write(new WritableRowKey(insert), insert);
+      context.write(NullWritable.get(), insert);
     }
 
     @Override

@@ -31,6 +31,9 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.util.CharsetUtil;
 
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -898,6 +901,64 @@ public final class Bytes {
   public static byte xorLeftMostBit(byte value) {
     value ^= (1 << 7);
     return value;
+  }
+
+  /**
+   * Get the byte array representation of this string, with UTF8 encoding
+   * @param data String get the byte array from
+   * @return UTF8 byte array
+   */
+  public static byte[] fromString(String data) {
+    return UTF8(data);
+  }
+
+  /**
+   * Get a string from the passed byte array, with UTF8 encoding
+   * @param b byte array to convert to string, possibly coming from {@link #fromString(String)}
+   * @return A new string built with the byte array
+   */
+  public static String getString(byte[] b) {
+    return getString(b, 0, b.length);
+  }
+
+  /**
+   * Get a string from the passed byte array, at the specified offset and for the specified
+   * length, with UTF8 encoding
+   * @param b byte array to convert to string, possibly coming from {@link #fromString(String)}
+   * @param offset where to start reading from in the byte array
+   * @param len how many bytes we should read
+   * @return A new string built with the byte array
+   */
+  public static String getString(byte[] b, int offset, int len) {
+    if (len == 0) {
+      return "";
+    }
+    return new String(b, offset, len, CharsetUtil.UTF_8);
+  }
+
+  /**
+   * Utility methd to write a byte array to a data output. Equivalent of doing a writeInt of the
+   * length followed by a write of the byte array. Convert back with {@link #readByteArray}
+   * @param dataOutput
+   * @param b
+   * @throws IOException
+   */
+  public static void writeByteArray(DataOutput dataOutput, byte[] b) throws IOException {
+    dataOutput.writeInt(b.length);
+    dataOutput.write(b);
+  }
+
+  /**
+   * Utility method to read a byte array written the way {@link #writeByteArray} does it.
+   * @param dataInput
+   * @return
+   * @throws IOException
+   */
+  public static byte[] readByteArray(DataInput dataInput) throws IOException {
+    int len = dataInput.readInt();
+    byte[] data = new byte[len];
+    dataInput.readFully(data);
+    return data;
   }
 
   /** A convenient map keyed with a byte array.  */

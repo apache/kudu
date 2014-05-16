@@ -28,11 +28,11 @@ public class BaseKuduTest {
 
   public static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
 
-  private final static String MASTER_ADDRESS = "masterAddress";
-  private final static String MASTER_PORT = "masterPort";
-  private final static String FLAGS_PATH = "flagsPath";
-  private final static String BASE_DIR_PATH = "baseDirPath";
-  private final static String START_CLUSTER = "startCluster";
+  private static final String MASTER_ADDRESS = "masterAddress";
+  private static final String MASTER_PORT = "masterPort";
+  private static final String FLAGS_PATH = "flagsPath";
+  private static final String BASE_DIR_PATH = "baseDirPath";
+  private static final String START_CLUSTER = "startCluster";
   private static boolean startCluster;
   private static String masterAddress;
   private static int masterPort;
@@ -42,6 +42,7 @@ public class BaseKuduTest {
   static Process master;
   static Process tabletServer;
   protected static KuduClient client;
+  protected static Schema basicSchema = getBasicSchema();
 
   private static List<String> tableNames = new ArrayList<String>();
 

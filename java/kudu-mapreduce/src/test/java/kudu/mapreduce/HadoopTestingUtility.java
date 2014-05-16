@@ -60,7 +60,7 @@ public class HadoopTestingUtility {
    * @param testName Will be used to build a part of the directory name for the test
    * @return Where the test is homed
    */
-  public File getTestDir(String testName, Configuration conf) {
+  public File setupAndGetTestDir(String testName, Configuration conf) {
     if (this.testDir != null) {
       return this.testDir;
     }
