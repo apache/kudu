@@ -69,7 +69,7 @@ LogOptions::LogOptions()
 
 Status ReadableLogSegment::Open(Env* env,
                                 const string& path,
-                                shared_ptr<ReadableLogSegment>* segment) {
+                                scoped_refptr<ReadableLogSegment>* segment) {
   VLOG(1) << "Parsing wal segment: " << path;
   uint64_t file_size;
   RETURN_NOT_OK(env->GetFileSize(path, &file_size));
@@ -356,7 +356,7 @@ struct DeltaIdEqualsTo {
 };
 
 uint32_t FindStaleSegmentsPrefixSize(
-    const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
+    const std::vector<scoped_refptr<ReadableLogSegment> > &segments,
     const consensus::OpId& earliest_needed_opid) {
   // We iterate in reverse order.
   // Keep the 1st log segment with initial OpId less than or equal to the
@@ -364,7 +364,7 @@ uint32_t FindStaleSegmentsPrefixSize(
   // (preceding meaning in natural order).
   uint32_t num_stale_segments = 0;
   bool seen_earlier_opid = false;
-  BOOST_REVERSE_FOREACH(const shared_ptr<ReadableLogSegment> &segment, segments) {
+  BOOST_REVERSE_FOREACH(const scoped_refptr<ReadableLogSegment> &segment, segments) {
     const OpId& first_in_segment = segment->header().initial_id();
     if (OpIdLessThan(first_in_segment, earliest_needed_opid) ||
         OpIdEquals(first_in_segment, earliest_needed_opid)) {

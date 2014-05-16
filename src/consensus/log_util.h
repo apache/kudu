@@ -9,6 +9,7 @@
 
 #include "consensus/log.pb.h"
 #include "gutil/macros.h"
+#include "gutil/ref_counted.h"
 #include "util/env.h"
 
 namespace kudu {
@@ -53,12 +54,12 @@ struct LogOptions {
 
 
 // A readable log segment for recovery and follower catch-up.
-class ReadableLogSegment {
+class ReadableLogSegment : public base::RefCountedThreadSafe<ReadableLogSegment> {
  public:
   // Factory method to construct a ReadableLogSegment from a file on the FS.
   static Status Open(Env* env,
                      const std::string& path,
-                     std::tr1::shared_ptr<ReadableLogSegment>* segment);
+                     scoped_refptr<ReadableLogSegment>* segment);
 
   // Build a readable segment to read entries from the provided path.
   ReadableLogSegment(const std::string &path,
@@ -112,6 +113,9 @@ class ReadableLogSegment {
   }
 
  private:
+  friend class base::RefCountedThreadSafe<ReadableLogSegment>;
+  ~ReadableLogSegment() {}
+
   // Helper functions called by Init().
   Status ReadMagicAndHeaderLength(uint32_t *len);
   Status ParseMagicAndLength(const Slice &data, uint32_t *parsed_len);
@@ -247,7 +251,7 @@ consensus::OpId MaximumOpId();
 // 10 and 5, but we can GC the log segment starting with OpId 0.
 // See comments in the implementation file for more details on the algorithm.
 uint32_t FindStaleSegmentsPrefixSize(
-    const std::vector<std::tr1::shared_ptr<ReadableLogSegment> > &segments,
+    const std::vector<scoped_refptr<ReadableLogSegment> > &segments,
     const consensus::OpId& earliest_needed_opid);
 
 // Checks if 'fname' is a correctly formatted name of log segment

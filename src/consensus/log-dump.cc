@@ -116,7 +116,7 @@ void PrintDecoded(const LogEntryPB& entry) {
   }
 }
 
-void PrintSegment(const shared_ptr<ReadableLogSegment>& segment) {
+void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   PrintEntryType print_type = ParsePrintType();
   if (FLAGS_print_headers) {
     cout << "Header:\n" << segment->header().DebugString();
@@ -150,7 +150,7 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
 
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, reader->segments()) {
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, reader->segments()) {
     PrintSegment(segment);
   }
 }
@@ -158,7 +158,7 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
 void DumpSegment(const string &segment_path) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
-  shared_ptr<ReadableLogSegment> segment;
+  scoped_refptr<ReadableLogSegment> segment;
   CHECK_OK(ReadableLogSegment::Open(env, segment_path, &segment));
   CHECK(segment);
   PrintSegment(segment);

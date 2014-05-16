@@ -161,7 +161,7 @@ class Log {
 
   // Note: accessing this internal structure is _not_ thread-safe while
   // concurrently running GC().
-  const vector<std::tr1::shared_ptr<ReadableLogSegment> >& PreviousSegmentsForTests() const {
+  const vector<scoped_refptr<ReadableLogSegment> >& PreviousSegmentsForTests() const {
     return previous_segments_;
   }
 
@@ -271,7 +271,7 @@ class Log {
   LogState log_state_;
 
   // All previous (inactive) un-GC'd segments.
-  vector<std::tr1::shared_ptr<ReadableLogSegment> > previous_segments_;
+  vector<scoped_refptr<ReadableLogSegment> > previous_segments_;
 
   // Lock to protect last_entry_op_id_, which is constantly written but
   // read occasionally by things like consensus and log GC.

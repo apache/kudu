@@ -91,7 +91,7 @@ TEST_F(LogTest, TestLogNotTrimmed) {
   BuildLogReader();
   vector<LogEntryPB*> entries;
   ElementDeleter deleter(&entries);
-  const shared_ptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
+  const scoped_refptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
   ASSERT_STATUS_OK(first_segment->ReadEntries(&entries));
   // Close after testing to ensure correct shutdown
   // TODO : put this in TearDown() with a test on log state?
@@ -150,7 +150,7 @@ TEST_F(LogTest, TestCorruptLog) {
 
   BuildLogReader();
   ASSERT_EQ(1, log_reader_->size());
-  const shared_ptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
+  const scoped_refptr<ReadableLogSegment>& first_segment = *log_reader_->segments().begin();
   Status status = first_segment->ReadEntries(&entries_);
   ASSERT_TRUE(status.IsCorruption());
 
@@ -175,7 +175,7 @@ TEST_F(LogTest, TestSegmentRollover) {
 
   ASSERT_STATUS_OK(log_->Close());
   BuildLogReader();
-  BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, log_reader_->segments()) {
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, log_reader_->segments()) {
     ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
   }
 
@@ -324,7 +324,7 @@ TEST_F(LogTest, TestWriteManyBatches) {
     LOG(INFO) << "Starting to read log";
     BuildLogReader();
     uint32_t num_entries = 0;
-    BOOST_FOREACH(const shared_ptr<ReadableLogSegment>& segment, log_reader_->segments()) {
+    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, log_reader_->segments()) {
       STLDeleteElements(&entries_);
       ASSERT_STATUS_OK(segment->ReadEntries(&entries_));
       num_entries += entries_.size();

@@ -650,9 +650,9 @@ Status TabletBootstrap::PlaySegments() {
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
   ReplayState state;
-  const vector<shared_ptr<log::ReadableLogSegment> >& segments = log_reader_->segments();
+  const vector<scoped_refptr<log::ReadableLogSegment> >& segments = log_reader_->segments();
   int segment_count = 0;
-  BOOST_FOREACH(const shared_ptr<log::ReadableLogSegment>& segment, segments) {
+  BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, segments) {
 
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);

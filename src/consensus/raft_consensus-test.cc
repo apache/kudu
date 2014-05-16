@@ -237,7 +237,7 @@ class RaftConsensusTest : public KuduTest {
                                           &log_reader));
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
-    BOOST_FOREACH(const shared_ptr<ReadableLogSegment> segment, log_reader->segments()) {
+    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment> segment, log_reader->segments()) {
       ASSERT_STATUS_OK(segment->ReadEntries(&entries));
     }
     BOOST_FOREACH(LogEntryPB* entry, entries) {

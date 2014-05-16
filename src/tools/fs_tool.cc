@@ -192,7 +192,7 @@ Status FsTool::ListSegmentsInDir(const string& segments_dir) {
 }
 
 Status FsTool::PrintLogSegmentHeader(const string& path) {
-  shared_ptr<ReadableLogSegment> segment;
+  scoped_refptr<ReadableLogSegment> segment;
   Status s = ReadableLogSegment::Open(fs_manager_->env(),
                                       path,
                                       &segment);

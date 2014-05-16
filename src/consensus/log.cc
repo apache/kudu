@@ -240,7 +240,7 @@ Status Log::Init() {
     VLOG(1) << "Using existing " << previous_segments_.size()
             << " segments from path: " << fs_manager_->GetWalsRootDir();
 
-    const shared_ptr<ReadableLogSegment>& segment = previous_segments_.back();
+    const scoped_refptr<ReadableLogSegment>& segment = previous_segments_.back();
     uint64_t last_written_seqno = segment->header().sequence_number();
     active_segment_sequence_number_ = last_written_seqno + 1;
   }
@@ -616,7 +616,7 @@ Status Log::SwitchToAllocatedSegment() {
     CHECK(active_segment_->IsHeaderWritten());
     shared_ptr<RandomAccessFile> readable_file;
     RETURN_NOT_OK(OpenFileForRandom(fs_manager_->env(), active_segment_->path(), &readable_file));
-    shared_ptr<ReadableLogSegment> readable_segment(
+    scoped_refptr<ReadableLogSegment> readable_segment(
         new ReadableLogSegment(active_segment_->path(),
                                active_segment_->writable_file()->Size(),
                                readable_file));
