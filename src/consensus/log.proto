@@ -11,15 +11,10 @@ import "server/metadata.proto";
 // Types of log entries.
 enum LogEntryTypePB {
   OPERATION = 1;
-  // TODO remove this (along with the parent enum) when we change the
-  // log GC not to depend on the tablet metadata. Moreover consider
-  // making the Log store OperationPB directly, as LogEntryPB might
-  // become obsolete.
-  TABLET_METADATA = 2;
   // Marker entry for dummy log messages. These will never end up in the log,
   // just serve the purpose of making sure that all entries up to the FLUSH_MARKER
   // entry are flushed.
-  FLUSH_MARKER = 3;
+  FLUSH_MARKER = 999;
 };
 
 // An entry in the WAL/state machine log.
