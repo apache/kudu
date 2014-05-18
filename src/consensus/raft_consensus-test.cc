@@ -188,7 +188,7 @@ class RaftConsensusTest : public KuduTest {
     clbk->Wait();
   }
 
-  void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for, RaftConsensus* replica) {
+  void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for, RaftConsensus* replica, int idx) {
     shared_ptr<LatchCallback> clbk(new LatchCallback);
     Status s = replica->RegisterOnCommitCallback(to_wait_for, clbk);
     if (s.IsAlreadyPresent()) {
@@ -210,9 +210,19 @@ class RaftConsensusTest : public KuduTest {
       if (num_attempts == 10) {
         LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
             << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
-        LOG(ERROR) << "Replica State: " << replica->state_->ToString();
-        LOG(ERROR) << "Leader Queue: ";
         GetLeader()->queue_.DumpToLog();
+
+        // Gather the replica and leader operations for printing
+        vector<OperationPB*> replica_ops;
+        ElementDeleter repl0_deleter(&replica_ops);
+        GatherOperations(idx, replica->log(), &replica_ops);
+        vector<OperationPB*> leader_ops;
+        ElementDeleter leader_deleter(&leader_ops);
+        int leader_idx = peers_.size() - 1;
+        GatherOperations(leader_idx, logs_[leader_idx], &leader_ops);
+
+        SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
+        SCOPED_TRACE(PrintOnError(replica_ops, replica->peer_uuid()));
         FAIL() << "Replica did not commit.";
       }
     }
@@ -261,15 +271,15 @@ class RaftConsensusTest : public KuduTest {
       }
     }
 
-    VerifyReplica(leader_replicates, leader_commits, leader_ops, replica0_ops, 0);
-    VerifyReplica(leader_replicates, leader_commits, leader_ops, replica1_ops, 1);
+    VerifyReplica(leader_replicates, leader_commits, leader_ops, replica0_ops, "peer-0");
+    VerifyReplica(leader_replicates, leader_commits, leader_ops, replica1_ops, "peer-1");
   }
 
   void VerifyReplica(const vector<OpId>& leader_replicates,
                      const vector<OpId>& leader_commits,
                      const vector<OperationPB*>& leader_ops,
                      const vector<OperationPB*>& replica_ops,
-                     int replica_idx) {
+                     string replica_id) {
     int l_repl_idx = 0;
     int l_comm_idx = 0;
     OpId last_repl_op = log::MinimumOpId();
@@ -277,7 +287,8 @@ class RaftConsensusTest : public KuduTest {
                   log::OpIdHashFunctor,
                   log::OpIdEqualsFunctor> replication_ops;
 
-    SCOPED_TRACE(PrintOnError(leader_ops, replica_ops, replica_idx));
+    SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
+    SCOPED_TRACE(PrintOnError(replica_ops, replica_id));
     for (int i = 0; i < replica_ops.size(); i++) {
       OperationPB* operation = replica_ops[i];
       // check that the operations appear in the same order as the leaders
@@ -303,17 +314,12 @@ class RaftConsensusTest : public KuduTest {
     }
   }
 
-  string PrintOnError(const vector<OperationPB*>& leader_ops,
-                      const vector<OperationPB*>& replica_ops,
-                      int replica_idx) {
-    string ret = Substitute("\nLeader/Replica Operations mismatched for replica: $0\n",
-                            replica_idx);
-    StrAppend(&ret, Substitute("Num Leader Ops: $0 Num Replica Ops: $1\n",
-                               leader_ops.size(),
+  string PrintOnError(const vector<OperationPB*>& replica_ops,
+                      string replica_id) {
+    string ret = "";
+    StrAppend(&ret, Substitute("Replica Ops for replica: $0 Num. Replica Ops: $1\n",
+                               replica_id,
                                replica_ops.size()));
-    BOOST_FOREACH(OperationPB* leader_op, leader_ops) {
-      StrAppend(&ret, "Leader Operation: ", leader_op->ShortDebugString(), "\n");
-    }
     BOOST_FOREACH(OperationPB* replica_op, replica_ops) {
       StrAppend(&ret, "Replica Operation: ", replica_op->ShortDebugString(), "\n");
     }
@@ -355,8 +361,8 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitMessage) {
   ASSERT_STATUS_OK(CommitDummyMessage(ctx.get()));
 
   // Wait for the followers commit the operations.
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
 }
 
@@ -392,8 +398,8 @@ TEST_F(RaftConsensusTest, TestFollowersReplicateAndCommitSequence) {
   }
 
   // Wait for the followers commit the operations.
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
 }
 
@@ -424,12 +430,12 @@ TEST_F(RaftConsensusTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     // this would hang here). We know he must have replicated but make sure
     // by calling Wait().
     WaitForReplicateIfNotAlreadyPresent(last_replicate, GetFollower(1));
-    WaitForCommitIfNotAlreadyPresent(last_replicate, GetFollower(1));
+    WaitForCommitIfNotAlreadyPresent(last_replicate, GetFollower(1), 1);
   }
 
   // After we let the lock go the remaining follower should get up-to-date
   WaitForReplicateIfNotAlreadyPresent(last_replicate, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_replicate, GetFollower(0));
+  WaitForCommitIfNotAlreadyPresent(last_replicate, GetFollower(0), 0);
   VerifyLogs();
 }
 
@@ -463,8 +469,8 @@ TEST_F(RaftConsensusTest, TestConsensusStopsIfAMajorityFallsBehind) {
   // Assert that everything was ok
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
 }
 
@@ -484,8 +490,8 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   last_op_id = ctx->id();
 
   ASSERT_STATUS_OK(CommitDummyMessage(ctx.get()));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
 
   // Append a sequence of messages, and keep injecting errors into the
   // replica proxies.
@@ -509,8 +515,8 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // Assert las operation was correctly committed
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(0));
   WaitForReplicateIfNotAlreadyPresent(last_op_id, GetFollower(1));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0));
-  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1));
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
+  WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
   VerifyLogs();
 }
 
