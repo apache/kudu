@@ -3,6 +3,7 @@
 #include "tablet/tablet_bootstrap.h"
 
 #include <boost/foreach.hpp>
+#include <gflags/gflags.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -60,6 +61,9 @@ using kudu::tserver::ChangeConfigRequestPB;
 using kudu::tserver::WriteRequestPB;
 using std::tr1::shared_ptr;
 using strings::Substitute;
+
+DEFINE_bool(skip_remove_old_recovery_dir, false,
+            "Skip removing WAL recovery dir after startup. (useful for debugging)");
 
 namespace kudu {
 namespace tablet {
@@ -422,6 +426,11 @@ Status TabletBootstrap::RemoveRecoveryDir() {
                         Substitute("Could not rename old recovery dir from: $0 to: $1",
                                    recovery_path, tmp_path));
   LOG(INFO) << "Renamed old recovery dir from: "  << recovery_path << " to: " << tmp_path;
+
+  if (FLAGS_skip_remove_old_recovery_dir) {
+    LOG(INFO) << "--skip_remove_old_recovery_dir enabled. NOT removing " << tmp_path;
+    return Status::OK();
+  }
   RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
                         "Could not remove renamed recovery dir" +  tmp_path);
   LOG(INFO) << "Removed renamed recovery dir: " << tmp_path;

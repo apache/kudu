@@ -91,7 +91,7 @@ class LinkedListTest : public KuduTest {
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 1;
     opts.data_root = GetTestPath("linked-list-cluster");
-
+    opts.extra_tserver_flags.push_back("--skip_remove_old_recovery_dir");
     cluster_.reset(new ExternalMiniCluster(opts));
     ASSERT_STATUS_OK(cluster_->Start());
     ASSERT_STATUS_OK(cluster_->CreateClient(KuduClientOptions(), &client_));
@@ -158,6 +158,10 @@ class ChainGenerator {
     return Status::OK();
   }
 
+  uint64_t prev_key() const {
+    return prev_key_;
+  }
+
  private:
   const uint8_t chain_idx_;
 
@@ -199,6 +203,10 @@ Status LinkedListTest::LoadLinkedList(const MonoDelta& run_for,
 
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
       LOG(INFO) << "Finished inserting list. Added " << (*written_count) << " in chain";
+      LOG(INFO) << "Last entries inserted had keys:";
+      for (int i = 0; i < FLAGS_num_chains; i++) {
+        LOG(INFO) << i << ": " << chains[i]->prev_key();
+      }
       return Status::OK();
     }
     BOOST_FOREACH(ChainGenerator* chain, chains) {

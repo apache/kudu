@@ -55,6 +55,10 @@ struct ExternalMiniClusterOptions {
   // Default: "", which uses the same path as the currently running executable.
   // This works for unit tests, since they all end up in build/latest/.
   std::string daemon_bin_path;
+
+  // Extra flags for tablet servers and masters respectively.
+  std::vector<std::string> extra_tserver_flags;
+  std::vector<std::string> extra_master_flags;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -139,7 +143,8 @@ class ExternalMiniCluster {
 
 class ExternalDaemon : public base::RefCountedThreadSafe<ExternalDaemon> {
  public:
-  ExternalDaemon(const std::string& exe, const std::string& data_dir);
+  ExternalDaemon(const std::string& exe, const std::string& data_dir,
+                 const std::vector<std::string>& extra_flags);
 
   HostPort bound_rpc_hostport() const;
   Sockaddr bound_rpc_addr() const;
@@ -155,6 +160,7 @@ class ExternalDaemon : public base::RefCountedThreadSafe<ExternalDaemon> {
 
   const std::string exe_;
   const std::string data_dir_;
+  const std::vector<std::string> extra_flags_;
 
   gscoped_ptr<Subprocess> process_;
 
@@ -166,7 +172,8 @@ class ExternalDaemon : public base::RefCountedThreadSafe<ExternalDaemon> {
 
 class ExternalMaster : public ExternalDaemon {
  public:
-  ExternalMaster(const std::string& exe, const std::string& data_dir);
+  ExternalMaster(const std::string& exe, const std::string& data_dir,
+                 const std::vector<std::string>& extra_flags);
 
   Status Start();
 
@@ -178,7 +185,8 @@ class ExternalMaster : public ExternalDaemon {
 class ExternalTabletServer : public ExternalDaemon {
  public:
   ExternalTabletServer(const std::string& exe, const std::string& data_dir,
-                       const HostPort& master_addr);
+                       const HostPort& master_addr,
+                       const std::vector<std::string>& extra_flags);
 
   Status Start();
 

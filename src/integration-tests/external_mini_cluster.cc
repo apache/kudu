@@ -153,7 +153,8 @@ string ExternalMiniCluster::GetDataPath(const string& daemon_id) const {
 
 Status ExternalMiniCluster::StartMaster() {
   string exe = GetBinaryPath(kMasterBinaryName);
-  master_ = new ExternalMaster(exe, GetDataPath("master"));
+  master_ = new ExternalMaster(exe, GetDataPath("master"),
+                               opts_.extra_master_flags);
   return master_->Start();
 }
 
@@ -165,7 +166,8 @@ Status ExternalMiniCluster::AddTabletServer() {
   string exe = GetBinaryPath(kTabletServerBinaryName);
   scoped_refptr<ExternalTabletServer> ts =
     new ExternalTabletServer(exe, GetDataPath(Substitute("ts-$0", idx)),
-                             master_->bound_rpc_hostport());
+                             master_->bound_rpc_hostport(),
+                             opts_.extra_tserver_flags);
   RETURN_NOT_OK(ts->Start());
   tablet_servers_.push_back(ts);
   return Status::OK();
@@ -233,9 +235,11 @@ Status ExternalMiniCluster::CreateClient(const client::KuduClientOptions& their_
 //------------------------------------------------------------
 
 ExternalDaemon::ExternalDaemon(const string& exe,
-                               const string& data_dir) :
+                               const string& data_dir,
+                               const vector<string>& extra_flags) :
   exe_(exe),
-  data_dir_(data_dir) {
+  data_dir_(data_dir),
+  extra_flags_(extra_flags) {
 }
 
 ExternalDaemon::~ExternalDaemon() {
@@ -248,6 +252,10 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   vector<string> argv;
   // First the exe for argv[0]
   argv.push_back(BaseName(exe_));
+
+  // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
+  // options struct)
+  argv.insert(argv.end(), extra_flags_.begin(), extra_flags_.end());
 
   // Then all the user-provided flags
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
@@ -352,8 +360,9 @@ const NodeInstancePB& ExternalDaemon::instance_id() const {
 //------------------------------------------------------------
 
 ExternalMaster::ExternalMaster(const string& exe,
-                               const string& data_dir)
-  : ExternalDaemon(exe, data_dir) {
+                               const string& data_dir,
+                               const vector<string>& extra_flags)
+  : ExternalDaemon(exe, data_dir, extra_flags) {
 }
 
 ExternalMaster::~ExternalMaster() {
@@ -374,8 +383,9 @@ Status ExternalMaster::Start() {
 
 ExternalTabletServer::ExternalTabletServer(const string& exe,
                                            const string& data_dir,
-                                           const HostPort& master_addr)
-  : ExternalDaemon(exe, data_dir),
+                                           const HostPort& master_addr,
+                                           const vector<string>& extra_flags)
+  : ExternalDaemon(exe, data_dir, extra_flags),
     master_addr_(master_addr.ToString()) {
 }
 
