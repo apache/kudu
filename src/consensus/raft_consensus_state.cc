@@ -44,6 +44,7 @@ ReplicaState::ReplicaState(ThreadPool* callback_exec_pool,
 
 // TODO check that the role change is legal.
 Status ReplicaState::ChangeConfigUnlocked(const metadata::QuorumPB& new_quorum) {
+  DCHECK(update_lock_.is_locked());
   // set this peer's role as non-participant
   current_role_ = QuorumPeerPB::NON_PARTICIPANT;
 
@@ -135,40 +136,48 @@ Status ReplicaState::LockForShutdown(UniqueLock* lock) {
 }
 
 Status ReplicaState::SetChangeConfigSuccessfulUnlocked() {
+  DCHECK(update_lock_.is_locked());
   CHECK_EQ(state_, kChangingConfig);
   state_ = kRunning;
   return Status::OK();
 }
 
 metadata::QuorumPeerPB::Role ReplicaState::GetCurrentRoleUnlocked() {
+  DCHECK(update_lock_.is_locked());
   return current_role_;
 }
 
 const metadata::QuorumPB& ReplicaState::GetCurrentConfigUnlocked() {
+  DCHECK(update_lock_.is_locked());
   return current_quorum_;
 }
 
 void ReplicaState::IncrementConfigSeqNoUnlocked() {
+  DCHECK(update_lock_.is_locked());
   current_quorum_.set_seqno(current_quorum_.seqno() + 1);
 }
 
 int ReplicaState::GetCurrentMajorityUnlocked() {
+  DCHECK(update_lock_.is_locked());
   return current_majority_;
 }
 
 const unordered_set<string>& ReplicaState::GetCurrentVotingPeersUnlocked() {
+  DCHECK(update_lock_.is_locked());
   return voting_peers_;
 }
 
 int ReplicaState::GetAllPeersCountUnlocked() {
+  DCHECK(update_lock_.is_locked());
   return current_quorum_.peers_size();
 }
 
-const string& ReplicaState::GetPeerUuidUnlocked() {
+const string& ReplicaState::GetPeerUuid() {
   return peer_uuid_;
 }
 
 const string& ReplicaState::GetLeaderUuidUnlocked() {
+  DCHECK(update_lock_.is_locked());
   return leader_uuid_;
 }
 
@@ -182,11 +191,12 @@ Status ReplicaState::WaitForOustandingApplies() {
       << in_flight_commits_latch_.count() << " outstanding commits.";
   }
   in_flight_commits_latch_.Wait();
-  LOG(INFO) << "All local commits completed for replica: " << GetPeerUuidUnlocked();
+  LOG(INFO) << "All local commits completed for replica: " << GetPeerUuid();
   return Status::OK();
 }
 
 Status ReplicaState::TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context) {
+  DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
   }
@@ -196,6 +206,7 @@ Status ReplicaState::TriggerPrepareUnlocked(gscoped_ptr<ConsensusRound> context)
 }
 
 Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit_op) {
+  DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Cannot trigger apply. Replica is not in kRunning state.");
   }
@@ -211,30 +222,41 @@ Status ReplicaState::TriggerApplyUnlocked(gscoped_ptr<OperationPB> leader_commit
 }
 
 void ReplicaState::UpdateLastReplicatedOpIdUnlocked(const OpId& op_id) {
+  DCHECK(update_lock_.is_locked());
   replicated_op_id_.CopyFrom(op_id);
   replicate_watchers_.MarkFinished(op_id, OpIdWaiterSet::MARK_ALL_OPS_BEFORE);
 }
 
 const OpId& ReplicaState::GetLastReplicatedOpIdUnlocked() const {
+  DCHECK(update_lock_.is_locked());
   return replicated_op_id_;
 }
 
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
+  DCHECK(update_lock_.is_locked());
   DCHECK_LE(log::OpIdCompare(received_op_id_, op_id), 0);
   received_op_id_ = op_id;
 }
 
 const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
+  DCHECK(update_lock_.is_locked());
   return received_op_id_;
 }
 
+const OpId& ReplicaState::GetSafeCommitOpIdUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return all_committed_before_id_;
+}
+
 void ReplicaState::UpdateLeaderCommittedOpIdUnlocked(const OpId& committed_op_id) {
+  DCHECK(update_lock_.is_locked());
   commit_watchers_.MarkFinished(committed_op_id, OpIdWaiterSet::MARK_ONLY_THIS_OP);
 }
 
 
 void ReplicaState::UpdateReplicaCommittedOpIdUnlocked(const OpId& commit_op_id,
                                                       const OpId& committed_op_id) {
+  DCHECK(update_lock_.is_locked());
   CHECK_EQ(in_flight_commits_.erase(commit_op_id), 1) << commit_op_id.ShortDebugString();
   if (log::OpIdEquals(commit_op_id, all_committed_before_id_)) {
     if (!in_flight_commits_.empty()) {
@@ -253,10 +275,6 @@ void ReplicaState::CountDownOutstandingCommitsIfShuttingDown() {
   if (PREDICT_FALSE(state_ == kShuttingDown)) {
     in_flight_commits_latch_.CountDown();
   }
-}
-
-const OpId& ReplicaState::GetSafeCommitOpIdUnlocked() const {
-  return all_committed_before_id_;
 }
 
 Status ReplicaState::RegisterOnReplicateCallback(
@@ -285,6 +303,7 @@ Status ReplicaState::RegisterOnCommitCallback(const OpId& op_id,
 }
 
 void ReplicaState::NewIdUnlocked(OpId* id) {
+  DCHECK(update_lock_.is_locked());
   id->set_term(current_term_);
   id->set_index(next_index_++);
 }

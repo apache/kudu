@@ -486,10 +486,14 @@ TEST_F(RaftConsensusTest, TestReplicasHandleCommunicationErrors) {
   // have gotten it)
   gscoped_ptr<ConsensusRound> round;
   ASSERT_STATUS_OK(AppendDummyMessage(GetLeader(), &round));
+  GetFollowerProxy(0)->InjectCommFaultLeaderSide();
+  GetFollowerProxy(1)->InjectCommFaultLeaderSide();
 
   last_op_id = round->id();
 
   ASSERT_STATUS_OK(CommitDummyMessage(round.get()));
+  GetFollowerProxy(0)->InjectCommFaultLeaderSide();
+  GetFollowerProxy(1)->InjectCommFaultLeaderSide();
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(0), 0);
   WaitForCommitIfNotAlreadyPresent(last_op_id, GetFollower(1), 1);
 

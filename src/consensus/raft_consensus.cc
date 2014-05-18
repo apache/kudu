@@ -58,7 +58,7 @@ Status RaftConsensus::Start(const metadata::QuorumPB& initial_quorum,
 
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  LOG(INFO) << "Raft consensus started. Peer: " << state_->GetPeerUuidUnlocked()
+  LOG(INFO) << "Raft consensus started. Peer: " << state_->GetPeerUuid()
       << " Role: " << state_->GetCurrentRoleUnlocked() << " Quorum: "
       << state_->GetCurrentConfigUnlocked().ShortDebugString();
   running_quorum->reset(new QuorumPB(state_->GetCurrentConfigUnlocked()));
@@ -92,13 +92,13 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
     if (peer != NULL) {
       continue;
     }
-    if (peer_pb.permanent_uuid() == state_->GetPeerUuidUnlocked()) {
+    if (peer_pb.permanent_uuid() == state_->GetPeerUuid()) {
       VLOG(1) << "Adding local peer. Peer: " << peer_pb.ShortDebugString();
       gscoped_ptr<Peer> local_peer;
       OpId initial = GetLastOpIdFromLog();
       RETURN_NOT_OK(Peer::NewLocalPeer(peer_pb,
                                        options_.tablet_id,
-                                       state_->GetPeerUuidUnlocked(),
+                                       state_->GetPeerUuid(),
                                        &queue_,
                                        log_,
                                        initial,
@@ -113,7 +113,7 @@ Status RaftConsensus::CreateOrUpdatePeersUnlocked() {
       gscoped_ptr<Peer> remote_peer;
       RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
                                         options_.tablet_id,
-                                        state_->GetPeerUuidUnlocked(),
+                                        state_->GetPeerUuid(),
                                         &queue_,
                                         peer_proxy.Pass(),
                                         &remote_peer))
@@ -245,7 +245,7 @@ OperationStatusTracker* RaftConsensus::CreateLeaderOnlyOperationStatusUnlocked(
     const OpId* op_id,
     const shared_ptr<FutureCallback>& commit_callback) {
   unordered_set<string> leader_uuid_set(1);
-  InsertOrDie(&leader_uuid_set, state_->GetPeerUuidUnlocked());
+  InsertOrDie(&leader_uuid_set, state_->GetPeerUuid());
   return new MajorityOperationStatus(op_id,
                                      leader_uuid_set,
                                      1,
@@ -342,27 +342,27 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   vector<const OperationPB*> replicate_ops;
   vector<const OperationPB*> commit_ops;
 
-  // Split the operations into two lists, one for REPLICATE
-  // and one for COMMIT. Also filter out any ops which have already
-  // been handled by a previous call to UpdateReplica()
-  BOOST_FOREACH(const OperationPB& op, request->ops()) {
-    if (log::OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
-      VLOG(2) << "Skipping op id " << op.id().ShortDebugString()
-          << " (already replicated/committed)";
-      continue;
-    }
-    if (op.has_replicate()) {
-      replicate_ops.push_back(&op);
-    } else if (op.has_commit()) {
-      commit_ops.push_back(&op);
-    } else {
-      LOG(FATAL)<< "Unexpected op: " << op.ShortDebugString();
-    }
-  }
-
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForUpdate(&lock));
+
+    // Split the operations into two lists, one for REPLICATE
+    // and one for COMMIT. Also filter out any ops which have already
+    // been handled by a previous call to UpdateReplica()
+    BOOST_FOREACH(const OperationPB& op, request->ops()) {
+      if (log::OpIdCompare(op.id(), state_->GetLastReceivedOpIdUnlocked()) <= 0) {
+        VLOG(2) << "Skipping op id " << op.id().ShortDebugString()
+            << " (already replicated/committed)";
+        continue;
+      }
+      if (op.has_replicate()) {
+        replicate_ops.push_back(&const_cast<OperationPB&>(op));
+      } else if (op.has_commit()) {
+        commit_ops.push_back(&op);
+      } else {
+        LOG(FATAL)<< "Unexpected op: " << op.ShortDebugString();
+      }
+    }
 
     // Only accept requests from the leader set in the last change config
     if (PREDICT_FALSE(request->sender_uuid() != state_->GetLeaderUuidUnlocked())) {
@@ -485,7 +485,7 @@ QuorumPeerPB::Role RaftConsensus::role() const {
 string RaftConsensus::peer_uuid() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  return state_->GetPeerUuidUnlocked();
+  return state_->GetPeerUuid();
 }
 
 

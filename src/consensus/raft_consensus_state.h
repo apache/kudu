@@ -121,7 +121,7 @@ class ReplicaState {
   int GetAllPeersCountUnlocked();
 
   // Returns the uuid of the peer to which this replica state belongs.
-  const std::string& GetPeerUuidUnlocked();
+  const std::string& GetPeerUuid();
 
   const std::string& GetLeaderUuidUnlocked();
 
