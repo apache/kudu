@@ -747,7 +747,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
   vector<uint64_t> write_timestamps_collector;
 
   // perform a series of writes and collect the timestamps
-  InsertTestRowsRemote(0, 0, num_rows, num_batches, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, num_rows, num_batches, NULL, kTabletId, &write_timestamps_collector);
 
   // now perform snapshot scans.
   ScanRequestPB req;
@@ -811,7 +811,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
 TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -846,7 +846,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -884,7 +884,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimestamp) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -942,7 +942,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
 TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTimestampFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;

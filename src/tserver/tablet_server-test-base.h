@@ -157,8 +157,6 @@ class TabletServerTest : public KuduTest {
     }
   }
 
- private:
-
   void CreateClientProxy(const Sockaddr &addr, gscoped_ptr<TabletServerServiceProxy>* proxy) {
     if (!client_messenger_) {
       MessengerBuilder bld("Client");
@@ -187,15 +185,21 @@ class TabletServerTest : public KuduTest {
                             uint64_t first_row,
                             uint64_t count,
                             uint64_t num_batches = -1,
+                            TabletServerServiceProxy* proxy = NULL,
+                            string tablet_id = kTabletId,
                             vector<uint64_t>* write_timestamps_collector = NULL,
                             TimeSeries *ts = NULL) {
+
+    if (!proxy) {
+      proxy = proxy_.get();
+    }
 
     if (num_batches == -1) {
       num_batches = count;
     }
 
     WriteRequestPB req;
-    req.set_tablet_id(kTabletId);
+    req.set_tablet_id(tablet_id);
 
     WriteResponsePB resp;
     RpcController controller;
@@ -212,15 +216,15 @@ class TabletServerTest : public KuduTest {
       controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
       data->Clear();
 
-      uint64_t first_row_in_batch = first_row + (i * count/num_batches);
-      uint64_t last_row_in_batch = first_row_in_batch + count/num_batches;
+      uint64_t first_row_in_batch = first_row + (i * count / num_batches);
+      uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
 
       for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
         AddTestRowToPB(RowOperationsPB::INSERT, schema_, j, j,
                        strings::Substitute("original$0", j), data);
       }
 
-      ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+      ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy)->Write(req, &resp, &controller));
       if (write_timestamps_collector) {
         write_timestamps_collector->push_back(resp.write_timestamp());
       }
@@ -229,7 +233,7 @@ class TabletServerTest : public KuduTest {
       ASSERT_EQ(0, resp.per_row_errors_size());
       shared_data_->last_inserted[tid] = last_row_in_batch;
 
-      inserted_since_last_report += count/num_batches;
+      inserted_since_last_report += count / num_batches;
       if ((inserted_since_last_report > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));
         inserted_since_last_report = 0;
@@ -249,8 +253,15 @@ class TabletServerTest : public KuduTest {
     return rb_->row();
   }
 
-  void DrainScannerToStrings(const string& scanner_id, const Schema& projection,
-                             vector<string>* results) {
+  void DrainScannerToStrings(const string& scanner_id,
+                             const Schema& projection,
+                             vector<string>* results,
+                             TabletServerServiceProxy* proxy = NULL) {
+
+    if (!proxy) {
+      proxy = proxy_.get();
+    }
+
     RpcController rpc;
     rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
     ScanRequestPB req;
@@ -261,7 +272,7 @@ class TabletServerTest : public KuduTest {
       rpc.Reset();
       req.set_batch_size_bytes(10000);
       SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+      ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy)->Scan(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
 
