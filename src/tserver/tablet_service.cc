@@ -332,10 +332,10 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     }
   }
 
-  WriteTransactionState *tx_state =
+  WriteTransactionState *state =
     new WriteTransactionState(tablet_peer.get(), req, resp);
 
-  // if the consistency mode is set to CLIENT_PROPAGATED and the client
+  // If the consistency mode is set to CLIENT_PROPAGATED and the client
   // sent us a timestamp, decode it and set it in the transaction context.
   // Also update the clock so that all future timestamps are greater than
   // the passed timestamp.
@@ -344,7 +344,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     if (req->has_propagated_timestamp()) {
       Timestamp ts(req->propagated_timestamp());
       if (PREDICT_TRUE(s.ok())) {
-        tx_state->set_client_propagated_timestamp(ts);
+        state->set_client_propagated_timestamp(ts);
         // update the clock with the client's timestamp
         s = server_->clock()->Update(ts);
       }
@@ -355,19 +355,13 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                            context);
       return;
     }
-
   }
 
-  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+  state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback(context, resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitWrite(tx_state);
-  if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-  }
+  WARN_NOT_OK(tablet_peer->SubmitWrite(state), "Could not execute write transaction.");
   return;
 }
 

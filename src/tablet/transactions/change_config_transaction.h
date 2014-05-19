@@ -63,38 +63,33 @@ class ChangeConfigTransactionState : public TransactionState {
   boost::unique_lock<Semaphore> config_lock_;
 };
 
-// Executes the change config transaction, leader side.
-class LeaderChangeConfigTransaction : public LeaderTransaction {
+// Executes the change config transaction.
+class ChangeConfigTransaction : public Transaction {
  public:
-  LeaderChangeConfigTransaction(TransactionTracker *txn_tracker,
-                                ChangeConfigTransactionState* tx_state,
-                                consensus::Consensus* consensus,
-                                TaskExecutor* prepare_executor,
-                                TaskExecutor* apply_executor,
-                                simple_spinlock* prepare_replicate_lock,
-                                Semaphore* config_sem);
- protected:
+  ChangeConfigTransaction(ChangeConfigTransactionState* tx_state,
+                          DriverType type,
+                          Semaphore* config_sem);
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);
+  virtual ChangeConfigTransactionState* state() OVERRIDE { return tx_state_.get(); }
+  virtual const ChangeConfigTransactionState* state() const OVERRIDE { return tx_state_.get(); }
 
-  // Executes a Prepare for the change config transaction, leader side.
-  virtual Status Prepare();
+  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
 
-  virtual void PrepareFailedPreCommitHooks(gscoped_ptr<consensus::CommitMsg>* commit_msg);
+  // Executes a Prepare for the change config transaction.
+  virtual Status Prepare() OVERRIDE;
 
-  // Executes an Apply for the change config transaction, leader side.
-  virtual Status Apply();
+  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
+
+  // Executes an Apply for the change config transaction.
+  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
   // Actually commits the transaction.
-  virtual void ApplySucceeded();
-
-  virtual ChangeConfigTransactionState* tx_state() OVERRIDE { return tx_state_.get(); }
-  virtual const ChangeConfigTransactionState* tx_state() const OVERRIDE { return tx_state_.get(); }
+  virtual void Finish() OVERRIDE;
 
  private:
 
   gscoped_ptr<ChangeConfigTransactionState> tx_state_;
-  DISALLOW_COPY_AND_ASSIGN(LeaderChangeConfigTransaction);
+  DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransaction);
   Semaphore* config_sem_;
 };
 

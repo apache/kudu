@@ -16,10 +16,6 @@ class RowChangeList;
 class RowProjector;
 class Schema;
 
-namespace rpc {
-class RpcContext;
-}
-
 namespace tserver {
 class WriteResponsePB;
 }
@@ -28,12 +24,6 @@ namespace tablet {
 class Tablet;
 
 class WriteTransactionState;
-
-// Decodes the row operations and sets up a client error if something fails.
-Status CreatePreparedInsertsAndMutates(Tablet* tablet,
-                                       WriteTransactionState* tx_state,
-                                       const Schema& client_schema,
-                                       const RowOperationsPB& ops_pb);
 
 // Return a row that is the Projection of the 'user_row_ptr' on the 'tablet_schema'.
 // The 'tablet_schema' pointer will be referenced by the returned row, so must

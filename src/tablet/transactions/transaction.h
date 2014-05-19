@@ -4,31 +4,20 @@
 #define KUDU_TABLET_TRANSACTION_H_
 
 #include <string>
-#include <tr1/memory>
 
 #include "common/timestamp.h"
 #include "common/wire_protocol.h"
 #include "consensus/consensus.h"
-#include "gutil/ref_counted.h"
 #include "util/auto_release_pool.h"
-#include "util/countdown_latch.h"
 #include "util/status.h"
-#include "util/locks.h"
 #include "util/memory/arena.h"
 
 namespace kudu {
-class FutureCallback;
-class Task;
-class TaskExecutor;
-
-namespace consensus {
-class CommitMsg;
-class ReplicateMsg;
-}
 
 namespace tablet {
 class TabletPeer;
-class TransactionTracker;
+class TransactionCompletionCallback;
+class TransactionState;
 
 // All metrics associated with a Transaction.
 struct TransactionMetrics {
@@ -39,75 +28,79 @@ struct TransactionMetrics {
   uint64_t commit_wait_duration_usec;
 };
 
-// A parent class for the callback that gets called when transactions
-// complete.
-//
-// This must be set in the TransactionState if the transaction initiator is to
-// be notified of when a transaction completes. The callback belongs to the
-// transaction context and is deleted along with it.
-//
-// NOTE: this is a concrete class so that we can use it as a default implementation
-// which avoids callers having to keep checking for NULL.
-class TransactionCompletionCallback {
+// Base class for transactions.
+// There are different implementations for different types (Write, AlterSchema, etc.).
+// TransactionDriver implementations use Transactions along with Consensus to execute
+// and replicate operations in a quorum.
+class Transaction {
  public:
 
-  TransactionCompletionCallback()
-      : code_(tserver::TabletServerErrorPB::UNKNOWN_ERROR) {
-  }
+  enum DriverType {
+    LEADER,
+    REPLICA
+  };
 
-  // Allows to set an error for this transaction and a mapping to a server level code.
-  // Calling this method does not mean the transaction is completed.
-  void set_error(const Status& status, tserver::TabletServerErrorPB::Code code) {
-    status_ = status;
-    code_ = code;
-  }
+  Transaction(TransactionState* state, DriverType type);
 
-  void set_error(const Status& status) {
-    status_ = status;
-  }
+  // Returns the TransactionState for this transaction.
+  virtual TransactionState* state() { return state_; }
+  virtual const TransactionState* state() const { return state_; }
 
-  bool has_error() const {
-    return !status_.ok();
-  }
+  // Returns whether this transaction is being executed on the leader or on a
+  // replica.
+  DriverType type() const { return type_; }
 
-  const Status& status() const { return status_; }
+  // Builds the ReplicateMsg for this transaction.
+  virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
 
-  const tserver::TabletServerErrorPB::Code error_code() const { return code_; }
+  // Builds a commit abort message for this transaction.
+  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
 
-  // Subclasses should override this.
-  virtual void TransactionCompleted() {}
+  // Executes the prepare phase of this transaction, the actual actions
+  // of this phase depend on the transaction type, but usually are limited
+  // to what can be done without actually changing data structures and without
+  // side-effects.
+  virtual Status Prepare() = 0;
 
-  virtual ~TransactionCompletionCallback() {}
+  // If supported, aborts the prepare phase, and subsequently the transaction.
+  // Not supported by default.
+  virtual bool AbortPrepare() { return false; }
 
- protected:
-  Status status_;
-  tserver::TabletServerErrorPB::Code code_;
-};
+  // Executes the Apply() phase of the transaction, the actual actions of
+  // this phase depend on the transaction type, but usually this is the
+  // method where data-structures are changed.
+  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
 
-// TransactionCompletionCallback implementation that can be waited on.
-// Helper to make async transaction, sync.
-// This is templated to accept any response PB that has a TabletServerError
-// 'error' field and to set the error before performing the latch countdown.
-template<class ResponsePB>
-class LatchTransactionCompletionCallback : public TransactionCompletionCallback {
- public:
-  explicit LatchTransactionCompletionCallback(CountDownLatch* latch,
-                                              ResponsePB* response)
-  : latch_(latch),
-    response_(response) {}
+  // If supported, aborts the apply phase, and subsequently the transaction.
+  // Not supported by default.
+  virtual bool AbortApply() { return false; }
 
-  virtual void TransactionCompleted() {
-    tserver::TabletServerErrorPB* error = response_->mutable_error();
-    StatusToPB(status_, error->mutable_status());
-    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
-    latch_->CountDown();
-  }
+  // Executed after Apply() but before the commit is submitted to consensus.
+  // Some transactions use this to perform pre-commit actions (e.g. write
+  // transactions perform early lock release on this hook).
+  // Default implementation does nothing.
+  virtual void PreCommit() {}
+
+  // Executed after the transaction has both been applied and submitted to
+  // to consensus, but before we have confirmation the commit is durable.
+  // Unused for the moment, needed to implement KUDU-120.
+  virtual void PostCommit() {}
+
+  // Executed after the transaction has been committed to consensus and the
+  // commit has been made durable.
+  // Implementations are expected to perform cleanup on this method but should
+  // not depend on the transaction having completed successfully as this is
+  // also called when transactions fail.
+  virtual void Finish() {}
+
+  virtual ~Transaction() {}
 
  private:
-  CountDownLatch* latch_;
-  ResponsePB* response_;
+  // A private version of this transaction's transaction state so that
+  // we can use base TransactionState methods on destructors.
+  TransactionState* state_;
+  DriverType type_;
 };
-
 
 class TransactionState {
  public:
@@ -124,37 +117,47 @@ class TransactionState {
     return consensus_round_.get();
   }
 
-  TabletPeer* tablet_peer() const { return tablet_peer_; }
+  TabletPeer* tablet_peer() const {
+    return tablet_peer_;
+  }
 
   // Return metrics related to this transaction.
-  const TransactionMetrics& metrics() const { return tx_metrics_; }
+  const TransactionMetrics& metrics() const {
+    return tx_metrics_;
+  }
 
-  TransactionMetrics* mutable_metrics() { return &tx_metrics_; }
+  TransactionMetrics* mutable_metrics() {
+    return &tx_metrics_;
+  }
 
   void set_completion_callback(gscoped_ptr<TransactionCompletionCallback> completion_clbk) {
     completion_clbk_.reset(completion_clbk.release());
   }
 
-  // Returns the completion callback is there is one. or NULL otherwise
-  TransactionCompletionCallback* completion_callback() { return completion_clbk_.get(); }
+  // Returns the completion callback.
+  TransactionCompletionCallback* completion_callback() {
+    return DCHECK_NOTNULL(completion_clbk_.get());
+  }
 
   // Sets a heap object to be managed by this transaction's AutoReleasePool.
-  template <class T>
+  template<class T>
   T* AddToAutoReleasePool(T* t) {
     return pool_.Add(t);
   }
 
   // Sets an array heap object to be managed by this transaction's AutoReleasePool.
-  template <class T>
+  template<class T>
   T* AddArrayToAutoReleasePool(T* t) {
     return pool_.AddArray(t);
   }
 
   // Return the arena associated with this transaction.
   // NOTE: this is not a thread-safe arena!
-  Arena* arena() { return &arena_; }
+  Arena* arena() {
+    return &arena_;
+  }
 
-  string ToString() {
+  string ToString() const {
     return "TODO transaction toString";
   }
 
@@ -165,10 +168,9 @@ class TransactionState {
     timestamp_ = timestamp;
   }
 
-  Timestamp timestamp() {
+  Timestamp timestamp() const {
     return timestamp_;
   }
-
   consensus::OpId* mutable_op_id() {
     return &op_id_;
   }
@@ -190,12 +192,8 @@ class TransactionState {
   }
 
  protected:
-  explicit TransactionState(TabletPeer* tablet_peer)
-      : tablet_peer_(tablet_peer),
-        completion_clbk_(new TransactionCompletionCallback()),
-        arena_(32*1024, 4*1024*1024),
-        external_consistency_mode_(NO_CONSISTENCY) {
-  }
+  explicit TransactionState(TabletPeer* tablet_peer);
+  virtual ~TransactionState();
 
   TransactionMetrics tx_metrics_;
 
@@ -228,156 +226,66 @@ class TransactionState {
   Timestamp client_propagated_timestamp_;
 };
 
-// Base class for transactions.
-// Transaction classes encapsulate the logic of executing a transaction. as well
-// as any required state.
-// This class is refcounted, and subclasses must not define a public destructor.
-class Transaction : public base::RefCountedThreadSafe<Transaction> {
+// A parent class for the callback that gets called when transactions
+// complete.
+//
+// This must be set in the TransactionState if the transaction initiator is to
+// be notified of when a transaction completes. The callback belongs to the
+// transaction context and is deleted along with it.
+//
+// NOTE: this is a concrete class so that we can use it as a default implementation
+// which avoids callers having to keep checking for NULL.
+class TransactionCompletionCallback {
  public:
-  // Starts the execution of a transaction.
-  virtual Status Execute() = 0;
 
-  // Returns the TransactionState for this transaction.
-  virtual TransactionState* tx_state() = 0;
-  virtual const TransactionState* tx_state() const = 0;
+  TransactionCompletionCallback();
 
-  // Get the OpId of the transaction.
-  // If unassigned, returns an uninitialized OpId.
-  virtual void GetOpId(consensus::OpId* op_id) const = 0;
+  // Allows to set an error for this transaction and a mapping to a server level code.
+  // Calling this method does not mean the transaction is completed.
+  void set_error(const Status& status, tserver::TabletServerErrorPB::Code code);
+
+  void set_error(const Status& status);
+
+  bool has_error() const;
+
+  const Status& status() const;
+
+  const tserver::TabletServerErrorPB::Code error_code() const;
+
+  // Subclasses should override this.
+  virtual void TransactionCompleted();
+
+  virtual ~TransactionCompletionCallback();
 
  protected:
-  Transaction(TaskExecutor* prepare_executor,
-              TaskExecutor* apply_executor);
-
-  virtual ~Transaction() {}
-
-  // Executes the prepare phase of this transaction, the actual actions
-  // of this phase depend on the transaction type, but usually are limited
-  // to what can be done without actually changing data structures.
-  virtual Status Prepare() = 0;
-
-  // If supported, aborts the prepare phase, and subsequently the transaction.
-  // Not supported by default.
-  virtual bool AbortPrepare() { return false; }
-
-  // Called when the Prepare phase has successfully completed. For most successful
-  // transactions, which interact with consensus, this method is actually
-  // called twice, one when Prepare() completes and one when Consensus::Append()
-  // completes.
-  // Once PrepareSucceeded() completes successfully it triggers the Apply() phase.
-  virtual void PrepareSucceeded() = 0;
-
-  // For transactions that interact with consensus this method is called if either
-  // the Prepare() call fails or if Consensus::Append() fails.
-  virtual void PrepareFailed(const Status& status) = 0;
-
-  // The Apply phase is a transaction is where changes to data structures are
-  // usually made.
-  virtual Status Apply() = 0;
-
-  // If supported, aborts the apply phase, and subsequently the transaction.
-  // Not supported by default.
-  virtual bool AbortApply() { return false; }
-
-  // Called when the Apply phase has successfully completed. Usually implementations
-  // of this method perform cleanup and answer to the client.
-  virtual void ApplySucceeded() = 0;
-
-  // Called when the Apply phase failed.
-  virtual void ApplyFailed(const Status& status) = 0;
-
-  // Makes the transaction update the relevant metrics.
-  virtual void UpdateMetrics() {}
-
-  // Makes the caller thread wait until timestamp < now.earliest
-  Status CommitWait();
-
-  std::tr1::shared_ptr<FutureCallback> prepare_finished_callback_;
-  std::tr1::shared_ptr<FutureCallback> commit_finished_callback_;
-  TaskExecutor* prepare_executor_;
-  TaskExecutor* apply_executor_;
-
-  // this transaction's start time
-  MonoTime start_time_;
-
- private:
-  friend class base::RefCountedThreadSafe<Transaction>;
-  DISALLOW_COPY_AND_ASSIGN(Transaction);
+  Status status_;
+  tserver::TabletServerErrorPB::Code code_;
 };
 
-// Base class for Leader transactions.
-// For how write transactions are executed see: tablet/transactions/write_transaction.h
-class LeaderTransaction : public Transaction {
+// TransactionCompletionCallback implementation that can be waited on.
+// Helper to make async transactions, sync.
+// This is templated to accept any response PB that has a TabletServerError
+// 'error' field and to set the error before performing the latch countdown.
+template<class ResponsePB>
+class LatchTransactionCompletionCallback : public TransactionCompletionCallback {
  public:
-  LeaderTransaction(TransactionTracker *txn_tracker,
-                    consensus::Consensus* consensus,
-                    TaskExecutor* prepare_executor,
-                    TaskExecutor* apply_executor,
-                    simple_spinlock* prepare_replicate_lock);
+  explicit LatchTransactionCompletionCallback(CountDownLatch* latch,
+                                              ResponsePB* response)
+  : latch_(latch),
+    response_(response) {}
 
-  virtual ~LeaderTransaction();
-
-  virtual Status Execute();
-
-  virtual void GetOpId(consensus::OpId* op_id) const OVERRIDE;
-
- protected:
-  //===========================================================================
-  // Implemented inherited methods.
-  //===========================================================================
-  virtual void PrepareSucceeded();
-
-  virtual void PrepareFailed(const Status& status);
-
-  // Child classes should call this _after_ performing any action as this will
-  // reply to the client and delete the transaction.
-  virtual void ApplySucceeded();
-
-  virtual void ApplyFailed(const Status& status);
-
-  // Called when one of Prepare() or Consensus::Append() has failed,
-  // after they have both completed.
-  //
-  // On failure one of several things might have happened:
-  // 1 - None of Prepare or Append were submitted.
-  // 2 - Append was submitted but Prepare failed to submit.
-  // 3 - Both Append and Prepare were submitted but one of them failed
-  //     afterwards.
-  // 4 - Both Append and Prepare succeeded but submitting Apply failed.
-  //
-  // In case 1 this callback does the cleanup and answers the client. In cases
-  // 2,3,4, this callback submits a commit abort message to consensus and quits.
-  // The commit callback will answer the client later on.
-  void HandlePrepareFailure();
-
-  //===========================================================================
-  // Additional pure virtual methods.
-  //===========================================================================
-
-  // Builds the ReplicateMsg for this transaction.
-  virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
-
-  // Executes whatever needs to be executed when a prepare phase fails and
-  // returns a commit message that describes the failure.
-  virtual void PrepareFailedPreCommitHooks(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
-
-  TransactionTracker *txn_tracker_;
-  consensus::Consensus* consensus_;
-  Atomic32 prepare_finished_calls_;
-  Status prepare_status_;
-
-  // Lock that protects that, on Execute(), Prepare() and Consensus::Append() are submitted
-  // in one go across transactions.
-  simple_spinlock* prepare_replicate_lock_;
-
-  // Lock per LeaderTransaction that protects state that may be accessed by
-  // other threads. At time of writing, that is only the TransactionState's
-  // OpId assigned at Consensus::Append() time.
-  mutable simple_spinlock state_lock_;
+  virtual void TransactionCompleted() {
+    tserver::TabletServerErrorPB* error = response_->mutable_error();
+    StatusToPB(status_, error->mutable_status());
+    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+    latch_->CountDown();
+  }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(LeaderTransaction);
+  CountDownLatch* latch_;
+  ResponsePB* response_;
 };
+
 
 }  // namespace tablet
 }  // namespace kudu

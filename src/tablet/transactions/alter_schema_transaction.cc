@@ -24,27 +24,19 @@ using tserver::AlterSchemaRequestPB;
 using tserver::AlterSchemaResponsePB;
 using boost::bind;
 
-LeaderAlterSchemaTransaction::LeaderAlterSchemaTransaction(TransactionTracker *txn_tracker,
-                                               AlterSchemaTransactionState* tx_state,
-                                               consensus::Consensus* consensus,
-                                               TaskExecutor* prepare_executor,
-                                               TaskExecutor* apply_executor,
-                                               simple_spinlock* prepare_replicate_lock)
-: LeaderTransaction(txn_tracker,
-                    consensus,
-                    prepare_executor,
-                    apply_executor,
-                    prepare_replicate_lock),
-  tx_state_(tx_state) {
+AlterSchemaTransaction::AlterSchemaTransaction(AlterSchemaTransactionState* state,
+                                               DriverType type)
+    : Transaction(state, type),
+      tx_state_(state) {
 }
 
-void LeaderAlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
+void AlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(ALTER_SCHEMA_OP);
-  (*replicate_msg)->mutable_alter_schema_request()->CopyFrom(*tx_state()->request());
+  (*replicate_msg)->mutable_alter_schema_request()->CopyFrom(*state()->request());
 }
 
-Status LeaderAlterSchemaTransaction::Prepare() {
+Status AlterSchemaTransaction::Prepare() {
   TRACE("PREPARE ALTER-SCHEMA: Starting");
 
   // Decode schema
@@ -56,7 +48,7 @@ Status LeaderAlterSchemaTransaction::Prepare() {
   }
 
   Tablet* tablet = tx_state_->tablet_peer()->tablet();
-  RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(tx_state(), schema.get()));
+  RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(state(), schema.get()));
 
   // now that we've acquired the locks set the transaction timestamp
   tx_state_->set_timestamp(tx_state_->tablet_peer()->clock()->Now());
@@ -67,39 +59,30 @@ Status LeaderAlterSchemaTransaction::Prepare() {
   return s;
 }
 
-void LeaderAlterSchemaTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>* commit_msg) {
-  tx_state_->release_component_lock();
-
+void AlterSchemaTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_alter_schema_response()->CopyFrom(*tx_state_->response());
   (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
 }
 
-Status LeaderAlterSchemaTransaction::Apply() {
+Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
   Tablet* tablet = tx_state_->tablet_peer()->tablet();
-  RETURN_NOT_OK(tablet->AlterSchema(tx_state()));
+  RETURN_NOT_OK(tablet->AlterSchema(state()));
 
-  gscoped_ptr<CommitMsg> commit(new CommitMsg());
-  commit->set_op_type(ALTER_SCHEMA_OP);
-  commit->set_timestamp(tx_state_->timestamp().ToUint64());
-
-  TRACE("APPLY ALTER-SCHEMA: finished, triggering COMMIT");
-
-  RETURN_NOT_OK(tx_state_->consensus_round()->Commit(commit.Pass()));
-  // NB: do not use tx_state_ after this point, because the commit may have
-  // succeeded, in which case the context may have been torn down.
+  commit_msg->reset(new CommitMsg());
+  (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
+  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
   return Status::OK();
 }
 
-void LeaderAlterSchemaTransaction::ApplySucceeded() {
+void AlterSchemaTransaction::Finish() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("AlterSchemaCommitCallback: making edits visible");
-  tx_state()->commit();
-  LeaderTransaction::ApplySucceeded();
+  state()->commit();
 }
 
 }  // namespace tablet

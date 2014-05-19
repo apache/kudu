@@ -3,16 +3,21 @@
 #include "tablet/tablet_peer.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 
+#include "consensus/consensus.h"
+#include "consensus/consensus_peers.h"
 #include "consensus/local_consensus.h"
 #include "consensus/log.h"
 #include "consensus/log_util.h"
 #include "consensus/opid_anchor_registry.h"
+#include "consensus/raft_consensus.h"
 #include "gutil/strings/substitute.h"
 #include "gutil/sysinfo.h"
+#include "tablet/transactions/transaction_driver.h"
 #include "tablet/transactions/alter_schema_transaction.h"
 #include "tablet/transactions/change_config_transaction.h"
 #include "tablet/transactions/write_transaction.h"
@@ -37,6 +42,10 @@ using consensus::ConsensusRound;
 using consensus::ConsensusOptions;
 using consensus::LocalConsensus;
 using consensus::OpId;
+using consensus::RaftConsensus;
+using consensus::CHANGE_CONFIG_OP;
+using consensus::WRITE_OP;
+using consensus::OP_ABORT;
 using log::CopyIfOpIdLessThan;
 using log::Log;
 using log::OpIdAnchorRegistry;
@@ -44,7 +53,6 @@ using metadata::QuorumPB;
 using metadata::QuorumPeerPB;
 using metadata::TabletMetadata;
 using rpc::Messenger;
-using rpc::RpcContext;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
@@ -59,7 +67,7 @@ TabletPeer::TabletPeer(const TabletMetadata& meta)
     log_gc_executor_(TaskExecutor::CreateNew("log gc exec", 1)),
     log_gc_shutdown_latch_(1),
     config_sem_(1) {
-  apply_executor_.reset(TaskExecutor::CreateNew("apply exec", base::NumCPUs()));
+  apply_executor_.reset(TaskExecutor::CreateNew("leader apply exec", base::NumCPUs()));
   state_ = metadata::BOOTSTRAPPING;
 }
 
@@ -98,7 +106,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   DCHECK(log_) << "A TabletPeer must be provided with a Log";
   DCHECK(opid_anchor_registry_) << "A TabletPeer must be provided with a OpIdAnchorRegistry";
 
-  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, this, log_.get()),
+  RETURN_NOT_OK_PREPEND(consensus_->Init(quorum_peer, clock_, NULL, log_.get()),
                         "Could not initialize consensus");
 
   // set consensus on the tablet to that it can store local state changes
@@ -192,48 +200,30 @@ Status TabletPeer::CheckRunning() const {
   return Status::OK();
 }
 
-Status TabletPeer::SubmitWrite(WriteTransactionState *tx_state) {
+Status TabletPeer::SubmitWrite(WriteTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
-  // TODO keep track of the transaction somewhere so that we can cancel transactions
-  // when we change leaders and/or want to quiesce a tablet.
-  LeaderWriteTransaction* transaction = new LeaderWriteTransaction(&txn_tracker_, tx_state,
-                                                                   consensus_.get(),
-                                                                   prepare_executor_.get(),
-                                                                   apply_executor_.get(),
-                                                                   &prepare_replicate_lock_);
-  // transaction deletes itself on delete/abort
-  return transaction->Execute();
+  WriteTransaction* transaction = new WriteTransaction(state, Transaction::LEADER);
+  LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
+  return driver->Execute(transaction);
 }
 
-Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *tx_state) {
+Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
-  // TODO keep track of the transaction somewhere so that we can cancel transactions
-  // when we change leaders and/or want to quiesce a tablet.
-  LeaderAlterSchemaTransaction* transaction =
-    new LeaderAlterSchemaTransaction(&txn_tracker_, tx_state, consensus_.get(),
-                                     prepare_executor_.get(),
-                                     apply_executor_.get(),
-                                     &prepare_replicate_lock_);
-  // transaction deletes itself on delete/abort
-  return transaction->Execute();
+  AlterSchemaTransaction* transaction = new AlterSchemaTransaction(state, Transaction::LEADER);
+  LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
+  return driver->Execute(transaction);
 }
 
-Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *tx_state) {
+Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
   RETURN_NOT_OK(CheckRunning());
 
-  // TODO keep track of the transaction somewhere so that we can cancel transactions
-  // when we change leaders and/or want to quiesce a tablet.
-  LeaderChangeConfigTransaction* transaction =
-      new LeaderChangeConfigTransaction(&txn_tracker_, tx_state,
-                                        consensus_.get(),
-                                        prepare_executor_.get(),
-                                        apply_executor_.get(),
-                                        &prepare_replicate_lock_,
-                                        &config_sem_);
-  // transaction deletes itself on delete/abort
-  return transaction->Execute();
+  ChangeConfigTransaction* transaction = new ChangeConfigTransaction(state,
+                                                                     Transaction::LEADER,
+                                                                     &config_sem_);
+  LeaderTransactionDriver* driver = NewLeaderTransactionDriver();
+  return driver->Execute(transaction);
 }
 
 Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> ctx) {
@@ -298,11 +288,10 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
   CopyIfOpIdLessThan(min_anchor_op_id, min_op_id);
 
   // Next, interrogate the TransactionTracker.
-  vector<scoped_refptr<Transaction> > pending_transactions;
+  vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
-  BOOST_FOREACH(const scoped_refptr<Transaction> tx, pending_transactions) {
-    OpId tx_op_id;
-    tx->GetOpId(&tx_op_id);
+  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
+    OpId tx_op_id = driver->GetOpId();
     CopyIfOpIdLessThan(tx_op_id, min_op_id);
   }
 
@@ -314,6 +303,14 @@ void TabletPeer::GetEarliestNeededOpId(consensus::OpId* min_op_id) const {
 
 string TabletPeer::tablet_id() const {
   return tablet_ != NULL ? tablet_->tablet_id() : "";
+}
+
+LeaderTransactionDriver* TabletPeer::NewLeaderTransactionDriver() {
+  return new LeaderTransactionDriver(&txn_tracker_,
+                                     consensus_.get(),
+                                     prepare_executor_.get(),
+                                     apply_executor_.get(),
+                                     &prepare_replicate_lock_);
 }
 
 }  // namespace tablet

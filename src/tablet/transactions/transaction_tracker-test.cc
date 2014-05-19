@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "gutil/ref_counted.h"
+#include "tablet/transactions/transaction_driver.h"
 #include "tablet/transactions/transaction_tracker.h"
 #include "tablet/transactions/transaction.h"
 #include "tablet/transactions/write_transaction.h"
@@ -20,44 +21,25 @@ class TransactionTrackerTest : public KuduTest {
   TransactionTracker tracker_;
 };
 
-class MockLeaderWriteTransaction : public LeaderWriteTransaction {
- public:
-  MockLeaderWriteTransaction(TransactionTracker *txn_tracker,
-                             WriteTransactionState* tx_state,
-                             consensus::Consensus* consensus,
-                             TaskExecutor* prepare_executor,
-                             TaskExecutor* apply_executor,
-                             simple_spinlock* prepare_replicate_lock)
-    : LeaderWriteTransaction(txn_tracker, tx_state, consensus,
-                             prepare_executor, apply_executor, prepare_replicate_lock) {
-  }
-
-  // Simply aborts an initialized transaction without executing it.
-  Status Abort() {
-    Status s = Status::Aborted("Aborted for testing before Execute()");
-    prepare_finished_callback_->OnFailure(s);
-    HandlePrepareFailure();
-    return s;
-  }
-};
-
 TEST_F(TransactionTrackerTest, TestGetPending) {
   gscoped_ptr<TaskExecutor> executor(TaskExecutor::CreateNew("test", 1));
   simple_spinlock lock;
 
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
-  scoped_refptr<MockLeaderWriteTransaction> tx(new MockLeaderWriteTransaction(
-                                                  &tracker_, new WriteTransactionState(), NULL,
-                                                  executor.get(), executor.get(), &lock));
+  scoped_refptr<LeaderTransactionDriver> driver(new LeaderTransactionDriver(&tracker_,
+                                                                            NULL,
+                                                                            executor.get(),
+                                                                            executor.get(),
+                                                                            &lock));
+
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
-  vector<scoped_refptr<Transaction> > pending_transactions;
-  ASSERT_TRUE(pending_transactions.empty());
+  vector<scoped_refptr<TransactionDriver> > pending_transactions;
   tracker_.GetPendingTransactions(&pending_transactions);
   ASSERT_EQ(1, pending_transactions.size());
-  ASSERT_EQ(tx.get(), pending_transactions.front().get());
+  ASSERT_EQ(driver.get(), pending_transactions.front().get());
 
-  tx->Abort();
+  driver->ApplyOrCommitFailed(Status::IllegalState(""));
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
 }
 

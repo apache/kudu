@@ -8,6 +8,7 @@
 #include <boost/thread/mutex.hpp>
 
 #include "gutil/strings/substitute.h"
+#include "tablet/transactions/transaction_driver.h"
 
 namespace kudu {
 namespace tablet {
@@ -15,28 +16,31 @@ namespace tablet {
 using std::vector;
 using strings::Substitute;
 
+TransactionTracker::TransactionTracker() {
+}
+
 TransactionTracker::~TransactionTracker() {
   boost::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(pending_txns_.size(), 0);
 }
 
-void TransactionTracker::Add(Transaction *txn) {
+void TransactionTracker::Add(TransactionDriver *driver) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  pending_txns_.insert(txn);
+  pending_txns_.insert(driver);
 }
 
-void TransactionTracker::Release(Transaction *txn) {
+void TransactionTracker::Release(TransactionDriver *driver) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (PREDICT_FALSE(pending_txns_.erase(txn) != 1)) {
-    LOG(FATAL) << "Could not remove pending transaction from map: " << txn->tx_state()->ToString();
+  if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
+    LOG(FATAL) << "Could not remove pending transaction from map: " << driver->ToString();
   }
 }
 
 void TransactionTracker::GetPendingTransactions(
-    vector<scoped_refptr<Transaction> >* pending_out) const {
+    vector<scoped_refptr<TransactionDriver> >* pending_out) const {
   DCHECK(pending_out->empty());
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(const scoped_refptr<Transaction>& tx, pending_txns_) {
+  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& tx, pending_txns_) {
     // Increments refcount of each transaction.
     pending_out->push_back(tx);
   }
@@ -63,8 +67,8 @@ void TransactionTracker::WaitForAllToFinish() {
     MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);
     int64_t waited_ms = diff.ToMilliseconds();
     if (waited_ms / complain_ms > num_complaints) {
-      LOG(WARNING) << Substitute("TransactionTracker waiting for outstanding transactions to"
-                                 " complete now for $0 ms", waited_ms);
+      LOG(WARNING) << Substitute("TransactionTracker waiting for $0 outstanding transactions to"
+                                 " complete now for $1 ms", pending_txns_.size(), waited_ms);
       num_complaints++;
     }
     wait_time = std::min(wait_time * 5 / 4, 1000000);

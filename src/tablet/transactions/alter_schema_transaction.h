@@ -85,44 +85,35 @@ class AlterSchemaTransactionState : public TransactionState {
   boost::unique_lock<rw_semaphore> component_lock_;
 };
 
-// Executes the alter schema transaction, leader side.
-class LeaderAlterSchemaTransaction : public LeaderTransaction {
+// Executes the alter schema transaction,.
+class AlterSchemaTransaction : public Transaction {
  public:
-  LeaderAlterSchemaTransaction(TransactionTracker *txn_tracker,
-                               AlterSchemaTransactionState* tx_state,
-                               consensus::Consensus* consensus,
-                               TaskExecutor* prepare_executor,
-                               TaskExecutor* apply_executor,
-                               simple_spinlock* prepare_replicate_lock);
- protected:
+  AlterSchemaTransaction(AlterSchemaTransactionState* tx_state, DriverType type);
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);
+  virtual AlterSchemaTransactionState* state() OVERRIDE { return tx_state_.get(); }
+  virtual const AlterSchemaTransactionState* state() const OVERRIDE { return tx_state_.get(); }
 
-  // Executes a Prepare for the alter schema transaction, leader side.
+  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
+
+  // Executes a Prepare for the alter schema transaction.
   //
   // Acquires the tablet component lock for the transaction.
-  virtual Status Prepare();
+  virtual Status Prepare() OVERRIDE;
 
-  // Releases the alter schema tablet lock and sets up the error in the AlterSchemaResponse
-  virtual void PrepareFailedPreCommitHooks(gscoped_ptr<consensus::CommitMsg>* commit_msg);
+  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
-  // Executes an Apply for the alter schema transaction, leader side.
-  virtual Status Apply();
+  // Executes an Apply for the alter schema transaction
+  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
   // Actually commits the transaction.
-  virtual void ApplySucceeded();
-
-  virtual AlterSchemaTransactionState* tx_state() OVERRIDE { return tx_state_.get(); }
-  virtual const AlterSchemaTransactionState* tx_state() const OVERRIDE { return tx_state_.get(); }
+  virtual void Finish() OVERRIDE;
 
  private:
-
   gscoped_ptr<AlterSchemaTransactionState> tx_state_;
-  DISALLOW_COPY_AND_ASSIGN(LeaderAlterSchemaTransaction);
+  DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransaction);
 };
 
 }  // namespace tablet
 }  // namespace kudu
-
 
 #endif /* KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_ */

@@ -10,30 +10,28 @@
 
 #include "gutil/ref_counted.h"
 #include "util/locks.h"
-#include "tablet/transactions/transaction.h"
 
 namespace kudu {
 namespace tablet {
-
-class Transaction;
+class TransactionDriver;
 
 // Each TabletPeer has a TransactionTracker which keeps track of pending transactions.
 // Each "LeaderTransaction" will register itself by calling Add().
 // It will remove itself by calling Release().
 class TransactionTracker {
  public:
-  TransactionTracker() {}
+  TransactionTracker();
   ~TransactionTracker();
 
   // Adds a transaction to the set of tracked transactions.
-  void Add(Transaction *txn);
+  void Add(TransactionDriver *driver);
 
   // Removes the txn from the pending list.
   // Also triggers the deletion of the Transaction object, if its refcount == 0.
-  void Release(Transaction *txn);
+  void Release(TransactionDriver *driver);
 
   // Populates list of currently-running transactions into 'pending_out' vector.
-  void GetPendingTransactions(std::vector<scoped_refptr<Transaction> >* pending_out) const;
+  void GetPendingTransactions(std::vector<scoped_refptr<TransactionDriver> >* pending_out) const;
 
   // Returns number of pending transactions.
   int GetNumPendingForTests() const;
@@ -42,9 +40,9 @@ class TransactionTracker {
 
  private:
   mutable simple_spinlock lock_;
-  std::tr1::unordered_set<scoped_refptr<Transaction>,
-                          ScopedRefPtrHashFunctor<Transaction>,
-                          ScopedRefPtrEqualToFunctor<Transaction> > pending_txns_;
+  std::tr1::unordered_set<scoped_refptr<TransactionDriver>,
+                          ScopedRefPtrHashFunctor<TransactionDriver>,
+                          ScopedRefPtrEqualToFunctor<TransactionDriver> > pending_txns_;
 
   DISALLOW_COPY_AND_ASSIGN(TransactionTracker);
 };

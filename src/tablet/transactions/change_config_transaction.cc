@@ -25,35 +25,26 @@ using metadata::QuorumPB;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
-LeaderChangeConfigTransaction::LeaderChangeConfigTransaction(
-    TransactionTracker *txn_tracker,
-    ChangeConfigTransactionState* tx_state,
-    consensus::Consensus* consensus,
-    TaskExecutor* prepare_executor,
-    TaskExecutor* apply_executor,
-    simple_spinlock* prepare_replicate_lock,
-    Semaphore* config_sem)
-: LeaderTransaction(txn_tracker,
-                    consensus,
-                    prepare_executor,
-                    apply_executor,
-                    prepare_replicate_lock),
-  tx_state_(tx_state),
-  config_sem_(config_sem) {
+ChangeConfigTransaction::ChangeConfigTransaction(ChangeConfigTransactionState* tx_state,
+                                                 DriverType type,
+                                                 Semaphore* config_sem)
+    : Transaction(tx_state, type),
+      tx_state_(tx_state),
+      config_sem_(config_sem) {
 }
 
-void LeaderChangeConfigTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
+void ChangeConfigTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(CHANGE_CONFIG_OP);
-  (*replicate_msg)->mutable_change_config_request()->CopyFrom(*tx_state()->request());
+  (*replicate_msg)->mutable_change_config_request()->CopyFrom(*state()->request());
 }
 
-Status LeaderChangeConfigTransaction::Prepare() {
+Status ChangeConfigTransaction::Prepare() {
   TRACE("PREPARE CHANGE CONFIG: Starting");
 
   tx_state_->acquire_config_sem(config_sem_);
 
-  // now that we've acquired the semaphore, set the transaction timestamp
+  // now that we've acquired the semaphore set the transaction timestamp
   tx_state_->set_timestamp(tx_state_->tablet_peer()->clock()->Now());
 
   const QuorumPB& old_quorum = tx_state_->tablet_peer()->tablet()->metadata()->Quorum();
@@ -69,48 +60,36 @@ Status LeaderChangeConfigTransaction::Prepare() {
   TRACE("PREPARE CHANGE CONFIG: finished (Status: $0)", s.ToString());
 
   if (!s.ok()) {
-     tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_CONFIG);
+    tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_CONFIG);
   }
   return s;
 }
 
-void LeaderChangeConfigTransaction::PrepareFailedPreCommitHooks(
-    gscoped_ptr<CommitMsg>* commit_msg) {
-  // Release the config semaphore (no effect if it was never acquired)
-  tx_state_->release_config_sem();
-
+void ChangeConfigTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(OP_ABORT);
   (*commit_msg)->mutable_change_config_response()->CopyFrom(*tx_state_->response());
   (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
 }
 
-Status LeaderChangeConfigTransaction::Apply() {
+Status ChangeConfigTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY CHANGE CONFIG: Starting");
 
   // change the config in the tablet metadata.
   tx_state_->tablet_peer()->tablet()->metadata()->SetQuorum(tx_state_->request()->new_config());
   RETURN_NOT_OK(tx_state_->tablet_peer()->tablet()->metadata()->Flush());
 
-  gscoped_ptr<CommitMsg> commit(new CommitMsg());
-  commit->set_op_type(CHANGE_CONFIG_OP);
-  commit->set_timestamp(tx_state_->timestamp().ToUint64());
-
-  TRACE("APPLY CHANGE CONFIG: finished, triggering COMMIT");
-
-  RETURN_NOT_OK(tx_state_->consensus_round()->Commit(commit.Pass()));
-  // NB: do not use tx_state_ after this point, because the commit may have
-  // succeeded, in which case the context may have been torn down.
+  commit_msg->reset(new CommitMsg());
+  (*commit_msg)->set_op_type(CHANGE_CONFIG_OP);
+  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
   return Status::OK();
 }
 
-void LeaderChangeConfigTransaction::ApplySucceeded() {
+void ChangeConfigTransaction::Finish() {
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("APPLY CHANGE CONFIG: apply finished");
-
-  tx_state()->commit();
-  LeaderTransaction::ApplySucceeded();
+  state()->commit();
 }
 
 }  // namespace tablet

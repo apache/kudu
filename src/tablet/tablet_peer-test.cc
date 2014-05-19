@@ -17,6 +17,7 @@
 #include "server/clock.h"
 #include "server/logical_clock.h"
 #include "tablet/transactions/transaction.h"
+#include "tablet/transactions/transaction_driver.h"
 #include "tablet/transactions/write_transaction.h"
 #include "tablet/tablet_peer.h"
 #include "tablet/tablet-test-util.h"
@@ -197,30 +198,20 @@ class TabletPeerTest : public KuduTabletTest {
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().
-class DelayedApplyTransaction : public LeaderWriteTransaction {
+class DelayedApplyTransaction : public WriteTransaction {
  public:
   DelayedApplyTransaction(CountDownLatch* apply_started,
                           CountDownLatch* apply_continue,
-                          TransactionTracker* txn_tracker,
-                          WriteTransactionState* tx_state,
-                          Consensus* consensus,
-                          TaskExecutor* prepare_executor,
-                          TaskExecutor* apply_executor,
-                          simple_spinlock& prepare_replicate_lock)
-    : LeaderWriteTransaction(txn_tracker,
-                             tx_state,
-                             consensus,
-                             prepare_executor,
-                             apply_executor,
-                             &prepare_replicate_lock),
-      apply_started_(DCHECK_NOTNULL(apply_started)),
-      apply_continue_(DCHECK_NOTNULL(apply_continue)) {
+                          WriteTransactionState* state)
+      : WriteTransaction(state, Transaction::LEADER),
+        apply_started_(DCHECK_NOTNULL(apply_started)),
+        apply_continue_(DCHECK_NOTNULL(apply_continue)) {
   }
 
-  virtual Status Apply() OVERRIDE {
+  virtual Status Apply(gscoped_ptr<CommitMsg>* commit_msg) OVERRIDE {
     apply_started_->CountDown();
     apply_continue_->Wait();
-    return LeaderWriteTransaction::Apply();
+    return WriteTransaction::Apply(commit_msg);
   }
 
  private:
@@ -355,16 +346,18 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, &resp)).Pass());
 
-    DelayedApplyTransaction* transaction = new DelayedApplyTransaction(
-        &apply_started,
-        &apply_continue,
+    LeaderTransactionDriver* driver = new LeaderTransactionDriver(
         &tablet_peer_->txn_tracker_,
-        tx_state,
         tablet_peer_->consensus(),
         tablet_peer_->prepare_executor_.get(),
         tablet_peer_->apply_executor_.get(),
-        tablet_peer_->prepare_replicate_lock_);
-    ASSERT_STATUS_OK(transaction->Execute());
+        &tablet_peer_->prepare_replicate_lock_);
+
+    DelayedApplyTransaction* transaction = new DelayedApplyTransaction(&apply_started,
+                                                                       &apply_continue,
+                                                                       tx_state);
+
+    ASSERT_STATUS_OK(driver->Execute(transaction));
     apply_started.Wait();
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.

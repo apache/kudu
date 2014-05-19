@@ -27,8 +27,10 @@ class Messenger;
 namespace tablet {
 
 class ChangeConfigTransactionState;
+class LeaderTransactionDriver;
 class TabletStatusPB;
 class TabletStatusListener;
+class TransactionDriver;
 
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -145,6 +147,8 @@ class TabletPeer : public consensus::ReplicaTransactionFactory {
   server::Clock* clock() {
     return clock_.get();
   }
+
+  LeaderTransactionDriver* NewLeaderTransactionDriver();
 
  private:
   friend class TabletPeerTest;

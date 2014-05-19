@@ -202,7 +202,7 @@ class WriteTransactionState : public TransactionState {
   gscoped_ptr<ScopedTransaction> mvcc_tx_;
 };
 
-// Executes a write transaction, leader side.
+// Executes a write transaction.
 //
 // Transaction execution is illustrated in the next diagram. (Further
 // illustration of the inner workings of the consensus system can be found
@@ -272,30 +272,27 @@ class WriteTransactionState : public TransactionState {
 //    completed, the mvcc transaction committed (making the updates visible
 //    to other transactions), the metrics updated and the transaction's
 //    resources released.
-//
-class LeaderWriteTransaction : public LeaderTransaction {
+// TODO rephrase the above comment to apply to generic transactions and move
+//      to transaction.h
+class WriteTransaction : public Transaction {
  public:
-  LeaderWriteTransaction(TransactionTracker *txn_tracker,
-                         WriteTransactionState* tx_state,
-                         consensus::Consensus* consensus,
-                         TaskExecutor* prepare_executor,
-                         TaskExecutor* apply_executor,
-                         simple_spinlock* prepare_replicate_lock);
- protected:
+  WriteTransaction(WriteTransactionState* tx_state, DriverType type);
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg);
+  virtual WriteTransactionState* state() OVERRIDE { return state_.get(); }
+  virtual const WriteTransactionState* state() const OVERRIDE { return state_.get(); }
 
-  // Executes a Prepare for a write transaction, leader side.
+  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
+
+  virtual void NewCommitAbortMessage(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
+
+  // Executes a Prepare for a write transaction
   //
   // Acquires all the relevant row locks for the transaction, the tablet
   // component_lock in shared mode and starts an Mvcc transaction. When the task
   // is finished, the next one in the pipeline must take ownership of these.
-  virtual Status Prepare();
+  virtual Status Prepare() OVERRIDE;
 
-  // Releases the write transaction's row locks and sets up the error in the WriteResponse
-  virtual void PrepareFailedPreCommitHooks(gscoped_ptr<consensus::CommitMsg>* commit_msg);
-
-  // Executes an Apply for a write transaction, leader side.
+  // Executes an Apply for a write transaction.
   //
   // Actually applies inserts/mutates into the tablet. After these start being
   // applied, the transaction must run to completion as there is currently no
@@ -313,21 +310,24 @@ class LeaderWriteTransaction : public LeaderTransaction {
   // are placed in the queue (but not necessarily in the same order of the
   // original requests) which is already a requirement of the consensus
   // algorithm.
-  virtual Status Apply();
+  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
 
-  // Actually commits the mvcc transaction.
-  virtual void ApplySucceeded();
+  // Releases the row locks (Early Lock Release).
+  virtual void PreCommit() OVERRIDE;
 
-  virtual void UpdateMetrics();
+  // Actually commits the mvcc transaction and updates the metrics.
+  virtual void Finish() OVERRIDE;
+ private:
+  // Decodes the rows in WriteRequestPB and creates prepared row writes.
+  Status CreatePreparedInsertsAndMutates(const Schema& client_schema);
 
-  virtual WriteTransactionState* tx_state() OVERRIDE { return tx_state_.get(); }
-  virtual const WriteTransactionState* tx_state() const OVERRIDE { return tx_state_.get(); }
+  // this transaction's start time
+  MonoTime start_time_;
 
- protected:
-  gscoped_ptr<WriteTransactionState> tx_state_;
+  gscoped_ptr<WriteTransactionState> state_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(LeaderWriteTransaction);
+  DISALLOW_COPY_AND_ASSIGN(WriteTransaction);
 };
 
 // A context for a single row in a transaction. Contains the row, the probe
@@ -394,6 +394,5 @@ class PreparedRowWrite {
 
 }  // namespace tablet
 }  // namespace kudu
-
 
 #endif /* KUDU_TABLET_WRITE_TRANSACTION_H_ */

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "common/wire_protocol.h"
+#include "common/row_operations.h"
 #include "gutil/stl_util.h"
 #include "rpc/rpc_context.h"
 #include "server/hybrid_clock.h"
@@ -28,31 +29,98 @@ using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 using boost::bind;
 
-LeaderWriteTransaction::LeaderWriteTransaction(TransactionTracker *txn_tracker,
-                                               WriteTransactionState* tx_state,
-                                               consensus::Consensus* consensus,
-                                               TaskExecutor* prepare_executor,
-                                               TaskExecutor* apply_executor,
-                                               simple_spinlock* prepare_replicate_lock)
-: LeaderTransaction(txn_tracker,
-                    consensus,
-                    prepare_executor,
-                    apply_executor,
-                    prepare_replicate_lock),
-  tx_state_(tx_state) {
+WriteTransaction::WriteTransaction(WriteTransactionState* state, DriverType type)
+: Transaction(state, type),
+  state_(state) {
+  start_time_ = MonoTime::Now(MonoTime::FINE);
 }
 
-void LeaderWriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
+void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(WRITE_OP);
-  (*replicate_msg)->mutable_write_request()->CopyFrom(*tx_state()->request());
+  (*replicate_msg)->mutable_write_request()->CopyFrom(*state()->request());
 }
 
-Status LeaderWriteTransaction::Prepare() {
+void WriteTransaction::NewCommitAbortMessage(gscoped_ptr<CommitMsg>* commit_msg) {
+  commit_msg->reset(new CommitMsg());
+  (*commit_msg)->set_op_type(OP_ABORT);
+  (*commit_msg)->mutable_write_response()->CopyFrom(*state_->response());
+  (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
+}
+
+Status WriteTransaction::CreatePreparedInsertsAndMutates(const Schema& client_schema) {
+  TRACE("PREPARE: Acquiring component lock");
+
+  Tablet* tablet = state()->tablet_peer()->tablet();
+
+  // acquire the component lock. this is more like "tablet lock" and is used
+  // to prevent AlterSchema and other operations that requires exclusive access
+  // to the tablet.
+  gscoped_ptr<shared_lock<rw_semaphore> > component_lock_(
+      new shared_lock<rw_semaphore>(*tablet->component_lock()));
+  state()->set_component_lock(component_lock_.Pass());
+
+  TRACE("Projecting inserts");
+  // Now that the schema is fixed, we can project the operations into that schema.
+  vector<DecodedRowOperation> decoded_ops;
+  if (state()->request()->row_operations().rows().size() > 0) {
+    RowOperationsPBDecoder dec(&state()->request()->row_operations(),
+                               &client_schema,
+                               tablet->schema_unlocked().get(),
+                               state()->arena());
+    Status s = dec.DecodeOperations(&decoded_ops);
+    if (!s.ok()) {
+      // TODO: is MISMATCHED_SCHEMA always right here? probably not.
+      state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
+      return s;
+    }
+  }
+
+  // Now acquire row locks and prepare everything for apply
+  TRACE("PREPARE: Running prepare for $0 operations", decoded_ops.size());
+  BOOST_FOREACH(const DecodedRowOperation& op, decoded_ops) {
+    gscoped_ptr<PreparedRowWrite> row_write;
+
+    switch (op.type) {
+      case RowOperationsPB::INSERT:
+      {
+        // TODO pass 'row_ptr' to the PreparedRowWrite once we get rid of the
+        // old API that has a Mutate method that receives the row as a reference.
+        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+        // a {schema, ptr} pair itself and probably cheaper to copy around.
+        ConstContiguousRow *row = state()->AddToAutoReleasePool(
+          new ConstContiguousRow(*tablet->schema_unlocked().get(), op.row_data));
+        RETURN_NOT_OK(tablet->CreatePreparedInsert(state(), row, &row_write));
+        break;
+      }
+      case RowOperationsPB::UPDATE:
+      case RowOperationsPB::DELETE:
+      {
+        const uint8_t* row_key_ptr = op.row_data;
+        const RowChangeList& mutation = op.changelist;
+
+        // TODO pass 'row_key_ptr' to the PreparedRowWrite once we get rid of the
+        // old API that has a Mutate method that receives the row as a reference.
+        // TODO: allocating ConstContiguousRow is kind of a waste since it is just
+        // a {schema, ptr} pair itself and probably cheaper to copy around.
+        ConstContiguousRow* row_key = new ConstContiguousRow(tablet->key_schema(), row_key_ptr);
+        row_key = state()->AddToAutoReleasePool(row_key);
+        RETURN_NOT_OK(tablet->CreatePreparedMutate(state(), row_key, mutation, &row_write));
+        break;
+      }
+      default:
+        LOG(FATAL) << "Bad type: " << op.type;
+    }
+
+    state()->add_prepared_row(row_write.Pass());
+  }
+  return Status::OK();
+}
+
+Status WriteTransaction::Prepare() {
   TRACE("PREPARE: Starting");
 
-  const WriteRequestPB* req = tx_state_->request();
-  Tablet* tablet = tx_state_->tablet_peer()->tablet();
+  const WriteRequestPB* req = state_->request();
 
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
@@ -62,124 +130,103 @@ Status LeaderWriteTransaction::Prepare() {
     // TODO: we have this kind of code a lot - add a new SchemaFromPB variant which
     // does this check inline.
     Status s = Status::InvalidArgument("User requests should not have Column IDs");
-    tx_state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
+    state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
-  Status s = CreatePreparedInsertsAndMutates(tablet,
-                                             tx_state_.get(),
-                                             client_schema,
-                                             req->row_operations());
+  Status s = CreatePreparedInsertsAndMutates(client_schema);
 
   // Now that we've prepared set the transaction timestamp (by initiating the
   // mvcc transaction). Doing this here allows us to wait the least possible
   // time if we're using commit wait.
-  Timestamp timestamp = tx_state_->start_mvcc_tx();
+  Timestamp timestamp = state_->start_mvcc_tx();
   TRACE("PREPARE: finished. Timestamp: $0", server::HybridClock::GetPhysicalValue(timestamp));
   return s;
 }
 
-void LeaderWriteTransaction::PrepareFailedPreCommitHooks(gscoped_ptr<CommitMsg>* commit_msg) {
-  // Release all row locks (no effect if no locks were acquired).
-  tx_state_->release_row_locks();
-
-  commit_msg->reset(new CommitMsg());
-  (*commit_msg)->set_op_type(OP_ABORT);
-  (*commit_msg)->mutable_write_response()->CopyFrom(*tx_state_->response());
-  (*commit_msg)->mutable_result()->CopyFrom(tx_state_->Result());
-  (*commit_msg)->set_timestamp(tx_state_->timestamp().ToUint64());
-}
-
 // FIXME: Since this is called as a void in a thread-pool callback,
 // it seems pointless to return a Status!
-Status LeaderWriteTransaction::Apply() {
+Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY: Starting");
 
-  Tablet* tablet = tx_state_->tablet_peer()->tablet();
-
+  Tablet* tablet = state()->tablet_peer()->tablet();
   int i = 0;
+  // TODO for now we're just warning on this status. This status indicates if
+  // _any_ insert or mutation failed consider writing OP_ABORT if all failed.
   Status s;
-  BOOST_FOREACH(const PreparedRowWrite *row, tx_state_->rows()) {
+  BOOST_FOREACH(const PreparedRowWrite *row, state()->rows()) {
     switch (row->write_type()) {
       case PreparedRowWrite::INSERT: {
-        s = tablet->InsertUnlocked(tx_state(), row);
+        s = tablet->InsertUnlocked(state(), row);
         break;
       }
       case PreparedRowWrite::MUTATE: {
-        s = tablet->MutateRowUnlocked(tx_state(), row);
+        s = tablet->MutateRowUnlocked(state(), row);
         break;
       }
     }
     if (PREDICT_FALSE(!s.ok())) {
-      WriteResponsePB::PerRowErrorPB* error = tx_state_->response()->add_per_row_errors();
-      error->set_row_index(i);
-      StatusToPB(s, error->mutable_error());
+      // Replicas disregard the per row errors, for now
+      // TODO check the per-row errors against the leader's, at least in debug mode
+      if (state()->response() != NULL) {
+        WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
+        error->set_row_index(i);
+        StatusToPB(s, error->mutable_error());
+      }
     }
     i++;
   }
+  WARN_NOT_OK(s, "Some row writes failed.");
 
-  // If the client requested COMMIT_WAIT as the external consistency mode
-  // calculate the latest that the prepare timestamp could be and wait
-  // until now.earliest > prepare_latest. Only after this are the locks
-  // released.
-  if (tx_state_->external_consistency_mode() == COMMIT_WAIT) {
-    TRACE("APPLY: Commit Wait.");
-    // If we can't commit wait and have already applied we might have consistency
-    // issues if we still reply to the client that the operation was a success.
-    // On the other hand we don't have rollbacks as of yet thus we can't undo the
-    // the apply either, so we just CHECK_OK for now.
-    CHECK_OK(CommitWait());
+  commit_msg->reset(new CommitMsg());
+  (*commit_msg)->mutable_result()->CopyFrom(state()->Result());
+  (*commit_msg)->set_op_type(WRITE_OP);
+  (*commit_msg)->set_timestamp(state()->timestamp().ToUint64());
+
+  // If this is a leader side transaction set the timestamp on the response
+  // TODO(todd): can we consolidate this code into the driver? we seem to be
+  // quite inconsistent whether we do this or not in the other transaction types.
+  if (type() == Transaction::LEADER) {
+    state()->response()->set_write_timestamp(state()->timestamp().ToUint64());
   }
-
-  TRACE("APPLY: Releasing row locks");
-
-  // Perform early lock release after we've applied all changes
-  tx_state_->release_row_locks();
-
-  gscoped_ptr<CommitMsg> commit(new CommitMsg());
-  commit->mutable_result()->CopyFrom(tx_state_->Result());
-  commit->set_op_type(WRITE_OP);
-  commit->set_timestamp(tx_state_->timestamp().ToUint64());
-  tx_state_->response()->set_write_timestamp(tx_state_->timestamp().ToUint64());
-
-  TRACE("APPLY: finished, triggering COMMIT");
-
-  RETURN_NOT_OK(tx_state_->consensus_round()->Commit(commit.Pass()));
-  // NB: do not use tx_state_ after this point, because the commit may have
-  // succeeded, in which case the context may have been torn down.
   return Status::OK();
 }
 
-void LeaderWriteTransaction::ApplySucceeded() {
-  // Now that all of the changes have been applied and the commit is durable
-  // make the changes visible to readers.
-  TRACE("WriteCommitCallback: making edits visible");
-  tx_state()->commit();
-  LeaderTransaction::ApplySucceeded();
+void WriteTransaction::PreCommit() {
+  TRACE("PRECOMMIT: Releasing row locks");
+  // Perform early lock release after we've applied all changes
+  state()->release_row_locks();
 }
 
-void LeaderWriteTransaction::UpdateMetrics() {
-  // Update tablet server metrics.
-  TabletMetrics* metrics = tx_state_->tablet_peer()->tablet()->metrics();
+void WriteTransaction::Finish() {
+  // Now that all of the changes have been applied and the commit is durable
+  // make the changes visible to readers.
+  TRACE("FINISH: making edits visible");
+  state()->commit();
+
+  TabletMetrics* metrics = state_->tablet_peer()->tablet()->metrics();
   if (metrics) {
     // TODO: should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?
-    metrics->rows_inserted->IncrementBy(tx_state_->metrics().successful_inserts);
-    metrics->rows_updated->IncrementBy(tx_state_->metrics().successful_updates);
-    if (tx_state()->external_consistency_mode() == COMMIT_WAIT) {
-      metrics->commit_wait_duration->Increment(tx_state_->metrics().commit_wait_duration_usec);
-    }
-    uint64_t op_duration_usec =
-        MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time_).ToMicroseconds();
-    switch (tx_state()->external_consistency_mode()) {
-      case NO_CONSISTENCY:
-        metrics->write_op_duration_no_consistency->Increment(op_duration_usec);
-        break;
-      case CLIENT_PROPAGATED:
-        metrics->write_op_duration_client_propagated_consistency->Increment(op_duration_usec);
-        break;
-      case COMMIT_WAIT:
-        metrics->write_op_duration_commit_wait_consistency->Increment(op_duration_usec);
-        break;
+    metrics->rows_inserted->IncrementBy(state_->metrics().successful_inserts);
+    metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
+
+    if (type() == Transaction::LEADER) {
+      if (state()->external_consistency_mode() == COMMIT_WAIT) {
+        metrics->commit_wait_duration->Increment(state_->metrics().commit_wait_duration_usec);
+      }
+      uint64_t op_duration_usec =
+          MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time_).ToMicroseconds();
+      switch (state()->external_consistency_mode()) {
+        case NO_CONSISTENCY:
+          metrics->write_op_duration_no_consistency->Increment(op_duration_usec);
+          break;
+        case CLIENT_PROPAGATED:
+          metrics->write_op_duration_client_propagated_consistency->Increment(op_duration_usec);
+          break;
+        case COMMIT_WAIT:
+          metrics->write_op_duration_commit_wait_consistency->Increment(op_duration_usec);
+          break;
+      }
     }
   }
 }

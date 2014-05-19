@@ -1636,6 +1636,9 @@ void CatalogManager::SelectReplicasForTablets(const vector<TabletInfo*>& tablets
     // Select the set of replicas
     metadata::QuorumPB *quorum = tablet->metadata().mutable_dirty()->pb.mutable_quorum();
     quorum->set_seqno(0);
+    // TODO allow the user to choose num replicas per table and
+    // and allow to choose local/dist quorum. See: KUDU-96
+    quorum->set_local(nreplicas == 1);
     SelectReplicas(quorum, ts_descs, nreplicas);
   }
 }
@@ -1670,7 +1673,7 @@ void CatalogManager::SelectReplicas(metadata::QuorumPB *quorum,
     ts->GetRegistration(&reg);
 
     QuorumPeerPB *peer = quorum->add_peers();
-    peer->set_role(QuorumPeerPB::CANDIDATE);
+    peer->set_role(QuorumPeerPB::FOLLOWER);
     peer->set_permanent_uuid(ts->permanent_uuid());
 
     // TODO: This is temporary, we will use only UUIDs
@@ -1692,7 +1695,6 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
   vector<TabletReplica> locs;
   {
     TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
-
     if (!l_tablet.data().is_running()) return false;
 
     locs.clear();
