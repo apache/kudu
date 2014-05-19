@@ -135,7 +135,7 @@ public abstract class Operation extends KuduRpc implements KuduRpc.HasKey {
    * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
    * the column's type
    */
-  public void addUnsignedInt(String columnName, BigInteger val) {
+  public void addUnsignedLong(String columnName, BigInteger val) {
     ColumnSchema col = this.schema.getColumn(columnName);
     checkColumn(col, Type.UINT64);
     Bytes.setUnsignedLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
