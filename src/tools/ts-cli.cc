@@ -128,8 +128,8 @@ Status TsAdminClient::ListTablets(vector<TabletStatusPB>* tablets) {
 
 static int TsCliMain(int argc, char** argv) {
   FLAGS_logtostderr = 1;
-  InitGoogleLoggingSafe(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  InitGoogleLoggingSafe(argv[0]);
   const string addr = FLAGS_tserver_address;
 
   TsAdminClient client(addr, FLAGS_timeout_ms);
