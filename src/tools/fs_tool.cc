@@ -479,7 +479,13 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
   // pointer.
   DeltaIterator* raw_iter;
 
-  MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  MvccSnapshot snap_all;
+  if (delta_type == tablet::REDO) {
+    snap_all = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  } else if (delta_type == tablet::UNDO) {
+    snap_all = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+  }
+
   Status s = delta_reader->NewDeltaIterator(&schema, snap_all, &raw_iter);
 
   if (s.IsNotFound()) {
